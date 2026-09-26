@@ -1930,3 +1930,633 @@ pub struct AuxCacheStatus {
     /// Recursive on-disk size in bytes; 0 when the directory is absent.
     pub size_bytes: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    //! Wire-contract round-trip tests. The TS side hand-mirrors every type
+    //! here (packages/webui/src/api/client.ts) — these tests pin the exact
+    //! JSON keys serde produces so a dropped `rename_all`, a renamed field,
+    //! or a changed `skip_serializing_if` fails CI instead of silently
+    //! drifting the IPC contract.
+
+    use super::*;
+
+    /// Serialize → deserialize → re-serialize must be the identity on the
+    /// JSON `Value` level. Returns the wire shape for key assertions.
+    fn round_trips<T>(value: T) -> serde_json::Value
+    where
+        T: Serialize + serde::de::DeserializeOwned,
+    {
+        let first = serde_json::to_value(&value).expect("serializes");
+        let back: T = serde_json::from_value(first.clone()).expect("parses its own shape");
+        let second = serde_json::to_value(&back).expect("re-serializes");
+        assert_eq!(first, second, "JSON round-trip must be stable");
+        first
+    }
+
+    // ── game detection (client.ts: GameInstall / GameProcessInfo) ──────────
+
+    /// `GameInstallKind::CnKongzhong` is the drift-prone variant: camelCase
+    /// yields "cnKongzhong", not "cn_kongzhong" / "CnKongzhong".
+    #[test]
+    fn game_install_renames_fields_and_enum_variants() {
+        let install = GameInstall {
+            kind: GameInstallKind::CnKongzhong,
+            path: r"C:\Games\WoWS".into(),
+            realm: Some("cn".into()),
+        };
+        let v = round_trips(install);
+        assert_eq!(v["kind"], "cnKongzhong");
+        assert_eq!(v["path"], r"C:\Games\WoWS");
+        assert_eq!(v["realm"], "cn");
+        assert_eq!(v.as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn game_process_info_renames_exe_path_and_matched_install() {
+        let info = GameProcessInfo {
+            running: true,
+            pid: Some(4242),
+            kind: Some(GameInstallKind::Steam),
+            realm: None,
+            exe_path: Some(r"C:\Steam\...\WorldOfWarships64.exe".into()),
+            matched_install: None,
+        };
+        let v = round_trips(info);
+        for key in [
+            "running",
+            "pid",
+            "kind",
+            "realm",
+            "exePath",
+            "matchedInstall",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["pid"], 4242);
+        assert_eq!(v["exePath"], r"C:\Steam\...\WorldOfWarships64.exe");
+    }
+
+    // ── replays (client.ts: ReplayMeta / ReplayMetaLite) ────────────────────
+
+    #[test]
+    fn replay_meta_renames_every_multi_word_field() {
+        let meta = ReplayMeta {
+            path: "replays/20250622.wowsreplay".into(),
+            match_group: Some("pvp".into()),
+            date_time: Some("20250622_152405".into()),
+            map_id: Some(15),
+            map_name: Some("15_NE_north".into()),
+            scenario: Some("domination_3point".into()),
+            event_type: Some("PCVE027".into()),
+            bot_count: 2,
+            vehicles: vec![VehicleEntry {
+                id: 7,
+                name: ":Bot:".into(),
+                relation: 2,
+                ship_id: 4282948544,
+                ship_name: Some("Montana".into()),
+            }],
+            raw: serde_json::json!({ "playerName": "recorder" }),
+        };
+        let v = round_trips(meta);
+        for key in [
+            "path",
+            "matchGroup",
+            "dateTime",
+            "mapId",
+            "mapName",
+            "scenario",
+            "eventType",
+            "botCount",
+            "vehicles",
+            "raw",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        let vehicle = &v["vehicles"][0];
+        assert_eq!(vehicle["shipId"], 4_282_948_544_i64);
+        assert_eq!(vehicle["shipName"], "Montana");
+        // bot_count is serde-defaulted: an old payload without it parses
+        // (the Option fields already default to None; `raw` stays required).
+        let legacy = serde_json::json!({ "path": "p", "vehicles": [], "raw": {} });
+        assert!(serde_json::from_value::<ReplayMeta>(legacy).is_ok());
+    }
+
+    #[test]
+    fn replay_meta_lite_renames_own_ship_fields() {
+        let lite = ReplayMetaLite {
+            path: "r.wowsreplay".into(),
+            date_time: Some("20250622".into()),
+            match_group: Some("ranked".into()),
+            map_name: Some("15_NE_north".into()),
+            map_id: Some(15),
+            scenario: None,
+            event_type: None,
+            bot_count: 0,
+            own_ship_id: Some(4282948544),
+            own_ship_name: Some("Montana".into()),
+            player_count: 12,
+        };
+        let v = round_trips(lite);
+        for key in [
+            "ownShipId",
+            "ownShipName",
+            "playerCount",
+            "dateTime",
+            "matchGroup",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["ownShipId"], 4_282_948_544_i64);
+    }
+
+    // ── pairing (client.ts: PairingStatus / PairingToken / PairingTarget /
+    //    PairingProgress / DiscoveredHost) ────────────────────────────────────
+
+    #[test]
+    fn pairing_status_renames_relay_online_and_via_upstream() {
+        let status = PairingStatus {
+            running: true,
+            host: Some("192.0.2.10".into()),
+            port: Some(51888),
+            pin: Some("123456".into()),
+            mode: Some("relay".into()),
+            relay_online: true,
+            provider: Some("wowsp".into()),
+            via_upstream: true,
+            notice: Some("maintenance".into()),
+        };
+        let v = round_trips(status);
+        for key in [
+            "running",
+            "host",
+            "port",
+            "pin",
+            "mode",
+            "relayOnline",
+            "provider",
+            "viaUpstream",
+            "notice",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["relayOnline"], true);
+        assert_eq!(v["viaUpstream"], true);
+        // The v2 manifest fields are additive: a v1 payload without them
+        // still deserializes (defaults kick in).
+        let v1 = serde_json::json!({ "running": false });
+        assert!(serde_json::from_value::<PairingStatus>(v1).is_ok());
+    }
+
+    #[test]
+    fn pairing_token_renames_room() {
+        let v = round_trips(PairingToken {
+            token: "bearer-1".into(),
+            room: Some("a".repeat(64)),
+        });
+        assert_eq!(v.as_object().unwrap().len(), 2);
+        assert_eq!(v["token"], "bearer-1");
+        assert_eq!(v["room"], "a".repeat(64));
+    }
+
+    /// `PairingTarget` is internally tagged (`kind`) — the TS side is a
+    /// discriminated union, so both the tag and the payload field names are
+    /// load-bearing.
+    #[test]
+    fn pairing_target_serializes_as_a_tagged_union() {
+        let lan = round_trips(PairingTarget::Lan {
+            host: "192.0.2.10".into(),
+            port: 51888,
+        });
+        assert_eq!(lan["kind"], "lan");
+        assert_eq!(lan["host"], "192.0.2.10");
+        assert_eq!(lan["port"], 51888);
+
+        let relay = round_trips(PairingTarget::Relay {
+            url: "https://worker.example.workers.dev".into(),
+            room: Some("b".repeat(64)),
+        });
+        assert_eq!(relay["kind"], "relay");
+        assert_eq!(relay["url"], "https://worker.example.workers.dev");
+        assert_eq!(relay["room"], "b".repeat(64));
+    }
+
+    #[test]
+    fn pairing_progress_renames_remote_name() {
+        let v = round_trips(PairingProgress {
+            remote_name: ":gamedata:".into(),
+            phase: "download".into(),
+            received: 1024,
+            total: 4096,
+            error: None,
+        });
+        for key in ["remoteName", "phase", "received", "total", "error"] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["remoteName"], ":gamedata:");
+    }
+
+    #[test]
+    fn discovered_host_renames_last_seen_age_sec() {
+        let v = round_trips(DiscoveredHost {
+            host: "192.0.2.10".into(),
+            port: 51888,
+            name: "DESKTOP".into(),
+            last_seen_age_sec: 3,
+            relay: None,
+        });
+        assert_eq!(v["lastSeenAgeSec"], 3);
+        assert_eq!(v.as_object().unwrap().len(), 5);
+    }
+
+    // ── overlay (client.ts: OverlayState / OverlayStatus) ───────────────────
+
+    /// `OverlayState` is serde-lowercase, not camelCase — the TS side spells
+    /// the union members "idle" | "searching" | ... exactly.
+    #[test]
+    fn overlay_state_serializes_lowercase() {
+        assert_eq!(round_trips(OverlayState::Idle), "idle");
+        assert_eq!(round_trips(OverlayState::Searching), "searching");
+        assert_eq!(round_trips(OverlayState::Detected), "detected");
+        assert_eq!(round_trips(OverlayState::Fallback), "fallback");
+        assert_eq!(round_trips(OverlayState::Manual), "manual");
+    }
+
+    #[test]
+    fn overlay_status_nests_the_state_enum() {
+        let v = round_trips(OverlayStatus {
+            state: OverlayState::Detected,
+            rows: Some(12),
+            manual: false,
+            stale: true,
+        });
+        assert_eq!(v["state"], "detected");
+        assert_eq!(v["rows"], 12);
+        assert_eq!(v["manual"], false);
+        assert_eq!(v["stale"], true);
+    }
+
+    // ── replay stream (client.ts: ReplayStream — skip_serializing_if
+    //    cluster) ─────────────────────────────────────────────────────────────
+
+    /// The stream DTO omits every empty optional section: a minimal stream
+    /// serializes to `{"trajectories":[...]}` alone, and the TS side reads
+    /// the missing keys as absent (not null).
+    #[test]
+    fn replay_stream_omits_empty_sections() {
+        let minimal = ReplayStream {
+            trajectories: vec![EntityTrajectory {
+                entity_id: 7,
+                kind: None,
+                samples: vec![PositionSample {
+                    time: 1.5,
+                    entity_id: 7,
+                    vehicle_id: 10513,
+                    x: 100.0,
+                    y: 0.0,
+                    z: -200.0,
+                    yaw: 1.25,
+                }],
+                death_time: None,
+                hp_samples: Vec::new(),
+                cap_samples: Vec::new(),
+                cap_progress: Vec::new(),
+            }],
+            shell_launches: Vec::new(),
+            explosions: Vec::new(),
+            torpedoes: Vec::new(),
+            torpedo_steers: Vec::new(),
+            weapon_locks: Vec::new(),
+            battle_results: None,
+            version: None,
+            map_name: None,
+            camera: Vec::new(),
+            net_stats: Vec::new(),
+            leaves: std::collections::BTreeMap::new(),
+            camera_modes: Vec::new(),
+            diagnostics: DiagnosticCounts::default(),
+            squadron_creates: Vec::new(),
+            squadron_planes: Vec::new(),
+            minimap_squadron_adds: Vec::new(),
+            minimap_squadron_moves: Vec::new(),
+            minimap_squadron_removes: Vec::new(),
+            wards: Vec::new(),
+            ward_removes: Vec::new(),
+            shot_kills: Vec::new(),
+            damage_stats: Vec::new(),
+            chat_messages: Vec::new(),
+            achievements: Vec::new(),
+        };
+        let v = round_trips(minimal);
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.len(), 1, "only trajectories survives: {v}");
+        assert!(obj.contains_key("trajectories"));
+        assert_eq!(obj["trajectories"][0]["samples"][0]["entityId"], 7);
+
+        // A populated stream keeps the renamed optional keys.
+        let rich = ReplayStream {
+            battle_results: Some(r#"{"personal":{"wins":1}}"#.into()),
+            version: Some("0.14.5".into()),
+            map_name: Some("40_Okinawa".into()),
+            diagnostics: DiagnosticCounts {
+                server_ticks: 5,
+                ..Default::default()
+            },
+            ..serde_json::from_value::<ReplayStream>(serde_json::json!({
+                "trajectories": []
+            }))
+            .unwrap()
+        };
+        let v = round_trips(rich);
+        for key in [
+            "trajectories",
+            "battleResults",
+            "version",
+            "mapName",
+            "diagnostics",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+    }
+
+    /// `EntityKind` hides its unrecovered optional fields entirely (the TS
+    /// side types them as optional), and defaults creation_time to -1.
+    #[test]
+    fn entity_kind_skips_unrecovered_fields() {
+        let bare = EntityKind {
+            entity_type: 2,
+            vehicle_id: 10513,
+            initial_x: 1.0,
+            initial_y: 2.0,
+            initial_z: 3.0,
+            creation_time: 10.0,
+            ship_id: None,
+            radius: None,
+            control_point_index: None,
+            initial_team: None,
+        };
+        let v = round_trips(bare);
+        for key in [
+            "entityType",
+            "vehicleId",
+            "initialX",
+            "initialY",
+            "initialZ",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        for absent in ["shipId", "radius", "controlPointIndex", "initialTeam"] {
+            assert!(
+                !v.as_object().unwrap().contains_key(absent),
+                "{absent} leaked"
+            );
+        }
+
+        let zone = EntityKind {
+            entity_type: 14,
+            radius: Some(45.0),
+            control_point_index: Some(1),
+            initial_team: Some(-1),
+            ship_id: Some(4282948544),
+            ..serde_json::from_value::<EntityKind>(serde_json::json!({
+                "entityType": 14,
+                "vehicleId": 10513,
+                "initialX": 0.0,
+                "initialY": 0.0,
+                "initialZ": 0.0
+            }))
+            .unwrap()
+        };
+        let v = round_trips(zone);
+        assert_eq!(v["radius"], 45.0);
+        assert_eq!(v["controlPointIndex"], 1);
+        assert_eq!(v["initialTeam"], -1);
+        assert_eq!(v["shipId"], 4_282_948_544_i64);
+        // creation_time defaulted to -1 (pre-replay start), not 0.
+        assert_eq!(v["creationTime"], -1.0);
+    }
+
+    // ── ship encyclopedia (client.ts: ShipInfo) ─────────────────────────────
+
+    /// `ShipInfo::type_` carries the file's ONLY explicit field rename —
+    /// the TS side reads `type` (a reserved word it can't spell otherwise).
+    #[test]
+    fn ship_info_renames_the_type_field() {
+        let ship = ShipInfo {
+            ship_id: 4282948544,
+            name: "Montana".into(),
+            tier: 10,
+            type_: "Battleship".into(),
+            nation: "usa".into(),
+            is_premium: false,
+            is_special: false,
+            description: "One of the most powerful battleships".into(),
+            game_version: "0.11.4".into(),
+            default_profile: serde_json::json!({ "hull": { "health": 96300 } }),
+            images: ShipImages {
+                small: "s.png".into(),
+                medium: "m.png".into(),
+                large: "l.png".into(),
+                contour: "c.png".into(),
+            },
+        };
+        let v = round_trips(ship);
+        for key in [
+            "shipId",
+            "type",
+            "isPremium",
+            "isSpecial",
+            "gameVersion",
+            "defaultProfile",
+            "images",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["type"], "Battleship");
+        assert!(!v.as_object().unwrap().contains_key("type_"));
+    }
+
+    // ── snapshots (client.ts: StatsSnapshot) ────────────────────────────────
+
+    #[test]
+    fn stats_snapshot_renames_game_version_and_avg_damage() {
+        let v = round_trips(StatsSnapshot {
+            timestamp: 1_700_000_000,
+            game_version: "0.11.4".into(),
+            battles: 1234,
+            wins: 617,
+            winrate: 50.0,
+            avg_damage: 61_238.5,
+            pr: Some(1500),
+        });
+        for key in [
+            "timestamp",
+            "gameVersion",
+            "battles",
+            "wins",
+            "winrate",
+            "avgDamage",
+            "pr",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["gameVersion"], "0.11.4");
+    }
+
+    // ── mod hub (client.ts: ModKind / InstalledMod / CatalogProgress) ───────
+
+    /// `ModKind` mirrors the TS union "voice" | "skin" | ... — single-word
+    /// variants under camelCase collapse to lowercase.
+    #[test]
+    fn mod_kind_serializes_to_the_ts_union_members() {
+        assert_eq!(round_trips(ModKind::Voice), "voice");
+        assert_eq!(round_trips(ModKind::Skin), "skin");
+        assert_eq!(round_trips(ModKind::Script), "script");
+        assert_eq!(round_trips(ModKind::Textures), "textures");
+        assert_eq!(round_trips(ModKind::Gui), "gui");
+        assert_eq!(round_trips(ModKind::Patch), "patch");
+    }
+
+    #[test]
+    fn installed_mod_skips_texture_analysis_when_absent() {
+        let plain = InstalledMod {
+            kind: ModKind::Skin,
+            name: "Yamato camo".into(),
+            detail: Some("PJSB001".into()),
+            texture_analysis: None,
+            rel_path: "PnFMods/PJSB001".into(),
+            paths: vec!["PnFMods/PJSB001".into()],
+            disabled: false,
+            version: None,
+        };
+        let v = round_trips(plain.clone());
+        assert!(!v.as_object().unwrap().contains_key("textureAnalysis"));
+        assert_eq!(v["relPath"], "PnFMods/PJSB001");
+        assert_eq!(v["kind"], "skin");
+
+        let textured = InstalledMod {
+            texture_analysis: Some(TextureAnalysis {
+                file_count: 12,
+                file_kinds: vec![TextureFileKind {
+                    ext: "dds".into(),
+                    count: 9,
+                }],
+                categories: vec!["camouflage".into()],
+                nations: Vec::new(),
+                species: Vec::new(),
+                ships: Vec::new(),
+                space_names: Vec::new(),
+                truncated: false,
+            }),
+            ..plain
+        };
+        let v = round_trips(textured);
+        assert!(v.as_object().unwrap().contains_key("textureAnalysis"));
+        assert_eq!(v["textureAnalysis"]["fileKinds"][0]["ext"], "dds");
+    }
+
+    #[test]
+    fn catalog_progress_renames_the_package_pair() {
+        let v = round_trips(CatalogProgress {
+            id: "aslain".into(),
+            phase: "downloading".into(),
+            package: 1,
+            packages: 3,
+            received: 2048,
+            total: 8192,
+        });
+        for key in ["id", "phase", "package", "packages", "received", "total"] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["package"], 1);
+        assert_eq!(v["packages"], 3);
+    }
+
+    // ── resource pack (client.ts: ResStatus / ResUpdate / ResProgress) ──────
+
+    #[test]
+    fn res_status_renames_tree_sha256_and_size_bytes() {
+        let v = round_trips(ResStatus {
+            present: true,
+            tree_sha256: Some("abc123def456".into()),
+            version: Some("2026-01-01T00:00:00Z".into()),
+            legacy_stamp: false,
+            size_bytes: 123_456_789,
+            downloading: false,
+            bundled: false,
+        });
+        for key in [
+            "present",
+            "treeSha256",
+            "version",
+            "legacyStamp",
+            "sizeBytes",
+            "downloading",
+            "bundled",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["treeSha256"], "abc123def456");
+    }
+
+    /// `ResUpdate` is the manifest-LOOKUP-ERROR DTO: an unreachable manifest
+    /// serializes as explicit nulls (`latestTreeSha256`/`deltaSteps`), which
+    /// the TS side types `?: ... | null` — null must stay on the wire.
+    #[test]
+    fn res_update_keeps_nulls_for_a_failed_lookup() {
+        let failed = ResUpdate {
+            latest_tree_sha256: None,
+            latest_version: None,
+            update_available: false,
+            delta_steps: None,
+        };
+        let v = round_trips(failed);
+        // The keys must be PRESENT and null — a dropped field would also
+        // index as Null, so pin the key set explicitly.
+        for key in [
+            "latestTreeSha256",
+            "latestVersion",
+            "updateAvailable",
+            "deltaSteps",
+        ] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert!(v["latestTreeSha256"].is_null());
+        assert!(v["latestVersion"].is_null());
+        assert!(v["deltaSteps"].is_null());
+
+        let ok = ResUpdate {
+            latest_tree_sha256: Some("abc123".into()),
+            latest_version: Some("2026-01-01T00:00:00Z".into()),
+            update_available: true,
+            delta_steps: Some(vec![ResDeltaStep {
+                from: "abc123".into(),
+                to: "def456".into(),
+                url: "https://github.com/.../wowsp-res-delta.tar.gz".into(),
+                size: 1024,
+            }]),
+        };
+        let v = round_trips(ok);
+        assert_eq!(v["latestTreeSha256"], "abc123");
+        assert_eq!(v["deltaSteps"][0]["from"], "abc123");
+        assert_eq!(v["deltaSteps"][0]["to"], "def456");
+    }
+
+    #[test]
+    fn res_progress_renames_the_segment_pair() {
+        let v = round_trips(ResProgress {
+            phase: "error".into(),
+            received: 512,
+            total: 0,
+            segment: 2,
+            segments: 4,
+            error: Some("download failed".into()),
+        });
+        for key in ["phase", "received", "total", "segment", "segments", "error"] {
+            assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
+        }
+        assert_eq!(v["segments"], 4);
+        assert_eq!(v["error"], "download failed");
+    }
+}

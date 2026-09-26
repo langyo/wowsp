@@ -8,10 +8,10 @@
 //! one big fetch on first use and then serves from disk until the game
 //! patches. Version detection drives cache invalidation AND trend bucketing.
 
-use std::fs;
-
 use serde::Deserialize;
 use wowsp_tauri_shared::{GameVersionInfo, ShipInfo};
+
+use super::appdata::{read_appdata_json, write_appdata_json};
 
 const INFO_CACHE: &str = "encyclopedia/info.json";
 
@@ -25,7 +25,7 @@ pub async fn get_game_version() -> Result<GameVersionInfo, String> {
 /// the version fetch without going through the command dispatcher.
 pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
     // Cache hit?
-    if let Ok(Some(raw)) = appdata_read(INFO_CACHE.into()) {
+    if let Ok(Some(raw)) = read_appdata_json(INFO_CACHE) {
         if let Ok(info) = serde_json::from_str::<GameVersionInfo>(&raw) {
             return Ok(info);
         }
@@ -67,9 +67,9 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
         timestamp: now_ts(),
     };
     // Persist (best-effort).
-    let _ = appdata_write(
-        INFO_CACHE.into(),
-        serde_json::to_string(&info).unwrap_or_default(),
+    let _ = write_appdata_json(
+        INFO_CACHE,
+        &serde_json::to_string(&info).unwrap_or_default(),
     );
     Ok(info)
 }
@@ -98,7 +98,7 @@ pub async fn get_ship_encyclopedia(
     let cache_file = format!("encyclopedia/ships-{version}-{compound}-s{CACHE_SCHEMA}.json");
 
     if !force_refresh {
-        if let Ok(Some(raw)) = appdata_read(cache_file.clone()) {
+        if let Ok(Some(raw)) = read_appdata_json(&cache_file) {
             if let Ok(cached) = serde_json::from_str::<CachedShips>(&raw) {
                 if cached.game_version == version {
                     return Ok(cached.ships);
@@ -184,9 +184,9 @@ pub async fn get_ship_encyclopedia(
         timestamp: now_ts(),
         ships: all.clone(),
     };
-    let _ = appdata_write(
-        cache_file,
-        serde_json::to_string(&cached).unwrap_or_default(),
+    let _ = write_appdata_json(
+        &cache_file,
+        &serde_json::to_string(&cached).unwrap_or_default(),
     );
     Ok(all)
 }
@@ -285,34 +285,6 @@ fn now_ts() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
-
-// Reuse the appdata persistence (same logic as appdata.rs commands, but called
-// internally — we can't call the #[tauri::command] fn directly without the
-// invoke glue, so we read/write the same paths).
-fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    crate::paths::ensure_data_dir()
-}
-
-fn appdata_read(file: String) -> Result<Option<String>, String> {
-    let path = appdata_dir()?.join(&file);
-    match fs::read_to_string(&path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("read {path:?}: {e}")),
-    }
-}
-
-fn appdata_write(file: String, content: String) -> Result<(), String> {
-    let dir = appdata_dir()?;
-    let path = dir.join(&file);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
-    Ok(())
 }
 
 // ── WG response envelope ────────────────────────────────────────────────
