@@ -194,10 +194,25 @@ detection (same-path entries) → restore point → atomic write → install
 record`.
 
 - **Restore points**: paths about to be overwritten are snapshotted to
-  `%AppData%/wowsp/restore/<ts>/`; rollback = reverse copy;
+  `%AppData%/wowsp/mods/restore/<ts>-<name>/`; the snapshot is mandatory —
+  a failure aborts the install instead of clobbering an unrestorable
+  original (nested snapshot directories are created, which the old
+  best-effort copy silently skipped);
+- **Atomic write + rollback**: every file lands via
+  `<dest>.wowsp-part` → rename, journaled; any failure rewinds the whole
+  install (restored snapshots, new files removed, emptied dirs pruned) so
+  a half-copied mod tree never reaches the client;
 - **Install record**: `%AppData%/wowsp/mods/installed.json` stores each mod's
   manifest, source, install time and written-file list — uninstall and
-  migration both rely on it;
+  migration both rely on it. Local-folder installs are recorded too
+  (source `local`), so their uninstall restores overwritten originals;
+  reinstalling the same mod (same id, or same plan name for local
+  installs) first rewinds the previous record — snapshots always point at
+  VANILLA files and files dropped by the new version don't linger;
+- **Game guard**: every mutating command (catalog/local install, uninstall,
+  unit toggle, overlay stub) refuses to run while the game client process
+  is live, the same way Aslain's installer warns — mid-session writes tear
+  half-loaded mods;
 - **Conflict policy**: later installs win, but the UI explicitly warns
   "this will overwrite N files from mod X".
 
@@ -234,14 +249,26 @@ Each unit supports two operations:
   (`mod.xml.bak`, `Main.py.bak`, `x.xml.bak`), so disabled units stay
   visible and toggleable. Directory names are never touched — the game
   stops loading the files, PnF's loader finds no `Main.py` to import.
-- **Uninstall** — ledger records overlapping the unit restore their
-  vanilla snapshots first, then the whole unit (including `.bak` twins)
-  is deleted, emptied parent dirs are pruned up to `res_mods`, and a
-  manifest-backed unit's row is removed from `installed_mods.xml`.
+  Disabling a shared catch-all group (all of `content/`, loose gui files)
+  that also carries files of a ledger-recorded mod living elsewhere is
+  refused: a PnF payload whose textures or unbound fragments just
+  vanished is a load-time crash, so the toggle points at that mod's own
+  entry instead.
+- **Uninstall** — the unit (including `.bak` twins) is deleted, emptied
+  parent dirs are pruned up to `res_mods`, and a manifest-backed unit's
+  row is removed from `installed_mods.xml` (rewritten atomically). Ledger
+  records the unit covers *completely* get the full uninstall — snapshot
+  restore plus record drop; a record that also owns files outside the
+  unit (another mod sharing the tree) is trimmed instead: only its
+  covered files and their snapshots are removed, so deleting one plugin
+  never silently uninstalls a neighbor. Ledger uninstalls also remove
+  `.bak` twins of recorded files so disabled mods cannot survive as
+  ghosts.
 
-All mutations (install / uninstall / toggle) serialize through an async
-gate so parallel catalog installs can download simultaneously without
-interleaving ledger writes or file renames.
+All mutations (catalog install/uninstall, unit toggle/uninstall, and the
+overlay stub's install/uninstall) serialize through an async gate so
+parallel catalog installs can download simultaneously without interleaving
+ledger writes or file renames.
 
 ### 4. Version migration & compatibility confirmation
 

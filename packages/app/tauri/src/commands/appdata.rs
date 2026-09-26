@@ -189,6 +189,13 @@ pub async fn get_game_process(
     }
 }
 
+/// Non-Windows builds never see the client, so the game-running guard used
+/// by the mod hub passes through.
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn find_game_pid() -> Option<u32> {
+    None
+}
+
 /// Find the PID of any running `WorldOfWarships.exe` / `WorldOfWarships64.exe`.
 /// Returns the first match (matches Starward's "first process" semantics —
 /// running two clients simultaneously is rare and would share a replay dir

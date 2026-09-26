@@ -82,6 +82,7 @@
   "unitEnabled": "已啟用「{name}」。",
   "unitDisabled": "已停用「{name}」—— 檔案已加 .bak 後綴。",
   "confirmUnitUninstall": "卸載「{name}」？將刪除其全部檔案（含停用的 .bak 副本），並還原被覆蓋的原始檔案。",
+  "gameRunningBlock": "《戰艦世界》正在執行——請先關閉遊戲，再安裝、解除安裝或啟停插件。",
   "manifestOnly": "未在 res_mods 中找到對應檔案（僅模組清單記錄）。",
   "manifestOnlyShort": "僅清單記錄",
   "experimental": "此功能不穩定，仍在開發中，不保證可以使用。",

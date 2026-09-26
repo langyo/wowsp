@@ -82,6 +82,7 @@
   "unitEnabled": "「{name}」を有効にしました。",
   "unitDisabled": "「{name}」を無効にしました（ファイルに .bak を付与）。",
   "confirmUnitUninstall": "「{name}」をアンインストールしますか？ファイル（無効な .bak コピーを含む）を削除し、上書きされた元のファイルを復元します。",
+  "gameRunningBlock": "World of Warships が実行中です。MOD のインストール・アンインストール・切り替えの前にゲームを終了してください。",
   "manifestOnly": "res_mods 以下に対応するファイルが見つかりません（マニフェストの記録のみ）。",
   "manifestOnlyShort": "マニフェストのみ",
   "experimental": "この機能は不安定で、まだ開発中です。動作は保証できません。",

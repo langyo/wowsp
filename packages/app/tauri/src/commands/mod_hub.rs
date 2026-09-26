@@ -95,25 +95,223 @@ fn find_pnf_main(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Copy a subtree (or a single mapped file) recursively, counting writes.
-/// `written` collects every file landing under `res_mods` (res_mods-relative);
-/// files about to be overwritten are first snapshotted into `restore_dir`.
-fn copy_tree(
-    from: &Path,
-    to: &Path,
-    res_mods: &Path,
-    restore_dir: &Option<PathBuf>,
-    written: &mut Vec<String>,
-) -> Result<usize, String> {
+/// Refuse to mutate the game tree while the client is live: the game holds
+/// res_mods files open and re-reads them at every battle load, so mid-session
+/// writes, renames and deletes leave torn half-installed mods — the classic
+/// "the mod manager crashed my game" report. Aslain's installer guards the
+/// same way (it warns when the game is running before touching files).
+pub(crate) fn ensure_game_closed() -> Result<(), String> {
+    if let Some(pid) = super::appdata::find_game_pid() {
+        return Err(format!(
+            "World of Warships is running (pid {pid}) — close the game before installing, uninstalling or toggling mods"
+        ));
+    }
+    Ok(())
+}
+
+/// In-flight copy suffix: a file must never land in the game tree half
+/// written (the client would load a truncated mod), so every write goes
+/// `<dest>.wowsp-part` first and is renamed into place.
+const PART_SUFFIX: &str = ".wowsp-part";
+
+/// Which tree a destination belongs to — res_mods files are ledger-recorded
+/// bare, game-root payloads under the `@game/` prefix.
+#[derive(Clone, Copy)]
+enum Place {
+    ResMods,
+    GameRoot,
+}
+
+/// One committed file write plus what it replaced, so a failure anywhere in
+/// the install can rewind everything.
+struct JournalAction {
+    dest: PathBuf,
+    /// Snapshot inside the restore dir; `None` means the file is brand new.
+    snapshot: Option<PathBuf>,
+}
+
+/// Install journal. Snapshots every file about to be overwritten (a failed
+/// snapshot aborts the install instead of clobbering an unrestorable
+/// original), writes through temp+rename so no file is ever observed half
+/// copied, and rewinds every action when any step fails — leaving the game
+/// tree exactly as it was instead of a half-installed mod.
+struct InstallJournal {
+    res_mods: PathBuf,
+    game_root: PathBuf,
+    restore_dir: PathBuf,
+    actions: Vec<JournalAction>,
+    /// Destinations already written this install — the dedup set for `place`
+    /// (integration packs reach tens of thousands of files, so this must not
+    /// be a linear scan). A failed place aborts the whole install, so a
+    /// claimed-but-unwritten dest never matters.
+    placed: std::collections::HashSet<PathBuf>,
+    /// Ledger-relative names (`a/b.xml`, `@game/foo.dll`) of placed files.
+    written: Vec<String>,
+}
+
+impl InstallJournal {
+    fn place(&mut self, src: &Path, dest: &Path, place: Place) -> Result<(), String> {
+        // Duplicate destinations within one install (overlapping plan
+        // entries): the first write already owns the file.
+        if !self.placed.insert(dest.to_path_buf()) {
+            return Ok(());
+        }
+        let snapshot = if dest.is_file() {
+            Some(self.snapshot(dest, place)?)
+        } else {
+            None
+        };
+        let tmp = sibling_with_suffix(dest, PART_SUFFIX);
+        if let Err(e) = fs::copy(src, &tmp) {
+            // A partial temp copy must not linger in the game tree.
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("copy {}: {e}", src.display()));
+        }
+        if let Err(e) = fs::rename(&tmp, dest) {
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("place {}: {e}", dest.display()));
+        }
+        self.record(dest, place);
+        self.actions.push(JournalAction {
+            dest: dest.to_path_buf(),
+            snapshot,
+        });
+        Ok(())
+    }
+
+    /// Create a brand-new empty file (the PnF loader marker) through the same
+    /// temp+rename path, snapshotting whatever unexpectedly sits there.
+    fn place_empty(&mut self, dest: &Path, place: Place) -> Result<(), String> {
+        if dest.is_file() || !self.placed.insert(dest.to_path_buf()) {
+            return Ok(());
+        }
+        let tmp = sibling_with_suffix(dest, PART_SUFFIX);
+        fs::File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
+        if let Err(e) = fs::rename(&tmp, dest) {
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("place {}: {e}", dest.display()));
+        }
+        self.record(dest, place);
+        self.actions.push(JournalAction {
+            dest: dest.to_path_buf(),
+            snapshot: None,
+        });
+        Ok(())
+    }
+
+    /// Which tree does a destination live in, as (root, snapshot subdir)?
+    fn place_roots(&self, place: Place) -> (PathBuf, Option<&'static str>) {
+        match place {
+            Place::ResMods => (self.res_mods.clone(), None),
+            Place::GameRoot => (self.game_root.clone(), Some("@game")),
+        }
+    }
+
+    /// Copy an existing target aside before it gets clobbered. Unlike the old
+    /// best-effort behavior, a failure is fatal: overwriting a file we cannot
+    /// restore would lose the user's original forever.
+    fn snapshot(&self, dest: &Path, place: Place) -> Result<PathBuf, String> {
+        let (root, prefix) = self.place_roots(place);
+        let rel = dest
+            .strip_prefix(&root)
+            .map_err(|_| format!("{} is outside the game tree", dest.display()))?;
+        let rel = match prefix {
+            Some(p) => Path::new(p).join(rel),
+            None => rel.to_path_buf(),
+        };
+        let snap = self.restore_dir.join(&rel);
+        if !snap.is_file() {
+            if let Some(parent) = snap.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("create {}: {e}", parent.display()))?;
+            }
+            fs::copy(dest, &snap).map_err(|e| {
+                format!(
+                    "snapshot {}: {e} — refusing to overwrite without a backup",
+                    dest.display()
+                )
+            })?;
+            tracing::debug!(from = %dest.display(), to = %snap.display(), "restore snapshot");
+        }
+        Ok(snap)
+    }
+
+    fn record(&mut self, dest: &Path, place: Place) {
+        let (root, prefix) = self.place_roots(place);
+        if let Ok(rel) = dest.strip_prefix(&root) {
+            let name = rel.to_string_lossy().replace('\\', "/");
+            self.written.push(match prefix {
+                Some(p) => format!("{p}/{name}"),
+                None => name,
+            });
+        }
+    }
+
+    /// Undo every action, newest first: snapshotted files come back, brand-
+    /// new files disappear. Keeps rewinding past individual failures and
+    /// reports the first error; empty directories the install created are
+    /// pruned afterwards.
+    fn rollback(mut self) -> Result<(), String> {
+        let mut parents: Vec<PathBuf> = self
+            .actions
+            .iter()
+            .filter_map(|a| a.dest.parent().map(|p| p.to_path_buf()))
+            .collect();
+        parents.sort();
+        parents.dedup();
+        let mut first_err: Option<String> = None;
+        for action in std::mem::take(&mut self.actions).into_iter().rev() {
+            let outcome = match &action.snapshot {
+                Some(snap) if snap.is_file() => {
+                    if let Some(parent) = action.dest.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    fs::copy(snap, &action.dest)
+                        .map(|_| ())
+                        .map_err(|e| format!("restore {}: {e}", action.dest.display()))
+                },
+                _ => match fs::remove_file(&action.dest) {
+                    Ok(()) => Ok(()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(e) => Err(format!("remove {}: {e}", action.dest.display())),
+                },
+            };
+            if let Err(e) = outcome {
+                first_err.get_or_insert(e);
+            }
+        }
+        // Directories the install created: remove_dir only succeeds on empty
+        // ones, so anything another mod uses survives.
+        for dir in parents.into_iter().rev() {
+            if dir.starts_with(&self.res_mods) && dir != self.res_mods {
+                let _ = fs::remove_dir(&dir);
+            }
+        }
+        match first_err {
+            Some(e) => Err(format!("rollback incomplete: {e}")),
+            None => Ok(()),
+        }
+    }
+}
+
+pub(crate) fn sibling_with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(suffix);
+    path.with_file_name(name)
+}
+
+/// Copy a subtree (or a single mapped file) through the journal.
+fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> Result<usize, String> {
     if !from.exists() {
         return Err(format!("{} does not exist", from.display()));
     }
     if from.is_file() {
         fs::create_dir_all(to.parent().unwrap_or(to))
             .map_err(|e| format!("create {}: {e}", to.display()))?;
-        snapshot_before_overwrite(to, res_mods, restore_dir);
-        fs::copy(from, to).map_err(|e| format!("copy {}: {e}", from.display()))?;
-        record_written(to, res_mods, written);
+        journal.place(from, to, Place::ResMods)?;
         return Ok(1);
     }
     fs::create_dir_all(to).map_err(|e| format!("create {}: {e}", to.display()))?;
@@ -130,35 +328,12 @@ fn copy_tree(
                 fs::create_dir_all(&d).map_err(|e| format!("create {}: {e}", d.display()))?;
                 stack.push((s, d));
             } else {
-                snapshot_before_overwrite(&d, res_mods, restore_dir);
-                fs::copy(&s, &d).map_err(|e| format!("copy {}: {e}", s.display()))?;
-                record_written(&d, res_mods, written);
+                journal.place(&s, &d, Place::ResMods)?;
                 count += 1;
             }
         }
     }
     Ok(count)
-}
-
-/// Copy an existing target aside before it gets clobbered (best effort — a
-/// failed snapshot only means that file can't be restored later).
-fn snapshot_before_overwrite(target: &Path, res_mods: &Path, restore_dir: &Option<PathBuf>) {
-    let (Some(dir), Ok(rel)) = (restore_dir.as_deref(), target.strip_prefix(res_mods)) else {
-        return;
-    };
-    if !target.is_file() {
-        return;
-    }
-    let snap = dir.join(rel);
-    if fs::copy(target, &snap).is_ok() {
-        tracing::debug!(from = %target.display(), to = %snap.display(), "restore snapshot");
-    }
-}
-
-fn record_written(written: &Path, res_mods: &Path, out: &mut Vec<String>) {
-    if let Ok(rel) = written.strip_prefix(res_mods) {
-        out.push(rel.to_string_lossy().replace('\\', "/"));
-    }
 }
 
 // ── Scan installed ──────────────────────────────────────────────────────────
@@ -970,7 +1145,10 @@ pub async fn mod_hub_set_unit_enabled(
     enabled: bool,
 ) -> Result<UnitToggleReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    let res_mods = scan_root(&game_root)?;
+    ensure_game_closed()?;
+    let (bin_version, ver_dir) = latest_bin_version(&game_root)
+        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+    let res_mods = ver_dir.join("res_mods");
     if !res_mods.is_dir() {
         return Err("res_mods directory not found".into());
     }
@@ -981,6 +1159,27 @@ pub async fn mod_hub_set_unit_enabled(
     if unit.paths.is_empty() {
         return Err(format!("{rel_path} has no files to toggle"));
     }
+    // Disabling a shared catch-all group (all of `content/`, every loose gui
+    // file, …) that also carries files of a catalog-recorded mod living
+    // elsewhere would leave that mod half-active — a registered PnF payload
+    // whose textures or unbound fragments just vanished is a load-time
+    // crash. Refuse and point at the mod's own entry instead.
+    if !enabled {
+        let ledger = super::mod_catalog::load_ledger();
+        if let Some(other) = ledger
+            .installs
+            .iter()
+            // Stale records from an older bin/<version> never describe what
+            // the current client loads — they must not block the toggle.
+            .filter(|r| r.bin_version == bin_version)
+            .find(|r| half_disable_violation(r, &unit.paths))
+        {
+            return Err(format!(
+                "\"{}\" shares this group with \"{}\", which also installs files outside it — disabling the group would leave that mod half-active. Disable or uninstall \"{}\" from its own entry instead.",
+                unit.name, other.name, other.name
+            ));
+        }
+    }
     let renamed = set_paths_state(&res_mods, &unit.paths, enabled)?;
     tracing::info!(rel = %rel_path, enabled, renamed, "mod_hub_set_unit_enabled done");
     Ok(UnitToggleReport {
@@ -988,6 +1187,24 @@ pub async fn mod_hub_set_unit_enabled(
         disabled: !enabled,
         renamed_files: renamed,
     })
+}
+
+/// Would toggling `paths` OFF disable only part of this record's mod? True
+/// when some of its files live under the paths and others do not (files
+/// outside the group — or in the game root — would stay live).
+fn half_disable_violation(record: &ModInstallRecord, paths: &[String]) -> bool {
+    let mut inside = false;
+    let mut outside = false;
+    for f in &record.files {
+        if f.starts_with("@game/") {
+            outside = true;
+        } else if unit_covers(paths, f) {
+            inside = true;
+        } else {
+            outside = true;
+        }
+    }
+    inside && outside
 }
 
 /// Rename every file of a unit between live names and `.bak` twins
@@ -1028,6 +1245,7 @@ pub async fn mod_hub_uninstall_unit(
     rel_path: String,
 ) -> Result<super::mod_catalog::UninstallReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed()?;
     let res_mods = scan_root(&game_root)?;
     if !res_mods.is_dir() {
         return Err("res_mods directory not found".into());
@@ -1087,21 +1305,49 @@ fn uninstall_unit_core(
         prune_empty_parents(res_mods, &unit.paths);
     }
 
-    // Ledger records overlapping the unit get the full treatment: restore
-    // the vanilla files they snapshotted, then drop the record.
-    let ids: Vec<String> = installs
-        .iter()
-        .filter(|r| {
-            r.files
+    // Ledger records overlapping the unit: a record whose files the unit
+    // covers completely gets the full uninstall (restore + drop). A record
+    // that also owns files OUTSIDE the unit — another mod sharing this
+    // folder tree — is trimmed to match instead: the old behavior silently
+    // uninstalled that whole mod, deleting files the user never asked about
+    // and leaving a half-removed plugin behind.
+    let mut idx = 0usize;
+    while idx < installs.len() {
+        let (all_covered, id, covered) = {
+            let record = &installs[idx];
+            let covered: Vec<String> = record
+                .files
                 .iter()
-                .any(|f| !f.starts_with("@game/") && unit_covers(&unit.paths, f))
-        })
-        .map(|r| r.id.clone())
-        .collect();
-    for id in &ids {
-        let report = super::mod_catalog::uninstall_from_ledger(installs, id, game_root)?;
-        removed += report.removed_files;
-        restored += report.restored_files;
+                .filter(|f| !f.starts_with("@game/") && unit_covers(&unit.paths, f))
+                .cloned()
+                .collect();
+            (
+                record
+                    .files
+                    .iter()
+                    .all(|f| f.starts_with("@game/") || unit_covers(&unit.paths, f)),
+                record.id.clone(),
+                covered,
+            )
+        };
+        if covered.is_empty() {
+            idx += 1;
+            continue;
+        }
+        if all_covered {
+            let report = super::mod_catalog::uninstall_from_ledger(installs, &id, game_root)?;
+            removed += report.removed_files;
+            restored += report.restored_files;
+        } else {
+            let (r, s) = trim_covered_files(&mut installs[idx], &covered, game_root)?;
+            removed += r;
+            restored += s;
+            if installs[idx].files.is_empty() {
+                installs.remove(idx);
+            } else {
+                idx += 1;
+            }
+        }
     }
 
     // Keep Aslain's manifest describing reality when the unit came from it.
@@ -1136,6 +1382,85 @@ fn prune_empty_parents(res_mods: &Path, paths: &[String]) {
     }
 }
 
+/// Remove a unit's covered files from a partially-overlapping ledger record:
+/// deletes those files (plus their `.bak` twins), restores only their
+/// snapshots, and trims them from the record so it keeps describing the files
+/// it still owns. Drops the record (and its restore dir) when nothing is
+/// left. Returns (removed, restored) counts.
+fn trim_covered_files(
+    record: &mut ModInstallRecord,
+    covered: &[String],
+    game_root: &str,
+) -> Result<(usize, usize), String> {
+    let res_mods = Path::new(game_root)
+        .join("bin")
+        .join(&record.bin_version)
+        .join("res_mods");
+    let mut removed = 0usize;
+    let mut restored = 0usize;
+    // The unit pass above usually removed these trees already; disabled
+    // twins and stragglers are caught here.
+    for rel in covered {
+        for path in [res_mods.join(rel), res_mods.join(format!("{rel}.bak"))] {
+            if path.is_file() {
+                fs::remove_file(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+                removed += 1;
+            }
+        }
+    }
+    // Bring back the vanilla files this record snapshotted under the covered
+    // paths, and drop those snapshots so the surviving record's restore dir
+    // describes only its remaining files.
+    if let Some(dir) = record.restore_dir.as_ref() {
+        let restore = PathBuf::from(dir);
+        if restore.is_dir() {
+            let mut restored_snaps: Vec<PathBuf> = Vec::new();
+            let mut stack = vec![restore.clone()];
+            while let Some(d) = stack.pop() {
+                let Ok(entries) = fs::read_dir(&d) else {
+                    continue;
+                };
+                for ent in entries.flatten() {
+                    let p = ent.path();
+                    if p.is_dir() {
+                        stack.push(p);
+                        continue;
+                    }
+                    let Ok(rel) = p.strip_prefix(&restore) else {
+                        continue;
+                    };
+                    if rel.starts_with("@game") {
+                        continue;
+                    }
+                    let rel = rel.to_string_lossy().replace('\\', "/");
+                    if !covered.contains(&rel) {
+                        continue;
+                    }
+                    let dest = res_mods.join(&rel);
+                    if let Some(parent) = dest.parent() {
+                        fs::create_dir_all(parent)
+                            .map_err(|e| format!("create {}: {e}", parent.display()))?;
+                    }
+                    fs::copy(&p, &dest).map_err(|e| format!("restore {}: {e}", dest.display()))?;
+                    restored += 1;
+                    restored_snaps.push(p);
+                }
+            }
+            for p in restored_snaps {
+                let _ = fs::remove_file(&p);
+            }
+        }
+    }
+    record.files.retain(|f| !covered.contains(f));
+    if record.files.is_empty() {
+        if let Some(dir) = record.restore_dir.as_ref() {
+            let _ = fs::remove_dir_all(PathBuf::from(dir));
+        }
+        record.restore_dir = None;
+    }
+    Ok((removed, restored))
+}
+
 /// Drop one `<mod name="…"/>` row from Aslain's manifest after its unit was
 /// uninstalled. Best effort: a failed rewrite leaves the manifest untouched.
 fn remove_manifest_entry(res_mods: &Path, name: &str) {
@@ -1161,7 +1486,12 @@ fn remove_manifest_entry(res_mods: &Path, name: &str) {
         cursor = end;
     }
     out.push_str(&body[cursor..]);
-    fs::write(&path, out).ok();
+    // Atomic rewrite: a crash mid-write must not corrupt the manifest other
+    // tools (Aslain's installer) also depend on.
+    let tmp = path.with_file_name("installed_mods.xml.tmp");
+    fs::write(&tmp, &out)
+        .and_then(|_| fs::rename(&tmp, &path))
+        .ok();
 }
 
 // ── Classify incoming package ───────────────────────────────────────────────
@@ -1434,21 +1764,134 @@ pub async fn mod_hub_install(
     // Same gate as the catalog install: the plan's copy must not interleave
     // with another install's res_mods writes or a `.bak` rename sweep.
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    tauri::async_runtime::spawn_blocking(move || {
-        install_plan(Path::new(&source_root), &game_root, &plan).map(|applied| applied.report)
+    ensure_game_closed()?;
+    // Validate BEFORE any rewind happens: an invalid plan must not uninstall
+    // the previous version only to fail afterwards.
+    validate_plan(&plan)?;
+    let src = PathBuf::from(&source_root);
+    if !src.is_dir() {
+        return Err(format!("package not found: {}", src.display()));
+    }
+    let mut ledger = super::mod_catalog::load_ledger();
+    let (outcome, ledger) = tauri::async_runtime::spawn_blocking(move || {
+        // Reinstalling a same-named mod must first rewind its previous
+        // record: files the old version shipped would linger under the new
+        // one, and chained snapshots used to make a later uninstall restore
+        // the previous MOD's files instead of the vanilla original.
+        let mut failure = None;
+        let old: Vec<String> = ledger
+            .installs
+            .iter()
+            .filter(|r| r.name.eq_ignore_ascii_case(&plan.name))
+            .map(|r| r.id.clone())
+            .collect();
+        for id in old {
+            if let Err(e) =
+                super::mod_catalog::uninstall_from_ledger(&mut ledger.installs, &id, &game_root)
+            {
+                failure = Some(e);
+                break;
+            }
+        }
+        let outcome = match failure {
+            Some(e) => Err(e),
+            None => match install_plan(&src, &game_root, &plan) {
+                // Local installs are ledger-recorded too, so their uninstall
+                // restores whatever vanilla files they overwrote — unrecorded
+                // local installs used to leave overwritten originals
+                // unrestorable.
+                Ok(applied) => {
+                    ledger.installs.push(local_record(&applied, &plan));
+                    Ok(applied)
+                },
+                Err(e) => Err(e),
+            },
+        };
+        (outcome, ledger)
     })
     .await
-    .map_err(|e| format!("install task: {e}"))?
+    .map_err(|e| format!("install task: {e}"))?;
+    let applied = match outcome {
+        Ok(applied) => applied,
+        Err(e) => {
+            // The rewind already changed the ledger even though the install
+            // failed — persist it so the on-disk ledger does not describe
+            // files that are already gone.
+            if let Err(se) = super::mod_catalog::save_ledger(&ledger) {
+                tracing::warn!(error = %se, "ledger save failed after failed install");
+            }
+            return Err(e);
+        },
+    };
+    super::mod_catalog::save_ledger(&ledger)?;
+    tracing::info!(
+        name = %applied.report.name,
+        files = applied.written.len(),
+        restore = ?applied.restore_dir,
+        "mod_hub_install recorded in ledger"
+    );
+    Ok(applied.report)
+}
+
+/// Ledger record for a local-folder install.
+pub(crate) fn local_record(applied: &PlanApply, plan: &PackagePlan) -> ModInstallRecord {
+    ModInstallRecord {
+        id: format!(
+            "local-{}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+            sanitize_dir_name(&plan.name)
+        ),
+        name: plan.name.clone(),
+        version: String::new(),
+        category: "local".into(),
+        source: "local".into(),
+        discussion: None,
+        bin_version: applied.report.bin_version.clone(),
+        installed_at: chrono::Utc::now().to_rfc3339(),
+        files: applied.written.clone(),
+        restore_dir: applied
+            .restore_dir
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
+    }
 }
 
 /// Core installer shared by the local-folder command and the online catalog:
-/// applies `plan` for `game_root`, records every written file (res_mods-
-/// relative) and snapshots overwritten originals for later restore.
+/// applies `plan` for `game_root`, recording every written file (res_mods-
+/// relative) and snapshotting overwritten originals for later restore. Every
+/// write goes through the journal — temp+rename into place, mandatory
+/// pre-overwrite snapshots, full rollback on any failure — so a broken
+/// install never leaves a half-copied mod in the game tree.
 pub(crate) fn install_plan(
     src: &Path,
     game_root: &str,
     plan: &PackagePlan,
 ) -> Result<PlanApply, String> {
+    install_plan_inner(src, game_root, plan, &[])
+}
+
+/// [`install_plan`] plus loose game-root payloads (catalog packs shipping a
+/// DLL next to their `res_mods/` tree) — journaled in the same transaction,
+/// so a failure rolls the game-root copies back with everything else.
+pub(crate) fn install_plan_with_loose(
+    src: &Path,
+    game_root: &str,
+    plan: &PackagePlan,
+    loose: &[PathBuf],
+) -> Result<PlanApply, String> {
+    install_plan_inner(src, game_root, plan, loose)
+}
+
+fn install_plan_inner(
+    src: &Path,
+    game_root: &str,
+    plan: &PackagePlan,
+    loose: &[PathBuf],
+) -> Result<PlanApply, String> {
+    validate_plan(plan)?;
     if !src.is_dir() {
         return Err(format!("package not found: {}", src.display()));
     }
@@ -1456,7 +1899,8 @@ pub(crate) fn install_plan(
         .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
     let res_mods = ver_dir.join("res_mods");
 
-    // Lazily-used snapshot dir; dropped again when nothing was overwritten.
+    // Created up front: snapshots are mandatory before any overwrite, so the
+    // restore dir must exist before the first file moves.
     let restore_dir = restore_root().join(format!(
         "{}-{}",
         std::time::SystemTime::now()
@@ -1467,40 +1911,69 @@ pub(crate) fn install_plan(
     ));
     fs::create_dir_all(&restore_dir).map_err(|e| format!("create restore dir: {e}"))?;
 
-    let mut written: Vec<String> = Vec::new();
-    let mut wrote = 0usize;
+    let mut journal = InstallJournal {
+        res_mods: res_mods.clone(),
+        game_root: PathBuf::from(game_root),
+        restore_dir: restore_dir.clone(),
+        actions: Vec::new(),
+        placed: std::collections::HashSet::new(),
+        written: Vec::new(),
+    };
     let mut warnings = plan.warnings.clone();
-    let mut touched_pnf = false;
-    for entry in &plan.entries {
-        let from = if entry.from_rel == "." {
-            src.to_path_buf()
-        } else {
-            src.join(&entry.from_rel)
-        };
-        let to = res_mods.join(&entry.to_rel);
-        wrote += copy_tree(
-            &from,
-            &to,
-            &res_mods,
-            &Some(restore_dir.clone()),
-            &mut written,
-        )?;
-        if entry.from_rel.eq_ignore_ascii_case("PnFMods") {
-            touched_pnf = true;
-        }
-    }
-
-    // PNF skin installs must leave the 0-byte loader marker behind.
-    if touched_pnf {
-        let loader = res_mods.join("PnFModsLoader.py");
-        if !loader.is_file() {
-            fs::write(&loader, "").map_err(|e| format!("touch loader: {e}"))?;
-            record_written(&loader, &res_mods, &mut written);
-            if !warnings.iter().any(|w| w.contains("PnFModsLoader")) {
-                warnings.push("created missing PnFModsLoader.py".into());
+    let wrote = {
+        let mut wrote = 0usize;
+        let mut touched_pnf = false;
+        let outcome = (|| -> Result<(), String> {
+            for entry in &plan.entries {
+                let from = if entry.from_rel == "." {
+                    src.to_path_buf()
+                } else {
+                    src.join(&entry.from_rel)
+                };
+                let to = res_mods.join(&entry.to_rel);
+                wrote += copy_tree(&from, &to, &mut journal)?;
+                if entry.from_rel.eq_ignore_ascii_case("PnFMods") {
+                    touched_pnf = true;
+                }
             }
+            // PNF skin installs must leave the 0-byte loader marker behind.
+            if touched_pnf {
+                let loader = res_mods.join("PnFModsLoader.py");
+                if !loader.is_file() {
+                    journal.place_empty(&loader, Place::ResMods)?;
+                    if !warnings.iter().any(|w| w.contains("PnFModsLoader")) {
+                        warnings.push("created missing PnFModsLoader.py".into());
+                    }
+                }
+            }
+            // Loose game-root payloads: same journal, same rollback.
+            for path in loose {
+                let name = path
+                    .file_name()
+                    .ok_or_else(|| format!("{} has no file name", path.display()))?;
+                journal.place(path, &Path::new(game_root).join(name), Place::GameRoot)?;
+                wrote += 1;
+            }
+            Ok(())
+        })();
+        match outcome {
+            Ok(()) => wrote,
+            Err(e) => {
+                // Put everything back before reporting the failure.
+                return match journal.rollback() {
+                    Ok(()) => {
+                        let _ = fs::remove_dir_all(&restore_dir);
+                        Err(e)
+                    },
+                    Err(rb) => Err(format!(
+                        "{e} (rollback incomplete: {rb}; snapshots kept in {})",
+                        restore_dir.display()
+                    )),
+                };
+            },
         }
-    }
+    };
+    let mut written = journal.written;
 
     // An untouched restore dir means nothing was overwritten — drop it so
     // uninstall does not chase ghosts.
@@ -1524,18 +1997,81 @@ pub(crate) fn install_plan(
     })
 }
 
+/// Plan paths arrive from the frontend or the catalog pipeline — validate
+/// before anything touches the disk: relative only, no `..`, no drive
+/// letters, no backslashes. `from_rel` may be `.` (the bare-voice wrapper
+/// maps the package root itself); `to_rel` must name a concrete destination
+/// under res_mods.
+fn validate_plan(plan: &PackagePlan) -> Result<(), String> {
+    if plan.entries.is_empty() {
+        return Err("plan has no entries".into());
+    }
+    for entry in &plan.entries {
+        check_plan_rel(&entry.from_rel, "fromRel", true)?;
+        check_plan_rel(&entry.to_rel, "toRel", false)?;
+    }
+    Ok(())
+}
+
+fn check_plan_rel(rel: &str, field: &str, allow_dot: bool) -> Result<(), String> {
+    use std::path::Component;
+    if rel.is_empty() || rel.contains('\\') || rel.contains(':') || Path::new(rel).is_absolute() {
+        return Err(format!("invalid {field} in plan: {rel:?}"));
+    }
+    for comp in Path::new(rel).components() {
+        match comp {
+            Component::Normal(_) => {},
+            Component::CurDir if allow_dot => {},
+            _ => return Err(format!("invalid {field} in plan: {rel:?}")),
+        }
+    }
+    Ok(())
+}
+
 fn restore_root_has_files(dir: &Path) -> bool {
     fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some())
 }
 
 /// `<data>/mods/restore/` — pre-overwrite snapshots, keyed by ts + mod name.
 pub(crate) fn restore_root() -> PathBuf {
+    // Test seam: unit tests redirect the snapshot root into their own tmp
+    // dir — otherwise they write into (and their cleanup wipes) the user's
+    // REAL restore dir, and parallel tests race each other's snapshots.
+    #[cfg(test)]
+    if let Some(dir) = TEST_RESTORE_ROOT.with(|slot| slot.borrow().clone()) {
+        fs::create_dir_all(&dir).ok();
+        return dir;
+    }
     let base = crate::paths::ensure_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("mods")
         .join("restore");
     fs::create_dir_all(&base).ok();
     base
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_RESTORE_ROOT: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Point [`restore_root`] at a test-owned directory for the rest of the
+/// current thread; dropping the guard restores the real path.
+#[cfg(test)]
+pub(crate) struct RestoreRootGuard(());
+
+#[cfg(test)]
+impl Drop for RestoreRootGuard {
+    fn drop(&mut self) {
+        TEST_RESTORE_ROOT.with(|slot| *slot.borrow_mut() = None);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_restore_root_in(dir: &Path) -> RestoreRootGuard {
+    TEST_RESTORE_ROOT.with(|slot| *slot.borrow_mut() = Some(dir.to_path_buf()));
+    RestoreRootGuard(())
 }
 
 #[cfg(test)]
@@ -1970,6 +2506,7 @@ mod tests {
         touch(&pkg.join("ime_config.xml"));
         fs::create_dir_all(game.join("bin/1")).unwrap();
 
+        let _rr = test_restore_root_in(&game.join("rr"));
         let plan = classify_package(&pkg).unwrap();
         assert_eq!(plan.kind, ModKind::Patch);
         let report = install_plan(
@@ -1995,6 +2532,7 @@ mod tests {
         fs::create_dir_all(pkg.join("PnFMods/Skin")).unwrap();
         touch(&pkg.join("PnFMods/Skin/Main.py"));
         fs::create_dir_all(game.join("bin/12668706")).unwrap();
+        let _rr = test_restore_root_in(&game.join("rr"));
 
         let plan = classify_package(&pkg).unwrap();
         let report = install_plan(
@@ -2018,6 +2556,201 @@ mod tests {
     fn zip_files_get_structured_error() {
         let err = mod_hub_classify_path("Z:/not/here/pack.zip".into()).unwrap_err();
         assert_eq!(err, UNSUPPORTED_ARCHIVE);
+    }
+
+    #[test]
+    fn install_rolls_back_completely_on_failure() {
+        // A mid-install failure must leave res_mods exactly as it was: the
+        // files already written disappear, overwritten originals come back.
+        // A half-copied mod tree is precisely what crashes the client.
+        let pkg = std::env::temp_dir().join("wowsp_rb_pkg");
+        let game = std::env::temp_dir().join("wowsp_rb_game");
+        let _ = fs::remove_dir_all(&pkg);
+        let _ = fs::remove_dir_all(&game);
+        fs::create_dir_all(pkg.join("gui/x")).unwrap();
+        fs::write(pkg.join("gui/old.png"), b"mod").unwrap();
+        fs::write(pkg.join("gui/x/a.png"), b"a").unwrap();
+        fs::write(pkg.join("ime_config.xml"), b"<ime/>").unwrap();
+        fs::create_dir_all(game.join("bin/1/res_mods/gui")).unwrap();
+        fs::write(game.join("bin/1/res_mods/gui/old.png"), b"vanilla").unwrap();
+        let _rr = test_restore_root_in(&game.join("rr"));
+        // Sabotage: the second plan entry's destination is occupied by a
+        // directory, so the final rename fails after `gui/` already copied.
+        fs::create_dir_all(game.join("bin/1/res_mods/ime_config.xml")).unwrap();
+
+        let plan = classify_package(&pkg).unwrap();
+        let err = match install_plan(&pkg, game.to_str().unwrap(), &plan) {
+            Ok(_) => panic!("sabotaged install must fail"),
+            Err(e) => e,
+        };
+        assert!(err.contains("place"), "{err}");
+        let rm = game.join("bin/1/res_mods");
+        assert_eq!(fs::read(rm.join("gui/old.png")).unwrap(), b"vanilla");
+        assert!(!rm.join("gui/x").exists(), "new files must not survive");
+        assert!(rm.join("ime_config.xml").is_dir(), "sabotage intact");
+        assert!(!rm.join("ime_config.xml.wowsp-part").exists());
+
+        fs::remove_dir_all(&pkg).ok();
+        fs::remove_dir_all(&game).ok();
+    }
+
+    #[test]
+    fn snapshot_failure_refuses_to_overwrite() {
+        // A snapshot that cannot be taken aborts the install — the old
+        // best-effort copy silently skipped it (nested snapshot dirs were
+        // never created), losing the user's original forever.
+        let tmp = std::env::temp_dir().join("wowsp_snap_fail");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("res_mods");
+        let rd = tmp.join("restore");
+        fs::create_dir_all(rm.join("gui")).unwrap();
+        fs::write(rm.join("gui/old.png"), b"original").unwrap();
+        // A directory squatting on the snapshot path makes the copy fail.
+        fs::create_dir_all(rd.join("gui/old.png")).unwrap();
+        let journal = InstallJournal {
+            res_mods: rm.clone(),
+            game_root: tmp.clone(),
+            restore_dir: rd,
+            actions: Vec::new(),
+            placed: std::collections::HashSet::new(),
+            written: Vec::new(),
+        };
+        let err = journal
+            .snapshot(&rm.join("gui/old.png"), Place::ResMods)
+            .unwrap_err();
+        assert!(err.contains("refusing to overwrite"), "{err}");
+        assert_eq!(fs::read(rm.join("gui/old.png")).unwrap(), b"original");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn plan_paths_are_validated_before_touching_disk() {
+        assert!(check_plan_rel("../evil", "toRel", false).is_err());
+        assert!(check_plan_rel("/abs", "toRel", false).is_err());
+        assert!(check_plan_rel(".", "toRel", false).is_err());
+        assert!(check_plan_rel("C:\\x", "fromRel", true).is_err());
+        assert!(check_plan_rel("a/../b", "fromRel", true).is_err());
+        assert!(check_plan_rel(".", "fromRel", true).is_ok());
+        assert!(check_plan_rel("gui/unbound2", "toRel", false).is_ok());
+    }
+
+    #[test]
+    fn unit_uninstall_trims_partially_overlapping_record() {
+        // Uninstalling the shared `content` group must NOT uninstall another
+        // mod that merely shares it: the record keeps its outside files and
+        // the covered files' vanilla snapshots come back.
+        let tmp = std::env::temp_dir().join("wowsp_trim_unit");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("content/gameplay")).unwrap();
+        fs::write(rm.join("content/gameplay/x.dds"), b"mod").unwrap();
+        fs::create_dir_all(rm.join("PnFMods/ModB")).unwrap();
+        fs::write(rm.join("PnFMods/ModB/Main.py"), b"print()").unwrap();
+        let restore = tmp.join("restore-modb");
+        fs::create_dir_all(restore.join("content/gameplay")).unwrap();
+        fs::write(restore.join("content/gameplay/x.dds"), b"vanilla").unwrap();
+
+        let unit = classify_installed_root(&rm)
+            .into_iter()
+            .find(|m| m.rel_path == "content")
+            .expect("content unit");
+        let mut installs = vec![ModInstallRecord {
+            id: "modb".into(),
+            name: "ModB".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec![
+                "content/gameplay/x.dds".into(),
+                "PnFMods/ModB/Main.py".into(),
+            ],
+            restore_dir: Some(restore.to_string_lossy().into_owned()),
+        }];
+        let report =
+            uninstall_unit_core(game.to_str().unwrap(), &rm, &unit, &mut installs).unwrap();
+        assert_eq!(report.restored_files, 1);
+        // The covered file returns to its vanilla original…
+        assert_eq!(
+            fs::read(rm.join("content/gameplay/x.dds")).unwrap(),
+            b"vanilla"
+        );
+        // …the mod's outside files stay…
+        assert!(rm.join("PnFMods/ModB/Main.py").is_file());
+        // …and the record survives, trimmed to what it still owns.
+        assert_eq!(installs.len(), 1);
+        assert_eq!(installs[0].files, vec!["PnFMods/ModB/Main.py".to_string()]);
+        // Its restore dir no longer carries the restored snapshot.
+        assert!(!restore.join("content/gameplay/x.dds").exists());
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn half_disable_violation_detects_mods_spanning_the_unit() {
+        let mk = |files: &[&str]| ModInstallRecord {
+            id: "x".into(),
+            name: "X".into(),
+            version: String::new(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| f.to_string()).collect(),
+            restore_dir: None,
+        };
+        let paths = vec!["content".to_string()];
+        // Same tree + files outside it: disabling the unit would half-disable
+        // the mod.
+        assert!(half_disable_violation(
+            &mk(&["content/gameplay/x.dds", "PnFMods/X/Main.py"]),
+            &paths
+        ));
+        // A record living fully inside the unit can be disabled as a whole.
+        assert!(!half_disable_violation(
+            &mk(&["content/gameplay/x.dds", "content/unlocks/y.dds"]),
+            &paths
+        ));
+        // A record with only outside files is unaffected.
+        assert!(!half_disable_violation(&mk(&["PnFMods/X/Main.py"]), &paths));
+        // A game-root DLL also counts as "outside" (toggles never touch it).
+        assert!(half_disable_violation(
+            &mk(&["content/gameplay/x.dds", "@game/gettext_x64r.dll"]),
+            &paths
+        ));
+    }
+
+    #[test]
+    fn local_record_describes_local_install() {
+        let applied = PlanApply {
+            report: InstallReport {
+                name: "Mod".into(),
+                bin_version: "1".into(),
+                wrote_files: 2,
+                warnings: Vec::new(),
+            },
+            written: vec!["gui/a.png".into(), "ime_config.xml".into()],
+            restore_dir: Some(PathBuf::from("R")),
+        };
+        let plan = PackagePlan {
+            kind: ModKind::Gui,
+            name: "Mod".into(),
+            detail: None,
+            entries: Vec::new(),
+            warnings: Vec::new(),
+            texture_analysis: None,
+        };
+        let record = local_record(&applied, &plan);
+        assert!(record.id.starts_with("local-"), "{}", record.id);
+        assert_eq!(record.source, "local");
+        assert_eq!(record.category, "local");
+        assert_eq!(record.bin_version, "1");
+        assert_eq!(record.files, applied.written);
+        assert_eq!(record.restore_dir.as_deref(), Some("R"));
     }
 
     // ── Real-world sample harness ───────────────────────────────────────────
@@ -2106,6 +2839,7 @@ mod tests {
         let game = std::env::temp_dir().join("wowsp_realsample_game");
         let _ = fs::remove_dir_all(&game);
         fs::create_dir_all(game.join("bin/12668706")).unwrap();
+        let _rr = test_restore_root_in(&game.join("rr"));
 
         // 1. ime_config.xml (config-patch, folder layout).
         let ime = find_dir(&dir, "输入法").expect("ime sample");
