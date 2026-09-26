@@ -39,6 +39,25 @@
   background: var(--holo-hud-border);
 }
 
+/* Zoom percent between the −/＋ buttons; click = reset to fit. */
+.tac-bar__zoom-pct {
+  min-width: 42px;
+  padding: 0 6px;
+  height: 24px;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--holo-hud-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(var(--tac-accent-rgb) / 16%);
+  }
+}
+
 /* Colour chip on the bar (opens the style sheet). */
 .tac-bar__color {
   display: inline-flex;

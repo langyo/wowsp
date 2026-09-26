@@ -152,6 +152,9 @@ export interface PlanTrack {
   label: string;
   variant: MarkerElement["variant"];
   color: string;
+  /** Marker ids of the whole chain — the unit's identity spans every
+   *  keyframe, so e.g. a rename rewrites them all. */
+  ids: string[];
   /** Actions sorted by time. */
   actions: PlanTrackAction[];
 }
@@ -169,6 +172,7 @@ export function planTracks(elements: TacticalElement[]): PlanTrack[] {
       label: sorted[0].label,
       variant: sorted[0].variant,
       color: sorted[0].color,
+      ids: sorted.map((el) => el.id),
       actions: sorted.map((el) => {
         const end = tweens.get(el.id);
         const next = nexts.get(el.id);

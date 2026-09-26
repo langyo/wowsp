@@ -121,9 +121,7 @@
   "minimap": {
     "zoom": "Carte agrandie",
     "trails": "Trajectoires des navires",
-    "grid": "Grille de la carte (A–J / 1–10)",
-    "rotateCcw": "Pivoter la carte de 90° anti-horaire",
-    "rotateCw": "Pivoter la carte de 90° horaire"
+    "grid": "Grille de la carte (A–J / 1–10)"
   },
   "labels": {
     "hide": "Masquer les étiquettes",
@@ -321,7 +319,9 @@
       "updateView": "Clic : y aller · Maj+clic : recadrer la caméra de l'étape"
     },
     "view": {
-      "reset": "Réinitialiser le zoom"
+      "reset": "Réinitialiser le zoom",
+      "zoomIn": "Zoomer",
+      "zoomOut": "Dézoomer"
     },
     "menu": {
       "shapes": "Formes et texte",
@@ -355,6 +355,7 @@
       "actionLabel": "Action",
       "hint": "Replacez la même unité plus tard et elle s'y rendra d'elle-même : la chronologie trace la flèche d'interpolation entre les deux repères.",
       "tween": "Interpolation",
+      "rename": "Renommer l'unité",
       "unitN": "Unité {n}",
       "actionCount": "{n} actions",
       "collapse": "Cliquer pour réduire",
