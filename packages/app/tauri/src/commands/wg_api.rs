@@ -47,6 +47,27 @@ use super::trends::ExpectedValues;
 /// inside a couple of waves without tripping it.
 const BATCH_CONCURRENCY: usize = 4;
 
+/// Exact-name search hits carried per roster name into the account/info
+/// sweep. The search index keeps STALE entries: an account renamed away
+/// stays listed under its old nickname, and a freed nickname can later be
+/// claimed by another account — so the first exact hit is not always the
+/// account that actually bears the name (ghost + live pairs observed in
+/// the wild). Three slots cover such pairs with margin while a full
+/// 24-name roster stays far under the info endpoint's 100-id cap.
+const EXACT_HIT_CANDIDATES: usize = 3;
+
+/// account/info ids accepted per request (the endpoint's documented cap).
+/// The batch's candidate ids stay well under one chunk; the cap only
+/// guards pathological caller input.
+const WG_INFO_IDS_PER_REQUEST: usize = 100;
+
+/// Process-lifetime roster answers, keyed (realm, name) — see the batch
+/// command's doc comment. Values are PRE-algo base stats; `None` (not
+/// found) is cached too, mirroring the client-side caches this serves.
+type RosterStatsCache = HashMap<(String, String), Option<PlayerStats>>;
+static ROSTER_STATS_CACHE: std::sync::LazyLock<std::sync::Mutex<RosterStatsCache>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
 /// Minimum length for a substring autocomplete query (WG rejects shorter
 /// searches). Numeric UID queries bypass this gate.
 const MIN_SEARCH_CHARS: usize = 3;
@@ -78,13 +99,19 @@ pub async fn lookup_player_stats(
     // 1. Resolve the query to an account. A purely numeric query is a UID
     //    ("nickname or UID" search): hit account/info directly and only fall
     //    back to the name search when the id doesn't resolve (numeric-looking
-    //    nicknames are rare but exist).
+    //    nicknames are rare but exist). `resolved_by_uid` marks the direct
+    //    path — its nickname came live from account/info, so the ghost
+    //    guard below has nothing to add.
+    let mut resolved_by_uid = false;
     let entry = match name.trim().parse::<i64>() {
         Ok(uid) if uid > 0 => match account_nickname_by_id(&client, &app_id, host, uid).await? {
-            Some(nickname) => Some(AccountListEntry {
-                account_id: uid,
-                nickname,
-            }),
+            Some(nickname) => {
+                resolved_by_uid = true;
+                Some(AccountListEntry {
+                    account_id: uid,
+                    nickname,
+                })
+            },
             None => account_list_one(&client, &app_id, host, &name).await?,
         },
         _ => account_list_one(&client, &app_id, host, &name).await?,
@@ -135,6 +162,27 @@ pub async fn lookup_player_stats(
     let (info, clan_map, dog_tag) = tokio::join!(info_fut, clan_fut, dog_tag_fut);
     let info: WgResponse<serde_json::Value> = info?;
 
+    // Ghost guard: the search index keeps stale entries under names their
+    // account renamed away (and freed names other accounts later claimed),
+    // and account_list_one takes the first exact hit. account/info answers
+    // the LIVE nickname — when it disagrees with the query, the resolved
+    // account is a dormant ghost, and "not found" beats pinning a
+    // stranger's (possibly hidden) profile on the card. The UID fast path
+    // already answered a live nickname; nothing to verify there.
+    if !resolved_by_uid {
+        let live = info
+            .data
+            .as_ref()
+            .and_then(|d| d.get(entry.account_id.to_string()))
+            .and_then(|v| v.get("nickname"))
+            .and_then(|n| n.as_str());
+        if let Some(live) = live {
+            if !nickname_matches(&name, live) {
+                return Err(LookupError::not_found_account(name, realm));
+            }
+        }
+    }
+
     // Expected algorithm: replace the winrate proxy with the wows-numbers PR
     // aggregated over the player's per-ship randoms (one extra ships/stats
     // request — see `account_expected_pr_for`). Computed before the assembly
@@ -158,10 +206,27 @@ pub async fn lookup_player_stats(
 
 /// Look up many players in one shot (live-roster fast path): N× account/list
 /// resolved with bounded parallelism, then ONE account/info and ONE
-/// clans/accountinfo for all ids combined. Returns one entry per input name,
+/// clans/accountinfo for all resolved ids combined. Returns one entry per input name,
 /// in order; `None` = account not found, no exact-name match, or the lookup
 /// failed — roster UIs render that as "no data" rather than failing the
 /// whole panel.
+///
+/// Answers are memoized per process, keyed (realm, name): the main window
+/// and the in-game overlay each fire the same roster names every battle,
+/// and without the shared cache each re-fetches the other's answers —
+/// twice the WG request storm per battle, which is how the shared per-IP
+/// rate limit ends up starving both windows mid-session. Values are the
+/// PRE-algo base stats (`apply_batch_pr_algo` runs per response, so both
+/// PR algorithms share one cache). Cached session-long, mirroring the
+/// client-side caches it serves: neither window refreshes roster stats
+/// mid-session today either.
+///
+/// Name resolution additionally verifies the search index's exact hits
+/// against account/info's LIVE nickname (see [`pick_verified_entry`]):
+/// the index keeps stale entries under names their account renamed away,
+/// and an innocent-looking exact match can be a dormant ghost — the rosters
+/// then show a stranger's (possibly hidden) profile, the false "hidden
+/// stats" reports.
 ///
 /// `pr_algo` selects the PR algorithm. Under "expected" every entry answers
 /// PR=None (see [`apply_batch_pr_algo`]): the roster line then renders its
@@ -189,14 +254,42 @@ pub async fn lookup_players_stats_batch(
         .build()
         .map_err(|e| format!("http client: {e}"))?;
 
-    // 1. name → account, bounded-parallel. `names` is consumed: owned items
-    //    keep the per-item futures lifetime-free (collect() preserves order).
-    //    A rate-limited / failed list response fails the whole batch — it
-    //    must not degrade into "not found" (the frontend would cache that).
-    let total = names.len();
-    let results: Vec<Result<Option<AccountListEntry>, String>> = {
+    // 0. Session cache: answer the hits on the spot, resolve only the
+    //    misses. Slots track the original positions so the response order
+    //    keeps matching the input order.
+    let mut answers: Vec<Option<PlayerStats>> = vec![None; names.len()];
+    let mut misses: Vec<(usize, String)> = Vec::new();
+    {
+        let cache = ROSTER_STATS_CACHE
+            .lock()
+            .map_err(|e| format!("roster stats cache lock: {e}"))?;
+        for (slot, name) in names.iter().enumerate() {
+            match cache.get(&(realm.clone(), name.clone())) {
+                Some(cached) => {
+                    let mut stats = cached.clone();
+                    if let Some(stats) = stats.as_mut() {
+                        apply_batch_pr_algo(stats, algo);
+                    }
+                    answers[slot] = stats;
+                },
+                None => misses.push((slot, name.clone())),
+            }
+        }
+    }
+    if misses.is_empty() {
+        return Ok(answers);
+    }
+
+    // 1. name → account, bounded-parallel. Every exact-prefix hit is kept
+    //    (capped — see [`EXACT_HIT_CANDIDATES`]): the first hit is not
+    //    always the live account, the live-nickname check below needs the
+    //    alternatives to pick from. A rate-limited / failed list response
+    //    fails the whole batch — it must not degrade into "not found" (the
+    //    frontend would cache that).
+    let miss_names: Vec<String> = misses.iter().map(|(_, n)| n.clone()).collect();
+    let results: Vec<Result<Vec<AccountListEntry>, String>> = {
         let client_ref = &client;
-        stream::iter(names)
+        stream::iter(miss_names)
             .map(|name| {
                 let url = format!(
                     "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
@@ -218,13 +311,18 @@ pub async fn lookup_players_stats_batch(
                             list.error.message.unwrap_or_default()
                         ));
                     }
-                    // Same exact-match guard as account_list_one: pick the
-                    // queried account out of the prefix hits — a lookalike's
+                    // Same exact-match guard as account_list_one: only the
+                    // queried account's name qualifies — a lookalike's
                     // stats must not leak into the roster batch.
-                    Ok(list.data.and_then(|d| {
-                        d.into_iter()
-                            .find(|found| nickname_matches(&name, &found.nickname))
-                    }))
+                    Ok(list
+                        .data
+                        .map(|d| {
+                            d.into_iter()
+                                .filter(|found| nickname_matches(&name, &found.nickname))
+                                .take(EXACT_HIT_CANDIDATES)
+                                .collect()
+                        })
+                        .unwrap_or_default())
                 }
             })
             .buffered(BATCH_CONCURRENCY)
@@ -234,63 +332,92 @@ pub async fn lookup_players_stats_batch(
     if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
         return Err(e.clone());
     }
-    let entries: Vec<Option<AccountListEntry>> =
-        results.into_iter().map(|r| r.unwrap_or(None)).collect();
-
-    let ids: Vec<i64> = entries.iter().flatten().map(|e| e.account_id).collect();
-    if ids.is_empty() {
-        return Ok(vec![None; total]);
-    }
+    let candidates: Vec<Vec<AccountListEntry>> =
+        results.into_iter().map(|r| r.unwrap_or_default()).collect();
 
     // 2+3. ONE account/info + ONE clan-tag lookup for the whole roster (the
     //       endpoints accept comma-joined id lists); independent, so run
-    //       them concurrently.
-    let id_list = ids
-        .iter()
-        .map(|i| i.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let info_fut = async {
-        // Same extra-gated division splits as the single lookup.
-        let resp = client
-            .get(format!(
-                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
-                 &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3"
-            ))
-            .send()
-            .await
-            .map_err(|e| format!("account/info request: {e}"))?;
-        let parsed = resp
-            .json::<WgResponse<serde_json::Value>>()
-            .await
-            .map_err(|e| format!("account/info parse: {e}"))?;
-        // A WG app-level failure (e.g. rate limit) surfaces as
-        // status:"error" — failing the batch lets the frontend's backoff
-        // retry handle it instead of silently caching hidden=true for
-        // everyone.
-        if parsed.status != "ok" {
-            return Err(format!(
-                "account/info: {}",
-                parsed.error.message.unwrap_or_default()
-            ));
+    //       them concurrently. The info sweep carries EVERY candidate id —
+    //       ghosts included — so the live-nickname pick has its data; the
+    //       id list stays capped well under the endpoint's 100-id cap
+    //       (24 names × 3 candidates), chunked defensively regardless.
+    let mut ids: Vec<i64> = Vec::new();
+    for cands in &candidates {
+        for entry in cands {
+            if !ids.contains(&entry.account_id) {
+                ids.push(entry.account_id);
+            }
         }
-        Ok(parsed)
+    }
+    let (info, clan_map) = if ids.is_empty() {
+        (Ok(None), HashMap::new())
+    } else {
+        let id_slot = &ids;
+        let info_fut = async {
+            // Same extra-gated division splits as the single lookup; the
+            // per-chunk results merge into one id-keyed map.
+            let mut roster = serde_json::Map::new();
+            for chunk in id_slot.chunks(WG_INFO_IDS_PER_REQUEST) {
+                let id_list = chunk
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let resp = client
+                    .get(format!(
+                        "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
+                         &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3"
+                    ))
+                    .send()
+                    .await
+                    .map_err(|e| format!("account/info request: {e}"))?;
+                let parsed = resp
+                    .json::<WgResponse<serde_json::Value>>()
+                    .await
+                    .map_err(|e| format!("account/info parse: {e}"))?;
+                // A WG app-level failure (e.g. rate limit) surfaces as
+                // status:"error" — failing the batch lets the frontend's
+                // backoff retry handle it instead of silently caching
+                // hidden=true for everyone.
+                if parsed.status != "ok" {
+                    return Err(format!(
+                        "account/info: {}",
+                        parsed.error.message.unwrap_or_default()
+                    ));
+                }
+                if let Some(data) = parsed.data.and_then(|d| d.as_object().cloned()) {
+                    roster.extend(data);
+                }
+            }
+            Ok(Some(serde_json::Value::Object(roster)))
+        };
+        let clan_fut = async { fetch_clan_info_for_accounts(&client, &app_id, host, &ids).await };
+        let (info, clan_map) = tokio::join!(info_fut, clan_fut);
+        (info, clan_map)
     };
-    let clan_fut = async { fetch_clan_info_for_accounts(&client, &app_id, host, &ids).await };
-    let (info, clan_map) = tokio::join!(info_fut, clan_fut);
-    let info: WgResponse<serde_json::Value> = info?;
+    let info_data: Option<serde_json::Value> = info?;
 
-    Ok(entries
-        .into_iter()
-        .map(|entry| {
-            entry.map(|entry| {
-                let mut stats =
-                    player_stats_from_info(entry, realm.clone(), info.data.as_ref(), &clan_map);
-                apply_batch_pr_algo(&mut stats, algo);
-                stats
-            })
-        })
-        .collect())
+    // 4. Verify each name's candidates against the LIVE nicknames and
+    //    build its stats; insert into the session cache (pre-algo).
+    for (slot, cands) in candidates.into_iter().enumerate() {
+        let name = &misses[slot].1;
+        let picked = pick_verified_entry(&cands, name, info_data.as_ref());
+        let stats = picked.map(|entry| {
+            player_stats_from_info(entry, realm.clone(), info_data.as_ref(), &clan_map)
+        });
+        {
+            let mut cache = ROSTER_STATS_CACHE
+                .lock()
+                .map_err(|e| format!("roster stats cache lock: {e}"))?;
+            cache.insert((realm.clone(), name.clone()), stats.clone());
+        }
+        if let Some(mut stats) = stats {
+            apply_batch_pr_algo(&mut stats, algo);
+            answers[misses[slot].0] = Some(stats);
+        }
+    }
+
+    Ok(answers)
 }
 
 /// Batch-roster PR policy. The expected algorithm needs each player's
@@ -446,6 +573,42 @@ pub(crate) fn encode_query(s: &str) -> String {
 /// prefix queries whose exact account is not contractually the top hit.
 pub(crate) fn nickname_matches(query: &str, found: &str) -> bool {
     query.trim().to_lowercase() == found.trim().to_lowercase()
+}
+
+/// Live-nickname verification over one name's exact search hits — the
+/// batch path's ghost guard (see the constant docs). A hit whose LIVE
+/// nickname (the one account/info answers, vs the search index's possibly
+/// stale copy) still equals the query wins. When the sweep answered a live
+/// nickname for at least one hit and NONE matched, the index is provably
+/// stale for this name and `None` beats pinning a renamed ghost's profile
+/// on the roster row. Only a sweep with no evidence at all (no info node
+/// for any hit) falls back to the first index hit — today's behavior, kept
+/// for the case a later call would resolve. Pure — unit-tested.
+pub(crate) fn pick_verified_entry(
+    candidates: &[AccountListEntry],
+    query: &str,
+    info_data: Option<&serde_json::Value>,
+) -> Option<AccountListEntry> {
+    let mut verified = None;
+    let mut saw_live_nickname = false;
+    for c in candidates {
+        let live = info_data
+            .and_then(|d| d.get(c.account_id.to_string()))
+            .and_then(|v| v.get("nickname"))
+            .and_then(|n| n.as_str());
+        if let Some(live) = live {
+            saw_live_nickname = true;
+            if nickname_matches(query, live) {
+                verified = Some(c);
+                break;
+            }
+        }
+    }
+    match verified {
+        Some(c) => Some(c.clone()),
+        None if candidates.is_empty() || saw_live_nickname => None,
+        None => Some(candidates[0].clone()),
+    }
 }
 
 /// account/list (limit=10) — one nickname → account entry. The search is a
@@ -1471,7 +1634,7 @@ struct WgResponse<T> {
 struct WgError {
     message: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub(crate) struct AccountListEntry {
     pub(crate) account_id: i64,
     pub(crate) nickname: String,
@@ -1547,6 +1710,61 @@ mod tests {
         assert!(!nickname_matches("Player", "Player_2077"));
         assert!(!nickname_matches("Player", ""));
         assert!(!nickname_matches("", "Player"));
+    }
+
+    #[test]
+    fn pick_verified_entry_prefers_the_live_nickname_over_a_ghost() {
+        // Search index shape observed in the wild: a renamed-away account
+        // (ghost, id 7) still listed under its old nickname, the live
+        // holder (id 9) behind it. account/info answers both accounts'
+        // CURRENT nicknames — only id 9 still bears the query.
+        let candidates = vec![
+            AccountListEntry {
+                account_id: 7,
+                nickname: "Myoui_Mina".to_string(),
+            },
+            AccountListEntry {
+                account_id: 9,
+                nickname: "Myoui_Mina".to_string(),
+            },
+        ];
+        let info = serde_json::json!({
+            "7": { "nickname": "RenamedAway_2017" },
+            "9": { "nickname": "myoui_mina" }
+        });
+        let picked = pick_verified_entry(&candidates, "Myoui_Mina", Some(&info)).unwrap();
+        assert_eq!(picked.account_id, 9);
+    }
+
+    #[test]
+    fn pick_verified_entry_rejects_stale_index_without_live_match() {
+        // Index fully stale: the only listed hit renamed away — its live
+        // nickname proves it no longer bears the query, so "not found"
+        // beats pinning a dormant ghost's profile on the row.
+        let candidates = vec![AccountListEntry {
+            account_id: 7,
+            nickname: "Ghost".to_string(),
+        }];
+        let info = serde_json::json!({ "7": { "nickname": "RenamedAway" } });
+        assert!(pick_verified_entry(&candidates, "Ghost", Some(&info)).is_none());
+    }
+
+    #[test]
+    fn pick_verified_entry_falls_back_to_the_first_hit_without_evidence() {
+        // No info node at all (the sweep missed the id — no evidence either
+        // way) → the first index hit answers, today's behavior as the
+        // fallback.
+        let candidates = vec![AccountListEntry {
+            account_id: 7,
+            nickname: "Ghost".to_string(),
+        }];
+        let picked = pick_verified_entry(&candidates, "Ghost", None).unwrap();
+        assert_eq!(picked.account_id, 7);
+    }
+
+    #[test]
+    fn pick_verified_entry_is_none_without_candidates() {
+        assert!(pick_verified_entry(&[], "Anyone", None).is_none());
     }
 
     #[test]

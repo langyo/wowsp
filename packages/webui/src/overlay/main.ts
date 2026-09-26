@@ -452,6 +452,10 @@ function render() {
     : null;
   if (anchor.rosterMode === "inferred") {
     aliveArr = anchor.rowAlive ?? null;
+    // Null entries here are rows whose player cannot be attributed without
+    // guessing — tie-group members at battle start, or a whole side once
+    // sinks meet a tie group (see inferredOrder.ts). They fall through to
+    // the silent "…" placeholder below, same as unrecognized OCR rows.
     players = inferredRowMapping(arena.vehicles, aliveArr);
   }
 
@@ -545,11 +549,21 @@ function render() {
  *  recovers (the main window's roster pipeline has its own retry; this is
  *  the same contract for the overlay page). The ceiling stays low on
  *  purpose: a batch that keeps failing must keep re-filling within a
- *  Tab-hold or two, not a half-minute out. */
+ *  Tab-hold or two, not a half-minute out.
+ *
+ *  The timer-driven retries are also BUDGETED per battle (`retriesLeft`,
+ *  the main window's `retriesLeft` contract): a hard-down or rate-limited
+ *  API must not be probed all battle long — an unbounded loop here kept the
+ *  "querying" status card spinning forever. When the budget runs out the
+ *  chips stay honestly "…" and the card goes away; a fresh anchor event
+ *  (the user holding Tab again) still gets one prompt attempt through
+ *  scheduleBatch, only the timed loop stops. */
 let inFlight = false;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelayMs = 2000;
 const RETRY_DELAY_MAX_MS = 10000;
+const RETRIES_PER_BATTLE = 2;
+let retriesLeft = RETRIES_PER_BATTLE;
 
 // A "not found" answer (null result, cached as the "—" no-data stat) is not
 // always final: WG/vortex lookups occasionally answer empty for a name the
@@ -670,13 +684,17 @@ async function runBatch() {
     render();
   } catch {
     // Transient WG hiccup: retry the same (still-uncached) names after a
-    // capped, doubling pause. The chips honestly stay "…" until a retry
-    // lands — never a silently wrong "no data".
-    retryTimer = setTimeout(() => {
-      retryTimer = null;
-      scheduleBatch();
-    }, retryDelayMs);
-    retryDelayMs = Math.min(retryDelayMs * 2, RETRY_DELAY_MAX_MS);
+    // capped, doubling pause — but only while the per-battle retry budget
+    // lasts (see RETRIES_PER_BATTLE). The chips honestly stay "…" until a
+    // retry lands — never a silently wrong "no data".
+    if (retriesLeft > 0) {
+      retriesLeft -= 1;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        scheduleBatch();
+      }, retryDelayMs);
+      retryDelayMs = Math.min(retryDelayMs * 2, RETRY_DELAY_MAX_MS);
+    }
     // A thrown batch is still an ATTEMPT against the suspected-absent names
     // riding in it: spend their budget and re-arm, so their re-queue stays
     // bounded even while the API is hard-down (the backoff above never
@@ -767,6 +785,7 @@ async function start() {
     if (next?.dateTime !== arena?.dateTime) {
       trustedRows = null;
       retryDelayMs = 2000;
+      retriesLeft = RETRIES_PER_BATTLE;
       if (retryTimer) {
         clearTimeout(retryTimer);
         retryTimer = null;

@@ -1,14 +1,20 @@
 /** Tests for the overlay's rule-inferred row→name mapping ("inferred"
- *  roster mode): the verified Tab sort rule (class rank → tier descending →
- *  ship id) applied per side as [alive] ++ [sunk], allies block before
- *  enemies, unknown-alive rows read as alive, and the ship-id tiebreak only
- *  ever deciding the (class, tier) residue the game's own sort does not
- *  expose in the arena file.
+ *  roster mode). The verified Tab sort rule (class rank → tier descending)
+ *  is a TOTAL order only when no two ships on a side share class+tier; the
+ *  tests pin down exactly what the rule can prove, per the module docs:
  *
- *  The scenario behind these tests: the Rust watcher supplies the row grid
- *  plus per-row alive flags (pure luma, no OCR) and the overlay must name
- *  the rows without any text recognition — deterministically, from the
- *  closed roster set. */
+ *  - all-singleton sides map 1:1, alive/sunk split included;
+ *  - at battle start (no sinks) singleton rows are named and tie-group
+ *    rows stay anonymous (the within-group order is not in the arena
+ *    file — verified against full battle rosters);
+ *  - once a sink meets a tie group, the luma vector cannot distinguish
+ *    "the pair lost a member" from "the lone ship next to it sank" (both
+ *    read flags like [T,T,T,F]) yet the two worlds regroup the table
+ *    differently — so the whole side goes anonymous rather than pinning
+ *    stats on 50/50 guesses.
+ *
+ *  The page renders `null` rows as its silent placeholder, exactly like
+ *  unrecognized rows; the OCR mode is the exact path for them. */
 import { describe, expect, it } from "vitest";
 
 import { inferredRowMapping, type InferredVehicle } from "./inferredOrder";
@@ -19,72 +25,113 @@ import { inferredRowMapping, type InferredVehicle } from "./inferredOrder";
  *  real ship ids from the captured frames instead: */
 const SHIPS = {
   ryujo: 4183799504, // AirCarrier T6 (龙骧)
-  saipan: 3763320816, // AirCarrier T8-ish (塞班 — CV class)
+  saipan: 3763320816, // AirCarrier T8 (塞班 — same class, different tier)
   newMexico: 4259264496, // Battleship T6
   renown: 4078909392, // Battleship T6
   konigsberg: 4184782640, // Cruiser T5
-  argentina: 4184782160, // Cruiser T5
   Leone: 3764270832, // Destroyer T6
   undine: 4183209936, // Submarine T6
 } as const;
 
 function veh(name: string, shipId: number, relation = 2): InferredVehicle {
-  return { name, relation, shipId };
+  return { name, shipId, relation };
 }
 
 describe("inferredRowMapping", () => {
-  it("orders one side by class then tier descending, all alive", () => {
-    // Enemy side of the captured 9v9 frame, nobody sunk yet: CV < BB(2×
-    // same tier → ship-id desc) < CA ×2 < DD < SS — the exact on-screen
-    // order the game showed.
+  it("names every row of an all-singleton side, battle start", () => {
+    // One ship per (class, tier): CV, BB, CA, DD, SS — every group a
+    // singleton, so the rule pins all five rows exactly. The T8 CV sorts
+    // above the T6 CV (same class, different tier — the tier key must
+    // survive grouping).
     const vehicles = [
       veh("Undine", SHIPS.undine),
       veh("Leone", SHIPS.Leone),
       veh("Konigsberg", SHIPS.konigsberg),
-      veh("Argentina", SHIPS.argentina),
       veh("Renown", SHIPS.renown),
-      veh("NewMexico", SHIPS.newMexico),
+      veh("Saipan", SHIPS.saipan),
       veh("Ryujo", SHIPS.ryujo),
     ];
     expect(inferredRowMapping(vehicles, null)).toEqual([
+      "Saipan",
       "Ryujo",
-      // (BB, T6) tie → the ship-id tiebreak (ascending) decides
-      // deterministically; renown < newMexico id-wise, matching the
-      // captured frame where 声望 sat above 新墨西哥.
       "Renown",
-      "NewMexico",
-      "Argentina",
       "Konigsberg",
       "Leone",
       "Undine",
     ]);
   });
 
-  it("splits alive and sunk blocks, each in rule order", () => {
-    // The enemy CV and one CA sunk: they move BELOW every alive ship,
-    // keeping the class order inside the sunk block.
+  it("yields null rows for a multi-member (class, tier) group at battle start", () => {
+    // Two T6 battleships: the game's pick between them is unknowable from
+    // the arena file — neither row may carry a name.
+    const vehicles = [
+      veh("Undine", SHIPS.undine),
+      veh("Renown", SHIPS.renown),
+      veh("NewMexico", SHIPS.newMexico),
+    ];
+    expect(inferredRowMapping(vehicles, null)).toEqual([null, null, "Undine"]);
+  });
+
+  it("splits an all-singleton side into alive and sunk blocks exactly", () => {
+    // No tie groups anywhere: the rule is a total order, so the alive/sunk
+    // regroup is attributable row by row. The CV and the BB sunk: they move
+    // below every alive ship, each block in rule order.
     const vehicles = [
       veh("Undine", SHIPS.undine),
       veh("Leone", SHIPS.Leone),
       veh("Konigsberg", SHIPS.konigsberg),
-      veh("Argentina", SHIPS.argentina),
       veh("Renown", SHIPS.renown),
-      veh("NewMexico", SHIPS.newMexico),
       veh("Ryujo", SHIPS.ryujo),
     ];
-    // Alive vector aligned with the game's CURRENT rows: row 0 (CV) and
-    // row 3 (a CA) read sunk.
-    const alive = [false, true, true, false, true, true, true];
+    // Alive vector aligned with the game's CURRENT rows: rows 0 (CV) and
+    // 1 (BB) read sunk.
+    const alive = [false, false, true, true, true];
     expect(inferredRowMapping(vehicles, alive)).toEqual([
-      // alive block: BB ×2 (id tiebreak), CA, DD, SS — rule order
-      "Renown",
-      "NewMexico",
+      // alive block: CA, DD, SS — rule order
       "Konigsberg",
       "Leone",
       "Undine",
-      // sunk block: CV first, then the CA — class order again
+      // sunk block: CV first, then the BB — class order again
       "Ryujo",
-      "Argentina",
+      "Renown",
+    ]);
+  });
+
+  it("anonymizes a whole side once sinks meet a tie group", () => {
+    // Flags [T,T,T,F] fit both "the BB pair lost a member" (game rows
+    // CV, surviving BB, DD, sunk BB) and "the DD sank instead" (game rows
+    // CV, BB, BB, sunk DD) — the luma vector cannot tell them apart, and
+    // the two worlds regroup the rows differently, so no row is provable.
+    const vehicles = [
+      veh("Ryujo", SHIPS.ryujo),
+      veh("Renown", SHIPS.renown),
+      veh("NewMexico", SHIPS.newMexico),
+      veh("Leone", SHIPS.Leone),
+    ];
+    const alive = [true, true, true, false];
+    expect(inferredRowMapping(vehicles, alive)).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("an all-sunk side collapses to the provable rule order", () => {
+    // Everyone sunk: the layout is the rule order alone — singletons are
+    // pinned again, only the tie group stays anonymous.
+    const vehicles = [
+      veh("Ryujo", SHIPS.ryujo),
+      veh("Renown", SHIPS.renown),
+      veh("NewMexico", SHIPS.newMexico),
+      veh("Leone", SHIPS.Leone),
+    ];
+    const alive = [false, false, false, false];
+    expect(inferredRowMapping(vehicles, alive)).toEqual([
+      "Ryujo",
+      null,
+      null,
+      "Leone",
     ]);
   });
 
@@ -103,17 +150,8 @@ describe("inferredRowMapping", () => {
     ]);
   });
 
-  it("keeps same-class same-tier pairs on the ship-id tiebreak", () => {
-    // The unknowable residue: two T6 battleships. The mapping is still
-    // DETERMINISTIC (id ascending) so chips never flicker between renders —
-    // and this exact pair sat 声望-above-新墨西哥 in the captured frame.
-    const vehicles = [
-      veh("Renown", SHIPS.renown),
-      veh("NewMexico", SHIPS.newMexico),
-    ];
-    expect(inferredRowMapping(vehicles, null)).toEqual([
-      "Renown",
-      "NewMexico",
-    ]);
+  it("unknown alive flags read as alive (battle-start state)", () => {
+    const vehicles = [veh("FoeBB", SHIPS.newMexico, 3)];
+    expect(inferredRowMapping(vehicles, null)).toEqual(["FoeBB"]);
   });
 });
