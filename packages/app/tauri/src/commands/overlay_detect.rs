@@ -56,9 +56,13 @@ const ROW_BAND_MIN_H: usize = 2;
 /// Vertical range below the header scanned for the white-text profile used
 /// by the phase refinement.
 const ROW_SCAN_MAX_SPAN_FRAC: f32 = 0.45;
-/// Row pitch = header-bar height × this factor. Measured on real captures:
-/// 52/55 ≈ 0.95 (1440p) and 48/54 ≈ 0.89 (1080p) — bars and rows share the
-/// same UI scale, so this single ratio replaces all pixel row-counting.
+/// Row pitch PRIOR = header-bar height × this factor. Measured on real
+/// captures: 52/55 ≈ 0.95 (1440p) and 48/54 ≈ 0.89 (1080p) — bars and rows
+/// share the same UI scale. This is no longer used verbatim for the grid:
+/// [`fit_row_grid`] reads the TRUE pitch off the frame's own text bands
+/// (the single ratio left a per-resolution error that accumulated down the
+/// table — the "chips drift off the bottom rows" report) and only falls back
+/// to this prior when too few bands vote.
 const PITCH_PER_HEADER: f32 = 0.92;
 /// Minimum rows of height the overlay window always gets, even when the
 /// current roster is smaller (12v12 is the largest standard battle; extra
@@ -166,49 +170,167 @@ pub(crate) fn detect_roster_with_band(
     // Row counts: each side's arena hint is authoritative; without any hint
     // fall back to a conservative 5-row grid (real flows always pass it).
     let rows_wanted = |hint: usize| if hint > 0 { hint } else { 5 };
-    let build_grid = |hint: usize, profile: &[u32]| -> Vec<f32> {
-        let mut grid: Vec<f32> = (0..rows_wanted(hint))
-            .map(|i| first + pitch * i as f32)
-            .collect();
-        // Phase refinement: bands consistent with the uniform grid (within
-        // a third of a pitch) vote on a shared offset; occluded or spurious
-        // bands (hint box, HUD) simply don't vote.
-        let prof_max = profile.iter().copied().max().unwrap_or(0);
-        if prof_max > 0 {
-            let thr = prof_max as f32 * ROW_TEXT_FRACTION;
-            let mut offsets: Vec<f32> = Vec::new();
-            let mut band_start: Option<usize> = None;
-            for (dy, &v) in profile.iter().enumerate() {
-                let in_band = v as f32 > thr;
-                if in_band && band_start.is_none() {
-                    band_start = Some(dy);
-                }
-                if !in_band {
-                    if let Some(s) = band_start.take() {
-                        if dy - s >= ROW_BAND_MIN_H {
-                            let b = prof_top as f32 + (s + dy - 1) as f32 / 2.0;
-                            let k = ((b - first) / pitch).round();
-                            let center = first + pitch * k;
-                            if (b - center).abs() <= pitch / 3.0 {
-                                offsets.push(b - center);
-                            }
-                        }
-                    }
-                }
-            }
-            if offsets.len() >= 2 {
-                offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let shift = offsets[offsets.len() / 2];
-                grid.iter_mut().for_each(|c| *c += shift);
+    let (centers_l, pitch_l) = fit_row_grid(
+        rows_wanted(expected_allies),
+        &profile_l,
+        prof_top,
+        first,
+        pitch,
+    );
+    let (centers_r, pitch_r) = fit_row_grid(
+        rows_wanted(expected_enemies),
+        &profile_r,
+        prof_top,
+        first,
+        pitch,
+    );
+    let mut centers = centers_l;
+    centers.extend(centers_r);
+
+    // ── 3. Rectangle + team split, back to physical px — then a NATIVE-
+    //    resolution refinement of the anchor features inside a small ROI
+    //    (the working frame quantizes every edge to `scale`-px steps; on a
+    //    3072-px capture that alone is a ±4-px grid) ────────────────────────
+    let det = finish_roster(band, h, scale, centers, pitch_l.max(pitch_r));
+    let header_bottom_prior = ((band.top + band.height) as f32 * scale as f32).round() as i32;
+    Some((
+        band,
+        refine_roster_native(rgba, width, height, &det, header_bottom_prior),
+    ))
+}
+
+/// Fit one side's row grid to its white-text density profile. The PRIOR grid
+/// comes from [`grid_origin`] (header-anchored, constant ratio); the text
+/// bands then correct it in two steps, in this order:
+///
+/// 1. PITCH from the bands' consecutive GAPS — index-free, so it is immune
+///    to exactly the drift being fixed (with a wrong prior pitch, far-down
+///    bands sit closer to the WRONG grid index, and a naive nearest-index
+///    assignment would mispair them). Each gap is divided by its nearest
+///    integer multiple of the prior pitch (an occluded row leaves a 2× gap);
+///    the median of the contributions is the estimate, clamped to a
+///    plausible band around the prior.
+/// 2. ORIGIN by least squares over the bands re-assigned against the
+///    corrected pitch (a half-pitch consistency filter + per-index dedupe
+///    keeps strays — HUD text, our own hint box — from voting).
+///
+/// Fewer than two bands (occlusion, all-sunk dim rows) degrades to the
+/// prior grid verbatim; two bands keep the corrected pitch but only shift
+/// the phase (the old refinement behavior). Returns the centers and the
+/// pitch actually used, both in working px.
+fn fit_row_grid(
+    rows: usize,
+    profile: &[u32],
+    prof_top: usize,
+    first0: f32,
+    pitch0: f32,
+) -> (Vec<f32>, f32) {
+    let uniform = |first: f32, pitch: f32| -> Vec<f32> {
+        (0..rows).map(|i| first + pitch * i as f32).collect()
+    };
+    if rows == 0 || pitch0 <= 0.0 {
+        return (Vec::new(), pitch0);
+    }
+    let prof_max = profile.iter().copied().max().unwrap_or(0);
+    if prof_max == 0 {
+        return (uniform(first0, pitch0), pitch0);
+    }
+    // Text-band centers (working px), half-px resolution.
+    let thr = prof_max as f32 * ROW_TEXT_FRACTION;
+    let mut bands: Vec<f32> = Vec::new();
+    let mut band_start: Option<usize> = None;
+    let flush = |band_start: &mut Option<usize>, dy: usize, bands: &mut Vec<f32>| {
+        if let Some(s) = band_start.take()
+            && dy - s >= ROW_BAND_MIN_H
+        {
+            bands.push(prof_top as f32 + (s + dy - 1) as f32 / 2.0);
+        }
+    };
+    for (dy, &v) in profile.iter().enumerate() {
+        let in_band = v as f32 > thr;
+        if in_band && band_start.is_none() {
+            band_start = Some(dy);
+        }
+        if !in_band {
+            flush(&mut band_start, dy, &mut bands);
+        }
+    }
+    flush(&mut band_start, profile.len(), &mut bands);
+    if bands.len() < 2 {
+        return (uniform(first0, pitch0), pitch0);
+    }
+    // ── Step 1: pitch from consecutive band gaps ──────────────────────────
+    let mut contributions: Vec<f32> = bands
+        .windows(2)
+        .map(|w| {
+            let gap = w[1] - w[0];
+            let multiples = ((gap / pitch0).round() as i32).max(1) as f32;
+            gap / multiples
+        })
+        .collect();
+    contributions.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mut pitch = contributions[contributions.len() / 2];
+    let plausible = 0.80 * pitch0..=1.05 * pitch0;
+    if !plausible.contains(&pitch) {
+        pitch = pitch0;
+    }
+    // ── Step 2: origin by least squares over re-assigned bands ────────────
+    let mut pairs: Vec<(f32, f32)> = bands
+        .iter()
+        .map(|&b| (((b - first0) / pitch).round(), b))
+        .filter(|&(k, b)| {
+            k >= 0.0 && (k as usize) < rows && (b - (first0 + pitch * k)).abs() <= pitch * 0.45
+        })
+        .collect();
+    // One band per grid row: when strays crowd a real row's index, the band
+    // closest to the (corrected-pitch) grid wins.
+    pairs.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(
+                (a.1 - (first0 + pitch * a.0))
+                    .abs()
+                    .partial_cmp(&(b.1 - (first0 + pitch * b.0)).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+    });
+    pairs.dedup_by(|a, b| a.0 == b.0);
+    if pairs.len() >= 3 {
+        let n = pairs.len() as f32;
+        let kmean = pairs.iter().map(|(k, _)| k).sum::<f32>() / n;
+        let bmean = pairs.iter().map(|(_, b)| b).sum::<f32>() / n;
+        let (mut cov, mut var) = (0.0f32, 0.0f32);
+        for (k, b) in &pairs {
+            cov += (k - kmean) * (b - bmean);
+            var += (k - kmean) * (k - kmean);
+        }
+        if var > 0.0 {
+            let fit_pitch = cov / var;
+            let fit_first = bmean - fit_pitch * kmean;
+            if plausible.contains(&fit_pitch) && (fit_first - first0).abs() <= pitch0 {
+                return (uniform(fit_first, fit_pitch), fit_pitch);
             }
         }
-        grid
-    };
-    let mut centers = build_grid(expected_allies, &profile_l);
-    centers.extend(build_grid(expected_enemies, &profile_r));
-
-    // ── 3. Rectangle + team split, back to physical px ────────────────────
-    Some((band, finish_roster(band, h, scale, centers)))
+        // The slope fit misbehaved (stray-dominated sample): keep the
+        // gap-median pitch, refine only the origin as a shared offset.
+        let mut offsets: Vec<f32> = pairs
+            .iter()
+            .map(|(k, b)| b - (first0 + pitch * k))
+            .collect();
+        offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let shift = offsets[offsets.len() / 2];
+        return (uniform(first0 + shift, pitch), pitch);
+    }
+    if pairs.len() == 2 {
+        let mut offsets: Vec<f32> = pairs
+            .iter()
+            .map(|(k, b)| b - (first0 + pitch * k))
+            .collect();
+        offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let shift = offsets[offsets.len() / 2];
+        return (uniform(first0 + shift, pitch), pitch);
+    }
+    (uniform(first0, pitch), pitch)
 }
 
 /// Pure geometry shared by the full detector and the cache rebuild: header
@@ -227,16 +349,24 @@ fn grid_origin(band: HeaderBand, h: usize) -> (usize, f32, f32) {
 /// Shared detector tail (pure): row centers in working px → the physical-px
 /// [`DetectedRoster`] (table rect + team split + scaled centers). Used by
 /// both the full detection and [`rebuild_roster_from_band`] so the two can
-/// never drift apart geometrically.
-fn finish_roster(band: HeaderBand, h: usize, scale: u32, centers: Vec<f32>) -> DetectedRoster {
-    let (prof_top, pitch, _) = grid_origin(band, h);
+/// never drift apart geometrically. `pitch_eff` is the row pitch the grid
+/// actually used (the fitted one, or the constant prior on the rebuild
+/// fallback) — it sizes the window-height floor and the bottom padding.
+fn finish_roster(
+    band: HeaderBand,
+    h: usize,
+    scale: u32,
+    centers: Vec<f32>,
+    pitch_eff: f32,
+) -> DetectedRoster {
+    let (prof_top, _, _) = grid_origin(band, h);
     let last = *centers.last().unwrap_or(&(prof_top as f32));
     // Window height floor: 12v12 is the largest standard roster, and the
     // overlay window must never be shorter than that even when the current
     // battle is smaller — extra height is transparent and click-through, but
     // a short window CLIPS the chips of a larger table (seen live).
-    let y1w = (last + pitch * 0.75)
-        .max(prof_top as f32 + pitch * MIN_WINDOW_ROWS)
+    let y1w = (last + pitch_eff * 0.75)
+        .max(prof_top as f32 + pitch_eff * MIN_WINDOW_ROWS)
         .min(h as f32 - 1.0) as usize;
     let split_raw = ((band.green.1 + band.red.0) as f32 * 0.5 - band.green.0 as f32)
         / (band.red.1.saturating_sub(band.green.0)).max(1) as f32;
@@ -531,25 +661,249 @@ pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &He
 /// same band origin and pitch, row count from the new roster. No frame scan
 /// and no white-text phase refinement — the cached pitch is trusted (the
 /// refinement's frame-to-frame jitter is exactly what the pin exists to
-/// suppress). The geometry matches [`detect_roster`]'s unrefined grid
-/// because both go through [`grid_origin`] / [`finish_roster`].
+/// suppress). `measured_pitch` (physical px, per side, from
+/// [`measured_pitch_from_centers`] on the cached detection) keeps the pitch
+/// the previous frame actually measured instead of the constant prior;
+/// `None` (or a non-positive value) falls back to [`PITCH_PER_HEADER`]. The
+/// geometry matches [`detect_roster`]'s unrefined grid because both go
+/// through [`grid_origin`] / [`finish_roster`].
 pub(crate) fn rebuild_roster_from_band(
     band: &HeaderBand,
     width: u32,
     height: u32,
     team_sizes: (usize, usize),
+    measured_pitch: Option<(f32, f32)>,
 ) -> DetectedRoster {
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let h_work = (height / scale) as usize;
-    let (_, pitch, first) = grid_origin(*band, h_work);
+    let (prof_top, pitch_const, _) = grid_origin(*band, h_work);
+    let pitch_of = |measured: Option<f32>| -> f32 {
+        measured
+            .filter(|p| *p > 0.0)
+            .map(|p| p / scale as f32)
+            .unwrap_or(pitch_const)
+    };
+    let pitch_l = pitch_of(measured_pitch.map(|(l, _)| l));
+    let pitch_r = pitch_of(measured_pitch.map(|(_, r)| r));
     // Row counts: the arena hint is authoritative; without any hint the
     // same conservative 5-row grid the full detector falls back to.
     let rows_wanted = |hint: usize| if hint > 0 { hint } else { 5 };
+    let first_l = prof_top as f32 + pitch_l * 0.5;
+    let first_r = prof_top as f32 + pitch_r * 0.5;
     let mut centers: Vec<f32> = (0..rows_wanted(team_sizes.0))
-        .map(|i| first + pitch * i as f32)
+        .map(|i| first_l + pitch_l * i as f32)
         .collect();
-    centers.extend((0..rows_wanted(team_sizes.1)).map(|i| first + pitch * i as f32));
-    finish_roster(*band, h_work, scale, centers)
+    centers.extend((0..rows_wanted(team_sizes.1)).map(|i| first_r + pitch_r * i as f32));
+    finish_roster(*band, h_work, scale, centers, pitch_l.max(pitch_r))
+}
+
+/// Per-side row pitch (physical px) measured off a previous detection's row
+/// centers: the mean consecutive-row gap of each block (allies first, then
+/// enemies). Feeds [`rebuild_roster_from_band`] so a cache rebuild keeps the
+/// pitch the frame itself measured. A block with fewer than two rows yields
+/// 0.0 — the caller's "no measurement" — rather than a guess.
+pub(crate) fn measured_pitch_from_centers(row_centers: &[i32], ally_rows: usize) -> (f32, f32) {
+    let side = |lo: usize, hi: usize| -> f32 {
+        let Some(blk) = row_centers.get(lo..hi) else {
+            return 0.0;
+        };
+        if blk.len() < 2 {
+            return 0.0;
+        }
+        blk.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<i32>() as f32 / (blk.len() - 1) as f32
+    };
+    let hi_l = ally_rows.min(row_centers.len());
+    (side(0, hi_l), side(hi_l, row_centers.len()))
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Native-resolution refinement (sub-working-pixel accuracy)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Base search radius (physical px) around each work-frame-derived edge —
+/// the radius scales with the downscale factor on top of this (the working
+/// frame's quantization error is up to one `scale`-px step per edge).
+const NATIVE_REFINE_RADIUS: i32 = 4;
+
+/// Re-measure the table's anchor features at FULL resolution inside a small
+/// ROI around a work-frame detection. Everything upstream ran on the ≤800-px
+/// working frame and maps back with `× scale` rounding — on a 3072-px
+/// capture (scale 4) that alone quantizes every edge and row center onto a
+/// 4-px grid, which read on screen as "the chips sit a couple of px off the
+/// table". This pass polishes, in order:
+///
+/// - the header band's top and bottom, via ROW-MEAN colors over each bar's
+///   span (averaging the whole span dilutes the white captions punched into
+///   the bars, so the means still classify with the same predicates);
+/// - the table's left/right edges and the team seam, via COLUMN-MEAN colors
+///   over the refined band rows;
+/// - the row grid, shifted by the header-bottom delta (its origin hangs off
+///   the band's bottom edge).
+///
+/// Every refinement is clamped to the ROI and silently keeps the incoming
+/// value whenever its feature is not found or fails a sanity check — a
+/// noisy or partially occluded frame degrades to the work-frame answer,
+/// never jumps somewhere else. Pure over the RGBA frame (unit-testable).
+pub(crate) fn refine_roster_native(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    det: &DetectedRoster,
+    header_bottom_prior: i32,
+) -> DetectedRoster {
+    let fw = width as i64;
+    let fh = height as i64;
+    let scale = width.div_ceil(MAX_WORK_WIDTH).max(1) as i64;
+    let radius: i64 = i64::from(NATIVE_REFINE_RADIUS) + 2 * scale;
+    if det.rect.width <= 0
+        || det.rect.height <= 0
+        || det.row_centers.is_empty()
+        || rgba.len() < (width as usize) * (height as usize) * 4
+    {
+        return det.clone();
+    }
+    let px = |x: i64, y: i64| -> Option<(i32, i32, i32)> {
+        if !(0..fw).contains(&x) || !(0..fh).contains(&y) {
+            return None;
+        }
+        let i = ((y * fw + x) * 4) as usize;
+        Some((rgba[i] as i32, rgba[i + 1] as i32, rgba[i + 2] as i32))
+    };
+    /// Mean color over a sampled pixel line, capped at ~96 samples so long
+    /// spans stay cheap. `len` is the line's full length (drives the stride).
+    fn mean_of(
+        pts: impl Iterator<Item = (i64, i64)>,
+        len: i64,
+        px: &impl Fn(i64, i64) -> Option<(i32, i32, i32)>,
+    ) -> Option<(i32, i32, i32)> {
+        if len <= 0 {
+            return None;
+        }
+        let step = (len / 96).max(1) as usize;
+        let (mut sr, mut sg, mut sb, mut n) = (0i64, 0i64, 0i64, 0i64);
+        for (a, b) in pts.step_by(step) {
+            if let Some((r, g, bl)) = px(a, b) {
+                sr += i64::from(r);
+                sg += i64::from(g);
+                sb += i64::from(bl);
+                n += 1;
+            }
+        }
+        (n > 0).then(|| ((sr / n) as i32, (sg / n) as i32, (sb / n) as i32))
+    }
+    let row_mean = |y: i64, x0: i64, x1: i64| mean_of((x0..x1).map(|x| (x, y)), x1 - x0, &px);
+    let col_mean = |x: i64, y0: i64, y1: i64| mean_of((y0..y1).map(|y| (x, y)), y1 - y0, &px);
+    let is_green = |c: (i32, i32, i32)| is_header_green(c.0 as i16, c.1 as i16, c.2 as i16);
+    let is_red = |c: (i32, i32, i32)| is_header_red(c.0 as i16, c.1 as i16, c.2 as i16);
+
+    // Bar spans for the row means, from the detected rect + split (the seam
+    // approximation only shifts which columns feed each mean — a couple of
+    // columns of the wrong bar dilute away in it).
+    let split = det.team_split.clamp(0.25, 0.75) as f64;
+    let gx0 = det.rect.x as i64;
+    let gx1 = (det.rect.x as f64 + det.rect.width as f64 * split) as i64;
+    let rx1 = (det.rect.x + det.rect.width) as i64;
+    let is_header_row = |y: i64| -> bool {
+        matches!(
+            (row_mean(y, gx0, gx1), row_mean(y, gx1, rx1)),
+            (Some(g), Some(r)) if is_green(g) && is_red(r)
+        )
+    };
+
+    // ── Header band top + bottom (the row grid hangs off the bottom) ──────
+    let y_lo = (det.rect.y as i64 - radius).max(0);
+    let y_scan_hi = (i64::from(header_bottom_prior) + radius)
+        .min(fh)
+        .max(y_lo + 1);
+    let mut new_top = det.rect.y as i64;
+    let mut new_bottom_excl = i64::from(header_bottom_prior);
+    if let Some(t0) = (y_lo..y_scan_hi).find(|&y| is_header_row(y)) {
+        let mut end = t0; // last header row, inclusive
+        let mut miss = 0i32;
+        for y in t0 + 1..y_scan_hi {
+            if is_header_row(y) {
+                end = y;
+                miss = 0;
+            } else {
+                miss += 1;
+                if miss >= 2 {
+                    break;
+                }
+            }
+        }
+        // A band thinner than two working rows is noise, not the header.
+        if end - t0 + 1 >= 2 * scale {
+            new_top = t0;
+            new_bottom_excl = end + 1;
+        }
+    }
+
+    // ── Left/right edges + seam via column means over the band rows ───────
+    let col_class = |x: i64| -> u8 {
+        match col_mean(x, new_top, new_bottom_excl) {
+            Some(c) if is_green(c) => 1,
+            Some(c) if is_red(c) => 2,
+            _ => 0,
+        }
+    };
+    let x_lo = (det.rect.x as i64 - radius).max(0);
+    let x_hi = (i64::from(det.rect.x + det.rect.width) + radius).min(fw);
+    // EXTREMES, not contiguous runs: the white captions punched into the
+    // middle of each bar leave a >100-column non-bar hole, so run extension
+    // would clip the bars at the caption. First/last classified columns are
+    // the bar edges (the surrounding scene is not bar-colored by the same
+    // predicates the detector itself uses).
+    let mut green_span: Option<(i64, i64)> = None;
+    let mut red_span: Option<(i64, i64)> = None;
+    for x in x_lo..x_hi {
+        match col_class(x) {
+            1 => {
+                green_span = Some(match green_span {
+                    Some((a, b)) => (a, b.max(x)),
+                    None => (x, x),
+                });
+            },
+            2 => {
+                red_span = Some(match red_span {
+                    Some((a, b)) => (a.min(x), b.max(x)),
+                    None => (x, x),
+                });
+            },
+            _ => {},
+        }
+    }
+
+    let mut out = det.clone();
+    if let (Some((gl, gr)), Some((rl, rr))) = (green_span, red_span) {
+        let new_width = rr - gl + 1;
+        let bars_hug = rl - gr <= (0.06 * f64::from(det.rect.width)).max(2.0 * scale as f64) as i64;
+        if new_width > 0 && (new_width - i64::from(det.rect.width)).abs() <= 2 * radius && bars_hug
+        {
+            let seam = (gr + rl) as f64 / 2.0;
+            let split_new = ((seam - gl as f64) / new_width as f64) as f32;
+            out.rect.x = gl as i32;
+            out.rect.width = new_width as i32;
+            if (0.30..=0.70).contains(&split_new) {
+                out.team_split = split_new;
+            }
+        }
+    }
+    // Top edge + the grid shift from the header-bottom delta (clamped to the
+    // ROI; a bottom that moved farther than that is a different feature).
+    let dy_top = (new_top - i64::from(det.rect.y)).clamp(-radius, radius) as i32;
+    if dy_top != 0 && det.rect.height - dy_top > 0 {
+        out.rect.y = (det.rect.y + dy_top).max(0);
+        out.rect.height -= dy_top;
+    }
+    let delta = (new_bottom_excl - i64::from(header_bottom_prior)).clamp(-radius, radius) as i32;
+    if delta != 0 {
+        out.row_centers = det
+            .row_centers
+            .iter()
+            .map(|c| (*c as f32 + delta as f32).round() as i32)
+            .collect();
+    }
+    out
 }
 
 /// Box-filter downscale to an RGB working image (alpha dropped, opaque).
@@ -654,7 +1008,7 @@ mod tests {
     /// Geometry mirrors the real client (~47% × table around 22% from top).
     /// Returns the frame plus the table rect in physical px.
     fn synth_header_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
-        synth_header_table_at(w, h, rows, 0)
+        synth_table(w, h, rows, 0, 0.92)
     }
 
     /// [`synth_header_table`] with the whole table drawn `x_shift` physical
@@ -666,6 +1020,19 @@ mod tests {
         h: u32,
         rows: usize,
         x_shift: i32,
+    ) -> (Vec<u8>, Rect, Vec<f32>) {
+        synth_table(w, h, rows, x_shift, 0.92)
+    }
+
+    /// [`synth_header_table`] with an explicit row-pitch factor (the ratio
+    /// measured across real clients spans 0.89–0.95; the fit tests draw
+    /// the extremes either side of the 0.92 prior).
+    fn synth_table(
+        w: u32,
+        h: u32,
+        rows: usize,
+        x_shift: i32,
+        pitch_factor: f32,
     ) -> (Vec<u8>, Rect, Vec<f32>) {
         let mut img = vec![0u8; (w * h * 4) as usize];
         let mut noise = Noise(0x1234_5678);
@@ -684,9 +1051,7 @@ mod tests {
         let ty = (h as f32 * 0.22) as u32;
         let seam = tx + tw / 2;
         let bar_h = (h as f32 * 0.028) as u32; // ≈ header bar height
-        // Real-client row pitch ≈ bar height × 0.92 (see PITCH_PER_HEADER) —
-        // the synthetic table must obey the same geometry.
-        let pitch = ((bar_h as f32 * 0.92) as u32).max(12);
+        let pitch = ((bar_h as f32 * pitch_factor) as u32).max(12);
         let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
             let i = ((y * w + x) * 4) as usize;
             img[i] = c.0;
@@ -1503,12 +1868,11 @@ mod tests {
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 12);
         let (band, det) = detect_roster_with_band(&img, w, h, (12, 12)).expect("detect");
-        // Same team sizes: the rebuild matches the detector's grid and rect
-        // (the phase refinement is a no-op on the clean synthetic table).
-        // Pitch compares within ±1 px: both paths round working-px centers
-        // to physical, so a fractional pitch (18.4 working × scale 2)
-        // alternates 18/19 deltas frame to frame.
-        let rebuilt = rebuild_roster_from_band(&band, w, h, (12, 12));
+        // Same team sizes: the rebuild (here without a measured-pitch hint)
+        // matches the detector's grid and rect. Pitch compares within ±1 px:
+        // both paths round working-px centers to physical, so a fractional
+        // pitch (18.4 working × scale 2) alternates 18/19 deltas.
+        let rebuilt = rebuild_roster_from_band(&band, w, h, (12, 12), None);
         assert_eq!(rebuilt.row_centers.len(), 24);
         let pitch_det = det.row_centers[1] - det.row_centers[0];
         let pitch_re = rebuilt.row_centers[1] - rebuilt.row_centers[0];
@@ -1520,18 +1884,137 @@ mod tests {
         assert_eq!(rebuilt.rect.x, det.rect.x);
         // New battle shape on the same window (7v7 after 12v12): the row
         // COUNT follows the new hint, the pitch does not move.
-        let small = rebuild_roster_from_band(&band, w, h, (6, 6));
+        let small = rebuild_roster_from_band(&band, w, h, (6, 6), None);
         assert_eq!(small.row_centers.len(), 12);
         assert!(
             (small.row_centers[1] - small.row_centers[0] - pitch_re).abs() <= 1,
             "rebuild pitch is uniform"
         );
         // Asym counts work per side.
-        let asym = rebuild_roster_from_band(&band, w, h, (12, 6));
+        let asym = rebuild_roster_from_band(&band, w, h, (12, 6), None);
         assert_eq!(asym.row_centers.len(), 18);
         // No hint → the same conservative 5+5 grid detect_roster uses.
-        let unhinted = rebuild_roster_from_band(&band, w, h, (0, 0));
+        let unhinted = rebuild_roster_from_band(&band, w, h, (0, 0), None);
         assert_eq!(unhinted.row_centers.len(), 10);
+    }
+
+    /// The rebuild with a MEASURED pitch hint keeps the pitch the frame
+    /// itself measured — not the constant prior. Drawn table at factor 0.97
+    /// (prior 0.92) on a 2560x1440 frame, where the ~1.2 px/row difference
+    /// between the two is unambiguous in the span average.
+    #[test]
+    fn rebuild_roster_from_band_keeps_the_measured_pitch() {
+        let (w, h) = (2560u32, 1440u32);
+        let (img, _, _) = synth_table(w, h, 12, 0, 0.97);
+        let (band, det) = detect_roster_with_band(&img, w, h, (12, 12)).expect("detect");
+        let measured = measured_pitch_from_centers(&det.row_centers, 12);
+        let span = |cs: &[i32]| (cs[cs.len() - 1] - cs[0]) as f32 / (cs.len() - 1) as f32;
+        let hinted = rebuild_roster_from_band(&band, w, h, (6, 6), Some(measured));
+        let prior = rebuild_roster_from_band(&band, w, h, (6, 6), None);
+        let pitch_hinted = span(&hinted.row_centers[..6]);
+        let pitch_prior = span(&prior.row_centers[..6]);
+        let pitch_det = span(&det.row_centers[..12]);
+        assert!(
+            (pitch_hinted - pitch_det).abs() <= 1.0,
+            "hinted {pitch_hinted} vs measured {pitch_det}"
+        );
+        assert!(
+            pitch_hinted > pitch_prior + 0.5,
+            "hinted pitch {pitch_hinted} must exceed the prior's {pitch_prior}"
+        );
+    }
+
+    /// The gap-based pitch fit replaces the constant ratio: tables drawn at
+    /// pitch factors either side of the 0.92 prior must have EVERY row (the
+    /// bottom ones included) land on the drawn centers — the old constant
+    /// accumulated its error downward (a 12-row table drifted ~1 pitch).
+    #[test]
+    fn adaptive_pitch_tracks_the_true_row_pitch() {
+        for factor in [0.86f32, 0.97f32] {
+            let (w, h) = (1280u32, 720u32);
+            let (img, _, centers) = synth_table(w, h, 12, 0, factor);
+            let det = detect_roster(&img, w, h, (12, 12)).expect("table must be detected");
+            assert_eq!(det.row_centers.len(), 24);
+            for (k, &c) in det.row_centers.iter().take(12).enumerate() {
+                assert!(
+                    (c as f32 - centers[k]).abs() <= 3.0,
+                    "factor {factor}: row {k}: {c} vs {}",
+                    centers[k]
+                );
+            }
+        }
+    }
+
+    /// The native refinement pins the table edges BETWEEN the working
+    /// frame's quantization steps: at 2560x1440 the work scale is 4, so the
+    /// unrefined detector can only ever emit coordinates on a 4-px grid.
+    /// Draw the table at a deliberately off-grid x — the refined rect must
+    /// land within 1 px.
+    #[test]
+    fn native_refinement_pins_edges_beyond_the_scale_grid() {
+        let (w, h) = (2560u32, 1440u32);
+        let scale = w.div_ceil(MAX_WORK_WIDTH) as i32;
+        let tx = (w as f32 * 0.26) as i32;
+        // Pick the nearest x that is NOT a multiple of the work scale.
+        let mut off_grid = tx + 1;
+        if off_grid.rem_euclid(scale) == 0 {
+            off_grid += 1;
+        }
+        assert_ne!(off_grid.rem_euclid(scale), 0, "fixture must be off-grid");
+        let (img, rect, centers) = synth_table(w, h, 6, off_grid - tx, 0.92);
+        assert_eq!(rect.x, off_grid);
+        let det = detect_roster(&img, w, h, (6, 6)).expect("table must be detected");
+        assert!(
+            (det.rect.x - off_grid).abs() <= 1,
+            "x: {off_grid} vs {:?}",
+            det.rect
+        );
+        assert!(
+            (det.rect.y - rect.y).abs() <= 1,
+            "y: {} vs {:?}",
+            rect.y,
+            det.rect
+        );
+        for (k, &c) in det.row_centers.iter().take(6).enumerate() {
+            assert!(
+                (c as f32 - centers[k]).abs() <= 3.0,
+                "row {k}: {c} vs {}",
+                centers[k]
+            );
+        }
+    }
+
+    /// Degenerate inputs never panic the refinement: an empty grid, a rect
+    /// outside the frame and a short buffer all come back untouched.
+    #[test]
+    fn native_refinement_degrades_to_the_input() {
+        let (w, h) = (2560u32, 1440u32);
+        let (img, _, _) = synth_header_table(w, h, 6);
+        let det = detect_roster(&img, w, h, (6, 6)).expect("detect");
+        let mut empty = det.clone();
+        empty.row_centers.clear();
+        let out = refine_roster_native(&img, w, h, &empty, det.rect.y + 40);
+        assert!(out.row_centers.is_empty());
+        // Short buffer → verbatim clone.
+        let out = refine_roster_native(&img[..16], w, h, &det, det.rect.y + 40);
+        assert_eq!(out.rect, det.rect);
+        assert_eq!(out.row_centers, det.row_centers);
+    }
+
+    /// `measured_pitch_from_centers` splits the blocks at the ally count and
+    /// averages each block's gaps; short blocks read as "no measurement".
+    #[test]
+    fn measured_pitch_splits_blocks_and_averages_gaps() {
+        // Allies 100/140/180 (pitch 40), enemies 100/175 (pitch 75).
+        let centers = vec![100, 140, 180, 100, 175];
+        let (l, r) = measured_pitch_from_centers(&centers, 3);
+        assert_eq!(l, 40.0);
+        assert_eq!(r, 75.0);
+        // Single-row blocks → (0, 0): no measurement.
+        let (l, r) = measured_pitch_from_centers(&[100, 100], 1);
+        assert_eq!((l, r), (0.0, 0.0));
+        // Empty → (0, 0).
+        assert_eq!(measured_pitch_from_centers(&[], 0), (0.0, 0.0));
     }
 
     #[test]

@@ -157,6 +157,10 @@
     "manualConfirm": "Confirm",
     "manualCancel": "Cancel",
     "manualTooSmall": "Selection is too small",
+    "manualShotHint": "Drag a box around the scoreboard area in the cached frame",
+    "manualGuides": "Guides & snap",
+    "manualShotFresh": "Cached frame · just now",
+    "manualShotAge": "Cached frame · {n} min ago",
     "param": {
       "mainGun": "Main",
       "secondary": "Secondary",

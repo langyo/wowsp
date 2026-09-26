@@ -157,6 +157,10 @@
     "manualConfirm": "确认",
     "manualCancel": "取消",
     "manualTooSmall": "选区太小",
+    "manualShotHint": "在缓存截屏上拖动，框选战绩表格区域",
+    "manualGuides": "辅助线吸附",
+    "manualShotFresh": "缓存截屏 · 刚刚",
+    "manualShotAge": "缓存截屏 · {n} 分钟前",
     "param": {
       "mainGun": "主炮",
       "secondary": "副炮",

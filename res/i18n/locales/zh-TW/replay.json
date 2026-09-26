@@ -157,6 +157,10 @@
     "manualConfirm": "確認",
     "manualCancel": "取消",
     "manualTooSmall": "選區太小",
+    "manualShotHint": "在快取截圖上拖曳，框選戰績表格區域",
+    "manualGuides": "輔助線吸附",
+    "manualShotFresh": "快取截圖 · 剛剛",
+    "manualShotAge": "快取截圖 · {n} 分鐘前",
     "param": {
       "mainGun": "主砲",
       "secondary": "副砲",

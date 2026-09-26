@@ -157,6 +157,10 @@
     "manualConfirm": "Подтвердить",
     "manualCancel": "Отмена",
     "manualTooSmall": "Область слишком мала",
+    "manualShotHint": "Выделите таблицу составов рамкой на кэшированном кадре",
+    "manualGuides": "Направляющие и привязка",
+    "manualShotFresh": "Кэшированный кадр · только что",
+    "manualShotAge": "Кэшированный кадр · {n} мин назад",
     "param": {
       "mainGun": "ГК",
       "secondary": "ПМК",

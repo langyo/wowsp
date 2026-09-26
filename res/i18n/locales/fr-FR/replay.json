@@ -157,6 +157,10 @@
     "manualConfirm": "Confirmer",
     "manualCancel": "Annuler",
     "manualTooSmall": "Sélection trop petite",
+    "manualShotHint": "Tracez un cadre autour du tableau des joueurs sur la capture en cache",
+    "manualGuides": "Guides et magnétisme",
+    "manualShotFresh": "Capture en cache · à l'instant",
+    "manualShotAge": "Capture en cache · il y a {n} min",
     "param": {
       "mainGun": "Artillerie principale",
       "secondary": "Artillerie secondaire",

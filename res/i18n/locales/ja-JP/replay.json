@@ -157,6 +157,10 @@
     "manualConfirm": "確認",
     "manualCancel": "キャンセル",
     "manualTooSmall": "選択範囲が小さすぎます",
+    "manualShotHint": "キャプチャ画像上をドラッグして成績テーブルを囲んでください",
+    "manualGuides": "ガイドとスナップ",
+    "manualShotFresh": "キャプチャ · たった今",
+    "manualShotAge": "キャプチャ · {n} 分前",
     "param": {
       "mainGun": "主砲",
       "secondary": "副砲",

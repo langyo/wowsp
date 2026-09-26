@@ -112,7 +112,8 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use wowsp_tauri_shared::{
-    CaptureResult, OverlayAnchor, OverlayState, OverlayStatus, Rect, TabRowOrder, TabRowPlayer,
+    CaptureResult, ManualLocateContext, ManualLocateGuides, OverlayAnchor, OverlayState,
+    OverlayStatus, Rect, TabRowOrder, TabRowPlayer,
 };
 
 use super::{overlay_detect, row_recognize};
@@ -379,6 +380,23 @@ fn post_create_window_setup(win: &tauri::WebviewWindow) {
 // Manual locate (screenshot-style drag box)
 // ─────────────────────────────────────────────────────────────────────────
 
+/// Per-edge tolerance (physical px) for "same game-window geometry" checks
+/// (pin validity, manual-anchor validity): DWM extended-frame bounds flap by
+/// a pixel or two across fullscreen transitions and focus switches WITHOUT
+/// the table moving relative to the window, and the exact-equality checks
+/// silently expired pins/anchors on it — a manual box the user just drew
+/// died to an invisible 1-px change.
+const RECT_JITTER_TOLERANCE_PX: i32 = 4;
+
+/// True when two game-window rects are the same geometry up to harmless
+/// DWM jitter (each edge within [`RECT_JITTER_TOLERANCE_PX`]).
+fn rect_same_within(a: &Rect, b: &Rect) -> bool {
+    (a.x - b.x).abs() <= RECT_JITTER_TOLERANCE_PX
+        && (a.y - b.y).abs() <= RECT_JITTER_TOLERANCE_PX
+        && (a.width - b.width).abs() <= RECT_JITTER_TOLERANCE_PX
+        && (a.height - b.height).abs() <= RECT_JITTER_TOLERANCE_PX
+}
+
 /// A user-drawn roster box, valid for ONE battle (arena stamp) on ONE
 /// game-window geometry. Held in the watcher's FSM ([`WatchFsm::
 /// manual_anchor`]): while the battle stamp and the game rect both still
@@ -390,7 +408,8 @@ struct ManualAnchor {
     /// new battle invalidates it.
     battle: i64,
     /// Game-window rect at draw time (physical screen px) — a moved or
-    /// resized game window invalidates it.
+    /// resized game window invalidates it (up to the jitter tolerance —
+    /// see [`rect_same_within`]).
     game_rect: Rect,
     /// The selection itself, PHYSICAL px relative to the game window's
     /// top-left corner (exactly what the picker webview submits).
@@ -434,7 +453,7 @@ fn manual_anchor_check(
         return ManualAnchorCheck::Stale;
     }
     match game_rect {
-        Some(r) if r == m.game_rect => ManualAnchorCheck::Live(m.clone(), r),
+        Some(r) if rect_same_within(&r, &m.game_rect) => ManualAnchorCheck::Live(m.clone(), r),
         Some(_) => ManualAnchorCheck::Stale,
         None => ManualAnchorCheck::Inert,
     }
@@ -598,9 +617,19 @@ fn post_create_manual_window_setup(win: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "windows"))]
 fn post_create_manual_window_setup(_win: &tauri::WebviewWindow) {}
 
-/// Open the manual-locate picker: a transparent, always-on-top, INTERACTIVE
-/// window placed exactly over the game rect (same Win32 geometry source as
-/// the Tab watcher), where the player drag-boxes the team table.
+/// Open the manual-locate picker. Two modes, decided before the window is
+/// shown:
+///
+/// - SCREENSHOT mode (preferred): a usable cached automatic capture exists
+///   (fresh + size-matched), or a FRESH capture shows the team header (the
+///   player is holding Tab in-game). The picker shows that frame with the
+///   detector's guides overlaid — see `manual_locate_context` — sized to
+///   the game monitor's WORK area, so the player boxes a STATIC, undimmed
+///   table without juggling Tab, focus and a transparent overlay.
+/// - LIVE mode (legacy fallback): no usable frame. The picker is a
+///   transparent, always-on-top, INTERACTIVE window placed exactly over
+///   the game rect, where the player drag-boxes the live table.
+///
 /// Single-instance — a call while one is open is a no-op. Requires a fresh
 /// battle roster and a resolvable game window.
 #[tauri::command]
@@ -618,7 +647,9 @@ pub async fn start_manual_locate(app: AppHandle, locale: Option<String>) -> Resu
         return Err("no fresh battle roster — manual locate unavailable".into());
     }
     #[cfg(target_os = "windows")]
-    let game_rect = rect_from_win32(find_game_window().ok_or("game window not found")?.rect);
+    let game = find_game_window().ok_or("game window not found")?;
+    #[cfg(target_os = "windows")]
+    let game_rect = rect_from_win32(game.rect);
     #[cfg(not(target_os = "windows"))]
     let game_rect = Rect {
         x: 0,
@@ -627,12 +658,30 @@ pub async fn start_manual_locate(app: AppHandle, locale: Option<String>) -> Resu
         height: 1,
     };
 
+    // Screenshot mode when a usable picker frame resolves — see
+    // `usable_picker_frame` (shared with the context command so the two
+    // decisions cannot drift apart).
+    #[cfg(target_os = "windows")]
+    let screenshot_mode = usable_picker_frame(&game).is_some();
+    #[cfg(not(target_os = "windows"))]
+    let screenshot_mode = false;
+
     // Same pre-rendered static page pattern as the overlay window (no Vue,
-    // instant first paint); the locale picks the hint/button copy.
+    // instant first paint); the locale picks the hint/button copy, and the
+    // decided MODE rides along so the page can tell "no frame because the
+    // backend chose live" from "frame lost between the two calls" (the
+    // latter closes itself — see the page's boot).
     let mut url = "/manual-locate.html".to_string();
+    let mut sep = "?";
     if let Some(l) = locale.as_deref().filter(|l| !l.is_empty()) {
-        url.push_str("?locale=");
+        url.push_str(sep);
+        url.push_str("locale=");
         url.push_str(l);
+        sep = "&";
+    }
+    if screenshot_mode {
+        url.push_str(sep);
+        url.push_str("mode=shot");
     }
     let win = WebviewWindowBuilder::new(&app, MANUAL_LOCATE_LABEL, WebviewUrl::App(url.into()))
         .title("WoWSP Manual Locate")
@@ -641,29 +690,224 @@ pub async fn start_manual_locate(app: AppHandle, locale: Option<String>) -> Resu
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .visible(false) // shown once placed over the game rect
+        .visible(false) // shown once placed
         .build()
         .map_err(|e| format!("create manual-locate window: {e}"))?;
     post_create_manual_window_setup(&win);
-    // Physical-pixel alignment with the game rect — the same rect the
-    // watcher BitBlts and places the overlay at. The one-shot interactive
-    // flow can afford Tauri's main-thread dispatch (unlike the watcher's
-    // hot path, which uses direct async Win32 calls).
-    let _ = win.set_position(tauri::PhysicalPosition::new(game_rect.x, game_rect.y));
-    let _ = win.set_size(tauri::PhysicalSize::new(
-        game_rect.width.max(1) as u32,
-        game_rect.height.max(1) as u32,
-    ));
-    win.show().map_err(|e| format!("show manual-locate: {e}"))?;
+    if screenshot_mode {
+        if let Err(e) = place_picker_window(&win, &game_rect) {
+            // Never leave a hidden zombie behind: the single-instance guard
+            // above would treat it as "already open" and silently swallow
+            // every later manual-locate click until restart.
+            destroy_manual_locate_window(&app);
+            return Err(e);
+        }
+    } else {
+        // Live mode: physical-pixel alignment with the game rect — the same
+        // rect the watcher BitBlts and places the overlay at, so page CSS
+        // px × devicePixelRatio map 1:1 onto the game's framebuffer.
+        let _ = win.set_position(tauri::PhysicalPosition::new(game_rect.x, game_rect.y));
+        let _ = win.set_size(tauri::PhysicalSize::new(
+            game_rect.width.max(1) as u32,
+            game_rect.height.max(1) as u32,
+        ));
+    }
+    if let Err(e) = win.show() {
+        // Same no-zombie rule as the placement failure above.
+        destroy_manual_locate_window(&app);
+        return Err(format!("show manual-locate: {e}"));
+    }
     let _ = win.set_focus();
     tracing::info!(
         rect = format!(
             "{}x{} at ({},{})",
             game_rect.width, game_rect.height, game_rect.x, game_rect.y
         ),
+        screenshot_mode,
         "manual-locate picker opened"
     );
     Ok(())
+}
+
+/// The frame the picker should anchor against, resolved the SAME way by
+/// `start_manual_locate` (mode decision) and `manual_locate_context`
+/// (payload build): the fresh cached automatic capture when one matches the
+/// current game window, else — only when a FRESH capture shows the team
+/// header (the player is holding Tab in-game; a frame WITHOUT the table is
+/// useless as a positioning reference and must not evict a good cache
+/// entry) — that capture, stored and returned. Windows-only.
+#[cfg(target_os = "windows")]
+fn usable_picker_frame(game: &GameWindow) -> Option<(Vec<u8>, u32, u32, u64, Rect)> {
+    let game_rect = rect_from_win32(game.rect);
+    if let Some(frame) = super::overlay_manual::fresh_frame_for(&game_rect) {
+        return Some(frame);
+    }
+    let (rgba, w, h) = capture_game_rgba(&game.rect)?;
+    if !overlay_detect::header_bars_present(&rgba, w, h) {
+        return None;
+    }
+    let at_ms = super::overlay_manual::store_capture(&rgba, w, h, game_rect);
+    Some((rgba, w, h, at_ms, game_rect))
+}
+
+/// Size + place the SCREENSHOT-mode picker on the game's monitor: the frame
+/// fitted into the monitor's WORK area (never over the taskbar), plus room
+/// for the page's toolbar. Everything in PHYSICAL px on purpose — the picker
+/// may sit on a different-scale monitor than the shell window, and the page
+/// maps its coordinates through its own CSS box (see `manual_locate_context`),
+/// so no logical/DPI unit is involved anywhere on this path.
+#[cfg(target_os = "windows")]
+fn place_picker_window(win: &tauri::WebviewWindow, game_rect: &Rect) -> Result<(), String> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    };
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+
+    unsafe {
+        let pt = POINT {
+            x: game_rect.x + game_rect.width / 2,
+            y: game_rect.y + game_rect.height / 2,
+        };
+        let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        let mut dpi_x = 96u32;
+        let mut dpi_y = 96u32;
+        let scale = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok()
+        {
+            f32::from(dpi_x as u16) / 96.0
+        } else {
+            1.0
+        };
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        let (wx, wy, ww, wh) = if GetMonitorInfoW(monitor, &mut mi).as_bool() {
+            (
+                mi.rcWork.left,
+                mi.rcWork.top,
+                mi.rcWork.right - mi.rcWork.left,
+                mi.rcWork.bottom - mi.rcWork.top,
+            )
+        } else {
+            (game_rect.x, game_rect.y, game_rect.width, game_rect.height)
+        };
+        let margin = (48.0 * scale).round() as i32;
+        let toolbar = (44.0 * scale).round() as i32;
+        let avail_w = (ww - 2 * margin).max(320);
+        let avail_h = (wh - 2 * margin - toolbar).max(200);
+        let fit = (f64::from(avail_w) / f64::from(game_rect.width.max(1)))
+            .min(f64::from(avail_h) / f64::from(game_rect.height.max(1)))
+            .min(1.0);
+        let win_w = ((f64::from(game_rect.width) * fit).round() as i32).max(320);
+        let win_h = ((f64::from(game_rect.height) * fit).round() as i32 + toolbar).max(240);
+        let x = wx + (ww - win_w) / 2;
+        let y = wy + (wh - win_h) / 2;
+        win.set_position(tauri::PhysicalPosition::new(x, y))
+            .map_err(|e| format!("place manual-locate: {e}"))?;
+        win.set_size(tauri::PhysicalSize::new(
+            win_w.max(1) as u32,
+            win_h.max(1) as u32,
+        ))
+        .map_err(|e| format!("size manual-locate: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Build the screenshot-mode context the picker page loads with: the cached
+/// automatic capture (downscaled to ≤1280 px wide, PNG, base64) plus the
+/// guides the detector finds on it RIGHT NOW (table rect, row lines, team
+/// seam). All heavy work runs once here, on a clone — the watcher's hot
+/// path never pays for the picker. No usable frame → all-None fields and
+/// the page runs the legacy live picker. Desktop only (the picker page
+/// itself never exists on mobile).
+#[tauri::command]
+pub async fn manual_locate_context() -> Result<ManualLocateContext, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let Some(game) = find_game_window() else {
+            return Ok(ManualLocateContext::default());
+        };
+        // Same resolver `start_manual_locate` based its window placement on
+        // (cache first, fresh-with-table-header fallback) — see
+        // `usable_picker_frame`.
+        let Some((rgba, w, h, at_ms, captured_rect)) = usable_picker_frame(&game) else {
+            return Ok(ManualLocateContext::default());
+        };
+        let team_sizes = super::arena_info::last_known_team_sizes();
+        let guides = match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes) {
+            Some((_, det)) => {
+                let seam = (det.rect.x as f64 + f64::from(det.rect.width) * det.team_split as f64)
+                    .round() as i32;
+                ManualLocateGuides {
+                    table_rect: Some(det.rect),
+                    row_lines: det.row_centers,
+                    seam_x: Some(seam),
+                }
+            },
+            None => ManualLocateGuides::default(),
+        };
+        let (image_base64, image_width, image_height) = encode_picker_image(&rgba, w, h);
+        Ok(ManualLocateContext {
+            image_base64,
+            image_width,
+            image_height,
+            phys_width: w,
+            phys_height: h,
+            captured_at_ms: Some(at_ms),
+            captured_game_rect: Some(captured_rect),
+            guides,
+        })
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(ManualLocateContext::default())
+    }
+}
+
+/// Transport encoding of the picker's background: integer-factor box-average
+/// downscale to at most 1280 px wide (the factor keeps the physical→image
+/// mapping exact), PNG, base64. `None` when encoding fails.
+#[cfg(target_os = "windows")]
+fn encode_picker_image(rgba: &[u8], w: u32, h: u32) -> (Option<String>, Option<u32>, Option<u32>) {
+    const PICKER_IMAGE_MAX_WIDTH: u32 = 1280;
+    let (buf, nw, nh) = if w > PICKER_IMAGE_MAX_WIDTH {
+        let factor = w.div_ceil(PICKER_IMAGE_MAX_WIDTH);
+        let nw = w / factor;
+        let nh = h / factor;
+        let mut out = vec![0u8; (nw * nh * 4) as usize];
+        for y in 0..nh {
+            for x in 0..nw {
+                let (mut sr, mut sg, mut sb) = (0u32, 0u32, 0u32);
+                let n = factor * factor;
+                for dy in 0..factor {
+                    for dx in 0..factor {
+                        let i = (((y * factor + dy) * w + x * factor + dx) * 4) as usize;
+                        sr += u32::from(rgba[i]);
+                        sg += u32::from(rgba[i + 1]);
+                        sb += u32::from(rgba[i + 2]);
+                    }
+                }
+                let o = ((y * nw + x) * 4) as usize;
+                out[o] = (sr / n).min(255) as u8;
+                out[o + 1] = (sg / n).min(255) as u8;
+                out[o + 2] = (sb / n).min(255) as u8;
+                out[o + 3] = 255;
+            }
+        }
+        (out, nw, nh)
+    } else {
+        (rgba.to_vec(), w, h)
+    };
+    let png = encode_png(&buf, nw, nh);
+    if png.is_empty() {
+        return (None, None, None);
+    }
+    (
+        Some(base64::engine::general_purpose::STANDARD.encode(png)),
+        Some(nw),
+        Some(nh),
+    )
 }
 
 /// Cancel + destroy the manual-locate picker without storing anything
@@ -835,14 +1079,18 @@ struct PinnedAnchor {
     anchor: OverlayAnchor,
 }
 
-/// Geometry-cache identity: the game window's rect AND its style bits. The
-/// rect alone misses a window-MODE switch (borderless ↔ windowed can keep
-/// the outer rect identical); `GWL_STYLE`/`GWL_EXSTYLE` change with it, so
-/// either mismatch retires the cache.
+/// Geometry-cache identity: the game window's SIZE and its style bits —
+/// deliberately NOT its origin. The cached band/grid is CAPTURE-relative
+/// (the capture always covers the clamped game rect), so a pure window
+/// MOVE leaves the pixel geometry identical and re-detecting would only
+/// burn a full scan (and flicker a re-acquisition). A size change — real
+/// resize, or the monitor-edge clamp biting differently — or a window-MODE
+/// switch (borderless ↔ windowed can keep the outer size while
+/// `GWL_STYLE`/`GWL_EXSTYLE` change) retires the cache.
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GeometryKey {
-    game_rect: Rect,
+    game_size: (i32, i32),
     style_bits: u64,
 }
 
@@ -1416,9 +1664,9 @@ fn held_status(pin_valid: bool, fallback_on_screen: bool) -> HeldStatus {
 
 /// Pure pin-validity rule (unit-testable): the pin applies to THIS battle
 /// on THIS game-window geometry and is a confirmed table detection. A new
-/// battle (arena stamp moved), a moved/resized game window, or a fallback
-/// anchor void it — and voiding it is exactly what re-arms the Searching
-/// report.
+/// battle (arena stamp moved), a real window move/resize (beyond the DWM
+/// jitter tolerance — see [`rect_same_within`]), or a fallback anchor void
+/// it — and voiding it is exactly what re-arms the Searching report.
 fn pin_matches(
     pin_battle: i64,
     pin_rect: &Rect,
@@ -1426,7 +1674,9 @@ fn pin_matches(
     battle: i64,
     game_rect: Option<Rect>,
 ) -> bool {
-    pin_table_detected && pin_battle == battle && game_rect.is_some_and(|r| r == *pin_rect)
+    pin_table_detected
+        && pin_battle == battle
+        && game_rect.is_some_and(|r| rect_same_within(&r, pin_rect))
 }
 
 /// Pure: does this `row_players` payload count as "no trusted row→name
@@ -1831,7 +2081,7 @@ fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
             return;
         }
     }
-    let Some((rgba, w, h)) = capture_game_rgba(&game.rect) else {
+    let Some((rgba, w, h)) = capture_game_rgba_cached(&game.rect) else {
         return;
     };
     let (roster, rows, split, ally_rows) = {
@@ -1873,6 +2123,10 @@ fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
             );
             fsm.geometry_cache = None;
             fsm.geometry_verify_fails = 0;
+            // Three misses ≈ the table itself moved (HUD phase switch):
+            // force the next tick's revalidation pass instead of waiting
+            // out the regular 5 s cadence with misplaced chips.
+            fsm.last_revalidate = None;
         }
         return;
     }
@@ -2124,7 +2378,8 @@ fn hide_overlay(_app: &AppHandle) {}
 #[cfg(target_os = "windows")]
 fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor> {
     let team_sizes = super::arena_info::last_known_team_sizes();
-    let Some((rgba, w, h)) = capture_game_rgba(&game.rect) else {
+    let game_rect = rect_from_win32(game.rect);
+    let Some((rgba, w, h)) = capture_game_rgba_cached(&game.rect) else {
         tracing::warn!("game window capture returned no pixels");
         return None;
     };
@@ -2140,7 +2395,7 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
     //    proof, so cache-hit frames pay no probe scan and no full-frame
     //    band search at all.
     let key = GeometryKey {
-        game_rect: rect_from_win32(game.rect),
+        game_size: (game_rect.width, game_rect.height),
         style_bits: window_style_bits(game.hwnd),
     };
     let mut verify_missed = false;
@@ -2150,8 +2405,8 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
             break 'cache None;
         };
         if cache.key != key {
-            // The window moved / resized / changed style: everything about
-            // the cached geometry is void — full re-detection on this frame.
+            // The window resized / changed style: everything about the
+            // cached geometry is void — full re-detection on this frame.
             tracing::info!("game window mode changed — roster geometry cache voided");
             fsm.geometry_cache = None;
             fsm.geometry_verify_fails = 0;
@@ -2165,8 +2420,19 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
             }
             // Same window, different battle shape (7v7 after 12v12):
             // rebuild the grid from the still-valid band — geometry, no
-            // frame scan.
-            let det = overlay_detect::rebuild_roster_from_band(&cache.band, w, h, team_sizes);
+            // frame scan — keeping the pitch the cached detection measured
+            // (per side; the two sub-tables can pitch differently).
+            let measured = overlay_detect::measured_pitch_from_centers(
+                &cache.roster.row_centers,
+                cache.team_sizes.0,
+            );
+            let det = overlay_detect::rebuild_roster_from_band(
+                &cache.band,
+                w,
+                h,
+                team_sizes,
+                Some(measured),
+            );
             cache.roster = det.clone();
             cache.team_sizes = team_sizes;
             break 'cache Some(det);
@@ -2184,6 +2450,11 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
             );
             fsm.geometry_cache = None;
             fsm.geometry_verify_fails = 0;
+            // The misses almost always mean the table itself moved (HUD
+            // phase switch): re-arm the pin revalidation so the very next
+            // tick re-detects, instead of leaving misplaced chips until
+            // the regular 5 s cadence comes around.
+            fsm.last_revalidate = None;
         } else {
             verify_missed = true;
         }
@@ -2287,13 +2558,8 @@ fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor
         })
         .map(|s| (Some(s.names), s.alive))
     };
-    let (overlay, mut anchor) = overlay_detect::build_anchor(
-        &rect_from_win32(game.rect),
-        &roster_rel,
-        rows,
-        split,
-        detected,
-    );
+    let (overlay, mut anchor) =
+        overlay_detect::build_anchor(&game_rect, &roster_rel, rows, split, detected);
     let (names, alive) = match row_state {
         Some((n, a)) => (Some(n), Some(a)),
         None => (None, None),
@@ -2357,7 +2623,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
             });
         };
         let team_sizes = super::arena_info::last_known_team_sizes();
-        let (anchor, png) = match capture_game_rgba(&game.rect) {
+        let (anchor, png) = match capture_game_rgba_cached(&game.rect) {
             Some((rgba, w, h)) => {
                 // Same dual-channel scene gate as `compute_anchor`: the HUD
                 // probe dims badly while Tab is held; the header bars are
@@ -2601,6 +2867,19 @@ fn window_bounds_clamped(
     }
 }
 
+/// Capture with the manual-locate cache refreshed: every automatic capture
+/// the watcher makes (detection passes, sink probes, the debug capture
+/// command) is remembered as the picker's positioning reference — see
+/// `commands/overlay_manual.rs`.
+#[cfg(target_os = "windows")]
+fn capture_game_rgba_cached(
+    rect: &windows::Win32::Foundation::RECT,
+) -> Option<(Vec<u8>, u32, u32)> {
+    let out = capture_game_rgba(rect)?;
+    super::overlay_manual::store_capture(&out.0, out.1, out.2, rect_from_win32(*rect));
+    Some(out)
+}
+
 /// GDI capture of a screen rect from the virtual-screen DC. Works for
 /// borderless / windowed-fullscreen games on any monitor (negative origins
 /// included); an exclusive-fullscreen swapchain may BitBlt black — the
@@ -2702,6 +2981,98 @@ fn capture_game_rgba(rect: &windows::Win32::Foundation::RECT) -> Option<(Vec<u8>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The exact game rect the anchors below were drawn against.
+    fn game_rect() -> Rect {
+        Rect {
+            x: -1280,
+            y: 216,
+            width: 2560,
+            height: 1440,
+        }
+    }
+
+    fn manual_anchor(battle: i64, rect: Rect) -> ManualAnchor {
+        ManualAnchor {
+            battle,
+            game_rect: rect,
+            rect: Rect {
+                x: 640,
+                y: 300,
+                width: 1200,
+                height: 620,
+            },
+            team_sizes: (7, 7),
+        }
+    }
+
+    /// DWM frame-bounds jitter (±1–4 px, no real move) must NOT expire a
+    /// manual anchor the user just drew — the old exact-equality check died
+    /// to it silently.
+    #[test]
+    fn manual_anchor_survives_dwm_jitter() {
+        let m = manual_anchor(42, game_rect());
+        for (dx, dy) in [(0, 1), (2, -2), (-4, 0), (3, 3)] {
+            let mut jittered = game_rect();
+            jittered.x += dx;
+            jittered.y += dy;
+            assert!(
+                matches!(
+                    manual_anchor_check(Some(&m), 42, Some(jittered)),
+                    ManualAnchorCheck::Live(_, _)
+                ),
+                "jitter ({dx},{dy}) must keep the anchor live"
+            );
+        }
+    }
+
+    #[test]
+    fn manual_anchor_expires_on_real_moves_and_new_battles() {
+        let m = manual_anchor(42, game_rect());
+        // A real move (beyond the tolerance) and a resize both expire.
+        let mut moved = game_rect();
+        moved.x += 40;
+        assert!(matches!(
+            manual_anchor_check(Some(&m), 42, Some(moved)),
+            ManualAnchorCheck::Stale
+        ));
+        let mut resized = game_rect();
+        resized.width -= 120;
+        assert!(matches!(
+            manual_anchor_check(Some(&m), 42, Some(resized)),
+            ManualAnchorCheck::Stale
+        ));
+        // New battle expires regardless of the rect.
+        assert!(matches!(
+            manual_anchor_check(Some(&m), 43, Some(game_rect())),
+            ManualAnchorCheck::Stale
+        ));
+        // Nothing stored / no rect this tick stay inert (never stale).
+        assert!(matches!(
+            manual_anchor_check(None, 42, Some(game_rect())),
+            ManualAnchorCheck::Inert
+        ));
+        assert!(matches!(
+            manual_anchor_check(Some(&m), 42, None),
+            ManualAnchorCheck::Inert
+        ));
+    }
+
+    /// Pin validity mirrors the manual anchor's: jitter keeps it, a real
+    /// move or a new battle voids it (re-arming the Searching report).
+    #[test]
+    fn pin_validity_uses_the_jitter_tolerance() {
+        let r = game_rect();
+        let mut jitter = r;
+        jitter.y -= 3;
+        assert!(pin_matches(7, &r, true, 7, Some(jitter)));
+        let mut moved = r;
+        moved.x -= 12;
+        assert!(!pin_matches(7, &r, true, 7, Some(moved)));
+        assert!(!pin_matches(7, &r, true, 8, Some(r)));
+        assert!(!pin_matches(7, &r, false, 7, Some(r)));
+        assert!(!pin_matches(7, &r, true, 7, None));
+    }
 
     /// Hand-built anchor for the recognition catch-up / transplant tests:
     /// only the fields those decisions read are varied.
@@ -3565,7 +3936,7 @@ mod tests {
         fsm.stale = true;
         fsm.geometry_cache = Some(GeometryCacheEntry {
             key: GeometryKey {
-                game_rect: game,
+                game_size: (game.width, game.height),
                 style_bits: 1,
             },
             band: overlay_detect::HeaderBand {
