@@ -91,6 +91,8 @@ pub mod overlay {
 pub mod overlay_config;
 #[cfg(desktop)]
 pub mod overlay_detect;
+#[cfg(desktop)]
+pub mod overlay_manual;
 pub mod packets;
 pub mod pairing;
 // LAN UDP discovery for pairing (desktop broadcaster + phone listener).

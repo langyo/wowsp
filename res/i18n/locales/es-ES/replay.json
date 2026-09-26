@@ -157,6 +157,10 @@
     "manualConfirm": "Confirmar",
     "manualCancel": "Cancelar",
     "manualTooSmall": "La selección es demasiado pequeña",
+    "manualShotHint": "Arrastra un recuadro sobre la tabla de jugadores en la captura en caché",
+    "manualGuides": "Guías y ajuste",
+    "manualShotFresh": "Captura en caché · ahora mismo",
+    "manualShotAge": "Captura en caché · hace {n} min",
     "param": {
       "mainGun": "Batería principal",
       "secondary": "Batería secundaria",

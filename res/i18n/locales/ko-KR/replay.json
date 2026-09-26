@@ -157,6 +157,10 @@
     "manualConfirm": "확인",
     "manualCancel": "취소",
     "manualTooSmall": "선택 영역이 너무 작습니다",
+    "manualShotHint": "캐즘 이미지에서 드래그해 전적 표를 선택하세요",
+    "manualGuides": "가이드 스냅",
+    "manualShotFresh": "캐즘 · 방금",
+    "manualShotAge": "캐즘 · {n}분 전",
     "param": {
       "mainGun": "주포",
       "secondary": "부포",

@@ -362,6 +362,62 @@ pub struct CaptureResult {
     pub anchor: Option<OverlayAnchor>,
 }
 
+/// Alignment guides the detector found on the manual-locate picker's cached
+/// frame, in PHYSICAL px relative to the capture's origin (the game window's
+/// top-left corner at capture time). The picker overlays them as snap
+/// targets for the drag box. All fields default-empty: a frame the detector
+/// could not read simply runs without guides.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualLocateGuides {
+    /// The detected table rectangle (header bar top → last row bottom,
+    /// green bar left → red bar right).
+    #[serde(default)]
+    pub table_rect: Option<Rect>,
+    /// Vertical center of each detected row — horizontal guide lines.
+    #[serde(default)]
+    pub row_lines: Vec<i32>,
+    /// The allies/enemies seam — a vertical guide line.
+    #[serde(default)]
+    pub seam_x: Option<i32>,
+}
+
+/// Screenshot-mode context for the manual-locate picker page: the LAST
+/// automatic capture (downscaled to ≤1280 px wide, PNG, base64) plus the
+/// guides the detector found on it. When `image_base64` is `None` no usable
+/// cached frame exists and the page falls back to the legacy live picker
+/// (a transparent window exactly over the game rect). Coordinates are
+/// PHYSICAL px relative to the capture origin; the page maps them through
+/// its own display scale, so the picker window's DPI never enters the math.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualLocateContext {
+    /// Base64 PNG of the cached frame (no data-URL prefix).
+    #[serde(default)]
+    pub image_base64: Option<String>,
+    /// PNG pixel size of `image_base64` (present iff the image is).
+    #[serde(default)]
+    pub image_width: Option<u32>,
+    #[serde(default)]
+    pub image_height: Option<u32>,
+    /// Capture size in PHYSICAL px — the coordinate space of `guides` and
+    /// the space the submitted selection maps back to. Zero when no image.
+    #[serde(default)]
+    pub phys_width: u32,
+    #[serde(default)]
+    pub phys_height: u32,
+    /// Wall-clock capture time (unix ms) — the picker shows the age.
+    #[serde(default)]
+    pub captured_at_ms: Option<u64>,
+    /// Game-window rect (physical screen px) the frame was captured from —
+    /// diagnostics; the selection itself is window-relative.
+    #[serde(default)]
+    pub captured_game_rect: Option<Rect>,
+    /// Pre-detected alignment guides on the cached frame.
+    #[serde(default)]
+    pub guides: ManualLocateGuides,
+}
+
 /// Everything the overlay window needs to align its stat chips with the
 /// in-game team list, produced by the roster detector on each Tab press.
 ///
