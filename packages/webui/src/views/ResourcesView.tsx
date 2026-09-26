@@ -30,6 +30,7 @@ import {
   type ModInstallRecord,
   type ModKind,
   type PackagePlan,
+  type StaleBinInfo,
   type TextureAnalysis,
 } from "@/api";
 import {
@@ -97,7 +98,9 @@ export default defineComponent({
     const plan = ref<PackagePlan | null>(null);
     const planError = ref("");
     const installing = ref(false);
-    const report = ref<{ name: string; count: number; version: string } | null>(null);
+    const report = ref<
+      { name: string; count: number; version: string; warnings: string[] } | null
+    >(null);
 
     // ── Online catalog state ──
     const catalog = ref<CatalogEntry[]>([]);
@@ -117,6 +120,13 @@ export default defineComponent({
     // Installed-unit actions: relPath → "toggle" | "uninstall".
     const unitBusy = ref(new Map<string, "toggle" | "uninstall">());
     const unitTarget = ref<InstalledMod | null>(null);
+
+    // Stale-bin migration: older `bin/<version>/res_mods` leftovers the
+    // game stopped loading after an update — surfaced so they can be moved
+    // into the current version instead of lingering as dead weight.
+    const staleBins = ref<StaleBinInfo[]>([]);
+    const migrateTarget = ref<StaleBinInfo | null>(null);
+    const migrating = ref(false);
 
     const gameRoot = computed(() => config.activeInstall?.path ?? "");
     const gameStatus = useGameStatusStore();
@@ -181,6 +191,7 @@ export default defineComponent({
       try {
         const r = await api.modCatalogInstall(entry.id, gameRoot.value);
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
+        for (const c of r.conflicts ?? []) toast.info(c);
         await Promise.all([scan(), loadRecords()]);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
@@ -267,8 +278,38 @@ export default defineComponent({
       scanning.value = true;
       try {
         installed.value = await api.modHubScanInstalled(gameRoot.value);
+        staleBins.value = await api.modHubStaleVersions(gameRoot.value).catch((e) => {
+          console.warn("stale-bin detection failed", e);
+          return [];
+        });
       } finally {
         scanning.value = false;
+      }
+    }
+
+    async function migrateStale() {
+      const target = migrateTarget.value;
+      if (!target || !gameRoot.value || migrating.value) return;
+      if (gameRunning()) {
+        migrateTarget.value = null;
+        return;
+      }
+      migrateTarget.value = null;
+      migrating.value = true;
+      try {
+        const r = await api.modHubMigrateStaleBin(gameRoot.value, target.binVersion);
+        toast.success(
+          t("resources.staleMigrated", {
+            moved: r.movedFiles,
+            to: r.toVersion,
+            skipped: r.skippedFiles,
+          }),
+        );
+        await Promise.all([scan(), loadRecords()]);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        migrating.value = false;
       }
     }
 
@@ -292,7 +333,12 @@ export default defineComponent({
       installing.value = true;
       try {
         const r = await api.modHubInstall(sourcePath.value.trim(), gameRoot.value, plan.value);
-        report.value = { name: r.name, count: r.wroteFiles, version: r.binVersion };
+        report.value = {
+          name: r.name,
+          count: r.wroteFiles,
+          version: r.binVersion,
+          warnings: r.warnings,
+        };
         plan.value = null;
         await Promise.all([scan(), loadRecords()]);
       } catch (e) {
@@ -820,6 +866,15 @@ export default defineComponent({
                   count: report.value.count,
                   version: report.value.version,
                 })}
+                {report.value.warnings.length > 0 && (
+                  <ul class="plan-card__warnings resources-report-warnings">
+                    {report.value.warnings.map((w, i) => (
+                      <li key={`${i}-${w}`}>
+                        <AlertTriangle size={12} /> {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
             {plan.value && (
@@ -928,6 +983,27 @@ export default defineComponent({
             <div class="resources-banner resources-banner--warn">
               <AlertTriangle size={16} />
               {t("resources.noGame")}
+            </div>
+          )}
+
+          {staleBins.value.length > 0 && gameRoot.value && (
+            <div class="resources-banner resources-banner--warn resources-banner--stale">
+              <AlertTriangle size={16} />
+              <span class="resources-banner__text">
+                {t("resources.staleBinBanner", {
+                  version: staleBins.value.map((b) => b.binVersion).join(", "),
+                  count: staleBins.value.reduce((n, b) => n + b.fileCount, 0),
+                })}
+              </span>
+              <HkButton
+                size="sm"
+                variant="primary"
+                disabled={migrating.value}
+                loading={migrating.value}
+                onClick={() => (migrateTarget.value = staleBins.value[0] ?? null)}
+              >
+                {t("resources.staleMigrate")}
+              </HkButton>
             </div>
           )}
 
@@ -1165,6 +1241,20 @@ export default defineComponent({
             onConfirm={uninstallMod}
             onUpdate:open={(v: boolean) => {
               if (!v) confirmTarget.value = null;
+            }}
+          />
+
+          <HkConfirmDialog
+            open={!!migrateTarget.value}
+            title={t("resources.staleMigrate")}
+            message={t("resources.confirmStaleMigrate", {
+              version: migrateTarget.value?.binVersion ?? "",
+              count: migrateTarget.value?.fileCount ?? 0,
+            })}
+            confirmLabel={t("resources.staleMigrate")}
+            onConfirm={migrateStale}
+            onUpdate:open={(v: boolean) => {
+              if (!v) migrateTarget.value = null;
             }}
           />
 

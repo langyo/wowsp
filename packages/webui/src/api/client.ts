@@ -1037,6 +1037,8 @@ export interface InstallReport {
   binVersion: string;
   wroteFiles: number;
   warnings: string[];
+  /** Which other installed mods this install overwrote files of. */
+  conflicts?: string[];
 }
 
 // ── Mod Hub online catalog (mirrors wowsp_tauri_shared, commands/mod_catalog.rs) ──
@@ -1097,6 +1099,24 @@ export interface ModInstallRecord {
   installedAt: string;
   files: string[];
   restoreDir?: string | null;
+}
+
+/** An older `bin/<version>/` whose `res_mods` still carries files —
+ *  stranded by a game update, invisible to the hub's installed list. */
+export interface StaleBinInfo {
+  binVersion: string;
+  /** Unit names the scanner recognizes in the stranded tree. */
+  mods: string[];
+  fileCount: number;
+}
+
+/** Result of migrating a stranded old-version `res_mods` into the current
+ *  one (keep-new: files the current tree already has stay untouched). */
+export interface MigrateReport {
+  fromVersion: string;
+  toVersion: string;
+  movedFiles: number;
+  skippedFiles: number;
 }
 
 /** Result of uninstalling a catalog mod. */
@@ -1535,6 +1555,15 @@ export const api = {
    *  snapshotted originals, syncs the Aslain manifest when relevant). */
   modHubUninstallUnit: (relPath: string, gameRoot: string) =>
     transport.invoke<UninstallReport>(RPC.mod_hub_uninstall_unit, { relPath, gameRoot }),
+  /** Older `bin/<version>` dirs whose res_mods still carries stranded mods. */
+  modHubStaleVersions: (gameRoot: string) =>
+    transport.invoke<StaleBinInfo[]>(RPC.mod_hub_stale_versions, { gameRoot }),
+  /** Move a stranded old-version res_mods into the current one (keep-new). */
+  modHubMigrateStaleBin: (gameRoot: string, fromVersion: string) =>
+    transport.invoke<MigrateReport>(RPC.mod_hub_migrate_stale_bin, {
+      gameRoot,
+      fromVersion,
+    }),
   // ── Mod Hub online catalog ──
   /** Fetch (or serve cached) `mod-index.json` from the mod-hub release. */
   modCatalogRefresh: (force: boolean) =>
