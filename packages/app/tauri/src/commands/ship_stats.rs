@@ -16,6 +16,7 @@ use wowsp_tauri_shared::{
     ShipStatsHistoryPoint, StatsSnapshot,
 };
 
+use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
 use super::trends::ExpectedValues;
 use super::wg_api::{ExpectedPrRow, PrAlgo};
 
@@ -58,9 +59,9 @@ pub async fn lookup_player_ship_stats(
                     p
                 })
                 .collect();
-            let _ = appdata_write(
-                cache_file.clone(),
-                serde_json::to_string(&enriched).unwrap_or_default(),
+            let _ = write_appdata_json(
+                &cache_file,
+                &serde_json::to_string(&enriched).unwrap_or_default(),
             );
             // Also append a per-ship history point so later lookups can
             // derive real "recent N days" deltas (WG has no per-battle API).
@@ -72,7 +73,7 @@ pub async fn lookup_player_ship_stats(
             // been written under the other PR algorithm; both algorithms are
             // pure functions of the stored counters, so re-derive instead of
             // serving a stale mixed rating.
-            if let Ok(Some(raw)) = appdata_read(cache_file) {
+            if let Ok(Some(raw)) = read_appdata_json(&cache_file) {
                 if let Ok(mut cached) = serde_json::from_str::<Vec<PlayerShipStats>>(&raw) {
                     for p in &mut cached {
                         apply_pr_algo(p, algo, &expected_table);
@@ -149,7 +150,7 @@ fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], 
         return;
     }
     let file = format!("ship-history/{realm}_{account_id}.json");
-    let mut history: Vec<ShipStatsHistoryPoint> = appdata_read(file.clone())
+    let mut history: Vec<ShipStatsHistoryPoint> = read_appdata_json(&file)
         .ok()
         .flatten()
         .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -172,7 +173,7 @@ fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], 
         let drop = history.len() - HISTORY_MAX_POINTS;
         history.drain(0..drop);
     }
-    let _ = appdata_write(file, serde_json::to_string(&history).unwrap_or_default());
+    let _ = write_appdata_json(&file, &serde_json::to_string(&history).unwrap_or_default());
 }
 
 fn career_totals(s: &PlayerShipStats) -> ShipCareerTotals {
@@ -196,7 +197,7 @@ pub async fn read_ship_stats_history(
     realm: String,
 ) -> Result<Vec<ShipStatsHistoryPoint>, String> {
     let file = format!("ship-history/{realm}_{account_id}.json");
-    Ok(appdata_read(file)
+    Ok(read_appdata_json(&file)
         .ok()
         .flatten()
         .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -232,7 +233,7 @@ pub async fn snapshot_player_stats(
     };
 
     let file = format!("snapshots/{realm}_{account_id}.json");
-    let mut history: Vec<StatsSnapshot> = appdata_read(file.clone())
+    let mut history: Vec<StatsSnapshot> = read_appdata_json(&file)
         .ok()
         .flatten()
         .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -243,14 +244,14 @@ pub async fn snapshot_player_stats(
         let drop = history.len() - 500;
         history.drain(0..drop);
     }
-    let _ = appdata_write(file, serde_json::to_string(&history).unwrap_or_default());
+    let _ = write_appdata_json(&file, &serde_json::to_string(&history).unwrap_or_default());
     Ok(snap)
 }
 
 /// Read the snapshot history for an account (used by the trends module).
 pub(crate) fn read_snapshots(realm: &str, account_id: i64) -> Vec<StatsSnapshot> {
     let file = format!("snapshots/{realm}_{account_id}.json");
-    appdata_read(file)
+    read_appdata_json(&file)
         .ok()
         .flatten()
         .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -577,7 +578,7 @@ impl From<&RawShipStats> for PlayerShipStats {
 fn load_ship_name_map() -> std::collections::HashMap<i64, String> {
     let mut map = std::collections::HashMap::new();
     // Scan all versioned encyclopedia cache files.
-    let dir = match appdata_dir() {
+    let dir = match appdata_dir_path() {
         Ok(d) => d.join("encyclopedia"),
         Err(_) => return map,
     };
@@ -619,7 +620,7 @@ fn load_ship_name_map() -> std::collections::HashMap<i64, String> {
 async fn get_game_version_cached() -> Result<GameVersionInfo, String> {
     // Delegate to the encyclopedia module's command logic by calling the
     // cache path directly first, then the live API.
-    if let Ok(Some(raw)) = appdata_read("encyclopedia/info.json".into()) {
+    if let Ok(Some(raw)) = read_appdata_json("encyclopedia/info.json") {
         if let Ok(v) = serde_json::from_str::<GameVersionInfo>(&raw) {
             return Ok(v);
         }
@@ -639,33 +640,6 @@ fn now_ts() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
-
-fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    // Same root as commands::appdata (paths.rs): identical %APPDATA%\WoWSP on
-    // Windows, Tauri-resolved app-private dir on Android.
-    crate::paths::ensure_data_dir()
-}
-
-fn appdata_read(file: String) -> Result<Option<String>, String> {
-    let path = appdata_dir()?.join(&file);
-    match fs::read_to_string(&path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("read {path:?}: {e}")),
-    }
-}
-
-fn appdata_write(file: String, content: String) -> Result<(), String> {
-    let dir = appdata_dir()?;
-    let path = dir.join(&file);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
-    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -844,7 +818,7 @@ mod tests {
     }
 
     fn read_history_file(file: &str) -> Vec<ShipStatsHistoryPoint> {
-        appdata_read(file.to_string())
+        read_appdata_json(file)
             .ok()
             .flatten()
             .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -860,7 +834,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let file = format!("ship-history/test_{ts}.json");
-        let _ = appdata_write(file.clone(), "[]".into());
+        let _ = write_appdata_json(&file, "[]");
 
         let t0: i64 = 1_700_000_000;
         append_ship_history("test", ts as i64, &[mk_stats(1, 100)], t0);
@@ -888,7 +862,7 @@ mod tests {
         assert_eq!(history[2].timestamp, t0 + 90_000);
         assert_eq!(history[2].ships[0].battles, 130);
 
-        let path = appdata_dir().unwrap().join(&file);
+        let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);
     }
 
@@ -902,7 +876,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let file = format!("ship-history/test_{ts}.json");
-        let _ = appdata_write(file.clone(), "[]".into());
+        let _ = write_appdata_json(&file, "[]");
 
         let t0: i64 = 1_700_000_000;
         // Empty fetch inside the merge window — must not wipe the good point.
@@ -914,7 +888,7 @@ mod tests {
         assert_eq!(history[0].timestamp, t0);
         assert_eq!(history[0].ships[0].battles, 100);
 
-        let path = appdata_dir().unwrap().join(&file);
+        let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);
     }
 
@@ -926,7 +900,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let file = format!("ship-history/test_{ts}.json");
-        let _ = appdata_write(file.clone(), "[]".into());
+        let _ = write_appdata_json(&file, "[]");
 
         let t0: i64 = 1_700_000_000;
         for i in 0..(HISTORY_MAX_POINTS as i64 + 5) {
@@ -944,7 +918,7 @@ mod tests {
             HISTORY_MAX_POINTS as i64 + 4,
         );
 
-        let path = appdata_dir().unwrap().join(&file);
+        let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);
     }
 
@@ -959,10 +933,10 @@ mod tests {
             .as_nanos();
         let file = format!("snapshots/test_{ts}.json");
         // Start clean.
-        let _ = appdata_write(file.clone(), "[]".into());
+        let _ = write_appdata_json(&file, "[]");
 
         for i in 0..3 {
-            let mut history: Vec<StatsSnapshot> = appdata_read(file.clone())
+            let mut history: Vec<StatsSnapshot> = read_appdata_json(&file)
                 .ok()
                 .flatten()
                 .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -976,10 +950,10 @@ mod tests {
                 avg_damage: 1000.0 * (i + 1) as f32,
                 pr: Some(1500),
             });
-            let _ = appdata_write(file.clone(), serde_json::to_string(&history).unwrap());
+            let _ = write_appdata_json(&file, &serde_json::to_string(&history).unwrap());
         }
 
-        let final_history: Vec<StatsSnapshot> = appdata_read(file.clone())
+        let final_history: Vec<StatsSnapshot> = read_appdata_json(&file)
             .ok()
             .flatten()
             .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -990,7 +964,7 @@ mod tests {
         assert_eq!(final_history[2].battles, 200);
 
         // Cleanup.
-        let path = appdata_dir().unwrap().join(&file);
+        let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);
     }
 }

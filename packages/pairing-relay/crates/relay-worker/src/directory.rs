@@ -70,7 +70,10 @@ impl DurableObject for Directory {
         let now = Date::now().as_millis();
         let (removed, next) = {
             let mut slot = self.dir.borrow_mut();
-            slot.as_mut().expect("directory hydrated").sweep(now)
+            let Some(dir) = slot.as_mut() else {
+                return not_hydrated();
+            };
+            dir.sweep(now)
         };
         let storage = self.state.storage();
         if !removed.is_empty() {
@@ -138,9 +141,10 @@ impl Directory {
         let mut rng = SystemCodeRng;
         let delta: Result<AllocateDelta, _> = {
             let mut slot = self.dir.borrow_mut();
-            slot.as_mut()
-                .expect("directory hydrated")
-                .allocate(now, &mut rng, room, host_id)
+            let Some(dir) = slot.as_mut() else {
+                return not_hydrated();
+            };
+            dir.allocate(now, &mut rng, room, host_id)
         };
         let storage = self.state.storage();
         let delta = match delta {
@@ -159,14 +163,13 @@ impl Directory {
         if !delta.removed.is_empty() {
             let _ = storage.delete_multiple(delta.removed.clone()).await;
         }
-        let next = self
-            .dir
-            .borrow()
-            .as_ref()
-            .expect("directory hydrated")
-            .entries()
-            .map(|(_, e)| e.expires_at)
-            .min();
+        let next = {
+            let slot = self.dir.borrow();
+            let Some(dir) = slot.as_ref() else {
+                return not_hydrated();
+            };
+            dir.entries().map(|(_, e)| e.expires_at).min()
+        };
         self.arm_alarm(next).await;
         Response::from_json(&serde_json::json!({ "code": delta.code }))
     }
@@ -182,9 +185,10 @@ impl Directory {
         let now = Date::now().as_millis();
         let (outcome, rate) = {
             let mut slot = self.dir.borrow_mut();
-            slot.as_mut()
-                .expect("directory hydrated")
-                .resolve(now, ip, code)
+            let Some(dir) = slot.as_mut() else {
+                return not_hydrated();
+            };
+            dir.resolve(now, ip, code)
         };
         let storage = self.state.storage();
         if rate.failures.is_empty() && rate.blocked_until.is_none() {
@@ -196,14 +200,14 @@ impl Directory {
             ResolveOutcome::Room(room) => {
                 // The resolve stamped resolved_by — persist the claim so
                 // it survives DO eviction for the code's whole TTL.
-                if let Some(entry) = self
-                    .dir
-                    .borrow()
-                    .as_ref()
-                    .expect("directory hydrated")
-                    .entry(code)
-                    .cloned()
-                {
+                let stamped = {
+                    let slot = self.dir.borrow();
+                    let Some(dir) = slot.as_ref() else {
+                        return not_hydrated();
+                    };
+                    dir.entry(code).cloned()
+                };
+                if let Some(entry) = stamped {
                     let _ = storage.put(&code_key(code), entry).await;
                 }
                 Response::from_json(&serde_json::json!({ "room": room }))
@@ -230,4 +234,13 @@ impl Directory {
 /// "room:<64hex>"); the storage row key is host_key_storage of this.
 fn host_storage_key_of(delta: &AllocateDelta) -> String {
     relay_core::directory::host_index_key(delta.entry.host_id.as_deref(), &delta.entry.room)
+}
+
+/// Error response for the (per the handlers' structure, unreachable) case of
+/// touching the directory before [`Directory::ensure_loaded`] has hydrated
+/// it. Handlers keep the ensure_loaded-then-use invariant, but a violation
+/// now surfaces as this file's plain-text 500 convention instead of a panic
+/// (which workerd reports as an opaque exception, swallowing any status).
+fn not_hydrated() -> Result<Response> {
+    Response::error("directory unavailable", 500)
 }

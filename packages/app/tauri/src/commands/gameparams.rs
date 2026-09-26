@@ -40,6 +40,8 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
+use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
+
 /// Extract one ship's GameParams subtree. `game_root` is the directory
 /// containing `bin/` (i.e. the WoWS install root, as detected by
 /// `detect_game_install`); the phone app always passes the empty string and
@@ -68,7 +70,7 @@ pub async fn get_ship_gameparams(
     }
 
     // 1. Cache hit?
-    if let Ok(Some(raw)) = appdata_read(cache_file.clone()) {
+    if let Ok(Some(raw)) = read_appdata_json(&cache_file) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
             return Ok(v);
         }
@@ -115,7 +117,7 @@ async fn ship_from_install_or_loose(
     let unpack_err = match unpacked {
         Ok(Ok(slice)) => {
             let serialized = serde_json::to_string(&slice).unwrap_or_default();
-            let _ = appdata_write(cache_file, serialized);
+            let _ = write_appdata_json(&cache_file, &serialized);
             return Ok(slice);
         },
         Ok(Err(e)) => e,
@@ -136,7 +138,7 @@ async fn ship_from_install_or_loose(
         let raw = fs::read_to_string(path).map_err(|e| format!("read GameParams.json: {e}"))?;
         let slice = extract_ship_slice(&raw, ship_id)?;
         let serialized = serde_json::to_string(&slice).unwrap_or_default();
-        let _ = appdata_write(cache_file, serialized);
+        let _ = write_appdata_json(&cache_file, &serialized);
         return Ok(slice);
     }
 
@@ -203,7 +205,7 @@ pub(crate) fn latest_build_with_idx(root: &Path) -> Option<u32> {
 /// filled. Best-effort: a failed wipe only means stale data until the next
 /// build change, never a hard error.
 fn invalidate_cache_on_build_change(build: u32) {
-    let marker = appdata_dir()
+    let marker = appdata_dir_path()
         .map(|d| d.join("gameparams").join("source-build.txt"))
         .ok();
     let Some(marker) = marker else { return };
@@ -214,7 +216,7 @@ fn invalidate_cache_on_build_change(build: u32) {
     if let Some(parent) = marker.parent() {
         let _ = fs::remove_dir_all(parent);
     }
-    let _ = appdata_write("gameparams/source-build.txt".to_string(), build.to_string());
+    let _ = write_appdata_json("gameparams/source-build.txt", &build.to_string());
 }
 
 /// Normalize the decoded GameParams pickle root to the params dict. The raw
@@ -270,7 +272,7 @@ pub async fn get_upgrade_prices(
     if let Some(build) = latest_build_with_idx(Path::new(&game_root)) {
         invalidate_cache_on_build_change(build);
     }
-    if let Ok(Some(raw)) = appdata_read("gameparams/upgrade-prices.json".into()) {
+    if let Ok(Some(raw)) = read_appdata_json("gameparams/upgrade-prices.json") {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
             return Ok(v);
         }
@@ -290,9 +292,9 @@ pub async fn get_upgrade_prices(
             .await
             .map_err(|e| format!("配件价格解包任务异常退出：{e}"))??;
 
-        let _ = appdata_write(
-            "gameparams/upgrade-prices.json".into(),
-            serde_json::to_string(&prices).unwrap_or_default(),
+        let _ = write_appdata_json(
+            "gameparams/upgrade-prices.json",
+            &serde_json::to_string(&prices).unwrap_or_default(),
         );
         Ok(prices)
     }
@@ -616,39 +618,6 @@ fn entry_matches_id(entry: &serde_json::Value, ship_id: i64) -> bool {
     false
 }
 
-// ── shared helpers (same pattern as encyclopedia.rs) ─────────────────────
-
-/// Resolves through `paths` (NOT `dirs_next` directly) so portable installs
-/// read/write `<exe>/data/` like every other appdata consumer — this used to
-/// hardcode %APPDATA%\WoWSP and silently split the gameparams cache across
-/// two roots in portable mode.
-fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    // Same root as commands::appdata (paths.rs): identical %APPDATA%\WoWSP on
-    // Windows, Tauri-resolved app-private dir on Android.
-    crate::paths::ensure_data_dir()
-}
-
-fn appdata_read(file: String) -> Result<Option<String>, String> {
-    let path = appdata_dir()?.join(&file);
-    match fs::read_to_string(&path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("read {path:?}: {e}")),
-    }
-}
-
-fn appdata_write(file: String, content: String) -> Result<(), String> {
-    let dir = appdata_dir()?;
-    let path = dir.join(&file);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
-    Ok(())
-}
-
 // ── bundled offline pack (mobile) ─────────────────────────────────────────
 
 /// Whether the bundled offline pack should shadow the pairing-synced
@@ -687,7 +656,7 @@ fn invalidate_synced_cache_behind_bundle(app: &tauri::AppHandle) {
     let Some(bundled) = bundled_pack_build(app) else {
         return;
     };
-    let synced = appdata_read("gameparams/source-build.txt".to_string())
+    let synced = read_appdata_json("gameparams/source-build.txt")
         .ok()
         .flatten()
         .and_then(|s| s.trim().parse::<u32>().ok());
@@ -699,13 +668,10 @@ fn invalidate_synced_cache_behind_bundle(app: &tauri::AppHandle) {
         synced_build = ?synced,
         "mobile: pairing-synced GameParams cache is older than the bundled pack — dropping stale slices"
     );
-    if let Ok(dir) = appdata_dir() {
+    if let Ok(dir) = appdata_dir_path() {
         let _ = fs::remove_dir_all(dir.join("gameparams"));
     }
-    let _ = appdata_write(
-        "gameparams/source-build.txt".to_string(),
-        bundled.to_string(),
-    );
+    let _ = write_appdata_json("gameparams/source-build.txt", &bundled.to_string());
 }
 
 /// Read a JSON file from the bundled frontend assets — the offline
