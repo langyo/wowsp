@@ -98,11 +98,5 @@
       height: auto;
       max-height: 46vh;
     }
-
-    /* The 160px card would eat ~40% of a phone-width board. */
-    &__minimap {
-      transform: scale(0.85);
-      transform-origin: bottom right;
-    }
   }
 }

@@ -34,7 +34,7 @@ export const router = createRouter({
     },
     {
       // Map tactics analysis over the active install's full map inventory
-      // (desktop app only — the sidebar hides the link on phones).
+      // (desktop app only).
       path: "/tactics",
       name: "tactics",
       component: () => import("@/views/replay/TacticsView"),

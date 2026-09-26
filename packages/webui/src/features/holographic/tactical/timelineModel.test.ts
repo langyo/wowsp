@@ -4,6 +4,7 @@ import {
   clampWindow,
   fmtClock,
   parseClock,
+  viewSummaryLabel,
   fullWindow,
   layoutMarkers,
   layoutPlanRows,
@@ -259,5 +260,21 @@ describe("planBandHeight", () => {
     const lanesH = planBandHeight(20, 20, 172, 320);
     expect(lanesH).toBe(320);
     expect(layoutPlanRows(planKeys(20), new Set(), lanesH).filter((r) => r.hidden)).toHaveLength(5);
+  });
+});
+
+describe("viewSummaryLabel", () => {
+  const full = { minX: 0, maxX: 1000, minZ: 0, maxZ: 1000 };
+
+  it("names the centred grid square (north = row 1) plus the zoom", () => {
+    expect(viewSummaryLabel({ cx: 50, cz: 950, scale: 1 }, full)).toBe("A1 · 100%");
+    expect(viewSummaryLabel({ cx: 950, cz: 50, scale: 4 }, full)).toBe("J10 · 400%");
+    expect(viewSummaryLabel({ cx: 500, cz: 500, scale: 2.5 }, full)).toBe("F6 · 250%");
+  });
+
+  it("clamps squares outside the map and falls back to zoom without bounds", () => {
+    expect(viewSummaryLabel({ cx: -999, cz: 9999, scale: 3 }, full)).toBe("A1 · 300%");
+    expect(viewSummaryLabel({ cx: 9999, cz: -999, scale: 3 }, full)).toBe("J10 · 300%");
+    expect(viewSummaryLabel({ cx: 100, cz: 100, scale: 1.22 }, null)).toBe("122%");
   });
 });

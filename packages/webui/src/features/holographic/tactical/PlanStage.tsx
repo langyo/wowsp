@@ -65,6 +65,8 @@ export default defineComponent({
   setup(props) {
     const artCanvas = ref<HTMLCanvasElement | null>(null);
     const stageRef = ref<HTMLDivElement | null>(null);
+    /** Live stage width (ResizeObserver) — sizes the overview card. */
+    const stageW = ref(0);
     /** Typed by the exposed surface only (defineExpose types don't
      *  propagate through InstanceType in TSX). */
     const boardRef = ref<{ flushDoc: () => void; reloadDoc: () => void } | null>(null);
@@ -210,6 +212,13 @@ export default defineComponent({
         };
       },
     };
+
+    /** Overview card scale rides the stage size: 1:1 from ~900px up, down to
+     *  0.72 on phones — the fixed 160px card would crowd a small board and
+     *  get lost on a 4K one. */
+    const minimapScale = computed(() =>
+      Math.min(1.25, Math.max(0.72, (stageW.value || 900) / 900)),
+    );
 
     // ── Overview card (hikari HMinimap): full-map art with the view window
     //    boxed + a zoom bar, so a zoomed-in author always knows where on the
@@ -451,7 +460,9 @@ export default defineComponent({
       loadMap();
       raf = requestAnimationFrame(frame);
       if (stageRef.value) {
-        ro = new ResizeObserver(() => {
+        ro = new ResizeObserver((entries) => {
+          const w = entries[0]?.contentRect.width ?? 0;
+          if (w > 0) stageW.value = w;
           dirty.value = true;
         });
         ro.observe(stageRef.value);
@@ -621,6 +632,7 @@ export default defineComponent({
                   planMode
                   dockSelector={`#${PLAN_DOCK_ID}`}
                   getBounds={tacticalBounds}
+                  getFullBounds={() => fullBounds.value}
                   getTime={boardProps.getTime}
                   getDuration={boardProps.getDuration}
                   getPlaying={boardProps.getPlaying}
@@ -639,6 +651,7 @@ export default defineComponent({
                 {minimap.value && (
                   <HMinimap
                     class="plan-stage__minimap"
+                    style={{ transform: `scale(${minimapScale.value})`, transformOrigin: "bottom right" }}
                     imageSrc={minimap.value.imageSrc}
                     imageBounds={{ x: 0, y: 0, w: 1, h: 1 }}
                     contentBounds={{ x: 0, y: 0, w: 1, h: 1 }}

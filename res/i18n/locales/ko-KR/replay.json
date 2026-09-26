@@ -321,7 +321,8 @@
       "presentStop": "프레젠테이션 중지",
       "empty": "단계 없음 — ＋로 설명 지점을 표시",
       "duplicate": "이 시점에는 이미 단계가 있습니다",
-      "updateView": "클릭: 이동 · Shift+클릭: 이 단계의 카메라 갱신"
+      "updateView": "클릭: 이동 · Shift+클릭: 이 단계의 카메라 갱신",
+      "noView": "카메라 없음(이동만)"
     },
     "view": {
       "reset": "보기 확대 초기화",

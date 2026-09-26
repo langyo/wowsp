@@ -321,7 +321,8 @@
       "presentStop": "Stop presentation",
       "empty": "No steps yet — mark explanation beats with ＋",
       "duplicate": "A step already exists at this moment",
-      "updateView": "Click: jump here · Shift+click: re-capture this step's camera"
+      "updateView": "Click: jump here · Shift+click: re-capture this step's camera",
+      "noView": "No camera (jump only)"
     },
     "view": {
       "reset": "Reset view zoom",

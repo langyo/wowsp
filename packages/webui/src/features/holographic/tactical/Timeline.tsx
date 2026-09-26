@@ -144,6 +144,12 @@ export default defineComponent({
       type: Function as PropType<(id: string, patch: { t0?: number; action?: TacticalActionKind }) => void>,
       default: undefined,
     },
+    /** Summary line for a step's captured camera (grid square + zoom) shown
+     *  on its ruler tooltip; absent hosts skip the line. */
+    viewLabelOf: {
+      type: Function as PropType<(view: { cx: number; cz: number; scale: number }) => string>,
+      default: undefined,
+    },
   },
   setup(props) {
     const wrapRef = ref<HTMLDivElement | null>(null);
@@ -323,7 +329,7 @@ export default defineComponent({
       }
       // Step pennants on the ruler.
       props.steps.forEach((s, i) => {
-        drawStepFlag(ctx, timeToX(s.t), RULER_H - 3, i === props.currentStepIndex);
+        drawStepFlag(ctx, timeToX(s.t), RULER_H - 3, i === props.currentStepIndex, s.view != null);
       });
 
       // Lanes band.
@@ -633,13 +639,22 @@ export default defineComponent({
         const d = Math.hypot(timeToX(s.t) - mx, RULER_H - 3 - my);
         if (d < bestD2) {
           bestD2 = d;
+          const lines = [
+            `${i18nT("replay.tactical.timeline.step")} ${s.name}`,
+            `T+${fmtClock(s.t)}`,
+          ];
+          if (s.view) {
+            if (props.viewLabelOf) lines.push(props.viewLabelOf(s.view));
+          } else {
+            lines.push(i18nT("replay.tactical.steps.noView"));
+          }
           bestStep = {
             kind: "step",
             id: s.id,
             index: i,
             x: timeToX(s.t),
             y: RULER_H - 3,
-            lines: [`${i18nT("replay.tactical.timeline.step")} ${s.name}`, `T+${fmtClock(s.t)}`],
+            lines,
           };
         }
       });

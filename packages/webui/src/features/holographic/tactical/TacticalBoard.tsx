@@ -22,6 +22,7 @@ import type { EntityTrajectory } from "@/api/client";
 import type { MapBounds } from "../modelLoader";
 import TacticalToolbar from "./TacticalToolbar";
 import Timeline, { type TimelineUserMarker } from "./Timeline";
+import { viewSummaryLabel } from "./timelineModel";
 import { useTactical } from "./useTactical";
 import type { ShipAction } from "./actions";
 import { planTracks as planTracksOf, type PlanTrack } from "./plan";
@@ -106,6 +107,12 @@ export default defineComponent({
     /** Toolbar + interactions visible; off = view-only annotations. */
     editMode: { type: Boolean, default: false },
     getBounds: { type: Function as PropType<() => MapBounds | null>, required: true },
+    /** FULL map bounds (grid squares are counted over the whole map —
+     *  getBounds returns the moving view window, useless for coordinates). */
+    getFullBounds: {
+      type: Function as PropType<() => MapBounds | null>,
+      default: undefined,
+    },
     getTime: { type: Function as PropType<() => number>, required: true },
     getDuration: { type: Function as PropType<() => number>, required: true },
     getPlaying: { type: Function as PropType<() => boolean>, required: true },
@@ -291,6 +298,14 @@ export default defineComponent({
       const el = store.elements.value.find((x) => x.id === id);
       if (!el || el.kind !== "marker") return null;
       return { t0: el.t0, action: el.action ?? null };
+    }
+
+    /** Step-camera summary for the timeline's ruler tooltips (grid square
+     *  of the view centre + zoom; zoom alone before bounds are ready). The
+     *  square needs the FULL map — through the view window it would always
+     *  read the centre cell. */
+    function viewLabelOf(view: { cx: number; cz: number; scale: number }): string {
+      return viewSummaryLabel(view, props.getFullBounds?.() ?? null);
     }
 
     /** Timeline action edit: retime / re-kind a keyframe (one undo step).
@@ -1530,6 +1545,7 @@ export default defineComponent({
                 onRenameUnit={renameUnit}
                 markerOf={markerOf}
                 onEditMarker={editMarker}
+                viewLabelOf={viewLabelOf}
               />
             </div>
             </Teleport>

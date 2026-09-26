@@ -4,6 +4,7 @@
  * collision-row assignment) are unit-testable without a canvas.
  */
 import type { ShipAction } from "./actions";
+import { GRID_LETTERS } from "./mapGrid";
 
 /** Zoom-in floor: the widest battle time one screen may ever show. */
 export const TIMELINE_MIN_SPAN_S = 15;
@@ -85,6 +86,25 @@ export function rulerTicks(
 export function fmtClock(t: number): string {
   const s = Math.max(0, Math.round(t));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** One-line summary of a captured presentation camera: the grid square it
+ *  centres on (the map's A–J/1–10 language, north = row 1) plus its zoom —
+ *  shown on the timeline's step flags. Falls back to the zoom alone when no
+ *  map bounds are available. */
+export function viewSummaryLabel(
+  view: { cx: number; cz: number; scale: number },
+  full: { minX: number; maxX: number; minZ: number; maxZ: number } | null,
+): string {
+  const zoom = `${Math.round(view.scale * 100)}%`;
+  if (!full) return zoom;
+  const w = full.maxX - full.minX || 1;
+  const h = full.maxZ - full.minZ || 1;
+  const col = GRID_LETTERS.charAt(
+    Math.max(0, Math.min(9, Math.floor(((view.cx - full.minX) / w) * 10))),
+  );
+  const row = 1 + Math.max(0, Math.min(9, Math.floor(((full.maxZ - view.cz) / h) * 10)));
+  return `${col}${row} · ${zoom}`;
 }
 
 /** Inverse of fmtClock for the action editor's input: accepts "M:SS",
