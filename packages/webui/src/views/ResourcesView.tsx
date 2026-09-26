@@ -128,6 +128,13 @@ export default defineComponent({
     const migrateTarget = ref<StaleBinInfo | null>(null);
     const migrating = ref(false);
 
+    // Safe mode: the whole current res_mods is quarantined under a
+    // `.wowsp-disabled` rename — one click to test the game fully vanilla
+    // (the fastest crash bisect), one click to bring everything back.
+    const safeMode = ref(false);
+    const safeModeAsk = ref<"on" | "off" | null>(null);
+    const safeModeBusy = ref(false);
+
     const gameRoot = computed(() => config.activeInstall?.path ?? "");
     const gameStatus = useGameStatusStore();
 
@@ -180,13 +187,20 @@ export default defineComponent({
       }
     }
 
-    const recordOf = (id: string) => records.value.find((r) => r.id === id);
+    /** The ledger is global: only records of THIS install (or legacy
+     *  unstamped ones) describe what is installed here. */
+    const recordOf = (id: string) =>
+      records.value.find(
+        (r) => r.id === id && (!r.gameRoot || r.gameRoot === gameRoot.value),
+      );
 
     /** Installed units are keyed by their primary path (unique per unit). */
     const unitKey = (m: InstalledMod) => m.relPath;
 
     async function installMod(entry: CatalogEntry) {
-      if (!gameRoot.value || busy.value.has(entry.id) || gameRunning()) return;
+      if (!gameRoot.value || busy.value.has(entry.id) || gameRunning() || safeModeBlocked()) {
+        return;
+      }
       busy.value.set(entry.id, "install");
       try {
         const r = await api.modCatalogInstall(entry.id, gameRoot.value);
@@ -204,7 +218,7 @@ export default defineComponent({
     async function uninstallMod() {
       const entry = confirmTarget.value;
       if (!entry || !gameRoot.value || busy.value.has(entry.id)) return;
-      if (gameRunning()) {
+      if (gameRunning() || safeModeBlocked()) {
         confirmTarget.value = null;
         return;
       }
@@ -230,7 +244,14 @@ export default defineComponent({
     // ── Installed-unit actions (temporary disable via `.bak`, uninstall) ──
 
     async function toggleUnit(mod: InstalledMod, enabled: boolean) {
-      if (!gameRoot.value || unitBusy.value.has(unitKey(mod)) || gameRunning()) return;
+      if (
+        !gameRoot.value ||
+        unitBusy.value.has(unitKey(mod)) ||
+        gameRunning() ||
+        safeModeBlocked()
+      ) {
+        return;
+      }
       unitBusy.value.set(unitKey(mod), "toggle");
       try {
         await api.modHubSetUnitEnabled(mod.relPath, gameRoot.value, enabled);
@@ -250,7 +271,7 @@ export default defineComponent({
     async function uninstallUnit() {
       const mod = unitTarget.value;
       if (!mod || !gameRoot.value || unitBusy.value.has(unitKey(mod))) return;
-      if (gameRunning()) {
+      if (gameRunning() || safeModeBlocked()) {
         unitTarget.value = null;
         return;
       }
@@ -282,6 +303,14 @@ export default defineComponent({
           console.warn("stale-bin detection failed", e);
           return [];
         });
+        safeMode.value = await api.modHubSafeMode(gameRoot.value).catch(() => false);
+        // Reconcile ghost ledger records (files gone from disk) and orphaned
+        // snapshot dirs; refresh the records list when something dropped.
+        const rec = await api.modHubReconcile(gameRoot.value).catch(() => null);
+        if (rec && rec.droppedRecords > 0) {
+          records.value = await api.modHubRecords().catch(() => []);
+          toast.info(t("resources.reconciled", { n: rec.droppedRecords }));
+        }
       } finally {
         scanning.value = false;
       }
@@ -290,7 +319,7 @@ export default defineComponent({
     async function migrateStale() {
       const target = migrateTarget.value;
       if (!target || !gameRoot.value || migrating.value) return;
-      if (gameRunning()) {
+      if (gameRunning() || safeModeBlocked()) {
         migrateTarget.value = null;
         return;
       }
@@ -313,6 +342,34 @@ export default defineComponent({
       }
     }
 
+    /** Mutations are refused while res_mods is quarantined — pre-check so
+     *  the localized message shows instead of the backend's English one. */
+    function safeModeBlocked(): boolean {
+      if (safeMode.value) {
+        toast.error(t("resources.safeModeBlock"));
+        return true;
+      }
+      return false;
+    }
+
+    async function doSafeMode() {
+      const dir = safeModeAsk.value;
+      safeModeAsk.value = null;
+      if (!dir || !gameRoot.value || safeModeBusy.value || gameRunning()) return;
+      safeModeBusy.value = true;
+      try {
+        const active = await api.modHubSetSafeMode(gameRoot.value, dir === "on");
+        toast.success(
+          active ? t("resources.safeModeOnDone") : t("resources.safeModeOffDone"),
+        );
+        await scan();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        safeModeBusy.value = false;
+      }
+    }
+
     async function analyze() {
       if (!sourcePath.value.trim() || analyzing.value) return;
       analyzing.value = true;
@@ -329,7 +386,7 @@ export default defineComponent({
     }
 
     async function confirmInstall() {
-      if (!plan.value || installing.value || gameRunning()) return;
+      if (!plan.value || installing.value || gameRunning() || safeModeBlocked()) return;
       installing.value = true;
       try {
         const r = await api.modHubInstall(sourcePath.value.trim(), gameRoot.value, plan.value);
@@ -787,6 +844,15 @@ export default defineComponent({
                 </span>
               </div>
             )}
+            {(mod.warnings ?? []).length > 0 && (
+              <ul class="plan-card__warnings">
+                {(mod.warnings ?? []).map((w, i) => (
+                  <li key={`${i}-${w}`}>
+                    <AlertTriangle size={12} /> {w}
+                  </li>
+                ))}
+              </ul>
+            )}
             {mod.textureAnalysis && renderTexAnalysis(mod.textureAnalysis)}
             {mod.detail && <div class="mod-detail__desc">{mod.detail}</div>}
             {mod.paths.length > 0 ? (
@@ -983,6 +1049,35 @@ export default defineComponent({
             <div class="resources-banner resources-banner--warn">
               <AlertTriangle size={16} />
               {t("resources.noGame")}
+            </div>
+          )}
+
+          {safeMode.value && gameRoot.value && (
+            <div class="resources-banner resources-banner--warn">
+              <AlertTriangle size={16} />
+              <span class="resources-banner__text">{t("resources.safeModeOn")}</span>
+              <HkButton
+                size="sm"
+                disabled={safeModeBusy.value}
+                loading={safeModeBusy.value}
+                onClick={() => (safeModeAsk.value = "off")}
+              >
+                {t("resources.safeModeExit")}
+              </HkButton>
+            </div>
+          )}
+
+          {!safeMode.value && gameRoot.value && installed.value.length > 0 && (
+            <div class="resources-banner">
+              <span class="resources-banner__text">{t("resources.safeModeHint")}</span>
+              <HkButton
+                size="sm"
+                disabled={safeModeBusy.value}
+                loading={safeModeBusy.value}
+                onClick={() => (safeModeAsk.value = "on")}
+              >
+                {t("resources.safeModeEnter")}
+              </HkButton>
             </div>
           )}
 
@@ -1241,6 +1336,23 @@ export default defineComponent({
             onConfirm={uninstallMod}
             onUpdate:open={(v: boolean) => {
               if (!v) confirmTarget.value = null;
+            }}
+          />
+
+          <HkConfirmDialog
+            open={!!safeModeAsk.value}
+            title={t(safeModeAsk.value === "on" ? "resources.safeModeEnter" : "resources.safeModeExit")}
+            message={t(
+              safeModeAsk.value === "on"
+                ? "resources.confirmSafeModeEnter"
+                : "resources.confirmSafeModeExit",
+            )}
+            confirmLabel={t(
+              safeModeAsk.value === "on" ? "resources.safeModeEnter" : "resources.safeModeExit",
+            )}
+            onConfirm={doSafeMode}
+            onUpdate:open={(v: boolean) => {
+              if (!v) safeModeAsk.value = null;
             }}
           />
 

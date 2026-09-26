@@ -1674,6 +1674,11 @@ pub struct InstalledMod {
     /// them (`.bak` suffix), not in the directory names.
     #[serde(default)]
     pub paths: Vec<String>,
+    /// Scan-time notices for this unit — e.g. another installed skin
+    /// overriding the same ship id. Absent when empty (wire-compatible
+    /// with older payloads).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
     /// True when every file of the unit carries a `.bak` suffix (temporarily
     /// disabled). The scan recognizes `.bak` files so units survive being
     /// disabled and can be re-enabled.
@@ -1825,6 +1830,10 @@ pub struct ModInstallRecord {
     pub files: Vec<String>,
     /// Where pre-overwrite snapshots of replaced files live, if any.
     pub restore_dir: Option<String>,
+    /// Game install this record belongs to (the game root path). Empty on
+    /// records written before the field existed — those match any root.
+    #[serde(default)]
+    pub game_root: String,
 }
 
 /// A `bin/<version>/` older than the client's current one whose `res_mods`
@@ -3692,9 +3701,27 @@ mod tests {
             paths: vec!["PnFMods/PJSB001".into()],
             disabled: false,
             version: None,
+            warnings: Vec::new(),
         };
         let v = round_trips(plain.clone());
         assert!(!v.as_object().unwrap().contains_key("textureAnalysis"));
+        // Empty warnings stay off the wire (older payloads have no such
+        // field and still deserialize).
+        assert!(!v.as_object().unwrap().contains_key("warnings"));
+        let legacy = serde_json::json!({
+            "kind": "skin",
+            "name": "old",
+            "detail": null,
+            "relPath": "x",
+            "paths": [],
+            "disabled": false,
+            "version": null
+        });
+        let back: InstalledMod = serde_json::from_value(legacy).unwrap();
+        assert!(back.warnings.is_empty());
+        let mut warned = plain.clone();
+        warned.warnings.push("conflict".into());
+        assert_eq!(round_trips(warned)["warnings"][0], "conflict");
         assert_eq!(v["relPath"], "PnFMods/PJSB001");
         assert_eq!(v["kind"], "skin");
 
@@ -3973,6 +4000,7 @@ mod tests {
             installed_at: "2026-09-26T12:00:00Z".into(),
             files: vec!["res_mods/0.15.7/gui/unbound/main.xml".into()],
             restore_dir: Some("backups/record-sentinel".into()),
+            game_root: "D:/Games/WoWs".into(),
         });
         assert_exact_keys(
             &v,
@@ -3987,6 +4015,7 @@ mod tests {
                 "installedAt",
                 "files",
                 "restoreDir",
+                "gameRoot",
             ],
         );
     }

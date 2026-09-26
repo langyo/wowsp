@@ -991,6 +991,8 @@ export interface TextureAnalysis {
 export interface InstalledMod {
   kind: ModKind;
   name: string;
+  /** Scan-time notices — e.g. another skin overriding the same ship id. */
+  warnings?: string[];
   /** PnF ship id / voice-over selector label, when the format carries one. */
   detail?: string | null;
   /** Structured content breakdown, `kind === "textures"` only. */
@@ -1099,6 +1101,8 @@ export interface ModInstallRecord {
   installedAt: string;
   files: string[];
   restoreDir?: string | null;
+  /** Game install this record belongs to (empty on legacy records). */
+  gameRoot?: string;
 }
 
 /** An older `bin/<version>/` whose `res_mods` still carries files —
@@ -1117,6 +1121,13 @@ export interface MigrateReport {
   toVersion: string;
   movedFiles: number;
   skippedFiles: number;
+}
+
+/** What a ledger reconciliation cleaned up (ghost records, orphan
+ *  snapshot dirs). */
+export interface ReconcileReport {
+  droppedRecords: number;
+  removedRestoreDirs: number;
 }
 
 /** Result of uninstalling a catalog mod. */
@@ -1564,6 +1575,16 @@ export const api = {
       gameRoot,
       fromVersion,
     }),
+  /** Is safe mode visible (current res_mods quarantined, or a stranded
+   *  twin in an old version dir)? */
+  modHubSafeMode: (gameRoot: string) =>
+    transport.invoke<boolean>(RPC.mod_hub_safe_mode, { gameRoot }),
+  /** Quarantine (or restore) the current res_mods in one atomic rename. */
+  modHubSetSafeMode: (gameRoot: string, enabled: boolean) =>
+    transport.invoke<boolean>(RPC.mod_hub_set_safe_mode, { gameRoot, enabled }),
+  /** Drop ghost ledger records and collect orphaned snapshot dirs. */
+  modHubReconcile: (gameRoot: string) =>
+    transport.invoke<ReconcileReport>(RPC.mod_hub_reconcile, { gameRoot }),
   // ── Mod Hub online catalog ──
   /** Fetch (or serve cached) `mod-index.json` from the mod-hub release. */
   modCatalogRefresh: (force: boolean) =>
