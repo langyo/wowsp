@@ -408,8 +408,9 @@ pub async fn pick_replay_files() -> Result<Vec<String>, String> {
     }
 }
 
-/// List `.wowsreplay` files under a directory (defaults to the detected game's
-/// `replays/` folder). Returns at most `limit` paths sorted newest-first.
+/// List `.wowsreplay` files under a directory (defaults to the resolved
+/// default replay dir — the unified game context's user-scoped order). Returns
+/// at most `limit` paths sorted newest-first.
 ///
 /// Async command + [`tokio::task::spawn_blocking`]: the recursive directory
 /// walk + per-file metadata reads are blocking I/O that must never run on the
@@ -772,19 +773,17 @@ fn parse_vehicle_entry(v: &serde_json::Value) -> Option<VehicleEntry> {
 }
 
 /// Default replay dir when neither an explicit `dir` nor the env pins name
-/// one. Desktop falls back to auto-detecting the game install (registry +
-/// Steam) and using its `replays/` folder — the common path when the frontend
-/// doesn't pass an explicit dir (e.g. CLI use, or a caller that didn't wire
-/// up the config store; the frontend normally passes the active install's
-/// path). Mobile replays live in the app-private managed dir
-/// (`<app_data>/replays`), filled by the pairing / import flow — there is no
-/// game install to auto-detect on a phone.
+/// one. Desktop resolves through the unified game context in its user-scoped
+/// order — the persisted active install, then the running client, then the
+/// first detected install — instead of blindly taking the first registry hit
+/// (on multi-install machines that could be a folder the user never selected
+/// and nothing is writing to). Mobile replays live in the app-private
+/// managed dir (`<app_data>/replays`), filled by the pairing / import flow —
+/// there is no game install to auto-detect on a phone.
 #[cfg(desktop)]
 fn default_replay_dir() -> Result<PathBuf, String> {
-    super::game_detect::scan_game_installs()
-        .into_iter()
-        .next()
-        .map(|detected| PathBuf::from(&detected.path).join("replays"))
+    super::game_context::resolve_root(super::game_context::RootPreference::PreferActive)
+        .map(|ctx| super::game_context::replays_dir(&ctx.root))
         .ok_or_else(|| {
             "no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into()
         })

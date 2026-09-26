@@ -36,30 +36,11 @@ const MOD_FILES: &[(&str, &str)] = &[
     ("WoWSP.py", include_str!("../../../mod_templates/WoWSP.py")),
 ];
 
-/// Locate the newest `bin/<version>/` directory in a game install (the client
-/// runs from the highest-numbered version dir).
-fn latest_bin_version(game_root: &str) -> Option<PathBuf> {
-    let bin = PathBuf::from(game_root).join("bin");
-    let mut newest: Option<(u64, PathBuf)> = None;
-    for ent in fs::read_dir(bin).ok()?.flatten() {
-        let name = ent.file_name();
-        let Some(name_str) = name.to_str() else {
-            continue;
-        };
-        if let Ok(n) = name_str.parse::<u64>() {
-            let path = ent.path();
-            if newest.as_ref().is_none_or(|(v, _)| n > *v) {
-                newest = Some((n, path));
-            }
-        }
-    }
-    newest.map(|(_, p)| p)
-}
-
+/// The res_mods target of a game install — the unified game context's
+/// `bin/<version>` selection (idx-carrying build preferred, numeric
+/// fallback).
 fn res_mods_dir(game_root: &str) -> Result<PathBuf, String> {
-    let ver = latest_bin_version(game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
-    Ok(ver.join("res_mods"))
+    super::game_context::res_mods_dir(std::path::Path::new(game_root))
 }
 
 /// Install the WoWSP overlay mod files into the game's res_mods. Returns the
@@ -69,7 +50,7 @@ fn res_mods_dir(game_root: &str) -> Result<PathBuf, String> {
 #[tauri::command]
 pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    super::mod_hub::ensure_game_closed()?;
+    super::mod_hub::ensure_game_closed(&game_root)?;
     let dir = res_mods_dir(&game_root)?;
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     for (name, body) in MOD_FILES {
@@ -83,7 +64,7 @@ pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    super::mod_hub::ensure_game_closed()?;
+    super::mod_hub::ensure_game_closed(&game_root)?;
     let dir = res_mods_dir(&game_root)?;
     for (name, _) in MOD_FILES {
         let path = dir.join(name);
@@ -114,8 +95,11 @@ mod tests {
         fs::create_dir_all(tmp.join("bin/12668706/res_mods")).unwrap();
         fs::create_dir_all(tmp.join("bin/12506899/res_mods")).unwrap();
         fs::create_dir_all(tmp.join("bin/notaversion")).unwrap();
-        let v = latest_bin_version(tmp.to_str().unwrap()).unwrap();
-        assert!(v.ends_with("12668706"), "got {v:?}");
+        let dir = res_mods_dir(tmp.to_str().unwrap()).unwrap();
+        assert!(
+            dir.ends_with(r"bin\12668706\res_mods") || dir.ends_with("bin/12668706/res_mods"),
+            "got {dir:?}"
+        );
         fs::remove_dir_all(&tmp).ok();
     }
 

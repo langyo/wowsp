@@ -54,10 +54,21 @@ export default defineComponent({
 
     const activePath = computed(() => gd.config.activeInstall?.path ?? "");
 
-    /** The realm to query live-roster stats against. Prefer the client
-     *  install's realm, then the bound account's realm, else the default. */
+    /** The folder live battle data comes from: while a client is actually
+     *  running, ITS replays folder is the one receiving tempArenaInfo.json
+     *  and the settling .wowsreplay — on multi-install machines that can
+     *  differ from the selected install, so the running process's folder
+     *  wins (mirrors the backend's live-order resolution). */
+    const liveRoot = computed(
+      () => gameStatus.process.matchedInstall?.path ?? activePath.value,
+    );
+
+    /** The realm to query live-roster stats against. Prefer the RUNNING
+     *  client's realm (the roster belongs to it), then the selected
+     *  install's, then the bound account's, else the default. */
     const realm = computed(
       () =>
+        gameStatus.process.matchedInstall?.realm ??
         gd.config.activeInstall?.realm ??
         accounts.activeAccount?.realm ??
         accounts.activeRealm ??
@@ -79,7 +90,7 @@ export default defineComponent({
     const livePhase = ref<"idle" | "battle" | "settling">("idle");
     let baselineFiles: Set<string> | null = null;
     async function snapshotReplayDir(): Promise<Set<string> | null> {
-      const dir = activePath.value ? replaysDir(activePath.value) : undefined;
+      const dir = liveRoot.value ? replaysDir(liveRoot.value) : undefined;
       try {
         const files = await api.listReplays(dir);
         return new Set(files);

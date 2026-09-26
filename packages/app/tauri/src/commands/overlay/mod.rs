@@ -192,6 +192,10 @@ const ANCHOR_REVALIDATE_INTERVAL: Duration = Duration::from_secs(5);
 const ARENA_FRESHNESS_SECS: u64 = 30 * 60;
 /// How often the cached game HWND is re-resolved.
 const HWND_REFRESH: Duration = Duration::from_secs(2);
+/// How often the arena watcher's target dir is re-checked against the
+/// resolved replay dir (follows the running client on multi-install
+/// machines). Same order as HWND_REFRESH — both take a Toolhelp snapshot.
+const WATCH_DIR_REFRESH: Duration = Duration::from_secs(2);
 /// While the overlay is shown with a confirmed pin, the SINK FAST-PATH runs
 /// at this cadence: one capture + a per-row strip-luma read (no OCR, no
 /// detection) at the pinned geometry. A ship sinking re-sorts the in-game

@@ -111,6 +111,14 @@ pub fn set_game_config(active_path: Option<String>) -> Result<GameConfigResponse
     Ok(GameConfigResponse { active_path })
 }
 
+/// The sanitized persisted active-install path for a given data dir — the
+/// read-only view the unified game context (`commands::game_context`) uses,
+/// so backend fallbacks and the webui selection agree on ONE install.
+/// `None` when unset, unreadable or garbage.
+pub(crate) fn persisted_active_path(dir: &Path) -> Option<String> {
+    load_from(dir)
+}
+
 /// Testable write core: sanitize → canonical TOML → atomic write → retire
 /// the legacy JSON twin (only after the write succeeded).
 fn set_from(dir: &Path, active_path: Option<String>) {

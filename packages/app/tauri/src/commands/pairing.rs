@@ -77,8 +77,9 @@ pub const GAMEDATA_SENTINEL: &str = ":gamedata:";
 
 /// The directory imported / pulled replays land in — the SAME directory the
 /// local listing reads, so a file that arrives is immediately visible:
-/// - desktop: the resolved default replay dir (explicit env override →
-///   auto-detected game install's `replays/`);
+/// - desktop: the resolved default replay dir (explicit env override → the
+///   unified game context's user-scoped order: persisted active install →
+///   running client → first detected install);
 /// - mobile: `<app_data>/replays` (there is no game install on a phone).
 pub(crate) fn managed_replays_dir() -> Result<PathBuf, String> {
     let dir = super::replay::resolve_replay_dir(None)?;
