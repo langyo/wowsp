@@ -10,6 +10,7 @@ pub mod changelog;
 pub mod encyclopedia;
 pub mod exports;
 pub mod game_config;
+pub mod game_context;
 pub mod game_detect;
 pub mod game_maps;
 pub mod gameparams;

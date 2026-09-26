@@ -45,6 +45,7 @@ import {
   type CatalogCat,
 } from "@/features/modhub/taxonomy";
 import { openExternal } from "@/utils/openExternal";
+import { sameGamePath } from "@/utils/gamePath";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { t } from "@/i18n";
@@ -129,20 +130,33 @@ export default defineComponent({
     const migrating = ref(false);
 
     // Safe mode: the whole current res_mods is quarantined under a
-    // `.wowsp-disabled` rename — one click to test the game fully vanilla
-    // (the fastest crash bisect), one click to bring everything back.
+    // `.wowsp-disabled` rename — one click to test the game with every
+    // res_mods mod bypassed (the fastest crash bisect), one click to bring
+    // everything back.
     const safeMode = ref(false);
     const safeModeAsk = ref<"on" | "off" | null>(null);
     const safeModeBusy = ref(false);
 
-    const gameRoot = computed(() => config.activeInstall?.path ?? "");
     const gameStatus = useGameStatusStore();
+    // The install every mod operation targets: the user's selection, with
+    // the RUNNING client's folder as the fallback (same order the ship
+    // detail uses) so the page keeps working when no selection is present.
+    const gameRoot = computed(
+      () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
+    );
 
-    /** Mutating res_mods while the client is running tears half-loaded mods —
-     *  the backend rejects it too; this pre-check gives the localized message
-     *  (and skips the round trip). */
+    /** Mutating res_mods while THAT client is running tears half-loaded
+     *  mods — the backend rejects it root-scoped; this pre-check mirrors
+     *  the same rule (a different client running elsewhere must not block
+     *  work on the selected install) and gives the localized message.
+     *  When the running process's folder is unknown, stay conservative and
+     *  block (the old blanket behavior). */
     function gameRunning(): boolean {
-      if (gameStatus.process.running) {
+      const runningRoot = gameStatus.process.matchedInstall?.path;
+      const targetsRunningClient =
+        gameStatus.process.running &&
+        (runningRoot === undefined || sameGamePath(gameRoot.value, runningRoot));
+      if (targetsRunningClient) {
         toast.error(t("resources.gameRunningBlock"));
         return true;
       }

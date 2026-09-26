@@ -157,17 +157,8 @@ pub async fn get_game_process(
 fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
     use wowsp_tauri_shared::{GameInstall, GameInstallKind};
 
+    let root = super::game_context::exe_game_root(exe)?;
     let norm = exe.replace('/', "\\");
-    let root = match norm.rfind("\\bin\\") {
-        Some(i) => norm[..i].to_string(),
-        None => {
-            let i = norm.rfind('\\')?;
-            norm[..i].to_string()
-        },
-    };
-    if root.is_empty() {
-        return None;
-    }
     let lower = norm.to_lowercase();
     let kind = if lower.contains("steamapps") {
         GameInstallKind::Steam
@@ -214,49 +205,24 @@ pub(crate) fn find_game_pid() -> Option<u32> {
     None
 }
 
-/// Find the PID of any running `WorldOfWarships.exe` / `WorldOfWarships64.exe`.
-/// Returns the first match (matches Starward's "first process" semantics —
-/// running two clients simultaneously is rare and would share a replay dir
-/// only if they're the same install anyway).
+/// Find the PID of the running client WoWSP should work with: the process
+/// backing the unified game context's live-monitoring root (see
+/// `commands::game_context`), falling back to the first
+/// `WorldOfWarships*.exe` in the snapshot. With several clients installed —
+/// or two running at once — capture, roster watching and the sidebar all
+/// follow the SAME client instead of diverging.
 #[cfg(target_os = "windows")]
 pub(crate) fn find_game_pid() -> Option<u32> {
-    use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-        TH32CS_SNAPPROCESS,
-    };
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
-        let mut entry = PROCESSENTRY32W {
-            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-            ..Default::default()
-        };
-        if Process32FirstW(snapshot, &mut entry).is_err() {
-            let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-            return None;
-        }
-        loop {
-            let name = String::from_utf16_lossy(&entry.szExeFile[..])
-                .trim_end_matches('\0')
-                .to_lowercase();
-            if name == "worldofwarships.exe" || name == "worldofwarships64.exe" {
-                let pid = entry.th32ProcessID;
-                let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-                return Some(pid);
-            }
-            if Process32NextW(snapshot, &mut entry).is_err() {
-                break;
-            }
-        }
-        let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-    }
-    None
+    super::game_context::preferred_game_pid()
 }
 
 /// Query the full image path of a process by PID. Uses
 /// `PROCESS_QUERY_LIMITED_INFORMATION` (available without elevation for
 /// processes owned by other users in the same session) + `QueryFullProcessImageNameW`.
+/// Shared with the unified game context, which resolves every running
+/// client's install folder from these paths.
 #[cfg(target_os = "windows")]
-fn query_process_image_path(pid: u32) -> Option<String> {
+pub(crate) fn query_process_image_path(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
         OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,

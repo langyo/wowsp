@@ -40,21 +40,12 @@ pub(crate) struct PlanApply {
     pub restore_dir: Option<PathBuf>,
 }
 
-/// Locate the newest numeric `bin/<version>/` dir. Same rule as the overlay
-/// mod installer — the client runs from the highest-numbered version dir.
+/// Locate the newest numeric `bin/<version>/` dir — the unified game
+/// context's rule (idx-carrying build preferred, numeric fallback), kept as
+/// a thin local shim returning `(version name, dir)` for the call sites.
 fn latest_bin_version(game_root: &str) -> Option<(String, PathBuf)> {
-    let bin = PathBuf::from(game_root).join("bin");
-    let mut newest: Option<(u64, PathBuf)> = None;
-    for ent in fs::read_dir(bin).ok()?.flatten() {
-        let name = ent.file_name();
-        let Ok(num) = name.to_string_lossy().parse::<u64>() else {
-            continue;
-        };
-        if newest.as_ref().is_none_or(|(v, _)| num > *v) {
-            newest = Some((num, ent.path()));
-        }
-    }
-    newest.map(|(n, p)| (n.to_string(), p))
+    super::game_context::latest_bin_dir(std::path::Path::new(game_root))
+        .map(|(n, p)| (n.to_string(), p))
 }
 
 /// Extract `<Name>value</Name>` of the first such tag (ASCII-case-insensitive).
@@ -95,15 +86,19 @@ fn find_pnf_main(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Refuse to mutate the game tree while the client is live: the game holds
-/// res_mods files open and re-reads them at every battle load, so mid-session
-/// writes, renames and deletes leave torn half-installed mods — the classic
-/// "the mod manager crashed my game" report. Aslain's installer guards the
-/// same way (it warns when the game is running before touching files).
-pub(crate) fn ensure_game_closed() -> Result<(), String> {
-    if let Some(pid) = super::appdata::find_game_pid() {
+/// Refuse to mutate a game tree while THAT client is live: the game holds
+/// its res_mods files open and re-reads them at every battle load, so
+/// mid-session writes, renames and deletes leave torn half-installed mods —
+/// the classic "the mod manager crashed my game" report. Aslain's installer
+/// guards the same way (it warns when the game is running before touching
+/// files). Root-scoped: a DIFFERENT client running elsewhere on a
+/// multi-install machine does not hold this tree open and must not block
+/// work on it (the unified game context resolves which folder each running
+/// process belongs to).
+pub(crate) fn ensure_game_closed(game_root: &str) -> Result<(), String> {
+    if let Some((pid, root)) = super::game_context::running_root_matching(game_root) {
         return Err(format!(
-            "World of Warships is running (pid {pid}) — close the game before installing, uninstalling or toggling mods"
+            "World of Warships is running from {root} (pid {pid}) — close that client before installing, uninstalling or toggling mods"
         ));
     }
     Ok(())
@@ -1270,7 +1265,7 @@ pub async fn mod_hub_set_unit_enabled(
     enabled: bool,
 ) -> Result<UnitToggleReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    ensure_game_closed()?;
+    ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
     let (bin_version, ver_dir) = latest_bin_version(&game_root)
         .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
@@ -1373,7 +1368,7 @@ pub async fn mod_hub_uninstall_unit(
     rel_path: String,
 ) -> Result<super::mod_catalog::UninstallReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    ensure_game_closed()?;
+    ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
     let res_mods = scan_root(&game_root)?;
     if !res_mods.is_dir() {
@@ -1643,7 +1638,7 @@ pub fn mod_hub_safe_mode(game_root: String) -> Result<bool, String> {
 #[tauri::command]
 pub async fn mod_hub_set_safe_mode(game_root: String, enabled: bool) -> Result<bool, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    ensure_game_closed()?;
+    ensure_game_closed(&game_root)?;
     set_safe_mode_core(&game_root, enabled)
 }
 
@@ -1731,7 +1726,7 @@ pub async fn mod_hub_migrate_stale_bin(
     from_version: String,
 ) -> Result<MigrateReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    ensure_game_closed()?;
+    ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
     migrate_stale_bin_core(&game_root, &from_version)
 }
@@ -2155,7 +2150,7 @@ pub async fn mod_hub_install(
     // Same gate as the catalog install: the plan's copy must not interleave
     // with another install's res_mods writes or a `.bak` rename sweep.
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    ensure_game_closed()?;
+    ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
     // Validate BEFORE any rewind happens: an invalid plan must not uninstall
     // the previous version only to fail afterwards.
