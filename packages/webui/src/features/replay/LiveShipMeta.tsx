@@ -20,7 +20,7 @@
  * Renders nothing when the ship is missing from the offline DBs (event ships
  * outside both sources).
  */
-import { computed, defineComponent, onBeforeUnmount, ref, Teleport, type CSSProperties } from "vue";
+import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, type CSSProperties } from "vue";
 import { Flag, Wrench } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -44,6 +44,7 @@ import {
   shipUpgradeLabel,
   tierRoman,
 } from "./shipLiveStats";
+import { LIVE_CARD_WIDTH_PX, placeLiveCard } from "./liveCardPlacement";
 import "./LiveShipMeta.scss";
 
 interface CommanderEntry {
@@ -116,6 +117,7 @@ export default defineComponent({
     // ── Flyout card ────────────────────────────────────────────────────────
     const flyoutOpen = ref(false);
     const flyoutPos = ref<CSSProperties>({});
+    const cardEl = ref<HTMLElement | null>(null);
     let showTimer: ReturnType<typeof setTimeout> | null = null;
     let inZone = false;
     let inCard = false;
@@ -129,18 +131,39 @@ export default defineComponent({
         // zero rect would clamp the card into a corner; skip and let the
         // next hover re-arm instead.
         if (!r.width && !r.height) return;
-        const width = 360;
-        const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-        // Below the strip; flip above when an estimated card height would
-        // overflow the bottom (the card itself scrolls if still too tall).
-        const estHeight = 420;
-        const below = r.bottom + 8;
-        const top =
-          below + estHeight < window.innerHeight
-            ? below
-            : Math.max(8, r.top - 8 - estHeight);
-        flyoutPos.value = { left: `${left}px`, top: `${top}px`, width: `${width}px` };
-        flyoutOpen.value = true;
+        // Render first (hidden), MEASURE the real box, then place: the
+        // card's height is content-driven (a capped max-height spec table),
+        // and an estimate flips sparse cards into thin air far above the
+        // anchor. The width rides along so height wraps at its final layout.
+        // An already-open card (pointer travelled card → strip) keeps its
+        // layout: measure in place instead of blinking through the hidden
+        // pass again.
+        if (!flyoutOpen.value) {
+          flyoutPos.value = {
+            left: "0px",
+            top: "0px",
+            width: `${LIVE_CARD_WIDTH_PX}px`,
+            visibility: "hidden",
+          };
+          flyoutOpen.value = true;
+        }
+        void nextTick(() => {
+          const card = cardEl.value;
+          if (!card) return;
+          const { left, top } = placeLiveCard(
+            r,
+            card.offsetWidth,
+            card.offsetHeight,
+            window.innerWidth,
+            window.innerHeight,
+          );
+          flyoutPos.value = {
+            left: `${Math.round(left)}px`,
+            top: `${Math.round(top)}px`,
+            width: `${LIVE_CARD_WIDTH_PX}px`,
+            visibility: "visible",
+          };
+        });
       }, 220);
     }
     function disarmZone() {
@@ -252,6 +275,7 @@ export default defineComponent({
       const flyout = flyoutOpen.value ? (
         <Teleport to="body">
           <div
+            ref={cardEl}
             class="live-ship-card"
             style={flyoutPos.value}
             onMouseenter={onCardEnter}
