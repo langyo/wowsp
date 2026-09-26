@@ -10,14 +10,19 @@ use crate::paths;
 
 /// Resolve the writable data root (`%APPDATA%/WoWSP/` locally, `<exe>/data/`
 /// in portable mode), creating it if missing.
-fn appdata_dir() -> Result<PathBuf, String> {
+///
+/// Shared by every command module that touches AppData-backed caches
+/// directly (encyclopedia / gameparams / ship_stats / trends) so they
+/// always resolve the same root as the `appdata_*` commands below —
+/// never `dirs_next` on its own.
+pub(crate) fn appdata_dir_path() -> Result<PathBuf, String> {
     paths::ensure_data_dir()
 }
 
-/// Read a JSON file from AppData. Returns None if the file doesn't exist yet.
-#[tauri::command]
-pub fn appdata_read(file: String) -> Result<Option<String>, String> {
-    let path = appdata_dir()?.join(&file);
+/// Read a file from the AppData root. Returns `None` when the file doesn't
+/// exist yet (the "no cache yet" state every consumer treats as empty).
+pub(crate) fn read_appdata_json(file: &str) -> Result<Option<String>, String> {
+    let path = appdata_dir_path()?.join(file);
     match fs::read_to_string(&path) {
         Ok(content) => Ok(Some(content)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -25,26 +30,39 @@ pub fn appdata_read(file: String) -> Result<Option<String>, String> {
     }
 }
 
-/// Write a JSON file to AppData (atomic: write to .tmp then rename).
-/// Creates intermediate subdirectories (e.g. `stats-cache/x.json`) as needed.
-#[tauri::command]
-pub fn appdata_write(file: String, content: String) -> Result<(), String> {
-    let dir = appdata_dir()?;
-    let path = dir.join(&file);
+/// Write a file under the AppData root (atomic: write to `.tmp` then
+/// rename). Creates intermediate subdirectories (e.g. `stats-cache/x.json`)
+/// as needed.
+pub(crate) fn write_appdata_json(file: &str, content: &str) -> Result<(), String> {
+    let dir = appdata_dir_path()?;
+    let path = dir.join(file);
     // Ensure any parent subdirectory (stats-cache/, snapshots/, ...) exists.
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
     }
     let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
+    fs::write(&tmp, content).map_err(|e| format!("write {tmp:?}: {e}"))?;
     fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
     Ok(())
+}
+
+/// Read a JSON file from AppData. Returns None if the file doesn't exist yet.
+#[tauri::command]
+pub fn appdata_read(file: String) -> Result<Option<String>, String> {
+    read_appdata_json(&file)
+}
+
+/// Write a JSON file to AppData (atomic: write to .tmp then rename).
+/// Creates intermediate subdirectories (e.g. `stats-cache/x.json`) as needed.
+#[tauri::command]
+pub fn appdata_write(file: String, content: String) -> Result<(), String> {
+    write_appdata_json(&file, &content)
 }
 
 /// Delete a file from AppData. Idempotent (missing file is OK).
 #[tauri::command]
 pub fn appdata_delete(file: String) -> Result<(), String> {
-    let path = appdata_dir()?.join(&file);
+    let path = appdata_dir_path()?.join(&file);
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),

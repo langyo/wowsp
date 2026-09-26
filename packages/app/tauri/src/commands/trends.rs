@@ -25,6 +25,8 @@ use wowsp_tauri_shared::{
     CommunityTrend, PatchNote, ShipServerStats, StatsSnapshot, TrendBucket, TrendResult,
 };
 
+use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
+
 /// Compute the per-version trend for a player. Reads snapshots from
 /// `ship-stats`'s persisted history and overlays any applicable patch notes.
 #[tauri::command]
@@ -55,7 +57,7 @@ pub fn get_community_ship_trend(ship_id: i64) -> CommunityTrend {
     // Check for a curated community cache (future: written by a server-side
     // aggregator). If absent, signal unavailable.
     let file = format!("community/{ship_id}.json");
-    if let Ok(Some(raw)) = appdata_read(file) {
+    if let Ok(Some(raw)) = read_appdata_json(&file) {
         if let Ok(v) = serde_json::from_str::<CommunityTrend>(&raw) {
             return v;
         }
@@ -160,12 +162,12 @@ pub(crate) async fn load_expected_values() -> Option<std::collections::HashMap<i
 }
 
 fn expected_values_path() -> Result<std::path::PathBuf, String> {
-    Ok(appdata_dir()?.join(EXPECTED_VALUES_FILE))
+    Ok(appdata_dir_path()?.join(EXPECTED_VALUES_FILE))
 }
 
 /// The cached expected-values document, any age. None when never fetched.
 fn read_expected_values() -> Option<String> {
-    appdata_read(EXPECTED_VALUES_FILE.into()).ok().flatten()
+    read_appdata_json(EXPECTED_VALUES_FILE).ok().flatten()
 }
 
 /// Whether the cache exists and was written within the TTL.
@@ -222,7 +224,7 @@ async fn fetch_and_cache_expected_values() -> Result<String, String> {
         .to_vec();
     let raw = String::from_utf8(bytes).map_err(|_| "expected-values: non-UTF8 body".to_string())?;
     validate_expected_values(&raw)?;
-    let _ = appdata_write(EXPECTED_VALUES_FILE.into(), raw.clone());
+    let _ = write_appdata_json(EXPECTED_VALUES_FILE, &raw);
     Ok(raw)
 }
 
@@ -309,39 +311,10 @@ fn mean(xs: &[f32]) -> f32 {
 /// Read `patches/index.json`. Returns an empty vec if absent (the default
 /// state — no patches curated yet).
 fn read_patch_index() -> Result<Vec<PatchNote>, String> {
-    match appdata_read("patches/index.json".into())? {
+    match read_appdata_json("patches/index.json")? {
         Some(raw) => Ok(serde_json::from_str(&raw).unwrap_or_default()),
         None => Ok(Vec::new()),
     }
-}
-
-// ── shared helpers (same pattern as other modules) ──────────────────────
-
-fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    // Same root as commands::appdata (paths.rs): identical %APPDATA%\WoWSP on
-    // Windows, Tauri-resolved app-private dir on Android.
-    crate::paths::ensure_data_dir()
-}
-
-fn appdata_read(file: String) -> Result<Option<String>, String> {
-    let path = appdata_dir()?.join(&file);
-    match fs::read_to_string(&path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("read {path:?}: {e}")),
-    }
-}
-
-fn appdata_write(file: String, content: String) -> Result<(), String> {
-    let dir = appdata_dir()?;
-    let path = dir.join(&file);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -524,10 +497,10 @@ mod tests {
             .as_nanos();
         // Write via the same path the fetcher caches to, then read back.
         let file = format!("community/expected-values-test_{ts}.json");
-        appdata_write(file.clone(), expected_values_doc()).unwrap();
-        let read = appdata_read(file.clone()).unwrap().unwrap();
+        write_appdata_json(&file, &expected_values_doc()).unwrap();
+        let read = read_appdata_json(&file).unwrap().unwrap();
         assert!(lookup_ship_server_stats(&read, 3374266064, true).is_some());
-        let path = appdata_dir().unwrap().join(&file);
+        let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);
     }
 }
