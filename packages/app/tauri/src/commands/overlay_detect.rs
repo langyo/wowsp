@@ -985,6 +985,596 @@ fn is_text_white(r: i16, g: i16, b: i16) -> bool {
     r.min(g).min(b) >= 170 && r.max(g).max(b) - r.min(g).min(b) <= 60
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Battle-scene gate
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Sample stride over the capture (physical px) for the scene probe.
+const SCENE_STEP: u32 = 4;
+/// The HP bar is a long run of saturated green in the bottom-left corner.
+/// Measured on a real 1080p client: it sits at ~78% of the frame height
+/// (x ~3-15%), so the band spans well around it.
+const HP_GREEN_MIN_RUN: u32 = 48;
+/// Vanilla rosters render small light ship silhouettes across the top of
+/// the screen. Detection is deliberately FUZZY and position-agnostic —
+/// roster placement differs between PvP / scenarios / co-op — so any icon-
+/// sized compact bright blob in the top band counts, wherever it sits.
+/// The size bounds reject broad sky/cloud expanses (too wide) and thin
+/// text strokes (too short).
+const ICON_MIN_W: u32 = 12;
+const ICON_MAX_W: u32 = 100;
+const ICON_MIN_H: u32 = 4;
+const ICON_MAX_H: u32 = 40;
+/// Bright threshold for icon pixels (silhouettes are near-white).
+const ICON_LUMA: u8 = 170;
+/// A full roster stacks many icons (PvP 5v5 -> 10+; scenarios fewer); a
+/// handful of ship-shaped blobs means a roster is on screen.
+const ICONS_MIN: u32 = 5;
+
+/// Green-dominance test for the HP bar, tolerant of the Tab dim: holding
+/// Tab darkens the bar from ≈ rgb(50,220,110) to ≈ rgb(28,68,56), and its
+/// vanilla hue is TEAL-ish (blue only slightly under green), so the old
+/// `g > b + 25` test matched only the pre-dim frame. Bluish water (blue
+/// over green) stays excluded.
+fn is_probe_green(r: i16, g: i16, b: i16) -> bool {
+    g > 55 && g >= r + 20 && g >= b - 10
+}
+
+/// True when the frame carries the in-battle HUD: the bottom-left health bar
+/// plus the vanilla team rosters' ship silhouettes across the top.
+/// None of these render outside the 3D scene — port, login and loading
+/// screens all fail this probe — so it gates the whole overlay.
+/// Components of the battle-HUD probe, logged on failure so real captures
+/// can be tuned from the dev console alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SceneProbe {
+    /// Long green run in the bottom-left corner (health bar).
+    pub hp_bar: bool,
+    /// Icon-sized bright blobs counted across the whole top band (ship
+    /// silhouettes of the team rosters, any roster layout).
+    pub icon_blobs: u32,
+}
+
+impl SceneProbe {
+    pub(crate) fn detected(&self) -> bool {
+        self.hp_bar && self.icon_blobs >= ICONS_MIN
+    }
+}
+
+pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneProbe {
+    let none = SceneProbe {
+        hp_bar: false,
+        icon_blobs: 0,
+    };
+    let px = |x: u32, y: u32| -> (u8, u8, u8) {
+        let i = ((y * width + x) * 4) as usize;
+        (rgba[i], rgba[i + 1], rgba[i + 2])
+    };
+
+    // ── HP bar: longest horizontal run of green in the bottom-left region ──
+    let x0 = width * 2 / 100;
+    let x1 = (width * 25 / 100).min(width.saturating_sub(1));
+    let y0 = height * 70 / 100;
+    let y1 = (height * 95 / 100).min(height.saturating_sub(1));
+    let mut hp_found = false;
+    if x1 > x0 && y1 > y0 {
+        'outer: for y in (y0..y1).step_by(SCENE_STEP as usize) {
+            let mut run = 0u32;
+            let mut best = 0u32;
+            for x in (x0..x1).step_by(SCENE_STEP as usize) {
+                let (r, g, b) = px(x, y);
+                if is_probe_green(r as i16, g as i16, b as i16) {
+                    run += SCENE_STEP;
+                    best = best.max(run);
+                } else {
+                    run = 0;
+                }
+            }
+            if best >= HP_GREEN_MIN_RUN {
+                hp_found = true;
+                break 'outer;
+            }
+        }
+    }
+    if !hp_found {
+        return none;
+    }
+
+    // ── Vanilla rosters: fuzzy ship-icon blobs across the whole top band ──
+    // Position-agnostic on purpose: scenario / co-op modes place their
+    // rosters differently from random battles, and mods may add their own
+    // bars — none of that may break the probe.
+    let icon_blobs = count_icon_blobs(
+        &px,
+        width * 2 / 100,
+        (width * 98 / 100).min(width.saturating_sub(1)),
+        height * 8 / 100,
+        (height * 35 / 100).min(height.saturating_sub(1)),
+    );
+    SceneProbe {
+        hp_bar: true,
+        icon_blobs,
+    }
+}
+
+/// Count compact bright blobs (ship silhouettes) in a region. A blob is a
+/// set of bright horizontal runs on adjacent scan rows whose x-ranges
+/// overlap; its size must fit the icon bounds, which rejects both broad
+/// sky/cloud areas and thin text strokes.
+fn count_icon_blobs(
+    px: &impl Fn(u32, u32) -> (u8, u8, u8),
+    x0: u32,
+    x1: u32,
+    y0: u32,
+    y1: u32,
+) -> u32 {
+    if x1 <= x0 || y1 <= y0 {
+        return 0;
+    }
+    // Collect bright runs per scan row: (y, x_start, x_end).
+    let mut runs: Vec<(u32, u32, u32)> = Vec::new();
+    for y in (y0..y1).step_by(SCENE_STEP as usize) {
+        let mut cur: Option<(u32, u32)> = None;
+        for x in (x0..x1).step_by(SCENE_STEP as usize) {
+            let (r, g, b) = px(x, y);
+            let luma = (u16::from(r) + u16::from(g) + u16::from(b)) / 3;
+            if luma >= u16::from(ICON_LUMA) {
+                cur = Some(match cur {
+                    Some((s, _)) => (s, x),
+                    None => (x, x),
+                });
+            } else if let Some((s, e)) = cur.take() {
+                if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
+                    runs.push((y, s, e));
+                }
+            }
+        }
+        if let Some((s, e)) = cur.take() {
+            if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
+                runs.push((y, s, e));
+            }
+        }
+    }
+    runs.sort_by_key(|&(y, xs, _)| (y, xs));
+
+    // Greedy vertical clustering: adjacent rows with overlapping x-ranges
+    // belong to the same blob.
+    let mut blobs = 0u32;
+    let mut open: Option<(u32, u32, u32, u32)> = None; // (y_last, x_min, x_max, y_first)
+    for (y, xs, xe) in runs {
+        open = match open {
+            Some((yl, xmin, xmax, yfirst))
+                if y - yl <= SCENE_STEP * 2 && xs <= xmax && xe >= xmin =>
+            {
+                Some((y, xmin.min(xs), xmax.max(xe), yfirst))
+            },
+            Some((yl, _xmin, _xmax, yfirst)) => {
+                let h = yl - yfirst;
+                if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
+                    blobs += 1;
+                }
+                Some((y, xs, xe, y))
+            },
+            None => Some((y, xs, xe, y)),
+        };
+    }
+    if let Some((yl, _xmin, _xmax, yfirst)) = open {
+        let h = yl - yfirst;
+        if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
+            blobs += 1;
+        }
+    }
+    blobs
+}
+
+/// Gate helper: the full HUD must be present.
+pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
+    probe_battle_scene(rgba, width, height).detected()
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Anchor construction (pure — unit-testable without Win32)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Vertical padding (physical px) added above/below the detected table when
+/// sizing the overlay window.
+pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
+    (roster.height / 8).clamp(24, 96)
+}
+
+/// Horizontal padding (physical px): WIDER than vertical because the stat
+/// chips render OUTSIDE the table's left/right edges (inside they cover the
+/// ship names) — the window must reserve a full chip width per side. The
+/// four-char seals recut onto one line (3:1 faces) roughly tripled each
+/// wide seal's footprint versus the old 2x2 face, so the floor rides up
+/// with them: at 150 px a hidden-profile 过街老鼠 chip (or any chip with a
+/// career + air + sub set) lost its outer seal flank.
+pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
+    (roster.width / 4).clamp(240, 440)
+}
+
+/// Build the overlay-window anchor from a detection relative to the game
+/// window: the overlay covers ONLY the table area (inflated by padding), and
+/// every coordinate is re-based to the overlay window's origin. Returns the
+/// anchor plus the overlay rect in SCREEN coordinates for window placement.
+pub(crate) fn build_anchor(
+    game_screen: &Rect,
+    roster_rel: &Rect,
+    mut row_centers: Vec<i32>,
+    team_split: f32,
+    table_detected: bool,
+) -> (Rect, wowsp_tauri_shared::OverlayAnchor) {
+    let pad = overlay_padding(roster_rel);
+    let padx = overlay_padding_x(roster_rel);
+    // Overlay rect in screen px: the table area inflated by the padding,
+    // clamped to stay inside the game window (multi-monitor safe — the game
+    // rect is already monitor-clamped).
+    let ox = (game_screen.x + roster_rel.x - padx).max(game_screen.x);
+    let oy = (game_screen.y + roster_rel.y - pad).max(game_screen.y);
+    let orx = game_screen.x + roster_rel.x + roster_rel.width + padx;
+    let ory = game_screen.y + roster_rel.y + roster_rel.height + pad;
+    let overlay = Rect {
+        x: ox,
+        y: oy,
+        width: (orx - ox).min(game_screen.x + game_screen.width - ox),
+        height: (ory - oy).min(game_screen.y + game_screen.height - oy),
+    };
+    // Re-base roster + rows to the overlay origin: overlay-relative =
+    // game-relative − (overlay origin − game origin).
+    let roster = Rect {
+        x: roster_rel.x - (ox - game_screen.x),
+        y: roster_rel.y - (oy - game_screen.y),
+        width: roster_rel.width,
+        height: roster_rel.height,
+    };
+    let dy = oy - game_screen.y;
+    row_centers.iter_mut().for_each(|c| *c -= dy);
+    let anchor = wowsp_tauri_shared::OverlayAnchor {
+        game_rect: *game_screen,
+        overlay_rect: overlay,
+        roster_rect: roster,
+        row_centers,
+        team_split,
+        table_detected,
+        // Anchors are built without recognition; the row→name pipeline in
+        // `row_recognize` fills `row_players` / `row_alive` afterwards when
+        // it ran (and flips `row_players_pending` with it — manual/automatic
+        // alike, pending never starts as true). `stale` is equally false at
+        // construction: it is a watcher-side pin flag (the sink probe / OCR
+        // re-map lifecycle), never a property of a fresh detection.
+        row_players: None,
+        row_alive: None,
+        row_players_pending: false,
+        stale: false,
+        // Set to the live settings mode at EMIT time (place_and_show) —
+        // construction-time anchors are mode-agnostic.
+        roster_mode: String::new(),
+    };
+    (overlay, anchor)
+}
+
+/// Fallback table geometry when detection fails on a real capture: a
+/// centered band matching the real client's proportions (~50% × 24% around
+/// 24% from the top) with rows spread per the expected team size. Way
+/// tighter than the old full-spread default, so even the fallback hugs the
+/// middle of the screen.
+pub(crate) fn fallback_roster(frame_w: i32, frame_h: i32, expected: usize) -> (Rect, Vec<i32>) {
+    let width = frame_w * 50 / 100;
+    let height = (frame_h * 8 / 100)
+        .max((expected as i32 * frame_h * 5 / 100).max(frame_h * 16 / 100))
+        // 12-row floor, same reasoning as MIN_WINDOW_ROWS: the fallback
+        // window must be able to carry a full 12v12 table's hint box.
+        .max(frame_h * 40 / 100);
+    let x = (frame_w - width) / 2;
+    let y = frame_h * 24 / 100;
+    let top = y + height / 6;
+    let bottom = y + height * 95 / 100;
+    let step = (bottom - top) / expected.max(1) as i32;
+    let rows = (0..expected)
+        .map(|i| top + step * i as i32 + step / 2)
+        .collect();
+    (
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        },
+        rows,
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pinned-anchor revalidation (pure decision — unit-testable)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Move threshold for replacing a pinned anchor: the fresh first row must sit
+/// more than HALF a row pitch away from the pinned one. Detector jitter (the
+/// per-side phase refinement shifts the grid by fractions of a pitch frame to
+/// frame) stays under it and keeps the pin — the whole point of the pin is
+/// that the chips never wander. A real layout switch crosses it: the panel
+/// moves as a WHOLE when HUD phases change (the countdown "waiting players"
+/// layout sits ~190 px ≈ 3.7 row pitches above the combat layout at
+/// 3072x1920) and sunk ships re-sort the rows.
+const ANCHOR_MOVE_HALF_PITCH: f32 = 0.5;
+
+/// Effective row pitch for the move test: the FRESH grid's first gap
+/// (`row_centers[1] − row_centers[0]`); grids with fewer than two rows fall
+/// back to the pinned grid's gap, then to roster height ÷ row count.
+/// Returns 0.0 when nothing yields a positive pitch (the caller then never
+/// reports movement).
+fn anchor_row_pitch(
+    fresh: &wowsp_tauri_shared::OverlayAnchor,
+    pinned: &wowsp_tauri_shared::OverlayAnchor,
+) -> f32 {
+    let first_gap =
+        |a: &wowsp_tauri_shared::OverlayAnchor| match (a.row_centers.first(), a.row_centers.get(1))
+        {
+            (Some(&r0), Some(&r1)) => (r1 - r0).abs() as f32,
+            _ => 0.0,
+        };
+    let pitch = match first_gap(fresh) {
+        p if p > 0.0 => p,
+        _ => match first_gap(pinned) {
+            p if p > 0.0 => p,
+            // Degenerate single-row grids on both sides: a coarse pitch from
+            // the taller roster rect over the longer row count.
+            _ => {
+                let rows = fresh.row_centers.len().max(pinned.row_centers.len()).max(1) as f32;
+                fresh.roster_rect.height.max(pinned.roster_rect.height) as f32 / rows
+            },
+        },
+    };
+    if pitch > 0.0 { pitch } else { 0.0 }
+}
+
+/// Whether a fresh detection of the SAME battle relocated the table enough to
+/// justify replacing the pinned anchor: the first row moved by more than half
+/// a row pitch (see [`ANCHOR_MOVE_HALF_PITCH`]). A fallback anchor
+/// (`table_detected == false`) never replaces a confirmed pin, and
+/// degenerate grids never count as movement.
+pub(crate) fn anchor_meaningfully_moved(
+    pinned: &wowsp_tauri_shared::OverlayAnchor,
+    fresh: &wowsp_tauri_shared::OverlayAnchor,
+) -> bool {
+    // A fallback anchor ("table not located" geometry) must never replace a
+    // pin that was itself a confirmed detection.
+    if !fresh.table_detected || pinned.row_centers.is_empty() || fresh.row_centers.is_empty() {
+        return false;
+    }
+    let pitch = anchor_row_pitch(fresh, pinned);
+    if pitch <= 0.0 {
+        return false;
+    }
+    let dy = (fresh.row_centers[0] - pinned.row_centers[0]).abs() as f32;
+    dy > pitch * ANCHOR_MOVE_HALF_PITCH
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Row name-strip cropping (row → name recognition pipeline)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Horizontal bounds of the player-name column INSIDE one sub-table half, as
+/// fractions of that half's width. The two halves are MIRRORED (measured on
+/// the #372 tab dumps, 3072x1920, countdown + combat layouts):
+///
+/// - ally half (left→right): icon column (~0–0.03), player nickname column
+///   (~0.04–0.37, long names ellipsized by the panel), ship silhouette
+///   (~0.42), ship name — the strip hugs the LEFT edge;
+/// - enemy half: ship name column (~0.09–0.27), ship silhouette, then the
+///   player nicknames RIGHT-ALIGNED near the outer edge (~0.64–0.93) — the
+///   strip hugs the RIGHT edge.
+///
+/// Both strips stop short of the silhouette/ship columns so the recognizer's
+/// input stays mostly nickname.
+const ALLY_NAME_STRIP_X0_FRAC: f32 = 0.02;
+const ALLY_NAME_STRIP_X1_FRAC: f32 = 0.40;
+const ENEMY_NAME_STRIP_X0_FRAC: f32 = 0.62;
+const ENEMY_NAME_STRIP_X1_FRAC: f32 = 0.96;
+
+/// Vertical half-extent of one row's name strip as a fraction of the row
+/// pitch. One row's glyphs sit well inside ±0.5 pitch; staying under it
+/// keeps the neighboring rows' text out of the crop (mis-pitching by half a
+/// row is exactly the wrong-name failure this pipeline fights).
+const NAME_STRIP_HALF_PITCH_FRAC: f32 = 0.42;
+
+/// One row's name-strip crop rectangle, PHYSICAL px relative to the CAPTURE
+/// (game window) origin — the same space `detect_roster` emits. `row` indexes
+/// `row_centers` (allies block first, then enemies — the anchor's order);
+/// `ally_rows` is the ally-block size (the roster's relation ≤ 1 count) and
+/// decides which half the row's strip sits in: allied names render in the
+/// left half, enemy names in the right half of the team split. Returns `None`
+/// for out-of-range rows and degenerate geometry.
+pub(crate) fn row_name_strip_rect(
+    roster: &Rect,
+    row_centers: &[i32],
+    team_split: f32,
+    ally_rows: usize,
+    row: usize,
+) -> Option<Rect> {
+    if row >= row_centers.len() {
+        return None;
+    }
+    // Block bounds within row_centers: allies [0, ally_rows), enemies
+    // [ally_rows, len). The split mirrors the frontend mapping (rows sliced
+    // at the roster's ally count) — a grid longer than the roster simply has
+    // an empty second block.
+    let (b0, b1) = if row < ally_rows {
+        (0, ally_rows.min(row_centers.len()))
+    } else {
+        (ally_rows, row_centers.len())
+    };
+    if b1 <= b0 {
+        return None;
+    }
+    let split = team_split.clamp(0.0, 1.0);
+    let (half_x0, half_w, x0_frac, x1_frac) = if row < ally_rows {
+        (
+            roster.x as f32,
+            roster.width as f32 * split,
+            ALLY_NAME_STRIP_X0_FRAC,
+            ALLY_NAME_STRIP_X1_FRAC,
+        )
+    } else {
+        (
+            roster.x as f32 + roster.width as f32 * split,
+            roster.width as f32 * (1.0 - split),
+            ENEMY_NAME_STRIP_X0_FRAC,
+            ENEMY_NAME_STRIP_X1_FRAC,
+        )
+    };
+    if half_w <= 0.0 {
+        return None;
+    }
+    let x0 = (half_x0 + half_w * x0_frac).round() as i32;
+    let x1 = (half_x0 + half_w * x1_frac).round() as i32;
+    // Row pitch from the row's own block neighbors (the two sub-tables can
+    // pitch differently); a single-row block falls back to a coarse
+    // roster-height estimate — rare (1v1), and the crop is frame-clamped
+    // either way.
+    let pitch = if b1 - b0 >= 2 {
+        if row + 1 < b1 {
+            (row_centers[row + 1] - row_centers[row]).abs()
+        } else {
+            (row_centers[row] - row_centers[row - 1]).abs()
+        }
+    } else {
+        (roster.height / (b1 - b0 + 1) as i32).max(1)
+    } as f32;
+    let half_pitch = pitch.max(1.0) * NAME_STRIP_HALF_PITCH_FRAC;
+    let cy = row_centers[row] as f32;
+    let y0 = (cy - half_pitch).round() as i32;
+    let y1 = (cy + half_pitch).round() as i32;
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    Some(Rect {
+        x: x0,
+        y: y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    })
+}
+
+/// Copy a sub-rectangle of an RGBA frame into a fresh, tightly-packed
+/// buffer. Clamps to the frame; returns `None` for empty results, negative
+/// overflow, or a buffer that does not back the given dimensions — the
+/// pipeline treats that as "no crop" rather than guessing or panicking.
+pub(crate) fn crop_rgba(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    rect: &Rect,
+) -> Option<(Vec<u8>, u32, u32)> {
+    if rect.width <= 0 || rect.height <= 0 {
+        return None;
+    }
+    if rgba.len() < (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let fx = width as i64;
+    let fy = height as i64;
+    let x0 = (rect.x as i64).clamp(0, fx);
+    let y0 = (rect.y as i64).clamp(0, fy);
+    let x1 = (rect.x as i64 + rect.width as i64).clamp(0, fx);
+    let y1 = (rect.y as i64 + rect.height as i64).clamp(0, fy);
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    let cw = (x1 - x0) as usize;
+    let ch = (y1 - y0) as usize;
+    let mut out = vec![0u8; cw * ch * 4];
+    for row in 0..ch {
+        let src = ((y0 as usize + row) * width as usize + x0 as usize) * 4;
+        let dst = row * cw * 4;
+        out[dst..dst + cw * 4].copy_from_slice(&rgba[src..src + cw * 4]);
+    }
+    Some((out, cw as u32, ch as u32))
+}
+
+/// Brightest-pixel luma of an RGBA name-strip crop — the "is this row
+/// alive?" signal. The Tab panel renders alive players' nicknames in
+/// near-white glyphs and sunk players' in dim gray, so the strip's MAXIMUM
+/// luma (the glyph cores, immune to the dark background) separates the two
+/// states cleanly: measured on the #372 tab dumps at 3072x1920, sunk rows
+/// peak at ≤ ~137 while every alive row — including the player's own
+/// highlight-dimmed row — reaches ≥ ~186. The 95th percentile behaves the
+/// same but adds nothing; the max is the cheaper and better-separated
+/// statistic.
+pub(crate) fn strip_max_luma(crop_rgba: &[u8]) -> f32 {
+    crop_rgba
+        .chunks_exact(4)
+        .map(|p| 0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2]))
+        .fold(0.0f32, f32::max)
+}
+
+/// Luma midpoint between the measured populations (sunk ≤ ~137, alive
+/// ≥ ~186 on 3072x1920 dumps; a half-resolution capture halves neither —
+/// glyphs saturate at 255 either way). Rows at or above it read as alive.
+pub(crate) const SUNK_ROW_MAX_LUMA: f32 = 160.0;
+
+/// Classify one row's strip: alive unless the brightest glyph core stayed
+/// clearly under the near-white alive population. Pure companion of
+/// [`strip_max_luma`] so the threshold decision is unit-testable alone.
+pub(crate) fn row_strip_alive(max_luma: f32) -> bool {
+    max_luma >= SUNK_ROW_MAX_LUMA
+}
+
+/// Name-strip crops for every row of a detected table, in `row_centers`
+/// order. Elements are `None` for rows whose strip leaves the frame — the
+/// recognition pipeline reads those as "unrecognized", never guesses.
+pub(crate) fn crop_row_name_strips(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    roster: &Rect,
+    row_centers: &[i32],
+    team_split: f32,
+    ally_rows: usize,
+) -> Vec<Option<(Vec<u8>, u32, u32)>> {
+    (0..row_centers.len())
+        .map(|row| {
+            row_name_strip_rect(roster, row_centers, team_split, ally_rows, row)
+                .and_then(|rect| crop_rgba(rgba, width, height, &rect))
+        })
+        .collect()
+}
+
+/// Per-row alive flags read off the CURRENT frame at the given roster
+/// geometry — no OCR, no detection, no roster read: one name-strip crop per
+/// row classified by its brightest-glyph luma ([`strip_max_luma`] +
+/// [`row_strip_alive`]). This is the Tab watcher's SINK FAST-PATH: cheap
+/// enough to run a few times per second while the overlay is up, so a ship
+/// sinking is seen in ~500 ms instead of waiting for the next full
+/// revalidation. Unreadable rows default to alive — identical to the
+/// recognition pipeline's semantics (a missing strip must never read as
+/// "sunk").
+pub(crate) fn read_row_alive(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    roster: &Rect,
+    row_centers: &[i32],
+    team_split: f32,
+    ally_rows: usize,
+) -> Vec<bool> {
+    crop_row_name_strips(
+        rgba,
+        width,
+        height,
+        roster,
+        row_centers,
+        team_split,
+        ally_rows,
+    )
+    .into_iter()
+    .map(|strip| match strip {
+        Some((buf, _, _)) => row_strip_alive(strip_max_luma(&buf)),
+        None => true,
+    })
+    .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2054,594 +2644,4 @@ mod tests {
         let alive = read_row_alive(&img, w, h, &roster, &rows, 0.5, 2);
         assert_eq!(alive, vec![true, false, false, true]);
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Battle-scene gate
-// ─────────────────────────────────────────────────────────────────────────
-
-/// Sample stride over the capture (physical px) for the scene probe.
-const SCENE_STEP: u32 = 4;
-/// The HP bar is a long run of saturated green in the bottom-left corner.
-/// Measured on a real 1080p client: it sits at ~78% of the frame height
-/// (x ~3-15%), so the band spans well around it.
-const HP_GREEN_MIN_RUN: u32 = 48;
-/// Vanilla rosters render small light ship silhouettes across the top of
-/// the screen. Detection is deliberately FUZZY and position-agnostic —
-/// roster placement differs between PvP / scenarios / co-op — so any icon-
-/// sized compact bright blob in the top band counts, wherever it sits.
-/// The size bounds reject broad sky/cloud expanses (too wide) and thin
-/// text strokes (too short).
-const ICON_MIN_W: u32 = 12;
-const ICON_MAX_W: u32 = 100;
-const ICON_MIN_H: u32 = 4;
-const ICON_MAX_H: u32 = 40;
-/// Bright threshold for icon pixels (silhouettes are near-white).
-const ICON_LUMA: u8 = 170;
-/// A full roster stacks many icons (PvP 5v5 -> 10+; scenarios fewer); a
-/// handful of ship-shaped blobs means a roster is on screen.
-const ICONS_MIN: u32 = 5;
-
-/// Green-dominance test for the HP bar, tolerant of the Tab dim: holding
-/// Tab darkens the bar from ≈ rgb(50,220,110) to ≈ rgb(28,68,56), and its
-/// vanilla hue is TEAL-ish (blue only slightly under green), so the old
-/// `g > b + 25` test matched only the pre-dim frame. Bluish water (blue
-/// over green) stays excluded.
-fn is_probe_green(r: i16, g: i16, b: i16) -> bool {
-    g > 55 && g >= r + 20 && g >= b - 10
-}
-
-/// True when the frame carries the in-battle HUD: the bottom-left health bar
-/// plus the vanilla team rosters' ship silhouettes across the top.
-/// None of these render outside the 3D scene — port, login and loading
-/// screens all fail this probe — so it gates the whole overlay.
-/// Components of the battle-HUD probe, logged on failure so real captures
-/// can be tuned from the dev console alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SceneProbe {
-    /// Long green run in the bottom-left corner (health bar).
-    pub hp_bar: bool,
-    /// Icon-sized bright blobs counted across the whole top band (ship
-    /// silhouettes of the team rosters, any roster layout).
-    pub icon_blobs: u32,
-}
-
-impl SceneProbe {
-    pub(crate) fn detected(&self) -> bool {
-        self.hp_bar && self.icon_blobs >= ICONS_MIN
-    }
-}
-
-pub(crate) fn probe_battle_scene(rgba: &[u8], width: u32, height: u32) -> SceneProbe {
-    let none = SceneProbe {
-        hp_bar: false,
-        icon_blobs: 0,
-    };
-    let px = |x: u32, y: u32| -> (u8, u8, u8) {
-        let i = ((y * width + x) * 4) as usize;
-        (rgba[i], rgba[i + 1], rgba[i + 2])
-    };
-
-    // ── HP bar: longest horizontal run of green in the bottom-left region ──
-    let x0 = width * 2 / 100;
-    let x1 = (width * 25 / 100).min(width.saturating_sub(1));
-    let y0 = height * 70 / 100;
-    let y1 = (height * 95 / 100).min(height.saturating_sub(1));
-    let mut hp_found = false;
-    if x1 > x0 && y1 > y0 {
-        'outer: for y in (y0..y1).step_by(SCENE_STEP as usize) {
-            let mut run = 0u32;
-            let mut best = 0u32;
-            for x in (x0..x1).step_by(SCENE_STEP as usize) {
-                let (r, g, b) = px(x, y);
-                if is_probe_green(r as i16, g as i16, b as i16) {
-                    run += SCENE_STEP;
-                    best = best.max(run);
-                } else {
-                    run = 0;
-                }
-            }
-            if best >= HP_GREEN_MIN_RUN {
-                hp_found = true;
-                break 'outer;
-            }
-        }
-    }
-    if !hp_found {
-        return none;
-    }
-
-    // ── Vanilla rosters: fuzzy ship-icon blobs across the whole top band ──
-    // Position-agnostic on purpose: scenario / co-op modes place their
-    // rosters differently from random battles, and mods may add their own
-    // bars — none of that may break the probe.
-    let icon_blobs = count_icon_blobs(
-        &px,
-        width * 2 / 100,
-        (width * 98 / 100).min(width.saturating_sub(1)),
-        height * 8 / 100,
-        (height * 35 / 100).min(height.saturating_sub(1)),
-    );
-    SceneProbe {
-        hp_bar: true,
-        icon_blobs,
-    }
-}
-
-/// Count compact bright blobs (ship silhouettes) in a region. A blob is a
-/// set of bright horizontal runs on adjacent scan rows whose x-ranges
-/// overlap; its size must fit the icon bounds, which rejects both broad
-/// sky/cloud areas and thin text strokes.
-fn count_icon_blobs(
-    px: &impl Fn(u32, u32) -> (u8, u8, u8),
-    x0: u32,
-    x1: u32,
-    y0: u32,
-    y1: u32,
-) -> u32 {
-    if x1 <= x0 || y1 <= y0 {
-        return 0;
-    }
-    // Collect bright runs per scan row: (y, x_start, x_end).
-    let mut runs: Vec<(u32, u32, u32)> = Vec::new();
-    for y in (y0..y1).step_by(SCENE_STEP as usize) {
-        let mut cur: Option<(u32, u32)> = None;
-        for x in (x0..x1).step_by(SCENE_STEP as usize) {
-            let (r, g, b) = px(x, y);
-            let luma = (u16::from(r) + u16::from(g) + u16::from(b)) / 3;
-            if luma >= u16::from(ICON_LUMA) {
-                cur = Some(match cur {
-                    Some((s, _)) => (s, x),
-                    None => (x, x),
-                });
-            } else if let Some((s, e)) = cur.take() {
-                if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
-                    runs.push((y, s, e));
-                }
-            }
-        }
-        if let Some((s, e)) = cur.take() {
-            if e - s >= ICON_MIN_W && e - s <= ICON_MAX_W {
-                runs.push((y, s, e));
-            }
-        }
-    }
-    runs.sort_by_key(|&(y, xs, _)| (y, xs));
-
-    // Greedy vertical clustering: adjacent rows with overlapping x-ranges
-    // belong to the same blob.
-    let mut blobs = 0u32;
-    let mut open: Option<(u32, u32, u32, u32)> = None; // (y_last, x_min, x_max, y_first)
-    for (y, xs, xe) in runs {
-        open = match open {
-            Some((yl, xmin, xmax, yfirst))
-                if y - yl <= SCENE_STEP * 2 && xs <= xmax && xe >= xmin =>
-            {
-                Some((y, xmin.min(xs), xmax.max(xe), yfirst))
-            },
-            Some((yl, _xmin, _xmax, yfirst)) => {
-                let h = yl - yfirst;
-                if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
-                    blobs += 1;
-                }
-                Some((y, xs, xe, y))
-            },
-            None => Some((y, xs, xe, y)),
-        };
-    }
-    if let Some((yl, _xmin, _xmax, yfirst)) = open {
-        let h = yl - yfirst;
-        if (ICON_MIN_H..=ICON_MAX_H).contains(&h) {
-            blobs += 1;
-        }
-    }
-    blobs
-}
-
-/// Gate helper: the full HUD must be present.
-pub(crate) fn detect_battle_scene(rgba: &[u8], width: u32, height: u32) -> bool {
-    probe_battle_scene(rgba, width, height).detected()
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Anchor construction (pure — unit-testable without Win32)
-// ─────────────────────────────────────────────────────────────────────────
-
-/// Vertical padding (physical px) added above/below the detected table when
-/// sizing the overlay window.
-pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
-    (roster.height / 8).clamp(24, 96)
-}
-
-/// Horizontal padding (physical px): WIDER than vertical because the stat
-/// chips render OUTSIDE the table's left/right edges (inside they cover the
-/// ship names) — the window must reserve a full chip width per side. The
-/// four-char seals recut onto one line (3:1 faces) roughly tripled each
-/// wide seal's footprint versus the old 2x2 face, so the floor rides up
-/// with them: at 150 px a hidden-profile 过街老鼠 chip (or any chip with a
-/// career + air + sub set) lost its outer seal flank.
-pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
-    (roster.width / 4).clamp(240, 440)
-}
-
-/// Build the overlay-window anchor from a detection relative to the game
-/// window: the overlay covers ONLY the table area (inflated by padding), and
-/// every coordinate is re-based to the overlay window's origin. Returns the
-/// anchor plus the overlay rect in SCREEN coordinates for window placement.
-pub(crate) fn build_anchor(
-    game_screen: &Rect,
-    roster_rel: &Rect,
-    mut row_centers: Vec<i32>,
-    team_split: f32,
-    table_detected: bool,
-) -> (Rect, wowsp_tauri_shared::OverlayAnchor) {
-    let pad = overlay_padding(roster_rel);
-    let padx = overlay_padding_x(roster_rel);
-    // Overlay rect in screen px: the table area inflated by the padding,
-    // clamped to stay inside the game window (multi-monitor safe — the game
-    // rect is already monitor-clamped).
-    let ox = (game_screen.x + roster_rel.x - padx).max(game_screen.x);
-    let oy = (game_screen.y + roster_rel.y - pad).max(game_screen.y);
-    let orx = game_screen.x + roster_rel.x + roster_rel.width + padx;
-    let ory = game_screen.y + roster_rel.y + roster_rel.height + pad;
-    let overlay = Rect {
-        x: ox,
-        y: oy,
-        width: (orx - ox).min(game_screen.x + game_screen.width - ox),
-        height: (ory - oy).min(game_screen.y + game_screen.height - oy),
-    };
-    // Re-base roster + rows to the overlay origin: overlay-relative =
-    // game-relative − (overlay origin − game origin).
-    let roster = Rect {
-        x: roster_rel.x - (ox - game_screen.x),
-        y: roster_rel.y - (oy - game_screen.y),
-        width: roster_rel.width,
-        height: roster_rel.height,
-    };
-    let dy = oy - game_screen.y;
-    row_centers.iter_mut().for_each(|c| *c -= dy);
-    let anchor = wowsp_tauri_shared::OverlayAnchor {
-        game_rect: *game_screen,
-        overlay_rect: overlay,
-        roster_rect: roster,
-        row_centers,
-        team_split,
-        table_detected,
-        // Anchors are built without recognition; the row→name pipeline in
-        // `row_recognize` fills `row_players` / `row_alive` afterwards when
-        // it ran (and flips `row_players_pending` with it — manual/automatic
-        // alike, pending never starts as true). `stale` is equally false at
-        // construction: it is a watcher-side pin flag (the sink probe / OCR
-        // re-map lifecycle), never a property of a fresh detection.
-        row_players: None,
-        row_alive: None,
-        row_players_pending: false,
-        stale: false,
-        // Set to the live settings mode at EMIT time (place_and_show) —
-        // construction-time anchors are mode-agnostic.
-        roster_mode: String::new(),
-    };
-    (overlay, anchor)
-}
-
-/// Fallback table geometry when detection fails on a real capture: a
-/// centered band matching the real client's proportions (~50% × 24% around
-/// 24% from the top) with rows spread per the expected team size. Way
-/// tighter than the old full-spread default, so even the fallback hugs the
-/// middle of the screen.
-pub(crate) fn fallback_roster(frame_w: i32, frame_h: i32, expected: usize) -> (Rect, Vec<i32>) {
-    let width = frame_w * 50 / 100;
-    let height = (frame_h * 8 / 100)
-        .max((expected as i32 * frame_h * 5 / 100).max(frame_h * 16 / 100))
-        // 12-row floor, same reasoning as MIN_WINDOW_ROWS: the fallback
-        // window must be able to carry a full 12v12 table's hint box.
-        .max(frame_h * 40 / 100);
-    let x = (frame_w - width) / 2;
-    let y = frame_h * 24 / 100;
-    let top = y + height / 6;
-    let bottom = y + height * 95 / 100;
-    let step = (bottom - top) / expected.max(1) as i32;
-    let rows = (0..expected)
-        .map(|i| top + step * i as i32 + step / 2)
-        .collect();
-    (
-        Rect {
-            x,
-            y,
-            width,
-            height,
-        },
-        rows,
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Pinned-anchor revalidation (pure decision — unit-testable)
-// ─────────────────────────────────────────────────────────────────────────
-
-/// Move threshold for replacing a pinned anchor: the fresh first row must sit
-/// more than HALF a row pitch away from the pinned one. Detector jitter (the
-/// per-side phase refinement shifts the grid by fractions of a pitch frame to
-/// frame) stays under it and keeps the pin — the whole point of the pin is
-/// that the chips never wander. A real layout switch crosses it: the panel
-/// moves as a WHOLE when HUD phases change (the countdown "waiting players"
-/// layout sits ~190 px ≈ 3.7 row pitches above the combat layout at
-/// 3072x1920) and sunk ships re-sort the rows.
-const ANCHOR_MOVE_HALF_PITCH: f32 = 0.5;
-
-/// Effective row pitch for the move test: the FRESH grid's first gap
-/// (`row_centers[1] − row_centers[0]`); grids with fewer than two rows fall
-/// back to the pinned grid's gap, then to roster height ÷ row count.
-/// Returns 0.0 when nothing yields a positive pitch (the caller then never
-/// reports movement).
-fn anchor_row_pitch(
-    fresh: &wowsp_tauri_shared::OverlayAnchor,
-    pinned: &wowsp_tauri_shared::OverlayAnchor,
-) -> f32 {
-    let first_gap =
-        |a: &wowsp_tauri_shared::OverlayAnchor| match (a.row_centers.first(), a.row_centers.get(1))
-        {
-            (Some(&r0), Some(&r1)) => (r1 - r0).abs() as f32,
-            _ => 0.0,
-        };
-    let pitch = match first_gap(fresh) {
-        p if p > 0.0 => p,
-        _ => match first_gap(pinned) {
-            p if p > 0.0 => p,
-            // Degenerate single-row grids on both sides: a coarse pitch from
-            // the taller roster rect over the longer row count.
-            _ => {
-                let rows = fresh.row_centers.len().max(pinned.row_centers.len()).max(1) as f32;
-                fresh.roster_rect.height.max(pinned.roster_rect.height) as f32 / rows
-            },
-        },
-    };
-    if pitch > 0.0 { pitch } else { 0.0 }
-}
-
-/// Whether a fresh detection of the SAME battle relocated the table enough to
-/// justify replacing the pinned anchor: the first row moved by more than half
-/// a row pitch (see [`ANCHOR_MOVE_HALF_PITCH`]). A fallback anchor
-/// (`table_detected == false`) never replaces a confirmed pin, and
-/// degenerate grids never count as movement.
-pub(crate) fn anchor_meaningfully_moved(
-    pinned: &wowsp_tauri_shared::OverlayAnchor,
-    fresh: &wowsp_tauri_shared::OverlayAnchor,
-) -> bool {
-    // A fallback anchor ("table not located" geometry) must never replace a
-    // pin that was itself a confirmed detection.
-    if !fresh.table_detected || pinned.row_centers.is_empty() || fresh.row_centers.is_empty() {
-        return false;
-    }
-    let pitch = anchor_row_pitch(fresh, pinned);
-    if pitch <= 0.0 {
-        return false;
-    }
-    let dy = (fresh.row_centers[0] - pinned.row_centers[0]).abs() as f32;
-    dy > pitch * ANCHOR_MOVE_HALF_PITCH
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Row name-strip cropping (row → name recognition pipeline)
-// ─────────────────────────────────────────────────────────────────────────
-
-/// Horizontal bounds of the player-name column INSIDE one sub-table half, as
-/// fractions of that half's width. The two halves are MIRRORED (measured on
-/// the #372 tab dumps, 3072x1920, countdown + combat layouts):
-///
-/// - ally half (left→right): icon column (~0–0.03), player nickname column
-///   (~0.04–0.37, long names ellipsized by the panel), ship silhouette
-///   (~0.42), ship name — the strip hugs the LEFT edge;
-/// - enemy half: ship name column (~0.09–0.27), ship silhouette, then the
-///   player nicknames RIGHT-ALIGNED near the outer edge (~0.64–0.93) — the
-///   strip hugs the RIGHT edge.
-///
-/// Both strips stop short of the silhouette/ship columns so the recognizer's
-/// input stays mostly nickname.
-const ALLY_NAME_STRIP_X0_FRAC: f32 = 0.02;
-const ALLY_NAME_STRIP_X1_FRAC: f32 = 0.40;
-const ENEMY_NAME_STRIP_X0_FRAC: f32 = 0.62;
-const ENEMY_NAME_STRIP_X1_FRAC: f32 = 0.96;
-
-/// Vertical half-extent of one row's name strip as a fraction of the row
-/// pitch. One row's glyphs sit well inside ±0.5 pitch; staying under it
-/// keeps the neighboring rows' text out of the crop (mis-pitching by half a
-/// row is exactly the wrong-name failure this pipeline fights).
-const NAME_STRIP_HALF_PITCH_FRAC: f32 = 0.42;
-
-/// One row's name-strip crop rectangle, PHYSICAL px relative to the CAPTURE
-/// (game window) origin — the same space `detect_roster` emits. `row` indexes
-/// `row_centers` (allies block first, then enemies — the anchor's order);
-/// `ally_rows` is the ally-block size (the roster's relation ≤ 1 count) and
-/// decides which half the row's strip sits in: allied names render in the
-/// left half, enemy names in the right half of the team split. Returns `None`
-/// for out-of-range rows and degenerate geometry.
-pub(crate) fn row_name_strip_rect(
-    roster: &Rect,
-    row_centers: &[i32],
-    team_split: f32,
-    ally_rows: usize,
-    row: usize,
-) -> Option<Rect> {
-    if row >= row_centers.len() {
-        return None;
-    }
-    // Block bounds within row_centers: allies [0, ally_rows), enemies
-    // [ally_rows, len). The split mirrors the frontend mapping (rows sliced
-    // at the roster's ally count) — a grid longer than the roster simply has
-    // an empty second block.
-    let (b0, b1) = if row < ally_rows {
-        (0, ally_rows.min(row_centers.len()))
-    } else {
-        (ally_rows, row_centers.len())
-    };
-    if b1 <= b0 {
-        return None;
-    }
-    let split = team_split.clamp(0.0, 1.0);
-    let (half_x0, half_w, x0_frac, x1_frac) = if row < ally_rows {
-        (
-            roster.x as f32,
-            roster.width as f32 * split,
-            ALLY_NAME_STRIP_X0_FRAC,
-            ALLY_NAME_STRIP_X1_FRAC,
-        )
-    } else {
-        (
-            roster.x as f32 + roster.width as f32 * split,
-            roster.width as f32 * (1.0 - split),
-            ENEMY_NAME_STRIP_X0_FRAC,
-            ENEMY_NAME_STRIP_X1_FRAC,
-        )
-    };
-    if half_w <= 0.0 {
-        return None;
-    }
-    let x0 = (half_x0 + half_w * x0_frac).round() as i32;
-    let x1 = (half_x0 + half_w * x1_frac).round() as i32;
-    // Row pitch from the row's own block neighbors (the two sub-tables can
-    // pitch differently); a single-row block falls back to a coarse
-    // roster-height estimate — rare (1v1), and the crop is frame-clamped
-    // either way.
-    let pitch = if b1 - b0 >= 2 {
-        if row + 1 < b1 {
-            (row_centers[row + 1] - row_centers[row]).abs()
-        } else {
-            (row_centers[row] - row_centers[row - 1]).abs()
-        }
-    } else {
-        (roster.height / (b1 - b0 + 1) as i32).max(1)
-    } as f32;
-    let half_pitch = pitch.max(1.0) * NAME_STRIP_HALF_PITCH_FRAC;
-    let cy = row_centers[row] as f32;
-    let y0 = (cy - half_pitch).round() as i32;
-    let y1 = (cy + half_pitch).round() as i32;
-    if x1 <= x0 || y1 <= y0 {
-        return None;
-    }
-    Some(Rect {
-        x: x0,
-        y: y0,
-        width: x1 - x0,
-        height: y1 - y0,
-    })
-}
-
-/// Copy a sub-rectangle of an RGBA frame into a fresh, tightly-packed
-/// buffer. Clamps to the frame; returns `None` for empty results, negative
-/// overflow, or a buffer that does not back the given dimensions — the
-/// pipeline treats that as "no crop" rather than guessing or panicking.
-pub(crate) fn crop_rgba(
-    rgba: &[u8],
-    width: u32,
-    height: u32,
-    rect: &Rect,
-) -> Option<(Vec<u8>, u32, u32)> {
-    if rect.width <= 0 || rect.height <= 0 {
-        return None;
-    }
-    if rgba.len() < (width as usize) * (height as usize) * 4 {
-        return None;
-    }
-    let fx = width as i64;
-    let fy = height as i64;
-    let x0 = (rect.x as i64).clamp(0, fx);
-    let y0 = (rect.y as i64).clamp(0, fy);
-    let x1 = (rect.x as i64 + rect.width as i64).clamp(0, fx);
-    let y1 = (rect.y as i64 + rect.height as i64).clamp(0, fy);
-    if x1 <= x0 || y1 <= y0 {
-        return None;
-    }
-    let cw = (x1 - x0) as usize;
-    let ch = (y1 - y0) as usize;
-    let mut out = vec![0u8; cw * ch * 4];
-    for row in 0..ch {
-        let src = ((y0 as usize + row) * width as usize + x0 as usize) * 4;
-        let dst = row * cw * 4;
-        out[dst..dst + cw * 4].copy_from_slice(&rgba[src..src + cw * 4]);
-    }
-    Some((out, cw as u32, ch as u32))
-}
-
-/// Brightest-pixel luma of an RGBA name-strip crop — the "is this row
-/// alive?" signal. The Tab panel renders alive players' nicknames in
-/// near-white glyphs and sunk players' in dim gray, so the strip's MAXIMUM
-/// luma (the glyph cores, immune to the dark background) separates the two
-/// states cleanly: measured on the #372 tab dumps at 3072x1920, sunk rows
-/// peak at ≤ ~137 while every alive row — including the player's own
-/// highlight-dimmed row — reaches ≥ ~186. The 95th percentile behaves the
-/// same but adds nothing; the max is the cheaper and better-separated
-/// statistic.
-pub(crate) fn strip_max_luma(crop_rgba: &[u8]) -> f32 {
-    crop_rgba
-        .chunks_exact(4)
-        .map(|p| 0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2]))
-        .fold(0.0f32, f32::max)
-}
-
-/// Luma midpoint between the measured populations (sunk ≤ ~137, alive
-/// ≥ ~186 on 3072x1920 dumps; a half-resolution capture halves neither —
-/// glyphs saturate at 255 either way). Rows at or above it read as alive.
-pub(crate) const SUNK_ROW_MAX_LUMA: f32 = 160.0;
-
-/// Classify one row's strip: alive unless the brightest glyph core stayed
-/// clearly under the near-white alive population. Pure companion of
-/// [`strip_max_luma`] so the threshold decision is unit-testable alone.
-pub(crate) fn row_strip_alive(max_luma: f32) -> bool {
-    max_luma >= SUNK_ROW_MAX_LUMA
-}
-
-/// Name-strip crops for every row of a detected table, in `row_centers`
-/// order. Elements are `None` for rows whose strip leaves the frame — the
-/// recognition pipeline reads those as "unrecognized", never guesses.
-pub(crate) fn crop_row_name_strips(
-    rgba: &[u8],
-    width: u32,
-    height: u32,
-    roster: &Rect,
-    row_centers: &[i32],
-    team_split: f32,
-    ally_rows: usize,
-) -> Vec<Option<(Vec<u8>, u32, u32)>> {
-    (0..row_centers.len())
-        .map(|row| {
-            row_name_strip_rect(roster, row_centers, team_split, ally_rows, row)
-                .and_then(|rect| crop_rgba(rgba, width, height, &rect))
-        })
-        .collect()
-}
-
-/// Per-row alive flags read off the CURRENT frame at the given roster
-/// geometry — no OCR, no detection, no roster read: one name-strip crop per
-/// row classified by its brightest-glyph luma ([`strip_max_luma`] +
-/// [`row_strip_alive`]). This is the Tab watcher's SINK FAST-PATH: cheap
-/// enough to run a few times per second while the overlay is up, so a ship
-/// sinking is seen in ~500 ms instead of waiting for the next full
-/// revalidation. Unreadable rows default to alive — identical to the
-/// recognition pipeline's semantics (a missing strip must never read as
-/// "sunk").
-pub(crate) fn read_row_alive(
-    rgba: &[u8],
-    width: u32,
-    height: u32,
-    roster: &Rect,
-    row_centers: &[i32],
-    team_split: f32,
-    ally_rows: usize,
-) -> Vec<bool> {
-    crop_row_name_strips(
-        rgba,
-        width,
-        height,
-        roster,
-        row_centers,
-        team_split,
-        ally_rows,
-    )
-    .into_iter()
-    .map(|strip| match strip {
-        Some((buf, _, _)) => row_strip_alive(strip_max_luma(&buf)),
-        None => true,
-    })
-    .collect()
 }
