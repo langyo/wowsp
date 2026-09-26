@@ -287,6 +287,7 @@
       "format": "형식",
       "scale": "해상도",
       "timestamp": "타임스탬프",
+      "minimap": "모서리에 미니맵 표시",
       "full": "현재 보기 스냅샷 내보내기",
       "region": "영역 지정 스냅샷",
       "regionRun": "선택 영역 내보내기",

@@ -287,6 +287,7 @@
       "format": "格式",
       "scale": "分辨率",
       "timestamp": "时间戳",
+      "minimap": "角落显示小地图",
       "full": "导出当前视图截图",
       "region": "框选区域截图",
       "regionRun": "导出所选区域",
