@@ -324,7 +324,8 @@
       "presentStop": "停止簡報",
       "empty": "暫無步驟——用 ＋ 標記講解節點",
       "duplicate": "該時刻已有步驟",
-      "updateView": "點擊跳轉 · Shift+點擊更新該步運鏡"
+      "updateView": "點擊跳轉 · Shift+點擊更新該步運鏡",
+      "noView": "無運鏡（僅跳轉）"
     },
     "view": {
       "reset": "重設視圖縮放",
