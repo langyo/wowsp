@@ -54,6 +54,7 @@ interface ExportSettings {
   format: "png" | "webp";
   scale: 1 | 2;
   timestamp: boolean;
+  minimap: boolean;
   offlineFps: 30 | 60;
   offlineFrom: "now" | "start";
 }
@@ -521,6 +522,14 @@ export default defineComponent({
                 }}
               >
                 {i18nT("replay.tactical.export.timestamp")}
+              </HkSwitch>
+              <HkSwitch
+                modelValue={props.exportSettings.minimap}
+                onUpdate:modelValue={(v: boolean) => {
+                  props.exportSettings.minimap = v;
+                }}
+              >
+                {i18nT("replay.tactical.export.minimap")}
               </HkSwitch>
               <div class="tac-bar__row tac-bar__row--actions">
                 <HkTooltip text={i18nT("replay.tactical.export.full")} placement="top">

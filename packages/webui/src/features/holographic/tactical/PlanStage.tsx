@@ -368,6 +368,45 @@ export default defineComponent({
       ctx.strokeRect(0.5, 0.5, TACTICAL_SIZE - 1, TACTICAL_SIZE - 1);
     }
 
+    /** Offscreen overview for exports/recordings: the FULL map art with the
+     *  current view window boxed — burned into the frame corner by the
+     *  exporters, so a zoomed-in recording always says where it is looking.
+     *  Repainted in the same dirty cycle as the art (it shares view/bounds). */
+    const OVERVIEW_PX = 256;
+    const overviewCanvas = document.createElement("canvas");
+    overviewCanvas.width = OVERVIEW_PX;
+    overviewCanvas.height = OVERVIEW_PX;
+
+    function paintOverview(): void {
+      const ctx = overviewCanvas.getContext("2d");
+      if (!ctx) return;
+      // Clear FIRST: while bounds reload (map switch) the overview must go
+      // blank, never keep the previous map's art to be burned into exports.
+      ctx.clearRect(0, 0, OVERVIEW_PX, OVERVIEW_PX);
+      const full = fullBounds.value;
+      if (!full) return;
+      const w = full.maxX - full.minX || 1;
+      const h = full.maxZ - full.minZ || 1;
+      if (artImage) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(artImage, 0, 0, OVERVIEW_PX, OVERVIEW_PX);
+      } else {
+        ctx.fillStyle = "rgba(5, 8, 15, 0.9)";
+        ctx.fillRect(0, 0, OVERVIEW_PX, OVERVIEW_PX);
+      }
+      const vb = viewBounds(full);
+      const x = ((vb.minX - full.minX) / w) * OVERVIEW_PX;
+      const y = ((full.maxZ - vb.maxZ) / h) * OVERVIEW_PX;
+      const bw = ((vb.maxX - vb.minX) / w) * OVERVIEW_PX;
+      const bh = ((vb.maxZ - vb.minZ) / h) * OVERVIEW_PX;
+      ctx.strokeStyle = "rgba(0, 195, 255, 0.95)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(x + 1, y + 1, Math.max(2, bw - 2), Math.max(2, bh - 2));
+      ctx.setLineDash([]);
+    }
+
     // ── Frame loop: advance the plan clock, tween the camera, repaint the
     //    art only when one of them actually changed. ─────────────────────
     let raf = 0;
@@ -398,6 +437,7 @@ export default defineComponent({
       if (dirty.value) {
         dirty.value = false;
         paintArt();
+        paintOverview();
       }
     }
 
@@ -540,6 +580,7 @@ export default defineComponent({
                   actions={[]}
                   pickShipAt={() => null}
                   baseCanvas={() => artCanvas.value}
+                  overlayCanvas={() => overviewCanvas}
                 />
                 {minimap.value && (
                   <HMinimap
