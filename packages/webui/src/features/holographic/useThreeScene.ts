@@ -4,9 +4,10 @@
  * handling, and disposal. Returns the scene/camera/renderer so callers can add
  * meshes (map plane, ship markers, trajectory lines).
  *
- * The render loop runs continuously; callers mutate the scene and the next
- * frame picks it up. M4: ship markers + trajectories are added by
- * `HolographicMap.tsx` from the decoded `EntityTrajectory[]`.
+ * The render loop runs while the page is visible (paused when the tab is
+ * hidden); callers mutate the scene and the next frame picks it up. M4:
+ * ship markers + trajectories are added by `HolographicMap.tsx` from the
+ * decoded `EntityTrajectory[]`.
  */
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from "vue";
 import * as THREE from "three";
@@ -49,6 +50,9 @@ export function useThreeScene(
   let resizeObs: ResizeObserver | null = null;
   let stopThemeWatch: (() => void) | null = null;
   let stopDpiWatch: (() => void) | null = null;
+  /** Removes the visibilitychange listener (which owns the loop's paused
+   *  state) — unmount stops the loop for good, so nothing restarts it. */
+  let stopVisibilityWatch: (() => void) | null = null;
 
   onMounted(() => {
     const el = container.value;
@@ -126,7 +130,35 @@ export function useThreeScene(
       renderer.render(scene, camera);
       rafId = requestAnimationFrame(tick);
     };
-    tick();
+
+    // Render-loop pause on hidden tabs (phone / Android edition keeps
+    // rAF-alikes burning otherwise): stop scheduling frames while
+    // document.hidden, resume on visible. Mirrors shipStage's visibility
+    // gating but with page visibility instead of IntersectionObserver.
+    let loopRunning = false;
+    const startLoop = () => {
+      if (loopRunning) return;
+      loopRunning = true;
+      // Drop the delta accumulated while paused so the first resumed
+      // frame does not hand a giant dt to onFrame.
+      clock.getDelta();
+      tick();
+    };
+    const stopLoop = () => {
+      if (!loopRunning) return;
+      loopRunning = false;
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") stopLoop();
+      else startLoop();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    stopVisibilityWatch = () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+    if (document.visibilityState !== "hidden") startLoop();
 
     resizeObs = new ResizeObserver(() => {
       const w = el.clientWidth;
@@ -140,6 +172,7 @@ export function useThreeScene(
   });
 
   onBeforeUnmount(() => {
+    stopVisibilityWatch?.();
     cancelAnimationFrame(rafId);
     stopThemeWatch?.();
     stopDpiWatch?.();

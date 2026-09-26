@@ -37,6 +37,7 @@ import { formationOffsets, inferGrouping } from "./planeFormation";
 import { resolveMarkerContext, resolveRosterAssignments } from "./rosterRoles";
 import { sampleAt, hpAtTime, progressAtTime } from "./trajectoryMath";
 import { clampXZ, disposeAny, frustumCorners } from "./sceneUtils";
+import { shouldReserveTabKey } from "./tabKeyGate";
 import { drawShipGlyph } from "./shipGlyph";
 import { makeHullOutline } from "./hullOutline";
 import {
@@ -657,8 +658,12 @@ export default defineComponent({
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
         if (e.key === "Tab") {
-          e.preventDefault();
-          showRoster.value = true;
+          // Claim Tab for the roster overlay ONLY when the keystroke did
+          // not land inside a form control — otherwise let focus move.
+          if (shouldReserveTabKey(e.target)) {
+            e.preventDefault();
+            showRoster.value = true;
+          }
         }
         if (e.key === "Alt") showCapEta.value = true;
       };
@@ -4281,11 +4286,14 @@ export default defineComponent({
       }
     }
 
-    // Playback loop.
+    // Playback loop. rAF is paused while the page is hidden, so the first
+    // tick after resuming sees the whole hidden span as dt — clamp it so
+    // playback never fast-forwards through the match on return.
+    const MAX_PLAYBACK_TICK_SECONDS = 0.5;
     function playTick(now: number) {
       if (!playing.value) return;
       if (lastTick === 0) lastTick = now;
-      const dt = (now - lastTick) / 1000;
+      const dt = Math.min((now - lastTick) / 1000, MAX_PLAYBACK_TICK_SECONDS);
       lastTick = now;
       current.value += dt * playbackSpeed.value; // playback multiplier (0.5–10×)
       if (current.value >= duration.value) {

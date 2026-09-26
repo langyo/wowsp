@@ -62,17 +62,20 @@ const PLATE_THICKNESS_RATIO = 0.07;
 
 /**
  * Build the armor-viewer scene: thin coloured plates + edge outlines.
- * Returns the group and per-material fade targets so the caller can
- * crossfade it with the hologram via a single 0..1 mix value.
+ * Returns the group, per-material fade targets so the caller can
+ * crossfade it with the hologram via a single 0..1 mix value, and every
+ * geometry allocated for the plates/edges so the caller can dispose them
+ * with the rest of the stage.
  */
 export function buildArmorPlates(
   spec: ArmorSceneSpec,
   zones: ArmorZone[],
-): { group: THREE.Group; fades: FadeTarget[] } {
+): { group: THREE.Group; fades: FadeTarget[]; geometries: THREE.BufferGeometry[] } {
   const group = new THREE.Group();
   group.name = "armor-overlay";
   group.renderOrder = 2;
   const fades: FadeTarget[] = [];
+  const geometries: THREE.BufferGeometry[] = [];
 
   const hullZLen = spec.bowZ - spec.sternZ;
   const hullXLen = spec.hullXMax - spec.hullXMin;
@@ -108,6 +111,7 @@ export function buildArmorPlates(
     const mm = byName.get(zoneName) ?? 0;
     const color = armorColor(mm);
     const geo = new THREE.BoxGeometry(dx, dy, dz);
+    geometries.push(geo);
     const mat = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
     });
@@ -116,6 +120,7 @@ export function buildArmorPlates(
     box.userData = { zone: zoneName, thickness: mm };
     group.add(box);
     const edge = new THREE.EdgesGeometry(geo);
+    geometries.push(edge);
     const line = new THREE.LineSegments(
       edge,
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthTest: false }),
@@ -131,6 +136,7 @@ export function buildArmorPlates(
     const mm = byName.get(zoneName) ?? 0;
     const color = armorColor(mm);
     const geo = new THREE.BoxGeometry(width, height, depth);
+    geometries.push(geo);
     const mat = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity: 0, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
     });
@@ -140,6 +146,7 @@ export function buildArmorPlates(
     box.userData = { zone: zoneName, thickness: mm };
     group.add(box);
     const edge = new THREE.EdgesGeometry(geo);
+    geometries.push(edge);
     const line = new THREE.LineSegments(
       edge,
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0, depthTest: false }),
@@ -216,5 +223,5 @@ export function buildArmorPlates(
   // Superstructure
   addHorizontal("superstructure", [m0 + 0.02, m1 - 0.02], [-0.20, 0.20]);
 
-  return { group, fades };
+  return { group, fades, geometries };
 }
