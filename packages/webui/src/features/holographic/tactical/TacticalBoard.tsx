@@ -27,6 +27,7 @@ import type { ShipAction } from "./actions";
 import { planTracks as planTracksOf, type PlanTrack } from "./plan";
 import {
   makeProjection,
+  markerHandlePx,
   planNextOf,
   planTweensOf,
   renderTactical,
@@ -48,7 +49,8 @@ import {
   presentParkTarget,
   serializeDoc,
 } from "./model";
-import type { LogicalRect, TacticalElement, Vec2 } from "./types";
+import type { LogicalRect, MarkerElement, TacticalElement, Vec2 } from "./types";
+import { TACTICAL_MAX_SCALE } from "./geometry";
 import {
   canvasToBlob,
   composeExportCanvas,
@@ -94,10 +96,6 @@ export default defineComponent({
     replayPath: { type: String, required: true },
     /** Filename fragment for export defaults (map name). */
     mapTag: { type: String, default: "map" },
-    /** Map-frame rotation (degrees, +45° per rotate click). The annotation
-     *  canvas renders through the same rotation as the base map; pointer
-     *  input is un-rotated before hitting world space. */
-    rotationDeg: { type: Number, default: 0 },
     /** Toolbar + interactions visible; off = view-only annotations. */
     editMode: { type: Boolean, default: false },
     getBounds: { type: Function as PropType<() => MapBounds | null>, required: true },
@@ -159,6 +157,14 @@ export default defineComponent({
      *  is DRAWN along its leg's tangent — this override keeps the glyph
      *  pointing where the pointer says during the spin (render.ts). */
     const rotateOverride = ref<Map<string, number> | null>(null);
+    /** Toolbar zoom readout (percent). Refreshed from the view once per
+     *  frame, written only on change so the toolbar doesn't re-render. */
+    const zoomPercent = ref(100);
+    /** Toolbar zoom rung — same factor as one wheel notch, anchored on the
+     *  viewport centre (there is no cursor to anchor on). */
+    function zoomByToolbar(factor: number): void {
+      props.viewApi.zoomAt(TACTICAL_SIZE / 2, TACTICAL_SIZE / 2, factor);
+    }
     /** Waiting for the user to drag the export-crop rectangle. */
     const regionMode = ref(false);
     /** Finished crop rectangle, kept highlighted until exported/cancelled. */
@@ -240,6 +246,20 @@ export default defineComponent({
       store.removeElement(id);
     }
 
+    /** Timeline unit rename: relabels EVERY keyframe of the track's chain —
+     *  the label is the unit's identity, so renaming one marker alone would
+     *  split the chain into two accordion rows. Empty = back to "Unit N". */
+    function renameUnit(track: PlanTrack, name: string): void {
+      const value = name.trim();
+      const ids = new Set(track.ids);
+      const owned = store.elements.value.filter(
+        (el): el is MarkerElement => ids.has(el.id) && el.kind === "marker",
+      );
+      if (!owned.some((el) => el.label !== value)) return;
+      store.pushHistory();
+      for (const el of owned) store.replaceElement(el.id, { ...el, label: value });
+    }
+
     function proj(): TacticalProjection | null {
       const b = props.getBounds();
       return b ? makeProjection(b) : null;
@@ -252,43 +272,13 @@ export default defineComponent({
       if (!pr || !cvs) return null;
       const rect = cvs.getBoundingClientRect();
       if (rect.width === 0) return null;
-      const raw = unrotate(
-        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
-        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
-      );
-      return { p: pr.toWorld(raw.lx, raw.ly), lx: raw.lx, ly: raw.ly, p2: pr };
+      const lx = ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE;
+      const ly = ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE;
+      return { p: pr.toWorld(lx, ly), lx, ly, p2: pr };
     }
 
     function anchorT0(): number {
       return store.anchorToTime.value ? props.getTime() : 0;
-    }
-
-    const rotRad = computed(() => (props.rotationDeg * Math.PI) / 180);
-    /** View-space (un-rotated) point for a canvas-space point: the annotation
-     *  canvas renders rotated, so pointer input must spin back by -θ around
-     *  the logical centre before it can hit world coordinates. */
-    function unrotate(lx: number, ly: number): { lx: number; ly: number } {
-      const r = -rotRad.value;
-      if (r === 0) return { lx, ly };
-      const c = TACTICAL_SIZE / 2;
-      const dx = lx - c;
-      const dy = ly - c;
-      return {
-        lx: c + dx * Math.cos(r) - dy * Math.sin(r),
-        ly: c + dx * Math.sin(r) + dy * Math.cos(r),
-      };
-    }
-    /** Screen-rotate a view-space point for DOM positioning (text editor). */
-    function rotatePoint(q: { x: number; y: number }): { x: number; y: number } {
-      const r = rotRad.value;
-      if (r === 0) return q;
-      const c = TACTICAL_SIZE / 2;
-      const dx = q.x - c;
-      const dy = q.y - c;
-      return {
-        x: c + dx * Math.cos(r) - dy * Math.sin(r),
-        y: c + dx * Math.sin(r) + dy * Math.cos(r),
-      };
     }
 
     // ── Render loop ──────────────────────────────────────────────────────
@@ -299,6 +289,8 @@ export default defineComponent({
       // recorder composes this very canvas, so the dim rectangle would burn
       // into the video (WYSIWYG: live view == recorded frames).
       renderNow(recorder?.recording ? null : undefined);
+      const z = Math.round(props.viewApi.snapshot().scale * 100);
+      if (z !== zoomPercent.value) zoomPercent.value = z;
       if (recorder?.recording) {
         recorder.tick();
         const dur = props.getDuration();
@@ -338,15 +330,6 @@ export default defineComponent({
       const ctx = cvs.getContext("2d");
       if (!ctx) return;
       ctx.setTransform(px / TACTICAL_SIZE, 0, 0, px / TACTICAL_SIZE, 0, 0);
-      // Mirror the base map's world-frame rotation (annotations are
-      // world-anchored: they must spin together with the art).
-      if (rotRad.value !== 0) {
-        ctx.save();
-        const c = TACTICAL_SIZE / 2;
-        ctx.translate(c, c);
-        ctx.rotate(rotRad.value);
-        ctx.translate(-c, -c);
-      }
       const p = makeProjection(bounds);
       const regionRect: LogicalRect | null =
         regionOverride !== undefined
@@ -369,10 +352,9 @@ export default defineComponent({
         // its own, so its units own the solid glyph.
         hollowMarkers: !props.planMode,
       });
-      if (rotRad.value !== 0) ctx.restore();
-      // Keep the text editor glued to its world anchor (screen-rotated).
+      // Keep the text editor glued to its world anchor.
       if (textEdit.value && inputRef.value) {
-        const q = rotatePoint(p.toPx(textEdit.value.at));
+        const q = p.toPx(textEdit.value.at);
         inputRef.value.style.left = `${(q.x / TACTICAL_SIZE) * 100}%`;
         inputRef.value.style.top = `${(q.y / TACTICAL_SIZE) * 100}%`;
       }
@@ -472,6 +454,25 @@ export default defineComponent({
         drag.value = { kind: "region", from: hit.p, to: hit.p };
         return;
       }
+      // Spin-handle grab: when a spinnable marker is selected, its heading
+      // knob outranks ordinary hit-testing so the knob is always grabbable
+      // even when it sits over another element.
+      if (tool === "select" && store.selectedId.value) {
+        const sel = store.elements.value.find((x) => x.id === store.selectedId.value);
+        if (sel) {
+          const handle = markerHandlePx(
+            sel,
+            store.elements.value,
+            hit.p2,
+            props.getTime(),
+            rotateOverride.value ?? undefined,
+          );
+          if (handle && Math.hypot(handle.at.x - hit.lx, handle.at.y - hit.ly) <= 9) {
+            drag.value = { kind: "rotate", id: sel.id, pushed: false };
+            return;
+          }
+        }
+      }
       switch (tool) {
         case "pen":
           drag.value = { kind: "draw", raw: [hit.p] };
@@ -561,9 +562,8 @@ export default defineComponent({
       const d = drag.value;
       switch (d.kind) {
         case "pan": {
-          // hit.lx/ly are already view-space (un-rotated); their DELTA is the
-          // screen-space drag delta rotated into view space, so the map
-          // follows the pointer 1:1 at any rotation.
+          // hit.lx/ly are view-space logical px; their delta IS the drag
+          // delta, so the map follows the pointer 1:1.
           props.viewApi.panByLogical(hit.lx - d.lastLx, hit.ly - d.lastLy);
           d.lastLx = hit.lx;
           d.lastLy = hit.ly;
@@ -747,12 +747,10 @@ export default defineComponent({
       if (!cvs) return;
       const rect = cvs.getBoundingClientRect();
       if (rect.width === 0) return;
-      const hit = unrotate(
-        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
-        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
-      );
+      const lx = ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE;
+      const ly = ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE;
       const factor = e.deltaY < 0 ? 1.22 : 1 / 1.22;
-      props.viewApi.zoomAt(hit.lx, hit.ly, factor);
+      props.viewApi.zoomAt(lx, ly, factor);
     }
 
     function onDoubleClick(e: MouseEvent): void {
@@ -859,8 +857,12 @@ export default defineComponent({
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         target?.isContentEditable === true;
+      // The capture-phase listener sees keys from ANY focused input — the
+      // board's own text editor, the timeline's rename box, dock selects.
+      // They own Escape/Enter themselves; acting here as well would e.g.
+      // cancel the selection while merely closing a rename.
+      if (typing && (e.key === "Escape" || e.key === "Enter")) return;
       if (e.key === "Escape") {
-        if (textEdit.value) return; // the input handles its own Escape
         if (drag.value) {
           cancelDrag();
           return;
@@ -1369,6 +1371,11 @@ export default defineComponent({
                 busy={busy.value}
                 exportSettings={exportSettings.value}
                 hasSelection={store.selected.value != null}
+                viewZoom={{
+                  percent: zoomPercent.value,
+                  canIn: zoomPercent.value < TACTICAL_MAX_SCALE * 100,
+                  canOut: zoomPercent.value > 100,
+                }}
                 actions={{
                   exportFull: () => void runImageExport(null),
                   exportRegion: () => {
@@ -1380,6 +1387,8 @@ export default defineComponent({
                   exportJson: exportDocJson,
                   importJson: () => jsonInput.value?.click(),
                   resetView: () => props.viewApi.reset(),
+                  zoomIn: () => zoomByToolbar(1.22),
+                  zoomOut: () => zoomByToolbar(1 / 1.22),
                 }}
               />
               <Timeline
@@ -1404,6 +1413,7 @@ export default defineComponent({
                 goToStep={goToStep}
                 removeStep={removeStepById}
                 removeUserMarker={removeUserMarkerById}
+                onRenameUnit={renameUnit}
               />
             </div>
             </Teleport>

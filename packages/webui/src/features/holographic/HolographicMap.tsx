@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Crosshair, Eye, EyeOff, Grid3x3, MessageSquare, Orbit, Pause, PenLine, Play, RotateCcw, RotateCw, Shield, Skull, Spline, Swords, Trophy, Video } from "@lucide/vue";
+import { Crosshair, Eye, EyeOff, Grid3x3, MessageSquare, Orbit, Pause, PenLine, Play, Shield, Skull, Spline, Swords, Trophy, Video } from "@lucide/vue";
 import { PLANE_TYPES, shellAmmoOf } from "./tactical/shellTypes";
 import { extractActions } from "./tactical/actions";
-import { gridLabelLayoutForView, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
+import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 import { useBreakpoint } from "@celestia-island/hikari";
 
 import { SCENE_THEMES, scenePalette, useThreeScene } from "./useThreeScene";
@@ -486,16 +486,6 @@ export default defineComponent({
     const minimapShowTrails = ref(true);
     /** The game's A–J / 1–10 grid with edge coordinate labels (default on). */
     const minimapShowGrid = ref(true);
-    /** Map rotation in degrees (canvas rotate convention, +90° per click).
-     *  The whole world frame — art, trails, annotations — rotates; the grid
-     *  labels stay pinned to the screen's top/left edges. */
-    const mmRotationDeg = ref(0);
-    const mmRotationRad = computed(() => (mmRotationDeg.value * Math.PI) / 180);
-    function rotateMap(steps: number): void {
-      // 90° steps keep the square map filling its viewport (45° would leave
-      // dark corner wedges).
-      mmRotationDeg.value += steps * 90;
-    }
     /** Tactical board editing on the enlarged 2D map (annotations stay
      *  rendered read-only when off, so a composed view survives toggling). */
     const tacticalOn = ref(false);
@@ -1572,16 +1562,6 @@ export default defineComponent({
           // bitmap, shown as-is in both modes); only the overlay chrome —
           // scrim, head pill, frame — follows the app theme.
           zctx.clearRect(0, 0, zw, zw);
-          // World frame rotation (rotate buttons): everything map-anchored —
-          // art, grid lines, trails, glyphs, annotations — spins together;
-          // screen-frame chrome (grid labels) is drawn after restore.
-          const rotRad = mmRotationRad.value;
-          zctx.save();
-          if (rotRad !== 0) {
-            zctx.translate(zw / 2, zw / 2);
-            zctx.rotate(rotRad);
-            zctx.translate(-zw / 2, -zw / 2);
-          }
           if (minimapImage) {
             zctx.imageSmoothingEnabled = true;
             // Crop the art to the view window (source rect in image px).
@@ -1598,7 +1578,7 @@ export default defineComponent({
           const zwx = (x: number) => ((x - vfull.minX) / (vfull.maxX - vfull.minX || 1)) * zw;
           const zwz = (zScene: number) => ((vfull.maxZ + zScene) / (vfull.maxZ - vfull.minZ || 1)) * zw;
           // The game's A–J / 1–10 grid, world-anchored (full map rect, so it
-          // stays put under pan/zoom and rotates with the frame).
+          // stays put under pan/zoom).
           if (minimapShowGrid.value) {
             zctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
             zctx.lineWidth = 1;
@@ -1630,10 +1610,8 @@ export default defineComponent({
             zctx.beginPath();
             zctx.arc(cx, cz, rPx, 0, Math.PI * 2);
             zctx.stroke();
-            // Ring text stays upright under map rotation.
             zctx.save();
             zctx.translate(cx, cz);
-            if (rotRad !== 0) zctx.rotate(-rotRad);
             zctx.fillStyle = zctx.strokeStyle;
             zctx.font = "bold 16px sans-serif";
             zctx.textAlign = "center";
@@ -1737,10 +1715,8 @@ export default defineComponent({
             zctx.font = "bold 12px sans-serif";
             zctx.textAlign = "center";
             zctx.textBaseline = "bottom";
-            // Smoke timer text stays upright under map rotation.
             zctx.save();
             zctx.translate(zwx(pStart.x), zwz(-pStart.z));
-            if (rotRad !== 0) zctx.rotate(-rotRad);
             zctx.fillText(`${Math.ceil(cl.endT - t)}s`, 0, -7);
             zctx.restore();
           }
@@ -1764,9 +1740,6 @@ export default defineComponent({
                 const sz = 22;
                 zctx.save();
                 zctx.translate(zwx(s.x), zwz(-s.z));
-                // Aircraft icons stay upright on the minimap (counter-rotate
-                // against the map frame when the rotate buttons are used).
-                if (rotRad !== 0) zctx.rotate(-rotRad);
                 zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
                 zctx.restore();
               } else {
@@ -1777,12 +1750,10 @@ export default defineComponent({
               }
             }
           }
-          zctx.restore(); // world frame (rotation)
           // Grid coordinate labels live in the SCREEN frame: pinned to the
-          // top / left edges, upright at any rotation (families swap edges
-          // past 45° — see mapGrid.gridLabelLayoutForView). Each label is
-          // projected through the view window like the grid lines it names,
-          // so it rides its square under pan/zoom.
+          // top / left edges. Each label is projected through the view
+          // window like the grid lines it names, so it rides its square
+          // under pan/zoom.
           if (minimapShowGrid.value) {
             const colCenters: number[] = [];
             const rowCenters: number[] = [];
@@ -1796,7 +1767,7 @@ export default defineComponent({
                 zwz(-(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS)),
               );
             }
-            const { top, left } = gridLabelLayoutForView(rotRad, zw, colCenters, rowCenters);
+            const { top, left } = gridEdgeLabels(zw, colCenters, rowCenters);
             for (const l of [...top, ...left]) {
               zctx.save();
               zctx.translate(l.x, l.y);
@@ -5264,11 +5235,6 @@ export default defineComponent({
                 close the view (only the scrim around the map does). Icon
                 toggles light up (primary) while active; tooltips name them. */}
             <div class="holo-map__mmzoom-head" onClick={(e: MouseEvent) => e.stopPropagation()}>
-              <HkTooltip text={i18nT("replay.minimap.rotateCcw")} placement="bottom">
-                <HkIconButton size={24} onClick={() => rotateMap(-1)}>
-                  <RotateCcw size={13} />
-                </HkIconButton>
-              </HkTooltip>
               <span>{i18nT("replay.minimap.zoom")}</span>
               <span class="holo-map__mmzoom-head-toggles">
                 <HkTooltip text={i18nT("replay.minimap.trails")} placement="bottom">
@@ -5299,11 +5265,6 @@ export default defineComponent({
                   </HkIconButton>
                 </HkTooltip>
               </span>
-              <HkTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
-                <HkIconButton size={24} onClick={() => rotateMap(1)}>
-                  <RotateCw size={13} />
-                </HkIconButton>
-              </HkTooltip>
             </div>
             {/* Stage: base map canvas + tactical annotation layer. The map
                 keeps its full size in tactical mode — the board docks INSIDE
@@ -5330,7 +5291,6 @@ export default defineComponent({
                 pause={() => { if (playing.value) togglePlay(); }}
                 seekTo={seekBattleTime}
                 trajectories={() => props.trajectories}
-                rotationDeg={mmRotationDeg.value}
                 actions={shipActions.value}
                 labelOf={vehicleLabelOf}
                 pickShipAt={pickShipAt}

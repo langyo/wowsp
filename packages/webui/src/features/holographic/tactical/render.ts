@@ -478,6 +478,35 @@ function drawElement(
   ctx.restore();
 }
 
+/** Screen geometry of a marker's spin handle: the knob sitting on the
+ *  heading ray just past the glyph, with the ray's start at the hull edge —
+ *  the visible affordance that a selected marker can be dragged around.
+ *  Null for non-markers and for scripted route markers (they sail their
+ *  route and are drawn along its tangent, so a manual heading would be
+ *  invisible the moment the pointer lifts). */
+export function markerHandlePx(
+  el: TacticalElement,
+  elements: TacticalElement[],
+  proj: TacticalProjection,
+  time: number,
+  headingOverrides?: Map<string, number>,
+): { from: { x: number; y: number }; at: { x: number; y: number } } | null {
+  if (el.kind !== "marker") return null;
+  if (el.route != null && el.route.length >= 2 && !!el.moveDur && el.moveDur > 0) return null;
+  const tween = planTweensOf(elements).get(el.id) ?? null;
+  const pose = markerPoseAt(el, time, tween);
+  const heading = headingOverrides?.get(el.id) ?? pose.heading;
+  const c = proj.toPx(pose.at);
+  // Heading 0 = north (screen up): the ray direction on canvas is (sin, −cos).
+  const dx = Math.sin(heading);
+  const dy = -Math.cos(heading);
+  const knobR = el.size * 0.75 + 14;
+  return {
+    from: { x: c.x + dx * el.size * 0.45, y: c.y + dy * el.size * 0.45 },
+    at: { x: c.x + dx * knobR, y: c.y + dy * knobR },
+  };
+}
+
 function drawSelection(ctx: CanvasRenderingContext2D, el: TacticalElement, opts: RenderOptions): void {
   if (el.kind === "replayPath") return;
   const pts = elementPoints(el, opts.time, planTweensOf(opts.elements).get(el.id) ?? null);
@@ -500,6 +529,24 @@ function drawSelection(ctx: CanvasRenderingContext2D, el: TacticalElement, opts:
   ctx.setLineDash([5, 4]);
   ctx.strokeRect(minX - padPx, minY - padPx, maxX - minX + padPx * 2, maxY - minY + padPx * 2);
   ctx.restore();
+  // Spin handle: a knob on the heading ray — drag it to turn the marker.
+  const handle = markerHandlePx(el, opts.elements, opts.proj, opts.time, opts.headingOverrides);
+  if (handle) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(0, 195, 255, 0.9)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(handle.from.x, handle.from.y);
+    ctx.lineTo(handle.at.x, handle.at.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(handle.at.x, handle.at.y, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(5, 12, 22, 0.9)";
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function drawRegionMask(ctx: CanvasRenderingContext2D, rect: LogicalRect, size: number): void {
