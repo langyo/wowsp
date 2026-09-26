@@ -184,7 +184,8 @@ export async function seedUiLocaleFromInstaller(): Promise<void> {
     const seeded = raw ? installerLocaleToUi(raw) : null;
     if (seeded && seeded !== uiLocale.value) {
       uiLocale.value = seeded;
-      setLocale(seeded);
+      // Await so callers observe the locale (and its messages) switched.
+      await setLocale(seeded);
     }
   } catch {
     // Not available (mock backend / old installer) — keep the fallback.
@@ -206,8 +207,11 @@ function loadDataLanguage(): string {
 const uiLocale = ref<Locale>(loadUiLocale());
 const dataLanguage = ref<string>(loadDataLanguage());
 
-// Apply the persisted UI locale to the i18n instance on load.
-setLocale(uiLocale.value);
+// Apply the persisted UI locale to the i18n instance on load. setLocale is
+// async (the locale bundle loads on demand), so expose the in-flight apply:
+// the app entry awaits it before mounting, keeping first paint in the
+// persisted locale instead of flashing the detected one.
+export const uiLocaleReady = setLocale(uiLocale.value);
 
 // Consult the installer seed once, after the saved/system resolution ran:
 // it can only ever upgrade a truly-first startup, never a stored choice.
@@ -220,7 +224,10 @@ export const effectiveWgLanguage = computed(() => wgApiLanguage(dataLanguage.val
 function setUiLocale(locale: Locale): void {
   uiLocale.value = locale;
   localStorage.setItem(UI_KEY, locale);
-  setLocale(locale);
+  // Fire-and-forget: a settings-dropdown toggle. Nothing here reads
+  // messages synchronously after the switch, and reactive t() callers
+  // re-render once the bundle lands and the locale ref flips.
+  void setLocale(locale);
 }
 
 function setDataLanguage(code: string): void {

@@ -9,10 +9,11 @@
  * version) and the 查看 action's landing in the settings' changelog
  * section.
  */
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
+import { initLocaleMessages } from "@/i18n";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 
 const mocks = vi.hoisted(() => ({ getVersion: vi.fn() }));
@@ -33,6 +34,12 @@ vi.mock("@/utils/platform", async (importOriginal) => {
 import UpdateAppliedToast from "./UpdateAppliedToast";
 
 enableAutoUnmount(afterEach);
+
+// The card renders through vue-i18n; locale messages load lazily now, so
+// the bundle must be in place before the first mount asserts on its text.
+beforeAll(async () => {
+  await initLocaleMessages();
+});
 
 const CARD = ".update-applied";
 

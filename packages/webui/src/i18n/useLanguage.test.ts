@@ -108,7 +108,9 @@ describe("seedUiLocaleFromInstaller", () => {
     const { uiLocale } = useLanguage();
     // No saved choice; the system detection left en-US in the ref.
     uiLocale.value = "en-US";
-    setLocale("en-US");
+    // setLocale is async now (lazy bundles) — await so the ref is settled
+    // before the seed switches it again.
+    await setLocale("en-US");
     invoke.mockResolvedValue("zh-Hant");
 
     await seedUiLocaleFromInstaller();

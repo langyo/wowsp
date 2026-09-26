@@ -7,10 +7,10 @@
  * mapping as total in both directions and tie every strip entry to a label
  * that exists in all nine shipped locales.
  */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { Anchor, Crosshair, MessagesSquare, Puzzle } from "@lucide/vue";
 
-import { i18n, SUPPORTED_LOCALES } from "@/i18n";
+import { i18n, loadLocaleMessages, SUPPORTED_LOCALES } from "@/i18n";
 
 import {
   BIG_CATS,
@@ -23,6 +23,12 @@ import {
   isCatalogCat,
   type BigCat,
 } from "./taxonomy";
+
+// Locale messages load lazily now (one bundle per locale) — pull all nine
+// in before the label-parity test reads them off the i18n instance.
+beforeAll(async () => {
+  await Promise.all(SUPPORTED_LOCALES.map((locale) => loadLocaleMessages(locale)));
+});
 
 describe("mod-hub taxonomy", () => {
   it("buckets every installed kind and keeps KIND_ORDER complete", () => {
