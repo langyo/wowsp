@@ -31,6 +31,12 @@
     "duplicate": "現在のプランを複製",
     "remove": "現在のプランを削除",
     "removeConfirm": "もう一度クリックで削除",
-    "rename": "プラン名を変更"
+    "rename": "プラン名を変更",
+    "exportBundle": "全プランを書き出す",
+    "importBundle": "プランを読み込む",
+    "exported": "プランを書き出しました",
+    "imported": "{n} 個のプランを読み込みました",
+    "importBad": "有効なプランファイルではありません",
+    "mapMismatch": "別のマップ（{map}）のプランです。位置がずれる可能性があります"
   }
 }

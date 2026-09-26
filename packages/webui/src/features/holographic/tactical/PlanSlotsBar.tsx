@@ -7,7 +7,7 @@
  * rename it.
  */
 import { defineComponent, nextTick, ref, type PropType } from "vue";
-import { Copy, Plus, Trash2 } from "@lucide/vue";
+import { Copy, Download, Plus, Trash2, Upload } from "@lucide/vue";
 import { HkTooltip } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import type { PlanSlot } from "./planSlots";
@@ -25,6 +25,9 @@ export default defineComponent({
     onDuplicate: { type: Function as PropType<() => void>, required: true },
     onRename: { type: Function as PropType<(id: string, name: string) => void>, required: true },
     onRemove: { type: Function as PropType<(id: string) => void>, required: true },
+    /** Bundle share: export every plan of the map / pick a bundle file. */
+    onExport: { type: Function as PropType<() => void>, required: true },
+    onImport: { type: Function as PropType<() => void>, required: true },
   },
   setup(props) {
     const renaming = ref<{ id: string; value: string } | null>(null);
@@ -114,6 +117,30 @@ export default defineComponent({
               }}
             >
               <Copy size={12} />
+            </button>
+          </HkTooltip>
+          <HkTooltip text={i18nT("tactics.slots.exportBundle")} placement="bottom">
+            <button
+              type="button"
+              class="plan-slots__btn"
+              onClick={() => {
+                armed.value = false;
+                props.onExport();
+              }}
+            >
+              <Download size={12} />
+            </button>
+          </HkTooltip>
+          <HkTooltip text={i18nT("tactics.slots.importBundle")} placement="bottom">
+            <button
+              type="button"
+              class="plan-slots__btn"
+              onClick={() => {
+                armed.value = false;
+                props.onImport();
+              }}
+            >
+              <Upload size={12} />
             </button>
           </HkTooltip>
           {props.slots.length > 1 ? (

@@ -52,6 +52,11 @@
     flex-shrink: 0;
   }
 
+  /* Hidden bundle-import file picker (the slot bar's upload button). */
+  &__file-input {
+    display: none;
+  }
+
   /* Overview card (hikari HMinimap): full-map art + view box + zoom bar,
      floating in the board's bottom-right corner above the canvases. */
   &__minimap {

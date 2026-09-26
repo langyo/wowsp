@@ -31,6 +31,12 @@
     "duplicate": "Duplicate current plan",
     "remove": "Delete current plan",
     "removeConfirm": "Click again to delete",
-    "rename": "Rename plan"
+    "rename": "Rename plan",
+    "exportBundle": "Export all plans",
+    "importBundle": "Import plans",
+    "exported": "Plans exported",
+    "imported": "Imported {n} plans",
+    "importBad": "Not a tactics plans file",
+    "mapMismatch": "Bundle came from another map ({map}) — positions may not line up"
   }
 }
