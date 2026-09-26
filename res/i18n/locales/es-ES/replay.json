@@ -116,7 +116,10 @@
     "shipType": "Tipo",
     "battles": "Batallas",
     "winrate": "WR",
-    "avgDamage": "Daño medio"
+    "avgDamage": "Daño medio",
+    "teamWrWeighted": "WR ponderado por nivel",
+    "teamWrPlain": "WR medio",
+    "teamAvgPr": "PR medio"
   },
   "minimap": {
     "zoom": "Mapa ampliado",

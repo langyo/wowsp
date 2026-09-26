@@ -139,6 +139,8 @@
     "prAlgoDesc": "Formule utilisée pour calculer le score PR.",
     "prAlgoWinrate": "Victoire pondérée ApeRadar",
     "prAlgoExpected": "Valeurs attendues wows-numbers",
+    "teamWrToggle": "TV d'équipe pondérée par palier",
+    "teamWrToggleDesc": "Pondère le taux de victoire de l'équipe en direct par palier du navire (les paliers élevés comptent davantage) ; désactivé, simple moyenne.",
     "sealsToggle": "Sceaux d'évaluation",
     "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
     "localizedTiersToggle": "Libellés de palier localisés",

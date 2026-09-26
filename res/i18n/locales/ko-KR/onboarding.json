@@ -26,6 +26,8 @@
   "prAlgoDesc": "PR 점수를 계산하는 공식을 선택합니다.",
   "prAlgoWinrate": "ApeRadar 가중 승률",
   "prAlgoExpected": "wows-numbers 기댓값",
+  "teamWrToggle": "팀 승률 티어 가중",
+  "teamWrToggleDesc": "실시간 전투의 팀 승률을 함선 티어로 가중합니다. 끄면 단순 평균을 사용합니다.",
   "sealsToggle": "평가 인장",
   "sealsToggleDesc": "«神了/海猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
   "localizedTiersToggle": "현지화 등급 표기",

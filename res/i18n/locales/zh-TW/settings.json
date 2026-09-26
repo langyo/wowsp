@@ -139,6 +139,8 @@
     "prAlgoDesc": "選擇計算 PR 分數的公式。",
     "prAlgoWinrate": "ApeRadar 加權勝率",
     "prAlgoExpected": "wows-numbers 期望值",
+    "teamWrToggle": "隊伍勝率加權",
+    "teamWrToggleDesc": "即時對局隊伍勝率按艦船階級加權（高階級權重更高），關閉則取簡單平均值。",
     "sealsToggle": "評價印章",
     "sealsToggleDesc": "蓋印「神了/海猴/蛆」評價印章，僅中文介面顯示。",
     "localizedTiersToggle": "本土化檔位文案",

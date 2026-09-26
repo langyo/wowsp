@@ -26,6 +26,8 @@
   "prAlgoDesc": "Fórmula con la que se calcula la puntuación PR.",
   "prAlgoWinrate": "Victorias ponderadas de ApeRadar",
   "prAlgoExpected": "Valores esperados de wows-numbers",
+  "teamWrToggle": "WR de equipo ponderado por nivel",
+  "teamWrToggleDesc": "Pondera la tasa de victoria del equipo en vivo por nivel de buque; desactivado, usa la media simple.",
   "sealsToggle": "Sellos de evaluación",
   "sealsToggleDesc": "Sellos de veredicto 神了/海猴/蛆: solo se muestran con la interfaz en chino.",
   "localizedTiersToggle": "Etiquetas de nivel localizadas",

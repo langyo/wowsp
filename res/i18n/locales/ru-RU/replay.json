@@ -116,7 +116,10 @@
     "shipType": "Класс",
     "battles": "Бои",
     "winrate": "% побед",
-    "avgDamage": "Ср. урон"
+    "avgDamage": "Ср. урон",
+    "teamWrWeighted": "Взвешенная победность",
+    "teamWrPlain": "Средняя победность",
+    "teamAvgPr": "Средний PR"
   },
   "minimap": {
     "zoom": "Увеличенная карта",
