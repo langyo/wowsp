@@ -118,7 +118,7 @@ zip = { version = "^8", default-features = false, features = ["deflate"] }
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
 # window-close lifecycle). Published to crates.io.
-malkuth = { version = "^0.2", default-features = false, features = ["signals"] }
+malkuth = { version = "^0.3", default-features = false, features = ["signals"] }
 
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg = "^0.56"
@@ -174,7 +174,7 @@ wowsunpack = { path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", defa
     "vfs-mmap",
 ] }
 # Native folder picker for manual game-path selection (Windows IFileDialog).
-rfd = { version = "0.16", default-features = false }
+rfd = { version = "0.17", default-features = false }
 clap = { version = "4.6.0", features = ["derive"] }
 rootcause = "0.12"
 glob = "0.3"
