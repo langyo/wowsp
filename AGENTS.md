@@ -1,10 +1,8 @@
 # AGENTS.md — WoWSP Repository Rules for AI Agents
 
-> 本文件改编自 Celestia 工作区规则（yuzu-linux-daemon 节点上的
-> `/mnt/codespace/AGENTS.md`），只保留适用于本仓库（langyo/wowsp）的规则，
-> 并记录了针对性调整（见 §10）。所有在本仓库工作的 AI agent / subagent
-> **必须**遵守本文件。工作区级文件中的真实凭据与内网信息**永远不会**被
-> 复制进本仓库（红线见 §7）。
+Every AI agent / subagent working in this repository (langyo/wowsp) **must**
+follow these rules. Real credentials and intranet details that live outside
+this repository are **never** copied into it (red lines in §7).
 
 ---
 
@@ -14,210 +12,246 @@
 <gitmoji> <Capitalized English summary ending with period.>
 ```
 
-- 必须以一个 gitmoji 开头。白名单 = gitmoji.dev 完整规范集 + 组织增补
-  （🔗 sync/copilot、🔄 sync/refresh、📜 license、🛡️ shield）。常用：
-  ✨ 🐛 🔧 ♻️ 🔥 📝 🎨 ✅ 🚀 🌐 ⬆️ 🎉 📦。
-  **权威实现是 `scripts/commit_msg_lint.py`**（CI 用它校验，本地可跑
-  `just lint-msg`）；白名单以该脚本为准。
-- 摘要为英文、首字母大写、以 `.` 结尾；**禁止 CJK 字符**。
-- **禁止 Conventional Commits 前缀**（`feat:` / `fix:` 等）——emoji 本身就是类型标记。
-- **禁止任何冒号前缀句式**（`Topic phrase: details`），即使是
-  `🔧 Fix compliance: nonce handshake` 这种首字母大写形式也不行；正确写法是
-  `🔧 Fix nonce handshake and embed path.`（CI linter 规则 7 会拒绝冒号前缀）。
-  详细背景写进 commit BODY（空行 + bullet），绝不写进摘要行。
-- 禁止以裸版本号或填充短语开头（`v1.2.3` / `Bump version` / `Update to`）。
-- **禁止 merge commit subject**（`Merge branch ...` / `Merge pull request ...`）：
-  本仓只使用 squash merge。
-- 豁免：`Revert "..."`（git revert 产物）豁免 gitmoji 要求；
-  dependabot 等机器人的 commit subject 豁免（按作者过滤，见 workflow）。
-- **PR 标题遵循完全相同的规则**（squash 后它就是 commit subject）：
-  `<gitmoji> <一句话英文描述.>`，无冒号前缀；机器人 PR（dependabot）豁免。
+- Must start with a gitmoji. Whitelist = the full gitmoji.dev spec plus
+  organizational additions (🔗 sync/copilot, 🔄 sync/refresh, 📜 license,
+  🛡️ shield). Commonly used: ✨ 🐛 🔧 ♻️ 🔥 📝 🎨 ✅ 🚀 🌐 ⬆️ 🎉 📦.
+  **The authoritative implementation is `scripts/commit_msg_lint.py`**
+  (CI enforces it; run `just lint-msg` locally) — the whitelist in that
+  script wins over this list.
+- The summary is English, capitalized, ends with `.`; **CJK characters are
+  forbidden**.
+- **Conventional Commits prefixes are forbidden** (`feat:` / `fix:` etc.) —
+  the emoji itself is the type marker.
+- **Any colon-prefix phrasing is forbidden** (`Topic phrase: details`), even
+  capitalized like `🔧 Fix compliance: nonce handshake`; the correct form is
+  `🔧 Fix nonce handshake and embed path.` (linter rule 7 rejects colon
+  prefixes). Put detail in the commit BODY (blank line + bullets), never in
+  the summary line.
+- Never start with a bare version number or filler phrases (`v1.2.3` /
+  `Bump version` / `Update to`).
+- **Merge commit subjects are forbidden** (`Merge branch ...` /
+  `Merge pull request ...`): this repo only uses squash merge.
+- Exemptions: `Revert "..."` (git revert output) is exempt from the gitmoji
+  requirement; bot commits (dependabot etc.) are exempt by author filtering
+  (see the workflow).
+- **PR titles follow exactly the same rules** (after squash merge the PR
+  title becomes the commit subject): `<gitmoji> <one-line English.>`, no
+  colon prefix; bot PRs (dependabot) are exempt.
 
-## 2. CHANGELOG Policy（2026-08-18 工作区指令沿用，强制）
+## 2. CHANGELOG Policy (mandatory)
 
-- **任何情况下不在仓库里维护 CHANGELOG / 修订历史文件。** 合并的 PR 就是
-  changelog：squash commit（gitmoji + 一句话摘要）+ PR 描述构成完整变更史，
-  任意粒度用 `git log` 过滤即可。
-- Release notes 写在 **git tag + GitHub Releases** 页面（按 release 撰写），
-  绝不落在被跟踪的文件里。
-- 仓库里已不存在 CHANGELOG 文件，不要新建；PR 模板 / workflow 里若再出现
-  changelog 引用，随触及它的 PR 一并移除。
+- **Never maintain a CHANGELOG / revision-history file in this repository,
+  under any circumstances.** Merged PRs are the changelog: the squash commit
+  (gitmoji + one-line summary) plus the PR description form the complete
+  change history; filter `git log` at any granularity.
+- Release notes are written on **git tags + the GitHub Releases page** (one
+  entry per release), never in tracked files.
+- No CHANGELOG file exists in the repo; do not create one. If a changelog
+  reference reappears in the PR template / workflows, remove it in the PR
+  that touches it.
 
 ## 3. PR Workflow
 
-每个阶段的工作必须遵循以下模式：
+Every unit of work follows this pattern:
 
-1. **从 master 切出 feature 分支**（`feat/<name>` / `fix/<name>`）。
-   有并行任务时用独立 `git worktree`，避免多个 agent 同时改主 checkout。
-2. **3 轮验证循环**：对每个变更——
-   - 第 1 轮：分析 → 改进 → 验证（用 subagent 做验证）
-   - 第 2 轮：再分析 → 改进 → 验证
-   - 第 3 轮：最终分析 → 打磨 → 验证
-   - **任何一轮失败，从零重新计数。**
-3. 以 gitmoji 格式 **commit**。
-4. **push** 分支。
-5. 用 `gh pr create` **创建 PR**（标题遵循 §1）。
-6. **squash merge**（满足 §5 门槛可自主合并）：subject 变为
-   `<gitmoji> Summary. (#PRID)`。
-7. 合并后**删除** feature 分支。
+1. **Branch off master** (`feat/<name>` / `fix/<name>`). For parallel tasks
+   use separate `git worktree`s so multiple agents never mutate the main
+   checkout at once.
+2. **3-round verification loop**, for every change:
+   - Round 1: analyze → improve → verify (use a subagent for verification)
+   - Round 2: analyze again → improve → verify
+   - Round 3: final analysis → polish → verify
+   - **Any failed round restarts the count from zero.**
+3. **Commit** in gitmoji format.
+4. **Push** the branch.
+5. **Create the PR** with `gh pr create` (title follows §1).
+6. **Squash merge** (autonomous once the §5 gates pass): the subject becomes
+   `<gitmoji> Summary. (#PRID)`.
+7. **Delete** the feature branch after merging.
 
-### Subagent 使用
+### Subagent usage
 
-- 所有非平凡任务**必须使用 subagent**（general / explore 类型），避免上下文污染。
-- 给 subagent 的任务描述必须完整：精确文件路径、先看既有代码模式、验证标准、
-  commit 消息格式。
-- 独立子任务并行发起；串行任务等待结果再继续。
-- 每个 subagent 返回前必须验证自己的工作；重要工作由另一个 subagent 交叉验证。
+- All non-trivial tasks **must use subagents** (general / explore types) to
+  avoid context pollution.
+- Subagent task descriptions must be self-contained: exact file paths, a
+  look at existing code patterns first, verification criteria, and the
+  commit message format.
+- Launch independent subtasks in parallel; wait for results before
+  continuing serial ones.
+- Every subagent must verify its own work before returning; important work
+  is cross-verified by another subagent.
 
-### Worktree PR 工作方式
+### Worktree-based PR workflow
 
-主 checkout 常驻 master；有并行任务、或当前任务与主 checkout 上的构建状态
-可能互相干扰时，一律用独立 `git worktree` 开分支：
+The main checkout stays on master. Use a separate `git worktree` whenever
+there are parallel tasks, or the task could interfere with the main
+checkout's build state:
 
-1. **创建**：`git worktree add ../<repo>-wt-<task> -b <type>/<name> master`
-   —— 兄弟目录、`-wt-` 前缀命名（如 `wowsp-wt-detect`）；所有改动、commit、
-   push、`gh pr create` 都在 worktree 内进行，主 checkout 保持 master 不动。
-2. **依赖不共享**：worktree 的 `node_modules` 是空的，进入后先 `pnpm install`
-   （pnpm store 全局共享，装得很快）；Rust `target/` 同样独立，首次
-   `cargo check` / `cargo test` 全量编译属预期。
-   - `tauri::generate_context!()` 在编译期嵌入 `dist/webui`，新 worktree 里
-     该目录不存在会直接编译失败——本地跑 Rust 测试前先 `pnpm build` 出真
-     产物，或像 CI 一样放一个占位 `dist/webui/index.html`（`dist/` 已
-     gitignore，不会进提交）。
-   - 可选加速：临时 `CARGO_TARGET_DIR` 指到主 checkout 的 `target/` 复用
-     依赖产物（cargo 自带文件锁，串行安全；两个 worktree 并行构建时不要
-     共享，且注意这会让主 checkout 下次构建重编改动过的 crate）。
-3. **合并后清理**：squash merge 并删除远端分支后，回主 checkout 执行
-   `git worktree remove ../<repo>-wt-<task>`（有未提交改动时加
-   `--force` 前先确认内容已进 PR）；残留的失效 worktree 用
-   `git worktree prune` 清理，本地分支 `git branch -d <type>/<name>`。
-4. worktree 内不再嵌套切出二级 worktree；一个 worktree 只服务一个分支。
+1. **Create**: `git worktree add ../<repo>-wt-<task> -b <type>/<name>
+   master` — sibling directory, `-wt-` prefix naming (e.g.
+   `wowsp-wt-detect`). Do all edits, commits, pushes and `gh pr create`
+   inside the worktree; keep the main checkout untouched on master.
+2. **Dependencies are not shared**: the worktree's `node_modules` is empty —
+   run `pnpm install` on entry (the pnpm store is global, so it is fast).
+   Rust `target/` is likewise independent; the first `cargo check` /
+   `cargo test` is a full build, which is expected.
+   - `tauri::generate_context!()` embeds `dist/webui` at compile time; in a
+     fresh worktree the Rust build fails outright while that directory is
+     missing — run `pnpm build` for real artifacts before running Rust
+     tests locally, or drop in a placeholder `dist/webui/index.html` the
+     way CI does (`dist/` is gitignored and never committed).
+   - Optional speedup: point `CARGO_TARGET_DIR` at the main checkout's
+     `target/` to reuse dependency artifacts (cargo's file lock makes serial
+     use safe; never share it between two worktrees building in parallel,
+     and note it makes the main checkout rebuild crates the worktree
+     touched).
+3. **Cleanup after merge**: once the PR is squash-merged and the remote
+   branch deleted, return to the main checkout and run
+   `git worktree remove ../<repo>-wt-<task>` (if uncommitted changes remain,
+   confirm they landed in the PR before adding `--force`); clean stale
+   worktrees with `git worktree prune` and delete the local branch with
+   `git branch -d <type>/<name>`.
+4. Never nest a second-level worktree inside a worktree; one worktree serves
+   one branch.
 
-### 验证门禁
+### Verification gates
 
-提交前 `just lint`（或分目标 `just lint rust` / `just lint webui`）、
-`cargo check` / `cargo test`、`pnpm build` 必须通过（按改动范围选择）。
+Before submitting, the relevant subset of `just lint` (or scoped
+`just lint rust` / `just lint webui`), `cargo check` / `cargo test`, and
+`pnpm build` must pass, chosen by what the change touches.
 
 ## 4. Branch Naming & Git Push Rules
 
-- `master` — 生产分支。**只接受 squash merge 的 PR**（2026-09-02 用户决策，
-  见 §10），禁止直推；紧急修复走 `fix/<name>` 分支 + PR。
-- `feat/<name>` — 新功能；`fix/<name>` — 缺陷修复；`chore/<name>` — 维护；
-  `refactor/<name>` — 无行为变化的重构。
-- `dev` — **已废弃，不要使用。**
+- `master` — production branch. **Accepts squash-merged PRs only**; direct
+  pushes are forbidden; urgent fixes go through a `fix/<name>` branch + PR.
+- `feat/<name>` — new features; `fix/<name>` — bug fixes; `chore/<name>` —
+  maintenance; `refactor/<name>` — behavior-preserving refactors.
+- `dev` — **deprecated, do not use.**
 
-### Git Push 硬规则
+### Git push hard rules
 
-- **禁止裸 `git push --force`**（无显式人工授权）。无例外。
-- feature 分支上 rebase/amend 恢复一律优先 `git push --force-with-lease`。
-- `--force-with-lease` 被拒（远端跟踪 ref 过期）时**立即停止，绝不回退到
-  `--force`**：先 fetch，用 `git log origin/<branch>..HEAD` 和
-  `git log HEAD..origin/<branch>` 审查双方提交，确认无未知提交后再问用户。
-- **master 上任何形式的 force push 绝对禁止**——master 只经 squash merge 前进。
-- 拿不准时不要 force push：开新分支、重新提交、或问用户。
-- 本条适用于所有 agent、subagent 和交互会话，无例外。
+- **Bare `git push --force` is forbidden** without explicit human
+  authorization. No exceptions.
+- On feature branches, prefer `git push --force-with-lease` for
+  rebase/amend recovery.
+- If `--force-with-lease` is rejected (stale remote-tracking ref) **stop
+  immediately and never fall back to `--force`**: fetch first, review both
+  sides with `git log origin/<branch>..HEAD` and
+  `git log HEAD..origin/<branch>`, and only after confirming there are no
+  unknown commits, consult the user.
+- **Any form of force push to master is absolutely forbidden** — master only
+  advances via squash merge.
+- When in doubt, do not force push: open a new branch, re-commit, or ask
+  the user.
+- These rules apply to all agents, subagents, and interactive sessions,
+  without exception.
 
 ## 5. Merge & Release Rules
 
-- **满足以下全部条件即可自主合并 PR**（无需逐 PR 人工确认）：
-  1. **消息合规**：squash subject 为 `<gitmoji> <一句英文.>`，无冒号前缀；
-     PR 标题同规则。
-  2. **检查门槛**：必要检查通过后才可合并。**代码级失败**（编译 / 测试 /
-     clippy / lint）必须修复，绝不带病合并；**环境性失败**（runner 配额、
-     外部服务抖动等）在 PR 里记录并经本地验证（`cargo test` / `pnpm build` /
-     lint）通过后可豁免。
-  3. **PR 节约**：不要为每个琐碎变更单独开 PR 立即合并——PR 号是有限资源。
-     一个 PR 应打包一批可合并的功能（一个连贯的功能/修复波次）；只有确实
-     无可打包内容时（紧急 hotfix、孤立单条规则变更）才允许小 PR。
-- **版本号随主 PR 走**：改版本就在功能/修复 PR 里一并 bump 七处
-  （`Cargo.toml` workspace version、`packages/app/tauri/tauri.conf.json`、
-  `packages/installer-shell/tauri.conf.json`、根 `package.json`、
-  `packages/webui`、`packages/website`、`packages/holo` 的 `version`），
-  由 `scripts/check_versions.py` 在 CI 里强制一致；
-  **不要**单独开纯 bump PR（除非用户明确要求）。
-- **版本号推进分级授权**（2026-09-22 用户决策）：未经用户明确同意，
-  agent 自主推进版本号时**最多只能升 patch 位**；minor / major 严禁
-  擅自推进，必须先获得用户对目标版本号的明确批准。功能/修复 PR 需要
-  升 minor 或 major 时，先向用户确认版本号再一并 bump 七处。
-- **只在被要求或已批准的工作流步骤里创建 PR**；未经许可不得自发开 PR。
+- **A PR may be merged autonomously (no per-PR human confirmation) when all
+  of the following hold:**
+  1. **Message compliance**: squash subject is `<gitmoji> <one English
+     sentence.>` with no colon prefix; the PR title follows the same rule.
+  2. **Check gates**: merge only after the required checks pass.
+     **Code-level failures** (compile / test / clippy / lint) must be fixed —
+     never merge around them; **environmental failures** (runner quota,
+     external service flakiness, etc.) may be waived after being recorded in
+     the PR and verified locally (`cargo test` / `pnpm build` / lint).
+  3. **PR economy**: do not open a separate PR for every trivial change and
+     merge it immediately — PR numbers are a finite resource. One PR should
+     bundle a coherent batch of mergeable work (a feature/fix wave); small
+     PRs are allowed only when there is genuinely nothing to bundle (urgent
+     hotfix, an isolated single-rule change).
+- **Version bumps ride along with the main PR**: when the version changes,
+  bump all seven places in the same feature/fix PR (`Cargo.toml` workspace
+  version, `packages/app/tauri/tauri.conf.json`,
+  `packages/installer-shell/tauri.conf.json`, root `package.json`, and the
+  `version` field of `packages/webui`, `packages/website`, `packages/holo`);
+  `scripts/check_versions.py` enforces consistency in CI. **Do not** open
+  version-bump-only PRs (unless the user explicitly asks).
+- **Version bump authorization tiers**: without explicit user consent, an
+  agent may autonomously advance **at most the patch digit**. minor / major
+  bumps must never be advanced unilaterally — first get the user's explicit
+  approval of the target version, then bump all seven places in the same PR.
+- **Create PRs only when asked, or as a step of an approved workflow**;
+  never open unsolicited PRs.
 
 ## 6. Build & Test
 
-- Rust：`cargo build` / `cargo test` / `cargo fmt` / `cargo clippy`
-  （仓库封装：`just check` / `just test unit` / `just lint rust`）。
-- Web：`pnpm build` / `pnpm lint` / `pnpm -r typecheck`
-  （仓库封装：`just lint webui`）。
-- Rust 检查在 Windows 上跑（CI 的 rust job 也是 windows runner）：锁定的
-  `windows-future 0.2.1` 在 Linux 上编不过（上游 bug，见 ci.yml 注释）；
-  fmt/clippy 只针对 app crates（`wowsp_tauri` / `wowsp_tauri_shared`），
-  vendored `wowsunpack` / `wows-core` 是依赖源，保持上游格式。
-- **跨仓依赖**：一律用发布件 / vendored checkout，不用指向本机外部目录的
-  path 依赖——hikari 走 npm 发布包 `@celestia-island/hikari`（组件全部基于
-  其公开导出搭建，不再 fork 源码；样式用 `styles/theme/*`、
-  `styles/admin-tokens.scss` 颗粒子路径，别用会逃出包外的 `styles` 聚合
-  入口），malkuth 走 crates.io 发布版，`wowsunpack` / `wows-core` 保持
-  vendored。
+- Rust: `cargo build` / `cargo test` / `cargo fmt` / `cargo clippy`
+  (repo wrappers: `just check` / `just test unit` / `just lint rust`).
+- Web: `pnpm build` / `pnpm lint` / `pnpm -r typecheck`
+  (repo wrapper: `just lint webui`).
+- Rust checks run on Windows (CI's rust job also runs on a Windows runner):
+  the pinned `windows-future 0.2.1` does not compile on Linux (upstream bug,
+  see the ci.yml comment). fmt/clippy target only the app crates
+  (`wowsp_tauri` / `wowsp_tauri_shared`); the vendored `wowsunpack` /
+  `wows-core` are dependency sources and keep their upstream formatting.
+- **Cross-repo dependencies**: always consume published artifacts or
+  vendored checkouts — never path dependencies pointing at local directories
+  outside this repo. hikari comes from the npm package
+  `@celestia-island/hikari` (components are built on its public exports;
+  use granular style subpaths like `styles/theme/*` and
+  `styles/admin-tokens.scss`, never the `styles` aggregate entry, which
+  escapes the package), malkuth from its crates.io release, and
+  `wowsunpack` / `wows-core` stay vendored.
 
-## 7. 敏感信息红线（强制，违反视为事故）
+## 7. Sensitive Information Red Lines (mandatory; violations are incidents)
 
-1. **禁止把任何真实密码 / 密钥 / token / 内网 IP 写进 git 树**（任何分支、
-   任何文件，包括注释、示例、默认值、测试数据、README、docs）。
-2. 代码里需要密码时：用环境变量 / 不入库的配置文件，或占位符
-   （`<your-password>` / `CHANGE_ME`）；示例 IP 一律用 RFC 5737 文档地址
-   （192.0.2.x / 198.51.100.x / 203.0.113.x），示例值用明显假值
-   （`test-password` / `sk-xxx`）。
-3. 确有必要写真实凭据的极少数情况：**先问用户**，并评估仓库可见性
-   （公共仓 ≠ 可写敏感值；历史泄漏不可撤销）。
-4. **提交前自查**：涉及配置 / 部署 / install 脚本 / 示例数据的改动，grep 一遍
-   `password|secret|token|api_key` 确认无真实值；内网 IP（192.168.x / 10.x）
-   用文档地址替代。
-5. 工作区本地文件（如 `/mnt/codespace/AGENTS.md`）里的真实凭据**只准留在
-   本地**，禁止复制进任何仓库文件（包括本文件）。
-6. 泄漏处置：立即删除 → 评估泄漏面（tag / 分支 / 下游引用）→ 报告用户，
-   由用户决定是否历史重写（涉及 master force push 需显式授权）→
-   **无论是否重写，凭据视为已公开，必须轮换**。
+1. **Never write any real password / key / token / intranet IP into the git
+   tree** (any branch, any file — including comments, examples, defaults,
+   test data, README, docs).
+2. When code needs a secret: use environment variables / a git-ignored
+   config file, or placeholders (`<your-password>` / `CHANGE_ME`); example
+   IPs must use RFC 5737 documentation addresses (192.0.2.x / 198.51.100.x /
+   203.0.113.x), and example values must be obviously fake
+   (`test-password` / `sk-xxx`).
+3. In the rare case where real credentials are genuinely required: **ask
+   the user first**, and weigh repository visibility (a public repo does not
+   make secrets writable; leaked history cannot be undone).
+4. **Pre-commit self-check**: for changes touching config / deployment /
+   install scripts / sample data, grep for `password|secret|token|api_key`
+   and confirm there are no real values; replace intranet IPs
+   (192.168.x / 10.x) with documentation addresses.
+5. Real credentials in local files outside this repository **stay local
+   only**; never copy them into any repository file (including this one).
+6. Leak handling: delete immediately → assess the leak surface (tags /
+   branches / downstream references) → report to the user, who decides
+   whether to rewrite history (force-pushing master requires explicit
+   authorization) → **regardless of any rewrite, treat the credential as
+   public and rotate it**.
 
-## 8. CI 使用策略
+## 8. CI Usage Policy
 
-1. **不要过度依赖 CI 状态**：本地验证（`just lint` / `cargo test` /
-   `pnpm build` 相关部分）+ commit/PR 标题 lint 通过即可合并；环境性失败
-   记录到 PR 即可豁免（§5.2）。
-2. **CI 是参考不是门禁**：合并前看一眼有没有**代码级失败**（编译 / 测试 /
-   clippy）；有则修，全是环境性就直接合并。**不要长时间盯 CI**——排队或
-   挂起超过 ~15 分钟按环境性处理。
-3. **取消过时任务**：同 PR 反复 push 触发的旧 run 可取消
-   （`gh run cancel <id>`）释放配额；各 workflow 已带
-   `concurrency` + `cancel-in-progress` 自动去重（wowsp 是公共仓、托管
-   runner，PR 每次 push 保留全量触发 + 并发去重的策略）。
-4. CI 结构（`.github/workflows/`）：
-   - `ci.yml` — web（ubuntu：typecheck / lint / website build / i18n /
-     pnpm audit）、rust（windows：fmt / clippy / check / test）、deny
-     （cargo-deny 原生二进制：advisories / licenses / sources）、versions
-     （五处版本一致性）。
-   - `commit-msg-lint.yml` — PR 标题 + PR 内全部 commit subject
-     （用 `scripts/commit_msg_lint.py`，机器人作者豁免）。
-   - `release.yml` / `site.yml` — tag 构建发布 / 站点部署。
+1. **Do not over-rely on CI status**: local verification (the relevant parts
+   of `just lint` / `cargo test` / `pnpm build`) plus a passing commit/PR
+   title lint is enough to merge; environmental failures are recorded in the
+   PR and waived (§5.2).
+2. **CI is a reference, not a gate**: before merging, glance for
+   **code-level failures** (compile / test / clippy) — fix those; purely
+   environmental ones do not block. **Do not babysit CI** — queued or hung
+   for more than ~15 minutes counts as environmental.
+3. **Cancel stale runs**: when repeated pushes retrigger a PR, old runs may
+   be cancelled (`gh run cancel <id>`) to free quota; every workflow already
+   carries `concurrency` + `cancel-in-progress` dedup (wowsp is a public
+   repo on hosted runners, so PRs keep full triggering with concurrency
+   dedup).
+4. CI structure (`.github/workflows/`):
+   - `ci.yml` — web (ubuntu: typecheck / lint / website build / i18n /
+     pnpm audit), rust (windows: fmt / clippy / check / test), deny
+     (cargo-deny native binary: advisories / licenses / sources), versions
+     (seven-version consistency via `scripts/check_versions.py`).
+   - `commit-msg-lint.yml` — PR title + every commit subject in the PR
+     (via `scripts/commit_msg_lint.py`, bot authors exempt).
+   - `release.yml` / `site.yml` — tag-driven build & release / site
+     deployment.
 
-## 9. 大文件下载纪律（通用化，强制）
+## 9. Large Download Discipline (mandatory)
 
-> 源自工作区 2026-08-13 流量事故教训；wowsp 侧主要涉及
-> `scripts/fetch_models.py`（模型下载）等大资源拉取。
-
-1. **>5GB 的下载先向用户报量确认**，未确认不得启动。
-2. 失败重试必须带总字节预算上限，**禁止无上限重试循环**。
-3. 下载脚本优先支持断点续传 / 内容寻址缓存，避免重复全量拉取。
-
-## 10. 与工作区 AGENTS.md 的差异记录
-
-以下工作区规则**不适用**于本仓库，或经用户确认调整：
-
-- 节点表 / NFS / worktree 软链 / malkuth 部署 / sing-box 代理等基础设施
-  章节（§0.6 具体、§1、§8、§9）——wowsp 是本地 Windows 开发 + GitHub
-  Actions 托管 CI，不依赖那套环境；仅 §9 保留了通用化的大文件纪律。
-- **master 策略**：工作区规则为「squash-only」，wowsp 历史上是直推 + PR
-  混合；2026-09-02 用户决策改为**严格 PR-only**（§4）。
-- **CI 触发策略**：工作区因自托管 runner 容量限制只开
-  `opened/reopened/ready_for_review` 触发；wowsp 为公共仓托管 runner，
-  用户决策**保留 PR 全量触发 + concurrency 去重**（§8.3）。
-- **自主合并**（§5）：2026-09-02 用户确认沿用工作区的自主合并门槛。
-- easy-hydro 仓的 CJK 豁免不适用于本仓（wowsp 一律英文摘要）。
+1. **Confirm the volume with the user before starting any download over
+   5GB**; without confirmation it must not start.
+2. Failed retries must carry a total byte-budget cap; **unbounded retry
+   loops are forbidden**.
+3. Download scripts should support resumable transfers / content-addressed
+   caching to avoid repeated full fetches. (In this repo this mainly
+   concerns `scripts/fetch_models.py` for model downloads.)
