@@ -35,8 +35,9 @@ not found"), so this script diffs all the name sets:
     windows/non-windows `is_game_running` pair, the mobile stand-ins) are
     intentional per-target definitions of ONE wire command, so both sides
     are compared by NAME only and twins never produce false positives.
-  - Rust vs raw invokes: every string-literal first argument of an
-    `invoke(...)` call in the webui must be a Rust command. Call sites
+  - Rust vs raw invokes: every literal first argument (quoted or
+    interpolation-free template) of an `invoke(...)` call in the webui
+    must be a Rust command. Call sites
     routed through rpc.ts's wrapper (non-literal argument) are naturally
     skipped.
   - Rust vs mock: one-directional. The mock only serves the browser-dev
@@ -92,14 +93,20 @@ HANDLER_MACRO_RE = re.compile(r"tauri::generate_handler!\s*\[")
 # lines out only as long as they stay single-line, the house style).
 HANDLER_ENTRY_RE = re.compile(r"^((?:[A-Za-z0-9_]+::)*[A-Za-z0-9_]+)\s*,?\s*$")
 
-# An `invoke` call matched BY NAME with a string-literal first argument:
+# An `invoke` call matched BY NAME with a literal first argument:
 # `invoke("cmd")`, `invoke<T>("cmd")`, `tauri.core.invoke("cmd")` — the
-# `<...>` optional generics tolerate one nesting level and never contain
-# parens. Non-literal first arguments (`transport.invoke(RPC.foo)`, the
-# wrapper's own `invoke(cmd, args)`) do not match, so rpc.ts-routed call
-# sites are naturally skipped. Quotes may be double or single.
+# `<...>` optional generics tolerate two nesting levels
+# (`invoke<Record<string, Array<number>>>("cmd")`) and never contain
+# parens; deeper nesting or parenthesized types simply do not match, so
+# those call sites stay skipped. The literal may be double/single-quoted
+# or a template literal WITHOUT `${...}` interpolation (`invoke` + "`" +
+# `quit_app` + "`") — an interpolated template is genuinely dynamic and
+# stays skipped (its `${` breaks the identifier match). Non-literal first
+# arguments (`transport.invoke(RPC.foo)`, the wrapper's own
+# `invoke(cmd, args)`) do not match, so rpc.ts-routed call sites are
+# naturally skipped.
 INVOKE_LITERAL_RE = re.compile(
-    r"\binvoke\s*(?:<(?:[^<>()]|<[^<>()]*>)*>)?\(\s*([\"'])([A-Za-z0-9_]+)\1"
+    r"\binvoke\s*(?:<(?:[^<>()]|<(?:[^<>()]|<[^<>()]*>)*>)*>)?\(\s*([\"'`])([A-Za-z0-9_]+)\1"
 )
 
 # How far below a `#[tauri::command]` attribute to look for its `pub fn`
