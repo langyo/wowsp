@@ -27,8 +27,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use wowsp_tauri_shared::{
-    InstallReport, InstalledMod, ModInstallRecord, ModKind, PackagePlan, PackagePlanEntry,
-    TextureAnalysis, TextureFileKind, UnitToggleReport,
+    InstallReport, InstalledMod, MigrateReport, ModInstallRecord, ModKind, PackagePlan,
+    PackagePlanEntry, StaleBinInfo, TextureAnalysis, TextureFileKind, UnitToggleReport,
 };
 
 /// What [`install_plan`] did, beyond the user-facing report: the exact files
@@ -1494,6 +1494,223 @@ fn remove_manifest_entry(res_mods: &Path, name: &str) {
         .ok();
 }
 
+// ── Stale bin detection & migration ─────────────────────────────────────────
+
+/// Older `bin/<version>/` directories whose `res_mods` still carries files.
+/// After a game update the client only loads `bin/<latest>`, so those mods
+/// vanish from the hub's installed list while staying on disk — surfacing
+/// them is the first step of the migration flow (mod-hub.md §4).
+#[tauri::command]
+pub fn mod_hub_stale_versions(game_root: String) -> Result<Vec<StaleBinInfo>, String> {
+    let Some((latest, _)) = latest_bin_version(&game_root) else {
+        return Ok(Vec::new());
+    };
+    let Ok(latest_num) = latest.parse::<u64>() else {
+        return Ok(Vec::new());
+    };
+    let bin = Path::new(&game_root).join("bin");
+    let mut out = Vec::new();
+    for ent in fs::read_dir(&bin)
+        .map_err(|e| format!("read {}: {e}", bin.display()))?
+        .flatten()
+    {
+        let name = ent.file_name().to_string_lossy().into_owned();
+        let Ok(num) = name.parse::<u64>() else {
+            continue;
+        };
+        if num >= latest_num {
+            continue;
+        }
+        let res_mods = ent.path().join("res_mods");
+        if !res_mods.is_dir() {
+            continue;
+        }
+        let file_count = count_tree_files(&res_mods);
+        if file_count == 0 {
+            continue;
+        }
+        let mods = classify_installed_root(&res_mods)
+            .into_iter()
+            .filter(|m| !m.paths.is_empty())
+            .map(|m| m.name)
+            .collect();
+        out.push(StaleBinInfo {
+            bin_version: name,
+            mods,
+            file_count,
+        });
+    }
+    // Newest stale bin first — numeric, so bin/10 sorts after bin/2 and the
+    // one-button migrate always moves the freshest leftovers (which then
+    // win keep-new conflicts against older strays).
+    out.sort_by_key(|i| std::cmp::Reverse(i.bin_version.parse::<u64>().unwrap_or(0)));
+    Ok(out)
+}
+
+fn count_tree_files(root: &Path) -> u64 {
+    let mut count = 0u64;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let p = ent.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+/// Move a stranded old-version `res_mods` into the current one. Conflict
+/// policy is keep-new: a file the current tree already has (live or as a
+/// disabled `.bak` twin) is left untouched — the newer install wins, so a
+/// migration can never overwrite or roll back what the player currently
+/// runs. Ledger records are re-pointed at the new version so their uninstall
+/// still finds the files.
+#[tauri::command]
+pub async fn mod_hub_migrate_stale_bin(
+    game_root: String,
+    from_version: String,
+) -> Result<MigrateReport, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed()?;
+    migrate_stale_bin_core(&game_root, &from_version)
+}
+
+/// Migration core (split from the command so tests drive it without the
+/// async gate).
+fn migrate_stale_bin_core(game_root: &str, from_version: &str) -> Result<MigrateReport, String> {
+    // Numeric on both sides: a hand-made leading-zero dir (`bin/01` next to
+    // `bin/1`) must be recognized as the current version, or src would
+    // equal dst and the keep-new probe would eat the current tree.
+    let from_num = from_version
+        .parse::<u64>()
+        .map_err(|_| format!("{from_version:?} is not a numeric bin version"))?;
+    let (latest, ver_dir) = latest_bin_version(game_root)
+        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+    if from_num >= latest.parse::<u64>().unwrap_or(u64::MAX) {
+        return Err(format!(
+            "{from_version} is the current version — nothing to migrate"
+        ));
+    }
+    let src = Path::new(game_root)
+        .join("bin")
+        .join(from_version)
+        .join("res_mods");
+    if !src.is_dir() {
+        return Err(format!("no res_mods under bin/{from_version}"));
+    }
+    let dst = ver_dir.join("res_mods");
+    fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
+
+    let mut moved = 0usize;
+    let mut skipped = 0usize;
+    migrate_tree(&src, &dst, &mut moved, &mut skipped)?;
+    // A fully migrated res_mods disappears entirely (empty-only remove, so
+    // leftovers survive when files were kept).
+    let _ = fs::remove_dir(&src);
+
+    // Stranded ledger records now describe files in the current bin.
+    let mut ledger = super::mod_catalog::load_ledger();
+    let mut touched = false;
+    for record in &mut ledger.installs {
+        if record.bin_version == from_version {
+            record.bin_version = latest.clone();
+            touched = true;
+        }
+    }
+    if touched {
+        super::mod_catalog::save_ledger(&ledger)?;
+    }
+    tracing::info!(from = %from_version, to = %latest, moved, skipped, "stale bin migrated");
+    Ok(MigrateReport {
+        from_version: from_version.to_string(),
+        to_version: latest,
+        moved_files: moved,
+        skipped_files: skipped,
+    })
+}
+
+/// Recursive keep-new move. Same-volume renames per file; directories the
+/// move emptied are removed on the way out (post-order), so a fully
+/// migrated `res_mods` disappears entirely.
+fn migrate_tree(
+    src: &Path,
+    dst: &Path,
+    moved: &mut usize,
+    skipped: &mut usize,
+) -> Result<(), String> {
+    let Ok(entries) = fs::read_dir(src) else {
+        return Ok(());
+    };
+    for ent in entries.flatten() {
+        let s = ent.path();
+        let d = dst.join(ent.file_name());
+        if s.is_dir() {
+            migrate_tree(&s, &d, moved, skipped)?;
+            let _ = fs::remove_dir(&s); // succeeds only when empty
+            continue;
+        }
+        // Aslain's manifest is per-install bookkeeping — transplanting it
+        // would resurrect rows for files the current tree never got. It
+        // dies with the stranded directory instead.
+        let name = ent.file_name().to_string_lossy().into_owned();
+        if name.eq_ignore_ascii_case("installed_mods.xml") {
+            let _ = fs::remove_file(&s);
+            *skipped += 1;
+            continue;
+        }
+        // Keep-new: the current tree already has this file — live, as a
+        // disabled twin, or as the live counterpart of this stranded twin —
+        // so the (older) stranded copy is dropped. Migrating a lone `.bak`
+        // next to a live file would silently break later toggles.
+        let bare = name.strip_suffix(".bak").unwrap_or(&name).to_string();
+        let live = d.with_file_name(&bare);
+        if d.is_file() || sibling_with_suffix(&d, ".bak").is_file() || live.is_file() {
+            let _ = fs::remove_file(&s);
+            *skipped += 1;
+            continue;
+        }
+        if let Some(parent) = d.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        fs::rename(&s, &d).map_err(|e| format!("move {}: {e}", s.display()))?;
+        *moved += 1;
+    }
+    Ok(())
+}
+
+/// Which other installed mods the freshly written files overlap — the
+/// design doc's conflict policy made real: later installs win, but the
+/// report must say whose files they clobbered (the overwrite itself is
+/// already snapshotted, so a later uninstall restores them).
+pub(crate) fn conflict_warnings(
+    written: &[String],
+    installs: &[ModInstallRecord],
+    exclude_id: &str,
+    bin_version: &str,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for record in installs {
+        if record.id == exclude_id || record.bin_version != bin_version {
+            continue;
+        }
+        let hits = written.iter().filter(|w| record.files.contains(*w)).count();
+        if hits > 0 {
+            out.push(format!(
+                "overwrites {hits} file(s) also installed by {:?}",
+                record.name
+            ));
+        }
+    }
+    out
+}
+
 // ── Classify incoming package ───────────────────────────────────────────────
 
 const UNSUPPORTED_ARCHIVE: &str =
@@ -1800,8 +2017,20 @@ pub async fn mod_hub_install(
                 // restores whatever vanilla files they overwrote — unrecorded
                 // local installs used to leave overwritten originals
                 // unrestorable.
-                Ok(applied) => {
-                    ledger.installs.push(local_record(&applied, &plan));
+                Ok(mut applied) => {
+                    let record = local_record(&applied, &plan);
+                    let id = record.id.clone();
+                    ledger.installs.push(record);
+                    // Say whose files this install clobbered (the journal
+                    // already snapshotted them).
+                    let conflicts = conflict_warnings(
+                        &applied.written,
+                        &ledger.installs,
+                        &id,
+                        &applied.report.bin_version,
+                    );
+                    applied.report.conflicts = conflicts.clone();
+                    applied.report.warnings.extend(conflicts);
                     Ok(applied)
                 },
                 Err(e) => Err(e),
@@ -1991,6 +2220,7 @@ fn install_plan_inner(
             bin_version,
             wrote_files: wrote,
             warnings,
+            conflicts: Vec::new(),
         },
         written,
         restore_dir,
@@ -2725,6 +2955,209 @@ mod tests {
     }
 
     #[test]
+    fn stale_versions_report_stranded_older_bins() {
+        let tmp = std::env::temp_dir().join("wowsp_stale_scan");
+        let _ = fs::remove_dir_all(&tmp);
+        // Old bin with stranded mods, an EMPTY old bin (ignored), a
+        // non-numeric dir (ignored), and the current bin.
+        touch(&tmp.join("bin/1/res_mods/PnFMods/Skin/Main.py"));
+        touch(&tmp.join("bin/2/res_mods"));
+        fs::create_dir_all(tmp.join("bin/notaversion/res_mods")).unwrap();
+        touch(&tmp.join("bin/3/res_mods/gui/a.png"));
+
+        let stale = mod_hub_stale_versions(tmp.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(stale.len(), 1, "{stale:?}");
+        assert_eq!(stale[0].bin_version, "1");
+        assert_eq!(stale[0].file_count, 1);
+        assert!(stale[0].mods.contains(&"Skin".to_string()));
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migrate_moves_stranded_files_and_repoints_ledger() {
+        let tmp = std::env::temp_dir().join("wowsp_stale_migrate");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let old = game.join("bin/1/res_mods");
+        let cur = game.join("bin/2/res_mods");
+        // Stranded tree: a skin, a gui file, a DISABLED voice bank (twin
+        // must carry over), the shared loader marker, and one file the
+        // current tree already ships (keep-new conflict).
+        touch(&old.join("PnFMods/Skin/Main.py"));
+        touch(&old.join("gui/old.png"));
+        touch(&old.join("banks/mods/Hoshino/mod.xml.bak"));
+        touch(&old.join("PnFModsLoader.py"));
+        fs::write(old.join("ime_config.xml"), b"old").unwrap();
+        fs::create_dir_all(&cur).unwrap();
+        fs::write(cur.join("ime_config.xml"), b"new").unwrap();
+        touch(&cur.join("own.png"));
+
+        let mut installs = vec![ModInstallRecord {
+            id: "m".into(),
+            name: "M".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["PnFMods/Skin/Main.py".into()],
+            restore_dir: None,
+        }];
+        let report = migrate_ledgerred(&game, "1", &mut installs).unwrap();
+        assert_eq!(report.to_version, "2");
+        assert_eq!(report.moved_files, 4, "{report:?}");
+        assert_eq!(report.skipped_files, 1);
+        // Everything landed in the current bin; conflicts kept the new side.
+        assert!(cur.join("PnFMods/Skin/Main.py").is_file());
+        assert!(cur.join("gui/old.png").is_file());
+        assert!(cur.join("banks/mods/Hoshino/mod.xml.bak").is_file());
+        assert!(cur.join("PnFModsLoader.py").is_file());
+        assert_eq!(fs::read(cur.join("ime_config.xml")).unwrap(), b"new");
+        assert!(cur.join("own.png").is_file());
+        // The stranded res_mods is gone entirely.
+        assert!(!old.exists());
+        // The record now describes the current bin.
+        assert_eq!(installs[0].bin_version, "2");
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Drive [`migrate_stale_bin_core`] against an in-memory record list by
+    /// applying the same bin-version rewrite the command performs on the
+    /// real ledger.
+    fn migrate_ledgerred(
+        game: &Path,
+        from: &str,
+        installs: &mut Vec<ModInstallRecord>,
+    ) -> Result<MigrateReport, String> {
+        let report = migrate_stale_bin_core(&game.to_string_lossy(), from)?;
+        for record in installs.iter_mut() {
+            if record.bin_version == from {
+                record.bin_version = report.to_version.clone();
+            }
+        }
+        Ok(report)
+    }
+
+    #[test]
+    fn migrate_keeps_new_on_every_twin_combination() {
+        // The four live/twin combinations across the stranded and current
+        // trees — only the no-counterpart case may move; a stranded twin
+        // landing next to a live file would silently break later toggles.
+        let tmp = std::env::temp_dir().join("wowsp_stale_twins");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let old = game.join("bin/1/res_mods");
+        let cur = game.join("bin/2/res_mods");
+        fs::create_dir_all(old.join("live_conflict")).unwrap();
+        fs::create_dir_all(old.join("twin_of_live")).unwrap();
+        fs::create_dir_all(cur.join("live_conflict")).unwrap();
+        fs::create_dir_all(cur.join("twin_of_live")).unwrap();
+        // Stranded live file, current live file → keep-new.
+        fs::write(old.join("live_conflict/a.png"), b"old").unwrap();
+        fs::write(cur.join("live_conflict/a.png"), b"new").unwrap();
+        // Stranded TWIN, current LIVE counterpart → the twin must NOT be
+        // transplanted next to the live file.
+        fs::write(old.join("twin_of_live/b.png.bak"), b"disabled").unwrap();
+        fs::write(cur.join("twin_of_live/b.png"), b"new-live").unwrap();
+
+        let report = migrate_stale_bin_core(&game.to_string_lossy(), "1").unwrap();
+        assert_eq!(report.moved_files, 0);
+        assert_eq!(report.skipped_files, 2);
+        assert_eq!(fs::read(cur.join("live_conflict/a.png")).unwrap(), b"new");
+        assert!(!cur.join("twin_of_live/b.png.bak").exists());
+        assert_eq!(
+            fs::read(cur.join("twin_of_live/b.png")).unwrap(),
+            b"new-live"
+        );
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migrate_drops_stranded_aslain_manifest() {
+        // The old bin's installed_mods.xml is per-install bookkeeping:
+        // transplanting it would resurrect ghost rows for conflict-skipped
+        // files, so it dies with the stranded directory.
+        let tmp = std::env::temp_dir().join("wowsp_stale_manifest");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let old = game.join("bin/1/res_mods");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("installed_mods.xml"), b"<data/>").unwrap();
+        touch(&old.join("gui/a.png"));
+        fs::create_dir_all(game.join("bin/2/res_mods")).unwrap();
+
+        let report = migrate_stale_bin_core(&game.to_string_lossy(), "1").unwrap();
+        assert_eq!(report.moved_files, 1);
+        assert_eq!(report.skipped_files, 1);
+        assert!(game.join("bin/2/res_mods/gui/a.png").is_file());
+        assert!(!game.join("bin/2/res_mods/installed_mods.xml").exists());
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migrate_rejects_current_version_and_unknown_bins() {
+        let tmp = std::env::temp_dir().join("wowsp_stale_migrate_err");
+        let _ = fs::remove_dir_all(&tmp);
+        touch(&tmp.join("bin/1/res_mods/x.xml"));
+        let root = tmp.to_string_lossy().into_owned();
+        let err = migrate_stale_bin_core(&root, "1").unwrap_err();
+        assert!(err.contains("current version"), "{err}");
+        // A version newer than (or equal to) the latest is rejected by the
+        // numeric guard before any disk lookup.
+        let err = migrate_stale_bin_core(&root, "2").unwrap_err();
+        assert!(err.contains("current version"), "{err}");
+        let err = migrate_stale_bin_core(&root, "notaversion").unwrap_err();
+        assert!(err.contains("not a numeric"), "{err}");
+        // A leading-zero spelling of the current version must be rejected
+        // numerically, not just by string equality.
+        fs::create_dir_all(tmp.join("bin/01/res_mods/stray")).unwrap();
+        fs::write(tmp.join("bin/01/res_mods/stray/x.xml"), b"x").unwrap();
+        let err = migrate_stale_bin_core(&root, "01").unwrap_err();
+        assert!(err.contains("current version"), "{err}");
+        assert!(tmp.join("bin/01/res_mods/stray/x.xml").is_file());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn conflict_warnings_flag_overlapping_records() {
+        let mk = |id: &str, name: &str, files: &[&str]| ModInstallRecord {
+            id: id.into(),
+            name: name.into(),
+            version: String::new(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| f.to_string()).collect(),
+            restore_dir: None,
+        };
+        let installs = vec![
+            mk("a", "ModA", &["gui/a.png", "gui/b.png"]),
+            mk("b", "ModB", &["content/x.dds"]),
+            mk("stale", "Stale", &["gui/a.png"]),
+        ];
+        let mut stale = installs[2].clone();
+        stale.bin_version = "0".into();
+        let list = vec![installs[0].clone(), installs[1].clone(), stale];
+        let warnings = conflict_warnings(
+            &["gui/a.png".to_string(), "gui/c.png".to_string()],
+            &list,
+            "self",
+            "1",
+        );
+        // Only same-bin, other-id records with actual overlap speak up.
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("ModA"), "{warnings:?}");
+        assert!(warnings[0].contains("1 file"), "{warnings:?}");
+    }
+
+    #[test]
     fn local_record_describes_local_install() {
         let applied = PlanApply {
             report: InstallReport {
@@ -2732,6 +3165,7 @@ mod tests {
                 bin_version: "1".into(),
                 wrote_files: 2,
                 warnings: Vec::new(),
+                conflicts: Vec::new(),
             },
             written: vec!["gui/a.png".into(), "ime_config.xml".into()],
             restore_dir: Some(PathBuf::from("R")),

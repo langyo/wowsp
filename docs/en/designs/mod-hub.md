@@ -272,8 +272,23 @@ ledger writes or file renames.
 
 ### 4. Version migration & compatibility confirmation
 
-After a game update (a new `bin/<version>/` directory appears), the
-migration wizard runs automatically:
+**Landed (detection + one-click migrate)**: the scan reports every older
+`bin/<version>/res_mods` that still carries files (`mod_hub_stale_versions`)
+and the resources page shows a warning banner;
+`mod_hub_migrate_stale_bin` moves the stranded files into the current
+version's `res_mods` (same-volume per-file renames; **keep-new** on
+conflicts — a stranded file is dropped when the current tree has it live
+or as a disabled twin, and a stranded twin is dropped when its live
+counterpart exists, so nothing is ever overwritten; disabled twins carry
+over when the current tree lacks the live file; the stranded Aslain
+`installed_mods.xml` dies with the old directory instead of
+transplanting ghost rows; the old directory is emptied afterwards and
+ledger records re-pointed at the current version; guarded by the mod-hub
+gate and the game-running check).
+
+**Planned (compatibility-graded migration wizard)**: after a game update
+(a new `bin/<version>/` directory appears), the migration wizard runs
+automatically:
 
 1. **Scan**: read the old `res_mods/<old>/` and the install record;
 2. **Classify**:

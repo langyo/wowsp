@@ -533,6 +533,15 @@ pub async fn mod_catalog_install(
         },
     };
 
+    // Say whose files this install clobbered (the journal already
+    // snapshotted them — this is the visibility half of the conflict
+    // policy the design doc promises).
+    let mut report = report;
+    let conflicts =
+        mod_hub::conflict_warnings(&written, &ledger.installs, &entry.id, &report.bin_version);
+    report.conflicts = conflicts.clone();
+    report.warnings.extend(conflicts);
+
     ledger.installs.push(ModInstallRecord {
         id: entry.id.clone(),
         name: report.name.clone(),
@@ -740,6 +749,13 @@ pub(crate) fn uninstall_from_ledger(
         .join("res_mods");
     let mut removed = 0usize;
     for rel in &record.files {
+        // The loader marker is shared and never deleted by the plain file
+        // loop — a foreign (non-empty) one must survive even the last
+        // uninstall; our own 0-byte placeholder is dropped by the
+        // ref-count pass below once the last user is gone.
+        if rel == "PnFModsLoader.py" {
+            continue;
+        }
         let path = match rel.strip_prefix("@game/") {
             Some(rest) => Path::new(game_root).join(rest),
             None => res_mods.join(rel),
@@ -782,6 +798,23 @@ pub(crate) fn uninstall_from_ledger(
     }
 
     installs.retain(|r| r.id != mod_id);
+
+    // The 0-byte loader marker is a shared component: when the last record
+    // referencing it is gone, drop our placeholder — a non-empty loader
+    // shipped with a real modpack (Aslain & co.) is never ours to touch.
+    if record.files.iter().any(|f| f == "PnFModsLoader.py")
+        && !installs
+            .iter()
+            .any(|r| r.files.iter().any(|f| f == "PnFModsLoader.py"))
+    {
+        let loader = res_mods.join("PnFModsLoader.py");
+        let is_placeholder = loader.metadata().map(|m| m.len() == 0).unwrap_or(false);
+        if is_placeholder {
+            fs::remove_file(&loader).map_err(|e| format!("remove {}: {e}", loader.display()))?;
+            removed += 1;
+            tracing::info!("removed the shared PnFModsLoader.py placeholder");
+        }
+    }
     Ok(UninstallReport {
         id: record.id,
         name: record.name,
@@ -1061,6 +1094,47 @@ mod tests {
 
         fs::remove_dir_all(&tmp).ok();
         fs::remove_dir_all(mod_hub::restore_root()).ok();
+    }
+
+    #[test]
+    fn uninstall_drops_shared_loader_only_when_last() {
+        // The 0-byte loader marker is ref-counted across records; a
+        // non-empty foreign loader is never ours to remove.
+        let tmp = std::env::temp_dir().join("wowsp_loader_refcount");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        fs::create_dir_all(rm.join("PnFMods/A")).unwrap();
+        fs::create_dir_all(rm.join("PnFMods/B")).unwrap();
+        fs::write(rm.join("PnFMods/A/Main.py"), b"a").unwrap();
+        fs::write(rm.join("PnFMods/B/Main.py"), b"b").unwrap();
+        fs::write(rm.join("PnFModsLoader.py"), b"").unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |id: &str, main: &str| ModInstallRecord {
+            id: id.into(),
+            name: id.into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec![format!("PnFMods/{main}/Main.py"), "PnFModsLoader.py".into()],
+            restore_dir: None,
+        };
+        let mut installs = vec![mk("a", "A"), mk("b", "B")];
+        uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+        assert!(rm.join("PnFModsLoader.py").is_file(), "still ref-counted");
+        uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
+        assert!(!rm.join("PnFModsLoader.py").exists(), "last user gone");
+
+        // A foreign (non-empty) loader survives even the last uninstall.
+        fs::create_dir_all(rm.join("PnFMods/A")).unwrap();
+        fs::write(rm.join("PnFModsLoader.py"), b"# Aslain").unwrap();
+        let mut installs = vec![mk("c", "A")];
+        fs::write(rm.join("PnFMods/A/Main.py"), b"a").unwrap();
+        uninstall_from_ledger(&mut installs, "c", &game_root).unwrap();
+        assert!(rm.join("PnFModsLoader.py").is_file());
+        fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]

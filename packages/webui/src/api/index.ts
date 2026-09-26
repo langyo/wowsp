@@ -22,6 +22,8 @@ export type {
   CatalogEntryI18n,
   CatalogIndex,
   ModInstallRecord,
+  StaleBinInfo,
+  MigrateReport,
   UninstallReport,
   CatalogProgress,
   PairingStatus,

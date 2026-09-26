@@ -1734,6 +1734,12 @@ pub struct InstallReport {
     pub bin_version: String,
     pub wrote_files: usize,
     pub warnings: Vec<String>,
+    /// Which other installed mods this install overwrote files of (also
+    /// mirrored into `warnings`); kept separate so the UI can toast them
+    /// without string-matching. Absent when empty so the wire shape of
+    /// conflict-free reports stays byte-identical to older builds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflicts: Vec<String>,
 }
 
 // ── Mod Hub online catalog (mirrors scripts/mod_hub_publish.py output) ──────
@@ -1819,6 +1825,30 @@ pub struct ModInstallRecord {
     pub files: Vec<String>,
     /// Where pre-overwrite snapshots of replaced files live, if any.
     pub restore_dir: Option<String>,
+}
+
+/// A `bin/<version>/` older than the client's current one whose `res_mods`
+/// still carries files — stranded by a game update: invisible to the hub's
+/// installed list and not loaded by the client, but still on disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StaleBinInfo {
+    pub bin_version: String,
+    /// Unit names the scanner recognizes in the stranded tree.
+    pub mods: Vec<String>,
+    pub file_count: u64,
+}
+
+/// What a stale-bin migration did: files moved into the current version's
+/// `res_mods`, and files kept as-is because the current tree already had
+/// them (the newer install wins, so migrations never overwrite).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrateReport {
+    pub from_version: String,
+    pub to_version: String,
+    pub moved_files: usize,
+    pub skipped_files: usize,
 }
 
 /// Progress push for a catalog install (`wowsp://mod-catalog-progress`).
@@ -3791,8 +3821,29 @@ mod tests {
             bin_version: "0.14.5".into(),
             wrote_files: 291,
             warnings: Vec::new(),
+            conflicts: Vec::new(),
         });
         assert_exact_keys(&v, &["name", "binVersion", "wroteFiles", "warnings"]);
+        // A report from a pre-conflicts build (no such field) still
+        // deserializes — the field defaults to empty.
+        let legacy = serde_json::json!({
+            "name": "old",
+            "binVersion": "1",
+            "wroteFiles": 1,
+            "warnings": []
+        });
+        let back: InstallReport = serde_json::from_value(legacy).unwrap();
+        assert_eq!(back.name, "old");
+        assert!(back.conflicts.is_empty());
+        // Non-empty conflicts serialize under the camelCase name.
+        let v = round_trips(InstallReport {
+            name: "x".into(),
+            bin_version: "1".into(),
+            wrote_files: 1,
+            warnings: Vec::new(),
+            conflicts: vec!["overwrites 2 file(s)".into()],
+        });
+        assert_eq!(v["conflicts"][0], "overwrites 2 file(s)");
     }
 
     #[test]
