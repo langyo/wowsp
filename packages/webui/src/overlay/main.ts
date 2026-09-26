@@ -855,6 +855,26 @@ async function start() {
   void loadCustomStamps(invoke).then(() => render());
 }
 
+// Re-render when the webview's own devicePixelRatio changes. The overlay
+// window is placed in PHYSICAL px on the game's monitor, and chips convert
+// anchor coordinates with `devicePixelRatio`; when the window moves between
+// monitors of different scale factors (mixed-DPI setups — or the game
+// dragging the overlay along), WebView2 updates its ratio ASYNCHRONOUSLY,
+// and chips positioned with the stale ratio sit off the rows until the next
+// anchor event. A fixed-resolution media query flips exactly when the ratio
+// moves; the listener detaches before re-arming so dpr ping-pong cannot
+// accumulate stale queries.
+function armDprWatch() {
+  const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  const onChange = () => {
+    mq.removeEventListener("change", onChange);
+    render();
+    armDprWatch();
+  };
+  mq.addEventListener("change", onChange);
+}
+armDprWatch();
+
 // Start hidden: the native window is created invisible, but a dev reload or
 // a late event could otherwise leave stale content painted over the game.
 document.documentElement.classList.add("overlay-hidden");
