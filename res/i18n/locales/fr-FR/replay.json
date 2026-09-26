@@ -356,6 +356,8 @@
       "hint": "Replacez la même unité plus tard et elle s'y rendra d'elle-même : la chronologie trace la flèche d'interpolation entre les deux repères.",
       "tween": "Interpolation",
       "rename": "Renommer l'unité",
+      "editTime": "Heure (m:ss)",
+      "removeAction": "Supprimer cette action",
       "unitN": "Unité {n}",
       "actionCount": "{n} actions",
       "collapse": "Cliquer pour réduire",

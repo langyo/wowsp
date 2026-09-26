@@ -24,5 +24,13 @@
   "select": "Selecciona un mapa para empezar el análisis",
   "plan": {
     "noBounds": "Este mapa no tiene datos de extensión, así que no se puede trazar un plan táctico sobre él."
+  },
+  "slots": {
+    "slotN": "Plan {n}",
+    "add": "Nuevo plan",
+    "duplicate": "Duplicar el plan actual",
+    "remove": "Eliminar el plan actual",
+    "removeConfirm": "Haz clic de nuevo para eliminar",
+    "rename": "Renombrar el plan"
   }
 }

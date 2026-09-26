@@ -21,10 +21,10 @@ import {
   watch,
   type PropType,
 } from "vue";
-import { ChevronsLeft, Pause, Play, Plus, ZoomIn, ZoomOut } from "@lucide/vue";
+import { ChevronsLeft, Pause, Play, Plus, Trash2, ZoomIn, ZoomOut } from "@lucide/vue";
 import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
 import { i18n, t as i18nT } from "@/i18n";
-import type { TacticalStep } from "./types";
+import type { TacticalActionKind, TacticalStep } from "./types";
 import type { ShipAction } from "./actions";
 import type { PlanTrack } from "./plan";
 import {
@@ -34,6 +34,7 @@ import {
   fullWindow,
   layoutMarkers,
   layoutPlanRows,
+  parseClock,
   planBandHeight,
   rulerTicks,
   zoomWindow,
@@ -130,6 +131,17 @@ export default defineComponent({
      *  hosts that don't own the document (read-only timelines). */
     onRenameUnit: {
       type: Function as PropType<(track: PlanTrack, name: string) => void>,
+      default: undefined,
+    },
+    /** Double-click a keyframe / user marker → the action editor. The getter
+     *  supplies the element's current time (+ action kind on a plan board);
+     *  null hides the affordance (non-marker elements). */
+    markerOf: {
+      type: Function as PropType<(id: string) => { t0: number; action: TacticalActionKind | null } | null>,
+      default: undefined,
+    },
+    onEditMarker: {
+      type: Function as PropType<(id: string, patch: { t0?: number; action?: TacticalActionKind }) => void>,
       default: undefined,
     },
   },
@@ -778,14 +790,21 @@ export default defineComponent({
 
     function onDblClick(e: MouseEvent): void {
       e.stopPropagation();
-      if (!props.onRenameUnit) return;
       const { x, y } = localXY(e);
       const key = trackHeaderKeyAt(x, y);
-      if (key == null) return;
-      const geo = rowGeometry(props.tracks.findIndex((t) => t.key === key));
-      if (!geo) return;
-      renameEdit.value = { key, value: geo.track.label, top: geo.top };
-      requestAnimationFrame(() => renameInput.value?.focus());
+      if (key != null) {
+        if (!props.onRenameUnit) return;
+        const geo = rowGeometry(props.tracks.findIndex((t) => t.key === key));
+        if (!geo) return;
+        renameEdit.value = { key, value: geo.track.label, top: geo.top };
+        requestAnimationFrame(() => renameInput.value?.focus());
+        return;
+      }
+      // Action keyframe / user marker → the editor panel.
+      if (props.onEditMarker && props.markerOf) {
+        const hit = hitAt(x, y);
+        if (hit?.kind === "user") openMarkerEdit(hit.id, hit.x, hit.y);
+      }
     }
     function commitRename(): void {
       const ed = renameEdit.value;
@@ -799,6 +818,63 @@ export default defineComponent({
       if (e.key === "Enter") commitRename();
       else if (e.key === "Escape") renameEdit.value = null;
     }
+
+    // ── Action editor (double-click a keyframe / user marker) ────────────
+    const markerEdit = ref<{ id: string; x: number; y: number } | null>(null);
+    const markerTimeInput = ref<HTMLInputElement | null>(null);
+    const markerTimeText = ref("");
+    /** The text the time field was seeded with: fmtClock ROUNDS to whole
+     *  seconds, so "user didn't touch the field" must compare TEXT against
+     *  this seed — comparing parsed seconds against t0 would silently nudge
+     *  every merely-opened action by up to half a second. */
+    let markerTimeSeed = "";
+    /** Current element data for the open editor (null once removed). */
+    const markerEditData = computed(() => {
+      const ed = markerEdit.value;
+      if (!ed || !props.markerOf) return null;
+      return props.markerOf(ed.id);
+    });
+    const markerEditKind = ref<TacticalActionKind>("move");
+
+    function openMarkerEdit(id: string, x: number, y: number): void {
+      const data = props.markerOf?.(id);
+      if (!data) return;
+      markerEditKind.value = data.action ?? "move";
+      markerTimeSeed = fmtClock(data.t0);
+      markerTimeText.value = markerTimeSeed;
+      markerEdit.value = { id, x, y };
+      requestAnimationFrame(() => markerTimeInput.value?.focus());
+    }
+    function commitMarkerEdit(): void {
+      const ed = markerEdit.value;
+      const data = markerEditData.value;
+      markerEdit.value = null;
+      if (!ed || !data || !props.onEditMarker) return;
+      const patch: { t0?: number; action?: TacticalActionKind } = {};
+      if (markerTimeText.value !== markerTimeSeed) {
+        const t = parseClock(markerTimeText.value);
+        if (t != null) patch.t0 = t; // unparseable edit = keep the old time
+      }
+      // Only offer the kind switch where it means something (plan boards).
+      if (props.tall && data.action != null && markerEditKind.value !== data.action) {
+        patch.action = markerEditKind.value;
+      }
+      if (patch.t0 != null || patch.action != null) props.onEditMarker(ed.id, patch);
+    }
+    function onMarkerEditKeydown(e: KeyboardEvent): void {
+      e.stopPropagation();
+      if (e.key === "Enter") commitMarkerEdit();
+      else if (e.key === "Escape") markerEdit.value = null;
+    }
+    const markerEditStyle = computed(() => {
+      const ed = markerEdit.value;
+      if (!ed) return null;
+      const flip = ed.x > width.value - 210;
+      return {
+        left: `${flip ? ed.x - 208 : ed.x + 10}px`,
+        top: `${Math.max(2, ed.y - 14)}px`,
+      };
+    });
 
     function zoomStep(factor: number): void {
       win.value = zoomWindow(win.value, duration.value, factor, props.getTime());
@@ -913,6 +989,57 @@ export default defineComponent({
               onBlur={commitRename}
               onClick={(e: MouseEvent) => e.stopPropagation()}
             />
+          ) : null}
+          {markerEdit.value && markerEditData.value && markerEditStyle.value ? (
+            <div
+              class="tac-timeline__edit"
+              style={markerEditStyle.value}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+            >
+              <label class="tac-timeline__edit-field">
+                <span>{i18nT("replay.tactical.plan.editTime")}</span>
+                <input
+                  ref={markerTimeInput}
+                  value={markerTimeText.value}
+                  onInput={(e: Event) => {
+                    markerTimeText.value = (e.target as HTMLInputElement).value;
+                  }}
+                  onKeydown={onMarkerEditKeydown}
+                  onBlur={commitMarkerEdit}
+                />
+              </label>
+              {props.tall && markerEditData.value.action != null ? (
+                <div class="tac-timeline__edit-kinds">
+                  {(["move", "attack", "spot"] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      class={[
+                        "tac-timeline__edit-kind",
+                        markerEditKind.value === kind ? "tac-timeline__edit-kind--on" : "",
+                      ]}
+                      onClick={() => {
+                        markerEditKind.value = kind;
+                      }}
+                    >
+                      {i18nT(`replay.tactical.plan.act.${kind}`)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                class="tac-timeline__edit-del"
+                title={i18nT("replay.tactical.plan.removeAction")}
+                onClick={() => {
+                  const ed = markerEdit.value;
+                  markerEdit.value = null;
+                  if (ed) props.removeUserMarker(ed.id);
+                }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
           ) : null}
           {tooltip.value && tooltipStyle.value ? (
             <div class="tac-timeline__tip" style={tooltipStyle.value}>

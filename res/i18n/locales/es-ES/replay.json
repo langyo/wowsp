@@ -356,6 +356,8 @@
       "hint": "Vuelve a colocar la misma unidad más tarde y se desplazará sola hasta ahí: la línea de tiempo dibuja la flecha de interpolación entre ambas marcas.",
       "tween": "Interpolación",
       "rename": "Renombrar la unidad",
+      "editTime": "Hora (m:ss)",
+      "removeAction": "Eliminar esta acción",
       "unitN": "Unidad {n}",
       "actionCount": "{n} acciones",
       "collapse": "Clic para contraer",

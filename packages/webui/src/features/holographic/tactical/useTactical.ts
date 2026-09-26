@@ -193,12 +193,17 @@ export function useTactical(replayPath: Ref<string>) {
       writePending();
     }, 400);
   }
-  function load(): void {
+  /** Write any debounced edit out NOW (the plan-slot duplicator calls this
+   *  before reading the source document from storage). */
+  function flush(): void {
     if (saveTimer != null) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
     writePending();
+  }
+  function load(): void {
+    flush();
     try {
       const raw = window.localStorage.getItem(docStorageKey(replayPath.value));
       const doc = raw ? parseDoc(raw) : null;
@@ -233,6 +238,7 @@ export function useTactical(replayPath: Ref<string>) {
     pushHistory,
     undo,
     redo,
+    flush,
     commit,
     replaceElement,
     removeElement,
