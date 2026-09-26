@@ -1522,8 +1522,10 @@ export default defineComponent({
         }
       }
 
-      // Camera frustum.
-      const cam = api.value?.camera;
+      // Camera frustum — hidden while the enlarged 2D view covers the
+      // scene: the 3D camera is not what the user is looking at (and the
+      // thumb gets burned into exports, where a stale frustum is noise).
+      const cam = !minimapZoom.value ? api.value?.camera : null;
       if (cam) {
         const corners = frustumCorners(cam);
         ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
@@ -1533,6 +1535,27 @@ export default defineComponent({
         for (let i = 1; i < 4; i++) ctx.lineTo(wx(corners[i].x), wz(corners[i].z));
         ctx.closePath();
         ctx.stroke();
+      }
+
+      // Enlarged 2D view window, boxed on the thumb: the exporters burn
+      // this canvas into the corner of recordings/screenshots, so the chip
+      // must say where the zoomed view is looking. The window is clamped to
+      // the FULL map but the thumb may show a cropped active area (db), so
+      // the box is intersected with the canvas — panned outside db it just
+      // clips instead of vanishing off-thumb.
+      if (minimapZoom.value) {
+        const vb = computeViewBounds(full);
+        const x0 = Math.max(0, wx(vb.minX));
+        const y0 = Math.max(0, wz(-vb.maxZ));
+        const x1 = Math.min(w, wx(vb.maxX));
+        const y1 = Math.min(h, wz(-vb.minZ));
+        if (x1 - x0 > 1 && y1 - y0 > 1) {
+          ctx.strokeStyle = "rgba(0, 195, 255, 0.95)";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 3]);
+          ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+          ctx.setLineDash([]);
+        }
       }
 
       // Enlarged minimap overlay: full-map view with ship trails + glyphs.
@@ -5295,6 +5318,7 @@ export default defineComponent({
                 labelOf={vehicleLabelOf}
                 pickShipAt={pickShipAt}
                 baseCanvas={() => zoomCanvas.value}
+                overlayCanvas={() => minimapCanvas.value}
               />
             </div>
           </div>

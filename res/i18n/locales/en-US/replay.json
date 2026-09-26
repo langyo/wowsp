@@ -283,6 +283,7 @@
       "format": "Format",
       "scale": "Resolution",
       "timestamp": "Timestamp",
+      "minimap": "Corner overview minimap",
       "full": "Export view snapshot",
       "region": "Crop-region snapshot",
       "regionRun": "Export selected region",

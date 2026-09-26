@@ -60,6 +60,7 @@ import { TACTICAL_MAX_SCALE } from "./geometry";
 import {
   canvasToBlob,
   composeExportCanvas,
+  drawMinimapChip,
   drawTimestampChip,
   formatBattleClock,
   frameTimes,
@@ -142,6 +143,13 @@ export default defineComponent({
       type: Function as PropType<() => HTMLCanvasElement | null>,
       required: true,
     },
+    /** The host's overview minimap canvas (full map + view box), burned
+     *  into exports/recordings when the export setting says so. Absent on
+     *  hosts without one. */
+    overlayCanvas: {
+      type: Function as PropType<() => HTMLCanvasElement | null>,
+      default: undefined,
+    },
     /** Plan board (no replay behind it): virtual units render SOLID (they are
      *  the subject here, not a plan sketched over someone else's fight),
      *  markers carry action kinds and the timeline switches to accordion unit
@@ -201,6 +209,10 @@ export default defineComponent({
       format: "png" as "png" | "webp",
       scale: 1 as 1 | 2,
       timestamp: false,
+      /** Burn the overview minimap into the frame's corner (on by default:
+     *  a recorded walkthrough without the "where are we" chip is much
+     *  harder to follow once the view is zoomed in). */
+      minimap: true,
       offlineFps: 30 as 30 | 60,
       offlineFrom: "now" as "now" | "start",
     });
@@ -985,6 +997,7 @@ export default defineComponent({
           Math.round(edgeW * native * s.scale),
           Math.round(edgeH * native * s.scale),
           s.timestamp ? formatBattleClock(props.getTime()) : null,
+          s.minimap ? props.overlayCanvas?.() ?? null : null,
         );
         const blob = await canvasToBlob(canvas, s.format === "webp" ? "image/webp" : "image/png");
         const saved = await saveExportBlob(blob, defaultName(s.format), "Image", s.format);
@@ -1013,6 +1026,8 @@ export default defineComponent({
       const overlay = canvasRef.value;
       if (overlay) ctx.drawImage(overlay, 0, 0, overlay.width, overlay.height, 0, 0, size, size);
       drawTimestampChip(ctx, size, formatBattleClock(t));
+      const minimap = exportSettings.value.minimap ? props.overlayCanvas?.() : undefined;
+      if (minimap) drawMinimapChip(ctx, size, size, minimap);
     }
 
     async function startRecording(): Promise<void> {

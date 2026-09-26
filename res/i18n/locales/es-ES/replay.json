@@ -283,6 +283,7 @@
       "format": "Formato",
       "scale": "Resolución",
       "timestamp": "Marca de tiempo",
+      "minimap": "Minimapa en la esquina",
       "full": "Exportar la vista actual",
       "region": "Captura de zona",
       "regionRun": "Exportar la zona seleccionada",

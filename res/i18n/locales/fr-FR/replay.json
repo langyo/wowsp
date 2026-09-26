@@ -283,6 +283,7 @@
       "format": "Format",
       "scale": "Résolution",
       "timestamp": "Horodatage",
+      "minimap": "Mini-carte dans le coin",
       "full": "Exporter la vue actuelle",
       "region": "Capture d'une zone",
       "regionRun": "Exporter la zone sélectionnée",
