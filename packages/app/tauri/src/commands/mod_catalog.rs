@@ -375,6 +375,10 @@ pub async fn mod_catalog_install(
         .ok_or_else(|| format!("{mod_id} is not in the cached catalog"))?
         .clone();
 
+    // Fail fast when the game is running — mutating res_mods under a live
+    // client tears half-loaded mods.
+    mod_hub::ensure_game_closed()?;
+
     let progress = |p: CatalogProgress| {
         let _ = app.emit(CATALOG_PROGRESS_EVENT, &p);
     };
@@ -483,23 +487,52 @@ pub async fn mod_catalog_install(
     });
 
     // Serialize the disk side (unpack, res_mods writes, ledger) while other
-    // installs may still be in their download phase.
+    // installs may still be in their download phase. The game guard runs
+    // again here: the client may have been launched while the download ran.
     let _gate = mod_hub_gate().await;
+    mod_hub::ensure_game_closed()?;
 
+    let mut ledger = load_ledger();
     // Unpack + classify + write are blocking fs work — keep them off the
     // async runtime threads.
     let unpack_id = entry.id.clone();
     let unpack_root = game_root.clone();
     let unpack_pkgs = entry.packages.clone();
     let unpack_work = work.0.clone();
-    let (report, written, restore_dir) = tauri::async_runtime::spawn_blocking(move || {
-        unpack_and_install(&unpack_id, &unpack_work, &unpack_root, &unpack_pkgs)
+    let (outcome, mut ledger) = tauri::async_runtime::spawn_blocking(move || {
+        // Reinstall = rewind first: restore the vanilla files the previous
+        // install snapshotted and delete its recorded files, so the new
+        // version starts from a clean baseline — files dropped by the new
+        // package don't linger, and the snapshots point at VANILLA originals
+        // instead of chaining onto the previous mod (chained snapshots used
+        // to make uninstall restore the previous mod's files).
+        let mut failure = None;
+        if ledger.installs.iter().any(|r| r.id == unpack_id) {
+            if let Err(e) = uninstall_from_ledger(&mut ledger.installs, &unpack_id, &unpack_root) {
+                failure = Some(e);
+            }
+        }
+        let outcome = match failure {
+            Some(e) => Err(e),
+            None => unpack_and_install(&unpack_id, &unpack_work, &unpack_root, &unpack_pkgs),
+        };
+        (outcome, ledger)
     })
     .await
-    .map_err(|e| format!("install task: {e}"))??;
+    .map_err(|e| format!("install task: {e}"))?;
+    let (report, written, restore_dir) = match outcome {
+        Ok(done) => done,
+        Err(e) => {
+            // The rewind already changed the ledger even though the unpack
+            // failed — persist it so the on-disk ledger does not describe
+            // files that are already gone.
+            if let Err(se) = save_ledger(&ledger) {
+                tracing::warn!(error = %se, "ledger save failed after failed install");
+            }
+            return Err(e);
+        },
+    };
 
-    let mut ledger = load_ledger();
-    ledger.installs.retain(|r| r.id != entry.id);
     ledger.installs.push(ModInstallRecord {
         id: entry.id.clone(),
         name: report.name.clone(),
@@ -586,58 +619,24 @@ fn unpack_and_install(
         ));
     }
 
-    let game = Path::new(game_root);
     let res_mods_src = extract_root.join("res_mods");
-    let (applied, loose) = if res_mods_src.is_dir() {
-        let plan = mod_hub::classify_package(&res_mods_src)?;
-        let applied = mod_hub::install_plan(&res_mods_src, game_root, &plan)?;
-        (applied, loose_root_files(&extract_root)?)
+    let (plan_root, loose) = if res_mods_src.is_dir() {
+        // Aslain packages are laid out against the game root: the payload
+        // lives under `res_mods/…`, and a few text mods ship a loose DLL
+        // that belongs in the game root itself. Both go through the same
+        // journaled install (snapshots + rollback).
+        let loose: Vec<PathBuf> = loose_root_files(&extract_root)?
+            .into_iter()
+            .map(|name| extract_root.join(name))
+            .collect();
+        (res_mods_src, loose)
     } else {
-        let plan = mod_hub::classify_package(&extract_root)?;
-        let applied = mod_hub::install_plan(&extract_root, game_root, &plan)?;
-        (applied, Vec::new())
+        (extract_root.clone(), Vec::new())
     };
+    let plan = mod_hub::classify_package(&plan_root)?;
+    let applied = mod_hub::install_plan_with_loose(&plan_root, game_root, &plan, &loose)?;
 
-    // Loose game-root payloads (gettext_x64r.dll …), ledger-recorded under an
-    // `@game/` prefix so uninstall can find them again.
-    let mut written = applied.written;
-    let mut restore_dir = applied.restore_dir;
-    for name in loose {
-        let src = extract_root.join(&name);
-        let dest = game.join(&name);
-        if dest.is_file() {
-            // The `@game/` subdir mirrors the res_mods snapshots inside the
-            // same restore dir, so one uninstall restores both roots.
-            let dir = match restore_dir.clone() {
-                Some(dir) => dir,
-                None => {
-                    let dir = mod_hub::restore_root().join(format!(
-                        "{}-{}",
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis(),
-                        sanitize_for_restore(&applied.report.name)
-                    ));
-                    fs::create_dir_all(&dir).ok();
-                    restore_dir = Some(dir.clone());
-                    dir
-                },
-            };
-            let snap = dir.join("@game").join(&name);
-            if let Some(parent) = snap.parent() {
-                fs::create_dir_all(parent).ok();
-            }
-            fs::copy(&dest, &snap).ok();
-        }
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
-        }
-        fs::copy(&src, &dest).map_err(|e| format!("copy {}: {e}", dest.display()))?;
-        written.push(format!("@game/{name}"));
-    }
-
-    Ok((applied.report, written, restore_dir))
+    Ok((applied.report, applied.written, applied.restore_dir))
 }
 
 /// Files sitting at the zip root next to `res_mods/` (game-root payloads).
@@ -662,18 +661,6 @@ fn loose_root_files(extract_root: &Path) -> Result<Vec<String>, String> {
     }
     loose.sort();
     Ok(loose)
-}
-
-fn sanitize_for_restore(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 /// Zip-slip-safe extraction; visited paths are collected for diagnostics.
@@ -725,6 +712,7 @@ pub async fn mod_catalog_uninstall(
     game_root: String,
 ) -> Result<UninstallReport, String> {
     let _gate = mod_hub_gate().await;
+    mod_hub::ensure_game_closed()?;
     let mut ledger = load_ledger();
     let report = uninstall_from_ledger(&mut ledger.installs, &mod_id, &game_root)?;
     save_ledger(&ledger)?;
@@ -758,6 +746,13 @@ pub(crate) fn uninstall_from_ledger(
         };
         if path.is_file() {
             fs::remove_file(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+            removed += 1;
+        }
+        // A disabled mod's files live under `.bak` twins — they must not
+        // survive the uninstall as ghost payloads the next scan resurrects.
+        let twin = mod_hub::sibling_with_suffix(&path, ".bak");
+        if twin.is_file() {
+            fs::remove_file(&twin).map_err(|e| format!("remove {}: {e}", twin.display()))?;
             removed += 1;
         }
     }
@@ -908,6 +903,7 @@ mod tests {
         let game = tmp.join("game/bin/1");
         fs::create_dir_all(&game).unwrap();
         let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
 
         let (report, written, restore) =
             unpack_and_install("test-mod", &work, &game_root, &packages).unwrap();
@@ -943,18 +939,125 @@ mod tests {
         }];
         let removed = uninstall_from_ledger(&mut installs, "test-mod", &game_root).unwrap();
         assert_eq!(removed.removed_files, 3);
-        assert_eq!(removed.restored_files, 2);
-        // The overwrite victim comes back (install #1's copy); the DLL had no
-        // earlier original, so it is simply gone.
-        // The overwrite victims come back (install #1's copies) — uninstall
-        // rewinds the LAST install, it does not blindly delete.
+        // All three overwrite victims (both res_mods files + the game-root
+        // DLL) come back as install #1's copies: nested snapshots now
+        // actually happen — the old best-effort copy silently skipped them
+        // whenever the snapshot parent directory did not exist yet.
+        assert_eq!(removed.restored_files, 3);
         assert!(res_mods.join("ime_config.xml").is_file());
         assert_eq!(
             fs::read(res_mods.join("ime_config.xml")).unwrap(),
             b"<ime/>"
         );
+        assert!(res_mods.join("gui/x/a.png").is_file());
         assert_eq!(fs::read(tmp.join("game/gettext_x64r.dll")).unwrap(), b"dll");
         assert!(installs.is_empty());
+
+        fs::remove_dir_all(&tmp).ok();
+        fs::remove_dir_all(mod_hub::restore_root()).ok();
+    }
+
+    #[test]
+    fn uninstall_removes_disabled_bak_twins() {
+        // A mod disabled through the hub lives as `.bak` twins; uninstalling
+        // it must remove those too — otherwise the next scan resurrects a
+        // ghost unit and the files linger in res_mods forever.
+        let tmp = std::env::temp_dir().join("wowsp_twin_uninstall");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods/gui");
+        fs::create_dir_all(&rm).unwrap();
+        fs::write(rm.join("a.png.bak"), b"disabled").unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mut installs = vec![ModInstallRecord {
+            id: "m".into(),
+            name: "M".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["gui/a.png".into()],
+            restore_dir: None,
+        }];
+        let report = uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
+        assert_eq!(report.removed_files, 1);
+        assert!(!rm.join("a.png.bak").exists());
+        assert!(installs.is_empty());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn reinstall_rewinds_to_vanilla_baseline() {
+        // The catalog install rewinds the previous record before writing the
+        // new one. This test drives the exact sequence the command performs:
+        // after v1 → rewind → v2, the final uninstall must restore the
+        // VANILLA file, not v1's modded copy (the old chained-snapshot bug).
+        let tmp = std::env::temp_dir().join("wowsp_rewind_reinstall");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game/bin/1/res_mods");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("ime_config.xml"), b"vanilla").unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+
+        let run = |work: &Path, ime: &[u8], gui: &str| {
+            fs::create_dir_all(work).unwrap();
+            zip_fixture(
+                &work.join("00-part1.zip"),
+                &[("res_mods/ime_config.xml", ime), (gui.as_ref(), b"g")],
+            );
+            let packages = vec![CatalogPackage {
+                url: "https://example.com/part1.zip".into(),
+                sha256: String::new(),
+                size: 0,
+                name: "part1.zip".into(),
+            }];
+            unpack_and_install("m", work, &game_root, &packages).unwrap()
+        };
+
+        // v1 adds a file the v2 package drops — leftovers must not survive.
+        let (_r1, written1, restore1) = run(&tmp.join("work1"), b"v1", "res_mods/gui/keep1.png");
+        let mut installs = vec![ModInstallRecord {
+            id: "m".into(),
+            name: "m".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: written1,
+            restore_dir: restore1.map(|p| p.to_string_lossy().into_owned()),
+        }];
+
+        // Reinstall: rewind the old record first (exactly what
+        // `mod_catalog_install` now does before unpacking the new version).
+        uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
+        assert_eq!(fs::read(game.join("ime_config.xml")).unwrap(), b"vanilla");
+        assert!(
+            !game.join("gui/keep1.png").exists(),
+            "dropped files must go"
+        );
+
+        let (_r2, written2, restore2) = run(&tmp.join("work2"), b"v2", "res_mods/gui/keep2.png");
+        installs.push(ModInstallRecord {
+            id: "m".into(),
+            name: "m".into(),
+            version: "2".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: written2,
+            restore_dir: restore2.map(|p| p.to_string_lossy().into_owned()),
+        });
+
+        // Final uninstall rewinds to VANILLA, not to v1.
+        uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
+        assert_eq!(fs::read(game.join("ime_config.xml")).unwrap(), b"vanilla");
+        assert!(!game.join("gui/keep2.png").exists());
 
         fs::remove_dir_all(&tmp).ok();
         fs::remove_dir_all(mod_hub::restore_root()).ok();

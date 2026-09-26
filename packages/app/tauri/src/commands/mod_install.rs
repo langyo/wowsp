@@ -63,9 +63,13 @@ fn res_mods_dir(game_root: &str) -> Result<PathBuf, String> {
 }
 
 /// Install the WoWSP overlay mod files into the game's res_mods. Returns the
-/// res_mods path that was written to.
+/// res_mods path that was written to. Gated and game-guarded like every
+/// other res_mods mutation — an ungated write used to race install/rename
+/// sweeps from the mod hub.
 #[tauri::command]
-pub fn install_overlay_mod(game_root: String) -> Result<String, String> {
+pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    super::mod_hub::ensure_game_closed()?;
     let dir = res_mods_dir(&game_root)?;
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     for (name, body) in MOD_FILES {
@@ -77,7 +81,9 @@ pub fn install_overlay_mod(game_root: String) -> Result<String, String> {
 
 /// Remove the WoWSP overlay mod files. Idempotent — missing files are fine.
 #[tauri::command]
-pub fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
+pub async fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    super::mod_hub::ensure_game_closed()?;
     let dir = res_mods_dir(&game_root)?;
     for (name, _) in MOD_FILES {
         let path = dir.join(name);
@@ -115,20 +121,27 @@ mod tests {
 
     #[test]
     fn install_then_uninstall_is_idempotent() {
+        // The commands refuse to run against a live game client — a developer
+        // testing with World of Warships open would otherwise see a false
+        // failure here.
+        if super::super::appdata::find_game_pid().is_some() {
+            eprintln!("skipping: World of Warships is running");
+            return;
+        }
         let tmp = std::env::temp_dir().join("wowsp_modinstall_test");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("bin/12668706")).unwrap();
         let root = tmp.to_str().unwrap().to_string();
 
         assert!(!is_overlay_mod_installed(root.clone()).unwrap());
-        let dir = install_overlay_mod(root.clone()).unwrap();
+        let dir = tauri::async_runtime::block_on(install_overlay_mod(root.clone())).unwrap();
         assert!(PathBuf::from(&dir).join("WoWSP.py").is_file());
         assert!(is_overlay_mod_installed(root.clone()).unwrap());
 
-        uninstall_overlay_mod(root.clone()).unwrap();
+        tauri::async_runtime::block_on(uninstall_overlay_mod(root.clone())).unwrap();
         assert!(!is_overlay_mod_installed(root.clone()).unwrap());
         // Second uninstall must not error (idempotent).
-        uninstall_overlay_mod(root).unwrap();
+        tauri::async_runtime::block_on(uninstall_overlay_mod(root)).unwrap();
         fs::remove_dir_all(&tmp).ok();
     }
 }
