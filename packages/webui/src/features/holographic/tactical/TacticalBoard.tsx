@@ -165,8 +165,12 @@ export default defineComponent({
     const store = useTactical(toRef(props, "replayPath"));
     const toast = useToast();
     /** Host-facing surface: flush the store's debounced save so a plan-slot
-     *  duplicate reads the CURRENT document, not one up to 400 ms stale. */
-    expose({ flushDoc: () => store.flush() });
+     *  duplicate reads the CURRENT document, not one up to 400 ms stale;
+     *  reloadDoc re-reads after a bundle import overwrote the storage. */
+    expose({
+      flushDoc: () => store.flush(),
+      reloadDoc: () => store.reloadDoc(),
+    });
 
     const drag = ref<Drag | null>(null);
     /** Heading shown for the marker being Shift-spun. The element adopts the
@@ -479,9 +483,55 @@ export default defineComponent({
     });
 
     // ── Pointer interactions ─────────────────────────────────────────────
+    // Touch/pen pointers on the canvas, by pointer id. TWO at once = pinch
+    // zoom + pan (the tool gesture in flight is cancelled); the canvas has
+    // touch-action:none so the browser never races us for the gesture.
+    const touchPts = new Map<number, { x: number; y: number }>();
+    let pinch: { dist: number; cx: number; cy: number } | null = null;
+
+    function canvasLogical(e: { clientX: number; clientY: number }): { x: number; y: number } | null {
+      const cvs = canvasRef.value;
+      if (!cvs) return null;
+      const rect = cvs.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return null;
+      return {
+        x: ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        y: ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      };
+    }
+
+    /** Advance the pinch from the current two pointers: zoom by the distance
+     *  ratio (anchored on the midpoint) and pan by the midpoint's move. */
+    function pinchUpdate(): void {
+      const pts = [...touchPts.values()];
+      if (pts.length < 2) {
+        pinch = null;
+        return;
+      }
+      const [a, b] = pts;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const cx = (a.x + b.x) / 2;
+      const cy = (a.y + b.y) / 2;
+      if (pinch != null && dist > 1) {
+        props.viewApi.zoomAt(cx, cy, dist / pinch.dist);
+        props.viewApi.panByLogical(cx - pinch.cx, cy - pinch.cy);
+      }
+      pinch = { dist, cx, cy };
+    }
+
     function onPointerDown(e: PointerEvent): void {
       // Never let the click bubble to the mmzoom overlay (it closes on click).
       e.stopPropagation();
+      if (e.pointerType !== "mouse") {
+        const q = canvasLogical(e);
+        if (q) touchPts.set(e.pointerId, q);
+        if (touchPts.size >= 2) {
+          // A second finger takes over from any single-pointer gesture.
+          cancelDrag();
+          pinchUpdate();
+          return;
+        }
+      }
       if (e.button !== 0) return;
       const hit = eventWorld(e);
       if (!hit) return;
@@ -601,6 +651,15 @@ export default defineComponent({
     }
 
     function onPointerMove(e: PointerEvent): void {
+      if (touchPts.has(e.pointerId)) {
+        const q = canvasLogical(e);
+        if (q) touchPts.set(e.pointerId, q);
+        if (touchPts.size >= 2) {
+          pinchUpdate();
+          e.stopPropagation();
+          return;
+        }
+      }
       if (!drag.value) return;
       e.stopPropagation();
       const hit = eventWorld(e);
@@ -706,6 +765,8 @@ export default defineComponent({
 
     function onPointerUp(e: PointerEvent): void {
       e.stopPropagation();
+      touchPts.delete(e.pointerId);
+      pinch = null; // re-baseline even if a finger pair survives a swap
       if (e.button !== 0) return; // only the primary button ends a gesture
       const d = drag.value;
       drag.value = null;
@@ -1356,9 +1417,13 @@ export default defineComponent({
               // Lost pointer capture mid-gesture — drop the stroke, don't
               // leave a frozen preview on screen.
               e.stopPropagation();
+              touchPts.delete(e.pointerId);
+              pinch = null; // re-baseline even if a finger pair survives a swap
               cancelDrag();
             }}
             onPointerleave={(e: PointerEvent) => {
+              touchPts.delete(e.pointerId);
+              pinch = null;
               if (drag.value && e.buttons === 0) {
                 cancelDrag();
                 e.stopPropagation();

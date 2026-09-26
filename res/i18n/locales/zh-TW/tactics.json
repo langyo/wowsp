@@ -31,6 +31,12 @@
     "duplicate": "複製目前方案",
     "remove": "刪除目前方案",
     "removeConfirm": "再次點擊確認刪除",
-    "rename": "重新命名方案"
+    "rename": "重新命名方案",
+    "exportBundle": "匯出全部方案",
+    "importBundle": "匯入方案集",
+    "exported": "方案集已匯出",
+    "imported": "已匯入 {n} 個方案",
+    "importBad": "不是有效的方案集檔案",
+    "mapMismatch": "方案集來自其它地圖（{map}），位置可能錯位"
   }
 }

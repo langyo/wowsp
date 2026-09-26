@@ -80,3 +80,109 @@ export function deleteSlotDoc(spaceId: string, slotId: string): void {
     // already gone
   }
 }
+
+// ── Plan bundles: every slot of one map in a single shareable file ────────
+
+/** One slot's payload inside a bundle (the tactical document itself). */
+export interface PlanBundleEntry {
+  name: string;
+  doc: { version: number; elements: unknown[]; steps: unknown[] };
+}
+
+export interface PlanBundle {
+  version: 1;
+  kind: "wowsp-tactics-plans";
+  /** Space the bundle was exported from — imports onto a different map are
+   *  allowed (new/old map successions) but the caller should warn. */
+  spaceId: string;
+  exportedAt: string;
+  slots: PlanBundleEntry[];
+}
+
+/** Assemble every slot of the map (inventory + documents) into a bundle. */
+export function exportBundle(spaceId: string): PlanBundle {
+  const slots = loadSlots(spaceId);
+  return {
+    version: 1,
+    kind: "wowsp-tactics-plans",
+    spaceId,
+    exportedAt: new Date().toISOString(),
+    slots: slots.map((s) => {
+      let doc: PlanBundleEntry["doc"] = { version: 1, elements: [], steps: [] };
+      try {
+        const raw = window.localStorage.getItem(docStorageKey(slotDocPath(spaceId, s.id)));
+        const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+        if (
+          typeof parsed === "object" && parsed != null &&
+          Array.isArray((parsed as PlanBundleEntry["doc"]).elements) &&
+          Array.isArray((parsed as PlanBundleEntry["doc"]).steps)
+        ) {
+          doc = parsed as PlanBundleEntry["doc"];
+        }
+      } catch {
+        // unreadable slot ships as empty
+      }
+      return { name: s.name, doc };
+    }),
+  };
+}
+
+/** Structural check of a bundle file; null = not a tactics bundle. */
+export function parseBundle(json: string): PlanBundle | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof data !== "object" || data == null) return null;
+  const b = data as Partial<PlanBundle>;
+  if (
+    b.kind !== "wowsp-tactics-plans" ||
+    b.version !== 1 ||
+    !Array.isArray(b.slots) ||
+    b.slots.length === 0
+  ) {
+    return null;
+  }
+  const slots: PlanBundleEntry[] = [];
+  for (const entry of b.slots) {
+    if (typeof entry !== "object" || entry == null) return null;
+    const e = entry as Partial<PlanBundleEntry>;
+    if (typeof e.name !== "string" || typeof e.doc !== "object" || e.doc == null) return null;
+    if (!Array.isArray(e.doc.elements) || !Array.isArray(e.doc.steps)) return null;
+    slots.push({ name: e.name, doc: { version: 1, elements: e.doc.elements, steps: e.doc.steps } });
+  }
+  return {
+    version: 1,
+    kind: "wowsp-tactics-plans",
+    spaceId: typeof b.spaceId === "string" ? b.spaceId : "",
+    exportedAt: typeof b.exportedAt === "string" ? b.exportedAt : "",
+    slots,
+  };
+}
+
+/** Write a bundle into the map's plan storage: slots are renumbered from the
+ *  default slot, every document lands under its key, the inventory is
+ *  replaced, and stale keys of slots the bundle doesn't carry are removed. */
+export function importBundle(spaceId: string, bundle: PlanBundle): void {
+  const stale = loadSlots(spaceId)
+    .filter((s) => s.id !== DEFAULT_SLOT_ID)
+    .map((s) => s.id);
+  const slots: PlanSlot[] = bundle.slots.map((entry, i) => {
+    const id = String(i);
+    try {
+      window.localStorage.setItem(
+        docStorageKey(slotDocPath(spaceId, id)),
+        JSON.stringify({ ...entry.doc, version: 1 }),
+      );
+    } catch {
+      // storage full — the slot shows empty rather than blocking the rest
+    }
+    return { id, name: entry.name };
+  });
+  saveSlots(spaceId, slots);
+  for (const id of stale) {
+    if (!slots.some((s) => s.id === id)) deleteSlotDoc(spaceId, id);
+  }
+}

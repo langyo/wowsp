@@ -3,8 +3,11 @@ import {
   DEFAULT_SLOT_ID,
   deleteSlotDoc,
   duplicateSlotDoc,
+  exportBundle,
+  importBundle,
   loadSlots,
   nextSlotId,
+  parseBundle,
   saveSlots,
   slotDocPath,
 } from "./planSlots";
@@ -63,5 +66,77 @@ describe("planSlots", () => {
     deleteSlotDoc("s", "3");
     expect(window.localStorage.getItem(docStorageKey("tactics:s#3"))).toBeNull();
     expect(window.localStorage.getItem(docStorageKey("tactics:s"))).toBe("DOC-0");
+  });
+});
+
+describe("plan bundles", () => {
+  const doc = (tag: string) => ({ version: 1, elements: [{ id: tag }], steps: [] });
+
+  function seed(): void {
+    saveSlots("s", [
+      { id: DEFAULT_SLOT_ID, name: "A" },
+      { id: "1", name: "" },
+      { id: "2", name: "C" },
+    ]);
+    window.localStorage.setItem(docStorageKey("tactics:s"), JSON.stringify(doc("d0")));
+    window.localStorage.setItem(docStorageKey("tactics:s#1"), JSON.stringify(doc("d1")));
+    window.localStorage.setItem(docStorageKey("tactics:s#2"), JSON.stringify(doc("d2")));
+  }
+
+  it("export assembles every slot's document under its inventory name", () => {
+    seed();
+    const bundle = exportBundle("s");
+    expect(bundle.kind).toBe("wowsp-tactics-plans");
+    expect(bundle.slots.map((e) => e.name)).toEqual(["A", "", "C"]);
+    expect(bundle.slots[0].doc.elements).toEqual([{ id: "d0" }]);
+    expect(bundle.slots[2].doc.elements).toEqual([{ id: "d2" }]);
+  });
+
+  it("an unreadable slot document exports as empty, not as a throw", () => {
+    seed();
+    window.localStorage.setItem(docStorageKey("tactics:s#1"), "{corrupt");
+    expect(exportBundle("s").slots[1].doc.elements).toEqual([]);
+  });
+
+  it("parseBundle accepts the export output and rejects foreign files", () => {
+    seed();
+    const ok = parseBundle(JSON.stringify(exportBundle("s")));
+    expect(ok).not.toBeNull();
+    expect(ok!.slots).toHaveLength(3);
+    expect(parseBundle(JSON.stringify({ hello: 1 }))).toBeNull();
+    expect(parseBundle(JSON.stringify({ kind: "wowsp-tactics-plans", slots: [] }))).toBeNull();
+    expect(parseBundle("not json")).toBeNull();
+    expect(
+      parseBundle(JSON.stringify({ kind: "wowsp-tactics-plans", slots: [{ name: 7, doc: {} }] })),
+    ).toBeNull();
+  });
+
+  it("import renumbers slots from 0, rewrites documents and drops stale keys", () => {
+    seed();
+    const bundle = parseBundle(
+      JSON.stringify({
+        version: 1,
+        kind: "wowsp-tactics-plans",
+        spaceId: "other",
+        exportedAt: "",
+        slots: [
+          { name: "X", doc: doc("x") },
+          { name: "Y", doc: doc("y") },
+        ],
+      }),
+    )!;
+    importBundle("s", bundle);
+    expect(loadSlots("s")).toEqual([
+      { id: "0", name: "X" },
+      { id: "1", name: "Y" },
+    ]);
+    expect(window.localStorage.getItem(docStorageKey("tactics:s"))).toBe(
+      JSON.stringify(doc("x")),
+    );
+    expect(window.localStorage.getItem(docStorageKey("tactics:s#1"))).toBe(
+      JSON.stringify(doc("y")),
+    );
+    // the old third slot's key is gone — no orphaned plan resurrects later
+    expect(window.localStorage.getItem(docStorageKey("tactics:s#2"))).toBeNull();
   });
 });

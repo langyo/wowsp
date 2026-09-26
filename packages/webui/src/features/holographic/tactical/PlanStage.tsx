@@ -23,6 +23,7 @@ import {
 } from "vue";
 import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoader";
 import { HMinimap } from "@celestia-island/hikari";
+import { useToast } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import TacticalBoard from "./TacticalBoard";
 import PlanSlotsBar from "./PlanSlotsBar";
@@ -30,12 +31,16 @@ import {
   DEFAULT_SLOT_ID,
   deleteSlotDoc,
   duplicateSlotDoc,
+  exportBundle,
+  importBundle,
   loadSlots,
   nextSlotId,
+  parseBundle,
   saveSlots,
   slotDocPath,
   type PlanSlot,
 } from "./planSlots";
+import { saveExportBlob } from "./exporters";
 import { TACTICAL_SIZE, viewWindow, type TacticalView } from "./render";
 import { MAP_GRID_COLUMNS, gridEdgeLabels } from "./mapGrid";
 import { TACTICAL_MAX_SCALE } from "./geometry";
@@ -62,7 +67,7 @@ export default defineComponent({
     const stageRef = ref<HTMLDivElement | null>(null);
     /** Typed by the exposed surface only (defineExpose types don't
      *  propagate through InstanceType in TSX). */
-    const boardRef = ref<{ flushDoc: () => void } | null>(null);
+    const boardRef = ref<{ flushDoc: () => void; reloadDoc: () => void } | null>(null);
 
     // ── Map art + world bounds ───────────────────────────────────────────
     let artImage: HTMLImageElement | null = null;
@@ -538,6 +543,53 @@ export default defineComponent({
       },
     );
 
+    // ── Bundle share: every plan of this map in one file ─────────────────
+    const toast = useToast();
+    const bundleInput = ref<HTMLInputElement | null>(null);
+
+    async function exportPlansBundle(): Promise<void> {
+      const bundle = exportBundle(props.spaceId);
+      const blob = new Blob([JSON.stringify(bundle)], { type: "application/json" });
+      const tag = (props.mapName || props.spaceId).replace(/[^\w-]+/g, "_");
+      const saved = await saveExportBlob(blob, `wowsp-tactics-${tag}-plans`, "JSON", "json");
+      if (saved) toast.info(i18nT("tactics.slots.exported"));
+    }
+
+    function importPlansBundle(e: Event): void {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file) return;
+      void file
+        .text()
+        .then((text) => {
+          const bundle = parseBundle(text);
+          if (!bundle) {
+            toast.error(i18nT("tactics.slots.importBad"));
+            return;
+          }
+          // Flush the debounced save FIRST: a pending pre-import document
+          // would otherwise be written back by the reload below, silently
+          // overwriting the slot the bundle just landed in.
+          boardRef.value?.flushDoc?.();
+          importBundle(props.spaceId, bundle);
+          slots.value = loadSlots(props.spaceId);
+          const switching = activeSlot.value !== DEFAULT_SLOT_ID;
+          activeSlot.value = DEFAULT_SLOT_ID;
+          // The replayPath watch does the (single) reload when the slot
+          // changes; when it was already the default, drive it by hand —
+          // reading any other key in between would resurrect a deleted one.
+          if (!switching) boardRef.value?.reloadDoc?.();
+          time.value = 0;
+          playing.value = false;
+          if (bundle.spaceId && bundle.spaceId !== props.spaceId) {
+            toast.info(i18nT("tactics.slots.mapMismatch", { map: bundle.spaceId }));
+          }
+          toast.info(i18nT("tactics.slots.imported", { n: bundle.slots.length }));
+        })
+        .catch(() => toast.error(i18nT("tactics.slots.importBad")));
+    }
+
     return () => (
       <div class="plan-stage">
         {boundsReady.value && !fullBounds.value ? (
@@ -555,6 +607,8 @@ export default defineComponent({
               onDuplicate={() => addSlot(true)}
               onRename={renameSlot}
               onRemove={removeSlot}
+              onExport={() => void exportPlansBundle()}
+              onImport={() => bundleInput.value?.click()}
             />
             <div class="plan-stage__viewport">
               <div ref={stageRef} class="plan-stage__stage">
@@ -608,6 +662,13 @@ export default defineComponent({
               </div>
             </div>
             <div class="plan-stage__dock" id={PLAN_DOCK_ID} />
+            <input
+              ref={bundleInput}
+              class="plan-stage__file-input"
+              type="file"
+              accept=".json,application/json"
+              onChange={importPlansBundle}
+            />
           </>
         )}
       </div>
