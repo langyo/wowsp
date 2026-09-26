@@ -11,6 +11,7 @@ import { parsePostBattle } from "@/features/replay/postBattle";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t as i18nT } from "@/i18n";
+import achievementNamesRaw from "@/data/achievement_names.json";
 import { sampleAt, hpAtTime } from "./trajectoryMath";
 import { clampXZ } from "./sceneUtils";
 import type { TeamRole } from "./teamColors";
@@ -30,8 +31,6 @@ import type { MapInternals, ShellTraceSlot } from "./mapInternals";
  *  over the old kill-only limit of 4. */
 const FEED_CAP = 6;
 const FEED_TTL_MS = 4000;
-
-import achievementNamesRaw from "@/data/achievement_names.json";
 
 /** Achievement id → localized display name (GameParams-derived bundle; the
  *  same per-locale shape as ribbon_names.json). Falls back to the raw id. */
