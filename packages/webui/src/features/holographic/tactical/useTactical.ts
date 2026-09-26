@@ -239,6 +239,9 @@ export function useTactical(replayPath: Ref<string>) {
     undo,
     redo,
     flush,
+    /** Re-read the current key from storage (flushes first) — the plan-slot
+     *  importer calls this after overwriting the documents underneath. */
+    reloadDoc: load,
     commit,
     replaceElement,
     removeElement,

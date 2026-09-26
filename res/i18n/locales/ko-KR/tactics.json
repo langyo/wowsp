@@ -31,6 +31,12 @@
     "duplicate": "현재 플랜 복제",
     "remove": "현재 플랜 삭제",
     "removeConfirm": "다시 클릭하면 삭제됩니다",
-    "rename": "플랜 이름 바꾸기"
+    "rename": "플랜 이름 바꾸기",
+    "exportBundle": "모든 플랜 내보내기",
+    "importBundle": "플랜 가져오기",
+    "exported": "플랜을 내보냈습니다",
+    "imported": "플랜 {n}개를 가져왔습니다",
+    "importBad": "올바른 플랜 파일이 아닙니다",
+    "mapMismatch": "다른 맵({map})의 플랜입니다. 위치가 어긋날 수 있습니다"
   }
 }

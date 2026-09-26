@@ -31,6 +31,12 @@
     "duplicate": "Dupliquer le plan actuel",
     "remove": "Supprimer le plan actuel",
     "removeConfirm": "Cliquez à nouveau pour supprimer",
-    "rename": "Renommer le plan"
+    "rename": "Renommer le plan",
+    "exportBundle": "Exporter tous les plans",
+    "importBundle": "Importer des plans",
+    "exported": "Plans exportés",
+    "imported": "{n} plans importés",
+    "importBad": "Fichier de plans invalide",
+    "mapMismatch": "Plans d'une autre carte ({map}) — les positions peuvent être décalées"
   }
 }

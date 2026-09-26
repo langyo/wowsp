@@ -31,6 +31,12 @@
     "duplicate": "Duplicar el plan actual",
     "remove": "Eliminar el plan actual",
     "removeConfirm": "Haz clic de nuevo para eliminar",
-    "rename": "Renombrar el plan"
+    "rename": "Renombrar el plan",
+    "exportBundle": "Exportar todos los planes",
+    "importBundle": "Importar planes",
+    "exported": "Planes exportados",
+    "imported": "{n} planes importados",
+    "importBad": "No es un archivo de planes válido",
+    "mapMismatch": "Los planes son de otro mapa ({map}); las posiciones pueden no coincidir"
   }
 }
