@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
+import { initLocaleMessages } from "@/i18n";
 import { statsPrefsState } from "@/stores/statsPrefs";
 
 import {
@@ -10,6 +11,12 @@ import {
   prTier,
   prTierLabel,
 } from "./winrate";
+
+// prTierLabel resolves through vue-i18n; locale messages load lazily now,
+// so the wording cases need the bundle in place before they assert.
+beforeAll(async () => {
+  await initLocaleMessages();
+});
 
 describe("prTier", () => {
   it("falls back to unknown for missing PR", () => {
