@@ -116,7 +116,10 @@
     "shipType": "艦種",
     "battles": "場次",
     "winrate": "勝率",
-    "avgDamage": "場均"
+    "avgDamage": "場均",
+    "teamWrWeighted": "加權勝率",
+    "teamWrPlain": "平均勝率",
+    "teamAvgPr": "平均 PR"
   },
   "minimap": {
     "zoom": "放大地圖",

@@ -13,7 +13,7 @@ export type PrAlgo = "winrate" | "expected";
  *  blob stays small and new kinds default to visible. */
 export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 
-/** Water-table display preferences. Persisted as one JSON blob so the four
+/** Water-table display preferences. Persisted as one JSON blob so the five
  *  knobs always travel together (the onboarding wizard and the settings
  *  section write the same object). */
 export interface StatsPrefs {
@@ -29,6 +29,9 @@ export interface StatsPrefs {
   /** Fun localized tier wording (夯/人上人/战舰仙人…) vs the standard
    *  English band words (Bad…Unicum). */
   localizedTiers: boolean;
+  /** Live-battle team winrate aggregation: tier-weighted (higher tiers
+   *  count more) or the plain arithmetic mean. */
+  weightedTeamWr: boolean;
   /** Per-seal visibility toggles (settings' seal customizer). */
   sealDisabled: SealDisableMap;
 }
@@ -44,6 +47,7 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   prAlgo: "winrate",
   sealsEnabled: true,
   localizedTiers: true,
+  weightedTeamWr: true,
   sealDisabled: {},
 };
 
@@ -82,6 +86,10 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.localizedTiers === "boolean"
           ? j.localizedTiers
           : DEFAULT_STATS_PREFS.localizedTiers,
+      weightedTeamWr:
+        typeof j.weightedTeamWr === "boolean"
+          ? j.weightedTeamWr
+          : DEFAULT_STATS_PREFS.weightedTeamWr,
       sealDisabled: parseSealDisabled(j.sealDisabled),
     };
   } catch {
@@ -162,6 +170,11 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
+  function setWeightedTeamWr(v: boolean) {
+    prefs.value.weightedTeamWr = v;
+    persist({ ...prefs.value });
+  }
+
   function setSealDisabled(kind: StampKind, disabled: boolean) {
     const next: SealDisableMap = { ...prefs.value.sealDisabled };
     if (disabled) next[kind] = true;
@@ -176,6 +189,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setPrAlgo,
     setSealsEnabled,
     setLocalizedTiers,
+    setWeightedTeamWr,
     setSealDisabled,
   };
 });

@@ -10,6 +10,9 @@
  *
  * Every human card is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles show a red notice instead of a fake "no data".
+ * While the PR rating is on, each column title additionally carries the
+ * team's aggregate — a tier-weighted (or plain, per the stats prefs) mean
+ * winrate plus a mean PR over the players whose stats landed.
  */
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type CSSProperties } from "vue";
 import { useRouter } from "vue-router";
@@ -26,6 +29,8 @@ import LiveShipMeta from "./LiveShipMeta";
 import { WaitingRadarArt } from "./liveGuideArt";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
+import { shipTierOf } from "@/utils/shipClass";
+import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useRosterStats, isAiName } from "@/composables/useRosterStats";
 import { useBattleClock } from "./useBattleClock";
@@ -219,6 +224,57 @@ export default defineComponent({
     function openLookup(name: string) {
       void router.push({ path: "/lookup", query: { name, realm: realm.value } });
     }
+
+    /** One team's header aggregate — tier-weighted (per the stats prefs)
+     *  mean winrate plus a plain mean PR over the players whose stats
+     *  landed. AI names, hidden profiles and still-loading rows sit out. */
+    const teamAgg = (entries: TabOrderedVehicle[]) =>
+      aggregateTeamStats(
+        entries.map((entry) => {
+          const v = entry.vehicle;
+          const st = stats.get(v.id);
+          if (!st || st.loading || st.hidden || isAiName(v.name)) {
+            return { winrate: null, pr: null, tier: shipTierOf(v.shipId) };
+          }
+          return { winrate: st.winrate, pr: st.pr, tier: shipTierOf(v.shipId) };
+        }),
+        prefs.prefs.weightedTeamWr,
+      );
+
+    /** A column title (我方/敌方) with the team aggregate riding its right
+     *  end — only while the PR rating is on; the caption stays bare
+     *  otherwise. Values carry their tier colors (winrateColor / prTier). */
+    const colTitle = (label: string, entries: TabOrderedVehicle[]) => {
+      const title = <span class="live-battle__col-name">{label}</span>;
+      if (!prefs.prefs.prEnabled) {
+        return <div class="live-battle__col-title">{title}</div>;
+      }
+      const agg = teamAgg(entries);
+      const prBand = prTier(agg.avgPr);
+      return (
+        <div class="live-battle__col-title">
+          {title}
+          <span class="live-battle__col-agg">
+            {t(
+              prefs.prefs.weightedTeamWr
+                ? "replay.roster.teamWrWeighted"
+                : "replay.roster.teamWrPlain",
+            )}{" "}
+            <b style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}>
+              {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+            </b>
+            {" · "}
+            {t("replay.roster.teamAvgPr")}{" "}
+            <b
+              class={prBand.rainbow ? "rainbow-text" : undefined}
+              style={prBand.rainbow ? undefined : { color: prBand.color }}
+            >
+              {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+            </b>
+          </span>
+        </div>
+      );
+    };
 
     return () => {
       // Game running but no roster yet (or the roster just cleared): a
@@ -425,11 +481,11 @@ export default defineComponent({
           </div>
           <div class="live-battle__matrix">
             <div class="live-battle__col">
-              <div class="live-battle__col-title">{t("replay.roster.allies")}</div>
+              {colTitle(t("replay.roster.allies"), allies.value)}
               {allies.value.map(cell)}
             </div>
             <div class="live-battle__col">
-              <div class="live-battle__col-title">{t("replay.roster.enemies")}</div>
+              {colTitle(t("replay.roster.enemies"), enemies.value)}
               {enemies.value.map(cell)}
             </div>
           </div>

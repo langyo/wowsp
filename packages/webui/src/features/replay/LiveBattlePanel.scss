@@ -168,11 +168,31 @@
   }
 
   &__col-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
     color: rgb(var(--color-text) / 0.55);
     font-size: var(--text-2xs);
     letter-spacing: 0.08em;
     padding: 0 2px 2px;
     border-bottom: 1px solid rgb(var(--color-text) / 0.1);
+  }
+
+  /* Team aggregate (weighted WR + mean PR) riding the column title's right
+     end — the caption voice without the caption letter-spacing (numbers
+     read poorly tracked); values carry their tier colors inline. Clipping
+     keeps a narrow window from pushing it into the sibling column. */
+  &__col-agg {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: normal;
+    white-space: nowrap;
+
+    b {
+      font-weight: 600;
+    }
   }
 
   /* Strict three-track card: a fixed name column, an elastic-but-clipping

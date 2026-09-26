@@ -26,6 +26,8 @@
   "prAlgoDesc": "PR スコアの計算式を選びます。",
   "prAlgoWinrate": "ApeRadar 加重勝率",
   "prAlgoExpected": "wows-numbers 期待値",
+  "teamWrToggle": "チーム勝率のティア加重",
+  "teamWrToggleDesc": "進行中の戦闘のチーム勝率を艦のティアで加重します。オフにすると単純平均になります。",
   "sealsToggle": "評価の印章",
   "sealsToggleDesc": "「神了/海猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
   "localizedTiersToggle": "ローカライズ段階表記",
