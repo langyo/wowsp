@@ -151,8 +151,7 @@ body {
   /* Above the wallpaper scrim (html[data-wallpaper-art] body::before,
      z-index 0 — below): the dim applies to the wallpaper layer (z -1) only,
      so chrome and content sample the scrim-adjusted image instead of
-     sitting under the tint themselves. Lives here, not App.scss — that
-     file is not imported by any entry point. Harmless in the overlay and
+     sitting under the tint themselves. Harmless in the overlay and
      manual-locate windows, which render no wallpaper layer. */
   position: relative;
   z-index: 1;
@@ -185,7 +184,7 @@ body {
   -webkit-user-drag: none;
 }
 /* Readability scrim over image wallpapers — sits ABOVE the wallpaper layer
-   (z -1) and BELOW #app (z 1, App.scss), so the dim only ever applies to
+   (z -1) and BELOW #app (z 1, above), so the dim only ever applies to
    the wallpaper while translucent chrome (sidebar, cards, modals) samples
    the scrim-adjusted image. Gated by the renderer: solid backgrounds never
    draw one. Strength is the user's overlay preference
