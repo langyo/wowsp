@@ -410,33 +410,50 @@ pub async fn pick_replay_files() -> Result<Vec<String>, String> {
 
 /// List `.wowsreplay` files under a directory (defaults to the detected game's
 /// `replays/` folder). Returns at most `limit` paths sorted newest-first.
+///
+/// Async command + [`tokio::task::spawn_blocking`]: the recursive directory
+/// walk + per-file metadata reads are blocking I/O that must never run on the
+/// UI thread (Tauri 2 synchronous commands do) — same rule as
+/// [`read_replay_header`].
 #[tauri::command]
-pub fn list_replays(dir: Option<String>, limit: Option<usize>) -> Result<Vec<String>, String> {
-    let dir = resolve_replay_dir(dir)?;
-    let mut entries: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
-    walk_replays(&dir, &mut entries);
-    use std::cmp::Reverse;
-    entries.sort_by_key(|(_, t)| Reverse(*t));
-    let limit = limit.unwrap_or(200);
-    Ok(entries
-        .into_iter()
-        .take(limit)
-        .map(|(p, _)| p.to_string_lossy().into_owned())
-        .collect())
+pub async fn list_replays(
+    dir: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = resolve_replay_dir(dir)?;
+        let mut entries: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+        walk_replays(&dir, &mut entries);
+        use std::cmp::Reverse;
+        entries.sort_by_key(|(_, t)| Reverse(*t));
+        let limit = limit.unwrap_or(200);
+        Ok(entries
+            .into_iter()
+            .take(limit)
+            .map(|(p, _)| p.to_string_lossy().into_owned())
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("replay listing task failed: {e}"))?
 }
 
 /// List replays with their parsed descriptor metadata — same walk as
 /// [`list_replays`], but each entry carries the lightweight summary fields
 /// (date/time, match group, map, own ship, player count) instead of just a
-/// path. Only the first JSON block is read per file (no packet-stream decode),
-/// so a few hundred replays list in well under a second. Files whose header
-/// can't be parsed still appear, with whatever fields were recoverable.
+/// path. Per file only the first JSON block is read — a bounded header read
+/// (see [`lite_from_path`]), never the multi-MB packet stream behind it — and
+/// the whole scan runs on the blocking pool
+/// ([`tokio::task::spawn_blocking`]) so the UI thread never stalls. Files
+/// whose header can't be parsed still appear, with whatever fields were
+/// recoverable.
 #[tauri::command]
-pub fn list_replays_meta(
+pub async fn list_replays_meta(
     dir: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<ReplayMetaLite>, String> {
-    Ok(scan_replays_meta(dir, limit)?.1)
+    tokio::task::spawn_blocking(move || scan_replays_meta(dir, limit).map(|(_, entries)| entries))
+        .await
+        .map_err(|e| format!("replay listing task failed: {e}"))?
 }
 
 /// Enumeration core shared by the [`list_replays_meta`] command and the
@@ -464,65 +481,79 @@ pub(crate) fn scan_replays_meta(
     ))
 }
 
+/// Generous upper bound on the first descriptor block: real descriptors run
+/// a few hundred KB (roster-heavy), so a length prefix beyond this is a
+/// corrupt or malicious header, not a block worth buffering.
+const MAX_FIRST_BLOCK_BYTES: usize = 16 * 1024 * 1024;
+
+/// Read just the first descriptor block of a replay file: the 8-byte prologue
+/// (magic + block count), a 4-byte little-endian block length, then exactly
+/// that many payload bytes — the same framing [`extract_descriptor_json`]
+/// parses on an in-memory slice, minus the multi-MB packet stream that
+/// follows. Lengths above [`MAX_FIRST_BLOCK_BYTES`] are rejected so a corrupt
+/// prefix can never drive a huge allocation or read.
+fn read_first_block(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read as _;
+    let mut f = fs::File::open(path)?;
+    let mut magic = [0u8; 4];
+    f.read_exact(&mut magic)?;
+    if magic != REPLAY_MAGIC {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "not a wowsreplay container (magic mismatch)",
+        ));
+    }
+    let mut count = [0u8; 4];
+    f.read_exact(&mut count)?;
+    if u32::from_le_bytes(count) == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "wowsreplay container has no blocks",
+        ));
+    }
+    let mut len = [0u8; 4];
+    f.read_exact(&mut len)?;
+    let block_len = u32::from_le_bytes(len) as usize;
+    if block_len > MAX_FIRST_BLOCK_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("first block length {block_len} exceeds {MAX_FIRST_BLOCK_BYTES}"),
+        ));
+    }
+    let mut payload = vec![0u8; block_len];
+    f.read_exact(&mut payload)?;
+    Ok(payload)
+}
+
 /// Build a [`ReplayMetaLite`] for one replay file by reading just its
-/// descriptor-JSON block. On any parse failure, returns a lite entry with only
-/// the path + filename-derived datetime populated, so the file is still listed.
-fn lite_from_path(path: &PathBuf) -> ReplayMetaLite {
+/// descriptor-JSON block. On any read/parse failure, returns a lite entry with
+/// only the path + filename-derived datetime populated, so the file is still
+/// listed.
+fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
     let path_str = path.to_string_lossy().into_owned();
     let date_time = parse_datetime_from_filename(&path_str);
-    let bytes = match fs::read(path) {
-        Ok(b) => b,
-        Err(_) => {
-            return ReplayMetaLite {
-                path: path_str,
-                date_time,
-                match_group: None,
-                map_name: None,
-                map_id: None,
-                scenario: None,
-                event_type: None,
-                bot_count: 0,
-                own_ship_id: None,
-                own_ship_name: None,
-                player_count: 0,
-            };
-        },
-    };
-    let json = match extract_descriptor_json(&bytes) {
-        Some(j) => j,
-        None => {
-            return ReplayMetaLite {
-                path: path_str,
-                date_time,
-                match_group: None,
-                map_name: None,
-                map_id: None,
-                scenario: None,
-                event_type: None,
-                bot_count: 0,
-                own_ship_id: None,
-                own_ship_name: None,
-                player_count: 0,
-            };
-        },
-    };
-    let raw: serde_json::Value = match serde_json::from_str(&json) {
-        Ok(v) => v,
-        Err(_) => {
-            return ReplayMetaLite {
-                path: path_str,
-                date_time,
-                match_group: None,
-                map_name: None,
-                map_id: None,
-                scenario: None,
-                event_type: None,
-                bot_count: 0,
-                own_ship_id: None,
-                own_ship_name: None,
-                player_count: 0,
-            };
-        },
+    // The walk only surfaces `*.wowsreplay` containers (never the bare-JSON
+    // tempArenaInfo variant), so the bounded first-block read is the only
+    // input path needed — the multi-MB packet stream behind the header is
+    // never touched. Any read/parse failure falls back to the path +
+    // filename-datetime entry below.
+    let raw: Option<serde_json::Value> = read_first_block(path)
+        .ok()
+        .and_then(|payload| serde_json::from_str(&String::from_utf8_lossy(&payload)).ok());
+    let Some(raw) = raw else {
+        return ReplayMetaLite {
+            path: path_str,
+            date_time,
+            match_group: None,
+            map_name: None,
+            map_id: None,
+            scenario: None,
+            event_type: None,
+            bot_count: 0,
+            own_ship_id: None,
+            own_ship_name: None,
+            player_count: 0,
+        };
     };
     lite_from_raw(path_str, date_time, raw)
 }
@@ -934,6 +965,65 @@ mod tests {
         assert_eq!(lite.player_count, 3);
         assert_eq!(lite.own_ship_id, Some(4182828960));
         assert_eq!(lite.own_ship_name.as_deref(), Some("Alpha"));
+    }
+
+    /// Unique temp file path for `lite_from_path` tests (this crate has no
+    /// tempfile dev-dependency): the system temp dir + the given base + a
+    /// per-process counter. The counter rides AFTER the base so a base that
+    /// opens with `YYYYMMDD_HHMMSS` still parses as the filename datetime.
+    /// Callers remove the file when done.
+    fn temp_replay_path(base: &str) -> PathBuf {
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{base}_{n}.wowsreplay"))
+    }
+
+    /// `lite_from_path` fills the summary fields from the FIRST block only:
+    /// the descriptor parses even though a fat (here: garbage) packet stream
+    /// follows, because the bounded header read never touches it.
+    #[test]
+    fn lite_from_path_reads_bounded_first_block() {
+        let path = temp_replay_path("20250622_152405_lite");
+        let json = r#"{"matchGroup":"ranked","mapDisplayName":"15_NE_north","mapId":8,"vehicles":[
+            {"id":1,"name":"Alpha","relation":0,"shipId":4182828960},
+            {"id":2,"name":"Bravo","relation":1,"shipId":4286591792}
+        ]}"#;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&REPLAY_MAGIC);
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // 1 block
+        bytes.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(json.as_bytes());
+        // Stand-in for the encrypted packet stream a real replay carries —
+        // several MB in production, never read by the listing path.
+        bytes.extend_from_slice(&[0u8; 4096]);
+        std::fs::write(&path, &bytes).expect("write temp replay");
+        let lite = lite_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(lite.date_time.as_deref(), Some("20250622_152405"));
+        assert_eq!(lite.match_group.as_deref(), Some("ranked"));
+        assert_eq!(lite.map_name.as_deref(), Some("15_NE_north"));
+        assert_eq!(lite.map_id, Some(8));
+        assert_eq!(lite.player_count, 2);
+        assert_eq!(lite.own_ship_id, Some(4182828960));
+        assert_eq!(lite.own_ship_name.as_deref(), Some("Alpha"));
+    }
+
+    /// A file truncated mid-prologue (4 bytes) falls back to the path +
+    /// filename-datetime lite entry — listed, never a panic.
+    #[test]
+    fn lite_from_path_falls_back_on_truncated_file() {
+        let path = temp_replay_path("20250701_101010_trunc");
+        std::fs::write(&path, REPLAY_MAGIC).expect("write truncated replay");
+        let lite = lite_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(lite.path, path.to_string_lossy());
+        assert_eq!(lite.date_time.as_deref(), Some("20250701_101010"));
+        assert_eq!(lite.match_group, None);
+        assert_eq!(lite.map_name, None);
+        assert_eq!(lite.map_id, None);
+        assert_eq!(lite.bot_count, 0);
+        assert_eq!(lite.player_count, 0);
+        assert_eq!(lite.own_ship_id, None);
     }
 
     /// Custom-room bot rosters (`:Name:` nicknames) are counted; plain PvP

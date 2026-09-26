@@ -1602,11 +1602,11 @@ pub(crate) mod server {
             })
     }
 
-    /// `scan_replays_meta` on the blocking pool — `lite_from_path` reads the
-    /// WHOLE replay file to pull its JSON header, so a 200-entry listing is
-    /// real disk work that must never stall async runtime workers (the sync
-    /// `list_replays_meta` command gets this for free from tauri; the
-    /// hand-rolled server has to do it itself).
+    /// `scan_replays_meta` on the blocking pool — even with `lite_from_path`
+    /// reading only the bounded first block, a 200-entry listing is real
+    /// disk work that must never stall async runtime workers (the async
+    /// `list_replays_meta` command wraps the same scan in its own
+    /// `spawn_blocking`; the hand-rolled server has to do it itself).
     async fn scan_remote(
         replay_root: PathBuf,
     ) -> Result<(PathBuf, Vec<wowsp_tauri_shared::ReplayMetaLite>), String> {
