@@ -176,7 +176,7 @@ from the official [`landaire/wows-toolkit`](https://github.com/landaire/wows-too
 repo. Build it once:
 
 ```bash
-just build-wowsunpack-patched
+just build wowsunpack
 ```
 
 This clones the official repo into `packages/tools/wowsunpack-vendor/` (gitignored)

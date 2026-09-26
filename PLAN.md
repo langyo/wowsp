@@ -79,12 +79,12 @@ All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in
 
 - [x] Consolidated unmerged PRs; closed bot PRs
 - [x] Repo references corrected (celestia-island → langyo), updater endpoints + mirrors
-- [x] Docs site (lagrange) builds clean for all 9 languages; CNAME wowsp.langyo.xyz
+- [x] Docs site (lagrange) builds clean for all 9 languages; Pages serves CNAME-less at `langyo.github.io/wowsp/` (site.yml strips `_site/CNAME` by design)
 - [x] Official website (vue3 tsx + scss + vite, `packages/website`) + GitHub Pages deploy
-- [x] Auto-update: GitHub + mirror endpoints, release workflow signs `latest.json`
+- [x] Auto-update: shun resolver with GitHub + mirror endpoints (`[package.metadata.shun.update]` in `packages/app/tauri/Cargo.toml`, `files = ["latest"]`); the release workflow uploads a plain `latest` version-marker file — no signed manifest
 - [x] Installer: WebView2 bootstrapper embedded; NSIS three-mode install (local / USB / green)
 - [x] GitHub Pages provisioned (`langyo.github.io/wowsp`); website + docs live
-- [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`) and set the custom domain in repo Pages settings; then flip `WOWSP_SITE_BASE` back to `/` in site.yml
+- [x] DNS: `wowsp.langyo.xyz` bound to the Cloudflare Worker (site shell + pairing relay); Pages stays the CNAME-less asset mirror at `langyo.github.io/wowsp/` (see `site.yml`)
 - [x] First tagged release + model-pack `res-latest` assets
 
 ## Post-1.0 milestones

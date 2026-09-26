@@ -4,7 +4,7 @@
  * The Rust handlers for these commands land in phase P; until then the web
  * transport serves them from this in-process mock so the whole mobile flow
  * (file import, host pairing, PIN exchange, remote browsing, pulls with
- * progress) is developable and visually verifiable in `just dev --mock`
+ * progress) is developable and visually verifiable in `just dev mock`
  * TODAY. The mock lives client-side (not in scripts/mock) so the Tauri
  * builds route straight through to the real `#[tauri::command]` handlers
  * the moment phase P registers them.

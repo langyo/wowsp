@@ -8,7 +8,7 @@ feature) via WowspDriver.
 Prerequisites:
     1. Build the app with the test harness:
            cargo tauri dev --features test-harness
-       (or: just test-visual, which does this for you)
+       (or: just test visual, which does this for you)
     2. The control server writes its port to %APPDATA%/WoWSP/test-harness-port;
        the driver reads it automatically.
     3. Run:

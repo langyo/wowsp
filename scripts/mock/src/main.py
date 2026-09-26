@@ -1,7 +1,7 @@
 """WoWSP mock backend — FastAPI.
 
 Mirrors the Tauri command surface (see `packages/webui/src/rpc.ts`) over HTTP
-under `/api/<cmd>`, so the frontend can develop in a browser (`just dev --mock`)
+under `/api/<cmd>`, so the frontend can develop in a browser (`just dev mock`)
 without the game or the Tauri shell. The webui's `WebTransport` calls these
 endpoints; see `packages/webui/src/transport/web.ts`.
 
