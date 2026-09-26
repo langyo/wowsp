@@ -26,47 +26,69 @@ const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
 /// `path` must point at an existing file. On any structural problem (missing
 /// magic, truncated header, unparseable JSON) the raw JSON block is still
 /// returned when recoverable, so the frontend can render whatever it can.
+///
+/// Async command + [`tokio::task::spawn_blocking`]: reading + decrypting the
+/// descriptor block is real file I/O + CPU work, which must never run on the
+/// UI thread (Tauri 2 synchronous commands do) — same rule as
+/// [`pick_replay_files`].
 #[tauri::command]
-pub fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
-    let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
-    let json = extract_descriptor_json(&bytes)
-        .ok_or_else(|| format!("{path}: not a valid wowsreplay (magic mismatch or truncated)"))?;
-    let raw: serde_json::Value =
-        serde_json::from_str(&json).map_err(|e| format!("parse descriptor JSON: {e}"))?;
-    Ok(meta_from_raw(path, raw))
+pub async fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
+    tokio::task::spawn_blocking(move || {
+        let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+        let json = extract_descriptor_json(&bytes).ok_or_else(|| {
+            format!("{path}: not a valid wowsreplay (magic mismatch or truncated)")
+        })?;
+        let raw: serde_json::Value =
+            serde_json::from_str(&json).map_err(|e| format!("parse descriptor JSON: {e}"))?;
+        Ok(meta_from_raw(path, raw))
+    })
+    .await
+    .map_err(|e| format!("replay header task failed: {e}"))?
 }
 
 /// Decode the packet stream of one `.wowsreplay` and return per-entity
 /// position trajectories (milestone M3) annotated with each entity's creation
-/// metadata (entity-create: type / vehicleId / initial position) so the frontend
-/// can filter ships from capture zones / avatars.
+/// metadata (entity-create: type / vehicleId / initial position) so the
+/// frontend can filter ships from capture zones / avatars.
+///
+/// Async command + [`tokio::task::spawn_blocking`]: the full Blowfish decrypt
+/// + zlib inflate of a real match's packet stream is seconds-scale CPU work —
+/// it runs on the blocking pool so the UI thread never stalls (same rule as
+/// [`pick_replay_files`]).
 #[tauri::command]
-pub fn read_replay_positions(path: String) -> Result<wowsp_tauri_shared::ReplayStream, String> {
-    let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
-    let stream = packet_stream_after_blocks(&bytes)
-        .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
-    // Roster shipIds from the descriptor JSON — the candidate set used to
-    // recover each entity's shipId from its EntityCreate state stream (the
-    // only reliable entity -> player join key).
-    let mut candidates = std::collections::HashSet::new();
-    let mut client_version: Option<String> = None;
-    if let Some(json) = extract_descriptor_json(&bytes) {
-        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
-            client_version = raw
-                .get("clientVersionFromExe")
-                .and_then(|x| x.as_str())
-                .map(str::to_string);
-            if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
-                for v in arr {
-                    if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
-                        candidates.insert(id as u32);
+pub async fn read_replay_positions(
+    path: String,
+) -> Result<wowsp_tauri_shared::ReplayStream, String> {
+    tokio::task::spawn_blocking(move || {
+        let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+        let stream = packet_stream_after_blocks(&bytes)
+            .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
+        // Roster shipIds from the descriptor JSON — the candidate set used to
+        // recover each entity's shipId from its EntityCreate state stream (the
+        // only reliable entity -> player join key).
+        let mut candidates = std::collections::HashSet::new();
+        let mut client_version: Option<String> = None;
+        if let Some(json) = extract_descriptor_json(&bytes) {
+            if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+                client_version = raw
+                    .get("clientVersionFromExe")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+                if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
+                    for v in arr {
+                        if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
+                            candidates.insert(id as u32);
+                        }
                     }
                 }
             }
         }
-    }
-    let decoded = super::packets::decode_replay(stream, &candidates, client_version.as_deref())?;
-    Ok(group_by_entity(decoded))
+        let decoded =
+            super::packets::decode_replay(stream, &candidates, client_version.as_deref())?;
+        Ok(group_by_entity(decoded))
+    })
+    .await
+    .map_err(|e| format!("replay positions task failed: {e}"))?
 }
 
 /// Skip the magic + JSON header blocks and return a slice over the encrypted
@@ -971,13 +993,15 @@ mod tests {
     /// feed the mock backend (`scripts/mock/fixtures/replay_dump.json`) so the
     /// holographic map can render a real match in a browser. Run with
     /// `WOWSP_TEST_REPLAY=<path> [WOWSP_DUMP_OUT=out.json]`.
-    #[test]
-    fn dump_replay_json() {
+    #[tokio::test]
+    async fn dump_replay_json() {
         let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
             return;
         };
-        let meta = read_replay_header(path.clone()).expect("header");
-        let stream = read_replay_positions(path.clone()).expect("positions");
+        let meta = read_replay_header(path.clone()).await.expect("header");
+        let stream = read_replay_positions(path.clone())
+            .await
+            .expect("positions");
         // Raw per-entity property timelines for offline analysis (score
         // hunting, property-index identification).
         let bytes = std::fs::read(&path).unwrap();
