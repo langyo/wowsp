@@ -34,7 +34,6 @@ import { MAP_NAMES, displayMapName, replaysDir } from "@/utils/mapNames";
 import { battleMapIds, bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
 import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
 import { modeKey } from "@/utils/modeColors";
-import { isMobileApp } from "@/utils/platform";
 import "./TacticsView.scss";
 
 /** hikari's HkAlert types `message` as required, but its runtime prefers
@@ -66,18 +65,9 @@ const BUCKET_ORDER: MapModeBucket[] = ["random", "ranked", "clan", "pve"];
 export default defineComponent({
   name: "TacticsView",
   setup() {
-    // The phone app build has no local game install to inspect, so it renders
-    // a static placeholder and mounts none of the loaders/watchers (the nav
-    // link is hidden there too — this is belt-and-braces for direct URLs),
-    // mirroring LiveView.
-    if (isMobileApp()) {
-      return () => (
-        <main class="tactics-view">
-          <div class="tactics-view__placeholder">{t("tactics.list.noClient")}</div>
-        </main>
-      );
-    }
-
+    // Phones get the full board: the map catalog is bundled and the board is
+    // touch-driven. Only the replay-history enrichment (mode pills) needs a
+    // local install — without one it silently falls back to "random".
     const gd = useGameDetect();
     const { dataLanguage } = useLanguage();
 

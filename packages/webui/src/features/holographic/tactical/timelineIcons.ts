@@ -263,8 +263,16 @@ export function drawUserPin(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.restore();
 }
 
-/** Presentation-step pennant. */
-export function drawStepFlag(ctx: CanvasRenderingContext2D, x: number, y: number, active: boolean): void {
+/** A presentation step pennant on the ruler. `hasView` distinguishes steps
+ *  that carry a captured camera (solid flag — clicking jumps AND moves the
+ *  camera) from plain time marks (outline flag — jump only). */
+export function drawStepFlag(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  active: boolean,
+  hasView: boolean,
+): void {
   ctx.save();
   ctx.strokeStyle = active ? "#ffe08a" : TL_COLORS.step;
   ctx.fillStyle = active ? "#ffe08a" : TL_COLORS.step;
@@ -278,7 +286,8 @@ export function drawStepFlag(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.lineTo(x + 7, y - 2.5);
   ctx.lineTo(x, y);
   ctx.closePath();
-  ctx.fill();
+  if (hasView) ctx.fill();
+  else ctx.stroke();
   ctx.restore();
 }
 

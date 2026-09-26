@@ -22,7 +22,7 @@ import "./Sidebar.scss";
  * Left sidebar: brand + nav links + spacer + footer.
  *
  * Nav links (top): Dashboard / Lookup / Ships / Live / Replay / Tactics /
- * Resources. Live + Tactics watch the local game install, so they hide on
+ * Resources. Live watch the local game install, so they hide on
  * the phone app build (no local game / install there).
  * Footer (bottom): game-status indicator, then two full-width key/value
  * buttons in the same style — the active game client (opens settings on
@@ -115,9 +115,10 @@ export default defineComponent({
             <Ship size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.ships")}</span>
           </RouterLink>
-          {/* Live battle + tactics analysis watch the LOCAL game install —
-              desktop app territory (same guard as the footer client button;
-              one branch covers the drawer variant too). */}
+          {/* Live battle watches the LOCAL game install — desktop app
+              territory (same guard as the footer client button; one branch
+              covers the drawer variant too). Tactics analysis works from the
+              bundled map catalog with touch gestures, so phones get it too. */}
           {!isMobileApp() ? (
             <RouterLink to="/live" class="sidebar__link" activeClass="is-active">
               <Video size={16} class="sidebar__link-icon" />
@@ -128,12 +129,10 @@ export default defineComponent({
             <Film size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.replay")}</span>
           </RouterLink>
-          {!isMobileApp() ? (
-            <RouterLink to="/tactics" class="sidebar__link" activeClass="is-active">
-              <Crosshair size={16} class="sidebar__link-icon" />
-              <span class="sidebar__link-text">{t("nav.tactics")}</span>
-            </RouterLink>
-          ) : null}
+          <RouterLink to="/tactics" class="sidebar__link" activeClass="is-active">
+            <Crosshair size={16} class="sidebar__link-icon" />
+            <span class="sidebar__link-text">{t("nav.tactics")}</span>
+          </RouterLink>
           <RouterLink to="/resources" class="sidebar__link" activeClass="is-active">
             <Package size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.resources")}</span>

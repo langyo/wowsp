@@ -300,3 +300,13 @@
     display: none;
   }
 }
+
+/* Phone: the bar outgrows a 390px viewport — wrap onto a second row.
+   (NOT overflow-x: scroll — an overflow axis turns the bar into a clipping
+   box and would cut the absolutely-positioned popovers off.) */
+@media (max-width: 767px) {
+  .tac-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+}
