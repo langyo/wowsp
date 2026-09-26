@@ -336,12 +336,37 @@ fn decrypt_stream(dirty: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// zlib-decompress the decrypted stream.
+/// Upper bound on the decompressed size of a replay's packet stream.
+/// Legitimate full-match streams measure in the tens of MB, so 256 MiB sits
+/// far above any real replay — the cap exists because the encrypted stream
+/// can also arrive from a paired peer (not only from local files), and a
+/// zlib-compressed bomb would otherwise let an unbounded inflate exhaust
+/// memory before the frame walk's per-frame sanity checks ever run.
+pub(crate) const MAX_INFLATED_STREAM_BYTES: usize = 256 * 1024 * 1024;
+
+/// zlib-decompress the decrypted stream, bounded by
+/// [`MAX_INFLATED_STREAM_BYTES`].
 fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
-    let mut dec = ZlibDecoder::new(decrypted);
+    inflate_zlib_with_cap(decrypted, MAX_INFLATED_STREAM_BYTES)
+}
+
+/// zlib-decompress `decrypted`, refusing to buffer more than `cap` bytes.
+///
+/// `Read::take` feeds the decoder `cap + 1` bytes at most, so a stream whose
+/// decompressed size strictly exceeds `cap` is rejected instead of being
+/// buffered whole — a decompression-bomb guard, not a fidelity trade-off
+/// (every real stream stays far under the cap).
+pub(crate) fn inflate_zlib_with_cap(decrypted: &[u8], cap: usize) -> Result<Vec<u8>, String> {
+    let mut dec = ZlibDecoder::new(decrypted).take(cap as u64 + 1);
     let mut out = Vec::new();
     dec.read_to_end(&mut out)
         .map_err(|e| format!("zlib inflate: {e}"))?;
+    if out.len() > cap {
+        return Err(format!(
+            "zlib inflate: decompressed stream exceeds the {cap}-byte cap; \
+             the replay may be corrupted or malicious"
+        ));
+    }
     Ok(out)
 }
 

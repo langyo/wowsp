@@ -749,3 +749,42 @@ fn scans_state_for_zone_radius() {
     state[98..102].copy_from_slice(&[0; 4]);
     assert!(scan_state_for_radius(&state).is_none());
 }
+
+/// Compress `data` with zlib — the mirror of what the decoder inflates.
+fn zlib_compress(data: &[u8]) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+    enc.write_all(data).expect("compress");
+    enc.finish().expect("finish zlib stream")
+}
+
+/// The inflate cap rejects a decompression bomb: ~1 MiB of zeros compresses
+/// into a couple of KB, but must not be buffered past the requested cap, and
+/// the error names the cap it tripped.
+#[test]
+fn inflate_cap_rejects_decompression_bomb() {
+    let bomb = zlib_compress(&vec![0u8; 1024 * 1024]);
+    assert!(
+        bomb.len() < 64 * 1024,
+        "the bomb's compressed form is tiny (got {} bytes)",
+        bomb.len()
+    );
+    let err = inflate_zlib_with_cap(&bomb, 64 * 1024).expect_err("must trip the cap");
+    assert!(err.contains("65536"), "error names the cap: {err}");
+    assert!(
+        err.contains("malicious"),
+        "error flags corrupt-or-malicious: {err}"
+    );
+}
+
+/// A legitimate payload under the cap round-trips byte-exact through both the
+/// capped primitive and the production wrapper.
+#[test]
+fn inflate_with_cap_round_trips_small_payload() {
+    let payload: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
+    let compressed = zlib_compress(&payload);
+    let out = inflate_zlib_with_cap(&compressed, MAX_INFLATED_STREAM_BYTES)
+        .expect("inflate under the cap");
+    assert_eq!(out, payload);
+    assert_eq!(inflate_zlib(&compressed).expect("wrapper"), payload);
+}
