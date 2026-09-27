@@ -10,6 +10,7 @@
 
 use std::fs;
 
+use futures::stream::{self, StreamExt};
 use serde::Deserialize;
 use wowsp_tauri_shared::{
     GameVersionInfo, PlayerShipStats, ShipCareerTotals, ShipModeBreakdown, ShipModeStats,
@@ -46,7 +47,7 @@ pub async fn lookup_player_ship_stats(
         None
     };
 
-    let result = fetch_ship_stats(account_id, &realm).await;
+    let result = fetch_ship_stats(account_id, &realm, true).await;
     let stats = match result {
         Ok(s) => {
             // Persist cache.
@@ -109,13 +110,14 @@ fn apply_pr_algo(
 }
 
 /// Per-ship PvP (randoms) totals for the account-level expected PR — the
-/// same fetch `lookup_player_ship_stats` performs, without the name
-/// enrichment or cache/history writes (the caller only needs the counters).
+/// pvp core of the fetch `lookup_player_ship_stats` performs (the mode
+/// splits are skipped: the caller only needs the counters), without the
+/// name enrichment or cache/history writes.
 pub(crate) async fn fetch_expected_pr_rows(
     account_id: i64,
     realm: &str,
 ) -> Result<Vec<ExpectedPrRow>, String> {
-    Ok(fetch_ship_stats(account_id, realm)
+    Ok(fetch_ship_stats(account_id, realm, false)
         .await?
         .iter()
         .map(|s| ExpectedPrRow {
@@ -260,9 +262,13 @@ pub(crate) fn read_snapshots(realm: &str, account_id: i64) -> Vec<StatsSnapshot>
 
 // ── WG API fetch ────────────────────────────────────────────────────────
 
-async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipStats>, String> {
+async fn fetch_ship_stats(
+    account_id: i64,
+    realm: &str,
+    mode_splits: bool,
+) -> Result<Vec<RawShipStats>, String> {
     if realm == "cn" {
-        return fetch_ship_stats_cn(account_id).await;
+        return fetch_ship_stats_cn(account_id, mode_splits).await;
     }
     let app_id = super::wg_realm::application_id(realm);
     let host = super::wg_realm::api_host(realm)?;
@@ -305,15 +311,89 @@ async fn fetch_ship_stats(account_id: i64, realm: &str) -> Result<Vec<RawShipSta
     Ok(out)
 }
 
-/// CN arm: the vortex per-ship endpoint
-/// `GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/`. Its
-/// `data.<id>.statistics` is a ship_id-keyed map of battle-type nodes with
-/// vortex field names (battles_count, survived, …); the ship id lives in the
-/// map key and no last_battle_time is served.
-async fn fetch_ship_stats_cn(account_id: i64) -> Result<Vec<RawShipStats>, String> {
+/// CN arm: the vortex per-battle-type bulk endpoints
+/// `GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/<battle_type>/`.
+///
+/// The ship *list* endpoint (`/api/accounts/<id>/ships/`) was reworked by
+/// the service (observed live 2026-09) to serve only summary counters —
+/// battles/wins/losses/premium_exp per battle type — with damage, frags,
+/// survival and XP gone, which used to render every CN row as
+/// "data anomaly" (battles > 0, damage 0). The full counters moved to the
+/// per-battle-type bulk endpoints above (the same family the official
+/// profile site lazy-loads per ship as `/ships/<shipId>/<battleType>/`).
+/// Each response's `data.<id>.statistics` is a ship_id-keyed map whose
+/// nodes carry that one battle type's subtree with vortex field names, so
+/// merging the per-mode maps rebuilds exactly the battle-type node shape
+/// [`RawShipStats::from_vortex`] has always consumed.
+///
+/// `pvp` is the only mode the row itself needs — callers that only
+/// aggregate account totals (the expected-PR rows) skip the other seven
+/// requests via `mode_splits = false`. A `pvp` transport failure fails the
+/// whole fetch (the caller's cache fallback then kicks in); a split
+/// failure only narrows that mode's breakdown, the same tolerance the WG
+/// path applies to absent fields. A hidden profile answers ok with no
+/// statistics map at all — the empty list that yields is the "hidden"
+/// marker, not an error.
+const CN_SHIP_MODE_CORE: &str = "pvp";
+const CN_SHIP_MODE_SPLITS: [&str; 7] = [
+    "pvp_solo",
+    "pvp_div2",
+    "pvp_div3",
+    "pve",
+    "rank_solo",
+    "rank_div2",
+    "rank_div3",
+];
+/// Parallel per-mode requests, capped politely like the CN batch resolver
+/// (the vortex service is unauthenticated).
+const CN_SHIP_MODE_CONCURRENCY: usize = 4;
+
+async fn fetch_ship_stats_cn(
+    account_id: i64,
+    mode_splits: bool,
+) -> Result<Vec<RawShipStats>, String> {
     let host = super::wg_realm::vortex_host("cn")?;
     let client = super::wg_api_cn::vortex_client()?;
-    let url = format!("https://{host}/api/accounts/{account_id}/ships/");
+    let modes: Vec<&'static str> = if mode_splits {
+        std::iter::once(CN_SHIP_MODE_CORE)
+            .chain(CN_SHIP_MODE_SPLITS)
+            .collect()
+    } else {
+        vec![CN_SHIP_MODE_CORE]
+    };
+    // Built with a plain loop instead of a `.map(|mode| …)` closure: the
+    // tauri command boundary type-checks this future at higher rank, where
+    // a closure over a `&str` trips rustc's "closure is not general
+    // enough". Each task owns its client clone; the collected future then
+    // holds no borrows of this scope at all.
+    let mut tasks = Vec::with_capacity(modes.len());
+    for mode in modes {
+        let client = client.clone();
+        tasks.push(async move {
+            (
+                mode,
+                fetch_cn_ships_mode(client, host, account_id, mode).await,
+            )
+        });
+    }
+    let results: Vec<(&str, Result<serde_json::Value, String>)> = stream::iter(tasks)
+        .buffered(CN_SHIP_MODE_CONCURRENCY)
+        .collect()
+        .await;
+    merge_cn_mode_maps(account_id, results)
+}
+
+/// Fetch one CN per-mode ships document and validate its envelope. Takes
+/// the client owned (a cheap clone) and the host/mode as `'static` names so
+/// the spawned future is `Send` without higher-ranked lifetime proof over
+/// borrowed parameters.
+async fn fetch_cn_ships_mode(
+    client: reqwest::Client,
+    host: &'static str,
+    account_id: i64,
+    mode: &'static str,
+) -> Result<serde_json::Value, String> {
+    let url = format!("https://{host}/api/accounts/{account_id}/ships/{mode}/");
     let resp = client
         .get(&url)
         .send()
@@ -330,24 +410,52 @@ async fn fetch_ship_stats_cn(account_id: i64) -> Result<Vec<RawShipStats>, Strin
         let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
         return Err(format!("CN ships: {err}"));
     }
-    // A hidden profile answers ok with an empty statistics map.
-    let stats_map = v
-        .get("data")
-        .and_then(|d| d.get(account_id.to_string()))
-        .and_then(|p| p.get("statistics"))
-        .and_then(|s| s.as_object());
-    let mut out = Vec::new();
-    if let Some(map) = stats_map {
-        for (ship_id, node) in map {
-            let Some(id) = ship_id.parse::<i64>().ok() else {
-                continue;
-            };
-            if let Some(raw) = RawShipStats::from_vortex(id, node) {
-                out.push(raw);
+    Ok(v)
+}
+
+/// Merge the per-mode statistics maps into per-ship battle-type nodes and
+/// parse them. Pure so the merge rule is unit-testable without HTTP. The
+/// ship id lives in the map key; a deterministic (id-sorted) order falls
+/// out of the BTreeMap, keeping cache writes and history diffs stable.
+fn merge_cn_mode_maps(
+    account_id: i64,
+    results: Vec<(&str, Result<serde_json::Value, String>)>,
+) -> Result<Vec<RawShipStats>, String> {
+    let mut merged: std::collections::BTreeMap<i64, serde_json::Map<String, serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    for (mode, result) in results {
+        let v = match result {
+            Ok(v) => v,
+            // The pvp core failing is a real outage — surface it so the
+            // caller falls back to its cache instead of reading the empty
+            // list as a hidden profile.
+            Err(e) if mode == CN_SHIP_MODE_CORE => return Err(e),
+            // A split failing only narrows the mode breakdown.
+            Err(_) => continue,
+        };
+        let stats_map = v
+            .get("data")
+            .and_then(|d| d.get(account_id.to_string()))
+            .and_then(|p| p.get("statistics"))
+            .and_then(|s| s.as_object());
+        if let Some(map) = stats_map {
+            for (ship_id, node) in map {
+                let Some(id) = ship_id.parse::<i64>().ok() else {
+                    continue;
+                };
+                if let Some(mode_node) = node.get(mode).filter(|m| !m.is_null()) {
+                    merged
+                        .entry(id)
+                        .or_default()
+                        .insert(mode.to_string(), mode_node.clone());
+                }
             }
         }
     }
-    Ok(out)
+    Ok(merged
+        .into_iter()
+        .filter_map(|(id, node)| RawShipStats::from_vortex(id, &serde_json::Value::Object(node)))
+        .collect())
 }
 
 /// Intermediate struct — raw WG fields before we compute winrate/avg_damage
@@ -484,10 +592,13 @@ impl RawShipStats {
     }
 
     /// CN vortex per-ship node: a battle-type map whose `pvp` entry carries
-    /// vortex field names and the ship id comes from the enclosing map key.
-    /// Several counters (damage, frags, survival) are served as null on ships
-    /// the player barely touched — they degrade to 0, same tolerance as the
-    /// WG path. No last_battle_time is served at all.
+    /// vortex field names and the ship id comes from the enclosing map key
+    /// (the CN transport rebuilds this shape by merging the per-mode bulk
+    /// endpoints — see `fetch_ship_stats_cn`). Counters absent from a node
+    /// degrade to 0, same tolerance as the WG path; XP keeps `xp` primary
+    /// but falls back to the vortex `exp` spelling (the account-level
+    /// `normalize_pvp` maps it the same way). No last_battle_time is served
+    /// at all.
     fn from_vortex(ship_id: i64, node: &serde_json::Value) -> Option<Self> {
         let pvp = node.get("pvp").filter(|v| !v.is_null())?;
         let battles = pvp.get("battles_count")?.as_i64()?;
@@ -521,7 +632,8 @@ impl RawShipStats {
             frags: field(pvp, "frags"),
             survived_battles: field(pvp, "survived"),
             last_battle_time: 0,
-            xp: field(pvp, "xp"),
+            // `max` picks whichever spelling is served (only one ever is).
+            xp: field(pvp, "xp").max(field(pvp, "exp")),
             modes: if has_modes.iter().any(|&b| b) {
                 Some(ShipModeBreakdown {
                     solo,
@@ -738,9 +850,10 @@ mod tests {
 
     #[test]
     fn raw_ship_stats_from_vortex_parses_cn_shape() {
-        // Live-response shape: the ship id comes from the map key and pvp
-        // carries vortex names; sparse counters arrive as null. Mode splits
-        // use the same battle-type keys with vortex counter names.
+        // Historical live shape of the (now summary-only) list endpoint's
+        // nodes: the ship id comes from the map key and pvp carries vortex
+        // names; sparse counters arrived as null. Mode splits use the same
+        // battle-type keys with vortex counter names.
         let node = serde_json::json!({
             "pvp": { "battles_count": 91, "wins": 31, "damage_dealt": null, "frags": null, "xp": 400000 },
             "pve": { "battles_count": 2, "wins": 1 },
@@ -765,6 +878,144 @@ mod tests {
         assert!(RawShipStats::from_vortex(1, &serde_json::json!({ "pvp": null })).is_none());
         let zero = serde_json::json!({ "pvp": { "battles_count": 0, "wins": 0 } });
         assert!(RawShipStats::from_vortex(1, &zero).is_none());
+    }
+
+    /// Live shape (player Evelyine, id 7048272283, ship 4065212112) of the
+    /// per-mode bulk endpoints: the merge rebuilds the battle-type node the
+    /// parser consumes, the vortex `exp` spelling feeds xp, a failed split
+    /// degrades to a missing breakdown entry, and zero-pvp ships are
+    /// skipped.
+    #[test]
+    fn merge_cn_mode_maps_rebuilds_per_ship_nodes() {
+        let pvp = serde_json::json!({
+            "status": "ok",
+            "data": { "7048272283": { "statistics": {
+                "4065212112": { "pvp": {
+                    "battles_count": 536, "wins": 379, "losses": 157,
+                    "damage_dealt": 32873159, "frags": 582, "survived": 253,
+                    "exp": 9480131
+                } },
+                "3760142032": { "pvp": {} }
+            } } }
+        });
+        let rank_solo = serde_json::json!({
+            "status": "ok",
+            "data": { "7048272283": { "statistics": {
+                "4065212112": { "rank_solo": {
+                    "battles_count": 76, "wins": 50,
+                    "damage_dealt": 3977644, "frags": 90, "survived": 30
+                } }
+            } } }
+        });
+        let rows = merge_cn_mode_maps(
+            7048272283,
+            vec![
+                ("pvp", Ok(pvp)),
+                (
+                    "pvp_div2",
+                    Err::<serde_json::Value, String>("CN ships: HTTP 503".to_string()),
+                ),
+                ("rank_solo", Ok(rank_solo)),
+            ],
+        )
+        .expect("merge succeeds");
+        assert_eq!(rows.len(), 1, "the zero-pvp ship is skipped");
+        let r = &rows[0];
+        assert_eq!(r.ship_id, 4065212112);
+        assert_eq!(r.battles, 536);
+        assert_eq!(r.wins, 379);
+        assert_eq!(r.damage_caused, 32873159);
+        assert_eq!(r.frags, 582);
+        assert_eq!(r.survived_battles, 253);
+        assert_eq!(r.xp, 9480131, "the exp spelling feeds xp");
+        let modes = r.modes.as_ref().expect("ranked split present");
+        assert_eq!(modes.ranked.as_ref().unwrap().battles, 76);
+        assert!((modes.ranked.as_ref().unwrap().winrate - 65.78).abs() < 0.01);
+        assert!(modes.solo.is_none(), "failed split degraded to missing");
+        let stats = PlayerShipStats::from(r);
+        assert!((stats.avg_damage - 32873159.0 / 536.0).abs() < 0.01);
+        assert!((stats.avg_xp.unwrap() - 9480131.0 / 536.0).abs() < 0.01);
+    }
+
+    /// The pvp core is load-bearing: its failure must surface (so the caller
+    /// falls back to its cache), while a hidden profile's ok-without-
+    /// statistics answer stays the empty-list "hidden" marker, never an
+    /// error.
+    #[test]
+    fn merge_cn_mode_maps_requires_pvp_core_but_tolerates_hidden() {
+        let err = merge_cn_mode_maps(
+            1,
+            vec![(
+                "pvp",
+                Err::<serde_json::Value, String>("CN ships: HTTP 500".to_string()),
+            )],
+        )
+        .expect_err("pvp failure must surface");
+        assert!(err.contains("CN ships"));
+        let hidden = serde_json::json!({
+            "status": "ok",
+            "data": { "1": { "name": "ghost", "hidden_profile": true } }
+        });
+        let rows =
+            merge_cn_mode_maps(1, vec![("pvp", Ok(hidden))]).expect("hidden is not an error");
+        assert!(rows.is_empty());
+        // Splits alone (pvp missing from the data map entirely) yield no
+        // rows either — a pvp-less node never parses.
+        let split_only = serde_json::json!({
+            "status": "ok",
+            "data": { "1": { "statistics": {
+                "42": { "pve": { "battles_count": 5, "wins": 4, "damage_dealt": 100000 } }
+            } } }
+        });
+        let rows = merge_cn_mode_maps(1, vec![("pve", Ok(split_only))]).expect("ok");
+        assert!(rows.is_empty(), "no pvp node parses to no row");
+    }
+
+    /// Defensive-branch coverage for the merge: a non-numeric ship-id key is
+    /// skipped without affecting its siblings, a null mode node yields no
+    /// entry (not an empty one), and the three ranked splits fed as separate
+    /// mode documents combine into the single ranked bucket exactly like
+    /// the WG path's integration test.
+    #[test]
+    fn merge_cn_mode_maps_skips_noise_and_combines_ranked_splits() {
+        let pvp = serde_json::json!({
+            "status": "ok",
+            "data": { "7": { "statistics": {
+                "42": { "pvp": {
+                    "battles_count": 100, "wins": 55, "damage_dealt": 2500000,
+                    "frags": 80, "survived": 30, "xp": 900000
+                } },
+                "garbage": { "pvp": { "battles_count": 1, "wins": 1 } },
+                "43": { "pvp": null }
+            } } }
+        });
+        let rank_solo = serde_json::json!({
+            "status": "ok",
+            "data": { "7": { "statistics": {
+                "42": { "rank_solo": { "battles_count": 12, "wins": 6, "damage_dealt": 300000 } }
+            } } }
+        });
+        let rank_div2 = serde_json::json!({
+            "status": "ok",
+            "data": { "7": { "statistics": {
+                "42": { "rank_div2": { "battles_count": 8, "wins": 5, "damage_dealt": 200000 } }
+            } } }
+        });
+        let rows = merge_cn_mode_maps(
+            7,
+            vec![
+                ("pvp", Ok(pvp)),
+                ("rank_solo", Ok(rank_solo)),
+                ("rank_div2", Ok(rank_div2)),
+            ],
+        )
+        .expect("merge succeeds");
+        assert_eq!(rows.len(), 1, "garbage key and null pvp node add no rows");
+        let modes = rows[0].modes.as_ref().expect("breakdown present");
+        let ranked = modes.ranked.as_ref().expect("ranked bucket");
+        assert_eq!(ranked.battles, 20, "rank_solo + rank_div2 merged");
+        assert_eq!(ranked.wins, 11);
+        assert_eq!(ranked.damage_caused, 500000);
     }
 
     fn mk_stats(ship_id: i64, battles: i64) -> PlayerShipStats {

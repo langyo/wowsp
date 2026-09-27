@@ -9,7 +9,10 @@
 //!   suggest GET https://vortex.wowsgame.cn/api/accounts/search/autocomplete/<name>/
 //!   info    GET https://vortex.wowsgame.cn/api/accounts/<id>/
 //!   clan    GET https://vortex.wowsgame.cn/api/accounts/<id>/clans/   (404 = no clan)
-//!   ships   GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/   (ship_stats.rs)
+//!   ships   GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/<battle_type>/
+//!           (per-mode bulk endpoints — the bare /ships/ list serves
+//!           summary counters only since the 2026 service rework; see
+//!           ship_stats.rs)
 //!   clan    GET https://clans.wowsgame.cn/api/clanbase/<id>/claninfo/
 //!   roster  GET https://clans.wowsgame.cn/api/members/<id>/?battle_type=pvp
 //!   clans   GET https://clans.wowsgame.cn/api/search/autocomplete/?search=<q>&type=clans
