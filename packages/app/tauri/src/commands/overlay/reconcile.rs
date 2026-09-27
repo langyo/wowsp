@@ -194,8 +194,8 @@ pub(super) fn revalidate_pinned_anchor(
 pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWindow) {
     fsm.last_sink_check = Some(Instant::now());
     // Everything decided BEFORE the capture: a pass with nothing comparable
-    // (recognition never produced alive flags, or no cache to gate the band
-    // with) must not pay a BitBlt.
+    // (no luma baseline yet, or no cache to gate the band with) must not
+    // pay a BitBlt.
     {
         let Some(pin) = fsm.pinned_anchor.as_ref() else {
             return;

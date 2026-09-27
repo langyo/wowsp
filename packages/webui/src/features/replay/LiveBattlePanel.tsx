@@ -28,7 +28,6 @@ import { useRouter } from "vue-router";
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import { useAccountStore } from "@/stores/account";
-import { useOverlayStore } from "@/stores/overlay";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
@@ -118,12 +117,6 @@ export default defineComponent({
     // (a panel that never used overlay mode stays badge-free).
     const overlayStatus = ref<OverlayStatus | null>(null);
     let unlistenStatus: (() => void) | null = null;
-    // In-game Tab row order, streamed by the same watcher whenever a
-    // recognition pass over a held Tab frame matched the roster. Held in
-    // the overlay store (survives this panel unmounting mid-battle); the
-    // columns below reorder to mirror the on-screen table exactly,
-    // sunk-ship grouping included.
-    const overlay = useOverlayStore();
     // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
     // strip-fingerprint matching) — feed the predicted order below so the
     // columns mirror the game's [alive] ++ [sunk] layout live.

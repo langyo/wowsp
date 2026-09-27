@@ -105,7 +105,6 @@ pub mod ranked;
 pub mod replay;
 pub mod res_mods;
 #[cfg(desktop)]
-#[cfg(desktop)]
 pub mod screenshot;
 pub mod ship_stats;
 pub mod stamps;

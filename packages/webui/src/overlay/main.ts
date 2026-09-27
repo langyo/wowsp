@@ -475,7 +475,7 @@ function render() {
   // index mapping.
   let players: (string | string[] | null)[] | null = null;
   let aliveArr: boolean[] | null = null;
-  {
+  if (anchor.rosterMode !== "off") {
     aliveArr = anchor.rowAlive ?? null;
     // The mapping replicates the client's own Tab sort key (decompiled —
     // see inferredOrder.ts), so battle-start rows arrive as EXACT names.

@@ -1344,7 +1344,7 @@ pub(crate) fn anchor_meaningfully_moved(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Row name-strip cropping (row → name recognition pipeline)
+// Row name-strip cropping (the sink solver's fingerprint input)
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Horizontal bounds of the player-name column INSIDE one sub-table half, as
@@ -1358,7 +1358,7 @@ pub(crate) fn anchor_meaningfully_moved(
 ///   player nicknames RIGHT-ALIGNED near the outer edge (~0.64–0.93) — the
 ///   strip hugs the RIGHT edge.
 ///
-/// Both strips stop short of the silhouette/ship columns so the recognizer's
+/// Both strips stop short of the silhouette/ship columns so the strip
 /// input stays mostly nickname.
 const ALLY_NAME_STRIP_X0_FRAC: f32 = 0.02;
 const ALLY_NAME_STRIP_X1_FRAC: f32 = 0.40;
@@ -1515,7 +1515,7 @@ pub(crate) fn row_strip_alive(max_luma: f32) -> bool {
 
 /// Name-strip crops for every row of a detected table, in `row_centers`
 /// order. Elements are `None` for rows whose strip leaves the frame — the
-/// recognition pipeline reads those as "unrecognized", never guesses.
+/// sink solver treats those as unfingerprintable, never guesses.
 pub(crate) fn crop_row_name_strips(
     rgba: &[u8],
     width: u32,
@@ -1539,9 +1539,8 @@ pub(crate) fn crop_row_name_strips(
 /// [`row_strip_alive`]). This is the Tab watcher's SINK FAST-PATH: cheap
 /// enough to run a few times per second while the overlay is up, so a ship
 /// sinking is seen in ~500 ms instead of waiting for the next full
-/// revalidation. Unreadable rows default to alive — identical to the
-/// recognition pipeline's semantics (a missing strip must never read as
-/// "sunk").
+/// revalidation. Unreadable rows default to alive — a missing strip must
+/// never read as "sunk".
 pub(crate) fn read_row_alive(
     rgba: &[u8],
     width: u32,

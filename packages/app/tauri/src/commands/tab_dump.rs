@@ -1,12 +1,10 @@
 //! Opt-in ground-truth dumps of the in-game Tab roster (debug aid).
 //!
-//! The overlay frontend currently maps `tempArenaInfo.json` players onto the
-//! detected table rows by array index, but the in-game Tab panel orders its
-//! rows with its own sort — so the chips can land on the wrong player. The
-//! planned fix ("row → name recognition") needs GROUND TRUTH: the exact Tab
-//! frame, the arena roster the frontend indexed, and the detector output, all
-//! captured at the same instant, so the REAL row order can be analysed
-//! offline.
+//! The overlay's row attribution is pixel-derived (the Tab sort key plus
+//! the sink solver's strip fingerprints), so its development needs GROUND
+//! TRUTH: the exact Tab frame, the arena roster of that instant, and the
+//! detector output, all captured together for offline analysis of the REAL
+//! row order and the strip fingerprints' behavior.
 //!
 //! The dump only runs when the developer sets `WOWSP_TAB_DUMP_DIR` to a
 //! non-empty path — it is a debugging feature, never a shipped behavior, and
@@ -24,10 +22,10 @@
 //! MOVES as a whole within one battle — the countdown "waiting players"
 //! layout sits ~190 px above the combat layout once the in-battle HUD
 //! appears — the first-row bucket changes and the new layout takes its own
-//! dump. Those per-layout frames are exactly the ground truth the
-//! row-recognition engine needs: the same battle captured under different
-//! panel layouts (row-order sampling across survival states is the
-//! recognition PR's own work). FAILED detections (the centered-fallback
+//! dump. Those per-layout frames are exactly the ground truth the strip
+//! fingerprinting needs: the same battle captured under different panel
+//! layouts (row-order sampling across survival states is the sink
+//! solver's own work). FAILED detections (the centered-fallback
 //! anchor behind the "table not found" hint) dump once per battle as
 //! `.miss.` artifacts — a scenario where the detector cannot find the table
 //! leaves its frame behind for offline analysis instead of vanishing. Every
@@ -163,10 +161,10 @@ fn first_dump_for_battle(seen: &mut Vec<u64>, signature: u64) -> bool {
 /// tempArenaInfo.json path with a new dateTime/roster, so every real battle
 /// hashes differently; the panel moving as a WHOLE inside one battle (the
 /// countdown → combat HUD phase shift) changes the bucket and takes its own
-/// dump — per-layout ground truth for the recognition engine. Row REORDERS
+/// dump — per-layout ground truth for the strip analysis. Row REORDERS
 /// at fixed slot positions (sunk ships) do not move the first row and are
-/// deliberately not part of this signature — sampling those is the
-/// recognition PR's own work.
+/// deliberately not part of this signature — sampling those is the sink
+/// solver tests' own work.
 fn battle_signature(info: &ArenaInfo, first_row_bucket: i64) -> u64 {
     let mut hasher = DefaultHasher::new();
     info.date_time.hash(&mut hasher);

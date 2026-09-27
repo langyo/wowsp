@@ -1750,11 +1750,9 @@ export default defineComponent({
               switches (radio-style so a future "plugin" mode can join each
               later without schema churn): table anchoring pixel-detects the
               team table, and its off state disables the WHOLE Tab overlay;
-              roster attribution picks the rule-inferred mapping (the
-              default — no OCR at all), the OCR pipeline (exact; offered
-              only when the OS engine is usable — a system with the OCR
-              language pack stripped keeps the option visible but disabled),
-              or the roster/index order fallback. The note under the first
+              roster attribution picks the derived mapping (the
+              default — the game's own Tab sort key plus the sink solver,
+              no OCR at all) or the roster/index order fallback. The note under the first
               switch explains why exclusive fullscreen can't work.
               Unreachable on the phone app build (no overlay window there —
               the rail filters the section out). */}

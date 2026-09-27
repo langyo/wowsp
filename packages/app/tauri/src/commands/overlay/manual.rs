@@ -132,12 +132,10 @@ pub(super) fn manual_row_centers(rect: &Rect, team_sizes: (usize, usize)) -> Vec
 /// Build the chip-layer anchor from a live manual anchor: the selection is
 /// treated exactly like a DETECTED roster rect (padded, re-based to the
 /// overlay window origin by the shared `overlay_detect::build_anchor`), with
-/// a 0.5 team split (two side-by-side columns). `row_players` stays `None`
-/// ON PURPOSE: the OCR pipeline is not run on a hand-drawn box — the per-row
-/// player count comes from the roster and need not match the drawn rows, so
-/// an index guess could pin the wrong stats onto chips. Honest silence (no
-/// chips on an off-count row) beats confidently wrong data. In the inferred
-/// mode the overlay page goes one better and names the rows itself from the
+/// a 0.5 team split (two side-by-side columns). `row_alive` stays `None`
+/// ON PURPOSE: the luma pass is not run on a hand-drawn box — the per-row
+/// player count comes from the roster and need not match the drawn rows.
+/// The overlay page names the rows itself from the
 /// verified sort rule (the drawn grid mirrors the roster's team sizes, the
 /// same closed-set contract the automatic flow deduces from).
 pub(super) fn build_manual_anchor(m: &ManualAnchor, game_screen: Rect) -> OverlayAnchor {

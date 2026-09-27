@@ -2371,7 +2371,7 @@ mod tests {
     }
 
     // ── live arena + manual locate (client.ts: ArenaInfo / CaptureResult /
-    //    OverlayAnchor / Rect / TabRow*; manual-locate/main.ts: the context
+    //    OverlayAnchor / Rect; manual-locate/main.ts: the context
     //    + guides DTOs) ─────────────────────────────────────────────────────────
 
     /// The live tempArenaInfo.json mirror of ReplayMeta (client.ts:

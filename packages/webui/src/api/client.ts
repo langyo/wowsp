@@ -1354,10 +1354,11 @@ export const api = {
   /** Detection-state push from the Tab watcher (transition-only). */
   listenOverlayStatus: (handler: (status: OverlayStatus) => void) =>
     transport.listen?.<OverlayStatus>("wowsp://overlay-status", handler),
-  /** In-game Tab row-order push from the Tab watcher: fired whenever a
-   *  recognition pass over a held Tab frame produced a trusted row→name
-   *  mapping (initial pin, layout shift, or a re-sort after sinks). The
-   *  main window's live panel reorders its columns to mirror it. */
+  /** Sink-attribution push from the Tab watcher: for one confirmed sink
+   *  transition, the pre-sink alive-row indices whose players just sank
+   *  (solved by strip-fingerprint matching). Consumers resolve the rows
+   *  against their sort-key layouts and render the exact [alive] ++
+   *  [sunk] order. */
   listenSinkAttribution: (handler: (attrib: SinkAttribution) => void) =>
     transport.listen?.<SinkAttribution>("wowsp://sink-attrib", handler),
   /** Player stats lookup. `prAlgo` picks the PR formula ("winrate" =

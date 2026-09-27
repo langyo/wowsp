@@ -520,7 +520,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             );
             // Cadenced work while the pin is up — at most ONE capture per
             // tick, priority: sink probe (cheapest, most time-critical) →
-            // recognition catch-up → full revalidation. A branch that fires
+            // full revalidation. A branch that fires
             // bumps only its own stamp, so the others simply run on a later
             // tick (their `due` conditions stay armed).
             if fsm

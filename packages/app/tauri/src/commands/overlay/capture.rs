@@ -96,8 +96,8 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     if verify_missed {
         // Band verify missed but the cache is not (yet) declared dead: skip
         // BOTH the gate's full scans and the detection for THIS frame — the
-        // next capture (sink probe 500 ms / catch-up 1.5 s / revalidate 5 s
-        // / acquisition 1.5 s) re-judges cheaply. A full-frame band search
+        // next capture (sink probe 500 ms / revalidate 5 s / acquisition
+        // 1.5 s) re-judges cheaply. A full-frame band search
         // here would find the MOVED table, but rescanning every frame is
         // exactly the cost this cache exists to avoid; the strike counter
         // is the last-resort re-arm.
