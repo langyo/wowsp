@@ -104,6 +104,10 @@ export default defineComponent({
     replayPath: { type: String, required: true },
     /** Filename fragment for export defaults (map name). */
     mapTag: { type: String, default: "map" },
+    /** Map-frame rotation (degrees, +90° per rotate click). The annotation
+     *  canvas renders through the same rotation as the base map; pointer
+     *  input is un-rotated before hitting world space. */
+    rotationDeg: { type: Number, default: 0 },
     /** Toolbar + interactions visible; off = view-only annotations. */
     editMode: { type: Boolean, default: false },
     getBounds: { type: Function as PropType<() => MapBounds | null>, required: true },
@@ -337,9 +341,61 @@ export default defineComponent({
       if (!pr || !cvs) return null;
       const rect = cvs.getBoundingClientRect();
       if (rect.width === 0) return null;
-      const lx = ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE;
-      const ly = ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE;
-      return { p: pr.toWorld(lx, ly), lx, ly, p2: pr };
+      const raw = unrotate(
+        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      );
+      return { p: pr.toWorld(raw.lx, raw.ly), lx: raw.lx, ly: raw.ly, p2: pr };
+    }
+
+    const rotRad = computed(() => (props.rotationDeg * Math.PI) / 180);
+    /** View-space (un-rotated) point for a canvas-space point: the annotation
+     *  canvas renders rotated, so pointer input must spin back by -θ around
+     *  the logical centre before it can hit world coordinates. */
+    function unrotate(lx: number, ly: number): { lx: number; ly: number } {
+      const r = -rotRad.value;
+      if (r === 0) return { lx, ly };
+      const c = TACTICAL_SIZE / 2;
+      const dx = lx - c;
+      const dy = ly - c;
+      return {
+        lx: c + dx * Math.cos(r) - dy * Math.sin(r),
+        ly: c + dx * Math.sin(r) + dy * Math.cos(r),
+      };
+    }
+    /** Screen-rotate a view-space point for DOM positioning (text editor). */
+    function rotatePoint(q: { x: number; y: number }): { x: number; y: number } {
+      const r = rotRad.value;
+      if (r === 0) return q;
+      const c = TACTICAL_SIZE / 2;
+      const dx = q.x - c;
+      const dy = q.y - c;
+      return {
+        x: c + dx * Math.cos(r) - dy * Math.sin(r),
+        y: c + dx * Math.sin(r) + dy * Math.cos(r),
+      };
+    }
+    /** Screen-space bounding box of a view-space rect under the map-frame
+     *  rotation: the live canvases store the ROTATED composition, so a crop
+     *  must spin forward before it can slice pixels — at 90° steps the
+     *  result is exactly the framed rect (edges swapped for odd turns). */
+    function screenCropRect(region: LogicalRect): LogicalRect {
+      const corners = [
+        { x: region.x, y: region.y },
+        { x: region.x + region.w, y: region.y },
+        { x: region.x, y: region.y + region.h },
+        { x: region.x + region.w, y: region.y + region.h },
+      ].map(rotatePoint);
+      const xs = corners.map((p) => p.x);
+      const ys = corners.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      return {
+        x: minX,
+        y: minY,
+        w: Math.max(...xs) - minX,
+        h: Math.max(...ys) - minY,
+      };
     }
 
     function anchorT0(): number {
@@ -395,6 +451,15 @@ export default defineComponent({
       const ctx = cvs.getContext("2d");
       if (!ctx) return;
       ctx.setTransform(px / TACTICAL_SIZE, 0, 0, px / TACTICAL_SIZE, 0, 0);
+      // Mirror the base map's world-frame rotation (annotations are
+      // world-anchored: they must spin together with the art).
+      if (rotRad.value !== 0) {
+        ctx.save();
+        const c = TACTICAL_SIZE / 2;
+        ctx.translate(c, c);
+        ctx.rotate(rotRad.value);
+        ctx.translate(-c, -c);
+      }
       const p = makeProjection(bounds);
       const regionRect: LogicalRect | null =
         regionOverride !== undefined
@@ -417,9 +482,10 @@ export default defineComponent({
         // its own, so its units own the solid glyph.
         hollowMarkers: !props.planMode,
       });
-      // Keep the text editor glued to its world anchor.
+      if (rotRad.value !== 0) ctx.restore();
+      // Keep the text editor glued to its world anchor (screen-rotated).
       if (textEdit.value && inputRef.value) {
-        const q = p.toPx(textEdit.value.at);
+        const q = rotatePoint(p.toPx(textEdit.value.at));
         inputRef.value.style.left = `${(q.x / TACTICAL_SIZE) * 100}%`;
         inputRef.value.style.top = `${(q.y / TACTICAL_SIZE) * 100}%`;
       }
@@ -509,10 +575,13 @@ export default defineComponent({
       if (!cvs) return null;
       const rect = cvs.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return null;
-      return {
-        x: ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
-        y: ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
-      };
+      // View-space: the pinch feeds zoomAt/panByLogical, which operate on
+      // the un-rotated viewport.
+      const q = unrotate(
+        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      );
+      return { x: q.lx, y: q.ly };
     }
 
     /** Advance the pinch from the current two pointers: zoom by the distance
@@ -869,10 +938,12 @@ export default defineComponent({
       if (!cvs) return;
       const rect = cvs.getBoundingClientRect();
       if (rect.width === 0) return;
-      const lx = ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE;
-      const ly = ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE;
+      const hit = unrotate(
+        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      );
       const factor = e.deltaY < 0 ? 1.22 : 1 / 1.22;
-      props.viewApi.zoomAt(lx, ly, factor);
+      props.viewApi.zoomAt(hit.lx, hit.ly, factor);
     }
 
     function onDoubleClick(e: MouseEvent): void {
@@ -1061,15 +1132,20 @@ export default defineComponent({
       busy.value = true;
       try {
         const s = exportSettings.value;
+        // The canvases hold the view-space composition rotated by the map
+        // frame (renderNow), so a crop spins into screen space before it
+        // slices pixels. Null = full view: the square maps onto itself at
+        // every 90° step, nothing to transform.
+        const screen = crop ? screenCropRect(crop) : null;
         const native = base.width / TACTICAL_SIZE;
-        const edgeW = crop ? crop.w : TACTICAL_SIZE;
-        const edgeH = crop ? crop.h : TACTICAL_SIZE;
+        const edgeW = screen ? screen.w : TACTICAL_SIZE;
+        const edgeH = screen ? screen.h : TACTICAL_SIZE;
         // Repaint the overlay without the crop mask so exports stay clean.
         renderNow(null);
         const canvas = composeExportCanvas(
           base,
           canvasRef.value,
-          { format: s.format, scale: s.scale, crop, timestamp: s.timestamp },
+          { format: s.format, scale: s.scale, crop: screen, timestamp: s.timestamp },
           Math.round(edgeW * native * s.scale),
           Math.round(edgeH * native * s.scale),
           s.timestamp ? formatBattleClock(props.getTime()) : null,

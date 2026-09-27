@@ -17,7 +17,21 @@ import type { HpSample } from "@/api";
  *  gliding on a straight line with a slowly rotating heading, which sailed
  *  ships straight across islands at weird angles. Spotted ships stream
  *  every 0.1–2 s, so 4 s cleanly separates the two regimes. */
-const UNSEEN_GAP_S = 4;
+export const UNSEEN_GAP_S = 4;
+
+/** Count of samples at or before `t` — the exclusive end index for
+ *  playhead-clipped drawing. Binary search, allocation-free: the trail
+ *  painter runs this per ship per frame. */
+export function samplesUpTo(samples: { time: number }[], t: number): number {
+  let lo = 0;
+  let hi = samples.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].time <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 
 /** Interpolate a sample at time t (linear between neighbors). */
 export function sampleAt(

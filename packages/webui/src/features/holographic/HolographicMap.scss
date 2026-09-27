@@ -799,7 +799,7 @@
   color: var(--holo-hud-text);
   user-select: none;
   cursor: default;
-  > span:first-child {
+  .holo-map__mmzoom-head-title {
     font-weight: 600;
     letter-spacing: 0.03em;
   }

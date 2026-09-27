@@ -84,4 +84,43 @@ describe("gridEdgeLabels", () => {
     ]);
     expect(left[0].y).toBeCloseTo(cell / 2, 5); // row 1 on the NORTHERN band
   });
+
+  it("90° map rotation swaps the strips: letters down the left, numbers across the top", () => {
+    const cell = 760 / MAP_GRID_COLUMNS;
+    const cols = Array.from({ length: MAP_GRID_COLUMNS }, (_, i) => (i + 0.5) * cell);
+    const rows = Array.from({ length: MAP_GRID_COLUMNS }, (_, j) => (j + 0.5) * cell);
+    const { top, left } = gridEdgeLabels(760, cols, rows, Math.PI / 2);
+    expect(left.map((l) => l.text)).toEqual(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]);
+    expect(top.map((l) => l.text)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+    // A clockwise quarter-turn carries the west edge to the top: column A's
+    // line now runs horizontally near the top, so its label sits high on
+    // the left strip; row 1 (north) lands by the right edge.
+    expect(left[0].y).toBeCloseTo(cell / 2, 5);
+    expect(top[0].x).toBeCloseTo(760 - cell / 2, 5);
+  });
+
+  it("270° map rotation swaps the strips the other way round", () => {
+    const cell = 760 / MAP_GRID_COLUMNS;
+    const cols = Array.from({ length: MAP_GRID_COLUMNS }, (_, i) => (i + 0.5) * cell);
+    const rows = Array.from({ length: MAP_GRID_COLUMNS }, (_, j) => (j + 0.5) * cell);
+    const { top, left } = gridEdgeLabels(760, cols, rows, (3 * Math.PI) / 2);
+    expect(left.map((l) => l.text)).toEqual(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]);
+    expect(top.map((l) => l.text)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+    // Counter-clockwise: the west edge goes to the bottom, north to the left.
+    expect(left[0].y).toBeCloseTo(760 - cell / 2, 5);
+    expect(top[0].x).toBeCloseTo(cell / 2, 5);
+  });
+
+  it("180° keeps the strips but reverses each family's positions", () => {
+    const cell = 760 / MAP_GRID_COLUMNS;
+    const cols = Array.from({ length: MAP_GRID_COLUMNS }, (_, i) => (i + 0.5) * cell);
+    const rows = Array.from({ length: MAP_GRID_COLUMNS }, (_, j) => (j + 0.5) * cell);
+    const { top, left } = gridEdgeLabels(760, cols, rows, Math.PI);
+    // Insertion order stays A..J / 1..10; the POSITIONS flip with the map.
+    expect(top.map((l) => l.text)).toEqual(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]);
+    expect(left.map((l) => l.text)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+    expect(top[0].x).toBeCloseTo(760 - cell / 2, 5); // A now on the right
+    expect(top[9].x).toBeCloseTo(cell / 2, 5);
+    expect(left[0].y).toBeCloseTo(760 - cell / 2, 5); // row 1 now at the bottom
+  });
 });

@@ -124,7 +124,9 @@
   "minimap": {
     "zoom": "Carte agrandie",
     "trails": "Trajectoires des navires",
-    "grid": "Grille de la carte (A–J / 1–10)"
+    "grid": "Grille de la carte (A–J / 1–10)",
+    "rotateCcw": "Pivoter la carte de 90° anti-horaire",
+    "rotateCw": "Pivoter la carte de 90° horaire"
   },
   "labels": {
     "hide": "Masquer les étiquettes",

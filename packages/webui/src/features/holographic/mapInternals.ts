@@ -238,6 +238,9 @@ export interface MapInternalsDeps {
   minimapZoom: Ref<boolean>;
   minimapShowTrails: Ref<boolean>;
   minimapShowGrid: Ref<boolean>;
+  /** Enlarged-map world-frame rotation in degrees (+90° per clockwise
+   *  click; the painter spins art/grid/trails/glyphs together). */
+  mmRotationDeg: Ref<number>;
   /** Alt held → show in-game point timers on the cap letters. */
   showCapEta: Ref<boolean>;
   /** Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy. */

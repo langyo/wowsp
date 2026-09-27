@@ -6,7 +6,7 @@
  */
 import { drawShipGlyph } from "./shipGlyph";
 import { planeIcon } from "./planeIcons";
-import { sampleAt } from "./trajectoryMath";
+import { sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
 import { frustumCorners } from "./sceneUtils";
 import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
@@ -310,6 +310,17 @@ export function drawMinimap(ctx: MapInternals) {
       // The 2D map art NEVER changes with the theme (the game's own
       // bitmap, shown as-is in both modes); only the overlay chrome —
       // scrim, head pill, frame — follows the app theme.
+      // World-frame rotation (the pill's rotate buttons): everything
+      // map-anchored — art, grid lines, trails, glyphs — spins together;
+      // upright chrome (cap letters, smoke timers, aircraft icons, grid
+      // labels) counter-rotates or is drawn after restore.
+      const rotRad = (ctx.mmRotationDeg.value * Math.PI) / 180;
+      zctx.save();
+      if (rotRad !== 0) {
+        zctx.translate(zw / 2, zw / 2);
+        zctx.rotate(rotRad);
+        zctx.translate(-zw / 2, -zw / 2);
+      }
       zctx.clearRect(0, 0, zw, zw);
       if (ctx.minimapImage) {
         zctx.imageSmoothingEnabled = true;
@@ -361,6 +372,8 @@ export function drawMinimap(ctx: MapInternals) {
         zctx.stroke();
         zctx.save();
         zctx.translate(cx, cz);
+        // Ring text stays upright under map rotation.
+        if (rotRad !== 0) zctx.rotate(-rotRad);
         zctx.fillStyle = zctx.strokeStyle;
         zctx.font = "bold 16px sans-serif";
         zctx.textAlign = "center";
@@ -386,17 +399,37 @@ export function drawMinimap(ctx: MapInternals) {
                 ? "rgba(255, 255, 255, 0.6)"
                 : "rgba(60, 180, 120, 0.5)";
           zctx.lineWidth = 1.5;
+          // The path travelled SO FAR, welded to the glyph: samples are
+          // clipped at the playhead (the full recorded path read as trails
+          // running everywhere BUT the ships), the pen lifts across
+          // un-spotted gaps (>4 s — same freeze rule the marker follows,
+          // so fog never draws a straight line to the re-spot), and the
+          // tail extends to the exact interpolated pose the marker sits
+          // at — line and glyph always meet.
+          const n = samplesUpTo(tr.samples, t);
+          if (n === 0) continue;
           zctx.beginPath();
-          // FULL recorded path, independent of the playhead — the trails
-          // toggle exists to review the whole battle's manoeuvres. (A
-          // playhead-clipped variant shipped once and hid the trails
-          // entirely at early battle times.)
-          for (let i = 0; i < tr.samples.length; i++) {
+          let started = false;
+          let prevT = 0;
+          for (let i = 0; i < n; i++) {
             const s = tr.samples[i];
-            const px = zwx(s.x);
-            const py = zwz(-s.z);
-            if (i === 0) zctx.moveTo(px, py);
-            else zctx.lineTo(px, py);
+            if (started && s.time - prevT > UNSEEN_GAP_S) started = false;
+            if (started) zctx.lineTo(zwx(s.x), zwz(-s.z));
+            else zctx.moveTo(zwx(s.x), zwz(-s.z));
+            started = true;
+            prevT = s.time;
+          }
+          // sampleAt hands back a RAW sample object whenever the pose is
+          // frozen — at the polyline's end (gap hold / past the stream)
+          // or at the pre-gap sample when t parks exactly on a
+          // re-detection sample the marker hasn't jumped to yet. Either
+          // way the tail must not draw: re-lining it would drag the line
+          // back across the very gap the pen just lifted over. Only a
+          // genuinely interpolating pose (a fresh object) extends it.
+          const tail = sampleAt(tr, t);
+          const prevDrawn = n >= 2 ? tr.samples[n - 2] : undefined;
+          if (tail !== tr.samples[n - 1] && tail !== prevDrawn) {
+            zctx.lineTo(zwx(tail.x), zwz(-tail.z));
           }
           zctx.stroke();
         }
@@ -466,6 +499,8 @@ export function drawMinimap(ctx: MapInternals) {
         zctx.textBaseline = "bottom";
         zctx.save();
         zctx.translate(zwx(pStart.x), zwz(-pStart.z));
+        // Smoke timer text stays upright under map rotation.
+        if (rotRad !== 0) zctx.rotate(-rotRad);
         zctx.fillText(`${Math.ceil(cl.endT - t)}s`, 0, -7);
         zctx.restore();
       }
@@ -489,6 +524,9 @@ export function drawMinimap(ctx: MapInternals) {
             const sz = 22;
             zctx.save();
             zctx.translate(zwx(s.x), zwz(-s.z));
+            // Aircraft icons stay upright on the minimap (counter-rotate
+            // against the map frame when the rotate buttons are used).
+            if (rotRad !== 0) zctx.rotate(-rotRad);
             zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
             zctx.restore();
           } else {
@@ -499,10 +537,10 @@ export function drawMinimap(ctx: MapInternals) {
           }
         }
       }
+      zctx.restore(); // world frame (rotation)
       // Grid coordinate labels live in the SCREEN frame: pinned to the
-      // top / left edges. Each label is projected through the view
-      // window like the grid lines it names, so it rides its square
-      // under pan/zoom.
+      // top / left edges, upright at any rotation — which strip a family
+      // labels swaps with the map's orientation (see gridEdgeLabels).
       if (ctx.minimapShowGrid.value) {
         const colCenters: number[] = [];
         const rowCenters: number[] = [];
@@ -516,7 +554,7 @@ export function drawMinimap(ctx: MapInternals) {
             zwz(-(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS)),
           );
         }
-        const { top, left } = gridEdgeLabels(zw, colCenters, rowCenters);
+        const { top, left } = gridEdgeLabels(zw, colCenters, rowCenters, rotRad);
         for (const l of [...top, ...left]) {
           zctx.save();
           zctx.translate(l.x, l.y);

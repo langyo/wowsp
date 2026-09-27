@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
-import { Eye, EyeOff, Grid3x3, Pause, PenLine, Play, Spline } from "@lucide/vue";
+import { Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline } from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
 import { useBreakpoint } from "@celestia-island/hikari";
 
@@ -300,6 +300,15 @@ export default defineComponent({
     const minimapShowTrails = ref(true);
     /** The game's A–J / 1–10 grid with edge coordinate labels (default on). */
     const minimapShowGrid = ref(true);
+    /** Map rotation in degrees (canvas rotate convention, +90° per click).
+     *  The whole world frame — art, grid, trails, glyphs — rotates; the
+     *  grid labels and upright icons stay readable. */
+    const mmRotationDeg = ref(0);
+    function rotateMap(steps: number): void {
+      // 90° steps keep the square map filling its viewport (45° would
+      // leave dark corner wedges).
+      mmRotationDeg.value += steps * 90;
+    }
     /** Tactical board editing on the enlarged 2D map (annotations stay
      *  rendered read-only when off, so a composed view survives toggling). */
     const tacticalOn = ref(false);
@@ -861,6 +870,7 @@ export default defineComponent({
       minimapZoom,
       minimapShowTrails,
       minimapShowGrid,
+      mmRotationDeg,
       showCapEta,
       capStatus,
       allyAlive,
@@ -1245,7 +1255,12 @@ export default defineComponent({
                 close the view (only the scrim around the map does). Icon
                 toggles light up (primary) while active; tooltips name them. */}
             <div class="holo-map__mmzoom-head" onClick={(e: MouseEvent) => e.stopPropagation()}>
-              <span>{i18nT("replay.minimap.zoom")}</span>
+              <HkTooltip text={i18nT("replay.minimap.rotateCcw")} placement="bottom">
+                <HkIconButton size={24} variant="ghost" onClick={() => rotateMap(-1)}>
+                  <RotateCcw size={13} />
+                </HkIconButton>
+              </HkTooltip>
+              <span class="holo-map__mmzoom-head-title">{i18nT("replay.minimap.zoom")}</span>
               <span class="holo-map__mmzoom-head-toggles">
                 <HkTooltip text={i18nT("replay.minimap.trails")} placement="bottom">
                   <HkIconButton
@@ -1275,6 +1290,11 @@ export default defineComponent({
                   </HkIconButton>
                 </HkTooltip>
               </span>
+              <HkTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
+                <HkIconButton size={24} variant="ghost" onClick={() => rotateMap(1)}>
+                  <RotateCw size={13} />
+                </HkIconButton>
+              </HkTooltip>
             </div>
             {/* Stage: base map canvas + tactical annotation layer. The map
                 keeps its full size in tactical mode — the board docks INSIDE
@@ -1291,6 +1311,7 @@ export default defineComponent({
               <TacticalBoard
                 replayPath={props.replayPath}
                 mapTag={(props.mapName || props.mapId || "map").replace(/[^\w-]+/g, "_")}
+                rotationDeg={mmRotationDeg.value}
                 editMode={tacticalOn.value}
                 getBounds={() => computeTacticalBounds()}
                 viewApi={viewApi}

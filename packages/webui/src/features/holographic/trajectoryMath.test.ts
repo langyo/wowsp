@@ -1,8 +1,42 @@
 /** Unit tests for trajectory stream math (pure sample lookups). */
 import { describe, expect, it } from "vitest";
-import { angleDiff, hpAtTime, progressAtTime, sampleAt } from "./trajectoryMath";
+import { angleDiff, hpAtTime, progressAtTime, sampleAt, samplesUpTo } from "./trajectoryMath";
 
 const traj = (samples: { time: number; x: number; z: number; yaw: number }[]) => ({ samples });
+
+describe("samplesUpTo", () => {
+  const ss = [
+    { time: 2, x: 0, z: 0, yaw: 0 },
+    { time: 5, x: 1, z: 0, yaw: 0 },
+    { time: 9, x: 2, z: 0, yaw: 0 },
+  ];
+
+  it("counts nothing before the first sample", () => {
+    expect(samplesUpTo(ss, 0)).toBe(0);
+    expect(samplesUpTo(ss, 1.999)).toBe(0);
+  });
+
+  it("counts a sample landed on exactly (inclusive clip)", () => {
+    expect(samplesUpTo(ss, 2)).toBe(1);
+    expect(samplesUpTo(ss, 5)).toBe(2);
+    expect(samplesUpTo(ss, 9)).toBe(3);
+  });
+
+  it("counts the whole stream past the end", () => {
+    expect(samplesUpTo(ss, 100)).toBe(3);
+  });
+
+  it("splits strictly between neighbours", () => {
+    expect(samplesUpTo(ss, 4.999)).toBe(1);
+    expect(samplesUpTo(ss, 6)).toBe(2);
+  });
+
+  it("handles empty and singleton streams", () => {
+    expect(samplesUpTo([], 10)).toBe(0);
+    expect(samplesUpTo([ss[0]], 1)).toBe(0);
+    expect(samplesUpTo([ss[0]], 3)).toBe(1);
+  });
+});
 
 describe("sampleAt", () => {
   const two = traj([
