@@ -91,7 +91,10 @@
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
-    align-items: center;
+    /* flex-start (not center): the ship-filter strip is two lines tall
+       (meta line + chip line); centering would drop the date tabs halfway
+       into the chip row instead of keeping them on the meta line. */
+    align-items: flex-start;
   }
 }
 

@@ -184,11 +184,14 @@
   margin-bottom: 6px;
 }
 
-/* Date-range tabs + inline ship-filter strip share one row. */
+/* Date-range tabs + inline ship-filter strip share one row. `flex-start`
+   (not center) keeps the tabs on the strip's FIRST line — the meta line
+   (summary + search) — instead of centered against the strip's two-line
+   height, which would drop the tabs halfway into the chip row. */
 .lookup-view__controls {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   flex-wrap: wrap;
 }

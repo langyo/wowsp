@@ -10,8 +10,16 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  flex: 1 1 auto;
-  min-width: 0;
+  /* Zero flex-basis is load-bearing: an `auto` basis resolves to the bar's
+     max-content size (the whole chip set on one hypothetical line), which
+     never fits beside the tabs, so the host row wrapped the ENTIRE bar
+     below them and the meta lost the tabs row. Basis 0 always fits there
+     and `flex-grow` fills the rest of the line. The min-width floor keeps
+     phones sane: once the tabs + meta genuinely cannot share a line, the
+     host wrap moves the whole bar below the tabs again (100% guards
+     against the floor exceeding a narrow host). */
+  flex: 1 1 0;
+  min-width: min(280px, 100%);
 
   /* While a chip drag is live, keep text selection off so pointer moves
      don't paint highlights across the strip. */
@@ -22,11 +30,13 @@
 }
 
 /* Two fixed rows instead of one drifting wrap line. The meta group takes
-   the first line — `order` lifts it above the chips in flex layout while
-   the DOM keeps chips first (tab order) — and `margin-left: auto` pins it
-   to that line's right end, next to the host's date tabs. The chip row's
-   100% flex-basis then always claims an exclusive full line below, so
-   neither row's composition depends on the viewport width. */
+   the bar's first line — `order` lifts it above the chips in flex layout
+   while the DOM keeps chips first (tab order) — and `margin-left: auto`
+   pins it to that line's right end, beside the host's date tabs (the zero
+   flex-basis on the root keeps the bar itself on the tabs' line; see
+   above). The chip row's 100% flex-basis then always claims an exclusive
+   full line below, so neither row's composition depends on the viewport
+   width. */
 .ship-filter-bar__chips {
   display: flex;
   flex-wrap: wrap;
