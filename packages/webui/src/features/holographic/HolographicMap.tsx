@@ -180,6 +180,11 @@ export default defineComponent({
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
+    /** Operation scenario (行动): the roster's relation values follow
+     *  scenario team slots, so every ship renders on the ally tint and the
+     *  scorebar/roster show a single team — same semantic as the replay
+     *  views (see utils/modeColors' isOperationBattle). */
+    operation: { type: Boolean, default: false },
     /** Ship encyclopedia (shipId → ShipInfo). Used to resolve tier/nation/type
      *  for per-ship model loading + tier-based fallback when a model is missing. */
     encyclopedia: { type: Object as () => Map<number, ShipInfo>, default: () => new Map() },
@@ -335,9 +340,16 @@ export default defineComponent({
       return `${formatTime(c)} / ${formatTime(d)}`;
     }
 
-    // Score bar data
-    const allyTotal = computed(() => props.vehicles.filter(v => v.relation <= 1).length);
-    const enemyTotal = computed(() => props.vehicles.filter(v => v.relation > 1).length);
+    // Score bar data. Operations count the WHOLE roster as the one team —
+    // their relation values follow scenario slots, not enemy semantics.
+    const allyTotal = computed(() =>
+      props.operation
+        ? props.vehicles.length
+        : props.vehicles.filter(v => v.relation <= 1).length,
+    );
+    const enemyTotal = computed(() =>
+      props.operation ? 0 : props.vehicles.filter(v => v.relation > 1).length,
+    );
     // Ships alive = total - sunk count at current time
     const allyAlive = ref(allyTotal.value);
     const enemyAlive = ref(enemyTotal.value);
@@ -369,8 +381,12 @@ export default defineComponent({
           dead,
         };
       };
-      const allies = props.vehicles.filter((v) => v.relation <= 1).map(mk);
-      const enemies = props.vehicles.filter((v) => v.relation > 1).map(mk);
+      const allies = (
+        props.operation ? props.vehicles : props.vehicles.filter((v) => v.relation <= 1)
+      ).map(mk);
+      const enemies = (
+        props.operation ? [] : props.vehicles.filter((v) => v.relation > 1)
+      ).map(mk);
       // Ship-size weight: carriers/battleships biggest, subs smallest. Sunk
       // ships form their own group at the outer edge of each side (allies:
       // leftmost, enemies: rightmost); within each group the biggest ships
@@ -1389,7 +1405,9 @@ export default defineComponent({
             </div>
           </div>
         ) : null}
-        {showRoster.value ? <HoloRosterOverlay vehicles={props.vehicles} /> : null}
+        {showRoster.value ? (
+          <HoloRosterOverlay vehicles={props.vehicles} operation={props.operation} />
+        ) : null}
       </div>
     );
   },

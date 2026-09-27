@@ -14,10 +14,15 @@ import { roleFromRelation, type TeamRole } from "./teamColors";
  *  picks, bots), the collision is broken by spawn-side: centroids are
  *  computed from the unambiguous joins, and each ambiguous entity takes
  *  the same-side roster entry. Entities with no roster hit get `null` and
- *  fall back to the spawn-order team heuristic in `resolveMarkerContext`. */
+ *  fall back to the spawn-order team heuristic in `resolveMarkerContext`.
+ *
+ *  Operation scenarios (`operation`, 行动) skip the side split entirely —
+ *  their relation values follow scenario team slots, so there is just one
+ *  pool and ambiguous entities take the first unclaimed entry. */
 export function resolveRosterAssignments(
   shipTrajs: EntityTrajectory[],
   vehicles: VehicleEntry[],
+  operation = false,
 ): Map<number, VehicleEntry | null> {
   const byShipId = new Map<number, VehicleEntry[]>();
   for (const v of vehicles) {
@@ -52,13 +57,13 @@ export function resolveRosterAssignments(
       if (!a) continue;
       claimed.add(a);
       const s = spawnOf(traj);
-      if (a.relation <= 1) { ax += s.x; az += s.z; an++; }
+      if (operation || a.relation <= 1) { ax += s.x; az += s.z; an++; }
       else { ex += s.x; ez += s.z; en++; }
     }
     for (const { traj, entries } of ambiguous) {
       const unclaimed = entries.filter((e) => !claimed.has(e));
       let pick: VehicleEntry;
-      if (an > 0 && en > 0) {
+      if (!operation && an > 0 && en > 0) {
         const s = spawnOf(traj);
         const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
         const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
@@ -83,25 +88,28 @@ export function resolveRosterAssignments(
  *  back to the entity-id spawn-order heuristic: the client spawns team A
  *  before team B, so the first half of ships (by entity id) are treated
  *  as allies. Unresolved ships never claim the "self" role, so the
- *  recorder's own marker stays uniquely white. */
+ *  recorder's own marker stays uniquely white. Operation scenarios
+ *  (`operation`) read every roster entry as ally — their relation values
+ *  follow scenario team slots, not enemy semantics. */
 export function resolveMarkerContext(
   traj: EntityTrajectory,
   shipEntityIds: number[],
   assignments: Map<number, VehicleEntry | null>,
   encyclopedia: Map<number, ShipInfo>,
+  operation = false,
 ): { role: TeamRole; shipInfo: ShipInfo | null; entry: VehicleEntry | null } {
   const entry = assignments.get(traj.entityId) ?? null;
   let role: TeamRole;
   let shipInfo: ShipInfo | null;
   if (entry) {
-    role = roleFromRelation(entry.relation);
+    role = roleFromRelation(entry.relation, operation);
     shipInfo = encyclopedia.get(entry.shipId) ?? null;
   } else {
     // Fallback: entity-id spawn order (team A spawns before team B).
     // Never "self" — only the exact match earns the recorder tint.
     const idx = shipEntityIds.indexOf(traj.entityId);
     const isAlly = idx >= 0 && idx < shipEntityIds.length / 2;
-    role = isAlly ? "ally" : "enemy";
+    role = isAlly || operation ? "ally" : "enemy";
     shipInfo = null;
   }
   return { role, shipInfo, entry };

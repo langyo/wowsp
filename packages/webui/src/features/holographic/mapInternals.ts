@@ -54,6 +54,10 @@ import type { TacticalView } from "./tactical/render";
  *  Structurally satisfied by the component's reactive props object. */
 export interface HoloMapDataProps {
   trajectories: EntityTrajectory[];
+  /** Operation scenario (行动): the roster's relation values follow
+   *  scenario team slots, so every ship renders on the ally tint and the
+   *  team splits collapse to one side. */
+  operation: boolean;
   /** Artillery launches (receiveArtilleryShots on the avatar). */
   shellLaunches: ShellLaunchEvent[];
   /** World-space shell impacts (receiveExplosions on the avatar). */
@@ -567,12 +571,16 @@ export function clearActors(ctx: MapInternals) {
  *  self-stats — reads the SAME roster assignments the 3D markers use
  *  (computed in rebuildActors), so trails and markers can never disagree.
  *  Ships without an assignment (older replays, decode gaps) fall back to
- *  the entity-id spawn-order heuristic: the client spawns team A first. */
+ *  the entity-id spawn-order heuristic: the client spawns team A first.
+ *  Operation scenarios (行动) read every entry as ally — their relation
+ *  values follow scenario team slots, not enemy semantics. */
 export function resolveRoleQuick(ctx: MapInternals, tr: EntityTrajectory): TeamRole {
   const entry = ctx.rosterAssignments.get(tr.entityId);
-  if (entry) return roleFromRelation(entry.relation);
+  if (entry) return roleFromRelation(entry.relation, ctx.props.operation);
   const idx = ctx.shipEntityIds.indexOf(tr.entityId);
-  return idx >= 0 && idx < ctx.shipEntityIds.length / 2 ? "ally" : "enemy";
+  return idx >= 0 && (ctx.props.operation || idx < ctx.shipEntityIds.length / 2)
+    ? "ally"
+    : "enemy";
 }
 
 // ── Minimap base art + shared world-rect helpers ──────────────────────

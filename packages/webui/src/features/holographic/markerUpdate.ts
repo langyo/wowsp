@@ -54,6 +54,10 @@ function pushFeed(ctx: MapInternals, entry: FeedEntry) {
 }
 /** Fire chat + achievement ctx.feed entries crossed by playhead `t`. */
 function advanceEventFeed(ctx: MapInternals, t: number) {
+  // Operation scenarios (行动): relation values follow scenario team slots,
+  // so the enemy tint must not key on them — everyone reads as ally.
+  const enemyOf = (roster: VehicleEntry | undefined) =>
+    !ctx.props.operation && (roster?.relation ?? 0) >= 2;
   const chats = ctx.props.chatMessages;
   while (ctx.chatPtr < chats.length && chats[ctx.chatPtr].time <= t) {
     const c = chats[ctx.chatPtr++];
@@ -63,7 +67,7 @@ function advanceEventFeed(ctx: MapInternals, t: number) {
       kind: "chat",
       id: ++ctx.feedSeq,
       sender: roster?.name ?? `#${c.playerId}`,
-      enemy: (roster?.relation ?? 0) >= 2,
+      enemy: enemyOf(roster),
       message: c.message,
     });
   }
@@ -78,7 +82,7 @@ function advanceEventFeed(ctx: MapInternals, t: number) {
       kind: "achievement",
       id: ++ctx.feedSeq,
       sender: roster?.name ?? `#${a.playerId}`,
-      enemy: (roster?.relation ?? 0) >= 2,
+      enemy: enemyOf(roster),
       name:
         bundle?.names[dataLang] ??
         bundle?.names["en-US"] ??

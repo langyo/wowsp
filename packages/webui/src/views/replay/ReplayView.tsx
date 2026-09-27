@@ -981,10 +981,14 @@ const CHANNEL_KEYS: ChatChannelKey[] = ["team", "all", "division", "private"];
  *  read another player's HP. Mirrors HolographicMap's
  *  `resolveRosterAssignments`: unique shipIds join directly; each ambiguous
  *  trajectory takes the same-side (nearest ally/enemy spawn centroid)
- *  unclaimed roster entry, never stealing a claimed one. */
+ *  unclaimed roster entry, never stealing a claimed one. Operation
+ *  scenarios (`operation`, 行动) skip the side split — their relation
+ *  values follow scenario team slots, so ambiguous picks just take the
+ *  first unclaimed entry. */
 function assignTrajectoriesByVehicle(
   vehicles: VehicleEntry[],
   trajectories: EntityTrajectory[],
+  operation = false,
 ): Map<number, EntityTrajectory> {
   const shipTrajs = trajectories.filter((tr) => tr.kind?.entityType === 2);
   const byShipId = new Map<number, VehicleEntry[]>();
@@ -1017,13 +1021,13 @@ function assignTrajectoriesByVehicle(
       const v = vehicles.find((x) => x.id === vid);
       if (!v) continue;
       const s = spawnOf(traj);
-      if (v.relation <= 1) { ax += s.x; az += s.z; an++; }
+      if (operation || v.relation <= 1) { ax += s.x; az += s.z; an++; }
       else { ex += s.x; ez += s.z; en++; }
     }
     for (const { traj, entries } of ambiguous) {
       const unclaimed = entries.filter((e) => !claimed.has(e.id));
       let pick: VehicleEntry | undefined;
-      if (an > 0 && en > 0) {
+      if (!operation && an > 0 && en > 0) {
         const s = spawnOf(traj);
         const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
         const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
@@ -1077,6 +1081,9 @@ const ChatLogPanel = defineComponent({
     events: { type: Array as () => ChatEvent[], required: true },
     vehicles: { type: Array as () => VehicleEntry[], required: true },
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
+    /** Operation scenario (行动): the vehicle→trajectory join skips the
+     *  ally/enemy spawn split (relation follows scenario team slots). */
+    operation: { type: Boolean, default: false },
     /** Match duration (s) from the decoded stream — the timeline scale
      *  before the map's own clock reports in. */
     duration: { type: Number, default: 0 },
@@ -1095,6 +1102,7 @@ const ChatLogPanel = defineComponent({
       const trajByVehicle = assignTrajectoriesByVehicle(
         props.vehicles,
         props.trajectories,
+        props.operation,
       );
       return props.events
         .filter((c) => c.playerId > 0)
@@ -1112,7 +1120,9 @@ const ChatLogPanel = defineComponent({
             name: v?.name ?? "",
             message: c.message,
             channel: chatChannelOf(c.namespace),
-            enemy: (v?.relation ?? 0) >= 2,
+            // Operations: relation follows scenario slots — nobody reads
+            // as enemy (same gate as the event feed's tint).
+            enemy: !props.operation && (v?.relation ?? 0) >= 2,
             shipId: v?.shipId ?? 0,
             shipType: v ? shipOfflineEntry(v.shipId)?.type ?? "" : "",
             shipName:
@@ -2044,6 +2054,7 @@ export default defineComponent({
                         events={chatMessages.value}
                         vehicles={parser.current.value.vehicles}
                         trajectories={trajectories.value}
+                        operation={isOperation.value}
                         duration={duration.value}
                         realm={realm.value}
                         mapApi={mapRef.value}
@@ -2088,6 +2099,7 @@ export default defineComponent({
                       chatMessages={chatMessages.value}
                       achievements={achievements.value}
                       vehicles={parser.current.value.vehicles}
+                      operation={isOperation.value}
                       encyclopedia={encyclopedia.byId}
                       mapId={parser.current.value.mapName ?? ""}
                       matchGroup={parser.current.value.matchGroup ?? ""}

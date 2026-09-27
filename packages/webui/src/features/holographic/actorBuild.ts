@@ -70,7 +70,11 @@ export function rebuildActors(ctx: MapInternals) {
     t.kind?.entityType === 2 && t.samples.length > 1;
   const shipTrajs = ctx.props.trajectories.filter(isShip);
   ctx.shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
-  ctx.rosterAssignments = resolveRosterAssignments(shipTrajs, ctx.props.vehicles);
+  ctx.rosterAssignments = resolveRosterAssignments(
+    shipTrajs,
+    ctx.props.vehicles,
+    ctx.props.operation,
+  );
   const assignments = ctx.rosterAssignments;
 
   // Smoke screens (entityType 4 = SmokeScreen): white ring markers at
@@ -251,6 +255,7 @@ export function rebuildActors(ctx: MapInternals) {
       ctx.shipEntityIds,
       assignments,
       ctx.props.encyclopedia,
+      ctx.props.operation,
     );
     const color = TEAM_COLOR[role];
     const offline = shipOfflineEntry((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined);
