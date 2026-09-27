@@ -5,7 +5,7 @@
  *   - matchGroup  — coarse bucket (pvp / ranked / clan / event / brawl / pve)
  *   - scenario    — scenario name (domination_3point, asymm_3point_coop, ...)
  *   - eventType   — GameParams BattleScript id (PCVE027 = EV27AsymCoop, ...)
- *   - botCount    — roster entries with the client's `:Name:` bot nickname
+ *   - botCount    — roster entries with bot nicknames (`:Name:` bots, `IDS_*` scripted units)
  *
  * The eventType is the most specific signal (a WG battle-script id); scenario
  * is next; matchGroup is the fallback. botCount subdivides WITHIN that layering
@@ -136,6 +136,11 @@ export function modeKey(
  * needs when the arena file carries no scenario/script (operations with an
  * empty scenario field exist): scenario units keep their `IDS_OP_*` ship
  * name as nickname.
+ *
+ * EXCEPT the new-account scripted battles (the `FIRST_BATTLE` tutorial and
+ * the `LOW_LVL_OPERATION_*` escort op) — those are coop-shaped two-team
+ * battles whose relation values ARE enemy semantics, so they must take the
+ * ordinary allies/enemies split (same exclusion as the Rust side).
  */
 export function isOperationBattle(
   matchGroup?: string | null,
@@ -145,6 +150,9 @@ export function isOperationBattle(
 ): boolean {
   const et = (eventType ?? "").toLowerCase();
   const sc = (scenario ?? "").toLowerCase();
+  if (sc.startsWith("low_lvl_operation") || sc === "first_battle") return false;
+  if (et.startsWith("low_lvl_operation") || et === "first_battle") return false;
+  if (names.some((n) => n.toUpperCase().startsWith("IDS_OP_15_"))) return false;
   if (et.startsWith("pcvo") || sc.startsWith("pcvo")) return true;
   if (et.includes("_op_") || sc.includes("_op_") || sc.includes("_hl_")) return true;
   if ((matchGroup ?? "").toLowerCase() === "pve" && names.some((n) => n.toUpperCase().startsWith("IDS_OP_"))) {

@@ -359,17 +359,47 @@ pub struct ArenaInfo {
 /// (`webui/src/utils/modeColors.ts`): a PCVO* battle script/scenario, an
 /// `_op_`/`_hl_` infix, or scenario units whose nickname keeps the client's
 /// `IDS_OP_*` ship name.
+///
+/// EXCEPT the new-account scripted battles — the tutorial (`FIRST_BATTLE`,
+/// matchGroup `intro`) and the low-level escort operation
+/// (`LOW_LVL_OPERATION_*`). Both field coop-shaped rosters whose `relation`
+/// values ARE enemy semantics (verified against live 360-server arena
+/// files: scripted allies sit at relation 1, escort DDs and target dummies
+/// at relation 2) and whose in-game Tab table is a normal two-block layout,
+/// so they must flow through the ordinary allies/enemies split. Their
+/// `IDS_OP_15_*` units would otherwise trip the roster fingerprint below
+/// and collapse the whole roster into one allied block.
 pub fn is_operation_arena(
     scenario: Option<&str>,
     event_type: Option<&str>,
     vehicles: &[VehicleEntry],
 ) -> bool {
+    if is_new_account_scripted_battle(scenario, event_type, vehicles) {
+        return false;
+    }
     [scenario, event_type].into_iter().flatten().any(|s| {
         let s = s.to_ascii_lowercase();
         s.starts_with("pcvo") || s.contains("_op_") || s.contains("_hl_")
     }) || vehicles
         .iter()
         .any(|v| v.name.to_ascii_uppercase().starts_with("IDS_OP_"))
+}
+
+/// The new-account scripted battles that must NOT take the single-team
+/// operation path (see [`is_operation_arena`]). Recognized by their
+/// scenario ids (`low_lvl_operation*`, `first_battle`) or, when the arena
+/// file carries no scenario, by the escort op's `IDS_OP_15_*` unit names.
+fn is_new_account_scripted_battle(
+    scenario: Option<&str>,
+    event_type: Option<&str>,
+    vehicles: &[VehicleEntry],
+) -> bool {
+    [scenario, event_type].into_iter().flatten().any(|s| {
+        let s = s.to_ascii_lowercase();
+        s.starts_with("low_lvl_operation") || s == "first_battle"
+    }) || vehicles
+        .iter()
+        .any(|v| v.name.to_ascii_uppercase().starts_with("IDS_OP_15_"))
 }
 
 /// Result of a Tab-triggered screen capture + roster-region detection in
@@ -2447,7 +2477,31 @@ mod tests {
         assert!(is_operation_arena(
             None,
             None,
+            &roster(&["langyo", "IDS_OP_50_DUMMY_01"])
+        ));
+        // New-account scripted battles stay team-vs-team even though their
+        // rosters carry `IDS_*` units: the low-level escort operation (by
+        // scenario AND by its `IDS_OP_15_*` units when the scenario is
+        // missing) and the `FIRST_BATTLE` tutorial.
+        assert!(!is_operation_arena(
+            Some("LOW_LVL_OPERATION_1_LVL_2"),
+            None,
+            &roster(&[
+                "langyo",
+                ":Buchan:",
+                "IDS_OP_15_ALLY_FLAGSHIP",
+                "IDS_OP_15_DUMMY_01"
+            ])
+        ));
+        assert!(!is_operation_arena(
+            None,
+            None,
             &roster(&["langyo", "IDS_OP_15_DUMMY_01"])
+        ));
+        assert!(!is_operation_arena(
+            Some("FIRST_BATTLE"),
+            None,
+            &roster(&["langyo", "IDS_AL_01", "IDS_EN_01"])
         ));
         // Co-op / random rosters stay team-vs-team.
         assert!(!is_operation_arena(

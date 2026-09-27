@@ -104,15 +104,23 @@ fn vortex_status(v: &serde_json::Value) -> Option<&str> {
 ///                      seasons.<id>.<shipType>.<mode>) for `ranked`
 ///   statistics.rank_info → passed through (fields already match WG)
 ///
-/// A hidden profile (`hidden_profile: true`) and an empty statistics node
-/// (fresh account) both normalize to `statistics: {pvp: null}` — the same
-/// "hidden" marker the WG path derives from null stats.
+/// A hidden profile (`hidden_profile: true`) normalizes to
+/// `statistics: null`; a PRESENT statistics node without `pvp` keeps the
+/// normalized object with `pvp: null` — a fresh account that simply never
+/// played that mode (the CN cluster omits the key instead of zero-filling,
+/// verified against live 360-server accounts). The distinction matters
+/// downstream: `player_stats_of` marks only the former hidden, so a
+/// zero-battle account renders "no data" instead of the hidden dot.
 fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
     let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let hidden = node
         .get("hidden_profile")
         .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+        .unwrap_or(false)
+        // No service-side flag at all AND no statistics tree: nothing to
+        // show for any mode — treat it as hidden rather than inventing
+        // an empty profile.
+        || node.get("statistics").is_none_or(|s| s.is_null());
     let statistics = node.get("statistics").filter(|v| !v.is_null());
     let basic = statistics
         .and_then(|s| s.get("basic"))
@@ -122,7 +130,7 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
         .filter(|v| !v.is_null());
     let seasons = statistics.and_then(|s| s.get("seasons"));
     let stats_json = if hidden {
-        serde_json::json!({ "pvp": serde_json::Value::Null })
+        serde_json::Value::Null
     } else {
         serde_json::json!({
             "pvp": normalize_pvp(statistics.and_then(|s| s.get("pvp"))),
@@ -385,7 +393,11 @@ fn player_stats_of(
 ) -> PlayerStats {
     let stats_node = node.get("statistics");
     let p = PvpStats::extract(stats_node);
-    let hidden = stats_node.is_none_or(|s| s.get("pvp").is_none_or(|p2| p2.is_null()));
+    // Hidden ONLY when the normalized node carries no statistics tree at
+    // all (see `normalize_player`): a fresh account's statistics object
+    // keeps `pvp: null`, which renders as "no data" — the WG realms' exact
+    // semantics for zero-battle accounts.
+    let hidden = stats_node.is_none_or(|s| s.is_null());
     PlayerStats {
         account_id: entry.account_id,
         name: entry.nickname,
@@ -1003,9 +1015,13 @@ mod tests {
     }
 
     /// Live-response fixture (player saber, id 7047835131): a never-played
-    /// account whose statistics only carries mastery_sign.
+    /// account whose statistics only carries mastery_sign. That is a ZERO-
+    /// BATTLE account, not a hidden profile — the statistics tree stays
+    /// present with `pvp: null`, so `player_stats_of` reports hidden=false
+    /// and the chips render "no data" (the same semantics the WG realms
+    /// give zero-battle accounts).
     #[test]
-    fn normalize_player_marks_empty_statistics_hidden() {
+    fn normalize_player_keeps_zero_battle_accounts_unhidden() {
         let vortex_node = serde_json::json!({
             "name": "saber",
             "created_at": 1590411566.0,
@@ -1015,10 +1031,30 @@ mod tests {
         let node = normalize_player(&vortex_node);
         let p = PvpStats::extract(node.get("statistics"));
         assert_eq!(p.battles, None);
-        let hidden = node
-            .get("statistics")
-            .is_none_or(|s| s.get("pvp").is_none_or(|p2| p2.is_null()));
-        assert!(hidden);
+        let hidden = node.get("statistics").is_none_or(|s| s.is_null());
+        assert!(!hidden);
+    }
+
+    /// Same shape as the fresh 360-server accounts: statistics present,
+    /// `pvp` an empty object (pve-only player) — also unhidden "no data".
+    #[test]
+    fn player_stats_of_zero_pvp_account_is_no_data_not_hidden() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "用户_31078422399",
+            "statistics": { "pvp": {}, "pve": { "battles_count": 50, "wins": 25 } }
+        }));
+        let stats = player_stats_of(
+            CnAccountRef {
+                account_id: 7068814419,
+                nickname: "用户_31078422399".into(),
+            },
+            &node,
+            None,
+            false,
+        );
+        assert!(!stats.hidden);
+        assert_eq!(stats.battles, None);
+        assert_eq!(stats.winrate, None);
     }
 
     #[test]
@@ -1029,13 +1065,27 @@ mod tests {
             "statistics": { "pvp": { "battles_count": 10, "wins": 5 } }
         });
         let node = normalize_player(&vortex_node);
-        assert!(
-            node.get("statistics")
-                .unwrap()
-                .get("pvp")
-                .unwrap()
-                .is_null()
+        assert!(node.get("statistics").unwrap().is_null());
+        // And the stats assembly reads that as hidden.
+        let stats = player_stats_of(
+            CnAccountRef {
+                account_id: 1,
+                nickname: "ghost".into(),
+            },
+            &node,
+            None,
+            false,
         );
+        assert!(stats.hidden);
+        assert_eq!(stats.battles, None);
+    }
+
+    /// A node with no statistics tree at all also reads hidden (nothing to
+    /// show for any mode).
+    #[test]
+    fn normalize_player_missing_statistics_tree_is_hidden() {
+        let node = normalize_player(&serde_json::json!({ "name": "void" }));
+        assert!(node.get("statistics").unwrap().is_null());
     }
 
     #[test]

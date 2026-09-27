@@ -50,8 +50,28 @@ describe("isOperationBattle", () => {
 
   it("falls back to the roster when scenario and script are missing", () => {
     expect(
-      isOperationBattle("pve", null, null, ["langyo", "IDS_OP_15_DUMMY_01"]),
+      isOperationBattle("pve", null, null, ["langyo", "IDS_OP_50_DUMMY_01"]),
     ).toBe(true);
+  });
+
+  it("keeps the new-account scripted battles two-team", () => {
+    // Low-level escort op: by scenario, and by its IDS_OP_15_* units when
+    // the arena file carries no scenario (360-server live rosters).
+    expect(
+      isOperationBattle("pve", "LOW_LVL_OPERATION_1_LVL_2", null, [
+        "langyo",
+        ":Buchan:",
+        "IDS_OP_15_ALLY_FLAGSHIP",
+        "IDS_OP_15_DUMMY_01",
+      ]),
+    ).toBe(false);
+    expect(
+      isOperationBattle("pve", null, null, ["langyo", "IDS_OP_15_DUMMY_01"]),
+    ).toBe(false);
+    // Tutorial first battle.
+    expect(
+      isOperationBattle("intro", "FIRST_BATTLE", null, ["langyo", "IDS_AL_01"]),
+    ).toBe(false);
   });
 
   it("is false for co-op and random rosters", () => {

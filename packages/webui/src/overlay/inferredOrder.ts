@@ -37,7 +37,12 @@
  * client), and the ship-name segment follows the APP's locale rather than
  * the game client's — only two different same-nation same-tier ships on
  * one side depend on that segment at all; the common tie (a division in
- * the same ship) is decided by the locale-free '[tag]name'.
+ * the same ship) is decided by the locale-free '[tag]name'. Scripted
+ * scenario units (`IDS_*` nicknames — tutorial / escort-op fleets) render
+ * under LOCALIZED names in-game (e.g. `IDS_AL_01` → zh `：舍尔：`), so their
+ * key order may differ from the client's; their chips all read "bot"
+ * (utils/aiNames), leaving at most a human's chip one row off among them
+ * in those battles.
  */
 import { gameTabRowKey } from "@/utils/shipClass";
 

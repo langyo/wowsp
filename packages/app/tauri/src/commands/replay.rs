@@ -732,11 +732,13 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
     }
 }
 
-/// The client fills bot rosters with colon-wrapped nicknames (`:Sturdee:`) —
-/// the same marker the frontend's `isAiName` uses to skip WG API lookups.
-/// Mirrors that `^:.*:$` rule (so at least two characters, both colons).
+/// The client fills bot rosters with colon-wrapped nicknames (`:Sturdee:`),
+/// and scripted scenario units keep their client text key as the nickname
+/// (`IDS_OP_15_DUMMY_01`, `IDS_AL_01` — the tutorial / escort-op fleets) —
+/// the same two markers the frontend's `isAiName` uses to skip WG API
+/// lookups. Mirrors that `^(?::.*:|IDS_.*)$` rule.
 fn is_bot_nickname(name: &str) -> bool {
-    name.len() >= 2 && name.starts_with(':') && name.ends_with(':')
+    (name.len() >= 2 && name.starts_with(':') && name.ends_with(':')) || name.starts_with("IDS_")
 }
 
 /// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;
