@@ -119,23 +119,38 @@
     position: absolute;
     left: 0;
     bottom: calc(100% + 8px);
-    /* Cap the row at the map's usable width: 100cqw minus the row's left
-       anchor offset (map border + the bar's 12px inset) and the 12px map
-       inset on the right, with a few px of deliberate slack so a capped
-       row still clears the map edge visibly. The row shrink-to-fits
-       against the bar's inner width too, so the bar normally already
-       bounds it — this clamp is the explicit authority for when the bar
-       itself is wider than the map affords. Under the cap the stat
-       segments (flex-shrink below) give up width; don't use
-       `width: max-content` here — intrinsic keywords size flex items at
-       their natural width and the max-width box clamp alone would leave
-       them overflowing the clamped box. */
-    max-width: calc(100cqw - 34px);
+    /* Cap the row short of the MINIMAP column, not the map edge: the
+       160px thumb sits 8px off the map's right edge (a 168px band the
+       plaque + stats must never enter), the row's left anchor is the
+       bar's 12px inset, and 8px of clearance plus 4px of slack round the
+       reserve to 192px. The capped row's right edge therefore lands at
+       100cqw - 180px — a constant 12px clear of the thumb's left edge
+       (100cqw - 168px) at every map width. Shrink-to-fit against the
+       content-sized bar normally bounds the row well before this clamp;
+       the clamp is the authority for narrow maps where the bar itself
+       reaches the corner. Under the cap the stat segments (flex-shrink
+       below) give up width; the @container rule beneath covers the
+       narrow regime where even min-content can't fit one line. Don't
+       use `width: max-content` here — intrinsic keywords size flex
+       items at their natural width and the max-width box clamp alone
+       would leave them overflowing the clamped box. */
+    max-width: calc(100cqw - 192px);
     display: flex;
     flex-direction: row;
     align-items: flex-end;
     gap: 10px;
     pointer-events: none;
+
+    /* Narrow-map fallback: under ~680px the cap drops below the row's
+       one-line footprint, the min-width:0 strip box then shrinks below
+       its nowrap segments' sum, and those segments bleed right — back
+       into the corner the cap just reserved. There the strip wraps below
+       the plaque instead (the row is bottom-anchored, so it grows
+       upward, still left of the thumb). At normal map widths the cap is
+       wider than the row's preferred width and this never fires. */
+    @container (max-width: 680px) {
+      flex-wrap: wrap;
+    }
   }
 
   &__play {
