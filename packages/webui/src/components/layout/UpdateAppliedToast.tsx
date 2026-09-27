@@ -4,6 +4,7 @@ import { CircleCheck, X } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { useSettingsUiStore } from "@/stores/settingsUi";
+import { peekLastRunVersion, recordRunVersion } from "@/utils/lastRunVersion";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import "./UpdateAppliedToast.scss";
 
@@ -15,12 +16,6 @@ const LEAVE_MS = 260;
  *  enough to be noticed, short enough to be gone before the updater's
  *  delayed startup prompt could stack on top of it. */
 const AUTO_DISMISS_MS = 8000;
-
-/** localStorage slot remembering the version the LAST run booted into:
- *  the update installer kills the app and relaunches the new build, so
- *  a fresh process compares this against its own version to know an
- *  update just landed (same pattern as the onboarding run-once flags). */
-const LAST_RUN_KEY = "wowsp-last-run-version";
 
 /**
  * UpdateAppliedToast — the after-update success card (已更新到 v…). The
@@ -75,8 +70,8 @@ export default defineComponent({
       // Record THIS run's version before deciding anything — even a
       // skipped boot (first ever, or already recorded) must leave the
       // slot current so the next update is still detected.
-      const stored = localStorage.getItem(LAST_RUN_KEY);
-      localStorage.setItem(LAST_RUN_KEY, current);
+      const stored = peekLastRunVersion();
+      recordRunVersion(current);
       if (!stored || stored === current) return;
       version.value = current;
       mounted.value = true;

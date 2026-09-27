@@ -184,6 +184,10 @@
   "resBundledClearNote": "La copie intégrée à l'application est utilisée. La suppression ne retire qu'une mise à jour téléchargée — le pack intégré continue de servir.",
   "resSegment": "Correctif {current} / {total}",
   "cacheApplying": "Application…",
+  "resEta": "reste {time}",
+  "resUpdatePrompt": "Une mise à jour du pack de ressources est disponible ({version})",
+  "resUpdateNow": "Mettre à jour",
+  "resUpdateLater": "Plus tard",
   "wallpaperOverlay": "Opacité du voile",
   "pairingPinCopy": "Copier le code",
   "pairingPinCopied": "Code copié dans le presse-papiers"

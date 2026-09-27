@@ -184,6 +184,10 @@
   "resBundledClearNote": "アプリ同梱のコピーを使用中。削除はダウンロード済みアップデートのみを対象とし、同梱パックは引き続き使用できます。",
   "resSegment": "パッチ {current} / {total}",
   "cacheApplying": "適用中…",
+  "resEta": "残り {time}",
+  "resUpdatePrompt": "リソースパックの更新があります（{version}）",
+  "resUpdateNow": "今すぐ更新",
+  "resUpdateLater": "後で",
   "wallpaperOverlay": "オーバーレイの不透明度",
   "pairingPinCopy": "コードをコピー",
   "pairingPinCopied": "コードをクリップボードにコピーしました"

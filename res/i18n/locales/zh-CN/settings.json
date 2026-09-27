@@ -184,6 +184,10 @@
   "resBundledClearNote": "当前使用应用内置资源。删除仅移除已下载的更新，内置资源仍会继续生效。",
   "resSegment": "第 {current} / {total} 段",
   "cacheApplying": "应用中…",
+  "resEta": "剩余 {time}",
+  "resUpdatePrompt": "资源包有可用更新（{version}）",
+  "resUpdateNow": "立即更新",
+  "resUpdateLater": "稍后",
   "wallpaperOverlay": "遮罩不透明度",
   "pairingPinCopy": "复制配对码",
   "pairingPinCopied": "配对码已复制到剪贴板"

@@ -184,6 +184,10 @@
   "resBundledClearNote": "앱에 내장된 사본을 사용 중입니다. 삭제는 다운로드한 업데이트만 제거하며 내장 팩은 계속 제공됩니다.",
   "resSegment": "패치 {current} / {total}",
   "cacheApplying": "적용 중…",
+  "resEta": "{time} 남음",
+  "resUpdatePrompt": "리소스 팩 업데이트가 있습니다 ({version})",
+  "resUpdateNow": "지금 업데이트",
+  "resUpdateLater": "나중에",
   "wallpaperOverlay": "오버레이 불투명도",
   "pairingPinCopy": "코드 복사",
   "pairingPinCopied": "코드가 클립보드에 복사되었습니다"

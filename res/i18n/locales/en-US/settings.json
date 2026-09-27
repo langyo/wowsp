@@ -184,6 +184,10 @@
   "resBundledClearNote": "Serving the copy bundled in the app. Delete removes a downloaded update only — the bundled pack keeps serving.",
   "resSegment": "Patch {current} / {total}",
   "cacheApplying": "Applying…",
+  "resEta": "{time} left",
+  "resUpdatePrompt": "Resource pack update available ({version})",
+  "resUpdateNow": "Update now",
+  "resUpdateLater": "Later",
   "wallpaperOverlay": "Overlay opacity",
   "pairingPinCopy": "Copy code",
   "pairingPinCopied": "Code copied to clipboard"

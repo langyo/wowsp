@@ -22,6 +22,7 @@ import { useSettingsUiStore } from "@/stores/settingsUi";
 import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
+import { peekLastRunVersion } from "@/utils/lastRunVersion";
 import { api } from "@/api";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import OnboardingWizard from "./OnboardingWizard";
@@ -32,6 +33,7 @@ import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "@/i18n";
@@ -76,6 +78,12 @@ export default defineComponent({
     // Phone APP build gate (see utils/platform): desktop-only features
     // (game-path prompt, updater, its toasts) stay off there.
     const mobileApp = isMobileApp();
+    // The previous run's recorded version, read synchronously in setup —
+    // BEFORE any child mounts: UpdateAppliedToast's mounted hook writes
+    // THIS run's version into the same slot, and the startup pack pass
+    // below must still see the pre-update value to know an app update
+    // just landed (parent setup always runs ahead of child mounted hooks).
+    const prevRunVersion = peekLastRunVersion();
 
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
@@ -160,13 +168,16 @@ export default defineComponent({
       // GO FIRST: this pass waits for the updater's delayed probe, so a
       // pending app update (whose installer restarts the app) always
       // precedes a ~1.2 GB pack pull — the pack catches up after the
-      // restart. The pack auto-downloads ONLY when entirely missing (lite
-      // install / wiped cache); an outdated-but-present pack is surfaced
-      // in Settings → updates instead of silently re-pulling. The phone
-      // app build skips the updater entirely (update commands are
-      // unsupported there — failures stay quiet); its pack ships INSIDE
-      // the APK, so it never downloads either — the updates panel is the
-      // only mobile download path.
+      // restart, where the first boot of the new build PROMPTS for it
+      // (last-run version moved + manifest says outdated → blocking
+      // toast, see offerUpdatePrompt). The pack auto-downloads ONLY when
+      // entirely missing (lite install / wiped cache); an
+      // outdated-but-present pack is surfaced in Settings → updates
+      // instead of silently re-pulling. The phone app build skips the
+      // updater entirely (update commands are unsupported there —
+      // failures stay quiet); its pack ships INSIDE the APK, so it never
+      // downloads either — the updates panel is the only mobile download
+      // path.
       if (!import.meta.env.DEV) {
         void cacheStore.init();
         void (async () => {
@@ -216,6 +227,21 @@ export default defineComponent({
             // Present (or status unavailable): refresh the remote manifest
             // so the updates panel's banner is ready when it opens.
             await cacheStore.refreshUpdates();
+            // First boot after an app update (the installer's relaunch —
+            // the last-run version moved): the pack stood down while the
+            // update was pending, so ask for its catch-up now instead of
+            // waiting for the user to find the panel. A normal boot (same
+            // version) stays silent — the updates-panel banner suffices;
+            // a first-ever boot has no previous version to compare.
+            const currentVersion = await getVersion().catch(() => null);
+            if (
+              currentVersion &&
+              prevRunVersion &&
+              prevRunVersion !== currentVersion &&
+              cacheStore.anyUpdateAvailable
+            ) {
+              void cacheStore.offerUpdatePrompt();
+            }
           } catch {
             // Older shell / offline — fall back to the unconditional
             // ensure so the pack still wires up (it serves whatever is on

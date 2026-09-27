@@ -72,6 +72,7 @@ import {
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type GameInstall, type NetworkConfig } from "@/api";
+import { formatEta, formatSpeed } from "@/utils/format";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import { useRouter } from "vue-router";
 import { useConfigStore } from "@/stores/config";
@@ -1577,20 +1578,54 @@ export default defineComponent({
                       </span>
                     ) : null}
                     {downloading ? (
-                      <div class="settings-modal__pack-progress">
-                        <div
-                          class="settings-modal__pack-progress-fill"
-                          style={{ width: prog?.phase === "apply" ? "100%" : `${pct}%` }}
-                        />
-                        {prog && prog.segments > 1 ? (
+                      <>
+                        <div class="settings-modal__pack-progress">
+                          <div
+                            class="settings-modal__pack-progress-fill"
+                            style={{ width: prog?.phase === "apply" ? "100%" : `${pct}%` }}
+                          />
+                        </div>
+                        {/* Live readout under the track: bytes moved (over
+                            the whole pass — cumulative across delta
+                            segments), smoothed speed, ETA, and the segment
+                            position. Never render text inside the 3px
+                            __pack-progress track itself — its
+                            overflow:hidden clips any content placed there.
+                            Hidden entirely when nothing is known yet (the
+                            full-install apply event carries all-zero
+                            counters — the full-width bar says it all). */}
+                        {prog &&
+                        (prog.phase === "download" || prog.phase === "apply") &&
+                        (prog.received > 0 || prog.total > 0 || prog.segments > 1) ? (
                           <span class="settings-modal__pack-desc">
-                            {t("settings.resSegment", {
-                              current: prog.segment,
-                              total: prog.segments,
-                            })}
+                            {[
+                              prog.total > 0
+                                ? `${formatBytes(prog.received)} / ${formatBytes(prog.total)}`
+                                : formatBytes(prog.received),
+                              (cacheStore.speedBps ?? 0) > 0
+                                ? formatSpeed(cacheStore.speedBps)
+                                : null,
+                              prog.phase === "download" &&
+                              prog.total > prog.received &&
+                              (cacheStore.speedBps ?? 0) > 0
+                                ? t("settings.resEta", {
+                                    time: formatEta(
+                                      (prog.total - prog.received) / (cacheStore.speedBps ?? 1),
+                                    ),
+                                  })
+                                : null,
+                              prog.segments > 1
+                                ? t("settings.resSegment", {
+                                    current: prog.segment,
+                                    total: prog.segments,
+                                  })
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </span>
                         ) : null}
-                      </div>
+                      </>
                     ) : null}
                     {prog?.phase === "error" && prog.error ? (
                       <span class="settings-modal__pack-error">

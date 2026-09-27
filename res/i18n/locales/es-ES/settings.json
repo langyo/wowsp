@@ -184,6 +184,10 @@
   "resBundledClearNote": "Se está usando la copia incluida en la app. Eliminar solo quita una actualización descargada — el paquete incluido sigue sirviendo.",
   "resSegment": "Parche {current} / {total}",
   "cacheApplying": "Aplicando…",
+  "resEta": "faltan {time}",
+  "resUpdatePrompt": "Hay una actualización del paquete de recursos ({version})",
+  "resUpdateNow": "Actualizar ahora",
+  "resUpdateLater": "Más tarde",
   "wallpaperOverlay": "Opacidad del velo",
   "pairingPinCopy": "Copiar código",
   "pairingPinCopied": "Código copiado al portapapeles"

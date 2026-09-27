@@ -184,6 +184,10 @@
   "resBundledClearNote": "Используется встроенная в приложение копия. Удаление убирает только загруженное обновление — встроенный пакет продолжит работать.",
   "resSegment": "Патч {current} / {total}",
   "cacheApplying": "Применение…",
+  "resEta": "осталось {time}",
+  "resUpdatePrompt": "Доступно обновление ресурсного пакета ({version})",
+  "resUpdateNow": "Обновить сейчас",
+  "resUpdateLater": "Позже",
   "wallpaperOverlay": "Непрозрачность затемнения",
   "pairingPinCopy": "Копировать код",
   "pairingPinCopied": "Код скопирован в буфер обмена"
