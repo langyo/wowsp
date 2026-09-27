@@ -112,9 +112,10 @@ export default defineComponent({
 
     // Overlay detection state, streamed by the Rust Tab watcher as
     // transition-only `wowsp://overlay-status` events. Rendered as a badge
-    // in the panel's head (right corner) and the base for the upcoming
-    // manual-locate flow. `null` = nothing received yet → show nothing
-    // (a panel that never used overlay mode stays badge-free).
+    // in the panel's head (right corner) next to the manual-locate button.
+    // `null` = nothing received yet → show no badge (the button itself is
+    // permanent — idle stretches between battles must not strand the
+    // manual-locate entry point).
     const overlayStatus = ref<OverlayStatus | null>(null);
     let unlistenStatus: (() => void) | null = null;
     // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
@@ -185,9 +186,10 @@ export default defineComponent({
       const s = overlayStatus.value;
       if (!s) return null;
       // A manual anchor stays ARMED across Idle/Searching (Rust marks every
-      // automatic report manual:true while it is stored): the badge — and
-      // with it the clear button — must survive those transitions too, since
-      // the anchor re-anchors on the same battle's next Tab hold.
+      // automatic report manual:true while it is stored): the badge must
+      // survive those transitions too, since the anchor re-anchors on the
+      // same battle's next Tab hold. (The clear button itself is permanent
+      // regardless — see the head markup below.)
       if (s.manual) {
         return { cls: "manual", spin: false, text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
       }
@@ -199,7 +201,7 @@ export default defineComponent({
           text: t("replay.live.detectedRows", { n: s.rows ?? 0 }),
         };
       }
-      // Searching/updating are settling states — carry the same inline
+      // Searching/fallback are settling states — carry the same inline
       // spinner the loading roster rows use (HkSpinner, currentcolor tone).
       return { cls: "searching", spin: true, text: t("replay.live.searching") };
     });
@@ -517,34 +519,36 @@ export default defineComponent({
               {displayMapName(props.arena.mapName, dataLanguage.value)}
             </span>
             {statusBadge.value ? (
-              <>
-                <span
-                  class={[
-                    "live-battle__pill",
-                    `live-battle__pill--status-${statusBadge.value.cls}`,
-                  ]}
-                >
-                  {statusBadge.value.spin && <HkSpinner size="xs" tone="current" />}
-                  {statusBadge.value.text}
-                </span>
-                <button
-                  class={[
-                    "live-battle__manual-btn",
-                    {
-                      "live-battle__manual-btn--active": manualActive.value,
-                      "live-battle__manual-btn--shake": manualShake.value,
-                    },
-                  ]}
-                  type="button"
-                  disabled={manualBusy.value}
-                  onClick={() => void onManualButton()}
-                >
-                  {manualActive.value
-                    ? t("replay.live.manualClear")
-                    : t("replay.live.manualLocate")}
-                </button>
-              </>
+              <span
+                class={[
+                  "live-battle__pill",
+                  `live-battle__pill--status-${statusBadge.value.cls}`,
+                ]}
+              >
+                {statusBadge.value.spin && <HkSpinner size="xs" tone="current" />}
+                {statusBadge.value.text}
+              </span>
             ) : null}
+            {/* The manual-locate entry point is PERMANENT: idle stretches
+                between battles (and battles where Tab was never held) leave
+                no overlay status to badge, and stranding the region-picker
+                entry on those states is exactly what made it look flaky. */}
+            <button
+              class={[
+                "live-battle__manual-btn",
+                {
+                  "live-battle__manual-btn--active": manualActive.value,
+                  "live-battle__manual-btn--shake": manualShake.value,
+                },
+              ]}
+              type="button"
+              disabled={manualBusy.value}
+              onClick={() => void onManualButton()}
+            >
+              {manualActive.value
+                ? t("replay.live.manualClear")
+                : t("replay.live.manualLocate")}
+            </button>
           </div>
           {/* Operations (行动) have no enemy team: the roster renders as a
               single full-width allies column, matching the game's own Tab

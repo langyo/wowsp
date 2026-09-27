@@ -98,21 +98,26 @@
     white-space: nowrap;
   }
 
+  /* The head's right-corner cluster (map label + detection badge +
+     manual-locate button) centers against the line instead of sharing the
+     title's text baseline: the badge grows a spinner while searching, and
+     equal-height-looking pills of different boxes baseline-align crooked. */
   &__map {
+    align-self: center;
     color: rgb(var(--color-muted));
     font-size: var(--text-sm);
     margin-left: auto;
   }
 
-  /* Detection-status badge + the manual-locate button ride the head's right
-     corner, after the map label. */
   .live-battle__pill--status-detected {
+    align-self: center;
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
   }
 
   .live-battle__pill--status-searching {
+    align-self: center;
     border-color: rgb(var(--color-warning, 251 191 36) / 55%);
     background: rgb(var(--color-warning, 251 191 36) / 16%);
     color: rgb(var(--color-warning, 251 191 36));
@@ -120,12 +125,14 @@
 
   /* Manual anchor in force — same green family as the detected badge. */
   .live-battle__pill--status-manual {
+    align-self: center;
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
   }
 
   &__manual-btn {
+    align-self: center;
     padding: 0.1rem 0.55rem;
     border-radius: 999px;
     border: 1px solid rgb(var(--color-text) / 20%);
