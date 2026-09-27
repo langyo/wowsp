@@ -55,7 +55,8 @@
 }
 
 /* Share toolbar: hide-all-nicknames toggle + per-row eye hint (left) and
-   the copy-share-shot action with its inline result note (right). */
+   the copy-share-shot action (right); copy feedback rides the global
+   toast surface instead of an inline note. */
 .replay-view__postbattle-toolbar {
   display: flex;
   align-items: center;
@@ -106,17 +107,6 @@
   color: rgb(var(--color-text) / 0.4);
   font-size: var(--text-2xs);
 }
-.replay-view__postbattle-shot-note {
-  flex: 0 0 auto;
-  font-size: var(--text-2xs);
-  color: rgb(var(--color-text) / 0.55);
-  &--done {
-    color: rgb(var(--color-success, 74 222 128));
-  }
-  &--failed {
-    color: rgb(var(--color-error));
-  }
-}
 
 .replay-view__postbattle-matrix {
   display: grid;
@@ -146,21 +136,49 @@
   letter-spacing: 0.08em;
   padding: 0 2px 2px;
   border-bottom: 1px solid rgb(var(--color-text) / 0.1);
+
+  /* Right-edge compensation so the header grid sits over the stat columns
+     below: rows spend width on the mask eye (22px + gaps), plus the career
+     seal slot when seals are enabled. */
+  &--pad-eye { padding-right: 34px; }
+  &--pad-seal { padding-right: 64px; }
+}
+/* With a team aggregate the title becomes a two-line mini table header
+   (tiny label over a mono value) on a grid mirroring the row cells:
+   [name][wr 6.5ch][pr 5ch][dmg 7.5ch][xp 6ch] with the same 8px gaps, so
+   the aggregate numbers land exactly on their columns. The grid element
+   carries the mono face so its ch matches the cells'. */
+.replay-view__postbattle-col-title--agg {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.5ch 5ch 7.5ch 6ch;
+  column-gap: 8px;
+  row-gap: 1px;
+  align-items: end;
+  font-family: var(--font-mono);
+  letter-spacing: normal;
+  .replay-view__postbattle-col-name {
+    grid-row: 1 / 3;
+    font-family: inherit;
+    letter-spacing: 0.08em;
+  }
 }
 .replay-view__postbattle-col-name {
   white-space: nowrap;
 }
-/* Team aggregate (weighted/plain mean WR + mean PR) riding the column
-   title's right end — same voice as the live panel's column captions. */
-.replay-view__postbattle-col-agg {
+.replay-view__postbattle-col-hlbl {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: normal;
+  overflow: visible;
+  justify-self: end;
   white-space: nowrap;
-  b {
-    font-weight: 600;
-  }
+  font-size: 10px;
+  line-height: 1.2;
+  color: rgb(var(--color-text) / 0.5);
+}
+.replay-view__postbattle-col-hval {
+  justify-self: end;
+  text-align: right;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 /* Row = card wrapper (background + dead/self states) holding the

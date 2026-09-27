@@ -426,7 +426,6 @@ const PostBattleFallbackPanel = defineComponent({
           <PostBattleShareBar
             hideAll={masking.hideAll.value}
             shotBusy={shot.busy.value}
-            shotNote={shot.note.value}
             onToggleAll={() => masking.toggleAll()}
             onShot={() => void shot.copyShot()}
           />

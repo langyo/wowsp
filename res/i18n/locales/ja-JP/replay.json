@@ -209,7 +209,10 @@
     "copyShot": "スクリーンショットをコピー",
     "copyShotDone": "スクリーンショットをクリップボードにコピーしました",
     "copyShotFailed": "コピーに失敗しました",
-    "shotTagline": "World of Warships 戦闘分析ツール"
+    "shotTagline": "World of Warships 戦闘分析ツール",
+    "shotDisclaimer1": "参考値です。長期的な実力を保証するものではありません。穏やかな議論を心がけましょう",
+    "shotDisclaimer2": "本ソフトは無料・オープンソースです。購入を求める詐欺にご注意ください",
+    "shotQqGroup": "QQグループ：{n}"
   },
   "capture": {
     "contested": "双方が占拠中のため進行が停止しています",

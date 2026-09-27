@@ -8,9 +8,9 @@
  * privacy choice, not a preference. The fixed-width mask is NOT
  * length-preserving: a nick's length is itself information.
  */
-import { defineComponent, onBeforeUnmount, ref } from "vue";
+import { defineComponent, ref } from "vue";
 import { Camera, Eye, EyeOff } from "@lucide/vue";
-import { HkSpinner } from "@celestia-island/hikari";
+import { HkSpinner, useToast } from "@celestia-island/hikari";
 
 import { api } from "@/api";
 import { t } from "@/i18n";
@@ -45,28 +45,22 @@ export function useNickMasking() {
 /** Copy flow for the share shot: renders the model off-DOM, then copies the
  *  PNG to the clipboard — native IPC first (arboard on desktop), the
  *  webview's async clipboard API as the fallback (mobile / browser hosts).
- *  Surfaces a short inline note ("copied" / "failed") instead of a toast so
- *  the feedback sits next to the button that caused it. */
+ *  Feedback rides the app's global toast surface (the inline note by the
+ *  button was retired — a toast can't shift the toolbar layout). */
 export function useShareShot(getModel: () => ShotModel, getEl: () => HTMLElement | null) {
   const busy = ref(false);
-  const note = ref<"done" | "failed" | null>(null);
-  let noteTimer: ReturnType<typeof setTimeout> | null = null;
-  function clearNoteLater() {
-    if (noteTimer) clearTimeout(noteTimer);
-    noteTimer = setTimeout(() => {
-      note.value = null;
-      noteTimer = null;
-    }, 2600);
-  }
+  const toast = useToast();
   async function copyShot() {
     if (busy.value) return;
     busy.value = true;
-    note.value = null;
     let ok = false;
     try {
       const bytes = await renderPostBattleShot(getModel(), {
         el: getEl(),
         tagline: t("replay.postbattle.shotTagline"),
+        disclaimer1: t("replay.postbattle.shotDisclaimer1"),
+        disclaimer2: t("replay.postbattle.shotDisclaimer2"),
+        qqGroup: t("replay.postbattle.shotQqGroup", { n: t("about.qqGroupNumber") }),
       });
       try {
         await api.copyImageToClipboard(bytes);
@@ -83,33 +77,29 @@ export function useShareShot(getModel: () => ShotModel, getEl: () => HTMLElement
             ]);
             ok = true;
           } catch {
-            /* fall through to the failure note */
+            /* fall through to the failure toast */
           }
         }
       }
     } catch {
-      /* render failure — same failure note */
+      /* render failure — same failure toast */
     }
     busy.value = false;
-    note.value = ok ? "done" : "failed";
-    clearNoteLater();
+    if (ok) toast.success(t("replay.postbattle.copyShotDone"));
+    else toast.error(t("replay.postbattle.copyShotFailed"), false);
   }
-  onBeforeUnmount(() => {
-    if (noteTimer) clearTimeout(noteTimer);
-  });
-  return { busy, note, copyShot };
+  return { busy, copyShot };
 }
 
 /** Toolbar riding the post-battle panel top: hide-all-nicknames toggle (with
- *  the per-row eye hint) and the copy-share-shot action with its inline
- *  result note. Shared by the results panel and the incomplete-results
- *  fallback so both post-battle windows expose the same share controls. */
+ *  the per-row eye hint) and the copy-share-shot action. Shared by the
+ *  results panel and the incomplete-results fallback so both post-battle
+ *  windows expose the same share controls. */
 export const PostBattleShareBar = defineComponent({
   name: "PostBattleShareBar",
   props: {
     hideAll: { type: Boolean, default: false },
     shotBusy: { type: Boolean, default: false },
-    shotNote: { type: String as () => "done" | "failed" | null, default: null },
   },
   emits: ["toggleAll", "shot"],
   setup(props, { emit }) {
@@ -130,18 +120,6 @@ export const PostBattleShareBar = defineComponent({
         </button>
         <span class="replay-view__postbattle-toolbar-hint">
           {t("replay.postbattle.maskHint")}
-        </span>
-        <span
-          class={[
-            "replay-view__postbattle-shot-note",
-            props.shotNote ? `replay-view__postbattle-shot-note--${props.shotNote}` : "",
-          ]}
-        >
-          {props.shotNote === "done"
-            ? t("replay.postbattle.copyShotDone")
-            : props.shotNote === "failed"
-              ? t("replay.postbattle.copyShotFailed")
-              : ""}
         </span>
         <button
           class="replay-view__postbattle-tool replay-view__postbattle-tool--shot"

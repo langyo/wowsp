@@ -39,12 +39,20 @@ export interface ShotRow {
   stats: ShotStat[];
 }
 
-/** Column aggregate riding the title (team mean WR / mean PR), like the
- * panels' column captions. */
+/** One label+value pair of the column-title aggregate (team mean WR / mean
+ * PR): `col` is the stat column index whose x-origin the value right-aligns
+ * onto, so the header numbers line up with the cells below them. */
+export interface ShotAgg {
+  col: number;
+  label: string;
+  value: string;
+  valueColor?: string;
+}
+
+/** Column aggregate riding the title, like the panels' column captions. */
 export interface ShotColumn {
   title: string;
-  /** Right-aligned aggregate text with optional colored `<b>` runs. */
-  agg?: { text: string; color?: string }[];
+  agg?: ShotAgg[];
   rows: ShotRow[];
 }
 
@@ -88,7 +96,22 @@ const PAD = 28;
 const ROW_H = 44;
 const HEAD_H = 66;
 const COL_TITLE_H = 34;
-const FOOT_H = 62;
+/** Footer band: tall enough for the logo block and the two centered
+ * disclaimer lines to breathe. */
+const FOOT_H = 88;
+const GITHUB_URL = "github.com/langyo/wowsp";
+/** The bundled pig-mascot brand mark (public/ asset — same-origin, so the
+ * canvas never taints; same pattern as the HUD marker PNGs). */
+const LOGO_URL = "/logo.webp";
+
+/** Localized strings the fixed promo footer carries (all resolved by the
+ * caller; the QQ number itself comes from about.qqGroupNumber). */
+export interface ShotFooterStrings {
+  tagline: string;
+  disclaimer1: string;
+  disclaimer2: string;
+  qqGroup: string;
+}
 
 function readPalette(el?: HTMLElement | null): Palette {
   if (!el) return DEFAULT_PALETTE;
@@ -155,13 +178,16 @@ function statOrigins(
   return origins;
 }
 
-/** Draw the camera-watermark promo footer: brand + localized tagline left,
- * project URL right — the fixed WoWSP signature on every share shot. */
+/** Draw the camera-watermark promo footer: pig logo + brand + localized
+ * tagline left, the two fixed disclaimers centered (data is reference-only;
+ * the software is free — never pay for it), QQ group + project URL right —
+ * the fixed WoWSP signature on every share shot. */
 function drawFooter(
   ctx: CanvasRenderingContext2D,
   palette: Palette,
   width: number,
-  tagline: string,
+  footer: ShotFooterStrings,
+  logo: HTMLImageElement | null,
 ): void {
   const y = ctx.canvas.height / SCALE - FOOT_H;
   ctx.fillStyle = rgba(palette.surface, 0.75);
@@ -170,18 +196,43 @@ function drawFooter(
   ctx.fillRect(0, y, width, 1);
 
   ctx.textBaseline = "middle";
+  const cy = y + FOOT_H / 2;
+
+  // Left: the mascot logo in a rounded frame, brand + tagline beside it.
+  let lx = PAD;
+  if (logo) {
+    const size = 46;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(lx, cy - size / 2, size, size, 10);
+    ctx.clip();
+    ctx.drawImage(logo, lx, cy - size / 2, size, size);
+    ctx.restore();
+    lx += size + 12;
+  }
   ctx.textAlign = "left";
   ctx.font = font(19, 700);
   ctx.fillStyle = rgba(palette.text, 1);
-  ctx.fillText("WoWSP", PAD, y + FOOT_H / 2 - 11);
-  ctx.font = font(12.5, 400);
-  ctx.fillStyle = rgba(palette.text, 0.62);
-  ctx.fillText(tagline, PAD, y + FOOT_H / 2 + 12);
+  ctx.fillText("WoWSP", lx, cy - 11);
+  ctx.font = font(12, 400);
+  ctx.fillStyle = rgba(palette.text, 0.6);
+  ctx.fillText(footer.tagline, lx, cy + 12);
 
+  // Center: the two disclaimers.
+  ctx.textAlign = "center";
+  ctx.font = font(11.5, 400);
+  ctx.fillStyle = rgba(palette.text, 0.48);
+  ctx.fillText(footer.disclaimer1, width / 2, cy - 12);
+  ctx.fillText(footer.disclaimer2, width / 2, cy + 12);
+
+  // Right: QQ group over the project URL.
   ctx.textAlign = "right";
-  ctx.font = font(12.5, 600);
+  ctx.font = font(12, 600);
+  ctx.fillStyle = rgba(palette.text, 0.72);
+  ctx.fillText(footer.qqGroup, width - PAD, cy - 11);
+  ctx.font = font(12, 400);
   ctx.fillStyle = rgba(palette.text, 0.55);
-  ctx.fillText("github.com/langyo/wowsp", width - PAD, y + FOOT_H / 2);
+  ctx.fillText(GITHUB_URL, width - PAD, cy + 12);
 }
 
 /** Fixed 2× supersampling: the share shot keeps crisp small text when pasted
@@ -189,10 +240,11 @@ function drawFooter(
 const SCALE = 2;
 
 /** Paint the share shot and return PNG bytes. `el` (any live panel element)
- * supplies the theme palette; `tagline` is the localized watermark line. */
+ * supplies the theme palette; the footer strings are the localized watermark
+ * lines (see ShotFooterStrings). */
 export async function renderPostBattleShot(
   model: ShotModel,
-  opts: { el?: HTMLElement | null; tagline: string },
+  opts: { el?: HTMLElement | null } & ShotFooterStrings,
 ): Promise<Uint8Array> {
   const palette = readPalette(opts.el);
   const cols = model.columns;
@@ -244,39 +296,48 @@ export async function renderPostBattleShot(
   ctx.fillRect(PAD, HEAD_H - 6, width - PAD * 2, 1);
 
   // Pre-measure stat cell widths with the row font active. The block's
-  // total width also bounds the nick text (see the row loop).
+  // total width also bounds the nick text (see the row loop) — and the
+  // same origins anchor the column-title aggregate values.
   ctx.font = font(13.5, 600, true);
   const origins = statOrigins(ctx, cols);
   const statsW = (origins[origins.length - 1] ?? 0) + 24;
 
-  // Column titles (+ aggregate) and rows.
-  const icons = await Promise.all(
-    cols.flatMap((c) =>
+  // Column titles (+ aggregate) and rows. The footer's logo loads alongside
+  // the class icons so the paint never waits twice on the network.
+  const icons = await Promise.all([
+    ...cols.flatMap((c) =>
       c.rows.map((r) => loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "plain"))),
     ),
-  );
+    loadImage(LOGO_URL),
+  ]);
+  const logo = icons.pop() ?? null;
   let iconIdx = 0;
   for (let ci = 0; ci < cols.length; ci++) {
     const col = cols[ci];
     const cx = PAD + ci * (COL_WIDTH + COL_GAP);
     let y = HEAD_H;
 
-    // Title + aggregate.
+    // Title + aggregate. The aggregate is a two-line mini table header —
+    // tiny label over a mono value — with the value right-aligned onto its
+    // stat column (same origins as the row cells below). A single-line
+    // label-before-value run cannot work here: the inter-column gap is
+    // narrower than a CJK label, so it would overlap the previous value.
+    const ty = y + COL_TITLE_H / 2;
     ctx.textAlign = "left";
     ctx.font = font(13, 600);
     ctx.fillStyle = rgba(palette.text, 0.55);
-    ctx.fillText(col.title, cx, y + COL_TITLE_H / 2);
-    if (col.agg && col.agg.length) {
+    ctx.fillText(col.title, cx, ty);
+    if (col.agg?.length) {
+      const base = cx + COL_WIDTH - 14 - statsW;
       ctx.textAlign = "right";
-      ctx.font = font(12.5, 400);
-      let ax = cx + COL_WIDTH;
-      for (let i = col.agg.length - 1; i >= 0; i--) {
-        const part = col.agg[i];
-        const w = ctx.measureText(part.text).width;
-        ax -= w;
-        ctx.fillStyle = part.color ?? rgba(palette.text, 0.7);
-        ctx.fillText(part.text, ax, y + COL_TITLE_H / 2);
-        ax -= 8;
+      for (const part of col.agg) {
+        const vx = base + (origins[part.col] ?? 0);
+        ctx.font = font(10.5, 400);
+        ctx.fillStyle = rgba(palette.text, 0.5);
+        ctx.fillText(part.label, vx, ty - 10);
+        ctx.font = font(12.5, 600, true);
+        ctx.fillStyle = part.valueColor ?? rgba(palette.text, 0.85);
+        ctx.fillText(part.value, vx, ty + 7);
       }
       ctx.textAlign = "left";
     }
@@ -331,7 +392,7 @@ export async function renderPostBattleShot(
     }
   }
 
-  drawFooter(ctx, palette, width, opts.tagline);
+  drawFooter(ctx, palette, width, opts, logo);
 
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob((b) => resolve(b), "image/png"),

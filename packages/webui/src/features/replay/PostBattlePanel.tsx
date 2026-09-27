@@ -409,25 +409,27 @@ export default defineComponent({
         list: typeof rows.value,
         enemy: boolean,
       ): ShotColumn => {
+        // Aggregate values carry their stat-column index so the shot's
+        // header numbers right-align onto the cells below them.
         let agg: ShotColumn["agg"];
         if (prefs.value.prEnabled) {
           const a = teamAgg(list);
           agg = [
             {
-              text: `${t(
+              col: 0,
+              label: t(
                 prefs.value.weightedTeamWr
                   ? "replay.roster.teamWrWeighted"
                   : "replay.roster.teamWrPlain",
-              )} `,
+              ),
+              value: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
+              valueColor: a.winrate != null ? winrateColor(a.winrate) : undefined,
             },
             {
-              text: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
-              color: a.winrate != null ? winrateColor(a.winrate) : undefined,
-            },
-            { text: ` · ${t("replay.roster.teamAvgPr")} ` },
-            {
-              text: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
-              color: a.avgPr != null ? prTier(a.avgPr).color : undefined,
+              col: 1,
+              label: t("replay.roster.teamAvgPr"),
+              value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
+              valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
             },
           ];
         }
@@ -485,21 +487,45 @@ export default defineComponent({
         const agg = teamAgg(list);
         const prBand = prTier(agg.avgPr);
         return (
-          <div class="replay-view__postbattle-col-title">
+          <div
+            class={[
+              "replay-view__postbattle-col-title",
+              "replay-view__postbattle-col-title--agg",
+              // Right-edge compensation so the header grid sits over the
+              // columns below: rows spend width on the mask eye (+ the
+              // career seal slot when seals are enabled).
+              prefs.value.sealsEnabled
+                ? "replay-view__postbattle-col-title--pad-seal"
+                : "replay-view__postbattle-col-title--pad-eye",
+            ]}
+          >
             {title}
-            <span class="replay-view__postbattle-col-agg">
+            <span class="replay-view__postbattle-col-hlbl">
               {t(
                 prefs.value.weightedTeamWr
                   ? "replay.roster.teamWrWeighted"
                   : "replay.roster.teamWrPlain",
-              )}{" "}
-              <b style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}>
-                {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
-              </b>
-              {" · "}
-              {t("replay.roster.teamAvgPr")}{" "}
-              <b style={{ color: prBand.color }}>{agg.avgPr != null ? Math.round(agg.avgPr) : "—"}</b>
+              )}
             </span>
+            <span class="replay-view__postbattle-col-hlbl">
+              {t("replay.roster.teamAvgPr")}
+            </span>
+            <span class="replay-view__postbattle-col-hfill" />
+            <span class="replay-view__postbattle-col-hfill" />
+            <b
+              class="replay-view__postbattle-col-hval"
+              style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}
+            >
+              {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+            </b>
+            <b
+              class="replay-view__postbattle-col-hval"
+              style={{ color: prBand.color }}
+            >
+              {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+            </b>
+            <span class="replay-view__postbattle-col-hfill" />
+            <span class="replay-view__postbattle-col-hfill" />
           </div>
         );
       };
@@ -632,7 +658,6 @@ export default defineComponent({
           <PostBattleShareBar
             hideAll={masking.hideAll.value}
             shotBusy={shot.busy.value}
-            shotNote={shot.note.value}
             onToggleAll={() => masking.toggleAll()}
             onShot={() => void shot.copyShot()}
           />
