@@ -19,6 +19,28 @@ describe("modeKey", () => {
   it("keeps plain co-op (pve matchGroup, no operation fingerprint) co-op", () => {
     expect(modeKey("pve", undefined, null)).toBe("cooperative");
     expect(modeKey("pve", "coop_1point", null)).toBe("cooperative");
+    // A `:Name:`-only roster stays co-op — those bots fill official co-op.
+    expect(modeKey("pve", "domination_3point", null, 9, 0)).toBe("cooperative");
+  });
+
+  it("classifies the low-level escort op as operation by its scenario id", () => {
+    // Live ASIA escort-op shape: matchGroup pve + LOW_LVL_OPERATION_* — no
+    // PCVO/_op_/IDS_OP_ fingerprint matches, only the scenario id (plus the
+    // mixed IDS_OP_15_*/:Name: roster) identifies the operation.
+    expect(modeKey("pve", "LOW_LVL_OPERATION_1_LVL_2", null)).toBe("operation");
+    expect(modeKey("pve", "LOW_LVL_OPERATION_1_LVL_2", null, 9, 5)).toBe("operation");
+    expect(modeKey("pve", null, "LOW_LVL_OPERATION_1_LVL_2")).toBe("operation");
+  });
+
+  it("classifies a scripted-unit roster inside the pve family as operation", () => {
+    // Descriptor with NO operation fingerprint at all — the scripted units
+    // (`IDS_*` text keys / `#Name` scenario style) never field in plain
+    // co-op, so their count is the operation fingerprint.
+    expect(modeKey("pve", null, null, 9, 5)).toBe("operation");
+    expect(modeKey("pve", "", "", 0, 2)).toBe("operation");
+    expect(modeKey("cooperative", null, null, 0, 1)).toBe("operation");
+    // Outside the pve family the count never relabels the mode.
+    expect(modeKey("pvp", "domination_3point", null, 0, 1)).toBe("pvp");
   });
 
   it("classifies asymmetric co-op by battle script and scenario", () => {
@@ -56,7 +78,9 @@ describe("isOperationBattle", () => {
 
   it("keeps the new-account scripted battles two-team", () => {
     // Low-level escort op: by scenario, and by its IDS_OP_15_* units when
-    // the arena file carries no scenario (360-server live rosters).
+    // the arena file carries no scenario (360-server live rosters). Their
+    // mode LABEL is still "operation" (see modeKey above) — only the roster
+    // layout stays two-team.
     expect(
       isOperationBattle("pve", "LOW_LVL_OPERATION_1_LVL_2", null, [
         "langyo",

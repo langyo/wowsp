@@ -271,6 +271,7 @@ mod tests {
             scenario: None,
             event_type: None,
             bot_count: 0,
+            scripted_unit_count: 0,
             vehicles: ids
                 .iter()
                 .map(|&id| VehicleEntry {

@@ -68,8 +68,9 @@ function modeLabelOf(
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
+  scriptedUnitCount = 0,
 ): string {
-  const key = modeKey(group, scenario, eventType, botCount);
+  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = "replay.mode." + key;
   const lbl = t(i18nKey);
@@ -366,6 +367,7 @@ export default defineComponent({
               props.arena.scenario,
               props.arena.eventType,
               props.arena.botCount ?? 0,
+              props.arena.scriptedUnitCount ?? 0,
             ) as CSSProperties
           }
         >
@@ -374,6 +376,7 @@ export default defineComponent({
             props.arena.scenario,
             props.arena.eventType,
             props.arena.botCount ?? 0,
+            props.arena.scriptedUnitCount ?? 0,
           )}
         </span>
       ) : null;

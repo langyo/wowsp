@@ -17,6 +17,7 @@ function liteFromMeta(m: ReplayMeta): ReplayMetaLite {
     scenario: m.scenario,
     eventType: m.eventType,
     botCount: m.botCount,
+    scriptedUnitCount: m.scriptedUnitCount,
     ownShipId: own?.shipId ?? null,
     ownShipName: own?.shipName ?? null,
     playerCount: m.vehicles.length,

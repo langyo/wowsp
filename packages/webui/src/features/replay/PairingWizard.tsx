@@ -63,7 +63,13 @@ function formatDateTime(dt?: string | null): string {
 
 /** Mode pill label with the generic fallback (same rule as the rail cards). */
 function modeLabel(e: RemoteReplayEntry): string {
-  const key = modeKey(e.matchGroup, e.scenario, e.eventType, e.botCount ?? 0);
+  const key = modeKey(
+    e.matchGroup,
+    e.scenario,
+    e.eventType,
+    e.botCount ?? 0,
+    e.scriptedUnitCount ?? 0,
+  );
   if (!key) return t("replay.mode._fallback");
   const lbl = t(`replay.mode.${key}`);
   return lbl === `replay.mode.${key}` ? t("replay.mode._fallback") : lbl;
@@ -645,6 +651,7 @@ export default defineComponent({
                                     e.scenario,
                                     e.eventType,
                                     e.botCount ?? 0,
+                                    e.scriptedUnitCount ?? 0,
                                   ) as CSSProperties
                                 }
                               >

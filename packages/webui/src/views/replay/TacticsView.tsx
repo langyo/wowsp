@@ -96,7 +96,13 @@ export default defineComponent({
           for (const m of metas) {
             if (!m.mapName) continue;
             const b = bucketOf(
-              modeKey(m.matchGroup, m.scenario, m.eventType, m.botCount ?? 0),
+              modeKey(
+                m.matchGroup,
+                m.scenario,
+                m.eventType,
+                m.botCount ?? 0,
+                m.scriptedUnitCount ?? 0,
+              ),
             );
             let set = acc.get(m.mapName);
             if (!set) acc.set(m.mapName, (set = new Set()));

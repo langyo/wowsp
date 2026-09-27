@@ -247,6 +247,7 @@ fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), Strin
             scenario: meta.scenario,
             event_type: meta.event_type,
             bot_count: meta.bot_count,
+            scripted_unit_count: meta.scripted_unit_count,
             vehicles: meta.vehicles,
             raw,
         },

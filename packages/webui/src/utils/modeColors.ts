@@ -5,7 +5,10 @@
  *   - matchGroup  — coarse bucket (pvp / ranked / clan / event / brawl / pve)
  *   - scenario    — scenario name (domination_3point, asymm_3point_coop, ...)
  *   - eventType   — GameParams BattleScript id (PCVE027 = EV27AsymCoop, ...)
- *   - botCount    — roster entries with bot nicknames (`:Name:` bots, `IDS_*` scripted units)
+ *   - botCount    — roster entries with bot nicknames (`:Name:` bots, `IDS_*` / `#Name` scripted units)
+ *   - scriptedUnitCount — the scripted-unit half of botCount (`IDS_*` text
+ *     keys / `#Name` scenario style); co-op and random fills carry `:Name:`
+ *     bots only, so a non-zero count in the pve family means operation (行动)
  *
  * The eventType is the most specific signal (a WG battle-script id); scenario
  * is next; matchGroup is the fallback. botCount subdivides WITHIN that layering
@@ -64,6 +67,7 @@ export function modeKey(
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
+  scriptedUnitCount = 0,
 ): string {
   const et = (eventType ?? "").toLowerCase();
   const sc = (scenario ?? "").toLowerCase();
@@ -74,6 +78,7 @@ export function modeKey(
   // the vendored Narai golden replay: eventType
   // `PCVO009_OP_02_02_...`), so the prefix alone decides.
   if (et.startsWith("pcvo")) return "operation";
+  if (et.startsWith("low_lvl_operation")) return "operation";
   if (et.includes("asym")) return "asymmetric";
   if (et.includes("convoy")) return "convoy";
   if (et.includes("armsrace")) return "armsrace";
@@ -109,15 +114,26 @@ export function modeKey(
   if (sc.includes("armsrace")) return "armsrace";
   if (sc.includes("ranked")) return "ranked";
   if (sc.startsWith("pcvo") || sc.includes("_op_") || sc.includes("_hl_")) return "operation";
+  // The low-level escort op (new-account) is an operation too — its scenario
+  // id says so even though its roster LAYOUT stays two-team (isOperationBattle
+  // keeps that split; only the label here is operation 行动).
+  if (sc.startsWith("low_lvl_operation")) return "operation";
 
   // matchGroup level. `pve` alone (no operation fingerprint above) is the
   // plain co-op bucket — operations normally arrive as `pve` too, but they
-  // are caught by the scenario/script levels first.
+  // are caught by the scenario/script levels first. The one late-caught case
+  // is the descriptor with NO operation fingerprint at all: scripted units
+  // (`IDS_*` / `#Name`) never field in plain co-op, so their presence inside
+  // the co-op family marks an operation (the escort op arrives this way when
+  // the scenario field is empty).
   if (mg.startsWith("ranked")) return "ranked";
   if (mg === "pvp" || mg.includes("random")) return "pvp";
   if (mg.includes("clan")) return "clan";
   if (mg.includes("brawl")) return "brawl";
-  if (mg.includes("coop") || mg.includes("cooperative") || mg.startsWith("pve")) return "cooperative";
+  const coopFamily =
+    mg.includes("coop") || mg.includes("cooperative") || mg.startsWith("pve");
+  if (coopFamily && scriptedUnitCount > 0) return "operation";
+  if (coopFamily) return "cooperative";
   if (mg.includes("event")) return "event";
   if (mg.includes("train") || mg.includes("sandbox")) return "training";
   if (mg.includes("squad")) return "squad";
@@ -140,7 +156,9 @@ export function modeKey(
  * EXCEPT the new-account scripted battles (the `FIRST_BATTLE` tutorial and
  * the `LOW_LVL_OPERATION_*` escort op) — those are coop-shaped two-team
  * battles whose relation values ARE enemy semantics, so they must take the
- * ordinary allies/enemies split (same exclusion as the Rust side).
+ * ordinary allies/enemies split (same exclusion as the Rust side). Their
+ * mode LABEL is still "operation" (see modeKey) — only the roster layout
+ * stays two-team here.
  */
 export function isOperationBattle(
   matchGroup?: string | null,
@@ -168,8 +186,9 @@ export function modeColor(
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
+  scriptedUnitCount = 0,
 ): ModeColor {
-  const key = modeKey(matchGroup, scenario, eventType, botCount);
+  const key = modeKey(matchGroup, scenario, eventType, botCount, scriptedUnitCount);
   const hex = (key && MODE_HEX[key]) || FALLBACK_HEX;
   return {
     background: `rgb(${parseHex(hex)} / 18%)`,

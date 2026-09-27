@@ -95,12 +95,23 @@ pub struct ReplayMeta {
     pub scenario: Option<String>,
     /// Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric).
     pub event_type: Option<String>,
-    /// Roster entries whose nickname is the client's bot style (`:Name:`).
+    /// Roster entries whose nickname is the client's bot style (`:Name:`
+    /// bots, `IDS_*` / `#Name` scripted units).
     /// Factual count only — official co-op / asymmetric battles fill bots the
     /// same way, so deciding "custom room with bots" from it (pvp-family match
     /// group or tournament scenario) is the frontend classifier's job.
     #[serde(default)]
     pub bot_count: u32,
+    /// Roster entries whose nickname is a scripted-unit key (`IDS_*`) or the
+    /// `#Name` scenario style — the operation (行动) half of `bot_count`.
+    /// Plain co-op / random fills carry `:Name:` bots only, so a non-zero
+    /// count inside a pve-family match group marks an operation even when the
+    /// descriptor carries no operation fingerprint (the low-level escort op
+    /// arrives as `matchGroup: "pve"` with a mixed `IDS_*` + `:Name:`
+    /// roster). Factual count only — the frontend mode classifier turns it
+    /// into the operation label.
+    #[serde(default)]
+    pub scripted_unit_count: u32,
     /// Per-player roster.
     pub vehicles: Vec<VehicleEntry>,
     /// Raw JSON block preserved for the frontend to render arbitrary fields.
@@ -145,6 +156,11 @@ pub struct ReplayMetaLite {
     /// see [`ReplayMeta::bot_count`].
     #[serde(default)]
     pub bot_count: u32,
+    /// Scripted-unit roster entries (`IDS_*` / `#Name`) — see
+    /// [`ReplayMeta::scripted_unit_count`]. The list view needs it because a
+    /// lite entry carries no roster to scan.
+    #[serde(default)]
+    pub scripted_unit_count: u32,
     /// The recording player's ship id — the roster entry with `relation == 0`.
     /// Used to render the per-replay holographic ship preview.
     pub own_ship_id: Option<i64>,
@@ -346,6 +362,11 @@ pub struct ArenaInfo {
     /// [`ReplayMeta::bot_count`].
     #[serde(default)]
     pub bot_count: u32,
+    /// Scripted-unit roster entries (`IDS_*` / `#Name`) — see
+    /// [`ReplayMeta::scripted_unit_count`]. The live panel needs it to label
+    /// the mode before any replay of the battle exists.
+    #[serde(default)]
+    pub scripted_unit_count: u32,
     pub vehicles: Vec<VehicleEntry>,
     pub raw: serde_json::Value,
 }
@@ -2074,6 +2095,7 @@ mod tests {
             scenario: Some("domination_3point".into()),
             event_type: Some("PCVE027".into()),
             bot_count: 2,
+            scripted_unit_count: 2,
             vehicles: vec![VehicleEntry {
                 id: 7,
                 name: ":Bot:".into(),
@@ -2093,6 +2115,7 @@ mod tests {
             "scenario",
             "eventType",
             "botCount",
+            "scriptedUnitCount",
             "vehicles",
             "raw",
         ] {
@@ -2118,6 +2141,7 @@ mod tests {
             scenario: None,
             event_type: None,
             bot_count: 0,
+            scripted_unit_count: 0,
             own_ship_id: Some(4282948544),
             own_ship_name: Some("Montana".into()),
             player_count: 12,
@@ -2129,6 +2153,7 @@ mod tests {
             "playerCount",
             "dateTime",
             "matchGroup",
+            "scriptedUnitCount",
         ] {
             assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
         }
@@ -2148,6 +2173,7 @@ mod tests {
             scenario: Some("domination_3point".into()),
             event_type: Some("PCVE027".into()),
             bot_count: 9,
+            scripted_unit_count: 0,
             vehicles: Vec::new(),
             raw: serde_json::json!({ "pin": true }),
         });
@@ -2162,6 +2188,7 @@ mod tests {
                 "scenario",
                 "eventType",
                 "botCount",
+                "scriptedUnitCount",
                 "vehicles",
                 "raw",
             ],
@@ -2180,6 +2207,7 @@ mod tests {
             scenario: Some("epic_3point".into()),
             event_type: Some("PCVE999".into()),
             bot_count: 8,
+            scripted_unit_count: 0,
             own_ship_id: Some(4_279_574_672_i64),
             own_ship_name: Some("Kremlin".into()),
             player_count: 7,
@@ -2195,6 +2223,7 @@ mod tests {
                 "scenario",
                 "eventType",
                 "botCount",
+                "scriptedUnitCount",
                 "ownShipId",
                 "ownShipName",
                 "playerCount",
@@ -2416,6 +2445,7 @@ mod tests {
             scenario: Some("domination_tournament_3point".into()),
             event_type: Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL".into()),
             bot_count: 3,
+            scripted_unit_count: 0,
             vehicles: vec![VehicleEntry {
                 id: 51_515_151,
                 name: "arena-sentinel".into(),
@@ -2435,6 +2465,7 @@ mod tests {
                 "scenario",
                 "eventType",
                 "botCount",
+                "scriptedUnitCount",
                 "vehicles",
                 "raw",
             ],

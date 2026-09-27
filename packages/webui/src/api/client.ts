@@ -60,8 +60,13 @@ export interface ReplayMeta {
   scenario?: string | null;
   /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
   eventType?: string | null;
-  /** Roster entries with the client's bot nicknames (`:Name:` bots and `IDS_*` scripted units). */
+  /** Roster entries with the client's bot nicknames (`:Name:` bots, `IDS_*` / `#Name` scripted units). */
   botCount?: number | null;
+  /** Scripted-unit roster entries (`IDS_*` text keys / `#Name` scenario
+   *  style) — the operation (行动) half of `botCount`. Co-op and random
+   *  fills carry `:Name:` bots only, so a non-zero count in a pve-family
+   *  match group marks an operation (see `modeKey`). */
+  scriptedUnitCount?: number | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }
@@ -83,8 +88,12 @@ export interface ReplayMetaLite {
   scenario?: string | null;
   /** Battle-script id, e.g. "PCVE027" (EV27AsymCoop = asymmetric). */
   eventType?: string | null;
-  /** Roster entries with the client's bot nicknames (`:Name:` bots and `IDS_*` scripted units). */
+  /** Roster entries with the client's bot nicknames (`:Name:` bots, `IDS_*` / `#Name` scripted units). */
   botCount?: number | null;
+  /** Scripted-unit roster entries (`IDS_*` / `#Name`) — the operation half
+   *  of `botCount` (see `ReplayMeta.scriptedUnitCount`). The list view has
+   *  no roster to scan, so the classifier reads this count instead. */
+  scriptedUnitCount?: number | null;
   /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
   ownShipId?: number | null;
   /** Recorder's ship display name when resolvable, else null. */
@@ -103,8 +112,12 @@ export interface ArenaInfo {
   /** Battle-script id, e.g. "PCVE027"; operations carry PCVO* — mirrors
    *  `ReplayMeta.eventType`. */
   eventType?: string | null;
-  /** Roster entries with the client's bot nicknames (`:Name:` bots and `IDS_*` scripted units). */
+  /** Roster entries with the client's bot nicknames (`:Name:` bots, `IDS_*` / `#Name` scripted units). */
   botCount?: number | null;
+  /** Scripted-unit roster entries (`IDS_*` / `#Name`) — the operation half
+   *  of `botCount` (see `ReplayMeta.scriptedUnitCount`). Labels the live
+   *  battle's mode before any replay of it exists. */
+  scriptedUnitCount?: number | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }

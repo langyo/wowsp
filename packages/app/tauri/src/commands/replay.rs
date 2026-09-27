@@ -551,6 +551,7 @@ fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
             scenario: None,
             event_type: None,
             bot_count: 0,
+            scripted_unit_count: 0,
             own_ship_id: None,
             own_ship_name: None,
             player_count: 0,
@@ -591,15 +592,19 @@ fn lite_from_raw(
         .and_then(|o| o.get("vehicles"))
         .and_then(|v| v.as_array());
     let player_count = vehicles.map(|a| a.len()).unwrap_or(0);
-    let bot_count = vehicles
+    let (bot_count, scripted_unit_count) = vehicles
         .map(|a| {
             a.iter()
                 .filter_map(|v| v.as_object())
                 .filter_map(|o| o.get("name").and_then(|x| x.as_str()))
-                .filter(|n| is_bot_nickname(n))
-                .count() as u32
+                .fold((0u32, 0u32), |(bots, scripted), n| {
+                    (
+                        bots + u32::from(is_bot_nickname(n)),
+                        scripted + u32::from(is_scripted_unit_nickname(n)),
+                    )
+                })
         })
-        .unwrap_or(0);
+        .unwrap_or((0, 0));
     let own = vehicles.and_then(|arr| {
         arr.iter()
             .filter_map(|v| v.as_object())
@@ -621,6 +626,7 @@ fn lite_from_raw(
         scenario,
         event_type,
         bot_count,
+        scripted_unit_count,
         own_ship_id,
         own_ship_name,
         player_count,
@@ -710,6 +716,10 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         })
         .unwrap_or_default();
     let bot_count = vehicles.iter().filter(|v| is_bot_nickname(&v.name)).count() as u32;
+    let scripted_unit_count = vehicles
+        .iter()
+        .filter(|v| is_scripted_unit_nickname(&v.name))
+        .count() as u32;
 
     ReplayMeta {
         // Replay files carry no timestamp in the descriptor (filename wins);
@@ -727,18 +737,31 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         scenario,
         event_type,
         bot_count,
+        scripted_unit_count,
         vehicles,
         raw,
     }
 }
 
-/// The client fills bot rosters with colon-wrapped nicknames (`:Sturdee:`),
-/// and scripted scenario units keep their client text key as the nickname
-/// (`IDS_OP_15_DUMMY_01`, `IDS_AL_01` — the tutorial / escort-op fleets) —
-/// the same two markers the frontend's `isAiName` uses to skip WG API
-/// lookups. Mirrors that `^(?::.*:|IDS_.*)$` rule.
+/// The client fills bot rosters with colon-wrapped nicknames (`:Sturdee:`)
+/// and scripted scenario units with their text-key / scenario-style nickname
+/// (see [`is_scripted_unit_nickname`]) — the same markers the frontend's
+/// `isAiName` uses to skip WG API lookups. Mirrors that
+/// `^(?::.*:|IDS_.*|#.+)$` rule.
 fn is_bot_nickname(name: &str) -> bool {
-    (name.len() >= 2 && name.starts_with(':') && name.ends_with(':')) || name.starts_with("IDS_")
+    is_scripted_unit_nickname(name)
+        || (name.len() >= 2 && name.starts_with(':') && name.ends_with(':'))
+}
+
+/// Scripted scenario units — operation (行动) fleets whose nickname is the
+/// client text key (`IDS_OP_15_DUMMY_01`, `IDS_SCENARIO_...`, the tutorial
+/// `IDS_AL_01`/`IDS_EN_01`) or the `#Name` scenario style. Unlike the
+/// `:Name:` bots that official co-op / random battles fill, these field only
+/// in scripted scenarios (operations and the intro/tutorial battles), so
+/// their count doubles as an operation fingerprint for the frontend mode
+/// classifier (see `ReplayMeta::scripted_unit_count`).
+fn is_scripted_unit_nickname(name: &str) -> bool {
+    name.starts_with("IDS_") || (name.len() >= 2 && name.starts_with('#'))
 }
 
 /// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;
@@ -1057,6 +1080,41 @@ mod tests {
         let raw: serde_json::Value = serde_json::from_str(plain).unwrap();
         let meta = meta_from_raw("x.wowsreplay".into(), raw);
         assert_eq!(meta.bot_count, 0);
+    }
+
+    /// Operation rosters mix scripted units (`IDS_*` keys, `#Name` scenario
+    /// style) with `:Name:` filler bots — shape from the live ASIA escort-op
+    /// arena (`matchGroup: "pve"`, `LOW_LVL_OPERATION_1_LVL_2`). Both halves
+    /// are counted so the frontend classifier can tell the operation from
+    /// plain co-op, whose rosters carry `:Name:` bots only.
+    #[test]
+    fn scripted_unit_count_splits_operation_rosters() {
+        let op = r##"{"matchGroup":"pve","scenario":"LOW_LVL_OPERATION_1_LVL_2","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"IDS_OP_15_ALLY_FLAGSHIP","relation":1,"shipId":2},
+            {"id":3,"name":"IDS_OP_15_DUMMY_01","relation":1,"shipId":2},
+            {"id":4,"name":"#Krebs","relation":2,"shipId":3},
+            {"id":5,"name":":Revel:","relation":2,"shipId":3},
+            {"id":6,"name":"#Aylard","relation":2,"shipId":3}
+        ]}"##;
+        let raw: serde_json::Value = serde_json::from_str(op).unwrap();
+        let meta = meta_from_raw("x.wowsreplay".into(), raw.clone());
+        let lite = lite_from_raw("x.wowsreplay".into(), None, raw);
+        assert_eq!(meta.bot_count, 5);
+        assert_eq!(meta.scripted_unit_count, 4);
+        assert_eq!(lite.bot_count, 5);
+        assert_eq!(lite.scripted_unit_count, 4);
+
+        // Plain co-op: `:Name:` bots only — scripted count stays zero.
+        let coop = r#"{"matchGroup":"pve","scenario":"domination_3point","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":":Yumashev:","relation":2,"shipId":3},
+            {"id":3,"name":":WGR_bot:","relation":2,"shipId":3}
+        ]}"#;
+        let raw: serde_json::Value = serde_json::from_str(coop).unwrap();
+        let meta = meta_from_raw("x.wowsreplay".into(), raw);
+        assert_eq!(meta.bot_count, 2);
+        assert_eq!(meta.scripted_unit_count, 0);
     }
 
     /// If a real replay is available on this machine, parse it end-to-end.

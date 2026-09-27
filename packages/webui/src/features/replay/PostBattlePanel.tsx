@@ -69,6 +69,7 @@ export interface PostBattleHead {
   scenario?: string | null;
   eventType?: string | null;
   botCount?: number | null;
+  scriptedUnitCount?: number | null;
   mapName?: string | null;
 }
 
@@ -79,8 +80,9 @@ function modeLabelOf(
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
+  scriptedUnitCount = 0,
 ): string {
-  const key = modeKey(group, scenario, eventType, botCount);
+  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = `replay.mode.${key}`;
   const lbl = t(i18nKey);
@@ -367,6 +369,7 @@ export default defineComponent({
               head.scenario,
               head.eventType,
               head.botCount ?? 0,
+              head.scriptedUnitCount ?? 0,
             );
             return {
               label: modeLabelOf(
@@ -374,6 +377,7 @@ export default defineComponent({
                 head.scenario,
                 head.eventType,
                 head.botCount ?? 0,
+                head.scriptedUnitCount ?? 0,
               ),
               color: c.color,
               background: c.background,
@@ -642,10 +646,17 @@ export default defineComponent({
                       head.scenario,
                       head.eventType,
                       head.botCount ?? 0,
+                      head.scriptedUnitCount ?? 0,
                     ) as CSSProperties
                   }
                 >
-                  {modeLabelOf(head.matchGroup, head.scenario, head.eventType, head.botCount ?? 0)}
+                  {modeLabelOf(
+                    head.matchGroup,
+                    head.scenario,
+                    head.eventType,
+                    head.botCount ?? 0,
+                    head.scriptedUnitCount ?? 0,
+                  )}
                 </span>
               ) : null}
               {head.mapName ? (

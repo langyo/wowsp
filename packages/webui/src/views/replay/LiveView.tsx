@@ -154,7 +154,13 @@ export default defineComponent({
       const a = overlay.arenaInfo;
       const elapsed = liveClock.elapsed.value;
       if (!a || elapsed == null) return false;
-      const key = modeKey(a.matchGroup, a.scenario, null, a.botCount ?? 0);
+      const key = modeKey(
+        a.matchGroup,
+        a.scenario,
+        null,
+        a.botCount ?? 0,
+        a.scriptedUnitCount ?? 0,
+      );
       const pvp =
         key === "pvp" ||
         key === "ranked" ||
@@ -315,6 +321,7 @@ export default defineComponent({
                     scenario: arena.value?.scenario ?? null,
                     eventType: arena.value?.eventType ?? null,
                     botCount: arena.value?.botCount ?? null,
+                    scriptedUnitCount: arena.value?.scriptedUnitCount ?? null,
                     mapName: arena.value?.mapName ?? null,
                   }}
                   operation={postBattleOperation.value}

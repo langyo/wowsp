@@ -74,8 +74,9 @@ function modeLabel(
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
+  scriptedUnitCount = 0,
 ): string {
-  const key = modeKey(group, scenario, eventType, botCount);
+  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = `replay.mode.${key}`;
   const lbl = t(i18nKey);
@@ -1505,9 +1506,23 @@ export default defineComponent({
                 {r.matchGroup ? (
                   <span
                     class="replay-card__pill"
-                    style={modeColor(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0) as CSSProperties}
+                    style={
+                      modeColor(
+                        r.matchGroup,
+                        r.scenario,
+                        r.eventType,
+                        r.botCount ?? 0,
+                        r.scriptedUnitCount ?? 0,
+                      ) as CSSProperties
+                    }
                   >
-                    {modeLabel(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0)}
+                    {modeLabel(
+                      r.matchGroup,
+                      r.scenario,
+                      r.eventType,
+                      r.botCount ?? 0,
+                      r.scriptedUnitCount ?? 0,
+                    )}
                   </span>
                 ) : null}
               </span>
@@ -1674,6 +1689,7 @@ export default defineComponent({
                         parser.current.value.scenario,
                         parser.current.value.eventType,
                         parser.current.value.botCount ?? 0,
+                        parser.current.value.scriptedUnitCount ?? 0,
                       ) as CSSProperties
                     }
                   >
@@ -1682,6 +1698,7 @@ export default defineComponent({
                       parser.current.value.scenario,
                       parser.current.value.eventType,
                       parser.current.value.botCount ?? 0,
+                      parser.current.value.scriptedUnitCount ?? 0,
                     )}
                   </span>
                 ) : null}
@@ -1747,6 +1764,7 @@ export default defineComponent({
                             scenario: parser.current.value.scenario,
                             eventType: parser.current.value.eventType,
                             botCount: parser.current.value.botCount ?? null,
+                            scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
                             mapName: parser.current.value.mapName,
                           }}
                           operation={isOperation.value}
