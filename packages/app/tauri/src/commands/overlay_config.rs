@@ -38,9 +38,7 @@
 //! Reading is CHEAP and panic-free by contract: the file is tiny, a TTL
 //! cache bounds the disk traffic (the watcher asks on every ~30 ms tick),
 //! and every failure degrades to the defaults instead of blocking or
-//! panicking the watcher thread. Precedence against the `WOWSP_ROW_RECOGNIZER`
-//! env lives in `row_recognize::ocr_active`: only the `ocr` mode lets the
-//! env pick (or disable) the engine — `inferred` and `off` never run it.
+//! panicking the watcher thread.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -59,7 +57,7 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"inferred\" | \"ocr\" | \"off\".\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"inferred\" | \"off\".\n\
                            # Invalid values are reset to the defaults by the app.\n";
 
 /// How long a cached read stays fresh. The file only changes when the user
@@ -86,9 +84,6 @@ pub(crate) enum RosterRecognition {
     /// the row order with ZERO OCR — the overlay page derives the mapping
     /// itself from the arena roster the anchor's `row_alive` vector.
     Inferred,
-    /// Windows OCR row→name matching — the exact-but-fragile fallback (the
-    /// settings UI offers it only when the OS OCR engine is available).
-    Ocr,
     /// Recognition off: chips follow the roster/index order.
     Off,
 }
@@ -106,7 +101,6 @@ impl RosterRecognition {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             RosterRecognition::Inferred => "inferred",
-            RosterRecognition::Ocr => "ocr",
             RosterRecognition::Off => "off",
         }
     }
@@ -144,7 +138,9 @@ fn parse_table_field(raw: &str) -> TableAnchor {
 /// Parse the v2 `roster` field with the same unknown-value contract.
 fn parse_roster_field(raw: &str) -> RosterRecognition {
     match raw {
-        "ocr" => RosterRecognition::Ocr,
+        // The Windows OCR pipeline is gone; a stored `ocr` pick migrates
+        // to its replacement (the derived mapping is strictly stronger).
+        "ocr" => RosterRecognition::Inferred,
         "off" => RosterRecognition::Off,
         // "inferred" and anything unrecognized (incl. future values).
         _ => RosterRecognition::Inferred,
@@ -386,9 +382,11 @@ mod tests {
     /// v2 round shape: both fields honored.
     #[test]
     fn parses_v2_fields() {
+        // A stored `ocr` pick migrates to `inferred` (the OCR pipeline is
+        // gone; the derived mapping is its strictly stronger replacement).
         let cfg = parse_config(r#"{"table":"off","roster":"ocr"}"#);
         assert_eq!(cfg.table, TableAnchor::Off);
-        assert_eq!(cfg.roster, RosterRecognition::Ocr);
+        assert_eq!(cfg.roster, RosterRecognition::Inferred);
         let cfg = parse_config(r#"{"table":"detect","roster":"off"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Off);
@@ -500,7 +498,7 @@ mod tests {
             read_uncached_from(&dir),
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Ocr,
+                roster: RosterRecognition::Inferred,
             }
         );
         assert!(dir.join(OVERLAY_CONFIG_FILE).exists());
@@ -512,7 +510,7 @@ mod tests {
             read_uncached_from(&dir),
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Ocr,
+                roster: RosterRecognition::Inferred,
             }
         );
         assert_eq!(

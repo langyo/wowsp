@@ -146,30 +146,11 @@ export interface OverlayAnchor {
   rowCenters: number[];
   /** Allies/enemies column split as a fraction (0–1) of the roster width. */
   teamSplit: number;
-  /** Per-row player names matched from the on-screen table text, same
-   *  length/order as `rowCenters` (allies block first). `null`/absent = no
-   *  recognition ran (map rows by index); an element `null` = that row's
-   *  player was not recognized (render a silent placeholder, never guess
-   *  by index). Names are the roster's own nicknames (stats-cache keys). */
-  rowPlayers?: (string | null)[] | null;
-  /** Per-row alive classification read off the same name strips the
-   *  recognizer crops (sunk rows render dim gray in-game). Same length/order
-   *  as `rowCenters`; `true` = alive; null/absent = recognition did not run
-   *  (treat every row as alive). */
+  /** Per-row alive classification read off the name strips (sunk rows
+   *  render dim gray in-game). Same length/order as `rowCenters`; `true` =
+   *  alive; null/absent = the luma pass did not run (treat every row as
+   *  alive). */
   rowAlive?: boolean[] | null;
-  /** True when recognition is enabled but this anchor has no trusted
-   *  row→name mapping yet (arena roster not ready, OCR read nothing, or
-   *  no row's text matched the roster): the overlay shows its "recognizing
-   *  roster" badge while this is up and the watcher transplants the
-   *  mapping onto the pin once it lands. Always false for manual anchors
-   *  and when recognition is off. */
-  rowPlayersPending?: boolean;
-  /** True when a detected sink JUST changed the rows (alive flags flipped,
-   *  the in-game table re-sorted) and the row→name re-mapping is still
-   *  catching up at the accelerated OCR cadence: the current chips' row
-   *  attribution may change again within seconds. Purely informational;
-   *  always false for manual anchors and when recognition is off. */
-  stale?: boolean;
 }
 
 /** Mirrors `wowsp_tauri_shared::CaptureResult`. */
@@ -192,35 +173,6 @@ export interface OverlayStatus {
   state: OverlayState;
   rows?: number | null;
   manual: boolean;
-  /** Mirrors `OverlayAnchor.stale`: true while the anchored rows' data just
-   *  changed (a ship sank) and the row→name re-mapping is catching up —
-   *  the panel can badge "updating". Only meaningful while `state` is
-   *  "detected": the flag rides the watcher's pin state, so a stale pin
-   *  that gets hidden (Tab released, focus lost) may leave `stale` true on
-   *  a later idle/searching payload until the next battle resets it. */
-  stale?: boolean;
-}
-
-/** One row of the in-game Tab panel as recognized off the live frame
- *  (mirrors `wowsp_tauri_shared::TabRowPlayer`): the player sitting in that
- *  row (null when the row's text was not matched) and whether their ship
- *  was still afloat at capture time. */
-export interface TabRowPlayer {
-  name?: string | null;
-  alive: boolean;
-}
-
-/** Payload of the `wowsp://tab-order` event (mirrors
- *  `wowsp_tauri_shared::TabRowOrder`): the in-game Tab panel's CURRENT row
- *  order per side — [alive by ship class] ++ [sunk by ship class], re-sorted
- *  live as ships sink — an order tempArenaInfo.json never carries. Match it
- *  to the live roster via `dateTime`. */
-export interface TabRowOrder {
-  dateTime?: string | null;
-  /** Arena-file mtime stamp (battle identity on the Rust side). */
-  battle: number;
-  allies: TabRowPlayer[];
-  enemies: TabRowPlayer[];
 }
 
 /** Payload of the `wowsp://sink-attrib` event (mirrors
@@ -1313,10 +1265,6 @@ export const api = {
   getOverlayConfig: () => transport.invoke<{ table: string; roster: string }>(RPC.get_overlay_config),
   setOverlayConfig: (table: string, roster: string) =>
     transport.invoke<{ table: string; roster: string }>(RPC.set_overlay_config, { table, roster }),
-  /** Whether the Windows OCR engine is usable on this machine (an OCR
-   *  language pack is installed). The settings UI probes this once to offer
-   *  the `ocr` roster mode or gray it out. */
-  overlayOcrAvailable: () => transport.invoke<boolean>(RPC.overlay_ocr_available),
   /** Remembered game-install path — sanitized + persisted as TOML by the
    *  shell (see commands/game_config.rs). */
   getGameConfig: () => transport.invoke<{ activePath: string | null }>(RPC.get_game_config),
@@ -1410,8 +1358,6 @@ export const api = {
    *  recognition pass over a held Tab frame produced a trusted row→name
    *  mapping (initial pin, layout shift, or a re-sort after sinks). The
    *  main window's live panel reorders its columns to mirror it. */
-  listenTabOrder: (handler: (order: TabRowOrder) => void) =>
-    transport.listen?.<TabRowOrder>("wowsp://tab-order", handler),
   listenSinkAttribution: (handler: (attrib: SinkAttribution) => void) =>
     transport.listen?.<SinkAttribution>("wowsp://sink-attrib", handler),
   /** Player stats lookup. `prAlgo` picks the PR formula ("winrate" =

@@ -485,65 +485,23 @@ pub struct OverlayAnchor {
     /// recognized. The names are the roster's own nickname strings — exactly
     /// the keys the frontend's stats cache uses.
     ///
-    /// Semantics:
-    ///   - `None` — recognition unavailable (recognizer disabled or the
-    ///     pipeline bailed): the frontend falls back to mapping rows onto
-    ///     roster entries by index (the historical behavior);
-    ///   - `Some(vec)` — recognition ran. A `None` element marks a row that
-    ///     was not recognized/matched: the frontend renders a silent
-    ///     placeholder and must NOT fall back to the index guess (the
-    ///     in-game panel sorts rows its own way, which is what the matcher
-    ///     exists to fix). When EVERY row fails to match, the vec is
-    ///     deliberately all `None` — the whole overlay goes silent instead
-    ///     of showing index-guessed stats (honest silence over confidently
-    ///     wrong data). Such an all-`None` vec is NOT a trusted mapping:
-    ///     instead of a confidence gate downgrading it back to `None`, the
-    ///     anchor reports `row_players_pending` (below) and the Tab watcher
-    ///     keeps re-running recognition until something actually matches.
-    #[serde(default)]
-    pub row_players: Option<Vec<Option<String>>>,
-    /// Per-row ALIVE classification read off the same name strips the
-    /// recognizer crops: the in-game Tab panel renders sunk players' rows in
-    /// dim gray, so a strip whose brightest text pixel stays well under the
-    /// alive rows' near-white glyphs marks that row sunk (`false`). Same
-    /// length and order as `row_centers`; `true` = alive (also the default
-    /// for rows whose strip could not be read — a missing strip must never
-    /// read as "sunk"). `None` when recognition did not run (same gating as
-    /// `row_players`).
+    /// Per-row ALIVE classification read off the name strips: the in-game
+    /// Tab panel renders sunk players' rows in dim gray, so a strip whose
+    /// brightest text pixel stays well under the alive rows' near-white
+    /// glyphs marks that row sunk (`false`). Same length and order as
+    /// `row_centers`; `true` = alive (also the default for rows whose strip
+    /// could not be read — a missing strip must never read as "sunk").
+    /// `None` when the luma read did not run (fallback anchors, the `off`
+    /// roster mode).
     #[serde(default)]
     pub row_alive: Option<Vec<bool>>,
-    /// True when recognition is ENABLED but this anchor carries no trusted
-    /// row→name mapping yet: `row_players` is `None` (the arena roster was
-    /// not ready when the table was pinned, or OCR read nothing) OR an
-    /// all-`None` vec (every row's text failed to match the roster). The
-    /// overlay page shows its "recognizing roster" badge while this is up
-    /// and keeps rendering the current chips; the Tab watcher keeps
-    /// re-running recognition and transplants the mapping onto the pin when
-    /// it arrives. Always `false` for manual anchors (recognition is never
-    /// run on a hand-drawn box) and when recognition is off; on a fallback
-    /// anchor (table not located) it is meaningless — recognition only runs
-    /// on a confirmed detection — and the overlay only badges confirmed
-    /// tables anyway.
-    #[serde(default)]
-    pub row_players_pending: bool,
-    /// True when the rows' data JUST changed under the chips (a ship sank —
-    /// the sink fast-probe flipped `row_alive`, grayed + re-sorted the
-    /// chips) and the row→name re-mapping is still catching up at the
-    /// accelerated OCR cadence: the current chips' row attribution may
-    /// change again within seconds. Purely informational — consumers keep
-    /// rendering the current chips. `#[serde(default)]` keeps older
-    /// frontends deserializing the payload unchanged.
-    #[serde(default)]
-    pub stale: bool,
     /// Roster attribution mode in force when this anchor was emitted —
-    /// `"inferred"` | `"ocr"` | `"off"` (absent = an older backend; the
-    /// frontend then keeps its OCR-era behavior). `"inferred"` tells the
-    /// overlay page to derive the row→name mapping ITSELF from the arena
-    /// roster plus this anchor's `row_alive` (verified Tab sort rule:
-    /// `[alive by class+tier] ++ [sunk by class+tier]`), so `row_players`
-    /// is deliberately `None` there without meaning "fallback to the index
-    /// guess". `"ocr"` carries recognized `row_players` as before; `"off"`
-    /// is the historical index mapping.
+    /// `"inferred"` (the default) | `"off"`. `"inferred"` tells the overlay
+    /// page to derive the row→name mapping ITSELF from the arena roster
+    /// plus this anchor's `row_alive` (the client's own Tab sort key,
+    /// recovered from the decompiled scripts — see the webui's
+    /// utils/shipClass) with the sink-attribution tracker keeping it exact
+    /// mid-battle. `"off"` is the historical index mapping.
     #[serde(default)]
     pub roster_mode: String,
 }
@@ -598,53 +556,6 @@ pub struct OverlayStatus {
     /// the battle or the game-window geometry changes (or the user clears
     /// it). Every automatic state carries `false`.
     pub manual: bool,
-    /// Mirrors [`OverlayAnchor::stale`]: true while the anchored rows' data
-    /// just changed (a ship sank) and the row→name re-mapping is catching
-    /// up at the accelerated cadence — the main window can badge the panel
-    /// "updating". CONSUME ONLY WHILE `state` IS DETECTED: the flag rides
-    /// the watcher's pin state across the whole pin lifetime, so a pin
-    /// that went stale and was then hidden (Tab released, focus lost) can
-    /// report `idle`/`searching` with `stale` still true — on a
-    /// non-detected payload the field is residual carry-over, not a
-    /// statement about what is (or is not) on screen. It resets with the
-    /// next battle / fresh pin.
-    pub stale: bool,
-}
-
-/// One row of the in-game Tab panel, as recognized off the live frame:
-/// the player sitting in that row (if the row→name matcher resolved it)
-/// and whether their ship was still afloat at capture time.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TabRowPlayer {
-    /// Roster nickname of the player in this row; `None` when the row's text
-    /// was not recognized/matched (the row exists, its occupant is unknown).
-    pub name: Option<String>,
-    /// False when the row's name strip read as dim gray (sunk ship).
-    pub alive: bool,
-}
-
-/// Payload of the `wowsp://tab-order` event: the in-game Tab panel's CURRENT
-/// row order per side, pushed whenever a recognition pass over a held Tab
-/// frame produced a trusted mapping. The in-game panel orders each team as
-/// [alive ships sorted by ship class] ++ [sunk ships sorted by ship class]
-/// and RE-SORTS live as ships sink — an order tempArenaInfo.json never
-/// carries — so this event is the only exact mirror of what the player sees
-/// while holding Tab. `name: None` entries keep the row slot (unknown
-/// occupant) so consumers can still count positions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TabRowOrder {
-    /// `ArenaInfo::date_time` of the battle the order belongs to — the same
-    /// battle identity the frontend's live roster carries, so consumers can
-    /// match order to roster.
-    pub date_time: Option<String>,
-    /// Arena-file mtime stamp (battle identity on the Rust side).
-    pub battle: i64,
-    /// Ally rows (relation ≤ 1), top to bottom, as shown in-game.
-    pub allies: Vec<TabRowPlayer>,
-    /// Enemy rows (relation > 1), top to bottom, as shown in-game.
-    pub enemies: Vec<TabRowPlayer>,
 }
 
 /// Payload of the `wowsp://sink-attrib` event: for ONE confirmed sink
@@ -2442,12 +2353,10 @@ mod tests {
             state: OverlayState::Detected,
             rows: Some(12),
             manual: false,
-            stale: true,
         });
         assert_eq!(v["state"], "detected");
         assert_eq!(v["rows"], 12);
         assert_eq!(v["manual"], false);
-        assert_eq!(v["stale"], true);
     }
 
     /// Wire-critical payload: exact key set (client.ts: OverlayStatus).
@@ -2457,9 +2366,8 @@ mod tests {
             state: OverlayState::Manual,
             rows: None,
             manual: true,
-            stale: false,
         });
-        assert_exact_keys(&v, &["state", "rows", "manual", "stale"]);
+        assert_exact_keys(&v, &["state", "rows", "manual"]);
     }
 
     // ── live arena + manual locate (client.ts: ArenaInfo / CaptureResult /
@@ -2583,11 +2491,8 @@ mod tests {
             row_centers: vec![100, 140, 180],
             team_split: 0.5,
             table_detected: true,
-            row_players: Some(vec![Some("capture-sentinel".into()), None]),
             row_alive: Some(vec![true, false]),
-            row_players_pending: false,
-            stale: false,
-            roster_mode: "ocr".into(),
+            roster_mode: "inferred".into(),
         };
         let full = CaptureResult {
             image_base64: "aGVsbG8=".into(),
@@ -2610,15 +2515,10 @@ mod tests {
                 "rowCenters",
                 "teamSplit",
                 "tableDetected",
-                "rowPlayers",
                 "rowAlive",
-                "rowPlayersPending",
-                "stale",
                 "rosterMode",
             ],
         );
-        // An unmatched row keeps its slot as null inside rowPlayers.
-        assert!(v["anchor"]["rowPlayers"][1].is_null());
 
         let bare = CaptureResult {
             image_base64: String::new(),
@@ -2705,28 +2605,6 @@ mod tests {
             height: 44,
         });
         assert_exact_keys(&v, &["x", "y", "width", "height"]);
-    }
-
-    /// The Tab-order event payload (client.ts: TabRowPlayer / TabRowOrder):
-    /// `battle` is the arena mtime join key, `name: null` keeps the slot.
-    #[test]
-    fn tab_row_order_renames_date_time_and_both_sides() {
-        let order = TabRowOrder {
-            date_time: Some("20260926_232425".into()),
-            battle: 1_777_777_778,
-            allies: vec![TabRowPlayer {
-                name: Some("tab-ally".into()),
-                alive: true,
-            }],
-            enemies: vec![TabRowPlayer {
-                name: None,
-                alive: false,
-            }],
-        };
-        let v = round_trips(order);
-        assert_exact_keys(&v, &["dateTime", "battle", "allies", "enemies"]);
-        assert_exact_keys(&v["allies"][0], &["name", "alive"]);
-        assert!(v["enemies"][0]["name"].is_null());
     }
 
     /// The sink-attribution event payload (client.ts: SinkAttribution):

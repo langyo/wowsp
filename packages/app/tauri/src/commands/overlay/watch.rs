@@ -126,7 +126,7 @@ pub(super) struct StripBaseline {
 
 /// All mutable watcher state in ONE struct (the loop's single-owner state
 /// machine): the want-visible bookkeeping, the pin, the manual anchor, the
-/// cadence stamps, the status mirror, the sink fast-path's stale flag and
+/// cadence stamps, the status mirror, the sink fast-path's baseline and
 /// the geometry cache. The loop owns it exclusively; commands and cadenced
 /// passes mutate it through `&mut` — no other thread writes any of it, so
 /// the status mirror's dedup is exact (the old scattered statics + direct
@@ -160,8 +160,6 @@ pub(super) struct WatchFsm {
     pub(super) last_watcher_dir_check: Option<Instant>,
     /// When the last pinned-anchor revalidation ran.
     pub(super) last_revalidate: Option<Instant>,
-    /// When the last recognition CATCH-UP pass ran.
-    pub(super) last_catch_up: Option<Instant>,
     /// When the last sink fast-probe ran (independent of every other stamp:
     /// the probe is deliberately far cheaper and faster than a revalidate).
     pub(super) last_sink_check: Option<Instant>,
@@ -169,11 +167,6 @@ pub(super) struct WatchFsm {
     /// nothing emitted yet). report_status() drops reports identical to it,
     /// so the per-tick status pushes are edge events, not level events.
     pub(super) last_status: Option<OverlayStatus>,
-    /// True when the pin's row data just changed under the chips (the sink
-    /// probe flipped alive flags) and the row→name re-map is still catching
-    /// up: rides the wire on every status + anchor emission until a trusted
-    /// mapping lands.
-    pub(super) stale: bool,
     /// Pending sink-probe REVIVAL candidate (pure-debounce state, see
     /// [`sink_probe_confirm`]): a probe read that only flipped sunk rows
     /// back to alive — almost always a single-frame glare/explosion
@@ -202,9 +195,7 @@ pub(super) struct WatchFsm {
 /// automatic report carries `manual: true` and the anchor's row count: the
 /// panel's green manual badge + clear button must survive Idle/Searching
 /// transitions, because the anchor itself does — it re-anchors on the same
-/// battle's next Tab hold. The payload's `stale` mirrors the FSM's
-/// pin-staleness flag (a stale flip carries no state transition, which is
-/// exactly why the pin path reports every tick and lets this dedup decide).
+/// battle's next Tab hold.
 #[cfg(target_os = "windows")]
 pub(super) fn report_status(
     app: &AppHandle,
@@ -218,7 +209,6 @@ pub(super) fn report_status(
         state,
         rows: rows.or(manual_rows.filter(|_| manual)),
         manual,
-        stale: fsm.stale,
     };
     if fsm.last_status == Some(status) {
         return;
@@ -256,12 +246,11 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     if fsm.overlay_shown {
         hide_overlay(&app);
     }
-    // Nor a stale badge in the main window: drop the panel to idle (a no-op
-    // when the last emitted state already was idle). The manual anchor and
-    // the stale flag are cleared FIRST — they live in this FSM and die with
-    // the loop — so the exit report already carries manual: false.
+    // Nor a leftover badge in the main window: drop the panel to idle (a
+    // no-op when the last emitted state already was idle). The manual anchor
+    // is cleared FIRST — it lives in this FSM and dies with the loop — so
+    // the exit report already carries manual: false.
     fsm.manual_anchor = None;
-    fsm.stale = false;
     report_status(&app, &mut fsm, OverlayState::Idle, None);
 }
 
@@ -324,9 +313,7 @@ pub(super) fn apply_watch_command(
             // means the same pixel geometry, and a new battle shape is
             // rebuilt from the cached band without a rescan.
             let had_pin = fsm.pinned_anchor.take().is_some();
-            fsm.stale = false;
             fsm.sink_candidate = None;
-            fsm.last_catch_up = None;
             fsm.last_revalidate = None;
             fsm.last_sink_check = None;
             fsm.strip_baseline = None;
@@ -469,10 +456,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         // Place ONCE per manual hold, not every 30 ms tick.
         if !fsm.overlay_shown || !fsm.manual_shown {
             let anchor = build_manual_anchor(&m, manual_game);
-            // Manual placement is fully current data — any leftover stale
-            // flag from a previous automatic pin does not apply to it.
-            fsm.stale = false;
-            place_and_show(app, &anchor, false);
+            place_and_show(app, &anchor);
             report_status(
                 app,
                 fsm,
@@ -519,7 +503,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             if !fsm.overlay_shown {
                 // Re-show this battle's pin verbatim — no capture, no
                 // Searching detour, the chips are where they were.
-                place_and_show(app, &anchor, fsm.stale);
+                place_and_show(app, &anchor);
                 fsm.overlay_shown = true;
                 fsm.last_hide = None;
                 // The anchor on screen is fresh as of NOW: start the
@@ -527,9 +511,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 // full interval instead of firing on the next tick.
                 fsm.last_revalidate = Some(Instant::now());
             }
-            // Status EVERY tick of the pin path (deduped by the mirror): a
-            // stale flip — sink detected, or the OCR re-map landing — is a
-            // payload change with no state transition to carry it.
+            // Status EVERY tick of the pin path (deduped by the mirror).
             report_status(
                 app,
                 fsm,
@@ -546,27 +528,6 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 .is_none_or(|t| t.elapsed() >= SINK_CHECK_INTERVAL)
             {
                 sink_check_pass(app, fsm, &g);
-            } else if should_catch_up_recognition(
-                Some(&anchor),
-                fsm.stale,
-                row_recognize::ocr_active(),
-                fsm.last_catch_up.is_none_or(|t| {
-                    t.elapsed()
-                        >= if fsm.stale {
-                            SINK_CATCHUP_INTERVAL
-                        } else {
-                            CAPTURE_MIN_INTERVAL
-                        }
-                }),
-            ) {
-                // The pin needs its row→name mapping (re)read: run the SAME
-                // revalidation pass at the (stale-accelerated) catch-up
-                // cadence instead of waiting the full 5 s — the fresh pass
-                // both re-checks the geometry and carries a new row→name
-                // mapping for the transplant inside. The pass bumps
-                // last_revalidate itself, so the two cadences never stack.
-                fsm.last_catch_up = Some(Instant::now());
-                revalidate_pinned_anchor(app, fsm, Some(g));
             } else if fsm
                 .last_revalidate
                 .is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL)
@@ -608,10 +569,9 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                     game_rect: rect_from_win32(g.rect),
                     anchor: anchor.clone(),
                 });
-                // A fresh pin restarts the stale lifecycle: brand-new
-                // recognition, nothing to re-map yet. The strip baseline
-                // dies with it — its thumbs belong to the old grid.
-                fsm.stale = false;
+                // A fresh pin restarts the sink lifecycle. The strip
+                // baseline dies with it — its thumbs belong to the old
+                // grid.
                 fsm.sink_candidate = None;
                 fsm.strip_baseline = None;
                 fsm.last_sink_check = Some(Instant::now());
@@ -622,7 +582,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 // re-placing an identical fallback hint every rate-limit
                 // window would only churn the event pipe.
                 if !fsm.overlay_shown || anchor.table_detected {
-                    place_and_show(app, &anchor, fsm.stale);
+                    place_and_show(app, &anchor);
                 }
                 // Status: what is on screen NOW. A confirmed anchor pins
                 // the chips (detected + row count); a fallback anchor is

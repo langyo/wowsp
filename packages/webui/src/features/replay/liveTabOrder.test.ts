@@ -3,11 +3,9 @@
  *    client's full Tab key (recovered from the decompiled client — see
  *    utils/shipClass): class, tier descending, nation, ship name,
  *    '[TAG]nickname';
- *  - with a recognized row order, the on-screen row order WINS exactly —
- *    including sunk ships interleaved wherever the game currently shows
- *    them — and unmatched rows never eject a roster entry;
- *  - roster entries no row claimed are appended after the recognized ones
- *    in predicted order.
+ *  - the trusted sunk set (sink-attrib events) splits [alive by key] ++
+ *    [sunk by key] and marks the sunk entries, mirroring the game's
+ *    regroup.
  *
  *  The fixtures use REAL ship ids from the offline DB (the key reads it).
  *  The scenario behind these tests: the in-game Tab table re-sorts as
@@ -51,7 +49,7 @@ describe("orderForTab", () => {
       vehicle("Konigsberg", SHIPS.konigsberg),
       vehicle("Leone", SHIPS.leone),
     ];
-    expect(names(orderForTab(list, null, { locale: "zh-CN" }))).toEqual([
+    expect(names(orderForTab(list, { locale: "zh-CN" }))).toEqual([
       "Saipan",
       "Ryujo",
       "Pommern",
@@ -67,10 +65,10 @@ describe("orderForTab", () => {
     // order must flip with it (the options re-derive reactively in the
     // panel).
     const list = [vehicle("zed", SHIPS.newMexico), vehicle("bob", SHIPS.newMexico)];
-    expect(names(orderForTab(list, null, { locale: "zh-CN" }))).toEqual(["bob", "zed"]);
+    expect(names(orderForTab(list, { locale: "zh-CN" }))).toEqual(["bob", "zed"]);
     expect(
       names(
-        orderForTab(list, null, {
+        orderForTab(list, {
           locale: "zh-CN",
           clanTagOf: (v) => (v.name === "zed" ? "CLAN" : null),
         }),
@@ -86,7 +84,7 @@ describe("orderForTab", () => {
       vehicle("Saipan", SHIPS.saipan),
       vehicle("Pommern", SHIPS.pommern),
     ];
-    const ordered = orderForTab(list, null, {
+    const ordered = orderForTab(list, {
       locale: "zh-CN",
       sunk: new Set(["Saipan"]),
     });
@@ -94,57 +92,8 @@ describe("orderForTab", () => {
     expect(ordered.map((o) => o.sunk)).toEqual([false, false, true]);
   });
 
-  it("follows the recognized row order exactly, sunk flags included", () => {
-    // The game re-sorted: an alive carrier row sits ABOVE sunk battleships
-    // (alive group first). The recognized order must win verbatim — no
-    // re-derivation from the file order.
-    const list = [
-      vehicle("Iowa", SHIPS.iowa),
-      vehicle("Saipan", SHIPS.saipan),
-      vehicle("Pommern", SHIPS.pommern),
-    ];
-    const rows = [
-      { name: "Saipan", alive: true },
-      { name: "Pommern", alive: false },
-      { name: "Iowa", alive: false },
-    ];
-    const ordered = orderForTab(list, rows, { locale: "zh-CN" });
-    expect(names(ordered)).toEqual(["Saipan", "Pommern", "Iowa"]);
-    expect(ordered.map((o) => o.sunk)).toEqual([false, true, true]);
-  });
-
-  it("keeps unmatched rows as slots and appends unclaimed entries", () => {
-    // One row failed to match; its roster entry must still render (after
-    // the recognized ones, in predicted order) instead of disappearing.
-    const list = [
-      vehicle("Konigsberg", SHIPS.konigsberg),
-      vehicle("Saipan", SHIPS.saipan),
-      vehicle("Leone", SHIPS.leone),
-    ];
-    const rows = [
-      { name: null, alive: true },
-      { name: "Saipan", alive: true },
-    ];
-    expect(names(orderForTab(list, rows, { locale: "zh-CN" }))).toEqual([
-      "Saipan",
-      "Konigsberg",
-      "Leone",
-    ]);
-  });
-
-  it("ignores row names that are not on this side", () => {
-    // Cross-side noise (an enemy name inside the ally rows) must be
-    // dropped, never matched against this side's roster.
-    const list = [vehicle("Ally", SHIPS.iowa), vehicle("Mate", SHIPS.renown)];
-    const rows = [
-      { name: "Enemy", alive: false },
-      { name: "Ally", alive: true },
-    ];
-    expect(names(orderForTab(list, rows, { locale: "zh-CN" }))).toEqual(["Ally", "Mate"]);
-  });
-
-  it("treats an empty row list as no recognition", () => {
+  it("orders carriers first and battleships by nation otherwise", () => {
     const list = [vehicle("Konigsberg", SHIPS.konigsberg), vehicle("Saipan", SHIPS.saipan)];
-    expect(names(orderForTab(list, [], { locale: "zh-CN" }))).toEqual(["Saipan", "Konigsberg"]);
+    expect(names(orderForTab(list, { locale: "zh-CN" }))).toEqual(["Saipan", "Konigsberg"]);
   });
 });

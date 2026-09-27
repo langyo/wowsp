@@ -47,8 +47,6 @@ export type {
   OverlayAnchor,
   OverlayState,
   OverlayStatus,
-  TabRowPlayer,
-  TabRowOrder,
   SinkAttribution,
   PositionSample,
   EntityKind,

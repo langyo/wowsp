@@ -48,132 +48,11 @@ pub(super) fn pin_matches(
         && game_rect.is_some_and(|r| rect_same_within(&r, pin_rect))
 }
 
-/// Pure: does this `row_players` payload count as "no trusted row→name
-/// mapping"? Both `None` (recognition off, or the pipeline bailed) and a
-/// vec where EVERY row failed to match (honest silence — text was read but
-/// nothing stuck to the roster) leave the chips without trusted
-/// attribution: the pending badge and the recognition catch-up stay on for
-/// both.
-pub(super) fn mapping_untrusted(players: &Option<Vec<Option<String>>>) -> bool {
-    match players {
-        None => true,
-        Some(v) => v.iter().all(Option::is_none),
-    }
-}
-
-/// Pure: does this payload leave at least one row WITHOUT a name? A
-/// partially-matched mapping is trusted enough to render (the matched chips
-/// are correct), but the unmatched rows are exactly the chips stuck on "…"
-/// — the recognition catch-up stays armed on them so a later OCR read can
-/// still fill the gaps. Strictly includes [`mapping_untrusted`].
-pub(super) fn mapping_incomplete(players: &Option<Vec<Option<String>>>) -> bool {
-    match players {
-        None => true,
-        Some(v) => v.iter().any(Option::is_none),
-    }
-}
-
-/// Pure catch-up gate (unit-testable; time, engine availability and the
-/// stale flag are injected by the caller): run a recognition catch-up pass
-/// when a CONFIRMED pin is on screen and its row→name mapping needs a
-/// fresh OCR read — because it still lacks a trusted mapping (absent, or
-/// an all-`None` read: nothing matched), because rows are still unnamed
-/// (a partial match leaves those chips on "…" until a later read names
-/// them), or because the pin is STALE (the sink probe flipped alive flags;
-/// the old mapping is battle-accurate but the rows re-sorted, so the
-/// mapping must be re-read to confirm the new order) — while recognition
-/// is enabled and the throttle says a pass may run.
-///
-/// Keeping the gate armed on an incomplete pin cannot oscillate: a
-/// deterministic re-read of a row OCR cannot name yields the same
-/// `None` again, the payload compares equal to the pin's mapping,
-/// `should_transplant_rows` stays false and the pass re-emits nothing —
-/// it only re-spends the (Tab-hold-only) capture budget.
-pub(super) fn should_catch_up_recognition(
-    pin: Option<&OverlayAnchor>,
-    stale: bool,
-    recognizer_on: bool,
-    throttle_elapsed: bool,
-) -> bool {
-    pin.is_some_and(|p| p.table_detected && (mapping_incomplete(&p.row_players) || stale))
-        && recognizer_on
-        && throttle_elapsed
-}
-
-/// Pure move-replacement mapping carry (unit-tested): the anchor a layout
-/// move should pin — `fresh`'s geometry with the OLD pin's row→name
-/// mapping carried over when fresh has nothing better. The in-battle panel
-/// shifts as a whole when HUD phases change, but the ROSTER is fixed for
-/// the battle: the fresh detection's OCR has usually not even landed yet
-/// (`row_players_pending` → the overlay would flash "recognizing
-/// roster…"), while the pin's mapping is battle-accurate — rows re-sort
-/// only when ships sink, and the sink fast-probe tracks exactly that.
-///
-/// - fresh carries its own trusted mapping → keep it (it is newer);
-/// - the grids disagree on row count → never index-guess: fresh stays
-///   unmapped;
-/// - the pin has no trusted mapping (absent / all-`None`) → nothing worth
-///   carrying.
-pub(super) fn carry_mapping_into_fresh(
-    fresh: &OverlayAnchor,
-    pinned: &OverlayAnchor,
-) -> OverlayAnchor {
-    let mut out = fresh.clone();
-    if !mapping_untrusted(&fresh.row_players) {
-        return out;
-    }
-    let same_grid = out.row_centers.len() == pinned.row_centers.len();
-    if same_grid && !mapping_untrusted(&pinned.row_players) {
-        out.row_players = pinned.row_players.clone();
-        out.row_alive = pinned.row_alive.clone();
-        out.row_players_pending = pinned.row_players_pending;
-    }
-    out
-}
-
-/// Where a mapping that just landed on the pin came from — decides whether
-/// it may clear the sink-lifecycle `stale` flag ([`stale_after_mapping`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MappingOrigin {
-    /// This frame's own OCR produced the trusted mapping: the attribution on
-    /// screen is CURRENT, so a set stale flag has done its job and clears.
-    FreshOcr,
-    /// The mapping was CARRIED from the OLD pin
-    /// ([`carry_mapping_into_fresh`]): the names are battle-accurate, but
-    /// the row order they describe is the PRE-sink one — exactly the
-    /// mis-attribution `stale` exists to flag. Carrying it onto new
-    /// geometry must never launder the flag away (and must never SET it
-    /// either — carrying is not a data change, just a re-print).
-    CarriedFromPin,
-}
-
-/// Pure stale lifecycle on the OCR side (unit-tested): only a TRUSTED
-/// mapping produced by THIS frame's OCR ([`MappingOrigin::FreshOcr`]) means
-/// the re-map has caught up — clear the stale flag. A trusted mapping
-/// CARRIED from the old pin keeps the flag exactly as it was, and an
-/// all-`None` landing (honest silence) or an absent mapping keeps it too:
-/// the chips' attribution is still in flux and the fast catch-up must stay
-/// armed.
-pub(super) fn stale_after_mapping(
-    stale: bool,
-    mapping: &Option<Vec<Option<String>>>,
-    origin: MappingOrigin,
-) -> bool {
-    if mapping_untrusted(mapping) {
-        stale
-    } else {
-        match origin {
-            MappingOrigin::FreshOcr => false,
-            MappingOrigin::CarriedFromPin => stale,
-        }
-    }
-}
-
 /// Pure sink decision (unit-tested): did any row's alive flag change
 /// between the pin's classification and a fresh strip read? Missing pin
-/// data (recognition never ran) or a length mismatch reads as "no change"
-/// — the sink channel only fires on comparable, same-grid data, never on a
-/// guess.
+/// data (no luma baseline) or a length mismatch reads as "no change"
+/// — the sink channel only fires on comparable, same-grid data, never on
+/// a guess.
 pub(super) fn alive_changed(pinned: Option<&[bool]>, fresh: &[bool]) -> bool {
     match pinned {
         Some(p) => p.len() == fresh.len() && p.iter().zip(fresh).any(|(a, b)| a != b),
@@ -209,9 +88,9 @@ pub(super) fn sink_probe_confirm(
     fresh: &[bool],
     now: Instant,
 ) -> SinkProbeResult {
-    // Not comparable (recognition never produced a baseline, length
-    // mismatch) or the read equals the pin: nothing to do — and a pending
-    // candidate was just contradicted by the pin-matching read, so drop it.
+    // Not comparable (no baseline, length mismatch) or the read equals the
+    // pin: nothing to do — and a pending candidate was just contradicted by
+    // the pin-matching read, so drop it.
     if !alive_changed(pinned, fresh) {
         return (None, None);
     }
@@ -232,125 +111,19 @@ pub(super) fn sink_probe_confirm(
     (None, Some((fresh.to_vec(), now)))
 }
 
-/// Pure transplant decision (unit-testable): a fresh detection carries a
-/// row→name mapping worth copying onto the pinned anchor. ALL of:
-///
-/// - the fresh anchor is a CONFIRMED table (a fallback detection never
-///   touches the pin);
-/// - its mapping covers exactly the pinned grid's rows — `row_players` is
-///   indexed BY ROW, so a length mismatch means the two grids disagree and
-///   the mapping would pin stats onto the wrong rows: dropped;
-/// - the mapping actually DIFFERS (absent→present catch-up, an all-`None`
-///   read landing for the first time, or a re-sort after sinks) — identical
-///   mappings are dropped so a pass that found nothing new never re-emits
-///   the anchor. The comparison includes `row_alive`: a ship can sink
-///   WITHOUT moving rows (it already sat at its group's tail), and that
-///   alive flip must still reach the overlay and the tab-order event.
-pub(super) fn should_transplant_rows(fresh: &OverlayAnchor, pinned: &OverlayAnchor) -> bool {
-    fresh.table_detected
-        && fresh.row_players.as_ref().map(Vec::len) == Some(pinned.row_centers.len())
-        && (fresh.row_players != pinned.row_players || fresh.row_alive != pinned.row_alive)
-}
-
-/// Pure transplant: the pinned anchor with `fresh`'s row→name mapping and
-/// alive flags (and pending flag) copied in — every geometry field untouched
-/// (the mapping is indexed by row, and the rows themselves did not move).
-/// `None` when [`should_transplant_rows`] says there is nothing to
-/// transplant.
-pub(super) fn transplant_row_players(
-    pinned: &OverlayAnchor,
-    fresh: &OverlayAnchor,
-) -> Option<OverlayAnchor> {
-    if !should_transplant_rows(fresh, pinned) {
-        return None;
-    }
-    let mut updated = pinned.clone();
-    updated.row_players = fresh.row_players.clone();
-    updated.row_alive = fresh.row_alive.clone();
-    // Pending survives an all-`None` transplant (honest silence is not a
-    // trusted mapping — the badge and the catch-up stay on); only a
-    // mapping that matched at least one row clears it.
-    updated.row_players_pending = mapping_untrusted(&updated.row_players);
-    Some(updated)
-}
-
-/// Build the [`TAB_ORDER_EVENT`] payload from a placed anchor: the rows'
-/// matched names in on-screen order plus their alive flags, split into the
-/// ally/enemy blocks at the ROSTER's relation count. `None` when the anchor
-/// carries no trusted mapping (fewer than one matched row) — the event then
-/// has nothing honest to say and is not emitted at all.
-///
-/// The split uses the roster's own relation counts rather than the detection
-/// grid's `ally_rows`: tempArenaInfo.json is STATIC for the whole battle, so
-/// the relation count cannot drift mid-battle — it is exactly the block
-/// boundary the panel's own two sub-tables draw. Rows beyond the roster's
-/// ally count belong to the enemy block; unmatched rows are inert for the
-/// consumer (it matches by name). Operation scenarios (行动) are the
-/// exception: their `relation` values follow scenario team slots, not enemy
-/// semantics, and the in-game Tab table shows a single team — every
-/// recognized row lands in the ally block.
-pub(super) fn tab_order_from_anchor(
-    anchor: &OverlayAnchor,
-    info: &wowsp_tauri_shared::ArenaInfo,
-) -> Option<TabRowOrder> {
-    let names = anchor.row_players.as_ref()?;
-    if mapping_untrusted(&anchor.row_players) {
-        return None;
-    }
-    let alive = anchor.row_alive.as_ref();
-    let row = |i: usize| TabRowPlayer {
-        name: names.get(i).cloned().flatten(),
-        alive: alive.and_then(|a| a.get(i).copied()).unwrap_or(true),
-    };
-    let single_team = wowsp_tauri_shared::is_operation_arena(
-        info.scenario.as_deref(),
-        info.event_type.as_deref(),
-        &info.vehicles,
-    );
-    let allies_n = if single_team {
-        info.vehicles.len()
-    } else {
-        info.vehicles.iter().filter(|v| v.relation <= 1).count()
-    };
-    // Slice bounds: the ally block is the roster count capped at the
-    // mapping length (a shorter mapping truncates the block rather than
-    // spilling), the enemy block is everything after it up to the mapping.
-    let ally_end = allies_n.min(names.len());
-    Some(TabRowOrder {
-        date_time: info.date_time.clone(),
-        battle: super::arena_info::last_arena_stamp(),
-        allies: (0..ally_end).map(row).collect(),
-        enemies: (ally_end..names.len()).map(row).collect(),
-    })
-}
-
 /// One revalidation pass over the pinned anchor while the overlay is shown:
 /// re-run the capture + detector against the live frame and reconcile the
-/// pin with it. Two outcomes change the pin (re-emitting the anchor):
-///
-/// - the table MOVED at row scale (`overlay_detect::anchor_meaningfully_moved`)
-///   → the pin is replaced by [`carry_mapping_into_fresh`]: fresh geometry,
-///   fresh recognition when trusted, otherwise the old pin's trusted
-///   mapping carried over — a HUD-phase move must not flash "recognizing
-///   roster…" for the seconds the fresh OCR takes to land;
-/// - the geometry is unchanged but the row→name mapping CHANGED
-///   ([`transplant_row_players`] — first recognition landing after the pin
-///   because the arena roster file was late, or a re-read after sinks
-///   re-sorted the rows) → only `row_players` / `row_alive` /
-///   `row_players_pending` are transplanted onto the pin, geometry
-///   untouched.
+/// pin with it. The ONE outcome that changes the pin: the table MOVED at
+/// row scale (`overlay_detect::anchor_meaningfully_moved`) — the pin is
+/// replaced by the fresh detection's geometry, re-keyed to the CURRENT
+/// battle + window geometry (the fresh anchor was computed from THIS
+/// frame, so it belongs to this geometry; the sink baseline dies with the
+/// old grid, see `sink_check_pass`).
 ///
 /// Every other outcome — a failed capture, a fallback detection, sub-pitch
-/// jitter, an identical mapping — keeps the pin and emits nothing, so this
-/// pass can never make the chips wander. Status reports are only touched by
-/// the move-replacement (whose row count may change); a transplant keeps the
-/// `detected` state and merely re-renders the chips. `last_revalidate` is
-/// bumped unconditionally: the pass costs a full capture attempt regardless
-/// of its outcome. A trusted mapping landing from FRESH OCR clears the FSM's
-/// stale flag ([`MappingOrigin::FreshOcr`]); a mapping CARRIED from the old
-/// pin onto a moved grid does not — it still describes the pre-sink row
-/// order, so the stale flag survives until this frame's own OCR confirms
-/// the new order.
+/// jitter — keeps the pin and emits nothing, so this pass can never make
+/// the chips wander. `last_revalidate` is bumped unconditionally: the pass
+/// costs a full capture attempt regardless of its outcome.
 ///
 /// Note that `compute_anchor` already drops a tab dump on every CONFIRMED
 /// detection (`tab_dump`): the pass that discovers a NEW layout leaves a
@@ -379,59 +152,21 @@ pub(super) fn revalidate_pinned_anchor(
             fresh_first_row = fresh.row_centers.first().copied().unwrap_or(0),
             "panel layout shifted — replacing the pinned anchor"
         );
-        // Fresh geometry + the best available mapping (see
-        // `carry_mapping_into_fresh`), re-keyed to the CURRENT battle +
-        // window geometry: the fresh anchor was computed from THIS frame,
-        // so it belongs to this geometry.
-        let carried = carry_mapping_into_fresh(&fresh, &pinned);
+        // The strip baseline describes the OLD grid's pixels: void it so
+        // the next sink probe re-baselines before diffing again.
+        fsm.strip_baseline = None;
         fsm.pinned_anchor = Some(PinnedAnchor {
             battle: super::arena_info::last_arena_stamp(),
             game_rect: rect_from_win32(g.rect),
-            anchor: carried.clone(),
+            anchor: fresh.clone(),
         });
-        // Only a trusted mapping produced by THIS frame's OCR clears the
-        // stale flag. When the replacement CARRIED the old pin's mapping
-        // (fresh recognition not landed yet), the on-screen row order still
-        // describes the pre-sink state — the flag must survive the move so
-        // the accelerated catch-up keeps chasing until fresh OCR confirms
-        // the new order. (A carried mapping never SETS the flag either.)
-        let fresh_ocr = !mapping_untrusted(&fresh.row_players);
-        let origin = if fresh_ocr {
-            MappingOrigin::FreshOcr
-        } else {
-            MappingOrigin::CarriedFromPin
-        };
-        fsm.stale = stale_after_mapping(fsm.stale, &carried.row_players, origin);
-        place_and_show(app, &carried, fsm.stale);
+        place_and_show(app, &fresh);
         report_status(
             app,
             fsm,
             OverlayState::Detected,
-            Some(carried.row_centers.len() as u32),
+            Some(fresh.row_centers.len() as u32),
         );
-        return;
-    }
-    // Geometry unchanged (sub-pitch jitter): only the row→name mapping may
-    // have caught up or been re-sorted. Transplant it — and re-emit the
-    // anchor so the overlay re-renders its chips — when fresh recognition
-    // disagrees with the pin; otherwise emit nothing.
-    if let Some(updated) = transplant_row_players(&pinned, &fresh) {
-        tracing::info!(
-            rows = updated.row_centers.len(),
-            matched = updated
-                .row_players
-                .as_ref()
-                .map(|r| r.iter().filter(|n| n.is_some()).count())
-                .unwrap_or(0),
-            "row recognition caught up — transplanting the mapping onto the pin"
-        );
-        // A transplant always copies THIS frame's OCR (see
-        // `should_transplant_rows`): a trusted landing clears stale.
-        fsm.stale = stale_after_mapping(fsm.stale, &updated.row_players, MappingOrigin::FreshOcr);
-        if let Some(pin) = fsm.pinned_anchor.as_mut() {
-            pin.anchor = updated.clone();
-        }
-        place_and_show(app, &updated, fsm.stale);
     }
 }
 
@@ -443,13 +178,12 @@ pub(super) fn revalidate_pinned_anchor(
 /// A settled alive-flag flip (see [`sink_probe_confirm`]: a SINK applies
 /// immediately, a pure revival needs two agreeing probes) then:
 ///
+/// - solves the victims (see [`overlay_detect::sink_victims`]) and emits
+///   [`SINK_ATTRIB_EVENT`] BEFORE the anchor of the same pass, so the
+///   consumers resolve the row indices against their pre-sink layouts;
 /// - updates the pin's `row_alive` and re-places the anchor (the chips
-///   gray out and re-sort; a trusted mapping also re-emits the tab order
-///   inside `place_and_show`);
-/// - raises the FSM's `stale` flag (wire-visible) — the old row→name
-///   mapping describes the pre-sink order;
-/// - clears `last_catch_up`, so the OCR re-map fires on the next tick at
-///   the accelerated [`SINK_CATCHUP_INTERVAL`] cadence.
+///   gray out and re-sort — the page re-derives the exact layout from the
+///   attribution plus the alive vector).
 ///
 /// The pass shares the geometry cache's band verify: a frame whose header
 /// band is NOT at the cached spot is a geometry event (HUD phase moved the
@@ -624,16 +358,11 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
         thumbs: new_thumbs,
     });
     let sunk = alive.iter().filter(|&&v| !v).count();
-    // A row's alive flag settled: update the pin and re-place. In the OCR
-    // mode the names→rows attribution is stale until the re-read lands, so
-    // the pin flags stale and the fast OCR re-map re-derives the (re-sorted)
-    // mapping. The INFERRED mode needs no re-read at all: the overlay page
-    // re-derives its mapping from the sink attribution above plus the alive
-    // vector the moment this anchor lands ([alive by sort rule] ++ [sunk by
-    // sort rule] — the same permutation the game just applied), so no stale
-    // badge, no remap.
-    let inferred =
-        super::overlay_config::roster_mode() == super::overlay_config::RosterRecognition::Inferred;
+    // A row's alive flag settled: update the pin and re-place. The overlay
+    // page re-derives its mapping from the sink attribution above plus the
+    // alive vector the moment this anchor lands ([alive by sort key] ++
+    // [sunk by sort key] — the same permutation the game just applied), so
+    // there is no re-map to chase and no stale badge to raise.
     let mut updated = fsm
         .pinned_anchor
         .as_ref()
@@ -641,18 +370,13 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
         .anchor
         .clone();
     updated.row_alive = Some(alive);
-    if !inferred {
-        fsm.stale = true;
-        fsm.last_catch_up = None;
-    }
     if let Some(pin) = fsm.pinned_anchor.as_mut() {
         pin.anchor = updated.clone();
     }
-    place_and_show(app, &updated, !inferred);
+    place_and_show(app, &updated);
     tracing::info!(
         sunk,
         rows = updated.row_centers.len(),
-        inferred,
         attributed = attrib.ally_rows.len() + attrib.enemy_rows.len(),
         "sink probe: alive flags changed — pin updated"
     );

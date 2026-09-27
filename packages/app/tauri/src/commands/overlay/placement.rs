@@ -8,9 +8,7 @@ pub(super) fn tab_key_down() -> bool {
 }
 
 /// Place the overlay window over the game rect, push the anchor to the
-/// webview, then show without activating. `stale` rides on the emitted
-/// anchor (the FSM's current pin-staleness flag): true tells the overlay
-/// page the row data just changed and the name re-map is in flight.
+/// page, then show without activating.
 ///
 /// All native window work goes through DIRECT async Win32 calls from this
 /// watcher thread (`SetWindowPos` with `SWP_ASYNCWINDOWPOS` +
@@ -22,13 +20,12 @@ pub(super) fn tab_key_down() -> bool {
 /// ordering between a show and a later hide is preserved because both are
 /// posted to the same window thread in watcher-loop order.
 #[cfg(target_os = "windows")]
-pub(super) fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor, stale: bool) {
+pub(super) fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
         tracing::warn!("overlay window missing — cannot show (was it destroyed?)");
         return;
     };
     let mut payload = anchor.clone();
-    payload.stale = stale;
     // The attribution mode rides on EVERY emitted anchor (single emit point,
     // manual anchors included): the overlay page branches on it per render,
     // so a settings flip applies from the next Tab press on — no window
@@ -36,26 +33,6 @@ pub(super) fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor, stale: boo
     payload.roster_mode = super::overlay_config::roster_mode().as_str().to_string();
     if let Err(e) = app.emit(OVERLAY_ANCHOR_EVENT, &payload) {
         tracing::warn!(error = %e, "emit overlay-anchor failed");
-    }
-    // Mirror the on-screen row order to ALL windows (main window's
-    // live-battle panel) whenever this anchor carries a TRUSTED mapping —
-    // absent or all-unmatched mappings have nothing honest to say, and
-    // skipping them also skips the arena read. The read is one small file
-    // on the watcher thread, at most once per placed anchor — the same
-    // cadence `row_recognize` already reads it at; without a roster there
-    // is no battle identity to stamp the order with, so the event is
-    // simply skipped.
-    if !mapping_untrusted(&payload.row_players) {
-        match super::arena_info::read_arena_snapshot() {
-            Some((info, _)) => {
-                if let Some(order) = tab_order_from_anchor(&payload, &info)
-                    && let Err(e) = app.emit(TAB_ORDER_EVENT, &order)
-                {
-                    tracing::warn!(error = %e, "emit tab-order failed");
-                }
-            },
-            None => tracing::debug!("tab-order skipped: no readable tempArenaInfo.json"),
-        }
     }
     // Reveal the page content AFTER the anchor is in (the page repaints
     // while still invisible, then flips visible in one step).
@@ -141,7 +118,7 @@ pub(super) fn reassert_topmost(hwnd: windows::Win32::Foundation::HWND) {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(super) fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor, _stale: bool) {}
+pub(super) fn place_and_show(_app: &AppHandle, _anchor: &OverlayAnchor) {}
 
 /// Hide the overlay: HTML-level hide FIRST (the event reaches the page
 /// directly from this thread), then the async native hide. Both idempotent —

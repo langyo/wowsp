@@ -45,14 +45,6 @@ use wowsp_tauri_shared::{ArenaInfo, OverlayAnchor};
 /// Environment variable that enables the dumps (set to a directory path).
 const TAB_DUMP_DIR_ENV: &str = "WOWSP_TAB_DUMP_DIR";
 
-/// Per-row RAW recognized text of the most recent recognition pass, aligned
-/// 1:1 with the anchor's `row_centers`. Stashed by [`stash_row_texts`] only
-/// while the dump gate is on, so a `.rows.json` artifact can carry what the
-/// OCR engine actually saw next to the names the matcher made of it — the two
-/// together are what answers "why did THIS row not match?" offline (raw text
-/// and crop geometry included, from the frame artifact written beside it).
-static LAST_ROW_TEXTS: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
-
 /// Signatures of every (battle, layout) already dumped — a seen-SET, not a
 /// last-write slot: the phase refinement moves the grid by up to ±pitch/3
 /// (well over one 8 px bucket), so jitter can ALTERNATE the quantized first
@@ -124,22 +116,6 @@ pub(crate) fn maybe_dump_tab_frame(rgba: &[u8], width: u32, height: u32, anchor:
     match write_dump_files(&dir, &stem, variant, &png, &arena_json, anchor) {
         Ok(()) => tracing::info!(dir = %dir.display(), "tab roster dump written"),
         Err(e) => tracing::warn!(error = %e, "tab roster dump write failed"),
-    }
-}
-
-/// Whether the dump gate is on right now. The recognition pass asks BEFORE
-/// stashing the raw row texts, so a build without `WOWSP_TAB_DUMP_DIR` pays
-/// one env read per pass and never touches the stash (the shipped hot path
-/// stays allocation-free).
-pub(crate) fn dump_enabled() -> bool {
-    dump_dir(std::env::var_os(TAB_DUMP_DIR_ENV)).is_some()
-}
-
-/// Stash the raw per-row recognized texts for the next dump. Poisoned by a
-/// panic elsewhere — stay silent and leave the overlay flow untouched.
-pub(crate) fn stash_row_texts(texts: &[Option<String>]) {
-    if let Ok(mut slot) = LAST_ROW_TEXTS.lock() {
-        *slot = texts.to_vec();
     }
 }
 
@@ -248,10 +224,7 @@ fn encode_frame_png(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 /// - `tab-<stem><variant>.frame.png` — the game-window frame the detector
 ///   ran on;
 /// - `tab-<stem><variant>.arena.json` — tempArenaInfo.json's raw JSON text;
-/// - `tab-<stem><variant>.anchor.json` — the serialized [`OverlayAnchor`];
-/// - `tab-<stem><variant>.rows.json` — the raw recognized text per row, when
-///   a recognition pass for THIS row count stashed one (the OCR's own view,
-///   beside the names the matcher made of it).
+/// - `tab-<stem><variant>.anchor.json` — the serialized [`OverlayAnchor`].
 ///
 /// All share the timestamp stem; `variant` is `""` for a confirmed detection
 /// and `".miss"` for a failed one. File names carry no player name, but the
@@ -283,22 +256,6 @@ fn write_dump_files(
         anchor_json,
     )
     .map_err(|e| format!("write anchor json: {e}"))?;
-    // The raw texts belong to ONE recognition pass — the OCR mode's. A
-    // non-OCR anchor (inferred derives its names without OCR; off names
-    // nothing) must not pair with a stash a previous OCR pass left behind,
-    // and neither should a row count that disagrees with the anchor's grid
-    // (a miss detection never runs recognition). Omit rather than write a
-    // misleading artifact.
-    let texts = LAST_ROW_TEXTS.lock().map(|t| t.clone()).unwrap_or_default();
-    if anchor.roster_mode == "ocr" && texts.len() == anchor.row_centers.len() {
-        let rows_json =
-            serde_json::to_string_pretty(&texts).map_err(|e| format!("serialize rows: {e}"))?;
-        std::fs::write(
-            dir.join(format!("tab-{stem}{variant}.rows.json")),
-            rows_json,
-        )
-        .map_err(|e| format!("write rows json: {e}"))?;
-    }
     Ok(())
 }
 
@@ -385,10 +342,7 @@ mod tests {
             row_centers: vec![first, first + 52, first + 104],
             team_split: 0.5,
             table_detected: true,
-            row_players: None,
             row_alive: None,
-            row_players_pending: false,
-            stale: false,
             roster_mode: String::new(),
         }
     }
@@ -515,10 +469,7 @@ mod tests {
             row_centers: vec![50, 92, 134],
             team_split: 0.5,
             table_detected: true,
-            row_players: None,
             row_alive: None,
-            row_players_pending: false,
-            stale: false,
             roster_mode: String::new(),
         };
         let arena_text = r#"{"dateTime":"20260917T120000","vehicles":[{"id":11}]}"#;

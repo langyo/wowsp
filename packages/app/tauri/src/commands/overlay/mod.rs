@@ -24,22 +24,7 @@
 //! detection and replaced when the table moved at row scale — the in-battle
 //! panel shifts as a whole when HUD phases change (countdown → combat), and
 //! a battle-pinned anchor would otherwise keep the countdown position for
-//! the entire battle. The same pass now also RECONCILES the row→name
-//! recognition: while a pin's mapping is incomplete (no trusted mapping yet
-//! — the arena roster file landed after the pin, or an all-`None` OCR read
-//! matched nothing — or a partial match left some rows unnamed, which are
-//! exactly the chips stuck on "…") it re-runs at the capture rate limit
-//! ([`CAPTURE_MIN_INTERVAL`]) instead of
-//! the full 5 s, and whenever a fresh detection disagrees with the pin's
-//! mapping — first recognition landing late, or sunk ships re-sorting the
-//! rows — only the mapping is transplanted onto the pin (geometry
-//! untouched) and the anchor is re-emitted, so the chips re-render with
-//! correct attribution without ever wandering. When the pin's geometry IS
-//! replaced (the table moved at row scale), the replacement carries the OLD
-//! pin's trusted row→name mapping on the fresh grid
-//! ([`carry_mapping_into_fresh`]) — the roster is fixed for the battle, so
-//! re-attributing the chips from scratch on every HUD-phase move would only
-//! flash "recognizing roster…" for nothing.
+//! the entire battle.
 //!
 //! Three further mechanisms keep the chips honest without flicker:
 //!
@@ -60,9 +45,7 @@
 //!   ([`overlay_detect::crop_row_name_strips`] — strip luma + occupancy
 //!   fingerprints, no OCR) runs every [`SINK_CHECK_INTERVAL`] at the
 //!   pinned geometry; an alive-flag flip immediately updates the pin,
-//!   re-places the chips (they gray out and re-sort), re-emits the tab
-//!   order and raises the wire's `stale` flag while the OCR re-map chases
-//!   at the accelerated [`SINK_CATCHUP_INTERVAL`] cadence. The flip is
+//!   re-places the chips (they gray out and re-sort). The flip is
 //!   direction-sensitive ([`sink_probe_confirm`]): a SINK applies at once,
 //!   while a pure REVIVAL flip — usually one frame of glare/explosion
 //!   pushing a sunk row's strip over the luma threshold — must survive two
@@ -119,12 +102,10 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use wowsp_tauri_shared::{
     CaptureResult, ManualLocateContext, ManualLocateGuides, OverlayAnchor, OverlayState,
-    OverlayStatus, Rect, TabRowOrder, TabRowPlayer,
+    OverlayStatus, Rect,
 };
 
-use super::{
-    appdata, arena_info, overlay_config, overlay_detect, overlay_manual, row_recognize, tab_dump,
-};
+use super::{appdata, arena_info, overlay_config, overlay_detect, overlay_manual, tab_dump};
 
 /// Label of the dedicated overlay window (distinct from "main").
 const OVERLAY_LABEL: &str = "overlay";
@@ -151,15 +132,6 @@ pub const OVERLAY_VISIBILITY_EVENT: &str = "wowsp://overlay-visibility";
 /// Tauri event carrying the DETECTION-STATE machine to all windows (main
 /// window's live-battle panel badge). Transition-only — see `report_status`.
 pub const OVERLAY_STATUS_EVENT: &str = "wowsp://overlay-status";
-
-/// Tauri event carrying the in-game Tab panel's CURRENT row order (names in
-/// on-screen order + per-row alive flags) to ALL windows. Emitted from
-/// `place_and_show` whenever the placed anchor carries a TRUSTED row→name
-/// mapping — the initial pin, a layout-move replacement, or a mapping
-/// transplant after sunk ships re-sorted the rows. The main window's
-/// live-battle panel reorders its roster columns from it, so the software's
-/// list mirrors exactly what the player sees while holding Tab.
-pub const TAB_ORDER_EVENT: &str = "wowsp://tab-order";
 
 /// Tauri event carrying one sink transition's ROW ATTRIBUTION to ALL
 /// windows: for each side, the pre-sink alive-row indices whose players
@@ -218,14 +190,6 @@ const WATCH_DIR_REFRESH: Duration = Duration::from_secs(2);
 /// panel's rows within a second — far faster than the 5 s revalidation — so
 /// the chips gray out and re-sort in step with the game.
 const SINK_CHECK_INTERVAL: Duration = Duration::from_millis(500);
-/// Recognition catch-up cadence while the pin is STALE (the sink probe just
-/// flipped alive flags and the row→name mapping needs re-reading): a full
-/// OCR pass runs every 500 ms instead of the usual [`CAPTURE_MIN_INTERVAL`]
-/// so the re-map lands within a second or two of the sink. The stale flag
-/// clears as soon as a trusted mapping produced by FRESH OCR lands — a move
-/// replacement that merely CARRIES the old pin's mapping keeps the flag
-/// (the carried order still describes the pre-sink rows).
-const SINK_CATCHUP_INTERVAL: Duration = Duration::from_millis(500);
 /// Consecutive header-band verify misses before the geometry cache is
 /// retired and the next capture runs a full detection again. One miss is a
 /// HUD-phase table move (or a transient scene change) — cheap ticks skip
@@ -280,15 +244,9 @@ use manual::{
 #[cfg(test)]
 use manual::{manual_row_centers, validate_manual_selection};
 use placement::{hide_overlay, place_and_show, reassert_topmost, show_async, tab_key_down};
-use reconcile::{
-    HeldStatus, held_status, mapping_untrusted, pin_matches, revalidate_pinned_anchor,
-    should_catch_up_recognition, sink_check_pass, tab_order_from_anchor,
-};
+use reconcile::{HeldStatus, held_status, pin_matches, revalidate_pinned_anchor, sink_check_pass};
 #[cfg(test)]
-use reconcile::{
-    MappingOrigin, alive_changed, carry_mapping_into_fresh, mapping_incomplete,
-    should_transplant_rows, sink_probe_confirm, stale_after_mapping, transplant_row_players,
-};
+use reconcile::{alive_changed, sink_probe_confirm};
 #[cfg(test)]
 use watch::apply_watch_command;
 pub use watch::{
@@ -302,9 +260,8 @@ use watch::{
 use watch_commands::WATCH_COMMANDS;
 pub(super) use watch_commands::{WatchCommand, push_watch_command};
 pub use window::{
-    __cmd__create_overlay_window, __cmd__destroy_overlay_window, __cmd__overlay_ocr_available,
-    __cmd__set_overlay_visible, __tauri_command_name_create_overlay_window,
-    __tauri_command_name_destroy_overlay_window, __tauri_command_name_overlay_ocr_available,
+    __cmd__create_overlay_window, __cmd__destroy_overlay_window, __cmd__set_overlay_visible,
+    __tauri_command_name_create_overlay_window, __tauri_command_name_destroy_overlay_window,
     __tauri_command_name_set_overlay_visible, create_overlay_window, destroy_overlay_window,
-    overlay_ocr_available, set_overlay_visible,
+    set_overlay_visible,
 };

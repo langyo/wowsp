@@ -47,20 +47,11 @@ import "./overlay.css";
 interface OverlayMessages {
   /** Failed-locate copy (the centered hint box IS the failure). */
   locateHint: string;
-  /** Locating copy: recognition is on, the table just isn't pinned yet. */
+  /** Locating copy: detection is on, the table just isn't pinned yet. */
   locatingHint: string;
-  /** Small badge over the table while the row mapping is still pending. */
-  recognizingBadge: string;
   /** Badge while the batched stats lookup is still working and at least
    *  one mapped chip has no numbers yet. */
   queryingBadge: string;
-  /** Badge while a detected sink reshuffled the rows and the row→name
-   *  re-mapping is still catching up. */
-  staleBadge: string;
-  /** Hint-box copy shown INSTEAD of the locating copy when the update
-   *  itself is why the table is not on screen (the stale mark survived a
-   *  lost pin — a change was detected and a full re-scan is running). */
-  staleHint: string;
 }
 const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
@@ -112,35 +103,16 @@ interface OverlayAnchor {
   /** False → the anchor used fallback geometry (table not located); the
    *  page renders a hint box instead of (mis)placed stat chips. */
   tableDetected?: boolean;
-  /** Per-row player names matched against the arena roster (closed set),
-   *  same length/order as rowCenters (allies block first). null/absent →
-   *  no recognition ran, rows map onto roster entries BY INDEX (legacy).
-   *  An element null → that row's player was not recognized: render a
-   *  silent placeholder and NEVER fall back to the index guess — the
-   *  in-game panel sorts rows its own way, which is what the matcher
-   *  exists to fix. */
-  rowPlayers?: (string | null)[] | null;
-  /** Per-row alive classification read off the same name strips (sunk rows
+  /** Per-row alive classification read off the name strips (sunk rows
    *  render dim gray in-game). Same length/order as rowCenters; true =
    *  alive; null/absent = unknown (treat every row as alive). */
   rowAlive?: boolean[] | null;
-  /** True when recognition is enabled but this anchor has no trusted
-   *  row→name mapping yet (absent, or an all-null read — nothing
-   *  matched): a small "recognizing roster" badge renders over the table
-   *  until the watcher transplants the mapping onto the pin. */
-  rowPlayersPending?: boolean;
-  /** True when a detected sink JUST changed the rows (alive flags flipped,
-   *  the in-game table re-sorted) and the row→name re-mapping is catching
-   *  up at the accelerated OCR cadence: the chips' attribution below may
-   *  change again within seconds. Purely informational — a "roster
-   *  updating" badge renders while it is up. */
-  stale?: boolean;
-  /** Roster attribution mode in force backend-side — "inferred" | "ocr" |
-   *  "off". "inferred" (the default) means rowPlayers is deliberately null
-   *  WITHOUT meaning "index fallback": this page derives the mapping itself
-   *  from the arena roster + rowAlive via the verified Tab sort rule (see
-   *  inferredOrder.ts). "ocr" carries recognized rowPlayers; "off" or an
-   *  absent field (older backend) is the historical index mapping. */
+  /** Roster attribution mode in force backend-side — "inferred" (the
+   *  default) | "off". "inferred" means this page derives the mapping
+   *  itself from the arena roster + rowAlive via the client's own Tab
+   *  sort key (see inferredOrder.ts), kept exact mid-battle by the
+   *  sink-attribution tracker. "off" or an absent field (older backend)
+   *  is the historical index mapping. */
   rosterMode?: string;
 }
 
@@ -263,17 +235,6 @@ async function loadCustomStamps(invoke: OverlayTauriApi["core"]["invoke"]) {
 
 let arena: ArenaInfo | null = null;
 let anchor: OverlayAnchor | null = null;
-// Last TRUSTED row→name mapping seen for the current battle (`dateTime`
-// keyed). A fresh anchor arrives before its recognition pass on the very
-// first press of a battle and whenever a re-read matched nothing; falling
-// back to the arena-index guess then would pin stats onto wrong players
-// (the panel re-sorts as ships sink), so the remembered mapping bridges
-// the gap instead. Cleared whenever a different battle's roster lands.
-let trustedRows: {
-  battle: string | null;
-  players: (string | null)[];
-  alive: boolean[] | null;
-} | null = null;
 // Per-battle trusted sunk sets, fed by the `wowsp://sink-attrib` events
 // (the Rust sink solver names WHO sank by strip-fingerprint matching).
 // While a side stays exact, render() lays its rows out precisely instead
@@ -411,16 +372,9 @@ function candidatesChip(members: string[]): string {
     .join(`<span class="sep">/</span>`);
 }
 
-/** A row→name payload is usable only when at least one row matched —
- *  mirrors the watcher's `mapping_untrusted` bar. An all-null read is
- *  honest silence and must not shadow the remembered mapping. */
-function usableRowPlayers(p: (string | null)[] | null | undefined): (string | null)[] | null {
-  return p && p.some((n) => n != null) ? p : null;
-}
-
 /** The ONE transient-status presentation: a spinner + a single line of
  *  copy, centered over the table. Every "something is settling" notice —
- *  locating, rescanning, recognizing, querying, stale — renders as this
+ *  locating, querying — renders as this
  *  card. DOM twin of hikari's centered HkSpinner (same circle geometry,
  *  rotation and stacking), which this bare page cannot import. */
 function statusCard(text: string): HTMLDivElement {
@@ -478,20 +432,13 @@ function render() {
   root.textContent = "";
   if (!anchor) return;
   // Battle is on but the table itself wasn't located — show the centered
-  // status card instead of chips that would sit on guessed rows. Three
-  // copy levels: a surviving stale mark means the update itself is underway
-  // (a change was detected, full re-scan running) and gets the
-  // change-specific copy; `fallback` is the one state that means a
-  // detection was TRIED and failed — the old failure-tone copy;
-  // still-searching (or no status event yet) gets the softer "hold Tab,
-  // recognizing the roster" copy.
+  // status card instead of chips that would sit on guessed rows. Two copy
+  // levels: `fallback` is the one state that means a detection was TRIED
+  // and failed — the failure-tone copy; still-searching (or no status
+  // event yet) gets the softer "hold Tab, locating the roster" copy.
   if (!anchor.tableDetected) {
     root.appendChild(
-      statusCard(
-        localized(
-          anchor.stale ? "staleHint" : statusState === "fallback" ? "locateHint" : "locatingHint",
-        ),
-      ),
+      statusCard(localized(statusState === "fallback" ? "locateHint" : "locatingHint")),
     );
     return;
   }
@@ -521,27 +468,14 @@ function render() {
     : arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
-  // Row → name attribution. Three sources, by mode:
-  //
-  // - INFERRED (the default): this page derives the mapping itself from the
-  //   arena roster + the anchor's alive vector via the verified Tab sort
-  //   rule (inferredRowMapping) — rowPlayers is null there BY DESIGN, not
-  //   an invitation to fall through;
-  // - OCR: a usable rowPlayers payload (at least one row matched — the
-  //   watcher's own trust bar; an all-null read is honest silence),
-  //   remembered per battle in `trustedRows` to bridge the gap while a
-  //   fresh anchor's recognition has not landed yet;
-  // - otherwise the legacy index mapping (recognition off / old backend).
-  const anchorPlayers = usableRowPlayers(anchor.rowPlayers);
-  let players: (string | string[] | null)[] | null =
-    anchorPlayers ??
-    (trustedRows && arena.dateTime != null && trustedRows.battle === arena.dateTime
-      ? usableRowPlayers(trustedRows.players)
-      : null);
-  let aliveArr = players
-    ? (anchorPlayers ? anchor.rowAlive : trustedRows?.alive) ?? null
-    : null;
-  if (anchor.rosterMode === "inferred") {
+  // Row → name attribution. INFERRED (the default and only naming mode):
+  // this page derives the mapping itself from the arena roster + the
+  // anchor's alive vector via the client's own Tab sort key
+  // (inferredRowMapping). "off" (or an older backend) keeps the legacy
+  // index mapping.
+  let players: (string | string[] | null)[] | null = null;
+  let aliveArr: boolean[] | null = null;
+  {
     aliveArr = anchor.rowAlive ?? null;
     // The mapping replicates the client's own Tab sort key (decompiled —
     // see inferredOrder.ts), so battle-start rows arrive as EXACT names.
@@ -650,20 +584,17 @@ function render() {
   }
 
   // Transient-status card, centered over the table, rebuilt on every
-  // render: one spinner + the copy of the STRONGEST live state (stale —
-  // rows are churning — beats recognizing — attribution unknown — beats
-  // querying — numbers in flight). The chips live OUTSIDE the left/right
-  // edges, so the card only ever crosses the table's own columns, and it
-  // disappears with its trigger on the next event (render() rebuilds from
-  // scratch each time). An undetected realm disables the lookups entirely,
-  // which leaves the query pipeline inactive — no card for it, by design.
-  const statusText = anchor.stale
-    ? localized("staleBadge")
-    : anchor.rowPlayersPending
-      ? localized("recognizingBadge")
-      : chipsMissingStats && (pending.size > 0 || inFlight || retryTimer != null)
-        ? localized("queryingBadge")
-        : null;
+  // render: one spinner + the "querying" copy while at least one chip
+  // renders from a known name whose stats are still in flight. The chips
+  // live OUTSIDE the left/right edges, so the card only ever crosses the
+  // table's own columns, and it disappears with its trigger on the next
+  // event (render() rebuilds from scratch each time). An undetected realm
+  // disables the lookups entirely, which leaves the query pipeline
+  // inactive — no card for it, by design.
+  const statusText =
+    chipsMissingStats && (pending.size > 0 || inFlight || retryTimer != null)
+      ? localized("queryingBadge")
+      : null;
   if (statusText != null) {
     root.appendChild(statusCard(statusText));
   }
@@ -913,7 +844,6 @@ async function start() {
     // row order belongs to the old battle) and reset the retry cadence —
     // the new battle's lookups start fresh.
     if (next?.dateTime !== arena?.dateTime) {
-      trustedRows = null;
       sunk.reset(next?.dateTime ?? null);
       retryDelayMs = 2000;
       retriesLeft = RETRIES_PER_BATTLE;
@@ -973,19 +903,6 @@ async function start() {
       } catch {
         // nothing to read — chips stay "…" until an arena event arrives
       }
-    }
-    // Remember every TRUSTED mapping for this battle (AFTER the arena
-    // fallback read above, so the battle key is the real dateTime): a
-    // later anchor that arrives before its own recognition lands (fresh
-    // press re-pinning, or an all-null re-read) renders from the memory
-    // instead of the known-wrong index guess.
-    const players = usableRowPlayers(anchor.rowPlayers);
-    if (players) {
-      trustedRows = {
-        battle: arena?.dateTime ?? null,
-        players,
-        alive: anchor.rowAlive ?? null,
-      };
     }
     // The user is LOOKING at the table right now — give any chip still on
     // "…" a prompt fill round. The call is cheap when everything is cached

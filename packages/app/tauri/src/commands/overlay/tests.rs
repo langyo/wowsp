@@ -91,15 +91,9 @@ fn pin_validity_uses_the_jitter_tolerance() {
     assert!(!pin_matches(7, &r, false, 7, Some(r)));
     assert!(!pin_matches(7, &r, true, 7, None));
 }
-
-/// Hand-built anchor for the recognition catch-up / transplant tests:
-/// only the fields those decisions read are varied.
-fn anchor_with_players(
-    rows: usize,
-    detected: bool,
-    players: Option<Vec<Option<String>>>,
-    pending: bool,
-) -> OverlayAnchor {
+/// Hand-built anchor for the watcher tests: only the fields those
+/// decisions read are varied.
+fn anchor_with(rows: usize, detected: bool, alive: Option<Vec<bool>>) -> OverlayAnchor {
     OverlayAnchor {
         game_rect: Rect {
             x: 0,
@@ -122,389 +116,9 @@ fn anchor_with_players(
         row_centers: vec![50; rows],
         team_split: 0.5,
         table_detected: detected,
-        row_players: players,
-        row_alive: None,
-        row_players_pending: pending,
-        stale: false,
+        row_alive: alive,
         roster_mode: String::new(),
     }
-}
-
-#[test]
-fn mapping_untrusted_needs_at_least_one_match() {
-    // Absent payload (recognition off / pipeline bailed) and an all-None
-    // read (text seen, nothing matched) are both "no trusted mapping";
-    // one matched row is enough to trust it.
-    assert!(mapping_untrusted(&None));
-    assert!(mapping_untrusted(&Some(vec![None, None])));
-    assert!(!mapping_untrusted(&Some(vec![Some("Alpha".into()), None])));
-}
-
-/// Anchor with BOTH a name mapping and an alive vector — the shape
-/// `compute_anchor` now produces and `tab_order_from_anchor` consumes.
-fn anchor_with_state(
-    rows: usize,
-    players: Option<Vec<Option<String>>>,
-    alive: Option<Vec<bool>>,
-) -> OverlayAnchor {
-    let mut a = anchor_with_players(rows, true, players, false);
-    a.row_alive = alive;
-    a
-}
-
-/// Minimal roster: relation ≤ 1 = allies, > 1 = enemies — the split
-/// `tab_order_from_anchor` keys on.
-fn arena_roster(names: &[(&str, i64)]) -> wowsp_tauri_shared::ArenaInfo {
-    wowsp_tauri_shared::ArenaInfo {
-        match_group: Some("pvp".into()),
-        date_time: Some("18.09.2026 16:17:19".into()),
-        map_name: None,
-        scenario: None,
-        event_type: None,
-        bot_count: 0,
-        vehicles: names
-            .iter()
-            .map(|&(name, relation)| wowsp_tauri_shared::VehicleEntry {
-                id: name.len() as i64,
-                name: name.into(),
-                relation,
-                ship_id: 0,
-                ship_name: None,
-            })
-            .collect(),
-        raw: serde_json::Value::Null,
-    }
-}
-
-#[test]
-fn tab_order_splits_blocks_at_the_roster_relation_count() {
-    // 3 allies + 2 enemies in the roster; the mapping's rows are split at
-    // the SAME boundary, keeping on-screen order inside each block.
-    let info = arena_roster(&[
-        ("Alpha", 0),
-        ("Bravo", 1),
-        ("Charlie", 1),
-        ("Delta", 2),
-        ("Echo", 2),
-    ]);
-    let anchor = anchor_with_state(
-        5,
-        Some(vec![
-            Some("Charlie".into()),
-            Some("Alpha".into()),
-            None,
-            Some("Echo".into()),
-            Some("Delta".into()),
-        ]),
-        Some(vec![true, false, true, false, true]),
-    );
-    let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
-    assert_eq!(order.date_time.as_deref(), Some("18.09.2026 16:17:19"));
-    let ally_names: Vec<_> = order.allies.iter().map(|r| r.name.clone()).collect();
-    let enemy_names: Vec<_> = order.enemies.iter().map(|r| r.name.clone()).collect();
-    assert_eq!(
-        ally_names,
-        [Some("Charlie".into()), Some("Alpha".into()), None]
-    );
-    assert_eq!(enemy_names, [Some("Echo".into()), Some("Delta".into())]);
-    // Alive flags ride along per row — sunk Alpha (row 1) and sunk Echo
-    // (row 3) carry false.
-    assert_eq!(
-        order.allies.iter().map(|r| r.alive).collect::<Vec<_>>(),
-        [true, false, true]
-    );
-    assert_eq!(
-        order.enemies.iter().map(|r| r.alive).collect::<Vec<_>>(),
-        [false, true]
-    );
-}
-
-#[test]
-fn tab_order_requires_a_trusted_mapping() {
-    let info = arena_roster(&[("Alpha", 0), ("Delta", 2)]);
-    // No mapping at all (recognition off / manual anchor): nothing to say.
-    assert!(tab_order_from_anchor(&anchor_with_state(2, None, None), &info).is_none());
-    // All-None mapping (honest silence): still nothing to say.
-    assert!(
-        tab_order_from_anchor(
-            &anchor_with_state(2, Some(vec![None, None]), Some(vec![true, true])),
-            &info
-        )
-        .is_none()
-    );
-}
-
-#[test]
-fn tab_order_lands_every_row_in_allies_for_operation_scenarios() {
-    // An operation roster (行动): relation values follow scenario team slots
-    // (escort waves / target ships), so slots > 1 are STILL allies and the
-    // in-game Tab table shows a single team — the recognized rows must all
-    // land in the ally block, never in the enemy one.
-    let mut info = arena_roster(&[
-        ("langyo", 0),
-        ("IDS_OP_15_ALLY_DD_01", 2),
-        ("IDS_OP_15_DUMMY_01", 2),
-    ]);
-    info.match_group = Some("pve".into());
-    let anchor = anchor_with_state(
-        3,
-        Some(vec![
-            Some("IDS_OP_15_DUMMY_01".into()),
-            Some("langyo".into()),
-            Some("IDS_OP_15_ALLY_DD_01".into()),
-        ]),
-        Some(vec![true, true, false]),
-    );
-    let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
-    let ally_names: Vec<_> = order.allies.iter().map(|r| r.name.clone()).collect();
-    assert_eq!(
-        ally_names,
-        [
-            Some("IDS_OP_15_DUMMY_01".into()),
-            Some("langyo".into()),
-            Some("IDS_OP_15_ALLY_DD_01".into()),
-        ]
-    );
-    assert!(order.enemies.is_empty());
-    assert!(!order.allies[2].alive);
-}
-
-#[test]
-fn tab_order_defaults_missing_alive_flags_to_alive() {
-    // A mapping without an alive vector (older payload shape) must never
-    // mark players sunk by accident.
-    let info = arena_roster(&[("Alpha", 0), ("Delta", 2)]);
-    let anchor = anchor_with_state(
-        2,
-        Some(vec![Some("Alpha".into()), Some("Delta".into())]),
-        None,
-    );
-    let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
-    assert!(order.allies[0].alive && order.enemies[0].alive);
-}
-
-#[test]
-fn tab_order_drops_rows_beyond_the_roster_blocks() {
-    // A detector overcount (mapping longer than the roster) must not
-    // shrink or misplace the ALLY block: it stays exactly the roster's
-    // relation ≤ 1 count, and every further row belongs to the enemy
-    // block (the frontend matches by name, so unmatched rows are inert).
-    let info = arena_roster(&[("Alpha", 0), ("Delta", 2)]);
-    let anchor = anchor_with_state(
-        4,
-        Some(vec![
-            Some("Alpha".into()),
-            None,
-            Some("Delta".into()),
-            Some("Ghost".into()),
-        ]),
-        Some(vec![true, true, true, true]),
-    );
-    let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
-    assert_eq!(
-        order.allies.len(),
-        1,
-        "ally block is exactly the roster count"
-    );
-    assert_eq!(order.allies[0].name, Some("Alpha".into()));
-    assert_eq!(
-        order.enemies.len(),
-        3,
-        "remaining rows land in the enemy block"
-    );
-    assert_eq!(order.enemies[0].name, None);
-    assert_eq!(order.enemies[1].name, Some("Delta".into()));
-    assert_eq!(order.enemies[2].name, Some("Ghost".into()));
-}
-
-#[test]
-fn transplant_copies_alive_flags_and_re_emits_on_alive_flip() {
-    // A ship sinking WITHOUT re-sorting the rows (it already sat at its
-    // group tail) changes only row_alive — that flip alone must count as
-    // a transplant-worthy difference so the overlay and the tab-order
-    // event both hear about it.
-    let pinned = anchor_with_state(
-        2,
-        Some(vec![Some("Alpha".into()), Some("Delta".into())]),
-        Some(vec![true, true]),
-    );
-    let fresh = anchor_with_state(
-        2,
-        Some(vec![Some("Alpha".into()), Some("Delta".into())]),
-        Some(vec![true, false]),
-    );
-    let updated = transplant_row_players(&pinned, &fresh).expect("alive flip transplants");
-    assert_eq!(updated.row_alive, Some(vec![true, false]));
-    // Identical names AND identical alive flags → nothing to transplant.
-    assert!(transplant_row_players(&updated, &fresh).is_none());
-}
-
-#[test]
-fn transplant_needs_confirmed_equal_length_changed_mapping() {
-    let pinned = anchor_with_players(2, true, None, true);
-    // First recognition landing on an unchanged grid → transplant.
-    let fresh = anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
-    let updated = transplant_row_players(&pinned, &fresh).expect("catch-up maps");
-    assert_eq!(
-        updated.row_players,
-        Some(vec![Some("Alpha".into()), None]),
-        "the mapping is copied verbatim"
-    );
-    assert!(!updated.row_players_pending, "a mapping clears pending");
-    // Geometry is untouched — only the mapping fields move.
-    assert_eq!(updated.row_centers, pinned.row_centers);
-    assert_eq!(updated.roster_rect, pinned.roster_rect);
-    assert_eq!(updated.overlay_rect, pinned.overlay_rect);
-    assert_eq!(updated.game_rect, pinned.game_rect);
-    assert_eq!(updated.team_split, pinned.team_split);
-    assert!(updated.table_detected);
-    // Identical mapping → nothing to re-emit.
-    let fresh_same = anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
-    let pinned_mapped = transplant_row_players(&pinned, &fresh).unwrap();
-    assert!(transplant_row_players(&pinned_mapped, &fresh_same).is_none());
-    // A re-sort (different mapping, same length) DOES transplant.
-    let re_sorted = anchor_with_players(2, true, Some(vec![None, Some("Alpha".into())]), false);
-    assert!(transplant_row_players(&pinned_mapped, &re_sorted).is_some());
-    // Length mismatch (grids disagree) → dropped, never mis-pinned.
-    let wrong_len =
-        anchor_with_players(3, true, Some(vec![Some("Alpha".into()), None, None]), false);
-    assert!(transplant_row_players(&pinned, &wrong_len).is_none());
-    // Fallback detection never touches the pin.
-    let fallback = anchor_with_players(2, false, Some(vec![None, None]), false);
-    assert!(transplant_row_players(&pinned, &fallback).is_none());
-    // A fresh pass that recognized nothing carries no mapping either.
-    let no_mapping = anchor_with_players(2, true, None, true);
-    assert!(transplant_row_players(&pinned, &no_mapping).is_none());
-    assert!(should_transplant_rows(&fresh, &pinned));
-    assert!(!should_transplant_rows(&no_mapping, &pinned));
-
-    // An all-None read (text seen, nothing matched) transplants onto a
-    // mapping-less pin — honest silence replaces the index guess — but
-    // the result is still NOT a trusted mapping: pending stays true.
-    let all_none = anchor_with_players(2, true, Some(vec![None, None]), false);
-    let silenced =
-        transplant_row_players(&pinned, &all_none).expect("an all-None read still lands");
-    assert_eq!(silenced.row_players, Some(vec![None, None]));
-    assert!(
-        silenced.row_players_pending,
-        "an all-None mapping is not trusted"
-    );
-    // A deterministic all-None re-read compares equal → no transplant,
-    // no re-emit: keeping catch-up armed on an all-None pin cannot
-    // oscillate.
-    assert!(transplant_row_players(&silenced, &all_none).is_none());
-    // A later read that matches something transplants…
-    let recovered_pin = anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
-    let recovered = transplant_row_players(&silenced, &recovered_pin)
-        .expect("a partial match improves an all-None mapping");
-    // …and a mapping with at least one match clears pending.
-    assert!(!recovered.row_players_pending);
-}
-
-#[test]
-fn catch_up_gate_needs_pin_pending_stale_engine_and_throttle() {
-    let pending_pin = anchor_with_players(2, true, None, true);
-    // An all-None mapping (text read, nothing matched) is NOT ready —
-    // catch-up stays armed for it too.
-    let all_none_pin = anchor_with_players(2, true, Some(vec![None, None]), false);
-    // A PARTIAL match names one row but leaves the other on "…": trusted
-    // enough to render, yet the catch-up stays armed so the unnamed row
-    // gets re-read instead of dotting for the whole battle.
-    let partial_pin = anchor_with_players(2, true, Some(vec![Some("Alpha".into()), None]), false);
-    let ready_pin = anchor_with_players(
-        2,
-        true,
-        Some(vec![Some("Alpha".into()), Some("Beta".into())]),
-        false,
-    );
-    let fallback_pin = anchor_with_players(2, false, None, false);
-    // Pending (absent, all-None or partially-named mapping) + engine on +
-    // throttle elapsed → run the catch-up pass.
-    assert!(should_catch_up_recognition(
-        Some(&pending_pin),
-        false,
-        true,
-        true
-    ));
-    assert!(should_catch_up_recognition(
-        Some(&all_none_pin),
-        false,
-        true,
-        true
-    ));
-    assert!(should_catch_up_recognition(
-        Some(&partial_pin),
-        false,
-        true,
-        true
-    ));
-    // …but not without the engine, the throttle, a pin, a confirmed
-    // table, or once a fully-named mapping has landed.
-    assert!(!should_catch_up_recognition(
-        Some(&pending_pin),
-        false,
-        false,
-        true
-    ));
-    assert!(!should_catch_up_recognition(
-        Some(&pending_pin),
-        false,
-        true,
-        false
-    ));
-    assert!(!should_catch_up_recognition(None, false, true, true));
-    assert!(!should_catch_up_recognition(
-        Some(&ready_pin),
-        false,
-        true,
-        true
-    ));
-    assert!(!should_catch_up_recognition(
-        Some(&fallback_pin),
-        false,
-        true,
-        true
-    ));
-    // STALE (the sink probe just flipped alive flags) arms the gate even
-    // on a trusted mapping: the mapping is battle-accurate but describes
-    // the PRE-sink row order — the re-read confirms the new order.
-    assert!(should_catch_up_recognition(
-        Some(&ready_pin),
-        true,
-        true,
-        true
-    ));
-    // …still gated by the engine, the throttle, the pin and the table.
-    assert!(!should_catch_up_recognition(
-        Some(&ready_pin),
-        true,
-        false,
-        true
-    ));
-    assert!(!should_catch_up_recognition(
-        Some(&ready_pin),
-        true,
-        true,
-        false
-    ));
-    assert!(!should_catch_up_recognition(None, true, true, true));
-    assert!(!should_catch_up_recognition(
-        Some(&fallback_pin),
-        true,
-        true,
-        true
-    ));
-}
-
-#[test]
-fn mapping_incomplete_needs_every_row_named() {
-    assert!(mapping_incomplete(&None));
-    assert!(mapping_incomplete(&Some(vec![None, None])));
-    assert!(mapping_incomplete(&Some(vec![Some("Alpha".into()), None])));
-    assert!(!mapping_incomplete(&Some(vec![Some("Alpha".into())])));
-    // Strictly stricter than the trust bar: everything untrusted is
-    // incomplete, while a partial match is trusted AND incomplete.
-    assert!(!mapping_untrusted(&Some(vec![Some("Alpha".into()), None])));
 }
 
 #[test]
@@ -671,8 +285,8 @@ fn build_manual_anchor_rebases_to_the_overlay_origin() {
     let anchor = build_manual_anchor(&m, game);
     // A manual anchor is always a CONFIRMED table.
     assert!(anchor.table_detected);
-    // row_players stays None on purpose — no OCR on a hand-drawn box.
-    assert!(anchor.row_players.is_none());
+    // row_alive stays None on purpose — no luma read on a hand-drawn box.
+    assert!(anchor.row_alive.is_none());
     assert_eq!(anchor.row_centers.len(), 10);
     // The overlay window covers the selection inflated by the shared
     // padding, and the anchor coordinates are re-based to ITS origin
@@ -733,116 +347,7 @@ fn detected_pin_never_degrades_to_searching() {
 
 // ── Move replacement carries the old mapping ─────────────────────────
 
-#[test]
-fn carry_mapping_into_fresh_rules() {
-    let pinned = anchor_with_state(
-        3,
-        Some(vec![Some("Alpha".into()), None, Some("Delta".into())]),
-        Some(vec![true, false, true]),
-    );
-    // HUD phase moved the table: fresh grid (different centers), fresh
-    // OCR NOT landed yet (pending).
-    let fresh_geometry = anchor_with_players(3, true, None, true);
-    let carried = carry_mapping_into_fresh(&fresh_geometry, &pinned);
-    assert!(
-        !mapping_untrusted(&carried.row_players),
-        "the battle-accurate mapping is carried onto the moved grid"
-    );
-    assert_eq!(
-        carried.row_players, pinned.row_players,
-        "names copied verbatim"
-    );
-    assert_eq!(carried.row_alive, pinned.row_alive, "alive flags copied");
-    assert!(!carried.row_players_pending, "pending cleared with it");
-    // Fresh GEOMETRY is kept: centers come from the moved detection.
-    assert_eq!(carried.row_centers, fresh_geometry.row_centers);
-    // Fresh carries its own trusted mapping → kept (it is newer).
-    let fresh_mapped =
-        anchor_with_players(3, true, Some(vec![Some("Bravo".into()), None, None]), false);
-    let kept = carry_mapping_into_fresh(&fresh_mapped, &pinned);
-    assert_eq!(kept.row_players, fresh_mapped.row_players);
-    // Grid length mismatch → never index-guess: fresh stays unmapped.
-    let fresh_other_grid = anchor_with_players(4, true, None, true);
-    let skipped = carry_mapping_into_fresh(&fresh_other_grid, &pinned);
-    assert!(mapping_untrusted(&skipped.row_players));
-    // Pin has no trusted mapping (None / all-None) → nothing to carry.
-    let unmapped_pin = anchor_with_players(3, true, None, true);
-    let nothing = carry_mapping_into_fresh(&fresh_geometry, &unmapped_pin);
-    assert!(mapping_untrusted(&nothing.row_players));
-    let silent_pin = anchor_with_players(3, true, Some(vec![None, None, None]), false);
-    assert!(mapping_untrusted(
-        &carry_mapping_into_fresh(&fresh_geometry, &silent_pin).row_players
-    ));
-}
-
 // ── Stale lifecycle ──────────────────────────────────────────────────
-
-#[test]
-fn stale_lifecycle_set_on_sink_cleared_by_trusted_landing() {
-    // Sink probe flips alive flags → stale rises…
-    let before = Some(vec![true, true, false]);
-    let after = vec![true, true, true];
-    assert!(alive_changed(before.as_deref(), &after), "a flip fires");
-    // …and the OCR side of the lifecycle clears it exactly when a
-    // TRUSTED mapping produced by THIS FRAME's OCR lands; an all-None
-    // landing (honest silence) keeps the flag and the fast catch-up
-    // armed.
-    let trusted = Some(vec![Some("Alpha".into()), None, Some("Delta".into())]);
-    let all_none = Some(vec![None, None, None]);
-    assert!(!stale_after_mapping(
-        true,
-        &trusted,
-        MappingOrigin::FreshOcr
-    ));
-    assert!(stale_after_mapping(
-        true,
-        &all_none,
-        MappingOrigin::FreshOcr
-    ));
-    assert!(stale_after_mapping(true, &None, MappingOrigin::FreshOcr));
-    // A trusted landing keeps stale cleared; a missing mapping never
-    // sets it on its own.
-    assert!(!stale_after_mapping(
-        false,
-        &trusted,
-        MappingOrigin::FreshOcr
-    ));
-    assert!(!stale_after_mapping(false, &None, MappingOrigin::FreshOcr));
-}
-
-#[test]
-fn carried_mapping_never_touches_the_stale_flag() {
-    // A mapping CARRIED from the old pin onto a moved grid still
-    // describes the PRE-sink row order — it must not launder a set
-    // stale flag, and carrying is not a data change, so it must not
-    // set one either. Only this frame's own OCR may clear.
-    let trusted = Some(vec![Some("Alpha".into()), None, Some("Delta".into())]);
-    let all_none = Some(vec![None, None, None]);
-    assert!(
-        stale_after_mapping(true, &trusted, MappingOrigin::CarriedFromPin),
-        "carry + stale → stays stale"
-    );
-    assert!(
-        !stale_after_mapping(false, &trusted, MappingOrigin::CarriedFromPin),
-        "carry + fresh → stays fresh (never sets)"
-    );
-    // Untrusted mappings keep the flag regardless of origin.
-    assert!(stale_after_mapping(
-        true,
-        &all_none,
-        MappingOrigin::CarriedFromPin
-    ));
-    assert!(!stale_after_mapping(
-        false,
-        &all_none,
-        MappingOrigin::CarriedFromPin
-    ));
-    assert!(stale_after_mapping(
-        true,
-        &None,
-        MappingOrigin::CarriedFromPin
-    ));
-}
 
 #[test]
 fn alive_changed_only_fires_on_comparable_data() {
@@ -976,14 +481,13 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
     fsm.pinned_anchor = Some(PinnedAnchor {
         battle: 42,
         game_rect: game,
-        anchor: anchor_with_players(10, true, None, true),
+        anchor: anchor_with(10, true, None),
     });
     let r4 = apply_watch_command(&mut fsm, WatchCommand::ManualAnchorCleared);
     assert_eq!(r4, Some((OverlayState::Detected, None)));
 
-    // BattleChanged voids the pin and the stale flag but KEEPS the
-    // geometry cache (same window mode → same pixel geometry).
-    fsm.stale = true;
+    // BattleChanged voids the pin but KEEPS the geometry cache (same
+    // window mode → same pixel geometry).
     fsm.geometry_cache = Some(GeometryCacheEntry {
         key: GeometryKey {
             game_size: (game.width, game.height),
@@ -1007,7 +511,6 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
         "the next tick re-derives the honest state"
     );
     assert!(fsm.pinned_anchor.is_none(), "pin voided");
-    assert!(!fsm.stale, "stale reset with the pin");
     assert!(
         fsm.geometry_cache.is_some(),
         "the cache survives battle changes by design"

@@ -1236,16 +1236,9 @@ pub(crate) fn build_anchor(
         row_centers,
         team_split,
         table_detected,
-        // Anchors are built without recognition; the row→name pipeline in
-        // `row_recognize` fills `row_players` / `row_alive` afterwards when
-        // it ran (and flips `row_players_pending` with it — manual/automatic
-        // alike, pending never starts as true). `stale` is equally false at
-        // construction: it is a watcher-side pin flag (the sink probe / OCR
-        // re-map lifecycle), never a property of a fresh detection.
-        row_players: None,
+        // The luma pass fills `row_alive` afterwards when it ran
+        // (manual/automatic alike).
         row_alive: None,
-        row_players_pending: false,
-        stale: false,
         // Set to the live settings mode at EMIT time (place_and_show) —
         // construction-time anchors are mode-agnostic.
         roster_mode: String::new(),
@@ -2483,10 +2476,7 @@ mod tests {
             row_centers: rows.to_vec(),
             team_split: 0.5,
             table_detected: detected,
-            row_players: None,
             row_alive: None,
-            row_players_pending: false,
-            stale: false,
             roster_mode: String::new(),
         }
     }

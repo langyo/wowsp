@@ -8,19 +8,18 @@
  *   Tab overlay (no overlay window, no watcher — `useOverlayLifecycle`
  *   never creates it, and the Rust watcher suppresses shows too).
  * - `roster` — roster attribution: "inferred" (the default and preferred:
- *   the row→name mapping derived from the game's verified Tab sort rule —
- *   class rank, tier descending, nation, ship name, '[tag]nickname —
- *   over the roster plus the luma
- *   probe's alive flags, no OCR), "ocr" (Windows OCR row→name matching —
- *   exact, offered only when the OS OCR engine is usable), or "off" (chips
- *   follow roster/index order, the historical fallback, with no
- *   "recognizing…" pending hints).
+ *   the row→name mapping derived from the game's own Tab sort key —
+ *   class rank, tier descending, nation, ship name, '[tag]nickname — over
+ *   the roster plus the luma probe's alive flags, kept exact mid-battle
+ *   by the sink solver; no OCR), or "off" (chips follow roster/index
+ *   order, the historical fallback). A stored "ocr" pick (the removed
+ *   Windows pipeline) migrates to "inferred".
  *
  * The Rust side owns every on-disk concern: the flat TOML file, the
  * one-shot migration of the pre-TOML `overlay-config.json`, the v1
- * `{enabled: boolean}` shape (enabled → detect + ocr, disabled → off +
- * ocr), and the fallback that resets an unknown value to the field's safe
- * default and FORCES the corrected value back to disk (see
+ * `{enabled: boolean}` shape (enabled → detect + inferred, disabled →
+ * off + inferred), and the fallback that resets an unknown value to the
+ * field's safe default and FORCES the corrected value back to disk (see
  * commands/overlay_config.rs). This store keeps a thin client-side guard
  * as defense in depth: values arriving from an older shell still land on
  * the defaults without ever throwing.
@@ -33,7 +32,7 @@ import { api } from "@/api";
 /** Table anchoring modes (schema v2 `table` field). */
 export type TableAnchorMode = "detect" | "off";
 /** Roster attribution modes (schema v2 `roster` field). */
-export type RosterRecognitionMode = "inferred" | "ocr" | "off";
+export type RosterRecognitionMode = "inferred" | "off";
 
 const DEFAULT_TABLE: TableAnchorMode = "detect";
 const DEFAULT_ROSTER: RosterRecognitionMode = "inferred";
@@ -44,7 +43,8 @@ function parseTable(raw: unknown): TableAnchorMode {
 }
 
 function parseRoster(raw: unknown): RosterRecognitionMode {
-  return raw === "ocr" ? "ocr" : raw === "off" ? "off" : DEFAULT_ROSTER;
+  // A stored "ocr" pick migrates to the derived mapping (its replacement).
+  return raw === "off" ? "off" : DEFAULT_ROSTER;
 }
 
 export const useOverlayConfigStore = defineStore("overlayConfig", () => {

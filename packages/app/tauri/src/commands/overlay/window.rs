@@ -70,15 +70,6 @@ pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether the Windows OCR engine could be built on this machine (an
-/// installed OCR language pack) — the settings UI probes this once to offer
-/// the `ocr` roster mode or gray it out. Desktop only (no overlay on
-/// mobile), `false` everywhere the engine does not exist.
-#[tauri::command]
-pub async fn overlay_ocr_available() -> bool {
-    row_recognize::engine_available()
-}
-
 /// Show or hide the overlay window manually (debug / settings preview). The
 /// Tab watcher is the authoritative visibility driver in normal operation.
 /// NEVER focuses the overlay — focus must stay on the game while playing.

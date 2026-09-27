@@ -399,7 +399,6 @@ pub fn run() {
             commands::overlay_config::set_overlay_config,
             // Desktop only (reads the Windows OCR engine availability).
             #[cfg(desktop)]
-            commands::overlay::overlay_ocr_available,
             commands::game_config::get_game_config,
             commands::game_config::set_game_config,
             commands::open_external::open_external,
