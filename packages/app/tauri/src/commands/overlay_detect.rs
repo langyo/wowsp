@@ -18,11 +18,23 @@
 //!   bar width    ≈ 24% of the frame each, seam exactly between them
 //!   row text     ≈ pure white, row pitch ≈ 0.95× the bar height
 //!
-//! Pipeline: find the row carrying both bars → bar spans give the table
-//! rectangle and the team split → white-text density bands below the header
-//! give the player rows (extended with the median pitch when the arena hint
-//! asks for more rows than were visible). Position-agnostic on purpose, so
-//! scenario / co-op layouts anchor just as well as random battles.
+//! PVE modes that roster a SINGLE team (scenarios / co-op / operations)
+//! draw a variant of that header: ONE full-width teal bar — captioned "my
+//! team", spanning ~55-65% of the frame — with NO brick bar to its right.
+//! The band locator accepts that green-only shape under two extra gates (a
+//! minimum bar width plus a white-row-text check below the bar — see
+//! [`find_header_band`]); such a band reports `team_split` exactly 1.0 and
+//! emits an ally-rows-only grid.
+//!
+//! Pipeline: find the row carrying the bars — both bars hugging the seam,
+//! or, single-team PVE only, a lone wide green bar after the two gates (a
+//! red bar FARTHER than the adjacency gap rejects the scan row outright,
+//! so mod scoreboards never degrade into green-only hits) → bar spans give
+//! the table rectangle and the team split → white-text density bands below
+//! the header give the player rows (extended with the median pitch when
+//! the arena hint asks for more rows than were visible). Position-agnostic
+//! on purpose, so scenario / co-op layouts anchor just as well as random
+//! battles.
 
 use wowsp_tauri_shared::Rect;
 
@@ -46,6 +58,12 @@ const HEADER_MIN_ROWS: usize = 3;
 /// bar's left edge (fraction of working width). The real bars hug the table
 /// seam (gap ≈ 2 px); the mod scoreboard's corner bars are ~35% apart.
 const HEADER_MAX_BAR_GAP_FRAC: f32 = 0.15;
+/// Minimum width (fraction of the working width) for a GREEN-ONLY header
+/// candidate — the single-team PVE table's teal bar spans ~55-65% of the
+/// frame, a lone PVP bar is ~24% and mods' corner bars are smaller still.
+/// Two-bar bands are NOT width-gated: their adjacency + pair signature
+/// already suffices.
+const GREEN_ONLY_MIN_W_FRAC: f32 = 0.30;
 /// Header-bar height bounds in working px (the real bar is ~14 px at 800-wide).
 const HEADER_MIN_H: usize = 4;
 /// White-text density bands below 22% of the row peak are noise (e.g. our
@@ -82,6 +100,11 @@ pub(crate) struct DetectedRoster {
     /// are extended with the median pitch).
     pub row_centers: Vec<i32>,
     /// Allies/enemies column split as a fraction (0–1) of the rect width.
+    /// Exactly 1.0 marks the single-team PVE variant: the table IS one
+    /// full-width team, so the backend name-strip math (half width =
+    /// `roster.width * split`) covers the whole table — where the PVE
+    /// nickname column lives — and the frontend never reads this field
+    /// anyway (rows map by the Tab sort key + the row centers).
     pub team_split: f32,
 }
 
@@ -121,14 +144,13 @@ pub(crate) fn detect_roster_with_band(
     };
 
     // ── 1. Header: a THICK band of consecutive scan rows each carrying the
-    //    green AND red bar (see `find_header_band`; the band's bar height —
-    //    the row pitch's source — is measured inside it too) ────────────────
+    //    green bar plus either the adjacent red one or nothing at all (see
+    //    `find_header_band`; the band's bar height — the row pitch's
+    //    source — is measured inside it too) ────────────────────────────────
     let band = find_header_band(&px, w, h)?;
     let (prof_top, pitch, first) = grid_origin(band, h);
     let gx0 = band.green.0;
     let gx1 = band.green.1;
-    let rx0 = band.red.0;
-    let rx1 = band.red.1;
 
     // ── 2. Player rows by pure GEOMETRY (no pixel row-counting) ───────────
     // Seven anchor points pin the table: THREE on top (green-bar top-left,
@@ -141,10 +163,12 @@ pub(crate) fn detect_roster_with_band(
     // header. White-text bands only fine-tune the PHASE of each side's
     // grid independently (± pitch/3) — they never gate the result.
     // White-text density profiles over the generous window below the header,
-    // one per side — used ONLY for the per-side phase refinement below.
+    // one per side — used ONLY for the per-side phase refinement below. A
+    // GREEN-ONLY (single-team PVE) band has no right half: its enemy
+    // profile stays empty and its enemy grid below is forced to zero rows.
     let prof_cap = (prof_top + (h as f32 * ROW_SCAN_MAX_SPAN_FRAC) as usize).min(h);
     let mut profile_l = vec![0u32; prof_cap.saturating_sub(prof_top)];
-    let mut profile_r = profile_l.clone();
+    let mut profile_r: Vec<u32> = Vec::new();
     for (dy, slot) in profile_l.iter_mut().enumerate() {
         let y = prof_top + dy;
         let mut n = 0u32;
@@ -156,20 +180,31 @@ pub(crate) fn detect_roster_with_band(
         }
         *slot = n;
     }
-    for (dy, slot) in profile_r.iter_mut().enumerate() {
-        let y = prof_top + dy;
-        let mut n = 0u32;
-        for x in rx0..rx1 {
-            let (r, g, b) = rgb(x, y);
-            if is_text_white(r, g, b) {
-                n += 1;
+    if let Some((rx0, rx1)) = band.red {
+        profile_r = profile_l.clone();
+        for (dy, slot) in profile_r.iter_mut().enumerate() {
+            let y = prof_top + dy;
+            let mut n = 0u32;
+            for x in rx0..rx1 {
+                let (r, g, b) = rgb(x, y);
+                if is_text_white(r, g, b) {
+                    n += 1;
+                }
             }
+            *slot = n;
         }
-        *slot = n;
     }
     // Row counts: each side's arena hint is authoritative; without any hint
     // fall back to a conservative 5-row grid (real flows always pass it).
+    // EXCEPT on a green-only band: there IS no enemy half, so the hint's
+    // enemy count must not conjure one (the arena-info path already parks
+    // every player of these modes on the ally side — ignore it regardless).
     let rows_wanted = |hint: usize| if hint > 0 { hint } else { 5 };
+    let enemies_wanted = if band.red.is_none() {
+        0
+    } else {
+        rows_wanted(expected_enemies)
+    };
     let (centers_l, pitch_l) = fit_row_grid(
         rows_wanted(expected_allies),
         &profile_l,
@@ -177,13 +212,7 @@ pub(crate) fn detect_roster_with_band(
         first,
         pitch,
     );
-    let (centers_r, pitch_r) = fit_row_grid(
-        rows_wanted(expected_enemies),
-        &profile_r,
-        prof_top,
-        first,
-        pitch,
-    );
+    let (centers_r, pitch_r) = fit_row_grid(enemies_wanted, &profile_r, prof_top, first, pitch);
     let mut centers = centers_l;
     centers.extend(centers_r);
 
@@ -368,19 +397,33 @@ fn finish_roster(
     let y1w = (last + pitch_eff * 0.75)
         .max(prof_top as f32 + pitch_eff * MIN_WINDOW_ROWS)
         .min(h as f32 - 1.0) as usize;
-    let split_raw = ((band.green.1 + band.red.0) as f32 * 0.5 - band.green.0 as f32)
-        / (band.red.1.saturating_sub(band.green.0)).max(1) as f32;
-    let team_split = if (0.30..=0.70).contains(&split_raw) {
-        split_raw
-    } else {
-        0.5
+    // Rect right edge + team split. GREEN-ONLY (single-team PVE): the
+    // table ends at the lone bar's right edge and the split is EXACTLY
+    // 1.0 — the PVE table IS one full-width team, so 1.0 makes the backend
+    // name-strip math (half width = roster.width * split) cover the whole
+    // table (its nickname column sits in the left ~2-40% of that), and the
+    // frontend never reads the split (rows map by Tab sort key + centers).
+    // The two-bar path keeps the seam-approximation split clamped to a
+    // plausible half.
+    let (right, team_split) = match band.red {
+        Some((rx0, rx1)) => {
+            let split_raw = ((band.green.1 + rx0) as f32 * 0.5 - band.green.0 as f32)
+                / (rx1.saturating_sub(band.green.0)).max(1) as f32;
+            let split = if (0.30..=0.70).contains(&split_raw) {
+                split_raw
+            } else {
+                0.5
+            };
+            (rx1, split)
+        },
+        None => (band.green.1, 1.0),
     };
     let to_phys = |v: usize| (v as f32 * scale as f32).round() as i32;
     DetectedRoster {
         rect: Rect {
             x: to_phys(band.green.0),
             y: to_phys(band.top),
-            width: to_phys(band.red.1.saturating_sub(band.green.0)),
+            width: to_phys(right.saturating_sub(band.green.0)),
             height: to_phys(y1w.saturating_sub(band.top)),
         },
         row_centers: centers
@@ -406,86 +449,212 @@ pub(crate) struct HeaderBand {
     pub height: usize,
     /// Green (ally) bar horizontal span.
     pub green: (usize, usize),
-    /// Red (enemy) bar horizontal span.
-    pub red: (usize, usize),
+    /// Red (enemy) bar horizontal span. `None` marks the single-team PVE
+    /// variant: the table opens with ONE full-width teal bar and no enemy
+    /// half at all (see [`find_header_band`] for the acceptance gates a
+    /// green-only band must pass).
+    pub red: Option<(usize, usize)>,
 }
 
 /// Locate the team-header band: a thick run of consecutive scan rows each
-/// carrying BOTH the teal and the brick bar. Single-row anchoring was
+/// carrying the teal bar plus EITHER the adjacent brick bar (the classic
+/// two-team Tab table) OR nothing at all (the single-team PVE table, whose
+/// lone teal bar spans the full table width). Single-row anchoring was
 /// fragile (a stray water horizon could outscore the real header), so the
-/// band must be [`HEADER_MIN_ROWS`] rows thick and the best total bar area
-/// wins. Returns [`HeaderBand`] (band top + bar height + both spans).
+/// band must be [`HEADER_MIN_ROWS`] rows thick and every run stays
+/// SINGLE-KIND (a two-bar row and a green-only row never share a run).
+///
+/// The best TWO-BAR run (by total bar area) wins whenever one exists; a
+/// GREEN-ONLY run is the fallback, accepted only after two extra gates on
+/// its union green span:
+///
+/// 1. WIDTH — the lone bar must span ≥ [`GREEN_ONLY_MIN_W_FRAC`] of the
+///    working width (the real PVE bar covers ~55-65%; a lone PVP bar is
+///    ~24% and mods' corner bars are smaller still). Two-bar bands are NOT
+///    width-gated: their adjacency + pair signature already suffices.
+/// 2. ROW TEXT — the frame below the band must carry ≥ 2 white text bands
+///    ([`green_only_has_row_text`]): the PVE table always lists player
+///    names under its bar, while teal water/sky horizons and mod panels
+///    without name rows don't. This gate also protects
+///    [`header_bars_present`], which delegates here.
+///
+/// A red bar present but NOT adjacent (gap beyond [`HEADER_MAX_BAR_GAP_FRAC`])
+/// rejects the scan row outright — the mod scoreboard's corner bars must
+/// never degrade into a green-only hit. Returns [`HeaderBand`] (band top +
+/// bar height + spans; `red: None` marks the single-team variant).
 fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBand> {
     let y_lo = (h as f32 * HEADER_SCAN_TOP_FRAC) as usize;
     let y_hi = ((h as f32 * HEADER_SCAN_BOTTOM_FRAC) as usize).min(h);
     let min_run = ((w as f32 * HEADER_MIN_RUN_FRAC) as usize).max(HEADER_MIN_RUN_PX);
+    let max_gap = (w as f32 * HEADER_MAX_BAR_GAP_FRAC) as usize;
     /// One scan-row hit: (bar y, green span, red span), spans end-exclusive.
-    type HeaderHit = (usize, (usize, usize), (usize, usize));
+    /// `red: None` marks a GREEN-ONLY row (single-team PVE header variant).
+    type HeaderHit = (usize, (usize, usize), Option<(usize, usize)>);
+    // Per-row classification: green bar + (adjacent red bar | nothing).
+    let row_hit = |y: usize| -> Option<HeaderHit> {
+        let g = longest_run_span(px, w, y, is_header_green).filter(|g| g.1 - g.0 >= min_run)?;
+        match longest_run_span(px, w, y, is_header_red).filter(|r| r.1 - r.0 >= min_run) {
+            // ADJACENCY: the real table's two header bars hug the central
+            // seam (gap ≈ 2 working px). The mod scoreboard's teal/brick
+            // bars sit in the screen's opposite corners — same colors, same
+            // heights, HUGE gap — and kept outscoring the real header by
+            // area, flinging the anchor to the top of the screen (the live
+            // "drift"). A pair whose gap exceeds a fraction of the width
+            // rejects the WHOLE row: never a two-bar hit, and never a
+            // degraded green-only hit either.
+            Some(r) if r.0.abs_diff(g.1) <= max_gap => Some((y, g, Some(r))),
+            Some(_) => None,
+            None => Some((y, g, None)),
+        }
+    };
     let mut run: Vec<HeaderHit> = Vec::new();
-    // Best thick run so far, owned (NOT borrowed from `run` — the borrow
-    // would fight the `run.clear()` reset below).
-    let mut best: Option<Vec<HeaderHit>> = None;
-    let mut best_area = 0usize;
-    let flush =
-        |run: &mut Vec<HeaderHit>, best: &mut Option<Vec<HeaderHit>>, best_area: &mut usize| {
-            if run.len() >= HEADER_MIN_ROWS {
-                let area: usize = run.iter().map(|(_, g, r)| (g.1 - g.0) + (r.1 - r.0)).sum();
-                if area > *best_area {
-                    *best_area = area;
-                    *best = Some(std::mem::take(run));
-                }
+    // Best thick run per kind, owned (NOT borrowed from `run` — the borrow
+    // would fight the `run.clear()` reset below). Slot 0 = green-only,
+    // slot 1 = two-bar; the bool-as-index keeps the flush shared.
+    let mut best: [(Option<Vec<HeaderHit>>, usize); 2] = std::array::from_fn(|_| (None, 0));
+    let flush = |run: &mut Vec<HeaderHit>, best: &mut [(Option<Vec<HeaderHit>>, usize); 2]| {
+        if run.len() >= HEADER_MIN_ROWS {
+            let slot = run[0].2.is_some() as usize;
+            let area: usize = run
+                .iter()
+                .map(|(_, g, r)| (g.1 - g.0) + r.map_or(0, |r| r.1 - r.0))
+                .sum();
+            if area > best[slot].1 {
+                best[slot].1 = area;
+                best[slot].0 = Some(std::mem::take(run));
             }
-            run.clear();
-        };
+        }
+        run.clear();
+    };
     for y in y_lo..y_hi {
-        let hit = longest_run_span(px, w, y, is_header_green)
-            .filter(|g| g.1 - g.0 >= min_run)
-            .and_then(|g| {
-                longest_run_span(px, w, y, is_header_red)
-                    .filter(|r| r.1 - r.0 >= min_run)
-                    // ADJACENCY: the real table's two header bars hug the
-                    // central seam (gap ≈ 2 working px). The mod scoreboard's
-                    // teal/brick bars sit in the screen's opposite corners —
-                    // same colors, same heights, HUGE gap — and kept outscoring
-                    // the real header by area, flinging the anchor to the top
-                    // of the screen (the live "drift"). Reject any pair whose
-                    // gap exceeds a fraction of the width.
-                    .filter(|r| {
-                        let gap = r.0.abs_diff(g.1);
-                        gap <= (w as f32 * HEADER_MAX_BAR_GAP_FRAC) as usize
-                    })
-                    .map(|r| (y, g, r))
-            });
-        match hit {
-            Some(h) => run.push(h),
-            None => flush(&mut run, &mut best, &mut best_area),
+        match row_hit(y) {
+            Some(hit) => {
+                // A run must stay single-KIND: mixing two-bar and green-only
+                // rows would blur which gates the band deserves, so a kind
+                // change flushes the run and starts a new one.
+                if run
+                    .last()
+                    .is_some_and(|prev| prev.2.is_some() != hit.2.is_some())
+                {
+                    flush(&mut run, &mut best);
+                }
+                run.push(hit);
+            },
+            None => flush(&mut run, &mut best),
         }
     }
-    flush(&mut run, &mut best, &mut best_area);
+    flush(&mut run, &mut best);
+    // Two-bar always wins if present; the green-only run is the gated
+    // fallback (both gates computed on the union green span across the
+    // band's rows).
+    let mut chosen = best[1].0.take();
+    if chosen.is_none()
+        && let Some(rows) = best[0].0.take()
+    {
+        let (gx0, gx1) = rows.iter().fold((usize::MAX, 0), |(s, e), (_, g, _)| {
+            (s.min(g.0), e.max(g.1))
+        });
+        if (gx1 - gx0) >= (w as f32 * GREEN_ONLY_MIN_W_FRAC) as usize
+            && green_only_has_row_text(px, w, h, rows[0].0, (gx0, gx1))
+        {
+            chosen = Some(rows);
+        }
+    }
+    let band_rows = chosen?;
     // Anchor row = the band's first row; spans = widest green/red extents
     // across the band (caption text punches holes into individual rows).
-    let band = best?;
-    let top = band[0].0;
-    let (gx0, gx1) = band.iter().fold((usize::MAX, 0), |(s, e), (_, g, _)| {
+    let top = band_rows[0].0;
+    let (gx0, gx1) = band_rows.iter().fold((usize::MAX, 0), |(s, e), (_, g, _)| {
         (s.min(g.0), e.max(g.1))
     });
-    let (rx0, rx1) = band.iter().fold((usize::MAX, 0), |(s, e), (_, _, r)| {
-        (s.min(r.0), e.max(r.1))
-    });
+    // Single-KIND runs: either every row carries the red span or none does.
+    let red = if band_rows[0].2.is_some() {
+        let (rx0, rx1) = band_rows
+            .iter()
+            .filter_map(|(_, _, r)| *r)
+            .fold((usize::MAX, 0), |(s, e), r| (s.min(r.0), e.max(r.1)));
+        Some((rx0, rx1))
+    } else {
+        None
+    };
     Some(HeaderBand {
         top,
-        height: header_bar_height(px, w, h, top, (gx0, gx1), (rx0, rx1)),
+        height: header_bar_height(px, w, h, top, (gx0, gx1), red),
         green: (gx0, gx1),
-        red: (rx0, rx1),
+        red,
     })
 }
 
+/// The ROW-TEXT gate for a GREEN-ONLY header candidate: the frame below the
+/// band must carry at least TWO white text bands over the bar's span. The
+/// single-team PVE table always lists player names directly under its teal
+/// bar, while the false positives this variant invites — teal water/sky
+/// horizons, mod panels without a name column — show none. Band extraction
+/// mirrors [`fit_row_grid`] exactly (threshold = [`ROW_TEXT_FRACTION`] of
+/// the profile max, bands ≥ [`ROW_BAND_MIN_H`] rows) over the same
+/// [`ROW_SCAN_MAX_SPAN_FRAC`] window the full detector profiles.
+fn green_only_has_row_text(
+    px: &[u8],
+    w: usize,
+    h: usize,
+    top: usize,
+    green: (usize, usize),
+) -> bool {
+    let height = header_bar_height(px, w, h, top, green, None);
+    let prof_top = (top + height).min(h);
+    let prof_cap = (prof_top + (h as f32 * ROW_SCAN_MAX_SPAN_FRAC) as usize).min(h);
+    if prof_cap <= prof_top {
+        return false;
+    }
+    let rgb = |x: usize, y: usize| -> (i16, i16, i16) {
+        let i = (y * w + x) * 3;
+        (px[i] as i16, px[i + 1] as i16, px[i + 2] as i16)
+    };
+    let mut profile = vec![0u32; prof_cap - prof_top];
+    for (dy, slot) in profile.iter_mut().enumerate() {
+        let y = prof_top + dy;
+        let mut n = 0u32;
+        for x in green.0..green.1 {
+            let (r, g, b) = rgb(x, y);
+            if is_text_white(r, g, b) {
+                n += 1;
+            }
+        }
+        *slot = n;
+    }
+    let prof_max = profile.iter().copied().max().unwrap_or(0);
+    if prof_max == 0 {
+        return false;
+    }
+    let thr = prof_max as f32 * ROW_TEXT_FRACTION;
+    let mut bands = 0usize;
+    let mut band_start: Option<usize> = None;
+    let mut flush = |band_start: &mut Option<usize>, dy: usize| {
+        if let Some(s) = band_start.take()
+            && dy - s >= ROW_BAND_MIN_H
+        {
+            bands += 1;
+        }
+    };
+    for (dy, &v) in profile.iter().enumerate() {
+        let in_band = v as f32 > thr;
+        if in_band && band_start.is_none() {
+            band_start = Some(dy);
+        }
+        if !in_band {
+            flush(&mut band_start, dy);
+        }
+    }
+    flush(&mut band_start, profile.len());
+    bands >= 2
+}
+
 /// Header-bar height: scan down from the band top; a row stays "header"
-/// while ≥2 of 6 sample points across both bars read bar color (or the
-/// white captions punched into them). Continuation checks the BAR colors
-/// only — counting white here would let the scan bleed into the first
-/// player-name row sitting right under the bar whenever a sample lands
-/// inside the name text. The same six sample columns are what
+/// while ≥2 of the bar sample columns ([`header_samples`]) read bar color
+/// (or the white captions punched into them). Continuation checks the BAR
+/// colors only — counting white here would let the scan bleed into the
+/// first player-name row sitting right under the bar whenever a sample
+/// lands inside the name text. The same sample columns are what
 /// [`verify_header_band`] re-checks on later captures.
 fn header_bar_height(
     px: &[u8],
@@ -493,7 +662,7 @@ fn header_bar_height(
     h: usize,
     top: usize,
     green: (usize, usize),
-    red: (usize, usize),
+    red: Option<(usize, usize)>,
 ) -> usize {
     let rgb = |x: usize, y: usize| -> (i16, i16, i16) {
         let i = (y * w + x) * 3;
@@ -520,24 +689,41 @@ fn header_bar_height(
     hh.clamp(HEADER_MIN_H, (h / 10).max(HEADER_MIN_H))
 }
 
-/// The six sample columns across the two header bars (3 per bar, at the
-/// quarter points) shared by the height scan and the band verification.
-fn header_samples(green: (usize, usize), red: (usize, usize)) -> [usize; 6] {
-    [
+/// The bar sample columns shared by the height scan and the band
+/// verification: two-bar bands keep the historical six (3 per bar, at the
+/// quarter points); a GREEN-ONLY (single-team PVE) band carries three
+/// columns at the green bar's quarter points. Both consumers keep the
+/// "≥ 2 sample hits per row" rule: the white team caption sits in the left
+/// ~quarter of the bar, so 2-of-3 tolerates exactly one sample landing
+/// inside it — the same one-caption-hole margin the six-column rule has on
+/// two-bar bands.
+fn header_samples(green: (usize, usize), red: Option<(usize, usize)>) -> Vec<usize> {
+    let green = [
         green.0 + (green.1 - green.0) / 4,
         green.0 + (green.1 - green.0) / 2,
         green.0 + (green.1 - green.0) * 3 / 4,
-        red.0 + (red.1 - red.0) / 4,
-        red.0 + (red.1 - red.0) / 2,
-        red.0 + (red.1 - red.0) * 3 / 4,
-    ]
+    ];
+    match red {
+        Some(red) => green
+            .into_iter()
+            .chain([
+                red.0 + (red.1 - red.0) / 4,
+                red.0 + (red.1 - red.0) / 2,
+                red.0 + (red.1 - red.0) * 3 / 4,
+            ])
+            .collect(),
+        None => green.to_vec(),
+    }
 }
 
 /// Full-frame header presence check — the strongest "inside a battle" proof
-/// (the teal/brick team-header bars exist ONLY on the in-battle Tab table).
-/// The HUD probe dims badly (holding Tab darkens the frame and real dimmed
-/// captures measure 2 icon clusters / a 12px HP run against thresholds of
-/// 5 / 48), so the scene gate accepts EITHER evidence.
+/// (the team-header bars exist ONLY on the in-battle Tab table: the classic
+/// teal+brick pair, or the single-team PVE variant's lone full-width teal
+/// bar accepted under [`find_header_band`]'s width + white-row-text gates —
+/// the text gate in particular keeps teal water/sky horizons from reading
+/// as a table). The HUD probe dims badly (holding Tab darkens the frame and
+/// real dimmed captures measure 2 icon clusters / a 12px HP run against
+/// thresholds of 5 / 48), so the scene gate accepts EITHER evidence.
 pub(crate) fn header_bars_present(rgba: &[u8], width: u32, height: u32) -> bool {
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let (px, w, h) = downscale_rgba(rgba, width, height, scale);
@@ -579,12 +765,14 @@ fn sample_working(rgba: &[u8], width: u32, scale: u32, x: usize, y: usize) -> (i
 const BAND_EDGE_COUNTER_OFFSETS_PX: usize = 2;
 
 /// Cheap re-verification of a cached detection: sample ONLY the cached
-/// header band region (the six bar sample columns × the band's rows — the
-/// same points the height scan used) and confirm the teal/brick team-header
-/// colors are still there, PLUS a few counter-evidence columns just outside
-/// the band's left/right ends. O(band area) with no full-frame downscale:
-/// this is what every capture pays INSTEAD of a full `detect_roster` while
-/// the cached geometry is trusted.
+/// header band region (the bar sample columns ([`header_samples`]) × the
+/// band's rows — the same points the height scan used) and confirm the
+/// teal/brick team-header colors are still there, PLUS a few
+/// counter-evidence columns just outside the band's left/right ends.
+/// O(band area) with no full-frame downscale: this is what every capture
+/// pays INSTEAD of a full `detect_roster` while the cached geometry is
+/// trusted. Single-team PVE bands (`red: None`) verify the same way over
+/// their three green-bar sample columns.
 ///
 /// The positive half alone proves "the bars are still HERE" but not "the
 /// table did not slide horizontally": the bars are ~24% of the width each
@@ -604,7 +792,9 @@ pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &He
     if w_work < 64 || h_work < 64 {
         return false;
     }
-    if band.green.1 <= band.green.0 || band.red.1 <= band.red.0 {
+    // Only the green span must be non-empty: a single-team PVE band
+    // legitimately carries `red: None`.
+    if band.green.1 <= band.green.0 {
         return false;
     }
     let bar_color_at = |x: usize, y: usize| -> bool {
@@ -628,13 +818,15 @@ pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &He
     }
     // Counter-evidence columns outside both ends of the band (a bar at the
     // frame's edge simply loses that side's columns — nothing to contradict
-    // there).
+    // there). The right side anchors on the band's right edge: the red bar's
+    // end when it exists, the lone green bar's end on single-team bands.
+    let band_right = band.red.map_or(band.green.1, |(_, rx1)| rx1);
     let mut counter_cols = Vec::with_capacity(4);
     for off in 1..=BAND_EDGE_COUNTER_OFFSETS_PX {
         if band.green.0 >= off {
             counter_cols.push(band.green.0 - off);
         }
-        counter_cols.push(band.red.1 + off);
+        counter_cols.push(band_right + off);
     }
     let mut counter_rows = 0usize;
     for dy in 0..rows {
@@ -693,7 +885,11 @@ pub(crate) fn rebuild_roster_from_band(
     let mut centers: Vec<f32> = (0..rows_wanted(team_sizes.0))
         .map(|i| first_l + pitch_l * i as f32)
         .collect();
-    centers.extend((0..rows_wanted(team_sizes.1)).map(|i| first_r + pitch_r * i as f32));
+    // GREEN-ONLY (single-team PVE) band: no enemy half exists — the rebuild
+    // emits the ally block ONLY, whatever the hint's enemy count says.
+    if band.red.is_some() {
+        centers.extend((0..rows_wanted(team_sizes.1)).map(|i| first_r + pitch_r * i as f32));
+    }
     finish_roster(*band, h_work, scale, centers, pitch_l.max(pitch_r))
 }
 
@@ -736,7 +932,11 @@ const NATIVE_REFINE_RADIUS: i32 = 4;
 ///   span (averaging the whole span dilutes the white captions punched into
 ///   the bars, so the means still classify with the same predicates);
 /// - the table's left/right edges and the team seam, via COLUMN-MEAN colors
-///   over the refined band rows;
+///   over the refined band rows — except on single-team PVE detections
+///   (`team_split` 1.0), where the whole rect width is ONE green bar: the
+///   header-row test runs the green mean alone, the column pass collects
+///   the green span only, and no seam/split update happens (the split
+///   stays 1.0);
 /// - the row grid, shifted by the header-bottom delta (its origin hangs off
 ///   the band's bottom edge).
 ///
@@ -798,16 +998,24 @@ pub(crate) fn refine_roster_native(
 
     // Bar spans for the row means, from the detected rect + split (the seam
     // approximation only shifts which columns feed each mean — a couple of
-    // columns of the wrong bar dilute away in it).
+    // columns of the wrong bar dilute away in it). GREEN-ONLY (single-team
+    // PVE) detections report team_split exactly 1.0: the whole rect width
+    // IS one bar, so the header-row test classifies a single green row-mean
+    // and the column pass below collects the green span only.
+    let single_team = det.team_split >= 0.999;
     let split = det.team_split.clamp(0.25, 0.75) as f64;
     let gx0 = det.rect.x as i64;
     let gx1 = (det.rect.x as f64 + det.rect.width as f64 * split) as i64;
     let rx1 = (det.rect.x + det.rect.width) as i64;
     let is_header_row = |y: i64| -> bool {
-        matches!(
-            (row_mean(y, gx0, gx1), row_mean(y, gx1, rx1)),
-            (Some(g), Some(r)) if is_green(g) && is_red(r)
-        )
+        if single_team {
+            row_mean(y, gx0, rx1).is_some_and(&is_green)
+        } else {
+            matches!(
+                (row_mean(y, gx0, gx1), row_mean(y, gx1, rx1)),
+                (Some(g), Some(r)) if is_green(g) && is_red(r)
+            )
+        }
     };
 
     // ── Header band top + bottom (the row grid hangs off the bottom) ──────
@@ -863,7 +1071,9 @@ pub(crate) fn refine_roster_native(
                     None => (x, x),
                 });
             },
-            2 => {
+            // Green-only frames collect no red span: a stray red column (HUD
+            // decoration) must not flip the update into the two-bar branch.
+            2 if !single_team => {
                 red_span = Some(match red_span {
                     Some((a, b)) => (a.min(x), b.max(x)),
                     None => (x, x),
@@ -874,7 +1084,18 @@ pub(crate) fn refine_roster_native(
     }
 
     let mut out = det.clone();
-    if let (Some((gl, gr)), Some((rl, rr))) = (green_span, red_span) {
+    if single_team {
+        // Single-team x/width update: same width sanity check as the
+        // two-bar path, but there is no seam to hug and no split to update
+        // (the lone bar IS the table; the split stays exactly 1.0).
+        if let Some((gl, gr)) = green_span {
+            let new_width = gr - gl + 1;
+            if new_width > 0 && (new_width - i64::from(det.rect.width)).abs() <= 2 * radius {
+                out.rect.x = gl as i32;
+                out.rect.width = new_width as i32;
+            }
+        }
+    } else if let (Some((gl, gr)), Some((rl, rr))) = (green_span, red_span) {
         let new_width = rr - gl + 1;
         let bars_hug = rl - gr <= (0.06 * f64::from(det.rect.width)).max(2.0 * scale as f64) as i64;
         if new_width > 0 && (new_width - i64::from(det.rect.width)).abs() <= 2 * radius && bars_hug
@@ -2068,6 +2289,236 @@ mod tests {
             (det.rect.y as f32 - h as f32 * 0.22).abs() <= 12.0,
             "{det:?}"
         );
+    }
+
+    // ── single-team PVE tables (one full-width teal bar, no enemy half) ──
+
+    /// Synthetic PVE single-team table over the same kind of noisy scene as
+    /// [`synth_table`]: ONE teal header bar spanning the full table width
+    /// (~58% of the frame — the real single-team bar covers ~55-65%), its
+    /// white team caption punched into the left quarter (so the bar's FIRST
+    /// quarter-point sample lands inside it — the 2-of-3 sample rule exists
+    /// for exactly that), and white player-name text on the rows below,
+    /// LEFT-anchored like the real PVE layout where the nickname column
+    /// hugs the table's left edge. The background noise stays under the
+    /// near-white threshold on purpose: a real scene behind the translucent
+    /// table never reads near-white across the bar's full width, and the
+    /// white-row-text gate (profile max × `ROW_TEXT_FRACTION`) needs that
+    /// floor to keep noise rows out of its band extraction. Returns the
+    /// frame plus the truth rect and the drawn row centers.
+    fn synth_single_team_table(
+        w: u32,
+        h: u32,
+        rows: usize,
+        x_shift: i32,
+        with_row_text: bool,
+    ) -> (Vec<u8>, Rect, Vec<f32>) {
+        let mut img = vec![0u8; (w * h * 4) as usize];
+        let mut noise = Noise(0x5011_7ea4);
+        for y in 0..h {
+            for x in 0..w {
+                let l = noise.next_f32(110.0, 165.0) as u8;
+                let i = ((y * w + x) * 4) as usize;
+                img[i] = l;
+                img[i + 1] = l;
+                img[i + 2] = l;
+                img[i + 3] = 255;
+            }
+        }
+        let tx = ((w as f32 * 0.10) as i32 + x_shift).max(0) as u32;
+        let tw = (w as f32 * 0.58) as u32;
+        let ty = (h as f32 * 0.22) as u32;
+        let bar_h = (h as f32 * 0.028) as u32; // ≈ header bar height
+        let pitch = ((bar_h as f32 * 0.92) as u32).max(12);
+        let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = c.0;
+            img[i + 1] = c.1;
+            img[i + 2] = c.2;
+            img[i + 3] = 255;
+        };
+        // ONE full-width teal bar, white caption punched into its left
+        // quarter (tw/6 .. tw/6 + tw*28/300 — covers the bar's first
+        // quarter-point sample, misses the other two).
+        for y in ty..ty + bar_h {
+            for x in tx..tx + tw {
+                put(&mut img, x, y, TEAL);
+            }
+        }
+        for y in ty + 2..ty + bar_h - 2 {
+            for x in tx + tw / 6..tx + tw / 6 + tw * 28 / 300 {
+                put(&mut img, x, y, (245, 245, 245));
+            }
+        }
+        // Player rows: white name text, left-anchored (the PVE nickname
+        // column).
+        let mut centers = Vec::new();
+        for k in 0..rows {
+            let yc = ty as f32 + bar_h as f32 + pitch as f32 * (k as f32 + 0.5);
+            centers.push(yc);
+            if with_row_text {
+                let y0 = yc as u32;
+                for y in y0..(y0 + 8).min(ty + bar_h + pitch * (k as u32 + 1)) {
+                    for x in tx + 8..tx + 8 + tw * 28 / 100 {
+                        put(&mut img, x, y, (240, 240, 240));
+                    }
+                }
+            }
+        }
+        let rect = Rect {
+            x: tx as i32,
+            y: ty as i32,
+            width: tw as i32,
+            height: (ty + bar_h + pitch * rows as u32 - ty) as i32,
+        };
+        (img, rect, centers)
+    }
+
+    /// The PVE single-team table must anchor like its two-bar sibling: an
+    /// ally-only grid from the hint, a truth-accurate rect, and the split
+    /// at exactly 1.0 (the frontend maps rows without the split; the
+    /// backend name-strip math needs it to cover the FULL table).
+    #[test]
+    fn detects_single_team_pve_table() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, rect, centers) = synth_single_team_table(w, h, 7, 0, true);
+        let det = detect_roster(&img, w, h, (7, 0)).expect("single-team table must be detected");
+        assert_eq!(det.row_centers.len(), 7, "ally hint only — no enemy half");
+        assert!((det.rect.x - rect.x).abs() <= 12, "x: {rect:?} vs {det:?}");
+        assert!((det.rect.y - rect.y).abs() <= 12, "y: {rect:?} vs {det:?}");
+        assert!(
+            (det.rect.width - rect.width).abs() <= 24,
+            "w: {rect:?} vs {det:?}"
+        );
+        for (k, &c) in det.row_centers.iter().enumerate() {
+            assert!(
+                (c as f32 - centers[k]).abs() <= 8.0,
+                "row {k}: center {c} vs truth {}",
+                centers[k]
+            );
+        }
+        assert_eq!(det.team_split, 1.0, "single-team split is exactly 1.0");
+    }
+
+    /// A lone wide teal bar with NOTHING white below it (a teal water/sky
+    /// horizon, a mod panel without player names) must not anchor — the
+    /// white-row-text gate kills the green-only band, for the detector AND
+    /// for the scene gate ([`header_bars_present`]) alike.
+    #[test]
+    fn single_team_band_rejected_without_row_text() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_single_team_table(w, h, 7, 0, false);
+        assert!(detect_roster(&img, w, h, (7, 0)).is_none());
+        assert!(!header_bars_present(&img, w, h));
+    }
+
+    /// The mod-scoreboard guard must hold for the green-only path too: a
+    /// brick bar FARTHER right than the adjacency gap rejects every scan
+    /// row of the teal bar outright — the row must never degrade into a
+    /// green-only hit and sneak through as a single-team table.
+    #[test]
+    fn single_team_band_rejects_far_red_bar() {
+        let (w, h) = (1280u32, 720u32);
+        let (mut img, _, _) = synth_single_team_table(w, h, 7, 0, true);
+        let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = c.0;
+            img[i + 1] = c.1;
+            img[i + 2] = c.2;
+            img[i + 3] = 255;
+        };
+        // Same-row brick bar on the far right: the run is wide enough to
+        // qualify (≥ HEADER_MIN_RUN_FRAC) and the gap ≈ 0.16 of the width —
+        // beyond HEADER_MAX_BAR_GAP_FRAC.
+        let ty = (h as f32 * 0.22) as u32;
+        let bar_h = (h as f32 * 0.028) as u32;
+        for y in ty..ty + bar_h {
+            for x in w * 84 / 100..w * 95 / 100 {
+                put(&mut img, x, y, BRICK);
+            }
+        }
+        assert!(detect_roster(&img, w, h, (7, 0)).is_none());
+        assert!(!header_bars_present(&img, w, h));
+    }
+
+    /// The cached single-team band verifies on the frame it was detected on
+    /// and fails on a horizontal slide (mirror of the two-bar verify
+    /// tests): the interior samples sit on the wide bar either way, so the
+    /// counter-evidence columns — anchored on the lone bar's right end,
+    /// there being no red bar — are what catch the drift.
+    #[test]
+    fn verify_header_band_accepts_single_team_frame_and_rejects_shift() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_single_team_table(w, h, 6, 0, true);
+        let (band, _) = detect_roster_with_band(&img, w, h, (6, 0)).expect("detect");
+        assert!(band.red.is_none(), "single-team detection yields red: None");
+        assert!(verify_header_band(&img, w, h, &band), "same frame verifies");
+        // 16 physical px = 8 working px right: the teal bar now covers the
+        // cached band's right counter columns.
+        let (right, _, _) = synth_single_team_table(w, h, 6, 16, true);
+        assert!(
+            !verify_header_band(&right, w, h, &band),
+            "rightward slide must fail"
+        );
+        // Same distance left: the bar covers the left counter columns.
+        let (left, _, _) = synth_single_team_table(w, h, 6, -16, true);
+        assert!(
+            !verify_header_band(&left, w, h, &band),
+            "leftward slide must fail"
+        );
+    }
+
+    /// The rebuild from a cached single-team band emits EXACTLY the ally
+    /// block — the enemy hint (3 here) must not conjure rows for a half
+    /// the table does not have — with the split pinned at 1.0.
+    #[test]
+    fn rebuild_roster_from_band_single_team_builds_ally_grid_only() {
+        let (w, h) = (1280u32, 720u32);
+        let (img, _, _) = synth_single_team_table(w, h, 7, 0, true);
+        let (band, _) = detect_roster_with_band(&img, w, h, (7, 0)).expect("detect");
+        assert!(band.red.is_none());
+        let rebuilt = rebuild_roster_from_band(&band, w, h, (7, 3), None);
+        assert_eq!(rebuilt.row_centers.len(), 7, "enemy hint ignored");
+        assert_eq!(rebuilt.team_split, 1.0);
+    }
+
+    /// Mirror of the two-bar pin test at 2560x1440 (work scale 4): the
+    /// unrefined detector can only land on a 4-px grid, so draw the
+    /// single-team table at an off-grid x — the native refinement must pin
+    /// the lone bar's edges within 1 px while keeping the split at 1.0.
+    #[test]
+    fn native_refinement_pins_single_team_edges() {
+        let (w, h) = (2560u32, 1440u32);
+        let scale = w.div_ceil(MAX_WORK_WIDTH) as i32;
+        let tx = (w as f32 * 0.10) as i32;
+        // Pick the nearest x that is NOT a multiple of the work scale.
+        let mut off_grid = tx + 1;
+        if off_grid.rem_euclid(scale) == 0 {
+            off_grid += 1;
+        }
+        assert_ne!(off_grid.rem_euclid(scale), 0, "fixture must be off-grid");
+        let (img, rect, centers) = synth_single_team_table(w, h, 7, off_grid - tx, true);
+        assert_eq!(rect.x, off_grid);
+        let det = detect_roster(&img, w, h, (7, 0)).expect("table must be detected");
+        assert!(
+            (det.rect.x - off_grid).abs() <= 1,
+            "x: {off_grid} vs {:?}",
+            det.rect
+        );
+        assert!(
+            (det.rect.y - rect.y).abs() <= 1,
+            "y: {} vs {:?}",
+            rect.y,
+            det.rect
+        );
+        for (k, &c) in det.row_centers.iter().enumerate() {
+            assert!(
+                (c as f32 - centers[k]).abs() <= 3.0,
+                "row {k}: {c} vs {}",
+                centers[k]
+            );
+        }
+        assert_eq!(det.team_split, 1.0);
     }
 
     #[test]

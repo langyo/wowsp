@@ -497,7 +497,7 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
             top: 10,
             height: 5,
             green: (20, 30),
-            red: (30, 40),
+            red: Some((30, 40)),
         },
         roster: overlay_detect::DetectedRoster {
             rect: game,
