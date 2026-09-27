@@ -1736,7 +1736,7 @@ pub(crate) fn sink_victims(
     // alive rows are the victims.
     let mut victims: Vec<usize> = Vec::with_capacity(victims_n);
     let mut sunk_claims: Vec<usize> = Vec::with_capacity(n - old_alive);
-    for (j, nj) in new.iter().enumerate().skip(new_alive) {
+    for (_j, nj) in new.iter().enumerate().skip(new_alive) {
         let (mut best, mut best_s) = (usize::MAX, -1.0f32);
         for (i, o) in old.iter().enumerate() {
             let s = thumb_similarity(nj, o);
