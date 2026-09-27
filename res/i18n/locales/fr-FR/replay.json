@@ -155,6 +155,8 @@
     "manualLocate": "Positionnement manuel",
     "manualClear": "Effacer le positionnement",
     "manualRows": "Positionné manuellement · {n} lignes",
+    "hideNicks": "Masquer les pseudos",
+    "showNicks": "Afficher les pseudos",
     "manualDragHint": "Maintenez le clic gauche et tracez un cadre autour du tableau des joueurs dans le jeu",
     "manualConfirm": "Confirmer",
     "manualCancel": "Annuler",
@@ -183,9 +185,7 @@
       "enemyNote": "Les informations d'équipement ennemies ne sont pas affichées par principe",
       "noData": "Aucune caractéristique pour ce navire"
     },
-    "tier": "Palier",
-    "postBattle": "Stats d'après-match",
-    "postBattleUnavailable": "Les données de règlement ne sont pas encore dans le replay — réessayez plus tard"
+    "tier": "Palier"
   },
   "postbattle": {
     "loadingGlobal": "Chargement des statistiques globales de {name}…",

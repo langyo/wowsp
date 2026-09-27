@@ -155,6 +155,8 @@
     "manualLocate": "手動定位",
     "manualClear": "清除定位",
     "manualRows": "已手動定位 · {n} 行",
+    "hideNicks": "隱藏暱稱",
+    "showNicks": "顯示暱稱",
     "manualDragHint": "按住滑鼠左鍵拖曳，框選遊戲內的戰績表格區域",
     "manualConfirm": "確認",
     "manualCancel": "取消",
@@ -183,9 +185,7 @@
       "enemyNote": "按規則不展示敵方裝配資訊",
       "noData": "暫無該艦參數"
     },
-    "tier": "階級",
-    "postBattle": "戰後統計",
-    "postBattleUnavailable": "結算數據尚未寫入錄像，稍後再試"
+    "tier": "階級"
   },
   "postbattle": {
     "loadingGlobal": "載入 {name} 的全域戰績…",

@@ -155,6 +155,8 @@
     "manualLocate": "手动定位",
     "manualClear": "清除定位",
     "manualRows": "已手动定位 · {n} 行",
+    "hideNicks": "隐藏昵称",
+    "showNicks": "显示昵称",
     "manualDragHint": "按住鼠标左键拖动，框选游戏内的战绩表格区域",
     "manualConfirm": "确认",
     "manualCancel": "取消",
@@ -183,9 +185,7 @@
       "enemyNote": "按规则不展示敌方装配信息",
       "noData": "暂无该舰参数"
     },
-    "tier": "等级",
-    "postBattle": "战后统计",
-    "postBattleUnavailable": "结算数据尚未写入录像，稍后再试"
+    "tier": "等级"
   },
   "postbattle": {
     "loadingGlobal": "加载 {name} 全局战绩…",

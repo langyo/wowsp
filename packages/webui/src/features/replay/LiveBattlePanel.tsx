@@ -13,6 +13,11 @@
  * While the PR rating is on, each column title additionally carries the
  * team's aggregate — a tier-weighted (or plain, per the stats prefs) mean
  * winrate plus a mean PR over the players whose stats landed.
+ *
+ * The head also carries the share actions: a copy-share-shot button (the
+ * roster painted onto a watermarked PNG, same pipeline as the post-battle
+ * panels) and a hide-all-nicknames toggle. Masking is ephemeral share-time
+ * state, not a pref — masked nicks never reach the copied image either.
  */
 import {
   computed,
@@ -22,25 +27,27 @@ import {
   ref,
   watch,
   type CSSProperties,
-  type PropType,
 } from "vue";
 import { useRouter } from "vue-router";
+import { Camera, Eye, EyeOff } from "@lucide/vue";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import { useAccountStore } from "@/stores/account";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
-import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
 import { WaitingRadarArt } from "./liveGuideArt";
+import { useNickMasking, useShareShot } from "./postBattleShare";
+import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
-import { useRosterStats, isAiName } from "@/composables/useRosterStats";
+import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
@@ -93,16 +100,6 @@ export default defineComponent({
     /** Realm the battle is played on (from the active client install);
      *  used for both the stats lookup and the lookup-view jump. */
     realm: { type: String, default: "" },
-    /** Post-battle entry: rendered as soon as the battle settles/ends (the
-     *  fresh .wowsreplay exists) — the parent (LiveView) reads the replay's
-     *  BattleResults and opens the shared PostBattlePanel window. Omitted on
-     *  hosts that cannot read replays. */
-    onResults: { type: Function as PropType<() => void>, default: null },
-    /** The post-battle payload is being read (spinner rides the button). */
-    resultsBusy: { type: Boolean, default: false },
-    /** The last read refused the payload (replay still settling) — shown as
-     *  an inline note inviting a retry. */
-    resultsFailed: { type: Boolean, default: false },
   },
   setup(props) {
     const accounts = useAccountStore();
@@ -121,6 +118,15 @@ export default defineComponent({
       realm: () => realm.value,
       arena: () => props.arena,
     });
+
+    // ── Share-time privacy + copy-shot (head actions) ───────────────────
+    // The hide-nicknames toggle masks every roster nick on screen AND in
+    // the copied share shot (the shot model reads already-masked names,
+    // so a hidden nick cannot leak into the image). Like the post-battle
+    // panels, the state is ephemeral — a share-time privacy choice.
+    const masking = useNickMasking();
+    const root = ref<HTMLElement | null>(null);
+    const shot = useShareShot(buildShotModel, () => root.value);
 
     // Overlay detection state, streamed by the Rust Tab watcher as
     // transition-only `wowsp://overlay-status` events. Rendered as a badge
@@ -309,6 +315,123 @@ export default defineComponent({
         prefs.prefs.weightedTeamWr,
       );
 
+    /** The copy-shot model: the two-column roster as the share renderer
+     *  sees it — same stats voice as the panel (WR, plus PR while the
+     *  rating is on), nicks arriving already masked, ship parameters
+     *  never included. */
+    function buildShotModel(): ShotModel {
+      const arena = props.arena;
+      let mode: ShotModel["mode"] = null;
+      if (arena?.matchGroup) {
+        const c = modeColor(
+          arena.matchGroup,
+          arena.scenario,
+          arena.eventType,
+          arena.botCount ?? 0,
+          arena.scriptedUnitCount ?? 0,
+        );
+        mode = {
+          label: modeLabelOf(
+            arena.matchGroup,
+            arena.scenario,
+            arena.eventType,
+            arena.botCount ?? 0,
+            arena.scriptedUnitCount ?? 0,
+          ),
+          color: c.color,
+          background: c.background,
+        };
+      }
+      const statCell = (
+        v: VehicleEntry,
+        pick: (s: RosterStat) => number | null,
+        fmt: (v: number) => string,
+        colorOf: (v: number) => string,
+      ): ShotStat => {
+        if (isAiName(v.name)) return { text: "—" };
+        const st = stats.get(v.id);
+        if (!st || st.loading || st.hidden) return { text: "—" };
+        const val = pick(st);
+        if (val == null) return { text: "—" };
+        return { text: fmt(val), color: colorOf(val) };
+      };
+      const mkCol = (entries: TabOrderedVehicle[], enemy: boolean): ShotColumn => {
+        // Aggregate values carry their stat-column index so the shot's
+        // header numbers right-align onto the cells below them.
+        let agg: ShotColumn["agg"];
+        if (prefs.prefs.prEnabled) {
+          const a = teamAgg(entries);
+          agg = [
+            {
+              col: 0,
+              label: t(
+                prefs.prefs.weightedTeamWr
+                  ? "replay.roster.teamWrWeighted"
+                  : "replay.roster.teamWrPlain",
+              ),
+              value: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
+              valueColor: a.winrate != null ? winrateColor(a.winrate) : undefined,
+            },
+            {
+              col: 1,
+              label: t("replay.roster.teamAvgPr"),
+              value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
+              valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
+            },
+          ];
+        }
+        return {
+          title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
+          agg,
+          rows: entries.map((entry): ShotRow => {
+            const v = entry.vehicle;
+            return {
+              nick: masking.maskOf(v.name),
+              clanTag: stats.get(v.id)?.clanTag ?? null,
+              shipName:
+                shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "",
+              bot: isAiName(v.name),
+              dim: entry.sunk,
+              shipType:
+                v.shipId != null ? (shipOfflineEntry(v.shipId)?.type ?? null) : null,
+              iconVariant: entry.sunk
+                ? "sunk"
+                : v.relation === 0
+                  ? "white"
+                  : operation.value || v.relation <= 1
+                    ? "ally"
+                    : "enemy",
+              stats: [
+                statCell(v, (s) => s.winrate, (val) => `${val.toFixed(1)}%`, winrateColor),
+                ...(prefs.prefs.prEnabled
+                  ? [
+                      statCell(
+                        v,
+                        (s) => s.pr,
+                        (val) => `${Math.round(val)}`,
+                        (val) => prTier(val).color,
+                      ),
+                    ]
+                  : []),
+              ],
+            };
+          }),
+        };
+      };
+      return {
+        title: t("replay.live.title"),
+        mode,
+        mapLabel: arena?.mapName ? displayMapName(arena.mapName, dataLanguage.value) : null,
+        botLabel: t("replay.bot"),
+        // Mirror the DOM's single-column rule (operations and any
+        // single-sided roster edge).
+        columns:
+          operation.value || enemies.value.length === 0
+            ? [mkCol(allies.value, false)]
+            : [mkCol(allies.value, false), mkCol(enemies.value, true)],
+      };
+    }
+
     /** A column title (我方/敌方) with the team aggregate riding its right
      *  end — only while the PR rating is on; the caption stays bare
      *  otherwise. Values carry their tier colors (winrateColor / prTier). */
@@ -464,7 +587,7 @@ export default defineComponent({
         const main = (
           <span class="live-battle__player-main">
             <span class="live-battle__player-name">
-              <span class="live-battle__player-nick">{v.name}</span>
+              <span class="live-battle__player-nick">{masking.maskOf(v.name)}</span>
               {/* Clan tag from the batch answer ([HOOD] etc.) — the same tag
                   the in-game Tab panel prefixes nicknames with. It sits
                   AFTER the nick so every card's nick starts at the same
@@ -509,7 +632,7 @@ export default defineComponent({
       };
 
       return (
-        <div class="live-battle">
+        <div class="live-battle" ref={root}>
           <div class="live-battle__head live-battle__head--status">
             {/* The page title — the only "实时对局" on screen (the view-level
                 duplicate was dropped; see LiveView). */}
@@ -532,22 +655,36 @@ export default defineComponent({
             <span class="live-battle__map">
               {displayMapName(props.arena.mapName, dataLanguage.value)}
             </span>
-            {(props.settling || props.ended) && props.onResults ? (
-              <button
-                class="live-battle__results-btn"
-                type="button"
-                disabled={props.resultsBusy}
-                onClick={() => props.onResults?.()}
-              >
-                {props.resultsBusy ? <HkSpinner size="xs" tone="current" /> : null}
-                {t("replay.live.postBattle")}
-              </button>
-            ) : null}
-            {props.resultsFailed ? (
-              <span class="live-battle__results-note">
-                {t("replay.live.postBattleUnavailable")}
-              </span>
-            ) : null}
+            {/* Copy-share-shot: the roster as a watermarked PNG straight
+                onto the clipboard — the share path itself, no separate
+                post-battle window in between. Copy feedback rides the
+                app's toast surface. */}
+            <button
+              class="live-battle__shot-btn"
+              type="button"
+              disabled={shot.busy.value}
+              onClick={() => void shot.copyShot()}
+            >
+              {shot.busy.value ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
+              {t("replay.postbattle.copyShot")}
+            </button>
+            {/* Hide-all-nicknames toggle — the post-battle share bar's
+                masking button, dressed in the head's pill voice. */}
+            <button
+              class={[
+                "live-battle__mask-btn",
+                { "live-battle__mask-btn--on": masking.hideAll.value },
+              ]}
+              type="button"
+              onClick={() => masking.toggleAll()}
+            >
+              {/* Icon = the action a click performs, matching the
+                  post-battle share bar's toggle exactly. */}
+              {masking.hideAll.value ? <Eye size={13} /> : <EyeOff size={13} />}
+              {masking.hideAll.value
+                ? t("replay.live.showNicks")
+                : t("replay.live.hideNicks")}
+            </button>
             {statusBadge.value ? (
               <span
                 class={[

@@ -1,10 +1,11 @@
 /**
  * Sharing utilities for the post-battle panels (replay 结果 modal and the
- * live-view post-battle window): nickname masking (hide all / hide single
- * players) plus the "copy share shot" flow that renders the matrix to a
- * watermarked PNG and pushes it onto the system clipboard.
+ * incomplete-results fallback matrix) and the live battle panel's head
+ * actions: nickname masking (hide all / hide single players) plus the
+ * "copy share shot" flow that renders the matrix to a watermarked PNG and
+ * pushes it onto the system clipboard.
  *
- * Masking state is deliberately per-modal and ephemeral — it is a share-time
+ * Masking state is deliberately per-view and ephemeral — it is a share-time
  * privacy choice, not a preference. The fixed-width mask is NOT
  * length-preserving: a nick's length is itself information.
  */
@@ -19,8 +20,9 @@ import { renderPostBattleShot, type ShotModel } from "./postBattleShot";
 /** Display replacement for a hidden nickname (fixed width, see header). */
 export const NICK_MASK = "••••••";
 
-/** Nickname masking state for one post-battle modal. `hideAll` masks every
- *  nick; per-name toggles ride on top and persist across hide-all flips. */
+/** Nickname masking state for one masked view (a post-battle modal, or the
+ *  live panel's head actions). `hideAll` masks every nick; per-name toggles
+ *  ride on top and persist across hide-all flips. */
 export function useNickMasking() {
   const hideAll = ref(false);
   const hiddenNames = ref(new Set<string>());

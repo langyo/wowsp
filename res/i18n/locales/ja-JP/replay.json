@@ -155,6 +155,8 @@
     "manualLocate": "手動で位置合わせ",
     "manualClear": "配置を解除",
     "manualRows": "手動配置済み · {n} 行",
+    "hideNicks": "ニックネームを隠す",
+    "showNicks": "ニックネームを表示",
     "manualDragHint": "左ボタンをドラッグして、ゲーム内の成績テーブルを囲んでください",
     "manualConfirm": "確認",
     "manualCancel": "キャンセル",
@@ -183,9 +185,7 @@
       "enemyNote": "規則により敵艦の装備情報は表示されません",
       "noData": "この艦の諸元はありません"
     },
-    "tier": "ティア",
-    "postBattle": "戦後統計",
-    "postBattleUnavailable": "結果データがまだリプレイに書き込まれていません。後でもう一度お試しください"
+    "tier": "ティア"
   },
   "postbattle": {
     "loadingGlobal": "{name} の全体戦績を読み込み中…",

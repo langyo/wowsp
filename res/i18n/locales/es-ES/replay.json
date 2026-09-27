@@ -155,6 +155,8 @@
     "manualLocate": "Ubicación manual",
     "manualClear": "Quitar ubicación manual",
     "manualRows": "Ubicado manualmente · {n} filas",
+    "hideNicks": "Ocultar apodos",
+    "showNicks": "Mostrar apodos",
     "manualDragHint": "Mantén pulsado el botón izquierdo y arrastra para enmarcar la tabla de jugadores del juego",
     "manualConfirm": "Confirmar",
     "manualCancel": "Cancelar",
@@ -183,9 +185,7 @@
       "enemyNote": "La información de equipamiento enemiga no se muestra por política",
       "noData": "No hay especificaciones para este buque"
     },
-    "tier": "Nivel",
-    "postBattle": "Estadísticas post-combate",
-    "postBattleUnavailable": "Los datos del resultado aún no se han escrito en la repetición; inténtalo de nuevo pronto"
+    "tier": "Nivel"
   },
   "postbattle": {
     "loadingGlobal": "Cargando las estadísticas globales de {name}…",

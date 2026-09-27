@@ -155,6 +155,8 @@
     "manualLocate": "Manual locate",
     "manualClear": "Clear locate",
     "manualRows": "Manually located · {n} rows",
+    "hideNicks": "Hide nicknames",
+    "showNicks": "Show nicknames",
     "manualDragHint": "Drag to box-select the scoreboard area in the game window",
     "manualConfirm": "Confirm",
     "manualCancel": "Cancel",
@@ -183,9 +185,7 @@
       "enemyNote": "Enemy loadout info is hidden by policy",
       "noData": "No parameters for this ship"
     },
-    "tier": "Tier",
-    "postBattle": "Post-battle stats",
-    "postBattleUnavailable": "Settlement data is not in the replay yet — try again shortly"
+    "tier": "Tier"
   },
   "postbattle": {
     "loadingGlobal": "Loading {name}'s global stats…",

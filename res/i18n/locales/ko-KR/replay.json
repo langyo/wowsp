@@ -155,6 +155,8 @@
     "manualLocate": "수동 위치 지정",
     "manualClear": "위치 지정 해제",
     "manualRows": "수동 위치 지정됨 · {n}행",
+    "hideNicks": "닉네임 숨기기",
+    "showNicks": "닉네임 표시",
     "manualDragHint": "마우스 왼쪽 버튼을 드래그해 게임 내 전적 표를 선택하세요",
     "manualConfirm": "확인",
     "manualCancel": "취소",
@@ -183,9 +185,7 @@
       "enemyNote": "규칙에 따라 적 함선의 장비 정보는 표시하지 않습니다",
       "noData": "이 함선의 제원이 없습니다"
     },
-    "tier": "티어",
-    "postBattle": "전투 후 통계",
-    "postBattleUnavailable": "결산 데이터가 아직 리플레이에 기록되지 않았습니다. 잠시 후 다시 시도하세요"
+    "tier": "티어"
   },
   "postbattle": {
     "loadingGlobal": "{name}의 전체 전적을 불러오는 중…",

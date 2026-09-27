@@ -37,9 +37,15 @@
     line-height: 1.6;
   }
 
+  /* One row, one alignment: every head item — title, status/mode pills,
+     clock, map label, share actions, badge, manual-locate — centers on the
+     same flex line. Text-baseline alignment looked right for plain text
+     pills but sat crooked for icon/spinner-led ones (their baseline is the
+     icon's bottom edge, not the text's), which is exactly how buttons in
+     this head ended up tilted against their neighbors. */
   &__head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.6rem;
     flex-wrap: wrap;
   }
@@ -98,26 +104,21 @@
     white-space: nowrap;
   }
 
-  /* The head's right-corner cluster (map label + detection badge +
-     manual-locate button) centers against the line instead of sharing the
-     title's text baseline: the badge grows a spinner while searching, and
-     equal-height-looking pills of different boxes baseline-align crooked. */
+  /* The head's right-corner cluster starts at the map label and runs to
+     the manual-locate button — one centered line, no per-item overrides. */
   &__map {
-    align-self: center;
     color: rgb(var(--color-muted));
     font-size: var(--text-sm);
     margin-left: auto;
   }
 
   .live-battle__pill--status-detected {
-    align-self: center;
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
   }
 
   .live-battle__pill--status-searching {
-    align-self: center;
     border-color: rgb(var(--color-warning, 251 191 36) / 55%);
     background: rgb(var(--color-warning, 251 191 36) / 16%);
     color: rgb(var(--color-warning, 251 191 36));
@@ -125,44 +126,20 @@
 
   /* Manual anchor in force — same green family as the detected badge. */
   .live-battle__pill--status-manual {
-    align-self: center;
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
   }
 
-  /* Post-battle stats entry (settling/ended): same pill voice as the
-     manual-locate button, accent-tinted — it opens the shared post-battle
-     window parsed off the fresh replay file. */
-  &__results-btn {
+  /* Head action pills (copy-shot / hide-nicknames / manual-locate) share
+     one voice: a quiet neutral pill; the nicknames toggle flips green
+     while masking is on. */
+  &__shot-btn,
+  &__mask-btn,
+  &__manual-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.1rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid rgb(var(--color-accent) / 45%);
-    color: rgb(var(--color-accent));
-    background: rgb(var(--color-accent) / 10%);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-    cursor: pointer;
-
-    &:disabled {
-      cursor: wait;
-      opacity: 0.6;
-    }
-  }
-
-  &__results-note {
-    color: rgb(var(--color-warning, 251 191 36));
-    font-size: var(--text-2xs);
-    white-space: nowrap;
-  }
-
-  &__manual-btn {
-    align-self: center;
     padding: 0.1rem 0.55rem;
     border-radius: 999px;
     border: 1px solid rgb(var(--color-text) / 20%);
@@ -178,6 +155,13 @@
       cursor: wait;
       opacity: 0.6;
     }
+  }
+
+  /* Nicknames are masked: the toggle reads "show nicknames" in the same
+     success green as the manual-anchor button and the detected badge. */
+  &__mask-btn--on {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    color: rgb(var(--color-success, 74 222 128));
   }
 
   /* A manual anchor is live: the button now reads "clear locate". */
