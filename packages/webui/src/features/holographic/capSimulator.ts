@@ -185,6 +185,58 @@ function ownerAt(ctx: MapInternals,
   return o;
 }
 
+/** A ship marker's scoring-relevant fields — the subset of the THREE
+ *  marker's userData the kill/death attribution reads. */
+export interface SunkShipMarker {
+  role: TeamRole;
+  type?: string;
+  deathTime: number | null;
+}
+
+/** Kill/death points the sunk ships add to each side's score by time `t`
+ * (classic class tables; `special` maps override with flat +40/-25). Team
+ * modes attribute each sink's kill points to the OPPOSITE side, inferred
+ * from the marker's role. Operation scenarios (行动) make NO attribution:
+ * their single-team roster cannot tell an enemy bot from an ally script
+ * ship (relation follows scenario slots — see #606), so crediting the
+ * enemy score from friendly sinks would be pure invention; only the cap
+ * simulation (which follows the game's own ownership stream) scores. */
+export function sunkShipPoints(
+  markers: SunkShipMarker[],
+  t: number,
+  special: boolean,
+  operation = false,
+): { ally: number; enemy: number } {
+  let ally = 0;
+  let enemy = 0;
+  if (operation) return { ally, enemy };
+  for (const m of markers) {
+    const dt = m.deathTime;
+    if (dt == null || t < dt) continue;
+    const killer = m.role === "ally" || m.role === "self" ? "enemy" : "ally";
+    let kill: number;
+    let death: number;
+    if (special) {
+      kill = 40;
+      death = -25;
+    } else {
+      const cls =
+        (m.type ?? "").includes("Destroyer") ? "Destroyer"
+        : (m.type ?? "").includes("Battleship") ? "Battleship"
+        : (m.type ?? "").includes("AirCarrier") || (m.type ?? "").includes("AirCar") ? "AirCarrier"
+        : (m.type ?? "").includes("Submarine") ? "Submarine"
+        : "Cruiser";
+      kill = KILL_PTS[cls].kill;
+      death = KILL_PTS[cls].death;
+    }
+    if (killer === "ally") ally += kill;
+    else enemy += kill;
+    if (m.role === "ally" || m.role === "self") ally += death;
+    else enemy += death;
+  }
+  return { ally, enemy };
+}
+
 /** Recompute cap zone states + score at playback time t. Fully derived
  *  from the replay stream (capSamples ownership changes, ship positions,
  *  HP streams) so scrubbing reproduces the same result. */
@@ -218,34 +270,20 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
   let enemyScoreNow = startPts;
 
   // Kill / death points by ship class (classic tables; special maps
-  // override with flat +40/-25).
-  for (const m of ctx.shipMarkers) {
-    const dt = m.userData.deathTime as number | null;
-    if (dt == null || t < dt) continue;
-    const role = m.userData.role as TeamRole;
-    const killer = role === "ally" || role === "self" ? "enemy" : "ally";
-    const type = (m.userData.type as string | undefined) ?? "";
-    // Both branches below assign before any read — no initializer.
-    let kill: number;
-    let death: number;
-    if (special) {
-      kill = 40;
-      death = -25;
-    } else {
-      const cls =
-        type.includes("Destroyer") ? "Destroyer"
-        : type.includes("Battleship") ? "Battleship"
-        : type.includes("AirCarrier") || type.includes("AirCar") ? "AirCarrier"
-        : type.includes("Submarine") ? "Submarine"
-        : "Cruiser";
-      kill = KILL_PTS[cls].kill;
-      death = KILL_PTS[cls].death;
-    }
-    if (killer === "ally") allyScoreNow += kill;
-    else enemyScoreNow += kill;
-    if (role === "ally" || role === "self") allyScoreNow += death;
-    else enemyScoreNow += death;
-  }
+  // override with flat +40/-25). Operations make no attribution — see
+  // sunkShipPoints.
+  const sunkPts = sunkShipPoints(
+    ctx.shipMarkers.map((m) => ({
+      role: m.userData.role as TeamRole,
+      type: m.userData.type as string | undefined,
+      deathTime: m.userData.deathTime as number | null,
+    })),
+    t,
+    special,
+    ctx.props.operation,
+  );
+  allyScoreNow += sunkPts.ally;
+  enemyScoreNow += sunkPts.enemy;
 
   // Cap completion + accrual come from the per-zone simulation (which
   // pauses accrual while a point is contested), plus per-zone live capture
