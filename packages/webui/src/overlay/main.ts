@@ -140,6 +140,9 @@ interface Stat {
   /** Clan id from the batch answer (null = clanless / not found) — joins
    *  the hidden-profile 过街老鼠 clan gate below. */
   clanId: number | null;
+  /** Clan tag from the same answer — feeds the Tab sort key's display-name
+   *  segment ('[TAG]name', exactly what the game's table sorts by). */
+  clanTag: string | null;
   hidden: boolean;
 }
 
@@ -370,11 +373,12 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
   return side === "ally" ? seals + core : core + seals;
 }
 
-/** The ambiguous tie-group row's chip: every member's winrate side by
- *  side, joined by slashes. Damage and seals are dropped ON PURPOSE — the
- *  row is a SET of players (order unknown), so per-member seals would
- *  misattribute, and the chip must stay compact enough for a three-member
- *  brawl group to fit the reserved side pad. A member whose stats have not
+/** A mid-battle candidate-RANGE row's chip (sinks made the alive subset
+ *  unknowable — the range is contiguous in the Tab key order): every
+ *  candidate's winrate side by side, joined by slashes. Damage and seals
+ *  are dropped ON PURPOSE — the row is a SET of players, so per-member
+ *  seals would misattribute, and the chip must stay compact enough for a
+ *  wide range to fit the reserved side pad. A member whose stats have not
  *  landed reads "…", a hidden one the red dot — the same per-member faces
  *  chipContent renders. */
 function candidatesChip(members: string[]): string {
@@ -472,12 +476,16 @@ function render() {
     : null;
   if (anchor.rosterMode === "inferred") {
     aliveArr = anchor.rowAlive ?? null;
-    // Null entries here are rows with NO provable attribution — a whole
-    // side once sinks meet a tie group (see inferredOrder.ts) — and fall
-    // through to the silent "…" placeholder below, same as unrecognized
-    // OCR rows. Tie-group rows at battle start arrive as CANDIDATE SETS
-    // (the group's full member list per row) and render the joined chip.
-    players = inferredRowMapping(arena.vehicles, aliveArr);
+    // The mapping replicates the client's own Tab sort key (decompiled —
+    // see inferredOrder.ts), so battle-start rows arrive as EXACT names;
+    // once ships sink, rows carry provable CANDIDATE RANGES (contiguous in
+    // the key order) and render the joined chip. Clan tags feed the key's
+    // display-name segment, and the mapping re-derives on every render —
+    // when the WG batch lands a tag, the next render re-sorts with it.
+    players = inferredRowMapping(arena.vehicles, aliveArr, {
+      locale,
+      clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
+    });
   }
 
   const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
@@ -516,10 +524,10 @@ function render() {
           el.innerHTML = chipContent(mapped, side);
           sunk = aliveArr?.[blockOffset + i] === false;
         } else if (Array.isArray(mapped)) {
-          // A (class, tier) tie group the rule cannot order within: the
-          // chip lists every member's winrate instead of picking one —
-          // those rows collectively ARE those players. No seals here:
-          // a career stamp is a per-player verdict, and stamping an
+          // A mid-battle candidate RANGE (sinks made the alive subset
+          // unknowable — contiguous in the Tab key order): the chip lists
+          // every candidate's winrate instead of picking one. No seals
+          // here: a career stamp is a per-player verdict, and stamping an
           // ambiguous row would misattribute it.
           el.innerHTML = candidatesChip(mapped);
           multi = true;
@@ -690,6 +698,7 @@ async function runBatch() {
           pr: r.pr ?? null,
           battles: r.battles ?? null,
           clanId: r.clanId ?? null,
+          clanTag: r.clanTag ?? null,
           hidden: r.hidden,
         });
         notFoundLeft.delete(name);
@@ -701,6 +710,7 @@ async function runBatch() {
           pr: null,
           battles: null,
           clanId: null,
+          clanTag: null,
           hidden: false,
         });
         // Cache the "—" now, but keep a bounded re-queue armed: an empty

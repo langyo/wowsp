@@ -168,8 +168,8 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     //   row→name mapping from the verified Tab sort rule over the roster,
     //   so this side only contributes the per-row alive/sunk classification
     //   (pure luma, no text recognition). The mapping it implies is exact
-    //   for the group structure the game renders and leaves only the
-    //   within-(class, tier) ties to chance.
+    //   at battle start (the key is a total order) and narrows to provable
+    //   candidate ranges once sinks make the alive subset unreadable.
     // - `off`: neither — the frontend falls back to the historical index
     //   mapping, all rows read alive.
     let mode = super::overlay_config::roster_mode();

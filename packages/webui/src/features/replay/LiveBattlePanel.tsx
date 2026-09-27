@@ -208,16 +208,25 @@ export default defineComponent({
       }
       return side === "allies" ? order.allies : order.enemies;
     };
+    // Inputs for the predicted order's full Tab key: the ship-name locale
+    // plus the per-vehicle clan tag off the stats map — the order re-derives
+    // reactively when the WG batch lands a tag.
+    const predictedOrderOptions = computed(() => ({
+      locale: dataLanguage.value,
+      clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
+    }));
     const allies = computed(() =>
       orderForTab(
         props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
         tabRowsFor("allies"),
+        predictedOrderOptions.value,
       ),
     );
     const enemies = computed(() =>
       orderForTab(
         props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
         tabRowsFor("enemies"),
+        predictedOrderOptions.value,
       ),
     );
 

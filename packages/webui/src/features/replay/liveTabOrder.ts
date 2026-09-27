@@ -1,39 +1,25 @@
 /**
  * Live-roster ordering that mirrors the in-game Tab panel.
  *
- * The game orders each team's Tab rows as
- *
- *     [alive ships] ++ [sunk ships], each block by
- *     class rank (carrier < battleship < cruiser < destroyer < submarine),
- *     then TIER DESCENDING inside the class
- *
- * and re-sorts live as ships sink — the block structure is verified against
- * ground-truth Tab dumps (a sunk ship drops below every alive ship even when
- * it shares its ship type with them, and stays with its group's class order
- * inside the sunk block), and the tier-descending key is verified against
- * captured frames of real battles (every class block of every captured frame
- * listed its higher tiers first). tempArenaInfo.json is written once at
- * battle start and never reflects any of that, so two sources build the
- * order here:
+ * The game orders each team's Tab rows by ONE sort key recovered from the
+ * decompiled client (see utils/shipClass's module docs): alive flag, class
+ * rank, tier descending, nation rank, localized ship name, and the
+ * '[TAG]nickname' display name — and re-sorts live as ships sink. Two
+ * sources build the order here:
  *
  *  - the `wowsp://tab-order` event (`TabRowPlayer[]` per side, matched by
  *    the battle's `dateTime`) — the EXACT on-screen row order plus per-row
  *    alive flags, read off the frame by the Tab watcher's recognition
  *    pass. Whenever it exists it wins;
- *  - otherwise a PREDICTED order: stable sort by class rank, then tier
- *    descending, then ship id so same-ship players (the classic division)
- *    stay adjacent, everyone treated as alive. This matches the game's
- *    initial layout for every battle whose Tab table nobody has held yet,
- *    and stays a sane approximation afterwards.
- *
- * The within-(class, tier) tiebreak of the game's own sort is not derivable
- * from the arena file (checked against the captured frames: neither ship id
- * nor nation explains it); only the recognized row order is exact there —
- * rows that did not match a roster name keep their slot, and roster entries
- * no row claims are appended after the recognized ones in predicted order.
+ *  - otherwise a PREDICTED order: the same full key, everyone treated as
+ *    alive (the battle-start layout — exact, modulo the clan-tag segment
+ *    arriving with the WG batch, which re-sorts the moment it lands).
+ *    Rows that did not match a roster name keep their slot, and roster
+ *    entries no row claims are appended after the recognized ones in
+ *    predicted order.
  */
 import type { TabRowPlayer, VehicleEntry } from "@/api";
-import { shipClassRank, shipTierWeight, tabOrderCompare } from "@/utils/shipClass";
+import { gameTabRowKey } from "@/utils/shipClass";
 
 /** One roster entry with its display state after Tab-ordering. */
 export interface TabOrderedVehicle {
@@ -43,6 +29,16 @@ export interface TabOrderedVehicle {
   sunk: boolean;
 }
 
+/** Extra inputs for the predicted order's full sort key. */
+export interface PredictedOrderOptions {
+  /** Locale for the key's ship-name segment (zh-CN fallback inside the
+   *  key builder). */
+  locale?: string;
+  /** Clan tag per vehicle — from the panel's stats map; the predicted
+   *  order re-derives reactively when the WG batch lands tags. */
+  clanTagOf?: (v: VehicleEntry) => string | null | undefined;
+}
+
 /**
  * Order one side's roster for display.
  *
@@ -50,16 +46,12 @@ export interface TabOrderedVehicle {
  *        relation > 1), in arena-file order.
  * @param rows that side's recognized Tab rows in on-screen order, when a
  *        trusted recognition pass exists for this battle (null otherwise).
- * @param rankOf ship-class rank injector (tests); defaults to the offline
- *        ship DB's class ranking.
- * @param tierWeightOf ship-tier weight injector (tests); defaults to the
- *        offline ship DB's tier weighting (higher tiers sort first).
+ * @param options the predicted order's key inputs (locale, clan tags).
  */
 export function orderForTab(
   list: VehicleEntry[],
   rows?: TabRowPlayer[] | null,
-  rankOf: (shipId: number) => number = shipClassRank,
-  tierWeightOf: (shipId: number) => number = shipTierWeight,
+  options: PredictedOrderOptions = {},
 ): TabOrderedVehicle[] {
   const claimed = new Set<string>();
   const ordered: TabOrderedVehicle[] = [];
@@ -73,16 +65,22 @@ export function orderForTab(
     }
   }
   // Roster entries no row claimed (recognition missed them, or no
-  // recognition ran at all): predicted order — the verified game rule
-  // (class rank, tier descending, ship id) with the arena order as the
-  // final stable tie-break.
+  // recognition ran at all): predicted order — the client's full Tab key
+  // (alive, class, tier, nation, ship name, '[tag]name') with the arena
+  // order as the final stable tie-break.
   const rest = list
     .filter((v) => !claimed.has(v.name))
-    .map((v, i) => ({ v, i }))
-    .sort(
-      (a, b) =>
-        tabOrderCompare(rankOf, tierWeightOf)(a.v, b.v) || a.i - b.i,
-    )
+    .map((v, i) => ({
+      v,
+      i,
+      key: gameTabRowKey(
+        v,
+        true,
+        options.locale ?? "en-US",
+        options.clanTagOf ? () => options.clanTagOf?.(v) ?? null : undefined,
+      ),
+    }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
     .map(({ v }) => v);
   for (const v of rest) ordered.push({ vehicle: v, sunk: false });
   return ordered;

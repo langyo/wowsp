@@ -8,8 +8,8 @@
 //!   the webui never creates the overlay window, and the Rust Tab watcher
 //!   (belt-and-suspenders — see `watch_tab_tick`) suppresses every show.
 //! - `roster` — roster attribution. `"inferred"` (default) derives the
-//!   row→name mapping from the verified Tab sort rule (class rank, then
-//!   tier descending, then ship id) over the roster plus the luma probe's
+//!   row→name mapping from the decompiled client's full Tab sort key (alive,
+//!   class, tier, nation, ship name, '[tag]nickname) over the roster plus the luma probe's
 //!   alive flags — no OCR at all; `"ocr"` keeps the Windows OCR row→name
 //!   pipeline (exact, but unavailable on systems without an OCR language
 //!   pack); `"off"` skips attribution entirely — the anchor carries no
@@ -81,8 +81,8 @@ pub(crate) enum TableAnchor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RosterRecognition {
     /// Rule-inferred row→name mapping (the default and preferred mode): the
-    /// verified Tab sort rule (class rank, then tier descending, then ship
-    /// id) turns the roster plus the luma probe's per-row alive flags into
+    /// decompiled client's full Tab sort key (alive, class, tier, nation, ship
+    /// name, '[tag]nickname) turns the roster plus the luma probe's per-row alive flags into
     /// the row order with ZERO OCR — the overlay page derives the mapping
     /// itself from the arena roster the anchor's `row_alive` vector.
     Inferred,

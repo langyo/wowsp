@@ -9,7 +9,8 @@
  *   never creates it, and the Rust watcher suppresses shows too).
  * - `roster` — roster attribution: "inferred" (the default and preferred:
  *   the row→name mapping derived from the game's verified Tab sort rule —
- *   class rank, tier descending, ship id — over the roster plus the luma
+ *   class rank, tier descending, nation, ship name, '[tag]nickname —
+ *   over the roster plus the luma
  *   probe's alive flags, no OCR), "ocr" (Windows OCR row→name matching —
  *   exact, offered only when the OS OCR engine is usable), or "off" (chips
  *   follow roster/index order, the historical fallback, with no
