@@ -647,6 +647,27 @@ pub struct TabRowOrder {
     pub enemies: Vec<TabRowPlayer>,
 }
 
+/// Payload of the `wowsp://sink-attrib` event: for ONE confirmed sink
+/// transition, the rows whose players just left the alive block — solved by
+/// fingerprint-matching the Tab table's name strips across the sink (the
+/// game re-sorts [alive by Tab key] ++ [sunk by Tab key], so each victim's
+/// strip reappears dimmed inside the sunk block; see the watcher's sink
+/// fast-path). Indices are rows of the side's block in the PRE-sink alive
+/// order — the consumer resolves them against its own layout (the decompiled
+/// Tab sort key keeps that layout exact), then adds the named players to its
+/// sunk set. An empty vec on a side means "no attribution for that side"
+/// (unreadable strips / an unexplained rewrite): the consumer must degrade
+/// that side to candidate ranges, never guess.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SinkAttribution {
+    /// Ally side (relation ≤ 1): pre-sink alive-row indices of the players
+    /// that just sank.
+    pub ally_rows: Vec<u32>,
+    /// Enemy side (relation > 1): same, for the enemy block.
+    pub enemy_rows: Vec<u32>,
+}
+
 /// One position sample for one entity at one instant — the raw output of M3's
 /// packet-stream decoder. WoWS maps are planar: x = east, z = north, y ≈ 0.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -2706,6 +2727,19 @@ mod tests {
         assert_exact_keys(&v, &["dateTime", "battle", "allies", "enemies"]);
         assert_exact_keys(&v["allies"][0], &["name", "alive"]);
         assert!(v["enemies"][0]["name"].is_null());
+    }
+
+    /// The sink-attribution event payload (client.ts: SinkAttribution):
+    /// pre-sink alive-row indices per side, camelCased.
+    #[test]
+    fn sink_attribution_renames_both_sides() {
+        let v = round_trips(SinkAttribution {
+            ally_rows: vec![2],
+            enemy_rows: vec![],
+        });
+        assert_exact_keys(&v, &["allyRows", "enemyRows"]);
+        assert_eq!(v["allyRows"][0], 2);
+        assert!(v["enemyRows"].as_array().is_some_and(|a| a.is_empty()));
     }
 
     // ── replay stream (client.ts: ReplayStream — skip_serializing_if

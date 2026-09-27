@@ -223,6 +223,18 @@ export interface TabRowOrder {
   enemies: TabRowPlayer[];
 }
 
+/** Payload of the `wowsp://sink-attrib` event (mirrors
+ *  `wowsp_tauri_shared::SinkAttribution`): for one confirmed sink
+ *  transition, the rows whose players just left the alive block — indices
+ *  into the side's PRE-sink alive order (the Tab sort key keeps that order
+ *  exact), solved by fingerprint-matching the table's name strips across
+ *  the sink. An EMPTY side means "no attribution" — degrade that side to
+ *  candidate ranges, never guess. */
+export interface SinkAttribution {
+  allyRows: number[];
+  enemyRows: number[];
+}
+
 /** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
  * maps are planar: x = east, z = north, y ≈ 0 (sea level). */
 export interface PositionSample {
@@ -1400,6 +1412,8 @@ export const api = {
    *  main window's live panel reorders its columns to mirror it. */
   listenTabOrder: (handler: (order: TabRowOrder) => void) =>
     transport.listen?.<TabRowOrder>("wowsp://tab-order", handler),
+  listenSinkAttribution: (handler: (attrib: SinkAttribution) => void) =>
+    transport.listen?.<SinkAttribution>("wowsp://sink-attrib", handler),
   /** Player stats lookup. `prAlgo` picks the PR formula ("winrate" =
    *  ApeRadar weighted winrate, "expected" = wows-numbers expected values);
    *  omitted → the backend's zero-cost default. Forward it only while the

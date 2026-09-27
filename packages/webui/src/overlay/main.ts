@@ -7,6 +7,9 @@
  *
  *   - `wowsp://arena-info`  → roster snapshot (names, teams) → schedules ONE
  *     batched WG stats lookup (same backend command the main window uses);
+ *   - `wowsp://sink-attrib` → one sink transition's solved victims (row
+ *     indices into each side's pre-sink alive order) → the sunk tracker
+ *     keeps the row→name mapping EXACT mid-battle (utils/sunkTracker);
  *   - `wowsp://overlay-anchor` → table geometry (rows, team split) → chips
  *     are positioned at each row.
  *
@@ -21,6 +24,8 @@ import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 // sort rule over the roster + the anchor's alive flags (no OCR) — see
 // inferredOrder.ts.
 import { inferredRowMapping } from "./inferredOrder";
+import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
+import { gameTabRowKey } from "@/utils/shipClass";
 import { isOperationBattle } from "@/utils/modeColors";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
@@ -269,6 +274,11 @@ let trustedRows: {
   players: (string | null)[];
   alive: boolean[] | null;
 } | null = null;
+// Per-battle trusted sunk sets, fed by the `wowsp://sink-attrib` events
+// (the Rust sink solver names WHO sank by strip-fingerprint matching).
+// While a side stays exact, render() lays its rows out precisely instead
+// of showing candidate ranges — see utils/sunkTracker.ts.
+const sunk = new SunkTracker();
 // Latest `wowsp://overlay-status` detection state (mirrors OverlayState on
 // the wire; null before the first event). Picks the two-level hint copy:
 // only `fallback` is a tried-and-failed state, everything else still reads
@@ -425,6 +435,43 @@ function statusCard(text: string): HTMLDivElement {
   return card;
 }
 
+/** The roster's believed full-key order for one side — the same ordering
+ *  inferredRowMapping applies (see utils/shipClass for the decompiled
+ *  rule). Operation scenarios map the whole roster as the ally block. */
+function sideFullOrder(side: SunkSide): string[] {
+  if (!arena) return [];
+  const operation = isOperationBattle(
+    arena.matchGroup,
+    arena.scenario,
+    arena.eventType,
+    arena.vehicles.map((v) => v.name),
+  );
+  // Operations (行动) map the WHOLE roster as the ally block — their
+  // relation values follow scenario team slots, not enemy semantics.
+  const list = operation
+    ? side === "enemy"
+      ? []
+      : arena.vehicles
+    : arena.vehicles.filter((v) => (side === "enemy" ? v.relation > 1 : v.relation <= 1));
+  return list
+    .map((v, i) => ({
+      v,
+      i,
+      key: gameTabRowKey(v, true, locale, (n) => stats.get(cacheKey(n))?.clanTag ?? null),
+    }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
+    .map(({ v }) => v.name);
+}
+
+/** The side's believed CURRENT alive order (full order minus the trusted
+ *  sunk set) — what sink-attrib row indices resolve against. While the
+ *  side is exact this is the game's alive block, verbatim. */
+function sideAliveOrder(side: SunkSide): string[] {
+  const sunkSet = sunk.sunkNames(side);
+  const full = sideFullOrder(side);
+  return sunkSet ? full.filter((n) => !sunkSet.has(n)) : full;
+}
+
 /** Rebuild every chip from the current roster + anchor. */
 function render() {
   const root = document.body;
@@ -497,16 +544,31 @@ function render() {
   if (anchor.rosterMode === "inferred") {
     aliveArr = anchor.rowAlive ?? null;
     // The mapping replicates the client's own Tab sort key (decompiled —
-    // see inferredOrder.ts), so battle-start rows arrive as EXACT names;
-    // once ships sink, rows carry provable CANDIDATE RANGES (contiguous in
-    // the key order) and render the joined chip. Clan tags feed the key's
+    // see inferredOrder.ts), so battle-start rows arrive as EXACT names.
+    // Mid-battle, the sink tracker holds the TRUSTED sunk sets (fed by the
+    // sink-attrib events) — a side whose set agrees with the anchor's
+    // alive count renders the exact [alive] ++ [sunk] layout, every row
+    // named; a degraded side (a sink the strip solver could not explain)
+    // falls back to provable CANDIDATE RANGES. Clan tags feed the key's
     // display-name segment, and the mapping re-derives on every render —
     // when the WG batch lands a tag, the next render re-sorts with it.
     // Operation scenarios map the whole roster as a single allies block.
+    const allyN = operation
+      ? arena.vehicles.length
+      : arena.vehicles.filter((v) => v.relation <= 1).length;
+    const enemyN = operation ? 0 : arena.vehicles.length - allyN;
+    const reconcileSide = (rel: "ally" | "enemy", n: number, off: number) => {
+      const slice = aliveArr == null ? null : aliveArr.slice(off, off + n);
+      const aliveCount = slice == null ? n : slice.lastIndexOf(true) + 1;
+      sunk.reconcile(rel, n - aliveCount);
+    };
+    reconcileSide("ally", allyN, 0);
+    if (!operation) reconcileSide("enemy", enemyN, allyN);
     players = inferredRowMapping(arena.vehicles, aliveArr, {
       locale,
       clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
       operation,
+      sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
     });
   }
 
@@ -852,6 +914,7 @@ async function start() {
     // the new battle's lookups start fresh.
     if (next?.dateTime !== arena?.dateTime) {
       trustedRows = null;
+      sunk.reset(next?.dateTime ?? null);
       retryDelayMs = 2000;
       retriesLeft = RETRIES_PER_BATTLE;
       if (retryTimer) {
@@ -883,6 +946,20 @@ async function start() {
     // already on screen current without waiting for the next anchor event.
     statusState = (e.payload as { state?: string } | null)?.state ?? null;
     render();
+  });
+  await listen("wowsp://sink-attrib", (e: { payload: unknown }) => {
+    // One sink transition, solved Rust-side: row indices into each side's
+    // PRE-sink alive order. Resolve them against this page's believed
+    // layout (the sort-key order minus the current sunk set). NO render
+    // here: the anchor of the same Rust pass follows this event and
+    // renders with counts that MATCH the grown set — an interim render
+    // would reconcile the new set against the PRE-sink alive vector and
+    // degrade the side for the whole battle.
+    const attrib = e.payload as { allyRows?: number[]; enemyRows?: number[] };
+    sunk.applyAttribution(
+      { ally: attrib?.allyRows ?? [], enemy: attrib?.enemyRows ?? [] },
+      (side) => sideAliveOrder(side),
+    );
   });
   await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {
     anchor = e.payload as OverlayAnchor;

@@ -437,9 +437,10 @@ pub(super) fn revalidate_pinned_anchor(
 
 /// One SINK FAST-PATH pass (overlay shown + confirmed pin): capture the
 /// game window once and read every row's alive flag straight off the
-/// PINNED geometry — strip crops + brightest-glyph luma only, no OCR, no
-/// detection, no roster read ([`overlay_detect::read_row_alive`]). A
-/// settled alive-flag flip (see [`sink_probe_confirm`]: a SINK applies
+/// PINNED geometry — strip crops + brightest-glyph luma, plus the
+/// occupancy fingerprints the sink solver below diffs, no OCR, no
+/// detection, no roster read ([`overlay_detect::crop_row_name_strips`]).
+/// A settled alive-flag flip (see [`sink_probe_confirm`]: a SINK applies
 /// immediately, a pure revival needs two agreeing probes) then:
 ///
 /// - updates the pin's `row_alive` and re-places the anchor (the chips
@@ -522,7 +523,31 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
         return;
     }
     fsm.geometry_verify_fails = 0;
-    let fresh = overlay_detect::read_row_alive(&rgba, w, h, &roster, &rows, split, ally_rows);
+    // One strip crop serves BOTH channels: the luma classification (alive
+    // flags, as before) and the occupancy fingerprints the sink solver
+    // diffs across this transition.
+    let strips =
+        overlay_detect::crop_row_name_strips(&rgba, w, h, &roster, &rows, split, ally_rows);
+    let fresh: Vec<bool> = strips
+        .iter()
+        .map(|s| match s {
+            Some((buf, _, _)) => {
+                overlay_detect::row_strip_alive(overlay_detect::strip_max_luma(buf))
+            },
+            None => true,
+        })
+        .collect();
+    let new_thumbs: Vec<Option<overlay_detect::StripThumb>> = strips
+        .iter()
+        .map(|s| match s {
+            Some((buf, cw, ch)) => overlay_detect::strip_thumb(buf, *cw, *ch),
+            None => None,
+        })
+        .collect();
+    let battle = super::arena_info::last_arena_stamp();
+    let baseline_usable = fsm.strip_baseline.as_ref().is_some_and(|b| {
+        b.battle == battle && b.row_centers == rows && b.thumbs.len() == strips.len()
+    });
     let pinned_alive = fsm
         .pinned_anchor
         .as_ref()
@@ -537,16 +562,76 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
     );
     fsm.sink_candidate = next_candidate;
     let Some(alive) = apply_now else {
+        // No settled flip: the baseline still tracks the latest frame so
+        // the NEXT transition diffs against fresh thumbs.
+        fsm.strip_baseline = Some(StripBaseline {
+            battle,
+            row_centers: rows,
+            thumbs: new_thumbs,
+        });
         return;
     };
+    // Sink attribution: diff this side's old-vs-new strips around the
+    // alive-count drop. A side the solver cannot explain contributes an
+    // EMPTY vec — the consumer degrades that side, never guesses.
+    let mut attrib = wowsp_tauri_shared::SinkAttribution {
+        ally_rows: Vec::new(),
+        enemy_rows: Vec::new(),
+    };
+    let old_thumbs: Option<&Vec<Option<overlay_detect::StripThumb>>> =
+        baseline_usable.then_some(&fsm.strip_baseline.as_ref().expect("checked").thumbs);
+    let side = |range: std::ops::Range<usize>| -> Vec<u32> {
+        let Some(old) = old_thumbs else {
+            return Vec::new();
+        };
+        let Some(prev_alive) = pinned_alive.as_deref() else {
+            return Vec::new();
+        };
+        // The applied vector must be BLOCKWISE on this side ([T…T F…F]):
+        // the game's re-sorted layout always is, so a non-blockwise read
+        // (a glare frame darkening one alive row mid-block) is NOT a sink
+        // layout — attributing it would name the wrong victim. Skip: the
+        // consumer degrades to ranges on the count mismatch instead.
+        let blockwise = !alive[range.clone()]
+            .iter()
+            .zip(alive[range.clone()].iter().skip(1))
+            .any(|(a, b)| !*a && *b);
+        if !blockwise {
+            return Vec::new();
+        }
+        let old_side: Vec<Option<overlay_detect::StripThumb>> =
+            range.clone().map(|i| old[i]).collect();
+        let new_side: Vec<Option<overlay_detect::StripThumb>> =
+            range.clone().map(|i| new_thumbs[i]).collect();
+        let count = |v: &[bool]| v[range.clone()].iter().filter(|&&a| a).count();
+        let (was, now) = (count(prev_alive), count(&alive));
+        overlay_detect::sink_victims(&old_side, &new_side, was, now)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|i| (i + range.start) as u32)
+            .collect()
+    };
+    let n = strips.len();
+    attrib.ally_rows = side(0..ally_rows.min(n));
+    attrib.enemy_rows = side(ally_rows.min(n)..n);
+    if let Err(e) = app.emit(super::SINK_ATTRIB_EVENT, &attrib) {
+        tracing::warn!(error = %e, "emit sink-attrib failed");
+    }
+    // The new frame becomes the diff baseline for the next transition.
+    fsm.strip_baseline = Some(StripBaseline {
+        battle,
+        row_centers: rows,
+        thumbs: new_thumbs,
+    });
     let sunk = alive.iter().filter(|&&v| !v).count();
     // A row's alive flag settled: update the pin and re-place. In the OCR
     // mode the names→rows attribution is stale until the re-read lands, so
     // the pin flags stale and the fast OCR re-map re-derives the (re-sorted)
     // mapping. The INFERRED mode needs no re-read at all: the overlay page
-    // re-derives its mapping from the alive vector the moment this anchor
-    // lands ([alive by sort rule] ++ [sunk by sort rule] — the same
-    // permutation the game just applied), so no stale badge, no remap.
+    // re-derives its mapping from the sink attribution above plus the alive
+    // vector the moment this anchor lands ([alive by sort rule] ++ [sunk by
+    // sort rule] — the same permutation the game just applied), so no stale
+    // badge, no remap.
     let inferred =
         super::overlay_config::roster_mode() == super::overlay_config::RosterRecognition::Inferred;
     let mut updated = fsm
@@ -568,6 +653,7 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
         sunk,
         rows = updated.row_centers.len(),
         inferred,
+        attributed = attrib.ally_rows.len() + attrib.enemy_rows.len(),
         "sink probe: alive flags changed — pin updated"
     );
 }

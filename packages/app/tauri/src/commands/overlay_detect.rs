@@ -1575,6 +1575,205 @@ pub(crate) fn read_row_alive(
     .collect()
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Name-strip fingerprint matching (the sink attribution engine)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Fingerprint grid resolution for one name strip. Wide and short, like
+/// the strips themselves: 48x12 keeps glyph-shape detail at a fraction of
+/// the raw crop's cost and makes thumbs from different captures directly
+/// comparable (the pooling maps any strip size onto the same grid).
+pub(crate) const STRIP_THUMB_W: usize = 48;
+pub(crate) const STRIP_THUMB_H: usize = 12;
+
+/// One name strip's occupancy fingerprint: per grid cell the FRACTION of
+/// pixels above the strip's own binarization threshold (0.0..1.0). The
+/// per-strip adaptive threshold is what makes this comparable across
+/// frames — the Tab table's translucent plate rides over whatever the
+/// scene behind it shows, so absolute luma drifts between Tab holds while
+/// the glyph coverage pattern does not.
+pub(crate) type StripThumb = [f32; STRIP_THUMB_W * STRIP_THUMB_H];
+
+/// Minimum soft-IoU for two thumbs to count as the SAME row content, and
+/// the margin the structural checks tolerate. Calibrated against synthetic
+/// strips: same text at different background brightness + noise lands well
+/// above it, different texts well below (see the tests below).
+pub(crate) const STRIP_MATCH_THRESHOLD: f32 = 0.55;
+
+/// Build one strip's occupancy fingerprint: Otsu-threshold the luma
+/// histogram (glyphs are the bright population, the table plate the dark
+/// one — whichever absolute levels the scene behind the plate produces),
+/// then pool the binary mask onto the fixed grid. Returns `None` for an
+/// empty crop (the caller treats the row as unfingerprintable, never as a
+/// match).
+pub(crate) fn strip_thumb(crop_rgba: &[u8], cw: u32, ch: u32) -> Option<StripThumb> {
+    if cw == 0 || ch == 0 || crop_rgba.len() < (cw as usize) * (ch as usize) * 4 {
+        return None;
+    }
+    // 256-bin luma histogram over the strip.
+    let mut hist = [0u32; 256];
+    let mut luma = Vec::with_capacity((cw as usize) * (ch as usize));
+    for p in crop_rgba.chunks_exact(4) {
+        let l = (0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2]))
+            .round()
+            .clamp(0.0, 255.0) as u8;
+        hist[l as usize] += 1;
+        luma.push(l);
+    }
+    let total = (cw as usize) * (ch as usize);
+    // Otsu: maximize the between-class variance over all split points.
+    let mut sum_all = 0u64;
+    for (v, n) in hist.iter().enumerate() {
+        sum_all += (v as u64) * (*n as u64);
+    }
+    let (mut best_t, mut best_var, mut w0, mut sum0) = (0u8, -1.0f32, 0u64, 0u64);
+    for t in 0..256u32 {
+        w0 += u64::from(hist[t as usize]);
+        if w0 == 0 || w0 as usize == total {
+            continue;
+        }
+        sum0 += u64::from(t) * u64::from(hist[t as usize]);
+        let w1 = total as u64 - w0;
+        let m0 = sum0 as f32 / w0 as f32;
+        let m1 = (sum_all - sum0) as f32 / w1 as f32;
+        let var = (w0 as f32 * w1 as f32) * (m0 - m1) * (m0 - m1);
+        if var > best_var {
+            best_var = var;
+            best_t = t as u8;
+        }
+    }
+    // Pool the thresholded mask onto the fixed grid. Cell occupancy is the
+    // fraction of its pixels above the threshold — a soft, sub-pixel-tolerant
+    // shape descriptor rather than a hard bitmap.
+    let mut thumb = [0f32; STRIP_THUMB_W * STRIP_THUMB_H];
+    for gy in 0..STRIP_THUMB_H {
+        let y0 = (gy * ch as usize) / STRIP_THUMB_H;
+        let y1 = (((gy + 1) * ch as usize) / STRIP_THUMB_H).max(y0 + 1);
+        for gx in 0..STRIP_THUMB_W {
+            let x0 = (gx * cw as usize) / STRIP_THUMB_W;
+            let x1 = (((gx + 1) * cw as usize) / STRIP_THUMB_W).max(x0 + 1);
+            let (mut on, mut cnt) = (0u32, 0u32);
+            for y in y0..y1.min(ch as usize) {
+                for x in x0..x1.min(cw as usize) {
+                    cnt += 1;
+                    if luma[y * cw as usize + x] > best_t {
+                        on += 1;
+                    }
+                }
+            }
+            thumb[gy * STRIP_THUMB_W + gx] = if cnt == 0 {
+                0.0
+            } else {
+                on as f32 / cnt as f32
+            };
+        }
+    }
+    Some(thumb)
+}
+
+/// Soft IoU between two thumbs: Σmin / Σmax over the occupancy grids. 1.0
+/// for identical shapes, ~0 for disjoint ones; robust to small sub-pixel
+/// shifts because neighboring cells share fractional coverage. Two
+/// (near-)empty strips read as identical — an empty strip carries no
+/// identity, and the STRUCTURAL solver below is what prevents that from
+/// misattributing anything.
+pub(crate) fn thumb_similarity(a: &StripThumb, b: &StripThumb) -> f32 {
+    let (mut inter, mut union) = (0.0f32, 0.0f32);
+    for (x, y) in a.iter().zip(b.iter()) {
+        inter += (*x).min(*y);
+        union += (*x).max(*y);
+    }
+    if union < 1e-6 { 1.0 } else { inter / union }
+}
+
+/// Solve ONE side's sink transition from strip fingerprints: which of the
+/// OLD alive rows (indices into this side's block) hold the players that
+/// just sank.
+///
+/// The game re-sorts on every sink ([alive by Tab key] ++ [sunk by Tab
+/// key]), so the new frame's strips are the old ones REARRANGED: the new
+/// alive block is the old alive block minus the victims (order preserved),
+/// and each victim's strip — binarized, so its new DIM rendering still
+/// matches its old bright one — reappears inside the new sunk block. The
+/// solver exploits exactly that structure:
+///
+/// 1. every NEW SUNK row must match some OLD row (a victim's old alive
+///    row, or an already-sunk row that kept its place) above the
+///    threshold;
+/// 2. the claimed old-ALIVE rows are the victims — their count must equal
+///    the alive-count drop, with no double claims;
+/// 3. the claims on old-SUNK rows must stay in increasing order (both
+///    blocks re-sort by the same key, so survivors keep their relative
+///    order);
+/// 4. the new ALIVE block must match the old alive block minus the
+///    victims, cell for cell.
+///
+/// Any violation — glare-distorted strips, a multi-ship rewrite the
+/// pattern cannot explain, an unreadable row — returns `None`, and the
+/// caller falls back to the range candidates for that transition. Never a
+/// guess.
+pub(crate) fn sink_victims(
+    old: &[Option<StripThumb>],
+    new: &[Option<StripThumb>],
+    old_alive: usize,
+    new_alive: usize,
+) -> Option<Vec<usize>> {
+    if old.len() != new.len() || old_alive > old.len() || new_alive > new.len() {
+        return None;
+    }
+    let n = old.len();
+    if new_alive >= old_alive {
+        return None; // not a sink transition (revive or unchanged)
+    }
+    let victims_n = old_alive - new_alive;
+    if old.iter().any(Option::is_none) || new.iter().any(Option::is_none) {
+        return None;
+    }
+    let old: Vec<&StripThumb> = old.iter().map(|t| t.as_ref().expect("checked")).collect();
+    let new: Vec<&StripThumb> = new.iter().map(|t| t.as_ref().expect("checked")).collect();
+
+    // 1+2: match every new sunk row to its best old row; claims on old
+    // alive rows are the victims.
+    let mut victims: Vec<usize> = Vec::with_capacity(victims_n);
+    let mut sunk_claims: Vec<usize> = Vec::with_capacity(n - old_alive);
+    for (j, nj) in new.iter().enumerate().skip(new_alive) {
+        let (mut best, mut best_s) = (usize::MAX, -1.0f32);
+        for (i, o) in old.iter().enumerate() {
+            let s = thumb_similarity(nj, o);
+            if s > best_s {
+                best_s = s;
+                best = i;
+            }
+        }
+        if best_s < STRIP_MATCH_THRESHOLD {
+            return None;
+        }
+        if best < old_alive {
+            if victims.contains(&best) {
+                return None; // two new rows claim the same victim
+            }
+            victims.push(best);
+        } else {
+            sunk_claims.push(best);
+        }
+    }
+    if victims.len() != victims_n {
+        return None;
+    }
+    // 3: already-sunk survivors keep their relative order.
+    if !sunk_claims.windows(2).all(|w| w[0] < w[1]) {
+        return None;
+    }
+    // 4: the new alive block is the old alive block minus the victims.
+    let expected: Vec<usize> = (0..old_alive).filter(|i| !victims.contains(i)).collect();
+    for (j, e) in expected.iter().enumerate() {
+        if thumb_similarity(new[j], old[*e]) < STRIP_MATCH_THRESHOLD {
+            return None;
+        }
+    }
+    Some(victims)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2643,5 +2842,138 @@ mod tests {
         );
         let alive = read_row_alive(&img, w, h, &roster, &rows, 0.5, 2);
         assert_eq!(alive, vec![true, false, false, true]);
+    }
+
+    // ── strip fingerprint matching (sink attribution) ────────────────────
+
+    /// Deterministic pseudo-random generator for synthetic strips.
+    struct StripNoise(u32);
+    impl StripNoise {
+        fn next(&mut self) -> f32 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 17;
+            self.0 ^= self.0 << 5;
+            (self.0 as f32 / u32::MAX as f32) * 2.0 - 1.0
+        }
+    }
+
+    /// Render one synthetic name strip: a dark plate, a few random bright
+    /// "glyph" blobs (the seed fixes their layout — same seed, same text)
+    /// and per-pixel noise. `bg` shifts the plate's absolute brightness,
+    /// `glyph_boost` the glyphs' — the whole point is that the FINGERPRINT
+    /// must not care.
+    fn synth_strip(
+        seed: u32,
+        w: u32,
+        h: u32,
+        bg: u8,
+        glyph: u8,
+        noise: f32,
+    ) -> (Vec<u8>, u32, u32) {
+        let mut img = vec![0u8; (w * h * 4) as usize];
+        let mut rng = StripNoise(seed);
+        // 3..7 glyph blobs, each a horizontal run of 2x2..5x5 blocks.
+        let blobs = 3 + (seed % 5) as u32;
+        for b in 0..blobs {
+            let bx = ((b * w) / blobs + (w / blobs) / 3) % w;
+            let by = h / 4 + ((seed >> b) % (h / 2).max(1));
+            let bw = 2 + ((seed >> (b + 3)) % 4);
+            let bh = 2 + ((seed >> (b + 5)) % 3);
+            for y in by..(by + bh).min(h) {
+                for x in bx..(bx + bw).min(w) {
+                    let i = ((y * w + x) * 4) as usize;
+                    img[i] = glyph;
+                    img[i + 1] = glyph;
+                    img[i + 2] = glyph;
+                    img[i + 3] = 255;
+                }
+            }
+        }
+        for i in 0..(w * h) as usize {
+            let j = i * 4;
+            if img[j] == 0 {
+                let d = (rng.next() * (noise * 8.0)) as i32;
+                let v = (bg as i32 + d).clamp(0, 255) as u8;
+                img[j] = v;
+                img[j + 1] = v;
+                img[j + 2] = v;
+            }
+            img[j + 3] = 255;
+        }
+        (img, w, h)
+    }
+
+    fn thumb_of(seed: u32, bg: u8, glyph: u8) -> StripThumb {
+        let (img, w, h) = synth_strip(seed, 220, 18, bg, glyph, 1.0);
+        strip_thumb(&img, w, h).expect("synthetic strip is fingerprintable")
+    }
+
+    #[test]
+    fn thumb_ignores_absolute_brightness_but_keeps_shape() {
+        let a = thumb_of(0x1234_5678, 40, 230); // bright glyphs on dark plate
+        let b = thumb_of(0x1234_5678, 95, 150); // dim glyphs on lighter plate
+        let c = thumb_of(0x8765_4321, 40, 230); // different "text"
+        assert!(
+            thumb_similarity(&a, &b) > STRIP_MATCH_THRESHOLD,
+            "same text at different brightness must match (got {})",
+            thumb_similarity(&a, &b)
+        );
+        assert!(
+            thumb_similarity(&a, &c) < STRIP_MATCH_THRESHOLD,
+            "different texts must not match (got {})",
+            thumb_similarity(&a, &c)
+        );
+    }
+
+    #[test]
+    fn sink_victims_solves_a_single_sink_with_shift_and_dimming() {
+        // Old: 4 alive [A,B,C,D], 0 sunk. C sinks: new = [A,B,D] ++ [C(dim)].
+        let old: Vec<Option<StripThumb>> = (0..4)
+            .map(|i| Some(thumb_of(0x1000 + i, 40, 230)))
+            .collect();
+        let new: Vec<Option<StripThumb>> = vec![
+            Some(thumb_of(0x1000, 60, 200)), // A, different background
+            Some(thumb_of(0x1001, 60, 200)), // B
+            Some(thumb_of(0x1003, 60, 200)), // D
+            Some(thumb_of(0x1002, 60, 150)), // C — sunk, dimmed glyphs
+        ];
+        assert_eq!(sink_victims(&old, &new, 4, 3).unwrap(), vec![2]);
+    }
+
+    #[test]
+    fn sink_victims_solves_two_sinks_in_one_transition() {
+        // Old: [A,B,C,D] all alive; A and C sink: new = [B,D] ++ [A?,C?] —
+        // sunk-block order follows the Tab key, so any interleaving of the
+        // two victims is structurally valid; both must be identified.
+        let old: Vec<Option<StripThumb>> = (0..4)
+            .map(|i| Some(thumb_of(0x2000 + i, 40, 230)))
+            .collect();
+        let new: Vec<Option<StripThumb>> = vec![
+            Some(thumb_of(0x2001, 70, 210)), // B
+            Some(thumb_of(0x2003, 70, 210)), // D
+            Some(thumb_of(0x2002, 70, 140)), // C sunk
+            Some(thumb_of(0x2000, 70, 140)), // A sunk
+        ];
+        let mut v = sink_victims(&old, &new, 4, 2).unwrap();
+        v.sort_unstable();
+        assert_eq!(v, vec![0, 2]);
+    }
+
+    #[test]
+    fn sink_victims_rejects_garbage_and_unreadable_rows() {
+        let old: Vec<Option<StripThumb>> = (0..3)
+            .map(|i| Some(thumb_of(0x3000 + i, 40, 230)))
+            .collect();
+        // A "new frame" whose rows share nothing with the old ones.
+        let garbage: Vec<Option<StripThumb>> = (0..3)
+            .map(|i| Some(thumb_of(0x9000 + i, 60, 200)))
+            .collect();
+        assert!(sink_victims(&old, &garbage, 3, 2).is_none());
+        // An unreadable row disqualifies the transition outright.
+        let mut hole = garbage.clone();
+        hole[1] = None;
+        assert!(sink_victims(&old, &hole, 3, 2).is_none());
+        // Not a sink transition.
+        assert!(sink_victims(&old, &old, 2, 3).is_none());
     }
 }

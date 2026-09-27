@@ -143,6 +143,34 @@ describe("inferredRowMapping", () => {
     ).toEqual(["P1", "P2", "P3", "P4"]);
   });
 
+  it("renders the exact layout when a trusted sunk set matches the flags", () => {
+    // The sink solver named the victims: the side's layout is the full key
+    // order split by membership — [alive by key] ++ [sunk by key] — every
+    // row pinned, no candidate ranges.
+    // Full key order: P1 (Japan) < P2 (USA) < P3 (Germany) < P4 (PanAsia).
+    const vehicles = [
+      veh("P2", SHIPS.iowa, 1),
+      veh("P1", SHIPS.izumo, 1),
+      veh("P4", SHIPS.bajie, 1),
+      veh("P3", SHIPS.pommern, 1),
+    ];
+    const sunk = new Set(["P2"]);
+    expect(
+      inferredRowMapping(vehicles, [true, true, true, false], {
+        locale: "zh-CN",
+        sunk: { ally: sunk },
+      }),
+    ).toEqual(["P1", "P3", "P4", "P2"]);
+    // A set that DISAGREES with the alive count keeps the provable ranges
+    // (the caller degrades the side; the function must not trust it).
+    expect(
+      inferredRowMapping(vehicles, [true, true, true, false], {
+        locale: "zh-CN",
+        sunk: { ally: new Set(["P1", "P2"]) },
+      }),
+    ).toEqual([["P1", "P2"], ["P2", "P3"], ["P3", "P4"], ["P1", "P2", "P3", "P4"]]);
+  });
+
   it("maps allies and enemies in separate blocks", () => {
     const vehicles = [
       veh("FoeBB", SHIPS.newMexico, 3),

@@ -37,6 +37,10 @@ export interface PredictedOrderOptions {
   /** Clan tag per vehicle — from the panel's stats map; the predicted
    *  order re-derives reactively when the WG batch lands tags. */
   clanTagOf?: (v: VehicleEntry) => string | null | undefined;
+  /** Trusted sunk names (utils/sunkTracker, fed by the sink-attrib
+   *  events): the predicted order splits [alive by key] ++ [sunk by key]
+   *  and marks the sunk entries — the exact layout the game shows. */
+  sunk?: Set<string> | null;
 }
 
 /**
@@ -68,6 +72,7 @@ export function orderForTab(
   // recognition ran at all): predicted order — the client's full Tab key
   // (alive, class, tier, nation, ship name, '[tag]name') with the arena
   // order as the final stable tie-break.
+  const sunk = options.sunk ?? null;
   const rest = list
     .filter((v) => !claimed.has(v.name))
     .map((v, i) => ({
@@ -75,13 +80,13 @@ export function orderForTab(
       i,
       key: gameTabRowKey(
         v,
-        true,
+        !(sunk?.has(v.name) ?? false),
         options.locale ?? "en-US",
         options.clanTagOf ? () => options.clanTagOf?.(v) ?? null : undefined,
       ),
     }))
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
     .map(({ v }) => v);
-  for (const v of rest) ordered.push({ vehicle: v, sunk: false });
+  for (const v of rest) ordered.push({ vehicle: v, sunk: sunk?.has(v.name) ?? false });
   return ordered;
 }

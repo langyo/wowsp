@@ -18,14 +18,19 @@
  * against a replay + matching Tab screenshot; see shipClass.ts.
  *
  * Mid-battle, once ships sink, the table re-sorts ([alive] ++ [sunk], each
- * block in the same key order) and the luma vector only reports HOW MANY
- * rows read alive — not WHICH players they are. Any subset of that size is
- * consistent with the observed flags, but a player at full-order position
- * r can only land on alive-row k when k ≤ r ≤ k + sunkCount (and on
- * sunk-row j when j ≤ r ≤ j + aliveCount): each row's candidates form a
- * CONTIGUOUS range of the full order, rendered as one slash-joined
- * winrate chip (overlay main.ts). All-sunk collapses back to the exact
- * full order, same as battle start. Rows past the roster stay `null`.
+ * block in the same key order) and the luma vector alone only reports HOW
+ * MANY rows read alive — not WHICH players they are. Two answers build on
+ * that: (1) the sink fast-path's strip-fingerprint solver NAMES the
+ * victims (`wowsp://sink-attrib` — utils/sunkTracker keeps a per-side
+ * TRUSTED sunk set), and a side whose set matches the observed sunk count
+ * renders the exact [alive by key] ++ [sunk by key] layout, every row
+ * pinned; (2) a side without a trusted set falls back to provable
+ * CANDIDATE RANGES: a player at full-order position r can only land on
+ * alive-row k when k ≤ r ≤ k + sunkCount (and on sunk-row j when
+ * j ≤ r ≤ j + aliveCount), so each row's candidates form a contiguous
+ * range of the full order, rendered as one slash-joined winrate chip
+ * (overlay main.ts). All-sunk collapses back to the exact full order,
+ * same as battle start. Rows past the roster stay `null`.
  *
  * Fidelity limits, both narrow: a ship missing from the offline DB keeps
  * a deterministic after-everything key (may misplace relative to the
@@ -56,6 +61,11 @@ export interface InferredOrderOptions {
    *  scenario team slots, not enemy semantics — the whole roster maps as
    *  ONE allies block. */
   operation?: boolean;
+  /** TRUSTED sunk sets per side (utils/sunkTracker): when a side's set is
+   *  present AND matches the alive vector's sunk count, that side renders
+   *  the EXACT layout — [alive by key] ++ [sunk by key], every row named —
+   *  instead of candidate ranges. null/absent sides keep the ranges. */
+  sunk?: { ally?: Set<string> | null; enemy?: Set<string> | null } | null;
 }
 
 /** One row's attribution:
@@ -84,12 +94,13 @@ export function inferredRowMapping(
   const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
   let offset = 0;
-  for (const list of options.operation
-    ? [vehicles]
+  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = options.operation
+    ? [[vehicles, "ally"]]
     : [
-        vehicles.filter((v) => v.relation <= 1),
-        vehicles.filter((v) => v.relation > 1),
-      ]) {
+        [vehicles.filter((v) => v.relation <= 1), "ally"],
+        [vehicles.filter((v) => v.relation > 1), "enemy"],
+      ];
+  for (const [list, sideKey] of sides) {
     const full = list
       .map((v, i) => ({
         v,
@@ -105,6 +116,18 @@ export function inferredRowMapping(
     const sideFlags = alive == null ? null : alive.slice(offset, offset + n);
     const aliveCount = sideFlags == null ? n : sideFlags.lastIndexOf(true) + 1;
     const sunkCount = n - aliveCount;
+    // TRUSTED sunk set (sink attribution solved the transition): the exact
+    // layout is the full order split by membership — [alive by key] ++
+    // [sunk by key], the same permutation the game just applied. Only a
+    // set that agrees with the observed sunk count may drive it; anything
+    // else keeps the provable ranges below (the caller degrades the side).
+    const sunkSet = sideKey === "ally" ? options.sunk?.ally : options.sunk?.enemy;
+    if (sunkSet && sunkSet.size === sunkCount) {
+      for (const name of full) if (!sunkSet.has(name)) out.push(name);
+      for (const name of full) if (sunkSet.has(name)) out.push(name);
+      offset += n;
+      continue;
+    }
     // Alive row k holds the player at full-order position r with
     // k ≤ r ≤ k + sunkCount; sunk row j mirrors it with j ≤ r ≤ j + aliveCount.
     for (let k = 0; k < aliveCount; k++) {

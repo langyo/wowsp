@@ -14,7 +14,15 @@
  * team's aggregate — a tier-weighted (or plain, per the stats prefs) mean
  * winrate plus a mean PR over the players whose stats landed.
  */
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type CSSProperties } from "vue";
+import {
+  computed,
+  defineComponent,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type CSSProperties,
+} from "vue";
 import { useRouter } from "vue-router";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
@@ -33,6 +41,7 @@ import { shipTierOf } from "@/utils/shipClass";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useRosterStats, isAiName } from "@/composables/useRosterStats";
+import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
 import { HkSpinner } from "@celestia-island/hikari";
@@ -115,7 +124,48 @@ export default defineComponent({
     // columns below reorder to mirror the on-screen table exactly,
     // sunk-ship grouping included.
     const overlay = useOverlayStore();
+    // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
+    // strip-fingerprint matching) — feed the predicted order below so the
+    // columns mirror the game's [alive] ++ [sunk] layout live.
+    const sunk = new SunkTracker();
+    watch(
+      () => props.arena?.dateTime ?? null,
+      (stamp) => sunk.reset(stamp),
+      { immediate: true },
+    );
+    // The tracker is plain state, so `sinkEpoch` is its reactive trigger:
+    // every sink event bumps it and the computed orders below re-derive.
+    const sinkEpoch = ref(0);
+    /** Predicted-order key inputs for one side: locale + per-vehicle clan
+     *  tag + that side's trusted sunk set. */
+    const predictedOptionsFor = (side: "ally" | "enemy") => {
+      void sinkEpoch.value;
+      return {
+        locale: dataLanguage.value,
+        clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
+        sunk: sunk.sunkNames(side),
+      };
+    };
     let unlistenTabOrder: (() => void) | null = null;
+    let unlistenSinkAttrib: (() => void) | null = null;
+    /** The side's believed alive order for resolving sink-attrib rows:
+     *  the predicted key order minus the trusted sunk set. */
+    const sideAliveOrder = (side: SunkSide): string[] => {
+      // Operations (行动) map the whole roster as the ally block — the
+      // Rust sink solver indexes their rows the same way (team_sizes
+      // carries the whole roster as allies).
+      const list =
+        operation.value && side === "ally"
+          ? props.arena?.vehicles ?? []
+          : (props.arena?.vehicles ?? []).filter((v) =>
+              side === "enemy" ? v.relation > 1 : v.relation <= 1,
+            );
+      const order = orderForTab(list, null, predictedOptionsFor(side)).map(
+        (e) => e.vehicle.name,
+      );
+      const names = sunk.sunkNames(side);
+      return names ? order.filter((n) => !names.has(n)) : order;
+    };
     onMounted(async () => {
       unlistenStatus = (await api.listenOverlayStatus((s) => {
         overlayStatus.value = s;
@@ -123,12 +173,21 @@ export default defineComponent({
       unlistenTabOrder = (await api.listenTabOrder((o) => {
         overlay.applyTabOrder(o);
       })) as (() => void) | null;
+      unlistenSinkAttrib = (await api.listenSinkAttribution((a) => {
+        sunk.applyAttribution(
+          { ally: a.allyRows ?? [], enemy: a.enemyRows ?? [] },
+          sideAliveOrder,
+        );
+        sinkEpoch.value += 1;
+      })) as (() => void) | null;
     });
     onBeforeUnmount(() => {
       unlistenStatus?.();
       unlistenStatus = null;
       unlistenTabOrder?.();
       unlistenTabOrder = null;
+      unlistenSinkAttrib?.();
+      unlistenSinkAttrib = null;
       if (shakeTimer) {
         clearTimeout(shakeTimer);
         shakeTimer = null;
@@ -220,20 +279,17 @@ export default defineComponent({
       }
       return side === "allies" ? order.allies : order.enemies;
     };
-    // Inputs for the predicted order's full Tab key: the ship-name locale
-    // plus the per-vehicle clan tag off the stats map — the order re-derives
-    // reactively when the WG batch lands a tag.
-    const predictedOrderOptions = computed(() => ({
-      locale: dataLanguage.value,
-      clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
-    }));
+    // Inputs for the predicted order's full Tab key come from
+    // `predictedOptionsFor` above (locale + clan tag + that side's trusted
+    // sunk set) — the orders re-derive reactively when the WG batch lands a
+    // tag or a sink event bumps `sinkEpoch`.
     const allies = computed(() =>
       orderForTab(
         operation.value
           ? props.arena?.vehicles ?? []
           : props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
         tabRowsFor("allies"),
-        predictedOrderOptions.value,
+        predictedOptionsFor("ally"),
       ),
     );
     const enemies = computed(() =>
@@ -242,7 +298,7 @@ export default defineComponent({
           ? []
           : props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
         tabRowsFor("enemies"),
-        predictedOrderOptions.value,
+        predictedOptionsFor("enemy"),
       ),
     );
 

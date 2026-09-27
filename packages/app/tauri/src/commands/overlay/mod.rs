@@ -57,16 +57,22 @@
 //!   from the band without a rescan. Three consecutive verify misses (a
 //!   HUD-phase table move) retire the cache and re-arm a full detection.
 //! - SINK FAST-PATH: while the overlay is up, a light probe
-//!   ([`overlay_detect::read_row_alive`] — strip luma, no OCR) runs every
-//!   [`SINK_CHECK_INTERVAL`] at the pinned geometry; an alive-flag flip
-//!   immediately updates the pin, re-places the chips (they gray out and
-//!   re-sort), re-emits the tab order and raises the wire's `stale` flag
-//!   while the OCR re-map chases at the accelerated
-//!   [`SINK_CATCHUP_INTERVAL`] cadence. The flip is direction-sensitive
-//!   ([`sink_probe_confirm`]): a SINK applies at once, while a pure
-//!   REVIVAL flip — usually one frame of glare/explosion pushing a sunk
-//!   row's strip over the luma threshold — must survive two consecutive
-//!   probes before the pin believes it.
+//!   ([`overlay_detect::crop_row_name_strips`] — strip luma + occupancy
+//!   fingerprints, no OCR) runs every [`SINK_CHECK_INTERVAL`] at the
+//!   pinned geometry; an alive-flag flip immediately updates the pin,
+//!   re-places the chips (they gray out and re-sort), re-emits the tab
+//!   order and raises the wire's `stale` flag while the OCR re-map chases
+//!   at the accelerated [`SINK_CATCHUP_INTERVAL`] cadence. The flip is
+//!   direction-sensitive ([`sink_probe_confirm`]): a SINK applies at once,
+//!   while a pure REVIVAL flip — usually one frame of glare/explosion
+//!   pushing a sunk row's strip over the luma threshold — must survive two
+//!   consecutive probes before the pin believes it. A confirmed sink ALSO
+//!   emits [`SINK_ATTRIB_EVENT`]: the strip fingerprints are diffed across
+//!   the transition ([`overlay_detect::sink_victims`]) to name WHO sank —
+//!   the game re-sorts [alive by Tab key] ++ [sunk by Tab key], so each
+//!   victim's binarized strip reappears dimmed in the sunk block — and the
+//!   consumers (overlay page + live panel) keep their layouts exact
+//!   instead of falling back to candidate ranges.
 //!
 //! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
 //! searching/fallback (acquiring without a confirmed pin, the fallback
@@ -154,6 +160,16 @@ pub const OVERLAY_STATUS_EVENT: &str = "wowsp://overlay-status";
 /// live-battle panel reorders its roster columns from it, so the software's
 /// list mirrors exactly what the player sees while holding Tab.
 pub const TAB_ORDER_EVENT: &str = "wowsp://tab-order";
+
+/// Tauri event carrying one sink transition's ROW ATTRIBUTION to ALL
+/// windows: for each side, the pre-sink alive-row indices whose players
+/// just sank, solved by fingerprint-matching the Tab table's name strips
+/// across the sink (see the sink fast-path in `reconcile.rs`). Emitted
+/// BEFORE the updated anchor of the same pass, so a consumer can resolve
+/// the indices against its pre-sink layout first and re-derive an exact
+/// one when the anchor lands. An unsolved side carries an empty vec — the
+/// consumer degrades that side to candidate ranges instead of guessing.
+pub const SINK_ATTRIB_EVENT: &str = "wowsp://sink-attrib";
 
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
@@ -280,7 +296,9 @@ pub use watch::{
     __tauri_command_name_start_overlay_tab_watch, __tauri_command_name_stop_overlay_tab_watch,
     start_overlay_tab_watch, stop_overlay_tab_watch,
 };
-use watch::{GeometryCacheEntry, GeometryKey, PinnedAnchor, WatchFsm, report_status};
+use watch::{
+    GeometryCacheEntry, GeometryKey, PinnedAnchor, StripBaseline, WatchFsm, report_status,
+};
 use watch_commands::WATCH_COMMANDS;
 pub(super) use watch_commands::{WatchCommand, push_watch_command};
 pub use window::{

@@ -112,6 +112,18 @@ pub(super) struct GeometryCacheEntry {
     pub(super) team_sizes: (usize, usize),
 }
 
+/// The sink fast-path's fingerprint baseline: the name-strip thumbs of the
+/// LAST probe, keyed to the battle + capture-relative grid they were read
+/// at. The sink solver diffs the next probe's strips against it to name
+/// WHO sank (`overlay_detect::sink_victims`); a grid or battle change voids
+/// it (the thumbs would describe other pixels).
+#[cfg(target_os = "windows")]
+pub(super) struct StripBaseline {
+    pub(super) battle: i64,
+    pub(super) row_centers: Vec<i32>,
+    pub(super) thumbs: Vec<Option<overlay_detect::StripThumb>>,
+}
+
 /// All mutable watcher state in ONE struct (the loop's single-owner state
 /// machine): the want-visible bookkeeping, the pin, the manual anchor, the
 /// cadence stamps, the status mirror, the sink fast-path's stale flag and
@@ -172,6 +184,9 @@ pub(super) struct WatchFsm {
     pub(super) geometry_cache: Option<GeometryCacheEntry>,
     /// Consecutive band-verify misses on the current cache entry.
     pub(super) geometry_verify_fails: u32,
+    /// The sink fast-path's strip-fingerprint baseline (see
+    /// [`StripBaseline`]) — the previous probe's thumbs at the pinned grid.
+    pub(super) strip_baseline: Option<StripBaseline>,
 }
 
 /// Push a detection-status report to ALL windows — but only when it differs
@@ -314,6 +329,7 @@ pub(super) fn apply_watch_command(
             fsm.last_catch_up = None;
             fsm.last_revalidate = None;
             fsm.last_sink_check = None;
+            fsm.strip_baseline = None;
             tracing::info!(had_pin, "arena stamp changed — pin voided by FIFO command");
             // No immediate report: the next tick re-derives the honest state
             // (Searching while acquiring, Idle while hidden) and reports it
@@ -593,9 +609,11 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                     anchor: anchor.clone(),
                 });
                 // A fresh pin restarts the stale lifecycle: brand-new
-                // recognition, nothing to re-map yet.
+                // recognition, nothing to re-map yet. The strip baseline
+                // dies with it — its thumbs belong to the old grid.
                 fsm.stale = false;
                 fsm.sink_candidate = None;
+                fsm.strip_baseline = None;
                 fsm.last_sink_check = Some(Instant::now());
             }
             if let Some(anchor) = computed {

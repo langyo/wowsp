@@ -78,6 +78,22 @@ describe("orderForTab", () => {
     ).toEqual(["zed", "bob"]);
   });
 
+  it("splits [alive] ++ [sunk] when a trusted sunk set is present", () => {
+    // The sink solver named the victim: the predicted order mirrors the
+    // game's regroup and flags the card sunk.
+    const list = [
+      vehicle("Iowa", SHIPS.iowa),
+      vehicle("Saipan", SHIPS.saipan),
+      vehicle("Pommern", SHIPS.pommern),
+    ];
+    const ordered = orderForTab(list, null, {
+      locale: "zh-CN",
+      sunk: new Set(["Saipan"]),
+    });
+    expect(names(ordered)).toEqual(["Iowa", "Pommern", "Saipan"]);
+    expect(ordered.map((o) => o.sunk)).toEqual([false, false, true]);
+  });
+
   it("follows the recognized row order exactly, sunk flags included", () => {
     // The game re-sorted: an alive carrier row sits ABOVE sunk battleships
     // (alive group first). The recognized order must win verbatim — no
