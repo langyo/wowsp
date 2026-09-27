@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, Transition, watch } from "vue";
+import { computed, defineComponent, onUnmounted, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { AlertTriangle, RotateCcw, Ship } from "@lucide/vue";
 
@@ -14,6 +14,7 @@ import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useTrendsStore } from "@/stores/trends";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -44,6 +45,7 @@ export default defineComponent({
     const accounts = useAccountStore();
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
+    const loadingTasks = useLoadingTasksStore();
     const toast = useToast();
 
     // ── view mode (tech-tree vs list vs compare) ──────────────────────
@@ -63,20 +65,29 @@ export default defineComponent({
       }
     }
 
-    // Show toast whenever encyclopedia is loading.
-    let loadToastId = 0;
+    // Persistent progress on the title-bar chip whenever the encyclopedia
+    // is loading.
+    let loadTaskId = 0;
     watch(
       () => encyclopedia.loading,
       (v) => {
         if (v) {
-          loadToastId = toast.loading(t("ships.loading"));
-        } else if (loadToastId) {
-          toast.remove(loadToastId);
-          loadToastId = 0;
+          loadTaskId = loadingTasks.begin(t("ships.loading"));
+        } else if (loadTaskId) {
+          loadingTasks.end(loadTaskId);
+          loadTaskId = 0;
         }
       },
       { immediate: true },
     );
+    // A mid-load unmount stops the watcher before the false transition —
+    // release the chip here or it would stick until the next load.
+    onUnmounted(() => {
+      if (loadTaskId) {
+        loadingTasks.end(loadTaskId);
+        loadTaskId = 0;
+      }
+    });
 
     // Auto-load on mount if not already loaded for this realm.
     if (encyclopedia.ships.length === 0) {

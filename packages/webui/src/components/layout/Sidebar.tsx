@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, defineComponent, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package } from "@lucide/vue";
 
@@ -57,17 +57,22 @@ export default defineComponent({
     const { copy } = useClipboard();
 
     // Cached stats for the active account — only the emblem (dog tag /
-    // service-record tier) feeds the sidebar avatar. Hydrated from the
-    // local cache, never the API (same policy as the account cards). The
-    // token drops stale results when the account switches mid-hydration.
-    const activeStats = ref<PlayerStats | null>(null);
-    let activeStatsToken = 0;
+    // service-record tier) feeds the sidebar avatar. READ THROUGH the
+    // shared stats store's cache — the same reactive snapshot the
+    // dashboard header renders — so a dashboard refresh (or any other
+    // lookup) updates the sidebar live instead of diverging into a stale
+    // local copy. Hydration below stays cache-only (loadCached), never
+    // the API (same policy as the account cards).
+    const activeStats = computed<PlayerStats | null>(() => {
+      const a = accounts.activeAccount;
+      return a ? stats.cache.get(`${a.realm}_${a.accountId}`) ?? null : null;
+    });
     watch(
       () => accounts.activeAccount,
       async (a) => {
-        const token = ++activeStatsToken;
-        const cached = a ? await stats.loadCached(a.realm, a.accountId) : null;
-        if (token === activeStatsToken) activeStats.value = cached;
+        // Warm the shared cache from disk so the emblem is there on cold
+        // start; the computed above reacts when the map fills.
+        if (a) await stats.loadCached(a.realm, a.accountId);
       },
       { immediate: true },
     );

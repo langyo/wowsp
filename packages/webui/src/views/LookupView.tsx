@@ -6,7 +6,7 @@ import ClanCard from "@/components/stats/ClanCard";
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HkTabs, useToast } from "@celestia-island/hikari";
+import { HkTabs } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
@@ -14,6 +14,7 @@ import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useClanStatsStore, clanCacheKey } from "@/stores/clanStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -114,7 +115,7 @@ export default defineComponent({
     const clanStats = useClanStatsStore();
     const shipStats = useShipStatsStore();
     const ranked = useRankedStore();
-    const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     const route = useRoute();
     const mode = ref<LookupKind>(lastLookup.value?.kind ?? "player");
     const realm = ref(lastLookup.value?.realm ?? "asia");
@@ -250,7 +251,7 @@ export default defineComponent({
       result.value = null;
       ranked.reset();
       lastPlayerQuery.value = nm;
-      const toastId = toast.loading(t("account.searching"));
+      const taskId = loadingTasks.begin(t("account.searching"));
       try {
         // Explicit user query — always re-pull from the WG API. `nm` may be
         // a nickname or a numeric account id (both resolve server-side).
@@ -259,14 +260,14 @@ export default defineComponent({
         lastLookup.value = { kind: "player", name: acc.name, realm: rl, id: acc.accountId };
         pushHistory({ kind: "player", name: acc.name, realm: rl, id: acc.accountId });
         // Ranked seasons load in parallel (last 5, feeds the card's ranked
-        // split); per-ship stats load in the background (toast stays until
-        // done).
+        // split); per-ship stats load in the background (the loading chip
+        // stays until done).
         void ranked.load(acc.accountId, rl, 5);
         await shipStats.load(acc.accountId, rl).catch(() => {});
       } catch {
         // error surfaced via stats.error
       } finally {
-        toast.remove(toastId);
+        loadingTasks.end(taskId);
       }
     }
 
@@ -276,7 +277,7 @@ export default defineComponent({
       realm.value = rl;
       clanResult.value = null;
       lastClanQuery.value = String(clanId);
-      const toastId = toast.loading(t("account.searching"));
+      const taskId = loadingTasks.begin(t("account.searching"));
       try {
         const clan = await clanStats.lookup(clanId, rl, { force: true });
         clanResult.value = clan;
@@ -285,7 +286,7 @@ export default defineComponent({
       } catch {
         // error surfaced via clanStats.error
       } finally {
-        toast.remove(toastId);
+        loadingTasks.end(taskId);
       }
     }
 

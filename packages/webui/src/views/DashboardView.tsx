@@ -11,11 +11,11 @@ import SScrollTop from "@/components/base/SScrollTop";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useTrendsStore } from "@/stores/trends";
 import { useRankedStore } from "@/stores/ranked";
-import { useToast } from "@celestia-island/hikari";
 import { winrateColor } from "@/utils/winrate";
 import {
   computeRecentDelta,
@@ -55,7 +55,7 @@ export default defineComponent({
     const encyclopedia = useEncyclopediaStore();
     const trends = useTrendsStore();
     const ranked = useRankedStore();
-    const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     const router = useRouter();
 
     const showModal = ref(false);
@@ -115,7 +115,9 @@ export default defineComponent({
     async function refresh() {
       const acc = activeAccount.value;
       if (!acc) return;
-      const toastId = toast.loading(t("dashboard.loading"));
+      // Persistent progress now rides the title-bar chip (left of the
+      // settings gear) instead of a top-right toast slot.
+      const taskId = loadingTasks.begin(t("dashboard.loading"));
       // Phase 1: warm the account-level cache (instant render on cold start).
       try {
         await stats.loadCached(acc.realm, acc.accountId);
@@ -136,7 +138,7 @@ export default defineComponent({
         trends.loadPlayer(acc.accountId, acc.realm),
         ranked.load(acc.accountId, acc.realm, 5),
       ]);
-      toast.remove(toastId);
+      loadingTasks.end(taskId);
     }
 
     // Refresh on mount + whenever the active account changes. We always

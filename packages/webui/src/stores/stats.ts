@@ -28,6 +28,12 @@ const INDEX_FILE = "stats-cache/index.json";
  *  - Everyone else: passive lookups (replay menu) reuse the disk cache as
  *    long as it exists; only an explicit user query (`force: true`) hits
  *    the API again.
+ *  - Concurrent lookups of the same player share ONE API call (in-flight
+ *    dedupe) and its cache writes instead of racing duplicate requests.
+ *
+ *  Every consumer reads the same reactive cache — the dashboard header,
+ *  the sidebar account card and the account manager all render ONE
+ *  snapshot per player, so a refresh anywhere updates them everywhere.
  */
 export const useStatsStore = defineStore("stats", () => {
   const cache = ref<Map<string, PlayerStats>>(new Map());
@@ -43,6 +49,11 @@ export const useStatsStore = defineStore("stats", () => {
    *  plain `error` string is kept in parallel for the pre-existing
    *  consumers (dashboard / replay), which stay untouched. */
   const lookupError = ref<LookupErrorPayload | null>(null);
+  /** In-flight lookup dedupe (`realm_nickname_algo` → shared promise):
+   *  concurrent lookups of the same player await the same API call, so a
+   *  dashboard refresh racing another consumer can't double-hit the WG
+   *  API or interleave two cache writes for one player. */
+  const inflight = new Map<string, Promise<PlayerStats>>();
 
   function cacheKey(realm: string, accountId: number) {
     return `${realm}_${accountId}`;
@@ -98,6 +109,61 @@ export const useStatsStore = defineStore("stats", () => {
     }
   }
 
+  /** The single API pull + cache write for one player (shared via
+   *  `inflight`). A fresh result that comes back without a dog tag keeps
+   *  the previous snapshot's emblem: the Rust command swallows a Vortex
+   *  dog-tag fetch failure into `null`, so without this carry-over a
+   *  routine refresh could wipe a perfectly good avatar from every
+   *  surface rendering the cache (dashboard header, sidebar, cards). */
+  function fetchAndCache(nickname: string, realm: string): Promise<PlayerStats> {
+    const algo = prAlgoForRequest();
+    const dedupeKey = `${indexKey(realm, nickname)}_${algo}`;
+    const existing = inflight.get(dedupeKey);
+    if (existing) return existing;
+    const task = (async (): Promise<PlayerStats> => {
+      const stats = await api.lookupPlayerStats(nickname, realm, algo);
+      const key = cacheKey(realm, stats.accountId);
+      // Cold session: the previous snapshot may live only on disk (a
+      // force lookup skips the cached-read path) — warm it so the
+      // carry-over below can see it.
+      if (stats.dogTag == null && !cache.value.has(key)) {
+        await readCacheFile(realm, stats.accountId);
+      }
+      const prevDogTag = cache.value.get(key)?.dogTag ?? null;
+      let merged = stats;
+      if (stats.dogTag == null && prevDogTag != null) {
+        merged = { ...stats, dogTag: prevDogTag };
+      }
+      cache.value.set(key, merged);
+      fetchedAt.value.set(key, Date.now());
+      index.value.set(indexKey(realm, nickname), stats.accountId);
+      persistIndex();
+      // Persist current snapshot to AppData (best-effort, don't block UI).
+      const envelope: CachedStats = { fetchedAt: Date.now(), stats: merged };
+      void api.appdataWrite(cacheFile(realm, stats.accountId), JSON.stringify(envelope)).catch(() => {});
+      // Append a versioned snapshot for trend tracking (best-effort).
+      void api.snapshotPlayerStats(
+        stats.accountId,
+        realm,
+        merged.battles ?? null,
+        // wins isn't in PlayerStats directly — derive from winrate * battles.
+        merged.battles != null && merged.winrate != null
+          ? Math.round((merged.winrate / 100) * merged.battles)
+          : null,
+        merged.winrate ?? null,
+        merged.avgDamage ?? null,
+        merged.pr ?? null,
+      ).catch(() => {});
+      return merged;
+    })().finally(() => {
+      // Release the slot on success AND failure so a rejected attempt can
+      // be retried immediately.
+      inflight.delete(dedupeKey);
+    });
+    inflight.set(dedupeKey, task);
+    return task;
+  }
+
   /** Look up a player's stats.
    *
    *  `force: true` always hits the WG API (explicit user queries, own
@@ -128,29 +194,7 @@ export const useStatsStore = defineStore("stats", () => {
         }
       }
 
-      const stats = await api.lookupPlayerStats(nickname, realm, prAlgoForRequest());
-      const key = cacheKey(realm, stats.accountId);
-      cache.value.set(key, stats);
-      fetchedAt.value.set(key, Date.now());
-      index.value.set(nickKey, stats.accountId);
-      persistIndex();
-      // Persist current snapshot to AppData (best-effort, don't block UI).
-      const envelope: CachedStats = { fetchedAt: Date.now(), stats };
-      void api.appdataWrite(cacheFile(realm, stats.accountId), JSON.stringify(envelope)).catch(() => {});
-      // Append a versioned snapshot for trend tracking (best-effort).
-      void api.snapshotPlayerStats(
-        stats.accountId,
-        realm,
-        stats.battles ?? null,
-        // wins isn't in PlayerStats directly — derive from winrate * battles.
-        stats.battles != null && stats.winrate != null
-          ? Math.round((stats.winrate / 100) * stats.battles)
-          : null,
-        stats.winrate ?? null,
-        stats.avgDamage ?? null,
-        stats.pr ?? null,
-      ).catch(() => {});
-      return stats;
+      return await fetchAndCache(nickname, realm);
     } catch (e) {
       if (e instanceof LookupError) lookupError.value = e.payload;
       error.value = (e as Error).message;

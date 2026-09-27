@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, ref, watch, type CSSProperties } from "vue";
+import { computed, defineComponent, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue";
 import { Copy, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
@@ -49,6 +49,7 @@ import { tierToRoman } from "@wowsp/holo";
 import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import { damageColor, winrateColor } from "@/utils/winrate";
@@ -163,8 +164,8 @@ function rosterStatCols(
 /** Post-battle modal: two-column team matrix (allies left, enemies right)
  *  sorted by settlement XP (real base exp from the results payload, with an
  *  estimate fallback on legacy short arrays). Clicking a player opens a real
- *  second-level modal with the match result + on-demand global stats (toast
- *  while loading) and a jump link into the lookup screen. */
+ *  second-level modal with the match result + on-demand global stats (title
+ *  bar chip while loading) and a jump link into the lookup screen. */
 const PostBattlePanel = defineComponent({
   name: "PostBattlePanel",
   props: { raw: { type: String, required: true } },
@@ -172,7 +173,7 @@ const PostBattlePanel = defineComponent({
   setup(props, { emit }) {
     const parsed = computed(() => parsePostBattle(props.raw));
     const { dataLanguage } = useLanguage();
-    const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     const router = useRouter();
     const rows = computed(() => {
       const pb = parsed.value;
@@ -272,21 +273,21 @@ const PostBattlePanel = defineComponent({
     onMounted(() => {
       void loadNameStats();
     });
-    /** Load the selected player's global stats on-demand (toast while
-     *  loading; the lookup API resolves by nickname + realm). Failures are
-     *  silent — AI names and rate-limited lookups are common, and an error
-     *  toast for every bot would be noise. */
+    /** Load the selected player's global stats on-demand (title bar chip
+     *  while loading; the lookup API resolves by nickname + realm). Failures
+     *  are silent — AI names and rate-limited lookups are common, and an
+     *  error toast for every bot would be noise. */
     async function loadGlobal(p: (typeof rows.value)[number]) {
       globalStats.value = null;
       globalLoading.value = false;
       if (!p.realm || AI_NAME.test(p.name)) return;
       globalLoading.value = true;
-      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name: p.name }));
+      const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name: p.name }));
       try {
         globalStats.value = await api.lookupPlayerStats(p.name, p.realm, prAlgoForRequest());
-        toast.remove(tid);
+        loadingTasks.end(tid);
       } catch {
-        toast.remove(tid);
+        loadingTasks.end(tid);
         globalError.value = true;
       } finally {
         globalLoading.value = false;
@@ -434,7 +435,7 @@ const PostBattlePanel = defineComponent({
                       <span>{t("replay.postbattle.credits")} <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
                     </div>
                   ) : null}
-                  {/* On-demand global stats (toast while loading) */}
+                  {/* On-demand global stats (title bar chip while loading) */}
                   <div class="replay-view__postbattle-global">
                     {globalLoading.value ? (
                       <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
@@ -500,7 +501,7 @@ const PostBattleFallbackPanel = defineComponent({
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
     const router = useRouter();
-    const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     /** AI/bot players (":Name:") have no WG account. */
     const AI_NAME = /^:.*:$/;
     const realm = computed(() => props.realm || "asia");
@@ -613,12 +614,12 @@ const PostBattleFallbackPanel = defineComponent({
       globalLoading.value = false;
       globalError.value = false;
       globalLoading.value = true;
-      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name }));
+      const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name }));
       try {
         globalStats.value = await api.lookupPlayerStats(name, realm.value, prAlgoForRequest());
-        toast.remove(tid);
+        loadingTasks.end(tid);
       } catch {
-        toast.remove(tid);
+        loadingTasks.end(tid);
         globalError.value = true;
       } finally {
         globalLoading.value = false;
@@ -1065,7 +1066,7 @@ const ChatLogPanel = defineComponent({
   },
   setup(props) {
     const { dataLanguage } = useLanguage();
-    const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     const router = useRouter();
     const { copy } = useClipboard();
     /** AI/bot players (":Name:") have no WG account. Same rule as the
@@ -1143,15 +1144,15 @@ const ChatLogPanel = defineComponent({
       globalLoading.value = false;
       globalError.value = false;
       globalLoading.value = true;
-      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name }));
+      const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name }));
       try {
         const stats = await api.lookupPlayerStats(name, props.realm || "asia", prAlgoForRequest());
-        toast.remove(tid);
+        loadingTasks.end(tid);
         // Drop late responses for a player that is no longer selected.
         if (selected.value?.name !== name) return;
         globalStats.value = stats;
       } catch {
-        toast.remove(tid);
+        loadingTasks.end(tid);
         if (selected.value?.name !== name) return;
         globalError.value = true;
       } finally {
@@ -1381,6 +1382,7 @@ export default defineComponent({
     const accounts = useAccountStore();
     const encyclopedia = useEncyclopediaStore();
     const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     const { dataLanguage } = useLanguage();
     const mapLang = computed(() => dataLanguage.value);
     const gameStatus = useGameStatusStore();
@@ -1406,14 +1408,22 @@ export default defineComponent({
       },
     );
 
-    // Auto-manage loading toast for replay operations.
-    let loadingToastId = 0;
+    // Persistent progress for replay operations rides the title-bar chip.
+    let loadingTaskId = 0;
     watch(() => parser.loading.value, (v) => {
       if (v) {
-        loadingToastId = toast.loading(t("replay.loading"));
-      } else if (loadingToastId) {
-        toast.remove(loadingToastId);
-        loadingToastId = 0;
+        loadingTaskId = loadingTasks.begin(t("replay.loading"));
+      } else if (loadingTaskId) {
+        loadingTasks.end(loadingTaskId);
+        loadingTaskId = 0;
+      }
+    });
+    // A mid-load unmount stops the watcher before the false transition —
+    // release the chip here or it would stick until the next load.
+    onUnmounted(() => {
+      if (loadingTaskId) {
+        loadingTasks.end(loadingTaskId);
+        loadingTaskId = 0;
       }
     });
 

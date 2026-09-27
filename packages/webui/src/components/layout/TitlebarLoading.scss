@@ -1,0 +1,49 @@
+/* TitlebarLoading — the title-bar loading chip. Lives inside hikari's
+   .hk-titlebar-actions (so it inherits the no-drag region), immediately
+   left of the settings gear. Chrome, not a control: pointer-events pass
+   off the chip entirely (wrapper included, so even the idle slot can
+   never intercept a click). Tinting off --color-text keeps it legible on
+   both the glass bar and the opaque phone bar without new theme tokens. */
+.titlebar-loading-slot {
+  pointer-events: none;
+}
+
+.titlebar-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgb(var(--color-text) / 8%);
+  color: rgb(var(--color-text) / 72%);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  max-width: 260px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.titlebar-loading__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.titlebar-loading__extra {
+  flex: none;
+  opacity: 0.85;
+}
+
+/* Phone bar: no room for a label next to the caption buttons — spinner-only. */
+@media (max-width: 767px) {
+  .titlebar-loading {
+    padding: 2px 8px;
+  }
+
+  .titlebar-loading__label,
+  .titlebar-loading__extra {
+    display: none;
+  }
+}

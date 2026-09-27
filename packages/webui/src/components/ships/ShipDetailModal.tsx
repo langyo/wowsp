@@ -8,6 +8,7 @@ import NationFlag from "@/components/base/NationFlag";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useTrendsStore } from "@/stores/trends";
@@ -66,6 +67,7 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const ranked = useRankedStore();
     const trends = useTrendsStore();
+    const loadingTasks = useLoadingTasksStore();
     const toast = useToast();
     const router = useRouter();
     // Phone app build: there is no local game install to point the armor
@@ -103,11 +105,11 @@ export default defineComponent({
       if (gpFetched.value || !props.ship) return;
       gpLoading.value = true;
       gpError.value = null;
-      const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
+      const taskId = loadingTasks.begin(t("ships.detail.gameparamsLoading"));
       // First load per ship unpacks GameParams.data from the install (a few
-      // seconds even on release builds) — keep the loading toast up long
+      // seconds even on release builds) — keep the loading chip up long
       // enough to cover it; the finally block dismisses it on completion.
-      const timer = setTimeout(() => toast.remove(toastId), 90_000);
+      const timer = setTimeout(() => loadingTasks.end(taskId), 90_000);
       // Guard the switch-ships-while-loading race: if the user moves to
       // another ship while this fetch is in flight, the watch already reset
       // the state — a late resolve for the OLD ship must not clobber the
@@ -124,7 +126,7 @@ export default defineComponent({
         clearTimeout(timer);
         gpLoading.value = false;
         gpFetched.value = true;
-        toast.remove(toastId);
+        loadingTasks.end(taskId);
       }
     }
 

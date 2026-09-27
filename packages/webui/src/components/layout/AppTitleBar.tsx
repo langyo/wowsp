@@ -4,6 +4,7 @@ import { Menu } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useNavUiStore } from "@/stores/navUi";
+import TitlebarLoading from "@/components/layout/TitlebarLoading";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
 import "./AppTitleBar.scss";
@@ -142,6 +143,13 @@ export default defineComponent({
                 </span>
               </>
             ),
+            // The loading chip rides HkTitleBar's `actions` slot, which
+            // renders ahead of `customActions` — i.e. right-aligned,
+            // immediately left of the settings gear. It replaces the
+            // persistent loading toasts that used to squat the top-right
+            // toast corner for the whole load (TitlebarLoading +
+            // useLoadingTasksStore).
+            actions: () => <TitlebarLoading />,
           }}
         />
       </div>

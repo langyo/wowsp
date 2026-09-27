@@ -44,9 +44,6 @@ export default defineComponent({
     /** Player resolved by the lookup step, awaiting confirmation. */
     const found = ref<{ profile: AccountProfile; stats: PlayerStats } | null>(null);
     const binding = ref(false);
-    // Per-account stats cache (hydrated from the local cache so cards can
-    // show winrate/battles/clan without re-hitting the WG API).
-    const statsById = ref<Map<string, PlayerStats>>(new Map());
 
     /** Bumped by every event that invalidates a lookup in flight: a new
      *  query, a realm switch, the dialog being reopened. `doSearch` stamps
@@ -135,7 +132,8 @@ export default defineComponent({
       try {
         await accounts.addAccount(f.profile);
         await accounts.setActive(f.profile.realm, f.profile.accountId);
-        statsById.value.set(`${f.profile.realm}_${f.profile.accountId}`, f.stats);
+        // The bind search's lookup already seeded the SHARED stats cache
+        // with f.stats — the new card picks it up reactively.
         found.value = null;
         searchName.value = "";
         addOpen.value = false;
@@ -164,14 +162,16 @@ export default defineComponent({
       await accounts.setPreferred(profile.realm, profile.accountId);
     }
 
-    /** Hydrate cached stats for every bound account so cards can show
-     *  winrate/battles/clan without re-hitting the WG API. */
+    /** Warm the SHARED stats cache from disk for every bound account so
+     *  cards can show winrate/battles/clan without re-hitting the WG API.
+     *  The cards read the store's cache reactively (no local copy), so a
+     *  lookup from anywhere — the bind search below, the dashboard refresh
+     *  — updates them live. */
     async function hydrateStats() {
       for (const a of accounts.accounts) {
         const key = a.realm + "_" + a.accountId;
-        if (statsById.value.has(key)) continue;
-        const cached = await stats.loadCached(a.realm, a.accountId);
-        if (cached) statsById.value.set(key, cached);
+        if (stats.cache.has(key)) continue;
+        await stats.loadCached(a.realm, a.accountId);
       }
     }
 
@@ -195,7 +195,7 @@ export default defineComponent({
               const isActive =
                 accounts.activeAccountId === a.accountId &&
                 accounts.activeRealm === a.realm;
-              const s = statsById.value.get(`${a.realm}_${a.accountId}`);
+              const s = stats.cache.get(`${a.realm}_${a.accountId}`);
               const preferred = accounts.preferredAccount(a.realm);
               const isPreferred = preferred?.accountId === a.accountId;
               const realmHasChoice =
