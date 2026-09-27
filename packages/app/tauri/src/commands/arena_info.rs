@@ -37,11 +37,23 @@ fn unix_secs(t: SystemTime) -> i64 {
         .unwrap_or(0)
 }
 
-/// Record both team sizes (allies = relation ≤ 1) and the battle's start
-/// stamp (the arena file's mtime).
-fn note_arena_seen(vehicles: &[wowsp_tauri_shared::VehicleEntry], file_mtime: SystemTime) {
-    let allies = vehicles.iter().filter(|v| v.relation <= 1).count();
-    let enemies = vehicles.len() - allies;
+/// Record both team sizes and the battle's start stamp (the arena file's
+/// mtime). Allies = relation ≤ 1 — EXCEPT in operation scenarios (行动),
+/// whose `relation` values follow scenario team slots (escort waves, target
+/// ships) instead of enemy semantics, and whose in-game Tab table shows ONE
+/// team: there the whole roster is the single ally block.
+fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime) {
+    let single_team = wowsp_tauri_shared::is_operation_arena(
+        info.scenario.as_deref(),
+        info.event_type.as_deref(),
+        &info.vehicles,
+    );
+    let allies = if single_team {
+        info.vehicles.len()
+    } else {
+        info.vehicles.iter().filter(|v| v.relation <= 1).count()
+    };
+    let enemies = info.vehicles.len() - allies;
     LAST_TEAM_SIZES.store(
         (allies << 16) | enemies,
         std::sync::atomic::Ordering::Relaxed,
@@ -96,7 +108,7 @@ pub(crate) fn refresh_battle_state() -> bool {
     }
     match read_arena_file(&path) {
         Ok(info) => {
-            note_arena_seen(&info.vehicles, mtime);
+            note_arena_seen(&info, mtime);
             true
         },
         Err(e) => {
@@ -135,7 +147,7 @@ pub async fn read_temp_arena_info(
     let mtime = path.metadata().and_then(|m| m.modified()).ok();
     let info = read_arena_file(&path)?;
     if let Some(mtime) = mtime {
-        note_arena_seen(&info.vehicles, mtime);
+        note_arena_seen(&info, mtime);
     }
     Ok(Some(info))
 }
@@ -233,6 +245,7 @@ fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), Strin
             date_time: meta.date_time,
             map_name: meta.map_name,
             scenario: meta.scenario,
+            event_type: meta.event_type,
             bot_count: meta.bot_count,
             vehicles: meta.vehicles,
             raw,
@@ -351,7 +364,7 @@ fn handle_watch_event(
                 players = info.vehicles.len(),
                 "fresh tempArenaInfo.json — emitting arena-info event"
             );
-            note_arena_seen(&info.vehicles, mtime);
+            note_arena_seen(&info, mtime);
             // A NEW battle voids the Tab watcher's pinned anchor for the
             // PREVIOUS one. Pushed as a FIFO command (not applied here) so
             // the watcher applies it in-order with the manual-anchor

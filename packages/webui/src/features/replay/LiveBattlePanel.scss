@@ -159,6 +159,11 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+
+    /* Single-sided battle (operations): the allies column takes the width. */
+    &--single {
+      grid-template-columns: 1fr;
+    }
   }
 
   &__col {

@@ -337,12 +337,39 @@ pub struct ArenaInfo {
     /// variants are the custom-room fingerprints) — mirrors `ReplayMeta`.
     #[serde(default)]
     pub scenario: Option<String>,
+    /// Battle-script id, e.g. "PCVE027" — mirrors `ReplayMeta::event_type`.
+    /// The PCVO* scripts are the operation-scenario fingerprints (see
+    /// [`is_operation_arena`]).
+    #[serde(default)]
+    pub event_type: Option<String>,
     /// Roster entries with the client's `:Name:` bot nickname style — see
     /// [`ReplayMeta::bot_count`].
     #[serde(default)]
     pub bot_count: u32,
     pub vehicles: Vec<VehicleEntry>,
     pub raw: serde_json::Value,
+}
+
+/// Whether this battle is an operation scenario (行动模式) rather than a
+/// team-vs-team mode. Operations fill `matchGroup: "pve"` like co-op does,
+/// and their roster `relation` values follow scenario team SLOTS (escort
+/// waves, target ships) instead of the enemy semantics PvP modes give them —
+/// every consumer that splits the roster into allies/enemies must special-
+/// case this. Fingerprints, in the same spirit as the webui classifier
+/// (`webui/src/utils/modeColors.ts`): a PCVO* battle script/scenario, an
+/// `_op_`/`_hl_` infix, or scenario units whose nickname keeps the client's
+/// `IDS_OP_*` ship name.
+pub fn is_operation_arena(
+    scenario: Option<&str>,
+    event_type: Option<&str>,
+    vehicles: &[VehicleEntry],
+) -> bool {
+    [scenario, event_type].into_iter().flatten().any(|s| {
+        let s = s.to_ascii_lowercase();
+        s.starts_with("pcvo") || s.contains("_op_") || s.contains("_hl_")
+    }) || vehicles
+        .iter()
+        .any(|v| v.name.to_ascii_uppercase().starts_with("IDS_OP_"))
 }
 
 /// Result of a Tab-triggered screen capture + roster-region detection in
@@ -2428,6 +2455,7 @@ mod tests {
             date_time: Some("20260926_202122".into()),
             map_name: Some("spaces/40_Okinawa".into()),
             scenario: Some("domination_tournament_3point".into()),
+            event_type: Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL".into()),
             bot_count: 3,
             vehicles: vec![VehicleEntry {
                 id: 51_515_151,
@@ -2446,6 +2474,7 @@ mod tests {
                 "dateTime",
                 "mapName",
                 "scenario",
+                "eventType",
                 "botCount",
                 "vehicles",
                 "raw",
@@ -2454,6 +2483,54 @@ mod tests {
         let vehicle = &v["vehicles"][0];
         assert_exact_keys(vehicle, &["id", "name", "relation", "shipId", "shipName"]);
         assert_eq!(vehicle["shipId"], 4_180_755_280_i64);
+    }
+
+    /// Operation-scenario fingerprints: the PCVO battle script, the `_op_`
+    /// scenario infix, or scenario units keeping their `IDS_OP_*` ship name
+    /// as nickname — and NONE of them fire for co-op / PvP rosters.
+    #[test]
+    fn is_operation_arena_fingerprints() {
+        let roster = |names: &[&str]| {
+            names
+                .iter()
+                .enumerate()
+                .map(|(i, n)| VehicleEntry {
+                    id: i as i64,
+                    name: n.to_string(),
+                    relation: 0,
+                    ship_id: 1000 + i as i64,
+                    ship_name: None,
+                })
+                .collect::<Vec<_>>()
+        };
+        // Battle script / scenario fingerprints.
+        assert!(is_operation_arena(
+            Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL"),
+            None,
+            &roster(&["player"])
+        ));
+        assert!(is_operation_arena(
+            None,
+            Some("PCVO013_Halloween_Scenario"),
+            &roster(&[])
+        ));
+        // Roster fingerprint (the live arena file may carry no scenario).
+        assert!(is_operation_arena(
+            None,
+            None,
+            &roster(&["langyo", "IDS_OP_15_DUMMY_01"])
+        ));
+        // Co-op / random rosters stay team-vs-team.
+        assert!(!is_operation_arena(
+            Some("asymm_3point_coop"),
+            Some("PCVE027"),
+            &roster(&[":Yumashev:", "langyo"])
+        ));
+        assert!(!is_operation_arena(
+            Some("domination_3point"),
+            None,
+            &roster(&["langyo", "WGR_bot"])
+        ));
     }
 
     /// `anchor` is `#[serde(default)]` WITHOUT `skip_serializing_if`: a

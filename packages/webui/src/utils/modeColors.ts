@@ -69,7 +69,11 @@ export function modeKey(
   const sc = (scenario ?? "").toLowerCase();
   const mg = (matchGroup ?? "").toLowerCase();
 
-  // Battle-script level — the WG id encodes the exact event/operation.
+  // Battle-script level — the WG id encodes the exact event/operation. The
+  // PCVO* scripts are the operation scenarios themselves (verified against
+  // the vendored Narai golden replay: eventType
+  // `PCVO009_OP_02_02_...`), so the prefix alone decides.
+  if (et.startsWith("pcvo")) return "operation";
   if (et.includes("asym")) return "asymmetric";
   if (et.includes("convoy")) return "convoy";
   if (et.includes("armsrace")) return "armsrace";
@@ -84,7 +88,7 @@ export function modeKey(
   if (et.includes("airships")) return "event";
   if (et.includes("airbarrier")) return "event";
   if (et.includes("respawns")) return "event";
-  if (et.includes("_op_") || et.includes("_hl_")) return "operation";
+  if (et.includes("_op_")) return "operation";
 
   // Custom-room level (see doc above).
   const tournamentRoom = sc.includes("tournament");
@@ -98,14 +102,17 @@ export function modeKey(
   if (botCount > 0 && (pvpFamily || tournamentRoom)) return "room_bots";
   if (tournamentRoom) return "training";
 
-  // Scenario level.
+  // Scenario level. A `pcvo*` scenario id is an operation script echoed
+  // into the scenario field by some client versions.
   if (sc.includes("asymm")) return "asymmetric";
   if (sc.includes("convoy")) return "convoy";
   if (sc.includes("armsrace")) return "armsrace";
   if (sc.includes("ranked")) return "ranked";
-  if (sc.includes("_op_") || sc.startsWith("pcvo") || sc.includes("_hl_")) return "operation";
+  if (sc.startsWith("pcvo") || sc.includes("_op_") || sc.includes("_hl_")) return "operation";
 
-  // matchGroup level.
+  // matchGroup level. `pve` alone (no operation fingerprint above) is the
+  // plain co-op bucket — operations normally arrive as `pve` too, but they
+  // are caught by the scenario/script levels first.
   if (mg.startsWith("ranked")) return "ranked";
   if (mg === "pvp" || mg.includes("random")) return "pvp";
   if (mg.includes("clan")) return "clan";
@@ -115,6 +122,35 @@ export function modeKey(
   if (mg.includes("train") || mg.includes("sandbox")) return "training";
   if (mg.includes("squad")) return "squad";
   return mg;
+}
+
+/**
+ * Whether this battle is an operation scenario (行动模式): no enemy team —
+ * the roster's `relation` values follow scenario team slots (escort waves,
+ * target ships) instead of enemy semantics, and the in-game Tab table shows
+ * ONE team. Rosters therefore render as a single allies column, and any
+ * relation-based ally/enemy split is meaningless for them.
+ *
+ * The fingerprints mirror `is_operation_arena` in `wowsp_tauri_shared` and
+ * the operation branches of `modeKey`, plus the roster scan every caller
+ * needs when the arena file carries no scenario/script (operations with an
+ * empty scenario field exist): scenario units keep their `IDS_OP_*` ship
+ * name as nickname.
+ */
+export function isOperationBattle(
+  matchGroup?: string | null,
+  scenario?: string | null,
+  eventType?: string | null,
+  names: string[] = [],
+): boolean {
+  const et = (eventType ?? "").toLowerCase();
+  const sc = (scenario ?? "").toLowerCase();
+  if (et.startsWith("pcvo") || sc.startsWith("pcvo")) return true;
+  if (et.includes("_op_") || sc.includes("_op_") || sc.includes("_hl_")) return true;
+  if ((matchGroup ?? "").toLowerCase() === "pve" && names.some((n) => n.toUpperCase().startsWith("IDS_OP_"))) {
+    return true;
+  }
+  return false;
 }
 
 /** Resolve the colour triple for a battle mode. Unknown modes fall back to

@@ -50,11 +50,11 @@ import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
-import { modeColor, modeKey } from "@/utils/modeColors";
+import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import { damageColor, winrateColor } from "@/utils/winrate";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
-import { fetchRosterStatsByNames, isAiName, type RosterStat } from "@/composables/useRosterStats";
+import { AI_NAME, fetchRosterStatsByNames, isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
 import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
@@ -78,11 +78,17 @@ function modeLabel(
 }
 
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
- *  relation), single-sided modes (PvE, ops) show the raw count. */
-function formatPlayerCount(vehicles: { relation: number }[]): string {
-  const ally = vehicles.filter((v) => v.relation <= 1).length;
-  const enemy = vehicles.filter((v) => v.relation > 1).length;
-  if (ally > 0 && enemy > 0) return `${ally}v${enemy}`;
+ *  relation), single-sided modes (PvE, ops) show the raw count. Operations
+ *  skip the split entirely — their relation values follow scenario slots. */
+function formatPlayerCount(
+  vehicles: { relation: number }[],
+  operation = false,
+): string {
+  if (!operation) {
+    const ally = vehicles.filter((v) => v.relation <= 1).length;
+    const enemy = vehicles.filter((v) => v.relation > 1).length;
+    if (ally > 0 && enemy > 0) return `${ally}v${enemy}`;
+  }
   return t("replay.players", { n: vehicles.length });
 }
 
@@ -231,10 +237,6 @@ const PostBattlePanel = defineComponent({
         /* distribution unavailable — hide */
       }
     }
-
-    /** AI/bot players have no WG account — skip the global-stats lookup.
-     *  In replays they appear as ":Name:" (colon-wrapped, e.g. ":Millo:"). */
-    const AI_NAME = /^:.*:$/;
 
     /** Roster WR / avg-damage per player name for the matrix columns (one
      *  batched lookup on mount, warm-served from the shared roster-stats
@@ -496,14 +498,16 @@ const PostBattleFallbackPanel = defineComponent({
     /** Query realm (shared with the parent view) — the replay belongs to
      *  the client install, not to the bound account. */
     realm: { type: String, default: "asia" },
+    /** Operation scenario (行动): the roster's relation values follow
+     *  scenario team slots, not enemy semantics — the matrix renders a
+     *  single allies column. */
+    operation: { type: Boolean, default: false },
   },
   emits: ["close"],
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
     const router = useRouter();
     const loadingTasks = useLoadingTasksStore();
-    /** AI/bot players (":Name:") have no WG account. */
-    const AI_NAME = /^:.*:$/;
     const realm = computed(() => props.realm || "asia");
 
     /** Roster WR / avg-damage columns — same batched lookup as the main
@@ -597,10 +601,16 @@ const PostBattleFallbackPanel = defineComponent({
         Number(AI_NAME.test(b.vehicle.name)) ||
       a.vehicle.name.localeCompare(b.vehicle.name);
     const allies = computed(() =>
-      rows.value.filter((r) => r.vehicle.relation <= 1).sort(sortRows),
+      (props.operation
+        ? rows.value
+        : rows.value.filter((r) => r.vehicle.relation <= 1)
+      ).sort(sortRows),
     );
     const enemies = computed(() =>
-      rows.value.filter((r) => r.vehicle.relation > 1).sort(sortRows),
+      (props.operation
+        ? []
+        : rows.value.filter((r) => r.vehicle.relation > 1)
+      ).sort(sortRows),
     );
 
     const selected = ref<null | (typeof rows.value)[number]>(null);
@@ -664,7 +674,7 @@ const PostBattleFallbackPanel = defineComponent({
                   ? "sunk"
                   : r.vehicle.relation === 0
                     ? "white"
-                    : r.vehicle.relation <= 1
+                    : props.operation || r.vehicle.relation <= 1
                       ? "ally"
                       : "enemy"
               }
@@ -689,19 +699,28 @@ const PostBattleFallbackPanel = defineComponent({
       const sel = selected.value;
       return (
         <div class="replay-view__postbattle">
-          <div class="replay-view__postbattle-matrix">
+          <div
+            class={[
+              "replay-view__postbattle-matrix",
+              // Single-sided battle (operations): one full-width allies
+              // column, no enemy column at all.
+              { "replay-view__postbattle-matrix--single": enemies.value.length === 0 },
+            ]}
+          >
             <div class="replay-view__postbattle-col">
               <div class="replay-view__postbattle-col-title">
                 {t("replay.roster.allies")}
               </div>
               {allies.value.map(cell)}
             </div>
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">
-                {t("replay.roster.enemies")}
+            {enemies.value.length > 0 ? (
+              <div class="replay-view__postbattle-col">
+                <div class="replay-view__postbattle-col-title">
+                  {t("replay.roster.enemies")}
+                </div>
+                {enemies.value.map(cell)}
               </div>
-              {enemies.value.map(cell)}
-            </div>
+            ) : null}
           </div>
 
           {detailOpen.value && sel ? (
@@ -721,7 +740,7 @@ const PostBattleFallbackPanel = defineComponent({
                         variant={
                           !sel.alive
                             ? "sunk"
-                            : sel.vehicle.relation <= 1
+                            : props.operation || sel.vehicle.relation <= 1
                               ? "ally"
                               : "enemy"
                         }
@@ -1069,10 +1088,6 @@ const ChatLogPanel = defineComponent({
     const loadingTasks = useLoadingTasksStore();
     const router = useRouter();
     const { copy } = useClipboard();
-    /** AI/bot players (":Name:") have no WG account. Same rule as the
-     *  post-battle panels. */
-    const AI_NAME = /^:.*:$/;
-
     const rows = computed<ChatRow[]>(() => {
       // Resolve once per recompute — the shipId join is ambiguous for mirror
       // picks, so the vehicle→trajectory mapping must go through the
@@ -1604,6 +1619,18 @@ export default defineComponent({
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
     const duration = ref(0);
+    /** Operation scenario (行动): single-team battle — drives the single
+     *  allies column, the "N players" count and the icon variants. */
+    const isOperation = computed(() => {
+      const cur = parser.current.value;
+      if (!cur) return false;
+      return isOperationBattle(
+        cur.matchGroup,
+        cur.scenario,
+        cur.eventType,
+        cur.vehicles.map((v) => v.name),
+      );
+    });
     watch(
       () => parser.current.value?.path,
       async (path) => {
@@ -1919,7 +1946,7 @@ export default defineComponent({
                   </span>
                 ) : null}
                 <span class="replay-view__meta-item replay-view__count">
-                  {formatPlayerCount(parser.current.value.vehicles)}
+                  {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
                 </span>
                 {duration.value > 0 ? (
                   <span class="replay-view__meta-item">
@@ -1985,6 +2012,7 @@ export default defineComponent({
                           shotKills={shotKills.value}
                           damageStats={damageStats.value}
                           realm={realm.value}
+                          operation={isOperation.value}
                           onClose={() => (showResults.value = false)}
                         />
                       )}

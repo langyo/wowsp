@@ -52,6 +52,10 @@ export interface InferredOrderOptions {
    *  absent entries compare as bare nicknames and re-derive when the WG
    *  batch lands the tag (the caller re-renders on stats arrival). */
   clanTagOf?: (name: string) => string | null | undefined;
+  /** Operation scenario (行动): the roster's relation values follow
+   *  scenario team slots, not enemy semantics — the whole roster maps as
+   *  ONE allies block. */
+  operation?: boolean;
 }
 
 /** One row's attribution:
@@ -68,7 +72,9 @@ export type RowAttribution = string | string[] | null;
  * row grid (the game re-sorts sunk rows below alive ones, so the vector is
  * blockwise [true…true, false…false]; null/absent = unknown → battle
  * start). Entry `k` of the result is row `k`'s attribution — see
- * {@link RowAttribution}.
+ * {@link RowAttribution}. Operation scenarios (`options.operation`, 行动)
+ * have one team — their relation values follow scenario slots, so the whole
+ * roster maps as a single allies block.
  */
 export function inferredRowMapping(
   vehicles: InferredVehicle[],
@@ -78,10 +84,12 @@ export function inferredRowMapping(
   const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
   let offset = 0;
-  for (const list of [
-    vehicles.filter((v) => v.relation <= 1),
-    vehicles.filter((v) => v.relation > 1),
-  ]) {
+  for (const list of options.operation
+    ? [vehicles]
+    : [
+        vehicles.filter((v) => v.relation <= 1),
+        vehicles.filter((v) => v.relation > 1),
+      ]) {
     const full = list
       .map((v, i) => ({
         v,

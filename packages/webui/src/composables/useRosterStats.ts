@@ -18,13 +18,11 @@ import { onBeforeUnmount, reactive, watch } from "vue";
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
 import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
+import { AI_NAME, isAiName } from "@/utils/aiNames";
 
-/** The client renders bots as `:NAME:`. */
-const AI_NAME = /^:.*:$/;
-
-export function isAiName(name: string): boolean {
-  return AI_NAME.test(name);
-}
+// Re-exports keep the historical import paths (`AI_NAME` was defined here
+// before the overlay page needed it too — see utils/aiNames.ts).
+export { AI_NAME, isAiName };
 
 export interface RosterStat {
   winrate: number | null;

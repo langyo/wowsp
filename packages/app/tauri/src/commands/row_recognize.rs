@@ -324,9 +324,12 @@ fn recognize_row_state(
 /// instants and disagree mid-battle, while the grid's count is what the row
 /// geometry actually used. The roster subsets stay relation-filtered; a
 /// disagreement with the grid is absorbed by the clamped split and by
-/// `assign_rows` tolerating candidate/text count mismatches. Output is
-/// aligned 1:1 with `texts` (== the anchor's `row_centers` order) and holds
-/// the roster's own nickname strings, the frontend's exact cache keys.
+/// `assign_rows` tolerating candidate/text count mismatches. Operation
+/// scenarios (行动) are the single-team exception — their relation values
+/// follow scenario slots, and `note_arena_seen` already sized the grid to
+/// the WHOLE roster: every row matches against the full closed set. Output
+/// is aligned 1:1 with `texts` (== the anchor's `row_centers` order) and
+/// holds the roster's own nickname strings, the frontend's exact cache keys.
 fn row_match_blocks(
     texts: &[Option<String>],
     info: &ArenaInfo,
@@ -336,19 +339,34 @@ fn row_match_blocks(
     if info.vehicles.is_empty() {
         return out;
     }
-    let allies: Vec<VehicleEntry> = info
-        .vehicles
-        .iter()
-        .filter(|v| v.relation <= 1)
-        .cloned()
-        .collect();
-    let enemies: Vec<VehicleEntry> = info
-        .vehicles
-        .iter()
-        .filter(|v| v.relation > 1)
-        .cloned()
-        .collect();
-    let split = ally_rows.min(texts.len());
+    let operation = wowsp_tauri_shared::is_operation_arena(
+        info.scenario.as_deref(),
+        info.event_type.as_deref(),
+        &info.vehicles,
+    );
+    let allies: Vec<VehicleEntry> = if operation {
+        info.vehicles.clone()
+    } else {
+        info.vehicles
+            .iter()
+            .filter(|v| v.relation <= 1)
+            .cloned()
+            .collect()
+    };
+    let enemies: Vec<VehicleEntry> = if operation {
+        Vec::new()
+    } else {
+        info.vehicles
+            .iter()
+            .filter(|v| v.relation > 1)
+            .cloned()
+            .collect()
+    };
+    let split = if operation {
+        texts.len()
+    } else {
+        ally_rows.min(texts.len())
+    };
     for (i, name) in row_match::assign_rows(&texts[..split], &allies)
         .into_iter()
         .enumerate()
@@ -561,6 +579,7 @@ mod tests {
             date_time: None,
             map_name: None,
             scenario: None,
+            event_type: None,
             bot_count: 0,
             vehicles: vec![
                 VehicleEntry {
@@ -619,6 +638,7 @@ mod tests {
             date_time: None,
             map_name: None,
             scenario: None,
+            event_type: None,
             bot_count: 0,
             vehicles: vec![
                 VehicleEntry {
@@ -677,12 +697,68 @@ mod tests {
     }
 
     #[test]
+    fn row_match_blocks_matches_the_whole_roster_in_operation_scenarios() {
+        // An operation roster (行动): relation values follow scenario team
+        // slots, so the relation-2 scenario ships are allies and the grid
+        // covers the WHOLE roster. Their texts must match against the full
+        // closed set — under a relation split they would match nothing and
+        // the rows would fall back to silence.
+        let info = ArenaInfo {
+            match_group: Some("pve".into()),
+            date_time: None,
+            map_name: None,
+            scenario: None,
+            event_type: None,
+            bot_count: 0,
+            vehicles: vec![
+                VehicleEntry {
+                    id: 1,
+                    name: "langyo".into(),
+                    relation: 0,
+                    ship_id: 0,
+                    ship_name: None,
+                },
+                VehicleEntry {
+                    id: 2,
+                    name: "IDS_OP_15_ALLY_DD_01".into(),
+                    relation: 2,
+                    ship_id: 0,
+                    ship_name: None,
+                },
+                VehicleEntry {
+                    id: 3,
+                    name: "IDS_OP_15_DUMMY_01".into(),
+                    relation: 2,
+                    ship_id: 0,
+                    ship_name: None,
+                },
+            ],
+            raw: serde_json::Value::Null,
+        };
+        let texts = vec![
+            Some("langyo".to_string()),
+            Some("ids_op_15_dummy_01".to_string()),
+            Some("ids_op_15_ally_dd_01".to_string()),
+        ];
+        // The grid was sized to the whole roster (note_arena_seen), so the
+        // caller passes ally_rows = 3 — but even a stale lower count must
+        // not matter: the operation branch matches every row in one block.
+        for ally_rows in [3, 1] {
+            let out = row_match_blocks(&texts, &info, ally_rows);
+            assert_eq!(out[0], Some("langyo".into()));
+            assert_eq!(out[1], Some("IDS_OP_15_DUMMY_01".into()));
+            assert_eq!(out[2], Some("IDS_OP_15_ALLY_DD_01".into()));
+        }
+    }
+
+    #[test]
     fn row_match_blocks_tolerates_empty_and_mismatched_inputs() {
         let empty = ArenaInfo {
             match_group: None,
             date_time: None,
             map_name: None,
             scenario: None,
+            event_type: None,
             bot_count: 0,
             vehicles: vec![],
             raw: serde_json::Value::Null,
@@ -696,6 +772,7 @@ mod tests {
             date_time: None,
             map_name: None,
             scenario: None,
+            event_type: None,
             bot_count: 0,
             vehicles: vec![VehicleEntry {
                 id: 1,
@@ -791,6 +868,7 @@ mod tests {
                 date_time: meta.date_time,
                 map_name: meta.map_name,
                 scenario: meta.scenario,
+                event_type: meta.event_type,
                 bot_count: meta.bot_count,
                 vehicles: meta.vehicles,
                 raw: serde_json::Value::Null,

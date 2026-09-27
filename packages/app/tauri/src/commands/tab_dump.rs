@@ -314,6 +314,7 @@ mod tests {
             date_time: Some(date_time.into()),
             map_name: None,
             scenario: None,
+            event_type: None,
             bot_count: 0,
             vehicles: ids
                 .iter()

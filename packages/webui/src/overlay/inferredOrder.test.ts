@@ -157,4 +157,19 @@ describe("inferredRowMapping", () => {
       "FoeBB",
     ]);
   });
+
+  it("maps the whole roster as one block in operation scenarios", () => {
+    // An operation roster (行动): relation values follow scenario team
+    // slots — the `relation: 3` entries are escort allies, not enemies —
+    // so `operation` collapses everything into a single allies block.
+    // Class order (CA < DD < SS) decides the row order.
+    const vehicles = [
+      veh("langyo", SHIPS.leone, 0),
+      veh("IDS_OP_15_DUMMY_01", SHIPS.konigsberg, 3),
+      veh("IDS_OP_15_ALLY_DD_01", SHIPS.undine, 3),
+    ];
+    expect(
+      inferredRowMapping(vehicles, null, { locale: "zh-CN", operation: true }),
+    ).toEqual(["IDS_OP_15_DUMMY_01", "langyo", "IDS_OP_15_ALLY_DD_01"]);
+  });
 });

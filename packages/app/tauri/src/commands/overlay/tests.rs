@@ -160,6 +160,7 @@ fn arena_roster(names: &[(&str, i64)]) -> wowsp_tauri_shared::ArenaInfo {
         date_time: Some("18.09.2026 16:17:19".into()),
         map_name: None,
         scenario: None,
+        event_type: None,
         bot_count: 0,
         vehicles: names
             .iter()
@@ -231,6 +232,41 @@ fn tab_order_requires_a_trusted_mapping() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn tab_order_lands_every_row_in_allies_for_operation_scenarios() {
+    // An operation roster (行动): relation values follow scenario team slots
+    // (escort waves / target ships), so slots > 1 are STILL allies and the
+    // in-game Tab table shows a single team — the recognized rows must all
+    // land in the ally block, never in the enemy one.
+    let mut info = arena_roster(&[
+        ("langyo", 0),
+        ("IDS_OP_15_ALLY_DD_01", 2),
+        ("IDS_OP_15_DUMMY_01", 2),
+    ]);
+    info.match_group = Some("pve".into());
+    let anchor = anchor_with_state(
+        3,
+        Some(vec![
+            Some("IDS_OP_15_DUMMY_01".into()),
+            Some("langyo".into()),
+            Some("IDS_OP_15_ALLY_DD_01".into()),
+        ]),
+        Some(vec![true, true, false]),
+    );
+    let order = tab_order_from_anchor(&anchor, &info).expect("trusted mapping");
+    let ally_names: Vec<_> = order.allies.iter().map(|r| r.name.clone()).collect();
+    assert_eq!(
+        ally_names,
+        [
+            Some("IDS_OP_15_DUMMY_01".into()),
+            Some("langyo".into()),
+            Some("IDS_OP_15_ALLY_DD_01".into()),
+        ]
+    );
+    assert!(order.enemies.is_empty());
+    assert!(!order.allies[2].alive);
 }
 
 #[test]

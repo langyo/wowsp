@@ -285,7 +285,10 @@ pub(super) fn transplant_row_players(
 /// the relation count cannot drift mid-battle — it is exactly the block
 /// boundary the panel's own two sub-tables draw. Rows beyond the roster's
 /// ally count belong to the enemy block; unmatched rows are inert for the
-/// consumer (it matches by name).
+/// consumer (it matches by name). Operation scenarios (行动) are the
+/// exception: their `relation` values follow scenario team slots, not enemy
+/// semantics, and the in-game Tab table shows a single team — every
+/// recognized row lands in the ally block.
 pub(super) fn tab_order_from_anchor(
     anchor: &OverlayAnchor,
     info: &wowsp_tauri_shared::ArenaInfo,
@@ -299,7 +302,16 @@ pub(super) fn tab_order_from_anchor(
         name: names.get(i).cloned().flatten(),
         alive: alive.and_then(|a| a.get(i).copied()).unwrap_or(true),
     };
-    let allies_n = info.vehicles.iter().filter(|v| v.relation <= 1).count();
+    let single_team = wowsp_tauri_shared::is_operation_arena(
+        info.scenario.as_deref(),
+        info.event_type.as_deref(),
+        &info.vehicles,
+    );
+    let allies_n = if single_team {
+        info.vehicles.len()
+    } else {
+        info.vehicles.iter().filter(|v| v.relation <= 1).count()
+    };
     // Slice bounds: the ally block is the roster count capped at the
     // mapping length (a shorter mapping truncates the block rather than
     // spilling), the enemy block is everything after it up to the mapping.

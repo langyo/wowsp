@@ -27,7 +27,7 @@ import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
 import { WaitingRadarArt } from "./liveGuideArt";
-import { modeColor, modeKey } from "@/utils/modeColors";
+import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
@@ -53,13 +53,14 @@ function displayMapName(spaceId?: string | null, lang?: string): string {
 }
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
- *  roster bots). */
+ *  battle script / roster bots). */
 function modeLabelOf(
   group?: string | null,
   scenario?: string | null,
+  eventType?: string | null,
   botCount = 0,
 ): string {
-  const key = modeKey(group, scenario, null, botCount);
+  const key = modeKey(group, scenario, eventType, botCount);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = "replay.mode." + key;
   const lbl = t(i18nKey);
@@ -201,6 +202,17 @@ export default defineComponent({
     // verbatim — sunk-ship regrouping included, with sunk players dimmed —
     // and without one a predicted class-grouped order approximates the
     // game's layout far better than tempArenaInfo.json's join order.
+    // Operation scenarios (行动) render ONE allies column: their relation
+    // values follow scenario team slots (escort waves, target ships), not
+    // enemy semantics, and the game's own Tab table shows a single team.
+    const operation = computed(() =>
+      isOperationBattle(
+        props.arena?.matchGroup,
+        props.arena?.scenario,
+        props.arena?.eventType,
+        props.arena?.vehicles.map((v) => v.name),
+      ),
+    );
     const tabRowsFor = (side: "allies" | "enemies") => {
       const order = overlay.tabOrder;
       if (!order || !props.arena?.dateTime || order.dateTime !== props.arena.dateTime) {
@@ -217,14 +229,18 @@ export default defineComponent({
     }));
     const allies = computed(() =>
       orderForTab(
-        props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
+        operation.value
+          ? props.arena?.vehicles ?? []
+          : props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
         tabRowsFor("allies"),
         predictedOrderOptions.value,
       ),
     );
     const enemies = computed(() =>
       orderForTab(
-        props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
+        operation.value
+          ? []
+          : props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
         tabRowsFor("enemies"),
         predictedOrderOptions.value,
       ),
@@ -306,12 +322,17 @@ export default defineComponent({
             modeColor(
               props.arena.matchGroup,
               props.arena.scenario,
-              null,
+              props.arena.eventType,
               props.arena.botCount ?? 0,
             ) as CSSProperties
           }
         >
-          {modeLabelOf(props.arena.matchGroup, props.arena.scenario, props.arena.botCount ?? 0)}
+          {modeLabelOf(
+            props.arena.matchGroup,
+            props.arena.scenario,
+            props.arena.eventType,
+            props.arena.botCount ?? 0,
+          )}
         </span>
       ) : null;
 
@@ -419,8 +440,9 @@ export default defineComponent({
             {main}
             {/* Ship identity + parameters ride the card's middle ground;
                 ally rows additionally carry the consumable/module/flag
-                summary. Enemies get parameters only. */}
-            <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
+                summary. Enemies get parameters only — and operations have
+                no enemies at all. */}
+            <LiveShipMeta shipId={v.shipId} ally={operation.value || v.relation <= 1} />
             {seal}
           </>
         );
@@ -495,15 +517,25 @@ export default defineComponent({
               </>
             ) : null}
           </div>
-          <div class="live-battle__matrix">
+          {/* Operations (行动) have no enemy team: the roster renders as a
+              single full-width allies column, matching the game's own Tab
+              table. */}
+          <div
+            class={[
+              "live-battle__matrix",
+              { "live-battle__matrix--single": enemies.value.length === 0 },
+            ]}
+          >
             <div class="live-battle__col">
               {colTitle(t("replay.roster.allies"), allies.value)}
               {allies.value.map(cell)}
             </div>
-            <div class="live-battle__col">
-              {colTitle(t("replay.roster.enemies"), enemies.value)}
-              {enemies.value.map(cell)}
-            </div>
+            {enemies.value.length > 0 ? (
+              <div class="live-battle__col">
+                {colTitle(t("replay.roster.enemies"), enemies.value)}
+                {enemies.value.map(cell)}
+              </div>
+            ) : null}
           </div>
         </div>
       );

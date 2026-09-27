@@ -21,6 +21,10 @@ import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 // sort rule over the roster + the anchor's alive flags (no OCR) — see
 // inferredOrder.ts.
 import { inferredRowMapping } from "./inferredOrder";
+import { isOperationBattle } from "@/utils/modeColors";
+// Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
+// account — the shared store-free regex (utils/aiNames.ts) covers both.
+import { AI_NAME } from "@/utils/aiNames";
 // The square 2x2 faces the in-app surfaces use, plus the flat one-line
 // recuts of the four-char seals (res/stamps-wide) — the chip rows are far
 // too short for a 2x2 face, so ONLY this page swaps the flat faces in
@@ -87,7 +91,11 @@ interface Vehicle {
 }
 
 interface ArenaInfo {
+  matchGroup?: string | null;
   dateTime?: string | null;
+  /** Operation scenarios (行动) carry the PCVO* battle script here. */
+  scenario?: string | null;
+  eventType?: string | null;
   vehicles: Vehicle[];
 }
 
@@ -155,7 +163,6 @@ interface PlayerComposition {
   sub: boolean;
 }
 
-const AI_NAME = /^:.*:$/;
 // main.ts declares Window.__TAURI__ as `unknown` for the whole project —
 // narrow it locally instead of redeclaring the global.
 const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
@@ -449,9 +456,22 @@ function render() {
   // The anchor carries TWO grid blocks concatenated: allies first, then
   // enemies (asymmetrical battles 12v6 render sub-tables of different
   // heights). Each side maps onto its OWN block — the enemy block starts
-  // where the ally block ends.
-  const allies = arena.vehicles.filter((v) => v.relation <= 1);
-  const enemies = arena.vehicles.filter((v) => v.relation > 1);
+  // where the ally block ends. Operation scenarios (行动) are the
+  // exception: their relation values follow scenario team slots, and the
+  // game's Tab table shows a single team — the whole roster is the one
+  // ally block (matching the Rust-side team sizes).
+  const operation = isOperationBattle(
+    arena.matchGroup,
+    arena.scenario,
+    arena.eventType,
+    arena.vehicles.map((v) => v.name),
+  );
+  const allies = operation
+    ? arena.vehicles
+    : arena.vehicles.filter((v) => v.relation <= 1);
+  const enemies = operation
+    ? []
+    : arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
   // Row → name attribution. Three sources, by mode:
@@ -482,9 +502,11 @@ function render() {
     // the key order) and render the joined chip. Clan tags feed the key's
     // display-name segment, and the mapping re-derives on every render —
     // when the WG batch lands a tag, the next render re-sorts with it.
+    // Operation scenarios map the whole roster as a single allies block.
     players = inferredRowMapping(arena.vehicles, aliveArr, {
       locale,
       clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
+      operation,
     });
   }
 

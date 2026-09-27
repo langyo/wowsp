@@ -35,7 +35,10 @@ export interface GameProcessInfo {
 export interface VehicleEntry {
   id: number;
   name: string;
-  /** 0/1 = ally (self + division); 2+ = enemy. Numeric in the client JSON. */
+  /** PvP rosters: 0/1 = ally (self + division), 2+ = enemy. Operation
+   *  scenarios (行动) break that rule — their values follow scenario team
+   *  slots (escort waves, target ships), so gate ANY relation-based split
+   *  on `isOperationBattle` first. Numeric in the client JSON. */
   relation: number;
   /** Client ship id (numeric, JSON number). */
   shipId: number;
@@ -97,6 +100,9 @@ export interface ArenaInfo {
   mapName?: string | null;
   /** Scenario name — the "tournament" variants are custom-room fingerprints. */
   scenario?: string | null;
+  /** Battle-script id, e.g. "PCVE027"; operations carry PCVO* — mirrors
+   *  `ReplayMeta.eventType`. */
+  eventType?: string | null;
   /** Roster entries with the client's `:Name:` bot nickname. */
   botCount?: number | null;
   vehicles: VehicleEntry[];

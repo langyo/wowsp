@@ -509,6 +509,11 @@
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     min-height: 0;
+
+    /* Single-sided battle (operations): the allies column takes the width. */
+    &--single {
+      grid-template-columns: 1fr;
+    }
   }
   &__postbattle-col {
     display: flex;
