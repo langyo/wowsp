@@ -141,13 +141,22 @@
     gap: 10px;
     pointer-events: none;
 
+    /* The shared plaque's 12rem floor is for standalone surfaces (the
+       website's replay page lays it out on its own). Inside this row the
+       cap above needs the plaque to give up width on narrow maps, so
+       re-floor it at its own content — the nowrap HP readout — instead
+       of an arbitrary rem constant; the website keeps the package
+       default. */
+    .holo-ship-card {
+      min-width: min-content;
+    }
+
     /* Narrow-map fallback: under ~680px the cap drops below the row's
-       one-line footprint, the min-width:0 strip box then shrinks below
-       its nowrap segments' sum, and those segments bleed right — back
-       into the corner the cap just reserved. There the strip wraps below
-       the plaque instead (the row is bottom-anchored, so it grows
-       upward, still left of the thumb). At normal map widths the cap is
-       wider than the row's preferred width and this never fires. */
+       one-line footprint, so the strip wraps below the plaque (the row
+       is bottom-anchored, so it grows upward, still left of the thumb).
+       With the strip's own internal wrap (below) this threshold is now
+       cosmetic — a mistimed guess at font metrics degrades into a 2×2
+       strip instead of an overflow. */
     @container (max-width: 680px) {
       flex-wrap: wrap;
     }
@@ -375,12 +384,19 @@
    with the plaque; each stat inside is a centred mini column. */
 .holo-map__selfstats {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 0;
   /* Release the strip's automatic minimum inside the shipcard row: it
      would otherwise read as the sum of the segments' 4.5rem contributions
      and keep the row rigid even under the row's width cap. */
   min-width: 0;
+  /* Internal wrap is the correctness backstop for the row's minimap
+     reserve: min-width:0 lets this box shrink below the nowrap segments'
+     sum, and without wrapping they would bleed right out of the box —
+     back into the corner the row's cap reserved. Wrapped, the strip
+     degrades to a 2×2 stat grid instead, at any map width, whatever the
+     labels' locale or the user's font scaling does to segment widths. */
   padding: 0.45rem 0.3rem;
   background: var(--holo-hud-glass, rgb(96 108 126 / 42%));
   border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
