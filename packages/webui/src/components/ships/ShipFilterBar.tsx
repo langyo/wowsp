@@ -305,6 +305,37 @@ export default defineComponent({
     const searchPanelEl = ref<HTMLElement | null>(null);
     const popPanelEls = new Map<CatKey, HTMLElement | null>();
 
+    // ── Chip-row indent: the bar sits beside the view's date tabs, so its
+    //    box (and the chips row's 100% wrap basis with it) starts one
+    //    tabs-width in — the chip row then reads as centered in the leftover
+    //    space. The bar's offset against the host row is measured into
+    //    `--sfb-indent`; the SCSS turns that into a negative margin plus a
+    //    matching basis so the chips start flush with the tabs' left edge.
+    //    (The bar must stay a direct flex sibling of the tabs in the host
+    //    row — an intermediate wrapper would measure 0.) When the host wraps
+    //    the whole bar below the tabs the offset is 0 and the strip keeps
+    //    its natural layout. ──
+    const chipIndent = ref(0);
+    let indentObserver: ResizeObserver | null = null;
+    function measureChipIndent() {
+      const bar = chipsRow.value;
+      const row = bar?.parentElement;
+      if (!bar || !row) {
+        chipIndent.value = 0;
+        return;
+      }
+      const rowStyle = getComputedStyle(row);
+      const padLeft = parseFloat(rowStyle.paddingLeft) || 0;
+      const borderLeft = parseFloat(rowStyle.borderLeftWidth) || 0;
+      // Floor (not round): a fractional overshoot would poke the row's
+      // right edge past the host content edge, while a shortfall just
+      // leaves an invisible sub-pixel gap on the left.
+      chipIndent.value = Math.max(
+        0,
+        Math.floor(bar.getBoundingClientRect().left - row.getBoundingClientRect().left - padLeft - borderLeft),
+      );
+    }
+
     /** One outside-close for the whole bar, attached exactly while a panel
      *  is open (capture so it precedes every inside handler). Presses inside
      *  the bar root are ignored here — the chip's own click then toggles or
@@ -331,6 +362,7 @@ export default defineComponent({
     );
     onBeforeUnmount(() => {
       document.removeEventListener("pointerdown", onDocPointerDown, true);
+      indentObserver?.disconnect();
       window.removeEventListener("pointermove", onChipPointerMove);
       window.removeEventListener("pointerup", onChipPointerUp);
       window.removeEventListener("pointercancel", onChipPointerCancel);
@@ -341,6 +373,14 @@ export default defineComponent({
       if (props.realm && !encyclopedia.loadedRealm && !encyclopedia.loading) {
         void encyclopedia.load(props.realm).catch(() => {});
       }
+      // Keep the indent fresh across tab-width changes (language switch,
+      // viewport wraps) — the bar's width changes whenever the tabs' does.
+      if (typeof ResizeObserver !== "undefined") {
+        indentObserver = new ResizeObserver(measureChipIndent);
+        if (chipsRow.value) indentObserver.observe(chipsRow.value);
+        if (chipsRow.value?.parentElement) indentObserver.observe(chipsRow.value.parentElement);
+      }
+      measureChipIndent();
     });
 
     /** Unified ship metadata: encyclopedia first (full API list), offline
@@ -597,7 +637,12 @@ export default defineComponent({
       dir === "desc" ? <ArrowDown size={11} class="ship-filter-bar__dir" /> : <ArrowUp size={11} class="ship-filter-bar__dir" />;
 
     return () => (
-      <div ref={chipsRow} class="ship-filter-bar" data-dragging={chipDragging.value || undefined}>
+      <div
+        ref={chipsRow}
+        class="ship-filter-bar"
+        style={{ "--sfb-indent": `${chipIndent.value}px` }}
+        data-dragging={chipDragging.value || undefined}
+      >
         {/* Two fixed rows (styled in ShipFilterBar.scss): the chip group
             always claims a full row of its own while the meta group rides
             the first row's right end, beside the view's date tabs. Chips

@@ -34,15 +34,21 @@
    while the DOM keeps chips first (tab order) — and `margin-left: auto`
    pins it to that line's right end, beside the host's date tabs (the zero
    flex-basis on the root keeps the bar itself on the tabs' line; see
-   above). The chip row's 100% flex-basis then always claims an exclusive
-   full line below, so neither row's composition depends on the viewport
-   width. */
+   above). The chip row's flex-basis then always claims an exclusive full
+   line below, so neither row's composition depends on the viewport width. */
 .ship-filter-bar__chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  flex: 0 0 100%;
+  /* A bare 100% basis wraps the chips inside the bar's box, which starts
+     one tabs-width in — the row read as centered in the leftover space.
+     The component measures that offset into `--sfb-indent` on the root;
+     the negative margin re-anchors the row at the host's left edge and the
+     matching basis extension restores the full content width (both collapse
+     to 0 when the host wraps the whole bar below the tabs). */
+  flex: 0 0 calc(100% + var(--sfb-indent, 0px));
+  margin-left: calc(-1 * var(--sfb-indent, 0px));
   min-width: 0;
 }
 
