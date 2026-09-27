@@ -24,6 +24,9 @@ import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 // sort rule over the roster + the anchor's alive flags (no OCR) — see
 // inferredOrder.ts.
 import { inferredRowMapping } from "./inferredOrder";
+// Post-layout pass keeping chips inside the overlay window — a chip wider
+// than the reserved side pad would otherwise clip flat at the window edge.
+import { fitChips, refitWhenSealsSettle } from "./chipFit";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { gameTabRowKey } from "@/utils/shipClass";
 import { isOperationBattle } from "@/utils/modeColors";
@@ -302,7 +305,9 @@ function stampImg(kind: StampKind): string {
   if (SEALS_DISABLED.has(kind)) return "";
   const label = STAMP_TEXT[kind];
   const src = CUSTOM_STAMPS[kind] ?? STAMP_GLYPHS[kind];
-  return `<img class="overlay-stamp" src="${src}" alt="${label}" title="${label}">`;
+  // data-stamp carries the kind to chipFit's trim pass (comp seals before
+  // career verdicts when a chip must shrink to stay inside the window).
+  return `<img class="overlay-stamp" data-stamp="${kind}" src="${src}" alt="${label}" title="${label}">`;
 }
 
 function chipContent(name: string, side: "ally" | "enemy"): string {
@@ -582,6 +587,14 @@ function render() {
       root.appendChild(el);
     });
   }
+  // A chip wider than its side pad would run past the window edge and get
+  // clipped flat (rounded cap gone, numbers cut) — pull overflowing chips
+  // back inside: seals trim first, the free edge clamps last (chipFit.ts).
+  fitChips(root, document.documentElement.clientWidth);
+  // Seal bitmaps decode (or fail) after this layout — re-run the fit pass
+  // as each settles so the clamp stays honest on the first seal-bearing
+  // render.
+  refitWhenSealsSettle(root, () => document.documentElement.clientWidth);
 
   // Transient-status card, centered over the table, rebuilt on every
   // render: one spinner + the "querying" copy while at least one chip
