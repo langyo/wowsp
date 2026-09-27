@@ -1465,6 +1465,12 @@ export const api = {
     transport.invokeRaw?.<null>(RPC.write_export_bytes, bytes, {
       "x-export-path": encodeURIComponent(path),
     }) ?? Promise.reject(new Error("raw IPC unavailable in this host")),
+  /** Copy a PNG image onto the system clipboard (post-battle share shot) via
+   *  a raw IPC body. Rejects on mobile (marker error) and outside the Tauri
+   *  shell — callers fall back to the webview clipboard API. */
+  copyImageToClipboard: (bytes: Uint8Array) =>
+    transport.invokeRaw?.<null>(RPC.copy_image_to_clipboard, bytes, {}) ??
+    Promise.reject(new Error("raw IPC unavailable in this host")),
   installOverlayMod: (gameRoot: string) =>
     transport.invoke<string>(RPC.install_overlay_mod, { gameRoot }),
   uninstallOverlayMod: (gameRoot: string) =>

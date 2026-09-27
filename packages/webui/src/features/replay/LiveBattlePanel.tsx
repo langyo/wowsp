@@ -22,6 +22,7 @@ import {
   ref,
   watch,
   type CSSProperties,
+  type PropType,
 } from "vue";
 import { useRouter } from "vue-router";
 
@@ -91,6 +92,16 @@ export default defineComponent({
     /** Realm the battle is played on (from the active client install);
      *  used for both the stats lookup and the lookup-view jump. */
     realm: { type: String, default: "" },
+    /** Post-battle entry: rendered as soon as the battle settles/ends (the
+     *  fresh .wowsreplay exists) — the parent (LiveView) reads the replay's
+     *  BattleResults and opens the shared PostBattlePanel window. Omitted on
+     *  hosts that cannot read replays. */
+    onResults: { type: Function as PropType<() => void>, default: null },
+    /** The post-battle payload is being read (spinner rides the button). */
+    resultsBusy: { type: Boolean, default: false },
+    /** The last read refused the payload (replay still settling) — shown as
+     *  an inline note inviting a retry. */
+    resultsFailed: { type: Boolean, default: false },
   },
   setup(props) {
     const accounts = useAccountStore();
@@ -516,6 +527,22 @@ export default defineComponent({
             <span class="live-battle__map">
               {displayMapName(props.arena.mapName, dataLanguage.value)}
             </span>
+            {(props.settling || props.ended) && props.onResults ? (
+              <button
+                class="live-battle__results-btn"
+                type="button"
+                disabled={props.resultsBusy}
+                onClick={() => props.onResults?.()}
+              >
+                {props.resultsBusy ? <HkSpinner size="xs" tone="current" /> : null}
+                {t("replay.live.postBattle")}
+              </button>
+            ) : null}
+            {props.resultsFailed ? (
+              <span class="live-battle__results-note">
+                {t("replay.live.postBattleUnavailable")}
+              </span>
+            ) : null}
             {statusBadge.value ? (
               <>
                 <span

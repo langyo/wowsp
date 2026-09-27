@@ -125,6 +125,36 @@
     color: rgb(var(--color-success, 74 222 128));
   }
 
+  /* Post-battle stats entry (settling/ended): same pill voice as the
+     manual-locate button, accent-tinted — it opens the shared post-battle
+     window parsed off the fresh replay file. */
+  &__results-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-accent) / 45%);
+    color: rgb(var(--color-accent));
+    background: rgb(var(--color-accent) / 10%);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+  }
+
+  &__results-note {
+    color: rgb(var(--color-warning, 251 191 36));
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+  }
+
   &__manual-btn {
     padding: 0.1rem 0.55rem;
     border-radius: 999px;

@@ -13,12 +13,15 @@
  * placeholder and mounts none of the watchers (the nav link is hidden there
  * too — this is belt-and-braces for direct URLs).
  */
+import { X } from "@lucide/vue";
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
 import LiveIdleGuide from "@/features/replay/LiveIdleGuide";
+import PostBattlePanel from "@/features/replay/PostBattlePanel";
+import { isOperationBattle } from "@/utils/modeColors";
 import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -88,6 +91,11 @@ export default defineComponent({
      *  settling pill would stick for every battle after the first in one
      *  game session. */
     const livePhase = ref<"idle" | "battle" | "settling">("idle");
+    /** The fresh .wowsreplay whose appearance flipped the phase to settling
+     *  (newest when several landed at once — names lead with the capture
+     *  timestamp, so a plain lexicographic sort is chronological). Feeds the
+     *  post-battle window's BattleResults read. */
+    const freshReplay = ref<string | null>(null);
     let baselineFiles: Set<string> | null = null;
     async function snapshotReplayDir(): Promise<Set<string> | null> {
       const dir = liveRoot.value ? replaysDir(liveRoot.value) : undefined;
@@ -104,6 +112,10 @@ export default defineComponent({
      *  started must land in the same state a mid-page game start would. */
     async function armBattlePhase() {
       livePhase.value = "battle";
+      freshReplay.value = null;
+      // A new battle invalidates the previous one's post-battle window.
+      postBattleOpen.value = false;
+      postBattleFailed.value = false;
       baselineFiles = await snapshotReplayDir();
     }
     watch(
@@ -115,6 +127,8 @@ export default defineComponent({
           livePhase.value = "idle";
           baselineFiles = null;
         }
+        // Keep freshReplay after the game exits: the ended roster stays up
+        // and the post-battle window must stay reachable off the SAME file.
       },
     );
     watch(
@@ -166,8 +180,12 @@ export default defineComponent({
               }
               const now = await snapshotReplayDir();
               if (!now) return;
-              const fresh = [...now].some((f) => !baselineFiles!.has(f));
-              if (fresh) {
+              const fresh = [...now]
+                .filter((f) => !baselineFiles!.has(f))
+                .sort()
+                .at(-1);
+              if (fresh != null) {
+                freshReplay.value = fresh;
                 livePhase.value = "settling";
               } else {
                 baselineFiles = now;
@@ -211,6 +229,46 @@ export default defineComponent({
       () => gameStatus.process.running || overlay.arenaInfo != null,
     );
 
+    // ── Post-battle window (战后统计) ───────────────────────────────────
+    // Opened from the panel head once the battle settles/ends: reads the
+    // fresh replay's BattleResults payload (a full position parse — heavy,
+    // hence the busy state) and mounts the SAME PostBattlePanel the replay
+    // view's 结果 modal uses, dressed with the retained arena's mode/map.
+    // While the game still sits on its results screen the file can lack the
+    // settlement packet — that reads as "unavailable, retry shortly".
+    const postBattleRaw = ref<string | null>(null);
+    const postBattleOpen = ref(false);
+    const postBattleBusy = ref(false);
+    const postBattleFailed = ref(false);
+    const arena = computed(() => overlay.arenaInfo);
+    const postBattleOperation = computed(() =>
+      isOperationBattle(
+        arena.value?.matchGroup,
+        arena.value?.scenario,
+        arena.value?.eventType,
+        arena.value?.vehicles.map((v) => v.name),
+      ),
+    );
+    async function openPostBattle() {
+      const path = freshReplay.value;
+      if (!path || postBattleBusy.value) return;
+      postBattleBusy.value = true;
+      postBattleFailed.value = false;
+      try {
+        const stream = await api.readReplayPositions(path);
+        if (stream.battleResults) {
+          postBattleRaw.value = stream.battleResults;
+          postBattleOpen.value = true;
+        } else {
+          postBattleFailed.value = true;
+        }
+      } catch {
+        postBattleFailed.value = true;
+      } finally {
+        postBattleBusy.value = false;
+      }
+    }
+
     return () => (
       <main class="live-view">
         {/* No page-level header: the panel renders the page title itself
@@ -223,11 +281,49 @@ export default defineComponent({
               settling={livePhase.value === "settling"}
               ended={overlay.battleEnded}
               realm={realm.value}
+              onResults={freshReplay.value ? () => void openPostBattle() : undefined}
+              resultsBusy={postBattleBusy.value}
+              resultsFailed={postBattleFailed.value}
             />
           ) : (
             <LiveIdleGuide />
           )}
         </div>
+
+        {/* Post-battle stats window — the same component the replay view's
+            结果 modal mounts; the retained arena dresses its head pills. */}
+        {postBattleOpen.value && postBattleRaw.value ? (
+          <div class="live-view__modal" onClick={() => (postBattleOpen.value = false)}>
+            <div class="live-view__modal-panel" onClick={(e) => e.stopPropagation()}>
+              <div class="live-view__modal-head">
+                <div class="live-view__modal-title">
+                  <strong>{t("replay.live.postBattle")}</strong>
+                </div>
+                <button
+                  class="live-view__modal-close"
+                  onClick={() => (postBattleOpen.value = false)}
+                  aria-label="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div class="live-view__modal-body">
+                <PostBattlePanel
+                  raw={postBattleRaw.value}
+                  head={{
+                    matchGroup: arena.value?.matchGroup ?? null,
+                    scenario: arena.value?.scenario ?? null,
+                    eventType: arena.value?.eventType ?? null,
+                    botCount: arena.value?.botCount ?? null,
+                    mapName: arena.value?.mapName ?? null,
+                  }}
+                  operation={postBattleOperation.value}
+                  onClose={() => (postBattleOpen.value = false)}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     );
   },

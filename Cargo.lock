@@ -7790,6 +7790,7 @@ name = "wowsp_tauri"
 version = "0.4.9"
 dependencies = [
  "anyhow",
+ "arboard",
  "base64 0.23.1",
  "blowfish",
  "byteorder",

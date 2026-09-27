@@ -183,7 +183,9 @@
       "enemyNote": "규칙에 따라 적 함선의 장비 정보는 표시하지 않습니다",
       "noData": "이 함선의 제원이 없습니다"
     },
-    "tier": "티어"
+    "tier": "티어",
+    "postBattle": "전투 후 통계",
+    "postBattleUnavailable": "결산 데이터가 아직 리플레이에 기록되지 않았습니다. 잠시 후 다시 시도하세요"
   },
   "postbattle": {
     "loadingGlobal": "{name}의 전체 전적을 불러오는 중…",
@@ -198,7 +200,16 @@
     "globalUnavailable": "전체 전적을 사용할 수 없습니다",
     "noRealm": " (서버 정보 없음)",
     "tierDist": "주력 티어 분포",
-    "fullStats": "전체 전적 보기 →"
+    "fullStats": "전체 전적 보기 →",
+    "hideAll": "모든 닉네임 숨기기",
+    "showAll": "모든 닉네임 표시",
+    "maskHint": "행 끝의 눈 아이콘으로 개별 닉네임을 숨길 수 있으며, 숨긴 이름은 스크린샷에 포함되지 않습니다",
+    "hideName": "이 닉네임 숨기기",
+    "showName": "이 닉네임 표시",
+    "copyShot": "스크린샷 복사",
+    "copyShotDone": "스크린샷이 클립보드에 복사되었습니다",
+    "copyShotFailed": "복사 실패",
+    "shotTagline": "World of Warships 전투 분석 도구"
   },
   "capture": {
     "contested": "양측 모두 점령 중 — 진행 일시 정지",

@@ -183,7 +183,9 @@
       "enemyNote": "La información de equipamiento enemiga no se muestra por política",
       "noData": "No hay especificaciones para este buque"
     },
-    "tier": "Nivel"
+    "tier": "Nivel",
+    "postBattle": "Estadísticas post-combate",
+    "postBattleUnavailable": "Los datos del resultado aún no se han escrito en la repetición; inténtalo de nuevo pronto"
   },
   "postbattle": {
     "loadingGlobal": "Cargando las estadísticas globales de {name}…",
@@ -198,7 +200,16 @@
     "globalUnavailable": "Estadísticas globales no disponibles",
     "noRealm": " (sin información del servidor)",
     "tierDist": "Distribución de niveles",
-    "fullStats": "Estadísticas completas →"
+    "fullStats": "Estadísticas completas →",
+    "hideAll": "Ocultar todos los apodos",
+    "showAll": "Mostrar todos los apodos",
+    "maskHint": "El ojo al final de la fila oculta un apodo; las capturas nunca incluyen apodos ocultos",
+    "hideName": "Ocultar este apodo",
+    "showName": "Mostrar este apodo",
+    "copyShot": "Copiar captura",
+    "copyShotDone": "Captura copiada al portapapeles",
+    "copyShotFailed": "Error al copiar",
+    "shotTagline": "Análisis de batallas de World of Warships"
   },
   "capture": {
     "contested": "Ambos bandos capturando — progreso en pausa",

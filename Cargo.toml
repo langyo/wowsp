@@ -143,6 +143,11 @@ windows = { version = "^0.61", features = [
 # Image handling for capture analysis
 image = { version = "^0.25", default-features = false, features = ["png"] }
 
+# System clipboard image copy for the post-battle share shot (desktop only;
+# already in the lockfile via egui-winit, so this adds no new crate). Only the
+# image-data path is needed — Wayland/other default features stay off.
+arboard = { version = "^3.6", default-features = false, features = ["image-data"] }
+
 # Encoding helpers
 base64 = "^0.23"
 hex = "^0.4"

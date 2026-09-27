@@ -29,6 +29,7 @@ export const RPC = {
   pick_replay_files: "pick_replay_files",
   pick_export_path: "pick_export_path",
   write_export_bytes: "write_export_bytes",
+  copy_image_to_clipboard: "copy_image_to_clipboard",
   read_temp_arena_info: "read_temp_arena_info",
   start_arena_watcher: "start_arena_watcher",
   stop_arena_watcher: "stop_arena_watcher",

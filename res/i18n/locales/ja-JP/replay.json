@@ -183,7 +183,9 @@
       "enemyNote": "規則により敵艦の装備情報は表示されません",
       "noData": "この艦の諸元はありません"
     },
-    "tier": "ティア"
+    "tier": "ティア",
+    "postBattle": "戦後統計",
+    "postBattleUnavailable": "結果データがまだリプレイに書き込まれていません。後でもう一度お試しください"
   },
   "postbattle": {
     "loadingGlobal": "{name} の全体戦績を読み込み中…",
@@ -198,7 +200,16 @@
     "globalUnavailable": "全体戦績は利用できません",
     "noRealm": "（サーバー情報なし）",
     "tierDist": "使用ティア分布",
-    "fullStats": "詳細な戦績 →"
+    "fullStats": "詳細な戦績 →",
+    "hideAll": "全ニックネームを隠す",
+    "showAll": "全ニックネームを表示",
+    "maskHint": "行末の目のアイコンで個別のニックネームを非表示にできます。非表示の名前はスクリーンショットに含まれません",
+    "hideName": "このニックネームを隠す",
+    "showName": "このニックネームを表示",
+    "copyShot": "スクリーンショットをコピー",
+    "copyShotDone": "スクリーンショットをクリップボードにコピーしました",
+    "copyShotFailed": "コピーに失敗しました",
+    "shotTagline": "World of Warships 戦闘分析ツール"
   },
   "capture": {
     "contested": "双方が占拠中のため進行が停止しています",

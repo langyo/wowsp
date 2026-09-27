@@ -183,7 +183,9 @@
       "enemyNote": "Les informations d'équipement ennemies ne sont pas affichées par principe",
       "noData": "Aucune caractéristique pour ce navire"
     },
-    "tier": "Palier"
+    "tier": "Palier",
+    "postBattle": "Stats d'après-match",
+    "postBattleUnavailable": "Les données de règlement ne sont pas encore dans le replay — réessayez plus tard"
   },
   "postbattle": {
     "loadingGlobal": "Chargement des statistiques globales de {name}…",
@@ -198,7 +200,16 @@
     "globalUnavailable": "Statistiques globales indisponibles",
     "noRealm": " (aucune info de serveur)",
     "tierDist": "Répartition des paliers",
-    "fullStats": "Statistiques complètes →"
+    "fullStats": "Statistiques complètes →",
+    "hideAll": "Masquer tous les pseudos",
+    "showAll": "Afficher tous les pseudos",
+    "maskHint": "L'œil en fin de ligne masque un pseudo ; les captures n'incluent jamais les pseudos masqués",
+    "hideName": "Masquer ce pseudo",
+    "showName": "Afficher ce pseudo",
+    "copyShot": "Copier la capture",
+    "copyShotDone": "Capture copiée dans le presse-papiers",
+    "copyShotFailed": "Échec de la copie",
+    "shotTagline": "Analyse de bataille World of Warships"
   },
   "capture": {
     "contested": "Les deux camps capturent — progression en pause",

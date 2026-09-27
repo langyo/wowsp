@@ -78,6 +78,51 @@ pub async fn write_export_bytes(request: tauri::ipc::Request<'_>) -> Result<(), 
     .map_err(|e| format!("export write task failed: {e}"))?
 }
 
+/// Copy a PNG image (raw IPC body, same channel as [`write_export_bytes`])
+/// onto the system clipboard — the post-battle share shot's "copy screenshot"
+/// action. Desktop only: arboard has no Android backend, so mobile returns the
+/// [`crate::mobile_unsupported::CLIPBOARD_IMAGE`] marker and the webview layer
+/// falls back to its own clipboard API. Blocking pool: Windows clipboard open
+/// can block briefly when another app holds the clipboard.
+#[tauri::command]
+pub async fn copy_image_to_clipboard(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        _ => return Err("expected raw body (pass a Uint8Array to invokeRaw)".into()),
+    };
+    #[cfg(mobile)]
+    {
+        let _ = bytes;
+        return Err(crate::mobile_unsupported::CLIPBOARD_IMAGE.into());
+    }
+    #[cfg(desktop)]
+    {
+        tokio::task::spawn_blocking(move || {
+            // arboard 3.6 carries no PNG entry point, so decode through the
+            // app's own `image` stack into the RGBA8 it expects.
+            let decoded = image::load_from_memory(&bytes)
+                .map_err(|e| format!("decode share-shot PNG: {e}"))?
+                .to_rgba8();
+            let (w, h) = decoded.dimensions();
+            let img = arboard::ImageData {
+                width: w as usize,
+                height: h as usize,
+                bytes: std::borrow::Cow::Owned(decoded.into_raw()),
+            };
+            let mut clip = arboard::Clipboard::new().map_err(|e| format!("open clipboard: {e}"))?;
+            clip.set_image(img)
+                .map_err(|e| format!("set clipboard image: {e}"))?;
+            tracing::info!(
+                bytes = bytes.len(),
+                "post-battle share shot copied to clipboard"
+            );
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("clipboard task failed: {e}"))?
+    }
+}
+
 /// Decode a percent-encoded ASCII string (from `encodeURIComponent` on the JS
 /// side) back into UTF-8. Hand-rolled to avoid a new dependency for one call.
 /// Shared with the pairing module (URL paths + the import file-name header).

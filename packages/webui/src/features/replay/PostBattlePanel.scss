@@ -1,0 +1,551 @@
+/* Post-battle panel styles — shared by the replay view's 结果 modal and the
+ live view's post-battle window (the component lives in
+ features/replay/PostBattlePanel.tsx; the class prefix keeps the historical
+ `replay-view__postbattle-*` names both views already render). */
+
+
+/* Post-battle: two-column team matrix + drill-down panel. The stats
+   content runs ONE step up the --text-* scale (2xs→xs, sm→base) so the
+   result sheet reads slightly larger than the replay list around it. */
+.replay-view__postbattle-cell-status {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text) / 0.45);
+}
+.replay-view__postbattle-bot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.2em;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgb(var(--color-text) / 0.14);
+  color: rgb(var(--color-text) / 0.62);
+  font-size: 0.72em;
+  line-height: 1;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+/* Battle identity head: mode pill + map label, the same dressing the live
+   panel carries in its own head row. */
+.replay-view__postbattle-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 8px;
+}
+.replay-view__postbattle-head-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.replay-view__postbattle-head-map {
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+}
+
+/* Share toolbar: hide-all-nicknames toggle + per-row eye hint (left) and
+   the copy-share-shot action with its inline result note (right). */
+.replay-view__postbattle-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.replay-view__postbattle-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-text) / 20%);
+  background: transparent;
+  color: rgb(var(--color-text) / 75%);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+
+  /* All nicknames currently masked — the toggle is "on". */
+  &--on {
+    border-color: rgb(var(--color-primary) / 55%);
+    color: rgb(var(--color-primary));
+  }
+
+  /* The copy-shot action: slightly more presence than the mask toggle. */
+  &--shot {
+    border-color: rgb(var(--color-accent) / 45%);
+    color: rgb(var(--color-accent));
+    &:hover {
+      background: rgb(var(--color-accent) / 12%);
+    }
+  }
+}
+.replay-view__postbattle-toolbar-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(var(--color-text) / 0.4);
+  font-size: var(--text-2xs);
+}
+.replay-view__postbattle-shot-note {
+  flex: 0 0 auto;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text) / 0.55);
+  &--done {
+    color: rgb(var(--color-success, 74 222 128));
+  }
+  &--failed {
+    color: rgb(var(--color-error));
+  }
+}
+
+.replay-view__postbattle-matrix {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+
+  /* Single-sided battle (operations): the allies column takes the width. */
+  &--single {
+    grid-template-columns: 1fr;
+  }
+}
+.replay-view__postbattle-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.replay-view__postbattle-col-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: rgb(var(--color-text) / 0.55);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  padding: 0 2px 2px;
+  border-bottom: 1px solid rgb(var(--color-text) / 0.1);
+}
+.replay-view__postbattle-col-name {
+  white-space: nowrap;
+}
+/* Team aggregate (weighted/plain mean WR + mean PR) riding the column
+   title's right end — same voice as the live panel's column captions. */
+.replay-view__postbattle-col-agg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: normal;
+  white-space: nowrap;
+  b {
+    font-weight: 600;
+  }
+}
+
+/* Row = card wrapper (background + dead/self states) holding the
+   drill-down button, the career seal and the per-row mask toggle; the
+   wrapper is a div so the eye stays a real button (no nested buttons). */
+.replay-view__postbattle-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0 4px 0 0;
+  border-radius: 6px;
+  background: rgb(var(--color-text) / 0.04);
+  color: rgb(var(--color-text));
+  font-size: var(--text-xs);
+
+  &--dead { opacity: 0.55; }
+  &--self {
+    outline: 1px solid rgb(var(--color-text) / 0.7);
+    outline-offset: -1px;
+  }
+}
+.replay-view__postbattle-cell-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+  &:hover { background: rgb(var(--color-text) / 0.1); }
+}
+.replay-view__postbattle-cell-ico {
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+.replay-view__postbattle-cell-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.replay-view__postbattle-cell-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.replay-view__postbattle-cell-nick {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Clan tag ([HOOD] etc.) after the nick — muted identity metadata, same
+   voice as the live panel's clan tags. */
+.replay-view__postbattle-cell-clan {
+  flex: none;
+  color: rgb(var(--color-text) / 0.5);
+  font-size: 0.78em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.replay-view__postbattle-cell-sub {
+  color: rgb(var(--color-text) / 0.45);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Career seal pressed onto the card's right edge (live panel look). */
+.replay-view__postbattle-cell-stamp {
+  flex: 0 0 auto;
+}
+/* Per-row nickname mask toggle. Muted until hovered — the share flow's
+   discoverability lives in the toolbar hint. */
+.replay-view__postbattle-cell-eye {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgb(var(--color-text) / 0.35);
+  cursor: pointer;
+  &:hover {
+    color: rgb(var(--color-text) / 0.8);
+    background: rgb(var(--color-text) / 8%);
+  }
+  &--on {
+    color: rgb(var(--color-primary));
+  }
+}
+/* Roster stat columns (overall WR / PR / avg damage) left of the XP —
+   values are tier-colored inline; fixed ch widths keep each column
+   aligned across rows. */
+.replay-view__postbattle-cell-stat {
+  flex: 0 0 auto;
+  text-align: right;
+  font-family: var(--font-mono);
+  em {
+    font-style: normal;
+    color: rgb(var(--color-text) / 0.35);
+  }
+  b { font-weight: 600; }
+  &--wr { min-width: 6.5ch; }
+  &--pr { min-width: 5ch; }
+  &--dmg { min-width: 7.5ch; }
+}
+.replay-view__postbattle-cell-xp {
+  flex: 0 0 auto;
+  min-width: 6ch;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+.replay-view__postbattle-detail {
+  position: relative;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(var(--color-text) / 0.05);
+  border: 1px solid rgb(var(--color-text) / 0.12);
+}
+.replay-view__postbattle-detail-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: none;
+  color: rgb(var(--color-text) / 0.6);
+  cursor: pointer;
+  font-size: var(--text-base);
+}
+.replay-view__postbattle-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.replay-view__postbattle-detail-ico { display: inline-flex; }
+.replay-view__postbattle-detail-name {
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+.replay-view__postbattle-detail-ship {
+  font-style: normal;
+  color: rgb(var(--color-text) / 0.5);
+  margin-left: 8px;
+  font-size: var(--text-xs);
+}
+.replay-view__postbattle-killed {
+  color: #ff6b6b;
+  font-size: var(--text-xs);
+  margin-bottom: 6px;
+}
+.replay-view__postbattle-detail-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.replay-view__postbattle-detail-damage {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.replay-view__postbattle-detail-damage-num {
+  font-family: var(--font-mono);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: rgb(var(--color-text));
+  line-height: 1;
+}
+.replay-view__postbattle-detail-damage-label {
+  color: rgb(var(--color-text) / 0.5);
+  font-size: var(--text-xs);
+  margin-top: 2px;
+}
+.replay-view__postbattle-detail-ribbons {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.replay-view__postbattle-detail-ribbon {
+  position: relative;
+  display: inline-flex;
+  img { display: block; border-radius: 2px; }
+  em {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    font-style: normal;
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: #111;
+    background: #ffd93d;
+    border-radius: 6px;
+    padding: 0 3px;
+    line-height: 12px;
+  }
+}
+.replay-view__postbattle-damage-unknown {
+  font-style: normal;
+  color: #ffd93d;
+  font-size: 1.0625rem;
+  vertical-align: super;
+  cursor: help;
+}
+.replay-view__postbattle-settlement {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(var(--color-text) / 0.1);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text) / 0.7);
+  b { color: #ffd93d; font-family: var(--font-mono); margin-left: 4px; }
+}
+/* Level-2 modal (player detail) */
+.replay-view__postbattle-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 4, 8, 0.7);
+  backdrop-filter: blur(3px);
+}
+.replay-view__postbattle-modal-panel {
+  width: min(560px, 90vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-text) / 0.14);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+  color: rgb(var(--color-text));
+  overflow: hidden;
+}
+.replay-view__postbattle-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 600;
+  button {
+    border: none;
+    background: none;
+    color: rgb(var(--color-text) / 0.6);
+    cursor: pointer;
+    font-size: var(--text-base);
+  }
+}
+/* Player-detail body scrolls between the fixed head and the jump button —
+   StatsCard + tier/class charts overflow the 82vh cap on short viewports. */
+.replay-view__postbattle-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Phone sheet-family scroll containment (see __modal-body). */
+  overscroll-behavior: contain;
+}
+.replay-view__postbattle-global {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(var(--color-text) / 0.1);
+}
+.replay-view__postbattle-global-note {
+  color: rgb(var(--color-text) / 0.5);
+  font-size: var(--text-xs);
+
+  &--loading {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 0;
+  }
+}
+.replay-view__postbattle-global-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text) / 0.7);
+  b { color: rgb(var(--color-text)); font-family: var(--font-mono); margin-right: 3px; }
+}
+.replay-view__postbattle-jump {
+  flex: none;
+  margin-top: 10px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 5px;
+  background: rgb(var(--color-accent) / 22%);
+  color: rgb(var(--color-accent));
+  font-size: var(--text-xs);
+  cursor: pointer;
+  align-self: flex-start;
+  &:hover { background: rgb(var(--color-accent) / 35%); }
+}
+.replay-view__postbattle-dist {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(var(--color-text) / 0.1);
+}
+.replay-view__postbattle-dist-title {
+  color: rgb(var(--color-text) / 0.55);
+  font-size: var(--text-xs);
+  margin-bottom: 5px;
+}
+.replay-view__postbattle-dist-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  margin-bottom: 3px;
+}
+.replay-view__postbattle-dist-item {
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text) / 0.7);
+  b { color: #ffd93d; font-family: var(--font-mono); margin-right: 2px; }
+}
+
+/* ── Phone layout (≤767px): the post-battle drill-down docks as a bottom
+ sheet (same shape the replay view's own overlays use). */
+@media (max-width: 767px) {
+  .replay-view__postbattle-modal {
+    align-items: flex-end;
+  }
+  .replay-view__postbattle-modal-panel {
+    width: 100%;
+    max-width: none;
+    max-height: calc(
+      100dvh - var(--app-titlebar-h, 48px) - env(safe-area-inset-top, 0px) - 2.25rem
+    );
+    border-radius: 12px 12px 0 0;
+    border-bottom: none;
+    animation: replay-view-sheet-up 0.24s var(--ease-standard, ease);
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+  .replay-view__postbattle-modal-head {
+    padding: 0.55rem 0.75rem;
+    button {
+      min-width: 44px;
+      min-height: 44px;
+      margin: -0.35rem -0.5rem -0.35rem 0;
+    }
+  }
+  /* Team matrix columns stack (two 12-row columns don't fit side by
+     side); rows get tap-sized padding. */
+  .replay-view__postbattle-matrix {
+    grid-template-columns: 1fr;
+  }
+  .replay-view__postbattle-cell {
+    min-height: 44px;
+  }
+  .replay-view__postbattle-cell-btn {
+    padding: 0.4rem 0.4rem 0.4rem 0.5rem;
+  }
+  .replay-view__postbattle-jump {
+    min-height: 44px;
+    align-self: stretch;
+    text-align: center;
+  }
+}
+
+@keyframes replay-view-sheet-up {
+  from {
+    transform: translateY(16%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

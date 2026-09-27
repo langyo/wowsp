@@ -47,6 +47,9 @@ pub mod mobile_unsupported {
     /// Desktop pairing server (the phone is a CLIENT — it pairs to desktops,
     /// it never serves).
     pub const PAIRING: &str = "pairing server is not supported on mobile";
+    /// Image clipboard write (arboard has no Android backend; the phone app's
+    /// share flow falls back to the webview clipboard API or a save dialog).
+    pub const CLIPBOARD_IMAGE: &str = "image clipboard is not supported on mobile";
 }
 
 /// App bootstrap shared by the desktop bin and the Android entry point.
@@ -459,6 +462,7 @@ pub fn run() {
             commands::screenshot::capture_main_window,
             commands::exports::pick_export_path,
             commands::exports::write_export_bytes,
+            commands::exports::copy_image_to_clipboard,
             commands::mod_hub::mod_hub_scan_installed,
             commands::mod_hub::mod_hub_classify_path,
             commands::mod_hub::mod_hub_install,

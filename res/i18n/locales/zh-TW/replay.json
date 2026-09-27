@@ -183,7 +183,9 @@
       "enemyNote": "按規則不展示敵方裝配資訊",
       "noData": "暫無該艦參數"
     },
-    "tier": "階級"
+    "tier": "階級",
+    "postBattle": "戰後統計",
+    "postBattleUnavailable": "結算數據尚未寫入錄像，稍後再試"
   },
   "postbattle": {
     "loadingGlobal": "載入 {name} 的全域戰績…",
@@ -198,7 +200,16 @@
     "globalUnavailable": "全域戰績不可用",
     "noRealm": "（無伺服器資訊）",
     "tierDist": "常玩階級分布",
-    "fullStats": "查看完整戰績 →"
+    "fullStats": "查看完整戰績 →",
+    "hideAll": "隱藏全部暱稱",
+    "showAll": "顯示全部暱稱",
+    "maskHint": "行尾的眼睛可隱藏單一暱稱，截圖不含已隱藏暱稱",
+    "hideName": "隱藏該暱稱",
+    "showName": "顯示該暱稱",
+    "copyShot": "複製截圖",
+    "copyShotDone": "截圖已複製到剪貼簿",
+    "copyShotFailed": "複製失敗",
+    "shotTagline": "戰艦世界對局分析工具"
   },
   "capture": {
     "contested": "雙方壓點，進度暫停",

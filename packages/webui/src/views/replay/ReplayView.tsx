@@ -1,5 +1,5 @@
 import { computed, defineComponent, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue";
-import { Copy, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
+import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
@@ -34,7 +34,14 @@ import type {
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { isMobileApp } from "@/utils/platform";
-import { parsePostBattle, type PostBattleRibbon } from "@/features/replay/postBattle";
+import { type PostBattleRibbon } from "@/features/replay/postBattle";
+import PostBattlePanel, { rosterStatCols } from "@/features/replay/PostBattlePanel";
+import {
+  PostBattleShareBar,
+  useNickMasking,
+  useShareShot,
+} from "@/features/replay/postBattleShare";
+import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "@/features/replay/postBattleShot";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
@@ -51,13 +58,12 @@ import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
+import { damageColor, prTier, winrateColor } from "@/utils/winrate";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
-import { damageColor, winrateColor } from "@/utils/winrate";
-import { prAlgoForRequest } from "@/stores/statsPrefs";
-import { AI_NAME, fetchRosterStatsByNames, isAiName, type RosterStat } from "@/composables/useRosterStats";
+import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
+import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
-import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
 import "./ReplayView.scss";
 
@@ -103,382 +109,6 @@ function formatDateTime(dt?: string | null): string {
   return `${y}-${mo}-${d}${hhmm}`;
 }
 
-/** The two aligned roster-stat columns for one player name — overall winrate
- *  and avg damage, tier-colored (the XVM-style level coloring from
- *  utils/winrate). A tiny spinner rides while the batch lookup runs; bots /
- *  hidden profiles / lookup misses render a muted "—". Shared by both
- *  post-battle panels. */
-function rosterStatCols(
-  name: string,
-  stats: Map<string, RosterStat>,
-  loading: boolean,
-) {
-  const ai = isAiName(name);
-  const stat = ai ? undefined : stats.get(name);
-  const col = (
-    mod: string,
-    title: string,
-    pick: (s: RosterStat) => number | null,
-    colorOf: (v: number) => string,
-    fmt: (v: number) => string,
-  ) => {
-    let tip = title;
-    let body;
-    if (ai) {
-      tip = t("replay.botNote");
-      body = <em>—</em>;
-    } else if (!stat || loading) {
-      body = <HkSpinner size="xs" tone="current" />;
-    } else {
-      const v = pick(stat);
-      if (v == null) {
-        if (stat.hidden) tip = t("replay.live.hiddenProfile");
-        body = <em>—</em>;
-      } else {
-        body = <b style={{ color: colorOf(v) }}>{fmt(v)}</b>;
-      }
-    }
-    return (
-      <span
-        class={`replay-view__postbattle-cell-stat ${mod}`}
-        data-hint={tip}
-      >
-        {body}
-      </span>
-    );
-  };
-  return (
-    <>
-      {col(
-        "replay-view__postbattle-cell-stat--wr",
-        t("replay.postbattle.winrate"),
-        (s) => s.winrate,
-        winrateColor,
-        (v) => `${v.toFixed(1)}%`,
-      )}
-      {col(
-        "replay-view__postbattle-cell-stat--dmg",
-        t("replay.postbattle.avgDamage"),
-        (s) => s.avgDamage,
-        damageColor,
-        (v) => Math.round(v).toLocaleString(),
-      )}
-    </>
-  );
-}
-
-/** Post-battle modal: two-column team matrix (allies left, enemies right)
- *  sorted by settlement XP (real base exp from the results payload, with an
- *  estimate fallback on legacy short arrays). Clicking a player opens a real
- *  second-level modal with the match result + on-demand global stats (title
- *  bar chip while loading) and a jump link into the lookup screen. */
-const PostBattlePanel = defineComponent({
-  name: "PostBattlePanel",
-  props: { raw: { type: String, required: true } },
-  emits: ["close"],
-  setup(props, { emit }) {
-    const parsed = computed(() => parsePostBattle(props.raw));
-    const { dataLanguage } = useLanguage();
-    const loadingTasks = useLoadingTasksStore();
-    const router = useRouter();
-    const rows = computed(() => {
-      const pb = parsed.value;
-      if (!pb) return [];
-      const names = new Map(pb.players.map((p) => [p.accountId, p.name]));
-      return pb.players.map((p) => ({
-        ...p,
-        shipName:
-          (p.shipId != null ? shipNameFromOfflineDb(p.shipId, dataLanguage.value) : null) ??
-          "",
-        killerName: p.killerId != null ? names.get(p.killerId) ?? null : null,
-        // Settlement XP: the real base exp streamed per player (bots carry
-        // 0); falls back to a rough estimate for legacy short arrays only.
-        xp: p.exp ?? Math.round(p.damage * 0.1 + p.frags * 250 + (p.alive ? 100 : 0)),
-      }));
-    });
-    /** The recorder's own team. `playersPublicInfo[6]` is a 0/1 TEAM number
-     *  (12 vs 12), NOT a 0=self/1=ally/2=enemy relation — the recorder's
-     *  team is always the "allies" column. Falls back to team 0 when the
-     *  recorder isn't in the player list (watching someone else's replay). */
-    const selfTeam = computed(() => {
-      const pb = parsed.value;
-      if (!pb) return null;
-      return pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null;
-    });
-    const allies = computed(() => {
-      const st = selfTeam.value;
-      return rows.value
-        .filter((p) => (st != null ? p.team === st : p.team !== 1))
-        .sort((a, b) => b.xp - a.xp);
-    });
-    const enemies = computed(() => {
-      const st = selfTeam.value;
-      return rows.value
-        .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
-        .sort((a, b) => b.xp - a.xp);
-    });
-    const detailOpen = ref(false);
-    const selected = ref<(typeof rows.value)[number] | null>(null);
-    const globalStats = ref<PlayerStats | null>(null);
-    const globalLoading = ref(false);
-    const globalError = ref(false);
-    /** Battles per tier (index 1..10) and per ship type — for spotting
-     *  low-tier farmers / CV-SS specialists. */
-    const shipDistList = ref<DistDatum[]>([]);
-
-    /** Load the player's per-ship stats and aggregate tier/type distribution. */
-    async function loadShipDist(p: (typeof rows.value)[number]) {
-      shipDistList.value = [];
-      if (!p.realm) return;
-      try {
-        const list = await api.lookupPlayerShipStats(p.accountId, p.realm, prAlgoForRequest());
-        shipDistList.value = list.map((s) => ({ shipId: s.shipId, battles: s.battles }));
-      } catch {
-        /* distribution unavailable — hide */
-      }
-    }
-
-    /** Roster WR / avg-damage per player name for the matrix columns (one
-     *  batched lookup on mount, warm-served from the shared roster-stats
-     *  cache). Entries without a realm ride the roster's dominant one — a
-     *  battle is single-realm in practice. */
-    const nameStats = ref<Map<string, RosterStat>>(new Map());
-    const nameStatsLoading = ref(false);
-    async function loadNameStats() {
-      const pb = parsed.value;
-      if (!pb) return;
-      const dominant = pb.players.find((p) => p.realm)?.realm ?? null;
-      const byRealm = new Map<string, Set<string>>();
-      for (const p of pb.players) {
-        if (AI_NAME.test(p.name)) continue;
-        const realm = p.realm ?? dominant;
-        if (!realm) continue;
-        const set = byRealm.get(realm) ?? new Set<string>();
-        set.add(p.name);
-        byRealm.set(realm, set);
-      }
-      if (byRealm.size === 0) return;
-      nameStatsLoading.value = true;
-      try {
-        const maps = await Promise.all(
-          [...byRealm].map(([realm, names]) =>
-            fetchRosterStatsByNames([...names], realm),
-          ),
-        );
-        const merged = new Map<string, RosterStat>();
-        for (const m of maps) for (const [k, v] of m) merged.set(k, v);
-        nameStats.value = merged;
-      } finally {
-        nameStatsLoading.value = false;
-      }
-    }
-    onMounted(() => {
-      void loadNameStats();
-    });
-    /** Load the selected player's global stats on-demand (title bar chip
-     *  while loading; the lookup API resolves by nickname + realm). Failures
-     *  are silent — AI names and rate-limited lookups are common, and an
-     *  error toast for every bot would be noise. */
-    async function loadGlobal(p: (typeof rows.value)[number]) {
-      globalStats.value = null;
-      globalLoading.value = false;
-      if (!p.realm || AI_NAME.test(p.name)) return;
-      globalLoading.value = true;
-      const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name: p.name }));
-      try {
-        globalStats.value = await api.lookupPlayerStats(p.name, p.realm, prAlgoForRequest());
-        loadingTasks.end(tid);
-      } catch {
-        loadingTasks.end(tid);
-        globalError.value = true;
-      } finally {
-        globalLoading.value = false;
-      }
-    }
-
-    function openDetail(p: (typeof rows.value)[number]) {
-      selected.value = p;
-      detailOpen.value = true;
-      void loadGlobal(p);
-      void loadShipDist(p);
-    }
-
-    /** Jump into the lookup screen for this player, closing the modal. */
-    function jumpToLookup() {
-      const p = selected.value;
-      detailOpen.value = false;
-      emit("close");
-      if (p) {
-        void router.push({ path: "/lookup", query: { name: p.name, realm: p.realm ?? "asia" } });
-      }
-    }
-
-    return () => {
-      const pb = parsed.value;
-      if (!pb) return <pre>{props.raw}</pre>;
-      const st = selfTeam.value;
-      const isEnemy = (p: (typeof rows.value)[number]) =>
-        p.team !== null && (st != null ? p.team !== st : p.team === 1);
-      const cell = (p: (typeof allies.value)[number]) => (
-        <button
-          class={[
-            "replay-view__postbattle-cell",
-            p.alive ? "" : "replay-view__postbattle-cell--dead",
-            p.accountId === pb.selfId ? "replay-view__postbattle-cell--self" : "",
-          ]}
-          onClick={() => openDetail(p)}
-        >
-          <span class="replay-view__postbattle-cell-ico">
-            {p.shipId != null ? (
-              <BattleIcon
-                type={shipTypeOf(p.shipId)}
-                variant={p.alive ? (isEnemy(p) ? "enemy" : p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
-                size={20}
-              />
-            ) : null}
-          </span>
-          <span class="replay-view__postbattle-cell-main">
-            <span class="replay-view__postbattle-cell-name">{p.name}</span>
-            <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
-          </span>
-          {rosterStatCols(p.name, nameStats.value, nameStatsLoading.value)}
-          <span class="replay-view__postbattle-cell-xp">{p.xp.toLocaleString()}</span>
-        </button>
-      );
-      const sel = selected.value;
-      return (
-        <div class="replay-view__postbattle">
-          <div class="replay-view__postbattle-matrix">
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">{t("replay.roster.allies")}</div>
-              {allies.value.map(cell)}
-            </div>
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">{t("replay.roster.enemies")}</div>
-              {enemies.value.map(cell)}
-            </div>
-          </div>
-
-          {/* Level-2 modal: player detail */}
-          {detailOpen.value && sel ? (
-            <div
-              class="replay-view__postbattle-modal"
-              onClick={() => (detailOpen.value = false)}
-            >
-              <div
-                class="replay-view__postbattle-modal-panel"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div class="replay-view__postbattle-modal-head">
-                  <span class="replay-view__postbattle-detail-head">
-                    <span class="replay-view__postbattle-detail-ico">
-                      {sel.shipId != null ? (
-                        <BattleIcon
-                          type={shipTypeOf(sel.shipId)}
-                          variant={sel.alive ? (isEnemy(sel) ? "enemy" : "ally") : "sunk"}
-                          size={24}
-                        />
-                      ) : null}
-                    </span>
-                    <span class="replay-view__postbattle-detail-name">
-                      {sel.name}
-                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
-                    </span>
-                  </span>
-                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
-                </div>
-                <div class="replay-view__postbattle-modal-scroll">
-                  {!sel.alive && sel.killerName ? (
-                    <div class="replay-view__postbattle-killed">
-                      {t("replay.postbattle.destroyedBy", { name: sel.killerName })}
-                    </div>
-                  ) : null}
-                  <div class="replay-view__postbattle-detail-body">
-                    <div class="replay-view__postbattle-detail-damage">
-                      <span class="replay-view__postbattle-detail-damage-num">
-                        {sel.damage.toLocaleString()}
-                        {sel.accountId !== pb.selfId ? (
-                          <em
-                            class="replay-view__postbattle-damage-unknown"
-                            data-hint={t("replay.postbattle.damageUnknownNote")}
-                          >
-                            *
-                          </em>
-                        ) : null}
-                      </span>
-                      <span class="replay-view__postbattle-detail-damage-label">
-                        {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
-                        {sel.hpRatio != null
-                          ? ` · ${t("replay.hpRemaining")} ${Math.round(sel.hpRatio)}%`
-                          : ""}
-                      </span>
-                    </div>
-                    <div class="replay-view__postbattle-detail-ribbons">
-                      {sel.ribbons.map((x) => {
-                        const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
-                        return (
-                          <span
-                            key={x.key}
-                            class="replay-view__postbattle-detail-ribbon"
-                            data-hint={`${name} ×${x.value}`}
-                          >
-                            <AssetImage src={bundledRibbonUrl(x.key)} width={40} height={15} alt="" />
-                            <em>{x.value}</em>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  {/* Own full settlement data — the replay only streams the
-                      recorder's private results. */}
-                  {sel.accountId === pb.selfId && (pb.selfExp != null || pb.selfCredits != null) ? (
-                    <div class="replay-view__postbattle-settlement">
-                      <span>{t("replay.postbattle.xp")} <b>{pb.selfExp?.toLocaleString() ?? "—"}</b></span>
-                      <span>{t("replay.postbattle.credits")} <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
-                    </div>
-                  ) : null}
-                  {/* On-demand global stats (title bar chip while loading) */}
-                  <div class="replay-view__postbattle-global">
-                    {globalLoading.value ? (
-                      <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                        <HkSpinner size="md" tone="current" />
-                      </span>
-                    ) : globalStats.value ? (
-                      <StatsCard stats={globalStats.value} />
-                    ) : globalError.value ? (
-                      <span class="replay-view__postbattle-global-note">
-                        {t("replay.postbattle.globalFailedAi")}
-                      </span>
-                    ) : (
-                      <span class="replay-view__postbattle-global-note">
-                        {t("replay.postbattle.globalUnavailable")}
-                        {sel.realm ? "" : t("replay.postbattle.noRealm")}
-                      </span>
-                    )}
-                  </div>
-                  {/* Ship distribution: tier histogram + class pie — spot
-                      low-tier farmers / CV-SS specialists. */}
-                  {shipDistList.value.length > 0 ? (
-                    <div class="replay-view__postbattle-dist">
-                      <div class="replay-view__postbattle-dist-title">
-                        {t("replay.postbattle.tierDist")}
-                      </div>
-                      <ShipDistCharts ships={shipDistList.value} />
-                    </div>
-                  ) : null}
-                </div>
-                <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
-                  {t("replay.postbattle.fullStats")}
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      );
-    };
-  },
-});
-
 /**
  * Fallback post-battle panel for replays whose BattleResults packet is missing
  * (the replay ended before the server settlement was recorded). Shows the last
@@ -509,6 +139,66 @@ const PostBattleFallbackPanel = defineComponent({
     const router = useRouter();
     const loadingTasks = useLoadingTasksStore();
     const realm = computed(() => props.realm || "asia");
+    const root = ref<HTMLElement | null>(null);
+
+    // Share-time privacy + share shot (same controls as the results panel —
+    // the fallback matrix leaks nicknames just the same).
+    const masking = useNickMasking();
+    const shot = useShareShot(buildShotModel, () => root.value);
+    function buildShotModel(): ShotModel {
+      const mkCol = (list: typeof rows.value, enemy: boolean): ShotColumn => ({
+        title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
+        rows: list.map((r): ShotRow => {
+          const ai = AI_NAME.test(r.vehicle.name);
+          const st = ai ? undefined : nameStats.value.get(r.vehicle.name);
+          const cell = (
+            pick: (x: RosterStat) => number | null,
+            fmt: (v: number) => string,
+            colorOf: (v: number) => string,
+          ): ShotStat => {
+            if (!st) return { text: "—" };
+            const v = pick(st);
+            if (v == null) return { text: "—" };
+            return { text: fmt(v), color: colorOf(v) };
+          };
+          const stats: ShotStat[] = [
+            cell((x) => x.winrate, (v) => `${v.toFixed(1)}%`, winrateColor),
+          ];
+          if (statsPrefsState.value.prEnabled) {
+            stats.push(cell((x) => x.pr, (v) => `${Math.round(v)}`, (v) => prTier(v).color));
+          }
+          stats.push(
+            cell((x) => x.avgDamage, (v) => Math.round(v).toLocaleString(), damageColor),
+          );
+          return {
+            nick: masking.maskOf(r.vehicle.name),
+            clanTag: st?.clanTag ?? null,
+            shipName: r.shipName,
+            bot: ai,
+            dim: !r.alive,
+            shipType: r.vehicle.shipId != null ? shipOfflineEntry(r.vehicle.shipId)?.type ?? null : null,
+            iconVariant: !r.alive
+              ? "sunk"
+              : r.vehicle.relation === 0
+                ? "white"
+                : props.operation || r.vehicle.relation <= 1
+                  ? "ally"
+                  : "enemy",
+            stats,
+          };
+        }),
+      });
+      return {
+        title: t("replay.results"),
+        botLabel: t("replay.bot"),
+        // Mirror the DOM's single-column rule (operations and any
+        // single-sided roster edge).
+        columns:
+          props.operation || enemies.value.length === 0
+            ? [mkCol(allies.value, false)]
+            : [mkCol(allies.value, false), mkCol(enemies.value, true)],
+      };
+    }
 
     /** Roster WR / avg-damage columns — same batched lookup as the main
      *  panel; the whole fallback roster lives on the query realm. */
@@ -659,46 +349,87 @@ const PostBattleFallbackPanel = defineComponent({
     return () => {
       const isBot = (r: (typeof rows.value)[number]) => AI_NAME.test(r.vehicle.name);
       const cell = (r: (typeof rows.value)[number]) => (
-        <button
+        <div
           class={[
             "replay-view__postbattle-cell",
             !r.alive ? "replay-view__postbattle-cell--dead" : "",
           ]}
-          onClick={() => openPlayer(r)}
         >
-          <span class="replay-view__postbattle-cell-ico">
-            <BattleIcon
-              type={shipTypeOf(r.vehicle.shipId)}
-              variant={
-                !r.alive
-                  ? "sunk"
-                  : r.vehicle.relation === 0
-                    ? "white"
-                    : props.operation || r.vehicle.relation <= 1
-                      ? "ally"
-                      : "enemy"
-              }
-              size={20}
-            />
-          </span>
-          <span class="replay-view__postbattle-cell-main">
-            <span class="replay-view__postbattle-cell-name">
-              {r.vehicle.name}
-              {isBot(r) ? (
-                <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
-              ) : null}
+          <button
+            class="replay-view__postbattle-cell-btn"
+            type="button"
+            onClick={() => openPlayer(r)}
+          >
+            <span class="replay-view__postbattle-cell-ico">
+              <BattleIcon
+                type={shipTypeOf(r.vehicle.shipId)}
+                variant={
+                  !r.alive
+                    ? "sunk"
+                    : r.vehicle.relation === 0
+                      ? "white"
+                      : props.operation || r.vehicle.relation <= 1
+                        ? "ally"
+                        : "enemy"
+                }
+                size={20}
+              />
             </span>
-            <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
-          </span>
-          {rosterStatCols(r.vehicle.name, nameStats.value, nameStatsLoading.value)}
-          <span class="replay-view__postbattle-cell-status">
-            {!r.alive ? t("replay.legend.dead") : ""}
-          </span>
-        </button>
+            <span class="replay-view__postbattle-cell-main">
+              <span class="replay-view__postbattle-cell-name">
+                <span class="replay-view__postbattle-cell-nick">
+                  {masking.maskOf(r.vehicle.name)}
+                </span>
+                {nameStats.value.get(r.vehicle.name)?.clanTag ? (
+                  <span class="replay-view__postbattle-cell-clan">
+                    [{nameStats.value.get(r.vehicle.name)?.clanTag}]
+                  </span>
+                ) : null}
+                {isBot(r) ? (
+                  <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                ) : null}
+              </span>
+              <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
+            </span>
+            {rosterStatCols(r.vehicle.name, nameStats.value, nameStatsLoading.value)}
+            <span class="replay-view__postbattle-cell-status">
+              {!r.alive ? t("replay.legend.dead") : ""}
+            </span>
+          </button>
+          {isBot(r) ? null : (
+            <button
+              class={[
+                "replay-view__postbattle-cell-eye",
+                { "replay-view__postbattle-cell-eye--on": masking.isHidden(r.vehicle.name) },
+              ]}
+              type="button"
+              data-hint={
+                masking.isHidden(r.vehicle.name)
+                  ? t("replay.postbattle.showName")
+                  : t("replay.postbattle.hideName")
+              }
+              aria-label={
+                masking.isHidden(r.vehicle.name)
+                  ? t("replay.postbattle.showName")
+                  : t("replay.postbattle.hideName")
+              }
+              onClick={() => masking.toggleOne(r.vehicle.name)}
+            >
+              {masking.isHidden(r.vehicle.name) ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+          )}
+        </div>
       );
       const sel = selected.value;
       return (
-        <div class="replay-view__postbattle">
+        <div class="replay-view__postbattle" ref={root}>
+          <PostBattleShareBar
+            hideAll={masking.hideAll.value}
+            shotBusy={shot.busy.value}
+            shotNote={shot.note.value}
+            onToggleAll={() => masking.toggleAll()}
+            onShot={() => void shot.copyShot()}
+          />
           <div
             class={[
               "replay-view__postbattle-matrix",
@@ -748,7 +479,7 @@ const PostBattleFallbackPanel = defineComponent({
                       />
                     </span>
                     <span class="replay-view__postbattle-detail-name">
-                      {sel.vehicle.name}
+                      {masking.maskOf(sel.vehicle.name)}
                       {isBot(sel) ? (
                         <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
                       ) : null}
@@ -2012,6 +1743,14 @@ export default defineComponent({
                       {battleResults.value ? (
                         <PostBattlePanel
                           raw={battleResults.value}
+                          head={{
+                            matchGroup: parser.current.value.matchGroup,
+                            scenario: parser.current.value.scenario,
+                            eventType: parser.current.value.eventType,
+                            botCount: parser.current.value.botCount ?? null,
+                            mapName: parser.current.value.mapName,
+                          }}
+                          operation={isOperation.value}
                           onClose={() => (showResults.value = false)}
                         />
                       ) : (

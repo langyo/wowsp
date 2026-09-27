@@ -183,7 +183,9 @@
       "enemyNote": "按规则不展示敌方装配信息",
       "noData": "暂无该舰参数"
     },
-    "tier": "等级"
+    "tier": "等级",
+    "postBattle": "战后统计",
+    "postBattleUnavailable": "结算数据尚未写入录像，稍后再试"
   },
   "postbattle": {
     "loadingGlobal": "加载 {name} 全局战绩…",
@@ -198,7 +200,16 @@
     "globalUnavailable": "全局战绩不可用",
     "noRealm": "（无服务器信息）",
     "tierDist": "常玩等级分布",
-    "fullStats": "查看完整战绩 →"
+    "fullStats": "查看完整战绩 →",
+    "hideAll": "隐藏全部昵称",
+    "showAll": "显示全部昵称",
+    "maskHint": "行尾的眼睛可隐藏单个昵称，截图不含已隐藏昵称",
+    "hideName": "隐藏该昵称",
+    "showName": "显示该昵称",
+    "copyShot": "复制截图",
+    "copyShotDone": "截图已复制到剪贴板",
+    "copyShotFailed": "复制失败",
+    "shotTagline": "战舰世界对局分析工具"
   },
   "capture": {
     "contested": "双方压点，进度暂停",

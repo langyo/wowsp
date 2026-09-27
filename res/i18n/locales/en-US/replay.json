@@ -183,7 +183,9 @@
       "enemyNote": "Enemy loadout info is hidden by policy",
       "noData": "No parameters for this ship"
     },
-    "tier": "Tier"
+    "tier": "Tier",
+    "postBattle": "Post-battle stats",
+    "postBattleUnavailable": "Settlement data is not in the replay yet — try again shortly"
   },
   "postbattle": {
     "loadingGlobal": "Loading {name}'s global stats…",
@@ -198,7 +200,16 @@
     "globalUnavailable": "Global stats unavailable",
     "noRealm": " (no server info)",
     "tierDist": "Tier distribution",
-    "fullStats": "Full stats →"
+    "fullStats": "Full stats →",
+    "hideAll": "Hide all nicknames",
+    "showAll": "Show all nicknames",
+    "maskHint": "The eye at a row's end hides one nick; share shots never include hidden nicks",
+    "hideName": "Hide this nickname",
+    "showName": "Show this nickname",
+    "copyShot": "Copy share shot",
+    "copyShotDone": "Share shot copied to clipboard",
+    "copyShotFailed": "Copy failed",
+    "shotTagline": "World of Warships battle analysis"
   },
   "capture": {
     "contested": "Both sides capping — progress paused",

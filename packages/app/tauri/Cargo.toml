@@ -111,6 +111,9 @@ reqwest.workspace = true
 # Native folder/file pickers (Windows IFileDialog); mobile uses its own
 # document-picker flow.
 rfd.workspace = true
+# System clipboard image copy for the post-battle share shot (arboard has no
+# Android backend — the command returns a mobile-unsupported marker there).
+arboard.workspace = true
 # Tauri tray + PNG decoding for the system-tray icon (desktop only).
 tauri = { workspace = true, features = ["tray-icon", "image-png"] }
 
