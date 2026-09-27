@@ -292,6 +292,18 @@
     line-height: 1;
   }
 
+  /* Clan tag ([HOOD] etc.) riding the nickname — quiet identity metadata,
+     not a badge: muted text, no pill, so a roster where most players have
+     clans stays calm. */
+  &__player-clan {
+    flex: none;
+    color: rgb(var(--color-text) / 0.5);
+    font-size: 0.78em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
   &__player-ship {
     color: rgb(var(--color-text) / 0.45);
     font-size: var(--text-xs);

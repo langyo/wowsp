@@ -390,6 +390,13 @@ export default defineComponent({
           <span class="live-battle__player-main">
             <span class="live-battle__player-name">
               <span class="live-battle__player-nick">{v.name}</span>
+              {/* Clan tag from the batch answer ([HOOD] etc.) — the same tag
+                  the in-game Tab panel prefixes nicknames with. It sits
+                  AFTER the nick so every card's nick starts at the same
+                  column. */}
+              {st?.clanTag ? (
+                <span class="live-battle__player-clan">[{st.clanTag}]</span>
+              ) : null}
               {isAiName(v.name) ? (
                 <em class="live-battle__player-bot">{t("replay.bot")}</em>
               ) : null}

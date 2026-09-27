@@ -18,14 +18,21 @@
  *   order — every row maps to its player, alive/sunk split included.
  * - BATTLE START (no sinks): the alive block is the whole side; every row
  *   whose (class, tier) group has a single member is pinned; multi-member
- *   groups yield `null` rows.
+ *   groups yield CANDIDATE SET rows — every row of the group carries the
+ *   group's full member list, because those rows collectively hold exactly
+ *   those players (their internal order is the unknowable residue). The
+ *   page renders such a row as one chip listing every member's winrate —
+ *   the honest "these rows ARE these players" answer that still puts real
+ *   numbers on screen when a whole side shares one class+tier (brawl teams
+ *   are the extreme: every row would otherwise be an anonymous dot).
  * - SINKS + any multi-member group on the side: unknowable, and not just
  *   within the group. The luma vector gives row COUNTS, not identities —
  *   "the tier-7 BB pair lost one member" and "the lone DD next to them
  *   sank instead" read byte-identical flags ([T,T,T,F]), yet they regroup
  *   the table into different row sets, shifting every row after the pair.
  *   With a sink anywhere on the side and a tie group anywhere on it, NO
- *   row is provable, so the whole side yields `null` rows rather than a
+ *   row is provable and no per-row candidate set survives the possible
+ *   worlds either, so the whole side yields `null` rows rather than a
  *   50/50 guess that pins the wrong player's stats on a chip (verified
  *   against full battle rosters: neither ship id, entity id, nation, join
  *   order nor localized-name collation reproduces the game's within-group
@@ -61,22 +68,30 @@ function groupRuns(ordered: InferredVehicle[]): InferredVehicle[][] {
   return runs;
 }
 
+/** One row's attribution:
+ *  - a `string` pins the row to that player (a rule-provable row);
+ *  - a `string[]` is a CANDIDATE SET — a (class, tier) tie group the rule
+ *    cannot order within: the group's rows collectively hold exactly these
+ *    players, one per row, order unknown (every row of the group carries
+ *    the same full list);
+ *  - `null` is honest silence — nothing provable, not even a set (a whole
+ *    side once sinks meet a tie group), or a row beyond the roster. */
+export type RowAttribution = string | string[] | null;
+
 /**
  * Map the roster onto the detected rows: allies block first, enemies after,
  * each side ordered [alive by rule] ++ [sunk by rule]. `alive` is the
  * anchor's per-row alive vector aligned with the row grid (null = unknown —
  * every row reads alive, the battle-start state); entry `k` of the result
- * names the player of row `k`, or is `null` when that row's player cannot
- * be attributed without guessing (see the module docs — multi-member
- * groups at battle start; a whole side once sinks meet a tie group). Rows
- * beyond the roster's size (the watcher pads the grid to the team size)
- * also yield `null` and render as dots.
+ * is row `k`'s attribution (see {@link RowAttribution}). Rows beyond the
+ * roster's size (the watcher pads the grid to the team size) yield `null`
+ * and render as dots.
  */
 export function inferredRowMapping(
   vehicles: InferredVehicle[],
   alive: boolean[] | null,
-): (string | null)[] {
-  const out: (string | null)[] = [];
+): RowAttribution[] {
+  const out: RowAttribution[] = [];
   let offset = 0;
   for (const list of [
     vehicles.filter((v) => v.relation <= 1),
@@ -112,10 +127,16 @@ export function inferredRowMapping(
       for (const v of ordered.filter((_, i) => !flags[i])) out.push(v.name);
     } else {
       // Battle start with tie groups (or the all-sunk end state — same
-      // collapsed rule order): singletons are pinned, tie-group rows stay
-      // anonymous (their internal order is the unknowable residue).
+      // collapsed rule order): singletons are pinned, tie-group rows carry
+      // the group's full member list — those rows ARE those players, one
+      // per row, with only the internal order unknowable.
       for (const run of runs) {
-        for (const v of run) out.push(run.length > 1 ? null : v.name);
+        if (run.length > 1) {
+          const candidates = run.map((v) => v.name);
+          for (const _v of run) out.push([...candidates]);
+        } else {
+          out.push(run[0].name);
+        }
       }
     }
     offset += ordered.length;

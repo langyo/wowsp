@@ -60,6 +60,14 @@ html.overlay-hidden body {
   filter: grayscale(0.9);
 }
 
+/* An ambiguous (class, tier) tie-group row: the chip lists EVERY member's
+   winrate slash-joined instead of pinning one player. The dashed border is
+   the "order unknown" tell — a solid-border chip always names exactly one
+   player, this one speaks for the group. */
+.overlay-chip--multi {
+  border-style: dashed;
+}
+
 /* The ONE transient-status card — spinner + copy, centered over the table
    (both axes). Every settling notice renders as this card; it only ever
    crosses the table's own columns (chips live outside the left/right

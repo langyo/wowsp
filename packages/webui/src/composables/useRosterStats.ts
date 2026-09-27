@@ -34,6 +34,9 @@ export interface RosterStat {
   /** Clan id from the batch answer (null = clanless / not found) — joins
    *  the hidden-profile 过街老鼠 clan gate. */
   clanId: number | null;
+  /** Clan tag from the same batch answer (`HOOD` — rendered as [HOOD]
+   *  beside the nickname; null = clanless / not found / still loading). */
+  clanTag: string | null;
   /** Resolved clan winrate for the rat gate: undefined = not judged yet
    *  (a hidden + clanful entry holds its stamp until this lands) or no
    *  judgment needed; a number passes to careerStamp's gate; null = the
@@ -62,6 +65,7 @@ const emptyStat = (loading: boolean): RosterStat => ({
   avgDamage: null,
   battles: null,
   clanId: null,
+  clanTag: null,
   hidden: false,
   loading,
 });
@@ -201,6 +205,7 @@ export function useRosterStats(options: UseRosterStatsOptions) {
               avgDamage: r.avgDamage ?? null,
               battles: r.battles ?? null,
               clanId: r.clanId ?? null,
+              clanTag: r.clanTag ?? null,
               hidden: r.hidden,
               loading: false,
             }
@@ -337,6 +342,7 @@ export async function fetchRosterStatsByNames(
             avgDamage: r.avgDamage ?? null,
             battles: r.battles ?? null,
             clanId: r.clanId ?? null,
+            clanTag: r.clanTag ?? null,
             hidden: r.hidden,
             loading: false,
           }

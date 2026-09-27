@@ -370,6 +370,26 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
   return side === "ally" ? seals + core : core + seals;
 }
 
+/** The ambiguous tie-group row's chip: every member's winrate side by
+ *  side, joined by slashes. Damage and seals are dropped ON PURPOSE — the
+ *  row is a SET of players (order unknown), so per-member seals would
+ *  misattribute, and the chip must stay compact enough for a three-member
+ *  brawl group to fit the reserved side pad. A member whose stats have not
+ *  landed reads "…", a hidden one the red dot — the same per-member faces
+ *  chipContent renders. */
+function candidatesChip(members: string[]): string {
+  return members
+    .map((m) => {
+      if (AI_NAME.test(m)) return `<span class="muted">bot</span>`;
+      const st = stats.get(cacheKey(m));
+      if (!st) return `<span class="muted">…</span>`;
+      if (st.hidden) return `<span class="hidden">●</span>`;
+      if (st.winrate == null) return `<span class="muted">—</span>`;
+      return `<b style="color:${winrateColor(st.winrate)}">${st.winrate.toFixed(1)}%</b>`;
+    })
+    .join(`<span class="sep">/</span>`);
+}
+
 /** A row→name payload is usable only when at least one row matched —
  *  mirrors the watcher's `mapping_untrusted` bar. An all-null read is
  *  honest silence and must not shadow the remembered mapping. */
@@ -442,7 +462,7 @@ function render() {
   //   fresh anchor's recognition has not landed yet;
   // - otherwise the legacy index mapping (recognition off / old backend).
   const anchorPlayers = usableRowPlayers(anchor.rowPlayers);
-  let players =
+  let players: (string | string[] | null)[] | null =
     anchorPlayers ??
     (trustedRows && arena.dateTime != null && trustedRows.battle === arena.dateTime
       ? usableRowPlayers(trustedRows.players)
@@ -452,10 +472,11 @@ function render() {
     : null;
   if (anchor.rosterMode === "inferred") {
     aliveArr = anchor.rowAlive ?? null;
-    // Null entries here are rows whose player cannot be attributed without
-    // guessing — tie-group members at battle start, or a whole side once
-    // sinks meet a tie group (see inferredOrder.ts). They fall through to
-    // the silent "…" placeholder below, same as unrecognized OCR rows.
+    // Null entries here are rows with NO provable attribution — a whole
+    // side once sinks meet a tie group (see inferredOrder.ts) — and fall
+    // through to the silent "…" placeholder below, same as unrecognized
+    // OCR rows. Tie-group rows at battle start arrive as CANDIDATE SETS
+    // (the group's full member list per row) and render the joined chip.
     players = inferredRowMapping(arena.vehicles, aliveArr);
   }
 
@@ -484,15 +505,28 @@ function render() {
       if (block[i] == null) return;
       const el = document.createElement("div");
       let sunk = false;
+      let multi = false;
       let mappedName: string | null = null;
       if (players) {
         const mapped = players[blockOffset + i] ?? null;
-        if (mapped != null) {
+        if (typeof mapped === "string") {
           // Recognized name — exactly a roster nickname, so the stats
           // cache lookup works unchanged.
           mappedName = mapped;
           el.innerHTML = chipContent(mapped, side);
           sunk = aliveArr?.[blockOffset + i] === false;
+        } else if (Array.isArray(mapped)) {
+          // A (class, tier) tie group the rule cannot order within: the
+          // chip lists every member's winrate instead of picking one —
+          // those rows collectively ARE those players. No seals here:
+          // a career stamp is a per-player verdict, and stamping an
+          // ambiguous row would misattribute it.
+          el.innerHTML = candidatesChip(mapped);
+          multi = true;
+          sunk = aliveArr?.[blockOffset + i] === false;
+          if (mapped.some((m) => !AI_NAME.test(m) && !stats.has(cacheKey(m)))) {
+            chipsMissingStats = true;
+          }
         } else {
           // This row's player was not recognized: stay silent rather
           // than pinning stats by index guess.
@@ -507,7 +541,9 @@ function render() {
         chipsMissingStats = true;
       }
       el.className =
-        `overlay-chip overlay-chip--${side}` + (sunk ? " overlay-chip--sunk" : "");
+        `overlay-chip overlay-chip--${side}` +
+        (multi ? " overlay-chip--multi" : "") +
+        (sunk ? " overlay-chip--sunk" : "");
       el.style.top = `${block[i] / dpr}px`;
       el.style.fontSize = `${fontSize.toFixed(1)}px`;
       if (side === "ally") {
