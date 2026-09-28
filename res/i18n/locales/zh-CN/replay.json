@@ -91,6 +91,13 @@
   "ownShip": "主舰",
   "noShipModel": "暂无该舰艇的全息白模。",
   "duration": "时长",
+  "realm": {
+    "ru": "俄服",
+    "eu": "欧服",
+    "na": "美服",
+    "asia": "亚服",
+    "cn": "国服"
+  },
   "matchTime": "对战时间",
   "mapLabel": "地图",
   "legend": {

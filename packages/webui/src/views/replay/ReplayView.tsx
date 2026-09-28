@@ -50,7 +50,7 @@ import { HkButton, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hik
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
-import { shipClassRank } from "@/utils/shipClass";
+import { gameTabRowKey } from "@/utils/shipClass";
 import { shipTypeClass } from "@/features/holographic/shipIcons";
 import { tierToRoman } from "@wowsp/holo";
 import { useClipboard } from "@/composables/useClipboard";
@@ -108,6 +108,20 @@ function formatDateTime(dt?: string | null): string {
   const [, y, mo, d, hh, mm] = m;
   const hhmm = hh ? ` ${hh}:${mm}` : "";
   return `${y}-${mo}-${d}${hhmm}`;
+}
+
+/** The replay descriptor's game version arrives comma-separated
+ *  ("14,1,0,1234567" from clientVersionFromExe); normalize to the dotted
+ *  "14.1.0" display form with the build hash dropped. Null when the
+ *  descriptor carries no parsable version. */
+function gameVersionOf(raw: unknown): string | null {
+  const v = (raw as { clientVersionFromExe?: unknown } | null)?.clientVersionFromExe;
+  if (typeof v !== "string") return null;
+  const parts = v
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^\d+$/.test(s));
+  return parts.length >= 2 ? parts.slice(0, 3).join(".") : null;
 }
 
 /**
@@ -268,7 +282,6 @@ const PostBattleFallbackPanel = defineComponent({
             (v.shipId != null
               ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
               : null) ?? v.shipName ?? "",
-          tier: v.shipId != null ? (shipOfflineEntry(v.shipId)?.tier ?? 0) : 0,
           damage: isSelf ? st.damage : 0,
           frags,
           hpRatio: hpRatioOf(hp),
@@ -279,18 +292,24 @@ const PostBattleFallbackPanel = defineComponent({
         };
       }),
     );
-    // Sort order: survivors first, then ship class (carrier > BB > CA > DD >
-    // SS), then tier, then human before bot, then name case-sensitive.
+    // Sort order: the game's own fixed Tab key (alive, class, tier desc,
+    // nation, ship name, '[tag]nick') — the exact row order the in-game
+    // table shows, instead of a hand-rolled approximation.
     const sortRows = (
       a: (typeof rows.value)[number],
       b: (typeof rows.value)[number],
-    ) =>
-      Number(!a.alive) - Number(!b.alive) ||
-      shipClassRank(a.vehicle.shipId) - shipClassRank(b.vehicle.shipId) ||
-      b.tier - a.tier ||
-      Number(AI_NAME.test(a.vehicle.name)) -
-        Number(AI_NAME.test(b.vehicle.name)) ||
-      a.vehicle.name.localeCompare(b.vehicle.name);
+    ) => {
+      const keyOf = (r: (typeof rows.value)[number]) =>
+        gameTabRowKey(
+          { shipId: r.vehicle.shipId, name: r.vehicle.name },
+          r.alive,
+          dataLanguage.value,
+          (n) => nameStats.value.get(n)?.clanTag ?? null,
+        );
+      const ka = keyOf(a);
+      const kb = keyOf(b);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    };
     const allies = computed(() =>
       (props.operation
         ? rows.value
@@ -1766,6 +1785,12 @@ export default defineComponent({
                             botCount: parser.current.value.botCount ?? null,
                             scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
                             mapName: parser.current.value.mapName,
+                            realm: realm.value,
+                            gameVersion: gameVersionOf(parser.current.value.raw),
+                            battleTime: parser.current.value.dateTime
+                              ? formatDateTime(parser.current.value.dateTime)
+                              : null,
+                            durationSec: duration.value > 0 ? duration.value : null,
                           }}
                           operation={isOperation.value}
                           onClose={() => (showResults.value = false)}

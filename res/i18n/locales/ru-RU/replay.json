@@ -91,6 +91,13 @@
   "ownShip": "Ваш корабль",
   "noShipModel": "Для этого корабля нет голографической модели.",
   "duration": "Длительность",
+  "realm": {
+    "ru": "RU",
+    "eu": "EU",
+    "na": "NA",
+    "asia": "ASIA",
+    "cn": "CN"
+  },
   "matchTime": "Время боя",
   "mapLabel": "Карта",
   "legend": {

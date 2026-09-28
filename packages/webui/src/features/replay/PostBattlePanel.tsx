@@ -44,8 +44,9 @@ import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { careerStamp, damageColor, prTier, winrateColor } from "@/utils/winrate";
+import { formatEta } from "@/utils/format";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
-import { shipTierOf } from "@/utils/shipClass";
+import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName } from "@/utils/mapNames";
 import {
@@ -71,6 +72,14 @@ export interface PostBattleHead {
   botCount?: number | null;
   scriptedUnitCount?: number | null;
   mapName?: string | null;
+  /** Share-shot provenance (the header's meta line, see shotMetaLine):
+   *  server realm code, client version (dotted), the formatted battle
+   *  start stamp and the match duration in seconds. All optional —
+   *  absent parts drop out of the line. */
+  realm?: string | null;
+  gameVersion?: string | null;
+  battleTime?: string | null;
+  durationSec?: number | null;
 }
 
 /** Localize a battle mode from its layered identity (same helper shape the
@@ -87,6 +96,25 @@ function modeLabelOf(
   const i18nKey = `replay.mode.${key}`;
   const lbl = t(i18nKey);
   return lbl === i18nKey ? t("replay.mode._fallback") : lbl;
+}
+
+/** The share shot's provenance line — server · game version · battle time ·
+ *  duration — composed from the head's optional fields; absent parts drop
+ *  out and an all-absent head yields null (no line at all). */
+export function shotMetaLine(head: PostBattleHead | null): string | null {
+  if (!head) return null;
+  const parts: string[] = [];
+  if (head.realm) {
+    const key = `replay.realm.${head.realm}`;
+    const lbl = t(key);
+    if (lbl !== key) parts.push(lbl);
+  }
+  if (head.gameVersion) parts.push(head.gameVersion);
+  if (head.battleTime) parts.push(head.battleTime);
+  if (head.durationSec != null && head.durationSec > 0) {
+    parts.push(`${t("replay.duration")} ${formatEta(head.durationSec)}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** The aligned roster-stat columns for one player name — overall winrate, PR
@@ -207,18 +235,6 @@ export default defineComponent({
       if (!pb) return null;
       return pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null;
     });
-    const allies = computed(() => {
-      const st = selfTeam.value;
-      return rows.value
-        .filter((p) => (st != null ? p.team === st : p.team !== 1))
-        .sort((a, b) => b.xp - a.xp);
-    });
-    const enemies = computed(() => {
-      const st = selfTeam.value;
-      return rows.value
-        .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
-        .sort((a, b) => b.xp - a.xp);
-    });
     const detailOpen = ref(false);
     const selected = ref<(typeof rows.value)[number] | null>(null);
     const globalStats = ref<PlayerStats | null>(null);
@@ -294,6 +310,40 @@ export default defineComponent({
     });
     onBeforeUnmount(() => {
       if (verdictTimer) clearTimeout(verdictTimer);
+    });
+
+    /** Roster order: the game's own fixed Tab key (utils/shipClass — alive,
+     *  class, tier desc, nation, ship name, '[tag]nick'), the exact order
+     *  the in-game results table shows, instead of the XP-sorted scatter.
+     *  Clan tags ride the roster stats map and re-sort when the batch
+     *  lands; equal keys fall to settlement XP desc, then the stable
+     *  parser (damage-desc) order. */
+    const tabOrder = (list: typeof rows.value) =>
+      [...list].sort((a, b) => {
+        const keyOf = (p: (typeof rows.value)[number]) =>
+          gameTabRowKey(
+            { shipId: p.shipId ?? 0, name: p.name },
+            p.alive,
+            dataLanguage.value,
+            (n) => nameStats.value.get(n)?.clanTag ?? null,
+          );
+        const ka = keyOf(a);
+        const kb = keyOf(b);
+        return ka < kb ? -1 : ka > kb ? 1 : b.xp - a.xp;
+      });
+    const allies = computed(() => {
+      const st = selfTeam.value;
+      return tabOrder(
+        rows.value.filter((p) => (st != null ? p.team === st : p.team !== 1)),
+      );
+    });
+    const enemies = computed(() => {
+      const st = selfTeam.value;
+      return tabOrder(
+        rows.value.filter(
+          (p) => p.team !== null && (st != null ? p.team !== st : p.team === 1),
+        ),
+      );
     });
 
     const prefs = computed(() => statsPrefsState.value);
@@ -466,6 +516,7 @@ export default defineComponent({
         mapLabel: head?.mapName
           ? displayMapName(head.mapName, dataLanguage.value)
           : null,
+        metaLine: shotMetaLine(head),
         botLabel: t("replay.bot"),
         // Mirror the DOM's single-column rule: one column whenever there is
         // no enemy roster (operations AND any single-team payload edge).

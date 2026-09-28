@@ -61,6 +61,9 @@ export interface ShotModel {
   /** Mode pill: text color + pill background (modeColor() output). */
   mode?: { label: string; color?: string; background?: string } | null;
   mapLabel?: string | null;
+  /** Provenance line under the map label (server · game version · battle
+   *  time · duration); composed by the caller, absent parts drop out. */
+  metaLine?: string | null;
   /** Short bot marker label appended after masked/plain nicks (t("replay.bot")). */
   botLabel?: string;
   columns: ShotColumn[];
@@ -92,6 +95,11 @@ const MONO_STACK =
  * crispness, so these are pre-scale units). */
 const COL_WIDTH = 620;
 const COL_GAP = 16;
+/** Visual gap between adjacent stat cells of a row. At 26 the widest mono
+ *  neighbors (PR digits against the damage figure, e.g. "1880 104,751")
+ *  read as one merged number in the pasted image — the columns need this
+ *  much air before the eye separates them. */
+const STAT_GAP = 36;
 const PAD = 28;
 const ROW_H = 44;
 const HEAD_H = 66;
@@ -173,7 +181,7 @@ function statOrigins(
       }
     }
     origins.push(x);
-    x += w + 26;
+    x += w + STAT_GAP;
   }
   return origins;
 }
@@ -285,11 +293,23 @@ export async function renderPostBattleShot(
     ctx.fillText(label, hx + 9, pillY + pillH / 2);
     hx += tw + 18 + 14;
   }
-  if (model.mapLabel) {
+  if (model.mapLabel || model.metaLine) {
     ctx.textAlign = "right";
-    ctx.font = font(14, 400);
-    ctx.fillStyle = rgba(palette.muted, 1);
-    ctx.fillText(model.mapLabel, width - PAD, HEAD_H / 2 + 2);
+    const rx = width - PAD;
+    if (model.mapLabel && model.metaLine) {
+      // Two stacked lines: the map stays the headline, the provenance line
+      // rides beneath it in a smaller muted face.
+      ctx.font = font(14, 400);
+      ctx.fillStyle = rgba(palette.muted, 1);
+      ctx.fillText(model.mapLabel, rx, HEAD_H / 2 - 8);
+      ctx.font = font(11, 400);
+      ctx.fillStyle = rgba(palette.muted, 0.72);
+      ctx.fillText(model.metaLine, rx, HEAD_H / 2 + 12);
+    } else {
+      ctx.font = font(14, 400);
+      ctx.fillStyle = rgba(palette.muted, 1);
+      ctx.fillText((model.mapLabel ?? model.metaLine)!, rx, HEAD_H / 2 + 2);
+    }
     ctx.textAlign = "left";
   }
   ctx.fillStyle = rgba(palette.text, 0.1);

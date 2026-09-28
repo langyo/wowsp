@@ -91,6 +91,13 @@
   "ownShip": "Votre navire",
   "noShipModel": "Aucun modèle holographique pour ce navire.",
   "duration": "Durée",
+  "realm": {
+    "ru": "RU",
+    "eu": "EU",
+    "na": "NA",
+    "asia": "ASIA",
+    "cn": "CN"
+  },
   "matchTime": "Temps de match",
   "mapLabel": "Carte",
   "legend": {

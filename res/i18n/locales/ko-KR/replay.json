@@ -91,6 +91,13 @@
   "ownShip": "내 함선",
   "noShipModel": "이 함선에는 홀로그램 모델이 없습니다.",
   "duration": "지속 시간",
+  "realm": {
+    "ru": "RU",
+    "eu": "EU",
+    "na": "NA",
+    "asia": "ASIA",
+    "cn": "CN"
+  },
   "matchTime": "전투 시간",
   "mapLabel": "맵",
   "legend": {

@@ -91,6 +91,13 @@
   "ownShip": "自艦",
   "noShipModel": "この艦艇のホログラムモデルはまだありません。",
   "duration": "再生時間",
+  "realm": {
+    "ru": "RU",
+    "eu": "EU",
+    "na": "NA",
+    "asia": "ASIA",
+    "cn": "CN"
+  },
   "matchTime": "戦闘時間",
   "mapLabel": "マップ",
   "legend": {

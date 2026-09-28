@@ -91,6 +91,13 @@
   "ownShip": "Tu buque",
   "noShipModel": "No hay modelo holográfico para este buque.",
   "duration": "Duración",
+  "realm": {
+    "ru": "RU",
+    "eu": "EU",
+    "na": "NA",
+    "asia": "ASIA",
+    "cn": "CN"
+  },
   "matchTime": "Tiempo de combate",
   "mapLabel": "Mapa",
   "legend": {
