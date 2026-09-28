@@ -44,6 +44,7 @@ import {
   type BigCat,
   type CatalogCat,
 } from "@/features/modhub/taxonomy";
+import { useRoute } from "vue-router";
 import { openExternal } from "@/utils/openExternal";
 import { sameGamePath } from "@/utils/gamePath";
 import { useConfigStore } from "@/stores/config";
@@ -80,6 +81,7 @@ export default defineComponent({
   setup() {
     const config = useConfigStore();
     const toast = useToast();
+    const route = useRoute();
     const { uiLocale, dataLanguage } = useLanguage();
 
     const source = ref<"online" | "installed">("online");
@@ -200,6 +202,26 @@ export default defineComponent({
         records.value = [];
       }
     }
+
+    // ── Deep link (?mod=<catalog id>): the settings' roster plugin button ──
+    // lands here. The index may still be loading on a cold visit, so the
+    // pending id survives until the catalog has (or clearly never has) the
+    // row; filters reset so the selected row is actually visible in the list.
+    const pendingDeepLink = ref(
+      typeof route.query.mod === "string" ? route.query.mod : "",
+    );
+    watch(catalog, (mods) => {
+      const want = pendingDeepLink.value;
+      if (!want || !mods.length) return;
+      const hit = mods.find((m) => m.id === want);
+      if (!hit) return;
+      pendingDeepLink.value = "";
+      source.value = "online";
+      bigCat.value = catBig(hit.category);
+      catalogFilter.value = "all";
+      listQuery.value = "";
+      selection.value = { mode: "catalog", entry: hit };
+    });
 
     /** The ledger is global: only records of THIS install (or legacy
      *  unstamped ones) describe what is installed here. */

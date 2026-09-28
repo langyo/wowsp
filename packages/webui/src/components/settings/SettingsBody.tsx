@@ -73,7 +73,6 @@ import {
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type GameInstall, type NetworkConfig } from "@/api";
-import { openExternal } from "@/utils/openExternal";
 import { formatEta, formatSpeed } from "@/utils/format";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import { useRouter } from "vue-router";
@@ -207,6 +206,9 @@ export default defineComponent({
     // Discussions thread. Refreshed whenever the active install changes.
     const ingamePluginInstalled = ref(false);
     const ingamePluginDiscussion = ref<number | null>(null);
+    // Catalog id of the plugin's mod-hub row (discussion #640) — the page
+    // button deep-links /resources?mod=<id>.
+    const INGAME_PLUGIN_MOD_ID = "battle.ingame.stats";
     async function refreshIngamePlugin() {
       const root = activePath.value;
       if (!root) {
@@ -1864,11 +1866,16 @@ export default defineComponent({
                 <HkButton
                   variant="ghost"
                   size="sm"
-                  onClick={() =>
-                    void openExternal(
-                      `https://github.com/langyo/wowsp/discussions/${ingamePluginDiscussion.value}`,
-                    )
-                  }
+                  onClick={() => {
+                    // In-app jump, not a browser link: close the settings
+                    // surface and deep-link the mod hub's catalog page to
+                    // the plugin's row (ResourcesView handles ?mod=).
+                    ui.hide();
+                    void router.push({
+                      path: "/resources",
+                      query: { mod: INGAME_PLUGIN_MOD_ID },
+                    });
+                  }}
                 >
                   {t("settings.overlayRosterPluginPage")}
                 </HkButton>
