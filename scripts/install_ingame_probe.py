@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 MOD_DIR_NAME = 'WoWSPProbe'
-TEMPLATE = Path(__file__).resolve().parents[1] / 'packages' / 'app' / 'mod_templates' / 'ingame_probe' / 'Main.py'
+TEMPLATE = Path(__file__).resolve().parents[1] / 'packages' / 'ingame-plugin' / 'src' / 'Main.py'
 GAME_EXES = ('WorldOfWarships64.exe', 'WorldOfWarships.exe')
 
 
