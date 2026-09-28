@@ -169,15 +169,23 @@ class Probe(object):
     # globals() and never shadow the injected bindings.
 
     def resolve_api(self):
-        g = globals()
-        self.dh = g.get('dataHub')
-        self.const = g.get('constants')
+        # Bare-name lookup is the only sandbox-safe way: builtins like
+        # globals() and eval() are whitelisted away, but injected names
+        # resolve normally and missing ones raise catchable NameError.
+        try:
+            self.dh = dataHub
+        except Exception:
+            self.dh = None
+        try:
+            self.const = constants
+        except Exception:
+            self.const = None
         if self.dh is None:
             try:
                 import dataHub as dh_module
                 self.dh = dh_module
             except Exception as exc:
-                log('dataHub resolve failed=' + str(exc)[:160])
+                log('dataHub resolve failed=' + str(exc)[:400])
         if self.const is None:
             try:
                 import constants as const_module
@@ -191,11 +199,17 @@ class Probe(object):
     def api_probe(self, phase):
         if not self.api_dumped:
             self.api_dumped = True
-            try:
-                log('module globals=' + str(sorted([k for k in globals().keys()
-                                                   if not k.startswith('_')]))[:3000])
-            except Exception as exc:
-                log('globals dump failed=' + str(exc)[:120])
+            found = []
+            for name, getter in (('events', lambda: events), ('ui', lambda: ui),
+                                 ('utils', lambda: utils), ('battle', lambda: battle),
+                                 ('callbacks', lambda: callbacks), ('dataHub', lambda: dataHub),
+                                 ('constants', lambda: constants)):
+                try:
+                    getter()
+                    found.append(name)
+                except Exception:
+                    pass
+            log('injected names=' + str(found))
             if self.const is not None:
                 try:
                     names = [n for n in dir(self.const.UiComponents) if not n.startswith('_')]
