@@ -27,7 +27,7 @@ exception escape a callback: the game keeps running but the mod dies.
 """
 API_VERSION = 'API_v1.0'
 
-PROBE_VERSION = '0.2.1'
+PROBE_VERSION = '0.2.2'
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
@@ -35,6 +35,15 @@ RESPONSE_FILE = 'response.json'
 MANUAL_FLAG = 'manual_refresh.flag'
 ROSTER_RAW_FILE = 'roster_raw.json'
 ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
+JOURNAL_LIMIT = 300
+
+# SafeClass records hide their keys from dir(); probe likely field names so
+# the projection works even when no enumeration path succeeds.
+GUESS_FIELDS = ('name', 'accountDBID', 'shipParamsId', 'isBot', 'teamId', 'id',
+                'vehicleId', 'shipId', 'shipName', 'score', 'frags', 'kills',
+                'deaths', 'damageDealt', 'isAlive', 'isHidden', 'isTeamKiller',
+                'clanAbbrev', 'clanID', 'level', 'relation', 'planeKills',
+                'maxHealth', 'currHealth')
 
 import time
 
@@ -61,7 +70,13 @@ class Probe(object):
         self.key_log_count = 0
         self.v_down = False
         self.last_raw = ''
-        self.deep_dumped = False
+        self.journal = []
+        try:
+            stream = open(ROSTER_JOURNAL_FILE, 'r')
+            self.journal = [line for line in stream.read(2097152).split('\n') if line]
+            stream.close()
+        except Exception:
+            pass
         for name, module in (('battle', battle), ('events', events), ('ui', ui),
                              ('callbacks', callbacks), ('utils', utils)):
             try:
@@ -173,20 +188,20 @@ class Probe(object):
             return []
         return sorted(result, key=lambda p: p['name'])[:64]
 
-    def fields_of(self, record):
-        """Enumerate fields of a dict OR a SafeClass wrapper record.
+    def journal_mark(self, kind):
+        self.journal.append('{"t":' + str(int(time.time() * 1000)) + ',"ev":' + utils.jsonEncode(kind) + '}')
+        self.journal_flush()
 
-        getPlayersInfo() returns plain dicts for the collection but wraps
-        each player in SafeClass: subscript access works, .items() does not.
-        """
+    def journal_flush(self):
+        # The sandbox open() has no append mode (it returns None for 'a'), so
+        # the journal is rewritten whole from an in-memory ring buffer.
+        del self.journal[:-JOURNAL_LIMIT]
         try:
-            return list(record.keys())
-        except Exception:
-            pass
-        try:
-            return [k for k in dir(record) if not k.startswith('_')]
-        except Exception:
-            return []
+            stream = open(ROSTER_JOURNAL_FILE, 'w')
+            stream.write('\n'.join(self.journal) + '\n')
+            stream.close()
+        except Exception as exc:
+            self.soft('journal flush failed=' + str(exc)[:120])
 
     def read_field(self, record, key):
         try:
@@ -203,57 +218,59 @@ class Probe(object):
             pass
         return str(value)[:48]
 
+    def project_record(self, record):
+        """Full JSON encode when possible (keeps every field), else the
+        guessed-field projection for records the encoder cannot handle."""
+        try:
+            return str(utils.jsonEncode(record))[:300]
+        except Exception:
+            return dict((k, v) for k, v in ((k, self.read_field(record, k))
+                                            for k in GUESS_FIELDS) if v is not None)
+
+    def discover(self, record):
+        """One-shot battery: what does a SafeClass record actually expose?"""
+        for label, call in (('jsonEncode', lambda: utils.jsonEncode(record)),
+                            ('str', lambda: str(record)),
+                            ('keys', lambda: list(record.keys())),
+                            ('iter', lambda: list(record)),
+                            ('dir', lambda: [k for k in dir(record) if not k.startswith('_')])):
+            try:
+                log('discovery ' + label + '=' + str(call())[:3000])
+            except Exception as exc:
+                log('discovery ' + label + ' failed=' + str(exc)[:80])
+        for field in GUESS_FIELDS:
+            value = self.read_field(record, field)
+            if value is not None:
+                log('discovery field ' + field + '=' + value)
+
     def observe_raw(self, records):
         """Project every record and rewrite roster_raw.json on change; also
-        append every distinct state to roster_journal.jsonl so one battle
-        shows the field-change sequence around TAB re-sorts and sinks."""
+        append every distinct state to the journal so one battle shows the
+        field-change sequence around TAB re-sorts and sinks."""
         try:
             projection = {}
             for key, p in records.items():
-                projection[str(key)] = dict((k, v) for k, v
-                                            in ((k, self.read_field(p, k)) for k in self.fields_of(p))
-                                            if v is not None)
+                projection[str(key)] = self.project_record(p)
             body = utils.jsonEncode(projection)
             if body != self.last_raw:
                 first = self.last_raw == ''
                 self.last_raw = body
                 stamp = str(int(time.time() * 1000))
-                stream = open(ROSTER_RAW_FILE, 'w')
-                stream.write('{"t":' + stamp + ',"players":' + body + '}\n')
-                stream.close()
-                stream = open(ROSTER_JOURNAL_FILE, 'a')
-                stream.write('{"t":' + stamp + ',"players":' + body + '}\n')
-                stream.close()
                 try:
-                    stream = open(ROSTER_JOURNAL_FILE, 'r')
-                    data = stream.read()
+                    stream = open(ROSTER_RAW_FILE, 'w')
+                    stream.write('{"t":' + stamp + ',"players":' + body + '}\n')
                     stream.close()
-                    if len(data) > 1572864:
-                        lines = data.splitlines(True)[-100:]
-                        stream = open(ROSTER_JOURNAL_FILE, 'w')
-                        stream.write(''.join(lines))
-                        stream.close()
-                except Exception:
-                    pass
-                if not first:
-                    return
-                # First snapshot of this battle: document the schema once.
-                if projection:
-                    sample = projection[list(projection)[0]]
-                    log('roster_raw first snapshot fields=' + str(len(projection)) +
-                        ' keys=' + str(sorted(sample.keys()))[:400])
-                if not self.deep_dumped and records:
-                    # One full-precision dump of the first record for nested
-                    # structure the shallow projection hides.
-                    self.deep_dumped = True
+                except Exception as exc:
+                    self.soft('roster_raw write failed=' + str(exc)[:120])
+                if first and records:
+                    # Schema documentation first: nothing below may kill it.
                     record = records[list(records)[0]]
                     try:
-                        log('roster_raw deep sample=' + utils.jsonEncode(record)[:4000])
-                    except Exception:
-                        try:
-                            log('roster_raw deep str=' + str(record)[:2000])
-                        except Exception:
-                            log('roster_raw deep keys=' + str(self.fields_of(record)))
+                        self.discover(record)
+                    except Exception as exc:
+                        log('discovery crashed=' + str(exc)[:120])
+                self.journal.append('{"t":' + stamp + ',"players":' + body + '}')
+                self.journal_flush()
         except Exception as exc:
             self.soft('roster_raw failed=' + str(exc)[:120])
 
@@ -310,6 +327,8 @@ class Probe(object):
                 if self.event_log_count < 400:
                     self.event_log_count += 1
                     log('sfm event ' + str(name))
+            if name == 'input.tabModeIn' or name == 'input.tabModeOut':
+                self.journal_mark(name)
             if name == 'inputMapping.onAction':
                 name, data = data[0], data[1]
             for prefix in ('action.', 'inputMapping.'):
