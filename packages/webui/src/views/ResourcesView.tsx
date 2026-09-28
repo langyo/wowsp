@@ -147,7 +147,9 @@ export default defineComponent({
     // ── Migration wizard state (plan → review → executing → done) ──
     const migrateWizardOpen = ref(false);
     const migFrom = ref("");
-    const migStep = ref<"plan" | "review" | "executing" | "done">("plan");
+    const migStep = ref<"confirm" | "plan" | "review" | "executing" | "done">(
+      "confirm",
+    );
     const migPlan = ref<MigrationPlan | null>(null);
     const migError = ref("");
     // Decide-bucket paths the user checked (default: all keep).
@@ -425,8 +427,9 @@ export default defineComponent({
 
     /** Entry points: the ⋯ menu item and the stale banner button. Re-checks
      *  the same guards the mutations run (localized messages included) and
-     *  defaults to the freshest stale bin, which wins keep-new conflicts
-     *  against older strays. */
+     *  defaults to the freshest stale bin. Landing on the confirm step is
+     *  deliberate: planning hashes every stranded file, a heavy disk sweep
+     *  the owner asked to gate behind an explicit start click. */
     function openMigrateWizard() {
       if (!gameRoot.value || staleBins.value.length === 0 || migrating.value) return;
       if (gameRunning() || safeModeBlocked()) return;
@@ -434,15 +437,17 @@ export default defineComponent({
         migFrom.value = staleBins.value[0]?.binVersion ?? "";
       }
       migrateWizardOpen.value = true;
-      void loadMigPlan();
+      migStep.value = "confirm";
+      migError.value = "";
     }
 
     /** Switch the wizard's source bin (only shown with >1 stale bins) —
-     *  the plan is rebuilt for the new pair. */
+     *  back to confirm; the plan is rebuilt only on an explicit start. */
     function pickMigFrom(v: string) {
       if (v === migFrom.value || migrating.value) return;
       migFrom.value = v;
-      void loadMigPlan();
+      migStep.value = "confirm";
+      migPlan.value = null;
     }
 
     function toggleMigKeep(path: string, keep: boolean) {
@@ -452,7 +457,7 @@ export default defineComponent({
 
     function closeMigrate() {
       migrateWizardOpen.value = false;
-      migStep.value = "plan";
+      migStep.value = "confirm";
       migPlan.value = null;
       migError.value = "";
       migKeep.value = new Set();
@@ -1251,6 +1256,16 @@ export default defineComponent({
             },
           ];
         }
+        if (step === "confirm") {
+          return [
+            cancel,
+            {
+              label: t("resources.migrateScanStart"),
+              variant: "primary" as const,
+              onClick: () => void loadMigPlan(),
+            },
+          ];
+        }
         if (step === "plan" && migError.value) {
           return [
             cancel,
@@ -1278,6 +1293,27 @@ export default defineComponent({
           footerActions={footers}
         >
           <div class="mig-wizard">
+            {step === "confirm" && (
+              <>
+                {staleBins.value.length > 1 && (
+                  <HkTabs
+                    block
+                    variant="segmented"
+                    modelValue={migFrom.value}
+                    onUpdate:modelValue={(v: string) => pickMigFrom(v)}
+                    tabs={staleBins.value.map((b) => ({
+                      key: b.binVersion,
+                      label: `bin/${b.binVersion} (${b.fileCount})`,
+                    }))}
+                    renderPanels={false}
+                  />
+                )}
+                <p class="mig-wizard__status">{t("resources.migrateScanIntro", { from: migFrom.value, count: staleBins.value.find((b) => b.binVersion === migFrom.value)?.fileCount ?? 0 })}</p>
+                <p class="mig-wizard__status mig-wizard__status--muted">
+                  {t("resources.migrateScanNote")}
+                </p>
+              </>
+            )}
             {step === "plan" &&
               (migError.value ? (
                 <div class="resources-banner resources-banner--error">{migError.value}</div>
