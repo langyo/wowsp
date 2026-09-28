@@ -30,6 +30,12 @@ API_VERSION = 'API_v1.0'
 # Owner decision: the probe reports itself as 0.1.0 for the whole
 # experiment; iterate via git history only, never this constant.
 PROBE_VERSION = '0.1.0'
+
+try:
+    import dataHub, constants
+except Exception:
+    dataHub = None
+    constants = None
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
@@ -73,6 +79,7 @@ class Probe(object):
         self.v_down = False
         self.last_raw = ''
         self.discovered = False
+        self.order_subs = {}
         self.journal = []
         try:
             stream = open(ROSTER_JOURNAL_FILE, 'r')
@@ -143,7 +150,72 @@ class Probe(object):
     def start(self, *args):
         self.last_error = ''
         self.explore_shell('battleStart')
+        self.watch_order()
         log('battle start')
+
+    # -- reactive TAB-order watch -------------------------------------------
+    # The game's own team lists render getCollection(CC.avatar) children at
+    # 'team.ally.sortedAlive' / 'team.enemy.sortedAlive' driven by evUpdated;
+    # subscribing to the same collections yields the exact rendered order.
+
+    def watch_order(self):
+        self.close_order()
+        if dataHub is None or constants is None:
+            log('order unavailable: no dataHub/constants globals')
+            return
+        try:
+            names = [n for n in dir(constants.UiComponents) if not n.startswith('_')]
+            log('order UiComponents=' + str(sorted(names))[:3800])
+        except Exception as exc:
+            log('order UiComponents dir failed=' + str(exc)[:120])
+        try:
+            names = [n for n in dir(dataHub) if not n.startswith('_')]
+            log('order dataHub dir=' + str(names)[:2000])
+        except Exception as exc:
+            log('order dataHub dir failed=' + str(exc)[:120])
+        try:
+            collection = dataHub.getCollection(constants.UiComponents.avatar)
+        except Exception as exc:
+            self.soft('order collection failed=' + str(exc)[:160])
+            return
+        for side, path in (('ally', 'team.ally.sortedAlive'), ('enemy', 'team.enemy.sortedAlive')):
+            try:
+                child = collection.getChildByPath(path)
+                handler = self.order_handler(side, child)
+                child.evUpdated.add(handler)
+                self.order_subs[side] = (child, handler)
+                log('order subscribed ' + side + ' path=' + path)
+                handler('initial')
+            except Exception as exc:
+                self.soft('order sub ' + side + ' failed=' + str(exc)[:160])
+
+    def close_order(self):
+        for side in list(self.order_subs):
+            child, handler = self.order_subs.pop(side)
+            try:
+                child.evUpdated.remove(handler)
+            except Exception as exc:
+                self.soft('order unsub ' + side + ' failed=' + str(exc)[:120])
+
+    def order_handler(self, side, child):
+        def handler(*args):
+            try:
+                rows = []
+                for item in child.items:
+                    row = []
+                    for pick in (lambda: item.avatar.name, lambda: item.avatar.id,
+                                 lambda: item.avatar.isBot, lambda: item.avatar.ttkStatus):
+                        try:
+                            row.append(str(pick()))
+                        except Exception:
+                            row.append('?')
+                    rows.append(row)
+                self.journal.append('{"t":' + str(int(time.time() * 1000)) + ',"ev":"order.' + side +
+                                    '","items":' + utils.jsonEncode(rows) + '}')
+                self.journal_flush()
+            except Exception as exc:
+                self.soft('order handler failed=' + str(exc)[:120])
+        return handler
 
     def explore_shell(self, phase):
         """Map the wider ModsShell surface real modules expose.
@@ -194,6 +266,7 @@ class Probe(object):
         self.busy = False
         self.details_reset()
         self.clear_players()
+        self.close_order()
         self.last_raw = ''
         self.discovered = False
         log('battle cleared')
