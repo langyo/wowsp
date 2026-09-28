@@ -181,9 +181,17 @@
     grid-template-columns: 1fr 1fr;
     gap: 10px;
 
-    /* Single-sided battle (operations): the allies column takes the width. */
+    /* Single-sided battle (operations): the enemy list hides (its side is
+       all scripted spawns) and the allies column keeps the two-column
+       layout's column width, centered on the page — a full-width roster of
+       stretched cards reads looser than the game's own compact team block. */
     &--single {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
+
+      .live-battle__col {
+        width: 50%;
+        margin-inline: auto;
+      }
     }
   }
 

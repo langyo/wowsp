@@ -263,9 +263,11 @@ export default defineComponent({
     // verbatim — sunk-ship regrouping included, with sunk players dimmed —
     // and without one a predicted class-grouped order approximates the
     // game's layout far better than tempArenaInfo.json's join order.
-    // Operation scenarios (行动) render ONE allies column: their relation
-    // values follow scenario team slots (escort waves, target ships), not
-    // enemy semantics, and the game's own Tab table shows a single team.
+    // Operation scenarios (行动) whose relation values follow scenario team
+    // slots (escort waves, target ships) rather than enemy semantics keep
+    // the whole roster on the ally side here — the Rust sink solver indexes
+    // its rows the same way (team_sizes carries the whole roster as
+    // allies), so sink attributions stay name-matched.
     const operation = computed(() =>
       isOperationBattle(
         props.arena?.matchGroup,
@@ -274,6 +276,29 @@ export default defineComponent({
         props.arena?.vehicles.map((v) => v.name),
       ),
     );
+    // The panel RENDERS one allies column for every operation-labeled
+    // battle (the mode pill says 行动) — wider than `operation` above: the
+    // new-account escort op keeps two-team relation semantics for the sink
+    // solver and the overlay's Tab anchor, but its enemy block is all
+    // scripted spawns (IDS_* dummies, escort waves) — an enemy list nobody
+    // reads. Those battles hide the enemy column and center the allies one
+    // (see the matrix SCSS); the share shot mirrors the same rule.
+    const operationLabeled = computed(
+      () =>
+        operation.value ||
+        modeKey(
+          props.arena?.matchGroup,
+          props.arena?.scenario,
+          props.arena?.eventType,
+          props.arena?.botCount ?? 0,
+          props.arena?.scriptedUnitCount ?? 0,
+        ) === "operation",
+    );
+    // The ally side: real operations field the whole roster as one block
+    // (their relation values are scenario slots, and the Rust sink solver
+    // indexes them the same way); every other battle keeps the relation
+    // split, which for the new-account escort op IS our team — its scripted
+    // spawns sit at relation>1 and drop out of the panel below.
     // Inputs for the predicted order's full Tab key come from
     // `predictedOptionsFor` above (locale + clan tag + that side's trusted
     // sunk set) — the orders re-derive reactively when the WG batch lands a
@@ -286,9 +311,13 @@ export default defineComponent({
         predictedOptionsFor("ally"),
       ),
     );
+    // The enemy list: every operation-LABELED battle hides it (wider than
+    // `operation` — the pill says 行动 there too, and the enemy block is
+    // all scripted spawns nobody reads), while real two-team modes keep
+    // the relation>1 split.
     const enemies = computed(() =>
       orderForTab(
-        operation.value
+        operationLabeled.value
           ? []
           : props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
         predictedOptionsFor("enemy"),
@@ -717,9 +746,9 @@ export default defineComponent({
                 : t("replay.live.manualLocate")}
             </button>
           </div>
-          {/* Operations (行动) have no enemy team: the roster renders as a
-              single full-width allies column, matching the game's own Tab
-              table. */}
+          {/* Operations (行动) have no enemy list — the enemy side is all
+              scripted spawns — so the roster renders as one centered
+              allies column (single-sided roster edges included). */}
           <div
             class={[
               "live-battle__matrix",
