@@ -27,13 +27,14 @@ exception escape a callback: the game keeps running but the mod dies.
 """
 API_VERSION = 'API_v1.0'
 
-PROBE_VERSION = '0.2.0'
+PROBE_VERSION = '0.2.1'
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
 RESPONSE_FILE = 'response.json'
 MANUAL_FLAG = 'manual_refresh.flag'
 ROSTER_RAW_FILE = 'roster_raw.json'
+ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
 
 import time
 
@@ -61,11 +62,16 @@ class Probe(object):
         self.v_down = False
         self.last_raw = ''
         self.deep_dumped = False
-        for module in ('battle', 'events', 'ui', 'callbacks', 'utils'):
+        for name, module in (('battle', battle), ('events', events), ('ui', ui),
+                             ('callbacks', callbacks), ('utils', utils)):
             try:
-                log('api ' + module + ' ' + str(sorted(dir(eval(module)))))
+                try:
+                    names = sorted(dir(module))
+                except Exception:
+                    names = sorted(getattr(module, '__dict__', {}).keys())
+                log('api ' + name + ' ' + str(names))
             except Exception as exc:
-                log('api ' + module + ' dir failed=' + str(exc)[:80])
+                log('api ' + name + ' dump failed=' + str(exc)[:80])
         try:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': int(time.time() * 1000), 'phase': 'load'})
         except Exception as exc:
@@ -167,24 +173,68 @@ class Probe(object):
             return []
         return sorted(result, key=lambda p: p['name'])[:64]
 
-    def observe_raw(self, records):
-        """Shallow-project every record and rewrite roster_raw.json on change.
+    def fields_of(self, record):
+        """Enumerate fields of a dict OR a SafeClass wrapper record.
 
-        The projection keeps one level of fields with stringified values, so
-        diffing consecutive writes shows exactly which fields move when the
-        TAB table re-sorts (score / frags / alive flags / dict order).
+        getPlayersInfo() returns plain dicts for the collection but wraps
+        each player in SafeClass: subscript access works, .items() does not.
         """
+        try:
+            return list(record.keys())
+        except Exception:
+            pass
+        try:
+            return [k for k in dir(record) if not k.startswith('_')]
+        except Exception:
+            return []
+
+    def read_field(self, record, key):
+        try:
+            value = record[key]
+        except Exception:
+            try:
+                value = getattr(record, key)
+            except Exception:
+                return None
+        try:
+            if callable(value):
+                return None
+        except Exception:
+            pass
+        return str(value)[:48]
+
+    def observe_raw(self, records):
+        """Project every record and rewrite roster_raw.json on change; also
+        append every distinct state to roster_journal.jsonl so one battle
+        shows the field-change sequence around TAB re-sorts and sinks."""
         try:
             projection = {}
             for key, p in records.items():
-                projection[str(key)] = dict((k, str(v)[:48]) for k, v in p.items())
+                projection[str(key)] = dict((k, v) for k, v
+                                            in ((k, self.read_field(p, k)) for k in self.fields_of(p))
+                                            if v is not None)
             body = utils.jsonEncode(projection)
             if body != self.last_raw:
                 first = self.last_raw == ''
                 self.last_raw = body
+                stamp = str(int(time.time() * 1000))
                 stream = open(ROSTER_RAW_FILE, 'w')
-                stream.write('{"t":' + str(int(time.time() * 1000)) + ',"players":' + body + '}\n')
+                stream.write('{"t":' + stamp + ',"players":' + body + '}\n')
                 stream.close()
+                stream = open(ROSTER_JOURNAL_FILE, 'a')
+                stream.write('{"t":' + stamp + ',"players":' + body + '}\n')
+                stream.close()
+                try:
+                    stream = open(ROSTER_JOURNAL_FILE, 'r')
+                    data = stream.read()
+                    stream.close()
+                    if len(data) > 1572864:
+                        lines = data.splitlines(True)[-100:]
+                        stream = open(ROSTER_JOURNAL_FILE, 'w')
+                        stream.write(''.join(lines))
+                        stream.close()
+                except Exception:
+                    pass
                 if not first:
                     return
                 # First snapshot of this battle: document the schema once.
@@ -200,7 +250,10 @@ class Probe(object):
                     try:
                         log('roster_raw deep sample=' + utils.jsonEncode(record)[:4000])
                     except Exception:
-                        log('roster_raw deep keys=' + str(sorted(record.keys())))
+                        try:
+                            log('roster_raw deep str=' + str(record)[:2000])
+                        except Exception:
+                            log('roster_raw deep keys=' + str(self.fields_of(record)))
         except Exception as exc:
             self.soft('roster_raw failed=' + str(exc)[:120])
 
