@@ -87,7 +87,16 @@ class Probe(object):
             log('onPlayersListUpdated failed=' + str(exc)[:120])
         try:
             stream = open(ROSTER_JOURNAL_FILE, 'r')
-            self.journal = [line for line in stream.read(2097152).split('\n') if line]
+            seeded = []
+            for line in stream.read(2097152).split('\n'):
+                if not line:
+                    continue
+                try:
+                    utils.jsonDecode(line)
+                    seeded.append(line)
+                except Exception:
+                    pass  # drop malformed lines from earlier probe builds
+            self.journal = seeded
             stream.close()
         except Exception:
             pass
