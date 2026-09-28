@@ -2,5 +2,11 @@
   "hint": "对局中按住 Tab 键显示双方水表数据。",
   "locateHint": "当前检测已开启，但暂未定位到表格，请进入游戏后再试",
   "locatingHint": "请按住 Tab，正在定位名单",
-  "queryingBadge": "战绩查询中"
+  "queryingBadge": "战绩查询中",
+  "intelAlly": "我方",
+  "intelEnemy": "敌方",
+  "intelRadar": "雷达",
+  "intelHydro": "水听",
+  "intelSmoke": "烟",
+  "intelRange": "最远"
 }

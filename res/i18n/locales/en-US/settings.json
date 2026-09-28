@@ -142,7 +142,11 @@
     "sealsToggle": "Rating stamps",
     "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — shown only under a Chinese interface.",
     "localizedTiersToggle": "Localized tier labels",
-    "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum."
+    "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum.",
+    "avgStatsToggle": "Tab-overlay stats chips",
+    "avgStatsToggleDesc": "The winrate and average-damage numbers beside each player while holding Tab.",
+    "teamIntelToggle": "Team consumable intel",
+    "teamIntelToggleDesc": "Radar / hydro / smoke count estimates and the longest radar range beside the hold-Tab team lists; utility ships sharing one slot for several consumables count as estimates."
   },
   "sealCustomizer": {
     "desc": "Toggle each seal individually, or set a custom picture per seal (stored in the stamps folder of the app data directory). Previews update live; resetting deletes the custom picture.",

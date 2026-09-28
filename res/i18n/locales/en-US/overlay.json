@@ -2,5 +2,11 @@
   "hint": "Hold Tab in battle to show team stats.",
   "locateHint": "Detection is active, but the team list hasn't been located yet — enter a battle and try again.",
   "locatingHint": "Hold Tab — locating the roster",
-  "queryingBadge": "Fetching stats"
+  "queryingBadge": "Fetching stats",
+  "intelAlly": "Allies",
+  "intelEnemy": "Enemies",
+  "intelRadar": "Radar",
+  "intelHydro": "Hydro",
+  "intelSmoke": "Smoke",
+  "intelRange": "max"
 }

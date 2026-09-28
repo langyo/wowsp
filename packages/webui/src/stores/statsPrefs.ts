@@ -13,13 +13,13 @@ export type PrAlgo = "winrate" | "expected";
  *  blob stays small and new kinds default to visible. */
 export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 
-/** Water-table display preferences. Persisted as one JSON blob so the five
+/** Water-table display preferences. Persisted as one JSON blob so the
  *  knobs always travel together (the onboarding wizard and the settings
  *  section write the same object). */
 export interface StatsPrefs {
   /** Master switch for every PR rating surface (account card hero, per-ship
-   *  panel, live roster lines, clan card). Winrate coloring never depends
-   *  on this. Defaults OFF — the rating is opt-in. */
+   *  panel, live roster lines, clan card). Winrate coloring never depends on
+   *  this. Defaults OFF — the rating is opt-in. */
   prEnabled: boolean;
   /** Rating algorithm forwarded to the stats RPCs when `prEnabled`. */
   prAlgo: PrAlgo;
@@ -32,6 +32,13 @@ export interface StatsPrefs {
   /** Live-battle team winrate aggregation: tier-weighted (higher tiers
    *  count more) or the plain arithmetic mean. */
   weightedTeamWr: boolean;
+  /** Tab overlay chips: the per-row winrate + average-damage numbers.
+   *  Display-only — the underlying WG lookups keep running either way,
+   *  because the row mapping consumes their clan tags. */
+  avgStatsEnabled: boolean;
+  /** Tab overlay team-intel cards flanking the roster (radar/hydro/smoke
+   *  estimate counts + the side's longest radar range). */
+  teamIntelEnabled: boolean;
   /** Per-seal visibility toggles (settings' seal customizer). */
   sealDisabled: SealDisableMap;
 }
@@ -48,6 +55,8 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   sealsEnabled: true,
   localizedTiers: true,
   weightedTeamWr: true,
+  avgStatsEnabled: true,
+  teamIntelEnabled: true,
   sealDisabled: {},
 };
 
@@ -90,6 +99,14 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.weightedTeamWr === "boolean"
           ? j.weightedTeamWr
           : DEFAULT_STATS_PREFS.weightedTeamWr,
+      avgStatsEnabled:
+        typeof j.avgStatsEnabled === "boolean"
+          ? j.avgStatsEnabled
+          : DEFAULT_STATS_PREFS.avgStatsEnabled,
+      teamIntelEnabled:
+        typeof j.teamIntelEnabled === "boolean"
+          ? j.teamIntelEnabled
+          : DEFAULT_STATS_PREFS.teamIntelEnabled,
       sealDisabled: parseSealDisabled(j.sealDisabled),
     };
   } catch {
@@ -175,6 +192,16 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
+  function setAvgStatsEnabled(v: boolean) {
+    prefs.value.avgStatsEnabled = v;
+    persist({ ...prefs.value });
+  }
+
+  function setTeamIntelEnabled(v: boolean) {
+    prefs.value.teamIntelEnabled = v;
+    persist({ ...prefs.value });
+  }
+
   function setSealDisabled(kind: StampKind, disabled: boolean) {
     const next: SealDisableMap = { ...prefs.value.sealDisabled };
     if (disabled) next[kind] = true;
@@ -190,6 +217,8 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setSealsEnabled,
     setLocalizedTiers,
     setWeightedTeamWr,
+    setAvgStatsEnabled,
+    setTeamIntelEnabled,
     setSealDisabled,
   };
 });

@@ -142,3 +142,38 @@ html.overlay-hidden body {
   margin: 0 2px;
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
 }
+
+/* Team-intel summary card — the aggregate consumable estimate flanking the
+   table (one per side, at the blocks' outer ends). Same dark-glass chip
+   skin and side anchoring as the row chips, stacked as two lines so the
+   card stays inside the window's reserved side pad; the fit pass treats it
+   as a chip of its side (no seals inside → straight to the edge clamp). */
+.overlay-chip--intel {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1em;
+  padding: 0.16em 0.6em;
+}
+
+.overlay-intel-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  white-space: nowrap;
+}
+
+/* Side label + family names stay quiet so the counts read first. */
+.overlay-intel-team,
+.overlay-intel-k {
+  color: rgb(165 175 185);
+}
+
+.overlay-chip--intel b {
+  font-weight: 600;
+}
+
+/* The longest radar range is the load-bearing number of the card — the
+   distance the player must respect — so it alone gets the warm accent. */
+.overlay-intel-range {
+  color: rgb(255 210 122);
+}

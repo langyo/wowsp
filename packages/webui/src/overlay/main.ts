@@ -29,6 +29,14 @@ import { collapseCandidateBots } from "./candidates";
 // Post-layout pass keeping chips inside the overlay window — a chip wider
 // than the reserved side pad would otherwise clip flat at the window edge.
 import { fitChips, refitWhenSealsSettle } from "./chipFit";
+// Two-sided team consumable intel (radar/hydro/smoke estimate counts +
+// longest radar range) from the baked capability asset.
+import {
+  formatIntelCount,
+  formatIntelKm,
+  teamIntelFor,
+  type TeamIntelCount,
+} from "./teamIntel";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { gameTabRowKey } from "@/utils/shipClass";
 import { isOperationBattle } from "@/utils/modeColors";
@@ -57,6 +65,14 @@ interface OverlayMessages {
   /** Badge while the batched stats lookup is still working and at least
    *  one mapped chip has no numbers yet. */
   queryingBadge: string;
+  /** Team-intel card copy (the two-sided consumable summary): side
+   *  labels, the three family names, and the longest-range prefix. */
+  intelAlly: string;
+  intelEnemy: string;
+  intelRadar: string;
+  intelHydro: string;
+  intelSmoke: string;
+  intelRange: string;
 }
 const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
@@ -200,6 +216,25 @@ const SEALS_DISABLED: ReadonlySet<StampKind> = (() => {
 // nothing under a non-zh UI locale, and the overlay chips follow suit.
 const SEALS_SHOWN = SEALS_ON && locale.startsWith("zh");
 
+// ── Overlay display switches (same statsPrefs blob, default ON) ─────────
+// AVG_STATS_ON gates the per-row winrate + average-damage numbers (and the
+// transient faces standing in for them); TEAM_INTEL_ON gates the two-sided
+// consumable summary cards. Display-only — read once at window creation
+// with the same tolerant contract as the seal switches above, so a toggle
+// applies the next time the overlay window is (re)created.
+function readStatsPrefFlag(key: string, fallback: boolean): boolean {
+  try {
+    const raw = localStorage.getItem("wowsp-stats-prefs");
+    if (raw == null) return fallback;
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    return typeof j?.[key] === "boolean" ? j[key] === true : fallback;
+  } catch {
+    return fallback;
+  }
+}
+const AVG_STATS_ON = readStatsPrefFlag("avgStatsEnabled", true);
+const TEAM_INTEL_ON = readStatsPrefFlag("teamIntelEnabled", true);
+
 // kind → bitmap + Chinese label, copied from RatingStamp.tsx's STAMP_GLYPHS
 // (bare DOM cannot reuse that Vue component).
 const STAMP_GLYPHS: Record<StampKind, string> = {
@@ -313,10 +348,13 @@ function stampImg(kind: StampKind): string {
 }
 
 function chipContent(name: string, side: "ally" | "enemy"): string {
-  if (AI_NAME.test(name)) return `<span class="muted">bot</span>`;
+  if (AI_NAME.test(name)) return AVG_STATS_ON ? `<span class="muted">bot</span>` : "";
   const st = stats.get(cacheKey(name));
+  // AVG_STATS_ON off → no numbers and none of their placeholder faces
+  // either; the seals below still render (they are their own switch).
   let core: string;
-  if (!st) core = `<span class="muted">…</span>`;
+  if (!AVG_STATS_ON) core = "";
+  else if (!st) core = `<span class="muted">…</span>`;
   else if (st.hidden) core = `<span class="hidden">●</span>`;
   else if (st.winrate == null) core = `<span class="muted">—</span>`;
   else {
@@ -371,6 +409,7 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
  *  "43.2% + 2 bot" keeps the range's cardinality at a fraction of the
  *  width, and a pure-bot range collapses to the single muted face. */
 function candidatesChip(members: string[]): string {
+  if (!AVG_STATS_ON) return "";
   const { humans, botCount } = collapseCandidateBots(members);
   if (humans.length === 0) return `<span class="muted">bot</span>`;
   const faces = humans
@@ -386,6 +425,41 @@ function candidatesChip(members: string[]): string {
     return `${faces}<span class="sep">+</span><span class="muted">${botCount} bot</span>`;
   }
   return faces;
+}
+
+/** One side's team-intel summary card — the aggregate consumable
+ *  capability of that side's roster (estimate semantics in teamIntel.ts).
+ *  Line 1 carries the side label, the radar estimate and the LONGEST radar
+ *  range (the distance a player must respect); line 2 stacks hydro and
+ *  smoke. Styled and anchored as a (two-line) chip of the same side, so
+ *  chipFit's clamp pass covers this card exactly like the row chips;
+ *  `topCss` is the desired CSS-px center line. */
+function teamIntelCard(
+  side: "ally" | "enemy",
+  vehicles: Vehicle[],
+  topCss: number,
+  fontSize: number,
+): HTMLDivElement {
+  const intel = teamIntelFor(vehicles.map((v) => v.shipId));
+  const item = (label: string, c: TeamIntelCount) =>
+    `<span class="overlay-intel-k">${label}</span><b>${formatIntelCount(c)}</b>`;
+  const range =
+    intel.radarMaxM != null && intel.radarMaxM > 0
+      ? `<span class="overlay-intel-range">${localized("intelRange")} ${formatIntelKm(intel.radarMaxM)}km</span>`
+      : "";
+  const line1 =
+    `<span class="overlay-intel-line"><span class="overlay-intel-team">` +
+    `${localized(side === "ally" ? "intelAlly" : "intelEnemy")}</span>` +
+    `${item(localized("intelRadar"), intel.radar)}${range}</span>`;
+  const line2 =
+    `<span class="overlay-intel-line">${item(localized("intelHydro"), intel.hydro)}` +
+    `<span class="sep">·</span>${item(localized("intelSmoke"), intel.smoke)}</span>`;
+  const el = document.createElement("div");
+  el.className = `overlay-chip overlay-chip--${side} overlay-chip--intel`;
+  el.innerHTML = `${line1}${line2}`;
+  el.style.top = `${topCss}px`;
+  el.style.fontSize = `${fontSize.toFixed(1)}px`;
+  return el;
 }
 
 /** The ONE transient-status presentation: a spinner + a single line of
@@ -545,7 +619,7 @@ function render() {
   for (const [list, side, block, blockOffset] of sides) {
     list.forEach((v, i) => {
       if (block[i] == null) return;
-      const el = document.createElement("div");
+      let html: string;
       let sunk = false;
       let multi = false;
       let mappedName: string | null = null;
@@ -555,7 +629,7 @@ function render() {
           // Recognized name — exactly a roster nickname, so the stats
           // cache lookup works unchanged.
           mappedName = mapped;
-          el.innerHTML = chipContent(mapped, side);
+          html = chipContent(mapped, side);
           sunk = aliveArr?.[blockOffset + i] === false;
         } else if (Array.isArray(mapped)) {
           // A mid-battle candidate RANGE (sinks made the alive subset
@@ -563,25 +637,39 @@ function render() {
           // every candidate's winrate instead of picking one. No seals
           // here: a career stamp is a per-player verdict, and stamping an
           // ambiguous row would misattribute it.
-          el.innerHTML = candidatesChip(mapped);
+          html = candidatesChip(mapped);
           multi = true;
           sunk = aliveArr?.[blockOffset + i] === false;
-          if (mapped.some((m) => !AI_NAME.test(m) && !stats.has(cacheKey(m)))) {
+          if (AVG_STATS_ON && mapped.some((m) => !AI_NAME.test(m) && !stats.has(cacheKey(m)))) {
             chipsMissingStats = true;
           }
         } else {
           // This row's player was not recognized: stay silent rather
           // than pinning stats by index guess.
-          el.innerHTML = `<span class="muted">…</span>`;
+          html = AVG_STATS_ON || SEALS_SHOWN ? `<span class="muted">…</span>` : "";
         }
       } else {
         // No recognition payload — legacy index mapping.
         mappedName = v.name;
-        el.innerHTML = chipContent(v.name, side);
+        html = chipContent(v.name, side);
       }
-      if (mappedName != null && !AI_NAME.test(mappedName) && !stats.has(cacheKey(mappedName))) {
+      // The badge speaks about RENDERED content: with both the numbers and
+      // the seals switched off nothing on this row can ever appear, so a
+      // missing stat must not spin the "querying" card all battle.
+      if (
+        (AVG_STATS_ON || SEALS_SHOWN) &&
+        mappedName != null &&
+        !AI_NAME.test(mappedName) &&
+        !stats.has(cacheKey(mappedName))
+      ) {
         chipsMissingStats = true;
       }
+      // Nothing to show for this row (avg stats off and no seal landed —
+      // or a candidate range with numbers off): the badge bookkeeping
+      // above still ran, but an empty chip must not take layout space.
+      if (html === "") return;
+      const el = document.createElement("div");
+      el.innerHTML = html;
       el.className =
         `overlay-chip overlay-chip--${side}` +
         (multi ? " overlay-chip--multi" : "") +
@@ -597,6 +685,49 @@ function render() {
       }
       root.appendChild(el);
     });
+  }
+
+  // Two-sided team-intel cards — each side's aggregate radar/hydro/smoke
+  // estimate plus its longest radar range, flanking the table at the
+  // blocks' OUTER ends (ally card one row-band above the first ally row on
+  // the left, enemy card one row-band below the last enemy row on the
+  // right) so they never collide with row chips. Match-start capability
+  // BY DESIGN: the numbers do not decrement as ships sink — the mid-battle
+  // row→ship attribution is inferred, and silently miscounting radars
+  // would be worse than a static "what each team brought" summary.
+  // Operations (行动) render no enemy list — the ally card alone.
+  if (TEAM_INTEL_ON) {
+    const intelFontSize = Math.min(13, Math.max(9, pitch * 0.4));
+    // The window's top/bottom edges can crowd the table in odd aspect
+    // ratios — keep each card fully inside, measured post-append (the
+    // horizontal fit pass below covers both cards already).
+    const clampVertically = (el: HTMLDivElement): void => {
+      const box = el.getBoundingClientRect();
+      if (box.top < 0) el.style.top = `${box.height / 2 + 2}px`;
+      if (box.bottom > document.documentElement.clientHeight) {
+        el.style.top = `${Math.max(
+          4,
+          document.documentElement.clientHeight - box.height / 2 - 2,
+        )}px`;
+      }
+    };
+    if (allyBlock.length > 0 && allies.length > 0) {
+      const el = teamIntelCard("ally", allies, allyBlock[0] / dpr - pitch, intelFontSize);
+      el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
+      root.appendChild(el);
+      clampVertically(el);
+    }
+    if (!operation && enemies.length > 0 && enemyBlock.length > 0) {
+      const el = teamIntelCard(
+        "enemy",
+        enemies,
+        enemyBlock[enemyBlock.length - 1] / dpr + pitch,
+        intelFontSize,
+      );
+      el.style.left = `${tableRight + gap}px`;
+      root.appendChild(el);
+      clampVertically(el);
+    }
   }
   // A chip wider than its side pad would run past the window edge and get
   // clipped flat (rounded cap gone, numbers cut) — pull overflowing chips

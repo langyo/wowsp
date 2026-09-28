@@ -142,7 +142,11 @@
     "sealsToggle": "Sceaux d'évaluation",
     "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
     "localizedTiersToggle": "Libellés de palier localisés",
-    "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…)."
+    "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…).",
+    "avgStatsToggle": "Stats sous Tab",
+    "avgStatsToggleDesc": "Taux de victoire et dégâts moyens affichés à côté de chaque joueur pendant l'appui sur Tab.",
+    "teamIntelToggle": "Infos consommables des équipes",
+    "teamIntelToggleDesc": "Estimations radar / hydro / fumigène et portée radar maximale de part et d'autre des listes d'équipes sous Tab ; les navires polyvalents partageant un même emplacement comptent comme estimation."
   },
   "sealCustomizer": {
     "desc": "Activez ou désactivez chaque sceau individuellement, ou définissez une image personnalisée par sceau (stockée dans le dossier stamps du répertoire de données de l'application). L'aperçu est immédiat ; la réinitialisation supprime l'image personnalisée.",

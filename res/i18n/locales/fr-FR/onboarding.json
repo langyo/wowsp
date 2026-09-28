@@ -31,5 +31,9 @@
   "sealsToggle": "Sceaux d'évaluation",
   "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
   "localizedTiersToggle": "Libellés de palier localisés",
-  "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard."
+  "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard.",
+  "avgStatsToggle": "Stats sous Tab",
+  "avgStatsToggleDesc": "Les chiffres par joueur pendant l'appui sur Tab.",
+  "teamIntelToggle": "Infos consommables sous Tab",
+  "teamIntelToggleDesc": "Estimations radar/hydro/fumée de part et d'autre des listes."
 }

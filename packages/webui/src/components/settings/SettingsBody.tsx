@@ -1101,7 +1101,7 @@ export default defineComponent({
           ),
           stats: () => (
           <>
-          {/* 战绩 (water-table prefs) — the same five controls as the
+          {/* 战绩 (water-table prefs) — the same controls as the
               onboarding wizard's preferences step (StatsPrefsControls),
               reading/writing the shared statsPrefs store. */}
           <HkSettingsGroup title={t("settings.statsSection")}>

@@ -2,5 +2,11 @@
   "hint": "Mantén Tab en batalla para mostrar estadísticas.",
   "locateHint": "La detección está activa, pero aún no se ha localizado la tabla de equipos: entra en una batalla e inténtalo de nuevo.",
   "locatingHint": "Mantén pulsado Tab: localizando la lista de jugadores",
-  "queryingBadge": "Consultando estadísticas"
+  "queryingBadge": "Consultando estadísticas",
+  "intelAlly": "Aliados",
+  "intelEnemy": "Enemigos",
+  "intelRadar": "Radar",
+  "intelHydro": "Hidro",
+  "intelSmoke": "Humo",
+  "intelRange": "máx"
 }

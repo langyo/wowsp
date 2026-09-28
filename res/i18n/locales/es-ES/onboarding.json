@@ -31,5 +31,9 @@
   "sealsToggle": "Sellos de evaluación",
   "sealsToggleDesc": "Sellos de veredicto 神了/海猴/蛆: solo se muestran con la interfaz en chino.",
   "localizedTiersToggle": "Etiquetas de nivel localizadas",
-  "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar."
+  "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar.",
+  "avgStatsToggle": "Estadísticas con Tab",
+  "avgStatsToggleDesc": "Las cifras por jugador mientras mantienes Tab.",
+  "teamIntelToggle": "Consumibles de equipos con Tab",
+  "teamIntelToggleDesc": "Estimaciones de radar/hidro/humo a los lados de las listas."
 }

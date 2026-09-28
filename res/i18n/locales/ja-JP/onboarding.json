@@ -31,5 +31,9 @@
   "sealsToggle": "評価の印章",
   "sealsToggleDesc": "「神了/海猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
   "localizedTiersToggle": "ローカライズ段階表記",
-  "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階になります。"
+  "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階になります。",
+  "avgStatsToggle": "Tab 戦績表示",
+  "avgStatsToggleDesc": "戦闘中に Tab 押下で各プレイヤーの数値を表示します。",
+  "teamIntelToggle": "Tab 消耗品情報",
+  "teamIntelToggleDesc": "Tab 押下中にチーム表両側へレーダー等の推定を表示します。"
 }

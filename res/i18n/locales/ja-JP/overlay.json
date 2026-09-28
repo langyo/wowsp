@@ -2,5 +2,11 @@
   "hint": "対局中に Tab キーを押し続けると戦績を表示します。",
   "locateHint": "検出は有効ですが、チーム表の位置をまだ特定できていません。戦闘に入ってからもう一度お試しください。",
   "locatingHint": "Tab を押し続けてください — 名簿を探しています",
-  "queryingBadge": "戦績を取得中"
+  "queryingBadge": "戦績を取得中",
+  "intelAlly": "味方",
+  "intelEnemy": "敵",
+  "intelRadar": "レーダー",
+  "intelHydro": "ソナー",
+  "intelSmoke": "煙幕",
+  "intelRange": "最長"
 }

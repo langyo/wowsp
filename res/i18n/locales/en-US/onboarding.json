@@ -31,5 +31,9 @@
   "sealsToggle": "Rating stamps",
   "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — Chinese UI only.",
   "localizedTiersToggle": "Localized tier labels",
-  "localizedTiersToggleDesc": "Fun localized tier wording; off shows the standard English bands."
+  "localizedTiersToggleDesc": "Fun localized tier wording; off shows the standard English bands.",
+  "avgStatsToggle": "Winrate & avg damage on Tab",
+  "avgStatsToggleDesc": "The per-player numbers shown while holding Tab in battle.",
+  "teamIntelToggle": "Team consumable intel on Tab",
+  "teamIntelToggleDesc": "Radar/hydro/smoke estimates beside the hold-Tab team lists."
 }

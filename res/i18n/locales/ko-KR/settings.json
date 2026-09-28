@@ -142,7 +142,11 @@
     "sealsToggle": "평가 인장",
     "sealsToggleDesc": "«神了/海猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
     "localizedTiersToggle": "현지화 등급 표기",
-    "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급(Bad/Good/Unicum 등)이 표시됩니다."
+    "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급(Bad/Good/Unicum 등)이 표시됩니다.",
+    "avgStatsToggle": "Tab 전적 칩",
+    "avgStatsToggleDesc": "Tab 키를 누르는 동안 표시되는 실시간 전적의 플레이어별 승률과 평균 데미지 수치입니다.",
+    "teamIntelToggle": "팀 소모품 정보",
+    "teamIntelToggleDesc": "Tab 키를 누르는 동안 팀 목록 양쪽에 레이더 / 음탐 / 연막 추정 수와 최장 레이더 거리를 표시합니다. 한 슬롯에 여러 소모품을 선택할 수 있는 함선은 추정치로 계산됩니다."
   },
   "sealCustomizer": {
     "desc": "각 인장을 개별적으로 표시/숨기거나, 인장마다 사용자 지정 이미지를 설정할 수 있습니다(이미지는 앱 데이터 디렉터리의 stamps 폴더에 저장됨). 미리 보기는 즉시 적용되며, 기본값으로 되돌리면 사용자 지정 이미지가 삭제됩니다.",

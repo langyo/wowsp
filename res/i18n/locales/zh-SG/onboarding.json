@@ -31,5 +31,9 @@
   "sealsToggle": "评价印章",
   "sealsToggleDesc": "盖印「神了/海猴/蛆」评价印章，仅中文界面显示。",
   "localizedTiersToggle": "本土化档位文案",
-  "localizedTiersToggleDesc": "使用趣味本土化档位文案，关闭时显示标准英文档位。"
+  "localizedTiersToggleDesc": "使用趣味本土化档位文案，关闭时显示标准英文档位。",
+  "avgStatsToggle": "按 Tab 显示场均与胜率",
+  "avgStatsToggleDesc": "对局中按住 Tab 时显示每位玩家的数字。",
+  "teamIntelToggle": "按 Tab 显示消耗品情报",
+  "teamIntelToggleDesc": "按住 Tab 时在队伍列表两侧显示雷达/水听/烟估计。"
 }

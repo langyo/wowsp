@@ -142,7 +142,11 @@
     "sealsToggle": "评价印章",
     "sealsToggleDesc": "盖印「神了/海猴/蛆」评价印章，仅中文界面显示。",
     "localizedTiersToggle": "本土化档位文案",
-    "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。"
+    "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。",
+    "avgStatsToggle": "按 Tab 场均与胜率",
+    "avgStatsToggleDesc": "按住 Tab 实时战绩中每位玩家旁的胜率与场均伤害数字。",
+    "teamIntelToggle": "双方消耗品情报",
+    "teamIntelToggleDesc": "按住 Tab 时队伍列表两侧的雷达 / 水听 / 发烟器数量估计与最远雷达距离；一个槽位可在多种消耗品间选择的工具船按估计计入。"
   },
   "sealCustomizer": {
     "desc": "逐个开关每枚印章，或为印章选用自定义图片（图片存储在应用数据目录的 stamps 文件夹）。预览即时生效，还原默认即删除自定义图。",

@@ -142,7 +142,11 @@
     "sealsToggle": "評価の印章",
     "sealsToggleDesc": "「神了/海猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
     "localizedTiersToggle": "ローカライズ段階表記",
-    "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階（Bad/Good/Unicum など）になります。"
+    "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階（Bad/Good/Unicum など）になります。",
+    "avgStatsToggle": "Tab 戦績チップ",
+    "avgStatsToggleDesc": "Tab 押下中のリアルタイム戦績で各プレイヤーの勝率と平均ダメージを表示します。",
+    "teamIntelToggle": "チーム消耗品情報",
+    "teamIntelToggleDesc": "Tab 押下中のチーム表両側にレーダー / ソナー / 発煙器の推定数と最長レーダー距離を表示します。1 スロットで複数の消耗品から選べる工作艦的な艦は推定として数えます。"
   },
   "sealCustomizer": {
     "desc": "印章を個別に表示/非表示したり、印章ごとにカスタム画像を設定できます（画像はアプリデータディレクトリの stamps フォルダに保存されます）。プレビューは即時反映され、既定に戻すとカスタム画像は削除されます。",
