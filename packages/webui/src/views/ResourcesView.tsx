@@ -210,11 +210,20 @@ export default defineComponent({
     const pendingDeepLink = ref(
       typeof route.query.mod === "string" ? route.query.mod : "",
     );
+    let deepLinkForced = false;
     watch(catalog, (mods) => {
       const want = pendingDeepLink.value;
       if (!want || !mods.length) return;
       const hit = mods.find((m) => m.id === want);
-      if (!hit) return;
+      if (!hit) {
+        // A stale cached index predates the row — force one refresh before
+        // giving up (offline / genuinely absent entries stop here).
+        if (!deepLinkForced) {
+          deepLinkForced = true;
+          void loadCatalog(true);
+        }
+        return;
+      }
       pendingDeepLink.value = "";
       source.value = "online";
       bigCat.value = catBig(hit.category);
