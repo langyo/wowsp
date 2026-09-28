@@ -2,6 +2,7 @@ import { computed, defineComponent, onMounted, onUnmounted, ref, watch } from "v
 import {
   AlertTriangle,
   AudioLines,
+  ChevronDown,
   Ellipsis,
   ExternalLink,
   FolderSearch,
@@ -16,9 +17,12 @@ import {
 
 import {
   HkButton,
+  HkCheckbox,
   HkConfirmDialog,
   HkIconButton,
+  HkModal,
   HkSearchInput,
+  HkSpinner,
   HkSwitch,
   HkTabs,
   HMenu,
@@ -31,9 +35,12 @@ import {
   type CatalogEntry,
   type CatalogProgress,
   type InstalledMod,
+  type MigrationPlan,
+  type MigrateReport,
   type ModInstallRecord,
   type ModKind,
   type PackagePlan,
+  type PlanFile,
   type StaleBinInfo,
   type TextureAnalysis,
 } from "@/api";
@@ -48,6 +55,7 @@ import {
   type BigCat,
   type CatalogCat,
 } from "@/features/modhub/taxonomy";
+import { resolveIdentity } from "@/features/modhub/migrateIdentity";
 import { useRoute } from "vue-router";
 import { openExternal } from "@/utils/openExternal";
 import { sameGamePath } from "@/utils/gamePath";
@@ -132,8 +140,21 @@ export default defineComponent({
     // game stopped loading after an update — surfaced so they can be moved
     // into the current version instead of lingering as dead weight.
     const staleBins = ref<StaleBinInfo[]>([]);
-    const migrateTarget = ref<StaleBinInfo | null>(null);
+    // `migrating` means "the wizard's execute step is in flight"; the ⋯ menu
+    // entry and the stale banner button both disable on it.
     const migrating = ref(false);
+
+    // ── Migration wizard state (plan → review → executing → done) ──
+    const migrateWizardOpen = ref(false);
+    const migFrom = ref("");
+    const migStep = ref<"plan" | "review" | "executing" | "done">("plan");
+    const migPlan = ref<MigrationPlan | null>(null);
+    const migError = ref("");
+    // Decide-bucket paths the user checked (default: all keep).
+    const migKeep = ref(new Set<string>());
+    const migReport = ref<MigrateReport | null>(null);
+    // Which auto-cleaned group is expanded (duplicates / superseded).
+    const migGroupOpen = ref<"duplicate" | "superseded" | null>(null);
 
     // Safe mode: the whole current res_mods is quarantined under a
     // `.wowsp-disabled` rename — one click to test the game with every
@@ -147,7 +168,6 @@ export default defineComponent({
     // free-floating banners — safe mode both ways, the migration wizard.
     const toolsOpen = ref(false);
     const toolsAnchor = ref<HTMLElement | null>(null);
-    const migrateWizardOpen = ref(false);
 
     const gameStatus = useGameStatusStore();
     // The install every mod operation targets: the user's selection, with
@@ -371,27 +391,93 @@ export default defineComponent({
       }
     }
 
-    async function migrateStale() {
-      const target = migrateTarget.value;
-      if (!target || !gameRoot.value || migrating.value) return;
-      if (gameRunning() || safeModeBlocked()) {
-        migrateTarget.value = null;
-        return;
-      }
-      migrateTarget.value = null;
-      migrating.value = true;
+    // ── Stale-bin migration wizard ─────────────────────────────────────────
+    // plan (backend classifies the stale tree) → review (user checks which
+    // stale-only files survive) → executing → done. Duplicates and files the
+    // current tree superseded never reach the review list: they are cleaned
+    // up automatically, the newer install always wins.
+
+    /** Human size for a plan row (KB granularity, like the package list). */
+    const migKb = (size: number) =>
+      size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
+
+    /** Display name for a plan row: catalog/alias identity when the path
+     *  maps to one, else null (the row then shows the raw path only). */
+    const migIdentity = (f: PlanFile): string | null =>
+      resolveIdentity(f.path, catalog.value, (e) => localized(e).name || e.nameEn || e.title);
+
+    async function loadMigPlan() {
+      if (!gameRoot.value || !migFrom.value) return;
+      migStep.value = "plan";
+      migError.value = "";
+      migPlan.value = null;
+      migReport.value = null;
+      migGroupOpen.value = null;
       try {
-        const r = await api.modHubMigrateStaleBin(gameRoot.value, target.binVersion);
-        toast.success(
-          t("resources.staleMigrated", {
-            moved: r.movedFiles,
-            to: r.toVersion,
-            skipped: r.skippedFiles,
-          }),
-        );
+        const p = await api.modHubMigrationPlan(gameRoot.value, migFrom.value);
+        migPlan.value = p;
+        migKeep.value = new Set(p.decide.map((f) => f.path));
+        migStep.value = "review";
+      } catch (e) {
+        migError.value = e instanceof Error ? e.message : String(e);
+      }
+    }
+
+    /** Entry points: the ⋯ menu item and the stale banner button. Re-checks
+     *  the same guards the mutations run (localized messages included) and
+     *  defaults to the freshest stale bin, which wins keep-new conflicts
+     *  against older strays. */
+    function openMigrateWizard() {
+      if (!gameRoot.value || staleBins.value.length === 0 || migrating.value) return;
+      if (gameRunning() || safeModeBlocked()) return;
+      if (!migFrom.value || !staleBins.value.some((b) => b.binVersion === migFrom.value)) {
+        migFrom.value = staleBins.value[0]?.binVersion ?? "";
+      }
+      migrateWizardOpen.value = true;
+      void loadMigPlan();
+    }
+
+    /** Switch the wizard's source bin (only shown with >1 stale bins) —
+     *  the plan is rebuilt for the new pair. */
+    function pickMigFrom(v: string) {
+      if (v === migFrom.value || migrating.value) return;
+      migFrom.value = v;
+      void loadMigPlan();
+    }
+
+    function toggleMigKeep(path: string, keep: boolean) {
+      if (keep) migKeep.value.add(path);
+      else migKeep.value.delete(path);
+    }
+
+    function closeMigrate() {
+      migrateWizardOpen.value = false;
+      migStep.value = "plan";
+      migPlan.value = null;
+      migError.value = "";
+      migKeep.value = new Set();
+      migReport.value = null;
+      migGroupOpen.value = null;
+    }
+
+    async function startMigrate() {
+      if (!gameRoot.value || !migPlan.value || migrating.value) return;
+      if (gameRunning() || safeModeBlocked()) return;
+      migrating.value = true;
+      migStep.value = "executing";
+      migError.value = "";
+      try {
+        const r = await api.modHubMigrationExecute(gameRoot.value, migFrom.value, [
+          ...migKeep.value,
+        ]);
+        migReport.value = r;
+        migStep.value = "done";
         await Promise.all([scan(), loadRecords()]);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e));
+        migError.value = e instanceof Error ? e.message : String(e);
+        // Back to review so the plan stays visible instead of dead-ending
+        // the wizard on a failed execute.
+        migStep.value = "review";
       } finally {
         migrating.value = false;
       }
@@ -1080,6 +1166,203 @@ export default defineComponent({
       }
     }
 
+    // ── Stale-bin migration wizard modal ─────────────────────────────────
+
+    /** One auto-cleaned group (duplicates / superseded): collapsed to a
+     *  count + one-line explanation, expandable to the raw file list. */
+    function renderMigGroup(kind: "duplicate" | "superseded", files: PlanFile[]) {
+      const open = migGroupOpen.value === kind;
+      return (
+        <div class="mig-wizard__group" key={kind}>
+          <button
+            type="button"
+            class="mig-wizard__group-head"
+            disabled={files.length === 0}
+            onClick={() => (migGroupOpen.value = open ? null : kind)}
+          >
+            <ChevronDown size={14} class={["mig-wizard__chevron", { open }]} />
+            <strong>{t(`resources.migrateGroup.${kind}`)}</strong>
+            <span class="mig-wizard__count">{files.length}</span>
+          </button>
+          <p class="mig-wizard__hint">{t(`resources.migrateGroup.${kind}Hint`)}</p>
+          {open && files.length > 0 && (
+            <ul class="mig-wizard__files">
+              {files.map((f) => (
+                <li key={f.path} title={f.path}>
+                  {f.path}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      );
+    }
+
+    /** A decide row: checkbox (= keep), the resolved identity name when the
+     *  path maps to a catalog entry / known Aslain directory, the raw path,
+     *  and the size. */
+    const renderMigRow = (f: PlanFile) => {
+      const identity = migIdentity(f);
+      return (
+        <label key={f.path} class="mig-wizard__row" title={f.path}>
+          <HkCheckbox
+            modelValue={migKeep.value.has(f.path)}
+            onUpdate:modelValue={(v: boolean) => toggleMigKeep(f.path, v)}
+          />
+          <span class="mig-wizard__row-main">
+            <span class="mig-wizard__row-name">{identity ?? f.path}</span>
+            {identity && <span class="mig-wizard__row-path">{f.path}</span>}
+          </span>
+          <span class="mig-wizard__row-size">{migKb(f.size)}</span>
+        </label>
+      );
+    };
+
+    function renderMigrateWizard() {
+      const plan = migPlan.value;
+      const step = migStep.value;
+      const busy = step === "executing";
+      const title = t("resources.staleMigrate");
+      const footers = (() => {
+        if (step === "done") {
+          return [
+            {
+              label: t("common.close"),
+              variant: "primary" as const,
+              onClick: closeMigrate,
+            },
+          ];
+        }
+        if (busy) return [];
+        const cancel = {
+          label: t("resources.migrateCancel"),
+          variant: "secondary" as const,
+          onClick: closeMigrate,
+        };
+        if (step === "review" && plan) {
+          return [
+            cancel,
+            {
+              label: t("resources.migrateStart"),
+              variant: "primary" as const,
+              disabled:
+                plan.duplicate.length + plan.superseded.length + plan.decide.length === 0,
+              onClick: () => void startMigrate(),
+            },
+          ];
+        }
+        if (step === "plan" && migError.value) {
+          return [
+            cancel,
+            {
+              label: t("common.retry"),
+              variant: "primary" as const,
+              onClick: () => void loadMigPlan(),
+            },
+          ];
+        }
+        return [cancel];
+      })();
+
+      return (
+        <HkModal
+          modelValue={migrateWizardOpen.value}
+          onUpdate:modelValue={(v: boolean) => {
+            // Opening is driven by the entry points; an in-flight execute
+            // must not be dismissable mid-sweep.
+            if (v || busy) return;
+            closeMigrate();
+          }}
+          title={title}
+          width="34rem"
+          footerActions={footers}
+        >
+          <div class="mig-wizard">
+            {step === "plan" &&
+              (migError.value ? (
+                <div class="resources-banner resources-banner--error">{migError.value}</div>
+              ) : (
+                <p class="mig-wizard__status">
+                  <HkSpinner size="sm" tone="current" />
+                  {t("resources.migrateAnalyzing", { from: migFrom.value })}
+                </p>
+              ))}
+
+            {step === "review" && plan && (
+              <>
+                {staleBins.value.length > 1 && (
+                  <HkTabs
+                    block
+                    variant="segmented"
+                    modelValue={migFrom.value}
+                    onUpdate:modelValue={(v: string) => pickMigFrom(v)}
+                    tabs={staleBins.value.map((b) => ({
+                      key: b.binVersion,
+                      label: `bin/${b.binVersion}`,
+                    }))}
+                  />
+                )}
+                {migError.value && (
+                  <div class="resources-banner resources-banner--error">{migError.value}</div>
+                )}
+                {plan.duplicate.length +
+                  plan.superseded.length +
+                  plan.decide.length ===
+                0 ? (
+                  <p class="mig-wizard__empty">{t("resources.migrateEmpty")}</p>
+                ) : (
+                  <>
+                    {renderMigGroup("duplicate", plan.duplicate)}
+                    {renderMigGroup("superseded", plan.superseded)}
+                    <div class="mig-wizard__group">
+                      <div class="mig-wizard__group-head mig-wizard__group-head--static">
+                        <strong>{t("resources.migrateGroup.decide")}</strong>
+                        <span class="mig-wizard__count">
+                          {t("resources.migrateKeptCount", {
+                            kept: migKeep.value.size,
+                            total: plan.decide.length,
+                          })}
+                        </span>
+                      </div>
+                      <p class="mig-wizard__hint">{t("resources.migrateGroup.decideHint")}</p>
+                      {plan.decide.length > 0 && (
+                        <div class="mig-wizard__rows">
+                          {plan.decide.map(renderMigRow)}
+                        </div>
+                      )}
+                    </div>
+                    <p class="mig-wizard__hint mig-wizard__hint--foot">
+                      {t("resources.migrateCleanupNote")}
+                    </p>
+                  </>
+                )}
+              </>
+            )}
+
+            {step === "executing" && (
+              <p class="mig-wizard__status">
+                <HkSpinner size="sm" tone="current" />
+                {t("resources.migrateExecuting", {
+                  from: migFrom.value,
+                  to: plan?.toVersion ?? "",
+                })}
+              </p>
+            )}
+
+            {step === "done" && migReport.value && (
+              <div class="resources-banner resources-banner--ok">
+                {t("resources.migrateDone", {
+                  moved: migReport.value.movedFiles,
+                  to: migReport.value.toVersion,
+                  skipped: migReport.value.skippedFiles,
+                })}
+              </div>
+            )}
+          </div>
+        </HkModal>
+      );
+    }
+
     return () => {
       const sourceTabs = [
         { key: "online", label: t("resources.source.online") },
@@ -1139,7 +1422,7 @@ export default defineComponent({
                   toolsOpen.value = false;
                   if (key === "safe-enter") safeModeAsk.value = "on";
                   else if (key === "safe-exit") safeModeAsk.value = "off";
-                  else if (key === "migrate") migrateWizardOpen.value = true;
+                  else if (key === "migrate") openMigrateWizard();
                 }}
                 onUpdate:open={(v: boolean) => (toolsOpen.value = v)}
               />
@@ -1184,7 +1467,7 @@ export default defineComponent({
                 variant="primary"
                 disabled={migrating.value}
                 loading={migrating.value}
-                onClick={() => (migrateWizardOpen.value = true)}
+                onClick={openMigrateWizard}
               >
                 {t("resources.staleMigrate")}
               </HkButton>
@@ -1445,19 +1728,8 @@ export default defineComponent({
             }}
           />
 
-          <HkConfirmDialog
-            open={!!migrateTarget.value}
-            title={t("resources.staleMigrate")}
-            message={t("resources.confirmStaleMigrate", {
-              version: migrateTarget.value?.binVersion ?? "",
-              count: migrateTarget.value?.fileCount ?? 0,
-            })}
-            confirmLabel={t("resources.staleMigrate")}
-            onConfirm={migrateStale}
-            onUpdate:open={(v: boolean) => {
-              if (!v) migrateTarget.value = null;
-            }}
-          />
+          {/* Stale-bin migration wizard: plan → review → executing → done. */}
+          {renderMigrateWizard()}
 
           <HkConfirmDialog
             open={!!unitTarget.value}

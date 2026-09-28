@@ -58,14 +58,14 @@ describe("mod-hub taxonomy", () => {
 
   it("separates the catalog vocabulary from the on-disk kind names", () => {
     for (const cat of CATALOG_CATS) expect(isCatalogCat(cat), cat).toBe(true);
-    // Kinds are not catalog categories…
+    // Kinds are not catalog categories — "patch" used to collide across
+    // both, but the catalog bucket is gone (folded into "text"); the
+    // on-disk kind survives and must not read as a catalog category.
     expect(isCatalogCat("voice")).toBe(false);
     expect(isCatalogCat("skin")).toBe(false);
     expect(isCatalogCat("textures")).toBe(false);
-    // …except "patch", which exists in both — the collision that makes
-    // catBig unusable for installed rows.
-    expect(isCatalogCat("patch")).toBe(true);
-    expect(KIND_BIG.patch).toBe(catBig("patch"));
+    expect(isCatalogCat("patch")).toBe(false);
+    expect(KIND_BIG.patch).toBe("function");
   });
 
   it("resolves tile glyphs and falls back to the generic one", () => {

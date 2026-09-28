@@ -24,6 +24,8 @@ export type {
   ModInstallRecord,
   StaleBinInfo,
   MigrateReport,
+  PlanFile,
+  MigrationPlan,
   ReconcileReport,
   UninstallReport,
   CatalogProgress,

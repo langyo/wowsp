@@ -1874,6 +1874,38 @@ pub struct MigrateReport {
     pub skipped_files: usize,
 }
 
+/// One stale-tree file in a [`MigrationPlan`], `res_mods`-relative with
+/// forward slashes so the wire shape is platform-independent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanFile {
+    pub path: String,
+    pub size: u64,
+    /// Display name resolved backend-side. Always `None` today — identity
+    /// matching (catalog ids / Aslain dir aliases) is done by the webui
+    /// (`features/modhub/migrateIdentity.ts`), which has the online catalog
+    /// loaded already.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+}
+
+/// The wizard's pre-flight view of a stale bin: every file bucketed by what
+/// the execute step will do with it. Duplicates (identical size + SHA-256 in
+/// the destination) and superseded files (same path, different content — the
+/// newer destination copy wins) are deleted, never carried over; `decide`
+/// files exist only in the stale tree and follow the user's per-file keep
+/// choice. Per-install bookkeeping (`installed_mods.xml`, `PnFModsLoader.py`,
+/// `mods/installed.json`) is absent on purpose — it is deleted outright.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrationPlan {
+    pub from_version: String,
+    pub to_version: String,
+    pub duplicate: Vec<PlanFile>,
+    pub superseded: Vec<PlanFile>,
+    pub decide: Vec<PlanFile>,
+}
+
 /// Progress push for a catalog install (`wowsp://mod-catalog-progress`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3968,6 +4000,48 @@ mod tests {
         assert_eq!(v["packages"], 3);
     }
 
+    /// Migration wizard plan (client.ts: MigrationPlan / PlanFile). `identity`
+    /// is absent while the backend leaves it unresolved (the webui does the
+    /// catalog matching).
+    #[test]
+    fn migration_plan_renames_versions_and_buckets() {
+        let file = PlanFile {
+            path: "gui/penetration.png".into(),
+            size: 4_096,
+            identity: None,
+        };
+        let v = round_trips(file);
+        assert_exact_keys(&v, &["path", "size"]);
+
+        let plan = MigrationPlan {
+            from_version: "1".into(),
+            to_version: "2".into(),
+            duplicate: vec![PlanFile {
+                path: "PnFModsLoader.py".into(),
+                size: 0,
+                identity: None,
+            }],
+            superseded: vec![],
+            decide: vec![PlanFile {
+                path: "gui/a.png".into(),
+                size: 12,
+                identity: Some("Penetration Calculator".into()),
+            }],
+        };
+        let v = round_trips(plan);
+        assert_exact_keys(
+            &v,
+            &[
+                "fromVersion",
+                "toVersion",
+                "duplicate",
+                "superseded",
+                "decide",
+            ],
+        );
+        assert_exact_keys(&v["decide"][0], &["path", "size", "identity"]);
+    }
+
     /// The catalog's hash field must stay `sha256` — camelCase must not
     /// touch the digits (client.ts: CatalogPackage).
     #[test]
@@ -4010,6 +4084,7 @@ mod tests {
             discussion: Some(3_021),
             version: "15.7.0".into(),
             game: ">=15.7 <15.8".into(),
+            bundled: false,
             title: "title-sentinel".into(),
             name_zh: "name-zh-sentinel".into(),
             name_en: "name-en-sentinel".into(),
@@ -4040,6 +4115,7 @@ mod tests {
                 "discussion",
                 "version",
                 "game",
+                "bundled",
                 "title",
                 "nameZh",
                 "nameEn",

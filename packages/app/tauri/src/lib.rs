@@ -472,6 +472,8 @@ pub fn run() {
             commands::mod_hub::mod_hub_uninstall_unit,
             commands::mod_hub::mod_hub_stale_versions,
             commands::mod_hub::mod_hub_migrate_stale_bin,
+            commands::mod_hub::mod_hub_migration_plan,
+            commands::mod_hub::mod_hub_migration_execute,
             commands::mod_hub::mod_hub_safe_mode,
             commands::mod_hub::mod_hub_set_safe_mode,
             commands::mod_catalog::mod_hub_reconcile,
