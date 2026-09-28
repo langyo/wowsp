@@ -1344,6 +1344,7 @@ export default defineComponent({
                       key: b.binVersion,
                       label: `bin/${b.binVersion}`,
                     }))}
+                    renderPanels={false}
                   />
                 )}
                 {migError.value && (
