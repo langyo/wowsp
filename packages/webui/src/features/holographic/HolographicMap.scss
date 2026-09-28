@@ -154,9 +154,10 @@
     /* Narrow-map fallback: under ~680px the cap drops below the row's
        one-line footprint, so the strip wraps below the plaque (the row
        is bottom-anchored, so it grows upward, still left of the thumb).
-       With the strip's own internal wrap (below) this threshold is now
-       cosmetic — a mistimed guess at font metrics degrades into a 2×2
-       strip instead of an overflow. */
+       Below the plaque the strip keeps four-across by compressing its
+       cells (shrink above), and under ~500px the equal 2×2 grid further
+       down takes over — so a mistimed guess at font metrics here only
+       moves a layout boundary, it can no longer produce an overflow. */
     @container (max-width: 680px) {
       flex-wrap: wrap;
     }
@@ -384,19 +385,19 @@
    with the plaque; each stat inside is a centred mini column. */
 .holo-map__selfstats {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: stretch;
   gap: 0;
   /* Release the strip's automatic minimum inside the shipcard row: it
      would otherwise read as the sum of the segments' 4.5rem contributions
      and keep the row rigid even under the row's width cap. */
   min-width: 0;
-  /* Internal wrap is the correctness backstop for the row's minimap
-     reserve: min-width:0 lets this box shrink below the nowrap segments'
-     sum, and without wrapping they would bleed right out of the box —
-     back into the corner the row's cap reserved. Wrapped, the strip
-     degrades to a 2×2 stat grid instead, at any map width, whatever the
-     labels' locale or the user's font scaling does to segment widths. */
+  /* Segments compress toward their min-content under the cap (flex-shrink
+     on .holo-map__selfstat) and must keep doing so — do NOT wrap this
+     strip: a wrapping flex line breaks at the rigid 4.5rem bases before
+     shrink ever runs, so a strip squeezed to ~250px (common beside the
+     plaque) splats into 3+1 with dead glass after the third cell. The
+     narrow-map degradation is the explicit equal 2×2 grid further down,
+     which never passes through a 3+1 state. */
   padding: 0.45rem 0.3rem;
   background: var(--holo-hud-glass, rgb(96 108 126 / 42%));
   border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
@@ -421,7 +422,11 @@
      rides on the 4.5rem base (not this floor), so without it the strip's
      automatic minimum stays ≈ its natural width and the row stays rigid.
      Under pressure segments stop at their nowrap content, numbers never
-     clip; unconstrained rows still lay out at exactly 4.5rem.
+     clip; unconstrained rows still lay out at exactly 4.5rem. Do NOT
+     grow these: a growable segment inflates the strip's intrinsic
+     contribution, widening the whole row and splatting the surplus onto
+     the widest-numbered cell (measured 78/78/78/235) — distribution is
+     the @container grid rule's job instead.
      width stays alongside the basis: dropping it would collapse the
      unconstrained row down to bare text widths. */
   flex: 0 1 4.5rem;
@@ -431,6 +436,31 @@
 
   &:not(:first-child) {
     border-left: 1px solid var(--holo-hud-border, rgb(255 255 255 / 16%));
+  }
+}
+/* Under a ~500px map the row cap (100cqw - 192px) drops below the
+   strip's four-segment footprint, the strip wraps, and wrapped flex
+   lines leave their tail cells at the rigid 4.5rem with dead glass
+   after them (the 2×2 read the wrap produces at 400px). Pin the
+   degradation point there instead: an explicit equal 2×2 grid — every
+   cell stretches to half the strip, no dead space, and the 3+1
+   intermediate a bare wrap would pass through never appears. Width
+   returns to auto here: the 4.5rem rest width would otherwise cap the
+   cell inside its 1fr track and reintroduce the blank. */
+@container (max-width: 500px) {
+  .holo-map__selfstats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    /* A wrapped grid sizes shrink-to-fit at its min-content (cells hug
+       "32,825" at ~49px, glued together); as the only item on the row's
+       second line it can grow to the full cap width instead, so each
+       cell gets a roomy half. Above 500px this rule is inert, so the
+       beside/below-the-plaque layouts never feel it. */
+    flex-grow: 1;
+
+    .holo-map__selfstat {
+      width: auto;
+    }
   }
 }
 .holo-map__selfstat-ico {
