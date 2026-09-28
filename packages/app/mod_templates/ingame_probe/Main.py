@@ -75,6 +75,16 @@ class Probe(object):
         self.discovered = False
         self.order_subs = {}
         self.journal = []
+        self.dh = None
+        self.const = None
+        self.api_dumped = False
+        self.comp_dumped = False
+        self.resolve_api()
+        self.api_probe('load')
+        try:
+            events.onPlayersListUpdated(self.on_players_list)
+        except Exception as exc:
+            log('onPlayersListUpdated failed=' + str(exc)[:120])
         try:
             stream = open(ROSTER_JOURNAL_FILE, 'r')
             self.journal = [line for line in stream.read(2097152).split('\n') if line]
@@ -152,45 +162,119 @@ class Probe(object):
     # 'team.ally.sortedAlive' / 'team.enemy.sortedAlive' driven by evUpdated;
     # subscribing to the same collections yields the exact rendered order.
 
-    def watch_order(self):
-        self.close_order()
+    # -- verified ModsShell API access (TeamHP-proven patterns) -------------
+    # The loader injects events/ui/utils/battle/callbacks/dataHub/constants
+    # straight into the module namespace; imports of them fail harmlessly
+    # (TeamHP/Intuitions wrap them in try/except pass), so resolve via
+    # globals() and never shadow the injected bindings.
+
+    def resolve_api(self):
         g = globals()
-        try:
-            log('module globals=' + str(sorted([k for k in g.keys() if not k.startswith('_')]))[:3000])
-        except Exception as exc:
-            log('globals dump failed=' + str(exc)[:120])
-        # The loader injects API modules straight into our namespace (that is
-        # how events/ui/utils work without imports); never shadow them with a
-        # failed import, and only fall back to importing when absent.
-        dh = g.get('dataHub')
-        const = g.get('constants')
-        if dh is None:
+        self.dh = g.get('dataHub')
+        self.const = g.get('constants')
+        if self.dh is None:
             try:
                 import dataHub as dh_module
-                dh = dh_module
+                self.dh = dh_module
             except Exception as exc:
-                log('order dataHub import failed=' + str(exc)[:160])
-        if const is None:
+                log('dataHub resolve failed=' + str(exc)[:160])
+        if self.const is None:
             try:
                 import constants as const_module
-                const = const_module
+                self.const = const_module
             except Exception as exc:
-                log('order constants import failed=' + str(exc)[:160])
-        if dh is None or const is None:
+                log('constants resolve failed=' + str(exc)[:160])
+
+    def on_players_list(self, *args):
+        self.journal_mark('playersListUpdated')
+
+    def api_probe(self, phase):
+        if not self.api_dumped:
+            self.api_dumped = True
+            try:
+                log('module globals=' + str(sorted([k for k in globals().keys()
+                                                   if not k.startswith('_')]))[:3000])
+            except Exception as exc:
+                log('globals dump failed=' + str(exc)[:120])
+            if self.const is not None:
+                try:
+                    names = [n for n in dir(self.const.UiComponents) if not n.startswith('_')]
+                    log('CC names=' + str(sorted(names))[:3800])
+                except Exception as exc:
+                    log('CC dir failed=' + str(exc)[:120])
+            if self.dh is not None:
+                try:
+                    log('dataHub dir=' + str([n for n in dir(self.dh)
+                                              if not n.startswith('_')])[:2000])
+                except Exception as exc:
+                    log('dataHub dir failed=' + str(exc)[:120])
+        log('api[%s] dh=%s const=%s' % (phase, self.dh is not None, self.const is not None))
+        # Enumerate which components actually exist on avatar entities; this
+        # is the per-player data vocabulary and it only exists in battle.
+        if self.dh is None or self.const is None or self.comp_dumped:
+            return
+        try:
+            entities = self.dh.getEntityCollections('avatar')
+            counted = 0
+            present = {}
+            for entity in entities:
+                counted += 1
+                if self.comp_dumped:
+                    break
+                try:
+                    for comp_name in [n for n in dir(self.const.UiComponents) if not n.startswith('_')]:
+                        comp_class = getattr(self.const.UiComponents, comp_name)
+                        try:
+                            if comp_class in entity:
+                                present[comp_name] = True
+                        except Exception:
+                            pass
+                    self.comp_dumped = True
+                    log('entity components present=' + str(sorted(present.keys()))[:3000])
+                except Exception as exc:
+                    log('component enum failed=' + str(exc)[:120])
+            log('api[%s] avatar entities=%d' % (phase, counted))
+        except Exception as exc:
+            log('api[%s] entity collections failed=%s' % (phase, str(exc)[:160]))
+
+    def entity_states(self):
+        """Per-avatar live state from entity components (health path is
+        TeamHP-proven; enemy values are spotting-dependent per its notes)."""
+        if self.dh is None or self.const is None:
+            return {}
+        cc = self.const.UiComponents
+        states = {}
+        try:
+            for entity in self.dh.getEntityCollections('avatar'):
+                try:
+                    avatar = entity[cc.avatar]
+                    name = str(avatar.name)
+                except Exception:
+                    continue
+                row = {}
+                try:
+                    health = entity[cc.health]
+                    row['hp'] = str(health.value) + '/' + str(health.max)
+                    row['alive'] = str(bool(health.isAlive))
+                except Exception:
+                    pass
+                try:
+                    row['relation'] = str(entity[cc.relation].value)
+                except Exception:
+                    pass
+                states[name] = row
+        except Exception as exc:
+            self.soft('entity states failed=' + str(exc)[:120])
+        return states
+
+    def watch_order(self):
+        self.close_order()
+        self.api_probe('battleStart')
+        if self.dh is None or self.const is None:
             log('order unavailable: no dataHub/constants')
             return
         try:
-            names = [n for n in dir(const.UiComponents) if not n.startswith('_')]
-            log('order UiComponents=' + str(sorted(names))[:3800])
-        except Exception as exc:
-            log('order UiComponents dir failed=' + str(exc)[:120])
-        try:
-            names = [n for n in dir(dh) if not n.startswith('_')]
-            log('order dataHub dir=' + str(names)[:2000])
-        except Exception as exc:
-            log('order dataHub dir failed=' + str(exc)[:120])
-        try:
-            collection = dh.getCollection(const.UiComponents.avatar)
+            collection = self.dh.getCollection(self.const.UiComponents.avatar)
         except Exception as exc:
             self.soft('order collection failed=' + str(exc)[:160])
             return
@@ -285,6 +369,7 @@ class Probe(object):
         self.close_order()
         self.last_raw = ''
         self.discovered = False
+        self.comp_dumped = False
         log('battle cleared')
 
     def details_reset(self):
@@ -379,21 +464,21 @@ class Probe(object):
                 log('discovery field ' + field + '=' + value)
 
     def observe_raw(self, records):
-        """Project every record and rewrite roster_raw.json on change; also
-        append every distinct state to the journal so one battle shows the
-        field-change sequence around TAB re-sorts and sinks."""
+        """Project roster records plus entity-component state; rewrite
+        roster_raw.json on change and append every distinct state to the
+        journal so one battle shows the change sequence around TAB re-sorts."""
         try:
             projection = {}
             for key, p in records.items():
                 projection[str(key)] = self.project_record(p)
-            body = utils.jsonEncode(projection)
+            body = utils.jsonEncode({'players': projection, 'states': self.entity_states()})
             if body != self.last_raw:
                 first = self.last_raw == ''
                 self.last_raw = body
                 stamp = str(int(time.time() * 1000))
                 try:
                     stream = open(ROSTER_RAW_FILE, 'w')
-                    stream.write('{"t":' + stamp + ',"players":' + body + '}\n')
+                    stream.write('{"t":' + stamp + ',' + body + '}\n')
                     stream.close()
                 except Exception as exc:
                     self.soft('roster_raw write failed=' + str(exc)[:120])
@@ -406,7 +491,7 @@ class Probe(object):
                         self.discover(record)
                     except Exception as exc:
                         log('discovery crashed=' + str(exc)[:120])
-                self.journal.append('{"t":' + stamp + ',"players":' + body + '}')
+                self.journal.append('{"t":' + stamp + ',' + body + '}')
                 self.journal_flush()
         except Exception as exc:
             self.soft('roster_raw failed=' + str(exc)[:120])
