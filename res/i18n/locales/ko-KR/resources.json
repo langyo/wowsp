@@ -65,8 +65,7 @@
     "battle": "전투",
     "minimap": "미니맵",
     "port": "항구",
-    "text": "텍스트 및 채팅",
-    "patch": "공식 패치"
+    "text": "텍스트 및 채팅"
   },
   "big": {
     "function": "기능",

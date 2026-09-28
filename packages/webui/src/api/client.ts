@@ -1329,6 +1329,11 @@ export const api = {
   getOverlayConfig: () => transport.invoke<{ table: string; roster: string }>(RPC.get_overlay_config),
   setOverlayConfig: (table: string, roster: string) =>
     transport.invoke<{ table: string; roster: string }>(RPC.set_overlay_config, { table, roster }),
+  /** In-game stats plugin presence in a game install (see
+   * commands/ingame_plugin.rs) — powers the roster "plugin detection"
+   * option's enabled state and its Discussions page link. */
+  ingamePluginStatus: (gameRoot: string) =>
+    transport.invoke<{ installed: boolean; resMods: string; discussion: number }>(RPC.ingame_plugin_status, { gameRoot }),
   /** Remembered game-install path — sanitized + persisted as TOML by the
    *  shell (see commands/game_config.rs). */
   getGameConfig: () => transport.invoke<{ activePath: string | null }>(RPC.get_game_config),

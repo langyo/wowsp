@@ -128,10 +128,12 @@ biological nomenclature:
     battle.timer.shot        port.carousel.filters
     battle.marker.regen      port.sessionstats.v2
     minimap.rpf.2d           text.shipname.real
-    patch.ime.compat
+    patch.ime.compat         battle.ingame.stats
 
-- `category` is a closed whitelist: `battle` / `minimap` / `port` / `text` /
-  `patch` (new categories are maintainer-gated);
+- `category` is a closed whitelist: `battle` / `minimap` / `port` / `text`
+  (new categories are maintainer-gated; the one-off `patch` bucket was folded
+  into `text` — `patch.ime.compat` keeps its permanent id but is filed under
+  `text`);
 - `genus` is the functional family (`timer`, `meter`, `marker`, `panel`,
   `carousel`, `techtree`, `crew`, `chat`, `shipname`, `font`, …);
 - `species` carries the specifics, hyphenated modifiers and variant tails

@@ -73,6 +73,7 @@ import {
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type GameInstall, type NetworkConfig } from "@/api";
+import { openExternal } from "@/utils/openExternal";
 import { formatEta, formatSpeed } from "@/utils/format";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import { useRouter } from "vue-router";
@@ -198,6 +199,30 @@ export default defineComponent({
     const installRows = computed<GameInstall[]>(() => configStore.installs);
     const activePath = computed(() => configStore.activeInstall?.path ?? "");
     const detecting = computed(() => configStore.detecting);
+
+    // ── in-game stats plugin (roster "plugin detection" option) ──────────
+    // Presence probe for the PnFMods bridge mod (commands/ingame_plugin.rs):
+    // the option stays greyed until the plugin is installed in the active
+    // game install, and the page button below deep-links the mod's
+    // Discussions thread. Refreshed whenever the active install changes.
+    const ingamePluginInstalled = ref(false);
+    const ingamePluginDiscussion = ref<number | null>(null);
+    async function refreshIngamePlugin() {
+      const root = activePath.value;
+      if (!root) {
+        ingamePluginInstalled.value = false;
+        return;
+      }
+      try {
+        const status = await api.ingamePluginStatus(root);
+        ingamePluginInstalled.value = status.installed;
+        ingamePluginDiscussion.value = status.discussion;
+      } catch {
+        // older shell / mock backend — the option simply stays greyed
+        ingamePluginInstalled.value = false;
+      }
+    }
+    watch(activePath, () => void refreshIngamePlugin());
 
     // The process watcher synthesizes an install for a running exe that no
     // detected install claims — a one-click fallback row above the actions.
@@ -344,6 +369,7 @@ export default defineComponent({
 
     onMounted(async () => {
       void overlayCfg.load();
+      void refreshIngamePlugin();
       try {
         const cfg = await api.getNetworkConfig();
         netCfg.value = { ...cfg };
@@ -1819,10 +1845,34 @@ export default defineComponent({
                   void overlayCfg.setRoster(v as RosterRecognitionMode)
                 }
                 tabs={[
+                  {
+                    key: "plugin",
+                    label: t("settings.overlayRosterPlugin"),
+                    // Greyed until the in-game plugin actually sits in the
+                    // active install's res_mods — the status refreshes with
+                    // the install selection (see refreshIngamePlugin).
+                    disabled: !ingamePluginInstalled.value,
+                  },
                   { key: "inferred", label: t("settings.overlayRosterInferred") },
                   { key: "off", label: t("settings.overlayRosterOff") },
                 ]}
               />
+              {!ingamePluginInstalled.value ? (
+                <HkSettingsHint>{t("settings.overlayRosterPluginMissing")}</HkSettingsHint>
+              ) : null}
+              {ingamePluginDiscussion.value ? (
+                <HkButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    void openExternal(
+                      `https://github.com/langyo/wowsp/discussions/${ingamePluginDiscussion.value}`,
+                    )
+                  }
+                >
+                  {t("settings.overlayRosterPluginPage")}
+                </HkButton>
+              ) : null}
             </HkSettingsSub>
           </HkSettingsGroup>
 

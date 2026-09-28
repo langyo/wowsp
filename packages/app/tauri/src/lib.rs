@@ -482,6 +482,7 @@ pub fn run() {
             commands::mod_install::install_overlay_mod,
             commands::mod_install::uninstall_overlay_mod,
             commands::mod_install::is_overlay_mod_installed,
+            commands::ingame_plugin::ingame_plugin_status,
             commands::ranked::get_ranked_stats,
             // Changelog feed for the settings' 更新日志 section — GitHub
             // Releases via the mirror ladder; platform-neutral (the phone

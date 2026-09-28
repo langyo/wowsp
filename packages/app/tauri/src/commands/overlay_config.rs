@@ -57,7 +57,7 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"inferred\" | \"off\".\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"inferred\" | \"plugin\" | \"off\".\n\
                            # Invalid values are reset to the defaults by the app.\n";
 
 /// How long a cached read stays fresh. The file only changes when the user
@@ -84,6 +84,12 @@ pub(crate) enum RosterRecognition {
     /// the row order with ZERO OCR — the overlay page derives the mapping
     /// itself from the arena roster the anchor's `row_alive` vector.
     Inferred,
+    /// In-game plugin telemetry (packages/ingame-plugin): the PnFMods bridge
+    /// feeds the exact arena order with `isAlive` sinking and the TAB
+    /// screen's own tabModeIn/Out marks — strictly better than inference
+    /// when the plugin is installed. Until the bridge consumer lands (M2)
+    /// the overlay treats it like the inferred mapping.
+    Plugin,
     /// Recognition off: chips follow the roster/index order.
     Off,
 }
@@ -101,6 +107,7 @@ impl RosterRecognition {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             RosterRecognition::Inferred => "inferred",
+            RosterRecognition::Plugin => "plugin",
             RosterRecognition::Off => "off",
         }
     }
@@ -141,6 +148,7 @@ fn parse_roster_field(raw: &str) -> RosterRecognition {
         // The Windows OCR pipeline is gone; a stored `ocr` pick migrates
         // to its replacement (the derived mapping is strictly stronger).
         "ocr" => RosterRecognition::Inferred,
+        "plugin" => RosterRecognition::Plugin,
         "off" => RosterRecognition::Off,
         // "inferred" and anything unrecognized (incl. future values).
         _ => RosterRecognition::Inferred,
@@ -433,12 +441,16 @@ mod tests {
         }
     }
 
-    /// Unknown enum values (a future `plugin`, a typo, a wrong type) fall
+    /// Unknown enum values (a future roster pick, a typo, a wrong type) fall
     /// back to the per-field safe default; absent fields take the v1
     /// migration path.
     #[test]
     fn unknown_values_fall_back_per_field() {
+        // "plugin" is a VALID roster pick now; table keeps rejecting it.
         let cfg = parse_config(r#"{"table":"plugin","roster":"plugin"}"#);
+        assert_eq!(cfg.table, TableAnchor::Detect);
+        assert_eq!(cfg.roster, RosterRecognition::Plugin);
+        let cfg = parse_config(r#"{"table":"future","roster":"future"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Inferred);
         let cfg = parse_config(r#"{"table":42,"roster":null}"#);

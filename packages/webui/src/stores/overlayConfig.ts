@@ -32,19 +32,21 @@ import { api } from "@/api";
 /** Table anchoring modes (schema v2 `table` field). */
 export type TableAnchorMode = "detect" | "off";
 /** Roster attribution modes (schema v2 `roster` field). */
-export type RosterRecognitionMode = "inferred" | "off";
+export type RosterRecognitionMode = "plugin" | "inferred" | "off";
 
 const DEFAULT_TABLE: TableAnchorMode = "detect";
 const DEFAULT_ROSTER: RosterRecognitionMode = "inferred";
 
-/** Unknown values (incl. future ones like "plugin") → the safe default. */
+/** Unknown values (incl. future ones) → the safe default. */
 function parseTable(raw: unknown): TableAnchorMode {
   return raw === "off" ? "off" : DEFAULT_TABLE;
 }
 
 function parseRoster(raw: unknown): RosterRecognitionMode {
   // A stored "ocr" pick migrates to the derived mapping (its replacement).
-  return raw === "off" ? "off" : DEFAULT_ROSTER;
+  if (raw === "off") return "off";
+  if (raw === "plugin") return "plugin";
+  return DEFAULT_ROSTER;
 }
 
 export const useOverlayConfigStore = defineStore("overlayConfig", () => {

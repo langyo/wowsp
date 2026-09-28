@@ -65,8 +65,7 @@
     "battle": "Battle",
     "minimap": "Minimap",
     "port": "Port",
-    "text": "Texts & chat",
-    "patch": "Patches"
+    "text": "Texts & chat"
   },
   "big": {
     "function": "Function",

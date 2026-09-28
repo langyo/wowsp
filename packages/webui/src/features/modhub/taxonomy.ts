@@ -39,13 +39,16 @@ export const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> 
   textures: { icon: PackageCheck, class: "textures" },
 };
 
-/** Curated categories of the online index (scripts/mod_hub_publish.py). */
-export type CatalogCat = "battle" | "minimap" | "port" | "text" | "patch";
-export const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "text", "patch"];
+/** Curated categories of the online index (scripts/mod_hub_publish.py).
+ * The one-off `patch` bucket is gone — its only resident (patch.ime.compat)
+ * lives under `text` now; on-disk `kind: "patch"` is a DIFFERENT vocabulary
+ * and is unaffected. */
+export type CatalogCat = "battle" | "minimap" | "port" | "text";
+export const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "text"];
 
 /** Catalog categories and on-disk kinds are DIFFERENT vocabularies that share
- *  one strip — "patch" happens to exist in both, which is why the two
- *  mappings below stay separate and this guard exists at all. */
+ *  one strip — "patch" survives as an on-disk kind only, which is why the
+ *  two mappings below stay separate and this guard exists at all. */
 export function isCatalogCat(value: string): value is CatalogCat {
   return (CATALOG_CATS as string[]).includes(value);
 }
@@ -72,7 +75,6 @@ const CAT_BIG: Record<CatalogCat, BigCat> = {
   minimap: "function",
   port: "function",
   text: "function",
-  patch: "function",
 };
 
 /** Big category of a catalog entry. Unknown categories bucket with
@@ -87,7 +89,6 @@ const CAT_ICON: Record<CatalogCat, typeof Puzzle> = {
   minimap: MapIcon,
   port: Anchor,
   text: MessagesSquare,
-  patch: ScrollText,
 };
 
 /** Tile glyph for a catalog entry; unknown categories fall back to Puzzle. */
