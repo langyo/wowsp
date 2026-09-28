@@ -124,6 +124,47 @@ const ROW_H = 44;
 const STAT_GAP = 36;
 const SEAL_SIZE = 44;
 const SEAL_SMALL = 34;
+/** Horizontal gap between adjacent per-type chips. */
+const CHIP_GAP = 8;
+
+/** One per-type chip's outer width (its rounded card), measured under the
+ *  fonts the chip draws with — the wrap pass and the draw pass share it. */
+function typeChipWidth(ctx: CanvasRenderingContext2D, chip: StatsShotTypeChip): number {
+  ctx.font = font(11.5, 700);
+  const codeW = ctx.measureText(chip.code).width;
+  ctx.font = font(11, 400);
+  const battlesW = ctx.measureText(chip.battles).width;
+  ctx.font = font(11.5, 600);
+  const valW = ctx.measureText(chip.value).width;
+  return 14 + codeW + 10 + battlesW + 10 + valW + 14;
+}
+
+/** Greedy row-wrap of the per-type chips: a five-class card (BB/CV/CA/DD/SS)
+ *  does not fit one 604px row, and silently dropping a class would misrepre-
+ *  sent the career — the chips flow onto a second row instead. Measured on a
+ *  scratch context so the canvas height can budget every wrapped row. */
+function wrapTypeChips(
+  model: StatsShotModel,
+): StatsShotTypeChip[][] {
+  if (model.typeChips.length === 0) return [];
+  const scratch = document.createElement("canvas").getContext("2d");
+  if (!scratch) return [model.typeChips];
+  const rows: StatsShotTypeChip[][] = [];
+  let row: StatsShotTypeChip[] = [];
+  let x = 0;
+  for (const chip of model.typeChips) {
+    const w = typeChipWidth(scratch, chip);
+    if (row.length > 0 && x + w > WIDTH - PAD * 2) {
+      rows.push(row);
+      row = [];
+      x = 0;
+    }
+    row.push(chip);
+    x += w + CHIP_GAP;
+  }
+  if (row.length > 0) rows.push(row);
+  return rows;
+}
 
 export async function renderStatsShot(
   model: StatsShotModel,
@@ -132,14 +173,14 @@ export async function renderStatsShot(
   const palette = readPalette(opts.el);
   const hasDiv = model.divisions.length > 0;
   const kpiRows = Math.ceil(model.kpis.length / 3);
-  const hasTypes = model.typeChips.length > 0;
+  const chipRows = wrapTypeChips(model);
   const shipCount = model.ships.length;
   const hasShips = shipCount > 0;
 
   let height = HEAD_H + IDENTITY_H + HERO_H;
   if (hasDiv) height += DIV_H;
   if (kpiRows > 0) height += kpiRows * KPI_CELL_H + (kpiRows - 1) * KPI_GAP + 8;
-  if (hasTypes) height += TYPE_H + 10;
+  if (chipRows.length > 0) height += chipRows.length * TYPE_H + 10;
   if (hasShips) {
     height += 8 + SHIP_TITLE_H + SHIP_HEAD_H + shipCount * (ROW_H + 6);
     if (model.moreShips) height += 20;
@@ -307,39 +348,39 @@ export async function renderStatsShot(
     y += kpiRows * KPI_CELL_H + (kpiRows - 1) * KPI_GAP;
   }
 
-  // Per-type chips: measured inline runs, clipped to the content width.
-  if (hasTypes) {
+  // Per-type chips: greedily wrapped rows (see wrapTypeChips), each row
+  // measured under its own fonts so every class always makes the image.
+  if (chipRows.length > 0) {
     y += 10;
-    const cy = y + TYPE_H / 2;
-    let x = PAD;
-    ctx.font = font(11.5, 600);
-    for (const chip of model.typeChips) {
-      const codeW = ctx.measureText(chip.code).width;
-      ctx.font = font(11, 400);
-      const battlesW = ctx.measureText(chip.battles).width;
-      ctx.font = font(11.5, 600);
-      const valW = ctx.measureText(chip.value).width;
-      const w = 14 + codeW + 10 + battlesW + 10 + valW + 14;
-      if (x + w > WIDTH - PAD) break;
-      ctx.fillStyle = rgba(palette.text, 0.05);
-      ctx.beginPath();
-      ctx.roundRect(x, y + 6, w, TYPE_H - 12, 8);
-      ctx.fill();
-      let tx = x + 14;
-      ctx.font = font(11.5, 700);
-      ctx.fillStyle = rgba(palette.text, 0.85);
-      ctx.fillText(chip.code, tx, cy);
-      tx += codeW + 10;
-      ctx.font = font(11, 400);
-      ctx.fillStyle = rgba(palette.muted, 1);
-      ctx.fillText(chip.battles, tx, cy);
-      tx += battlesW + 10;
-      ctx.font = font(11.5, 600);
-      ctx.fillStyle = chip.color ?? rgba(palette.text, 0.9);
-      ctx.fillText(chip.value, tx, cy);
-      x += w + 8;
+    for (const row of chipRows) {
+      const cy = y + TYPE_H / 2;
+      let x = PAD;
+      for (const chip of row) {
+        ctx.font = font(11.5, 700);
+        const codeW = ctx.measureText(chip.code).width;
+        ctx.font = font(11, 400);
+        const battlesW = ctx.measureText(chip.battles).width;
+        const w = typeChipWidth(ctx, chip);
+        ctx.fillStyle = rgba(palette.text, 0.05);
+        ctx.beginPath();
+        ctx.roundRect(x, y + 6, w, TYPE_H - 12, 8);
+        ctx.fill();
+        let tx = x + 14;
+        ctx.font = font(11.5, 700);
+        ctx.fillStyle = rgba(palette.text, 0.85);
+        ctx.fillText(chip.code, tx, cy);
+        tx += codeW + 10;
+        ctx.font = font(11, 400);
+        ctx.fillStyle = rgba(palette.muted, 1);
+        ctx.fillText(chip.battles, tx, cy);
+        tx += battlesW + 10;
+        ctx.font = font(11.5, 600);
+        ctx.fillStyle = chip.color ?? rgba(palette.text, 0.9);
+        ctx.fillText(chip.value, tx, cy);
+        x += w + CHIP_GAP;
+      }
+      y += TYPE_H;
     }
-    y += TYPE_H;
   }
 
   // Top ships: section title, right-aligned column labels at the measured
