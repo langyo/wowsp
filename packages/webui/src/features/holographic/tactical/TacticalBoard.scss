@@ -39,6 +39,10 @@
 .tac-layer__text-input {
   position: absolute;
   transform: translateY(-0.35em);
+  /* Pivot on the top-left corner — the world anchor the box is parked on —
+     so the map-rotation tilt set from renderNow spins around the same
+     point the committed text does. */
+  transform-origin: 0 0;
   min-width: 140px;
   max-width: 60%;
   padding: 0.22rem 0.5rem;

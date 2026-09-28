@@ -483,11 +483,17 @@ export default defineComponent({
         hollowMarkers: !props.planMode,
       });
       if (rotRad.value !== 0) ctx.restore();
-      // Keep the text editor glued to its world anchor (screen-rotated).
+      // Keep the text editor glued to its world anchor (screen-rotated),
+      // tilting the box with the map frame: committed text pivots on its
+      // top-left anchor (drawText, render.ts), so the editor rotates around
+      // the same corner — its -0.35em lift rides the rotated frame and
+      // keeps clearing the first line.
       if (textEdit.value && inputRef.value) {
         const q = rotatePoint(p.toPx(textEdit.value.at));
         inputRef.value.style.left = `${(q.x / TACTICAL_SIZE) * 100}%`;
         inputRef.value.style.top = `${(q.y / TACTICAL_SIZE) * 100}%`;
+        inputRef.value.style.transform =
+          rotRad.value !== 0 ? `rotate(${props.rotationDeg}deg) translateY(-0.35em)` : "";
       }
     }
 
