@@ -43,10 +43,10 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
-import { careerStamp, damageColor, prTier, winrateColor } from "@/utils/winrate";
+import { careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from "@/utils/winrate";
 import { formatEta } from "@/utils/format";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
-import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
+import { shipTierOf } from "@/utils/shipClass";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName } from "@/utils/mapNames";
 import {
@@ -207,7 +207,7 @@ export default defineComponent({
   emits: ["close"],
   setup(props, { emit }) {
     const parsed = computed(() => parsePostBattle(props.raw));
-    const { dataLanguage } = useLanguage();
+    const { dataLanguage, uiLocale } = useLanguage();
     const loadingTasks = useLoadingTasksStore();
     const router = useRouter();
     const root = ref<HTMLElement | null>(null);
@@ -312,41 +312,27 @@ export default defineComponent({
       if (verdictTimer) clearTimeout(verdictTimer);
     });
 
-    /** Roster order: the game's own fixed Tab key (utils/shipClass — alive,
-     *  class, tier desc, nation, ship name, '[tag]nick'), the exact order
-     *  the in-game results table shows, instead of the XP-sorted scatter.
-     *  Clan tags ride the roster stats map and re-sort when the batch
-     *  lands; equal keys fall to settlement XP desc, then the stable
-     *  parser (damage-desc) order. */
-    const tabOrder = (list: typeof rows.value) =>
-      [...list].sort((a, b) => {
-        const keyOf = (p: (typeof rows.value)[number]) =>
-          gameTabRowKey(
-            { shipId: p.shipId ?? 0, name: p.name },
-            p.alive,
-            dataLanguage.value,
-            (n) => nameStats.value.get(n)?.clanTag ?? null,
-          );
-        const ka = keyOf(a);
-        const kb = keyOf(b);
-        return ka < kb ? -1 : ka > kb ? 1 : b.xp - a.xp;
-      });
+    /** Roster order: final settlement XP descending — the order the game's
+     *  own results screen shows (top earner first), so the matrix reads as
+     *  a scoreboard. Legacy short arrays ride the damage/frags estimate. */
     const allies = computed(() => {
       const st = selfTeam.value;
-      return tabOrder(
-        rows.value.filter((p) => (st != null ? p.team === st : p.team !== 1)),
-      );
+      return rows.value
+        .filter((p) => (st != null ? p.team === st : p.team !== 1))
+        .sort((a, b) => b.xp - a.xp);
     });
     const enemies = computed(() => {
       const st = selfTeam.value;
-      return tabOrder(
-        rows.value.filter(
-          (p) => p.team !== null && (st != null ? p.team !== st : p.team === 1),
-        ),
-      );
+      return rows.value
+        .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
+        .sort((a, b) => b.xp - a.xp);
     });
 
     const prefs = computed(() => statsPrefsState.value);
+    /** Seals ride the PR cluster in the settings (the master toggle nests
+     *  under it) and need PR data to grade — one gate for the DOM slot,
+     *  the header pad and the share shot alike. */
+    const sealsShown = computed(() => prefs.value.prEnabled && prefs.value.sealsEnabled);
 
     /** One team's header aggregate — tier-weighted (per the stats prefs)
      *  mean winrate plus a plain mean PR over the players whose stats
@@ -409,6 +395,18 @@ export default defineComponent({
     // ── Share-time privacy + share shot ─────────────────────────────────
     const masking = useNickMasking();
     const shot = useShareShot(buildShotModel, () => root.value);
+    /** The career seal a row carries into the share shot — the exact gate
+     *  chain the DOM cells render (settings master switch, zh-only bitmaps,
+     *  verdict-pending holds, per-kind kill switch), so a seal switched off
+     *  in the settings never leaks into the copied image. */
+    const shotStampOf = (name: string): CareerStamp | null => {
+      if (!sealsShown.value || !uiLocale.value.startsWith("zh")) return null;
+      const st = isAiName(name) ? undefined : nameStats.value.get(name);
+      if (!st || st.loading) return null;
+      if (st.hidden && st.clanId != null && st.clanWinrate === undefined) return null;
+      const kind = careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate);
+      return kind && !prefs.value.sealDisabled[kind] ? kind : null;
+    };
     function buildShotModel(): ShotModel {
       const pb = parsed.value;
       const head = props.head;
@@ -505,6 +503,7 @@ export default defineComponent({
                   : p.accountId === pb?.selfId
                     ? "white"
                     : "ally",
+              stamp: shotStampOf(p.name),
               stats: statTexts(p),
             };
           }),
@@ -549,7 +548,7 @@ export default defineComponent({
               // Right-edge compensation so the header grid sits over the
               // columns below: rows spend width on the mask eye (+ the
               // career seal slot when seals are enabled).
-              prefs.value.sealsEnabled
+              sealsShown.value
                 ? "replay-view__postbattle-col-title--pad-seal"
                 : "replay-view__postbattle-col-title--pad-eye",
             ]}
@@ -656,7 +655,12 @@ export default defineComponent({
                 {p.xp.toLocaleString()}
               </span>
             </button>
-            {seal}
+            {/* Career-seal slot: reserved whenever seals show at all (PR +
+                settings master), so the mask eyes align across rows whether
+                or not a given player earned a stamp. */}
+            {sealsShown.value ? (
+              <span class="replay-view__postbattle-cell-stampslot">{seal}</span>
+            ) : null}
             {ai ? null : (
               <button
                 class={[

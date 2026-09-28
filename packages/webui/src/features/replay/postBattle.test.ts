@@ -158,6 +158,33 @@ describe("parsePostBattle field mapping", () => {
     expect(p.hpRatio).toBe(100);
   });
 
+  it("maps the 14.x legacy layout (485 entries) onto the shifted late indices", () => {
+    // Ground truth from client-14.5 replays (485-entry arrays): the 15.2
+    // client inserted 15 fields before `exp`, moving exp 389→404, damage
+    // 411→426 and the killer id 393→408. Reading the new indices on the old
+    // layout lands on the inserted zero fields — the all-zero XP column.
+    const data = parsePostBattle(
+      payload(
+        arr(
+          {
+            1: "Legacy145",
+            21: false,
+            32: 2, // frags — below the inserted block, unshifted
+            389: 1189, // exp
+            393: 2026777155, // killer_db_id
+            411: 75309, // damage
+          },
+          485,
+        ),
+      ),
+    );
+    const p = data!.players[0];
+    expect(p.exp).toBe(1189);
+    expect(p.damage).toBe(75309);
+    expect(p.killerId).toBe(2026777155);
+    expect(p.frags).toBe(2);
+  });
+
   it("parses mode, self id and the recorder's private settlement", () => {
     const data = parsePostBattle(payload(arr({ 1: "Self" })));
     expect(data!.mode).toBe("pvp_domination");

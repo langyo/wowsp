@@ -217,7 +217,9 @@
     backdrop-filter: blur(3px);
   }
   &__modal-panel {
-    width: min(720px, 92vw);
+    /* Wide enough for two 12-row roster columns without ellipsizing every
+     * mid-length nickname (the results matrix lives here). */
+    width: min(980px, 92vw);
     max-height: 82vh;
     display: flex;
     flex-direction: column;

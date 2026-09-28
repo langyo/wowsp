@@ -16,6 +16,11 @@
  * (same-origin vite assets, so the canvas never taints).
  */
 import { shipIconUrl, type ShipIconVariant } from "@/features/holographic/shipIcons";
+import type { CareerStamp } from "@/utils/winrate";
+import stampApe from "../../res/stamps/stamp-ape.png";
+import stampMaggot from "../../res/stamps/stamp-maggot.png";
+import stampMiracle from "../../res/stamps/stamp-miracle.png";
+import stampRat from "../../res/stamps/stamp-rat.png";
 
 /** One right-aligned stat cell of a row (WR / PR / avg damage / base XP). */
 export interface ShotStat {
@@ -36,6 +41,10 @@ export interface ShotRow {
   /** Ship-class HUD icon (bundled PNG url) + its variant. */
   shipType?: string | null;
   iconVariant?: ShipIconVariant;
+  /** Career seal (神了/海猴/蛆/过街老鼠) pressed onto the row-end slot the
+   *  renderer reserves whenever ANY row carries one — the caller applies
+   *  the settings gates, so a disabled seal never arrives here. */
+  stamp?: CareerStamp | null;
   stats: ShotStat[];
 }
 
@@ -100,6 +109,19 @@ const COL_GAP = 16;
  *  read as one merged number in the pasted image — the columns need this
  *  much air before the eye separates them. */
 const STAT_GAP = 36;
+/** Career-seal column: a fixed slot after the last stat cell, reserved
+ *  whenever any row carries a stamp so the stat columns stay put. */
+const STAMP_SIZE = 26;
+const STAMP_SLOT = STAMP_SIZE + 4;
+/** Cinnabar seal ink — RatingStamp's frame color (RatingStamp.scss). */
+const STAMP_INK = "202 44 38";
+/** The seal glyph bitmaps (same assets the RatingStamp SVG embeds). */
+const STAMP_URL: Record<CareerStamp, string> = {
+  miracle: stampMiracle,
+  ape: stampApe,
+  maggot: stampMaggot,
+  rat: stampRat,
+};
 const PAD = 28;
 const ROW_H = 44;
 const HEAD_H = 66;
@@ -320,7 +342,10 @@ export async function renderPostBattleShot(
   // same origins anchor the column-title aggregate values.
   ctx.font = font(13.5, 600, true);
   const origins = statOrigins(ctx, cols);
-  const statsW = (origins[origins.length - 1] ?? 0) + 24;
+  // The seal column rides the right edge: reserve its slot only when some
+  // row actually carries a stamp, so seal-less shots keep today's metrics.
+  const hasStamps = cols.some((c) => c.rows.some((r) => r.stamp));
+  const statsW = (origins[origins.length - 1] ?? 0) + 24 + (hasStamps ? STAMP_SLOT : 0);
 
   // Column titles (+ aggregate) and rows. The footer's logo loads alongside
   // the class icons so the paint never waits twice on the network.
@@ -331,6 +356,21 @@ export async function renderPostBattleShot(
     loadImage(LOGO_URL),
   ]);
   const logo = icons.pop() ?? null;
+  // Seal faces load in a second wave (bundled same-origin PNGs, so this
+  // settles near-instantly and only when seals are on at all).
+  const stampImages = new Map<CareerStamp, HTMLImageElement | null>();
+  if (hasStamps) {
+    const kinds = [
+      ...new Set(
+        cols
+          .flatMap((c) => c.rows.map((r) => r.stamp))
+          .filter((k): k is CareerStamp => !!k),
+      ),
+    ];
+    await Promise.all(
+      kinds.map(async (k) => stampImages.set(k, await loadImage(STAMP_URL[k]))),
+    );
+  }
   let iconIdx = 0;
   for (let ci = 0; ci < cols.length; ci++) {
     const col = cols[ci];
@@ -407,6 +447,30 @@ export async function renderPostBattleShot(
         ctx.fillStyle = s.color ?? rgba(palette.text, 0.85);
         ctx.fillText(s.text, x, cy);
       });
+      // The career seal: RatingStamp's face redrawn in canvas — double
+      // rounded frame in cinnabar ink around the glyph bitmap, tilted by
+      // the shared −9° press (mini variant: no moiré weave at this size).
+      if (row.stamp) {
+        ctx.save();
+        ctx.translate(cx + COL_WIDTH - 14 - STAMP_SIZE / 2, cy);
+        ctx.rotate(-Math.PI / 20);
+        ctx.strokeStyle = rgba(STAMP_INK, 0.9);
+        const s = STAMP_SIZE / 100;
+        ctx.lineWidth = 6 * s;
+        ctx.beginPath();
+        ctx.roundRect(-45 * s, -45 * s, 90 * s, 90 * s, 7 * s);
+        ctx.stroke();
+        ctx.lineWidth = 2 * s;
+        ctx.beginPath();
+        ctx.roundRect(-35.5 * s, -35.5 * s, 71 * s, 71 * s, 3 * s);
+        ctx.stroke();
+        const img = stampImages.get(row.stamp);
+        if (img) {
+          ctx.globalAlpha *= 0.92;
+          ctx.drawImage(img, -33 * s, -33 * s, 66 * s, 66 * s);
+        }
+        ctx.restore();
+      }
       ctx.globalAlpha = 1;
       y += ROW_H + 6;
     }

@@ -103,10 +103,14 @@ describe("careerStamp", () => {
     expect(careerStamp(749, null, null)).toBe("ape");
   });
 
-  it("stamps 过街老鼠 on hidden profiles regardless of anything else", () => {
+  it("stamps 过街老鼠 on hidden profiles unless 神了 qualifies", () => {
     expect(careerStamp(null, null, null, true)).toBe("rat");
-    expect(careerStamp(2600, 3000, 60, true)).toBe("rat");
     expect(careerStamp(400, 30, 39.9, true)).toBe("rat");
+    // One stamp, priority: a sustained purple career outranks 过街老鼠 —
+    // the PR evidence stands on its own even behind a hidden profile.
+    expect(careerStamp(2600, 3000, 60, true)).toBe("miracle");
+    // Short purple + hidden: 神了 doesn't qualify, the hidden verdict applies.
+    expect(careerStamp(2300, 200, 55, true)).toBe("rat");
   });
 
   it("excuses a hidden profile whose clan beats the winrate gate", () => {

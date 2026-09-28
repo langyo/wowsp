@@ -94,15 +94,21 @@ export type StampKind = CareerStamp | CompositionStamp;
  *  mark when the winrate is also sub-40% (a red-tier red-WR career is a
  *  different beast); a sustained purple-tier+ career earns 神了 — gated on
  *  500+ battles, ApeRadar's unicum battle-count threshold ("长期" 紫表, not a
- *  short hot streak). A hidden profile earns the 过街老鼠 mark no matter
- *  what — there are no stats to grade, and hiding is the tell — unless the
- *  clan gate excuses it: when `clanWinrate` carries the player's clan's
- *  aggregate winrate and it beats RAT_CLAN_WINRATE_MAX, the clan is strong
+ *  short hot streak). A hidden profile earns the 过街老鼠 mark — there are
+ *  no stats to grade, and hiding is the tell — except when 神了 qualifies
+ *  (checked first, see below) or the clan gate excuses it: when `clanWinrate`
+ *  carries the player's clan's aggregate winrate and it beats
+ *  RAT_CLAN_WINRATE_MAX, the clan is strong
  *  enough that the hidden profile is not read as hiding a bad career and no
  *  stamp is earned. Fail-open: a missing (`undefined`) or failed (`null`)
  *  clan verdict never suppresses the stamp — only a RESOLVED strong-clan
  *  verdict does. An unknown winrate falls back to 海猴. Null when no stamp
- *  applies. */
+ *  applies.
+ *
+ *  Exactly ONE stamp comes back — priority: 神了 outranks everything (a
+ *  qualifying purple career is the loudest verdict, even over 过街老鼠 on a
+ *  hidden profile); when it doesn't qualify, the hidden / red-tier verdicts
+ *  apply in their own mutually-exclusive PR bands. */
 export function careerStamp(
   pr: number | null | undefined,
   battles: number | null | undefined,
@@ -110,10 +116,10 @@ export function careerStamp(
   hidden = false,
   clanWinrate?: number | null,
 ): CareerStamp | null {
+  if (pr != null && pr >= 2100 && battles != null && battles >= 500) return "miracle";
   if (hidden && clanWinrate != null && clanWinrate > RAT_CLAN_WINRATE_MAX) return null;
   if (hidden) return "rat";
   if (pr == null) return null;
-  if (pr >= 2100) return battles != null && battles >= 500 ? "miracle" : null;
   if (pr < 750) return winrate != null && winrate < 40 ? "maggot" : "ape";
   return null;
 }

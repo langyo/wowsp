@@ -256,7 +256,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Career seal pressed onto the card's right edge (live panel look). */
+/* Career seal pressed onto the card's right edge (live panel look). The
+   slot itself is a reserved 26px column between the XP cell and the mask
+   eye — present whenever seals are enabled at all, so the eyes align
+   across rows whether or not a given player earned a stamp. */
+.replay-view__postbattle-cell-stampslot {
+  flex: 0 0 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+}
 .replay-view__postbattle-cell-stamp {
   flex: 0 0 auto;
 }
