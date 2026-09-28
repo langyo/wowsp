@@ -492,7 +492,7 @@ class Probe(object):
                 stamp = str(int(time.time() * 1000))
                 try:
                     stream = open(ROSTER_RAW_FILE, 'w')
-                    stream.write('{"t":' + stamp + ',' + body + '}\n')
+                    stream.write('{"t":' + stamp + ',' + body[1:] + '\n')
                     stream.close()
                 except Exception as exc:
                     self.soft('roster_raw write failed=' + str(exc)[:120])
@@ -505,7 +505,9 @@ class Probe(object):
                         self.discover(record)
                     except Exception as exc:
                         log('discovery crashed=' + str(exc)[:120])
-                self.journal.append('{"t":' + stamp + ',' + body + '}')
+                # body starts with '{'; splice it open so the line is one
+                # flat object: {"t":...,"players":...,"states":...}
+                self.journal.append('{"t":' + stamp + ',' + body[1:])
                 self.journal_flush()
         except Exception as exc:
             self.soft('roster_raw failed=' + str(exc)[:120])
