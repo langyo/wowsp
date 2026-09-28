@@ -68,6 +68,22 @@ type RosterStatsCache = HashMap<(String, String), Option<PlayerStats>>;
 static ROSTER_STATS_CACHE: std::sync::LazyLock<std::sync::Mutex<RosterStatsCache>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
+/// Cached answer for one roster name — `Some(None)` is a cached MISS, an
+/// absent entry still needs resolving. Infallible on a poisoned lock (the
+/// critical sections are trivial clones, and degrading to a cache miss
+/// just re-fetches). Shared by the WG and CN batch arms.
+pub(crate) fn roster_cache_get(realm: &str, name: &str) -> Option<Option<PlayerStats>> {
+    let cache = ROSTER_STATS_CACHE.lock().ok()?;
+    cache.get(&(realm.to_string(), name.to_string())).cloned()
+}
+
+/// Store one roster name's PRE-algo answer. See [`roster_cache_get`].
+pub(crate) fn roster_cache_insert(realm: &str, name: &str, stats: Option<PlayerStats>) {
+    if let Ok(mut cache) = ROSTER_STATS_CACHE.lock() {
+        cache.insert((realm.to_string(), name.to_string()), stats);
+    }
+}
+
 /// Minimum length for a substring autocomplete query (WG rejects shorter
 /// searches). Numeric UID queries bypass this gate.
 const MIN_SEARCH_CHARS: usize = 3;
@@ -259,21 +275,16 @@ pub async fn lookup_players_stats_batch(
     //    keeps matching the input order.
     let mut answers: Vec<Option<PlayerStats>> = vec![None; names.len()];
     let mut misses: Vec<(usize, String)> = Vec::new();
-    {
-        let cache = ROSTER_STATS_CACHE
-            .lock()
-            .map_err(|e| format!("roster stats cache lock: {e}"))?;
-        for (slot, name) in names.iter().enumerate() {
-            match cache.get(&(realm.clone(), name.clone())) {
-                Some(cached) => {
-                    let mut stats = cached.clone();
-                    if let Some(stats) = stats.as_mut() {
-                        apply_batch_pr_algo(stats, algo);
-                    }
-                    answers[slot] = stats;
-                },
-                None => misses.push((slot, name.clone())),
-            }
+    for (slot, name) in names.iter().enumerate() {
+        match roster_cache_get(&realm, name) {
+            Some(cached) => {
+                let mut stats = cached;
+                if let Some(stats) = stats.as_mut() {
+                    apply_batch_pr_algo(stats, algo);
+                }
+                answers[slot] = stats;
+            },
+            None => misses.push((slot, name.clone())),
         }
     }
     if misses.is_empty() {
@@ -405,12 +416,7 @@ pub async fn lookup_players_stats_batch(
         let stats = picked.map(|entry| {
             player_stats_from_info(entry, realm.clone(), info_data.as_ref(), &clan_map)
         });
-        {
-            let mut cache = ROSTER_STATS_CACHE
-                .lock()
-                .map_err(|e| format!("roster stats cache lock: {e}"))?;
-            cache.insert((realm.clone(), name.clone()), stats.clone());
-        }
+        roster_cache_insert(&realm, name, stats.clone());
         if let Some(mut stats) = stats {
             apply_batch_pr_algo(&mut stats, algo);
             answers[misses[slot].0] = Some(stats);

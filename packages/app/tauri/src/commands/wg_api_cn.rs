@@ -103,6 +103,9 @@ fn vortex_status(v: &serde_json::Value) -> Option<&str> {
 ///   statistics.seasons → same per-mode mapping (WG seasons API shape:
 ///                      seasons.<id>.<shipType>.<mode>) for `ranked`
 ///   statistics.rank_info → passed through (fields already match WG)
+///   statistics.pve   → co-op fallback: an account with NO pvp battles at
+///                      all maps its `pve` node (same vortex field shape)
+///                      into the pvp slot, tagged `coop_fallback: true`
 ///
 /// A hidden profile (`hidden_profile: true`) normalizes to
 /// `statistics: null`; a PRESENT statistics node without `pvp` keeps the
@@ -111,6 +114,17 @@ fn vortex_status(v: &serde_json::Value) -> Option<&str> {
 /// verified against live 360-server accounts). The distinction matters
 /// downstream: `player_stats_of` marks only the former hidden, so a
 /// zero-battle account renders "no data" instead of the hidden dot.
+///
+/// The pve fallback exists because on the CN cluster that case is the
+/// COMMON co-op player, not an edge: co-op mains (and every fresh 360
+/// account, which starts in 联合作战) carry `pvp: {}` with their whole
+/// record under `pve`, and without the fallback every roster they appear
+/// on — i.e. every co-op battle — reads them as permanent "no data". It
+/// is strictly a fallback: any pvp battles keep PvP numbers, so randoms
+/// players' stats are untouched. The `coop_fallback` marker lets
+/// `player_stats_of` withhold the career PR, which the extract's
+/// winrate-fallback path would otherwise distill out of the inflated
+/// co-op winrate.
 fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
     let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let hidden = node
@@ -132,8 +146,21 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
     let stats_json = if hidden {
         serde_json::Value::Null
     } else {
+        let mut coop_fallback = false;
+        let pvp = match normalize_pvp(statistics.and_then(|s| s.get("pvp"))) {
+            serde_json::Value::Null => {
+                let pve = normalize_pvp(statistics.and_then(|s| s.get("pve")));
+                if pve.is_null() {
+                    serde_json::Value::Null
+                } else {
+                    coop_fallback = true;
+                    pve
+                }
+            },
+            pvp => pvp,
+        };
         serde_json::json!({
-            "pvp": normalize_pvp(statistics.and_then(|s| s.get("pvp"))),
+            "pvp": pvp,
             "pvp_solo": normalize_div(statistics.and_then(|s| s.get("pvp_solo"))),
             "pvp_div2": normalize_div(statistics.and_then(|s| s.get("pvp_div2"))),
             "pvp_div3": normalize_div(statistics.and_then(|s| s.get("pvp_div3"))),
@@ -142,6 +169,7 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
             // through as-is: its rank/rank_best fields already match).
             "rank_info": rank_info.cloned().unwrap_or(serde_json::Value::Null),
             "seasons": normalize_seasons(seasons),
+            "coop_fallback": coop_fallback,
         })
     };
     serde_json::json!({
@@ -398,6 +426,15 @@ fn player_stats_of(
     // keeps `pvp: null`, which renders as "no data" — the WG realms' exact
     // semantics for zero-battle accounts.
     let hidden = stats_node.is_none_or(|s| s.is_null());
+    // See `normalize_player`: the pve fallback is tagged, and a co-op-only
+    // record must not breed a PR — the extract's career fallback distills
+    // one out of the overall winrate, and a co-op winrate (routinely 90%+)
+    // inflates it into fantasy territory. PR is a PvP metric; a pve-only
+    // account stays without one.
+    let coop_fallback = stats_node
+        .and_then(|s| s.get("coop_fallback"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     PlayerStats {
         account_id: entry.account_id,
         name: entry.nickname,
@@ -412,7 +449,7 @@ fn player_stats_of(
         kd_ratio: p.kd_ratio,
         survival_rate: p.survival_rate,
         hit_rate: p.hit_rate,
-        pr: p.pr,
+        pr: if coop_fallback { None } else { p.pr },
         ships_played: p.ships_played,
         leveling_tier: node
             .get("leveling_tier")
@@ -475,10 +512,13 @@ pub(crate) async fn lookup_player_stats(
     Ok(stats)
 }
 
-/// CN arm of `wg_api::lookup_players_stats_batch`. One full lookup per name
-/// with bounded parallelism (the vortex service has no multi-id batch
-/// endpoints). Any transport failure fails the whole batch — same contract
-/// as the WG path, so the frontend's retry backoff kicks in instead of
+/// CN arm of `wg_api::lookup_players_stats_batch`. The shared session cache
+/// answers the hits on the spot; each miss is one full lookup (search +
+/// info + clan round-trips — the vortex service has no multi-id batch
+/// endpoints) with bounded parallelism, so a roster that re-fires for the
+/// same names every battle window costs one resolution, not one per
+/// window. Any transport failure fails the whole batch — same contract as
+/// the WG path, so the frontend's retry backoff kicks in instead of
 /// caching "no data". Under the expected algorithm every entry answers
 /// PR=None for the same request-budget reason as the WG arm (see
 /// `wg_api::apply_batch_pr_algo`).
@@ -486,10 +526,28 @@ pub(crate) async fn lookup_players_stats_batch(
     names: Vec<String>,
     algo: PrAlgo,
 ) -> Result<Vec<Option<PlayerStats>>, String> {
+    let mut answers: Vec<Option<PlayerStats>> = vec![None; names.len()];
+    let mut misses: Vec<(usize, String)> = Vec::new();
+    for (slot, name) in names.iter().enumerate() {
+        match super::wg_api::roster_cache_get("cn", name) {
+            Some(cached) => {
+                let mut stats = cached;
+                if let Some(stats) = stats.as_mut() {
+                    super::wg_api::apply_batch_pr_algo(stats, algo);
+                }
+                answers[slot] = stats;
+            },
+            None => misses.push((slot, name.clone())),
+        }
+    }
+    if misses.is_empty() {
+        return Ok(answers);
+    }
     let client = vortex_client()?;
+    let miss_names: Vec<String> = misses.iter().map(|(_, n)| n.clone()).collect();
     let results: Vec<Result<Option<PlayerStats>, LookupError>> = {
         let client_ref = &client;
-        stream::iter(names)
+        stream::iter(miss_names)
             .map(|name| async move { lookup_one(client_ref, &name).await })
             .buffered(BATCH_CONCURRENCY)
             .collect()
@@ -501,15 +559,15 @@ pub(crate) async fn lookup_players_stats_batch(
         // historical message.
         return Err(e.to_string());
     }
-    Ok(results
-        .into_iter()
-        .map(|r| {
-            r.unwrap_or(None).map(|mut stats| {
-                super::wg_api::apply_batch_pr_algo(&mut stats, algo);
-                stats
-            })
-        })
-        .collect())
+    for (i, (slot, name)) in misses.into_iter().enumerate() {
+        let stats = results[i].clone().unwrap_or(None);
+        super::wg_api::roster_cache_insert("cn", &name, stats.clone());
+        if let Some(mut stats) = stats {
+            super::wg_api::apply_batch_pr_algo(&mut stats, algo);
+            answers[slot] = Some(stats);
+        }
+    }
+    Ok(answers)
 }
 
 /// CN arm of `wg_api::suggest_players`: prefix autocomplete over the vortex
@@ -1036,13 +1094,28 @@ mod tests {
     }
 
     /// Same shape as the fresh 360-server accounts: statistics present,
-    /// `pvp` an empty object (pve-only player) — also unhidden "no data".
+    /// `pvp` an empty object, the whole record under `pve`. The pve
+    /// fallback maps the co-op record into the pvp slot — the roster shows
+    /// the player's real (co-op) numbers instead of permanent "no data" —
+    /// while the PR stays None (a PvP metric that the inflated co-op
+    /// winrate would turn into fantasy).
     #[test]
-    fn player_stats_of_zero_pvp_account_is_no_data_not_hidden() {
+    fn player_stats_of_coop_only_account_falls_back_to_pve() {
         let node = normalize_player(&serde_json::json!({
             "name": "用户_31078422399",
-            "statistics": { "pvp": {}, "pve": { "battles_count": 50, "wins": 25 } }
+            "statistics": {
+                "pvp": {},
+                "pve": {
+                    "battles_count": 50, "wins": 25, "damage_dealt": 400000,
+                    "exp": 200000, "survived": 10, "frags": 30,
+                    "shots_by_main": 1000, "hits_by_main": 300,
+                },
+            }
         }));
+        assert_eq!(
+            node.get("statistics").and_then(|s| s.get("coop_fallback")),
+            Some(&serde_json::Value::Bool(true))
+        );
         let stats = player_stats_of(
             CnAccountRef {
                 account_id: 7068814419,
@@ -1053,8 +1126,48 @@ mod tests {
             false,
         );
         assert!(!stats.hidden);
-        assert_eq!(stats.battles, None);
-        assert_eq!(stats.winrate, None);
+        assert_eq!(stats.battles, Some(50));
+        assert_eq!(stats.winrate, Some(50.0));
+        assert_eq!(stats.avg_damage, Some(8000.0));
+        assert_eq!(stats.hit_rate, Some(30.0));
+        assert_eq!(stats.pr, None);
+    }
+
+    /// An account with pvp battles keeps its PvP numbers — the fallback is
+    /// strictly a fallback and never mixes modes.
+    #[test]
+    fn normalize_player_with_pvp_battles_skips_the_pve_fallback() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "veteran",
+            "statistics": {
+                "pvp": { "battles_count": 5000, "wins": 2500 },
+                "pve": { "battles_count": 50, "wins": 49 },
+            }
+        }));
+        assert_eq!(
+            node.get("statistics").and_then(|s| s.get("coop_fallback")),
+            Some(&serde_json::Value::Bool(false))
+        );
+        let p = PvpStats::extract(node.get("statistics"));
+        assert_eq!(p.battles, Some(5000));
+        assert_eq!(p.winrate, Some(50.0));
+    }
+
+    /// No pvp AND no pve record: still "no data" (nothing was invented),
+    /// unhidden like any other zero-battle account.
+    #[test]
+    fn normalize_player_without_any_record_stays_no_data() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "saber",
+            "statistics": { "pvp": {}, "pve": {} }
+        }));
+        assert_eq!(
+            node.get("statistics").and_then(|s| s.get("coop_fallback")),
+            Some(&serde_json::Value::Bool(false))
+        );
+        let p = PvpStats::extract(node.get("statistics"));
+        assert_eq!(p.battles, None);
+        assert_eq!(p.winrate, None);
     }
 
     #[test]
