@@ -27,7 +27,7 @@ exception escape a callback: the game keeps running but the mod dies.
 """
 API_VERSION = 'API_v1.0'
 
-PROBE_VERSION = '0.2.2'
+PROBE_VERSION = '0.2.3'
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
@@ -70,6 +70,7 @@ class Probe(object):
         self.key_log_count = 0
         self.v_down = False
         self.last_raw = ''
+        self.discovered = False
         self.journal = []
         try:
             stream = open(ROSTER_JOURNAL_FILE, 'r')
@@ -150,6 +151,7 @@ class Probe(object):
         self.details_reset()
         self.clear_players()
         self.last_raw = ''
+        self.discovered = False
         log('battle cleared')
 
     def details_reset(self):
@@ -222,7 +224,7 @@ class Probe(object):
         """Full JSON encode when possible (keeps every field), else the
         guessed-field projection for records the encoder cannot handle."""
         try:
-            return str(utils.jsonEncode(record))[:300]
+            return str(utils.jsonEncode(record))[:1200]
         except Exception:
             return dict((k, v) for k, v in ((k, self.read_field(record, k))
                                             for k in GUESS_FIELDS) if v is not None)
@@ -262,8 +264,10 @@ class Probe(object):
                     stream.close()
                 except Exception as exc:
                     self.soft('roster_raw write failed=' + str(exc)[:120])
-                if first and records:
-                    # Schema documentation first: nothing below may kill it.
+                if records and not self.discovered:
+                    # First POPULATED snapshot of this battle: document the
+                    # schema (the port-empty write must not consume this).
+                    self.discovered = True
                     record = records[list(records)[0]]
                     try:
                         self.discover(record)
