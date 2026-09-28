@@ -30,6 +30,7 @@ import {
 } from "vue";
 import { useRouter } from "vue-router";
 import { Camera, Eye, EyeOff } from "@lucide/vue";
+import { useToast } from "@celestia-island/hikari";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
@@ -57,6 +58,15 @@ import mapNamesRaw from "@/data/map_names.json";
 import "./LiveBattlePanel.scss";
 
 const MAP_NAMES = mapNamesRaw as Record<string, Record<string, string>>;
+
+/** Stable refusal codes from `start_manual_locate` → the replay.live.*
+ *  copy toasted next to the button shake. Module-level: the mapping is
+ *  pure data, no per-instance state. */
+const MANUAL_REFUSAL_KEYS: Record<string, string> = {
+  "no-battle": "replay.live.manualNoBattle",
+  "no-game": "replay.live.manualNoGame",
+  "no-frame": "replay.live.manualNoFrame",
+};
 
 function displayMapName(spaceId?: string | null, lang?: string): string {
   if (!spaceId) return t("replay.map.unknown");
@@ -107,6 +117,7 @@ export default defineComponent({
     const router = useRouter();
     const prefs = useStatsPrefsStore();
     const manualLocate = useManualLocateStore();
+    const toast = useToast();
     const { dataLanguage } = useLanguage();
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
@@ -235,9 +246,12 @@ export default defineComponent({
      *  or (when a manual anchor is already in force) clears it back to the
      *  automatic detection flow. */
     const manualBusy = ref(false);
-    /** Short shake when the backend refuses to open the picker (no fresh
-     *  battle roster / no game window / no usable cached frame — hold Tab
-     *  in game) — visible feedback, never silent. */
+    /** Short shake when the backend refuses to open the picker — visible
+     *  feedback, never silent. The refusal ALSO toasts the localized reason:
+     *  stable gate codes (see MANUAL_REFUSAL_KEYS) map onto replay.live.*,
+     *  anything else surfaces raw so nothing is ever swallowed. NOTE: the
+     *  transport wraps invoke rejections into an `RpcError` (message = the
+     *  backend string), so the code must be read off `.message`. */
     const manualShake = ref(false);
     let shakeTimer: ReturnType<typeof setTimeout> | null = null;
     async function onManualButton() {
@@ -251,6 +265,9 @@ export default defineComponent({
           manualLocate.openPicker();
         }
       } catch (err) {
+        const code =
+          typeof err === "string" ? err : ((err as Error | null)?.message ?? String(err));
+        toast.warning(MANUAL_REFUSAL_KEYS[code] ? t(MANUAL_REFUSAL_KEYS[code]) : code);
         console.warn("[live-battle] manual locate refused:", err);
         manualShake.value = true;
         if (shakeTimer) clearTimeout(shakeTimer);

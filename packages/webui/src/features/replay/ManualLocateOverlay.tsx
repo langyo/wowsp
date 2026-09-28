@@ -1,34 +1,41 @@
 /**
- * Manual-locate picker layer — a full-cover sub-window INSIDE the main
- * window (rendered by the app shell; no dedicated Tauri window exists
- * anymore). Opened by the live-battle panel's "manual locate" button after
- * the backend gates pass (`startManualLocate`); the state itself lives in
- * the manualLocate store so a mid-pick roster update cannot unmount the
- * picker out from under the user.
+ * Manual-locate picker — an in-app SUB-WINDOW of the main window, rendered
+ * as a plain HkModal (the same window context as Settings), NOT a dedicated
+ * Tauri window and NOT a full-screen takeover. Opened by the live-battle
+ * panel's "manual locate" button after the backend gates pass
+ * (`startManualLocate`); the open state lives in the manualLocate store so
+ * a mid-pick roster update cannot unmount the picker out from under the
+ * user.
  *
- * The background is the LAST frame the Tab detector itself analyzed (the
- * Rust capture cache, downscaled for transport). The detector's knowledge
- * of that frame is overlaid as GUIDES — the table rectangle, one
- * horizontal line per row, the team seam — and the drag box's edges snap
- * to them (toggleable from the toolbar; hiding the guides disables the
- * snapping). A suggested box (the detected table) is pre-drawn so a good
- * detection is one Enter away.
+ * The background is the LAST frame captured while the player held Tab (the
+ * roster moment they actually saw — the Rust cache only stores Tab-held
+ * captures), downscaled for transport. The detector's knowledge of that
+ * frame is overlaid as GUIDES — the table rectangle, one horizontal line
+ * per row, the team seam — and the drag box's edges snap to them
+ * (toggleable; hiding the guides disables the snapping). A suggested box
+ * (the detected table) is pre-drawn so a good detection is one Enter away.
  *
- * The mapping is display-relative: a single factor `k` (CSS px per
- * physical px) is derived from the canvas element's actual on-screen box,
- * so the app window's own DPI NEVER enters the math — the window may sit
- * on any monitor regardless of the game monitor's scale factor. The
- * submitted box converts back through the same `k` into PHYSICAL px
- * relative to the game window origin (what `set_manual_roster_rect`
- * validates). Closing paths: Confirm (submit Ok), Cancel / Esc
- * (`cancelManualLocate` clears the backend flag), and the backend's
- * `wowsp://manual-locate-close` force-close push (game window gone /
- * overlay mode ended).
+ * Coordinates under zoom/DPI: a single factor `k` (CSS px per physical px)
+ * is derived from the canvas element's actual on-screen box, so the app
+ * window's own devicePixelRatio never enters the math — the window may sit
+ * on any monitor regardless of the game monitor's scale factor. The shell's
+ * MANUAL interface-scale preference additionally applies root CSS `zoom`,
+ * which would otherwise double-scale the canvas (the measured box inflates
+ * by Z, the canvas lays out Z× the stage and renders Z²) — the surface
+ * therefore NEUTRALIZES zoom (`neutralizeZoom`): the subtree runs at
+ * effective zoom 1 and every px inside is a true CSS px again. The
+ * submitted box converts back through `k` into PHYSICAL px relative to the
+ * game window origin (what `set_manual_roster_rect` validates).
  *
- * Interaction contract (same as the picker window this layer replaces):
+ * Closing paths: Confirm (submit Ok), Cancel (footer / Esc — HkModal's own
+ * Esc/X/mask close included, routed through `cancelPick` so the backend's
+ * open flag always clears), and the backend's `wowsp://manual-locate-close`
+ * force-close push (game window gone / overlay mode ended).
+ *
+ * Interaction contract:
  *   - press + drag on the frame → draw the selection (dashed border, light
  *     wash, live W×H readout in physical game px);
- *   - release → the toolbar's Confirm arms; a box below the 32-physical-px
+ *   - release → the footer's Confirm arms; a box below the 32-physical-px
  *     minimum is a mis-click (reset + "too small" note);
  *   - Enter = confirm, Esc = cancel (always — Esc must never get stuck).
  */
@@ -42,7 +49,7 @@ import {
   watch,
 } from "vue";
 import { Teleport } from "vue";
-import { HkSpinner } from "@celestia-island/hikari";
+import { HkModal, HkSpinner } from "@celestia-island/hikari";
 
 import {
   api,
@@ -50,7 +57,9 @@ import {
   type Rect,
 } from "@/api";
 import { t } from "@/i18n";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { useManualLocateStore } from "@/stores/manualLocate";
+import { nextZoomFix } from "./manualLocateZoom";
 import "./ManualLocateOverlay.scss";
 
 /** One selection box, PHYSICAL game px (the layer converts through its own
@@ -97,18 +106,23 @@ export default defineComponent({
     /** Drag origin in canvas CSS px, null while no drag is in progress. */
     let dragStart: { x: number; y: number } | null = null;
     /** CSS px per physical px — derived from the canvas's actual box (the
-     *  app window's DPI never enters the math). */
+     *  app window's DPI — and, thanks to `neutralizeZoom`, the shell's
+     *  interface-scale zoom — never enter the math). */
     const cssPerPhys = ref(1);
     const guidesOn = ref(true);
     /** Guards a double confirm (double Enter / button + Enter race). */
     const submitting = ref(false);
-    /** Toolbar note slot: a too-small flash or a submit error, in place of
+    /** Metaline note slot: a too-small flash or a submit error, in place of
      *  the default hint. Cleared by the next drag. */
     const note = ref<string | null>(null);
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const rootEl = ref<HTMLElement | null>(null);
     const stageEl = ref<HTMLElement | null>(null);
     const canvasEl = ref<HTMLElement | null>(null);
+    /** Compensating zoom applied on the picker surface so the subtree runs
+     *  at effective zoom 1 — see `neutralizeZoom`. */
+    const zoomFix = ref(1);
 
     // ── guides (physical px snap targets + drawn lines) ──────────────────
     const tableRect = computed<Rect | null>(() => ctx.value?.guides?.tableRect ?? null);
@@ -170,6 +184,21 @@ export default defineComponent({
       });
     }
 
+    /** Bring the surface back to effective zoom 1. The shell's manual DPI
+     *  scale applies root CSS `zoom`; measured off THIS root's visual-vs-
+     *  layout width ratio (works for whatever zoom the shell applies, and
+     *  re-converges after mid-pick scale changes — the pure step function
+     *  `nextZoomFix` owns the math AND the convergence contract, including
+     *  the no-oscillation property under ResizeObserver feedback). */
+    function neutralizeZoom() {
+      const el = rootEl.value;
+      if (!el) return;
+      const visual = el.getBoundingClientRect().width;
+      const layout = el.offsetWidth;
+      if (layout < 1 || visual < 1) return;
+      zoomFix.value = nextZoomFix(zoomFix.value, visual / layout);
+    }
+
     // ── layout: one factor maps physical px → CSS px, derived from the
     //    canvas's actual box; a relayout CANCELS a drag in progress (its
     //    origin lives in the old k's CSS space) — the completed box redraws
@@ -183,6 +212,13 @@ export default defineComponent({
         Math.max(r.width, 1) / physW.value,
         Math.max(r.height, 1) / physH.value,
       );
+    }
+    /** Zoom-normalize FIRST (the fix lands on the next render), then measure
+     *  k in the normalized space. */
+    async function relayout() {
+      neutralizeZoom();
+      await nextTick();
+      layout();
     }
     const canvasStyle = computed(() => ({
       width: `${Math.max(1, Math.floor(physW.value * cssPerPhys.value))}px`,
@@ -238,7 +274,7 @@ export default defineComponent({
         : t("replay.live.manualShotAge", { n: minutes });
     });
 
-    // ── payload load (open + the layer's Retry button) ───────────────────
+    // ── payload load (open + the picker's Retry button) ───────────────────
     async function load() {
       loading.value = true;
       ctx.value = null;
@@ -262,19 +298,28 @@ export default defineComponent({
           box.value = { x: table.x, y: table.y, w: table.width, h: table.height };
         }
         await nextTick();
-        layout();
+        await relayout();
         observeStage();
       }
     }
 
-    // Relayout on stage resize (maximize / restore / monitor moves included):
-    // the factor follows the canvas's actual box, nothing else.
+    // Relayout on stage resize (maximize / restore / monitor or interface-
+    // scale changes included): the factor follows the canvas's actual box,
+    // nothing else.
     let ro: ResizeObserver | null = null;
     function observeStage() {
-      if (!ro) ro = new ResizeObserver(() => layout());
+      if (!ro) ro = new ResizeObserver(() => void relayout());
       ro.disconnect();
       if (stageEl.value) ro.observe(stageEl.value);
     }
+    // A root-zoom change does NOT necessarily resize the stage in layout px
+    // (a max-width-driven modal keeps its layout box), so the ResizeObserver
+    // alone can miss it — watch the applied interface scale directly and
+    // re-neutralize + re-measure when it moves mid-pick.
+    const dpiScale = useAppliedDpiScale();
+    watch(dpiScale, () => {
+      if (manual.open) void relayout();
+    });
 
     // ── confirm / cancel ──────────────────────────────────────────────────
     async function confirmSelection() {
@@ -294,12 +339,12 @@ export default defineComponent({
           Math.round(b.h),
         );
         // Success: the backend armed the anchor and cleared its open flag —
-        // drop the layer. `submitting` stays true until the close reset: no
+        // drop the picker. `submitting` stays true until the close reset: no
         // further input is accepted meanwhile.
         manual.closePicker();
       } catch (err) {
         // Validation failed (too small / no battle / game gone). Keep the
-        // layer open so the user can retry or hit Esc — surface the reason.
+        // picker open so the user can retry or hit Esc — surface the reason.
         submitting.value = false;
         note.value = err instanceof Error ? err.message : String(err);
         console.warn("[manual-locate] submit refused:", err);
@@ -311,6 +356,14 @@ export default defineComponent({
       // means the backend never armed it (defensive anyway).
       void api.cancelManualLocate().catch(() => {});
       manual.closePicker();
+    }
+
+    /** HkModal-internal closes (X button / mask / its own Esc handling):
+     *  the picker must treat them all as a cancel so the backend flag
+     *  clears. Programmatic closes (confirm / force-close) flip the store
+     *  directly and never emit this. */
+    function onModalUpdate(v: boolean) {
+      if (!v) cancelPick();
     }
 
     // ── pointer flow (canvas-local CSS px; drag surface = the frame only) ──
@@ -362,13 +415,20 @@ export default defineComponent({
       dragStart = null;
     }
 
-    // ── keyboard: Esc must ALWAYS be an exit — mid-drag included ──────────
+    // ── keyboard: Esc must ALWAYS be an exit — mid-drag included (HkModal's
+    //    own Esc path lands here too; both are idempotent) — and Enter
+    //    confirms an armed box ──
     function onKey(e: KeyboardEvent) {
       if (!manual.open) return;
       if (e.key === "Escape") {
         e.preventDefault();
         cancelPick();
       } else if (e.key === "Enter" && box.value) {
+        // Never hijack Enter on a focused control (HkModal focuses its close
+        // button first; the user may be on a footer button) — only the
+        // "canvas intent" Enter confirms.
+        const target = e.target as HTMLElement | null;
+        if (target?.closest("button, a, input, select, textarea")) return;
         e.preventDefault();
         void confirmSelection();
       }
@@ -379,9 +439,9 @@ export default defineComponent({
       () => manual.open,
       (open) => {
         if (open) {
-          // The click that opened the layer leaves its button focused; blur
+          // The click that opened the picker leaves its button focused; blur
           // it so Enter/Space cannot fall through and re-trigger the panel
-          // underneath the full-cover layer.
+          // underneath the modal.
           (document.activeElement as HTMLElement | null)?.blur?.();
           now.value = Date.now();
           ageTimer = setInterval(() => (now.value = Date.now()), 30000);
@@ -402,6 +462,7 @@ export default defineComponent({
           note.value = null;
           submitting.value = false;
           guidesOn.value = true;
+          zoomFix.value = 1;
         }
       },
     );
@@ -425,102 +486,105 @@ export default defineComponent({
 
     return () => (
       <Teleport to="body">
-        {manual.open && (
-          <div class="manual-locate">
-            {loading.value ? (
-              <div class="ml-loading">
-                <HkSpinner size={28} tone="current" />
+        <HkModal
+          modelValue={manual.open}
+          onUpdate:modelValue={onModalUpdate}
+          title={t("replay.live.manualLocate")}
+          width="min(72rem, 94vw)"
+          footerActions={[
+            {
+              label: t("replay.live.manualCancel"),
+              variant: "secondary",
+              onClick: cancelPick,
+            },
+            {
+              label: t("replay.live.manualConfirm"),
+              variant: "primary",
+              disabled: !box.value || submitting.value,
+              loading: submitting.value,
+              onClick: () => void confirmSelection(),
+            },
+          ]}
+        >
+          {loading.value ? (
+            <div class="manual-locate ml-state">
+              <HkSpinner size={28} tone="current" />
+            </div>
+          ) : hasImage.value ? (
+            <div class="manual-locate" ref={rootEl} style={{ zoom: zoomFix.value }}>
+              <div class="ml-metaline">
+                <button
+                  type="button"
+                  class="ml-guide-toggle"
+                  aria-pressed={guidesOn.value}
+                  onClick={() => (guidesOn.value = !guidesOn.value)}
+                >
+                  {t("replay.live.manualGuides")}
+                </button>
+                {ageText.value ? <span class="ml-age">{ageText.value}</span> : null}
+                <span class="ml-hint">{note.value ?? t("replay.live.manualShotHint")}</span>
               </div>
-            ) : hasImage.value ? (
-              <>
-                <div class="ml-bar">
-                  <button
-                    type="button"
-                    class="ml-guide-toggle"
-                    aria-pressed={guidesOn.value}
-                    onClick={() => (guidesOn.value = !guidesOn.value)}
-                  >
-                    {t("replay.live.manualGuides")}
-                  </button>
-                  {ageText.value ? <span class="ml-age">{ageText.value}</span> : null}
-                  <span class="ml-bar-hint">
-                    {note.value ?? t("replay.live.manualShotHint")}
-                  </span>
-                  <div class="ml-bar-actions">
-                    <button
-                      type="button"
-                      class="ml-btn ml-btn--primary"
-                      disabled={!box.value || submitting.value}
-                      onClick={() => void confirmSelection()}
-                    >
-                      {t("replay.live.manualConfirm")}
-                    </button>
-                    <button type="button" class="ml-btn" onClick={cancelPick}>
-                      {t("replay.live.manualCancel")}
-                    </button>
-                  </div>
-                </div>
-                <div class="ml-stage" ref={stageEl}>
+              <div class="ml-stage" ref={stageEl}>
+                <div
+                  class="ml-canvas"
+                  ref={canvasEl}
+                  style={canvasStyle.value}
+                  onPointerdown={onPointerDown}
+                  onPointermove={onPointerMove}
+                  onPointerup={onPointerUp}
+                  onPointercancel={onPointerCancel}
+                >
+                  <img class="ml-frame" src={frameSrc.value} alt="" draggable={false} />
                   <div
-                    class="ml-canvas"
-                    ref={canvasEl}
-                    style={canvasStyle.value}
-                    onPointerdown={onPointerDown}
-                    onPointermove={onPointerMove}
-                    onPointerup={onPointerUp}
-                    onPointercancel={onPointerCancel}
+                    class={["ml-guide-layer", { "ml-guide-layer--hidden": !guidesOn.value }]}
                   >
-                    <img class="ml-frame" src={frameSrc.value} alt="" draggable={false} />
-                    <div
-                      class={[
-                        "ml-guide-layer",
-                        { "ml-guide-layer--hidden": !guidesOn.value },
-                      ]}
-                    >
-                      {tableRect.value ? (
-                        <div class="ml-guide-rect" style={guideRectStyle.value} />
-                      ) : null}
-                      {[...hGuides.value].map((y) => (
-                        <div
-                          key={`h-${y}`}
-                          class="ml-guide-line ml-guide-line--h"
-                          style={{ top: `${y * cssPerPhys.value}px` }}
-                        />
-                      ))}
-                      {[...vGuides.value].map((x) => (
-                        <div
-                          key={`v-${x}`}
-                          class="ml-guide-line ml-guide-line--v"
-                          style={{ left: `${x * cssPerPhys.value}px` }}
-                        />
-                      ))}
-                    </div>
-                    {box.value ? (
-                      <div class="ml-selection" style={selectionStyle.value} />
+                    {tableRect.value ? (
+                      <div class="ml-guide-rect" style={guideRectStyle.value} />
                     ) : null}
-                    {box.value ? (
-                      <div class="ml-size" style={sizeStyle.value}>
-                        {sizeText.value}
-                      </div>
-                    ) : null}
+                    {[...hGuides.value].map((y) => (
+                      <div
+                        key={`h-${y}`}
+                        class="ml-guide-line ml-guide-line--h"
+                        style={{ top: `${y * cssPerPhys.value}px` }}
+                      />
+                    ))}
+                    {[...vGuides.value].map((x) => (
+                      <div
+                        key={`v-${x}`}
+                        class="ml-guide-line ml-guide-line--v"
+                        style={{ left: `${x * cssPerPhys.value}px` }}
+                      />
+                    ))}
                   </div>
-                </div>
-              </>
-            ) : (
-              <div class="ml-unavailable">
-                <p class="ml-unavailable__msg">{t("replay.live.manualNoFrame")}</p>
-                <div class="ml-unavailable__actions">
-                  <button type="button" class="ml-btn" onClick={() => void load()}>
-                    {t("common.retry")}
-                  </button>
-                  <button type="button" class="ml-btn ml-btn--primary" onClick={cancelPick}>
-                    {t("replay.live.manualCancel")}
-                  </button>
+                  {box.value ? (
+                    <div class="ml-selection" style={selectionStyle.value} />
+                  ) : null}
+                  {box.value ? (
+                    <div class="ml-size" style={sizeStyle.value}>
+                      {sizeText.value}
+                    </div>
+                  ) : null}
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div class="manual-locate ml-state">
+              <p class="ml-state__msg">{t("replay.live.manualNoFrame")}</p>
+              <div class="ml-state__actions">
+                <button type="button" class="ml-btn" onClick={() => void load()}>
+                  {t("common.retry")}
+                </button>
+                <button
+                  type="button"
+                  class="ml-btn ml-btn--primary"
+                  onClick={cancelPick}
+                >
+                  {t("replay.live.manualCancel")}
+                </button>
+              </div>
+            </div>
+          )}
+        </HkModal>
       </Teleport>
     );
   },

@@ -173,6 +173,8 @@
     "manualGuides": "ガイドとスナップ",
     "manualShotFresh": "キャプチャ · たった今",
     "manualShotAge": "キャプチャ · {n} 分前",
+    "manualNoBattle": "現在進行中の戦闘がありません。戦闘に入ってから手動配置を利用してください",
+    "manualNoGame": "ゲームのウィンドウが見つかりません。ゲームが起動しているか確認してください",
     "manualNoFrame": "利用可能なキャッシュ画像がありません。ゲーム内で Tab を押して戦績テーブルを表示してから再試行してください",
     "param": {
       "mainGun": "主砲",

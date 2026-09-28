@@ -173,6 +173,8 @@
     "manualGuides": "辅助线吸附",
     "manualShotFresh": "缓存截屏 · 刚刚",
     "manualShotAge": "缓存截屏 · {n} 分钟前",
+    "manualNoBattle": "当前没有进行中的战斗，进入战斗后才能手动定位",
+    "manualNoGame": "未找到游戏窗口，请确认游戏已启动",
     "manualNoFrame": "暂无可用的缓存截屏，请在游戏中按住 Tab 查看战绩表后重试",
     "param": {
       "mainGun": "主炮",

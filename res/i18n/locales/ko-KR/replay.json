@@ -173,6 +173,8 @@
     "manualGuides": "가이드 스냅",
     "manualShotFresh": "캐즘 · 방금",
     "manualShotAge": "캐즘 · {n}분 전",
+    "manualNoBattle": "진행 중인 전투가 없습니다. 전투에 들어간 후 수동 위치 지정을 사용하세요",
+    "manualNoGame": "게임 창을 찾을 수 없습니다. 게임이 실행 중인지 확인하세요",
     "manualNoFrame": "사용 가능한 캐시 화면이 없습니다. 게임에서 Tab을 눌러 전적 표를 나타낸 뒤 다시 시도하세요",
     "param": {
       "mainGun": "주포",

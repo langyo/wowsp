@@ -173,6 +173,8 @@
     "manualGuides": "輔助線吸附",
     "manualShotFresh": "快取截圖 · 剛剛",
     "manualShotAge": "快取截圖 · {n} 分鐘前",
+    "manualNoBattle": "目前沒有進行中的戰鬥，進入戰鬥後才能手動定位",
+    "manualNoGame": "未找到遊戲視窗，請確認遊戲已啟動",
     "manualNoFrame": "暫無可用的快取截圖，請在遊戲中按住 Tab 檢視戰績表後重試",
     "param": {
       "mainGun": "主砲",

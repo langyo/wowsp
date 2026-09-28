@@ -368,10 +368,11 @@ export default defineComponent({
             desktop Tauri shell, so it mounts unconditionally here. */}
         <UpdateAppliedToast />
 
-        {/* In-game manual-locate picker layer (cached-frame drag box for the
+        {/* In-game manual-locate picker (cached-frame drag box for the
             live-battle panel's 手动定位 flow): renders nothing until the
-            manualLocate store opens it, and covers the whole window while
-            it does — see features/replay/ManualLocateOverlay. */}
+            manualLocate store opens it, then shows as a plain HkModal
+            sub-window — same window context as Settings. See
+            features/replay/ManualLocateOverlay. */}
         <ManualLocateOverlay />
 
         {/* Close confirm dialog — footer carries the action button group. */}

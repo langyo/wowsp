@@ -173,6 +173,8 @@
     "manualGuides": "Guides & snap",
     "manualShotFresh": "Cached frame · just now",
     "manualShotAge": "Cached frame · {n} min ago",
+    "manualNoBattle": "No battle in progress — manual locate needs an active battle",
+    "manualNoGame": "Game window not found — make sure the game is running",
     "manualNoFrame": "No usable cached frame — hold Tab over the roster in game, then retry",
     "param": {
       "mainGun": "Main",

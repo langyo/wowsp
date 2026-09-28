@@ -181,10 +181,13 @@ pub(super) fn force_close_manual_locate(app: &AppHandle) {
 /// - a usable picker frame exists — the fresh cached automatic capture, or
 ///   a FRESH capture showing the team header (the player is holding Tab
 ///   in-game) — see `usable_picker_frame`, shared with
-///   `manual_locate_context` so the two decisions cannot drift apart. No
-///   frame → refused: without a frame there is nothing to box, and the old
-///   live-overlay fallback (a transparent window exactly over the game) is
-///   gone together with the dedicated picker window.
+///   `manual_locate_context` so the two decisions cannot drift apart.
+///
+/// A refused gate returns a STABLE ERROR CODE the webui localizes into the
+/// toast it shows next to the shake: `"no-battle"` / `"no-game"` /
+/// `"no-frame"`. No frame → refused: without a frame there is nothing to
+/// box, and the old live-overlay fallback (a transparent window exactly
+/// over the game) is gone together with the dedicated picker window.
 ///
 /// Single-instance by construction: the layer is webui state, and a call
 /// while it is open just re-runs the gates and re-arms the flag.
@@ -195,22 +198,26 @@ pub async fn start_manual_locate() -> Result<(), String> {
         battle_known = super::arena_info::refresh_battle_state();
     }
     if !battle_known {
-        return Err("no fresh battle roster — manual locate unavailable".into());
+        tracing::warn!("manual locate refused: no fresh battle roster");
+        return Err("no-battle".into());
     }
     #[cfg(target_os = "windows")]
     {
-        let game = find_game_window().ok_or("game window not found")?;
+        let Some(game) = find_game_window() else {
+            tracing::warn!("manual locate refused: game window not found");
+            return Err("no-game".into());
+        };
         if usable_picker_frame(&game).is_none() {
-            return Err(
-                "no usable cached frame — hold Tab over the roster in game, then retry".into(),
-            );
+            tracing::warn!("manual locate refused: no usable cached frame");
+            return Err("no-frame".into());
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
         // No game window off-Windows (same answer the window gate would
         // give): the picker has nothing to anchor against.
-        return Err("game window not found".into());
+        tracing::warn!("manual locate refused: game window not found (non-windows)");
+        return Err("no-game".into());
     }
     PICKER_OPEN.store(true, Ordering::SeqCst);
     tracing::info!("manual-locate picker layer opened in the main window");

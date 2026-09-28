@@ -1,17 +1,23 @@
-//! Cache of the LAST automatic game capture, backing the screenshot-style
-//! manual-locate picker.
+//! Cache of the LAST TAB-HELD automatic game capture, backing the
+//! screenshot-style manual-locate picker.
 //!
 //! The Tab watcher captures the game window several times a second while the
 //! overlay is up (`compute_anchor`, the sink fast-path). Until now those
 //! frames were used and dropped; the manual-locate flow wants the LAST one
-//! as a positioning reference — the player re-draws the table box against
-//! the frame the detector itself just saw, with the detector's guides
-//! overlaid, instead of holding Tab in-game and boxing against the live
-//! (dimmed, flickering) table through a transparent picker.
+//! as a positioning reference — and specifically the frame from the instant
+//! Tab was last held (the roster moment the player actually saw), NOT
+//! whatever was on screen most recently: `capture_game_rgba_cached` stores
+//! only while the key is down, so a capture that lands after the release
+//! never evicts the reference, and the cache stays frozen on the last
+//! Tab-held frame until the next hold. The player re-draws the table box
+//! against the frame the detector itself just saw, with the detector's
+//! guides overlaid, instead of holding Tab in-game and boxing against the
+//! live (dimmed, flickering) table through a transparent picker.
 //!
 //! The cache is a single static slot written by the watcher thread (and by
-//! the one-shot fresh-capture fallback in `start_manual_locate`) and read by
-//! the `manual_locate_context` command on the Tauri async runtime. Frames
+//! the one-shot fresh-capture fallback in `start_manual_locate`, whose
+//! header check proves the table is on screen right then) and read by the
+//! `manual_locate_context` command on the Tauri async runtime. Frames
 //! are kept RAW (RGBA + size + the game rect they were captured from + a
 //! wall-clock stamp): everything expensive — PNG encoding, guide detection —
 //! runs once, in the command, on a clone. All coordinates in the cache are

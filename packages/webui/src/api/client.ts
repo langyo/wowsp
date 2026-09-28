@@ -1377,8 +1377,9 @@ export const api = {
   /** Open the manual-locate picker INSIDE the main window: the backend runs
    *  its gates (fresh battle roster, resolvable game window, usable cached
    *  frame) and arms the open flag; the full-cover picker layer itself is
-   *  rendered by ManualLocateOverlay. Errors when a gate fails — the panel
-   *  shakes. */
+   *  rendered by ManualLocateOverlay. Refusals reject with a STABLE code —
+   *  "no-battle" / "no-game" / "no-frame" — the panel localizes into a
+   *  toast next to the button shake. */
   startManualLocate: () => transport.invoke<null>(RPC.start_manual_locate),
   /** Close the picker layer without storing anything (its Esc / Cancel
    *  path) — clears the backend's open flag. */

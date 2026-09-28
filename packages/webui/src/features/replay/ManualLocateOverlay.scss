@@ -1,63 +1,55 @@
 /**
- * Manual-locate picker layer — the full-cover cached-frame drag box that
- * opens inside the main window. Deliberately LITERAL dark colors (like the
- * standalone picker page this layer replaced): it is a screenshot viewer,
- * not a themed app surface, and must read identically over any theme.
+ * Manual-locate picker — an in-app HkModal sub-window (same window context
+ * as Settings). The modal frame owns header/footer; this file styles only
+ * the content: the metaline (guides toggle + frame age + hint) and the
+ * dark screenshot stage with its guide/selection overlay. The stage colors
+ * stay LITERAL dark (like the standalone picker page this surface
+ * replaced): it is a screenshot viewer, not a themed app surface.
+ *
+ * Zoom contract: the component neutralizes the shell's interface-scale zoom
+ * on the content root (compensating `zoom`, see ManualLocateOverlay.tsx), so
+ * every px below is a true CSS px and the physical↔CSS factor stays exact.
  */
 
 .manual-locate {
-  position: fixed;
-  inset: 0;
-  // Above everything the shell can raise (toasts top out at
-  // --hk-z-toast/4000): while picking, the layer IS the window.
-  z-index: 6000;
   display: flex;
   flex-direction: column;
-  background: rgb(10 14 20);
-  color: rgb(236 241 246);
-  font-size: 0.875rem;
-  user-select: none;
+  gap: 10px;
 }
 
-// ── loading / no-frame states ──────────────────────────────────────────────
+// ── loading / no-frame states (modal content, no stage yet) ────────────────
 
-.ml-loading,
-.ml-unavailable {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
+.manual-locate.ml-state {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  min-height: 0;
+  min-height: 240px;
 }
 
-.ml-unavailable__msg {
-  max-width: 72%;
-  padding: 0.7em 1.3em;
-  border: 1px dashed rgb(255 255 255 / 38%);
-  border-radius: 10px;
-  background: rgb(10 14 20 / 72%);
+.ml-state__msg {
+  max-width: 90%;
   font-size: 0.875rem;
   line-height: 1.55;
   text-align: center;
 }
 
-.ml-unavailable__actions {
+.ml-state__actions {
   display: flex;
   gap: 8px;
 }
 
-// ── toolbar ────────────────────────────────────────────────────────────────
+// ── metaline ───────────────────────────────────────────────────────────────
 
-.ml-bar {
+// Literal dark strip on purpose: it sits on the THEMED modal surface (near
+// white under the light theme) and carries white text + the error note —
+// theme tokens would leave it unreadable exactly when it matters.
+.ml-metaline {
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px;
-  border-bottom: 1px solid rgb(255 255 255 / 8%);
-  background: rgb(14 19 27);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgb(10 14 20 / 85%);
 }
 
 .ml-guide-toggle {
@@ -65,7 +57,7 @@
   padding: 2px 10px;
   border-radius: 6px;
   border: 1px solid rgb(255 255 255 / 22%);
-  background: rgb(10 14 20 / 85%);
+  background: transparent;
   color: rgb(236 241 246);
   font-size: 0.75rem;
   font-weight: 600;
@@ -84,13 +76,16 @@
 
 .ml-age {
   flex: 0 0 auto;
-  color: rgb(255 255 255 / 45%);
+  color: rgb(255 255 255 / 55%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 5px;
+  padding: 1px 8px;
   font-size: 0.6875rem;
   font-family: ui-monospace, Consolas, monospace;
   white-space: nowrap;
 }
 
-.ml-bar-hint {
+.ml-hint {
   flex: 1 1 auto;
   overflow: hidden;
   color: rgb(255 255 255 / 60%);
@@ -100,21 +95,16 @@
   white-space: nowrap;
 }
 
-.ml-bar-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
 // ── stage / canvas ─────────────────────────────────────────────────────────
 
 .ml-stage {
   position: relative;
   display: flex;
-  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
-  min-height: 0;
+  height: clamp(320px, 58vh, 720px);
+  border-radius: 8px;
+  background: rgb(10 14 20);
   overflow: hidden;
 }
 
@@ -193,7 +183,7 @@
   pointer-events: none;
 }
 
-// ── buttons ────────────────────────────────────────────────────────────────
+// ── fallback buttons (no-frame state) ──────────────────────────────────────
 
 .ml-btn {
   padding: 2px 12px;
@@ -214,10 +204,4 @@
 
 .ml-btn:hover {
   filter: brightness(1.15);
-}
-
-.ml-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-  filter: none;
 }

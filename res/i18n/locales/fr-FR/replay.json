@@ -173,6 +173,8 @@
     "manualGuides": "Guides et magnétisme",
     "manualShotFresh": "Capture en cache · à l'instant",
     "manualShotAge": "Capture en cache · il y a {n} min",
+    "manualNoBattle": "Aucune bataille en cours — la localisation manuelle requiert une bataille active",
+    "manualNoGame": "Fenêtre du jeu introuvable — vérifiez que le jeu est lancé",
     "manualNoFrame": "Aucune image en cache exploitable — maintenez Tab sur le tableau en jeu, puis réessayez",
     "param": {
       "mainGun": "Artillerie principale",

@@ -1,7 +1,8 @@
 /**
- * Manual-locate picker layer state for the MAIN window: the cached-frame
- * drag-box picker renders as a full-cover sub-window of the app itself —
- * there is no dedicated Tauri window anymore (see `ManualLocateOverlay`).
+ * Manual-locate picker state for the MAIN window: the cached-frame drag-box
+ * picker renders as an in-app HkModal sub-window (same window context as
+ * Settings) — there is no dedicated Tauri window (see
+ * `ManualLocateOverlay`).
  *
  * The live-battle panel's button opens the layer after the backend gates
  * pass (`startManualLocate`); the layer closes itself on submit / cancel
