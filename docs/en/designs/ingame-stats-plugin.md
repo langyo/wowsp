@@ -31,7 +31,7 @@ priority chain for the overlay's data, keyed by a new roster mode
 
 Verified on Steam-ASIA 15.8.0 (build 13187581) and 360-CN 15.8.1 (build
 13243917), several battles each, probe artifact at
-`packages/app/mod_templates/ingame_probe/` (reports itself as `0.1.0`
+`packages/ingame-plugin/src/Main.py` (reports itself as `0.1.0`
 forever; iteration lives in git history only):
 
 | Capability | Mechanism | Latency / notes |
@@ -137,7 +137,7 @@ Bridge files (protocol v1, all in the mod directory):
 
 1. **Auto-install on toggle**: enabling the in-game ordering source in
    settings writes the mod via the existing `mod_install.rs` /
-   `mod_templates` path (`PnFModsLoader.py` marker only if absent; own
+   `packages/ingame-plugin` path (`PnFModsLoader.py` marker only if absent; own
    files only; snapshot + rollback; game-closed guard). Disabling
    uninstalls. This is the "special" registration behavior the owner
    specified: the plugin never appears as a manual install step.
