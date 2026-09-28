@@ -2,13 +2,16 @@ import { computed, defineComponent, onMounted, onUnmounted, ref, watch } from "v
 import {
   AlertTriangle,
   AudioLines,
+  Ellipsis,
   ExternalLink,
   FolderSearch,
   ImageIcon,
   MousePointerClick,
   Puzzle,
   RefreshCw,
+  ShieldCheck,
   Trash2,
+  Undo2,
 } from "@lucide/vue";
 
 import {
@@ -18,6 +21,7 @@ import {
   HkSearchInput,
   HkSwitch,
   HkTabs,
+  HMenu,
   useToast,
 } from "@celestia-island/hikari";
 
@@ -138,6 +142,12 @@ export default defineComponent({
     const safeMode = ref(false);
     const safeModeAsk = ref<"on" | "off" | null>(null);
     const safeModeBusy = ref(false);
+
+    // Header overflow menu (the ⋯ button): tool entries that used to be
+    // free-floating banners — safe mode both ways, the migration wizard.
+    const toolsOpen = ref(false);
+    const toolsAnchor = ref<HTMLElement | null>(null);
+    const migrateWizardOpen = ref(false);
 
     const gameStatus = useGameStatusStore();
     // The install every mod operation targets: the user's selection, with
@@ -841,7 +851,7 @@ export default defineComponent({
                     {busyUninstall ? t("resources.uninstalling") : t("resources.uninstall")}
                   </button>
                 )}
-                {!upToDate && (
+                {!upToDate && !entry.bundled && (
                   <HkButton
                     size="sm"
                     variant="primary"
@@ -855,6 +865,9 @@ export default defineComponent({
                         ? t("resources.update")
                         : t("resources.install")}
                   </HkButton>
+                )}
+                {entry.bundled && (
+                  <span class="mod-detail__bundled">{t("resources.bundledWithApp")}</span>
                 )}
               </div>
             </div>
@@ -1081,15 +1094,60 @@ export default defineComponent({
       return (
         <div class="resources-view">
           <header class="resources-view__head">
-            <h1 class="resources-view__title">{t("resources.title")}</h1>
-            <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
+            <div class="resources-view__headtext">
+              <h1 class="resources-view__title">{t("resources.title")}</h1>
+              <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
+            </div>
+            {/* Tool menu: safe mode + the migration wizard. */}
+            <div class="resources-view__tools" ref={toolsAnchor}>
+              <HkIconButton
+                size={24}
+                variant="ghost"
+                data-hint={t("resources.toolsMenu")}
+                onClick={() => (toolsOpen.value = !toolsOpen.value)}
+              >
+                <Ellipsis size={15} />
+              </HkIconButton>
+              <HMenu
+                variant="popup"
+                title={t("resources.toolsMenu")}
+                open={toolsOpen.value}
+                anchorRef={toolsAnchor.value}
+                placement="bottom-end"
+                items={[
+                  {
+                    key: "safe-enter",
+                    label: t("resources.safeModeEnter"),
+                    icon: ShieldCheck,
+                    disabled: !gameRoot.value || safeMode.value || safeModeBusy.value,
+                  },
+                  {
+                    key: "safe-exit",
+                    label: t("resources.safeModeExit"),
+                    icon: Undo2,
+                    disabled: !safeMode.value || safeModeBusy.value,
+                  },
+                  {
+                    key: "migrate",
+                    label: t("resources.staleMigrate"),
+                    icon: RefreshCw,
+                    disabled:
+                      !gameRoot.value || staleBins.value.length === 0 || migrating.value,
+                  },
+                ]}
+                onSelect={({ key }: { key: string | number }) => {
+                  toolsOpen.value = false;
+                  if (key === "safe-enter") safeModeAsk.value = "on";
+                  else if (key === "safe-exit") safeModeAsk.value = "off";
+                  else if (key === "migrate") migrateWizardOpen.value = true;
+                }}
+                onUpdate:open={(v: boolean) => (toolsOpen.value = v)}
+              />
+            </div>
           </header>
 
-          <div class="resources-banner resources-banner--warn">
-            <AlertTriangle size={16} />
-            {t("resources.experimental")}
-          </div>
-
+          {/* Compact condition strip: only what NEEDS attention stays a
+              banner; tooling (safe mode, migration) lives in the ⋯ menu. */}
           {!gameRoot.value && (
             <div class="resources-banner resources-banner--warn">
               <AlertTriangle size={16} />
@@ -1112,21 +1170,7 @@ export default defineComponent({
             </div>
           )}
 
-          {!safeMode.value && gameRoot.value && installed.value.length > 0 && (
-            <div class="resources-banner">
-              <span class="resources-banner__text">{t("resources.safeModeHint")}</span>
-              <HkButton
-                size="sm"
-                disabled={safeModeBusy.value}
-                loading={safeModeBusy.value}
-                onClick={() => (safeModeAsk.value = "on")}
-              >
-                {t("resources.safeModeEnter")}
-              </HkButton>
-            </div>
-          )}
-
-          {staleBins.value.length > 0 && gameRoot.value && (
+          {staleBins.value.length > 0 && gameRoot.value && !safeMode.value && (
             <div class="resources-banner resources-banner--warn resources-banner--stale">
               <AlertTriangle size={16} />
               <span class="resources-banner__text">
@@ -1140,7 +1184,7 @@ export default defineComponent({
                 variant="primary"
                 disabled={migrating.value}
                 loading={migrating.value}
-                onClick={() => (migrateTarget.value = staleBins.value[0] ?? null)}
+                onClick={() => (migrateWizardOpen.value = true)}
               >
                 {t("resources.staleMigrate")}
               </HkButton>

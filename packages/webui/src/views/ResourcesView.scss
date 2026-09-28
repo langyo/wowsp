@@ -17,6 +17,19 @@
 
   &__head {
     flex: none;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  &__headtext {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__tools {
+    flex: none;
+    position: relative;
   }
 
   &__title {
@@ -795,6 +808,13 @@
       opacity: 0.5;
       cursor: default;
     }
+  }
+
+  // Bundled-with-app marker: listed first-party plugin that has no
+  // download packages (the in-game stats plugin).
+  &__bundled {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
   }
 
   // Opens through open_external (default browser) — a <button> in the Tauri

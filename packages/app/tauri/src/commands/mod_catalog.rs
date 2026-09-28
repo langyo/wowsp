@@ -196,6 +196,9 @@ struct RawVersion {
     name_zh: Option<String>,
     #[serde(default)]
     description: Option<String>,
+    /// Ships inside the WoWSP app — listed without download packages.
+    #[serde(default)]
+    bundled: Option<bool>,
     #[serde(default)]
     i18n: std::collections::HashMap<String, RawI18n>,
     /// Present in the publisher index; not rendered in-app (CSP blocks the
@@ -267,15 +270,20 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
                 }
             })
             .collect();
-        if packages.is_empty() {
+        // Entries with no packages ship inside the app itself (the in-game
+        // stats plugin is the first) — they stay listed, marked
+        // bundled-installed by the UI, and are not downloadable.
+        if !ver.bundled.unwrap_or(false) && packages.is_empty() {
             continue;
         }
+        let packages = packages;
         mods.push(CatalogEntry {
             id: id.clone(),
             category: m.category.unwrap_or_else(|| "aux".into()),
             discussion: m.discussion,
             version: latest,
             game: ver.game.clone().unwrap_or_else(|| "*".into()),
+            bundled: ver.bundled.unwrap_or(false),
             title: ver.title.clone().unwrap_or_else(|| id.clone()),
             name_zh: ver.name_zh.clone().unwrap_or_default(),
             name_en: ver

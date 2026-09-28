@@ -123,6 +123,9 @@ def index_discussions(nodes: list[dict]) -> dict:
             "title": d.get("title"),
             "author": (d.get("author") or {}).get("login"),
         }
+        if meta.get("bundled", "").lower() in ("true", "yes", "1"):
+            # Ships inside the WoWSP app — listed without download packages.
+            entry["versions"][version]["bundled"] = True
         if packages:
             entry["versions"][version]["packages"] = packages
         i18n = parse_i18n(d.get("body") or "")

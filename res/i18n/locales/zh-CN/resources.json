@@ -53,6 +53,7 @@
   "installingMod": "下载安装中…",
   "uninstalling": "卸载中…",
   "discuss": "讨论帖",
+  "bundledWithApp": "随应用分发（启用插件检测时自动安装）",
   "openDiscussion": "打开帖子",
   "pkgCount": "{count} 个包 · {kb} KB",
   "gameRange": "适用 {game}",

@@ -1079,6 +1079,8 @@ export interface CatalogEntry {
   version: string;
   /** Game-version range as published, e.g. `>=15.7 <15.8`. */
   game: string;
+  /** Ships inside the WoWSP app — listed, not downloadable. */
+  bundled?: boolean;
   title: string;
   nameZh: string;
   nameEn: string;

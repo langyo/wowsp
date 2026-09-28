@@ -1796,6 +1796,10 @@ pub struct CatalogEntry {
     pub version: String,
     /// Game-version range string as published, e.g. `>=15.7 <15.8`.
     pub game: String,
+    /// Ships inside the WoWSP app (no download packages; the UI renders it
+    /// as bundled). First-party plugins use this.
+    #[serde(default)]
+    pub bundled: bool,
     pub title: String,
     pub name_zh: String,
     pub name_en: String,

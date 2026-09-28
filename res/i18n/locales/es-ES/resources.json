@@ -53,6 +53,7 @@
   "installingMod": "Descargando…",
   "uninstalling": "Desinstalando…",
   "discuss": "Debate",
+  "bundledWithApp": "Incluido con la aplicación (se instala automáticamente al activar la detección por plugin)",
   "openDiscussion": "Abrir hilo",
   "pkgCount": "{count} paquetes · {kb} KB",
   "gameRange": "juego {game}",

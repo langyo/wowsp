@@ -53,6 +53,7 @@
   "installingMod": "다운로드 중…",
   "uninstalling": "제거 중…",
   "discuss": "토론",
+  "bundledWithApp": "앱 번들 제공(플러그인 감지 사용 시 자동 설치)",
   "openDiscussion": "게시글 열기",
   "pkgCount": "패키지 {count}개 · {kb} KB",
   "gameRange": "{game} 지원",

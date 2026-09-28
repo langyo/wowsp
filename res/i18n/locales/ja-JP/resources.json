@@ -53,6 +53,7 @@
   "installingMod": "ダウンロード中…",
   "uninstalling": "アンインストール中…",
   "discuss": "ディスカッション",
+  "bundledWithApp": "アプリ同梱（プラグイン検出を有効にすると自動インストール）",
   "openDiscussion": "スレッドを開く",
   "pkgCount": "{count} パッケージ · {kb} KB",
   "gameRange": "対応 {game}",

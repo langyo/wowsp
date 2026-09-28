@@ -53,6 +53,7 @@
   "installingMod": "Загрузка…",
   "uninstalling": "Удаление…",
   "discuss": "Обсуждение",
+  "bundledWithApp": "Поставляется с приложением (устанавливается автоматически при включении обнаружения плагином)",
   "openDiscussion": "Открыть тему",
   "pkgCount": "{count} пак. · {kb} КБ",
   "gameRange": "игра {game}",
