@@ -146,9 +146,25 @@ const HISTORY_MAX_POINTS: usize = 240;
 ///
 /// Empty stats are ignored: a hidden profile (or a transient WG hiccup)
 /// returning an empty list must never become a baseline — an empty baseline
-/// would turn the player's whole career into "recent" deltas later.
+/// would turn the player's whole career into "recent" deltas later. Rows
+/// whose counters are impossible are dropped for the same reason (see
+/// [`is_poisoned_career_row`]).
 fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], timestamp: i64) {
     if stats.is_empty() {
+        return;
+    }
+    let mut fresh: Vec<ShipCareerTotals> = Vec::with_capacity(stats.len());
+    let mut poisoned_ids: Vec<i64> = Vec::new();
+    for row in stats.iter().map(career_totals) {
+        if is_poisoned_career_row(&row) {
+            poisoned_ids.push(row.ship_id);
+        } else {
+            fresh.push(row);
+        }
+    }
+    // Nothing healthy came back — record nothing, same reasoning as the
+    // empty check above.
+    if fresh.is_empty() {
         return;
     }
     let file = format!("ship-history/{realm}_{account_id}.json");
@@ -164,11 +180,22 @@ fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], 
     if merges_with_last {
         let last = history.last_mut().expect("is_some_and checked for Some");
         last.timestamp = timestamp;
-        last.ships = stats.iter().map(career_totals).collect();
+        // Fresh totals replace their stored row; a ship whose fresh row is
+        // poisoned keeps its previously stored totals instead of regressing
+        // the baseline to a zero-counter row.
+        let previous = std::mem::take(&mut last.ships);
+        last.ships = fresh
+            .into_iter()
+            .chain(
+                previous
+                    .into_iter()
+                    .filter(|stored| poisoned_ids.contains(&stored.ship_id)),
+            )
+            .collect();
     } else {
         history.push(ShipStatsHistoryPoint {
             timestamp,
-            ships: stats.iter().map(career_totals).collect(),
+            ships: fresh,
         });
     }
     if history.len() > HISTORY_MAX_POINTS {
@@ -176,6 +203,18 @@ fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], 
         history.drain(0..drop);
     }
     let _ = write_appdata_json(&file, &serde_json::to_string(&history).unwrap_or_default());
+}
+
+/// A career row with battles recorded but zero damage AND zero kills cannot
+/// be genuine — any played battle deals damage or scores kills. Such rows
+/// are what a partially broken upstream returns (the 2026-09 CN vortex
+/// regression shipped `battles_count` with null counter fields). Recording
+/// one poisons every future range view: the frontend's range stats diff
+/// current totals against the baseline, so a zero-counter baseline
+/// resurrects the whole career total as the "recent" delta while battles
+/// stay a true small delta.
+fn is_poisoned_career_row(row: &ShipCareerTotals) -> bool {
+    row.battles > 0 && row.damage_caused == 0 && row.frags == 0
 }
 
 fn career_totals(s: &PlayerShipStats) -> ShipCareerTotals {
@@ -1138,6 +1177,86 @@ mod tests {
         assert_eq!(history.len(), 1, "empty fetch must be ignored");
         assert_eq!(history[0].timestamp, t0);
         assert_eq!(history[0].ships[0].battles, 100);
+
+        let path = appdata_dir_path().unwrap().join(&file);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Rows with battles but zero damage AND kills (what a partially broken
+    /// upstream returns — the 2026-09 CN vortex regression) must never enter
+    /// the history: diffing against one later would resurrect the whole
+    /// career total as a "recent" delta.
+    #[test]
+    fn ship_history_skips_poisoned_rows() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file = format!("ship-history/test_{ts}.json");
+        let _ = write_appdata_json(&file, "[]");
+
+        let t0: i64 = 1_700_000_000;
+        let poisoned = |ship_id: i64, battles: i64| {
+            let mut s = mk_stats(ship_id, battles);
+            s.damage_caused = 0;
+            s.frags = 0;
+            s
+        };
+        // Healthy ship 1 + poisoned ship 2 → only ship 1 is recorded.
+        append_ship_history("test", ts as i64, &[mk_stats(1, 100), poisoned(2, 50)], t0);
+
+        let history = read_history_file(&file);
+        assert_eq!(history.len(), 1);
+        assert_eq!(
+            history[0].ships.len(),
+            1,
+            "poisoned row must not be recorded"
+        );
+        assert_eq!(history[0].ships[0].ship_id, 1);
+
+        // An all-poisoned fetch records nothing at all: no new point inside
+        // the merge window, and the stored point stays untouched.
+        append_ship_history("test", ts as i64, &[poisoned(3, 10)], t0 + 60);
+        let history = read_history_file(&file);
+        assert_eq!(history.len(), 1, "all-poisoned fetch must be ignored");
+        assert_eq!(history[0].timestamp, t0, "stored point must not be touched");
+        assert_eq!(history[0].ships[0].ship_id, 1);
+
+        let path = appdata_dir_path().unwrap().join(&file);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A merge in which a ship's fresh row is poisoned must keep that ship's
+    /// previously stored totals instead of regressing the baseline to a
+    /// zero-counter row.
+    #[test]
+    fn ship_history_merge_keeps_stored_totals_for_poisoned_refresh() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file = format!("ship-history/test_{ts}.json");
+        let _ = write_appdata_json(&file, "[]");
+
+        let t0: i64 = 1_700_000_000;
+        append_ship_history("test", ts as i64, &[mk_stats(2, 40)], t0);
+        // Same session (< 6h apart) → merges into the stored point. Ship 1
+        // arrives healthy, ship 2 comes back poisoned.
+        let mut poisoned2 = mk_stats(2, 55);
+        poisoned2.damage_caused = 0;
+        poisoned2.frags = 0;
+        append_ship_history("test", ts as i64, &[mk_stats(1, 10), poisoned2], t0 + 3600);
+
+        let history = read_history_file(&file);
+        assert_eq!(history.len(), 1);
+        let by_ship: std::collections::HashMap<i64, _> =
+            history[0].ships.iter().map(|s| (s.ship_id, s)).collect();
+        assert_eq!(by_ship[&1].battles, 10, "healthy fresh row is recorded");
+        assert_eq!(
+            by_ship[&2].battles, 40,
+            "poisoned refresh must keep the stored healthy totals",
+        );
+        assert_eq!(by_ship[&2].damage_caused, 40 * 10_000);
 
         let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);

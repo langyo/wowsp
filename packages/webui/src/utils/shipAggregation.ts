@@ -13,6 +13,13 @@
  *  recorded history point at or before the range cutoff (see
  *  `computeRecentDelta`). The plain lastBattleTime filter is kept only as the
  *  labeled career fallback for when no old-enough baseline exists yet.
+ *
+ *  Baseline rows with impossible career counters (battles recorded, zero
+ *  damage AND zero kills — artifacts of a partially broken upstream, such as
+ *  the 2026-09 CN vortex regression) are skipped when picking a baseline:
+ *  diffing against one would resurrect the whole career total as the
+ *  "recent" delta while battles stay a true small delta (see
+ *  `isPoisonedCareerRow`).
  */
 import type { PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint } from "@/api";
 import type { ShipInfo } from "@/api";
@@ -68,13 +75,16 @@ export interface RecentDelta {
   /** Ships actually played in the covered window, with battles/wins/damage
    *  etc. recomputed as deltas (winrate/avgDamage derived from them). */
   ships: PlayerShipStats[];
-  /** Baseline point timestamp — the deltas actually cover [sinceTs, now]. */
+  /** Baseline point timestamp — the latest history point at or before the
+   *  cutoff. A ship whose rows there are absent or poisoned falls back to
+   *  its latest healthy earlier point, so an individual ship's window may
+   *  reach further back than `sinceTs`. */
   sinceTs: number;
 }
 
 /** Per-ship recent-window delta — the single-ship slice of `RecentDelta`
- *  (career totals minus the totals at the latest baseline point at or before
- *  the cutoff). Null when no old-enough baseline exists yet. */
+ *  (career totals minus the totals at the ship's latest usable baseline row
+ *  at or before the cutoff). Null when no old-enough baseline exists yet. */
 export interface ShipRecentDelta {
   battles: number;
   wins: number;
@@ -86,28 +96,47 @@ export interface ShipRecentDelta {
   sinceTs: number;
 }
 
+/** Career-total rows recording battles but zero damage AND zero kills cannot
+ *  be genuine — any played battle deals damage or scores kills. They are what
+ *  a partially broken upstream returns (the 2026-09 CN vortex regression
+ *  shipped `battles_count` with null counter fields). Diffing current totals
+ *  against such a row resurrects the whole career total as the "recent"
+ *  delta while battles stay a true small delta, inflating every range-view
+ *  average by orders of magnitude — so baseline selection skips them. */
+export function isPoisonedCareerRow(row: ShipCareerTotals): boolean {
+  return row.battles > 0 && row.damageCaused === 0 && row.frags === 0;
+}
+
 /** Compute one ship's real recent stats: current career totals minus the
- *  latest history point at or before `cutoffSec` (single-ship counterpart of
- *  `computeRecentDelta`). Deltas are clamped at 0 to tolerate WG-side data
- *  corrections; a zero/negative battle delta yields null (not played in the
- *  window is indistinguishable from no baseline coverage per ship). */
+ *  totals at the latest non-poisoned history row at or before `cutoffSec`
+ *  (single-ship counterpart of `computeRecentDelta`). Deltas are clamped at 0
+ *  to tolerate WG-side data corrections; a zero/negative battle delta yields
+ *  null (not played in the window is indistinguishable from no baseline
+ *  coverage per ship). */
 export function shipRecentDelta(
   current: PlayerShipStats,
   history: ShipStatsHistoryPoint[],
   cutoffSec: number,
 ): ShipRecentDelta | null {
   let base: ShipCareerTotals | undefined;
-  let sinceTs = 0;
+  let baseTs = 0;
+  let latestTs = 0;
   for (const point of history) {
-    if (point.timestamp <= cutoffSec) {
-      sinceTs = point.timestamp;
-      base = point.ships.find((s) => s.shipId === current.shipId);
+    if (point.timestamp > cutoffSec) continue;
+    latestTs = point.timestamp;
+    const row = point.ships.find((s) => s.shipId === current.shipId);
+    if (row && !isPoisonedCareerRow(row)) {
+      base = row;
+      baseTs = point.timestamp;
     }
   }
   // No baseline point at all → unknown window (same semantics as the
-  // account-level view). A baseline point that simply lacks this ship means
-  // the ship was unplayed then — a full-career window, deltas = career.
-  if (sinceTs === 0) return null;
+  // account-level view). A baseline with no usable row for this ship — the
+  // point simply lacks it, or every recorded row is poisoned — means the
+  // ship was unplayed then — a full-career window, deltas = career, labeled
+  // from the latest known point.
+  if (latestTs === 0) return null;
+  const sinceTs = base ? baseTs : latestTs;
   const battles = current.battles - (base?.battles ?? 0);
   if (battles <= 0) return null;
   const wins = Math.max(0, current.wins - (base?.wins ?? 0));
@@ -124,25 +153,32 @@ export function shipRecentDelta(
   };
 }
 
-/** Compute real recent stats as current career totals minus the latest
- *  history point at or before `cutoffSec` (history points are recorded
- *  locally on each successful per-ship fetch, ascending by timestamp).
- *  Ships with a zero battle delta are dropped; totals are clamped at 0 to
- *  tolerate WG-side data corrections. Returns null when no baseline exists
- *  yet (first-ever lookup, or every recorded point is newer than the
- *  cutoff) — callers fall back to the labeled career view then. */
+/** Compute real recent stats as current career totals minus the per-ship
+ *  totals at the latest non-poisoned history rows at or before `cutoffSec`
+ *  (history points are recorded locally on each successful per-ship fetch,
+ *  ascending by timestamp). Ships with a zero battle delta are dropped;
+ *  totals are clamped at 0 to tolerate WG-side data corrections. Returns
+ *  null when no baseline exists yet (first-ever lookup, or every recorded
+ *  point is newer than the cutoff) — callers fall back to the labeled
+ *  career view then. */
 export function computeRecentDelta(
   current: PlayerShipStats[],
   history: ShipStatsHistoryPoint[],
   cutoffSec: number,
 ): RecentDelta | null {
-  let base: ShipStatsHistoryPoint | undefined;
+  let sinceTs = 0;
+  const baseByShip = new Map<number, ShipCareerTotals>();
   for (const point of history) {
-    if (point.timestamp <= cutoffSec) base = point;
+    if (point.timestamp > cutoffSec) continue;
+    sinceTs = point.timestamp;
+    // Later points overwrite earlier ones, so each ship ends up with its
+    // latest usable row; a poisoned row never displaces a healthy one.
+    for (const row of point.ships) {
+      if (isPoisonedCareerRow(row)) continue;
+      baseByShip.set(row.shipId, row);
+    }
   }
-  if (!base) return null;
-
-  const baseByShip = new Map(base.ships.map((s) => [s.shipId, s]));
+  if (sinceTs === 0) return null;
   const ships: PlayerShipStats[] = [];
   for (const cur of current) {
     const prev = baseByShip.get(cur.shipId);
@@ -161,7 +197,7 @@ export function computeRecentDelta(
       avgDamage: damageCaused / battles,
     });
   }
-  return { ships, sinceTs: base.timestamp };
+  return { ships, sinceTs };
 }
 
 /** Aggregate PlayerShipStats by ship type (Battleship/Cruiser/...).

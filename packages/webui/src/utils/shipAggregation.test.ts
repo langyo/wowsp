@@ -18,6 +18,7 @@ import {
   computeRecentDelta,
   dateRangeCutoff,
   filterByDateRange,
+  isPoisonedCareerRow,
   shipRecentDelta,
 } from "./shipAggregation";
 
@@ -204,5 +205,89 @@ describe("shipRecentDelta (single-ship slice)", () => {
       ]),
     ];
     expect(shipRecentDelta(current, history, cutoff)).toBeNull();
+  });
+});
+
+describe("poisoned baseline rows (zero-counter career totals)", () => {
+  const now = 1_700_000_000;
+  const cutoff = dateRangeCutoff("7d", now);
+
+  // The 2026-09 CN vortex regression recorded history rows whose battles
+  // carried career totals while damage/frags came back as 0. Diffing against
+  // such a row resurrects the whole career total: the reported symptom was a
+  // 2-battle Thunderer showing 10.6M "avg" damage — its career total ÷ 2.
+
+  it("flags only rows with battles but zero damage and zero frags", () => {
+    expect(
+      isPoisonedCareerRow({ shipId: 1, battles: 198, wins: 99, damageCaused: 0, frags: 0, survivedBattles: 40, lastBattleTime: 0 }),
+    ).toBe(true);
+    // Odd but partially-present counters are trusted.
+    expect(
+      isPoisonedCareerRow({ shipId: 1, battles: 5, wins: 2, damageCaused: 0, frags: 3, survivedBattles: 1, lastBattleTime: 0 }),
+    ).toBe(false);
+    expect(
+      isPoisonedCareerRow({ shipId: 1, battles: 0, wins: 0, damageCaused: 0, frags: 0, survivedBattles: 0, lastBattleTime: 0 }),
+    ).toBe(false);
+  });
+
+  it("computeRecentDelta falls back to the latest healthy earlier row", () => {
+    const current = [ship({ shipId: 1, battles: 200, wins: 100, damageCaused: 4_200_000, frags: 32, survivedBattles: 62 })];
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 1, battles: 190, wins: 95, damageCaused: 4_000_000, frags: 30, survivedBattles: 60, lastBattleTime: 0 },
+      ]),
+      // Latest point at or before the cutoff, but poisoned — must not
+      // become the baseline, and must not displace the healthy row above.
+      point(now - 10 * 86_400, [
+        { shipId: 1, battles: 198, wins: 99, damageCaused: 0, frags: 0, survivedBattles: 61, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.ships[0].battles).toBe(10);
+    expect(delta.ships[0].damageCaused).toBe(200_000);
+    expect(delta.ships[0].avgDamage).toBeCloseTo(20_000, 5);
+    // The view-wide label stays on the latest point at or before the cutoff.
+    expect(delta.sinceTs).toBe(now - 10 * 86_400);
+  });
+
+  it("treats a ship recorded only as poisoned rows as first-seen (career delta)", () => {
+    const current = [ship({ shipId: 2, battles: 55, wins: 30, damageCaused: 1_100_000, frags: 70 })];
+    const history = [
+      point(cutoff - 1, [
+        { shipId: 2, battles: 50, wins: 27, damageCaused: 0, frags: 0, survivedBattles: 25, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.ships[0].battles).toBe(55);
+    expect(delta.ships[0].damageCaused).toBe(1_100_000);
+    expect(delta.ships[0].avgDamage).toBeCloseTo(20_000, 5);
+  });
+
+  it("shipRecentDelta uses the latest healthy row and labels the window from it", () => {
+    const current = ship({ shipId: 7, battles: 320, wins: 176, damageCaused: 21_824_000, frags: 412, survivedBattles: 120 });
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 7, battles: 300, wins: 160, damageCaused: 20_400_000, frags: 380, survivedBattles: 110, lastBattleTime: 0 },
+      ]),
+      point(now - 10 * 86_400, [
+        { shipId: 7, battles: 315, wins: 172, damageCaused: 0, frags: 0, survivedBattles: 116, lastBattleTime: 0 },
+      ]),
+    ];
+    const d = shipRecentDelta(current, history, cutoff)!;
+    expect(d.battles).toBe(20);
+    expect(d.avgDamage).toBeCloseTo(71_200, 5);
+    expect(d.sinceTs).toBe(now - 40 * 86_400);
+  });
+
+  it("shipRecentDelta treats an all-poisoned history as a full-career window", () => {
+    const current = ship({ shipId: 7, battles: 320, wins: 176, damageCaused: 21_824_000, frags: 412, survivedBattles: 120 });
+    const history = [
+      point(now - 10 * 86_400, [
+        { shipId: 7, battles: 315, wins: 172, damageCaused: 0, frags: 0, survivedBattles: 116, lastBattleTime: 0 },
+      ]),
+    ];
+    const d = shipRecentDelta(current, history, cutoff)!;
+    expect(d.battles).toBe(320);
+    expect(d.sinceTs).toBe(now - 10 * 86_400);
   });
 });
