@@ -24,6 +24,8 @@ import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 // sort rule over the roster + the anchor's alive flags (no OCR) — see
 // inferredOrder.ts.
 import { inferredRowMapping } from "./inferredOrder";
+// Bot folding for candidate-range chips (see candidates.ts).
+import { collapseCandidateBots } from "./candidates";
 // Post-layout pass keeping chips inside the overlay window — a chip wider
 // than the reserved side pad would otherwise clip flat at the window edge.
 import { fitChips, refitWhenSealsSettle } from "./chipFit";
@@ -363,11 +365,16 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
  *  seals would misattribute, and the chip must stay compact enough for a
  *  wide range to fit the reserved side pad. A member whose stats have not
  *  landed reads "…", a hidden one the red dot — the same per-member faces
- *  chipContent renders. */
+ *  chipContent renders. The AI members fold into a counted suffix
+ *  (candidates.ts): the game's own table already marks those rows, so a
+ *  verbatim "bot / bot / bot" only stretched the chip over the left HUD —
+ *  "43.2% + 2 bot" keeps the range's cardinality at a fraction of the
+ *  width, and a pure-bot range collapses to the single muted face. */
 function candidatesChip(members: string[]): string {
-  return members
+  const { humans, botCount } = collapseCandidateBots(members);
+  if (humans.length === 0) return `<span class="muted">bot</span>`;
+  const faces = humans
     .map((m) => {
-      if (AI_NAME.test(m)) return `<span class="muted">bot</span>`;
       const st = stats.get(cacheKey(m));
       if (!st) return `<span class="muted">…</span>`;
       if (st.hidden) return `<span class="hidden">●</span>`;
@@ -375,6 +382,10 @@ function candidatesChip(members: string[]): string {
       return `<b style="color:${winrateColor(st.winrate)}">${st.winrate.toFixed(1)}%</b>`;
     })
     .join(`<span class="sep">/</span>`);
+  if (botCount > 0) {
+    return `${faces}<span class="sep">+</span><span class="muted">${botCount} bot</span>`;
+  }
+  return faces;
 }
 
 /** The ONE transient-status presentation: a spinner + a single line of
