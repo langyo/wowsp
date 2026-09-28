@@ -236,11 +236,19 @@ export default defineComponent({
     }
 
     // ── Deep link (?mod=<catalog id>): the settings' roster plugin button ──
-    // lands here. The index may still be loading on a cold visit, so the
-    // pending id survives until the catalog has (or clearly never has) the
-    // row; filters reset so the selected row is actually visible in the list.
-    const pendingDeepLink = ref(
-      typeof route.query.mod === "string" ? route.query.mod : "",
+    // lands here. The query is watched REACTIVELY: the settings surface is a
+    // modal stacked on top of this view, so a click while /resources is
+    // already active re-uses this component instance — a mount-time read of
+    // route.query would never fire. The index may still be loading on a cold
+    // visit, so the pending id survives until the catalog has (or clearly
+    // never has) the row; filters reset so the row is visible in the list.
+    const pendingDeepLink = ref("");
+    watch(
+      () => route.query.mod,
+      (v) => {
+        if (typeof v === "string" && v) pendingDeepLink.value = v;
+      },
+      { immediate: true },
     );
     let deepLinkForced = false;
     watch(catalog, (mods) => {

@@ -1426,6 +1426,35 @@ mod tests {
     }
 
     #[test]
+    fn bundled_entries_survive_without_packages() {
+        let raw = serde_json::json!({
+            "schema": 1,
+            "mods": {
+                "battle.ingame.stats": {
+                    "id": "battle.ingame.stats",
+                    "category": "battle",
+                    "discussion": 640,
+                    "latest": "0.1.0",
+                    "versions": {
+                        "0.1.0": {
+                            "game": "*",
+                            "title": "In-Game Tab Stats Plugin",
+                            "bundled": true
+                        }
+                    }
+                },
+                "still-dropped": {"latest": "1", "versions": {"1": {"title": "no packages, no flag"}}}
+            }
+        });
+        let index = parse_index(&raw).unwrap();
+        assert_eq!(index.mods.len(), 1, "only the bundled entry survives");
+        let m = &index.mods[0];
+        assert_eq!(m.id, "battle.ingame.stats");
+        assert!(m.bundled, "bundled flag reaches the DTO");
+        assert!(m.packages.is_empty(), "no download packages to offer");
+    }
+
+    #[test]
     fn ledger_roundtrips() {
         // Ledger file location follows the app data dir; write through the
         // same helpers the commands use so the shape stays in lock-step.
