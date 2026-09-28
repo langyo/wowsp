@@ -30,12 +30,6 @@ API_VERSION = 'API_v1.0'
 # Owner decision: the probe reports itself as 0.1.0 for the whole
 # experiment; iterate via git history only, never this constant.
 PROBE_VERSION = '0.1.0'
-
-try:
-    import dataHub, constants
-except Exception:
-    dataHub = None
-    constants = None
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
@@ -160,21 +154,43 @@ class Probe(object):
 
     def watch_order(self):
         self.close_order()
-        if dataHub is None or constants is None:
-            log('order unavailable: no dataHub/constants globals')
+        g = globals()
+        try:
+            log('module globals=' + str(sorted([k for k in g.keys() if not k.startswith('_')]))[:3000])
+        except Exception as exc:
+            log('globals dump failed=' + str(exc)[:120])
+        # The loader injects API modules straight into our namespace (that is
+        # how events/ui/utils work without imports); never shadow them with a
+        # failed import, and only fall back to importing when absent.
+        dh = g.get('dataHub')
+        const = g.get('constants')
+        if dh is None:
+            try:
+                import dataHub as dh_module
+                dh = dh_module
+            except Exception as exc:
+                log('order dataHub import failed=' + str(exc)[:160])
+        if const is None:
+            try:
+                import constants as const_module
+                const = const_module
+            except Exception as exc:
+                log('order constants import failed=' + str(exc)[:160])
+        if dh is None or const is None:
+            log('order unavailable: no dataHub/constants')
             return
         try:
-            names = [n for n in dir(constants.UiComponents) if not n.startswith('_')]
+            names = [n for n in dir(const.UiComponents) if not n.startswith('_')]
             log('order UiComponents=' + str(sorted(names))[:3800])
         except Exception as exc:
             log('order UiComponents dir failed=' + str(exc)[:120])
         try:
-            names = [n for n in dir(dataHub) if not n.startswith('_')]
+            names = [n for n in dir(dh) if not n.startswith('_')]
             log('order dataHub dir=' + str(names)[:2000])
         except Exception as exc:
             log('order dataHub dir failed=' + str(exc)[:120])
         try:
-            collection = dataHub.getCollection(constants.UiComponents.avatar)
+            collection = dh.getCollection(const.UiComponents.avatar)
         except Exception as exc:
             self.soft('order collection failed=' + str(exc)[:160])
             return
