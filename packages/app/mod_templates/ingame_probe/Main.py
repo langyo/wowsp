@@ -27,7 +27,7 @@ exception escape a callback: the game keeps running but the mod dies.
 """
 API_VERSION = 'API_v1.0'
 
-PROBE_VERSION = '0.2.3'
+PROBE_VERSION = '0.3.0'
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
@@ -140,7 +140,49 @@ class Probe(object):
 
     def start(self, *args):
         self.last_error = ''
+        self.explore_shell('battleStart')
         log('battle start')
+
+    def explore_shell(self, phase):
+        """Map the wider ModsShell surface real modules expose.
+
+        The injected globals are only the tip: shipped mods import
+        ModsShell.API_v_1_0.* gates plus engine namespaces (BigWorld, dh).
+        dir() works on these real modules, unlike SafeClass records.
+        """
+        try:
+            from ModsShell.API_v_1_0.dataHub import ComponentClass as CC
+            names = [n for n in dir(CC) if not n.startswith('_')]
+            log('shell[%s] CC %d names=%s' % (phase, len(names), str(sorted(names))[:3800]))
+        except Exception as exc:
+            log('shell[%s] CC failed=%s' % (phase, str(exc)[:120]))
+        try:
+            from dh import DataHubStorage
+            hub = DataHubStorage.getDataHub(DataHubStorage.CLIENT_HUB)
+            names = [n for n in dir(hub) if not n.startswith('_')]
+            log('shell[%s] hub type=%s dir=%s' % (phase, str(type(hub)), str(names)[:2000]))
+        except Exception as exc:
+            log('shell[%s] hub failed=%s' % (phase, str(exc)[:120]))
+        try:
+            from ModsShell.API_v_1_0 import battleGate
+            names = [n for n in dir(battleGate) if not n.startswith('_')]
+            log('shell[%s] battleGate=%s' % (phase, str(names)[:2000]))
+        except Exception as exc:
+            log('shell[%s] battleGate failed=%s' % (phase, str(exc)[:120]))
+        try:
+            import BigWorld
+            ents = BigWorld.entities
+            count = len(ents)
+            sample = sorted(ents.keys())[:8]
+            log('shell[%s] bigworld entities=%d sampleIds=%s' % (phase, count, str(sample)))
+            for eid in sample:
+                entity = ents[eid]
+                names = [n for n in dir(entity) if not n.startswith('_')]
+                if names:
+                    log('shell[%s] entity %s type=%s attrs=%s' % (phase, eid, str(type(entity)), str(names)[:1200]))
+                    break
+        except Exception as exc:
+            log('shell[%s] bigworld failed=%s' % (phase, str(exc)[:120]))
 
     def quit(self, *args):
         self.roster = []
