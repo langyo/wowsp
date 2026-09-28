@@ -1,0 +1,29 @@
+/* ShareShotButton.tsx — the copy-share-shot pill riding the stats cards'
+   identity head (top-right corner of the card). Same visual language as the
+   post-battle panel's tool buttons (PostBattlePanel.scss). */
+
+.share-shot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-accent) / 45%);
+  background: transparent;
+  color: rgb(var(--color-accent));
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover {
+    background: rgb(var(--color-accent) / 12%);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+}

@@ -208,14 +208,7 @@
     "showAll": "Afficher tous les pseudos",
     "maskHint": "L'œil en fin de ligne masque un pseudo ; les captures n'incluent jamais les pseudos masqués",
     "hideName": "Masquer ce pseudo",
-    "showName": "Afficher ce pseudo",
-    "copyShot": "Copier la capture",
-    "copyShotDone": "Capture copiée dans le presse-papiers",
-    "copyShotFailed": "Échec de la copie",
-    "shotTagline": "Analyse de bataille World of Warships",
-    "shotDisclaimer1": "À titre indicatif uniquement — pas une mesure du niveau à long terme. Discutez avec bienveillance",
-    "shotDisclaimer2": "Ce logiciel est gratuit et open source — ne payez jamais pour l'obtenir",
-    "shotQqGroup": "Groupe QQ : {n}"
+    "showName": "Afficher ce pseudo"
   },
   "capture": {
     "contested": "Les deux camps capturent — progression en pause",

@@ -1,0 +1,12 @@
+{
+  "copyShot": "复制截图",
+  "copyShotDone": "截图已复制到剪贴板",
+  "copyShotFailed": "复制失败",
+  "shotTagline": "战舰世界对局分析工具",
+  "shotDisclaimer1": "仅供参考，不代表玩家长期水平，请友好讨论",
+  "shotDisclaimer2": "本软件免费开源，请勿上当受骗，不要为购买该软件付费",
+  "shotQqGroup": "QQ群：{n}",
+  "topShips": "常用舰船",
+  "moreShips": "另有 {n} 艘舰船",
+  "moreMembers": "另有 {n} 名成员"
+}

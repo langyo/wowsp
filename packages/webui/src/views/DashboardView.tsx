@@ -16,7 +16,14 @@ import { useShipStatsStore } from "@/stores/shipStats";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useTrendsStore } from "@/stores/trends";
 import { useRankedStore } from "@/stores/ranked";
-import { winrateColor } from "@/utils/winrate";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
+import { useLanguage } from "@/i18n/useLanguage";
+import { useCareerStamp } from "@/composables/useCareerStamp";
+import { useCompositionStamps } from "@/composables/useCompositionStamps";
+import ShareShotButton from "@/features/share/ShareShotButton";
+import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot";
+import { useShareImage } from "@/features/share/useShareImage";
+import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import {
   computeRecentDelta,
   dateRangeCutoff,
@@ -57,6 +64,10 @@ export default defineComponent({
     const ranked = useRankedStore();
     const loadingTasks = useLoadingTasksStore();
     const router = useRouter();
+    const prefs = useStatsPrefsStore();
+    const { uiLocale } = useLanguage();
+    // Root element feeds the share shot's live theme palette.
+    const root = ref<HTMLElement | null>(null);
 
     const showModal = ref(false);
     const dateRange = ref<DateRange>("all");
@@ -171,8 +182,130 @@ export default defineComponent({
       { value: "all", label: t("dashboard.rangeAll") },
     ];
 
+    // ── Share shot ────────────────────────────────────────────────────
+    // Career + composition seals for the shot, the same gates the live
+    // card applies (zh locale + PR master + seals toggle); the career
+    // verdict's clan gate lives in the shared composable.
+    const stampKind = useCareerStamp(() => currentStats.value);
+    const composition = useCompositionStamps(
+      () => activeAccount.value?.accountId ?? null,
+      () => activeAccount.value?.realm ?? "",
+    );
+    const SHOT_SHIP_LIMIT = 8;
+
+    function buildShotModel(): StatsShotModel {
+      const s = currentStats.value;
+      if (!s) throw new Error("no stats loaded for the share shot");
+      const rangeText = {
+        "1d": t("dashboard.range1d"),
+        "7d": t("dashboard.range7d"),
+        "30d": t("dashboard.range30d"),
+        all: t("dashboard.rangeAll"),
+      }[dateRange.value];
+      const rangeLabel =
+        dateRange.value !== "all" && recentDelta.value
+          ? `${rangeText} · ${new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString()}`
+          : rangeText;
+      const pr = prTier(s.pr);
+      // Same anomaly flag the card's KPI strip uses — battles with zero
+      // damage are broken snapshot data.
+      const damageAnomaly =
+        s.battles != null && s.battles > 0 && s.avgDamage != null && s.avgDamage <= 0;
+      const sealsOn =
+        uiLocale.value.startsWith("zh") &&
+        prefs.prefs.prEnabled &&
+        prefs.prefs.sealsEnabled;
+      const fmtWr = (wr: number | null | undefined) =>
+        wr != null ? `${wr.toFixed(1)}%` : "—";
+      const ships = filteredShips.value.slice(0, SHOT_SHIP_LIMIT);
+      return {
+        title: t("nav.dashboard"),
+        rangeLabel,
+        realm: s.realm,
+        name: s.name,
+        clanTag: s.clanTag,
+        hidden: !!s.hidden,
+        hiddenLabel: t("stats.hidden"),
+        stamp: sealsOn ? stampKind.value : null,
+        airSub: sealsOn ? composition.value : null,
+        prOn: prefs.prefs.prEnabled,
+        hero: {
+          winrate: s.winrate != null ? `${s.winrate.toFixed(1)}%` : "—",
+          winrateColor: winrateColor(s.winrate),
+          winrateLabel: t("stats.winrate"),
+          battlesText:
+            s.battles != null ? `${s.battles.toLocaleString()} ${t("stats.battles")}` : "—",
+          pr: s.pr != null ? s.pr.toLocaleString() : null,
+          prColor: pr.rainbow ? undefined : pr.color,
+          prRainbow: pr.rainbow,
+          prLabel: prTierLabel(pr.key),
+        },
+        // The live card hides the strip when every split is unknown —
+        // the shot keeps the same gate.
+        divisions:
+          [s.soloWr, s.div2Wr, s.div3Wr, ranked.winrate].some((wr) => wr != null)
+            ? [
+                { label: t("stats.solo"), value: fmtWr(s.soloWr), color: winrateColor(s.soloWr) },
+                { label: t("stats.div2"), value: fmtWr(s.div2Wr), color: winrateColor(s.div2Wr) },
+                { label: t("stats.div3"), value: fmtWr(s.div3Wr), color: winrateColor(s.div3Wr) },
+                { label: t("stats.ranked"), value: fmtWr(ranked.winrate), color: winrateColor(ranked.winrate) },
+              ]
+            : [],
+        kpis: [
+          { label: t("stats.battles"), value: s.battles != null ? s.battles.toLocaleString() : "—" },
+          {
+            label: t("stats.avgDamage"),
+            value: damageAnomaly
+              ? t("stats.dataAnomaly")
+              : s.avgDamage != null
+                ? Math.round(s.avgDamage).toLocaleString()
+                : "—",
+            color: damageAnomaly ? damageColor(0) : undefined,
+          },
+          { label: t("stats.avgExp"), value: s.avgXp != null ? Math.round(s.avgXp).toLocaleString() : "—" },
+          { label: t("stats.kdRatio"), value: s.kdRatio != null ? s.kdRatio.toFixed(2) : "—" },
+          { label: t("stats.survivalRate"), value: s.survivalRate != null ? `${s.survivalRate.toFixed(0)}%` : "—" },
+          { label: t("stats.hitRate"), value: s.hitRate != null ? `${s.hitRate.toFixed(0)}%` : "—" },
+        ],
+        typeChips: typeSummary.value.map((ts) => ({
+          code: SHIP_TYPE_SHORT[ts.type] ?? "?",
+          battles: ts.battles.toLocaleString(),
+          value: `${ts.winrate.toFixed(1)}%`,
+          color: winrateColor(ts.winrate),
+        })),
+        shipsTitle: t("share.topShips"),
+        shipsHead: [
+          t("stats.battles"),
+          t("stats.winrate"),
+          t("stats.avgDamage"),
+          t("stats.kdRatio"),
+        ],
+        ships: ships.map((ship) => ({
+          name: displayShipName(ship),
+          shipType: encyclopedia.byId.get(ship.shipId)?.type ?? null,
+          cells: [
+            { text: ship.battles.toLocaleString() },
+            { text: `${ship.winrate.toFixed(1)}%`, color: winrateColor(ship.winrate) },
+            {
+              text:
+                ship.battles > 0 && ship.avgDamage <= 0
+                  ? t("stats.dataAnomaly")
+                  : ship.avgDamage.toFixed(0),
+            },
+            { text: (ship.frags / Math.max(1, ship.battles)).toFixed(2) },
+          ],
+        })),
+        moreShips:
+          filteredShips.value.length > SHOT_SHIP_LIMIT
+            ? t("share.moreShips", { n: filteredShips.value.length - SHOT_SHIP_LIMIT })
+            : null,
+      };
+    }
+
+    const shot = useShareImage(() => renderStatsShot(buildShotModel(), { el: root.value }));
+
     return () => (
-      <div class="dashboard-view">
+      <div class="dashboard-view" ref={root}>
         <Transition name="s-fade-slide" mode="out-in">
           {!activeAccount.value ? (
             <div class="dashboard-view__empty" key="empty">
@@ -204,6 +337,14 @@ export default defineComponent({
                         })
                     : undefined
                 }
+                v-slots={{
+                  actions: () => (
+                    <ShareShotButton
+                      busy={shot.busy.value}
+                      onShot={() => void shot.copyShot()}
+                    />
+                  ),
+                }}
               />
 
               {/* ── Ranked history ── */}

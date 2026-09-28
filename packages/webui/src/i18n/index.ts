@@ -5,7 +5,7 @@
  * comes from window.__WOWSP_OS_PREFS__ (seeded by the Tauri shell before
  * page load) or the browser. Adapted from shittim-chest's i18n.
  *
- * Locale JSON is LAZY: a non-eager glob keeps all 9 locales × 17 namespaces
+ * Locale JSON is LAZY: a non-eager glob keeps all 9 locales × 18 namespaces
  * out of the main bundle, and each locale's namespaces are awaited and
  * merged on first use (see loadLocaleMessages). The fallback (en-US) and
  * the resolved initial locale are preloaded before the app mounts

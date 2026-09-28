@@ -3,24 +3,35 @@
  * result matrix onto an offscreen canvas and returns PNG bytes, ready for the
  * clipboard copy (`api.copyImageToClipboard`) or a save-file fallback.
  *
- * The image is a hand-drawn canvas composite (same approach as the tactical
- * board's exporters) rather than a DOM rasterization on purpose: the share
- * shot must be deterministic (no hover states, no scrollbars, no ship
- * parameters ever), must apply the nickname masking the user chose, and must
- * carry the fixed WoWSP watermark footer — a camera-watermark-style promo
- * strip — regardless of the window state the panel happens to be in.
+ * The image is a hand-drawn canvas composite built on the shared share-shot
+ * kit (features/share/shotKit.ts — palette, fonts, seal painter and the
+ * fixed WoWSP watermark footer) rather than a DOM rasterization on purpose:
+ * the share shot must be deterministic (no hover states, no scrollbars, no
+ * ship parameters ever), must apply the nickname masking the user chose, and
+ * must carry the watermark footer regardless of the window state the panel
+ * happens to be in.
  *
- * Theme colors are read live from the app's CSS custom properties (so the
- * shot follows the light/dark mode) with hard dark-theme fallbacks; ship
- * class icons are the same bundled HUD-marker PNGs the minimap canvas draws
- * (same-origin vite assets, so the canvas never taints).
+ * Ship class icons are the same bundled HUD-marker PNGs the minimap canvas
+ * draws (same-origin vite assets, so the canvas never taints).
  */
 import { shipIconUrl, type ShipIconVariant } from "@/features/holographic/shipIcons";
+import {
+  FOOT_H,
+  LOGO_URL,
+  PAD,
+  STAMP_URL,
+  canvasToPngBytes,
+  drawFooter,
+  drawStampSeal,
+  font,
+  loadImage,
+  newShotCanvas,
+  readPalette,
+  rgba,
+  statCellOrigins,
+  type ShotFooterStrings,
+} from "@/features/share/shotKit";
 import type { CareerStamp } from "@/utils/winrate";
-import stampApe from "../../res/stamps/stamp-ape.png";
-import stampMaggot from "../../res/stamps/stamp-maggot.png";
-import stampMiracle from "../../res/stamps/stamp-miracle.png";
-import stampRat from "../../res/stamps/stamp-rat.png";
 
 /** One right-aligned stat cell of a row (WR / PR / avg damage / base XP). */
 export interface ShotStat {
@@ -30,7 +41,7 @@ export interface ShotStat {
 }
 
 /** One player row. `nick` arrives ALREADY masked by the caller — the
- * renderer never sees a hidden nickname, so one cannot leak into the image. */
+ *  renderer never sees a hidden nickname, so one cannot leak into the image. */
 export interface ShotRow {
   nick: string;
   clanTag?: string | null;
@@ -49,8 +60,8 @@ export interface ShotRow {
 }
 
 /** One label+value pair of the column-title aggregate (team mean WR / mean
- * PR): `col` is the stat column index whose x-origin the value right-aligns
- * onto, so the header numbers line up with the cells below them. */
+ *  PR): `col` is the stat column index whose x-origin the value right-aligns
+ *  onto, so the header numbers line up with the cells below them. */
 export interface ShotAgg {
   col: number;
   label: string;
@@ -78,30 +89,8 @@ export interface ShotModel {
   columns: ShotColumn[];
 }
 
-/** App palette snapshot: CSS var triplets ("R G B") resolved at render time. */
-interface Palette {
-  bg: string;
-  surface: string;
-  text: string;
-  muted: string;
-  border: string;
-}
-
-const DEFAULT_PALETTE: Palette = {
-  bg: "12 17 27",
-  surface: "22 30 46",
-  text: "233 238 246",
-  muted: "150 160 175",
-  border: "255 255 255",
-};
-
-const FONT_STACK =
-  'ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif';
-const MONO_STACK =
-  'ui-monospace, "Cascadia Mono", Consolas, "Segoe UI", monospace, sans-serif';
-
 /** Canvas logical width of one roster column (the image renders 2× for
- * crispness, so these are pre-scale units). */
+ *  crispness, so these are pre-scale units). */
 const COL_WIDTH = 620;
 const COL_GAP = 16;
 /** Visual gap between adjacent stat cells of a row. At 26 the widest mono
@@ -113,161 +102,22 @@ const STAT_GAP = 36;
  *  whenever any row carries a stamp so the stat columns stay put. */
 const STAMP_SIZE = 26;
 const STAMP_SLOT = STAMP_SIZE + 4;
-/** Cinnabar seal ink — RatingStamp's frame color (RatingStamp.scss). */
-const STAMP_INK = "202 44 38";
-/** The seal glyph bitmaps (same assets the RatingStamp SVG embeds). */
-const STAMP_URL: Record<CareerStamp, string> = {
-  miracle: stampMiracle,
-  ape: stampApe,
-  maggot: stampMaggot,
-  rat: stampRat,
-};
-const PAD = 28;
 const ROW_H = 44;
 const HEAD_H = 66;
 const COL_TITLE_H = 34;
-/** Footer band: tall enough for the logo block and the two centered
- * disclaimer lines to breathe. */
-const FOOT_H = 88;
-const GITHUB_URL = "github.com/langyo/wowsp";
-/** The bundled pig-mascot brand mark (public/ asset — same-origin, so the
- * canvas never taints; same pattern as the HUD marker PNGs). */
-const LOGO_URL = "/logo.webp";
-
-/** Localized strings the fixed promo footer carries (all resolved by the
- * caller; the QQ number itself comes from about.qqGroupNumber). */
-export interface ShotFooterStrings {
-  tagline: string;
-  disclaimer1: string;
-  disclaimer2: string;
-  qqGroup: string;
-}
-
-function readPalette(el?: HTMLElement | null): Palette {
-  if (!el) return DEFAULT_PALETTE;
-  const style = getComputedStyle(el);
-  const pick = (name: string, fallback: string): string => {
-    const v = style.getPropertyValue(name).trim();
-    // CSS vars here are "R G B" triplets (rgb(var(--x) / a) usage in the app).
-    return /^\d{1,3} \d{1,3} \d{1,3}$/.test(v) ? v : fallback;
-  };
-  return {
-    bg: pick("--color-background", DEFAULT_PALETTE.bg),
-    surface: pick("--color-surface", DEFAULT_PALETTE.surface),
-    text: pick("--color-text", DEFAULT_PALETTE.text),
-    muted: pick("--color-muted", DEFAULT_PALETTE.muted),
-    border: pick("--color-text", DEFAULT_PALETTE.border),
-  };
-}
-
-const rgba = (triplet: string, alpha: number): string =>
-  `rgba(${triplet.split(" ").join(",")},${alpha})`;
-
-/** Image cache for the bundled HUD marker PNGs (a full matrix reuses the
- * same handful of class icons dozens of times). */
-const imageCache = new Map<string, Promise<HTMLImageElement | null>>();
-function loadImage(url: string | null): Promise<HTMLImageElement | null> {
-  if (!url) return Promise.resolve(null);
-  let entry = imageCache.get(url);
-  if (!entry) {
-    entry = new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
-    imageCache.set(url, entry);
-  }
-  return entry;
-}
-
-function font(size: number, weight = 400, mono = false): string {
-  return `${weight} ${size}px ${mono ? MONO_STACK : FONT_STACK}`;
-}
 
 /** Measure the widest right-aligned stat cell per column index so every row's
- * cells share one x-origin — the aligned-table look of the live panel. */
+ *  cells share one x-origin — the aligned-table look of the live panel. */
 function statOrigins(
   ctx: CanvasRenderingContext2D,
   columns: ShotColumn[],
 ): number[] {
-  const origins: number[] = [];
-  let x = 0;
-  const count = Math.max(...columns.map((c) => c.rows[0]?.stats.length ?? 0), 0);
-  for (let i = 0; i < count; i++) {
-    let w = 0;
-    for (const col of columns) {
-      for (const row of col.rows) {
-        const s = row.stats[i];
-        if (s) w = Math.max(w, ctx.measureText(s.text).width);
-      }
-    }
-    origins.push(x);
-    x += w + STAT_GAP;
-  }
-  return origins;
+  return statCellOrigins(
+    ctx,
+    columns.flatMap((c) => c.rows.map((r) => r.stats.map((s) => s.text))),
+    STAT_GAP,
+  );
 }
-
-/** Draw the camera-watermark promo footer: pig logo + brand + localized
- * tagline left, the two fixed disclaimers centered (data is reference-only;
- * the software is free — never pay for it), QQ group + project URL right —
- * the fixed WoWSP signature on every share shot. */
-function drawFooter(
-  ctx: CanvasRenderingContext2D,
-  palette: Palette,
-  width: number,
-  footer: ShotFooterStrings,
-  logo: HTMLImageElement | null,
-): void {
-  const y = ctx.canvas.height / SCALE - FOOT_H;
-  ctx.fillStyle = rgba(palette.surface, 0.75);
-  ctx.fillRect(0, y, width, FOOT_H);
-  ctx.fillStyle = rgba(palette.text, 0.12);
-  ctx.fillRect(0, y, width, 1);
-
-  ctx.textBaseline = "middle";
-  const cy = y + FOOT_H / 2;
-
-  // Left: the mascot logo in a rounded frame, brand + tagline beside it.
-  let lx = PAD;
-  if (logo) {
-    const size = 46;
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(lx, cy - size / 2, size, size, 10);
-    ctx.clip();
-    ctx.drawImage(logo, lx, cy - size / 2, size, size);
-    ctx.restore();
-    lx += size + 12;
-  }
-  ctx.textAlign = "left";
-  ctx.font = font(19, 700);
-  ctx.fillStyle = rgba(palette.text, 1);
-  ctx.fillText("WoWSP", lx, cy - 11);
-  ctx.font = font(12, 400);
-  ctx.fillStyle = rgba(palette.text, 0.6);
-  ctx.fillText(footer.tagline, lx, cy + 12);
-
-  // Center: the two disclaimers.
-  ctx.textAlign = "center";
-  ctx.font = font(11.5, 400);
-  ctx.fillStyle = rgba(palette.text, 0.48);
-  ctx.fillText(footer.disclaimer1, width / 2, cy - 12);
-  ctx.fillText(footer.disclaimer2, width / 2, cy + 12);
-
-  // Right: QQ group over the project URL.
-  ctx.textAlign = "right";
-  ctx.font = font(12, 600);
-  ctx.fillStyle = rgba(palette.text, 0.72);
-  ctx.fillText(footer.qqGroup, width - PAD, cy - 11);
-  ctx.font = font(12, 400);
-  ctx.fillStyle = rgba(palette.text, 0.55);
-  ctx.fillText(GITHUB_URL, width - PAD, cy + 12);
-}
-
-/** Fixed 2× supersampling: the share shot keeps crisp small text when pasted
- * into HiDPI chat clients. All draw code below works in logical units. */
-const SCALE = 2;
 
 /** Paint the share shot and return PNG bytes. `el` (any live panel element)
  * supplies the theme palette; the footer strings are the localized watermark
@@ -282,16 +132,7 @@ export async function renderPostBattleShot(
   const maxRows = Math.max(...cols.map((c) => c.rows.length), 0);
   const height = HEAD_H + COL_TITLE_H + maxRows * (ROW_H + 6) + 10 + FOOT_H;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * SCALE);
-  canvas.height = Math.round(height * SCALE);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("canvas 2d context unavailable");
-  ctx.scale(SCALE, SCALE);
-
-  // Background + subtle panel surface behind the matrix.
-  ctx.fillStyle = rgba(palette.bg, 1);
-  ctx.fillRect(0, 0, width, height);
+  const { canvas, ctx } = newShotCanvas(width, height, palette);
 
   // Header: title, mode pill, map (right).
   ctx.textBaseline = "middle";
@@ -447,29 +288,16 @@ export async function renderPostBattleShot(
         ctx.fillStyle = s.color ?? rgba(palette.text, 0.85);
         ctx.fillText(s.text, x, cy);
       });
-      // The career seal: RatingStamp's face redrawn in canvas — double
-      // rounded frame in cinnabar ink around the glyph bitmap, tilted by
-      // the shared −9° press (mini variant: no moiré weave at this size).
+      // The career seal: RatingStamp's face redrawn in canvas, pressed onto
+      // the row-end slot reserved above (mini variant, see drawStampSeal).
       if (row.stamp) {
-        ctx.save();
-        ctx.translate(cx + COL_WIDTH - 14 - STAMP_SIZE / 2, cy);
-        ctx.rotate(-Math.PI / 20);
-        ctx.strokeStyle = rgba(STAMP_INK, 0.9);
-        const s = STAMP_SIZE / 100;
-        ctx.lineWidth = 6 * s;
-        ctx.beginPath();
-        ctx.roundRect(-45 * s, -45 * s, 90 * s, 90 * s, 7 * s);
-        ctx.stroke();
-        ctx.lineWidth = 2 * s;
-        ctx.beginPath();
-        ctx.roundRect(-35.5 * s, -35.5 * s, 71 * s, 71 * s, 3 * s);
-        ctx.stroke();
-        const img = stampImages.get(row.stamp);
-        if (img) {
-          ctx.globalAlpha *= 0.92;
-          ctx.drawImage(img, -33 * s, -33 * s, 66 * s, 66 * s);
-        }
-        ctx.restore();
+        drawStampSeal(
+          ctx,
+          cx + COL_WIDTH - 14 - STAMP_SIZE / 2,
+          cy,
+          STAMP_SIZE,
+          stampImages.get(row.stamp) ?? null,
+        );
       }
       ctx.globalAlpha = 1;
       y += ROW_H + 6;
@@ -477,10 +305,5 @@ export async function renderPostBattleShot(
   }
 
   drawFooter(ctx, palette, width, opts, logo);
-
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob((b) => resolve(b), "image/png"),
-  );
-  if (!blob) throw new Error("PNG encode failed");
-  return new Uint8Array(await blob.arrayBuffer());
+  return canvasToPngBytes(canvas);
 }

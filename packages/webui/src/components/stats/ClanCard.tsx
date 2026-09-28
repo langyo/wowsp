@@ -43,12 +43,25 @@ function roleRank(role: string): number {
   return i === -1 ? ROLE_ORDER.length : i;
 }
 
-function roleLabel(role: string): string {
+/** Localized roster role label (falls back to the raw WG role string when
+ *  the i18n table has no entry). Exported for the clan share shot, which
+ *  labels its roster rows the same way. */
+export function roleLabel(role: string): string {
   const key = `lookup.role.${role}`;
   const label = t(key);
   // vue-i18n returns the key itself for missing entries — fall back to the
   // raw WG role string.
   return label === key ? role : label;
+}
+
+/** The roster's default order (officers first, battles desc) — exported for
+ *  the clan share shot, which mirrors the card's initial sort. */
+export function defaultRosterOrder(members: ClanMember[]): ClanMember[] {
+  return [...members].sort(
+    (a, b) =>
+      roleRank(a.role) - roleRank(b.role) ||
+      (b.stats.battles ?? 0) - (a.stats.battles ?? 0),
+  );
 }
 
 /** Numeric sort value for the active sort key; missing values and hidden
@@ -74,7 +87,7 @@ export default defineComponent({
     /** Roster row clicked → jump to that player's lookup. */
     onMemberClick: Function as PropType<(member: ClanMember) => void>,
   },
-  setup(props) {
+  setup(props, { slots }) {
     const prefs = useStatsPrefsStore();
     const sortKey = ref<SortKey | null>(null);
     const sortDir = ref<"desc" | "asc">("desc");
@@ -93,30 +106,23 @@ export default defineComponent({
     }
 
     const members = computed(() => {
+      if (sortKey.value == null) return defaultRosterOrder(props.clan.members);
       const list = [...props.clan.members];
-      if (sortKey.value == null) {
-        list.sort(
-          (a, b) =>
-            roleRank(a.role) - roleRank(b.role) ||
-            (b.stats.battles ?? 0) - (a.stats.battles ?? 0),
-        );
-      } else {
-        const k = sortKey.value;
-        const d = sortDir.value === "desc" ? -1 : 1;
-        list.sort((a, b) => {
-          // Hidden members AND missing sort values sink in BOTH directions
-          // (a fixed -Infinity would float them in asc order), then the key
-          // decides; officers break ties.
-          const byHidden = Number(a.stats.hidden) - Number(b.stats.hidden);
-          if (byHidden !== 0) return byHidden;
-          const va = sortValue(a, k);
-          const vb = sortValue(b, k);
-          const byMissing =
-            Number(va === Number.NEGATIVE_INFINITY) - Number(vb === Number.NEGATIVE_INFINITY);
-          if (byMissing !== 0) return byMissing;
-          return d * (va - vb) || roleRank(a.role) - roleRank(b.role);
-        });
-      }
+      const k = sortKey.value;
+      const d = sortDir.value === "desc" ? -1 : 1;
+      list.sort((a, b) => {
+        // Hidden members AND missing sort values sink in BOTH directions
+        // (a fixed -Infinity would float them in asc order), then the key
+        // decides; officers break ties.
+        const byHidden = Number(a.stats.hidden) - Number(b.stats.hidden);
+        if (byHidden !== 0) return byHidden;
+        const va = sortValue(a, k);
+        const vb = sortValue(b, k);
+        const byMissing =
+          Number(va === Number.NEGATIVE_INFINITY) - Number(vb === Number.NEGATIVE_INFINITY);
+        if (byMissing !== 0) return byMissing;
+        return d * (va - vb) || roleRank(a.role) - roleRank(b.role);
+      });
       return list;
     });
 
@@ -190,6 +196,7 @@ export default defineComponent({
             badges: () => (
               <HkTag variant="default" size="sm">{props.clan.realm.toUpperCase()}</HkTag>
             ),
+            actions: () => slots.actions?.(),
           }}
         />
         {props.clan.description ? (

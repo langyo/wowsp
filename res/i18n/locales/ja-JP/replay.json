@@ -208,14 +208,7 @@
     "showAll": "全ニックネームを表示",
     "maskHint": "行末の目のアイコンで個別のニックネームを非表示にできます。非表示の名前はスクリーンショットに含まれません",
     "hideName": "このニックネームを隠す",
-    "showName": "このニックネームを表示",
-    "copyShot": "スクリーンショットをコピー",
-    "copyShotDone": "スクリーンショットをクリップボードにコピーしました",
-    "copyShotFailed": "コピーに失敗しました",
-    "shotTagline": "World of Warships 戦闘分析ツール",
-    "shotDisclaimer1": "参考値です。長期的な実力を保証するものではありません。穏やかな議論を心がけましょう",
-    "shotDisclaimer2": "本ソフトは無料・オープンソースです。購入を求める詐欺にご注意ください",
-    "shotQqGroup": "QQグループ：{n}"
+    "showName": "このニックネームを表示"
   },
   "capture": {
     "contested": "双方が占拠中のため進行が停止しています",

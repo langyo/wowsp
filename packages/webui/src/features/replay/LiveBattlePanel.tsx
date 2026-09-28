@@ -717,7 +717,7 @@ export default defineComponent({
               onClick={() => void shot.copyShot()}
             >
               {shot.busy.value ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
-              {t("replay.postbattle.copyShot")}
+              {t("share.copyShot")}
             </button>
             {/* Hide-all-nicknames toggle — the post-battle share bar's
                 masking button, dressed in the head's pill voice. */}

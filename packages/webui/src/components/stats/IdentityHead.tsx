@@ -12,6 +12,9 @@ import "./IdentityHead.scss";
  * Slots:
  *   avatar — leading visual (PlayerBadge on the player card).
  *   badges — trailing HkTag row.
+ *   actions — rightmost pill buttons after the badges (the share-shot
+ *     button mounts here, keeping the action in the card's top-right
+ *     corner on every water-table surface).
  */
 export default defineComponent({
   name: "IdentityHead",
@@ -44,7 +47,10 @@ export default defineComponent({
           ) : null}
           <h3 class="id-head__name">{props.name}</h3>
         </div>
-        <div class="id-head__badges">{slots.badges?.()}</div>
+        <div class="id-head__badges">
+          {slots.badges?.()}
+          {slots.actions?.()}
+        </div>
       </header>
     );
   },

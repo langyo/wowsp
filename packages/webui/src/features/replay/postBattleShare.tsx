@@ -3,7 +3,8 @@
  * incomplete-results fallback matrix) and the live battle panel's head
  * actions: nickname masking (hide all / hide single players) plus the
  * "copy share shot" flow that renders the matrix to a watermarked PNG and
- * pushes it onto the system clipboard.
+ * pushes it onto the system clipboard (the copy flow itself lives in the
+ * shared share kit — features/share/useShareImage.ts).
  *
  * Masking state is deliberately per-view and ephemeral — it is a share-time
  * privacy choice, not a preference. The fixed-width mask is NOT
@@ -11,10 +12,11 @@
  */
 import { defineComponent, ref } from "vue";
 import { Camera, Eye, EyeOff } from "@lucide/vue";
-import { HkSpinner, useToast } from "@celestia-island/hikari";
+import { HkSpinner } from "@celestia-island/hikari";
 
-import { api } from "@/api";
 import { t } from "@/i18n";
+import { shareFooterStrings } from "@/features/share/shotKit";
+import { useShareImage } from "@/features/share/useShareImage";
 import { renderPostBattleShot, type ShotModel } from "./postBattleShot";
 
 /** Display replacement for a hidden nickname (fixed width, see header). */
@@ -44,53 +46,12 @@ export function useNickMasking() {
   return { hideAll, hiddenNames, isHidden, toggleAll, toggleOne, maskOf };
 }
 
-/** Copy flow for the share shot: renders the model off-DOM, then copies the
- *  PNG to the clipboard — native IPC first (arboard on desktop), the
- *  webview's async clipboard API as the fallback (mobile / browser hosts).
- *  Feedback rides the app's global toast surface (the inline note by the
- *  button was retired — a toast can't shift the toolbar layout). */
+/** Copy flow for the post-battle share shot: renders the model off-DOM via
+ *  the shared copy pipeline, with the shot kit's localized watermark footer. */
 export function useShareShot(getModel: () => ShotModel, getEl: () => HTMLElement | null) {
-  const busy = ref(false);
-  const toast = useToast();
-  async function copyShot() {
-    if (busy.value) return;
-    busy.value = true;
-    let ok = false;
-    try {
-      const bytes = await renderPostBattleShot(getModel(), {
-        el: getEl(),
-        tagline: t("replay.postbattle.shotTagline"),
-        disclaimer1: t("replay.postbattle.shotDisclaimer1"),
-        disclaimer2: t("replay.postbattle.shotDisclaimer2"),
-        qqGroup: t("replay.postbattle.shotQqGroup", { n: t("about.qqGroupNumber") }),
-      });
-      try {
-        await api.copyImageToClipboard(bytes);
-        ok = true;
-      } catch {
-        // Native path unavailable (mobile marker / non-Tauri host): the
-        // webview clipboard API still accepts PNG blobs on many hosts.
-        if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
-          try {
-            await navigator.clipboard.write([
-              new ClipboardItem({
-                "image/png": new Blob([bytes.slice().buffer], { type: "image/png" }),
-              }),
-            ]);
-            ok = true;
-          } catch {
-            /* fall through to the failure toast */
-          }
-        }
-      }
-    } catch {
-      /* render failure — same failure toast */
-    }
-    busy.value = false;
-    if (ok) toast.success(t("replay.postbattle.copyShotDone"));
-    else toast.error(t("replay.postbattle.copyShotFailed"), false);
-  }
-  return { busy, copyShot };
+  return useShareImage(async () =>
+    renderPostBattleShot(getModel(), { el: getEl(), ...shareFooterStrings() }),
+  );
 }
 
 /** Toolbar riding the post-battle panel top: hide-all-nicknames toggle (with
@@ -130,7 +91,7 @@ export const PostBattleShareBar = defineComponent({
           onClick={() => emit("shot")}
         >
           {props.shotBusy ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
-          {t("replay.postbattle.copyShot")}
+          {t("share.copyShot")}
         </button>
       </div>
     );

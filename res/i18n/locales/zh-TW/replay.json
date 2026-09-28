@@ -208,14 +208,7 @@
     "showAll": "顯示全部暱稱",
     "maskHint": "行尾的眼睛可隱藏單一暱稱，截圖不含已隱藏暱稱",
     "hideName": "隱藏該暱稱",
-    "showName": "顯示該暱稱",
-    "copyShot": "複製截圖",
-    "copyShotDone": "截圖已複製到剪貼簿",
-    "copyShotFailed": "複製失敗",
-    "shotTagline": "戰艦世界對局分析工具",
-    "shotDisclaimer1": "僅供參考，不代表玩家長期水準，請友善討論",
-    "shotDisclaimer2": "本軟體免費開源，請勿上當受騙，不要為購買該軟體付費",
-    "shotQqGroup": "QQ群：{n}"
+    "showName": "顯示該暱稱"
   },
   "capture": {
     "contested": "雙方壓點，進度暫停",

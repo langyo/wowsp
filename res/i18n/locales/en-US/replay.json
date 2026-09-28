@@ -208,14 +208,7 @@
     "showAll": "Show all nicknames",
     "maskHint": "The eye at a row's end hides one nick; share shots never include hidden nicks",
     "hideName": "Hide this nickname",
-    "showName": "Show this nickname",
-    "copyShot": "Copy share shot",
-    "copyShotDone": "Share shot copied to clipboard",
-    "copyShotFailed": "Copy failed",
-    "shotTagline": "World of Warships battle analysis",
-    "shotDisclaimer1": "For reference only — not a measure of long-term skill. Please discuss kindly.",
-    "shotDisclaimer2": "This software is free and open source — never pay anyone for it.",
-    "shotQqGroup": "QQ Group: {n}"
+    "showName": "Show this nickname"
   },
   "capture": {
     "contested": "Both sides capping — progress paused",

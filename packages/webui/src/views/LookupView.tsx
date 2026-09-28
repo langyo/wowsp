@@ -2,7 +2,7 @@ import { computed, defineComponent, onMounted, ref, Transition } from "vue";
 import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
-import ClanCard from "@/components/stats/ClanCard";
+import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/ClanCard";
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
@@ -18,10 +18,18 @@ import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useClanStatsStore, clanCacheKey } from "@/stores/clanStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
+import { useLanguage } from "@/i18n/useLanguage";
+import { useCareerStamp } from "@/composables/useCareerStamp";
+import { useCompositionStamps } from "@/composables/useCompositionStamps";
+import ShareShotButton from "@/features/share/ShareShotButton";
+import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot";
+import { renderClanShot, type ClanShotModel } from "@/features/share/clanShot";
+import { useShareImage } from "@/features/share/useShareImage";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
 import { tierToRoman } from "@wowsp/holo";
-import { winrateColor } from "@/utils/winrate";
+import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import {
   computeRecentDelta,
   dateRangeCutoff,
@@ -358,8 +366,220 @@ export default defineComponent({
       void doSearch(name, r);
     });
 
+    // ── Share shots ───────────────────────────────────────────────────
+    // One per lookup mode, mirroring the result the user currently sees.
+    // Root element feeds the live theme palette.
+    const root = ref<HTMLElement | null>(null);
+    const prefs = useStatsPrefsStore();
+    const { uiLocale } = useLanguage();
+    const stampKind = useCareerStamp(() => result.value);
+    const composition = useCompositionStamps(
+      () => result.value?.accountId ?? null,
+      // Keyed on the RESULT's realm (what the live card shows), not the
+      // realm picker, so a picker flip without a re-search cannot skew the
+      // shot's composition verdicts.
+      () => result.value?.realm ?? null,
+    );
+    const SHOT_SHIP_LIMIT = 8;
+    const SHOT_MEMBER_LIMIT = 12;
+
+    function buildPlayerShotModel(): StatsShotModel {
+      const s = result.value;
+      if (!s) throw new Error("no player result for the share shot");
+      const rangeText = {
+        "1d": t("dashboard.range1d"),
+        "7d": t("dashboard.range7d"),
+        "30d": t("dashboard.range30d"),
+        all: t("dashboard.rangeAll"),
+      }[dateRange.value];
+      const rangeLabel =
+        dateRange.value !== "all" && recentDelta.value
+          ? `${rangeText} · ${new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString()}`
+          : rangeText;
+      const pr = prTier(s.pr);
+      const damageAnomaly =
+        s.battles != null && s.battles > 0 && s.avgDamage != null && s.avgDamage <= 0;
+      const sealsOn =
+        uiLocale.value.startsWith("zh") &&
+        prefs.prefs.prEnabled &&
+        prefs.prefs.sealsEnabled;
+      const fmtWr = (wr: number | null | undefined) =>
+        wr != null ? `${wr.toFixed(1)}%` : "—";
+      const ships = filteredShips.value.slice(0, SHOT_SHIP_LIMIT);
+      return {
+        title: t("nav.lookup"),
+        rangeLabel,
+        realm: s.realm,
+        name: s.name,
+        clanTag: s.clanTag,
+        hidden: !!s.hidden,
+        hiddenLabel: t("stats.hidden"),
+        stamp: sealsOn ? stampKind.value : null,
+        airSub: sealsOn ? composition.value : null,
+        prOn: prefs.prefs.prEnabled,
+        hero: {
+          winrate: s.winrate != null ? `${s.winrate.toFixed(1)}%` : "—",
+          winrateColor: winrateColor(s.winrate),
+          winrateLabel: t("stats.winrate"),
+          battlesText:
+            s.battles != null ? `${s.battles.toLocaleString()} ${t("stats.battles")}` : "—",
+          pr: s.pr != null ? s.pr.toLocaleString() : null,
+          prColor: pr.rainbow ? undefined : pr.color,
+          prRainbow: pr.rainbow,
+          prLabel: prTierLabel(pr.key),
+        },
+        // The live card hides the strip when every split is unknown —
+        // the shot keeps the same gate.
+        divisions:
+          [s.soloWr, s.div2Wr, s.div3Wr, ranked.winrate].some((wr) => wr != null)
+            ? [
+                { label: t("stats.solo"), value: fmtWr(s.soloWr), color: winrateColor(s.soloWr) },
+                { label: t("stats.div2"), value: fmtWr(s.div2Wr), color: winrateColor(s.div2Wr) },
+                { label: t("stats.div3"), value: fmtWr(s.div3Wr), color: winrateColor(s.div3Wr) },
+                { label: t("stats.ranked"), value: fmtWr(ranked.winrate), color: winrateColor(ranked.winrate) },
+              ]
+            : [],
+        kpis: [
+          { label: t("stats.battles"), value: s.battles != null ? s.battles.toLocaleString() : "—" },
+          {
+            label: t("stats.avgDamage"),
+            value: damageAnomaly
+              ? t("stats.dataAnomaly")
+              : s.avgDamage != null
+                ? Math.round(s.avgDamage).toLocaleString()
+                : "—",
+            color: damageAnomaly ? damageColor(0) : undefined,
+          },
+          { label: t("stats.avgExp"), value: s.avgXp != null ? Math.round(s.avgXp).toLocaleString() : "—" },
+          { label: t("stats.kdRatio"), value: s.kdRatio != null ? s.kdRatio.toFixed(2) : "—" },
+          { label: t("stats.survivalRate"), value: s.survivalRate != null ? `${s.survivalRate.toFixed(0)}%` : "—" },
+          { label: t("stats.hitRate"), value: s.hitRate != null ? `${s.hitRate.toFixed(0)}%` : "—" },
+        ],
+        typeChips: typeSummary.value.map((ts) => ({
+          code: ts.code,
+          battles: ts.battles.toLocaleString(),
+          value: `${ts.winrate.toFixed(1)}%`,
+          color: winrateColor(ts.winrate),
+        })),
+        shipsTitle: t("share.topShips"),
+        shipsHead: [
+          t("stats.battles"),
+          t("stats.winrate"),
+          t("stats.avgDamage"),
+          t("stats.kdRatio"),
+        ],
+        ships: ships.map((ship) => ({
+          name: displayName(ship),
+          shipType: infoOf(ship.shipId)?.type ?? null,
+          cells: [
+            { text: ship.battles.toLocaleString() },
+            { text: `${ship.winrate.toFixed(1)}%`, color: winrateColor(ship.winrate) },
+            {
+              text:
+                ship.battles > 0 && ship.avgDamage <= 0
+                  ? t("stats.dataAnomaly")
+                  : Math.round(ship.avgDamage).toLocaleString(),
+            },
+            { text: (ship.frags / Math.max(1, ship.battles)).toFixed(2) },
+          ],
+        })),
+        moreShips:
+          filteredShips.value.length > SHOT_SHIP_LIMIT
+            ? t("share.moreShips", { n: filteredShips.value.length - SHOT_SHIP_LIMIT })
+            : null,
+      };
+    }
+
+    function buildClanShotModel(): ClanShotModel {
+      const clan = clanResult.value;
+      if (!clan) throw new Error("no clan result for the share shot");
+      const prOn = prefs.prefs.prEnabled;
+      const avgPr = prTier(clan.avgPr ?? null);
+      const top = defaultRosterOrder(clan.members).slice(0, SHOT_MEMBER_LIMIT);
+      return {
+        title: t("nav.lookup"),
+        realm: clan.realm,
+        name: clan.name,
+        tag: clan.tag,
+        description: clan.description || null,
+        prOn,
+        hero: {
+          winrate: clan.winrate > 0 ? `${clan.winrate.toFixed(1)}%` : "—",
+          winrateColor: winrateColor(clan.winrate),
+          winrateLabel: t("stats.winrate"),
+          battlesText:
+            clan.totalBattles > 0
+              ? `${clan.totalBattles.toLocaleString()} ${t("stats.battles")}`
+              : "—",
+          pr: prOn && clan.avgPr != null ? clan.avgPr.toLocaleString() : null,
+          prColor: avgPr.rainbow ? undefined : avgPr.color,
+          prRainbow: avgPr.rainbow,
+          prLabel: prTierLabel(avgPr.key),
+        },
+        kpis: [
+          { label: t("lookup.membersCount"), value: clan.membersCount.toLocaleString() },
+          {
+            label: t("stats.avgDamage"),
+            value: clan.avgDamage > 0 ? Math.round(clan.avgDamage).toLocaleString() : "—",
+          },
+          {
+            label: t("stats.hidden"),
+            value: clan.hiddenCount > 0 ? clan.hiddenCount.toLocaleString() : "0",
+          },
+          {
+            label: t("lookup.createdAt"),
+            value: clan.createdAt
+              ? new Date(clan.createdAt * 1000).toLocaleDateString()
+              : "—",
+          },
+        ],
+        membersTitle: t("lookup.clanMembers"),
+        membersHead: prOn
+          ? [t("stats.battles"), t("stats.winrate"), t("stats.pr"), t("stats.avgDamage")]
+          : [t("stats.battles"), t("stats.winrate"), t("stats.avgDamage")],
+        members: top.map((m) => {
+          const tier = prTier(m.stats.pr);
+          const cells: { text: string; color?: string; rainbow?: boolean }[] = [
+            { text: m.stats.battles != null ? m.stats.battles.toLocaleString() : "—" },
+            m.stats.winrate != null
+              ? { text: `${m.stats.winrate.toFixed(1)}%`, color: winrateColor(m.stats.winrate) }
+              : { text: "—" },
+          ];
+          if (prOn) {
+            cells.push(
+              m.stats.pr != null
+                ? {
+                    text: m.stats.pr.toLocaleString(),
+                    color: tier.rainbow ? undefined : tier.color,
+                    rainbow: tier.rainbow,
+                  }
+                : { text: "—" },
+            );
+          }
+          cells.push({
+            text:
+              m.stats.avgDamage != null
+                ? Math.round(m.stats.avgDamage).toLocaleString()
+                : "—",
+          });
+          return { name: m.name, role: roleLabel(m.role), dim: !!m.stats.hidden, cells };
+        }),
+        moreMembers:
+          clan.members.length > SHOT_MEMBER_LIMIT
+            ? t("share.moreMembers", { n: clan.members.length - SHOT_MEMBER_LIMIT })
+            : null,
+      };
+    }
+
+    const playerShot = useShareImage(() =>
+      renderStatsShot(buildPlayerShotModel(), { el: root.value }),
+    );
+    const clanShot = useShareImage(() =>
+      renderClanShot(buildClanShotModel(), { el: root.value }),
+    );
+
     return () => (
-      <div class="lookup-view">
+      <div class="lookup-view" ref={root}>
         {/* Level-2 sidebar: search on top, query history below */}
         <aside class="lookup-view__sidebar">
           <div class="lookup-view__search">
@@ -464,6 +684,14 @@ export default defineComponent({
                 <ClanCard
                   clan={clanResult.value}
                   onMemberClick={(m) => void doSearch(String(m.accountId), realm.value)}
+                  v-slots={{
+                    actions: () => (
+                      <ShareShotButton
+                        busy={clanShot.busy.value}
+                        onShot={() => void clanShot.copyShot()}
+                      />
+                    ),
+                  }}
                 />
               </div>
             ) : mode.value === "player" && result.value ? (
@@ -477,6 +705,14 @@ export default defineComponent({
                       ? () => void doClanLookup(result.value!.clanId!, realm.value)
                       : undefined
                   }
+                  v-slots={{
+                    actions: () => (
+                      <ShareShotButton
+                        busy={playerShot.busy.value}
+                        onShot={() => void playerShot.copyShot()}
+                      />
+                    ),
+                  }}
                 />
                 {/* Ship distribution charts */}
                 {shipRows.value.length > 0 ? (
