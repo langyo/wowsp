@@ -184,14 +184,6 @@
       "speed": "Velocidad"
     },
     "card": {
-      "loadout": "Equipamiento y mejoras",
-      "consumables": "Ranuras de consumibles",
-      "upgrades": "Módulos investigables",
-      "upgradesNone": "Totalmente investigado (no quedan módulos)",
-      "flags": "Capacidad de señales",
-      "commander": "Comandante legendario (nación)",
-      "loadoutNote": "Solo capacidades del buque — la configuración real no aparece en los datos de batalla",
-      "enemyNote": "La información de equipamiento enemiga no se muestra por política",
       "noData": "No hay especificaciones para este buque"
     },
     "tier": "Nivel"

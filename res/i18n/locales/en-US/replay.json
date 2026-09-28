@@ -184,14 +184,6 @@
       "speed": "Speed"
     },
     "card": {
-      "loadout": "Loadout & upgrades",
-      "consumables": "Consumable slots",
-      "upgrades": "Researchable modules",
-      "upgradesNone": "Fully researched (no modules left)",
-      "flags": "Signal flag capacity",
-      "commander": "Legendary commander (nation)",
-      "loadoutNote": "Ship capability only — actual loadouts are not exposed by the battle data",
-      "enemyNote": "Enemy loadout info is hidden by policy",
       "noData": "No parameters for this ship"
     },
     "tier": "Tier"

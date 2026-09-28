@@ -184,14 +184,6 @@
       "speed": "速度"
     },
     "card": {
-      "loadout": "装備と改装",
-      "consumables": "消耗品スロット",
-      "upgrades": "研究可能な改装",
-      "upgradesNone": "研究完了（未研究の改装なし）",
-      "flags": "信号旗上限",
-      "commander": "本国の伝説艦長",
-      "loadoutNote": "構成可能な項目のみ。実際の搭載内容は対戦データからは判別できません",
-      "enemyNote": "規則により敵艦の装備情報は表示されません",
       "noData": "この艦の諸元はありません"
     },
     "tier": "ティア"

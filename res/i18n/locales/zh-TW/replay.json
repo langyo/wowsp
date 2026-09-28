@@ -184,14 +184,6 @@
       "speed": "航速"
     },
     "card": {
-      "loadout": "裝配與升級",
-      "consumables": "消耗品槽位",
-      "upgrades": "可研發模組",
-      "upgradesNone": "完全體（無待研發模組）",
-      "flags": "信號旗上限",
-      "commander": "本國傳奇艦長",
-      "loadoutNote": "僅列出該艦可配置項；實際裝配無法從對局資料獲知",
-      "enemyNote": "按規則不展示敵方裝配資訊",
       "noData": "暫無該艦參數"
     },
     "tier": "階級"

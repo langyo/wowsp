@@ -6,16 +6,14 @@
  * `ship_live_stats.json`: the tier (roman), the class icon + short code, the
  * nation flag, the leading combat-relevant parameters (main/secondary/
  * torpedo range, ASW airstrike — capped so the strip holds one line), and —
- * ALLY ROWS ONLY — the ship's notable consumable slots, researchable-module
- * kinds, signal-flag capacity and legendary commanders. Enemy rows carry
- * identity + parameters only: loadout data does not exist in the battle data
- * (neither GameParams nor the WG API exposes per-player fits), and inventing
- * "intelligence" about enemy builds would be fabrication.
+ * ALLY ROWS ONLY — the ship's notable consumable slots, upgrade count and
+ * signal-flag capacity as compact badges.
  *
  * Hovering the strip floats a condensed ship card (teleported to <body>,
- * fixed position): the full spec groups plus the loadout section on ally
- * rows. Everything here is ship CAPABILITY, never a player's actual fit —
- * the card footer says so.
+ * fixed position): the ship's spec groups, nothing else. Loadouts are NOT
+ * listed for either side — per-player fits do not exist in the battle data
+ * (neither GameParams nor the WG API exposes them), and a speculative
+ * "could have" list reads as filler.
  *
  * Renders nothing when the ship is missing from the offline DBs (event ships
  * outside both sources).
@@ -31,8 +29,6 @@ import {
   nationNameFromDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
-import commandersData from "@/data/commanders.json";
-import { gameNationOf } from "@/utils/nationCodes";
 import {
   formatShipParams,
   formatShipSpecGroups,
@@ -41,20 +37,10 @@ import {
   shipLiveStats,
   shipTypeLabel,
   shipTypeShort,
-  shipUpgradeLabel,
   tierRoman,
 } from "./shipLiveStats";
 import { LIVE_CARD_WIDTH_PX, placeLiveCard } from "./liveCardPlacement";
 import "./LiveShipMeta.scss";
-
-interface CommanderEntry {
-  name: string;
-  person: string;
-  nations: string[];
-  talents: unknown[];
-}
-
-const COMMANDERS = commandersData as CommanderEntry[];
 
 /** Consumable families worth a row badge, in slot order. */
 function badgeFamilies(load: string[] | undefined): string[] {
@@ -74,8 +60,8 @@ export default defineComponent({
     // frontend through some paths (the mock backend serves raw JSON) —
     // accept both; the accessors stringify anyway.
     shipId: { type: [Number, String], required: true },
-    /** Ally rows (relation ≤ 1) may carry the loadout summary; enemy rows
-     *  never do — the note in the flyout explains the policy either way. */
+    /** Ally rows (relation ≤ 1) additionally carry the consumable/module/
+     *  flag summary badges; enemy rows carry identity + parameters only. */
     ally: { type: Boolean, default: false },
   },
   setup(props) {
@@ -100,19 +86,6 @@ export default defineComponent({
     );
     const upgrades = computed(() => stats.value?.upg ?? []);
     const flagCap = computed(() => stats.value?.flags ?? null);
-    /** Legendary (talent-carrying) commanders usable on this ship's nation —
-     *  the "special captain" surface the battle data can legitimately offer. */
-    const legendary = computed(() => {
-      if (!nation.value) return [];
-      const gp = gameNationOf(nation.value);
-      return COMMANDERS.filter((c) => c.talents.length > 0 && c.nations.includes(gp)).map(
-        (c) => {
-          const key = `ships.skills.commanders.${c.person}`;
-          const msg = t(key);
-          return msg === key ? c.person.replace(/_/g, " ") : msg;
-        },
-      );
-    });
 
     // ── Flyout card ────────────────────────────────────────────────────────
     const flyoutOpen = ref(false);
@@ -216,7 +189,6 @@ export default defineComponent({
 
     return () => {
       if (!entry.value || (!chips.value.length && !tier.value)) return null;
-      const s = stats.value;
 
       const identity = (
         <span class="live-ship-meta__id">
@@ -270,8 +242,6 @@ export default defineComponent({
         ) : null,
       ];
 
-      const loadoutNames = (s?.load ?? []).map((f) => shipConsumableLabel(f));
-
       const flyout = flyoutOpen.value ? (
         <Teleport to="body">
           <div
@@ -297,9 +267,6 @@ export default defineComponent({
                   size="sm"
                 />
               ) : null}
-              {props.ally ? null : (
-                <span class="live-ship-card__enemy-note">{t("replay.live.card.enemyNote")}</span>
-              )}
             </div>
 
             {specGroups.value.length ? (
@@ -321,53 +288,6 @@ export default defineComponent({
             ) : (
               <p class="live-ship-card__empty">{t("replay.live.card.noData")}</p>
             )}
-
-            {props.ally ? (
-              <div class="live-ship-card__loadout">
-                <div class="live-ship-card__group-title">{t("replay.live.card.loadout")}</div>
-                {loadoutNames.length ? (
-                  <p class="live-ship-card__line">
-                    <span class="live-ship-card__line-label">
-                      {t("replay.live.card.consumables")}
-                    </span>
-                    {loadoutNames.join(" / ")}
-                  </p>
-                ) : null}
-                {upgrades.value.length ? (
-                  <p class="live-ship-card__line">
-                    <span class="live-ship-card__line-label">
-                      {t("replay.live.card.upgrades")}
-                    </span>
-                    {upgrades.value.map((code) => shipUpgradeLabel(code)).join(" / ")}
-                  </p>
-                ) : (
-                  <p class="live-ship-card__line">
-                    <span class="live-ship-card__line-label">
-                      {t("replay.live.card.upgrades")}
-                    </span>
-                    {t("replay.live.card.upgradesNone")}
-                  </p>
-                )}
-                {flagCap.value ? (
-                  <p class="live-ship-card__line">
-                    <span class="live-ship-card__line-label">
-                      {t("replay.live.card.flags")}
-                    </span>
-                    {"×"}
-                    {flagCap.value}
-                  </p>
-                ) : null}
-                {legendary.value.length ? (
-                  <p class="live-ship-card__line">
-                    <span class="live-ship-card__line-label">
-                      {t("replay.live.card.commander")}
-                    </span>
-                    {legendary.value.join(" / ")}
-                  </p>
-                ) : null}
-                <p class="live-ship-card__note">{t("replay.live.card.loadoutNote")}</p>
-              </div>
-            ) : null}
           </div>
         </Teleport>
       ) : null;

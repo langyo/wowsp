@@ -184,14 +184,6 @@
       "speed": "Vitesse"
     },
     "card": {
-      "loadout": "Équipement et améliorations",
-      "consumables": "Emplacements de consommables",
-      "upgrades": "Améliorations à rechercher",
-      "upgradesNone": "Entièrement recherché (aucune amélioration restante)",
-      "flags": "Capacité de signaux",
-      "commander": "Commandant légendaire (nation)",
-      "loadoutNote": "Capacités du navire uniquement — la configuration réelle n'est pas exposée par les données de bataille",
-      "enemyNote": "Les informations d'équipement ennemies ne sont pas affichées par principe",
       "noData": "Aucune caractéristique pour ce navire"
     },
     "tier": "Palier"
