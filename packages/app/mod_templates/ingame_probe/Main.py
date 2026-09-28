@@ -7,24 +7,33 @@ everything it learns goes to python.log (prefix WOWSP_PROBE) and to flat
 JSON files next to this Main.py. The wowsp companion process is expected
 to read request.json and write response.json back.
 
-Validated in this order (see bridge/heartbeat.json "phase"):
-  1. the mod loads at all (log line + heartbeat file appears),
-  2. battle.getPlayersInfo() yields a stable roster -> request.json,
-  3. a hand-made response.json is read back and logged,
-  4. Tab / Alt / V key events arrive via events.onKeyEvent,
-  5. ui.createUiElement + addDataComponentWithId work (stage-B groundwork).
+Product direction under test: the mod renders NOTHING in game. It is a
+precision telemetry source - while the transparent overlay window keeps
+doing the display, the mod feeds it the exact live ordering of the TAB
+team table (priority: mod telemetry > screen-capture inference > static
+roster order). No unbound overrides means no per-game-version UI copies.
+
+What this version measures:
+  1. load + heartbeat (heartbeat.json, phase port/battle),
+  2. the full raw schema of battle.getPlayersInfo() (roster_raw.json,
+     rewritten whenever any projected field changes - diff consecutive
+     writes during a battle to see which fields drive the TAB re-sort),
+  3. the sandbox API surface (dir() of every injected module, once),
+  4. request/response file bridge + Tab/Alt/V key events,
+  5. ui.createUiElement data components (later UI groundwork).
 
 Keep the syntax conservative (no f-strings, 3.6-level) and never let an
 exception escape a callback: the game keeps running but the mod dies.
 """
 API_VERSION = 'API_v1.0'
 
-PROBE_VERSION = '0.1.0'
+PROBE_VERSION = '0.2.0'
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
 RESPONSE_FILE = 'response.json'
 MANUAL_FLAG = 'manual_refresh.flag'
+ROSTER_RAW_FILE = 'roster_raw.json'
 
 import time
 
@@ -50,6 +59,13 @@ class Probe(object):
         self.event_log_count = 0
         self.key_log_count = 0
         self.v_down = False
+        self.last_raw = ''
+        self.deep_dumped = False
+        for module in ('battle', 'events', 'ui', 'callbacks', 'utils'):
+            try:
+                log('api ' + module + ' ' + str(sorted(dir(eval(module)))))
+            except Exception as exc:
+                log('api ' + module + ' dir failed=' + str(exc)[:80])
         try:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': int(time.time() * 1000), 'phase': 'load'})
         except Exception as exc:
@@ -112,6 +128,7 @@ class Probe(object):
         self.busy = False
         self.details_reset()
         self.clear_players()
+        self.last_raw = ''
         log('battle cleared')
 
     def details_reset(self):
@@ -126,10 +143,16 @@ class Probe(object):
                 except Exception as exc:
                     self.soft('entity delete failed=' + str(exc)[:120])
 
-    def players(self):
+    def players_raw(self):
+        try:
+            return battle.getPlayersInfo() or {}
+        except Exception as exc:
+            self.soft('players error=' + str(exc)[:120])
+            return {}
+
+    def players(self, records):
         result = []
         try:
-            records = battle.getPlayersInfo()
             for key, p in records.items():
                 if p['isBot'] or not p['name'] or p['name'].startswith(':'):
                     continue
@@ -143,6 +166,43 @@ class Probe(object):
             self.soft('players error=' + str(exc)[:120])
             return []
         return sorted(result, key=lambda p: p['name'])[:64]
+
+    def observe_raw(self, records):
+        """Shallow-project every record and rewrite roster_raw.json on change.
+
+        The projection keeps one level of fields with stringified values, so
+        diffing consecutive writes shows exactly which fields move when the
+        TAB table re-sorts (score / frags / alive flags / dict order).
+        """
+        try:
+            projection = {}
+            for key, p in records.items():
+                projection[str(key)] = dict((k, str(v)[:48]) for k, v in p.items())
+            body = utils.jsonEncode(projection)
+            if body != self.last_raw:
+                first = self.last_raw == ''
+                self.last_raw = body
+                stream = open(ROSTER_RAW_FILE, 'w')
+                stream.write('{"t":' + str(int(time.time() * 1000)) + ',"players":' + body + '}\n')
+                stream.close()
+                if not first:
+                    return
+                # First snapshot of this battle: document the schema once.
+                if projection:
+                    sample = projection[list(projection)[0]]
+                    log('roster_raw first snapshot fields=' + str(len(projection)) +
+                        ' keys=' + str(sorted(sample.keys()))[:400])
+                if not self.deep_dumped and records:
+                    # One full-precision dump of the first record for nested
+                    # structure the shallow projection hides.
+                    self.deep_dumped = True
+                    record = records[list(records)[0]]
+                    try:
+                        log('roster_raw deep sample=' + utils.jsonEncode(record)[:4000])
+                    except Exception:
+                        log('roster_raw deep keys=' + str(sorted(record.keys())))
+        except Exception as exc:
+            self.soft('roster_raw failed=' + str(exc)[:120])
 
     # -- request/response ----------------------------------------------------
 
@@ -242,7 +302,9 @@ class Probe(object):
         handle[0] = callbacks.callback(1 if self.session else 2, tick)
 
     def tick(self):
-        roster = self.players()
+        records = self.players_raw()
+        self.observe_raw(records)
+        roster = self.players(records)
         if roster:
             if roster == self.previous:
                 self.stable += 1
