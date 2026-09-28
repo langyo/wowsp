@@ -27,7 +27,9 @@ exception escape a callback: the game keeps running but the mod dies.
 """
 API_VERSION = 'API_v1.0'
 
-PROBE_VERSION = '0.3.0'
+# Owner decision: the probe reports itself as 0.1.0 for the whole
+# experiment; iterate via git history only, never this constant.
+PROBE_VERSION = '0.1.0'
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
 REQUEST_FILE = 'request.json'
