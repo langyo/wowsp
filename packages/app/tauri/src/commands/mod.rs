@@ -60,7 +60,7 @@ pub mod overlay {
     }
 
     #[tauri::command]
-    pub async fn start_manual_locate(_locale: Option<String>) -> Result<(), String> {
+    pub async fn start_manual_locate() -> Result<(), String> {
         Err(OVERLAY.into())
     }
 

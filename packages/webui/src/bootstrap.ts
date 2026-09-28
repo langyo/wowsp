@@ -17,6 +17,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { installGlobalTooltip } from "./composables/globalTooltip";
+import { api } from "./api";
 import { initDpiPrefs } from "./theme/dpiPrefs";
 import { initFontScalePreference } from "./theme/fontScalePreference";
 import { initThemeModePreference } from "./theme/themeModePreference";
@@ -47,15 +48,22 @@ export function bootstrap(): void {
   initFontScalePreference();
   // WoWSP's interface-scale (DPI) preference writes a root CSS `zoom` over
   // the whole shell — same authoritative-key-wins contract as above. Only
-  // this main-window bootstrap runs it: the game overlay and manual-locate
-  // windows have separate non-Vue bootstraps and never call bootstrap(), so
-  // the zoom cannot leak into their screen-coordinate math.
+  // this main-window bootstrap runs it: the game overlay window has its
+  // own separate non-Vue bootstrap and never calls bootstrap(), so the
+  // zoom cannot leak into its screen-coordinate math.
   initDpiPrefs();
   initFontContext();
 
   // Delegated tooltip hook: everything that used to lean on native
   // `title` popups opts in via data-hint and renders hikari-style.
   installGlobalTooltip();
+
+  // Backend flag hygiene: a webview reload (Vite HMR, WebView2 crash
+  // recovery) wipes this window's manual-locate picker-layer state while
+  // the Rust-side open flag would stay set — at boot the layer is closed
+  // by definition, so clearing is always safe. Rejected off the desktop
+  // shell (browser dev), ignored.
+  void api.cancelManualLocate().catch(() => {});
 
   // One-shot deep link (?theme=light|dark): force the mode for this load
   // WITHOUT persisting it — same semantics as the pre-hikari theme manager.

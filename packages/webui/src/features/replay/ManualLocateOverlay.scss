@@ -1,73 +1,54 @@
-/* Manual-locate picker window — self-contained styles. This page does NOT
-   load the app theme (bare HTML), so colors are literal.
+/**
+ * Manual-locate picker layer — the full-cover cached-frame drag box that
+ * opens inside the main window. Deliberately LITERAL dark colors (like the
+ * standalone picker page this layer replaced): it is a screenshot viewer,
+ * not a themed app surface, and must read identically over any theme.
+ */
 
-   Two modes (mutually exclusive body classes):
-   - .ml-live  — the legacy transparent picker sitting exactly over the game
-     rect; body carries the crosshair cursor because a drag can start
-     anywhere on the (fullscreen) page.
-   - .ml-shot  — the screenshot picker: a toolbar on top, the cached frame
-     below with the guide overlay and the drag selection. Only the frame
-     area is a drag surface. */
-
-html,
-body {
-  margin: 0;
-  width: 100vw;
-  height: 100vh;
-  background: transparent;
-  overflow: hidden;
-  font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
-  -webkit-font-smoothing: antialiased;
+.manual-locate {
+  position: fixed;
+  inset: 0;
+  // Above everything the shell can raise (toasts top out at
+  // --hk-z-toast/4000): while picking, the layer IS the window.
+  z-index: 6000;
+  display: flex;
+  flex-direction: column;
+  background: rgb(10 14 20);
+  color: rgb(236 241 246);
+  font-size: 0.875rem;
   user-select: none;
 }
 
-/* ── LIVE mode ─────────────────────────────────────────────────────────── */
+// ── loading / no-frame states ──────────────────────────────────────────────
 
-body.ml-live {
-  cursor: crosshair;
+.ml-loading,
+.ml-unavailable {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 0;
 }
 
-/* Full-cover dim: everything under the picker reads as "paused". The drag
-   selection later adds a slightly LIGHTER wash inside its bounds (the
-   standard screenshot-picker look). */
-.ml-dim {
-  position: fixed;
-  inset: 0;
-  background: rgb(0 0 0 / 45%);
-}
-
-.ml-hint {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+.ml-unavailable__msg {
   max-width: 72%;
   padding: 0.7em 1.3em;
   border: 1px dashed rgb(255 255 255 / 38%);
   border-radius: 10px;
   background: rgb(10 14 20 / 72%);
-  color: rgb(235 240 246);
   font-size: 0.875rem;
   line-height: 1.55;
   text-align: center;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
-  white-space: normal;
-  pointer-events: none;
 }
 
-.ml-buttons {
-  position: fixed;
+.ml-unavailable__actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
-/* ── SCREENSHOT mode ───────────────────────────────────────────────────── */
-
-body.ml-shot {
-  display: flex;
-  flex-direction: column;
-  background: rgb(10 14 20);
-}
+// ── toolbar ────────────────────────────────────────────────────────────────
 
 .ml-bar {
   display: flex;
@@ -125,6 +106,8 @@ body.ml-shot {
   gap: 6px;
 }
 
+// ── stage / canvas ─────────────────────────────────────────────────────────
+
 .ml-stage {
   position: relative;
   display: flex;
@@ -135,8 +118,8 @@ body.ml-shot {
   overflow: hidden;
 }
 
-/* Sized in px by main.ts from the physical frame's aspect — never by CSS,
-   so the physical↔CSS mapping factor stays exact. */
+// Sized in px by the component from the physical frame's aspect — never by
+// CSS, so the physical↔CSS mapping factor stays exact.
 .ml-canvas {
   position: relative;
   cursor: crosshair;
@@ -160,8 +143,8 @@ body.ml-shot {
   display: none;
 }
 
-/* Detected table outline — a solid hairline so it reads as "the detector's
-   answer", distinct from the user's dashed selection. */
+// Detected table outline — a solid hairline so it reads as "the detector's
+// answer", distinct from the user's dashed selection.
 .ml-guide-rect {
   position: absolute;
   box-sizing: border-box;
@@ -186,7 +169,7 @@ body.ml-shot {
   width: 1px;
 }
 
-/* ── shared chrome ─────────────────────────────────────────────────────── */
+// ── selection chrome ───────────────────────────────────────────────────────
 
 .ml-selection {
   position: absolute;
@@ -210,6 +193,8 @@ body.ml-shot {
   pointer-events: none;
 }
 
+// ── buttons ────────────────────────────────────────────────────────────────
+
 .ml-btn {
   padding: 2px 12px;
   border-radius: 6px;
@@ -229,4 +214,10 @@ body.ml-shot {
 
 .ml-btn:hover {
   filter: brightness(1.15);
+}
+
+.ml-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
 }

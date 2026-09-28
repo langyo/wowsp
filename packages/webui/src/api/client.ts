@@ -200,6 +200,33 @@ export interface SinkAttribution {
   enemyRows: number[];
 }
 
+/** Mirrors `wowsp_tauri_shared::ManualLocateGuides`: alignment guides the
+ *  detector found on the manual-locate picker's cached frame, PHYSICAL px
+ *  relative to the capture origin (the game window's top-left at capture
+ *  time). Snap targets for the drag box; all fields default-empty. */
+export interface ManualLocateGuides {
+  tableRect?: Rect | null;
+  rowLines?: number[];
+  seamX?: number | null;
+}
+
+/** Mirrors `wowsp_tauri_shared::ManualLocateContext`: the cached frame the
+ *  picker layer draws on (integer-factor downscaled to ≤1280 px wide, PNG,
+ *  base64 WITHOUT the data-URL prefix) plus the detector's guides on it.
+ *  `imageBase64 == null` = no usable cached frame right now (the layer
+ *  shows its retry state). Coordinates are PHYSICAL px relative to the
+ *  capture origin — the submitted selection maps back into the same space. */
+export interface ManualLocateContext {
+  imageBase64?: string | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+  physWidth: number;
+  physHeight: number;
+  capturedAtMs?: number | null;
+  capturedGameRect?: Rect | null;
+  guides: ManualLocateGuides;
+}
+
 /** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
  * maps are planar: x = east, z = north, y ≈ 0 (sea level). */
 export interface PositionSample {
@@ -1347,20 +1374,31 @@ export const api = {
   destroyOverlayWindow: () => transport.invoke<null>(RPC.destroy_overlay_window),
   startOverlayTabWatch: () => transport.invoke<null>(RPC.start_overlay_tab_watch),
   stopOverlayTabWatch: () => transport.invoke<null>(RPC.stop_overlay_tab_watch),
-  /** Screenshot-style manual locate: open the drag-box picker window over
-   *  the game rect (single-instance; errors when no fresh battle roster or
-   *  game window). `locale` picks the picker page's copy. */
-  startManualLocate: (locale?: string) =>
-    transport.invoke<null>(RPC.start_manual_locate, { locale: locale ?? null }),
-  /** Close the picker without storing anything (its Esc / Cancel path). */
+  /** Open the manual-locate picker INSIDE the main window: the backend runs
+   *  its gates (fresh battle roster, resolvable game window, usable cached
+   *  frame) and arms the open flag; the full-cover picker layer itself is
+   *  rendered by ManualLocateOverlay. Errors when a gate fails — the panel
+   *  shakes. */
+  startManualLocate: () => transport.invoke<null>(RPC.start_manual_locate),
+  /** Close the picker layer without storing anything (its Esc / Cancel
+   *  path) — clears the backend's open flag. */
   cancelManualLocate: () => transport.invoke<null>(RPC.cancel_manual_locate),
+  /** Fetch the picker's cached frame + guides (ManualLocateOverlay's boot
+   *  payload; the layer re-invokes it on retry). */
+  fetchManualLocateContext: () =>
+    transport.invoke<ManualLocateContext>(RPC.manual_locate_context),
   /** Submit the picker's drag-box selection (PHYSICAL px relative to the
-   *  game window origin). Validates + freezes the manual roster anchor and
-   *  closes the picker; the overlay chips re-anchor on the next Tab hold. */
+   *  game window origin). Validates + freezes the manual roster anchor;
+   *  the layer closes on this Ok and the overlay chips re-anchor on the
+   *  next Tab hold. */
   setManualRosterRect: (x: number, y: number, width: number, height: number) =>
     transport.invoke<null>(RPC.set_manual_roster_rect, { x, y, width, height }),
   /** Drop the manual anchor; detection returns to the automatic flow. */
   clearManualRosterRect: () => transport.invoke<null>(RPC.clear_manual_roster_rect),
+  /** Backend force-close push for the picker layer: the game window vanished
+   *  underneath it (or overlay mode ended) — unmount the layer. */
+  listenManualLocateClose: (handler: () => void) =>
+    transport.listen?.<void>("wowsp://manual-locate-close", handler),
   /** Anchor push from the Rust Tab watcher (capture + detector result). */
   listenOverlayAnchor: (handler: (anchor: OverlayAnchor) => void) =>
     transport.listen?.<OverlayAnchor>("wowsp://overlay-anchor", handler),

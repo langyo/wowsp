@@ -47,6 +47,7 @@ import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
+import { useManualLocateStore } from "@/stores/manualLocate";
 import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
@@ -105,7 +106,8 @@ export default defineComponent({
     const accounts = useAccountStore();
     const router = useRouter();
     const prefs = useStatsPrefsStore();
-    const { dataLanguage, uiLocale } = useLanguage();
+    const manualLocate = useManualLocateStore();
+    const { dataLanguage } = useLanguage();
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
     );
@@ -228,12 +230,14 @@ export default defineComponent({
      *  flips from "manual locate" to "clear locate". */
     const manualActive = computed(() => overlayStatus.value?.manual === true);
 
-    /** Manual-locate entry point: opens the drag-box picker window over the
-     *  game rect, or (when a manual anchor is already in force) clears it
-     *  back to the automatic detection flow. */
+    /** Manual-locate entry point: opens the cached-frame picker layer inside
+     *  the main window (ManualLocateOverlay, after the backend gates pass),
+     *  or (when a manual anchor is already in force) clears it back to the
+     *  automatic detection flow. */
     const manualBusy = ref(false);
     /** Short shake when the backend refuses to open the picker (no fresh
-     *  battle roster / no game window) — visible feedback, never silent. */
+     *  battle roster / no game window / no usable cached frame — hold Tab
+     *  in game) — visible feedback, never silent. */
     const manualShake = ref(false);
     let shakeTimer: ReturnType<typeof setTimeout> | null = null;
     async function onManualButton() {
@@ -243,7 +247,8 @@ export default defineComponent({
         if (manualActive.value) {
           await api.clearManualRosterRect();
         } else {
-          await api.startManualLocate(uiLocale.value);
+          await api.startManualLocate();
+          manualLocate.openPicker();
         }
       } catch (err) {
         console.warn("[live-battle] manual locate refused:", err);

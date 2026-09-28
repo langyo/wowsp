@@ -392,8 +392,8 @@ pub fn run() {
             commands::overlay::cancel_manual_locate,
             commands::overlay::set_manual_roster_rect,
             commands::overlay::clear_manual_roster_rect,
-            // Desktop only (the screenshot-mode picker page never exists on
-            // mobile, so no stand-in is mirrored).
+            // Desktop only (the main window's manual-locate picker layer
+            // never renders on mobile, so no stand-in is mirrored).
             #[cfg(desktop)]
             commands::overlay::manual_locate_context,
             commands::network::get_network_config,

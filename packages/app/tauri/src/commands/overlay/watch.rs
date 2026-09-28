@@ -413,12 +413,13 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         battle_known = super::arena_info::refresh_battle_state();
         tracing::debug!(battle_known, "tab held: refreshed battle state");
     }
-    // The manual-locate picker covers the game and owns the pointer:
-    // while it exists the overlay must never fight it for screen space,
-    // and it is torn down when the game window disappears underneath it.
-    let picker_open = app.get_webview_window(MANUAL_LOCATE_LABEL).is_some();
+    // The manual-locate picker layer is open in the main window: the
+    // stored-anchor path stands down for the tick (the user is re-picking
+    // the box), and when the game window disappears underneath the layer it
+    // is force-closed (open flag + close event to the main window).
+    let picker_open = manual_locate_open();
     if picker_open && game.is_none() {
-        destroy_manual_locate_window(app);
+        force_close_manual_locate(app);
     }
 
     let battle = super::arena_info::last_arena_stamp();

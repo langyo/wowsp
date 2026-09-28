@@ -166,7 +166,6 @@
     "manualRows": "Positionné manuellement · {n} lignes",
     "hideNicks": "Masquer les pseudos",
     "showNicks": "Afficher les pseudos",
-    "manualDragHint": "Maintenez le clic gauche et tracez un cadre autour du tableau des joueurs dans le jeu",
     "manualConfirm": "Confirmer",
     "manualCancel": "Annuler",
     "manualTooSmall": "Sélection trop petite",
@@ -174,6 +173,7 @@
     "manualGuides": "Guides et magnétisme",
     "manualShotFresh": "Capture en cache · à l'instant",
     "manualShotAge": "Capture en cache · il y a {n} min",
+    "manualNoFrame": "Aucune image en cache exploitable — maintenez Tab sur le tableau en jeu, puis réessayez",
     "param": {
       "mainGun": "Artillerie principale",
       "secondary": "Artillerie secondaire",

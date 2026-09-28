@@ -144,73 +144,52 @@ pub(super) fn build_manual_anchor(m: &ManualAnchor, game_screen: Rect) -> Overla
     anchor
 }
 
-/// Destroy the picker window if present (any teardown path: confirm,
-/// cancel, overlay-mode end, game exit). Pure programmatic teardown —
-/// `destroy()`, not `close()`, for the same reason as
-/// `destroy_overlay_window`.
-pub(super) fn destroy_manual_locate_window(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window(MANUAL_LOCATE_LABEL)
-        && let Err(e) = win.destroy()
-    {
-        tracing::warn!(error = %e, "destroy manual-locate window failed");
-    }
+/// Open-state of the manual-locate picker LAYER inside the main window (no
+/// dedicated window exists anymore — the main window's webui renders the
+/// cached-frame picker as a full-cover sub-window). Set by
+/// `start_manual_locate`, cleared by every close path (submit / cancel /
+/// clear / force-close) so the watcher's `picker_open` gate and the
+/// game-gone teardown keep working without a window to query.
+static PICKER_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// True while the main window's manual-locate picker layer is open.
+pub(super) fn manual_locate_open() -> bool {
+    PICKER_OPEN.load(Ordering::SeqCst)
 }
 
-/// Kill the DWM 1px border + rounded corners on the borderless transparent
-/// picker (same visual fix as `post_create_window_setup`) — but deliberately
-/// WITHOUT the click-through (`set_ignore_cursor_events`) and the
-/// NOACTIVATE/TOOLWINDOW ex-styles: the picker must receive mouse + keyboard
-/// input and may take focus (Enter/Esc are part of the flow).
-#[cfg(target_os = "windows")]
-fn post_create_manual_window_setup(win: &tauri::WebviewWindow) {
-    use windows::Win32::Graphics::Dwm::{
-        DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
-        DWMWCP_DONOTROUND, DwmSetWindowAttribute,
-    };
-    if let Ok(hwnd) = win.hwnd() {
-        let hwnd = windows::Win32::Foundation::HWND(hwnd.0);
-        unsafe {
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_NCRENDERING_POLICY,
-                &(DWMNCRP_DISABLED.0) as *const _ as *const core::ffi::c_void,
-                4,
-            );
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_WINDOW_CORNER_PREFERENCE,
-                &(DWMWCP_DONOTROUND.0) as *const _ as *const core::ffi::c_void,
-                4,
-            );
+/// Force-close the picker layer from the backend (the game window vanished
+/// underneath it, or overlay mode ended): clears the open flag and tells the
+/// main window to unmount the layer. No-op when nothing is open.
+pub(super) fn force_close_manual_locate(app: &AppHandle) {
+    if PICKER_OPEN.swap(false, Ordering::SeqCst) {
+        if let Err(e) = app.emit(MANUAL_LOCATE_CLOSE_EVENT, ()) {
+            tracing::warn!(error = %e, "emit manual-locate-close failed");
         }
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn post_create_manual_window_setup(_win: &tauri::WebviewWindow) {}
-
-/// Open the manual-locate picker. Two modes, decided before the window is
-/// shown:
+/// Open the manual-locate picker INSIDE the main window. The main window's
+/// webui renders the cached-frame picker as a full-cover sub-window layer
+/// (see `ManualLocateOverlay`); this command is the backend gate + open
+/// flag — no window is built here anymore.
 ///
-/// - SCREENSHOT mode (preferred): a usable cached automatic capture exists
-///   (fresh + size-matched), or a FRESH capture shows the team header (the
-///   player is holding Tab in-game). The picker shows that frame with the
-///   detector's guides overlaid — see `manual_locate_context` — sized to
-///   the game monitor's WORK area, so the player boxes a STATIC, undimmed
-///   table without juggling Tab, focus and a transparent overlay.
-/// - LIVE mode (legacy fallback): no usable frame. The picker is a
-///   transparent, always-on-top, INTERACTIVE window placed exactly over
-///   the game rect, where the player drag-boxes the live table.
+/// Gates, decided before the layer opens:
 ///
-/// Single-instance — a call while one is open is a no-op. Requires a fresh
-/// battle roster and a resolvable game window.
+/// - a fresh battle roster exists (same gate as the Tab watcher, with the
+///   same cheap synchronous refresh on a stale cache);
+/// - the game window resolves;
+/// - a usable picker frame exists — the fresh cached automatic capture, or
+///   a FRESH capture showing the team header (the player is holding Tab
+///   in-game) — see `usable_picker_frame`, shared with
+///   `manual_locate_context` so the two decisions cannot drift apart. No
+///   frame → refused: without a frame there is nothing to box, and the old
+///   live-overlay fallback (a transparent window exactly over the game) is
+///   gone together with the dedicated picker window.
+///
+/// Single-instance by construction: the layer is webui state, and a call
+/// while it is open just re-runs the gates and re-arms the flag.
 #[tauri::command]
-pub async fn start_manual_locate(app: AppHandle, locale: Option<String>) -> Result<(), String> {
-    if app.get_webview_window(MANUAL_LOCATE_LABEL).is_some() {
-        return Ok(()); // already open
-    }
-    // Same battle-known gate as the Tab watcher, with the same cheap
-    // synchronous refresh on a stale cache.
+pub async fn start_manual_locate() -> Result<(), String> {
     let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
     if !battle_known {
         battle_known = super::arena_info::refresh_battle_state();
@@ -219,95 +198,32 @@ pub async fn start_manual_locate(app: AppHandle, locale: Option<String>) -> Resu
         return Err("no fresh battle roster — manual locate unavailable".into());
     }
     #[cfg(target_os = "windows")]
-    let game = find_game_window().ok_or("game window not found")?;
-    #[cfg(target_os = "windows")]
-    let game_rect = rect_from_win32(game.rect);
-    #[cfg(not(target_os = "windows"))]
-    let game_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 1,
-        height: 1,
-    };
-
-    // Screenshot mode when a usable picker frame resolves — see
-    // `usable_picker_frame` (shared with the context command so the two
-    // decisions cannot drift apart).
-    #[cfg(target_os = "windows")]
-    let screenshot_mode = usable_picker_frame(&game).is_some();
-    #[cfg(not(target_os = "windows"))]
-    let screenshot_mode = false;
-
-    // Same pre-rendered static page pattern as the overlay window (no Vue,
-    // instant first paint); the locale picks the hint/button copy, and the
-    // decided MODE rides along so the page can tell "no frame because the
-    // backend chose live" from "frame lost between the two calls" (the
-    // latter closes itself — see the page's boot).
-    let mut url = "/manual-locate.html".to_string();
-    let mut sep = "?";
-    if let Some(l) = locale.as_deref().filter(|l| !l.is_empty()) {
-        url.push_str(sep);
-        url.push_str("locale=");
-        url.push_str(l);
-        sep = "&";
-    }
-    if screenshot_mode {
-        url.push_str(sep);
-        url.push_str("mode=shot");
-    }
-    let win = WebviewWindowBuilder::new(&app, MANUAL_LOCATE_LABEL, WebviewUrl::App(url.into()))
-        .title("WoWSP Manual Locate")
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .visible(false) // shown once placed
-        .build()
-        .map_err(|e| format!("create manual-locate window: {e}"))?;
-    post_create_manual_window_setup(&win);
-    if screenshot_mode {
-        if let Err(e) = place_picker_window(&win, &game_rect) {
-            // Never leave a hidden zombie behind: the single-instance guard
-            // above would treat it as "already open" and silently swallow
-            // every later manual-locate click until restart.
-            destroy_manual_locate_window(&app);
-            return Err(e);
+    {
+        let game = find_game_window().ok_or("game window not found")?;
+        if usable_picker_frame(&game).is_none() {
+            return Err(
+                "no usable cached frame — hold Tab over the roster in game, then retry".into(),
+            );
         }
-    } else {
-        // Live mode: physical-pixel alignment with the game rect — the same
-        // rect the watcher BitBlts and places the overlay at, so page CSS
-        // px × devicePixelRatio map 1:1 onto the game's framebuffer.
-        let _ = win.set_position(tauri::PhysicalPosition::new(game_rect.x, game_rect.y));
-        let _ = win.set_size(tauri::PhysicalSize::new(
-            game_rect.width.max(1) as u32,
-            game_rect.height.max(1) as u32,
-        ));
     }
-    if let Err(e) = win.show() {
-        // Same no-zombie rule as the placement failure above.
-        destroy_manual_locate_window(&app);
-        return Err(format!("show manual-locate: {e}"));
+    #[cfg(not(target_os = "windows"))]
+    {
+        // No game window off-Windows (same answer the window gate would
+        // give): the picker has nothing to anchor against.
+        return Err("game window not found".into());
     }
-    let _ = win.set_focus();
-    tracing::info!(
-        rect = format!(
-            "{}x{} at ({},{})",
-            game_rect.width, game_rect.height, game_rect.x, game_rect.y
-        ),
-        screenshot_mode,
-        "manual-locate picker opened"
-    );
+    PICKER_OPEN.store(true, Ordering::SeqCst);
+    tracing::info!("manual-locate picker layer opened in the main window");
     Ok(())
 }
 
 /// The frame the picker should anchor against, resolved the SAME way by
-/// `start_manual_locate` (mode decision) and `manual_locate_context`
-/// (payload build): the fresh cached automatic capture when one matches the
-/// current game window, else — only when a FRESH capture shows the team
-/// header (the player is holding Tab in-game; a frame WITHOUT the table is
-/// useless as a positioning reference and must not evict a good cache
-/// entry) — that capture, stored and returned. Windows-only.
+/// `start_manual_locate` (open gate) and `manual_locate_context` (payload
+/// build): the fresh cached automatic capture when one matches the current
+/// game window, else — only when a FRESH capture shows the team header (the
+/// player is holding Tab in-game; a frame WITHOUT the table is useless as a
+/// positioning reference and must not evict a good cache entry) — that
+/// capture, stored and returned. Windows-only.
 #[cfg(target_os = "windows")]
 fn usable_picker_frame(game: &GameWindow) -> Option<(Vec<u8>, u32, u32, u64, Rect)> {
     let game_rect = rect_from_win32(game.rect);
@@ -322,77 +238,13 @@ fn usable_picker_frame(game: &GameWindow) -> Option<(Vec<u8>, u32, u32, u64, Rec
     Some((rgba, w, h, at_ms, game_rect))
 }
 
-/// Size + place the SCREENSHOT-mode picker on the game's monitor: the frame
-/// fitted into the monitor's WORK area (never over the taskbar), plus room
-/// for the page's toolbar. Everything in PHYSICAL px on purpose — the picker
-/// may sit on a different-scale monitor than the shell window, and the page
-/// maps its coordinates through its own CSS box (see `manual_locate_context`),
-/// so no logical/DPI unit is involved anywhere on this path.
-#[cfg(target_os = "windows")]
-fn place_picker_window(win: &tauri::WebviewWindow, game_rect: &Rect) -> Result<(), String> {
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
-    };
-    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
-
-    unsafe {
-        let pt = POINT {
-            x: game_rect.x + game_rect.width / 2,
-            y: game_rect.y + game_rect.height / 2,
-        };
-        let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-        let mut dpi_x = 96u32;
-        let mut dpi_y = 96u32;
-        let scale = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok()
-        {
-            f32::from(dpi_x as u16) / 96.0
-        } else {
-            1.0
-        };
-        let mut mi = MONITORINFO {
-            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-            ..Default::default()
-        };
-        let (wx, wy, ww, wh) = if GetMonitorInfoW(monitor, &mut mi).as_bool() {
-            (
-                mi.rcWork.left,
-                mi.rcWork.top,
-                mi.rcWork.right - mi.rcWork.left,
-                mi.rcWork.bottom - mi.rcWork.top,
-            )
-        } else {
-            (game_rect.x, game_rect.y, game_rect.width, game_rect.height)
-        };
-        let margin = (48.0 * scale).round() as i32;
-        let toolbar = (44.0 * scale).round() as i32;
-        let avail_w = (ww - 2 * margin).max(320);
-        let avail_h = (wh - 2 * margin - toolbar).max(200);
-        let fit = (f64::from(avail_w) / f64::from(game_rect.width.max(1)))
-            .min(f64::from(avail_h) / f64::from(game_rect.height.max(1)))
-            .min(1.0);
-        let win_w = ((f64::from(game_rect.width) * fit).round() as i32).max(320);
-        let win_h = ((f64::from(game_rect.height) * fit).round() as i32 + toolbar).max(240);
-        let x = wx + (ww - win_w) / 2;
-        let y = wy + (wh - win_h) / 2;
-        win.set_position(tauri::PhysicalPosition::new(x, y))
-            .map_err(|e| format!("place manual-locate: {e}"))?;
-        win.set_size(tauri::PhysicalSize::new(
-            win_w.max(1) as u32,
-            win_h.max(1) as u32,
-        ))
-        .map_err(|e| format!("size manual-locate: {e}"))?;
-    }
-    Ok(())
-}
-
-/// Build the screenshot-mode context the picker page loads with: the cached
-/// automatic capture (downscaled to ≤1280 px wide, PNG, base64) plus the
-/// guides the detector finds on it RIGHT NOW (table rect, row lines, team
-/// seam). All heavy work runs once here, on a clone — the watcher's hot
-/// path never pays for the picker. No usable frame → all-None fields and
-/// the page runs the legacy live picker. Desktop only (the picker page
-/// itself never exists on mobile).
+/// Build the screenshot-mode context the main window's picker layer loads
+/// with: the cached automatic capture (downscaled to ≤1280 px wide, PNG,
+/// base64) plus the guides the detector finds on it RIGHT NOW (table rect,
+/// row lines, team seam). All heavy work runs once here, on a clone — the
+/// watcher's hot path never pays for the picker. No usable frame →
+/// all-None fields and the layer shows its "no frame" state (retry /
+/// close). Desktop only (the picker layer never exists on mobile).
 #[tauri::command]
 pub async fn manual_locate_context() -> Result<ManualLocateContext, String> {
     #[cfg(target_os = "windows")]
@@ -400,9 +252,8 @@ pub async fn manual_locate_context() -> Result<ManualLocateContext, String> {
         let Some(game) = find_game_window() else {
             return Ok(ManualLocateContext::default());
         };
-        // Same resolver `start_manual_locate` based its window placement on
-        // (cache first, fresh-with-table-header fallback) — see
-        // `usable_picker_frame`.
+        // Same resolver the open gate ran (cache first, fresh-with-table-
+        // header fallback) — see `usable_picker_frame`.
         let Some((rgba, w, h, at_ms, captured_rect)) = usable_picker_frame(&game) else {
             return Ok(ManualLocateContext::default());
         };
@@ -482,11 +333,12 @@ fn encode_picker_image(rgba: &[u8], w: u32, h: u32) -> (Option<String>, Option<u
     )
 }
 
-/// Cancel + destroy the manual-locate picker without storing anything
-/// (the picker page's Cancel button / Esc).
+/// Cancel the manual-locate picker without storing anything (the layer's
+/// Cancel button / Esc): just clears the open flag — the main window
+/// unmounts the layer itself.
 #[tauri::command]
-pub async fn cancel_manual_locate(app: AppHandle) -> Result<(), String> {
-    destroy_manual_locate_window(&app);
+pub async fn cancel_manual_locate() -> Result<(), String> {
+    PICKER_OPEN.store(false, Ordering::SeqCst);
     Ok(())
 }
 
@@ -495,13 +347,7 @@ pub async fn cancel_manual_locate(app: AppHandle) -> Result<(), String> {
 /// arms the manual anchor and reports the manual badge from there (within
 /// one poll interval). The anchor takes effect on the next Tab hold.
 #[tauri::command]
-pub async fn set_manual_roster_rect(
-    app: AppHandle,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-) -> Result<(), String> {
+pub async fn set_manual_roster_rect(x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
     let sel = Rect {
         x,
         y,
@@ -541,8 +387,10 @@ pub async fn set_manual_roster_rect(
         battle,
         team_sizes,
     });
-    // Success — the picker's job is done; it must not linger as a zombie.
-    destroy_manual_locate_window(&app);
+    // Success — the picker's job is done: clear the open flag (the main
+    // window closes the layer on this Ok response) so the watcher's
+    // `picker_open` gate releases immediately.
+    PICKER_OPEN.store(false, Ordering::SeqCst);
     tracing::info!(
         battle,
         sel = format!("{}x{} at ({},{})", sel.width, sel.height, sel.x, sel.y),
@@ -560,10 +408,10 @@ pub async fn set_manual_roster_rect(
 /// unfocused) → idle. An unconditional "searching" would stick forever —
 /// the watcher's hide branch only runs while the overlay is shown, so
 /// nothing would ever demote the badge afterwards. Also closes the picker
-/// if one is somehow still open.
+/// layer if one is somehow still open.
 #[tauri::command]
 pub async fn clear_manual_roster_rect(app: AppHandle) -> Result<(), String> {
     push_watch_command(WatchCommand::ManualAnchorCleared);
-    destroy_manual_locate_window(&app);
+    force_close_manual_locate(&app);
     Ok(())
 }

@@ -166,7 +166,6 @@
     "manualRows": "수동 위치 지정됨 · {n}행",
     "hideNicks": "닉네임 숨기기",
     "showNicks": "닉네임 표시",
-    "manualDragHint": "마우스 왼쪽 버튼을 드래그해 게임 내 전적 표를 선택하세요",
     "manualConfirm": "확인",
     "manualCancel": "취소",
     "manualTooSmall": "선택 영역이 너무 작습니다",
@@ -174,6 +173,7 @@
     "manualGuides": "가이드 스냅",
     "manualShotFresh": "캐즘 · 방금",
     "manualShotAge": "캐즘 · {n}분 전",
+    "manualNoFrame": "사용 가능한 캐시 화면이 없습니다. 게임에서 Tab을 눌러 전적 표를 나타낸 뒤 다시 시도하세요",
     "param": {
       "mainGun": "주포",
       "secondary": "부포",

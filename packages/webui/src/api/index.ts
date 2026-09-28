@@ -48,6 +48,8 @@ export type {
   OverlayState,
   OverlayStatus,
   SinkAttribution,
+  ManualLocateGuides,
+  ManualLocateContext,
   PositionSample,
   EntityKind,
   EntityTrajectory,

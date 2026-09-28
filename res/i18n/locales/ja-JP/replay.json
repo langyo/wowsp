@@ -166,7 +166,6 @@
     "manualRows": "手動配置済み · {n} 行",
     "hideNicks": "ニックネームを隠す",
     "showNicks": "ニックネームを表示",
-    "manualDragHint": "左ボタンをドラッグして、ゲーム内の成績テーブルを囲んでください",
     "manualConfirm": "確認",
     "manualCancel": "キャンセル",
     "manualTooSmall": "選択範囲が小さすぎます",
@@ -174,6 +173,7 @@
     "manualGuides": "ガイドとスナップ",
     "manualShotFresh": "キャプチャ · たった今",
     "manualShotAge": "キャプチャ · {n} 分前",
+    "manualNoFrame": "利用可能なキャッシュ画像がありません。ゲーム内で Tab を押して戦績テーブルを表示してから再試行してください",
     "param": {
       "mainGun": "主砲",
       "secondary": "副砲",

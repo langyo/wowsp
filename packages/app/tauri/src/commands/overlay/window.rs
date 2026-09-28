@@ -52,12 +52,13 @@ pub async fn create_overlay_window(
 /// store, and closing the webview skips Vue teardown.
 #[tauri::command]
 pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
-    // Manual-locate leftovers must not outlive overlay mode: the open picker
-    // window is torn down here, and the stored anchor lives in the watcher's
-    // FSM ([`WatchFsm::manual_anchor`]) — it dies with the loop thread that
+    // Manual-locate leftovers must not outlive overlay mode: the main
+    // window's picker layer is force-closed here (flag + close event), and
+    // the stored anchor lives in the watcher's FSM ([`WatchFsm::
+    // manual_anchor`]) — it dies with the loop thread that
     // `stop_overlay_tab_watch` signals below, whose loop-exit idle report
     // clears the anchor first so it already carries manual: false.
-    destroy_manual_locate_window(&app);
+    force_close_manual_locate(&app);
     stop_overlay_tab_watch().await?;
     let _ = super::arena_info::stop_arena_watcher().await;
     if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {

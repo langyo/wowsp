@@ -460,13 +460,13 @@ pub struct ManualLocateGuides {
     pub seam_x: Option<i32>,
 }
 
-/// Screenshot-mode context for the manual-locate picker page: the LAST
+/// Context for the manual-locate picker layer in the MAIN window: the LAST
 /// automatic capture (downscaled to ≤1280 px wide, PNG, base64) plus the
 /// guides the detector found on it. When `image_base64` is `None` no usable
-/// cached frame exists and the page falls back to the legacy live picker
-/// (a transparent window exactly over the game rect). Coordinates are
-/// PHYSICAL px relative to the capture origin; the page maps them through
-/// its own display scale, so the picker window's DPI never enters the math.
+/// cached frame exists and the layer shows its "no cached frame" retry
+/// state. Coordinates are PHYSICAL px relative to the capture origin; the
+/// layer maps them through its own display scale, so the app window's DPI
+/// never enters the math.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ManualLocateContext {
@@ -1983,8 +1983,8 @@ pub struct AuxCacheStatus {
 #[cfg(test)]
 mod tests {
     //! Wire-contract round-trip tests. The TS side hand-mirrors every type
-    //! here (packages/webui/src/api/client.ts, plus the manual-locate picker
-    //! in packages/webui/src/manual-locate/main.ts) — these tests pin the
+    //! here in packages/webui/src/api/client.ts (the manual-locate picker
+    //! layer included) — these tests pin the
     //! JSON keys serde produces so a dropped `rename_all`, a renamed field,
     //! or a changed `skip_serializing_if` fails CI instead of silently
     //! drifting the IPC contract.
@@ -2430,8 +2430,8 @@ mod tests {
     }
 
     // ── live arena + manual locate (client.ts: ArenaInfo / CaptureResult /
-    //    OverlayAnchor / Rect; manual-locate/main.ts: the context
-    //    + guides DTOs) ─────────────────────────────────────────────────────────
+    //    OverlayAnchor / Rect / ManualLocateContext / ManualLocateGuides)
+    //    ─────────────────────────────────────────────────────────
 
     /// The live tempArenaInfo.json mirror of ReplayMeta (client.ts:
     /// ArenaInfo). Wire-critical payload: exact key set, plus the nested
@@ -2615,8 +2615,8 @@ mod tests {
         assert!(v["anchor"].is_null());
     }
 
-    /// The picker's snap guides (manual-locate/main.ts:
-    /// ManualLocateGuides) — defaults keep absent keys parsing as empty.
+    /// The picker's snap guides (client.ts: ManualLocateGuides) —
+    /// defaults keep absent keys parsing as empty.
     #[test]
     fn manual_locate_guides_renames_table_rect_row_lines_and_seam_x() {
         let v = round_trips(ManualLocateGuides {
@@ -2632,8 +2632,8 @@ mod tests {
         assert_exact_keys(&v, &["tableRect", "rowLines", "seamX"]);
     }
 
-    /// Wire-critical payload: exact key set of the picker's screenshot-mode
-    /// context (manual-locate/main.ts: ManualLocateContext).
+    /// Wire-critical payload: exact key set of the picker layer's
+    /// context (client.ts: ManualLocateContext).
     #[test]
     fn manual_locate_context_pins_the_exact_wire_key_set() {
         let ctx = ManualLocateContext {

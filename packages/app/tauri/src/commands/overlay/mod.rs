@@ -70,10 +70,11 @@
 //! back to Searching: the pin-reuse path reports Detected directly instead
 //! of flashing "locating…" before every Tab press.
 //!
-//! The MANUAL LOCATE flow (`start_manual_locate` → the drag-box picker
-//! window → `set_manual_roster_rect`) lets the player anchor the chips by
-//! hand when auto detection keeps missing: a dedicated, INTERACTIVE
-//! transparent window covers the game rect, the player drags a rectangle
+//! The MANUAL LOCATE flow (`start_manual_locate` → the main window's
+//! cached-frame picker sub-window → `set_manual_roster_rect`) lets the
+//! player anchor the chips by hand when auto detection keeps missing: the
+//! main window's webui renders a full-cover picker layer over a CACHED game
+//! frame (the detector's own last capture), the player drags a rectangle
 //! over the team table, and the selection is stored as a [`ManualAnchor`].
 //! While it stays valid (same battle stamp + same game-window rect) the
 //! watcher uses it INSTEAD of running the detector — no capture, no OCR,
@@ -110,11 +111,6 @@ use super::{appdata, arena_info, overlay_config, overlay_detect, overlay_manual,
 /// Label of the dedicated overlay window (distinct from "main").
 const OVERLAY_LABEL: &str = "overlay";
 
-/// Label of the manual-locate picker window (screenshot-style drag box).
-/// A SEPARATE window from [`OVERLAY_LABEL`]: it must RECEIVE mouse + keyboard
-/// input (never click-through) while the overlay chips window must never.
-const MANUAL_LOCATE_LABEL: &str = "manual-locate";
-
 /// Minimum accepted size (physical px) of a manual roster selection, per
 /// axis — anything smaller cannot carry a readable table row.
 const MANUAL_MIN_SIZE: i32 = 32;
@@ -132,6 +128,12 @@ pub const OVERLAY_VISIBILITY_EVENT: &str = "wowsp://overlay-visibility";
 /// Tauri event carrying the DETECTION-STATE machine to all windows (main
 /// window's live-battle panel badge). Transition-only — see `report_status`.
 pub const OVERLAY_STATUS_EVENT: &str = "wowsp://overlay-status";
+
+/// Tauri event telling the main window to force-close its manual-locate
+/// picker layer (the game window vanished underneath it, or overlay mode
+/// ended). Emitted only from `force_close_manual_locate`; the layer's own
+/// submit/cancel paths close without this event.
+pub const MANUAL_LOCATE_CLOSE_EVENT: &str = "wowsp://manual-locate-close";
 
 /// Tauri event carrying one sink transition's ROW ATTRIBUTION to ALL
 /// windows: for each side, the pre-sink alive-row indices whose players
@@ -238,8 +240,8 @@ pub use manual::{
     manual_locate_context, set_manual_roster_rect, start_manual_locate,
 };
 use manual::{
-    ManualAnchor, ManualAnchorCheck, build_manual_anchor, destroy_manual_locate_window,
-    manual_anchor_check, rect_same_within, stored_manual_rows,
+    ManualAnchor, ManualAnchorCheck, build_manual_anchor, force_close_manual_locate,
+    manual_anchor_check, manual_locate_open, rect_same_within, stored_manual_rows,
 };
 #[cfg(test)]
 use manual::{manual_row_centers, validate_manual_selection};

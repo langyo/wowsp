@@ -166,7 +166,6 @@
     "manualRows": "Manually located · {n} rows",
     "hideNicks": "Hide nicknames",
     "showNicks": "Show nicknames",
-    "manualDragHint": "Drag to box-select the scoreboard area in the game window",
     "manualConfirm": "Confirm",
     "manualCancel": "Cancel",
     "manualTooSmall": "Selection is too small",
@@ -174,6 +173,7 @@
     "manualGuides": "Guides & snap",
     "manualShotFresh": "Cached frame · just now",
     "manualShotAge": "Cached frame · {n} min ago",
+    "manualNoFrame": "No usable cached frame — hold Tab over the roster in game, then retry",
     "param": {
       "mainGun": "Main",
       "secondary": "Secondary",

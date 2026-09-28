@@ -166,7 +166,6 @@
     "manualRows": "已手動定位 · {n} 行",
     "hideNicks": "隱藏暱稱",
     "showNicks": "顯示暱稱",
-    "manualDragHint": "按住滑鼠左鍵拖曳，框選遊戲內的戰績表格區域",
     "manualConfirm": "確認",
     "manualCancel": "取消",
     "manualTooSmall": "選區太小",
@@ -174,6 +173,7 @@
     "manualGuides": "輔助線吸附",
     "manualShotFresh": "快取截圖 · 剛剛",
     "manualShotAge": "快取截圖 · {n} 分鐘前",
+    "manualNoFrame": "暫無可用的快取截圖，請在遊戲中按住 Tab 檢視戰績表後重試",
     "param": {
       "mainGun": "主砲",
       "secondary": "副砲",

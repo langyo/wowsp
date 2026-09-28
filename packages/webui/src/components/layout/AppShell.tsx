@@ -31,6 +31,7 @@ import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
+import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
@@ -366,6 +367,12 @@ export default defineComponent({
             the settings' changelog section. Renders nothing outside the
             desktop Tauri shell, so it mounts unconditionally here. */}
         <UpdateAppliedToast />
+
+        {/* In-game manual-locate picker layer (cached-frame drag box for the
+            live-battle panel's 手动定位 flow): renders nothing until the
+            manualLocate store opens it, and covers the whole window while
+            it does — see features/replay/ManualLocateOverlay. */}
+        <ManualLocateOverlay />
 
         {/* Close confirm dialog — footer carries the action button group. */}
         <HkModal

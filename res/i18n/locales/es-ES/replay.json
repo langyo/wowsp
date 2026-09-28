@@ -166,7 +166,6 @@
     "manualRows": "Ubicado manualmente · {n} filas",
     "hideNicks": "Ocultar apodos",
     "showNicks": "Mostrar apodos",
-    "manualDragHint": "Mantén pulsado el botón izquierdo y arrastra para enmarcar la tabla de jugadores del juego",
     "manualConfirm": "Confirmar",
     "manualCancel": "Cancelar",
     "manualTooSmall": "La selección es demasiado pequeña",
@@ -174,6 +173,7 @@
     "manualGuides": "Guías y ajuste",
     "manualShotFresh": "Captura en caché · ahora mismo",
     "manualShotAge": "Captura en caché · hace {n} min",
+    "manualNoFrame": "No hay fotograma en caché utilizable: mantén pulsado Tab sobre la tabla en el juego y reintenta",
     "param": {
       "mainGun": "Batería principal",
       "secondary": "Batería secundaria",

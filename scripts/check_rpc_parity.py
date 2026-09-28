@@ -12,7 +12,7 @@ surfaces (the main app and the installer shell) plus a dev mock:
   - `packages/webui/src/rpc.ts` — the hand-maintained `RPC` name table the
     webui routes every `transport.invoke(cmd)` through,
   - raw `invoke("...")` string literals in `packages/webui/src/**/*.{ts,tsx}`
-    (overlay/ and manual-locate/ bypass rpc.ts entirely) — a typo'd literal
+    (overlay/ bypasses rpc.ts entirely) — a typo'd literal
     here passes every other check and explodes at runtime,
   - `scripts/mock/src/main.py` — the browser-dev mock backend, which
     mirrors a SUBSET of the same names under `/api/<cmd>`,
