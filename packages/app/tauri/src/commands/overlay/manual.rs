@@ -353,8 +353,23 @@ pub async fn cancel_manual_locate() -> Result<(), String> {
 /// origin): validate it and enqueue it as a FIFO command — the watcher loop
 /// arms the manual anchor and reports the manual badge from there (within
 /// one poll interval). The anchor takes effect on the next Tab hold.
+///
+/// `frame_game_rect` is the rect the picker's cached frame was captured
+/// against, passed back by the UI. The picker is DESIGNED to be used after
+/// Alt-Tab (cached frame), where the live window rect is a minimized
+/// placeholder (-32000, tiny size) — validating against it refuses a
+/// correct selection, and storing it arms an anchor that expires the
+/// instant the game restores. The frame's own rect is the truth the
+/// drawing is relative to.
 #[tauri::command]
-pub async fn set_manual_roster_rect(x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
+pub async fn set_manual_roster_rect(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    frame_game_rect: Option<Rect>,
+) -> Result<(), String> {
+    tracing::info!(sel = format!("{}x{} at ({},{})", width, height, x, y), frame_rect = ?frame_game_rect, "manual locate submit invoked");
     let sel = Rect {
         x,
         y,
@@ -367,22 +382,35 @@ pub async fn set_manual_roster_rect(x: i32, y: i32, width: i32, height: i32) -> 
         battle_known = super::arena_info::refresh_battle_state();
     }
     if !battle_known {
+        tracing::warn!("manual locate refused: no fresh battle roster");
         return Err("no fresh battle roster — manual locate unavailable".into());
     }
     let team_sizes = super::arena_info::last_known_team_sizes();
     if team_sizes.0.max(team_sizes.1) == 0 {
+        tracing::warn!("manual locate refused: team sizes unknown");
         return Err("battle roster team sizes unknown — cannot derive rows".into());
     }
+    // Prefer the frame's captured rect; fall back to the live window rect
+    // (a NON-minimized live rect is equally valid for in-place usage).
     #[cfg(target_os = "windows")]
-    let game_rect = rect_from_win32(find_game_window().ok_or("game window not found")?.rect);
-    #[cfg(not(target_os = "windows"))]
-    let game_rect = Rect {
-        x: 0,
-        y: 0,
-        width: i32::MAX,
-        height: i32::MAX,
+    let game_rect: Rect = match frame_game_rect {
+        Some(r) => r,
+        None => rect_from_win32(find_game_window().ok_or("game window not found")?.rect),
     };
-    validate_manual_selection(&sel, &game_rect)?;
+    #[cfg(not(target_os = "windows"))]
+    let game_rect: Rect = match frame_game_rect {
+        Some(r) => r,
+        None => Rect {
+            x: 0,
+            y: 0,
+            width: i32::MAX,
+            height: i32::MAX,
+        },
+    };
+    if let Err(e) = validate_manual_selection(&sel, &game_rect) {
+        tracing::warn!(error = %e, "manual locate refused: validation");
+        return Err(e);
+    }
     let battle = super::arena_info::last_arena_stamp();
     // No direct status emit here (the old immediate Manual report): the
     // watcher loop applies this command FIFO within one poll interval and

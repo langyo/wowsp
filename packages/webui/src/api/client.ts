@@ -1463,8 +1463,8 @@ export const api = {
    *  game window origin). Validates + freezes the manual roster anchor;
    *  the layer closes on this Ok and the overlay chips re-anchor on the
    *  next Tab hold. */
-  setManualRosterRect: (x: number, y: number, width: number, height: number) =>
-    transport.invoke<null>(RPC.set_manual_roster_rect, { x, y, width, height }),
+  setManualRosterRect: (x: number, y: number, width: number, height: number, frameGameRect?: Rect | null) =>
+    transport.invoke<null>(RPC.set_manual_roster_rect, { x, y, width, height, frameGameRect }),
   /** Drop the manual anchor; detection returns to the automatic flow. */
   clearManualRosterRect: () => transport.invoke<null>(RPC.clear_manual_roster_rect),
   /** Backend force-close push for the picker layer: the game window vanished

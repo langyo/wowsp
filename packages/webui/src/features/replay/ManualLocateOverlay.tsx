@@ -337,6 +337,11 @@ export default defineComponent({
           Math.round(b.y),
           Math.round(b.w),
           Math.round(b.h),
+          // The rect the cached frame was captured against — the drawing is
+          // relative to it. The live window rect is useless here: the picker
+          // is designed for Alt-Tab use, where the minimized window reports
+          // a placeholder rect that refuses valid boxes.
+          ctx.value?.capturedGameRect ?? null,
         );
         // Success: the backend armed the anchor and cleared its open flag —
         // drop the picker. `submitting` stays true until the close reset: no
