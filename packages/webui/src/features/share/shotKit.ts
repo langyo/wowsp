@@ -61,10 +61,25 @@ export const PAD = 28;
 /** Footer band: tall enough for the logo block and the two centered
  *  disclaimer lines to breathe. */
 export const FOOT_H = 88;
+/** The footer's mascot logo: rounded-frame size and the air between it and
+ *  the brand block (shared by the painter and the minimum-width measure). */
+const LOGO_SIZE = 46;
+const LOGO_GAP = 12;
+/** Minimum air between the footer's three text blocks (brand / disclaimers /
+ *  QQ group) before they count as colliding. */
+const FOOTER_GAP = 16;
 /** The bundled pig-mascot brand mark (public/ asset — same-origin, so the
  *  canvas never taints; same pattern as the HUD marker PNGs). */
 export const LOGO_URL = "/logo.webp";
 const GITHUB_URL = "github.com/langyo/wowsp";
+
+/** Scratch 2d context for measuring text outside a live shot canvas — the
+ *  footer minimum width budgets before any painting starts. */
+let measureCtx: CanvasRenderingContext2D | null = null;
+function sharedMeasureContext(): CanvasRenderingContext2D | null {
+  if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
+  return measureCtx;
+}
 
 export const rgba = (triplet: string, alpha: number): string =>
   `rgba(${triplet.split(" ").join(",")},${alpha})`;
@@ -130,6 +145,41 @@ export function shareFooterStrings(): ShotFooterStrings {
   };
 }
 
+/** Lowest canvas logical width that keeps the fixed footer's three blocks —
+ *  brand + tagline left, the two disclaimers centered, QQ group + project
+ *  URL right — from colliding (the centered block must clear both sides).
+ *  Renderers floor their width on this (their own layout minimums may sit
+ *  higher) so a longer watermark copy widens the shot instead of having its
+ *  bottom lines overlap. */
+export function footerMinWidth(
+  footer: ShotFooterStrings,
+  hasLogo: boolean,
+): number {
+  const ctx = sharedMeasureContext();
+  if (!ctx) return 0;
+  let left = PAD;
+  if (hasLogo) left += LOGO_SIZE + LOGO_GAP;
+  ctx.font = font(19, 700);
+  const brandW = ctx.measureText("WoWSP").width;
+  ctx.font = font(12, 400);
+  left += Math.max(brandW, ctx.measureText(footer.tagline).width);
+  ctx.font = font(11.5, 400);
+  const centerW = Math.max(
+    ctx.measureText(footer.disclaimer1).width,
+    ctx.measureText(footer.disclaimer2).width,
+  );
+  ctx.font = font(12, 600);
+  const qqW = ctx.measureText(footer.qqGroup).width;
+  ctx.font = font(12, 400);
+  const rightW = Math.max(qqW, ctx.measureText(GITHUB_URL).width);
+  return Math.ceil(
+    Math.max(
+      2 * left + centerW + FOOTER_GAP * 2,
+      centerW + 2 * rightW + 2 * (PAD + FOOTER_GAP),
+    ),
+  );
+}
+
 /** Draw the camera-watermark promo footer: pig logo + brand + localized
  *  tagline left, the two fixed disclaimers centered (data is reference-only;
  *  the software is free — never pay for it), QQ group + project URL right —
@@ -153,14 +203,13 @@ export function drawFooter(
   // Left: the mascot logo in a rounded frame, brand + tagline beside it.
   let lx = PAD;
   if (logo) {
-    const size = 46;
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(lx, cy - size / 2, size, size, 10);
+    ctx.roundRect(lx, cy - LOGO_SIZE / 2, LOGO_SIZE, LOGO_SIZE, 10);
     ctx.clip();
-    ctx.drawImage(logo, lx, cy - size / 2, size, size);
+    ctx.drawImage(logo, lx, cy - LOGO_SIZE / 2, LOGO_SIZE, LOGO_SIZE);
     ctx.restore();
-    lx += size + 12;
+    lx += LOGO_SIZE + LOGO_GAP;
   }
   ctx.textAlign = "left";
   ctx.font = font(19, 700);

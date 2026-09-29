@@ -381,7 +381,9 @@ export default defineComponent({
       () => result.value?.realm ?? null,
     );
     const SHOT_SHIP_LIMIT = 8;
-    const SHOT_MEMBER_LIMIT = 12;
+    // Clan roster cap: the shot draws two side-by-side columns (13 rows),
+    // so 25 members fit without stretching the poster's height.
+    const SHOT_MEMBER_LIMIT = 25;
 
     function buildPlayerShotModel(): StatsShotModel {
       const s = result.value;

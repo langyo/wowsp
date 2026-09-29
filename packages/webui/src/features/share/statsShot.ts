@@ -24,6 +24,7 @@ import {
   drawFooter,
   drawStampSeal,
   ellipsize,
+  footerMinWidth,
   font,
   loadImage,
   newShotCanvas,
@@ -108,7 +109,13 @@ export interface StatsShotModel {
 
 /** Canvas logical width — one content column, a touch wider than a
  * post-battle roster column so the hero band breathes. */
-const WIDTH = 660;
+const BASE_WIDTH = 660;
+
+/** The shot's render width for this session's locale: the base single-
+ * column width, or more when the localized watermark copy would otherwise
+ * overlap in the footer (see footerMinWidth). */
+const shotWidth = (): number =>
+  Math.max(BASE_WIDTH, footerMinWidth(shareFooterStrings(), true));
 const HEAD_H = 66;
 const IDENTITY_H = 48;
 const HERO_H = 92;
@@ -140,11 +147,12 @@ function typeChipWidth(ctx: CanvasRenderingContext2D, chip: StatsShotTypeChip): 
 }
 
 /** Greedy row-wrap of the per-type chips: a five-class card (BB/CV/CA/DD/SS)
- *  does not fit one 604px row, and silently dropping a class would misrepre-
+ *  does not fit one content row, and silently dropping a class would misrepre-
  *  sent the career — the chips flow onto a second row instead. Measured on a
  *  scratch context so the canvas height can budget every wrapped row. */
 function wrapTypeChips(
   model: StatsShotModel,
+  width: number,
 ): StatsShotTypeChip[][] {
   if (model.typeChips.length === 0) return [];
   const scratch = document.createElement("canvas").getContext("2d");
@@ -154,7 +162,7 @@ function wrapTypeChips(
   let x = 0;
   for (const chip of model.typeChips) {
     const w = typeChipWidth(scratch, chip);
-    if (row.length > 0 && x + w > WIDTH - PAD * 2) {
+    if (row.length > 0 && x + w > width - PAD * 2) {
       rows.push(row);
       row = [];
       x = 0;
@@ -171,9 +179,10 @@ export async function renderStatsShot(
   opts: { el?: HTMLElement | null },
 ): Promise<Uint8Array> {
   const palette = readPalette(opts.el);
+  const width = shotWidth();
   const hasDiv = model.divisions.length > 0;
   const kpiRows = Math.ceil(model.kpis.length / 3);
-  const chipRows = wrapTypeChips(model);
+  const chipRows = wrapTypeChips(model, width);
   const shipCount = model.ships.length;
   const hasShips = shipCount > 0;
 
@@ -187,7 +196,7 @@ export async function renderStatsShot(
   }
   height += FOOT_H;
 
-  const { canvas, ctx } = newShotCanvas(WIDTH, height, palette);
+  const { canvas, ctx } = newShotCanvas(width, height, palette);
 
   // Header: title, range + realm stacked (right), hairline.
   ctx.textBaseline = "middle";
@@ -196,7 +205,7 @@ export async function renderStatsShot(
   ctx.fillStyle = rgba(palette.text, 1);
   ctx.fillText(model.title, PAD, HEAD_H / 2 + 2);
   ctx.textAlign = "right";
-  const rx = WIDTH - PAD;
+  const rx = width - PAD;
   if (model.rangeLabel && model.realm) {
     ctx.font = font(14, 400);
     ctx.fillStyle = rgba(palette.muted, 1);
@@ -212,7 +221,7 @@ export async function renderStatsShot(
   }
   ctx.textAlign = "left";
   ctx.fillStyle = rgba(palette.text, 0.1);
-  ctx.fillRect(PAD, HEAD_H - 6, WIDTH - PAD * 2, 1);
+  ctx.fillRect(PAD, HEAD_H - 6, width - PAD * 2, 1);
 
   // Identity row: [TAG] + nickname, hidden pill right.
   const iy = HEAD_H + IDENTITY_H / 2;
@@ -230,17 +239,17 @@ export async function renderStatsShot(
   ctx.fillText(tagText, PAD, iy);
   ctx.font = font(17, 700);
   ctx.fillStyle = rgba(palette.text, 1);
-  const nickW = WIDTH - PAD * 2 - tagW - (pillW ? pillW + 12 : 0);
+  const nickW = width - PAD * 2 - tagW - (pillW ? pillW + 12 : 0);
   ctx.fillText(ellipsize(ctx, model.name, Math.max(nickW, 60)), PAD + tagW, iy);
   if (pillW > 0 && model.hiddenLabel) {
     ctx.font = font(11.5, 600);
     ctx.fillStyle = "rgba(220,80,80,0.16)";
     ctx.beginPath();
-    ctx.roundRect(WIDTH - PAD - pillW, iy - 12, pillW, 24, 12);
+    ctx.roundRect(width - PAD - pillW, iy - 12, pillW, 24, 12);
     ctx.fill();
     ctx.fillStyle = "rgba(220,80,80,0.95)";
     ctx.textAlign = "right";
-    ctx.fillText(model.hiddenLabel, WIDTH - PAD - 8, iy);
+    ctx.fillText(model.hiddenLabel, width - PAD - 8, iy);
     ctx.textAlign = "left";
   }
 
@@ -257,7 +266,7 @@ export async function renderStatsShot(
   ctx.fillText(model.hero.battlesText, PAD, heroY + 76);
 
   ctx.textAlign = "right";
-  let heroRight = WIDTH - PAD;
+  let heroRight = width - PAD;
   // The live card renders the PR block with "—" while the rating is on but
   // unknown (hidden profiles) — the shot keeps the same shape.
   if (model.prOn) {
@@ -305,7 +314,7 @@ export async function renderStatsShot(
   let y = heroY + HERO_H;
   if (hasDiv) {
     const n = model.divisions.length;
-    const cellW = (WIDTH - PAD * 2) / n;
+    const cellW = (width - PAD * 2) / n;
     for (let i = 0; i < n; i++) {
       const d = model.divisions[i];
       const cx = PAD + cellW * i + cellW / 2;
@@ -328,7 +337,7 @@ export async function renderStatsShot(
   // KPI grid: three columns of label-over-value cards.
   if (kpiRows > 0) {
     y += 8;
-    const cellW = (WIDTH - PAD * 2 - KPI_GAP * 2) / 3;
+    const cellW = (width - PAD * 2 - KPI_GAP * 2) / 3;
     model.kpis.forEach((k, i) => {
       const col = i % 3;
       const row = Math.floor(i / 3);
@@ -399,7 +408,7 @@ export async function renderStatsShot(
       STAT_GAP,
     );
     const statsW = (origins[origins.length - 1] ?? 0) + 24;
-    const statLeft = WIDTH - PAD - statsW;
+    const statLeft = width - PAD - statsW;
 
     ctx.font = font(10.5, 400);
     ctx.fillStyle = rgba(palette.muted, 0.8);
@@ -417,7 +426,7 @@ export async function renderStatsShot(
       const cy = y + ROW_H / 2;
       ctx.fillStyle = rgba(palette.text, 0.05);
       ctx.beginPath();
-      ctx.roundRect(PAD, y, WIDTH - PAD * 2, ROW_H, 8);
+      ctx.roundRect(PAD, y, width - PAD * 2, ROW_H, 8);
       ctx.fill();
 
       let tx = PAD + 12;
@@ -447,6 +456,6 @@ export async function renderStatsShot(
   }
 
   const logo = await loadImage(LOGO_URL);
-  drawFooter(ctx, palette, WIDTH, shareFooterStrings(), logo);
+  drawFooter(ctx, palette, width, shareFooterStrings(), logo);
   return canvasToPngBytes(canvas);
 }

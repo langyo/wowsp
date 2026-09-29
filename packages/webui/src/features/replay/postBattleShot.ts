@@ -24,6 +24,7 @@ import {
   drawFooter,
   drawStampSeal,
   font,
+  footerMinWidth,
   loadImage,
   newShotCanvas,
   readPalette,
@@ -128,7 +129,13 @@ export async function renderPostBattleShot(
 ): Promise<Uint8Array> {
   const palette = readPalette(opts.el);
   const cols = model.columns;
-  const width = PAD * 2 + cols.length * COL_WIDTH + (cols.length - 1) * COL_GAP;
+  // A single-team column lands below the footer's no-overlap minimum —
+  // floor the content width on it so the watermark lines never collide.
+  // Sized for the logo present: it loads for the footer in the normal path.
+  const width = Math.max(
+    PAD * 2 + cols.length * COL_WIDTH + (cols.length - 1) * COL_GAP,
+    footerMinWidth(opts, true),
+  );
   const maxRows = Math.max(...cols.map((c) => c.rows.length), 0);
   const height = HEAD_H + COL_TITLE_H + maxRows * (ROW_H + 6) + 10 + FOOT_H;
 

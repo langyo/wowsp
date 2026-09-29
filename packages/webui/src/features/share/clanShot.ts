@@ -2,9 +2,10 @@
  * Share-shot renderer for the clan water-table card (the lookup's clan
  * mode): paints the ClanCard's content — [TAG] identity, clan-wide hero
  * winrate / avg PR, the KPI strip and the top of the roster table (current
- * default order: officers first, battles desc) — onto an offscreen canvas
- * via the shared shot kit, and returns PNG bytes for the clipboard copy
- * flow (useShareImage).
+ * default order: officers first, battles desc, capped by the caller and
+ * drawn as two side-by-side columns so a wide roster keeps the poster's
+ * aspect sane) — onto an offscreen canvas via the shared shot kit, and
+ * returns PNG bytes for the clipboard copy flow (useShareImage).
  *
  * Same contract as the other shots: plain-data model, colors pre-resolved
  * by the caller, live theme palette, fixed WoWSP watermark footer. Hidden
@@ -19,6 +20,7 @@ import {
   canvasToPngBytes,
   drawFooter,
   ellipsize,
+  footerMinWidth,
   font,
   loadImage,
   newShotCanvas,
@@ -68,7 +70,12 @@ export interface ClanShotModel {
   moreMembers?: string | null;
 }
 
-const WIDTH = 660;
+/** Canvas logical width: two roster columns side by side keep the poster's
+ *  aspect sane at the caller's member cap (13 rows tall for 25), and every
+ *  section — including a roster name clear of the battles column — keeps
+ *  room to breathe; floored at the footer's no-overlap minimum so the
+ *  watermark lines can never collide. */
+const BASE_WIDTH = 1060;
 const HEAD_H = 66;
 const IDENTITY_H = 48;
 const DESC_H = 24;
@@ -79,25 +86,33 @@ const MEMBER_TITLE_H = 30;
 const MEMBER_HEAD_H = 22;
 const ROW_H = 44;
 const STAT_GAP = 36;
+/** Air between the two roster columns. */
+const COL_GAP = 16;
 
 export async function renderClanShot(
   model: ClanShotModel,
   opts: { el?: HTMLElement | null },
 ): Promise<Uint8Array> {
   const palette = readPalette(opts.el);
+  const footer = shareFooterStrings();
+  // Logo first: its presence (with the localized watermark copy) decides
+  // the width floor before anything is laid out.
+  const logo = await loadImage(LOGO_URL);
+  const width = Math.max(BASE_WIDTH, footerMinWidth(footer, !!logo));
   const kpiCount = model.kpis.length;
   const memberCount = model.members.length;
   const hasMembers = memberCount > 0;
+  const memberRows = Math.ceil(memberCount / 2);
 
   let height = HEAD_H + IDENTITY_H + (model.description ? DESC_H : 0) + HERO_H;
   if (kpiCount > 0) height += KPI_CELL_H + 8;
   if (hasMembers) {
-    height += MEMBER_TITLE_H + MEMBER_HEAD_H + memberCount * (ROW_H + 6);
+    height += MEMBER_TITLE_H + MEMBER_HEAD_H + memberRows * (ROW_H + 6);
     if (model.moreMembers) height += 20;
   }
   height += FOOT_H;
 
-  const { canvas, ctx } = newShotCanvas(WIDTH, height, palette);
+  const { canvas, ctx } = newShotCanvas(width, height, palette);
 
   // Header: title, realm (right), hairline.
   ctx.textBaseline = "middle";
@@ -109,11 +124,11 @@ export async function renderClanShot(
     ctx.textAlign = "right";
     ctx.font = font(14, 400);
     ctx.fillStyle = rgba(palette.muted, 1);
-    ctx.fillText(model.realm.toUpperCase(), WIDTH - PAD, HEAD_H / 2 + 2);
+    ctx.fillText(model.realm.toUpperCase(), width - PAD, HEAD_H / 2 + 2);
     ctx.textAlign = "left";
   }
   ctx.fillStyle = rgba(palette.text, 0.1);
-  ctx.fillRect(PAD, HEAD_H - 6, WIDTH - PAD * 2, 1);
+  ctx.fillRect(PAD, HEAD_H - 6, width - PAD * 2, 1);
 
   // Identity row: [TAG] + clan name (clan cards always carry a tag).
   const iy = HEAD_H + IDENTITY_H / 2;
@@ -124,14 +139,14 @@ export async function renderClanShot(
   ctx.fillText(tagText, PAD, iy);
   ctx.font = font(17, 700);
   ctx.fillStyle = rgba(palette.text, 1);
-  ctx.fillText(ellipsize(ctx, model.name, Math.max(WIDTH - PAD * 2 - tagW, 60)), PAD + tagW, iy);
+  ctx.fillText(ellipsize(ctx, model.name, Math.max(width - PAD * 2 - tagW, 60)), PAD + tagW, iy);
   let y = HEAD_H + IDENTITY_H;
 
   // Optional one-line description.
   if (model.description) {
     ctx.font = font(12, 400);
     ctx.fillStyle = rgba(palette.muted, 0.9);
-    ctx.fillText(ellipsize(ctx, model.description, WIDTH - PAD * 2), PAD, y + DESC_H / 2);
+    ctx.fillText(ellipsize(ctx, model.description, width - PAD * 2), PAD, y + DESC_H / 2);
     y += DESC_H;
   }
 
@@ -152,21 +167,21 @@ export async function renderClanShot(
     ctx.textAlign = "right";
     ctx.font = font(26, 700, true);
     if (model.hero.prRainbow) {
-      ctx.fillStyle = rainbowFill(ctx, WIDTH - PAD, ctx.measureText(prText).width);
+      ctx.fillStyle = rainbowFill(ctx, width - PAD, ctx.measureText(prText).width);
     } else {
       ctx.fillStyle = model.hero.prColor ?? rgba(palette.text, 1);
     }
-    ctx.fillText(prText, WIDTH - PAD, y + 26);
+    ctx.fillText(prText, width - PAD, y + 26);
     ctx.font = font(11, 400);
     ctx.fillStyle = rgba(palette.muted, 1);
-    if (model.hero.prLabel) ctx.fillText(model.hero.prLabel, WIDTH - PAD, y + 52);
+    if (model.hero.prLabel) ctx.fillText(model.hero.prLabel, width - PAD, y + 52);
     ctx.textAlign = "left";
   }
   y += HERO_H;
 
   // KPI strip: one row of up to four label-over-value cards.
   if (kpiCount > 0) {
-    const cellW = (WIDTH - PAD * 2 - KPI_GAP * (kpiCount - 1)) / kpiCount;
+    const cellW = (width - PAD * 2 - KPI_GAP * (kpiCount - 1)) / kpiCount;
     model.kpis.forEach((k, i) => {
       const x = PAD + i * (cellW + KPI_GAP);
       ctx.fillStyle = rgba(palette.text, 0.05);
@@ -184,7 +199,11 @@ export async function renderClanShot(
   }
 
   // Roster: section title, right-aligned column labels at the measured
-  // stat origins, then the row cards (name + role stacked, stat cells).
+  // stat origins, then the row cards (name + role stacked, stat cells) in
+  // two side-by-side columns — column-major, the top half of the ranking
+  // reading down the left column and the rest down the right. One shared
+  // origin set (measured across every member) keeps both halves' stat
+  // cells on the same grid.
   if (hasMembers) {
     ctx.font = font(13, 600);
     ctx.fillStyle = rgba(palette.text, 0.55);
@@ -198,48 +217,67 @@ export async function renderClanShot(
       STAT_GAP,
     );
     const statsW = (origins[origins.length - 1] ?? 0) + 24;
-    const statLeft = WIDTH - PAD - statsW;
+    // Widest first stat cell (the battles column) — a row's name must clear
+    // it, not just the cell's right-aligned origin, or long ellipsized names
+    // run into the digits.
+    const firstCellW =
+      origins.length > 1 ? origins[1] - origins[0] - STAT_GAP : 0;
+    const colW = (width - PAD * 2 - COL_GAP) / 2;
+    const columns = [model.members.slice(0, memberRows), model.members.slice(memberRows)];
+    const colX = (ci: number) => PAD + ci * (colW + COL_GAP);
 
     ctx.font = font(10.5, 400);
     ctx.fillStyle = rgba(palette.muted, 0.8);
     ctx.textAlign = "right";
-    model.membersHead.forEach((label, i) => {
-      ctx.fillText(label, statLeft + (origins[i] ?? 0), y + MEMBER_HEAD_H / 2);
-    });
+    for (let ci = 0; ci < 2; ci++) {
+      const statLeft = colX(ci) + colW - statsW;
+      model.membersHead.forEach((label, i) => {
+        ctx.fillText(label, statLeft + (origins[i] ?? 0), y + MEMBER_HEAD_H / 2);
+      });
+    }
     ctx.textAlign = "left";
     y += MEMBER_HEAD_H;
 
-    for (const member of model.members) {
-      const cy = y + ROW_H / 2;
-      ctx.globalAlpha = member.dim ? 0.5 : 1;
-      ctx.fillStyle = rgba(palette.text, 0.05);
-      ctx.beginPath();
-      ctx.roundRect(PAD, y, WIDTH - PAD * 2, ROW_H, 8);
-      ctx.fill();
+    for (let r = 0; r < memberRows; r++) {
+      const ry = y + r * (ROW_H + 6);
+      for (let ci = 0; ci < 2; ci++) {
+        const member = columns[ci][r];
+        if (!member) continue;
+        const statLeft = colX(ci) + colW - statsW;
+        const cy = ry + ROW_H / 2;
+        ctx.globalAlpha = member.dim ? 0.5 : 1;
+        ctx.fillStyle = rgba(palette.text, 0.05);
+        ctx.beginPath();
+        ctx.roundRect(colX(ci), ry, colW, ROW_H, 8);
+        ctx.fill();
 
-      const textW = Math.max(statLeft - 8 - (PAD + 12), 60);
-      ctx.font = font(14.5, 600);
-      ctx.fillStyle = rgba(palette.text, 1);
-      ctx.fillText(ellipsize(ctx, member.name, textW), PAD + 12, cy - 8);
-      ctx.font = font(11, 400);
-      ctx.fillStyle = rgba(palette.text, 0.5);
-      ctx.fillText(ellipsize(ctx, member.role, textW), PAD + 12, cy + 10);
+        const textW = Math.max(
+          statLeft - firstCellW - 8 - (colX(ci) + 12),
+          60,
+        );
+        ctx.font = font(14.5, 600);
+        ctx.fillStyle = rgba(palette.text, 1);
+        ctx.fillText(ellipsize(ctx, member.name, textW), colX(ci) + 12, cy - 8);
+        ctx.font = font(11, 400);
+        ctx.fillStyle = rgba(palette.text, 0.5);
+        ctx.fillText(ellipsize(ctx, member.role, textW), colX(ci) + 12, cy + 10);
 
-      ctx.font = font(13.5, 600, true);
-      ctx.textAlign = "right";
-      member.cells.forEach((c, ci) => {
-        const x = statLeft + (origins[ci] ?? 0);
-        if (c.rainbow) {
-          ctx.fillStyle = rainbowFill(ctx, x, ctx.measureText(c.text).width);
-        } else {
-          ctx.fillStyle = c.color ?? rgba(palette.text, 0.85);
-        }
-        ctx.fillText(c.text, x, cy);
-      });
-      ctx.textAlign = "left";
-      ctx.globalAlpha = 1;
-      y += ROW_H + 6;
+        ctx.font = font(13.5, 600, true);
+        ctx.textAlign = "right";
+        member.cells.forEach((c, i) => {
+          const x = statLeft + (origins[i] ?? 0);
+          if (c.rainbow) {
+            ctx.fillStyle = rainbowFill(ctx, x, ctx.measureText(c.text).width);
+          } else {
+            ctx.fillStyle = c.color ?? rgba(palette.text, 0.85);
+          }
+          ctx.fillText(c.text, x, cy);
+        });
+        ctx.textAlign = "left";
+        ctx.globalAlpha = 1;
+      }
     }
+    y += memberRows * (ROW_H + 6);
     if (model.moreMembers) {
       ctx.font = font(11, 400);
       ctx.fillStyle = rgba(palette.muted, 0.9);
@@ -248,7 +286,6 @@ export async function renderClanShot(
     }
   }
 
-  const logo = await loadImage(LOGO_URL);
-  drawFooter(ctx, palette, WIDTH, shareFooterStrings(), logo);
+  drawFooter(ctx, palette, width, footer, logo);
   return canvasToPngBytes(canvas);
 }
