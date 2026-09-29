@@ -1,6 +1,7 @@
 import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   BarChart3,
+  Bug,
   Check,
   Copy,
   Copyright,
@@ -102,6 +103,7 @@ import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import SealCustomizer from "@/components/stats/SealCustomizer";
 import FontSizeControl from "@/components/layout/FontSizeControl";
 import ChangelogSection from "@/components/settings/ChangelogSection";
+import FeedbackSection from "@/components/settings/FeedbackSection";
 import ThemeSchemeDialog from "@/components/settings/ThemeSchemeDialog";
 import { ATTRIBUTIONS } from "@/data/attributions";
 import { kindLabel } from "@/utils/installLabel";
@@ -689,6 +691,7 @@ export default defineComponent({
       updates: RefreshCw,
       changelog: ScrollText,
       overlay: Layers,
+      feedback: Bug,
       about: Info,
       attributions: Copyright,
     };
@@ -704,6 +707,7 @@ export default defineComponent({
       updates: t("settings.updates"),
       changelog: t("settings.changelog"),
       overlay: t("settings.overlay"),
+      feedback: t("settings.feedback"),
       about: t("settings.about"),
       attributions: t("settings.attributions"),
     }));
@@ -1822,6 +1826,15 @@ export default defineComponent({
             </HkSettingsSub>
           </HkSettingsGroup>
 
+          </>
+          ),
+          feedback: () => (
+          <>
+          {/* 问题反馈 — diagnostics-log hub: the app keeps a daily-rolling
+              UTF-8 file log (Rust `logging` module); this section surfaces
+              it for one-click reveal/copy/export, plus the manual feedback
+              channels while the 飞书 self-service upload is pending. */}
+          <FeedbackSection />
           </>
           ),
           about: () => (

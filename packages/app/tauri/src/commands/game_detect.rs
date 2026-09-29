@@ -154,7 +154,14 @@ fn dedupe_installs(installs: Vec<GameInstall>) -> Vec<GameInstall> {
 // sync command would execute it inline on the main/UI thread.
 #[tauri::command]
 pub async fn detect_game_install() -> Vec<GameInstall> {
-    scan_game_installs()
+    let installs = scan_game_installs();
+    // Logged at the command (not inside the sync core) so internal callers
+    // resolving replay/arena dirs don't spam the log with repeated scans.
+    tracing::info!(count = installs.len(), "game install scan complete");
+    for install in &installs {
+        tracing::debug!(kind = ?install.kind, realm = ?install.realm, path = %install.path, "game install detected");
+    }
+    installs
 }
 
 /// Open a native folder picker and validate the choice as a WoWS install.
@@ -195,7 +202,9 @@ pub async fn pick_game_folder() -> Result<Option<GameInstall>, String> {
 /// exe existing).
 #[tauri::command]
 pub async fn set_game_path(path: String) -> Result<GameInstall, String> {
-    validate_manual_path(&path)
+    let install = validate_manual_path(&path)?;
+    tracing::info!(path = %install.path, kind = ?install.kind, "game path pinned manually");
+    Ok(install)
 }
 
 /// Shared validation for the picker + manual-path command: the folder must

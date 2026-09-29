@@ -106,6 +106,7 @@ pub fn get_game_config() -> Result<GameConfigResponse, String> {
 #[tauri::command]
 pub fn set_game_config(active_path: Option<String>) -> Result<GameConfigResponse, String> {
     let active_path = sanitize_path(active_path);
+    tracing::info!(?active_path, "active game install changed");
     let dir = paths::ensure_data_dir()?;
     set_from(&dir, active_path.clone());
     Ok(GameConfigResponse { active_path })

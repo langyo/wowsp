@@ -359,6 +359,7 @@ pub struct UpdateInfo {
 pub async fn update_check() -> Result<UpdateInfo, String> {
     let (version, _artifact_url) = resolve_latest().await?;
     let available = is_newer(&version, APP_VERSION);
+    tracing::info!(latest = %version, current = APP_VERSION, available, "update check complete");
     Ok(UpdateInfo {
         current: APP_VERSION.to_string(),
         available,
@@ -764,6 +765,7 @@ async fn update_download_inner(window: &tauri::WebviewWindow) -> Result<(), Stri
     let version = candidates[0].version.clone();
     let racers: Vec<&SourceCandidate> =
         candidates.iter().filter(|c| c.version == version).collect();
+    tracing::info!(%version, racers = racers.len(), "update download starting");
 
     // PID-suffixed temp names: two app instances must not race one file.
     let temp = std::env::temp_dir();
@@ -974,6 +976,10 @@ async fn update_download_inner(window: &tauri::WebviewWindow) -> Result<(), Stri
         .args(["--silent", &format!("--dir={}", install_dir.display())])
         .spawn()
         .map_err(|e| format!("spawn installer {}: {e}", installer_path.display()))?;
+    // The last line the running build writes before the installer kills it —
+    // when an update reports "nothing happened", this is the fork in the
+    // trail: present here means the handoff succeeded.
+    tracing::info!(%version, installer = %installer_path.display(), "installer spawned; handing off");
 
     Ok(())
 }
@@ -984,6 +990,7 @@ async fn update_download_inner(window: &tauri::WebviewWindow) -> Result<(), Stri
 /// reset with the update still available). A no-op between passes.
 #[tauri::command]
 pub fn update_cancel() -> Result<(), String> {
+    tracing::info!("update download cancelled by user");
     UPDATE_CANCEL.store(true, Ordering::SeqCst);
     Ok(())
 }

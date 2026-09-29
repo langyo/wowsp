@@ -354,6 +354,7 @@ pub fn set_overlay_config(table: String, roster: String) -> Result<OverlayConfig
     };
     let dir = paths::ensure_data_dir()?;
     let canonical = canonical_toml(config)?;
+    tracing::info!(table = ?config.table, roster = ?config.roster, "overlay config saved");
     settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical)?;
     settings_store::retire_legacy_json(&dir, LEGACY_OVERLAY_CONFIG_FILE);
     let mut cache = CACHE

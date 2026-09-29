@@ -1294,6 +1294,30 @@ export interface GamedataSyncResult {
  *  `wowsp://pairing-progress` stream (mirrors the Rust constant). */
 export const GAMEDATA_SENTINEL = ":gamedata:";
 
+/** One retained diagnostics-log file (`wowsp.<date>.log`, UTF-8 text).
+ *  Mirrors `wowsp_tauri::commands::logs::LogFileInfo`. */
+export interface LogFileInfo {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  /** RFC 3339 (UTC); null when the filesystem didn't say. */
+  modified?: string | null;
+}
+
+/** The diagnostics-log folder view for the settings' 问题反馈 section.
+ *  Mirrors `wowsp_tauri::commands::logs::LogsOverview`. */
+export interface LogsOverview {
+  /** The folder the roller writes to (and the reveal button opens). */
+  dir: string;
+  /** Newest file; null until the first write of the day materializes it. */
+  latest?: LogFileInfo | null;
+  /** Retained files, newest first (the latest excluded). */
+  files: LogFileInfo[];
+  totalBytes: number;
+  /** How many daily files the roller keeps before pruning. */
+  retainedMax: number;
+}
+
 export const api = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
@@ -1523,6 +1547,18 @@ export const api = {
   copyImageToClipboard: (bytes: Uint8Array) =>
     transport.invokeRaw?.<null>(RPC.copy_image_to_clipboard, bytes, {}) ??
     Promise.reject(new Error("raw IPC unavailable in this host")),
+  /** Diagnostics-log surface for the settings' 问题反馈 section. The folder
+   *  overview is cheap (one read_dir); the reveal opens the system file
+   *  manager with the newest log selected. */
+  logsOverview: () => transport.invoke<LogsOverview>(RPC.logs_overview),
+  logsRevealLatest: () => transport.invoke<null>(RPC.logs_reveal_latest),
+  /** Last `lines` lines (default 120) of the newest log, UTF-8 text for
+   *  clipboard sharing. */
+  logsReadTail: (lines?: number) =>
+    transport.invoke<string>(RPC.logs_read_tail, { lines: lines ?? null }),
+  /** Write the feedback zip bundle (logs + UTF-8 manifest) into the logs
+   *  folder, reveal it in the file manager, and return its path. */
+  logsExportBundle: () => transport.invoke<string>(RPC.logs_export_bundle),
   installOverlayMod: (gameRoot: string) =>
     transport.invoke<string>(RPC.install_overlay_mod, { gameRoot }),
   uninstallOverlayMod: (gameRoot: string) =>

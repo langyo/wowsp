@@ -16,6 +16,7 @@ pub mod game_maps;
 pub mod gameparams;
 pub mod github_mirror;
 pub mod installer;
+pub mod logs;
 pub mod lookup_error;
 pub mod media;
 pub mod method_tables;

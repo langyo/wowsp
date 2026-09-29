@@ -37,6 +37,7 @@ futures.workspace = true
 # Logging
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tracing-appender.workspace = true
 
 # File watching (poll tempArenaInfo.json, replay dir)
 notify.workspace = true

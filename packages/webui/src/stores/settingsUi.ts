@@ -17,6 +17,7 @@ export type SettingsSection =
   | "updates"
   | "changelog"
   | "overlay"
+  | "feedback"
   | "about"
   | "attributions";
 
@@ -32,6 +33,7 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = [
   "updates",
   "changelog",
   "overlay",
+  "feedback",
   "about",
   "attributions",
 ];
@@ -48,6 +50,10 @@ const MOBILE_HIDDEN_SECTIONS: readonly SettingsSection[] = [
   // Desktop-only: the phone build has no system tray and no window close
   // button, so there is no close behavior to configure.
   "closeBehavior",
+  // Desktop-only: the diagnostics file sink never attaches on mobile (see
+  // the Rust logging module) — logcat covers Android debugging, and the
+  // phone has no file manager to reveal a log folder in anyway.
+  "feedback",
 ];
 
 /** Clamp a section request to what the current build can show. */

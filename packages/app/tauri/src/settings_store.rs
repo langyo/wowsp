@@ -94,6 +94,7 @@ pub(crate) fn store(dir: &Path, file: &str, content: &str) -> Result<(), String>
     let tmp = dir.join(format!("{file}.{stamp}.tmp"));
     std::fs::write(&tmp, content).map_err(|e| format!("write {tmp:?}: {e}"))?;
     std::fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
+    tracing::debug!(file, bytes = content.len(), "settings file written");
     Ok(())
 }
 
@@ -147,6 +148,9 @@ pub(crate) fn heal(
     canonical: &str,
 ) {
     if needs_rewrite(source, on_disk, canonical) && store(dir, toml_file, canonical).is_ok() {
+        // Migration or garbage-repair landed — exactly the kind of event a
+        // feedback log should carry (explains "my settings reset" reports).
+        tracing::info!(file = toml_file, ?source, "settings file healed");
         retire_legacy_json(dir, legacy_json_file);
         return;
     }

@@ -24,6 +24,7 @@
 #![cfg_attr(mobile, allow(dead_code))]
 
 mod commands;
+mod logging;
 mod os_prefs;
 mod paths;
 mod settings_store;
@@ -33,7 +34,6 @@ mod test_harness;
 use tauri::Manager;
 #[cfg(desktop)]
 use tauri::{Emitter, WindowEvent};
-use tracing_subscriber::EnvFilter;
 
 /// Error strings every desktop-only command returns on mobile. The frontend
 /// transport surfaces command errors as rejected promises; the mobile UI
@@ -57,15 +57,11 @@ pub mod mobile_unsupported {
 pub fn run() {
     // Initialize structured logging with a compact, readable format:
     //   wowsp 00:05:32 INFO module_name  message
-    // RUST_LOG overrides the default level. The target (module path) is shown
-    // so you can tell wowsp's own logs apart from Tauri/reqwest/etc.
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("wowsp=info,warn")),
-        )
-        .with_target(true)
-        .with_ansi(true)
-        .init();
+    // RUST_LOG overrides the default level. The target (module path) is
+    // shown so you can tell wowsp's own logs apart from Tauri/reqwest/etc.
+    // On desktop this also attaches the daily-rolling UTF-8 file sink the
+    // settings' 问题反馈 section ships (see src/logging.rs).
+    logging::init();
 
     // Android swaps reqwest onto rustls (see the manifest's android target
     // table): `rustls-no-provider` compiles no default crypto provider, so
@@ -179,6 +175,10 @@ pub fn run() {
             // paths.rs); capture the AppHandle globally before anything asks
             // for a data/cache dir.
             paths::init(app.handle().clone());
+            {
+                let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
+                tracing::debug!(?data_dir, ?cache_dir, "writable roots resolved");
+            }
 
             // The frontend loads 3D models through the asset protocol from
             // the model-pack cache (paths.rs conventions: %LOCALAPPDATA%\WoWSP
@@ -485,6 +485,15 @@ pub fn run() {
             // Releases via the mirror ladder; platform-neutral (the phone
             // app serves the same feed).
             commands::changelog::changelog_list,
+            // Diagnostics-log surface for the settings' 问题反馈 section:
+            // folder overview, explorer reveal of the newest log, tail
+            // read, and the feedback zip bundle. Platform-neutral commands
+            // (on mobile the file sink never attaches, so they answer
+            // empty/`no log files yet` and the section hides anyway).
+            commands::logs::logs_overview,
+            commands::logs::logs_reveal_latest,
+            commands::logs::logs_read_tail,
+            commands::logs::logs_export_bundle,
             // Self-update ships a Windows NSIS installer artifact; mobile has
             // no installer flow (store updates instead) — the frontend hides
             // the updater on mobile.

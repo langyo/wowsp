@@ -80,6 +80,9 @@ rustls = { version = "^0.23", default-features = false, features = [
 # Logging and tracing
 tracing = { version = "^0.1", features = ["log"] }
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
+# Daily-rotating file sink for the diagnostics log the settings' 问题反馈
+# section ships (UTF-8 `wowsp.<date>.log` under `<data>/logs`).
+tracing-appender = "^0.2"
 
 # Async / concurrent runtime
 futures = "^0.3"

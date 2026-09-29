@@ -95,4 +95,6 @@ export type {
   TrendResult,
   PatchNote,
   CommunityTrend,
+  LogFileInfo,
+  LogsOverview,
 } from "./client";

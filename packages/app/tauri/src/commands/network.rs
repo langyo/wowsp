@@ -248,6 +248,8 @@ pub fn set_network_config(config: NetworkConfig) -> Result<NetworkConfigResponse
     // a bogus IPC payload self-corrects instead of poisoning every later
     // load (which would sanitize it anyway — belt and suspenders).
     let config = sanitize(config);
+    // Mode only — a manual proxy URL may embed credentials.
+    tracing::info!(mode = ?config.mode, "network config saved");
     let dir = paths::ensure_data_dir()?;
     let canonical = canonical_toml(&config)?;
     settings_store::store(&dir, NETWORK_CONFIG_FILE, &canonical)?;
