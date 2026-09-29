@@ -7,18 +7,27 @@
 }
 
 /* Tier histogram claims the larger share of the row; the min-widths push
-   the three charts onto separate lines once the viewport gets too narrow
-   (the two donuts wrap first, then everything stacks). Pie blocks are a
-   bit wider than they used to be — each now holds a donut PLUS its
-   beside-it legend columns. */
+   the three charts onto separate lines once the viewport gets too narrow.
+   Flex bases 32 + 30 + 30 = 92% deliberately leave the remaining 8% for
+   the row's two 12px gaps, so all three blocks DO share one line on wide
+   containers. Verified wrap points (flex-wrap packs hypothetical sizes —
+   basis clamped up by min-width): one line from ≈ 918px up (there the
+   bar's 32% basis, ≈ 294px, already exceeds its 240px min, so the
+   binding constraint is 0.32W + 300 + 300 + 24 ≤ W, not the 864px sum of
+   bare min-widths); from 552px (240 + 300 + one gap) to ≈ 918px the bar
+   and the FIRST donut keep line 1 and only the second donut wraps; below
+   552px everything stacks one block per line. The min() caps keep the
+   fixed min-widths from overflowing phone-narrow containers (lookup
+   mobile content ≈ 280px, postbattle sheet ≈ 266px): there each block
+   simply fills the full row width. */
 .ship-dist-charts__bar {
-  flex: 1 1 40%;
-  min-width: 240px;
+  flex: 1 1 32%;
+  min-width: min(240px, 100%);
 }
 
 .ship-dist-charts__piewrap {
   flex: 1 1 30%;
-  min-width: 300px;
+  min-width: min(300px, 100%);
 }
 
 .ship-dist-charts__pie-title {
@@ -48,8 +57,12 @@
   gap: 10px;
 }
 
-/* One column of legend rows — fills top-to-bottom (5 rows ≈ the 150px
-   donut height), the next column continues to the right. */
+/* One column of legend rows — fills top-to-bottom, the next column
+   continues to the right. A full 5-row column measures ≈ 104px (five
+   ~15px 2xs lines + 4 × 0.45rem gaps), which matches the donut RING, not
+   the whole canvas: the 68% outer radius over the 150px-tall canvas
+   paints a ≈ 102px-diameter ring, so a filled column and the ring read
+   as one visual unit. */
 .ship-dist-charts__legend-col {
   display: flex;
   flex-direction: column;

@@ -62,9 +62,11 @@ const NATION_COLORS: Record<string, string> = {
 };
 
 /** Rows per legend column (WG-site style: items stack top-to-bottom, then
- *  overflow continues in the next column to the right). 5 rows make a full
- *  column visually match the 150px donut height: 6 ship types split 5+1
- *  over two columns, 14 nations split 5+5+4 over three. */
+ *  overflow continues in the next column to the right). A full 5-row
+ *  column measures ≈ 104px (five ~15px 2xs lines + 4 × 0.45rem gaps) —
+ *  matching the donut RING (68% outer radius on the 150px canvas ≈ 102px
+ *  diameter), not the full canvas height: 6 ship types split 5+1 over two
+ *  columns, 14 nations split 5+5+4 over three. */
 const LEGEND_ROWS_PER_COLUMN = 5;
 
 /** Split items into fixed-height columns: each column holds up to `size`
@@ -80,12 +82,15 @@ export function chunkLegendItems<T>(items: readonly T[], size: number): T[][] {
   return columns;
 }
 
-/** One DOM legend row: colored dot + "<localized name> <integer>%". The
+/** One DOM legend row: colored dot + "<localized name> <integer>%" keyed by
+ *  the RAW aggregation code — two nations can share a display name (and an
+ *  equal rounded percent), so the text is not unique enough to key on. The
  *  percentage base is the SUM OF SHOWN SLICES, not aggregate.total: battles
  *  of ships with no type/nation entry never reach a slice, and the donut
  *  tooltip's own {d}% divides by the shown sum — this way the legend
  *  percents always add up to 100 like the tooltips. */
 interface LegendItem {
+  code: string;
   color: string;
   text: string;
 }
@@ -97,9 +102,21 @@ function toLegendItems(
 ): LegendItem[] {
   const shown = entries.reduce((a, [, v]) => a + v, 0);
   return entries.map(([k, v]) => ({
+    code: k,
     color: colorOf(k),
     text: `${labelOf(k)} ${shown > 0 ? Math.round((v / shown) * 100) : 0}%`,
   }));
+}
+
+/** Aggregation-record → battles-desc entries with zero-battle keys dropped:
+ *  a zero slice is invisible in the donut and would paint a misleading
+ *  "<name> 0%" legend row, so all-zero data renders blank charts with no
+ *  legend rows. Shared by the canvases and the DOM legends so the two
+ *  views of one aggregation can never drift apart. */
+function positiveEntries(record: Record<string, number>): [string, number][] {
+  return Object.entries(record)
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1]);
 }
 
 /** Theme-aware chart ink. ECharts paints on canvas, so it cannot follow CSS
@@ -169,14 +186,14 @@ export default defineComponent({
     const dist = computed(() => aggregate(props.ships));
     const typeLegend = computed(() =>
       toLegendItems(
-        Object.entries(dist.value.types).sort((a, b) => b[1] - a[1]),
+        positiveEntries(dist.value.types),
         (k) => shipTypeCssColor(shipTypeChartColor(k)),
         typeLabel,
       ),
     );
     const nationLegend = computed(() =>
       toLegendItems(
-        Object.entries(dist.value.nations).sort((a, b) => b[1] - a[1]),
+        positiveEntries(dist.value.nations),
         (k) => NATION_COLORS[k] ?? NATION_COLORS.other!,
         nationLabel,
       ),
@@ -248,25 +265,21 @@ export default defineComponent({
         // theme/shipTypeColors, so a class keeps its color across players,
         // filters and locale switches — and user edits repaint live via the
         // shipTypeColors watch below.
-        const typeData = Object.entries(types)
-          .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => ({
-            name: typeLabel(k),
-            value: v,
-            itemStyle: { color: shipTypeCssColor(shipTypeChartColor(k)) },
-          }));
+        const typeData = positiveEntries(types).map(([k, v]) => ({
+          name: typeLabel(k),
+          value: v,
+          itemStyle: { color: shipTypeCssColor(shipTypeChartColor(k)) },
+        }));
         pieChart.setOption(donutOption(typeData, t("stats.dist.shipType")), true);
       }
       if (!props.tiersOnly && nationEl.value && nationChart) {
         // Nation composition — same donut shape, but a fixed component-local
         // palette (nations are not user-tintable).
-        const nationData = Object.entries(nations)
-          .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => ({
-            name: nationLabel(k),
-            value: v,
-            itemStyle: { color: NATION_COLORS[k] ?? NATION_COLORS.other! },
-          }));
+        const nationData = positiveEntries(nations).map(([k, v]) => ({
+          name: nationLabel(k),
+          value: v,
+          itemStyle: { color: NATION_COLORS[k] ?? NATION_COLORS.other! },
+        }));
         nationChart.setOption(donutOption(nationData, t("stats.dist.nationPieTitle")), true);
       }
     }
@@ -321,7 +334,7 @@ export default defineComponent({
         {chunkLegendItems(items, LEGEND_ROWS_PER_COLUMN).map((column, ci) => (
           <div class="ship-dist-charts__legend-col" key={ci}>
             {column.map((it) => (
-              <span class="ship-dist-charts__legend-item" key={it.text}>
+              <span class="ship-dist-charts__legend-item" key={it.code}>
                 <span class="ship-dist-charts__legend-dot" style={{ background: it.color }} />
                 <span class="ship-dist-charts__legend-text">{it.text}</span>
               </span>
