@@ -1173,6 +1173,22 @@ export default defineComponent({
             // broad panels read as surfaces instead of a flat pastel fill.
             mat.uniforms.uLightGain.value = 0.40;
             mat.uniforms.uLinesGain.value = 0.20;
+            // Glassier hologram: the fill drops to about half the legacy
+            // opacity so broadsides show the background through them (the
+            // depth anchor still hides the far side), the rim carries the
+            // silhouette, and three layered motions — fine screen rows, a
+            // climbing sweep band, a faint flicker — keep the surface reading
+            // as a transmitted projection rather than moulded plastic. The
+            // pale light-theme background washes a translucent fill out
+            // further, so it keeps a point more opacity there (same
+            // dataset.mode check the scene background uses; a mid-session
+            // theme flip takes effect on the next model load).
+            mat.uniforms.uBaseAlpha.value =
+              document.documentElement.dataset.mode === "dark" ? 0.38 : 0.48;
+            mat.uniforms.uRimAlpha.value = 0.55;
+            mat.uniforms.uScanGain.value = 0.50;
+            mat.uniforms.uSweepGain.value = 0.40;
+            mat.uniforms.uFlickerGain.value = 0.05;
             materialCache.set(name, mat);
           }
           mesh.material = mat;

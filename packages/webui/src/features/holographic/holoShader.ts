@@ -15,7 +15,7 @@
  * Scanlines sweep vertically over time; a separate wireframe overlay mesh is
  * drawn by the caller.
  *
- * Definition layer: the ship stage enables two extra terms that give large
+ * Definition layer: the ship stage enables five extra terms that give large
  * panels surface reading (a flat pastel fill with nothing between the
  * silhouette and the rim reads as porridge on a broadside hull):
  *   - `uLightGain` — a soft headlight (dot of the smooth normal with the view
@@ -28,7 +28,22 @@
  *     without a per-triangle wireframe. World space because the bake's local
  *     units differ per ship while the stage normalizes every model to the
  *     same 200-unit box.
- * Both default to 0 — `makeHoloMaterial()` alone reproduces the legacy look.
+ * Texture layer: three more stage-only terms push the look from "moulded
+ * plastic" toward a transmitted projection —
+ *   - `uScanGain` — fine CRT-pitch scanline rows in SCREEN space (constant
+ *     density at any zoom), drifting slowly upward.
+ *   - `uSweepGain` — a soft gaussian band climbing the world-space Y axis
+ *     once every ~7.7 s, brightening and slightly densifying the hull as it
+ *     passes (a "materializing" wash).
+ *   - `uFlickerGain` — a single-digit-percent brightness flicker (two
+ *     incommensurate sines) so the surface feels transmitted.
+ * Translucency: the fill/rim alpha split moved into `uBaseAlpha` /
+ * `uRimAlpha` (legacy constants 0.72 / 0.28) so the stage can trade fill
+ * opacity for rim glow — a glassier shell whose broadsides show the
+ * background through them while the depth anchor still occludes the far
+ * side.
+ * All new terms default to 0 / legacy — `makeHoloMaterial()` alone still
+ * reproduces the legacy look.
  *
  * Usage:
  *   const mat = makeHoloMaterial();          // a ShaderMaterial (transparent)
@@ -64,6 +79,18 @@ export interface HoloUniforms {
   uLightGain: { value: number };
   /** Measuring-grid gain — 0 draws no grid. */
   uLinesGain: { value: number };
+  /** Fill opacity at zero fresnel — the legacy shell is 0.72; the ship stage
+   *  drops it well below so broadsides read as glass, not moulded plastic. */
+  uBaseAlpha: { value: number };
+  /** Fresnel-driven opacity added toward the rim (legacy 0.28). */
+  uRimAlpha: { value: number };
+  /** Fine screen-space scanline rows (CRT pitch, slow upward crawl) —
+   *  0 draws none. */
+  uScanGain: { value: number };
+  /** A soft bright band climbing the world-space Y axis — 0 draws none. */
+  uSweepGain: { value: number };
+  /** Subtle whole-surface brightness flicker — 0 stays steady. */
+  uFlickerGain: { value: number };
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -102,6 +129,11 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float ghostAlpha;
   uniform float uLightGain;
   uniform float uLinesGain;
+  uniform float uBaseAlpha;
+  uniform float uRimAlpha;
+  uniform float uScanGain;
+  uniform float uSweepGain;
+  uniform float uFlickerGain;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
@@ -146,11 +178,37 @@ export const HOLO_FRAG = /* glsl */ `
       float line = 1.0 - min(min(g.x, g.y), g.z);
       col += fresnelColor * clamp(line, 0.0, 1.0) * uLinesGain;
     }
+    // Fine scanline rows in SCREEN space: constant CRT pitch at any zoom,
+    // drifting slowly upward. Screen space because local-space rows change
+    // density with the ship's bake units while the effect wants to read as
+    // a property of the projector, not of the hull.
+    float sweep = 0.0;
+    if (uScanGain > 0.0 || uSweepGain > 0.0) {
+      float row = sin(gl_FragCoord.y * 1.7 - time * 3.0);
+      col += fresnelColor * smoothstep(0.55, 0.98, row) * uScanGain * 0.30;
+      // Sweep band: one soft gaussian wave climbing the world-space Y axis
+      // (the stage normalizes every model to the same 200-unit box, so the
+      // band crosses any ship in ~7.7 s). Lifts colour and a little alpha so
+      // the pass visibly "washes over" translucent hulls.
+      float yBand = -120.0 + 240.0 * fract(time * 0.13);
+      float d = vWorldPos.y - yBand;
+      sweep = exp(-d * d * 0.006);
+      col += fresnelColor * sweep * uSweepGain;
+    }
+    // Faint projector flicker — a beat of two incommensurate sines so the
+    // surface feels transmitted, never a steady paint job. Kept in single
+    // digits of gain: past that it reads as a rendering bug.
+    if (uFlickerGain > 0.0) {
+      col *= 1.0 + uFlickerGain * sin(time * 23.0) * sin(time * 7.3);
+    }
     // No interior alpha fade: it would be another dot(n, viewDir) sign test at
     // the same grazing incidence the plate mosaic comes from. Occlusion is the
     // depth test's job (the stage writes depth); every fragment keeps one
     // opacity, and a back face simply fades out through the Fresnel term.
-    float alpha = 0.72 + 0.28 * fres;
+    // uBaseAlpha/uRimAlpha split the legacy 0.72 + 0.28 * fres so callers can
+    // trade fill opacity for rim glow (glassier hologram) without touching
+    // the shader.
+    float alpha = min(uBaseAlpha + uRimAlpha * fres + sweep * uSweepGain * 0.20, 1.0);
     // Focus highlight: brighten fragments near any focus point.
     for (int i = 0; i < 8; i++) {
       if (float(i) >= focusCount) break;
@@ -202,10 +260,16 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       focusRadius: { value: 30.0 },
       focusBoost: { value: 0.8 },
       ghostAlpha: { value: 1.0 },
-      // Legacy look: both definition terms off. The ship stage turns them on
-      // per material after loading a model.
+      // Legacy look: every definition/texture term off and the alpha split at
+      // the historical constants. The ship stage turns the gains on per
+      // material after loading a model; markers and terrain keep these.
       uLightGain: { value: 0.0 },
       uLinesGain: { value: 0.0 },
+      uBaseAlpha: { value: 0.72 },
+      uRimAlpha: { value: 0.28 },
+      uScanGain: { value: 0.0 },
+      uSweepGain: { value: 0.0 },
+      uFlickerGain: { value: 0.0 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,
