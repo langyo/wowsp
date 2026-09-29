@@ -25,7 +25,7 @@
     "fontMaoRole": "Glifos del sello «神了»",
     "fontLuxunRole": "Glifos de los sellos «海猴», «空中小人», «水下小人»",
     "bitmapNote": "Se usan como mapas de bits (uso gráfico); los archivos de fuente no se distribuyen con la aplicación.",
-    "wallpaperRole": "Autor del fondo de pantalla predeterminado",
+    "wallpaperRole": "Artista de los fondos",
     "wallpaperNote": "La obra del fondo de pantalla sigue siendo propiedad de su autor.",
     "wallpaperMark": "Fondo",
     "aperadarRole": "Fuente principal de la lógica de consulta y los criterios de valoración",
@@ -33,8 +33,6 @@
     "wowscoreRole": "Modelo de datos del juego (vendored)",
     "hikariRole": "Biblioteca de componentes de UI",
     "devtoolsRole": "Infraestructura de disciplina para agentes (reglas de workspace y toolchain)",
-    "streamerRole": "Streamer colaborador",
-    "streamerSineNote": "Autor de los fondos",
     "shittimRole": "Shell del frontend e infraestructura de build"
   }
 }

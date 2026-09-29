@@ -1,13 +1,14 @@
 /** Supporters & credits, surfaced in the settings 支持与致谢 section in
- *  three groups: partner streamers first (cards with their live Bilibili
- *  avatars), upstream projects, and asset/resource partners last. Names,
- *  links and Bilibili UIDs are data; role/note wording lives in i18n
- *  (`about.attribution.*`). The seal fonts are declared as partners but
- *  only used as rendered bitmaps — the font files are NOT bundled.
+ *  three groups: SPECIAL THANKS first (cards with the helpers' live
+ *  Bilibili avatars — no identity labels beyond what each person actually
+ *  contributed), upstream projects, and asset/resource partners last.
+ *  Names, links and Bilibili UIDs are data; role/note wording lives in
+ *  i18n (`about.attribution.*`). The seal fonts are declared as partners
+ *  but only used as rendered bitmaps — the font files are NOT bundled.
  *
- *  正弦线 appears twice on purpose: once as the streamer he is (with the
- *  wallpaper note on his card), once under resources for the wallpaper
- *  art itself — the two rows carry different roles. */
+ *  正弦线 appears twice on purpose: once in special thanks as the wallpaper
+ *  artist (with his live avatar), once under resources for the wallpaper
+ *  art itself. */
 export interface Attribution {
   id: string;
   name: string;
@@ -18,38 +19,39 @@ export interface Attribution {
   noteKey?: string;
 }
 
-/** A partner streamer — rendered as a card: live Bilibili avatar (see
- *  commands/supporters.rs), name, role/note, click opens the space page. */
-export interface StreamerSupporter {
+/** One specially-thanked helper — rendered as a card: live Bilibili
+ *  avatar (see commands/supporters.rs), name, optional role/note, click
+ *  opens the space page. The role is what the person CONTRIBUTED (e.g.
+ *  wallpaper art), never an identity category. */
+export interface SpecialThanksEntry {
   id: string;
   name: string;
   /** Bilibili user id — space page `space.bilibili.com/<uid>` and the
    *  avatar lookup key. */
   uid: number;
-  roleKey: string;
+  /** i18n key of the contribution, omitted when the thanks needs no
+   *  qualifier. */
+  roleKey?: string;
   noteKey?: string;
 }
 
-/** The partner streamers, in display order. */
-export const STREAMER_SUPPORTERS: StreamerSupporter[] = [
+/** Special thanks, in display order. */
+export const SPECIAL_THANKS: SpecialThanksEntry[] = [
   {
-    id: "streamer-sine",
+    id: "thanks-sine",
     name: "正弦线",
     uid: 97738727,
-    roleKey: "streamerRole",
-    noteKey: "streamerSineNote",
+    roleKey: "wallpaperRole",
   },
   {
-    id: "streamer-cat",
-    name: "猫叔不吃鱼",
+    id: "thanks-cat",
+    name: "猫叔UoCat",
     uid: 10604786,
-    roleKey: "streamerRole",
   },
   {
-    id: "streamer-naomi",
+    id: "thanks-naomi",
     name: "BestNaomi",
     uid: 77660417,
-    roleKey: "streamerRole",
   },
 ];
 
@@ -117,5 +119,5 @@ export const RESOURCE_ATTRIBUTIONS: Attribution[] = [
   },
 ];
 
-/** The About page's streamer cards, as one avatar-lookup request. */
-export const STREAMER_UIDS: number[] = STREAMER_SUPPORTERS.map((s) => s.uid);
+/** The special-thanks cards, as one avatar-lookup request. */
+export const SPECIAL_THANKS_UIDS: number[] = SPECIAL_THANKS.map((s) => s.uid);

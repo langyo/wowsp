@@ -1,6 +1,6 @@
-//! Supporter (合作主播) Bilibili avatars for the About page's cards.
+//! Supporter Bilibili avatars for the About page's special-thanks cards.
 //!
-//! The credits section leads with the partner streamers, each card showing
+//! The credits section leads with the special-thanks cards, each showing
 //! their CURRENT Bilibili avatar — "current" as in fetched live, so a
 //! changed avatar shows up without an app release. Source is Bilibili's
 //! public user-card API (`api.bilibili.com/x/web-interface/card?mid=`),
@@ -35,11 +35,18 @@ const CACHE_FILE: &str = "supporters/avatars.json";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 fn load_cache() -> BTreeMap<String, String> {
+    // Cached values re-run the same normalization the live path applies,
+    // so a hand-edited cache file answers nothing normalize_face would
+    // have rejected (defense in depth — the media proxy's host allowlist
+    // gates the actual fetch either way).
     appdata::read_appdata_json(CACHE_FILE)
         .ok()
         .flatten()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .and_then(|raw| serde_json::from_str::<BTreeMap<String, String>>(&raw).ok())
         .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(uid, face)| normalize_face(&face).map(|f| (uid, f)))
+        .collect()
 }
 
 fn save_cache(cache: &BTreeMap<String, String>) {
@@ -79,9 +86,8 @@ async fn fetch_one(client: &reqwest::Client, uid: u64, cached: Option<String>) -
                 .and_then(|d| d.get("card"))
                 .and_then(|c| c.get("face"))
                 .and_then(|f| f.as_str())
-                .map(str::to_string)
-        })
-        .filter(|f| f.starts_with("https://"));
+                .and_then(normalize_face)
+        });
     match face {
         Some(face) => SupporterAvatar {
             uid,
@@ -89,6 +95,19 @@ async fn fetch_one(client: &reqwest::Client, uid: u64, cached: Option<String>) -
         },
         None => fallback(),
     }
+}
+
+/// Accept a Bilibili face URL in any of the forms the card API returns —
+/// `https://…`, `http://…` (animated GIF avatars in particular keep
+/// arriving as plain http), or protocol-relative `//…` — and normalize it
+/// to `https://` (the media proxy only fetches https). Anything else is
+/// rejected. Pure and unit-tested.
+fn normalize_face(url: &str) -> Option<String> {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .or_else(|| url.strip_prefix("//"))?;
+    Some(format!("https://{rest}"))
 }
 
 /// Resolve the supporters' avatar URLs (see the module docs). One entry
@@ -113,4 +132,32 @@ pub async fn get_supporter_avatars(uids: Vec<u64>) -> Result<Vec<SupporterAvatar
         save_cache(&cache);
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_face_upgrades_schemes_and_rejects_foreign_urls() {
+        // https passes through untouched (animated GIF avatars arrive as
+        // plain http on some accounts — the reason one supporter's avatar
+        // initially fell back to the initial disc).
+        assert_eq!(
+            normalize_face("https://i2.hdslb.com/bfs/face/abc.gif"),
+            Some("https://i2.hdslb.com/bfs/face/abc.gif".to_string())
+        );
+        assert_eq!(
+            normalize_face("http://i2.hdslb.com/bfs/face/abc.gif"),
+            Some("https://i2.hdslb.com/bfs/face/abc.gif".to_string())
+        );
+        assert_eq!(
+            normalize_face("//i2.hdslb.com/bfs/face/a.jpg"),
+            Some("https://i2.hdslb.com/bfs/face/a.jpg".to_string())
+        );
+        // Anything the media proxy could not vouch for is dropped.
+        assert_eq!(normalize_face("ftp://i2.hdslb.com/a.gif"), None);
+        assert_eq!(normalize_face("javascript:alert(1)"), None);
+        assert_eq!(normalize_face(""), None);
+    }
 }

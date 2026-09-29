@@ -25,7 +25,7 @@
     "fontMaoRole": "Glyphes du sceau « 神了 »",
     "fontLuxunRole": "Glyphes des sceaux « 海猴 », « 空中小人 », « 水下小人 »",
     "bitmapNote": "Utilisés sous forme de bitmaps (usage graphique) ; les fichiers de polices ne sont pas distribués avec l'application.",
-    "wallpaperRole": "Auteur du fond d'écran par défaut",
+    "wallpaperRole": "Artiste des fonds d'écran",
     "wallpaperNote": "L'œuvre du fond d'écran reste la propriété de son auteur.",
     "wallpaperMark": "Fond",
     "aperadarRole": "Source principale de la logique de requête et des conventions de notation",
@@ -33,8 +33,6 @@
     "wowscoreRole": "Modèle de données du jeu (vendored)",
     "hikariRole": "Bibliothèque de composants UI",
     "devtoolsRole": "Infrastructure de discipline agent (règles de workspace et chaîne d'outils)",
-    "streamerRole": "Streamer partenaire",
-    "streamerSineNote": "Fournisseur des fonds d'écran",
     "shittimRole": "Coquille frontale et outillage de build"
   }
 }

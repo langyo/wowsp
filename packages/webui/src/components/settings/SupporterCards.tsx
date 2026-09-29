@@ -2,21 +2,18 @@ import { defineComponent, onMounted, ref } from "vue";
 
 import { t } from "@/i18n";
 import { api } from "@/api";
-import {
-  STREAMER_SUPPORTERS,
-  STREAMER_UIDS,
-  type StreamerSupporter,
-} from "@/data/attributions";
+import { SPECIAL_THANKS, SPECIAL_THANKS_UIDS, type SpecialThanksEntry } from "@/data/attributions";
 import { mediaImageUrl } from "@/utils/media";
 import { openExternal } from "@/utils/openExternal";
 import "./SupporterCards.scss";
 
 /**
- * The credits section's leading group: one card per partner streamer with
- * their LIVE Bilibili avatar (`commands/supporters.rs` keeps a last-good
- * cache; a total miss falls back to the initial-letter disc), the role /
- * note lines, and the whole card opening their Bilibili space page in the
- * external browser. Avatars load through the `media://` proxy, so they are
+ * The credits section's leading group (特别致谢): one card per specially
+ * thanked helper with their LIVE Bilibili avatar (`commands/supporters.rs`
+ * keeps a last-good cache; a total miss falls back to the initial-letter
+ * disc), an optional contribution line (what they did, not who they are),
+ * and the whole card opening their Bilibili space page in the external
+ * browser. Avatars load through the `media://` proxy, so they are
  * disk-cached after the first view.
  */
 export default defineComponent({
@@ -31,7 +28,7 @@ export default defineComponent({
 
     onMounted(() => {
       api
-        .getSupporterAvatars(STREAMER_UIDS)
+        .getSupporterAvatars(SPECIAL_THANKS_UIDS)
         .then((list) => {
           const next = new Map<number, string>();
           for (const a of list) if (a.face) next.set(a.uid, a.face);
@@ -44,7 +41,7 @@ export default defineComponent({
 
     return () => (
       <div class="supporter-cards">
-        {STREAMER_SUPPORTERS.map((s: StreamerSupporter) => {
+        {SPECIAL_THANKS.map((s: SpecialThanksEntry) => {
           const face = faces.value.get(s.uid);
           const url = `https://space.bilibili.com/${s.uid}`;
           return (
@@ -72,9 +69,11 @@ export default defineComponent({
               )}
               <span class="supporter-card__body">
                 <span class="supporter-card__name">{s.name}</span>
-                <span class="supporter-card__role">
-                  {t(`about.attribution.${s.roleKey}`)}
-                </span>
+                {s.roleKey ? (
+                  <span class="supporter-card__role">
+                    {t(`about.attribution.${s.roleKey}`)}
+                  </span>
+                ) : null}
                 {s.noteKey ? (
                   <span class="supporter-card__note">
                     {t(`about.attribution.${s.noteKey}`)}

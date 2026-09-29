@@ -1393,7 +1393,7 @@ export const api = {
   wallpaperImport: () => transport.invoke<WallpaperFile | null>(RPC.wallpaper_import),
   wallpaperRemove: (id: string) => transport.invoke<null>(RPC.wallpaper_remove, { id }),
   /** Resolve the supporters' live Bilibili avatar URLs (About page
-   *  streamer cards) — one entry per input uid, `face` null when neither
+   *  special-thanks cards) — one entry per input uid, `face` null when neither
    *  a live answer nor a cached URL exists (the UI shows the initial
    *  letter). Never rejects on network failure. */
   getSupporterAvatars: (uids: number[]) =>

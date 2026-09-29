@@ -1920,8 +1920,8 @@ pub struct CatalogProgress {
     pub total: u64,
 }
 
-/// One supporter's Bilibili avatar resolution (About page's streamer
-/// cards, `commands/supporters.rs`): `face` is the live or last-cached
+/// One supporter's Bilibili avatar resolution (About page's
+/// special-thanks cards, `commands/supporters.rs`): `face` is the live or last-cached
 /// avatar URL; `None` when neither exists — the frontend then renders
 /// the initial-letter fallback.
 #[derive(Debug, Clone, Serialize, Deserialize)]

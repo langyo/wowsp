@@ -25,7 +25,7 @@
     "fontMaoRole": "「神了」印章字样",
     "fontLuxunRole": "「海猴」「空中小人」「水下小人」印章字样",
     "bitmapNote": "仅以位图（图形化）形式使用，未随应用分发字体文件。",
-    "wallpaperRole": "默认壁纸作者",
+    "wallpaperRole": "壁纸画师",
     "wallpaperNote": "壁纸美术作品，版权归作者所有。",
     "wallpaperMark": "壁纸",
     "aperadarRole": "查询逻辑与评分口径的主要来源",
@@ -33,8 +33,6 @@
     "wowscoreRole": "游戏数据模型（vendored）",
     "hikariRole": "UI 组件库",
     "devtoolsRole": "Agent 纪律设施（工作区规范与工具链）",
-    "streamerRole": "合作主播",
-    "streamerSineNote": "提供壁纸",
     "shittimRole": "前端外壳与构建设施"
   }
 }

@@ -2015,8 +2015,8 @@ export default defineComponent({
           ),
           attributions: () => (
           <>
-          {/* attributions — the categorized supporter page: partner
-              streamers FIRST (cards with live Bilibili avatars, the whole
+          {/* attributions — the categorized supporter page: SPECIAL
+              THANKS first (cards with live Bilibili avatars, the whole
               card opens their space page), then the upstream projects,
               and the asset / resource partners LAST. The same AuthorMark
               component annotates the desktop wallpaper. */}
