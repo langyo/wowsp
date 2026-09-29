@@ -19,6 +19,7 @@ import {
   Plus,
   Power,
   RefreshCw,
+  RotateCcw,
   Smartphone,
   ScrollText,
   SquarePen,
@@ -30,6 +31,7 @@ import {
 
 import {
   HkButton,
+  HkColorPicker,
   HkDivider,
   HkIconButton,
   HkInput,
@@ -64,6 +66,13 @@ import {
   themeModePreference,
   type ThemeModePreference,
 } from "@/theme/themeModePreference";
+import {
+  SHIP_TYPE_COLOR_LABEL_KEYS,
+  SHIP_TYPE_COLOR_ORDER,
+  resetShipTypeColors,
+  setShipTypeColor,
+  shipTypeColors,
+} from "@/theme/shipTypeColors";
 import {
   DPI_MAX,
   DPI_MIN,
@@ -960,6 +969,45 @@ export default defineComponent({
                 </button>
               </div>
               <HkSettingsHint>{t("settings.themeSchemeHint")}</HkSettingsHint>
+            </HkSettingsSub>
+
+            <HkDivider />
+
+            {/* ship-type pie colors — the fixed per-class palette behind the
+                ship-distribution donut (theme/shipTypeColors): one picker
+                row per ship type, labeled by the full class name. Edits
+                apply (and persist) immediately; the chart repaints live
+                through its palette-ref watch. */}
+            <HkSettingsSub title={t("settings.shipTypeColors")}>
+              <div class="settings-modal__ship-colors">
+                {SHIP_TYPE_COLOR_ORDER.map((key) => {
+                  const c = shipTypeColors.value[key];
+                  return (
+                    <HkColorPicker
+                      key={key}
+                      r={c.r}
+                      g={c.g}
+                      b={c.b}
+                      layout="row"
+                      label={t(`ships.type.${SHIP_TYPE_COLOR_LABEL_KEYS[key]}`)}
+                      onChange={(next: { r: number; g: number; b: number }) =>
+                        setShipTypeColor(key, next)
+                      }
+                    />
+                  );
+                })}
+              </div>
+              <div class="settings-modal__ship-colors-reset">
+                <HkIconButton
+                  size={24}
+                  variant="ghost"
+                  aria-label={t("settings.shipTypeColorsReset")}
+                  onClick={resetShipTypeColors}
+                >
+                  <RotateCcw size={14} />
+                </HkIconButton>
+              </div>
+              <HkSettingsHint>{t("settings.shipTypeColorsHint")}</HkSettingsHint>
             </HkSettingsSub>
 
             <HkDivider />

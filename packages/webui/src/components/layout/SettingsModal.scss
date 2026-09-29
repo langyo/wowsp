@@ -205,6 +205,25 @@
     color: rgb(var(--color-muted));
   }
 
+  /* ── ship-type pie colors ──────────────────────────────────────────────── */
+
+  /* One row-layout picker per ship class — same vertical rhythm as the
+     scheme list above it. */
+  &__ship-colors {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  /* Trailing reset affordance for the whole palette — the standard hikari
+     functional icon button (ghost/24), docked right like the scheme rows'
+     action column. */
+  &__ship-colors-reset {
+    display: flex;
+    justify-content: flex-end;
+    padding-right: 0.35rem;
+  }
+
   /* ── wallpaper ────────────────────────────────────────────────────────── */
 
   /* Horizontal, never-wrapping wallpaper strip — overflows into an

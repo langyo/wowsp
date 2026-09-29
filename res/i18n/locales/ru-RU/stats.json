@@ -39,6 +39,7 @@
     "cruiser": "КР",
     "destroyer": "ЭМ",
     "submarine": "ПЛ",
+    "auxiliary": "Всп",
     "battles": "Бои",
     "shipType": "Класс",
     "pieTitle": "По классам"

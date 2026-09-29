@@ -39,6 +39,7 @@
     "cruiser": "巡洋",
     "destroyer": "驅逐",
     "submarine": "潛艦",
+    "auxiliary": "輔助",
     "battles": "場次",
     "shipType": "艦種",
     "pieTitle": "艦種構成"

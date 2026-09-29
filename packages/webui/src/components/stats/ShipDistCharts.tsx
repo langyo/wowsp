@@ -9,6 +9,11 @@ import * as echarts from "echarts";
 import { t } from "@/i18n";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { useTheme } from "@/theme";
+import {
+  shipTypeChartColor,
+  shipTypeColors,
+  shipTypeCssColor,
+} from "@/theme/shipTypeColors";
 import "./ShipDistCharts.scss";
 
 /** Localized short class label ("stats.dist.<type>"); falls back to the raw
@@ -113,13 +118,21 @@ export default defineComponent({
         );
       }
       if (!props.tiersOnly && pieEl.value && pieChart) {
+        // Per-slice colors keyed by the ship type itself (not data order):
+        // each itemStyle resolves the fixed palette from
+        // theme/shipTypeColors, so a class keeps its color across players,
+        // filters and locale switches — and user edits repaint live via the
+        // shipTypeColors watch below.
         const typeData = Object.entries(types)
           .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => ({ name: typeLabel(k), value: v }));
+          .map(([k, v]) => ({
+            name: typeLabel(k),
+            value: v,
+            itemStyle: { color: shipTypeCssColor(shipTypeChartColor(k)) },
+          }));
         pieChart.setOption(
           {
             animation: false,
-            color: ["#4ade80", "#ff6b6b", "#ffd93d", "#78d2ff", "#c084fc"],
             tooltip: { trigger: "item" },
             series: [
               {
@@ -158,9 +171,12 @@ export default defineComponent({
     watch(() => props.ships, render, { deep: true });
     // Light/dark flips and brand-theme switches rewrite the CSS-variable ink
     // this component samples at render time — re-render so canvas text tracks
-    // them (DOM text needs no help; it follows the vars directly).
+    // them (DOM text needs no help; it follows the vars directly). The
+    // ship-type palette ref joins them so settings-picker edits repaint the
+    // pie live (writers replace the whole record object, so plain watch
+    // sources fire).
     const theme = useTheme();
-    watch([theme.effectiveMode, theme.currentTheme], render);
+    watch([theme.effectiveMode, theme.currentTheme, shipTypeColors], render);
     onBeforeUnmount(() => {
       resizeObserver?.disconnect();
       resizeObserver = null;

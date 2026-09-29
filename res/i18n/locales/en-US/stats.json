@@ -39,6 +39,7 @@
     "cruiser": "CA",
     "destroyer": "DD",
     "submarine": "SS",
+    "auxiliary": "AX",
     "battles": "Battles",
     "shipType": "Type",
     "pieTitle": "By class"

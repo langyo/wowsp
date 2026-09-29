@@ -39,6 +39,7 @@
     "cruiser": "순",
     "destroyer": "구",
     "submarine": "잠",
+    "auxiliary": "보조",
     "battles": "전투 수",
     "shipType": "함종",
     "pieTitle": "함종 구성"
