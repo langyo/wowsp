@@ -49,6 +49,49 @@ function nationFileStem(nation: string): string {
   return NATION_FILE_MAP[key] ?? key;
 }
 
+/**
+ * The canonical nation code set the app standardizes on (offline DB and WG
+ * API codes both fold onto it): the encyclopedia's lowercase stems plus the
+ * two renames the rest of the app prefers (`uk`, `ussr`) and `europe`.
+ */
+const CANONICAL_NATIONS: ReadonlySet<string> = new Set([
+  "usa",
+  "japan",
+  "germany",
+  "france",
+  "italy",
+  "pan_asia",
+  "pan_america",
+  "netherlands",
+  "commonwealth",
+  "spain",
+  "europe",
+  "uk",
+  "ussr",
+]);
+
+/**
+ * Normalize any WG/offline nation code to the canonical set. The offline DB
+ * spells three nations differently from the rest of the app
+ * (`united_kingdom`/`russia` vs `uk`/`ussr`); `events` and unknown codes
+ * carry no canonical nation and return "" (callers bucket those as
+ * "other"). Case-insensitive, so PascalCase encyclopedia codes
+ * (`United_Kingdom`) fold too.
+ */
+export function canonicalNation(code: string): string {
+  const key = code.trim().toLowerCase();
+  switch (key) {
+    case "united_kingdom":
+      return "uk";
+    case "russia":
+      return "ussr";
+    case "events":
+      return "";
+    default:
+      return CANONICAL_NATIONS.has(key) ? key : "";
+  }
+}
+
 /** Build the public URL for a nation's flag of the given variant. */
 export function resolveNationFlag(
   nation: string | undefined,

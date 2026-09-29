@@ -40,8 +40,10 @@
     "destroyer": "驅逐",
     "submarine": "潛艦",
     "auxiliary": "輔助",
+    "other": "其他",
     "battles": "場次",
     "shipType": "艦種",
-    "pieTitle": "艦種構成"
+    "pieTitle": "艦種構成",
+    "nationPieTitle": "國家構成"
   }
 }

@@ -1,18 +1,22 @@
 .ship-dist-charts {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: stretch;
   width: 100%;
 }
 
+/* Tier histogram claims the larger share of the row; the min-widths push
+   the three charts onto separate lines once the viewport gets too narrow
+   (the two donuts wrap first, then everything stacks). */
 .ship-dist-charts__bar {
-  flex: 1 1 55%;
-  min-width: 0;
+  flex: 1 1 40%;
+  min-width: 240px;
 }
 
 .ship-dist-charts__piewrap {
-  flex: 1 1 45%;
-  min-width: 0;
+  flex: 1 1 24%;
+  min-width: 168px;
 }
 
 .ship-dist-charts__pie-title {

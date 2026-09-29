@@ -40,8 +40,10 @@
     "destroyer": "DD",
     "submarine": "SS",
     "auxiliary": "Aux",
+    "other": "Autre",
     "battles": "Batailles",
     "shipType": "Type",
-    "pieTitle": "Par classe"
+    "pieTitle": "Par classe",
+    "nationPieTitle": "Par nation"
   }
 }

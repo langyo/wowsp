@@ -40,8 +40,10 @@
     "destroyer": "駆",
     "submarine": "潜",
     "auxiliary": "補助",
+    "other": "その他",
     "battles": "対戦数",
     "shipType": "艦種",
-    "pieTitle": "艦種別構成"
+    "pieTitle": "艦種別構成",
+    "nationPieTitle": "国家構成"
   }
 }

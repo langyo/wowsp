@@ -40,8 +40,10 @@
     "destroyer": "ЭМ",
     "submarine": "ПЛ",
     "auxiliary": "Всп",
+    "other": "Прочее",
     "battles": "Бои",
     "shipType": "Класс",
-    "pieTitle": "По классам"
+    "pieTitle": "По классам",
+    "nationPieTitle": "По странам"
   }
 }

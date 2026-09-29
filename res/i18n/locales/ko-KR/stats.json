@@ -40,8 +40,10 @@
     "destroyer": "구",
     "submarine": "잠",
     "auxiliary": "보조",
+    "other": "기타",
     "battles": "전투 수",
     "shipType": "함종",
-    "pieTitle": "함종 구성"
+    "pieTitle": "함종 구성",
+    "nationPieTitle": "국가 구성"
   }
 }

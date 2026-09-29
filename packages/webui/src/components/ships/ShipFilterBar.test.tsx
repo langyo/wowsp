@@ -1,9 +1,9 @@
 /**
  * Tests for the chip-based ShipFilterBar interaction model (mixed
  * multi/single select):
- *  - four collapsed chips default to the inert grayed 全部… state; with
+ *  - five collapsed chips default to the inert grayed 全部… state; with
  *    nothing engaged the view keeps the historical battles-desc order;
- *  - the popup hosts the category's option group: type/tier are
+ *  - the popup hosts the category's option group: type/nation/tier are
  *    multi-select (picks OR within the category — the tier test covers the
  *    shared-direction flip), winrate/battles hold a SINGLE pick (a new
  *    bracket replaces the old one). Re-clicking the picked option flips
@@ -12,14 +12,21 @@
  *  - 全部… itself always shows the direction arrow: without a selection it
  *    engages the sort-in-全部-state mode (first click sorts in the shown
  *    direction, further clicks flip it) — the chip wears the --sort style;
- *  - concrete ship types are pure filters: no arrows anywhere, re-clicking
- *    a type deselects it, and only 全部舰种 can make the category sort;
- *  - every category's option group is RESIDENT: it never shrinks with the
- *    queried data, so a pick with no matches in the current range keeps its
- *    popup entry, chip label and re-click deselect (an empty result is the
- *    hosting view's business);
+ *  - concrete ship types and nations are pure filters: no arrows anywhere,
+ *    re-clicking one deselects it, and only the 全部… option can make the
+ *    category sort;
+ *  - nations are data-derived: only canonical nations PRESENT in the
+ *    queried list get options (offline-DB spellings normalize onto the
+ *    canonical codes), and event/rental ships with no canonical nation
+ *    pass only while the selection is empty;
+ *  - every other category's option group is RESIDENT: it never shrinks
+ *    with the queried data, so a pick with no matches in the current range
+ *    keeps its popup entry, chip label and re-click deselect (an empty
+ *    result is the hosting view's business);
  *  - the chip drag order (persisted, hence seedable via localStorage) is
  *    the multi-key sort priority: leftmost sorting chip is the primary key;
+ *  - the v3 four-category storage migrates to v4 with "nation" inserted
+ *    after "type", the legacy key swept and the v4 blob written back;
  *  - stale multi-select storage of the now-single categories is clamped
  *    to one pick on load;
  *  - selections survive an unmount/remount cycle.
@@ -40,7 +47,8 @@ import ShipFilterBar, { type FilterState } from "./ShipFilterBar";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { PlayerShipStats, ShipInfo } from "@/api";
 
-const PERSIST_KEY = "wowsp.shipFilter.v3";
+const PERSIST_KEY = "wowsp.shipFilter.v4";
+const LEGACY_PERSIST_KEY = "wowsp.shipFilter.v3";
 
 // A popover left open by one test must not leak into the next test's
 // body-level queries — unmount every wrapper after each test.
@@ -83,9 +91,9 @@ const META = [
   { shipId: 5, name: "Ship 5", tier: 10, type: "Cruiser", nation: "uk" },
 ] as unknown as ShipInfo[];
 
-function mountBar(ships: PlayerShipStats[] = SHIPS) {
+function mountBar(ships: PlayerShipStats[] = SHIPS, meta: ShipInfo[] = META) {
   const pinia = createPinia();
-  useEncyclopediaStore(pinia).ships = META;
+  useEncyclopediaStore(pinia).ships = meta;
   return mount(ShipFilterBar, {
     props: { ships, realm: "" },
     global: { plugins: [pinia] },
@@ -133,11 +141,11 @@ describe("ShipFilterBar chips", () => {
     localStorage.clear();
   });
 
-  it("renders four collapsed chips defaulting to the grayed 全部… state", async () => {
+  it("renders five collapsed chips defaulting to the grayed 全部… state", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    for (const key of ["type", "tier", "winrate", "battles"]) {
+    for (const key of ["type", "nation", "tier", "winrate", "battles"]) {
       expect(chip(wrapper, key).classes()).toContain("ship-filter-bar__chip--all");
       // Nothing engaged → no direction arrow anywhere on the chips.
       expect(chip(wrapper, key).find(".ship-filter-bar__dir").exists()).toBe(false);
@@ -275,6 +283,64 @@ describe("ShipFilterBar chips", () => {
     expect(order(wrapper)).toEqual([4, 3, 5, 1, 2]); // DD → CA → BB
   });
 
+  it("filters by nation (multi-select) with offline spellings normalized", async () => {
+    // The offline DB spells nations differently (russia / united_kingdom /
+    // events); the options and the predicate both fold onto the canonical
+    // codes. Id 6 is an event curio with NO canonical nation.
+    const meta = META.map((m) =>
+      m.shipId === 3 ? { ...m, nation: "russia" } : m.shipId === 5 ? { ...m, nation: "united_kingdom" } : m,
+    ) as ShipInfo[];
+    const ships = [...SHIPS, ship({ shipId: 6, battles: 5, winrate: 50, avgDamage: 10 })];
+    const wrapper = mountBar(ships, meta);
+    await flushPromises();
+
+    await chip(wrapper, "nation").trigger("click");
+    await waitPops(1);
+    // Options: 全部国家 + the five canonical nations PRESENT in the data,
+    // in tech-tree order (japan, usa, ussr, germany, uk) — the offline
+    // spellings normalized, "events" gets no option of its own.
+    expect(popOpts().length).toBe(6);
+    // Concrete options lead with the flag badge (letter fallback in the
+    // test env — the wrapper span is what matters).
+    expect(popOpts()[1]!.find(".nation-flag").exists()).toBe(true);
+
+    // Japan (id 1) — pure filter, no direction arrow anywhere.
+    await popOpts()[1]!.trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([1]);
+    expect(chip(wrapper, "nation").find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(chip(wrapper, "nation").classes()).toContain("ship-filter-bar__chip--on");
+
+    // Multi-select ORs: + germany (id 4, the 10-battle DD).
+    await popOpts()[4]!.trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([1, 4]);
+
+    // Re-clicking a picked nation deselects it (pure filter, like types).
+    await popOpts()[1]!.trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([4]);
+
+    // 全部国家 resets the set — every ship returns, the event curio
+    // included (it passes only while the selection is empty).
+    await popOpts()[0]!.trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([1, 2, 3, 5, 4, 6]);
+    expect(chip(wrapper, "nation").classes()).toContain("ship-filter-bar__chip--all");
+  });
+
+  it("derives the nation options from the queried data only", async () => {
+    // Half the fleet: only japan/usa/germany remain — the popup never
+    // offers nations with no ships in range.
+    const ships = SHIPS.filter((s) => [1, 2, 4].includes(s.shipId));
+    const wrapper = mountBar(ships, META);
+    await flushPromises();
+
+    await chip(wrapper, "nation").trigger("click");
+    await waitPops(1);
+    expect(popOpts().length).toBe(4); // 全部 + japan + usa + germany
+  });
+
   it("keeps every type option resident when the queried data lacks the type", async () => {
     // 1-day-range reproduction: no destroyer was played in the range while
     // the selection still asks for one — the popup must not lose the
@@ -342,7 +408,7 @@ describe("ShipFilterBar chips", () => {
     // winrate only breaks ties.
     localStorage.setItem(
       PERSIST_KEY,
-      JSON.stringify({ order: ["battles", "winrate", "tier", "type"], sel: {} }),
+      JSON.stringify({ order: ["battles", "winrate", "tier", "type", "nation"], sel: {} }),
     );
     const wrapper = mountBar();
     await flushPromises();
@@ -379,7 +445,7 @@ describe("ShipFilterBar chips", () => {
     localStorage.setItem(
       PERSIST_KEY,
       JSON.stringify({
-        order: ["battles", "winrate", "tier", "type"],
+        order: ["battles", "winrate", "tier", "type", "nation"],
         sel: {
           winrate: { values: ["gte60", "50-60"], dir: "desc", allSort: false },
           battles: { values: ["100", "30"], dir: "desc", allSort: false },
@@ -394,6 +460,31 @@ describe("ShipFilterBar chips", () => {
     expect(chip(wrapper, "winrate").text()).toContain("50–60%");
     expect(chip(wrapper, "battles").text()).toContain("≥30");
     expect(order(wrapper)).toEqual([1, 2, 3]);
+  });
+
+  it("migrates the v3 four-category storage to v4 with nation after type", async () => {
+    // A v3-era blob (four keys, any drag order, a live selection)…
+    localStorage.setItem(
+      LEGACY_PERSIST_KEY,
+      JSON.stringify({
+        order: ["battles", "winrate", "tier", "type"],
+        sel: {
+          winrate: { values: ["gte60"], dir: "desc", allSort: false },
+        },
+      }),
+    );
+    const wrapper = mountBar();
+    await flushPromises();
+
+    // …is accepted with "nation" inserted after "type" — the carried-over
+    // selection still filters…
+    expect(order(wrapper)).toEqual([5]);
+    // …the v4 blob is written back immediately (the state must survive a
+    // no-interaction session, not re-migrate from defaults next boot)…
+    const persisted = JSON.parse(localStorage.getItem(PERSIST_KEY)!) as { order: string[] };
+    expect(persisted.order).toEqual(["battles", "winrate", "tier", "type", "nation"]);
+    // …and the legacy key is swept so the migration runs exactly once.
+    expect(localStorage.getItem(LEGACY_PERSIST_KEY)).toBe(null);
   });
 
   it("keeps selections across an unmount/remount cycle", async () => {

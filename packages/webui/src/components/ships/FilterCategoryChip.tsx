@@ -14,7 +14,7 @@
  * positions against the chip button, so an overflow ancestor (the ship
  * picker's HkModal body is a scroll container) can never clip it.
  */
-import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type VNode } from "vue";
 
 import { HkPopover, useBreakpoint } from "@celestia-island/hikari";
 import { X } from "@lucide/vue";
@@ -38,6 +38,13 @@ export default defineComponent({
     open: { type: Boolean, default: false },
     /** Right-most chip in a row — the popup opens leftwards (bottom-end). */
     edge: { type: Boolean, default: false },
+    /** Optional leading icon per option value (e.g. a nation flag before
+     *  the nation name). Undefined (default) keeps the text-only rows, so
+     *  existing callers are unaffected. */
+    renderOptionIcon: {
+      type: Function as PropType<(value: string) => VNode>,
+      default: undefined,
+    },
   },
   emits: {
     "update:open": (_v: boolean) => true,
@@ -162,6 +169,7 @@ export default defineComponent({
                   data-active={props.selected.has(o.value) || undefined}
                   onClick={() => emit("toggle", o.value)}
                 >
+                  {props.renderOptionIcon ? props.renderOptionIcon(o.value) : null}
                   <span>{o.label}</span>
                 </button>
               ))}

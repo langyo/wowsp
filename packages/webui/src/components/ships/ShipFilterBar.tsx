@@ -7,18 +7,19 @@
  * moves.
  *
  * Interaction model:
- *   - Four filter categories — type / tier / winrate / battles — render as
- *     collapsed chips styled after the segmented button-group triggers.
+ *   - Five filter categories — type / nation / tier / winrate / battles —
+ *     render as collapsed chips styled after the segmented button-group
+ *     triggers.
  *   - Clicking a chip opens a popup hosting the category's option group.
- *     Type and tier are MULTI-SELECT: the chosen options OR together inside
- *     the category (categories still AND). Winrate and battles are
+ *     Type, nation and tier are MULTI-SELECT: the chosen options OR together
+ *     inside the category (categories still AND). Winrate and battles are
  *     SINGLE-SELECT — their brackets sit on one numeric axis, so OR-ing
  *     thresholds that subsume each other (≥30 ∪ ≥100 = ≥30) only confuses;
  *     picking a bracket replaces the previous pick. The 正序/倒序 flag is
  *     SHARED by the whole category — re-clicking the picked option flips
- *     every arrow in it at once. Ship types are further special: pure
- *     filters with no direction at all, so re-clicking a type simply
- *     deselects it.
+ *     every arrow in it at once. Ship types and nations are further
+ *     special: pure filters with no direction at all, so re-clicking a
+ *     type/nation simply deselects it.
  *   - The 全部… option always shows the direction arrow too: with a concrete
  *     selection it resets the category to the gray state; without one it
  *     engages the "sort while unfiltered" mode (first click sorts in the
@@ -45,16 +46,27 @@ import { ArrowDown, ArrowUp, GripHorizontal, Search, X } from "@lucide/vue";
 import { HkPopover, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { shipOfflineEntry, nationNameFromDb } from "@/features/holographic/modelLoader";
+import { canonicalNation } from "@/utils/nationFlags";
+import NationFlag from "@/components/base/NationFlag";
 import { useLanguage } from "@/i18n/useLanguage";
 import { matchShipNames } from "@/features/search/pinyinSearch";
 import { t } from "@/i18n";
 import "./ShipFilterBar.scss";
 
-type CatKey = "type" | "tier" | "winrate" | "battles";
+type CatKey = "type" | "nation" | "tier" | "winrate" | "battles";
 type SortDir = "asc" | "desc";
 
 const TYPE_ORDER = ["Battleship", "AirCarrier", "Cruiser", "Destroyer", "Submarine", ""];
+/** Canonical nation display order (the port tech-tree reading order) —
+ *  mirrors the encyclopedia store's NATION_ORDER as a LOCAL const: importing
+ *  the Pinia store from this component would risk a store↔component cycle
+ *  and drag store wiring into every surface hosting the bar. */
+const NATION_FILTER_ORDER = [
+  "japan", "usa", "ussr", "germany", "uk", "france",
+  "pan_asia", "italy", "netherlands", "commonwealth",
+  "pan_america", "spain", "europe",
+];
 const TIER_FILTERS: [string, string][] = [
   ["I–V", "I – V"],
   ["VI–VII", "VI – VII"],
@@ -90,6 +102,7 @@ interface ShipMeta {
   shipId: number;
   tier: number;
   type: string;
+  nation: string;
 }
 
 interface CatDef {
@@ -108,12 +121,29 @@ function typeRank(type: string): number {
   return idx >= 0 ? idx : TYPE_ORDER.length;
 }
 
+/** Canonical nation ordering index (tech-tree reading order) — ships with
+ *  no canonical nation (event/rental curios) sort last. */
+function nationRank(nation: string): number {
+  const idx = NATION_FILTER_ORDER.indexOf(canonicalNation(nation));
+  return idx >= 0 ? idx : NATION_FILTER_ORDER.length;
+}
+
 const CAT_DEFS: Record<CatKey, CatDef> = {
   type: {
     title: "ships.filter.typeTitle",
     allLabel: "ships.filter.typeAll",
     matches: (_row, info, value) => (info?.type ?? "").startsWith(value),
     sortValue: (_row, info) => typeRank(info?.type ?? ""),
+  },
+  nation: {
+    title: "ships.filter.nationTitle",
+    allLabel: "ships.filter.nationAll",
+    // Ships with NO canonical nation (event/rental curios — offline DB
+    // "events" and unknown codes) pass only while the selection is empty:
+    // once concrete nations are picked they are deliberately excluded
+    // rather than getting an "other" option of their own.
+    matches: (_row, info, value) => canonicalNation(info?.nation ?? "") === value,
+    sortValue: (_row, info) => nationRank(info?.nation ?? ""),
   },
   tier: {
     title: "ships.filter.tierTitle",
@@ -136,15 +166,21 @@ const CAT_DEFS: Record<CatKey, CatDef> = {
   },
 };
 
-const CAT_KEYS: CatKey[] = ["type", "tier", "winrate", "battles"];
+const CAT_KEYS: CatKey[] = ["type", "nation", "tier", "winrate", "battles"];
 const DEFAULT_ORDER: CatKey[] = [...CAT_KEYS];
 
 /** Winrate and battles brackets carve up ONE numeric axis, so picking
  *  several at once ORs thresholds that subsume each other (≥30 ∪ ≥100 is
  *  just ≥30) — these two categories hold exactly one pick at a time;
- *  type/tier stay multi-select. */
+ *  type/tier/nation stay multi-select. */
 const SINGLE_CATS: readonly CatKey[] = ["winrate", "battles"];
 const isSingleSel = (key: CatKey) => SINGLE_CATS.includes(key);
+
+/** Pure-filter categories: multi-select picks with no sort direction — a
+ *  re-click deselects, and only the 全部… option can engage a sort (by the
+ *  category's canonical rank order). */
+const PURE_CATS: readonly CatKey[] = ["type", "nation"];
+const isPureCat = (key: CatKey) => PURE_CATS.includes(key);
 
 /** Concrete option values of a category in canonical (display) order —
  *  used to clamp stale multi-select storage down to the single-select
@@ -154,6 +190,8 @@ function canonicalValues(key: CatKey): string[] {
   switch (key) {
     case "type":
       return TYPE_ORDER.filter((t) => t !== "");
+    case "nation":
+      return [...NATION_FILTER_ORDER];
     case "tier":
       return TIER_FILTERS.map(([v]) => v);
     case "winrate":
@@ -165,7 +203,9 @@ function canonicalValues(key: CatKey): string[] {
 
 // ── localStorage persistence (shared by every view hosting the bar) ──
 
-const PERSIST_KEY = "wowsp.shipFilter.v3";
+const PERSIST_KEY = "wowsp.shipFilter.v4";
+/** The pre-nation format (four categories, no "nation" key). */
+const LEGACY_PERSIST_KEY = "wowsp.shipFilter.v3";
 
 /** Per-category state: multi-select filter values + the SHARED sort
  *  direction + whether the category also sorts while sitting at 全部…
@@ -194,6 +234,8 @@ function isValidValue(key: CatKey, v: string): boolean {
   switch (key) {
     case "type":
       return TYPE_ORDER.some((t) => t && t === v);
+    case "nation":
+      return NATION_FILTER_ORDER.includes(v);
     case "tier":
       return isValidTierValue(v);
     case "winrate":
@@ -203,25 +245,65 @@ function isValidValue(key: CatKey, v: string): boolean {
   }
 }
 
+/** `order` is exactly the given keys in some order (a permutation). */
+function isPermutationOf(order: unknown, keys: readonly CatKey[]): order is CatKey[] {
+  return (
+    Array.isArray(order) &&
+    order.length === keys.length &&
+    keys.every((k) => (order as unknown[]).includes(k))
+  );
+}
+
+const LEGACY_CAT_KEYS: readonly CatKey[] = ["type", "tier", "winrate", "battles"];
+
+/** Insert the "nation" category right after "type" (its default slot). */
+function withNationAfterType(order: CatKey[]): CatKey[] {
+  const idx = order.indexOf("type");
+  const next = [...order];
+  next.splice(idx >= 0 ? idx + 1 : next.length, 0, "nation");
+  return next;
+}
+
 function loadPersisted(): Persisted | null {
   try {
-    const raw = localStorage.getItem(PERSIST_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Persisted;
-    // Order must be a permutation of the four categories, else fall back.
-    // Heal-write: the invalid blob is swept (absence = the canonical
-    // defaults) so the stale value is corrected once, not every boot.
-    if (
-      !Array.isArray(p.order) ||
-      p.order.length !== CAT_KEYS.length ||
-      !CAT_KEYS.every((k) => p.order.includes(k))
-    ) {
-      localStorage.removeItem(PERSIST_KEY);
+    const rawV4 = localStorage.getItem(PERSIST_KEY);
+    if (rawV4) {
+      const p = JSON.parse(rawV4) as Persisted;
+      // Order must be a permutation of the five categories, else fall back.
+      // Heal-write: the invalid blob is swept (absence = the canonical
+      // defaults) so the stale value is corrected once, not every boot.
+      if (!isPermutationOf(p.order, CAT_KEYS)) {
+        localStorage.removeItem(PERSIST_KEY);
+        return null;
+      }
+      return p;
+    }
+    // v3 → v4 migration: the legacy four-key order (any permutation) is
+    // accepted with "nation" inserted after "type". The v4 blob is written
+    // back IMMEDIATELY and the v3 key swept — the migrated state must
+    // survive a session with no further interaction, not re-migrate from
+    // defaults on the next boot.
+    const rawV3 = localStorage.getItem(LEGACY_PERSIST_KEY);
+    if (!rawV3) return null;
+    const legacy = JSON.parse(rawV3) as Persisted;
+    if (!isPermutationOf(legacy.order, LEGACY_CAT_KEYS)) {
+      localStorage.removeItem(LEGACY_PERSIST_KEY);
       return null;
     }
-    return p;
+    const migrated: Persisted = {
+      order: withNationAfterType(legacy.order),
+      sel: legacy.sel ?? {},
+    };
+    try {
+      localStorage.setItem(PERSIST_KEY, JSON.stringify(migrated));
+    } catch {
+      /* storage full — the migrated state still holds for the session */
+    }
+    localStorage.removeItem(LEGACY_PERSIST_KEY);
+    return migrated;
   } catch {
     localStorage.removeItem(PERSIST_KEY);
+    localStorage.removeItem(LEGACY_PERSIST_KEY);
     return null;
   }
 }
@@ -255,6 +337,7 @@ export default defineComponent({
     const order = ref<CatKey[]>(stored ? [...stored.order] : [...DEFAULT_ORDER]);
     const sel = ref<Record<CatKey, CatSel>>({
       type: { values: [], dir: "asc", allSort: false },
+      nation: { values: [], dir: "asc", allSort: false },
       tier: { values: [], dir: "desc", allSort: false },
       winrate: { values: [], dir: "desc", allSort: false },
       battles: { values: [], dir: "desc", allSort: false },
@@ -405,17 +488,42 @@ export default defineComponent({
         : null;
     };
 
-    /** Option rows per category. All four lists are RESIDENT: the selectable
-     *  range never shrinks with the queried data, so a pick that matches
-     *  nothing in the current range stays visible and re-clickable and just
-     *  yields an empty result (the hosting view shows the no-match empty
-     *  state) instead of degrading the popup. */
+    /** Option rows per category. Type/tier/winrate/battles lists are
+     *  RESIDENT: the selectable range never shrinks with the queried data,
+     *  so a pick that matches nothing in the current range stays visible
+     *  and re-clickable and just yields an empty result (the hosting view
+     *  shows the no-match empty state) instead of degrading the popup.
+     *  Nations are the exception — data-derived: only nations PRESENT in
+     *  the queried list get an option (a nation with no ships can never
+     *  match anything), in the canonical tech-tree reading order. */
+    const presentNations = computed(() => {
+      const set = new Set<string>();
+      for (const s of props.ships) {
+        const c = canonicalNation(infoOf(s.shipId)?.nation ?? "");
+        if (c) set.add(c);
+      }
+      return NATION_FILTER_ORDER.filter((n) => set.has(n));
+    });
+
+    /** Nation display name — the app-wide chain: 素材翻译 DB first, then
+     *  ships.nation.<code> i18n, raw code last (same as ShipPickerModal). */
+    function nationOptionLabel(code: string): string {
+      return (
+        nationNameFromDb(code, dataLanguage.value) ??
+        (t(`ships.nation.${code}`, {}) || code)
+      );
+    }
+
     const catOptions = computed<Record<CatKey, { value: string; label: string }[]>>(() => ({
       type: [
         { value: "", label: t(CAT_DEFS.type.allLabel) },
         ...TYPE_ORDER.filter((k) => k !== "").map(
           (k) => ({ value: k, label: t(`dashboard.shipType.${k}`, {}) }),
         ),
+      ],
+      nation: [
+        { value: "", label: t(CAT_DEFS.nation.allLabel) },
+        ...presentNations.value.map((n) => ({ value: n, label: nationOptionLabel(n) })),
       ],
       tier: [
         { value: "", label: t(CAT_DEFS.tier.allLabel) },
@@ -454,10 +562,11 @@ export default defineComponent({
     );
 
     /** A category contributes a sort key while it has a concrete selection
-     *  or an engaged 全部…-sort. Types only via the latter: a type pick is a
-     *  pure filter with no direction, so it must not reorder the list. */
+     *  or an engaged 全部…-sort. Types and nations only via the latter: a
+     *  type/nation pick is a pure filter with no direction, so it must not
+     *  reorder the list. */
     const isSortCat = (key: CatKey) =>
-      sel.value[key].allSort || (sel.value[key].values.length > 0 && key !== "type");
+      sel.value[key].allSort || (sel.value[key].values.length > 0 && !isPureCat(key));
 
     const filteredShips = computed(() => {
       let rows = props.ships;
@@ -504,8 +613,9 @@ export default defineComponent({
      *  all-state sort — the first click engages in the displayed direction,
      *  later clicks flip it. Concrete options join the selection when
      *  unpicked (replacing it outright in the single-select categories);
-     *  when picked they flip the category's shared direction — except
-     *  types, which carry no direction and simply drop out. */
+     *  when picked they flip the category's shared direction — except the
+     *  pure categories (types/nations), which carry no direction and
+     *  simply drop out. */
     function clickOption(key: CatKey, value: string) {
       const s = sel.value[key];
       if (value === "") {
@@ -520,7 +630,7 @@ export default defineComponent({
         return;
       }
       if (s.values.includes(value)) {
-        if (key === "type") {
+        if (isPureCat(key)) {
           s.values = s.values.filter((v) => v !== value);
         } else {
           s.dir = s.dir === "desc" ? "asc" : "desc";
@@ -615,19 +725,22 @@ export default defineComponent({
       openPop.value = openPop.value === key ? null : key;
     }
 
-    /** Popup explainer — three shapes: types are pure filters (re-click
-     *  deselects), winrate/battles pick a single bracket, tier is the
-     *  multi-select-with-sort case. */
+    /** Popup explainer — four shapes: types/nations are pure filters
+     *  (re-click deselects; types get the dedicated wording, nations the
+     *  generic multi-select hint), winrate/battles pick a single bracket,
+     *  tier is the multi-select-with-sort case. */
     const popHint = (key: CatKey) =>
       key === "type"
         ? t("ships.filter.hintTypePop")
-        : isSingleSel(key)
-          ? t("ships.filter.hintSinglePop")
-          : t("ships.filter.hintSortPop");
+        : key === "nation"
+          ? t("ships.filter.hintMulti")
+          : isSingleSel(key)
+            ? t("ships.filter.hintSinglePop")
+            : t("ships.filter.hintSortPop");
 
     /** Chip tooltip — same split as the popup hint. */
     const chipTitle = (key: CatKey) =>
-      key === "type"
+      isPureCat(key)
         ? t("ships.filter.hintTypeChip")
         : isSingleSel(key)
           ? t("ships.filter.hintSingleChip")
@@ -733,10 +846,16 @@ export default defineComponent({
                       </button>
                     </div>
                     {/* Option group in the segmented track look (multi-select
-                        for type/tier, single for winrate/battles).
-                        全部… always shows the direction arrow; concrete types
-                        never do (pure filters). */}
-                    <div class="ship-filter-bar__opts">
+                        for type/nation/tier, single for winrate/battles).
+                        全部… always shows the direction arrow; concrete pure
+                        categories (types/nations) never do. Nation options
+                        lead with their flag (NationFlag swaps to a letter
+                        badge when the asset is missing), and the track wraps
+                        — 13 nations cannot fit the desktop one-line strip. */}
+                    <div
+                      class="ship-filter-bar__opts"
+                      style={key === "nation" ? { flexWrap: "wrap", justifyContent: "flex-start" } : undefined}
+                    >
                       {catOptions.value[key].map((o) => {
                         const isAll = o.value === "";
                         const on = isAll ? cur.values.length === 0 : cur.values.includes(o.value);
@@ -748,8 +867,11 @@ export default defineComponent({
                             data-active={on || undefined}
                             onClick={() => clickOption(key, o.value)}
                           >
+                            {key === "nation" && !isAll ? (
+                              <NationFlag nation={o.value} label={o.label} variant="flag" size="sm" />
+                            ) : null}
                             <span>{o.label}</span>
-                            {isAll || (on && key !== "type") ? dirIcon(cur.dir) : null}
+                            {isAll || (on && !isPureCat(key)) ? dirIcon(cur.dir) : null}
                           </button>
                         );
                       })}

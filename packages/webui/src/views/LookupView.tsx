@@ -719,12 +719,16 @@ export default defineComponent({
                     ),
                   }}
                 />
-                {/* Ship distribution charts */}
+                {/* Ship distribution charts — fed the UNFILTERED career list
+                    (shipRows): the tier histogram and both donuts must never
+                    react to the date-range tabs or the filter bar below;
+                    everything else (type cards, ship table, share shot)
+                    keeps the filtered view. */}
                 {shipRows.value.length > 0 ? (
                   <div class="lookup-view__dist">
                     <div class="lookup-view__dist-title">{t("lookup.distTitle")}</div>
                     <ShipDistCharts
-                      ships={filteredShips.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
+                      ships={shipRows.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
                     />
                   </div>
                 ) : null}
