@@ -1365,7 +1365,7 @@ export const api = {
    * commands/ingame_plugin.rs) — powers the roster "plugin detection"
    * option's enabled state and its Discussions page link. */
   ingamePluginStatus: (gameRoot: string) =>
-    transport.invoke<{ installed: boolean; resMods: string; discussion: number }>(RPC.ingame_plugin_status, { gameRoot }),
+    transport.invoke<{ installed: boolean; outdated?: boolean; resMods: string; discussion: number }>(RPC.ingame_plugin_status, { gameRoot }),
   ingamePluginInstall: (gameRoot: string) =>
     transport.invoke<string>(RPC.ingame_plugin_install, { gameRoot }),
   ingamePluginUninstall: (gameRoot: string) =>

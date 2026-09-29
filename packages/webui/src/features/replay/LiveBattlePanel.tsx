@@ -42,6 +42,7 @@ import { t } from "@/i18n";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
+import PluginStatusCard from "./PluginStatusCard";
 import { WaitingRadarArt } from "./liveGuideArt";
 import { useNickMasking, useShareShot } from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
@@ -298,7 +299,9 @@ export default defineComponent({
     const overlayCfg = useOverlayConfigStore();
     const telemetryGrade = computed<"plugin" | "incomplete" | "infer">(() => {
       if (overlayCfg.roster !== "plugin") return "infer";
-      return plugin.installed ? "plugin" : "incomplete";
+      // An outdated build predates telemetry.json — it is "installed" but
+      // will never emit, so it grades as not-connected until updated.
+      return plugin.installed && !plugin.outdated ? "plugin" : "incomplete";
     });
 
     /** Manual-locate entry point: opens the cached-frame picker layer inside
@@ -588,6 +591,10 @@ export default defineComponent({
             <WaitingRadarArt class="live-battle__empty-art" />
             <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
             <p class="live-battle__empty-hint">{t("replay.live.waitingHint")}</p>
+            {/* Status-only plugin card: res_mods mutations are refused
+                while the game runs, so no lifecycle buttons here — but the
+                state (incl. the outdated warning) stays visible. */}
+            <PluginStatusCard actions={false} />
           </div>
         );
       }

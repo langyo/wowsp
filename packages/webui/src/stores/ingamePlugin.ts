@@ -1,17 +1,18 @@
 /**
  * In-game stats plugin (packages/ingame-plugin) presence + lifecycle for
- * the live-battle surfaces. One shared probe feeding two consumers:
+ * the live-battle surfaces. One shared probe feeding three consumers:
  *
  * - LiveBattlePanel's status corner grades the telemetry source (plugin
  *   connected vs. degraded screen-capture inference),
- * - LiveIdleGuide offers one-click install when absent and uninstall when
- *   present, so a broken install can be reinstalled in place.
+ * - LiveBattlePanel's waiting state shows the plugin card status-only,
+ * - LiveIdleGuide offers one-click install when absent, update when the
+ *   installed bytes predate this app build (content-hash freshness — the
+ *   in-game version string is pinned at 0.1.0 by owner decision), and
+ *   uninstall when present, so a broken install can be reinstalled.
  *
  * Presence means the PnFMods bridge sits in the ACTIVE game install
  * (commands/ingame_plugin.rs); the probe re-runs whenever that selection
- * changes. The M2 bridge consumer will add a live "connected" signal on
- * top — for now "installed" is the strongest state, and the panel's
- * degraded badge explains exactly that gap.
+ * changes.
  */
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
@@ -21,13 +22,16 @@ import { useConfigStore } from "@/stores/config";
 
 export const useIngamePluginStore = defineStore("ingamePlugin", () => {
   const installed = ref(false);
+  /** Installed but not the bytes this app ships (older build / hand-edited)
+   *  — the UI offers a one-click update. */
+  const outdated = ref(false);
   /** Null once probed; a failed probe (older shell, no install) stays null
    *  so consumers treat the plugin as absent rather than unknown. */
   const probed = ref(false);
   /** Discussions thread backing the mod-hub page (for the page link). */
   const discussion = ref<number | null>(null);
-  /** "install" | "uninstall" while a lifecycle command is in flight. */
-  const busy = ref<"install" | "uninstall" | null>(null);
+  /** "install" | "uninstall" | "update" while a lifecycle command is in flight. */
+  const busy = ref<"install" | "uninstall" | "update" | null>(null);
 
   const config = useConfigStore();
   const gameRoot = computed(
@@ -38,16 +42,19 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     const root = gameRoot.value;
     if (!root) {
       installed.value = false;
+      outdated.value = false;
       probed.value = false;
       return;
     }
     try {
       const status = await api.ingamePluginStatus(root);
       installed.value = status.installed;
+      outdated.value = status.outdated === true;
       discussion.value = status.discussion;
       probed.value = true;
     } catch {
       installed.value = false;
+      outdated.value = false;
       probed.value = false;
     }
   }
@@ -62,6 +69,23 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     try {
       // Same PnFMods layout the probe installer writes (Main.py + the
       // 0-byte loader marker); the backend refuses while the game runs.
+      await api.ingamePluginInstall(root);
+      await refresh();
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    } finally {
+      busy.value = null;
+    }
+  }
+
+  /** One-click update — install overwrites in place, so this is install
+   *  with update-flavored busy state (the card shows its own spinner). */
+  async function update(): Promise<string | null> {
+    const root = gameRoot.value;
+    if (!root || busy.value) return "common.game.offline";
+    busy.value = "update";
+    try {
       await api.ingamePluginInstall(root);
       await refresh();
       return null;
@@ -91,9 +115,22 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
   // first detection on cold start) re-probes.
   watch(gameRoot, () => void refresh(), { immediate: true });
 
-  const state = computed<"absent" | "installed">(() =>
-    installed.value ? "installed" : "absent",
-  );
+  const state = computed<"absent" | "outdated" | "installed">(() => {
+    if (!installed.value) return "absent";
+    return outdated.value ? "outdated" : "installed";
+  });
 
-  return { installed, probed, discussion, busy, state, gameRoot, refresh, install, uninstall };
+  return {
+    installed,
+    outdated,
+    probed,
+    discussion,
+    busy,
+    state,
+    gameRoot,
+    refresh,
+    install,
+    update,
+    uninstall,
+  };
 });

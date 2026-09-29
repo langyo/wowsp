@@ -26,6 +26,11 @@ const MOD_ENTRY: &str = "Main.py";
 pub struct IngamePluginStatus {
     /// Whether the plugin's entry file exists in the install's res_mods.
     pub installed: bool,
+    /// Installed but NOT the bytes this app ships (an older build, or a
+    /// hand-edited file): the UI offers a one-click update. The in-game
+    /// version string is pinned at 0.1.0 by owner decision, so the content
+    /// hash is the only reliable freshness signal.
+    pub outdated: bool,
     /// The res_mods directory that was inspected (diagnostics for the UI).
     pub res_mods: String,
     /// GitHub discussion thread backing the plugin's mod-hub page.
@@ -38,9 +43,23 @@ pub struct IngamePluginStatus {
 #[tauri::command]
 pub fn ingame_plugin_status(game_root: String) -> Result<IngamePluginStatus, String> {
     let dir = super::game_context::res_mods_dir(std::path::Path::new(&game_root))?;
-    let installed = dir.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY).is_file();
+    let entry = dir.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY);
+    let installed = entry.is_file();
+    let outdated = installed
+        && match std::fs::read(&entry) {
+            Ok(bytes) => {
+                use sha2::{Digest, Sha256};
+                let mut current = Sha256::new();
+                current.update(PLUGIN_SOURCE.as_bytes());
+                let mut on_disk = Sha256::new();
+                on_disk.update(&bytes);
+                current.finalize()[..] != on_disk.finalize()[..]
+            },
+            Err(_) => true, // unreadable is un-updatable — treat as stale
+        };
     Ok(IngamePluginStatus {
         installed,
+        outdated,
         res_mods: dir.to_string_lossy().into_owned(),
         discussion: DISCUSSION_NUMBER,
     })
