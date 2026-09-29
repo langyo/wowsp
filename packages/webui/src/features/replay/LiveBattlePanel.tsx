@@ -29,12 +29,14 @@ import {
   type CSSProperties,
 } from "vue";
 import { useRouter } from "vue-router";
-import { Camera, Eye, EyeOff } from "@lucide/vue";
+import { Camera, Eye, EyeOff, Plug, ScanEye, Unplug } from "@lucide/vue";
 import { useToast } from "@celestia-island/hikari";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import { useAccountStore } from "@/stores/account";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
+import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -191,6 +193,9 @@ export default defineComponent({
       return names ? order.filter((n) => !names.has(n)) : order;
     };
     onMounted(async () => {
+      // The telemetry pill reads the persisted roster mode; the store is
+      // lazy elsewhere on this surface.
+      void overlayCfg.load();
       unlistenStatus = (await api.listenOverlayStatus((s) => {
         overlayStatus.value = s;
       })) as (() => void) | null;
@@ -240,6 +245,20 @@ export default defineComponent({
     /** A manual anchor is in force: the badge turns green and the button
      *  flips from "manual locate" to "clear locate". */
     const manualActive = computed(() => overlayStatus.value?.manual === true);
+
+    // ── Telemetry-source grade (the head's state pill) ───────────────────
+    // "plugin" roster mode + the PnFMods bridge installed = full precision
+    // (the exact TAB order arrives from inside the client); the mode picked
+    // but the plugin absent degrades to the screen-capture inference and
+    // the pill says so — staged per the owner's spec. Until the M2 bridge
+    // consumer lands, a connected plugin renders the same order as
+    // inference; the pill already reflects the source, not the pipeline.
+    const plugin = useIngamePluginStore();
+    const overlayCfg = useOverlayConfigStore();
+    const telemetryGrade = computed<"plugin" | "incomplete" | "infer">(() => {
+      if (overlayCfg.roster !== "plugin") return "infer";
+      return plugin.installed ? "plugin" : "incomplete";
+    });
 
     /** Manual-locate entry point: opens the cached-frame picker layer inside
      *  the main window (ManualLocateOverlay, after the backend gates pass),
@@ -736,6 +755,28 @@ export default defineComponent({
                 ? t("replay.live.showNicks")
                 : t("replay.live.hideNicks")}
             </button>
+            {/* Telemetry-source grade: staged per the roster mode and the
+                plugin's presence — plugin connected (full precision) >
+                incomplete (mode picked, plugin missing: the capture
+                inference still runs) > inference (default pipeline). */}
+            <span
+              class={[
+                "live-battle__pill",
+                `live-battle__pill--telemetry-${telemetryGrade.value}`,
+              ]}
+              data-hint={
+                t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}Hint`)
+              }
+            >
+              {telemetryGrade.value === "plugin" ? (
+                <Plug size={12} />
+              ) : telemetryGrade.value === "incomplete" ? (
+                <Unplug size={12} />
+              ) : (
+                <ScanEye size={12} />
+              )}
+              {t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}`)}
+            </span>
             {statusBadge.value ? (
               <span
                 class={[

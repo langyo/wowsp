@@ -83,6 +83,8 @@ export const RPC = {
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
   ingame_plugin_status: "ingame_plugin_status",
+  ingame_plugin_install: "ingame_plugin_install",
+  ingame_plugin_uninstall: "ingame_plugin_uninstall",
   get_game_config: "get_game_config",
   set_game_config: "set_game_config",
   update_check: "update_check",

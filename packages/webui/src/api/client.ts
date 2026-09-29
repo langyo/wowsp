@@ -1358,6 +1358,10 @@ export const api = {
    * option's enabled state and its Discussions page link. */
   ingamePluginStatus: (gameRoot: string) =>
     transport.invoke<{ installed: boolean; resMods: string; discussion: number }>(RPC.ingame_plugin_status, { gameRoot }),
+  ingamePluginInstall: (gameRoot: string) =>
+    transport.invoke<string>(RPC.ingame_plugin_install, { gameRoot }),
+  ingamePluginUninstall: (gameRoot: string) =>
+    transport.invoke<null>(RPC.ingame_plugin_uninstall, { gameRoot }),
   /** Remembered game-install path — sanitized + persisted as TOML by the
    *  shell (see commands/game_config.rs). */
   getGameConfig: () => transport.invoke<{ activePath: string | null }>(RPC.get_game_config),
