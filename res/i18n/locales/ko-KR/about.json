@@ -32,6 +32,9 @@
     "wowsunpackRole": "게임 데이터 언패킹 (vendored)",
     "wowscoreRole": "게임 데이터 모델 (vendored)",
     "hikariRole": "UI 컴포넌트 라이브러리",
-    "devtoolsRole": "에이전트 규율 인프라 (워크스페이스 규칙 및 툴체인)"
+    "devtoolsRole": "에이전트 규율 인프라 (워크스페이스 규칙 및 툴체인)",
+    "streamerRole": "파트너 스트리머",
+    "streamerSineNote": "배경화면 아트 제공",
+    "shittimRole": "프런트엔드 셸 및 빌드 인프라"
   }
 }

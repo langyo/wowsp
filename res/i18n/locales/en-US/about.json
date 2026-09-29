@@ -45,6 +45,9 @@
     "wowsunpackRole": "Game-data unpacking (vendored)",
     "wowscoreRole": "Game-data model (vendored)",
     "hikariRole": "UI component library",
-    "devtoolsRole": "Agent-discipline infrastructure (workspace rules and toolchain)"
+    "devtoolsRole": "Agent-discipline infrastructure (workspace rules and toolchain)",
+    "streamerRole": "Partner streamer",
+    "streamerSineNote": "Wallpaper art provider",
+    "shittimRole": "Frontend shell & build infrastructure"
   }
 }

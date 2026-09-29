@@ -32,6 +32,9 @@
     "wowsunpackRole": "遊戲資料解包（vendored）",
     "wowscoreRole": "遊戲資料模型（vendored）",
     "hikariRole": "UI 元件庫",
-    "devtoolsRole": "Agent 紀律設施（工作區規範與工具鏈）"
+    "devtoolsRole": "Agent 紀律設施（工作區規範與工具鏈）",
+    "streamerRole": "合作實況主",
+    "streamerSineNote": "提供桌布",
+    "shittimRole": "前端外殼與建置設施"
   }
 }

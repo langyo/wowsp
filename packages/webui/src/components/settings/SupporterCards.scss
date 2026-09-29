@@ -1,0 +1,75 @@
+/* Partner-streamer cards (credits section's leading group). The whole
+   card is the click target for the Bilibili space page; the avatar is the
+   live/cached bilibili head shot with an initial-letter disc fallback. */
+.supporter-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.7rem;
+}
+
+.supporter-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgb(var(--color-border) / 22%);
+  border-radius: 12px;
+  background: rgb(var(--color-surface) / 82%);
+  color: rgb(var(--color-text));
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: rgb(var(--color-border) / 45%);
+  }
+
+  &__avatar {
+    flex: none;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgb(var(--color-border) / 25%);
+
+    &--initial {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.15rem;
+      font-weight: 600;
+      /* Solid primary + the theme's on-primary ink: an alpha-blended disc
+         lightens under light themes and drops the glyph below AA. */
+      color: rgb(var(--color-on-primary));
+      background: rgb(var(--color-primary));
+    }
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  &__name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__role,
+  &__note {
+    font-size: 0.78rem;
+    color: rgb(var(--color-text) / 62%);
+  }
+
+  &__platform {
+    margin-left: auto;
+    align-self: flex-start;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-text) / 42%);
+  }
+}

@@ -105,7 +105,11 @@ import FontSizeControl from "@/components/layout/FontSizeControl";
 import ChangelogSection from "@/components/settings/ChangelogSection";
 import FeedbackSection from "@/components/settings/FeedbackSection";
 import ThemeSchemeDialog from "@/components/settings/ThemeSchemeDialog";
-import { ATTRIBUTIONS } from "@/data/attributions";
+import {
+  RESOURCE_ATTRIBUTIONS,
+  UPSTREAM_ATTRIBUTIONS,
+} from "@/data/attributions";
+import SupporterCards from "@/components/settings/SupporterCards";
 import { kindLabel } from "@/utils/installLabel";
 import { sameGamePath } from "@/utils/gamePath";
 import "../layout/SettingsModal.scss";
@@ -503,6 +507,8 @@ export default defineComponent({
         // never at startup — so opening the section is what loads it.
         if (id === "changelog") void changelog.ensureLoaded();
         if (id !== "updates") return;
+        void refreshDataPackRow(false);
+        void refreshModCatalogRow(false);
         void cacheStore.refreshStatus();
         void cacheStore.loadMirror().then(() => {
           mirrorDraft.value = cacheStore.githubMirror ?? "";
@@ -518,6 +524,8 @@ export default defineComponent({
       () => props.active,
       (open) => {
         if (open && ui.section === "updates") {
+          void refreshDataPackRow(false);
+          void refreshModCatalogRow(false);
           void cacheStore.refreshStatus();
           void cacheStore.refreshUpdates();
         }
@@ -539,6 +547,13 @@ export default defineComponent({
       startPairingPoll();
     }
     if (ui.section === "changelog") void changelog.ensureLoaded();
+    // Same gap for the updates section's data-source rows: a landing mount
+    // never triggers the watcher's loads (the pack cards mask it via their
+    // boot-time store init — the rows have no such backstop).
+    if (ui.section === "updates") {
+      void refreshDataPackRow(false);
+      void refreshModCatalogRow(false);
+    }
 
     async function saveMirror() {
       if (!mirrorDirty.value) return;
@@ -578,6 +593,44 @@ export default defineComponent({
     /** True while an app update is pending (or streaming) — the resource
      *  pack must wait for it: app first, pack after the restart. */
     const appUpdatePending = computed(() => updater.available && !updater.portable);
+
+    // ── dynamic data sources (updates section) ──────────────────────────
+    // The managed rows above the aux caches: the ship-data hot-update pack
+    // (data-latest) and the mod-hub catalog. Both show a state stamp and
+    // offer an explicit refresh; failures keep the previous stamp — a
+    // source the panel cannot reach right now must not read as "bundled".
+    const dataPackVersion = ref<string | null>(null);
+    const dataPackBusy = ref(false);
+    const modCatalogStamp = ref<string | null>(null);
+    const modCatalogBusy = ref(false);
+
+    async function refreshDataPackRow(force: boolean) {
+      if (dataPackBusy.value) return;
+      dataPackBusy.value = true;
+      try {
+        if (force) await api.refreshDataPack();
+        dataPackVersion.value = await api.dataPackInfo();
+      } catch {
+        // keep the previous stamp
+      } finally {
+        dataPackBusy.value = false;
+      }
+    }
+
+    async function refreshModCatalogRow(force: boolean) {
+      if (modCatalogBusy.value) return;
+      modCatalogBusy.value = true;
+      try {
+        // force=false serves the 6-hour cache; the row's button passes
+        // true for an explicit refresh, same as the Mod Hub page's.
+        const idx = await api.modCatalogRefresh(force);
+        modCatalogStamp.value = idx?.fetchedAt ?? null;
+      } catch {
+        // keep the previous stamp
+      } finally {
+        modCatalogBusy.value = false;
+      }
+    }
 
     /** Aux-cache scope → i18n keys (unknown future scopes render raw). */
     const AUX_LABELS: Record<string, { title: string; desc: string }> = {
@@ -1732,8 +1785,50 @@ export default defineComponent({
               ))}
             </div>
           </HkSettingsGroup>
-          <HkSettingsGroup title={t("settings.cacheAuxTitle")}>
-            <HkSettingsHint>{t("settings.cacheAuxHint")}</HkSettingsHint>
+          <HkSettingsGroup title={t("settings.dataSourcesTitle")}>
+            <HkSettingsHint>{t("settings.dataSourcesHint")}</HkSettingsHint>
+            <div class="settings-modal__pack">
+              <div class="settings-modal__pack-info">
+                <span class="settings-modal__pack-name">{t("settings.dataSourceShipData")}</span>
+                <span class="settings-modal__pack-desc">{t("settings.dataSourceShipDataDesc")}</span>
+                <span class="settings-modal__pack-meta">
+                  {dataPackVersion.value
+                    ? `${t("settings.dataSourceVersion")}: ${dataPackVersion.value.replace("T", " ").slice(0, 16)}`
+                    : t("settings.dataSourceBundled")}
+                </span>
+              </div>
+              <div class="settings-modal__pack-actions">
+                <HkButton
+                  variant="secondary"
+                  size="sm"
+                  loading={dataPackBusy.value}
+                  onClick={() => void refreshDataPackRow(true)}
+                >
+                  {t("settings.dataSourceRefresh")}
+                </HkButton>
+              </div>
+            </div>
+            <div class="settings-modal__pack">
+              <div class="settings-modal__pack-info">
+                <span class="settings-modal__pack-name">{t("settings.dataSourceModCatalog")}</span>
+                <span class="settings-modal__pack-desc">{t("settings.dataSourceModCatalogDesc")}</span>
+                <span class="settings-modal__pack-meta">
+                  {modCatalogStamp.value
+                    ? `${t("settings.dataSourceModCatalogAt")}: ${modCatalogStamp.value.replace("T", " ").slice(0, 16)}`
+                    : t("settings.dataSourceModCatalogNone")}
+                </span>
+              </div>
+              <div class="settings-modal__pack-actions">
+                <HkButton
+                  variant="secondary"
+                  size="sm"
+                  loading={modCatalogBusy.value}
+                  onClick={() => void refreshModCatalogRow(true)}
+                >
+                  {t("settings.dataSourceRefresh")}
+                </HkButton>
+              </div>
+            </div>
             {cacheStore.auxCaches.map((c) => (
               <div class="settings-modal__pack" key={c.scope}>
                 <div class="settings-modal__pack-info">
@@ -1856,13 +1951,30 @@ export default defineComponent({
           ),
           attributions: () => (
           <>
-          {/* attributions — partner + asset credits (seal calligraphy
-              fonts, wallpaper art). The same AuthorMark component
-              annotates the desktop wallpaper. */}
-          <HkSettingsGroup title={t("settings.attributions")}>
-            <HkSettingsHint>{t("settings.attributionsHint")}</HkSettingsHint>
+          {/* attributions — the categorized supporter page: partner
+              streamers FIRST (cards with live Bilibili avatars, the whole
+              card opens their space page), then the upstream projects,
+              and the asset / resource partners LAST. The same AuthorMark
+              component annotates the desktop wallpaper. */}
+          <HkSettingsGroup title={t("settings.supportersTitle")}>
+            <HkSettingsHint>{t("settings.supportersHint")}</HkSettingsHint>
+            <SupporterCards />
+          </HkSettingsGroup>
+          <HkSettingsGroup title={t("settings.upstreamTitle")}>
+            <HkSettingsHint>{t("settings.upstreamHint")}</HkSettingsHint>
             <div class="settings-modal__attributions">
-              {ATTRIBUTIONS.map((a) => (
+              {UPSTREAM_ATTRIBUTIONS.map((a) => (
+                <div key={a.id} class="settings-modal__attribution">
+                  <AuthorMark name={a.name} url={a.url} role={t(`about.attribution.${a.roleKey}`)} />
+                  {a.noteKey ? <HkSettingsHint>{t(`about.attribution.${a.noteKey}`)}</HkSettingsHint> : null}
+                </div>
+              ))}
+            </div>
+          </HkSettingsGroup>
+          <HkSettingsGroup title={t("settings.resourcesTitle")}>
+            <HkSettingsHint>{t("settings.resourcesHint")}</HkSettingsHint>
+            <div class="settings-modal__attributions">
+              {RESOURCE_ATTRIBUTIONS.map((a) => (
                 <div key={a.id} class="settings-modal__attribution">
                   <AuthorMark name={a.name} url={a.url} role={t(`about.attribution.${a.roleKey}`)} />
                   {a.noteKey ? <HkSettingsHint>{t(`about.attribution.${a.noteKey}`)}</HkSettingsHint> : null}

@@ -32,6 +32,9 @@
     "wowsunpackRole": "Extraction des données du jeu (vendored)",
     "wowscoreRole": "Modèle de données du jeu (vendored)",
     "hikariRole": "Bibliothèque de composants UI",
-    "devtoolsRole": "Infrastructure de discipline agent (règles de workspace et chaîne d'outils)"
+    "devtoolsRole": "Infrastructure de discipline agent (règles de workspace et chaîne d'outils)",
+    "streamerRole": "Streamer partenaire",
+    "streamerSineNote": "Fournisseur des fonds d'écran",
+    "shittimRole": "Coquille frontale et outillage de build"
   }
 }

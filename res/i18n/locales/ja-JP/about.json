@@ -32,6 +32,9 @@
     "wowsunpackRole": "ゲームデータの展開（vendored）",
     "wowscoreRole": "ゲームデータモデル（vendored）",
     "hikariRole": "UI コンポーネントライブラリ",
-    "devtoolsRole": "エージェント規律インフラ（ワークスペース規約とツールチェーン）"
+    "devtoolsRole": "エージェント規律インフラ（ワークスペース規約とツールチェーン）",
+    "streamerRole": "パートナーストリーマー",
+    "streamerSineNote": "壁紙アート提供",
+    "shittimRole": "フロントエンド外装とビルド基盤"
   }
 }

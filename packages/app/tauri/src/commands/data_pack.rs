@@ -28,6 +28,7 @@
 //! asset, so the refresh is fire-and-forget from the main window's boot.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -157,25 +158,49 @@ fn kit_is_current(local: Option<&str>, entry: &DatasetEntry) -> bool {
     local.is_some_and(|sha| sha.eq_ignore_ascii_case(&entry.sha256))
 }
 
+/// The cached kit's published-at version, for the Settings → updates
+/// data-sources row — `None` when no downloadable copy is installed (the
+/// bundled asset is serving). Shows the version string verbatim (an ISO
+/// timestamp today).
+#[tauri::command]
+pub fn data_pack_info() -> Result<Option<String>, String> {
+    Ok(verified_kit_meta()?
+        .filter(|m| !m.version.is_empty())
+        .map(|m| m.version))
+}
+
+/// The sidecar of an INTACT cached kit (sidecar present AND its sha
+/// matching the body) — `None` for no cache or a corrupt one.
+fn verified_kit_meta() -> Result<Option<KitMeta>, String> {
+    verified_kit_meta_in(&appdata::appdata_dir_path()?)
+}
+
+/// [`verified_kit_meta`] against an explicit directory (tests run the
+/// four cache states against a temp dir).
+fn verified_kit_meta_in(dir: &Path) -> Result<Option<KitMeta>, String> {
+    let body = match fs::read_to_string(dir.join(KIT_FILE)) {
+        Ok(body) => body,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("read {}: {e}", KIT_FILE)),
+    };
+    let meta = fs::read_to_string(dir.join(KIT_META))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<KitMeta>(&raw).ok());
+    Ok(meta.filter(|m| m.sha256 == sha256_hex(body.as_bytes())))
+}
+
 /// The cached, hash-verified kit JSON for the webui to overlay onto its
 /// bundled copy — `None` means "no downloadable copy on this machine"
 /// (never downloaded, or the cache failed verification), which the webui
 /// maps to the baked asset.
 #[tauri::command]
 pub fn get_ship_kit() -> Result<Option<String>, String> {
-    let body = match appdata::read_appdata_json(KIT_FILE)? {
-        Some(body) => body,
-        None => return Ok(None),
-    };
-    let meta = appdata::read_appdata_json(KIT_META)?
-        .and_then(|raw| serde_json::from_str::<KitMeta>(&raw).ok());
-    let verified = meta.is_some_and(|m| m.sha256 == sha256_hex(body.as_bytes()));
-    if verified {
-        Ok(Some(body))
+    // Corrupt or tampered cache (or a missing sidecar): report absent
+    // rather than serving data nobody vouched for; the next refresh
+    // re-downloads over it (verification via [`verified_kit_meta`]).
+    if verified_kit_meta()?.is_some() {
+        Ok(appdata::read_appdata_json(KIT_FILE)?)
     } else {
-        // Corrupt or tampered cache (or a missing sidecar): report absent
-        // rather than serving data nobody vouched for; the next refresh
-        // re-downloads over it.
         Ok(None)
     }
 }
@@ -363,6 +388,32 @@ mod tests {
             !kit_is_current(Some(&other), &e),
             "any byte differs → stale"
         );
+    }
+
+    #[test]
+    fn verified_kit_meta_covers_the_four_cache_states() {
+        let dir = std::env::temp_dir().join(format!("wowsp-kit-meta-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let body = br#"{"3763300940":{"r":2,"radarM":10000}}"#;
+
+        // absent → None
+        assert!(verified_kit_meta_in(&dir).expect("read").is_none());
+
+        // intact → Some, and the version survives data_pack_info's filter
+        let e = entry(&sha256_hex(body));
+        install_kit_in(&dir, body, &e).expect("install");
+        let meta = verified_kit_meta_in(&dir).expect("read").expect("intact");
+        assert_eq!(meta.version, "2026-09-29T00:00:00Z");
+
+        // corrupt body (sidecar sha no longer matches) → None
+        fs::write(dir.join(KIT_FILE), br#"{"tampered":1}"#).expect("write");
+        assert!(verified_kit_meta_in(&dir).expect("read").is_none());
+
+        // missing sidecar over a body → None
+        fs::remove_file(dir.join(KIT_META)).expect("remove");
+        assert!(verified_kit_meta_in(&dir).expect("read").is_none());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

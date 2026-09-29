@@ -1098,6 +1098,14 @@ export interface CatalogIndex {
   mods: CatalogEntry[];
 }
 
+/** One supporter's avatar resolution (mirrors
+ *  `wowsp_tauri_shared::SupporterAvatar`, commands/supporters.rs). */
+export interface SupporterAvatar {
+  uid: number;
+  /** Live or last-cached Bilibili avatar URL; null when neither exists. */
+  face: string | null;
+}
+
 /** Install book-keeping for one mod (`mods/installed.json`). */
 export interface ModInstallRecord {
   id: string;
@@ -1351,6 +1359,12 @@ export const api = {
    *  user cancelled the dialog. */
   wallpaperImport: () => transport.invoke<WallpaperFile | null>(RPC.wallpaper_import),
   wallpaperRemove: (id: string) => transport.invoke<null>(RPC.wallpaper_remove, { id }),
+  /** Resolve the supporters' live Bilibili avatar URLs (About page
+   *  streamer cards) — one entry per input uid, `face` null when neither
+   *  a live answer nor a cached URL exists (the UI shows the initial
+   *  letter). Never rejects on network failure. */
+  getSupporterAvatars: (uids: number[]) =>
+    transport.invoke<SupporterAvatar[]>(RPC.get_supporter_avatars, { uids }),
   /** List customized seals (kind-keyed pictures in the AppData `stamps/`
    *  folder). Kinds without a file fall back to the bundled glyph. */
   stampList: () => transport.invoke<StampOverride[]>(RPC.stamp_list),
@@ -1567,6 +1581,9 @@ export const api = {
     transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
   getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
     transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
+  /** The data pack's installed version (Settings → updates data
+   *  sources row), or null while only the bundled asset serves. */
+  dataPackInfo: () => transport.invoke<string | null>(RPC.data_pack_info),
   /** The runtime-downloaded consumable-kit JSON (the `data-latest`
    *  cache, hash-verified shell-side), or null when no download ever
    *  landed — the baked asset serves in that case. */

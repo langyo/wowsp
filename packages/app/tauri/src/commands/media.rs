@@ -30,9 +30,13 @@ use crate::paths;
 /// Official host served when no Resource CDN mirror is configured.
 const DEFAULT_CDN_HOST: &str = "wows-gloss-icons.wgcdn.co";
 
-/// Only Wargaming's CDN (and its subdomains) may be fetched through the
-/// scheme (plus the configured Resource CDN mirror host, see [`is_allowed`]).
+/// Hosts whose images may be fetched through the scheme: Wargaming's CDN
+/// (and its subdomains) plus the configured Resource CDN mirror host, and
+/// Bilibili's avatar CDN for the About page's supporter cards (see
+/// [`is_allowed`]).
 const MEDIA_HOST_SUFFIX: &str = "wgcdn.co";
+/// Bilibili's static CDN (`i0/i1/i2.hdslb.com` — avatars).
+const BILIBILI_HOST_SUFFIX: &str = "hdslb.com";
 
 /// Subdirectory of the app cache root holding the fetched images.
 const IMAGE_CACHE_DIR: &str = "image-cache";
@@ -66,6 +70,9 @@ pub fn is_allowed(url: &str, resource_cdn: Option<&str>) -> bool {
         return false;
     };
     if host == DEFAULT_CDN_HOST || host.ends_with(&format!(".{MEDIA_HOST_SUFFIX}")) {
+        return true;
+    }
+    if host.ends_with(&format!(".{BILIBILI_HOST_SUFFIX}")) {
         return true;
     }
     let base = resource_cdn.map(str::trim).filter(|b| !b.is_empty());
@@ -317,6 +324,15 @@ mod tests {
     fn allows_cdn_subdomains() {
         assert!(is_allowed("https://gloss-icons.wgcdn.co/a.png", None));
         assert!(is_allowed("https://a.b.wgcdn.co/a.png", None));
+    }
+
+    #[test]
+    fn allows_bilibili_avatar_cdn() {
+        assert!(is_allowed("https://i0.hdslb.com/bfs/face/abc.webp", None));
+        assert!(is_allowed("https://i2.hdslb.com/bfs/face/a.jpg", None));
+        // The bare apex is NOT allowlisted — only subdomains serve images.
+        assert!(!is_allowed("https://hdslb.com/a.png", None));
+        assert!(!is_allowed("https://evil-hdslb.com/a.png", None));
     }
 
     #[test]
