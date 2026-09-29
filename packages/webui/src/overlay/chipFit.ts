@@ -42,15 +42,16 @@ export function fitChips(root: ParentNode, viewportWidth: number): void {
       if (overflow() <= FIT_TOLERANCE_PX) continue;
       // Seals drop in value order: composition (air/sub) first, career
       // verdicts last. Each removal re-measures — only the seals the room
-      // actually demands come off.
-      const comp: HTMLImageElement[] = [];
-      const career: HTMLImageElement[] = [];
-      for (const img of el.querySelectorAll<HTMLImageElement>("img.overlay-stamp[data-stamp]")) {
-        (COMP_STAMP_KINDS.has(img.dataset.stamp ?? "") ? comp : career).push(img);
+      // actually demands come off. (Text seals and custom-picture <img>s
+      // alike carry the data-stamp hook.)
+      const comp: HTMLElement[] = [];
+      const career: HTMLElement[] = [];
+      for (const seal of el.querySelectorAll<HTMLElement>(".overlay-stamp[data-stamp]")) {
+        (COMP_STAMP_KINDS.has(seal.dataset.stamp ?? "") ? comp : career).push(seal);
       }
-      for (const img of [...comp, ...career]) {
+      for (const seal of [...comp, ...career]) {
         if (overflow() <= FIT_TOLERANCE_PX) break;
-        img.remove();
+        seal.remove();
       }
       if (overflow() <= FIT_TOLERANCE_PX) continue;
       // Bare numbers still overflow (a wide candidates range, a table
@@ -69,19 +70,20 @@ export function fitChips(root: ParentNode, viewportWidth: number): void {
   }
 }
 
-/** Bitmap seals decode asynchronously: an unloaded seal <img> lays out at
- *  zero width, so the first render that carries seals measures narrower
- *  chips than the user ends up seeing — the trim pass can under-trim and
- *  the terminal state re-widens the chip back into the clip (a decode
- *  shows the bitmap; a broken src shows the broken-image icon + alt text,
- *  which widens the chip just the same). Arm a one-shot re-fit per seal
- *  still loading on both terminal events — memory-cached seals are
- *  already `complete`, so steady state arms nothing; load and error are
- *  mutually exclusive per img; each fire re-measures the LIVE chips, so a
- *  re-render between arm and fire stays safe (the stale img's event just
- *  re-runs the pass over the new tree, no debounce needed). `viewport` is
- *  read at fire time — the width the window has THEN is the one that
- *  clips. */
+/** Custom seal PICTURES decode asynchronously: an unloaded seal <img> lays
+ *  out at zero width, so the first render that carries one measures
+ *  narrower chips than the user ends up seeing — the trim pass can
+ *  under-trim and the terminal state re-widens the chip back into the clip
+ *  (a decode shows the bitmap; a broken src shows the broken-image icon +
+ *  alt text, which widens the chip just the same). Arm a one-shot re-fit
+ *  per seal still loading on both terminal events — memory-cached seals
+ *  are already `complete`, so steady state arms nothing; load and error
+ *  are mutually exclusive per img; each fire re-measures the LIVE chips,
+ *  so a re-render between arm and fire stays safe (the stale img's event
+ *  just re-runs the pass over the new tree, no debounce needed). Text
+ *  seals (the default face) settle at layout time and need nothing here.
+ *  `viewport` is read at fire time — the width the window has THEN is the
+ *  one that clips. */
 export function refitWhenSealsSettle(root: ParentNode, viewport: () => number): void {
   for (const img of root.querySelectorAll<HTMLImageElement>("img.overlay-stamp[data-stamp]")) {
     if (img.complete) continue;

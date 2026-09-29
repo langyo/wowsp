@@ -467,6 +467,13 @@ fn player_stats_of(
         solo_battles: p.solo_battles,
         div2_battles: p.div2_battles,
         div3_battles: p.div3_battles,
+        // Ranked career comes off the normalized `seasons` tree (the extract
+        // reads it); the coop fallback never touches ranked counters, so the
+        // coop-only guard above does not apply here.
+        ranked_battles: p.ranked.battles,
+        ranked_winrate: p.ranked.winrate,
+        ranked_avg_damage: p.ranked.avg_damage,
+        ranked_pr: p.ranked.pr,
     }
 }
 
@@ -508,6 +515,9 @@ pub(crate) async fn lookup_player_stats(
     // renders "--"; the lookup itself must not fail over a rating.
     if algo == PrAlgo::Expected {
         stats.pr = super::wg_api::account_expected_pr_for("cn", stats.account_id).await;
+        // Same school-consistency guard as the WG arm / the batch: no ranked
+        // per-ship path under the expected algorithm.
+        stats.ranked_pr = None;
     }
     Ok(stats)
 }

@@ -142,11 +142,7 @@
     "sealsToggle": "评价印章",
     "sealsToggleDesc": "盖印「神了/海猴/蛆」评价印章，仅中文界面显示。",
     "localizedTiersToggle": "本土化档位文案",
-    "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。",
-    "avgStatsToggle": "按 Tab 场均与胜率",
-    "avgStatsToggleDesc": "按住 Tab 实时战绩中每位玩家旁的胜率与场均伤害数字。",
-    "teamIntelToggle": "双方消耗品情报",
-    "teamIntelToggleDesc": "按住 Tab 时队伍列表两侧的雷达 / 水听 / 发烟器数量估计与最远雷达距离；一个槽位可在多种消耗品间选择的工具船按估计计入。"
+    "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。"
   },
   "sealCustomizer": {
     "desc": "逐个开关每枚印章，或为印章选用自定义图片（图片存储在应用数据目录的 stamps 文件夹）。预览即时生效，还原默认即删除自定义图。",
@@ -228,5 +224,39 @@
   "upstreamHint": "本应用在其基础上构建的开源项目。",
   "resourcesTitle": "素材与资源",
   "resourcesHint": "本应用使用的合作方素材，相关权利归作者所有。",
-  "dataSourceModCatalogNone": "暂无目录 · 点击刷新获取"
+  "dataSourceModCatalogNone": "暂无目录 · 点击刷新获取",
+  "overlayContent": {
+    "title": "显示内容",
+    "hint": "调整按住 Tab 时悬浮窗显示的内容；改动将在下一次创建悬浮窗（下一场对局）时生效。",
+    "chipsWinrate": "胜率",
+    "chipsWinrateDesc": "按住 Tab 时每位玩家旁的胜率数字。",
+    "chipsPr": "PR 评价分",
+    "chipsPrDesc": "每位玩家旁的 PR 评价分（算法跟随「战绩」设置）。",
+    "chipsBattles": "场次",
+    "chipsBattlesDesc": "每位玩家旁的生涯场次。",
+    "chipsDamage": "场均伤害",
+    "chipsDamageDesc": "每位玩家旁的场均伤害数字。",
+    "statsMode": "统计来源",
+    "statsModeDesc": "数字取自哪种模式：跟随当前对局（排位显示排位战绩，其余显示随机），或固定为某一模式。",
+    "statsModeAuto": "跟随当前模式",
+    "statsModeRandom": "随机战",
+    "statsModeRanked": "排位战",
+    "sealToggle": "称号盖章",
+    "sealToggleDesc": "在玩家名旁盖印「神了/海猴/蛆」等称号章（普通文字样式），仅中文界面显示，且依赖 PR 评价开关。",
+    "sealNeedsPr": "需先在「战绩」设置中开启「水表 PR 评价」，盖章才会显示。",
+    "intelToggle": "消耗品情报卡",
+    "intelToggleDesc": "队伍列表下方的雷达 / 水听 / 发烟器数量估计与最远雷达距离；一个槽位可在多种消耗品间选择的工具船按估计计入。",
+    "intelRadar": "雷达数量",
+    "intelRadarDesc": "雷达估计数量与该方最远雷达距离。",
+    "intelHydro": "水听数量",
+    "intelHydroDesc": "水声探测估计数量。",
+    "intelSmoke": "发烟器数量",
+    "intelSmokeDesc": "发烟器估计数量。",
+    "avgWinrate": "队伍平均胜率",
+    "avgWinrateDesc": "队伍列表下方显示双方平均胜率（等级加权跟随「战绩」设置）。",
+    "avgPr": "队伍平均 PR",
+    "avgPrDesc": "队伍列表下方显示双方平均 PR。",
+    "avgDamage": "队伍场均伤害",
+    "avgDamageDesc": "队伍列表下方显示双方平均场均伤害。"
+  }
 }

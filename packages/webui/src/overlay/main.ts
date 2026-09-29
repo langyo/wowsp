@@ -16,10 +16,13 @@
  * Coordinates arrive in physical px relative to the overlay window's own
  * origin; CSS px = physical / devicePixelRatio.
  */
-import { careerStamp, damageColor, winrateColor, type StampKind } from "@/utils/winrate";
+import { careerStamp, damageColor, prTier, winrateColor, type StampKind } from "@/utils/winrate";
 // Pure-TS transport wrapper (no Vue/Pinia) — safe for this bare-DOM page,
 // same as @/utils/winrate above.
 import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
+// Team aggregates for the per-side summary cards (same helper the live
+// panel's column titles use).
+import { aggregateTeamStats } from "@/utils/teamAggregate";
 // Inferred roster mode: the row→name mapping derived from the verified Tab
 // sort rule over the roster + the anchor's alive flags (no OCR) — see
 // inferredOrder.ts.
@@ -39,22 +42,21 @@ import {
   teamIntelFor,
   type TeamIntelCount,
 } from "./teamIntel";
+// Display prefs (content toggles + the ranked/random stats source), read
+// once at window creation with the same tolerant contract as the store.
+import {
+  readOverlayDisplayPrefs,
+  rankedStatsSource,
+  statViewOf,
+  type RawStat,
+  type StatView,
+} from "./overlayPrefs";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
-import { gameTabRowKey } from "@/utils/shipClass";
+import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
 import { isOperationBattle } from "@/utils/modeColors";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
 import { AI_NAME } from "@/utils/aiNames";
-// The square 2x2 faces the in-app surfaces use, plus the flat one-line
-// recuts of the four-char seals (res/stamps-wide) — the chip rows are far
-// too short for a 2x2 face, so ONLY this page swaps the flat faces in
-// (see scripts/recut_stamp_bitmaps.py).
-import stampAir from "../res/stamps-wide/stamp-air.png";
-import stampApe from "../res/stamps/stamp-ape.png";
-import stampMaggot from "../res/stamps/stamp-maggot.png";
-import stampMiracle from "../res/stamps/stamp-miracle.png";
-import stampRat from "../res/stamps-wide/stamp-rat.png";
-import stampSub from "../res/stamps-wide/stamp-sub.png";
 import "./overlay.css";
 
 // Same locale files the Vue app consumes — one source of truth for the hint
@@ -75,6 +77,10 @@ interface OverlayMessages {
   intelHydro: string;
   intelSmoke: string;
   intelRange: string;
+  /** Team-average line labels (the per-side summary card's third line). */
+  avgWinrate: string;
+  avgPr: string;
+  avgDmg: string;
 }
 const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
@@ -139,12 +145,7 @@ interface OverlayAnchor {
   rosterMode?: string;
 }
 
-interface Stat {
-  winrate: number | null;
-  avgDamage: number | null;
-  /** Career PR + battle count — only consumed by the career seal below. */
-  pr: number | null;
-  battles: number | null;
+interface Stat extends RawStat {
   /** Clan id from the batch answer (null = clanless / not found) — joins
    *  the hidden-profile 过街老鼠 clan gate below. */
   clanId: number | null;
@@ -175,78 +176,31 @@ const realm = new URLSearchParams(window.location.search).get("realm") ?? "";
 // App locale forwarded by create_overlay_window — picks the hint copy.
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
 
-// ── Seals (career/composition stamp bitmaps beside the chip numbers) ────
-// Local mirror of stores/statsPrefs.ts (STATS_PREFS_STORAGE_KEY =
-// "wowsp-stats-prefs"): the bare-DOM page must not import the pinia store,
-// so the prefs are re-read here with the same contract as parsePrefs — a
-// corrupt blob or unavailable localStorage falls back to the defaults.
-// The seals toggle is the PR master switch's sub-control in settings, and
-// the seal customizer adds a per-kind kill switch on top; the chips follow
-// the same AND-composition as the webui surfaces: no PR rating, no seals,
-// and a seal switched off individually never renders either.
-const SEALS_ON = (() => {
-  const fallback = { pr: false, seals: true };
-  try {
-    const raw = localStorage.getItem("wowsp-stats-prefs");
-    if (raw == null) return fallback.pr && fallback.seals;
-    const j = JSON.parse(raw) as { prEnabled?: unknown; sealsEnabled?: unknown };
-    const pr = typeof j?.prEnabled === "boolean" ? j.prEnabled : fallback.pr;
-    const seals = typeof j?.sealsEnabled === "boolean" ? j.sealsEnabled : fallback.seals;
-    return pr && seals;
-  } catch {
-    return fallback.pr && fallback.seals;
-  }
-})();
-// Per-kind kill switches (settings' seal customizer), read with the same
-// tolerance contract: unknown keys dropped, non-booleans ignored.
-const STAMP_KIND_LIST: readonly StampKind[] = ["miracle", "ape", "maggot", "rat", "air", "sub"];
-const SEALS_DISABLED: ReadonlySet<StampKind> = (() => {
-  const out = new Set<StampKind>();
-  try {
-    const raw = localStorage.getItem("wowsp-stats-prefs");
-    if (raw == null) return out;
-    const j = JSON.parse(raw) as { sealDisabled?: Record<string, unknown> };
-    for (const kind of STAMP_KIND_LIST) {
-      if (j?.sealDisabled?.[kind] === true) out.add(kind);
-    }
-  } catch {
-    // unreadable blob → every seal stays visible
-  }
-  return out;
-})();
-// The seal glyphs are Chinese calligraphy bitmaps — RatingStamp.tsx renders
-// nothing under a non-zh UI locale, and the overlay chips follow suit.
-const SEALS_SHOWN = SEALS_ON && locale.startsWith("zh");
+// ── Display prefs (chips / stats source / intel / team averages / seals) ─
+// One tolerant read of the statsPrefs blob the main window's store owns
+// (see overlayPrefs.ts for the contract): the seal gates, the per-row chip
+// content toggles, the ranked/random stats source, the team-intel items
+// and the team-average line. Display-only — read once at window creation,
+// so a settings flip applies the next time the overlay window is
+// (re)created. The chips follow the same AND-composition as the webui
+// surfaces: no PR rating, no seals, and a seal switched off individually
+// never renders either.
+const PREFS = readOverlayDisplayPrefs();
+// The seal wording is Chinese-community vocabulary — RatingStamp.tsx
+// renders nothing under a non-zh UI locale, and the overlay chips follow
+// suit.
+const SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
+// Whether ANY per-row number (winrate / PR / battles / avg damage) can
+// render — gates the placeholder faces and the "querying" badge the same
+// way the old single avg-stats switch did.
+const ANY_CHIP_ON =
+  PREFS.chips.winrate || PREFS.chips.pr || PREFS.chips.battles || PREFS.chips.damage;
+// Which battle-mode stats the chips + team averages render, resolved per
+// battle in render() ("auto" follows the arena's mode key).
+let rankedSource = false;
 
-// ── Overlay display switches (same statsPrefs blob, default ON) ─────────
-// AVG_STATS_ON gates the per-row winrate + average-damage numbers (and the
-// transient faces standing in for them); TEAM_INTEL_ON gates the two-sided
-// consumable summary cards. Display-only — read once at window creation
-// with the same tolerant contract as the seal switches above, so a toggle
-// applies the next time the overlay window is (re)created.
-function readStatsPrefFlag(key: string, fallback: boolean): boolean {
-  try {
-    const raw = localStorage.getItem("wowsp-stats-prefs");
-    if (raw == null) return fallback;
-    const j = JSON.parse(raw) as Record<string, unknown>;
-    return typeof j?.[key] === "boolean" ? j[key] === true : fallback;
-  } catch {
-    return fallback;
-  }
-}
-const AVG_STATS_ON = readStatsPrefFlag("avgStatsEnabled", true);
-const TEAM_INTEL_ON = readStatsPrefFlag("teamIntelEnabled", true);
-
-// kind → bitmap + Chinese label, copied from RatingStamp.tsx's STAMP_GLYPHS
-// (bare DOM cannot reuse that Vue component).
-const STAMP_GLYPHS: Record<StampKind, string> = {
-  miracle: stampMiracle,
-  ape: stampApe,
-  maggot: stampMaggot,
-  rat: stampRat,
-  air: stampAir,
-  sub: stampSub,
-};
+// kind → Chinese label, copied from RatingStamp.tsx (bare DOM cannot reuse
+// that Vue component).
 const STAMP_TEXT: Record<StampKind, string> = {
   miracle: "神了",
   ape: "海猴",
@@ -258,15 +212,15 @@ const STAMP_TEXT: Record<StampKind, string> = {
 
 // Custom seal pictures (settings' seal customizer → commands::stamps):
 // kind → asset-protocol URL, loaded once at startup. A kind absent from
-// this map shows the bundled glyph; the kind-keyed file name in the stamps
-// folder IS the state, so a plain list call is the whole sync.
+// this map shows the plain text seal; the kind-keyed file name in the
+// stamps folder IS the state, so a plain list call is the whole sync.
 const CUSTOM_STAMPS: Partial<Record<StampKind, string>> = {};
 async function loadCustomStamps(invoke: OverlayTauriApi["core"]["invoke"]) {
   try {
     const files = (await invoke("stamp_list")) as Array<{ kind: string; path: string }>;
     const { convertFileSrc } = await import("@tauri-apps/api/core");
     for (const f of files) {
-      if ((STAMP_KIND_LIST as string[]).includes(f.kind)) {
+      if ((Object.keys(STAMP_TEXT) as string[]).includes(f.kind)) {
         CUSTOM_STAMPS[f.kind as StampKind] = convertFileSrc(f.path);
       }
     }
@@ -345,33 +299,67 @@ function fmtDamage(avg: number): string {
   return avg >= 100000 ? `${Math.round(avg / 1000)}k` : `${(avg / 1000).toFixed(1)}k`;
 }
 
-function stampImg(kind: StampKind): string {
-  if (SEALS_DISABLED.has(kind)) return "";
+function fmtBattles(n: number): string {
+  return n >= 100000 ? `${Math.round(n / 1000)}k` : n >= 10000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+}
+
+/** The seal node beside the chip numbers: the verdict wording as PLAIN
+ *  TEXT in cinnabar (the old fixed calligraphy bitmaps are gone), or the
+ *  user's custom picture when the seal customizer imported one. data-stamp
+ *  carries the kind to chipFit's trim pass (comp seals before career
+ *  verdicts when a chip must shrink to stay inside the window). */
+function stampNode(kind: StampKind): string {
+  if (PREFS.sealsDisabled.has(kind)) return "";
   const label = STAMP_TEXT[kind];
-  const src = CUSTOM_STAMPS[kind] ?? STAMP_GLYPHS[kind];
-  // data-stamp carries the kind to chipFit's trim pass (comp seals before
-  // career verdicts when a chip must shrink to stay inside the window).
-  return `<img class="overlay-stamp" data-stamp="${kind}" src="${src}" alt="${label}" title="${label}">`;
+  const custom = CUSTOM_STAMPS[kind];
+  if (custom != null) {
+    return `<img class="overlay-stamp" data-stamp="${kind}" src="${custom}" alt="${label}" title="${label}">`;
+  }
+  return `<span class="overlay-stamp" data-stamp="${kind}" title="${label}">${label}</span>`;
+}
+
+/** The per-row number block, one part per enabled chip toggle (winrate /
+ *  PR / battles / avg damage) in that order, joined by dots. The values
+ *  come from the stats source in force (randoms or ranked); a player
+ *  without ANY of the enabled numbers renders the single muted dash. */
+function chipNumbers(v: StatView): string {
+  const parts: string[] = [];
+  const muted = `<b class="muted">—</b>`;
+  if (PREFS.chips.winrate) {
+    parts.push(
+      v.winrate != null
+        ? `<b style="color:${winrateColor(v.winrate)}">${v.winrate.toFixed(1)}%</b>`
+        : muted,
+    );
+  }
+  if (PREFS.chips.pr) {
+    parts.push(
+      v.pr != null ? `<b style="color:${prTier(v.pr).color}">${Math.round(v.pr)}</b>` : muted,
+    );
+  }
+  if (PREFS.chips.battles) {
+    parts.push(v.battles != null ? `<b>${fmtBattles(v.battles)}</b>` : muted);
+  }
+  if (PREFS.chips.damage) {
+    parts.push(
+      v.damage != null
+        ? `<b style="color:${damageColor(v.damage)}">${fmtDamage(v.damage)}</b>`
+        : muted,
+    );
+  }
+  return parts.join(`<span class="sep">·</span>`);
 }
 
 function chipContent(name: string, side: "ally" | "enemy"): string {
-  if (AI_NAME.test(name)) return AVG_STATS_ON ? `<span class="muted">bot</span>` : "";
+  if (AI_NAME.test(name)) return ANY_CHIP_ON ? `<span class="muted">bot</span>` : "";
   const st = stats.get(cacheKey(name));
-  // AVG_STATS_ON off → no numbers and none of their placeholder faces
+  // All chip toggles off → no numbers and none of their placeholder faces
   // either; the seals below still render (they are their own switch).
   let core: string;
-  if (!AVG_STATS_ON) core = "";
+  if (!ANY_CHIP_ON) core = "";
   else if (!st) core = `<span class="muted">…</span>`;
   else if (st.hidden) core = `<span class="hidden">●</span>`;
-  else if (st.winrate == null) core = `<span class="muted">—</span>`;
-  else {
-    const wr = `<b style="color:${winrateColor(st.winrate)}">${st.winrate.toFixed(1)}%</b>`;
-    const dmg =
-      st.avgDamage != null
-        ? `<b style="color:${damageColor(st.avgDamage)}">${fmtDamage(st.avgDamage)}</b>`
-        : `<b class="muted">—</b>`;
-    core = `${wr}<span class="sep">·</span>${dmg}`;
-  }
+  else core = chipNumbers(statViewOf(st, rankedSource));
   if (!SEALS_SHOWN) return core;
   // Every seal of a side sits on ONE flank: allies carry theirs to the
   // LEFT of the numbers, enemies to the RIGHT — no more splitting career
@@ -384,6 +372,8 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
   // (beating the 53% gate) excuses them, and a stamp that flashes first
   // and retracts a beat later would be worse than none. A failed verdict
   // arrives as null and stamps fail-open, same as a clanless profile.
+  // Verdicts always grade the OVERALL career — even when the numbers
+  // beside them render the ranked source.
   let career: StampKind | null = null;
   if (st) {
     // Non-null clanId on a hidden profile = gated: an absent verdict
@@ -397,73 +387,149 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
   }
   const comp = compositions.get(cacheKey(name)) ?? null;
   const seals =
-    (career ? stampImg(career) : "") +
-    (comp?.air ? stampImg("air") : "") +
-    (comp?.sub ? stampImg("sub") : "");
+    (career ? stampNode(career) : "") +
+    (comp?.air ? stampNode("air") : "") +
+    (comp?.sub ? stampNode("sub") : "");
   return side === "ally" ? seals + core : core + seals;
 }
 
 /** A mid-battle candidate-RANGE row's chip (sinks made the alive subset
  *  unknowable — the range is contiguous in the Tab key order): every
- *  candidate's winrate side by side, joined by slashes. Damage and seals
- *  are dropped ON PURPOSE — the row is a SET of players, so per-member
- *  seals would misattribute, and the chip must stay compact enough for a
- *  wide range to fit the reserved side pad. A member whose stats have not
- *  landed reads "…", a hidden one the red dot — the same per-member faces
- *  chipContent renders. The AI members fold into a counted suffix
- *  (candidates.ts): the game's own table already marks those rows, so a
- *  verbatim "bot / bot / bot" only stretched the chip over the left HUD —
- *  "43.2% + 2 bot" keeps the range's cardinality at a fraction of the
- *  width, and a pure-bot range collapses to the single muted face. */
+ *  candidate's headline number side by side, joined by slashes — the first
+ *  chip toggle that carries a value (winrate → damage → PR → battles).
+ *  Seals are dropped ON PURPOSE — the row is a SET of players, so
+ *  per-member seals would misattribute, and the chip must stay compact
+ *  enough for a wide range to fit the reserved side pad. A member whose
+ *  stats have not landed reads "…", a hidden one the red dot — the same
+ *  per-member faces chipContent renders. The AI members fold into a
+ *  counted suffix (candidates.ts): the game's own table already marks
+ *  those rows, so a verbatim "bot / bot / bot" only stretched the chip
+ *  over the left HUD — "43.2% + 2 bot" keeps the range's cardinality at a
+ *  fraction of the width, and a pure-bot range collapses to the single
+ *  muted face. */
 function candidatesChip(members: string[]): string {
-  if (!AVG_STATS_ON) return "";
+  if (!ANY_CHIP_ON) return "";
   const { humans, botCount } = collapseCandidateBots(members);
   if (humans.length === 0) return `<span class="muted">bot</span>`;
-  const faces = humans
-    .map((m) => {
-      const st = stats.get(cacheKey(m));
-      if (!st) return `<span class="muted">…</span>`;
-      if (st.hidden) return `<span class="hidden">●</span>`;
-      if (st.winrate == null) return `<span class="muted">—</span>`;
-      return `<b style="color:${winrateColor(st.winrate)}">${st.winrate.toFixed(1)}%</b>`;
-    })
-    .join(`<span class="sep">/</span>`);
+  const face = (m: string): string => {
+    const st = stats.get(cacheKey(m));
+    if (!st) return `<span class="muted">…</span>`;
+    if (st.hidden) return `<span class="hidden">●</span>`;
+    const v = statViewOf(st, rankedSource);
+    if (PREFS.chips.winrate && v.winrate != null) {
+      return `<b style="color:${winrateColor(v.winrate)}">${v.winrate.toFixed(1)}%</b>`;
+    }
+    if (PREFS.chips.damage && v.damage != null) {
+      return `<b style="color:${damageColor(v.damage)}">${fmtDamage(v.damage)}</b>`;
+    }
+    if (PREFS.chips.pr && v.pr != null) {
+      return `<b style="color:${prTier(v.pr).color}">${Math.round(v.pr)}</b>`;
+    }
+    if (PREFS.chips.battles && v.battles != null) {
+      return `<b>${fmtBattles(v.battles)}</b>`;
+    }
+    return `<span class="muted">—</span>`;
+  };
+  const faces = humans.map(face).join(`<span class="sep">/</span>`);
   if (botCount > 0) {
     return `${faces}<span class="sep">+</span><span class="muted">${botCount} bot</span>`;
   }
   return faces;
 }
 
-/** One side's team-intel summary card — the aggregate consumable
- *  capability of that side's roster (estimate semantics in teamIntel.ts).
- *  Line 1 carries the side label, the radar estimate and the LONGEST radar
- *  range (the distance a player must respect); line 2 stacks hydro and
- *  smoke. Styled and anchored as a (two-line) chip of the same side, so
- *  chipFit's clamp pass covers this card exactly like the row chips;
- *  `topCss` is the desired CSS-px center line. */
-function teamIntelCard(
+/** One side's summary card, directly below that side's column. Line 1
+ *  carries the side label, the radar estimate (when its item toggle is on)
+ *  and the LONGEST radar range (the distance a player must respect); line
+ *  2 stacks hydro and smoke (each behind its own toggle); line 3 carries
+ *  the optional team averages (mean winrate — tier-weighted per the stats
+ *  prefs, the same aggregate the live panel's column titles use — mean PR
+ *  and mean avg damage). Item toggles can switch any line's contents off;
+ *  when neither the intel items nor the averages survive, the card itself
+ *  is gone (null) — the side label rides whichever line renders first.
+ *  Styled and anchored as a chip of the same side, so chipFit's clamp pass
+ *  covers this card exactly like the row chips; `topCss` is the desired
+ *  CSS-px center line. */
+function teamSummaryCard(
   side: "ally" | "enemy",
   vehicles: Vehicle[],
   topCss: number,
   fontSize: number,
-): HTMLDivElement {
+): HTMLDivElement | null {
+  const sideLabel = `<span class="overlay-intel-team">${localized(
+    side === "ally" ? "intelAlly" : "intelEnemy",
+  )}</span>`;
+  const lines: string[] = [];
   const intel = teamIntelFor(vehicles.map((v) => v.shipId));
-  const item = (label: string, c: TeamIntelCount) =>
+  const intelItem = (label: string, c: TeamIntelCount) =>
     `<span class="overlay-intel-k">${label}</span><b>${formatIntelCount(c)}</b>`;
-  const range =
-    intel.radarMaxM != null && intel.radarMaxM > 0
-      ? `<span class="overlay-intel-range">${localized("intelRange")} ${formatIntelKm(intel.radarMaxM)}km</span>`
-      : "";
-  const line1 =
-    `<span class="overlay-intel-line"><span class="overlay-intel-team">` +
-    `${localized(side === "ally" ? "intelAlly" : "intelEnemy")}</span>` +
-    `${item(localized("intelRadar"), intel.radar)}${range}</span>`;
-  const line2 =
-    `<span class="overlay-intel-line">${item(localized("intelHydro"), intel.hydro)}` +
-    `<span class="sep">·</span>${item(localized("intelSmoke"), intel.smoke)}</span>`;
+  if (PREFS.teamIntel && (PREFS.intel.radar || PREFS.intel.hydro || PREFS.intel.smoke)) {
+    const range =
+      PREFS.intel.radar && intel.radarMaxM != null && intel.radarMaxM > 0
+        ? `<span class="overlay-intel-range">${localized("intelRange")} ${formatIntelKm(intel.radarMaxM)}km</span>`
+        : "";
+    const line1 =
+      `<span class="overlay-intel-line">${sideLabel}` +
+      (PREFS.intel.radar ? intelItem(localized("intelRadar"), intel.radar) + range : "") +
+      `</span>`;
+    lines.push(line1);
+    const line2Items = [
+      PREFS.intel.hydro ? intelItem(localized("intelHydro"), intel.hydro) : "",
+      PREFS.intel.smoke ? intelItem(localized("intelSmoke"), intel.smoke) : "",
+    ].filter(Boolean);
+    if (line2Items.length > 0) {
+      lines.push(
+        `<span class="overlay-intel-line">${line2Items.join(`<span class="sep">·</span>`)}</span>`,
+      );
+    }
+  }
+  const agg =
+    PREFS.teamAvg.winrate || PREFS.teamAvg.pr || PREFS.teamAvg.damage
+      ? aggregateTeamStats(
+          vehicles
+            .filter((v) => !AI_NAME.test(v.name))
+            .map((v) => {
+              const st = stats.get(cacheKey(v.name));
+              const v2 = st && !st.hidden ? statViewOf(st, rankedSource) : null;
+              return {
+                winrate: v2?.winrate ?? null,
+                pr: v2?.pr ?? null,
+                damage: v2?.damage ?? null,
+                tier: shipTierOf(v.shipId),
+              };
+            }),
+          PREFS.weightedTeamWr,
+        )
+      : null;
+  if (agg != null) {
+    const avgItem = (label: string, value: string) =>
+      `<span class="overlay-intel-k">${label}</span><b>${value}</b>`;
+    const items = [
+      PREFS.teamAvg.winrate
+        ? avgItem(
+            localized("avgWinrate"),
+            agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—",
+          )
+        : "",
+      PREFS.teamAvg.pr
+        ? avgItem(localized("avgPr"), agg.avgPr != null ? `${Math.round(agg.avgPr)}` : "—")
+        : "",
+      PREFS.teamAvg.damage
+        ? avgItem(localized("avgDmg"), agg.avgDamage != null ? fmtDamage(agg.avgDamage) : "—")
+        : "",
+    ].filter(Boolean);
+    if (items.length > 0) {
+      const label = lines.length === 0 ? sideLabel : "";
+      lines.push(
+        `<span class="overlay-intel-line overlay-intel-line--avg">${label}${items.join(
+          `<span class="sep">·</span>`,
+        )}</span>`,
+      );
+    }
+  }
+  if (lines.length === 0) return null;
   const el = document.createElement("div");
   el.className = `overlay-chip overlay-chip--${side} overlay-chip--intel`;
-  el.innerHTML = `${line1}${line2}`;
+  el.innerHTML = lines.join("");
   el.style.top = `${topCss}px`;
   el.style.fontSize = `${fontSize.toFixed(1)}px`;
   return el;
@@ -540,6 +606,10 @@ function render() {
     return;
   }
   if (!arena) return;
+  // Which battle-mode stats this battle renders ("auto" resolves per
+  // battle — ranked battles show the ranked career, everything else the
+  // randoms career; the fixed modes pin it).
+  rankedSource = rankedStatsSource(PREFS.statsMode, arena);
   const dpr = window.devicePixelRatio || 1;
   const rows = anchor.rowCenters;
   if (rows.length === 0) return;
@@ -651,13 +721,13 @@ function render() {
           html = candidatesChip(mapped);
           multi = true;
           sunk = aliveArr?.[blockOffset + i] === false;
-          if (AVG_STATS_ON && mapped.some((m) => !AI_NAME.test(m) && !stats.has(cacheKey(m)))) {
+          if (ANY_CHIP_ON && mapped.some((m) => !AI_NAME.test(m) && !stats.has(cacheKey(m)))) {
             chipsMissingStats = true;
           }
         } else {
           // This row's player was not recognized: stay silent rather
           // than pinning stats by index guess.
-          html = AVG_STATS_ON || SEALS_SHOWN ? `<span class="muted">…</span>` : "";
+          html = ANY_CHIP_ON || SEALS_SHOWN ? `<span class="muted">…</span>` : "";
         }
       } else {
         // No recognition payload — legacy index mapping.
@@ -668,7 +738,7 @@ function render() {
       // the seals switched off nothing on this row can ever appear, so a
       // missing stat must not spin the "querying" card all battle.
       if (
-        (AVG_STATS_ON || SEALS_SHOWN) &&
+        (ANY_CHIP_ON || SEALS_SHOWN) &&
         mappedName != null &&
         !AI_NAME.test(mappedName) &&
         !stats.has(cacheKey(mappedName))
@@ -698,16 +768,19 @@ function render() {
     });
   }
 
-  // Two-sided team-intel cards — each side's aggregate radar/hydro/smoke
-  // estimate plus its longest radar range, one card directly BELOW its own
+  // Two-sided summary cards — each side's consumable intel (radar/hydro/
+  // smoke estimates plus its longest radar range) and/or team averages
+  // (mean winrate / PR / avg damage), one card directly BELOW its own
   // column (ally card under the allies, enemy card under the enemies) in
   // the empty band the game leaves under the table, aligned to the
   // column's outer edge and growing inward. Match-start capability
-  // BY DESIGN: the numbers do not decrement as ships sink — the mid-battle
-  // row→ship attribution is inferred, and silently miscounting radars
-  // would be worse than a static "what each team brought" summary.
-  // Operations (行动) render no enemy list — the ally card alone.
-  if (TEAM_INTEL_ON) {
+  // BY DESIGN: the intel numbers do not decrement as ships sink — the
+  // mid-battle row→ship attribution is inferred, and silently
+  // miscounting radars would be worse than a static "what each team
+  // brought" summary. Every item (and both halves wholesale) is
+  // switchable in settings; a side whose card renders nothing is simply
+  // absent. Operations (行动) render no enemy list — the ally card alone.
+  {
     const intelFontSize = Math.min(13, Math.max(9, pitch * 0.4));
     // The window's top/bottom edges can crowd the table in odd aspect
     // ratios — keep each card fully inside, measured post-append (the
@@ -723,26 +796,30 @@ function render() {
       }
     };
     if (allyBlock.length > 0 && allies.length > 0) {
-      const el = teamIntelCard(
+      const el = teamSummaryCard(
         "ally",
         allies,
         allyBlock[allyBlock.length - 1] / dpr + pitch,
         intelFontSize,
       );
-      el.style.left = `${tableLeft + gap}px`;
-      root.appendChild(el);
-      clampVertically(el);
+      if (el) {
+        el.style.left = `${tableLeft + gap}px`;
+        root.appendChild(el);
+        clampVertically(el);
+      }
     }
     if (!operation && enemies.length > 0 && enemyBlock.length > 0) {
-      const el = teamIntelCard(
+      const el = teamSummaryCard(
         "enemy",
         enemies,
         enemyBlock[enemyBlock.length - 1] / dpr + pitch,
         intelFontSize,
       );
-      el.style.right = `${Math.max(0, overlayW - tableRight + gap)}px`;
-      root.appendChild(el);
-      clampVertically(el);
+      if (el) {
+        el.style.right = `${Math.max(0, overlayW - tableRight + gap)}px`;
+        root.appendChild(el);
+        clampVertically(el);
+      }
     }
   }
   // A chip wider than its side pad would run past the window edge and get
@@ -871,9 +948,13 @@ async function runBatch() {
   pending.clear();
   inFlight = true;
   try {
+    // pr_algo rides along while the PR rating is on — the same param the
+    // main window injects (prAlgoForRequest), so chip PRs never disagree
+    // with the app's cards under the expected algorithm.
     const results = (await tauri.core.invoke("lookup_players_stats_batch", {
       names,
       realm,
+      ...(PREFS.prAlgo != null ? { pr_algo: PREFS.prAlgo } : {}),
     })) as Array<Stat | null>;
     names.forEach((name, i) => {
       const r = results[i];
@@ -883,6 +964,10 @@ async function runBatch() {
           avgDamage: r.avgDamage ?? null,
           pr: r.pr ?? null,
           battles: r.battles ?? null,
+          rankedWinrate: r.rankedWinrate ?? null,
+          rankedAvgDamage: r.rankedAvgDamage ?? null,
+          rankedPr: r.rankedPr ?? null,
+          rankedBattles: r.rankedBattles ?? null,
           clanId: r.clanId ?? null,
           clanTag: r.clanTag ?? null,
           hidden: r.hidden,
@@ -895,6 +980,10 @@ async function runBatch() {
           avgDamage: null,
           pr: null,
           battles: null,
+          rankedWinrate: null,
+          rankedAvgDamage: null,
+          rankedPr: null,
+          rankedBattles: null,
           clanId: null,
           clanTag: null,
           hidden: false,

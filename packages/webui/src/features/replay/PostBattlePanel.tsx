@@ -342,11 +342,12 @@ export default defineComponent({
         list.map((p) => {
           const st = !isAiName(p.name) ? nameStats.value.get(p.name) : undefined;
           if (!st || st.hidden) {
-            return { winrate: null, pr: null, tier: p.shipId != null ? shipTierOf(p.shipId) : null };
+            return { winrate: null, pr: null, damage: null, tier: p.shipId != null ? shipTierOf(p.shipId) : null };
           }
           return {
             winrate: st.winrate,
             pr: st.pr,
+            damage: st.avgDamage,
             tier: p.shipId != null ? shipTierOf(p.shipId) : null,
           };
         }),

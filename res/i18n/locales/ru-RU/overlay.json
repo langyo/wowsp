@@ -8,5 +8,8 @@
   "intelRadar": "Радар",
   "intelHydro": "ГАС",
   "intelSmoke": "Дымы",
-  "intelRange": "макс"
+  "intelRange": "макс",
+  "avgWinrate": "Ср. винрейт",
+  "avgPr": "Ср. PR",
+  "avgDmg": "Ср. урон"
 }

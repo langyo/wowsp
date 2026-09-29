@@ -3,9 +3,15 @@ import { describe, expect, it } from "vitest";
 import { aggregateTeamStats, type TeamStatEntry } from "./teamAggregate";
 
 /** Winrate helper: entries carry percent values (0–100). */
-const e = (winrate: number | null, tier: number | null, pr: number | null = null): TeamStatEntry => ({
+const e = (
+  winrate: number | null,
+  tier: number | null,
+  pr: number | null = null,
+  damage: number | null = null,
+): TeamStatEntry => ({
   winrate,
   pr,
+  damage,
   tier,
 });
 
@@ -45,15 +51,26 @@ describe("aggregateTeamStats", () => {
     expect(agg.avgPr).toBeCloseTo(1200, 10);
   });
 
+  it("averages damage only over players that have one (plain mean)", () => {
+    const agg = aggregateTeamStats(
+      [e(60, 10, null, 80000), e(40, 5, null, null), e(50, 8, null, 60000)],
+      // Weighted mode must NOT weight the damage mean — PR and damage stay
+      // plain whatever the winrate weighting.
+      true,
+    );
+    expect(agg.avgDamage).toBeCloseTo(70000, 10);
+  });
+
   it("returns null aggregates when nothing landed", () => {
     const agg = aggregateTeamStats([e(null, 10), e(null, 8, null)], true);
-    expect(agg).toEqual({ winrate: null, avgPr: null, counted: 0 });
+    expect(agg).toEqual({ winrate: null, avgPr: null, avgDamage: null, counted: 0 });
   });
 
   it("handles the empty roster", () => {
     expect(aggregateTeamStats([], true)).toEqual({
       winrate: null,
       avgPr: null,
+      avgDamage: null,
       counted: 0,
     });
   });

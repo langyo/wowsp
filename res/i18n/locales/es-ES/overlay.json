@@ -8,5 +8,8 @@
   "intelRadar": "Radar",
   "intelHydro": "Hidro",
   "intelSmoke": "Humo",
-  "intelRange": "máx"
+  "intelRange": "máx",
+  "avgWinrate": "VR medio",
+  "avgPr": "PR medio",
+  "avgDmg": "Daño medio"
 }

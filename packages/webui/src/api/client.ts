@@ -643,6 +643,14 @@ export interface PlayerStats {
   soloBattles?: number | null;
   div2Battles?: number | null;
   div3Battles?: number | null;
+  // ── Ranked (排位) career stats ──────────────────────────────────────
+  /** Career ranked battles; null = never played ranked / hidden. Absent
+   *  on cache files written before these fields existed. Consumed by the
+   *  Tab overlay's ranked stats source. */
+  rankedBattles?: number | null;
+  rankedWinrate?: number | null;
+  rankedAvgDamage?: number | null;
+  rankedPr?: number | null;
 }
 
 /** Player-name autocomplete item (WG account/list). Mirrors `wowsp_tauri_shared::PlayerSuggestion`. */

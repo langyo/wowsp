@@ -8,5 +8,8 @@
   "intelRadar": "雷达",
   "intelHydro": "水听",
   "intelSmoke": "烟",
-  "intelRange": "最远"
+  "intelRange": "最远",
+  "avgWinrate": "平均胜率",
+  "avgPr": "平均PR",
+  "avgDmg": "场均"
 }

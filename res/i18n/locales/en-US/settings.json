@@ -142,11 +142,7 @@
     "sealsToggle": "Rating stamps",
     "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — shown only under a Chinese interface.",
     "localizedTiersToggle": "Localized tier labels",
-    "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum.",
-    "avgStatsToggle": "Tab-overlay stats chips",
-    "avgStatsToggleDesc": "The winrate and average-damage numbers beside each player while holding Tab.",
-    "teamIntelToggle": "Team consumable intel",
-    "teamIntelToggleDesc": "Radar / hydro / smoke count estimates and the longest radar range beside the hold-Tab team lists; utility ships sharing one slot for several consumables count as estimates."
+    "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum."
   },
   "sealCustomizer": {
     "desc": "Toggle each seal individually, or set a custom picture per seal (stored in the stamps folder of the app data directory). Previews update live; resetting deletes the custom picture.",
@@ -228,5 +224,39 @@
   "upstreamHint": "Open-source projects this app builds on.",
   "resourcesTitle": "Assets & resources",
   "resourcesHint": "Partner assets used by the app; the rights stay with their authors.",
-  "dataSourceModCatalogNone": "No catalog yet — refresh to fetch"
+  "dataSourceModCatalogNone": "No catalog yet — refresh to fetch",
+  "overlayContent": {
+    "title": "Display content",
+    "hint": "What the hold-Tab overlay shows; changes apply the next time the overlay window is created (next battle).",
+    "chipsWinrate": "Winrate",
+    "chipsWinrateDesc": "The winrate number beside each player while holding Tab.",
+    "chipsPr": "PR rating",
+    "chipsPrDesc": "The PR rating number beside each player (same algorithm as the stats section).",
+    "chipsBattles": "Battles",
+    "chipsBattlesDesc": "The career battle count beside each player.",
+    "chipsDamage": "Average damage",
+    "chipsDamageDesc": "The average-damage number beside each player.",
+    "statsMode": "Stats source",
+    "statsModeDesc": "Which battle mode the numbers come from: follow the current battle (ranked battles show ranked stats, everything else randoms) or a fixed mode.",
+    "statsModeAuto": "Follow battle",
+    "statsModeRandom": "Randoms",
+    "statsModeRanked": "Ranked",
+    "sealToggle": "Career seal stamps",
+    "sealToggleDesc": "Press the 神了/海猴/蛆 verdict stamps beside the names as plain text — Chinese interface only, and it requires the PR rating master switch.",
+    "sealNeedsPr": "Turn on the PR rating switch in the stats section first — the seals grade that rating.",
+    "intelToggle": "Team intel card",
+    "intelToggleDesc": "Radar / hydro / smoke count estimates and the longest radar range below each team; utility ships sharing one slot for several consumables count as estimates.",
+    "intelRadar": "Radar count",
+    "intelRadarDesc": "The radar estimate plus the side's longest radar range.",
+    "intelHydro": "Hydro count",
+    "intelHydroDesc": "The hydroacoustic search estimate.",
+    "intelSmoke": "Smoke count",
+    "intelSmokeDesc": "The smoke generator estimate.",
+    "avgWinrate": "Team average winrate",
+    "avgWinrateDesc": "Both teams' mean winrate below the roster (tier weighting follows the stats section).",
+    "avgPr": "Team average PR",
+    "avgPrDesc": "Both teams' mean PR below the roster.",
+    "avgDamage": "Team average damage",
+    "avgDamageDesc": "Both teams' mean average damage below the roster."
+  }
 }

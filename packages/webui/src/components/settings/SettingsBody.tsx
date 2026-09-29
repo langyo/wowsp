@@ -102,6 +102,7 @@ import PlatformIcon from "@/components/base/PlatformIcon";
 import AuthorMark from "@/components/base/AuthorMark";
 import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import SealCustomizer from "@/components/stats/SealCustomizer";
+import OverlayContentControls from "@/components/settings/OverlayContentControls";
 import FontSizeControl from "@/components/layout/FontSizeControl";
 import ChangelogSection from "@/components/settings/ChangelogSection";
 import FeedbackSection from "@/components/settings/FeedbackSection";
@@ -1982,6 +1983,16 @@ export default defineComponent({
                   {t("settings.overlayRosterPluginPage")}
                 </HkButton>
               ) : null}
+            </HkSettingsSub>
+            {/* Display content — what the Tab overlay renders: the per-row
+                chip numbers (any mix of winrate / PR / battles / avg
+                damage), which battle-mode stats feed them, the career
+                seal stamps, the team-intel items and the team averages.
+                All of it lives in the statsPrefs blob (the overlay window
+                re-reads it at creation, so flips apply next battle). */}
+            <HkSettingsSub title={t("settings.overlayContent.title")}>
+              <HkSettingsHint>{t("settings.overlayContent.hint")}</HkSettingsHint>
+              <OverlayContentControls />
             </HkSettingsSub>
           </HkSettingsGroup>
 

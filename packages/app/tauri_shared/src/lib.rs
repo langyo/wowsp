@@ -1189,6 +1189,23 @@ pub struct PlayerStats {
     pub div2_battles: Option<i64>,
     #[serde(default)]
     pub div3_battles: Option<i64>,
+
+    // ── Ranked (排位) career stats ──────────────────────────────────────
+    /// Career ranked battles (rank_solo + rank_div2 + rank_div3 on the WG
+    /// realms; the summed seasons tree on CN). Consumed by the Tab overlay's
+    /// ranked stats source; None = never played ranked / hidden profile.
+    #[serde(default)]
+    pub ranked_battles: Option<i64>,
+    /// Career ranked winrate, percent (0–100).
+    #[serde(default)]
+    pub ranked_winrate: Option<f32>,
+    /// Average damage per ranked battle.
+    #[serde(default)]
+    pub ranked_avg_damage: Option<f32>,
+    /// Community PR proxy over the ranked splits (same ApeRadar-style
+    /// weighted-winrate formula as the overall `pr`).
+    #[serde(default)]
+    pub ranked_pr: Option<i64>,
 }
 
 /// One player name suggestion from the WG account/list autocomplete
@@ -3586,7 +3603,7 @@ mod tests {
     }
 
     /// Wire-critical payload: exact key set of the player card's data —
-    /// 24 keys, every multi-word one renamed (client.ts: PlayerStats).
+    /// 28 keys, every multi-word one renamed (client.ts: PlayerStats).
     #[test]
     fn player_stats_renames_every_deep_stat_field() {
         let stats = PlayerStats {
@@ -3620,6 +3637,10 @@ mod tests {
             solo_battles: Some(9_001),
             div2_battles: Some(9_002),
             div3_battles: Some(9_003),
+            ranked_battles: Some(1_234),
+            ranked_winrate: Some(54.5),
+            ranked_avg_damage: Some(77_777.0),
+            ranked_pr: Some(1_890),
         };
         let v = round_trips(stats);
         assert_exact_keys(
@@ -3649,10 +3670,15 @@ mod tests {
                 "soloBattles",
                 "div2Battles",
                 "div3Battles",
+                "rankedBattles",
+                "rankedWinrate",
+                "rankedAvgDamage",
+                "rankedPr",
             ],
         );
         assert_eq!(v["clanTag"], "[SENT]");
         assert_eq!(v["div2Wr"], 52.25);
+        assert_eq!(v["rankedPr"], 1_890);
     }
 
     /// Lookup sidebar autocomplete + the Tab-overlay seal verdicts

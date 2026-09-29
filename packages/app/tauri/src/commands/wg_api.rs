@@ -11,9 +11,10 @@
 //! API root and answers METHOD_NOT_FOUND for every method):
 //!   list    GET https://<api_host>/wows/account/list/?application_id=..&search=<name>
 //!   stats   GET https://<api_host>/wows/account/info/?application_id=..&account_id=<id>
-//!           &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3
-//!           (the division splits are extra-gated — unrequested nodes are
-//!           omitted from the response entirely)
+//!           &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3,
+//!                  statistics.rank_solo,statistics.rank_div2,statistics.rank_div3
+//!           (the division splits and the ranked splits are extra-gated —
+//!           unrequested nodes are omitted from the response entirely)
 //!   clan    GET https://<api_host>/wows/clans/accountinfo/?application_id=..&account_id=<id>
 //!   clans   GET https://<api_host>/wows/clans/list/?application_id=..&search=<tag|name>
 //!   claninfo GET https://<api_host>/wows/clans/info/?application_id=..&clan_id=<id>&extra=members
@@ -137,11 +138,13 @@ pub async fn lookup_player_stats(
     // 2-4. account/info, clan tag and Vortex dog tag only need the account
     //    id — run the three requests concurrently instead of serially.
     let info_fut = async {
-        // pvp_solo/div2/div3 are extra-gated: without the `extra` param the
-        // API omits them entirely and the division winrates render as "—".
+        // pvp_solo/div2/div3 and the rank_* splits are extra-gated: without
+        // the `extra` param the API omits them entirely (division winrates
+        // render "—", ranked stats vanish).
         let url = format!(
             "https://{host}/wows/account/info/?application_id={app_id}&account_id={}\
-             &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3",
+             &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3,\
+             statistics.rank_solo,statistics.rank_div2,statistics.rank_div3",
             entry.account_id
         );
         let resp = client
@@ -216,6 +219,10 @@ pub async fn lookup_player_stats(
     stats.dog_tag = dog_tag;
     if algo == PrAlgo::Expected {
         stats.pr = expected_pr;
+        // Same school-consistency guard as the batch (apply_batch_pr_algo):
+        // the expected algorithm has no ranked per-ship path, so the
+        // winrate-proxy ranked PR must not ride along on the same card.
+        stats.ranked_pr = None;
     }
     Ok(stats)
 }
@@ -377,7 +384,8 @@ pub async fn lookup_players_stats_batch(
                 let resp = client
                     .get(format!(
                         "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
-                         &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3"
+                         &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3,\
+                         statistics.rank_solo,statistics.rank_div2,statistics.rank_div3"
                     ))
                     .send()
                     .await
@@ -441,6 +449,9 @@ pub async fn lookup_players_stats_batch(
 pub(crate) fn apply_batch_pr_algo(stats: &mut PlayerStats, algo: PrAlgo) {
     if algo == PrAlgo::Expected {
         stats.pr = None;
+        // The expected algorithm has no ranked per-ship path either — the
+        // same never-a-different-school argument as `pr` above.
+        stats.ranked_pr = None;
     }
 }
 
@@ -484,6 +495,10 @@ fn player_stats_from_info(
         solo_battles: p.solo_battles,
         div2_battles: p.div2_battles,
         div3_battles: p.div3_battles,
+        ranked_battles: p.ranked.battles,
+        ranked_winrate: p.ranked.winrate,
+        ranked_avg_damage: p.ranked.avg_damage,
+        ranked_pr: p.ranked.pr,
     }
 }
 
@@ -1261,6 +1276,19 @@ pub(crate) fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared:
     }
 }
 
+/// Career ranked (排位) stats extracted alongside the PvP block: summed
+/// rank_solo/rank_div2/rank_div3 splits (WG realms, extra-gated on
+/// account/info) or the summed `seasons` tree (CN, vortex-normalized into
+/// the WG seasons shape by `wg_api_cn`). All fields None when the account
+/// never played ranked. Consumed by the Tab overlay's ranked stats source.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct RankedCareerStats {
+    pub(crate) battles: Option<i64>,
+    pub(crate) winrate: Option<f32>,
+    pub(crate) avg_damage: Option<f32>,
+    pub(crate) pr: Option<i64>,
+}
+
 /// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
 /// All fields are optional — hidden profiles yield null, and casual accounts
 /// may lack division splits. PR is a career rating derived from an
@@ -1284,6 +1312,8 @@ pub(crate) struct PvpStats {
     pub(crate) solo_battles: Option<i64>,
     pub(crate) div2_battles: Option<i64>,
     pub(crate) div3_battles: Option<i64>,
+    /// Career ranked stats (see [`RankedCareerStats`]).
+    pub(crate) ranked: RankedCareerStats,
 }
 
 impl PvpStats {
@@ -1293,10 +1323,19 @@ impl PvpStats {
             Some(s) => s,
             None => return Self::empty(),
         };
+        // Ranked extraction runs BEFORE the pvp early-returns below: an
+        // account can carry ranked counters with a null pvp node (randoms
+        // never played), and the ranked numbers must survive that.
+        let ranked = extract_ranked_career(statistics);
         let pvp = statistics.get("pvp").filter(|v| !v.is_null());
         let pvp = match pvp {
             Some(p) => p,
-            None => return Self::empty(),
+            None => {
+                return Self {
+                    ranked,
+                    ..Self::empty()
+                };
+            },
         };
 
         let battles = get_i64(pvp, "battles");
@@ -1379,6 +1418,7 @@ impl PvpStats {
             solo_battles: solo.map(|(_, b)| b),
             div2_battles: div2.map(|(_, b)| b),
             div3_battles: div3.map(|(_, b)| b),
+            ranked,
         }
     }
 
@@ -1399,8 +1439,97 @@ impl PvpStats {
             solo_battles: None,
             div2_battles: None,
             div3_battles: None,
+            ranked: RankedCareerStats::default(),
         }
     }
+}
+
+/// One battle-type stats node's raw counters: (battles, wins, damage).
+/// Null / zero-battle nodes read as None so a never-played split never
+/// dilutes the sums.
+fn mode_split(node: Option<&serde_json::Value>) -> Option<(i64, i64, i64)> {
+    let node = node.filter(|v| !v.is_null())?;
+    let b = get_i64(node, "battles")?;
+    if b <= 0 {
+        return None;
+    }
+    let w = get_i64(node, "wins").unwrap_or(0);
+    let d = get_i64(node, "damage_dealt").or_else(|| get_i64(node, "damage_caused"))?;
+    Some((b, w, d))
+}
+
+/// Assemble [`RankedCareerStats`] out of summed raw counters plus the
+/// per-split (winrate, battles) pairs the PR proxy blends. Zero total
+/// battles → all-None (never played ranked).
+fn ranked_career_of(splits: [(i64, i64, i64); 3]) -> RankedCareerStats {
+    let battles: i64 = splits.iter().map(|(b, _, _)| b).sum();
+    if battles <= 0 {
+        return RankedCareerStats::default();
+    }
+    let wins: i64 = splits.iter().map(|(_, w, _)| w).sum();
+    let damage: i64 = splits.iter().map(|(_, _, d)| d).sum();
+    let winrate = 100.0 * wins as f32 / battles as f32;
+    let wr_pair = |s: (i64, i64, i64)| (100.0 * s.1 as f32 / s.0 as f32, s.0);
+    RankedCareerStats {
+        battles: Some(battles),
+        winrate: Some(winrate),
+        avg_damage: Some(damage as f32 / battles as f32),
+        pr: compute_pr(
+            (splits[0].0 > 0).then(|| wr_pair(splits[0])),
+            (splits[1].0 > 0).then(|| wr_pair(splits[1])),
+            (splits[2].0 > 0).then(|| wr_pair(splits[2])),
+        ),
+    }
+}
+
+/// Career ranked extraction off the account/info `statistics` node. Two
+/// shapes, first hit wins: the WG rank_solo/rank_div2/rank_div3 extra
+/// fields, then the CN `seasons` tree (season → shipType → rank_* mode,
+/// vortex-normalized into the WG field names by `wg_api_cn`) summed across
+/// every season and ship type.
+fn extract_ranked_career(statistics: &serde_json::Value) -> RankedCareerStats {
+    let splits = [
+        mode_split(statistics.get("rank_solo")),
+        mode_split(statistics.get("rank_div2")),
+        mode_split(statistics.get("rank_div3")),
+    ];
+    if splits.iter().any(|s| s.is_some()) {
+        let unwrap_or_zero = |s: Option<(i64, i64, i64)>| s.unwrap_or((0, 0, 0));
+        return ranked_career_of([
+            unwrap_or_zero(splits[0]),
+            unwrap_or_zero(splits[1]),
+            unwrap_or_zero(splits[2]),
+        ]);
+    }
+    let Some(seasons) = statistics.get("seasons").and_then(|s| s.as_object()) else {
+        return RankedCareerStats::default();
+    };
+    let mut total = [0i64; 3]; // battles, wins, damage
+    for ships in seasons.values() {
+        let Some(ships) = ships.as_object() else {
+            continue;
+        };
+        for modes in ships.values() {
+            let Some(modes) = modes.as_object() else {
+                continue;
+            };
+            for (mode, node) in modes {
+                // Only the live ranked modes (rank_old_* never appears here,
+                // but the guard keeps the sum honest if one ever does).
+                if mode != "rank_solo" && mode != "rank_div2" && mode != "rank_div3" {
+                    continue;
+                }
+                if let Some((b, w, d)) = mode_split(Some(node)) {
+                    total[0] += b;
+                    total[1] += w;
+                    total[2] += d;
+                }
+            }
+        }
+    }
+    // No per-mode split detail in the seasons tree — the overall fallback
+    // (one blended bucket) carries the PR.
+    ranked_career_of([(total[0], total[1], total[2]), (0, 0, 0), (0, 0, 0)])
 }
 
 fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
@@ -1826,6 +1955,84 @@ mod tests {
     fn pvp_stats_empty_when_no_statistics_node() {
         let p = PvpStats::extract(None);
         assert_eq!(p.battles, None);
+        assert_eq!(p.ranked.battles, None);
+    }
+
+    /// Ranked career extraction off the WG rank_solo/div2/div3 extras: the
+    /// splits sum into battles / winrate / avg damage, and the PR blends the
+    /// splits that carry battles.
+    #[test]
+    fn ranked_stats_sum_the_wg_rank_splits() {
+        let node = serde_json::json!({
+            "pvp": { "battles": 5000, "wins": 2500, "damage_dealt": 250_000_000 },
+            "rank_solo": { "battles": 80, "wins": 40, "damage_dealt": 4_000_000 },
+            "rank_div2": { "battles": 20, "wins": 10, "damage_dealt": 2_000_000 },
+            "rank_div3": null
+        });
+        let p = PvpStats::extract(Some(&node));
+        let r = p.ranked;
+        assert_eq!(r.battles, Some(100));
+        assert!((r.winrate.unwrap() - 50.0).abs() < 0.01);
+        assert!((r.avg_damage.unwrap() - 60_000.0).abs() < 1.0);
+        assert!(r.pr.is_some());
+        // The overall pvp numbers stay untouched by the ranked splits.
+        assert_eq!(p.battles, Some(5000));
+    }
+
+    /// A never-ranked account (null splits) answers all-None — an absent
+    /// mode must not render as a 0% ranked record.
+    #[test]
+    fn ranked_stats_absent_splits_stay_none() {
+        let node = serde_json::json!({
+            "pvp": { "battles": 5000, "wins": 2500, "damage_dealt": 250_000_000 }
+        });
+        let p = PvpStats::extract(Some(&node));
+        assert_eq!(p.ranked.battles, None);
+        assert_eq!(p.ranked.winrate, None);
+        assert_eq!(p.ranked.avg_damage, None);
+        assert_eq!(p.ranked.pr, None);
+    }
+
+    /// The CN shape: no rank_* splits, ranked lives in the seasons tree
+    /// (already vortex-normalized into WG field names) and sums across
+    /// seasons and ship types.
+    #[test]
+    fn ranked_stats_sum_the_cn_seasons_tree() {
+        let node = serde_json::json!({
+            "pvp": { "battles": 100, "wins": 50, "damage_dealt": 5_000_000 },
+            "seasons": {
+                "1024": { "0": { "rank_solo": { "battles": 6, "wins": 4, "damage_dealt": 300_000 } } },
+                "1022": {
+                    "0": {
+                        "rank_solo": { "battles": 10, "wins": 5, "damage_dealt": 500_000 },
+                        "rank_div3": { "battles": 2, "wins": 1, "damage_dealt": 150_000 }
+                    },
+                    "1": { "rank_solo": { "battles": 2, "wins": 2, "damage_dealt": 160_000 } }
+                },
+                // an unplayed season's empty mode node — skipped, not zeroed
+                "1002": { "0": { "rank_solo": {} } }
+            }
+        });
+        let p = PvpStats::extract(Some(&node));
+        let r = p.ranked;
+        assert_eq!(r.battles, Some(20));
+        assert_eq!(r.winrate, Some(60.0));
+        assert!((r.avg_damage.unwrap() - 55_500.0).abs() < 1.0);
+        assert!(r.pr.is_some());
+    }
+
+    /// An account with ranked battles but NO random battles: the null pvp
+    /// node must not take the ranked counters down with it.
+    #[test]
+    fn ranked_stats_survive_a_null_pvp_node() {
+        let node = serde_json::json!({
+            "pvp": null,
+            "rank_solo": { "battles": 30, "wins": 15, "damage_dealt": 900_000 }
+        });
+        let p = PvpStats::extract(Some(&node));
+        assert_eq!(p.battles, None);
+        assert_eq!(p.ranked.battles, Some(30));
+        assert_eq!(p.ranked.winrate, Some(50.0));
     }
 
     #[test]

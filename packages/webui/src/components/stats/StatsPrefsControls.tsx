@@ -8,14 +8,15 @@ import "./StatsPrefsControls.scss";
 
 /**
  * The water-table preference controls (PR rating master switch →
- * algorithm / team-winrate weighting / stamps / localized tier wording,
- * plus the two hold-Tab overlay switches: per-row avg stats and the
- * team-intel cards), reading and writing the shared statsPrefs store. One
- * component, two hosts: the onboarding wizard's preferences step and the
- * settings modal's 战绩 section render the identical control set through
- * the `ns` prop — the two surfaces carry their own (differently worded)
- * i18n copies whose keys are kept in sync (onboarding.json top level ↔
- * settings.json `statsPrefs` sub-object).
+ * algorithm / team-winrate weighting / stamps / localized tier wording),
+ * reading and writing the shared statsPrefs store. One component, two
+ * hosts: the onboarding wizard's preferences step and the settings modal's
+ * 战绩 section render the identical control set through the `ns` prop —
+ * the two surfaces carry their own (differently worded) i18n copies whose
+ * keys are kept in sync (onboarding.json top level ↔ settings.json
+ * `statsPrefs` sub-object). The hold-Tab overlay's content switches live
+ * in their own group on the settings' 游戏内水表 section (see
+ * OverlayContentControls), not here.
  *
  * Layout mirrors the settings modal's row pattern: label + description on
  * the left, control on the right; the four sub-controls only exist while
@@ -98,30 +99,6 @@ export default defineComponent({
             </div>
           </div>
         ) : null}
-
-        {/* Hold-Tab overlay switches — independent of the PR cluster: the
-            avg numbers and the team-intel cards render with or without a
-            rating, so they stay visible at every PR state. */}
-        <div class="stats-prefs__row">
-          <span class="stats-prefs__row-text">
-            <span class="stats-prefs__row-label">{tr("avgStatsToggle")}</span>
-            <span class="stats-prefs__row-desc">{tr("avgStatsToggleDesc")}</span>
-          </span>
-          <HkSwitch
-            modelValue={prefs.prefs.avgStatsEnabled}
-            onUpdate:modelValue={(v: boolean) => prefs.setAvgStatsEnabled(v)}
-          />
-        </div>
-        <div class="stats-prefs__row">
-          <span class="stats-prefs__row-text">
-            <span class="stats-prefs__row-label">{tr("teamIntelToggle")}</span>
-            <span class="stats-prefs__row-desc">{tr("teamIntelToggleDesc")}</span>
-          </span>
-          <HkSwitch
-            modelValue={prefs.prefs.teamIntelEnabled}
-            onUpdate:modelValue={(v: boolean) => prefs.setTeamIntelEnabled(v)}
-          />
-        </div>
       </div>
     );
   },

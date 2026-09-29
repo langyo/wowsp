@@ -142,11 +142,7 @@
     "sealsToggle": "評価の印章",
     "sealsToggleDesc": "「神了/海猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
     "localizedTiersToggle": "ローカライズ段階表記",
-    "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階（Bad/Good/Unicum など）になります。",
-    "avgStatsToggle": "Tab 戦績チップ",
-    "avgStatsToggleDesc": "Tab 押下中のリアルタイム戦績で各プレイヤーの勝率と平均ダメージを表示します。",
-    "teamIntelToggle": "チーム消耗品情報",
-    "teamIntelToggleDesc": "Tab 押下中のチーム表両側にレーダー / ソナー / 発煙器の推定数と最長レーダー距離を表示します。1 スロットで複数の消耗品から選べる工作艦的な艦は推定として数えます。"
+    "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階（Bad/Good/Unicum など）になります。"
   },
   "sealCustomizer": {
     "desc": "印章を個別に表示/非表示したり、印章ごとにカスタム画像を設定できます（画像はアプリデータディレクトリの stamps フォルダに保存されます）。プレビューは即時反映され、既定に戻すとカスタム画像は削除されます。",
@@ -228,5 +224,39 @@
   "upstreamHint": "このアプリが基づくオープンソースプロジェクト。",
   "resourcesTitle": "素材とリソース",
   "resourcesHint": "アプリが使用するパートナー素材。権利は各作者に帰属します。",
-  "dataSourceModCatalogNone": "カタログ未取得 · 更新で取得します"
+  "dataSourceModCatalogNone": "カタログ未取得 · 更新で取得します",
+  "overlayContent": {
+    "title": "表示内容",
+    "hint": "Tab 押下中のオーバーレイに表示する内容を調整します。変更は次回オーバーレイ生成時（次の対局）から反映されます。",
+    "chipsWinrate": "勝率",
+    "chipsWinrateDesc": "Tab 押下中の各プレイヤーの勝率の数値。",
+    "chipsPr": "PR 評価値",
+    "chipsPrDesc": "各プレイヤーの PR 評価値（算出方式は「戦績」設定に従います）。",
+    "chipsBattles": "戦闘数",
+    "chipsBattlesDesc": "各プレイヤーの通算戦闘数。",
+    "chipsDamage": "平均ダメージ",
+    "chipsDamageDesc": "各プレイヤーの平均ダメージの数値。",
+    "statsMode": "戦績の参照モード",
+    "statsModeDesc": "数値の参照先：現在の対局に従う（ランク戦ではランク戦績、それ以外はランダム戦戦績）か、固定モード。",
+    "statsModeAuto": "対局に従う",
+    "statsModeRandom": "ランダム戦",
+    "statsModeRanked": "ランク戦",
+    "sealToggle": "称号の印章",
+    "sealToggleDesc": "「神了/海猴/蛆」などの称号を通常のテキストでプレイヤー名の横に表示します。中国語インターフェースのみ、かつ PR 評価のスイッチが必要です。",
+    "sealNeedsPr": "先に「戦績」設定で PR 評価をオンにすると印章が表示されます。",
+    "intelToggle": "消耗品情報カード",
+    "intelToggleDesc": "チーム表の下にレーダー / ソナー / 発煙器の推定数と最長レーダー距離を表示します。1 スロットで複数の消耗品から選べる艦は推定として数えます。",
+    "intelRadar": "レーダー数",
+    "intelRadarDesc": "レーダーの推定数と最長レーダー距離。",
+    "intelHydro": "ソナー数",
+    "intelHydroDesc": "ソナーの推定数。",
+    "intelSmoke": "発煙器数",
+    "intelSmokeDesc": "発煙器の推定数。",
+    "avgWinrate": "チーム平均勝率",
+    "avgWinrateDesc": "チーム表の下に両チームの平均勝率を表示（tier 加重は「戦績」設定に従います）。",
+    "avgPr": "チーム平均 PR",
+    "avgPrDesc": "チーム表の下に両チームの平均 PR を表示。",
+    "avgDamage": "チーム平均ダメージ",
+    "avgDamageDesc": "チーム表の下に両チームの平均ダメージを表示。"
+  }
 }

@@ -1,7 +1,7 @@
-/* Inked career-verdict seals (神了 / 海猴 / 蛆 / 过街老鼠 / 空中小人 / 水下小人) — geometry
-   lives in RatingStamp.tsx; the glyphs are bitmap assets (see
-   scripts/gen_stamp_bitmaps.py), so this file only carries the ink color
-   and the tilt. */
+/* Inked career-verdict seals (神了 / 海猴 / 蛆 / 过街老鼠 / 空中小人 / 水下小人) —
+   geometry lives in RatingStamp.tsx; the face is the verdict wording as
+   plain text, so this file carries the ink color, the text weight and the
+   tilt. */
 
 .rating-stamp {
   /* Cinnabar seal ink. */
@@ -27,9 +27,12 @@
     opacity: 0.18;
   }
 
-  &__ink image {
-    /* The glyph bitmaps are pre-inked cinnabar; blend their alpha the same
-       way the old stroked text sat on the weave. */
-    opacity: 0.92;
+  &__text {
+    /* The wording presses in the same ink as the frame — heavy enough to
+       read as a stamp, tight enough to sit inside the inner frame. */
+    fill: currentColor;
+    font-weight: 700;
+    font-family: inherit;
+    letter-spacing: 0.04em;
   }
 }

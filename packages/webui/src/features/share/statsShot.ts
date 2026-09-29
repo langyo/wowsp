@@ -19,7 +19,6 @@ import {
   FOOT_H,
   LOGO_URL,
   PAD,
-  STAMP_URL,
   canvasToPngBytes,
   drawFooter,
   drawStampSeal,
@@ -293,19 +292,13 @@ export async function renderStatsShot(
     model.airSub?.air ? { kind: "air" as const, size: SEAL_SMALL } : null,
     model.airSub?.sub ? { kind: "sub" as const, size: SEAL_SMALL } : null,
   ].filter((s): s is { kind: StampKind; size: number } => !!s);
-  const sealImages = new Map<string, HTMLImageElement | null>();
   if (sealKinds.length > 0) {
-    await Promise.all(
-      sealKinds.map(async ({ kind }) => {
-        if (!sealImages.has(kind)) sealImages.set(kind, await loadImage(STAMP_URL[kind]));
-      }),
-    );
     // Right-align the cluster by measuring its total extent first.
     let sx = heroRight;
     for (let i = sealKinds.length - 1; i >= 0; i--) {
       const { kind, size } = sealKinds[i];
       sx -= size;
-      drawStampSeal(ctx, sx + size / 2, heroY + HERO_H / 2, size, sealImages.get(kind) ?? null);
+      drawStampSeal(ctx, sx + size / 2, heroY + HERO_H / 2, size, kind);
       sx -= 8;
     }
   }

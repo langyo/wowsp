@@ -128,26 +128,38 @@ html.overlay-hidden body {
   white-space: normal;
 }
 
-/* Seal bitmaps flanking a chip's numbers (career verdict left, composition
-   tags right). Sized in em so they scale with the row pitch the chips
-   already derive from the table geometry; the chip's left/right anchoring
-   keeps working unchanged — a wider chip just grows further away from the
-   table. The drop shadow keeps the cinnabar ink legible over bright
-   sea/sky. */
+/* Seals flanking a chip's numbers (career verdict left, composition tags
+   right). The default face is PLAIN TEXT in cinnabar ink (a user-imported
+   custom picture keeps its <img>); sized in em so it scales with the row
+   pitch the chips already derive from the table geometry, and the chip's
+   left/right anchoring keeps working unchanged — a wider chip just grows
+   further away from the table. The drop shadow keeps the ink legible over
+   bright sea/sky. */
 .overlay-chip .overlay-stamp {
-  height: 1.2em;
-  width: auto;
   align-self: center;
   vertical-align: middle;
   margin: 0 2px;
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
 }
 
-/* Team-intel summary card — the aggregate consumable estimate flanking the
-   table (one per side, at the blocks' outer ends). Same dark-glass chip
-   skin and side anchoring as the row chips, stacked as two lines so the
-   card stays inside the window's reserved side pad; the fit pass treats it
-   as a chip of its side (no seals inside → straight to the edge clamp). */
+.overlay-chip span.overlay-stamp {
+  color: rgb(226 74 66);
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1.2em;
+}
+
+.overlay-chip img.overlay-stamp {
+  height: 1.2em;
+  width: auto;
+}
+
+/* Team summary card — the consumable intel estimate and/or the team
+   averages flanking the table (one per side, at the blocks' outer ends).
+   Same dark-glass chip skin and side anchoring as the row chips, stacked
+   as lines so the card stays inside the window's reserved side pad; the
+   fit pass treats it as a chip of its side (no seals inside → straight to
+   the edge clamp). */
 .overlay-chip--intel {
   flex-direction: column;
   align-items: flex-start;
@@ -170,6 +182,12 @@ html.overlay-hidden body {
 
 .overlay-chip--intel b {
   font-weight: 600;
+}
+
+/* The team-average numbers carry the same warm accent the radar range
+   does — they are the glance numbers of the card's third line. */
+.overlay-intel-line--avg b {
+  color: rgb(255 210 122);
 }
 
 /* The longest radar range is the load-bearing number of the card — the

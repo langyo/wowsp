@@ -8,5 +8,8 @@
   "intelRadar": "Radar",
   "intelHydro": "Hydro",
   "intelSmoke": "Fumée",
-  "intelRange": "max"
+  "intelRange": "max",
+  "avgWinrate": "WR moyen",
+  "avgPr": "PR moyen",
+  "avgDmg": "Dégâts moy."
 }

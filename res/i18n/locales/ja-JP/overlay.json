@@ -8,5 +8,8 @@
   "intelRadar": "レーダー",
   "intelHydro": "ソナー",
   "intelSmoke": "煙幕",
-  "intelRange": "最長"
+  "intelRange": "最長",
+  "avgWinrate": "平均勝率",
+  "avgPr": "平均PR",
+  "avgDmg": "平均ダメ"
 }

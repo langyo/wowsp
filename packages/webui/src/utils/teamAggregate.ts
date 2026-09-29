@@ -17,6 +17,9 @@ export interface TeamStatEntry {
   winrate: number | null;
   /** Career PR (per the active rating algorithm); null = no data. */
   pr: number | null;
+  /** Career average damage; null = no data. Plain arithmetic mean only —
+   *  unlike winrate there is no tier weighting to argue about. */
+  damage: number | null;
   /** Ship tier 1–11; null = ship unknown to the offline DB. */
   tier: number | null;
 }
@@ -26,6 +29,8 @@ export interface TeamAggregate {
   winrate: number | null;
   /** Arithmetic mean PR over the players that have one. */
   avgPr: number | null;
+  /** Arithmetic mean average damage over the players that have one. */
+  avgDamage: number | null;
   /** How many players' winrates entered the aggregate. */
   counted: number;
 }
@@ -40,13 +45,20 @@ export function aggregateTeamStats(
   const prRated = entries.filter(
     (e): e is TeamStatEntry & { pr: number } => e.pr != null,
   );
+  const dmgRated = entries.filter(
+    (e): e is TeamStatEntry & { damage: number } => e.damage != null,
+  );
+  const avgPr =
+    prRated.length > 0 ? prRated.reduce((a, e) => a + e.pr, 0) / prRated.length : null;
+  const avgDamage =
+    dmgRated.length > 0
+      ? dmgRated.reduce((a, e) => a + e.damage, 0) / dmgRated.length
+      : null;
   if (rated.length === 0) {
     return {
       winrate: null,
-      avgPr:
-        prRated.length > 0
-          ? prRated.reduce((a, e) => a + e.pr, 0) / prRated.length
-          : null,
+      avgPr,
+      avgDamage,
       counted: 0,
     };
   }
@@ -66,10 +78,8 @@ export function aggregateTeamStats(
   }
   return {
     winrate: sum / weight,
-    avgPr:
-      prRated.length > 0
-        ? prRated.reduce((a, e) => a + e.pr, 0) / prRated.length
-        : null,
+    avgPr,
+    avgDamage,
     counted: rated.length,
   };
 }

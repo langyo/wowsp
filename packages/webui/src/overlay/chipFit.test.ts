@@ -17,8 +17,8 @@ import { fitChips, refitWhenSealsSettle } from "./chipFit";
 const VIEW_W = 1000;
 /** Numbers + chip padding (CSS px) — every chip carries at least this. */
 const NUMBERS_W = 120;
-/** Seal bitmap widths by kind: the wide four-character recuts (air/sub/
- *  rat) are the ones that blow a narrow side pad. */
+/** Seal widths by kind: the wide four-character wording (air/sub/rat) is
+ *  what blows a narrow side pad. */
 const SEAL_W: Record<string, number> = { miracle: 40, maggot: 40, air: 120, sub: 120, rat: 120 };
 
 function chip(
@@ -27,14 +27,17 @@ function chip(
   kinds: string[],
   numbersW = NUMBERS_W,
   decodeGate = false,
+  /** The default seal face is a text <span>; custom user pictures keep the
+   *  <img> — both must trim identically. */
+  tag: "img" | "span" = "img",
 ): HTMLDivElement {
   const el = document.createElement("div");
   el.className = `overlay-chip overlay-chip--${side}`;
   for (const kind of kinds) {
-    const img = document.createElement("img");
-    img.className = "overlay-stamp";
-    img.dataset.stamp = kind;
-    el.appendChild(img);
+    const seal = document.createElement(tag);
+    seal.className = "overlay-stamp";
+    seal.dataset.stamp = kind;
+    el.appendChild(seal);
   }
   el.getBoundingClientRect = () => {
     let w = numbersW;
@@ -44,6 +47,9 @@ function chip(
     for (const img of el.querySelectorAll("img")) {
       if (decodeGate && img.dataset.decoded !== "1") continue;
       w += SEAL_W[img.dataset.stamp ?? ""] ?? 0;
+    }
+    for (const span of el.querySelectorAll<HTMLElement>("span.overlay-stamp")) {
+      w += SEAL_W[span.dataset.stamp ?? ""] ?? 0;
     }
     const left = side === "ally" ? anchoredEdge - w : anchoredEdge;
     return {
@@ -68,7 +74,9 @@ function mounted(...els: HTMLDivElement[]): ParentNode {
 }
 
 function sealKinds(el: HTMLDivElement): string[] {
-  return [...el.querySelectorAll("img")].map((img) => img.dataset.stamp ?? "");
+  return [...el.querySelectorAll<HTMLElement>(".overlay-stamp")].map(
+    (seal) => seal.dataset.stamp ?? "",
+  );
 }
 
 describe("fitChips", () => {
@@ -117,6 +125,15 @@ describe("fitChips", () => {
     expect(sealKinds(el)).toEqual([]);
     expect(el.style.left).toBe("");
     expect(el.style.right).toBe("");
+  });
+
+  it("trims a plain-text seal span exactly like a picture seal", () => {
+    // The default seal face is now a text <span> — same data-stamp hook,
+    // same trim order (comp seals before career verdicts).
+    const el = chip("ally", 200, ["maggot", "air", "sub"], NUMBERS_W, false, "span");
+    fitChips(mounted(el), VIEW_W);
+    expect(sealKinds(el)).toEqual(["maggot"]);
+    expect(el.style.left).toBe("");
   });
 
   it("clamps an enemy chip's free edge to the right window edge", () => {

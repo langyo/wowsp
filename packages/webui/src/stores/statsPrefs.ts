@@ -13,6 +13,36 @@ export type PrAlgo = "winrate" | "expected";
  *  blob stays small and new kinds default to visible. */
 export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 
+/** Which battle-mode stats feed the Tab overlay's numbers (per-row chips
+ *  and the team averages): follow the current battle (ranked battles show
+ *  ranked stats, everything else randoms) or a fixed mode. */
+export type OverlayStatsMode = "auto" | "random" | "ranked";
+
+/** Per-row chip content switches (Tab overlay). At least one on → the chip
+ *  renders numbers; all off → only the seal stamps remain. */
+export interface OverlayChipToggles {
+  winrate: boolean;
+  pr: boolean;
+  battles: boolean;
+  damage: boolean;
+}
+
+/** Team-intel card item switches (radar / hydro / smoke estimates). The
+ *  card's master switch is `teamIntelEnabled`. */
+export interface OverlayIntelToggles {
+  radar: boolean;
+  hydro: boolean;
+  smoke: boolean;
+}
+
+/** Team-average line items under each team (mean winrate / mean PR / mean
+ *  avg damage over the players whose stats landed). */
+export interface OverlayTeamAvgToggles {
+  winrate: boolean;
+  pr: boolean;
+  damage: boolean;
+}
+
 /** Water-table display preferences. Persisted as one JSON blob so the
  *  knobs always travel together (the onboarding wizard and the settings
  *  section write the same object). */
@@ -24,7 +54,7 @@ export interface StatsPrefs {
   /** Rating algorithm forwarded to the stats RPCs when `prEnabled`. */
   prAlgo: PrAlgo;
   /** 神了/海猴/蛆 verdict seals (AND-composed with RatingStamp's own
-   *  zh-locale gate — the bitmaps stay Chinese-only). */
+   *  zh-locale gate — the seal wording stays Chinese-only). */
   sealsEnabled: boolean;
   /** Fun localized tier wording (夯/人上人/战舰仙人…) vs the standard
    *  English band words (Bad…Unicum). */
@@ -32,15 +62,20 @@ export interface StatsPrefs {
   /** Live-battle team winrate aggregation: tier-weighted (higher tiers
    *  count more) or the plain arithmetic mean. */
   weightedTeamWr: boolean;
-  /** Tab overlay chips: the per-row winrate + average-damage numbers.
-   *  Display-only — the underlying WG lookups keep running either way,
-   *  because the row mapping consumes their clan tags. */
-  avgStatsEnabled: boolean;
   /** Tab overlay team-intel cards flanking the roster (radar/hydro/smoke
    *  estimate counts + the side's longest radar range). */
   teamIntelEnabled: boolean;
   /** Per-seal visibility toggles (settings' seal customizer). */
   sealDisabled: SealDisableMap;
+  /** Tab overlay per-row chip content (winrate / PR / battles / avg
+   *  damage). */
+  overlayChips: OverlayChipToggles;
+  /** Which battle-mode stats the Tab overlay displays. */
+  overlayStatsMode: OverlayStatsMode;
+  /** Team-intel card items (master switch `teamIntelEnabled`). */
+  overlayIntel: OverlayIntelToggles;
+  /** Team-average line items under each team. */
+  overlayTeamAvg: OverlayTeamAvgToggles;
 }
 
 export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
@@ -55,13 +90,34 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   sealsEnabled: true,
   localizedTiers: true,
   weightedTeamWr: true,
-  avgStatsEnabled: true,
   teamIntelEnabled: true,
   sealDisabled: {},
+  overlayChips: { winrate: true, pr: false, battles: false, damage: true },
+  overlayStatsMode: "auto",
+  overlayIntel: { radar: true, hydro: true, smoke: true },
+  overlayTeamAvg: { winrate: false, pr: false, damage: false },
 };
 
 function isPrAlgo(v: unknown): v is PrAlgo {
   return v === "winrate" || v === "expected";
+}
+
+function isOverlayStatsMode(v: unknown): v is OverlayStatsMode {
+  return v === "auto" || v === "random" || v === "ranked";
+}
+
+/** Read a toggles object of shape T off a raw blob: known boolean keys are
+ *  kept, everything else falls back to the default entry — a hand-edited
+ *  blob can never smuggle in junk keys or lose a newly added toggle. */
+function parseToggles<T extends object>(raw: unknown, defaults: T): T {
+  const out = { ...defaults };
+  if (raw == null || typeof raw !== "object") return out;
+  const src = raw as Record<string, unknown>;
+  const dst = out as Record<string, unknown>;
+  for (const key of Object.keys(defaults) as Array<keyof T & string>) {
+    if (typeof src[key] === "boolean") dst[key] = src[key];
+  }
+  return out;
 }
 
 /** Validate a raw JSON blob into prefs. Corrupt/wrong-shaped input returns
@@ -81,8 +137,17 @@ function parseSealDisabled(v: unknown): SealDisableMap {
 function parsePrefs(raw: string | null): StatsPrefs | null {
   if (raw == null) return null;
   try {
-    const j = JSON.parse(raw) as Partial<StatsPrefs>;
+    const j = JSON.parse(raw) as Partial<StatsPrefs> & { avgStatsEnabled?: unknown };
     if (j == null || typeof j !== "object") return null;
+    // Migration: the old single "per-row avg stats" switch seeds the chip
+    // toggles the first time a pre-overlayChips blob is read (winrate +
+    // damage followed it; PR / battles stay opt-in).
+    const legacyAvg =
+      typeof j.avgStatsEnabled === "boolean" ? j.avgStatsEnabled : null;
+    const seededChips: OverlayChipToggles =
+      legacyAvg == null
+        ? DEFAULT_STATS_PREFS.overlayChips
+        : { winrate: legacyAvg, pr: false, battles: false, damage: legacyAvg };
     return {
       prEnabled:
         typeof j.prEnabled === "boolean" ? j.prEnabled : DEFAULT_STATS_PREFS.prEnabled,
@@ -99,15 +164,17 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.weightedTeamWr === "boolean"
           ? j.weightedTeamWr
           : DEFAULT_STATS_PREFS.weightedTeamWr,
-      avgStatsEnabled:
-        typeof j.avgStatsEnabled === "boolean"
-          ? j.avgStatsEnabled
-          : DEFAULT_STATS_PREFS.avgStatsEnabled,
       teamIntelEnabled:
         typeof j.teamIntelEnabled === "boolean"
           ? j.teamIntelEnabled
           : DEFAULT_STATS_PREFS.teamIntelEnabled,
       sealDisabled: parseSealDisabled(j.sealDisabled),
+      overlayChips: parseToggles(j.overlayChips, seededChips),
+      overlayStatsMode: isOverlayStatsMode(j.overlayStatsMode)
+        ? j.overlayStatsMode
+        : DEFAULT_STATS_PREFS.overlayStatsMode,
+      overlayIntel: parseToggles(j.overlayIntel, DEFAULT_STATS_PREFS.overlayIntel),
+      overlayTeamAvg: parseToggles(j.overlayTeamAvg, DEFAULT_STATS_PREFS.overlayTeamAvg),
     };
   } catch {
     return null;
@@ -144,7 +211,8 @@ export function loadStatsPrefs(): StatsPrefs {
     return defaults;
   }
   // Normalize: a partially-invalid blob (dropped junk seal keys, fields
-  // reset to defaults) is rewritten so what's on disk is what's in effect.
+  // reset to defaults, the migrated-away legacy keys) is rewritten so
+  // what's on disk is what's in effect.
   if (JSON.stringify(parsed) !== raw) persist(parsed);
   return parsed;
 }
@@ -192,11 +260,6 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
-  function setAvgStatsEnabled(v: boolean) {
-    prefs.value.avgStatsEnabled = v;
-    persist({ ...prefs.value });
-  }
-
   function setTeamIntelEnabled(v: boolean) {
     prefs.value.teamIntelEnabled = v;
     persist({ ...prefs.value });
@@ -210,6 +273,32 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
+  function setOverlayChip<K extends keyof OverlayChipToggles>(
+    key: K,
+    v: boolean,
+  ) {
+    prefs.value.overlayChips = { ...prefs.value.overlayChips, [key]: v };
+    persist({ ...prefs.value });
+  }
+
+  function setOverlayStatsMode(v: OverlayStatsMode) {
+    prefs.value.overlayStatsMode = v;
+    persist({ ...prefs.value });
+  }
+
+  function setOverlayIntel<K extends keyof OverlayIntelToggles>(key: K, v: boolean) {
+    prefs.value.overlayIntel = { ...prefs.value.overlayIntel, [key]: v };
+    persist({ ...prefs.value });
+  }
+
+  function setOverlayTeamAvg<K extends keyof OverlayTeamAvgToggles>(
+    key: K,
+    v: boolean,
+  ) {
+    prefs.value.overlayTeamAvg = { ...prefs.value.overlayTeamAvg, [key]: v };
+    persist({ ...prefs.value });
+  }
+
   return {
     prefs,
     setPrEnabled,
@@ -217,8 +306,11 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setSealsEnabled,
     setLocalizedTiers,
     setWeightedTeamWr,
-    setAvgStatsEnabled,
     setTeamIntelEnabled,
     setSealDisabled,
+    setOverlayChip,
+    setOverlayStatsMode,
+    setOverlayIntel,
+    setOverlayTeamAvg,
   };
 });

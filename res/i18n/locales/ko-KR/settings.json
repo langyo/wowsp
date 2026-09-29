@@ -142,11 +142,7 @@
     "sealsToggle": "평가 인장",
     "sealsToggleDesc": "«神了/海猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
     "localizedTiersToggle": "현지화 등급 표기",
-    "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급(Bad/Good/Unicum 등)이 표시됩니다.",
-    "avgStatsToggle": "Tab 전적 칩",
-    "avgStatsToggleDesc": "Tab 키를 누르는 동안 표시되는 실시간 전적의 플레이어별 승률과 평균 데미지 수치입니다.",
-    "teamIntelToggle": "팀 소모품 정보",
-    "teamIntelToggleDesc": "Tab 키를 누르는 동안 팀 목록 양쪽에 레이더 / 음탐 / 연막 추정 수와 최장 레이더 거리를 표시합니다. 한 슬롯에 여러 소모품을 선택할 수 있는 함선은 추정치로 계산됩니다."
+    "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급(Bad/Good/Unicum 등)이 표시됩니다."
   },
   "sealCustomizer": {
     "desc": "각 인장을 개별적으로 표시/숨기거나, 인장마다 사용자 지정 이미지를 설정할 수 있습니다(이미지는 앱 데이터 디렉터리의 stamps 폴더에 저장됨). 미리 보기는 즉시 적용되며, 기본값으로 되돌리면 사용자 지정 이미지가 삭제됩니다.",
@@ -228,5 +224,39 @@
   "upstreamHint": "이 앱의 기반이 되는 오픈소스 프로젝트.",
   "resourcesTitle": "소재와 리소스",
   "resourcesHint": "앱이 사용하는 파트너 소재로, 권리는 각 작성자에게 있습니다.",
-  "dataSourceModCatalogNone": "카탈로그 없음 · 새로 고침으로 가져오기"
+  "dataSourceModCatalogNone": "카탈로그 없음 · 새로 고침으로 가져오기",
+  "overlayContent": {
+    "title": "표시 내용",
+    "hint": "Tab 키를 누르는 동안 오버레이에 표시되는 내용을 조정합니다. 변경 사항은 다음 번 오버레이가 생성될 때(다음 전투) 적용됩니다.",
+    "chipsWinrate": "승률",
+    "chipsWinrateDesc": "Tab 키를 누르는 동안 표시되는 플레이어별 승률 수치입니다.",
+    "chipsPr": "PR 평가점",
+    "chipsPrDesc": "플레이어별 PR 평가점 수치입니다(알고리즘은 «전적» 설정을 따릅니다).",
+    "chipsBattles": "전투 수",
+    "chipsBattlesDesc": "플레이어별 통산 전투 수입니다.",
+    "chipsDamage": "평균 데미지",
+    "chipsDamageDesc": "플레이어별 평균 데미지 수치입니다.",
+    "statsMode": "전적 출처 모드",
+    "statsModeDesc": "수치의 출처 모드: 현재 전투를 따름(랭크 전투에서는 랭크 전적, 그 외에는 랜덤 전투 전적) 또는 고정 모드.",
+    "statsModeAuto": "현재 전투 따르기",
+    "statsModeRandom": "랜덤 전투",
+    "statsModeRanked": "랭크 전투",
+    "sealToggle": "칭호 인장",
+    "sealToggleDesc": "«神了/海猴/蛆» 등의 칭호를 일반 텍스트로 플레이어 이름 옆에 표시합니다. 중국어 인터페이스에서만 표시되며 PR 평가 스위치가 필요합니다.",
+    "sealNeedsPr": "먼저 «전적» 설정에서 PR 평가 스위치를 켜야 인장이 표시됩니다.",
+    "intelToggle": "팀 소모품 정보 카드",
+    "intelToggleDesc": "팀 목록 아래에 레이더 / 음탐 / 연막 추정 수와 최장 레이더 거리를 표시합니다. 한 슬롯에 여러 소모품을 선택할 수 있는 함선은 추정치로 계산됩니다.",
+    "intelRadar": "레이더 수",
+    "intelRadarDesc": "레이더 추정 수와 해당 진영의 최장 레이더 거리입니다.",
+    "intelHydro": "음탐 수",
+    "intelHydroDesc": "음파탐지 추정 수입니다.",
+    "intelSmoke": "연막 수",
+    "intelSmokeDesc": "연막 발생기 추정 수입니다.",
+    "avgWinrate": "팀 평균 승률",
+    "avgWinrateDesc": "팀 목록 아래에 양 팀의 평균 승률을 표시합니다(등급 가중은 «전적» 설정을 따릅니다).",
+    "avgPr": "팀 평균 PR",
+    "avgPrDesc": "팀 목록 아래에 양 팀의 평균 PR을 표시합니다.",
+    "avgDamage": "팀 평균 데미지",
+    "avgDamageDesc": "팀 목록 아래에 양 팀의 평균 데미지를 표시합니다."
+  }
 }

@@ -142,11 +142,7 @@
     "sealsToggle": "Sceaux d'évaluation",
     "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
     "localizedTiersToggle": "Libellés de palier localisés",
-    "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…).",
-    "avgStatsToggle": "Stats sous Tab",
-    "avgStatsToggleDesc": "Taux de victoire et dégâts moyens affichés à côté de chaque joueur pendant l'appui sur Tab.",
-    "teamIntelToggle": "Infos consommables des équipes",
-    "teamIntelToggleDesc": "Estimations radar / hydro / fumigène et portée radar maximale de part et d'autre des listes d'équipes sous Tab ; les navires polyvalents partageant un même emplacement comptent comme estimation."
+    "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…)."
   },
   "sealCustomizer": {
     "desc": "Activez ou désactivez chaque sceau individuellement, ou définissez une image personnalisée par sceau (stockée dans le dossier stamps du répertoire de données de l'application). L'aperçu est immédiat ; la réinitialisation supprime l'image personnalisée.",
@@ -228,5 +224,39 @@
   "upstreamHint": "Les projets open source sur lesquels l'application est construite.",
   "resourcesTitle": "Ressources et éléments",
   "resourcesHint": "Éléments de partenaires utilisés par l'application ; les droits restent à leurs auteurs.",
-  "dataSourceModCatalogNone": "Pas de catalogue — actualisez pour le récupérer"
+  "dataSourceModCatalogNone": "Pas de catalogue — actualisez pour le récupérer",
+  "overlayContent": {
+    "title": "Contenu affiché",
+    "hint": "Ce que montre la superposition pendant l'appui sur Tab ; les changements s'appliquent à la prochaine création de la fenêtre (combat suivant).",
+    "chipsWinrate": "Taux de victoire",
+    "chipsWinrateDesc": "Taux de victoire à côté de chaque joueur pendant l'appui sur Tab.",
+    "chipsPr": "Score PR",
+    "chipsPrDesc": "Score PR à côté de chaque joueur (même algorithme que la section statistiques).",
+    "chipsBattles": "Batailles",
+    "chipsBattlesDesc": "Nombre total de batailles à côté de chaque joueur.",
+    "chipsDamage": "Dégâts moyens",
+    "chipsDamageDesc": "Dégâts moyens à côté de chaque joueur.",
+    "statsMode": "Source des stats",
+    "statsModeDesc": "Mode d'où viennent les chiffres : suivre la bataille en cours (les batailles classées montrent les stats classées, le reste les aléatoires) ou un mode fixe.",
+    "statsModeAuto": "Selon la bataille",
+    "statsModeRandom": "Aléatoires",
+    "statsModeRanked": "Classées",
+    "sealToggle": "Sceaux de titre",
+    "sealToggleDesc": "Sceaux de verdict 神了/海猴/蛆 en texte simple à côté des pseudos — interface chinoise uniquement, et cela requiert le rating PR.",
+    "sealNeedsPr": "Activez d'abord le rating PR dans la section Statistiques — les sceaux notent ce rating.",
+    "intelToggle": "Carte des consommables",
+    "intelToggleDesc": "Estimations radar / hydro / fumigène et portée radar maximale sous chaque liste d'équipe ; les navires polyvalents partageant un même emplacement comptent comme estimation.",
+    "intelRadar": "Radars",
+    "intelRadarDesc": "Estimation du nombre de radars et portée radar maximale de l'équipe.",
+    "intelHydro": "Hydro",
+    "intelHydroDesc": "Estimation du nombre de hydroacoustiques.",
+    "intelSmoke": "Fumigènes",
+    "intelSmokeDesc": "Estimation du nombre de générateurs de fumée.",
+    "avgWinrate": "Victoires moyennes",
+    "avgWinrateDesc": "Taux de victoire moyen des deux équipes sous la liste (pondération par tier comme dans la section statistiques).",
+    "avgPr": "PR moyen",
+    "avgPrDesc": "PR moyen des deux équipes sous la liste.",
+    "avgDamage": "Dégâts moyens d'équipe",
+    "avgDamageDesc": "Dégâts moyens des deux équipes sous la liste."
+  }
 }

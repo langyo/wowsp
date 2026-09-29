@@ -8,5 +8,8 @@
   "intelRadar": "레이더",
   "intelHydro": "음탐",
   "intelSmoke": "연막",
-  "intelRange": "최장"
+  "intelRange": "최장",
+  "avgWinrate": "평균 승률",
+  "avgPr": "평균 PR",
+  "avgDmg": "평균 딜"
 }

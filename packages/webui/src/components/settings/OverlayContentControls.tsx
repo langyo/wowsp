@@ -1,0 +1,114 @@
+import { defineComponent } from "vue";
+
+import { HkSwitch, HkTabs } from "@celestia-island/hikari";
+
+import { t } from "@/i18n";
+import {
+  useStatsPrefsStore,
+  type OverlayChipToggles,
+  type OverlayIntelToggles,
+  type OverlayStatsMode,
+  type OverlayTeamAvgToggles,
+} from "@/stores/statsPrefs";
+// Same row pattern as the stats section's preference controls (label +
+// description left, control right; the sub rail for dependent clusters).
+import "../stats/StatsPrefsControls.scss";
+
+/**
+ * The in-game Tab overlay's content-selection controls (settings → 游戏内
+ * 水表): what the per-row chips show (winrate / PR / battles / avg damage,
+ * any combination), which battle-mode stats feed them (follow the current
+ * battle / fixed randoms / fixed ranked), the career seal stamps, the
+ * team-intel card's items (radar / hydro / smoke) and the per-team average
+ * line. Everything reads/writes the shared statsPrefs store — the overlay
+ * window re-reads the blob the next time it is created, so a flip applies
+ * from the next battle (or window recreate).
+ */
+export default defineComponent({
+  name: "OverlayContentControls",
+  setup() {
+    const prefs = useStatsPrefsStore();
+
+    const row = (
+      label: string,
+      desc: string,
+      on: boolean,
+      set: (v: boolean) => void,
+    ) => (
+      <div class="stats-prefs__row">
+        <span class="stats-prefs__row-text">
+          <span class="stats-prefs__row-label">{label}</span>
+          <span class="stats-prefs__row-desc">{desc}</span>
+        </span>
+        <HkSwitch modelValue={on} onUpdate:modelValue={set} />
+      </div>
+    );
+    const chipRow = (key: keyof OverlayChipToggles, label: string, desc: string) =>
+      row(label, desc, prefs.prefs.overlayChips[key], (v) => prefs.setOverlayChip(key, v));
+    const intelRow = (key: keyof OverlayIntelToggles, label: string, desc: string) =>
+      row(label, desc, prefs.prefs.overlayIntel[key], (v) => prefs.setOverlayIntel(key, v));
+    const avgRow = (key: keyof OverlayTeamAvgToggles, label: string, desc: string) =>
+      row(label, desc, prefs.prefs.overlayTeamAvg[key], (v) => prefs.setOverlayTeamAvg(key, v));
+
+    return () => (
+      <div class="stats-prefs">
+        {chipRow("winrate", t("settings.overlayContent.chipsWinrate"), t("settings.overlayContent.chipsWinrateDesc"))}
+        {chipRow("pr", t("settings.overlayContent.chipsPr"), t("settings.overlayContent.chipsPrDesc"))}
+        {chipRow("battles", t("settings.overlayContent.chipsBattles"), t("settings.overlayContent.chipsBattlesDesc"))}
+        {chipRow("damage", t("settings.overlayContent.chipsDamage"), t("settings.overlayContent.chipsDamageDesc"))}
+
+        <div class="stats-prefs__row">
+          <span class="stats-prefs__row-text">
+            <span class="stats-prefs__row-label">{t("settings.overlayContent.statsMode")}</span>
+            <span class="stats-prefs__row-desc">{t("settings.overlayContent.statsModeDesc")}</span>
+          </span>
+          <HkTabs
+            variant="segmented"
+            modelValue={prefs.prefs.overlayStatsMode}
+            onUpdate:modelValue={(v: string) =>
+              prefs.setOverlayStatsMode(v as OverlayStatsMode)
+            }
+            tabs={[
+              { key: "auto", label: t("settings.overlayContent.statsModeAuto") },
+              { key: "random", label: t("settings.overlayContent.statsModeRandom") },
+              { key: "ranked", label: t("settings.overlayContent.statsModeRanked") },
+            ]}
+          />
+        </div>
+
+        {row(
+          t("settings.overlayContent.sealToggle"),
+          t("settings.overlayContent.sealToggleDesc"),
+          prefs.prefs.sealsEnabled,
+          (v) => prefs.setSealsEnabled(v),
+        )}
+        {/* The seals AND-compose with the PR master switch (their verdicts
+            grade the rating data) — point at the stats section when the
+            stamp toggle alone cannot light them up. */}
+        {!prefs.prefs.prEnabled ? (
+          <div class="stats-prefs__row">
+            <span class="stats-prefs__row-desc">{t("settings.overlayContent.sealNeedsPr")}</span>
+          </div>
+        ) : null}
+
+        {row(
+          t("settings.overlayContent.intelToggle"),
+          t("settings.overlayContent.intelToggleDesc"),
+          prefs.prefs.teamIntelEnabled,
+          (v) => prefs.setTeamIntelEnabled(v),
+        )}
+        {prefs.prefs.teamIntelEnabled ? (
+          <div class="stats-prefs__sub">
+            {intelRow("radar", t("settings.overlayContent.intelRadar"), t("settings.overlayContent.intelRadarDesc"))}
+            {intelRow("hydro", t("settings.overlayContent.intelHydro"), t("settings.overlayContent.intelHydroDesc"))}
+            {intelRow("smoke", t("settings.overlayContent.intelSmoke"), t("settings.overlayContent.intelSmokeDesc"))}
+          </div>
+        ) : null}
+
+        {avgRow("winrate", t("settings.overlayContent.avgWinrate"), t("settings.overlayContent.avgWinrateDesc"))}
+        {avgRow("pr", t("settings.overlayContent.avgPr"), t("settings.overlayContent.avgPrDesc"))}
+        {avgRow("damage", t("settings.overlayContent.avgDamage"), t("settings.overlayContent.avgDamageDesc"))}
+      </div>
+    );
+  },
+});

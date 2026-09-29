@@ -31,17 +31,21 @@ async function freshModule() {
 describe("loadStatsPrefs", () => {
   it("returns the defaults when nothing is stored", () => {
     expect(loadStatsPrefs()).toEqual(DEFAULT_STATS_PREFS);
-    // PR rating ships opt-out; the fun wording, seals, the tier-weighted
-    // team winrate and both Tab-overlay switches ship on.
+    // PR rating and the chip PR/battles ship opt-out; the fun wording,
+    // seals, the tier-weighted team winrate, the winrate/damage chips and
+    // the team-intel card ship on. Team averages ship off (dense already).
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: false,
       prAlgo: "winrate",
       sealsEnabled: true,
       localizedTiers: true,
       weightedTeamWr: true,
-      avgStatsEnabled: true,
       teamIntelEnabled: true,
       sealDisabled: {},
+      overlayChips: { winrate: true, pr: false, battles: false, damage: true },
+      overlayStatsMode: "auto",
+      overlayIntel: { radar: true, hydro: true, smoke: true },
+      overlayTeamAvg: { winrate: false, pr: false, damage: false },
     });
   });
 
@@ -69,6 +73,44 @@ describe("loadStatsPrefs", () => {
     );
   });
 
+  it("migrates the legacy avg-stats switch into the chip toggles", () => {
+    // A pre-overlayChips blob: avgStatsEnabled seeded winrate + damage, and
+    // the normalized rewrite drops the legacy key so it never comes back.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ prEnabled: true, avgStatsEnabled: false }),
+    );
+    expect(loadStatsPrefs()).toEqual({
+      ...DEFAULT_STATS_PREFS,
+      prEnabled: true,
+      overlayChips: { winrate: false, pr: false, battles: false, damage: false },
+    });
+    expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).not.toContain(
+      "avgStatsEnabled",
+    );
+
+    // The ON legacy value keeps the shipped chip content.
+    localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify({ avgStatsEnabled: true }));
+    expect(loadStatsPrefs().overlayChips).toEqual(
+      DEFAULT_STATS_PREFS.overlayChips,
+    );
+
+    // An explicit overlayChips object always wins over the legacy seed.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        avgStatsEnabled: false,
+        overlayChips: { winrate: true, pr: true, battles: true, damage: false },
+      }),
+    );
+    expect(loadStatsPrefs().overlayChips).toEqual({
+      winrate: true,
+      pr: true,
+      battles: true,
+      damage: false,
+    });
+  });
+
   it("fills missing fields with defaults instead of dropping the blob", () => {
     localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify({ prEnabled: true }));
     const prefs = loadStatsPrefs();
@@ -77,9 +119,12 @@ describe("loadStatsPrefs", () => {
     expect(prefs.sealsEnabled).toBe(true);
     expect(prefs.localizedTiers).toBe(true);
     expect(prefs.weightedTeamWr).toBe(true);
-    expect(prefs.avgStatsEnabled).toBe(true);
     expect(prefs.teamIntelEnabled).toBe(true);
     expect(prefs.sealDisabled).toEqual({});
+    expect(prefs.overlayChips).toEqual(DEFAULT_STATS_PREFS.overlayChips);
+    expect(prefs.overlayStatsMode).toBe("auto");
+    expect(prefs.overlayIntel).toEqual(DEFAULT_STATS_PREFS.overlayIntel);
+    expect(prefs.overlayTeamAvg).toEqual(DEFAULT_STATS_PREFS.overlayTeamAvg);
   });
 
   it("keeps only known boolean keys in sealDisabled", () => {
@@ -92,12 +137,42 @@ describe("loadStatsPrefs", () => {
     expect(loadStatsPrefs().sealDisabled).toEqual({ rat: true, air: false });
   });
 
+  it("keeps only known boolean keys in the toggle objects", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        overlayChips: { winrate: false, junk: true, pr: "yes" },
+        overlayIntel: { radar: false, smoke: true, sonar: true },
+        overlayTeamAvg: { pr: true, damage: true, karma: true },
+      }),
+    );
+    const prefs = loadStatsPrefs();
+    expect(prefs.overlayChips).toEqual({
+      ...DEFAULT_STATS_PREFS.overlayChips,
+      winrate: false,
+    });
+    expect(prefs.overlayIntel).toEqual({ radar: false, hydro: true, smoke: true });
+    expect(prefs.overlayTeamAvg).toEqual({
+      ...DEFAULT_STATS_PREFS.overlayTeamAvg,
+      pr: true,
+      damage: true,
+    });
+  });
+
   it("rejects an unknown algorithm value", () => {
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
       JSON.stringify({ prEnabled: true, prAlgo: "voodoo" }),
     );
     expect(loadStatsPrefs().prAlgo).toBe("winrate");
+  });
+
+  it("rejects an unknown stats-mode value", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ overlayStatsMode: "solo" }),
+    );
+    expect(loadStatsPrefs().overlayStatsMode).toBe("auto");
   });
 });
 
@@ -109,32 +184,36 @@ describe("statsPrefs store", () => {
     store.setSealsEnabled(false);
     store.setLocalizedTiers(false);
     store.setWeightedTeamWr(false);
-    store.setAvgStatsEnabled(false);
     store.setTeamIntelEnabled(false);
+    store.setOverlayChip("winrate", false);
+    store.setOverlayChip("pr", true);
+    store.setOverlayStatsMode("ranked");
+    store.setOverlayIntel("radar", false);
+    store.setOverlayTeamAvg("pr", true);
 
     const raw = localStorage.getItem(STATS_PREFS_STORAGE_KEY);
     expect(raw).toBeTruthy();
-    expect(JSON.parse(raw!)).toEqual({
+    const expected = {
       prEnabled: true,
       prAlgo: "expected",
       sealsEnabled: false,
       localizedTiers: false,
       weightedTeamWr: false,
-      avgStatsEnabled: false,
       teamIntelEnabled: false,
       sealDisabled: {},
-    });
+      overlayChips: {
+        winrate: false,
+        pr: true,
+        battles: false,
+        damage: true,
+      },
+      overlayStatsMode: "ranked",
+      overlayIntel: { radar: false, hydro: true, smoke: true },
+      overlayTeamAvg: { winrate: false, pr: true, damage: false },
+    };
+    expect(JSON.parse(raw!)).toEqual(expected);
     // Same values read back through the pure loader (the round trip).
-    expect(loadStatsPrefs()).toEqual({
-      prEnabled: true,
-      prAlgo: "expected",
-      sealsEnabled: false,
-      localizedTiers: false,
-      weightedTeamWr: false,
-      avgStatsEnabled: false,
-      teamIntelEnabled: false,
-      sealDisabled: {},
-    });
+    expect(loadStatsPrefs()).toEqual(expected);
   });
 
   it("persists a per-seal toggle and round-trips it", async () => {

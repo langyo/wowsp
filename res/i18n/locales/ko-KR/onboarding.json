@@ -31,9 +31,5 @@
   "sealsToggle": "평가 인장",
   "sealsToggleDesc": "«神了/海猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
   "localizedTiersToggle": "현지화 등급 표기",
-  "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급이 표시됩니다.",
-  "avgStatsToggle": "Tab 전적 표시",
-  "avgStatsToggleDesc": "전투 중 Tab 키로 플레이어별 수치를 표시합니다.",
-  "teamIntelToggle": "Tab 소모품 정보",
-  "teamIntelToggleDesc": "Tab 키로 팀 목록 양쪽에 추정치를 표시합니다."
+  "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급이 표시됩니다."
 }

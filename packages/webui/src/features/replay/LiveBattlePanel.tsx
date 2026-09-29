@@ -427,9 +427,14 @@ export default defineComponent({
           const v = entry.vehicle;
           const st = stats.get(v.id);
           if (!st || st.loading || st.hidden || isAiName(v.name)) {
-            return { winrate: null, pr: null, tier: shipTierOf(v.shipId) };
+            return { winrate: null, pr: null, damage: null, tier: shipTierOf(v.shipId) };
           }
-          return { winrate: st.winrate, pr: st.pr, tier: shipTierOf(v.shipId) };
+          return {
+            winrate: st.winrate,
+            pr: st.pr,
+            damage: st.avgDamage,
+            tier: shipTierOf(v.shipId),
+          };
         }),
         prefs.prefs.weightedTeamWr,
       );
