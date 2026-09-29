@@ -21,6 +21,7 @@ import { api } from "./api";
 import { initDpiPrefs } from "./theme/dpiPrefs";
 import { initFontScalePreference } from "./theme/fontScalePreference";
 import { initThemeModePreference } from "./theme/themeModePreference";
+import { initUiOpacityPreference } from "./theme/uiOpacityPreference";
 import { i18n } from "./i18n";
 
 /** Canonical wowsp locale → hikari i18n dir. Hikari ships simplified-
@@ -46,6 +47,12 @@ export function bootstrap(): void {
   // writes inline :root overrides after the stylesheets load — same
   // authoritative-key-wins contract as the mode preference above.
   initFontScalePreference();
+  // WoWSP's UI-opacity preference writes the inline `--ui-opacity`
+  // multiplier over every translucent surface (glass panels, modals, the
+  // title bar) — same authoritative-key-wins contract as above. The
+  // game-overlay window never calls bootstrap() (see initDpiPrefs), so its
+  // transparent roster cannot pick up a dial meant for the main shell.
+  initUiOpacityPreference();
   // WoWSP's interface-scale (DPI) preference writes a root CSS `zoom` over
   // the whole shell — same authoritative-key-wins contract as above. Only
   // this main-window bootstrap runs it: the game overlay window has its

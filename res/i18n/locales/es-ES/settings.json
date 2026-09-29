@@ -211,6 +211,8 @@
   "resUpdateNow": "Actualizar ahora",
   "resUpdateLater": "Más tarde",
   "wallpaperOverlay": "Opacidad del velo",
+  "uiOpacity": "Opacidad de la interfaz",
+  "uiOpacityHint": "Un único control para todas las superficies de cristal: el 100 % es el aspecto por defecto; por debajo deja ver más el fondo, por encima los paneles se vuelven más sólidos.",
   "pairingPinCopy": "Copiar código",
   "pairingPinCopied": "Código copiado al portapapeles",
   "dataSourcesTitle": "Fuentes de datos dinámicas",

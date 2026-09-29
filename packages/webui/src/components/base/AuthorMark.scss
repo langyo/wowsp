@@ -39,6 +39,7 @@
     padding: 0.2rem 0.55rem;
     border-radius: var(--radius-full);
     background: rgb(var(--color-surface) / 65%);
+    background: rgb(var(--color-surface) / min(100%, calc(65% * var(--ui-opacity, 1))));
     border: 1px solid rgb(var(--color-border) / 20%);
     backdrop-filter: blur(4px);
     pointer-events: auto;

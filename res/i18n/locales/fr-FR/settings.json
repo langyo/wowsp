@@ -211,6 +211,8 @@
   "resUpdateNow": "Mettre à jour",
   "resUpdateLater": "Plus tard",
   "wallpaperOverlay": "Opacité du voile",
+  "uiOpacity": "Opacité de l’interface",
+  "uiOpacityHint": "Un seul réglage pour toutes les surfaces vitrées : 100 % est l’apparence par défaut ; en dessous l’arrière-plan transparaît, au-dessus les panneaux se densifient.",
   "pairingPinCopy": "Copier le code",
   "pairingPinCopied": "Code copié dans le presse-papiers",
   "dataSourcesTitle": "Sources de données dynamiques",

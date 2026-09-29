@@ -15,6 +15,7 @@
   border: 1px solid rgb(var(--color-border) / 22%);
   border-radius: 12px;
   background: rgb(var(--color-surface) / 82%);
+  background: rgb(var(--color-surface) / min(100%, calc(82% * var(--ui-opacity, 1))));
   color: rgb(var(--color-text));
   text-align: left;
   cursor: pointer;

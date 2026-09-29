@@ -10,6 +10,7 @@
     flex-direction: column;
     border-right: 1px solid rgb(var(--color-border) / 20%);
     background: rgb(var(--color-surface) / 50%);
+    background: rgb(var(--color-surface) / min(100%, calc(50% * var(--ui-opacity, 1))));
     overflow: hidden;
   }
 
@@ -536,6 +537,7 @@
     align-items: center;
     justify-content: center;
     background: rgb(var(--color-surface) / 70%);
+    background: rgb(var(--color-surface) / min(100%, calc(70% * var(--ui-opacity, 1))));
     backdrop-filter: blur(3px);
     border-radius: var(--radius-md);
   }

@@ -12,6 +12,7 @@
      needs a lighter surface to actually read as glass. The deeper blur
      diffuses the now-stronger wallpaper so nav text keeps its contrast. */
   background: rgb(var(--color-surface) / 55%);
+  background: rgb(var(--color-surface) / min(100%, calc(55% * var(--ui-opacity, 1))));
   backdrop-filter: blur(var(--blur-lg));
   -webkit-backdrop-filter: blur(var(--blur-lg));
   border-right: 1px solid rgb(var(--color-border) / 20%);

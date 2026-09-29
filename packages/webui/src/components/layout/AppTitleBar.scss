@@ -37,6 +37,23 @@
   flex: none;
 }
 
+/* Desktop bar glass joins the UI-opacity dial (uiOpacityPreference.ts).
+   hikari ships the bar as an 80% surface color-mix — equal to plain
+   `rgb(surface / 80%)` — restated here at (0,2,0) with the multiplier so
+   one drag rescales the bar together with the rest of the chrome. Custom
+   properties never fail at parse time, so the scaled spelling sits in an
+   @supports math-in-color probe instead of behind a duplicate line; the
+   phone and no-backdrop-filter OPAQUE overrides further down the file
+   stay later in the cascade and keep winning in their lanes. */
+.app-titlebar .hk-titlebar {
+  --hk-tb-bg: color-mix(in srgb, rgb(var(--color-surface, 240 244 248)) 80%, transparent);
+}
+@supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
+  .app-titlebar .hk-titlebar {
+    --hk-tb-bg: rgb(var(--color-surface, 240 244 248) / min(100%, calc(80% * var(--ui-opacity, 1))));
+  }
+}
+
 @media (max-width: 767px) {
   .app-titlebar__menu {
     display: flex;

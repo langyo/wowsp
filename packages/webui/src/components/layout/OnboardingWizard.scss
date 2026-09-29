@@ -20,6 +20,17 @@
   --hk-modal-border-color: rgb(var(--color-border) / 20%);
 }
 
+/* The 82% glass also rides the UI-opacity dial (uiOpacityPreference.ts).
+   A custom property never fails at parse time, so the scaled spelling is
+   gated behind an @supports math-in-color probe rather than a duplicate
+   line; the opaque phone / no-blur fallbacks below stay later in this
+   file and keep winning in their lanes. */
+@supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
+  .hk-modal-content.onboarding-wizard {
+    --hk-modal-bg: rgb(var(--color-surface) / min(100%, calc(82% * var(--ui-opacity, 1))));
+  }
+}
+
 /* The 82% glass relies on the overlay's backdrop-filter to stay readable.
    On phones hikari docks every modal as a bottom sheet and drops that
    filter (--hk-modal-overlay-blur-mobile defaults to none — a per-frame

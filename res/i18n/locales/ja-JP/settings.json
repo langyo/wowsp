@@ -211,6 +211,8 @@
   "resUpdateNow": "今すぐ更新",
   "resUpdateLater": "後で",
   "wallpaperOverlay": "オーバーレイの不透明度",
+  "uiOpacity": "UIの不透明度",
+  "uiOpacityHint": "すべてのガラス面を一括で調整します。100%が既定の見た目で、下げると背景が透け、上げるとパネルが濃くなります。",
   "pairingPinCopy": "コードをコピー",
   "pairingPinCopied": "コードをクリップボードにコピーしました",
   "dataSourcesTitle": "動的データソース",

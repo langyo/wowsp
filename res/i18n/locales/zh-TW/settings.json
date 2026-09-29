@@ -211,6 +211,8 @@
   "resUpdateNow": "立即更新",
   "resUpdateLater": "稍後",
   "wallpaperOverlay": "遮罩不透明度",
+  "uiOpacity": "介面不透明度",
+  "uiOpacityHint": "統一調整所有玻璃面板：100% 為預設觀感，調低可透出背景，調高讓面板在花俏背景下更紮實。",
   "pairingPinCopy": "複製配對碼",
   "pairingPinCopied": "配對碼已複製到剪貼簿",
   "dataSourcesTitle": "動態資料來源",

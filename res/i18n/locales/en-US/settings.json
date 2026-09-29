@@ -211,6 +211,8 @@
   "resUpdateNow": "Update now",
   "resUpdateLater": "Later",
   "wallpaperOverlay": "Overlay opacity",
+  "uiOpacity": "UI opacity",
+  "uiOpacityHint": "One dial for every glass surface: 100% is the default look; lower it to let the background show through, raise it to keep panels readable over busy backgrounds.",
   "pairingPinCopy": "Copy code",
   "pairingPinCopied": "Code copied to clipboard",
   "dataSourcesTitle": "Dynamic data sources",

@@ -24,6 +24,7 @@
   /* Opaque enough to stay readable while content scrolls under it; the
      blur matches the app title bar's glass recipe. */
   background: rgb(var(--color-surface) / 88%);
+  background: rgb(var(--color-surface) / min(100%, calc(88% * var(--ui-opacity, 1))));
   backdrop-filter: blur(var(--blur-md));
   -webkit-backdrop-filter: blur(var(--blur-md));
   border-bottom: 1px solid rgb(var(--color-border) / 15%);

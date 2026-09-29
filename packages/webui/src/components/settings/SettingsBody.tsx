@@ -54,6 +54,12 @@ import {
 
 import { useWallpaper } from "@/theme/useWallpaper";
 import {
+  UI_OPACITY_MAX,
+  UI_OPACITY_MIN,
+  setUiOpacityPercent,
+  uiOpacityPercent,
+} from "@/theme/uiOpacityPreference";
+import {
   setThemeModePreference,
   themeModePreference,
   type ThemeModePreference,
@@ -1065,6 +1071,34 @@ export default defineComponent({
                 </div>
               ) : null}
               <HkSettingsHint>{t("settings.wallpaperHint")}</HkSettingsHint>
+            </HkSettingsSub>
+
+            <HkDivider />
+
+            {/* UI surface opacity — the chrome-side twin of the wallpaper
+                overlay dial above: one multiplier over every translucent
+                surface in the app (theme/uiOpacityPreference). 100% is the
+                shipped look; below it the glass clears for calm wallpapers,
+                above it panels solidify over busy ones (alpha caps at fully
+                opaque). Applies live — the settings window itself responds
+                while dragging. */}
+            <HkSettingsSub title={t("settings.uiOpacity")}>
+              <div class="settings-modal__dpi-row">
+                <HkSlider
+                  class="settings-modal__dpi-slider"
+                  min={UI_OPACITY_MIN}
+                  max={UI_OPACITY_MAX}
+                  step={5}
+                  modelValue={uiOpacityPercent.value}
+                  onUpdate:modelValue={setUiOpacityPercent}
+                  ariaLabel={t("settings.uiOpacity")}
+                  formatValue={(v: number) => `${v}%`}
+                />
+                <span class="settings-modal__dpi-value">
+                  {uiOpacityPercent.value}%
+                </span>
+              </div>
+              <HkSettingsHint>{t("settings.uiOpacityHint")}</HkSettingsHint>
             </HkSettingsSub>
 
             <HkDivider />
