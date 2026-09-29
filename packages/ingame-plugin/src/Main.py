@@ -76,7 +76,6 @@ class Probe(object):
         self.discovered = False
         self.order_subs = {}
         self.journal = []
-        self.last_telemetry = ''
         self.dh = None
         self.const = None
         self.api_dumped = False
@@ -401,7 +400,6 @@ class Probe(object):
                                            'battle': self.session or '',
                                            'players': {}}) + '\n')
             stream.close()
-            self.last_telemetry = ''
         except Exception as exc:
             self.soft('telemetry clear failed=' + str(exc)[:120])
         log('battle cleared')
@@ -650,7 +648,6 @@ class Probe(object):
                 self.details_reset()
                 self.busy = False
                 self.last_request = 0
-                self.last_telemetry = ''
                 self.request(False)
                 log('roster stable players=' + str(len(roster)) + ' sample=' + utils.jsonEncode(roster[0]))
         elif self.session:
@@ -682,9 +679,12 @@ class Probe(object):
 
     def write_telemetry(self):
         """The M2 consumer file: name-keyed alive flags for the whole
-        roster, rewritten whole whenever the dead-set changes (and once to
-        empty on battle quit). This is what wowsp's poller broadcasts to
-        drive exact sink marking and the [alive] ++ [sunk] order."""
+        roster, rewritten EVERY battle tick (the fresh `t` is the
+        heartbeat) — wowsp's 2 s poller then broadcasts once per poll
+        whether or not anything sank and whether or not Tab is held, and
+        consumers can tell a live stream from a dead one by freshness
+        instead of a timeout. Cleared once (empty players) on battle
+        quit; port ticks write nothing."""
         if not self.session:
             return
         try:
@@ -698,9 +698,6 @@ class Probe(object):
             body = utils.jsonEncode({'t': int(time.time() * 1000),
                                      'battle': self.session,
                                      'players': players})
-            if body == self.last_telemetry:
-                return
-            self.last_telemetry = body
             stream = open(TELEMETRY_FILE, 'w')
             stream.write(body + '\n')
             stream.close()
