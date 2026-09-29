@@ -5,6 +5,7 @@ import {
   Check,
   Copy,
   Copyright,
+  ExternalLink,
   FolderCog,
   FolderOpen,
   Globe,
@@ -1869,14 +1870,20 @@ export default defineComponent({
                   onClick={() => {
                     // In-app jump, not a browser link: close the settings
                     // surface and deep-link the mod hub's catalog page to
-                    // the plugin's row (ResourcesView handles ?mod=).
+                    // the plugin's row (ResourcesView handles ?mod=). The
+                    // modal's hikari back guard rewinds its pushed history
+                    // entry on close (a deferred macrotask) — a same-tick
+                    // router.push races that rewind and gets stranded (see
+                    // ShipDetailModal's identical workaround), so let the
+                    // close settle first.
                     ui.hide();
-                    void router.push({
+                    setTimeout(() => void router.push({
                       path: "/resources",
                       query: { mod: INGAME_PLUGIN_MOD_ID },
-                    });
+                    }), 350);
                   }}
                 >
+                  <ExternalLink size={13} />
                   {t("settings.overlayRosterPluginPage")}
                 </HkButton>
               ) : null}
