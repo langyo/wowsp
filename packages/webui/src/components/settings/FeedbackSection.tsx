@@ -89,12 +89,15 @@ export default defineComponent({
       }
     });
 
-    /** The web form link carries the local build identity as prefill. */
+    /** The web form link carries the local build identity as prefill, and
+     *  the UI locale so the form (and its privacy note) opens in the
+     *  language the user already chose in the app. */
     const webFormUrl = computed(() => {
       const q = new URLSearchParams({
         version: version.value,
         sysinfo: `desktop ${navigator.platform || "unknown"}`,
         channel: "desktop",
+        lang: lang.uiLocale.value,
       });
       return `${WEB_FORM_URL}?${q.toString()}`;
     });
@@ -181,9 +184,10 @@ export default defineComponent({
     }
 
     /** The web form's history panel, focused (the browser remembers the
-     *  contact id in its own localStorage). */
+     *  contact id in its own localStorage). Same lang handoff as the form
+     *  link above. */
     function openHistory() {
-      void openExternal(`${WEB_FORM_URL}?focus=history`);
+      void openExternal(`${WEB_FORM_URL}?focus=history&lang=${lang.uiLocale.value}`);
     }
 
     return () => (

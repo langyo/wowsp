@@ -3,6 +3,8 @@
 //! pages (`/feedback` form + `/erp` console). Pure and host-testable —
 //! the worker crate supplies fetch/KV/clock I/O only.
 
+use std::sync::OnceLock;
+
 use serde_json::{Map, Value, json};
 
 // ── Bitable schema (field names as created in the 反馈 table) ──────────
@@ -342,6 +344,65 @@ pub fn urlencode(s: &str) -> String {
 
 // ── pages ──────────────────────────────────────────────────────────────
 
+/// The /feedback page's locale table — the SAME res/i18n/locales facility
+/// the webui consumes (en-US baseline, 9 locales, key parity enforced by
+/// scripts/check_i18n.py). Compile-time embedded so the worker carries no
+/// extra fetch; key sets must stay identical across files.
+static FEEDBACK_LOCALE_FILES: &[(&str, &str)] = &[
+    (
+        "en-US",
+        include_str!("../../../../../res/i18n/locales/en-US/feedback.json"),
+    ),
+    (
+        "zh-CN",
+        include_str!("../../../../../res/i18n/locales/zh-CN/feedback.json"),
+    ),
+    (
+        "zh-SG",
+        include_str!("../../../../../res/i18n/locales/zh-SG/feedback.json"),
+    ),
+    (
+        "zh-TW",
+        include_str!("../../../../../res/i18n/locales/zh-TW/feedback.json"),
+    ),
+    (
+        "ja-JP",
+        include_str!("../../../../../res/i18n/locales/ja-JP/feedback.json"),
+    ),
+    (
+        "ko-KR",
+        include_str!("../../../../../res/i18n/locales/ko-KR/feedback.json"),
+    ),
+    (
+        "ru-RU",
+        include_str!("../../../../../res/i18n/locales/ru-RU/feedback.json"),
+    ),
+    (
+        "fr-FR",
+        include_str!("../../../../../res/i18n/locales/fr-FR/feedback.json"),
+    ),
+    (
+        "es-ES",
+        include_str!("../../../../../res/i18n/locales/es-ES/feedback.json"),
+    ),
+];
+
+/// Merged `{"en-US": {...}, "zh-CN": {...}, ...}` JSON injected into the
+/// page once per process. Embedded files are frozen at compile time and
+/// validated by tests, so the parse cannot fail in a healthy build.
+fn feedback_locales_json() -> &'static str {
+    static MERGED: OnceLock<String> = OnceLock::new();
+    MERGED.get_or_init(|| {
+        let mut m = Map::new();
+        for (lang, raw) in FEEDBACK_LOCALE_FILES {
+            let v: Value = serde_json::from_str(raw)
+                .unwrap_or_else(|e| panic!("feedback locale {lang} is not valid JSON: {e}"));
+            m.insert((*lang).to_string(), v);
+        }
+        Value::Object(m).to_string()
+    })
+}
+
 /// The /feedback form. `sitekey: None` renders the maintenance notice
 /// (deploy before the Turnstile widget exists / after pulling the key).
 pub fn feedback_page(sitekey: Option<&str>, base_url: &str) -> String {
@@ -351,13 +412,16 @@ pub fn feedback_page(sitekey: Option<&str>, base_url: &str) -> String {
         None => String::new(),
     };
     let turnstile_widget = match &key {
-        Some(k) => format!(r#"<div class="cf-turnstile" data-sitekey="{k}" data-theme="auto"></div>"#),
+        Some(k) => {
+            format!(r#"<div class="cf-turnstile" data-sitekey="{k}" data-theme="auto"></div>"#)
+        },
         None => r#"<p class="notice" data-i18n="maintenance"></p>"#.into(),
     };
     let submit_disabled = if key.is_some() { "" } else { " disabled" };
+    let locales_json = feedback_locales_json();
     format!(
         r#"<!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -370,23 +434,31 @@ body {{ margin: 0; font: 15px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans
   background: #f6f7f9; color: #1f2328; padding: 24px 12px; }}
 @media (prefers-color-scheme: dark) {{ body {{ background: #0d1117; color: #e6edf3; }} }}
 main {{ max-width: 620px; margin: 0 auto; }}
-h1 {{ font-size: 1.35rem; margin: 0 0 4px; }}
-p.sub {{ margin: 0 0 20px; color: #6b7280; }}
+.head {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; }}
+h1 {{ font-size: 1.35rem; margin: 0; }}
+#langSel {{ padding: 6px 10px; border: 1px solid #d0d7de; border-radius: 8px;
+  background: transparent; color: inherit; font: inherit; font-size: .85rem;
+  max-width: 46%; cursor: pointer; }}
+p.sub {{ margin: 4px 0 20px; color: #6b7280; }}
 label {{ display: block; margin: 14px 0 6px; font-weight: 600; font-size: .9rem; }}
 textarea, input[type=text] {{ width: 100%; padding: 8px 10px; border: 1px solid #d0d7de;
   border-radius: 8px; font: inherit; background: transparent; color: inherit; }}
 textarea {{ min-height: 120px; resize: vertical; }}
 input[readonly] {{ opacity: .75; }}
+.filepick-row {{ margin-top: 2px; }}
+.filepick-row button {{ padding: 8px 14px; font-size: .9rem; }}
 button {{ padding: 9px 18px; border: 0; border-radius: 8px; font: inherit;
   font-weight: 600; background: #2563eb; color: #fff; cursor: pointer; }}
 button:disabled {{ opacity: .5; cursor: not-allowed; }}
 button.ghost {{ background: transparent; border: 1px solid #d0d7de; color: inherit; }}
+button#submit {{ width: 100%; margin-top: 4px; }}
+.cf-turnstile {{ margin: 16px 0 10px; }}
 .notice {{ padding: 12px; border-radius: 8px; background: rgb(255 159 10 / 12%); }}
 #msg {{ margin-top: 14px; white-space: pre-wrap; }}
 #msg.ok {{ color: #1a7f37; }} #msg.err {{ color: #cf222e; }}
 a {{ color: #2563eb; }}
-.media-row {{ display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: center; }}
-.media-row button {{ padding: 7px 14px; font-size: .9rem; }}
+.media-row {{ display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }}
+.media-row button {{ padding: 8px 14px; font-size: .9rem; }}
 #recState {{ font-weight: 600; color: #cf222e; }}
 #attachInfo {{ margin-top: 8px; font-size: .85rem; color: #6b7280; display: flex;
   gap: 8px; align-items: center; flex-wrap: wrap; }}
@@ -397,8 +469,13 @@ details.history {{ margin-top: 22px; }}
 details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem; }}
 .hist-row {{ display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }}
 .hist-row input {{ flex: 1; min-width: 200px; }}
+@media (max-width: 480px) {{
+  .hist-row input, .hist-row button {{ width: 100%; flex: 1 1 100%; }}
+}}
+.hist-count {{ margin: 12px 0 8px; color: #6b7280; font-size: .85rem; }}
 .hist-item {{ padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 8px;
   margin-bottom: 8px; font-size: .88rem; }}
+.hist-meta {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }}
 .hist-item .muted {{ color: #6b7280; font-size: .8rem; }}
 .badge {{ display: inline-block; padding: 0 8px; border-radius: 999px; font-size: .78rem;
   background: rgb(37 99 235 / 14%); color: #2563eb; }}
@@ -407,7 +484,10 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
 </head>
 <body>
 <main>
-<h1>WoWSP Feedback</h1>
+<div class="head">
+  <h1>WoWSP Feedback</h1>
+  <select id="langSel"></select>
+</div>
 <p class="sub" data-i18n="subtitle"></p>
 <form id="f" action="{base_url}/api/feedback/submit" method="post" enctype="multipart/form-data">
   <label for="description" data-i18n="descLabel"></label>
@@ -421,7 +501,10 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
   <input type="hidden" name="channel" value="web">
   <input type="hidden" name="anon" id="anon">
   <label for="file" data-i18n="fileLabel"></label>
-  <input type="file" id="file" name="file" accept=".zip,.log,.txt,.gz,.png,.jpg,.jpeg,.gif,.webp,.bmp,.webm,.mp4,.mov">
+  <input type="file" id="file" name="file" hidden accept=".zip,.log,.txt,.gz,.png,.jpg,.jpeg,.gif,.webp,.bmp,.webm,.mp4,.mov">
+  <div class="filepick-row">
+    <button type="button" class="ghost" id="filePick" data-i18n="filePick"></button>
+  </div>
   <div class="media-row">
     <button type="button" class="ghost" id="shot" data-i18n="shotBtn"></button>
     <button type="button" class="ghost" id="rec" data-i18n="recBtn"></button>
@@ -448,58 +531,68 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
 </main>
 <script>
 (function () {{
-  var zh = {{
-    subtitle: "遇到问题或建议？可以带上截图、录屏或日志提交，我们会尽快处理。",
-    descLabel: "反馈描述 *", contactLabel: "联系方式（QQ / 邮箱，选填）",
-    versionLabel: "应用版本", sysLabel: "系统信息",
-    fileLabel: "附件（日志 .zip / 截图图片 / 录屏视频，选填）",
-    shotBtn: "截图", recBtn: "录屏（≤10 秒）", recStopBtn: "停止录制",
-    recCountdown: "录制中 #s 秒", attachClear: "移除",
-    privacy: "隐私说明：所有附件（截图、录屏、日志）都由你手动选择或手动触发采集，我们不会主动采集任何数据。画面里可能包含你的个人信息，请自行斟酌暴露范围——截图 / 录屏时可以选择只采集某个窗口而不是整个屏幕。你无意中暴露的隐私内容只会被用于定位问题，我们承诺不将其用于任何其他用途，问题处理完毕后随记录一起删除。",
-    submit: "提交", maintenance: "反馈通道暂时维护中，请稍后再试或到 QQ 群反馈。",
-    sending: "提交中…", ok: "提交成功，感谢反馈！",
-    viewRecord: "查看记录",
-    historyTitle: "历史反馈记录", historyContact: "QQ 或邮箱（追查处理进度）",
-    historyGo: "查询", historyEmpty: "没有查到该联系方式的反馈记录。",
-    historyFailed: "查询失败，请稍后再试。", historyCount: "最近 #n 条",
-    e_empty_description: "请填写反馈描述。", e_bad_channel: "渠道参数无效。",
-    e_file_too_large: "附件超过大小限制（日志 ≤ 4MB，图片 ≤ 10MB，录屏 ≤ 18MB）。",
-    e_bad_file_type: "支持的类型：日志 .zip/.log/.txt、图片 .png/.jpg/.webp、录屏 .webm/.mp4。",
-    e_turnstile: "人机验证未通过，请重试。", e_rate_limited: "提交过于频繁或超出当日限额（同一联系方式每天最多 20 次），请稍后再试。",
-    e_upstream: "服务暂时不可用，请稍后再试。"
+  // ── i18n runtime — same 9-locale table the app ships ─────────────────
+  var LOCALES = {locales_json};
+  var ORDER = ["en-US", "zh-CN", "zh-SG", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "fr-FR", "es-ES"];
+  var NAMES = {{
+    "en-US": "English", "zh-CN": "简体中文", "zh-SG": "简体中文（亚服）",
+    "zh-TW": "繁體中文", "ja-JP": "日本語", "ko-KR": "한국어",
+    "ru-RU": "Русский", "fr-FR": "Français", "es-ES": "Español"
   }};
-  var en = {{
-    subtitle: "Problem or suggestion? Attach a screenshot, a recording or logs and we will take a look.",
-    descLabel: "Description *", contactLabel: "Contact (QQ / email, optional)",
-    versionLabel: "App version", sysLabel: "System info",
-    fileLabel: "Attachment (log .zip / screenshot image / screen recording, optional)",
-    shotBtn: "Screenshot", recBtn: "Record (≤10s)", recStopBtn: "Stop recording",
-    recCountdown: "Recording #s s", attachClear: "Remove",
-    privacy: "Privacy note: every attachment (screenshot, recording, logs) is chosen or triggered by you manually — we never collect anything on our own. Captures may contain personal information; consider limiting the scope (pick a single window instead of the whole screen when capturing). Anything private you expose unintentionally is used only to diagnose your report, never for any other purpose, and is deleted along with the record once the issue is handled.",
-    submit: "Submit", maintenance: "The feedback channel is under maintenance — please retry later or use the QQ group.",
-    sending: "Submitting…", ok: "Submitted — thank you!",
-    viewRecord: "View record",
-    historyTitle: "My feedback history", historyContact: "QQ or email (track progress)",
-    historyGo: "Look up", historyEmpty: "No feedback found for this contact.",
-    historyFailed: "Lookup failed, please retry later.", historyCount: 'Latest #n',
-    e_empty_description: "Please describe the problem.", e_bad_channel: "Invalid channel.",
-    e_file_too_large: "Attachment exceeds its size limit (logs ≤ 4MB, images ≤ 10MB, recordings ≤ 18MB).",
-    e_bad_file_type: "Accepted: logs .zip/.log/.txt, images .png/.jpg/.webp, recordings .webm/.mp4.",
-    e_turnstile: "Human verification failed, please retry.", e_rate_limited: "Too many submissions or over the daily cap (max 20 per day per contact) — please retry later.",
-    e_upstream: "Service temporarily unavailable, please retry later."
-  }};
-  var dict = (navigator.language || "zh").toLowerCase().startsWith("zh") ? zh : en;
-  function t(k) {{ return dict[k] || ""; }}
-  document.querySelectorAll("[data-i18n]").forEach(function (el) {{
-    var v = t(el.getAttribute("data-i18n"));
-    if (v) el.textContent = v;
-  }});
-  document.querySelectorAll("[data-i18n-placeholder]").forEach(function (el) {{
-    var v = t(el.getAttribute("data-i18n-placeholder"));
-    if (v) el.placeholder = v;
-  }});
-
+  var FALLBACK = "en-US";
   var q = new URLSearchParams(location.search);
+  function pickLang() {{
+    var wanted = (q.get("lang") || "").toLowerCase();
+    for (var i = 0; i < ORDER.length; i++) if (ORDER[i].toLowerCase() === wanted) return ORDER[i];
+    var saved = localStorage.getItem("wowsp-fb-lang");
+    if (saved && ORDER.indexOf(saved) >= 0) return saved;
+    var navs = [].concat(navigator.languages || [], navigator.language || []);
+    for (var j = 0; j < navs.length; j++) {{
+      var n = String(navs[j] || "").toLowerCase();
+      if (!n) continue;
+      for (var i = 0; i < ORDER.length; i++) if (ORDER[i].toLowerCase() === n) return ORDER[i];
+      var base = n.split("-")[0];
+      if (base === "zh") {{
+        if (n.indexOf("hant") >= 0 || n === "zh-tw" || n === "zh-hk" || n === "zh-mo") return "zh-TW";
+        if (n === "zh-sg") return "zh-SG";
+        return "zh-CN";
+      }}
+      var pref = {{ en: "en-US", ja: "ja-JP", ko: "ko-KR", ru: "ru-RU", fr: "fr-FR", es: "es-ES" }}[base];
+      if (pref) return pref;
+    }}
+    return FALLBACK;
+  }}
+  var lang = pickLang();
+  function t(k) {{
+    var d = LOCALES[lang] || {{}}, f = LOCALES[FALLBACK] || {{}};
+    return d[k] || f[k] || "";
+  }}
+  function applyI18n() {{
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {{
+      var v = t(el.getAttribute("data-i18n"));
+      if (v) el.textContent = v;
+    }});
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(function (el) {{
+      var v = t(el.getAttribute("data-i18n-placeholder"));
+      if (v) el.placeholder = v;
+    }});
+  }}
+  var langSel = document.getElementById("langSel");
+  ORDER.forEach(function (code) {{
+    var o = document.createElement("option");
+    o.value = code; o.textContent = NAMES[code] || code;
+    langSel.appendChild(o);
+  }});
+  langSel.value = lang;
+  langSel.setAttribute("aria-label", t("langLabel"));
+  langSel.addEventListener("change", function () {{
+    lang = langSel.value;
+    localStorage.setItem("wowsp-fb-lang", lang);
+    applyI18n();
+    langSel.setAttribute("aria-label", t("langLabel"));
+  }});
+  applyI18n();
   ["version", "sysinfo"].forEach(function (k) {{
     if (q.get(k)) document.getElementById(k).value = q.get(k);
   }});
@@ -528,11 +621,12 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
   var attachInfo = document.getElementById("attachInfo");
   function setAttachment(name, blob) {{
     media.name = name; media.blob = blob;
-    if (blob) fileInput.value = "";
+    fileInput.value = "";
     attachInfo.style.display = blob ? "flex" : "none";
     document.getElementById("attachText").textContent = blob
       ? name + " (" + (blob.size / 1048576).toFixed(1) + " MB)" : "";
   }}
+  document.getElementById("filePick").onclick = function () {{ fileInput.click(); }};
   document.getElementById("attachClear").onclick = function () {{ setAttachment(null, null); }};
   fileInput.addEventListener("change", function () {{
     if (fileInput.files[0]) setAttachment(fileInput.files[0].name, fileInput.files[0]);
@@ -627,7 +721,9 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
           if (window.turnstile) turnstile.reset();
         }} else {{
           msg.className = "err";
-          msg.textContent = dict["e_" + (res.j.error || "upstream")] || t("e_upstream");
+          msg.textContent = res.j.error === "maintenance"
+            ? t("maintenance")
+            : (t("e_" + (res.j.error || "upstream")) || t("e_upstream"));
           if (window.turnstile) turnstile.reset();
         }}
       }})
@@ -653,15 +749,22 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
       .then(function (j) {{
         if (!j.ok) {{ histResult.textContent = t("historyFailed"); return; }}
         if (!j.items.length) {{ histResult.textContent = t("historyEmpty"); return; }}
+        // Server statuses are stored in Chinese (Bitable single-select);
+        // map them to i18n keys for display, raw value as fallback.
+        var STATUS_KEY = {{ "待审查": "statusPending", "已确认": "statusConfirmed",
+          "已开PR": "statusPR", "无需修复": "statusWontFix", "需补充": "statusNeedInfo" }};
+        var STATUS_DONE = {{ "已开PR": 1, "无需修复": 1 }};
         histResult.innerHTML =
-          '<p class="hist-item">' + t("historyCount").replace('#n', j.items.length) + "</p>" +
+          '<p class="hist-count">' + t("historyCount").replace('#n', j.items.length) + "</p>" +
           j.items.map(function (it) {{
             var d = it.time ? new Date(it.time).toLocaleString() : "";
-            var badge = it.status === "已开PR" || it.status === "无需修复" ? "badge s2" : "badge";
-            return '<div class="hist-item"><span class="' + badge + '">' + esc(it.status) + "</span>" +
-              ' <span class="muted">' + esc(d) + "</span>" +
-              (it.pr ? ' <a href="' + esc(it.pr) + '" target="_blank">PR</a>' : "") +
-              "<br>" + esc(it.description) + "</div>";
+            var badge = STATUS_DONE[it.status] ? "badge s2" : "badge";
+            var label = STATUS_KEY[it.status] ? t(STATUS_KEY[it.status]) : it.status;
+            return '<div class="hist-item"><div class="hist-meta">' +
+              '<span class="' + badge + '">' + esc(label) + "</span>" +
+              '<span class="muted">' + esc(d) + "</span>" +
+              (it.pr ? '<a href="' + esc(it.pr) + '" target="_blank">PR</a>' : "") +
+              "</div>" + esc(it.description) + "</div>";
           }}).join("");
       }})
       .catch(function () {{ histResult.textContent = t("historyFailed"); }});
@@ -946,7 +1049,9 @@ mod tests {
         let body = turnstile_verify_body("s", "tok", "1.2.3.4");
         assert!(body.contains("secret=s") && body.contains("response=tok"));
         assert!(turnstile_passed(&json!({ "success": true })));
-        assert!(!turnstile_passed(&json!({ "success": false, "error-codes": ["invalid-input-response"] })));
+        assert!(!turnstile_passed(
+            &json!({ "success": false, "error-codes": ["invalid-input-response"] })
+        ));
         assert!(!turnstile_passed(&json!({})));
         assert!(valid_sitekey("0x4AAAAAAAabc123-_"));
         assert!(!valid_sitekey(""));
@@ -955,9 +1060,7 @@ mod tests {
 
     #[test]
     fn rate_keys_use_integer_buckets() {
-        let [a, b, c] = rate_keys("1.2.3.4", "anon", "", 0)
-            .try_into()
-            .unwrap();
+        let [a, b, c] = rate_keys("1.2.3.4", "anon", "", 0).try_into().unwrap();
         assert_eq!(a, "rl:ip:1.2.3.4:0");
         assert_eq!(b, "rl:anon:anon:0");
         assert_eq!(c, "rl:day:0");
@@ -1030,6 +1133,65 @@ mod tests {
         // A hostile sitekey value is refused (falls back to maintenance).
         let bad = feedback_page(Some("x\" onload=alert(1)"), "https://wowsp.langyo.xyz");
         assert!(!bad.contains("onload=alert"));
+    }
+
+    #[test]
+    fn feedback_locales_parse_with_parity_and_tokens() {
+        let baseline = FEEDBACK_LOCALE_FILES
+            .iter()
+            .find(|(l, _)| *l == "en-US")
+            .map(|(_, raw)| raw)
+            .expect("en-US baseline present");
+        let base_map: Map<String, Value> =
+            serde_json::from_str(baseline).expect("en-US feedback.json parses");
+        let base_keys: Vec<&str> = base_map.keys().map(String::as_str).collect();
+        assert!(
+            base_keys.contains(&"privacy"),
+            "privacy disclaimer is i18n'd"
+        );
+
+        for (lang, raw) in FEEDBACK_LOCALE_FILES {
+            let m: Map<String, Value> = serde_json::from_str(raw)
+                .unwrap_or_else(|e| panic!("locale {lang} does not parse: {e}"));
+            assert_eq!(
+                m.keys().map(String::as_str).collect::<Vec<_>>(),
+                base_keys,
+                "locale {lang} key set drifts from en-US"
+            );
+            // Runtime #s/##n token replacement breaks silently without the
+            // token, so every locale must carry it.
+            for key in ["recCountdown", "historyCount"] {
+                let v = m.get(key).and_then(Value::as_str).unwrap_or_default();
+                let expect = if key == "recCountdown" { "#s" } else { "#n" };
+                assert!(
+                    v.contains(expect),
+                    "{lang}.{key} lost its {expect} token: {v}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn feedback_page_ships_the_locale_runtime() {
+        let page = feedback_page(Some("0x4AAAAsitekey"), "https://wowsp.langyo.xyz");
+        assert!(page.contains(r#"id="langSel""#));
+        for lang in [
+            "en-US", "zh-CN", "zh-SG", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "fr-FR", "es-ES",
+        ] {
+            assert!(
+                page.contains(&format!("\"{lang}\":")),
+                "page misses locale {lang}"
+            );
+        }
+        // The merged table is valid JSON (it doubles as a JS object literal).
+        let start = page.find("var LOCALES = ").expect("LOCALES decl") + "var LOCALES = ".len();
+        let end = page[start..].find(";\n").expect("LOCALES terminator") + start;
+        let merged: Value = serde_json::from_str(&page[start..end]).expect("LOCALES JSON");
+        assert_eq!(merged.as_object().map(Map::len), Some(9));
+        // The file picker is a translated custom button, not the OS-locale
+        // native control.
+        assert!(page.contains(r#"id="filePick" data-i18n="filePick""#));
+        assert!(page.contains(r#"<input type="file" id="file" name="file" hidden"#));
     }
 
     #[test]

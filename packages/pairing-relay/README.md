@@ -134,11 +134,13 @@ The same worker also hosts WoWSP's self-service feedback flow. Everything
 is worker-first (`run_worker_first` in `wrangler.toml` routes `/feedback`
 and `/erp` past the static-asset layer):
 
-- **`GET /feedback`** — an embedded, dependency-free bilingual form
-  (zh/en, dark-mode aware) with a Cloudflare Turnstile widget. The WoWSP
-  desktop app's 设置 ▸ 问题反馈 pane links here with `?version=…&sysinfo=…&channel=desktop`
-  prefill; the form itself mints a localStorage anonymous id and remembers
-  the optional contact field.
+- **`GET /feedback`** — an embedded, dependency-free form localized in the
+  same nine locales as the app's `res/i18n` files (language selector with
+  `?lang=`/localStorage/browser resolution, dark-mode aware) with a Cloudflare
+  Turnstile widget. The WoWSP desktop app's 设置 ▸ 问题反馈 pane links here
+  with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill (the history
+  lookup link adds `focus=history`); the form itself mints a localStorage
+  anonymous id and remembers the optional contact field.
 - **`POST /api/feedback/submit`** (multipart) — normalize → Turnstile
   siteverify → KV rate limits (5/h per IP, 10/day per anonymous id, 300/day
   global) → a record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on
