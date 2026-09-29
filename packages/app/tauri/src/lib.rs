@@ -175,6 +175,12 @@ pub fn run() {
             // paths.rs); capture the AppHandle globally before anything asks
             // for a data/cache dir.
             paths::init(app.handle().clone());
+
+            // The in-game plugin's telemetry poller (commands/ingame_plugin):
+            // broadcasts wowsp://ingame-telemetry to both surfaces — the
+            // authoritative sink/order source when the roster mode is
+            // "plugin" (see docs/en/designs/ingame-stats-plugin.md).
+            commands::ingame_plugin::spawn_telemetry_poller(app.handle().clone());
             {
                 let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
                 tracing::debug!(?data_dir, ?cache_dir, "writable roots resolved");

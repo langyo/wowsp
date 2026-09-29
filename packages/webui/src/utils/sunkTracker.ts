@@ -73,6 +73,27 @@ export class SunkTracker {
     }
   }
 
+  /** Authoritative named sink sets from the in-game plugin's telemetry
+   *  (wowsp://ingame-telemetry): REPLACES both sides' sets and keeps them
+   *  EXACT — the plugin observes isAlive inside the client, so it outranks
+   *  the luma solver by the priority chain. Names outside the roster
+   *  (stale file, renamed player) are dropped rather than trusted. */
+  applyNamedSunk(
+    sunkBySide: { ally?: Set<string>; enemy?: Set<string> },
+    rosterNames: Set<string>,
+  ): void {
+    for (const side of ["ally", "enemy"] as const) {
+      const incoming = sunkBySide[side];
+      if (!incoming) continue;
+      const state = this.sides[side];
+      state.sunk.clear();
+      for (const n of incoming) {
+        if (rosterNames.has(n)) state.sunk.add(n);
+      }
+      state.exact = true;
+    }
+  }
+
   /** Cross-check the sunk set against what the anchor's alive vector says
    *  (the side's sunk-row count). A disagreement — a sink the solver never
    *  explained, or a revive — degrades the side for the battle. */

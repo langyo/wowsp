@@ -1484,6 +1484,11 @@ export const api = {
    *  [sunk] order. */
   listenSinkAttribution: (handler: (attrib: SinkAttribution) => void) =>
     transport.listen?.<SinkAttribution>("wowsp://sink-attrib", handler),
+  /** In-game plugin telemetry broadcast (commands/ingame_plugin.rs poller):
+   *  { t, battle, players: { [name]: alive } } — the authoritative alive
+   *  set when the roster mode is "plugin". */
+  listenIngameTelemetry: (handler: (payload: { t: number; battle: string; players: Record<string, boolean> }) => void) =>
+    transport.listen?.("wowsp://ingame-telemetry", handler),
   /** Player stats lookup. `prAlgo` picks the PR formula ("winrate" =
    *  ApeRadar weighted winrate, "expected" = wows-numbers expected values);
    *  omitted → the backend's zero-cost default. Forward it only while the

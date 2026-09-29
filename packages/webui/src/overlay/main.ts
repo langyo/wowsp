@@ -282,6 +282,11 @@ let anchor: OverlayAnchor | null = null;
 // While a side stays exact, render() lays its rows out precisely instead
 // of showing candidate ranges — see utils/sunkTracker.ts.
 const sunk = new SunkTracker();
+// True while plugin telemetry is the authoritative sink source for the
+// current battle (a valid event applied under roster mode "plugin"): the
+// anchor's capture-derived alive vector then LAGS the plugin (it only
+// updates on Tab holds), so its reconcile must not degrade the sets.
+let telemetryAuthoritative = false;
 // Latest `wowsp://overlay-status` detection state (mirrors OverlayState on
 // the wire; null before the first event). Picks the two-level hint copy:
 // only `fallback` is a tried-and-failed state, everything else still reads
@@ -584,6 +589,10 @@ function render() {
       : arena.vehicles.filter((v) => v.relation <= 1).length;
     const enemyN = operation ? 0 : arena.vehicles.length - allyN;
     const reconcileSide = (rel: "ally" | "enemy", n: number, off: number) => {
+      // Plugin telemetry outranks the capture alive vector: its sets are
+      // updated off-Tab, so reconciling them against a STALE vector would
+      // wrongly degrade the side on every sink between Tab holds.
+      if (telemetryAuthoritative) return;
       const slice = aliveArr == null ? null : aliveArr.slice(off, off + n);
       const aliveCount = slice == null ? n : slice.lastIndexOf(true) + 1;
       sunk.reconcile(rel, n - aliveCount);
@@ -1047,6 +1056,41 @@ async function start() {
       { ally: attrib?.allyRows ?? [], enemy: attrib?.enemyRows ?? [] },
       (side) => sideAliveOrder(side),
     );
+  });
+  await listen("wowsp://ingame-telemetry", (e: { payload: unknown }) => {
+    // The in-game plugin's alive broadcast — the priority-chain top when
+    // the anchor's roster mode is "plugin": isAlive observed inside the
+    // client REPLACES the luma solver's sets (applyNamedSunk). No poller
+    // file → no events → the inference chain stays untouched. A render
+    // follows so visible chips re-grade immediately; the next anchor
+    // carries the matching alive vector.
+    const payload = e.payload as { t?: number; players?: Record<string, boolean> } | null;
+    if (!payload?.players || !arena) return;
+    if (Date.now() - (payload.t ?? 0) > 30_000) return;
+    if ((anchor?.rosterMode ?? "") !== "plugin") {
+      telemetryAuthoritative = false;
+      return;
+    }
+    const operation = isOperationBattle(
+      arena.matchGroup,
+      arena.scenario,
+      arena.eventType,
+      arena.vehicles.map((v) => v.name),
+    );
+    const bySide: { ally?: Set<string>; enemy?: Set<string> } = {
+      ally: new Set(),
+      enemy: new Set(),
+    };
+    const rosterNames = new Set<string>();
+    for (const v of arena.vehicles) {
+      rosterNames.add(v.name);
+      if (payload.players[v.name] !== false) continue;
+      if (operation || v.relation <= 1) bySide.ally!.add(v.name);
+      else bySide.enemy!.add(v.name);
+    }
+    telemetryAuthoritative = true;
+    sunk.applyNamedSunk(bySide, rosterNames);
+    render();
   });
   await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {
     anchor = e.payload as OverlayAnchor;

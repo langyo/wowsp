@@ -37,6 +37,7 @@ RESPONSE_FILE = 'response.json'
 MANUAL_FLAG = 'manual_refresh.flag'
 ROSTER_RAW_FILE = 'roster_raw.json'
 ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
+TELEMETRY_FILE = 'telemetry.json'
 JOURNAL_LIMIT = 300
 
 # SafeClass records hide their keys from dir(); probe likely field names so
@@ -75,6 +76,7 @@ class Probe(object):
         self.discovered = False
         self.order_subs = {}
         self.journal = []
+        self.last_telemetry = ''
         self.dh = None
         self.const = None
         self.api_dumped = False
@@ -393,6 +395,15 @@ class Probe(object):
         self.last_raw = ''
         self.discovered = False
         self.comp_dumped = False
+        try:
+            stream = open(TELEMETRY_FILE, 'w')
+            stream.write(utils.jsonEncode({'t': int(time.time() * 1000),
+                                           'battle': self.session or '',
+                                           'players': {}}) + '\n')
+            stream.close()
+            self.last_telemetry = ''
+        except Exception as exc:
+            self.soft('telemetry clear failed=' + str(exc)[:120])
         log('battle cleared')
 
     def details_reset(self):
@@ -639,6 +650,7 @@ class Probe(object):
                 self.details_reset()
                 self.busy = False
                 self.last_request = 0
+                self.last_telemetry = ''
                 self.request(False)
                 log('roster stable players=' + str(len(roster)) + ' sample=' + utils.jsonEncode(roster[0]))
         elif self.session:
@@ -649,6 +661,7 @@ class Probe(object):
                                              'players': len(self.roster), 'revision': self.revision})
         except Exception as exc:
             self.soft('heartbeat failed=' + str(exc)[:120])
+        self.write_telemetry()
         if not self.session:
             return
         try:
@@ -666,6 +679,33 @@ class Probe(object):
             if time.time() - self.last_request > 180:
                 self.busy = False
                 self.soft('response timeout after 180s')
+
+    def write_telemetry(self):
+        """The M2 consumer file: name-keyed alive flags for the whole
+        roster, rewritten whole whenever the dead-set changes (and once to
+        empty on battle quit). This is what wowsp's poller broadcasts to
+        drive exact sink marking and the [alive] ++ [sunk] order."""
+        if not self.session:
+            return
+        try:
+            states = self.entity_states()
+            players = {}
+            for p in self.roster:
+                row = states.get(p['name'])
+                # No entity yet (loading / never spotted-and-gone): alive.
+                alive = row is None or row.get('alive') != 'False'
+                players[p['name']] = alive
+            body = utils.jsonEncode({'t': int(time.time() * 1000),
+                                     'battle': self.session,
+                                     'players': players})
+            if body == self.last_telemetry:
+                return
+            self.last_telemetry = body
+            stream = open(TELEMETRY_FILE, 'w')
+            stream.write(body + '\n')
+            stream.close()
+        except Exception as exc:
+            self.soft('telemetry failed=' + str(exc)[:120])
 
     def soft(self, message):
         # Deduplicated soft logging: a repeating error should appear once.

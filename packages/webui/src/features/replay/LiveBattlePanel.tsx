@@ -173,7 +173,12 @@ export default defineComponent({
         sunk: sunk.sunkNames(side),
       };
     };
+    // True once plugin telemetry has replaced the inferred sets this
+    // battle: later luma attributions must not re-add names the plugin
+    // reports alive (the plugin outranks the solver).
+    let telemetryAuthoritative = false;
     let unlistenSinkAttrib: (() => void) | null = null;
+    let unlistenTelemetry: (() => void) | null = null;
     /** The side's believed alive order for resolving sink-attrib rows:
      *  the predicted key order minus the trusted sunk set. */
     const sideAliveOrder = (side: SunkSide): string[] => {
@@ -200,10 +205,45 @@ export default defineComponent({
         overlayStatus.value = s;
       })) as (() => void) | null;
       unlistenSinkAttrib = (await api.listenSinkAttribution((a) => {
+        if (telemetryAuthoritative) return;
         sunk.applyAttribution(
           { ally: a.allyRows ?? [], enemy: a.enemyRows ?? [] },
           sideAliveOrder,
         );
+        sinkEpoch.value += 1;
+      })) as (() => void) | null;
+      // In-game plugin telemetry — the priority-chain top when the roster
+      // mode is "plugin": isAlive observed inside the client beats the
+      // luma solver, and its sets REPLACE the inferred ones. Events while
+      // the mode is off are ignored so the inference chain stays the sole
+      // owner there.
+      unlistenTelemetry = (await api.listenIngameTelemetry((payload) => {
+        if (overlayCfg.roster !== "plugin" || !plugin.installed) return;
+        if (!props.arena) return;
+        // Stale file from a previous battle (game closed without a quit
+        // event): the plugin clears players on quit, so an empty map IS a
+        // reset; a fresh timestamp is required either way.
+        if (Date.now() - payload.t > 30_000) return;
+        const bySide: { ally?: Set<string>; enemy?: Set<string> } = {};
+        const ally = new Set<string>();
+        const enemy = new Set<string>();
+        const rosterNames = new Set<string>();
+        const operation = isOperationBattle(
+          props.arena.matchGroup,
+          props.arena.scenario,
+          props.arena.eventType,
+        );
+        for (const v of props.arena.vehicles) {
+          rosterNames.add(v.name);
+          const dead = payload.players[v.name] === false;
+          if (!dead) continue;
+          // Operations (行动) map the whole roster as the ally block — the
+          // same convention the sink solver uses (see sideAliveOrder).
+          if (operation || v.relation <= 1) ally.add(v.name);
+          else enemy.add(v.name);
+        }
+        telemetryAuthoritative = true;
+        sunk.applyNamedSunk({ ally, enemy }, rosterNames);
         sinkEpoch.value += 1;
       })) as (() => void) | null;
     });
@@ -212,6 +252,8 @@ export default defineComponent({
       unlistenStatus = null;
       unlistenSinkAttrib?.();
       unlistenSinkAttrib = null;
+      unlistenTelemetry?.();
+      unlistenTelemetry = null;
       if (shakeTimer) {
         clearTimeout(shakeTimer);
         shakeTimer = null;

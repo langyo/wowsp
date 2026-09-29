@@ -9,6 +9,7 @@
 //! resource thread.
 
 use serde::Serialize;
+use tauri::Emitter;
 
 /// The plugin's resource thread on langyo/wowsp — the settings page builds
 /// `https://github.com/langyo/wowsp/discussions/<n>` from this.
@@ -107,4 +108,59 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
     }
     tracing::info!(dir = %dir.display(), "ingame plugin uninstalled");
     Ok(())
+}
+
+/// The plugin's live telemetry file for a game root — `None` when the root
+/// has no versioned `bin/` layout to hang `res_mods` off.
+pub(crate) fn telemetry_file(game_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = super::game_context::res_mods_dir(game_root).ok()?;
+    Some(dir.join("PnFMods").join(MOD_DIR).join("telemetry.json"))
+}
+
+/// Spawn the detached telemetry poller: every 2 s it resolves the active
+/// game install, reads the plugin's `telemetry.json` (written by the
+/// in-game bridge on every alive-set change) and emits
+/// `wowsp://ingame-telemetry` to every window when its content changed.
+/// Both the live panel and the overlay window listen for the same event —
+/// this is the M2 consumer that turns the plugin's observations into
+/// authoritative sink marking and TAB ordering. Failures are silent: the
+/// poller is a pure best-effort publisher (no plugin / no game / parse
+/// hiccup all degrade to "no event this tick").
+pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
+    let _ = std::thread::Builder::new()
+        .name("ingame-telemetry-poll".into())
+        .spawn(move || {
+            let mut last: Option<String> = None;
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                let root = super::game_context::resolve_root(
+                    super::game_context::RootPreference::PreferRunning,
+                )
+                .map(|r| r.root);
+                let Some(root) = root else {
+                    continue;
+                };
+                let Some(path) = telemetry_file(&root) else {
+                    continue;
+                };
+                let Ok(raw) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let raw = raw.trim().to_owned();
+                if raw.is_empty() || raw.len() > 262_144 || last.as_deref() == Some(raw.as_str()) {
+                    continue;
+                }
+                // Only emit parseable JSON: a half-written file (the plugin
+                // rewrites whole, but the reader can still race the write)
+                // must not poison `last` — otherwise the good rewrite would
+                // be swallowed as "unchanged" while windows never saw it.
+                let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                    continue;
+                };
+                last = Some(raw);
+                if let Err(e) = app.emit("wowsp://ingame-telemetry", value) {
+                    tracing::warn!(error = %e, "emit ingame-telemetry failed");
+                }
+            }
+        });
 }
