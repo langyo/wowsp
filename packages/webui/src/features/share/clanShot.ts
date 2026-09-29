@@ -217,11 +217,9 @@ export async function renderClanShot(
       STAT_GAP,
     );
     const statsW = (origins[origins.length - 1] ?? 0) + 24;
-    // Widest first stat cell (the battles column) — a row's name must clear
-    // it, not just the cell's right-aligned origin, or long ellipsized names
-    // run into the digits.
-    const firstCellW =
-      origins.length > 1 ? origins[1] - origins[0] - STAT_GAP : 0;
+    // Origins are each column's RIGHT edge (statCellOrigins), so statLeft
+    // is the honest left edge of the whole stat block — a name only has to
+    // clear it (plus a little air), not any column's digits.
     const colW = (width - PAD * 2 - COL_GAP) / 2;
     const columns = [model.members.slice(0, memberRows), model.members.slice(memberRows)];
     const colX = (ci: number) => PAD + ci * (colW + COL_GAP);
@@ -251,10 +249,7 @@ export async function renderClanShot(
         ctx.roundRect(colX(ci), ry, colW, ROW_H, 8);
         ctx.fill();
 
-        const textW = Math.max(
-          statLeft - firstCellW - 8 - (colX(ci) + 12),
-          60,
-        );
+        const textW = Math.max(statLeft - 8 - (colX(ci) + 12), 60);
         ctx.font = font(14.5, 600);
         ctx.fillStyle = rgba(palette.text, 1);
         ctx.fillText(ellipsize(ctx, member.name, textW), colX(ci) + 12, cy - 8);

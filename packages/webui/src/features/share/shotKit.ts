@@ -317,7 +317,18 @@ export function rainbowFill(
 /** Measure the widest right-aligned stat cell per column index so every
  *  row's cells share one x-origin — the aligned-table look of the live
  *  panels. `cells` is one string array per row; `gap` is the visual air
- *  between adjacent columns. */
+ *  between adjacent columns.
+ *
+ *  The returned origin per column is that column's RIGHT edge, measured
+ *  from the stat block's left edge (`origin[i] = Σ_{j≤i} width_j + i·gap`)
+ *  — exactly where a `textAlign: "right"` fillText belongs. Returning
+ *  LEFT edges here used to make every column's right-aligned text reach
+ *  one column-width leftward into its neighbour, visibly overlapping
+ *  whenever a later column is wider than the previous one plus the gap
+ *  (the stats card's narrow battles column under a wide "100.0%"
+ *  winrate). The LAST origin therefore equals the whole block's width,
+ *  which is what the callers' `origins[origins.length - 1] + pad`
+ *  trailing-space math expects. */
 export function statCellOrigins(
   ctx: CanvasRenderingContext2D,
   cells: string[][],
@@ -332,7 +343,7 @@ export function statCellOrigins(
       const s = row[i];
       if (s) w = Math.max(w, ctx.measureText(s).width);
     }
-    origins.push(x);
+    origins.push(x + w);
     x += w + gap;
   }
   return origins;
