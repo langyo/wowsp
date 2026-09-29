@@ -91,27 +91,25 @@ export function chunkLegendItems<T>(items: readonly T[], size: number): T[][] {
 
 /** One DOM legend row: colored dot + "<localized name> <integer>%" keyed by
  *  the RAW aggregation code — two nations can share a display name (and an
- *  equal rounded percent), so the text is not unique enough to key on. The
- *  percentage base is the SUM OF SHOWN SLICES, not aggregate.total: battles
- *  of ships with no type/nation entry never reach a slice, and the slice
- *  tooltips divide by the shown sum — this way the legend percents always
- *  add up to 100 like the tooltips. */
+ *  equal rounded percent), so the text is not unique enough to key on. */
 interface LegendItem {
   code: string;
   color: string;
   text: string;
 }
 
-function toLegendItems(
-  entries: [string, number][],
-  colorOf: (key: string) => string,
-  labelOf: (key: string) => string,
-): LegendItem[] {
-  const shown = entries.reduce((a, [, v]) => a + v, 0);
-  return entries.map(([k, v]) => ({
-    code: k,
-    color: colorOf(k),
-    text: `${labelOf(k)} ${shown > 0 ? Math.round((v / shown) * 100) : 0}%`,
+/** Legend rows built FROM the donut slices, so the row percent is
+ *  DonutSlice.percentInt — the same integer the slice tooltip renders —
+ *  and the two views of one aggregation can never disagree. The share
+ *  base is the SUM OF SHOWN SLICES, not aggregate.total: battles of ships
+ *  with no type/nation entry never reach a slice. Independent integer
+ *  rounding can still leave a whole legend summing to 99 or 101 (three
+ *  equal thirds) — expected display rounding, not drift. */
+export function toLegendItems(slices: readonly DonutSlice[]): LegendItem[] {
+  return slices.map((s) => ({
+    code: s.code,
+    color: s.fill,
+    text: `${s.label} ${s.percentInt}%`,
   }));
 }
 
@@ -209,13 +207,19 @@ function fullRing(
 }
 
 /** One donut slice: raw aggregation code (stable key), localized label,
- *  battles, share of the SHOWN sum (2-decimal percent, matching the old
- *  in-canvas tooltip precision), ready-to-render path and fill. */
+ *  battles, share of the SHOWN sum, ready-to-render path and fill. */
 export interface DonutSlice {
   code: string;
   label: string;
   value: number;
+  /** Share of the shown sum at 2-decimal display precision (33.496% →
+   *  33.5). */
   percent: number;
+  /** Math.round of the RAW share (33.496% → 33): the single integer both
+   *  the slice tooltip and the DOM legend render. Computed once here so
+   *  re-rounding the 2-decimal value (33.5 → 34) can never disagree with
+   *  the legend. */
+  percentInt: number;
   path: string;
   fill: string;
 }
@@ -249,8 +253,8 @@ export function donutSlices(
   const slices: DonutSlice[] = [];
   let angle = -90;
   for (const [code, value] of shown) {
-    const percent = Math.round((value / total) * 10000) / 100;
-    const sweep = (value / total) * 360;
+    const share = value / total;
+    const sweep = share * 360;
     const end = angle + sweep;
     const path =
       sweep > 360 - 1e-9
@@ -260,7 +264,8 @@ export function donutSlices(
       code,
       label: opts.labelOf(code),
       value,
-      percent,
+      percent: Math.round(share * 10000) / 100,
+      percentInt: Math.round(share * 100),
       path,
       fill: opts.colorOf(code),
     });
@@ -315,6 +320,8 @@ export function tierBars(
   // Grid mirrors the old ECharts option: left/right 8, top 22 (room for
   // the value label above the tallest bar), bottom reserved for the tier
   // numbers (baseline at height-18, number baseline 6 above the edge).
+  // The top pad keeps the 10-unit label font inside the box: the tallest
+  // bar's label baseline is y=17 and a 10-unit ascent ≈ 8 → glyph top 9.
   const sidePad = 8;
   const topPad = 22;
   const baselineY = height - 18;
@@ -325,7 +332,9 @@ export function tierBars(
   const plotH = baselineY - topPad;
   const bars = tiers.map((value, i) => {
     const centerX = fmt(sidePad + slotW * (i + 0.5));
-    if (!(value > 0) || max <= 0) {
+    // `!(… > 0)` (not `<= 0`) so a NaN bin — which also poisons the max
+    // reduce — renders an empty slot instead of NaN geometry.
+    if (!(value > 0) || !(max > 0)) {
       return {
         tier: i + 1,
         value,
@@ -378,6 +387,25 @@ export function tierBars(
 const BAR_VIEWBOX = { width: 320, height: 150 };
 const DONUT_VIEWBOX = 150;
 
+// Tooltips ride the app-wide delegated hint hook
+// (composables/globalTooltip.ts): data-hint on each slice/bar path gets
+// the hikari-styled hover popup — viewport clamped, zero per-component
+// wiring. (The hook also shows hints on keyboard focus, but these paths
+// carry no tabindex, so in practice they are hover-only.) That hook's
+// charter is to RETIRE native title tooltips app-wide, and every other
+// webui surface already speaks data-hint, so plain SVG <title> would
+// fight the app convention (the only in-repo <title>, RatingStamp,
+// predates it). Slice hints render DonutSlice.percentInt — the same
+// integer the DOM legend rows beside the donut show — so the two can
+// never disagree.
+export function sliceHint(s: DonutSlice): string {
+  return `${s.label} · ${t("stats.dist.battles")} ${s.value} · ${s.percentInt}%`;
+}
+
+function barHint(b: TierBarSlot): string {
+  return `${t("ships.tier")} ${b.tier} · ${t("stats.dist.battles")} ${b.value}`;
+}
+
 export default defineComponent({
   name: "ShipDistCharts",
   props: {
@@ -392,20 +420,6 @@ export default defineComponent({
     // (t) / data-language (nation DB) / the ship-type palette ref, so
     // locale switches and palette edits repaint everything live.
     const dist = computed(() => aggregate(props.ships));
-    const typeLegend = computed(() =>
-      toLegendItems(
-        positiveEntries(dist.value.types),
-        (k) => shipTypeCssColor(shipTypeChartColor(k)),
-        typeLabel,
-      ),
-    );
-    const nationLegend = computed(() =>
-      toLegendItems(
-        positiveEntries(dist.value.nations),
-        (k) => NATION_COLORS[k] ?? NATION_COLORS.other!,
-        nationLabel,
-      ),
-    );
     const tierLayout = computed(() => tierBars(dist.value.tiers.slice(1)));
     // Slice colors keyed by the aggregated code itself (not data order):
     // each fill resolves the palette from theme/shipTypeColors, so a class
@@ -425,20 +439,11 @@ export default defineComponent({
         colorOf: (k) => NATION_COLORS[k] ?? NATION_COLORS.other!,
       }),
     );
-
-    // Tooltips ride the app-wide delegated hint hook
-    // (composables/globalTooltip.ts): data-hint on each slice/bar path gets
-    // the hikari-styled popup — hover AND keyboard focus, viewport
-    // clamping, zero per-component wiring. That hook's charter is to RETIRE
-    // native title tooltips app-wide, and every other webui surface
-    // already speaks data-hint, so plain SVG <title> would fight the app
-    // convention (the only in-repo <title>, RatingStamp, predates it).
-    // Integer percents keep the hints in exact agreement with the DOM
-    // legend rows beside each donut.
-    const sliceHint = (s: DonutSlice) =>
-      `${s.label} · ${t("stats.dist.battles")} ${s.value} · ${Math.round(s.percent)}%`;
-    const barHint = (b: TierBarSlot) =>
-      `${t("ships.tier")} ${b.tier} · ${t("stats.dist.battles")} ${b.value}`;
+    // Legend rows derive from the slices (shared percentInt), so the
+    // tooltip integer and the legend integer are the same value by
+    // construction.
+    const typeLegend = computed(() => toLegendItems(typeSlices.value));
+    const nationLegend = computed(() => toLegendItems(nationSlices.value));
 
     // DOM legend for a donut — WG-site style: each row is a small colored
     // dot followed by "<name> <percent>", rows stack vertically in columns

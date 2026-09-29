@@ -4,13 +4,18 @@
  *  rows per column: 6 ship types → 5+1 over two columns, 14 nations →
  *  5+5+4 over three). donutSlices / tierBars generate the hand-drawn SVG
  *  paths, so their angle math, radii, layout and the degenerate
- *  full-circle arc all carry exact-string coverage here. */
+ *  full-circle arc all carry exact-string coverage here; the percentInt
+ *  tests pin the legend/tooltip integer agreement against double
+ *  rounding. */
 import { describe, expect, it } from "vitest";
 
+import { t } from "@/i18n";
 import {
   chunkLegendItems,
   donutSlices,
+  sliceHint,
   tierBars,
+  toLegendItems,
 } from "./ShipDistCharts";
 
 /** Shorthand: the per-column item counts for a chunking run. */
@@ -114,6 +119,7 @@ describe("donutSlices", () => {
       label: "L(cruiser)",
       value: 10,
       percent: 100,
+      percentInt: 100,
       fill: "C(cruiser)",
     });
   });
@@ -127,6 +133,30 @@ describe("donutSlices", () => {
       identity,
     );
     expect(slices.map((s) => s.percent)).toEqual([33.33, 66.67]);
+    expect(slices.map((s) => s.percentInt)).toEqual([33, 67]);
+  });
+
+  it("feeds legend and hint the SAME integer from the raw share", () => {
+    // 33496/100000 = 33.496%: the 2-decimal display value is 33.5, so
+    // re-rounding IT would show 34 in the tooltip while the legend shows
+    // 33. percentInt is rounded once from the raw share, and both the
+    // legend rows and the slice hint render that single field.
+    expect(toLegendItems([])).toEqual([]);
+    const slices = donutSlices(
+      [
+        ["a", 33496],
+        ["b", 66504],
+      ],
+      identity,
+    );
+    expect(slices[0]!.percent).toBe(33.5);
+    expect(slices[0]!.percentInt).toBe(33);
+    expect(toLegendItems(slices)[0]!.text).toBe("L(a) 33%");
+    // Expected hint built with the SAME t() so the assertion holds whether
+    // or not another test already loaded the locale messages.
+    expect(sliceHint(slices[0]!)).toBe(
+      `L(a) · ${t("stats.dist.battles")} 33496 · 33%`,
+    );
   });
 
   it("honors custom viewBox and radii", () => {
@@ -224,6 +254,12 @@ describe("tierBars", () => {
 
   it("renders all-zero data without dividing by zero", () => {
     const { bars } = tierBars(new Array(10).fill(0));
+    expect(bars.every((b) => b.path === "" && b.labelY === null)).toBe(true);
+    expect(bars.every((b) => Number.isFinite(b.centerX))).toBe(true);
+  });
+
+  it("treats a NaN bin (and the max it poisons) as empty, never NaN geometry", () => {
+    const { bars } = tierBars([NaN, 5, 10, 0, 0, 0, 0, 0, 0, 0]);
     expect(bars.every((b) => b.path === "" && b.labelY === null)).toBe(true);
     expect(bars.every((b) => Number.isFinite(b.centerX))).toBe(true);
   });

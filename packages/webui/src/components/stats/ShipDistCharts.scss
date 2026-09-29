@@ -107,15 +107,21 @@
   fill: rgb(var(--color-primary));
 }
 
+/* Bar text runs 10 viewBox units (not the canvas-era 9px): preserve-
+   aspect "meet" renders the 320-unit box at ~0.75x once the flex item
+   hits its 240px min-width, and the extra unit keeps the digits legible
+   at that scale. Headroom holds — the tallest bar's value label sits at
+   baseline y=17, a 10-unit ascent ≈ 8 keeps the glyph top at y≈9, and
+   the tier numbers' baseline y=144 plus ≈2.5 descent stays inside 150. */
 .ship-dist-charts__bar-value {
   fill: rgb(var(--color-text) / 0.75);
-  font-size: 9px;
+  font-size: 10px;
   text-anchor: middle;
 }
 
 .ship-dist-charts__tier-num {
   fill: rgb(var(--color-text) / 0.6);
-  font-size: 9px;
+  font-size: 10px;
   text-anchor: middle;
 }
 
