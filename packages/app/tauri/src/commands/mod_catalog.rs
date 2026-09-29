@@ -276,7 +276,6 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
         if !ver.bundled.unwrap_or(false) && packages.is_empty() {
             continue;
         }
-        let packages = packages;
         mods.push(CatalogEntry {
             id: id.clone(),
             category: m.category.unwrap_or_else(|| "aux".into()),
