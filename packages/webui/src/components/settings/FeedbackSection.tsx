@@ -1,5 +1,6 @@
 import { computed, defineComponent, onMounted, ref } from "vue";
-import { Copy, FolderSearch, PackageOpen } from "@lucide/vue";
+import { getVersion } from "@tauri-apps/api/app";
+import { Copy, ExternalLink, FolderSearch, PackageOpen } from "@lucide/vue";
 
 import {
   HkButton,
@@ -62,18 +63,41 @@ function formatBytes(bytes: number): string {
 /**
  * FeedbackSection — the settings' 问题反馈 pane. The app keeps a
  * daily-rolling UTF-8 diagnostics log (Rust `logging` module, under
- * `<data>/logs`); this pane surfaces it: open the folder with the newest
- * file selected, copy the newest tail for a chat paste, and export a zip
- * bundle (logs + manifest) shaped as the future 飞书 self-service upload's
- * attachment. Manual channels (GitHub Issues / QQ group) fill the gap
- * until that lands.
+ * `<data>/logs`); this pane surfaces it locally (reveal the newest file,
+ * copy the tail, export a zip bundle) and hands off to the web feedback
+ * form (wowsp.langyo.xyz/feedback, Turnstile-protected) whose submissions
+ * land in the 飞书多维表 review pipeline — export the bundle first, then
+ * attach it in the form.
  */
+const WEB_FORM_URL = "https://wowsp.langyo.xyz/feedback";
+
 export default defineComponent({
   name: "FeedbackSection",
   setup() {
     const toast = useToast();
     const lang = useLanguage();
     const { copy } = useClipboard();
+
+    const version = ref("");
+    onMounted(async () => {
+      // Running build, for the web form's prefilled version field
+      // (browser dev keeps "" — the form just shows an empty field).
+      try {
+        version.value = await getVersion();
+      } catch {
+        // Browser dev mode — no Tauri runtime.
+      }
+    });
+
+    /** The web form link carries the local build identity as prefill. */
+    const webFormUrl = computed(() => {
+      const q = new URLSearchParams({
+        version: version.value,
+        sysinfo: `desktop ${navigator.platform || "unknown"}`,
+        channel: "desktop",
+      });
+      return `${WEB_FORM_URL}?${q.toString()}`;
+    });
 
     const overview = ref<LogsOverview | null>(null);
     // Starts true: mount always kicks a load onMounted, so the first render
@@ -245,6 +269,14 @@ export default defineComponent({
       <HkSettingsGroup title={t("settings.feedbackChannels")}>
         <HkSettingsHint>{t("settings.feedbackChannelsHint")}</HkSettingsHint>
         <div class="feedback__actions">
+          <HkButton
+            variant="primary"
+            size="sm"
+            onClick={() => void openExternal(webFormUrl.value)}
+          >
+            <ExternalLink size={14} />
+            {t("settings.feedbackWeb")}
+          </HkButton>
           <HkButton size="sm" onClick={() => void openExternal(t("about.links.issues"))}>
             GitHub Issues
           </HkButton>
@@ -252,7 +284,7 @@ export default defineComponent({
             {t("settings.feedbackQqGroup")}
           </HkButton>
         </div>
-        <HkSettingsHint>{t("settings.feedbackFeishuSoon")}</HkSettingsHint>
+        <HkSettingsHint>{t("settings.feedbackWebHint")}</HkSettingsHint>
       </HkSettingsGroup>
       </>
     );

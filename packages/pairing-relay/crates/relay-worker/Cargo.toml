@@ -28,6 +28,7 @@ worker = "^0.8"
 futures-util = { version = "^0.3", default-features = false, features = [
     "std",
 ] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 # Deserializing DO storage rows listed as raw JsValues (see directory.rs).
 serde-wasm-bindgen = "^0.6"

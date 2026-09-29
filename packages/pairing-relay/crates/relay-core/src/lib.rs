@@ -14,7 +14,9 @@
 //! version of that document.
 
 pub mod directory;
+pub mod feedback;
 pub mod manifest;
+pub mod multipart;
 pub mod protocol;
 pub mod room;
 pub mod route;

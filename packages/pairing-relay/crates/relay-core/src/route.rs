@@ -1,12 +1,19 @@
 //! URL classification for the gateway's HTTP + WebSocket routes. The
 //! worker serves the WEBSITE statically at `/`; everything it answers
 //! itself lives under `/api` (no version segment — the health document
-//! carries the version instead).
+//! carries the version instead) plus the two worker-first pages
+//! `/feedback` and `/erp` (see wrangler `run_worker_first`).
 //!
 //!   GET  /api/health                     — merged health + discovery doc
 //!   WS   /api/relay/control?room=<64hex>&role=host|client
 //!   WS   /api/relay/resolve?code=NNNNNN
 //!   WS   /api/relay/data/<room>/<connId>[?role=host|client]
+//!   GET  /feedback                       — feedback form page (Turnstile)
+//!   GET  /erp                            — admin review console page
+//!   POST /api/feedback/submit            — form target (multipart)
+//!   GET  /api/feedback/list              — records JSON (admin key)
+//!   POST /api/feedback/update            — status/PR-link write (admin)
+//!   GET  /api/feedback/attachment?file_token=… — 302 to a Feishu tmp url
 
 use crate::room::Side;
 
@@ -30,6 +37,19 @@ pub enum Route<'a> {
         conn_id: &'a str,
         side: Side,
     },
+    /// GET /feedback — the embedded feedback form page.
+    FeedbackPage,
+    /// GET /erp — the embedded admin review console page.
+    ErpPage,
+    /// POST /api/feedback/submit — multipart form target.
+    FeedbackSubmit,
+    /// GET /api/feedback/list — records JSON for the console / agents.
+    FeedbackList,
+    /// POST /api/feedback/update — status / PR-link write.
+    FeedbackUpdate,
+    /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
+    /// temporary download URL; `file_token` is the raw query value.
+    FeedbackAttachment { file_token: Option<&'a str> },
     /// Nothing we serve — the static-asset layer already answered every
     /// non-API path, so in production this only happens on unknown
     /// `/api/*` shapes.
@@ -51,6 +71,16 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
     let path = trim_path(path);
     match path {
         "/api/health" => return Route::Health,
+        "/feedback" => return Route::FeedbackPage,
+        "/erp" => return Route::ErpPage,
+        "/api/feedback/submit" => return Route::FeedbackSubmit,
+        "/api/feedback/list" => return Route::FeedbackList,
+        "/api/feedback/update" => return Route::FeedbackUpdate,
+        "/api/feedback/attachment" => {
+            return Route::FeedbackAttachment {
+                file_token: query_get(query, "file_token"),
+            };
+        },
         "/api/relay/control" => {
             return Route::Control {
                 room: query_get(query, "room"),
@@ -113,6 +143,29 @@ mod tests {
         assert_eq!(classify("/", ""), Route::NotFound);
         assert_eq!(classify("/api", ""), Route::NotFound);
         assert_eq!(classify("/api/", ""), Route::NotFound);
+    }
+
+    #[test]
+    fn feedback_routes_classify() {
+        assert_eq!(classify("/feedback", ""), Route::FeedbackPage);
+        assert_eq!(classify("/erp", ""), Route::ErpPage);
+        assert_eq!(classify("/erp/", ""), Route::ErpPage);
+        assert_eq!(classify("/api/feedback/submit", ""), Route::FeedbackSubmit);
+        assert_eq!(classify("/api/feedback/list", ""), Route::FeedbackList);
+        assert_eq!(classify("/api/feedback/update", ""), Route::FeedbackUpdate);
+        assert_eq!(
+            classify("/api/feedback/attachment", "file_token=ftok123"),
+            Route::FeedbackAttachment {
+                file_token: Some("ftok123")
+            }
+        );
+        assert_eq!(
+            classify("/api/feedback/attachment", ""),
+            Route::FeedbackAttachment { file_token: None }
+        );
+        // Unknown feedback subpaths stay NotFound.
+        assert_eq!(classify("/api/feedback/other", ""), Route::NotFound);
+        assert_eq!(classify("/feedback/sub", ""), Route::NotFound);
     }
 
     #[test]

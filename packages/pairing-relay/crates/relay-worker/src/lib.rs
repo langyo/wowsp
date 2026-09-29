@@ -17,6 +17,7 @@
 //!     (per-room rendezvous + byte pipes).
 
 pub mod directory;
+pub mod feedback;
 pub mod room;
 
 pub use directory::Directory;
@@ -53,6 +54,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     }
 
     let query = url.query().unwrap_or("").to_string();
+    let origin = url.origin().ascii_serialization();
 
     match classify(&path, &query) {
         Route::Health => {
@@ -65,6 +67,26 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             let mut resp = Response::from_json(&health)?;
             resp.headers_mut().set("cache-control", "no-store")?;
             Ok(resp)
+        },
+
+        // ── feedback pipeline (see src/feedback.rs) ─────────────────────
+        Route::FeedbackPage => {
+            if req.method() != Method::Get {
+                return Response::error("method not allowed", 405);
+            }
+            feedback::page_feedback(&origin, &env)
+        },
+        Route::ErpPage => {
+            if req.method() != Method::Get {
+                return Response::error("method not allowed", 405);
+            }
+            feedback::page_erp(&origin)
+        },
+        Route::FeedbackSubmit => feedback::handle_submit(req, env).await,
+        Route::FeedbackList => feedback::handle_list(req, env).await,
+        Route::FeedbackUpdate => feedback::handle_update(req, env).await,
+        Route::FeedbackAttachment { file_token: _ } => {
+            feedback::handle_attachment(req, env).await
         },
 
         Route::Control { room, role } => {

@@ -128,6 +128,65 @@ Clients below `minClientVersion` get a distinct update-the-app error
 (`relay-core::MIN_CLIENT_VERSION` is the knob to turn when a wire change
 old clients cannot talk to lands).
 
+## Feedback pipeline (`/feedback`, `/erp`)
+
+The same worker also hosts WoWSP's self-service feedback flow. Everything
+is worker-first (`run_worker_first` in `wrangler.toml` routes `/feedback`
+and `/erp` past the static-asset layer):
+
+- **`GET /feedback`** — an embedded, dependency-free bilingual form
+  (zh/en, dark-mode aware) with a Cloudflare Turnstile widget. The WoWSP
+  desktop app's 设置 ▸ 问题反馈 pane links here with `?version=…&sysinfo=…&channel=desktop`
+  prefill; the form itself mints a localStorage anonymous id and remembers
+  the optional contact field.
+- **`POST /api/feedback/submit`** (multipart) — normalize → Turnstile
+  siteverify → KV rate limits (5/h per IP, 10/day per anonymous id, 300/day
+  global) → a record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on
+  first use; see below) → optional log-bundle upload via
+  `drive/v1/medias/upload_all` attached to the record's 日志包 field.
+- **`GET /erp`** — the maintainer's review console (admin-key gated):
+  lists records, flips 处理状态, writes PR links, downloads attachments
+  through `/api/feedback/attachment` (302 to a Feishu temporary URL).
+- **`GET /api/feedback/list` / `POST /api/feedback/update`** — the JSON
+  surface behind the console, also what fix-agents consume (header
+  `X-Admin-Key`).
+
+Anti-abuse is layered: Turnstile (human check) → KV counters (speed) →
+every record starts as 待审查 and only matters once a human flips it.
+
+### Configuration (secrets & vars)
+
+```
+npx wrangler secret put FEISHU_APP_ID        # 飞书自建应用 app_id (cli_…)
+npx wrangler secret put FEISHU_APP_SECRET    # … its app_secret
+npx wrangler secret put TURNSTILE_SECRET     # Turnstile widget secret key
+npx wrangler secret put FEEDBACK_ADMIN_KEY   # the /erp + admin API key
+# dashboard ▶ Settings ▶ Variables (plaintext vars):
+#   TURNSTILE_SITEKEY        — Turnstile sitekey (public; form shows a
+#                              maintenance notice until it is set)
+#   FEEDBACK_ADMIN_OPEN_ID   — optional; granted full_access on the
+#                              bootstrapped Bitable so a human can open it
+#   FEEDBACK_BITABLE_APP_TOKEN / FEEDBACK_BITABLE_TABLE_ID — optional pin
+#                              to a pre-existing base instead of bootstrap
+```
+
+The Bitable is bootstrapped by the worker on first submission: it creates
+the base「WoWSP 反馈」+ the 反馈 table (schema in
+`crates/relay-core/src/feedback.rs`, verified live against the Feishu
+OpenAPI), caches the ids in `FEEDBACK_KV`, and — when
+`FEEDBACK_ADMIN_OPEN_ID` is set — grants that user `full_access` so they
+can review records in the Feishu app. The Feishu app needs the Bitable
+read/write + drive upload + permission-member scopes.
+
+A `FEEDBACK_TURNSTILE_BYPASS` **secret** exists purely for post-deploy
+smoke tests: a submission whose `_bypass` field equals the secret skips
+siteverify. Set it, curl a submission through, then `npx wrangler secret
+delete FEEDBACK_TURNSTILE_BYPASS` — never leave it in place.
+
+The `FEEDBACK_KV` namespace is bound in `wrangler.toml` (rate-limit
+counters + the tenant-token and base-id caches; create it once with
+`npx wrangler kv namespace create FEEDBACK_KV`).
+
 ## Deploy (the owner's manual step)
 
 Prerequisites: Rust (rustup with the `wasm32-unknown-unknown` target:

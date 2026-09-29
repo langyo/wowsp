@@ -42,7 +42,13 @@ command = "worker-build --release crates/relay-worker"
 directory = "./assets"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/docs", "/docs/*"]
+run_worker_first = ["/api/*", "/docs", "/docs/*", "/feedback", "/feedback/", "/erp", "/erp/"]
+
+# Feedback pipeline KV (rate-limit counters + Feishu token/base caches).
+# Namespace: `npx wrangler kv namespace create FEEDBACK_KV`.
+[[kv_namespaces]]
+binding = "FEEDBACK_KV"
+id = "a523e16e116b4f9fa5878c721c133028"
 
 # Two SQLite-backed Durable Object classes — what the Workers FREE tier
 # provisions:
