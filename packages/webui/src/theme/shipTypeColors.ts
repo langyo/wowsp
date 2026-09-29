@@ -3,8 +3,9 @@
  * ship-distribution donut (lookup screen and the replay post-battle panel,
  * components/stats/ShipDistCharts). Slices used to draw from an index-based
  * palette, so a class's color drifted with data order; here every ship type
- * owns a stable color (BB red, CA green, DD yellow, CV blue, SS purple,
- * AX slate) that the user can retint in the settings appearance section.
+ * owns a stable color (the WG official class colors; see
+ * DEFAULT_SHIP_TYPE_COLORS below) that the user can retint in the settings
+ * appearance section.
  *
  * Stored as a JSON object keyed by the six canonical ship-type strings
  * under `wowsp-ship-type-colors`. No CSS variables are written — consumers
@@ -45,15 +46,23 @@ export const SHIP_TYPE_COLOR_LABEL_KEYS: Record<ShipTypeColorKey, string> = {
   auxiliary: "Auxiliary",
 };
 
+/**
+ * Factory palette — WG OFFICIAL class colors, extracted from the bundled
+ * main.js of profile.worldofwarships.com (their literal map:
+ * `{aircarrier:"#f3bd7f", battleship:"#d14842", cruiser:"#3497da",
+ * destroyer:"#cfd4d8", submarine:"#808b8d"}`). WG defines no auxiliary
+ * color, so that class takes a distinct soft green to stay visible next to
+ * the destroyer silver-gray.
+ */
 export const DEFAULT_SHIP_TYPE_COLORS: Readonly<
   Record<ShipTypeColorKey, ShipTypeRgbColor>
 > = {
-  battleship: { r: 239, g: 68, b: 68 }, // #ef4444 red
-  cruiser: { r: 34, g: 197, b: 94 }, // #22c55e green
-  destroyer: { r: 250, g: 204, b: 21 }, // #facc15 yellow
-  aircarrier: { r: 59, g: 130, b: 246 }, // #3b82f6 blue
-  submarine: { r: 168, g: 85, b: 247 }, // #a855f7 purple
-  auxiliary: { r: 148, g: 163, b: 184 }, // #94a3b8 slate gray
+  battleship: { r: 209, g: 72, b: 66 }, // #d14842 red
+  cruiser: { r: 52, g: 151, b: 218 }, // #3497da blue
+  destroyer: { r: 207, g: 212, b: 216 }, // #cfd4d8 silver gray
+  aircarrier: { r: 243, g: 189, b: 127 }, // #f3bd7f flesh
+  submarine: { r: 128, g: 139, b: 141 }, // #808b8d gray
+  auxiliary: { r: 106, g: 174, b: 127 }, // #6aae7f soft green
 };
 
 function clampChannel(v: number): number {

@@ -25,6 +25,16 @@ function typeLabel(typeKey: string): string {
   return lbl === i18nKey ? typeKey : lbl;
 }
 
+/** Legend row text "战列 43%" — ECharts hands the legend formatter only the
+ *  slice NAME, so the value→percent mapping closes over the current data. */
+function legendPercentFormatter(data: { name: string; value: number }[], total: number) {
+  const byName = new Map(data.map((d) => [d.name, d.value]));
+  return (name: string): string => {
+    const v = byName.get(name) ?? 0;
+    return `${name} ${Math.round((v / total) * 100)}%`;
+  };
+}
+
 /** Theme-aware chart ink. ECharts paints on canvas, so it cannot follow CSS
  *  variables — resolve the text-channel triplet from the document element and
  *  derive rgba() strings. Called on every render(); the mode/theme watches
@@ -82,10 +92,11 @@ export default defineComponent({
       if (total === 0) return;
       const ink = chartInk();
       if (barEl.value && barChart) {
-        const tierData = tiers
-          .slice(1)
-          .map((n, i) => ({ tier: i + 1, value: n }))
-          .filter((d) => d.value > 0);
+        // ALL ten tier bins always render — an unplayed tier stays an empty
+        // gap on the axis instead of the neighbours stretching over it, and
+        // the fixed pixel bar width keeps bars identical no matter how many
+        // tiers carry battles. Zero bins hide only their top value label.
+        const tierData = tiers.slice(1).map((n, i) => ({ tier: i + 1, value: n }));
         barChart.setOption(
           {
             animation: false,
@@ -102,8 +113,8 @@ export default defineComponent({
               {
                 name: t("stats.dist.battles"),
                 type: "bar",
-                barWidth: "55%",
-                data: tierData.map((d) => d.value),
+                barWidth: 12,
+                data: tierData.map((d) => ({ value: d.value, label: { show: d.value > 0 } })),
                 itemStyle: { borderRadius: [2, 2, 0, 0] },
                 label: {
                   show: true,
@@ -122,7 +133,10 @@ export default defineComponent({
         // each itemStyle resolves the fixed palette from
         // theme/shipTypeColors, so a class keeps its color across players,
         // filters and locale switches — and user edits repaint live via the
-        // shipTypeColors watch below.
+        // shipTypeColors watch below. Presentation follows the WG profile
+        // page: no callout labels or leader lines, a scrollable legend
+        // strip at the bottom carrying the per-slice percent, and the
+        // donut lifted off center to make room for that legend.
         const typeData = Object.entries(types)
           .sort((a, b) => b[1] - a[1])
           .map(([k, v]) => ({
@@ -134,16 +148,24 @@ export default defineComponent({
           {
             animation: false,
             tooltip: { trigger: "item" },
+            legend: {
+              type: "scroll",
+              bottom: 0,
+              left: "center",
+              itemWidth: 8,
+              itemHeight: 8,
+              itemGap: 6,
+              textStyle: { color: ink.label, fontSize: 9 },
+              formatter: legendPercentFormatter(typeData, total),
+            },
             series: [
               {
                 name: t("stats.dist.shipType"),
                 type: "pie",
-                radius: ["38%", "66%"],
-                label: {
-                  color: ink.label,
-                  fontSize: 9,
-                  formatter: "{b} {d}%",
-                },
+                radius: ["34%", "60%"],
+                center: ["50%", "42%"],
+                label: { show: false },
+                labelLine: { show: false },
                 data: typeData,
               },
             ],
