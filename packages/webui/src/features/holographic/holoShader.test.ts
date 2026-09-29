@@ -39,6 +39,8 @@ describe("holoShader", () => {
     expect(mat.uniforms.uScanGain.value).toBe(0);
     expect(mat.uniforms.uSweepGain.value).toBe(0);
     expect(mat.uniforms.uFlickerGain.value).toBe(0);
+    expect(mat.uniforms.uFresnelPow.value).toBeCloseTo(2.5);
+    expect(mat.uniforms.uFresnelGain.value).toBeCloseTo(1.2);
     expect(mat.uniforms.ghostAlpha.value).toBe(1);
     expect(mat.transparent).toBe(true);
     expect(mat.depthWrite).toBe(false);

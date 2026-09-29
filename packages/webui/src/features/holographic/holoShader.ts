@@ -91,6 +91,12 @@ export interface HoloUniforms {
   uSweepGain: { value: number };
   /** Subtle whole-surface brightness flicker — 0 stays steady. */
   uFlickerGain: { value: number };
+  /** Fresnel exponent / gain — the legacy constants (2.5 / 1.2) by default so
+   *  markers keep the old rim; the stage raises the exponent to confine the
+   *  rim to the true silhouette (a coarse quantized hull at low incidence
+   *  otherwise turns the broad rim into a per-plate mosaic of bright wedges). */
+  uFresnelPow: { value: number };
+  uFresnelGain: { value: number };
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -134,6 +140,8 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float uScanGain;
   uniform float uSweepGain;
   uniform float uFlickerGain;
+  uniform float uFresnelPow;
+  uniform float uFresnelGain;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
@@ -158,11 +166,22 @@ export const HOLO_FRAG = /* glsl */ `
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
     float facing = dot(n, viewDir);
     if (facing < 0.0) n = -n;
-    float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
+    // Exponent/gain ride uniforms (legacy 2.5 / 1.2). A high exponent with a
+    // modest gain keeps the rim a silhouette light: the baked hull's quantized
+    // plates sit at slightly different incidences, and a broad rim turns those
+    // small differences into a mosaic of bright wedge patches and seam lines.
+    float fres = pow(1.0 - max(dot(n, viewDir), 0.0), uFresnelPow);
+    // With smooth normals the PRE-flip facing is trustworthy, and a plate whose
+    // normal leans slightly AWAY from the camera sits at |facing| ≈ 0 exactly
+    // like a true silhouette — the rim then paints it as a bright crumpled-foil
+    // seam over the whole flank. Fade the rim out across the leaning-away
+    // range. Gated to the smooth-normal path: derivative normals flip with the
+    // hull's random winding, where "negative facing" means nothing.
+    fres *= mix(1.0, smoothstep(-0.25, 0.05, facing), vHasNormal);
     float scan = sin((vLocalPos.y * 0.08 + scanOffset) * 6.2831) * 0.5 + 0.5;
     scan = smoothstep(0.82, 1.0, scan);
     vec3 col = baseColor * (0.75 + 0.45 * fres);
-    col += fresnelColor * fres * 1.2;
+    col += fresnelColor * fres * uFresnelGain;
     col += fresnelColor * scan * 0.5;
     // Headlight: ease the facing ratio so only surfaces square to the camera
     // lift, while grazing panels stay dark toward the rim. Multiplicative —
@@ -270,6 +289,8 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       uScanGain: { value: 0.0 },
       uSweepGain: { value: 0.0 },
       uFlickerGain: { value: 0.0 },
+      uFresnelPow: { value: 2.5 },
+      uFresnelGain: { value: 1.2 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,

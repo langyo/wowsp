@@ -1171,24 +1171,33 @@ export default defineComponent({
             mat.uniforms.fresnelColor.value.copy(c.fresnel);
             // Definition layer: smooth-normal headlight + measuring grid so
             // broad panels read as surfaces instead of a flat pastel fill.
-            mat.uniforms.uLightGain.value = 0.40;
-            mat.uniforms.uLinesGain.value = 0.20;
-            // Glassier hologram: the fill drops to about half the legacy
-            // opacity so broadsides show the background through them (the
+            // Both gains stay LOW: the baked hull's quantized plates sit at
+            // slightly different incidences, and big normal-driven terms
+            // amplify those differences into mottled patches across the
+            // flank (the headlight) or dense stripes at grazing (the grid).
+            mat.uniforms.uLightGain.value = 0.30;
+            mat.uniforms.uLinesGain.value = 0.12;
+            // Glassier hologram: the fill drops to roughly 60% of the legacy
+            // opacity in the dark theme (a tenth more in the light theme) so
+            // broadsides show the background through them (the
             // depth anchor still hides the far side), the rim carries the
             // silhouette, and three layered motions — fine screen rows, a
             // climbing sweep band, a faint flicker — keep the surface reading
             // as a transmitted projection rather than moulded plastic. The
             // pale light-theme background washes a translucent fill out
-            // further, so it keeps a point more opacity there (same
+            // further, so it keeps a tenth more opacity there (same
             // dataset.mode check the scene background uses; a mid-session
             // theme flip takes effect on the next model load).
             mat.uniforms.uBaseAlpha.value =
-              document.documentElement.dataset.mode === "dark" ? 0.38 : 0.48;
+              document.documentElement.dataset.mode === "dark" ? 0.45 : 0.55;
             mat.uniforms.uRimAlpha.value = 0.55;
             mat.uniforms.uScanGain.value = 0.50;
             mat.uniforms.uSweepGain.value = 0.40;
             mat.uniforms.uFlickerGain.value = 0.05;
+            // Confine the rim to the true silhouette (tuned in the holo lab
+            // against the crumpled-foil plate seams; see holoShader.ts).
+            mat.uniforms.uFresnelPow.value = 5.0;
+            mat.uniforms.uFresnelGain.value = 1.0;
             materialCache.set(name, mat);
           }
           mesh.material = mat;
