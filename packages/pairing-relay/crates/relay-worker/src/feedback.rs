@@ -76,13 +76,14 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
     }
-    // Cheap pre-reject before buffering the body (FILE_MAX + form slack).
+    // Cheap pre-reject before buffering the body (largest attachment
+    // kind + form slack).
     if let Some(len) = req
         .headers()
         .get("Content-Length")?
         .and_then(|v| v.parse::<usize>().ok())
     {
-        if len > relay_core::feedback::FILE_MAX + 64 * 1024 {
+        if len > relay_core::feedback::ATTACHMENT_MAX + 64 * 1024 {
             return err(413, "file_too_large");
         }
     }
@@ -94,7 +95,7 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     let body = req.bytes().await?;
     // Chunked requests carry no Content-Length — enforce the cap on the
     // BUFFERED body too, before any parsing happens.
-    if body.len() > relay_core::feedback::FILE_MAX + 64 * 1024 {
+    if body.len() > relay_core::feedback::ATTACHMENT_MAX + 64 * 1024 {
         return err(413, "file_too_large");
     }
     let parts = multipart::parse(&boundary, &body);
@@ -156,9 +157,13 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
 
     // Rate limits (best-effort KV counters; eventual consistency is fine —
     // Turnstile already carries the abuse load, this is the speed bump).
+    // Keys: IP/hour, anon/day, contact/day (when given), global/day.
     let kv = env.kv(KV)?;
     let now = now_ms();
-    for (key, limit) in rate_keys(&ip, &sub.anon_id, now).iter().zip(rate_limits()) {
+    for (key, limit) in rate_keys(&ip, &sub.anon_id, &sub.contact, now)
+        .iter()
+        .zip(rate_limits(&sub.contact))
+    {
         let count: u64 = kv.get(key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
         if count > limit {
             return err(429, "rate_limited");
@@ -317,6 +322,84 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
             })
             .filter(|t| !t.is_empty()),
     }))
+}
+
+/// GET /api/feedback/history?contact=… — PUBLIC lookup (the submitter's
+/// own progress tracker). Rate-limited per IP; rows carry only
+/// time/status/description-snippet/PR-link — no attachments, no
+/// record urls, snippet-capped descriptions (limits cross-contact
+/// disclosure through enumeration).
+pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
+    if req.method() != Method::Get {
+        return err(405, "method_not_allowed");
+    }
+    let query = req.url()?.query().unwrap_or("").to_string();
+    let Some(contact) = relay_core::route::query_get(&query, "contact")
+        .map(|c| relay_core::feedback::normalize_contact(c))
+        .filter(|c| !c.is_empty() && c.len() <= relay_core::feedback::CONTACT_MAX)
+    else {
+        return err(400, "bad_request");
+    };
+    let kv = env.kv(KV)?;
+    let ip = req
+        .headers()
+        .get("CF-Connecting-IP")?
+        .unwrap_or_else(|| "local".into());
+    let key = relay_core::feedback::history_rate_key(&ip, now_ms());
+    let count: u64 = kv.get(&key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
+    if count > relay_core::feedback::RATE_HISTORY_PER_HOUR {
+        return err(429, "rate_limited");
+    }
+    kv.put(&key, count)?.expiration_ttl(TTL_HOUR).execute().await?;
+
+    let token = feishu_token(&env).await.map_err(|e| e.to_string())?;
+    let ids = ensure_base(&env, &token).await.map_err(|e| e.to_string())?;
+    let (_, v) = feishu_json(
+        Method::Post,
+        &format!(
+            "{FEISHU}/bitable/v1/apps/{}/tables/{}/records/search?page_size=20",
+            ids.app_token, ids.table_id
+        ),
+        &token,
+        json!({
+            "filter": {
+                "conjunction": "and",
+                "conditions": [{
+                    "field_name": feedback::F_CONTACT,
+                    "operator": "is",
+                    "value": [contact],
+                }],
+            },
+            "sort": [{ "field_name": feedback::F_TIME, "desc": true }],
+        }),
+    )
+    .await?;
+
+    let items = v
+        .pointer("/data/items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|rec| {
+            let f = |name: &str| rec.pointer(&format!("/fields/{name}")).cloned();
+            let desc = text_val(&f(feedback::F_DESC));
+            let snippet: String = desc
+                .chars()
+                .take(relay_core::feedback::HISTORY_SNIPPET)
+                .collect();
+            json!({
+                "time": f(feedback::F_TIME).and_then(|v| v.as_i64()),
+                "status": text_val(&f(feedback::F_STATUS)),
+                "description": snippet,
+                "pr": f(feedback::F_PR).and_then(|v| {
+                    v.get("link").and_then(Value::as_str).map(str::to_string)
+                }),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    ok(json!({ "ok": true, "items": items }))
 }
 
 /// POST /api/feedback/update {record_id, status?, pr_link?} — the console's

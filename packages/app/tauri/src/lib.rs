@@ -470,6 +470,9 @@ pub fn run() {
             commands::trends::get_community_ship_trend,
             commands::trends::get_ship_server_stats,
             commands::screenshot::capture_main_window,
+            // Feedback quick action: full virtual-screen capture (Windows
+            // GDI); the revealed PNG is attached to the web feedback form.
+            commands::screenshot::feedback_capture_screen,
             commands::exports::pick_export_path,
             commands::exports::write_export_bytes,
             commands::exports::copy_image_to_clipboard,

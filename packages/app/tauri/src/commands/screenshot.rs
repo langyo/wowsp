@@ -196,6 +196,125 @@ pub(crate) fn capture_window_png(
     Err("screenshot capture is Windows-only".into())
 }
 
+/// Capture the ENTIRE virtual screen (all monitors) and save as PNG to
+/// `<data>/feedback-shot-<ts>.png`, then reveal the file in the system
+/// file manager. The feedback flow's 全屏截图 quick action — the user
+/// attaches the revealed file to the web form (or shares it manually).
+#[tauri::command]
+pub fn feedback_capture_screen(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let out_path = default_screenshot_path()?
+        .to_string_lossy()
+        .replace("screenshot-", "feedback-shot-")
+        .to_string();
+    let out_path = std::path::PathBuf::from(&out_path);
+    capture_screen_png(&out_path)?;
+    tracing::info!(path = %out_path.display(), "feedback screen shot saved");
+    let _ = app
+        .opener()
+        .reveal_item_in_dir(&out_path)
+        .inspect_err(|e| tracing::warn!(error = %e, "reveal feedback shot failed"));
+    Ok(out_path.to_string_lossy().into_owned())
+}
+
+/// Full virtual-screen capture: the desktop DC (GetDC(NULL)) BitBlts fine
+/// (no DirectComposition blank-surface problem — that only affects
+/// per-window WebView DCs).
+#[cfg(target_os = "windows")]
+fn capture_screen_png(out_path: &std::path::Path) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::*;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    };
+
+    let x = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+    let y = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
+    let width =
+        unsafe { GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CXVIRTUALSCREEN) };
+    let height =
+        unsafe { GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CYVIRTUALSCREEN) };
+    if width <= 0 || height <= 0 {
+        return Err("degenerate virtual screen metrics".into());
+    }
+    let (x, y, width, height) = (x, y, width as u32, height as u32);
+
+    unsafe {
+        let hdc_screen = GetDC(Some(HWND(std::ptr::null_mut())));
+        if hdc_screen.is_invalid() {
+            return Err("GetDC(NULL) failed".into());
+        }
+        let hdc_mem = CreateCompatibleDC(Some(hdc_screen));
+        let hbmp = CreateCompatibleBitmap(hdc_screen, width as i32, height as i32);
+        let old_bmp = SelectObject(hdc_mem, hbmp.into());
+        let blt = BitBlt(
+            hdc_mem,
+            0,
+            0,
+            width as i32,
+            height as i32,
+            Some(hdc_screen),
+            x,
+            y,
+            SRCCOPY | CAPTUREBLT,
+        );
+        if blt.is_err() {
+            let _ = SelectObject(hdc_mem, old_bmp);
+            let _ = DeleteObject(hbmp.into());
+            let _ = DeleteDC(hdc_mem);
+            let _ = ReleaseDC(Some(HWND(std::ptr::null_mut())), hdc_screen);
+            return Err("screen BitBlt failed".into());
+        }
+        let mut bi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width as i32,
+                biHeight: -(height as i32), // top-down
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD::default()],
+        };
+        let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
+        let got = GetDIBits(
+            hdc_mem,
+            hbmp,
+            0,
+            height,
+            Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),
+            &mut bi,
+            DIB_RGB_COLORS,
+        );
+        let _ = SelectObject(hdc_mem, old_bmp);
+        let _ = DeleteObject(hbmp.into());
+        let _ = DeleteDC(hdc_mem);
+        let _ = ReleaseDC(Some(HWND(std::ptr::null_mut())), hdc_screen);
+        if got == 0 {
+            return Err("GetDIBits returned 0".into());
+        }
+        for chunk in pixels.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+            chunk[3] = 255;
+        }
+        let img = image::RgbaImage::from_raw(width, height, pixels)
+            .ok_or_else(|| "failed to create image buffer".to_string())?;
+        img.save(out_path).map_err(|e| format!("save PNG: {e}"))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn capture_screen_png(_out_path: &std::path::Path) -> Result<(), String> {
+    Err("screen capture is Windows-only".into())
+}
+
 pub(crate) fn default_screenshot_path() -> Result<PathBuf, String> {
     // paths::data_dir keeps this identical on Windows (%APPDATA%\WoWSP) and
     // resolves the app-private dir on Android, where raw dirs-next has no

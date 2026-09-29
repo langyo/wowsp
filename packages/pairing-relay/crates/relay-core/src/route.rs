@@ -45,7 +45,10 @@ pub enum Route<'a> {
     FeedbackSubmit,
     /// GET /api/feedback/list — records JSON for the console / agents.
     FeedbackList,
-    /// POST /api/feedback/update — status / PR-link write.
+    /// GET /api/feedback/history?contact=… — public lookup of one
+    /// contact's own submissions + processing status (rate-limited).
+    FeedbackHistory { contact: Option<&'a str> },
+    /// POST /api/feedback/update — status/PR-link write.
     FeedbackUpdate,
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
@@ -75,6 +78,11 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/erp" => return Route::ErpPage,
         "/api/feedback/submit" => return Route::FeedbackSubmit,
         "/api/feedback/list" => return Route::FeedbackList,
+        "/api/feedback/history" => {
+            return Route::FeedbackHistory {
+                contact: query_get(query, "contact"),
+            };
+        },
         "/api/feedback/update" => return Route::FeedbackUpdate,
         "/api/feedback/attachment" => {
             return Route::FeedbackAttachment {
@@ -152,6 +160,16 @@ mod tests {
         assert_eq!(classify("/erp/", ""), Route::ErpPage);
         assert_eq!(classify("/api/feedback/submit", ""), Route::FeedbackSubmit);
         assert_eq!(classify("/api/feedback/list", ""), Route::FeedbackList);
+        assert_eq!(
+            classify("/api/feedback/history", "contact=12345"),
+            Route::FeedbackHistory {
+                contact: Some("12345")
+            }
+        );
+        assert_eq!(
+            classify("/api/feedback/history", ""),
+            Route::FeedbackHistory { contact: None }
+        );
         assert_eq!(classify("/api/feedback/update", ""), Route::FeedbackUpdate);
         assert_eq!(
             classify("/api/feedback/attachment", "file_token=ftok123"),

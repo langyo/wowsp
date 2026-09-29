@@ -1586,6 +1586,10 @@ export const api = {
     transport.invoke<ShipServerStats | null>(RPC.get_ship_server_stats, { shipId }),
   captureMainWindow: (path: string) =>
     transport.invoke<string>(RPC.capture_main_window, { path }),
+  /** Full virtual-screen capture for the feedback quick action: saves
+   *  `<data>/feedback-shot-<ts>.png`, reveals it in the file manager,
+   *  returns the path. Windows-only (errors elsewhere). */
+  feedbackCaptureScreen: () => transport.invoke<string>(RPC.feedback_capture_screen),
   /** Native save dialog for tactical-board exports (screenshots/video).
    *  Null = the user cancelled the dialog. */
   pickExportPath: (defaultName: string, filterName: string, filterExts: string[]) =>

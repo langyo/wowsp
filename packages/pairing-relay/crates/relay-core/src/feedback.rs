@@ -37,9 +37,21 @@ pub const ANON_MAX: usize = 48;
 /// free-plan Worker CPU budget (parse + rebuild multipart) is the real
 /// ceiling — 4 MiB keeps both comfortable (typical log zips are < 1 MiB).
 pub const FILE_MAX: usize = 4 * 1024 * 1024;
-/// Accepted log-bundle extensions (the app exports .zip; browsers may
-/// drag a raw .log/.txt).
-pub const FILE_EXTS: &[&str] = &["zip", "log", "txt", "gz"];
+/// Screenshot/image cap (browser screenshots paste in at a few MB).
+pub const IMAGE_MAX: usize = 10 * 1024 * 1024;
+/// Screen-recording cap. A 10-second 720p webm lands at 2–8 MB; 18 MiB
+/// stays under Feishu `upload_all`'s 20 MiB ceiling with headroom.
+pub const VIDEO_MAX: usize = 18 * 1024 * 1024;
+/// Log bundles (the app's zip export, raw logs).
+pub const LOG_EXTS: &[&str] = &["zip", "log", "txt", "gz"];
+/// Screenshots / pasted images.
+pub const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+/// Screen recordings (MediaRecorder in browsers emits webm; mp4 for
+/// Safari).
+pub const VIDEO_EXTS: &[&str] = &["webm", "mp4", "mov"];
+/// The largest cap any single attachment may hit (drives the request
+/// body precheck).
+pub const ATTACHMENT_MAX: usize = VIDEO_MAX;
 /// Uploaded file-name length cap (after control-character stripping).
 pub const FILENAME_MAX: usize = 200;
 
@@ -47,8 +59,48 @@ pub const FILENAME_MAX: usize = 200;
 pub const RATE_IP_PER_HOUR: u64 = 5;
 /// Per-anonymous-id submissions per UTC day.
 pub const RATE_ANON_PER_DAY: u64 = 10;
+/// Per-contact (QQ / email) submissions per UTC day — the abuse ceiling
+/// the operator asked for.
+pub const RATE_CONTACT_PER_DAY: u64 = 20;
 /// Global submissions per UTC day (the kill-switch ceiling).
 pub const RATE_GLOBAL_PER_DAY: u64 = 300;
+/// History lookups per IP per hour (the lookup endpoint is public).
+pub const RATE_HISTORY_PER_HOUR: u64 = 30;
+/// Description snippet length in public history rows (limits cross-contact
+/// information disclosure through the lookup endpoint).
+pub const HISTORY_SNIPPET: usize = 120;
+
+/// The kind of an attachment, by extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachKind {
+    Log,
+    Image,
+    Video,
+}
+
+/// Classify a (sanitized) file name; `None` when the extension is not
+/// accepted at all.
+pub fn attach_kind(name: &str) -> Option<AttachKind> {
+    let ext = name.rsplit('.').next()?.to_ascii_lowercase();
+    if LOG_EXTS.contains(&ext.as_str()) {
+        Some(AttachKind::Log)
+    } else if IMAGE_EXTS.contains(&ext.as_str()) {
+        Some(AttachKind::Image)
+    } else if VIDEO_EXTS.contains(&ext.as_str()) {
+        Some(AttachKind::Video)
+    } else {
+        None
+    }
+}
+
+/// Size cap for a given attachment kind.
+pub fn attach_max(kind: AttachKind) -> usize {
+    match kind {
+        AttachKind::Log => FILE_MAX,
+        AttachKind::Image => IMAGE_MAX,
+        AttachKind::Video => VIDEO_MAX,
+    }
+}
 
 // ── submission ─────────────────────────────────────────────────────────
 
@@ -102,31 +154,26 @@ pub fn normalize(sub: &mut Submission) -> Result<(), &'static str> {
     if sub.anon_id.is_empty() {
         sub.anon_id = "anon".into();
     }
-    if let Some(bytes) = sub.file_bytes.as_ref() {
-        if bytes.len() > FILE_MAX {
-            return Err("file_too_large");
-        }
-    }
-    // The name rides an outbound Content-Disposition header line — strip
-    // everything that could break the quoting/framing, cap the length
-    // (stem-only, extension preserved)…
     if let Some(name) = sub.file_name.as_mut() {
+        // The name rides an outbound Content-Disposition header line —
+        // strip everything that could break the quoting/framing, cap the
+        // length (stem-only, extension preserved)…
         *name = name
             .chars()
             .filter(|c| *c != '"' && *c != '\r' && *c != '\n' && *c != '\\')
             .collect();
         *name = cap_name(name, FILENAME_MAX);
     }
-    // …then the extension check runs on the FINAL name.
-    if sub.file_bytes.is_some() {
-        let name = sub.file_name.as_deref().unwrap_or("");
-        let ext_ok = !name.is_empty()
-            && name
-                .rsplit('.')
-                .next()
-                .is_some_and(|e| FILE_EXTS.contains(&e.to_ascii_lowercase().as_str()));
-        if !ext_ok {
+    // …then the kind check (extension) and the per-kind size cap run on
+    // the FINAL name.
+    if let Some(bytes) = sub.file_bytes.as_ref() {
+        let Some(name) = sub.file_name.as_deref().filter(|n| !n.is_empty()) else {
             return Err("bad_file_type");
+        };
+        match attach_kind(name) {
+            None => return Err("bad_file_type"),
+            Some(kind) if bytes.len() > attach_max(kind) => return Err("file_too_large"),
+            Some(_) => {},
         }
     }
     Ok(())
@@ -157,7 +204,9 @@ pub fn record_fields(sub: &Submission, now_ms: i64) -> Map<String, Value> {
     let mut m = Map::new();
     m.insert(F_DESC.into(), json!(sub.description));
     if !sub.contact.is_empty() {
-        m.insert(F_CONTACT.into(), json!(sub.contact));
+        // Store the canonical lookup form so handle_history's exact-match
+        // filter on the normalized query finds mixed-case/spacey originals.
+        m.insert(F_CONTACT.into(), json!(normalize_contact(&sub.contact)));
     }
     if !sub.version.is_empty() {
         m.insert(F_VERSION.into(), json!(sub.version));
@@ -236,19 +285,44 @@ pub fn valid_sitekey(k: &str) -> bool {
 // ── rate-limit key layout ──────────────────────────────────────────────
 
 /// Integer time buckets keep the layout clock-format-free (UTC).
-pub fn rate_keys(ip: &str, anon: &str, now_ms: i64) -> [String; 3] {
+/// Submit keys: IP/hour, anon/day, contact/day (only when a contact was
+/// given), global/day.
+pub fn rate_keys(ip: &str, anon: &str, contact: &str, now_ms: i64) -> Vec<String> {
     let hour = now_ms.div_euclid(3_600_000);
     let day = now_ms.div_euclid(86_400_000);
-    [
+    let mut keys = vec![
         format!("rl:ip:{ip}:{hour}"),
         format!("rl:anon:{anon}:{day}"),
-        format!("rl:day:{day}"),
-    ]
+    ];
+    if !contact.is_empty() {
+        keys.push(format!("rl:contact:{}:{day}", normalize_contact(contact)));
+    }
+    keys.push(format!("rl:day:{day}"));
+    keys
 }
 
-/// Which limit each key from [`rate_keys`] is compared against.
-pub fn rate_limits() -> [u64; 3] {
-    [RATE_IP_PER_HOUR, RATE_ANON_PER_DAY, RATE_GLOBAL_PER_DAY]
+/// Which limit each key from [`rate_keys`] is compared against (same
+/// order; the contact slot mirrors the key's presence).
+pub fn rate_limits(contact: &str) -> Vec<u64> {
+    let mut limits = vec![RATE_IP_PER_HOUR, RATE_ANON_PER_DAY];
+    if !contact.is_empty() {
+        limits.push(RATE_CONTACT_PER_DAY);
+    }
+    limits.push(RATE_GLOBAL_PER_DAY);
+    limits
+}
+
+/// Canonical lookup form for a contact: trimmed, lowercased (emails),
+/// interior whitespace collapsed — " QQ 123@QQ.com " and "123@qq.com"
+/// must share one bucket.
+pub fn normalize_contact(contact: &str) -> String {
+    let lower = contact.trim().to_lowercase();
+    lower.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// History-lookup rate key (per IP per hour).
+pub fn history_rate_key(ip: &str, now_ms: i64) -> String {
+    format!("rl:hist:{ip}:{}", now_ms.div_euclid(3_600_000))
 }
 
 /// Percent-encode a query/component value (RFC 3986 unreserved kept).
@@ -303,13 +377,32 @@ textarea, input[type=text] {{ width: 100%; padding: 8px 10px; border: 1px solid 
   border-radius: 8px; font: inherit; background: transparent; color: inherit; }}
 textarea {{ min-height: 120px; resize: vertical; }}
 input[readonly] {{ opacity: .75; }}
-button {{ margin-top: 18px; padding: 9px 22px; border: 0; border-radius: 8px; font: inherit;
+button {{ padding: 9px 18px; border: 0; border-radius: 8px; font: inherit;
   font-weight: 600; background: #2563eb; color: #fff; cursor: pointer; }}
 button:disabled {{ opacity: .5; cursor: not-allowed; }}
+button.ghost {{ background: transparent; border: 1px solid #d0d7de; color: inherit; }}
 .notice {{ padding: 12px; border-radius: 8px; background: rgb(255 159 10 / 12%); }}
 #msg {{ margin-top: 14px; white-space: pre-wrap; }}
 #msg.ok {{ color: #1a7f37; }} #msg.err {{ color: #cf222e; }}
 a {{ color: #2563eb; }}
+.media-row {{ display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: center; }}
+.media-row button {{ padding: 7px 14px; font-size: .9rem; }}
+#recState {{ font-weight: 600; color: #cf222e; }}
+#attachInfo {{ margin-top: 8px; font-size: .85rem; color: #6b7280; display: flex;
+  gap: 8px; align-items: center; flex-wrap: wrap; }}
+#attachInfo button {{ padding: 2px 10px; font-size: .78rem; }}
+.privacy {{ margin-top: 18px; padding: 12px; border-radius: 8px; font-size: .82rem;
+  line-height: 1.7; color: #6b7280; background: rgb(110 118 129 / 10%); }}
+details.history {{ margin-top: 22px; }}
+details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem; }}
+.hist-row {{ display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }}
+.hist-row input {{ flex: 1; min-width: 200px; }}
+.hist-item {{ padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 8px;
+  margin-bottom: 8px; font-size: .88rem; }}
+.hist-item .muted {{ color: #6b7280; font-size: .8rem; }}
+.badge {{ display: inline-block; padding: 0 8px; border-radius: 999px; font-size: .78rem;
+  background: rgb(37 99 235 / 14%); color: #2563eb; }}
+.badge.s2 {{ background: rgb(26 127 55 / 14%); color: #1a7f37; }}
 </style>
 </head>
 <body>
@@ -328,44 +421,82 @@ a {{ color: #2563eb; }}
   <input type="hidden" name="channel" value="web">
   <input type="hidden" name="anon" id="anon">
   <label for="file" data-i18n="fileLabel"></label>
-  <input type="file" id="file" name="file" accept=".zip,.log,.txt,.gz">
+  <input type="file" id="file" name="file" accept=".zip,.log,.txt,.gz,.png,.jpg,.jpeg,.gif,.webp,.bmp,.webm,.mp4,.mov">
+  <div class="media-row">
+    <button type="button" class="ghost" id="shot" data-i18n="shotBtn"></button>
+    <button type="button" class="ghost" id="rec" data-i18n="recBtn"></button>
+    <button type="button" class="ghost" id="recStop" style="display:none" data-i18n="recStopBtn"></button>
+    <span id="recState"></span>
+  </div>
+  <div id="attachInfo" style="display:none">
+    <span id="attachText"></span>
+    <button type="button" class="ghost" id="attachClear" data-i18n="attachClear"></button>
+  </div>
   {turnstile_widget}
   <button type="submit" id="submit"{submit_disabled} data-i18n="submit"></button>
   <p id="msg" role="status"></p>
 </form>
+<section class="privacy" data-i18n="privacy"></section>
+<details class="history" id="historyBox">
+  <summary data-i18n="historyTitle"></summary>
+  <div class="hist-row">
+    <input type="text" id="histContact" data-i18n-placeholder="historyContact">
+    <button type="button" id="histGo" data-i18n="historyGo"></button>
+  </div>
+  <div id="histResult"></div>
+</details>
 </main>
 <script>
 (function () {{
   var zh = {{
-    subtitle: "遇到问题或建议？带上日志提交，我们会尽快处理。",
-    descLabel: "反馈描述 *", contactLabel: "联系方式（QQ，选填）",
+    subtitle: "遇到问题或建议？可以带上截图、录屏或日志提交，我们会尽快处理。",
+    descLabel: "反馈描述 *", contactLabel: "联系方式（QQ / 邮箱，选填）",
     versionLabel: "应用版本", sysLabel: "系统信息",
-    fileLabel: "日志包（选填，≤ 4MB，.zip / .log / .txt / .gz）",
+    fileLabel: "附件（日志 .zip / 截图图片 / 录屏视频，选填）",
+    shotBtn: "截图", recBtn: "录屏（≤10 秒）", recStopBtn: "停止录制",
+    recCountdown: "录制中 #s 秒", attachClear: "移除",
+    privacy: "隐私说明：所有附件（截图、录屏、日志）都由你手动选择或手动触发采集，我们不会主动采集任何数据。画面里可能包含你的个人信息，请自行斟酌暴露范围——截图 / 录屏时可以选择只采集某个窗口而不是整个屏幕。你无意中暴露的隐私内容只会被用于定位问题，我们承诺不将其用于任何其他用途，问题处理完毕后随记录一起删除。",
     submit: "提交", maintenance: "反馈通道暂时维护中，请稍后再试或到 QQ 群反馈。",
     sending: "提交中…", ok: "提交成功，感谢反馈！",
     viewRecord: "查看记录",
+    historyTitle: "历史反馈记录", historyContact: "QQ 或邮箱（追查处理进度）",
+    historyGo: "查询", historyEmpty: "没有查到该联系方式的反馈记录。",
+    historyFailed: "查询失败，请稍后再试。", historyCount: "最近 #n 条",
     e_empty_description: "请填写反馈描述。", e_bad_channel: "渠道参数无效。",
-    e_file_too_large: "日志包超过 4MB 限制。", e_bad_file_type: "仅支持 .zip / .log / .txt / .gz。",
-    e_turnstile: "人机验证未通过，请重试。", e_rate_limited: "提交过于频繁，请稍后再试。",
+    e_file_too_large: "附件超过大小限制（日志 ≤ 4MB，图片 ≤ 10MB，录屏 ≤ 18MB）。",
+    e_bad_file_type: "支持的类型：日志 .zip/.log/.txt、图片 .png/.jpg/.webp、录屏 .webm/.mp4。",
+    e_turnstile: "人机验证未通过，请重试。", e_rate_limited: "提交过于频繁或超出当日限额（同一联系方式每天最多 20 次），请稍后再试。",
     e_upstream: "服务暂时不可用，请稍后再试。"
   }};
   var en = {{
-    subtitle: "Problem or suggestion? Attach your logs and we will take a look.",
-    descLabel: "Description *", contactLabel: "Contact (QQ, optional)",
+    subtitle: "Problem or suggestion? Attach a screenshot, a recording or logs and we will take a look.",
+    descLabel: "Description *", contactLabel: "Contact (QQ / email, optional)",
     versionLabel: "App version", sysLabel: "System info",
-    fileLabel: "Log bundle (optional, ≤ 4MB, .zip / .log / .txt / .gz)",
+    fileLabel: "Attachment (log .zip / screenshot image / screen recording, optional)",
+    shotBtn: "Screenshot", recBtn: "Record (≤10s)", recStopBtn: "Stop recording",
+    recCountdown: "Recording #s s", attachClear: "Remove",
+    privacy: "Privacy note: every attachment (screenshot, recording, logs) is chosen or triggered by you manually — we never collect anything on our own. Captures may contain personal information; consider limiting the scope (pick a single window instead of the whole screen when capturing). Anything private you expose unintentionally is used only to diagnose your report, never for any other purpose, and is deleted along with the record once the issue is handled.",
     submit: "Submit", maintenance: "The feedback channel is under maintenance — please retry later or use the QQ group.",
     sending: "Submitting…", ok: "Submitted — thank you!",
     viewRecord: "View record",
+    historyTitle: "My feedback history", historyContact: "QQ or email (track progress)",
+    historyGo: "Look up", historyEmpty: "No feedback found for this contact.",
+    historyFailed: "Lookup failed, please retry later.", historyCount: 'Latest #n',
     e_empty_description: "Please describe the problem.", e_bad_channel: "Invalid channel.",
-    e_file_too_large: "Log bundle exceeds the 4MB limit.", e_bad_file_type: "Only .zip / .log / .txt / .gz are accepted.",
-    e_turnstile: "Human verification failed, please retry.", e_rate_limited: "Too many submissions, please retry later.",
+    e_file_too_large: "Attachment exceeds its size limit (logs ≤ 4MB, images ≤ 10MB, recordings ≤ 18MB).",
+    e_bad_file_type: "Accepted: logs .zip/.log/.txt, images .png/.jpg/.webp, recordings .webm/.mp4.",
+    e_turnstile: "Human verification failed, please retry.", e_rate_limited: "Too many submissions or over the daily cap (max 20 per day per contact) — please retry later.",
     e_upstream: "Service temporarily unavailable, please retry later."
   }};
   var dict = (navigator.language || "zh").toLowerCase().startsWith("zh") ? zh : en;
+  function t(k) {{ return dict[k] || ""; }}
   document.querySelectorAll("[data-i18n]").forEach(function (el) {{
-    var v = dict[el.getAttribute("data-i18n")];
+    var v = t(el.getAttribute("data-i18n"));
     if (v) el.textContent = v;
+  }});
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(function (el) {{
+    var v = t(el.getAttribute("data-i18n-placeholder"));
+    if (v) el.placeholder = v;
   }});
 
   var q = new URLSearchParams(location.search);
@@ -391,36 +522,157 @@ a {{ color: #2563eb; }}
   contact.value = localStorage.getItem("wowsp_fb_contact") || "";
   contact.addEventListener("change", function () {{ localStorage.setItem("wowsp_fb_contact", contact.value); }});
 
+  // ── attachments: media capture replaces the file-input pick ──────────
+  var media = {{ blob: null, name: null }};
+  var fileInput = document.getElementById("file");
+  var attachInfo = document.getElementById("attachInfo");
+  function setAttachment(name, blob) {{
+    media.name = name; media.blob = blob;
+    if (blob) fileInput.value = "";
+    attachInfo.style.display = blob ? "flex" : "none";
+    document.getElementById("attachText").textContent = blob
+      ? name + " (" + (blob.size / 1048576).toFixed(1) + " MB)" : "";
+  }}
+  document.getElementById("attachClear").onclick = function () {{ setAttachment(null, null); }};
+  fileInput.addEventListener("change", function () {{
+    if (fileInput.files[0]) setAttachment(fileInput.files[0].name, fileInput.files[0]);
+  }});
+  // Pasting an image straight into the description attaches it.
+  document.addEventListener("paste", function (ev) {{
+    var item = (ev.clipboardData || {{}}).items && [].slice.call(ev.clipboardData.items)
+      .find(function (i) {{ return i.type.indexOf("image/") === 0; }});
+    if (!item) return;
+    var blob = item.getAsFile();
+    if (blob) setAttachment("pasted.png", blob);
+  }});
+
+  document.getElementById("shot").onclick = async function () {{
+    try {{
+      // The browser picker offers both single-window and full-screen.
+      var stream = await navigator.mediaDevices.getDisplayMedia({{ video: true }});
+      var track = stream.getVideoTracks()[0];
+      var video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      await new Promise(function (r) {{ setTimeout(r, 200); }});
+      var canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      stream.getTracks().forEach(function (t) {{ t.stop(); }});
+      canvas.toBlob(function (b) {{ if (b) setAttachment("screenshot.png", b); }}, "image/png");
+    }} catch (e) {{ /* user cancelled the picker */ }}
+  }};
+
+  var recorder = null, recTimer = null;
+  var recBtn = document.getElementById("rec"), recStop = document.getElementById("recStop");
+  var recState = document.getElementById("recState");
+  function recUi(on, left) {{
+    recBtn.disabled = on; recStop.style.display = on ? "" : "none";
+    recState.textContent = on ? t("recCountdown").replace('#s', left) : "";
+  }}
+  recBtn.onclick = async function () {{
+    try {{
+      var stream = await navigator.mediaDevices.getDisplayMedia({{ video: true }});
+      var mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9" : "video/webm";
+      recorder = new MediaRecorder(stream, {{ mimeType: mime, videoBitsPerSecond: 2500000 }});
+      var chunks = [];
+      recorder.ondataavailable = function (ev) {{ if (ev.data.size) chunks.push(ev.data); }};
+      recorder.onstop = function () {{
+        clearInterval(recTimer);
+        stream.getTracks().forEach(function (tr) {{ tr.stop(); }});
+        setAttachment("recording.webm", new Blob(chunks, {{ type: "video/webm" }}));
+        recorder = null; recUi(false, 0);
+      }};
+      recorder.start(250);
+      var left = 10;
+      recUi(true, left);
+      recTimer = setInterval(function () {{
+        left -= 1;
+        if (left <= 0) {{ clearInterval(recTimer); if (recorder) recorder.stop(); }}
+        else recUi(true, left);
+      }}, 1000);
+    }} catch (e) {{ /* user cancelled the picker */ }}
+  }};
+  recStop.onclick = function () {{
+    clearInterval(recTimer);
+    if (recorder) recorder.stop();
+  }};
+
+  // ── submit ────────────────────────────────────────────────────────────
   var form = document.getElementById("f"), msg = document.getElementById("msg"), btn = document.getElementById("submit");
   form.addEventListener("submit", function (ev) {{
     ev.preventDefault();
-    msg.className = ""; msg.textContent = dict.sending; btn.disabled = true;
-    fetch(form.action, {{ method: "POST", body: new FormData(form) }})
+    msg.className = ""; msg.textContent = t("sending"); btn.disabled = true;
+    var fd = new FormData(form);
+    if (media.blob) fd.append("file", media.blob, media.name);
+    fetch(form.action, {{ method: "POST", body: fd }})
       .then(function (r) {{ return r.json().then(function (j) {{ return {{ status: r.status, j: j }}; }}); }})
       .then(function (res) {{
         if (res.status >= 200 && res.status < 300 && res.j.ok) {{
-          msg.className = "ok"; msg.textContent = dict.ok;
+          msg.className = "ok"; msg.textContent = t("ok");
           form.reset();
           document.getElementById("version").value = pre.version;
           document.getElementById("sysinfo").value = pre.sysinfo;
           document.querySelector('[name="channel"]').value = pre.channel;
           document.getElementById("anon").value = anon;
           contact.value = localStorage.getItem("wowsp_fb_contact") || "";
+          setAttachment(null, null);
           if (res.j.record_url) {{
             var a = document.createElement("a");
-            a.href = res.j.record_url; a.target = "_blank"; a.textContent = dict.viewRecord;
+            a.href = res.j.record_url; a.target = "_blank"; a.textContent = t("viewRecord");
             msg.appendChild(document.createElement("br")); msg.appendChild(a);
           }}
           if (window.turnstile) turnstile.reset();
         }} else {{
           msg.className = "err";
-          msg.textContent = dict["e_" + (res.j.error || "upstream")] || dict.e_upstream;
+          msg.textContent = dict["e_" + (res.j.error || "upstream")] || t("e_upstream");
           if (window.turnstile) turnstile.reset();
         }}
       }})
-      .catch(function () {{ msg.className = "err"; msg.textContent = dict.e_upstream; }})
+      .catch(function () {{ msg.className = "err"; msg.textContent = t("e_upstream"); }})
       .finally(function () {{ btn.disabled = false; }});
   }});
+
+  // ── history lookup ───────────────────────────────────────────────────
+  var histContact = document.getElementById("histContact");
+  var histResult = document.getElementById("histResult");
+  histContact.value = contact.value;
+  function esc(s) {{
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {{
+      return {{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }}[c];
+    }});
+  }}
+  function loadHistory() {{
+    var c = histContact.value.trim();
+    if (!c) return;
+    histResult.textContent = "...";
+    fetch("{base_url}/api/feedback/history?contact=" + encodeURIComponent(c))
+      .then(function (r) {{ return r.json(); }})
+      .then(function (j) {{
+        if (!j.ok) {{ histResult.textContent = t("historyFailed"); return; }}
+        if (!j.items.length) {{ histResult.textContent = t("historyEmpty"); return; }}
+        histResult.innerHTML =
+          '<p class="hist-item">' + t("historyCount").replace('#n', j.items.length) + "</p>" +
+          j.items.map(function (it) {{
+            var d = it.time ? new Date(it.time).toLocaleString() : "";
+            var badge = it.status === "已开PR" || it.status === "无需修复" ? "badge s2" : "badge";
+            return '<div class="hist-item"><span class="' + badge + '">' + esc(it.status) + "</span>" +
+              ' <span class="muted">' + esc(d) + "</span>" +
+              (it.pr ? ' <a href="' + esc(it.pr) + '" target="_blank">PR</a>' : "") +
+              "<br>" + esc(it.description) + "</div>";
+          }}).join("");
+      }})
+      .catch(function () {{ histResult.textContent = t("historyFailed"); }});
+  }}
+  document.getElementById("histGo").onclick = loadHistory;
+  histContact.addEventListener("keydown", function (ev) {{ if (ev.key === "Enter") loadHistory(); }});
+  if (q.get("focus") === "history" || q.get("contact")) {{
+    document.getElementById("historyBox").open = true;
+    if (q.get("contact")) histContact.value = q.get("contact");
+    if (histContact.value) loadHistory();
+  }}
 }})();
 </script>
 </body>
@@ -658,8 +910,12 @@ mod tests {
     #[test]
     fn record_fields_map_to_bitable_names() {
         let mut s = sample();
+        // Mixed-case / spacey contact must land in its canonical lookup
+        // form — handle_history exact-matches the normalized query.
+        s.contact = "  QQ  1234@Gmail.com ".into();
         normalize(&mut s).unwrap();
         let f = record_fields(&s, 1_750_000_000_000i64);
+        assert_eq!(f.get(F_CONTACT).unwrap(), "qq 1234@gmail.com");
         assert_eq!(f.get(F_DESC).unwrap(), "Tab 面板不显示");
         assert_eq!(f.get(F_STATUS).unwrap(), "待审查");
         assert_eq!(f.get(F_TIME).unwrap(), &json!(1_750_000_000_000i64));
@@ -699,16 +955,63 @@ mod tests {
 
     #[test]
     fn rate_keys_use_integer_buckets() {
-        let [a, b, c] = rate_keys("1.2.3.4", "anon", 0);
+        let [a, b, c] = rate_keys("1.2.3.4", "anon", "", 0)
+            .try_into()
+            .unwrap();
         assert_eq!(a, "rl:ip:1.2.3.4:0");
         assert_eq!(b, "rl:anon:anon:0");
         assert_eq!(c, "rl:day:0");
+        assert_eq!(rate_limits(""), vec![5, 10, 300]);
         // One hour later the IP bucket rolls over, the day buckets do not.
-        let [a2, b2, c2] = rate_keys("1.2.3.4", "anon", 3_600_000);
-        assert_ne!(a, a2);
-        assert_eq!(b, b2);
-        assert_eq!(c, c2);
-        assert_eq!(rate_limits(), [5, 10, 300]);
+        let keys2 = rate_keys("1.2.3.4", "anon", "", 3_600_000);
+        assert_ne!(a, keys2[0]);
+        assert_eq!(b, keys2[1]);
+        assert_eq!(c, keys2[2]);
+    }
+
+    #[test]
+    fn contact_buckets_normalize_and_limit_at_twenty() {
+        let with = rate_keys("1.1.1.1", "anon", "  QQ  123@QQ.COM ", 0);
+        assert_eq!(with.len(), 4, "contact adds a fourth key");
+        assert_eq!(with[2], "rl:contact:qq 123@qq.com:0");
+        assert_eq!(rate_limits("10001"), vec![5, 10, 20, 300]);
+        // Same contact spelled differently shares the bucket.
+        let alt = rate_keys("2.2.2.2", "anon2", "qq 123@qq.com", 0);
+        assert_eq!(with[2], alt[2]);
+        assert_eq!(history_rate_key("1.1.1.1", 0), "rl:hist:1.1.1.1:0");
+    }
+
+    #[test]
+    fn attachment_kinds_have_distinct_caps() {
+        assert_eq!(attach_kind("logs.zip"), Some(AttachKind::Log));
+        assert_eq!(attach_kind("shot.PNG"), Some(AttachKind::Image));
+        assert_eq!(attach_kind("clip.webm"), Some(AttachKind::Video));
+        assert_eq!(attach_kind("clip.mp4"), Some(AttachKind::Video));
+        assert_eq!(attach_kind("payload.exe"), None);
+        assert_eq!(attach_max(AttachKind::Log), FILE_MAX);
+        assert_eq!(attach_max(AttachKind::Image), IMAGE_MAX);
+        assert_eq!(attach_max(AttachKind::Video), VIDEO_MAX);
+        assert!(ATTACHMENT_MAX >= IMAGE_MAX && ATTACHMENT_MAX >= FILE_MAX);
+    }
+
+    #[test]
+    fn media_sizes_validate_per_kind() {
+        // A 5 MB png is fine (image cap 10 MB) but a 5 MB zip is not.
+        let mut s = sample();
+        s.file_name = Some("shot.png".into());
+        s.file_bytes = Some(vec![0u8; 5 * 1024 * 1024]);
+        assert!(normalize(&mut s).is_ok());
+
+        let mut s = sample();
+        s.file_name = Some("logs.zip".into());
+        s.file_bytes = Some(vec![0u8; 5 * 1024 * 1024]);
+        assert_eq!(normalize(&mut s), Err("file_too_large"));
+
+        // A 12 MB webm recording passes (video cap 18 MB).
+        let mut s = sample();
+        s.file_name = Some("rec.webm".into());
+        s.file_bytes = Some(vec![0u8; 12 * 1024 * 1024]);
+        assert!(normalize(&mut s).is_ok());
     }
 
     #[test]

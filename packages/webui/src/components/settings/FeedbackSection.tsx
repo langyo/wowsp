@@ -1,6 +1,6 @@
 import { computed, defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { Copy, ExternalLink, FolderSearch, PackageOpen } from "@lucide/vue";
+import { Camera, Copy, ExternalLink, FolderSearch, History, PackageOpen } from "@lucide/vue";
 
 import {
   HkButton,
@@ -164,6 +164,28 @@ export default defineComponent({
       }
     }
 
+    const capturing = ref(false);
+
+    /** 全屏截图 quick action: capture → reveal → the user attaches the
+     *  revealed PNG in the web form (same pattern as the log bundle). */
+    async function captureScreen() {
+      capturing.value = true;
+      try {
+        const path = await api.feedbackCaptureScreen();
+        toast.success(`${t("settings.feedbackShotDone")}\n${path}`);
+      } catch (e) {
+        toast.error(`${t("settings.feedbackShot")}\n${(e as Error).message || e}`);
+      } finally {
+        capturing.value = false;
+      }
+    }
+
+    /** The web form's history panel, focused (the browser remembers the
+     *  contact id in its own localStorage). */
+    function openHistory() {
+      void openExternal(`${WEB_FORM_URL}?focus=history`);
+    }
+
     return () => (
       <>
       <HkSettingsGroup>
@@ -277,6 +299,19 @@ export default defineComponent({
             <ExternalLink size={14} />
             {t("settings.feedbackWeb")}
           </HkButton>
+          <HkButton
+            size="sm"
+            loading={capturing.value}
+            disabled={capturing.value}
+            onClick={() => void captureScreen()}
+          >
+            <Camera size={14} />
+            {t("settings.feedbackShot")}
+          </HkButton>
+          <HkButton size="sm" onClick={openHistory}>
+            <History size={14} />
+            {t("settings.feedbackHistoryBtn")}
+          </HkButton>
           <HkButton size="sm" onClick={() => void openExternal(t("about.links.issues"))}>
             GitHub Issues
           </HkButton>
@@ -285,6 +320,7 @@ export default defineComponent({
           </HkButton>
         </div>
         <HkSettingsHint>{t("settings.feedbackWebHint")}</HkSettingsHint>
+        <HkSettingsHint>{t("settings.feedbackPrivacy")}</HkSettingsHint>
       </HkSettingsGroup>
       </>
     );

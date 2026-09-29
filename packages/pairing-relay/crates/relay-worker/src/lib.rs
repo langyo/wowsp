@@ -84,6 +84,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         },
         Route::FeedbackSubmit => feedback::handle_submit(req, env).await,
         Route::FeedbackList => feedback::handle_list(req, env).await,
+        Route::FeedbackHistory { contact: _ } => feedback::handle_history(req, env).await,
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,
         Route::FeedbackAttachment { file_token: _ } => {
             feedback::handle_attachment(req, env).await
