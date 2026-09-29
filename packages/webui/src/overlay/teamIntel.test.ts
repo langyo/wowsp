@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activeKitSource,
   formatIntelCount,
   formatIntelKm,
+  setRuntimeKit,
+  teamIntelFor,
   teamIntelFrom,
   type TeamIntelCount,
 } from "./teamIntel";
@@ -65,5 +68,39 @@ describe("formatting", () => {
   it("renders meters as one-decimal kilometers", () => {
     expect(formatIntelKm(10000)).toBe("10.0");
     expect(formatIntelKm(9500)).toBe("9.5");
+  });
+});
+
+describe("runtime kit overlay (setRuntimeKit)", () => {
+  // Ship ids far outside the baked asset so the assertions below can only
+  // pass through the runtime copy.
+  const RUNTIME = JSON.stringify({
+    "990001": { r: 2, h: 2, radarM: 10000 },
+    "990002": { r: 1, s: 1, radarM: 7500, junk: "dropped" },
+  });
+
+  it("serves a valid runtime copy over the bundled asset", () => {
+    expect(setRuntimeKit(RUNTIME)).toBe(true);
+    expect(activeKitSource()).toBe("runtime");
+    const intel = teamIntelFor([990001, 990002]);
+    expect(intel.radar).toEqual(count(1, 2));
+    expect(intel.hydro).toEqual(count(1, 1));
+    expect(intel.smoke).toEqual(count(0, 1));
+    expect(intel.radarMaxM).toBe(10000);
+  });
+
+  it("keeps the previous copy on malformed downloads", () => {
+    expect(setRuntimeKit("{not json")).toBe(false);
+    expect(setRuntimeKit("[]")).toBe(false);
+    expect(setRuntimeKit('{"not-a-numeric-id": {"r": 2}}')).toBe(false);
+    expect(activeKitSource()).toBe("runtime");
+    expect(teamIntelFor([990001]).radar).toEqual(count(1, 1));
+  });
+
+  it("clears back to the bundled asset on a null cache", () => {
+    expect(setRuntimeKit(null)).toBe(false);
+    expect(activeKitSource()).toBe("bundled");
+    // Unknown to the baked asset again → all zeros.
+    expect(teamIntelFor([990001]).radar).toEqual(count(0, 0));
   });
 });

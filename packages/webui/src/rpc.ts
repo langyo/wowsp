@@ -66,6 +66,8 @@ export const RPC = {
   uninstall_overlay_mod: "uninstall_overlay_mod",
   is_overlay_mod_installed: "is_overlay_mod_installed",
   get_ranked_stats: "get_ranked_stats",
+  get_ship_kit: "get_ship_kit",
+  refresh_data_pack: "refresh_data_pack",
   ensure_res_pack: "ensure_res_pack",
   res_cache_root: "res_cache_root",
   res_report_bundled: "res_report_bundled",

@@ -23,6 +23,7 @@ import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { peekLastRunVersion } from "@/utils/lastRunVersion";
+import { setRuntimeKit } from "@/overlay/teamIntel";
 import { api } from "@/api";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import OnboardingWizard from "./OnboardingWizard";
@@ -181,6 +182,20 @@ export default defineComponent({
       // path.
       if (!import.meta.env.DEV) {
         void cacheStore.init();
+        // Ship-data hot updates (the `data-latest` release): a few KB,
+        // silent, fire-and-forget — the bundled assets serve until this
+        // lands and every failure (offline, mirror hiccup, older shell)
+        // just means "retry next boot". This window takes the fresh data
+        // when the pass updated something; overlay windows read the warmed
+        // cache themselves at creation.
+        void api
+          .refreshDataPack()
+          .then(async (updated) => {
+            if (!updated) return;
+            const kit = await api.getShipKit();
+            if (kit != null) setRuntimeKit(kit);
+          })
+          .catch(() => {});
         void (async () => {
           // Phone build: bundled pack + optional downloaded update. Report
           // the bundled baseline first (same-origin /wowsp-res.json → the

@@ -34,7 +34,18 @@ pub(crate) fn read_appdata_json(file: &str) -> Result<Option<String>, String> {
 /// rename). Creates intermediate subdirectories (e.g. `stats-cache/x.json`)
 /// as needed.
 pub(crate) fn write_appdata_json(file: &str, content: &str) -> Result<(), String> {
-    let dir = appdata_dir_path()?;
+    write_json_in(&appdata_dir_path()?, file, content)
+}
+
+/// [`write_appdata_json`] against an explicit directory — the injectable
+/// form tests (and other command modules' install paths) run against a
+/// temp dir instead of the real AppData root. Same atomicity contract:
+/// tmp + rename, parent subdirectories created on demand.
+pub(crate) fn write_json_in(
+    dir: &std::path::Path,
+    file: &str,
+    content: &str,
+) -> Result<(), String> {
     let path = dir.join(file);
     // Ensure any parent subdirectory (stats-cache/, snapshots/, ...) exists.
     if let Some(parent) = path.parent() {

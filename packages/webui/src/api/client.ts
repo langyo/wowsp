@@ -1531,6 +1531,13 @@ export const api = {
     transport.invoke<boolean>(RPC.is_overlay_mod_installed, { gameRoot }),
   getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
     transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
+  /** The runtime-downloaded consumable-kit JSON (the `data-latest`
+   *  cache, hash-verified shell-side), or null when no download ever
+   *  landed — the baked asset serves in that case. */
+  getShipKit: () => transport.invoke<string | null>(RPC.get_ship_kit),
+  /** One pass of the ship-data hot-update channel: fetch the manifest,
+   *  re-download only what changed. True when anything was updated. */
+  refreshDataPack: () => transport.invoke<boolean>(RPC.refresh_data_pack),
   /** Ensure the single resource pack is present (models + dogtags).
    *  Returns the cache directory path so the frontend can construct file
    *  URLs; never silently re-pulls a present-but-outdated pack. */

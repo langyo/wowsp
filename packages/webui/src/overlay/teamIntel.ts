@@ -37,6 +37,60 @@ interface KitEntry {
 
 const KIT = kitRaw as Record<string, KitEntry>;
 
+/** The runtime-downloaded copy (see `setRuntimeKit`) — `null` while only
+ *  the baked asset is serving. The main window loads it after its
+ *  data-pack refresh lands; each overlay window reads the shell cache at
+ *  creation. A first render may still show bundled numbers — the loaders
+ *  trigger their own re-render when the runtime copy arrives. */
+let runtimeKit: Record<string, KitEntry> | null = null;
+
+/** Overlay a runtime-downloaded kit (the shell's `data-latest` cache, read
+ *  through `get_ship_kit`) onto the baked asset. `null`/`undefined`
+ *  (no downloadable cache on this machine) clears back to the baked copy;
+ *  anything malformed keeps the previous data — a bad download must
+ *  degrade to known-good numbers, never to empty ones. */
+export function setRuntimeKit(raw: string | null | undefined): boolean {
+  if (raw == null) {
+    runtimeKit = null;
+    return false;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const out: Record<string, KitEntry> = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!/^\d+$/.test(key) || value == null || typeof value !== "object") continue;
+    const src = value as Record<string, unknown>;
+    const level = (v: unknown): KitLevel | undefined =>
+      v === 1 || v === 2 ? (v as KitLevel) : undefined;
+    const entry: KitEntry = {};
+    const r = level(src.r);
+    if (r) entry.r = r;
+    const h = level(src.h);
+    if (h) entry.h = h;
+    const s = level(src.s);
+    if (s) entry.s = s;
+    if (typeof src.radarM === "number" && Number.isFinite(src.radarM) && src.radarM > 0) {
+      entry.radarM = src.radarM;
+    }
+    out[key] = entry;
+  }
+  // A parse that yielded nothing usable is a broken download, not a valid
+  // empty kit (the real asset carries hundreds of ships).
+  if (Object.keys(out).length === 0) return false;
+  runtimeKit = out;
+  return true;
+}
+
+/** Test/debug hook: which copy the lookups currently serve. */
+export function activeKitSource(): "runtime" | "bundled" {
+  return runtimeKit ? "runtime" : "bundled";
+}
+
 export interface TeamIntelCount {
   min: number;
   max: number;
@@ -89,7 +143,7 @@ export function teamIntelFrom(
 /** Team intel for one side's vehicles (each entry's shipId; duplicates
  *  count — two Worcesters are two radars). */
 export function teamIntelFor(shipIds: Array<number | null | undefined>): TeamIntel {
-  return teamIntelFrom(shipIds, (id) => KIT[id]);
+  return teamIntelFrom(shipIds, (id) => (runtimeKit ?? KIT)[id]);
 }
 
 /** `3` / `3~5` — the range notation the cards show per family. */

@@ -419,6 +419,16 @@ ci:
 package *FLAGS:
     cargo tauri build {{FLAGS}}
 
+# ── publish-data ────────────────────────────────────────────────────────
+# Publish the baked ship-data assets to the fixed `data-latest` release —
+# the hot-update channel `commands/data_pack.rs` refreshes on every app
+# boot. Run after re-baking data (extract_ship_consumable_kit.py & co.);
+# identical content is a client-side no-op (content-addressed assets).
+# Idempotent; --dry-run shows the upload/prune plan.
+
+publish-data *ARGS:
+    python scripts/publish_data_pack.py {{ARGS}}
+
 # ── e2e ───────────────────────────────────────────────────────────────
 
 e2e-setup:

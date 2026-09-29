@@ -30,10 +30,12 @@ import { collapseCandidateBots } from "./candidates";
 // than the reserved side pad would otherwise clip flat at the window edge.
 import { fitChips, refitWhenSealsSettle } from "./chipFit";
 // Two-sided team consumable intel (radar/hydro/smoke estimate counts +
-// longest radar range) from the baked capability asset.
+// longest radar range) from the baked capability asset, overlaid by the
+// runtime-downloaded copy when the shell has one cached.
 import {
   formatIntelCount,
   formatIntelKm,
+  setRuntimeKit,
   teamIntelFor,
   type TeamIntelCount,
 } from "./teamIntel";
@@ -1089,6 +1091,19 @@ async function start() {
   // above); a later import in the settings window only matters next battle,
   // and a failure here costs nothing (the bundled glyphs show).
   void loadCustomStamps(invoke).then(() => render());
+
+  // Consumable-kit hot update: the main window's boot refresh warms the
+  // shell's cache; this window (created per battle) overlays it onto the
+  // baked asset. Cache read only — no network here, and a miss (older
+  // shell, nothing downloaded yet) keeps the bundled numbers.
+  void (async () => {
+    try {
+      const cached = (await invoke("get_ship_kit", {})) as string | null;
+      if (typeof cached === "string" && setRuntimeKit(cached)) render();
+    } catch {
+      // shell without the command — bundled kit stays
+    }
+  })();
 }
 
 // Re-render when the webview's own devicePixelRatio changes. The overlay

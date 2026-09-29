@@ -439,6 +439,8 @@ pub fn run() {
             commands::gameparams::get_ship_gameparams,
             commands::gameparams::get_upgrade_prices,
             commands::game_maps::list_game_maps,
+            commands::data_pack::get_ship_kit,
+            commands::data_pack::refresh_data_pack,
             commands::model_pack::ensure_res_pack,
             commands::model_pack::res_cache_root,
             commands::model_pack::res_report_bundled,
