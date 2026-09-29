@@ -699,10 +699,10 @@ function render() {
   }
 
   // Two-sided team-intel cards — each side's aggregate radar/hydro/smoke
-  // estimate plus its longest radar range, flanking the table at the
-  // blocks' OUTER ends (ally card one row-band above the first ally row on
-  // the left, enemy card one row-band below the last enemy row on the
-  // right) so they never collide with row chips. Match-start capability
+  // estimate plus its longest radar range, one card directly BELOW its own
+  // column (ally card under the allies, enemy card under the enemies) in
+  // the empty band the game leaves under the table, aligned to the
+  // column's outer edge and growing inward. Match-start capability
   // BY DESIGN: the numbers do not decrement as ships sink — the mid-battle
   // row→ship attribution is inferred, and silently miscounting radars
   // would be worse than a static "what each team brought" summary.
@@ -723,8 +723,13 @@ function render() {
       }
     };
     if (allyBlock.length > 0 && allies.length > 0) {
-      const el = teamIntelCard("ally", allies, allyBlock[0] / dpr - pitch, intelFontSize);
-      el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
+      const el = teamIntelCard(
+        "ally",
+        allies,
+        allyBlock[allyBlock.length - 1] / dpr + pitch,
+        intelFontSize,
+      );
+      el.style.left = `${tableLeft + gap}px`;
       root.appendChild(el);
       clampVertically(el);
     }
@@ -735,7 +740,7 @@ function render() {
         enemyBlock[enemyBlock.length - 1] / dpr + pitch,
         intelFontSize,
       );
-      el.style.left = `${tableRight + gap}px`;
+      el.style.right = `${Math.max(0, overlayW - tableRight + gap)}px`;
       root.appendChild(el);
       clampVertically(el);
     }
