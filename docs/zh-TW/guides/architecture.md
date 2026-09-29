@@ -68,7 +68,7 @@ timeline the holographic map scrubs.
 
 | Layer | Tech |
 |---|---|
-| Frontend | Vue 3 (TSX) + UnoCSS + co-located SCSS + Pinia + vue-i18n + three.js + echarts |
+| Frontend | Vue 3 (TSX) + UnoCSS + co-located SCSS + Pinia + vue-i18n + three.js |
 | Desktop shell | Tauri 2 (Rust) |
 | Backend IPC | `#[tauri::command]` handlers in `packages/app/tauri/src/commands/` |
 | Mock backend | FastAPI (`scripts/mock/`) for browser/e2e development |

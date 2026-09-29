@@ -9,8 +9,8 @@
  *
  * Stored as a JSON object keyed by the six canonical ship-type strings
  * under `wowsp-ship-type-colors`. No CSS variables are written — consumers
- * (the ECharts canvas) read the ref at render time, so no bootstrap init
- * hook is needed; the chart component watches the ref to repaint live.
+ * (the SVG donut's computeds) read the ref while rendering, so no bootstrap
+ * init hook is needed; palette edits repaint the chart live for free.
  */
 import { ref } from "vue";
 
@@ -178,7 +178,7 @@ export function resetShipTypeColors(): void {
   persistShipTypeColors(shipTypeColors.value);
 }
 
-/** Chart lookup by the ship-type key the pie aggregates on
+/** Chart lookup by the ship-type key the donut aggregates on
  *  (case-insensitive); unknown or missing keys fall back to the auxiliary
  *  class's own color so a new class still gets a visible slice. */
 export function shipTypeChartColor(key: string): ShipTypeRgbColor {
@@ -189,7 +189,7 @@ export function shipTypeChartColor(key: string): ShipTypeRgbColor {
   return shipTypeColors.value.auxiliary;
 }
 
-/** ShipTypeRgbColor → ECharts-friendly CSS color string. */
+/** ShipTypeRgbColor → CSS color string (SVG fill / legend dot). */
 export function shipTypeCssColor(color: ShipTypeRgbColor): string {
   return `rgb(${color.r}, ${color.g}, ${color.b})`;
 }

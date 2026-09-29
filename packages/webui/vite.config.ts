@@ -67,8 +67,7 @@ function cleanOutDirContents(outDir: string): Plugin {
 function vendorChunks(id: string): string | undefined {
   if (!id.includes('node_modules')) return;
   if (/[\\/]node_modules[\\/](three|@types[\\/]three)[\\/]/.test(id)) return 'three';
-  if (/[\\/]node_modules[\\/](echarts|zrender)[\\/]/.test(id)) return 'echarts';
-  if (/[\\/]node_modules[\\/]lucide-vue-next[\\/]/.test(id)) return 'icons';
+  if (/[\\/]node_modules[\\/](lucide-vue-next)[\\/]/.test(id)) return 'icons';
   return;
 }
 

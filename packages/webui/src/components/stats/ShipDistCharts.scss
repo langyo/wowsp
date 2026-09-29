@@ -23,6 +23,8 @@
 .ship-dist-charts__bar {
   flex: 1 1 32%;
   min-width: min(240px, 100%);
+  display: block;
+  height: 150px;
 }
 
 .ship-dist-charts__piewrap {
@@ -36,9 +38,10 @@
   margin-bottom: 4px;
 }
 
-/* Donut canvas and its DOM legend sit side by side, vertically centered.
-   The canvas takes the remaining width; the legend only ever shrinks
-   (never grows), so the donut keeps a stable diameter. */
+/* Donut svg and its DOM legend sit side by side, vertically centered.
+   The svg takes the remaining width (its square viewBox letterboxes via
+   preserveAspectRatio meet); the legend only ever shrinks (never grows),
+   so the donut keeps a stable diameter. */
 .ship-dist-charts__pie-body {
   display: flex;
   align-items: center;
@@ -48,6 +51,8 @@
 .ship-dist-charts__pie {
   flex: 1 1 auto;
   min-width: 96px;
+  display: block;
+  height: 150px;
 }
 
 .ship-dist-charts__legend {
@@ -60,9 +65,9 @@
 /* One column of legend rows — fills top-to-bottom, the next column
    continues to the right. A full 5-row column measures ≈ 104px (five
    ~15px 2xs lines + 4 × 0.45rem gaps), which matches the donut RING, not
-   the whole canvas: the 68% outer radius over the 150px-tall canvas
-   paints a ≈ 102px-diameter ring, so a filled column and the ring read
-   as one visual unit. */
+   the whole svg: the 68% outer radius over the 150px-tall box paints
+   a ≈ 102px-diameter ring, so a filled column and the ring read as one
+   visual unit. */
 .ship-dist-charts__legend-col {
   display: flex;
   flex-direction: column;
@@ -90,4 +95,38 @@
   font-size: var(--text-2xs);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* --- SVG ink: everything below styles through CSS variables, so light/
+   dark flips and brand-theme switches restyle the charts with no
+   re-render — the reason the old canvas ink-sampling code is gone. --- */
+
+/* Bar fill rides the brand primary (an upgrade over the retired ECharts
+   default blue): theme-aware for free. */
+.ship-dist-charts__bar-rect {
+  fill: rgb(var(--color-primary));
+}
+
+.ship-dist-charts__bar-value {
+  fill: rgb(var(--color-text) / 0.75);
+  font-size: 9px;
+  text-anchor: middle;
+}
+
+.ship-dist-charts__tier-num {
+  fill: rgb(var(--color-text) / 0.6);
+  font-size: 9px;
+  text-anchor: middle;
+}
+
+.ship-dist-charts__axis {
+  stroke: rgb(var(--color-text) / 0.15);
+  stroke-width: 1;
+}
+
+/* Slices carry inline fills (palette colors, not theme variables); the
+   class exists as the hover/hint hook and keeps stroke paint out of the
+   ring gaps. */
+.ship-dist-charts__slice {
+  stroke: none;
 }

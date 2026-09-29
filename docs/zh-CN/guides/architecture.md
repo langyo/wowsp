@@ -54,7 +54,7 @@ N 字节  json_block  = 对局描述（阵容、地图、对局类型）
 
 | 层 | 技术 |
 |---|---|
-| 前端 | Vue 3（TSX）+ UnoCSS + 同目录 SCSS + Pinia + vue-i18n + three.js + echarts |
+| 前端 | Vue 3（TSX）+ UnoCSS + 同目录 SCSS + Pinia + vue-i18n + three.js |
 | 桌面壳 | Tauri 2（Rust） |
 | 后端 IPC | `packages/app/tauri/src/commands/` 中的 `#[tauri::command]` 处理器 |
 | Mock 后端 | FastAPI（`scripts/mock/`），供浏览器/e2e 开发 |
