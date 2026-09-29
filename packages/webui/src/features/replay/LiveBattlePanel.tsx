@@ -224,7 +224,12 @@ export default defineComponent({
         // Stale file from a previous battle (game closed without a quit
         // event): the plugin clears players on quit, so an empty map IS a
         // reset; a fresh timestamp is required either way.
-        if (Date.now() - payload.t > 30_000) return;
+        if (Date.now() - payload.t > 30_000) {
+          // Stale stream (plugin died mid-battle): release the lock so the
+          // luma solver resumes instead of staying frozen forever.
+          telemetryAuthoritative = false;
+          return;
+        }
         const ally = new Set<string>();
         const enemy = new Set<string>();
         const rosterNames = new Set<string>();

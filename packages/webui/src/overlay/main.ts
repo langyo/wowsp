@@ -1076,6 +1076,11 @@ async function start() {
       telemetryAuthoritative = false;
       return;
     }
+    if (Date.now() - (payload.t ?? 0) > 30_000) {
+      // Stale stream: release the authoritative lock (resume inference).
+      telemetryAuthoritative = false;
+      return;
+    }
     const operation = isOperationBattle(
       arena.matchGroup,
       arena.scenario,

@@ -142,14 +142,18 @@ pub(crate) fn telemetry_file(game_root: &std::path::Path) -> Option<std::path::P
 /// `wowsp://ingame-telemetry` to every window when its content changed.
 /// Both the live panel and the overlay window listen for the same event —
 /// this is the M2 consumer that turns the plugin's observations into
-/// authoritative sink marking and TAB ordering. Failures are silent: the
-/// poller is a pure best-effort publisher (no plugin / no game / parse
-/// hiccup all degrade to "no event this tick").
+/// authoritative sink marking and TAB ordering.
+///
+/// The poller is otherwise a best-effort publisher, but the CHAIN has been
+/// hard to diagnose from the field (a silent gap anywhere looks identical
+/// to "the feature is broken"), so state transitions log: file acquired /
+/// lost, and every emit at DEBUG with the alive count.
 pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
     let _ = std::thread::Builder::new()
         .name("ingame-telemetry-poll".into())
         .spawn(move || {
             let mut last: Option<String> = None;
+            let mut had_file = false;
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(2));
                 let root = super::game_context::resolve_root(
@@ -163,8 +167,18 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     continue;
                 };
                 let Ok(raw) = std::fs::read_to_string(&path) else {
+                    if had_file {
+                        had_file = false;
+                        tracing::info!(
+                            "ingame telemetry stream lost (file gone) — resuming inference"
+                        );
+                    }
                     continue;
                 };
+                if !had_file {
+                    had_file = true;
+                    tracing::info!(path = %path.display(), "ingame telemetry stream acquired");
+                }
                 let raw = raw.trim().to_owned();
                 if raw.is_empty() || raw.len() > 262_144 || last.as_deref() == Some(raw.as_str()) {
                     continue;
@@ -177,6 +191,12 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     continue;
                 };
                 last = Some(raw);
+                let alive = value
+                    .get("players")
+                    .and_then(|p| p.as_object())
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                tracing::debug!(alive, "ingame telemetry emitted");
                 if let Err(e) = app.emit("wowsp://ingame-telemetry", value) {
                     tracing::warn!(error = %e, "emit ingame-telemetry failed");
                 }
