@@ -1012,6 +1012,22 @@
     padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
   }
 
+  /* The title/tools row pins while the stacked page scrolls under it in the
+     shell's scroll viewport (settings-page bar recipe): negative margins
+     bleed the glass over the page's phone padding, the padding restores the
+     resting offset. */
+  .resources-view__head {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: -0.9rem -0.9rem 0;
+    padding: 0.9rem 0.9rem 0.5rem;
+    background: rgb(var(--color-surface) / 88%);
+    backdrop-filter: blur(var(--blur-md));
+    -webkit-backdrop-filter: blur(var(--blur-md));
+    border-bottom: 1px solid rgb(var(--color-border) / 15%);
+  }
+
   .mod-hub {
     flex-direction: column;
   }

@@ -3,17 +3,22 @@
   flex-direction: column;
   gap: 0.75rem;
   height: 100%;
-  overflow-y: auto;
-  /* The panel reaches the window's right edge, so this native scrollbar
-     hugs it; the wider right padding keeps the content clear of the bar. */
-  padding: 1rem 1.5rem 1rem 1rem;
+  /* The head row pins and the roster matrix scrolls beneath it (ShipsView's
+     split): a long roster must not scroll the title / mode pills / share
+     actions out of reach. Right/bottom breathing room rides on the head and
+     the matrix instead — the panel itself only pads top + left. */
+  overflow: hidden;
+  padding: 1rem 0 0 1rem;
   color: rgb(var(--color-text));
 
-  /* Waiting for the battle to start (radar scope + copy). */
+  /* Waiting for the battle to start (radar scope + copy). No head row here,
+     so this variant keeps the old self-scrolling full-padding behavior. */
   &--empty {
     align-items: center;
     justify-content: center;
     text-align: center;
+    overflow-y: auto;
+    padding: 1rem 1.5rem 1rem 1rem;
   }
 
   &__empty-art {
@@ -48,6 +53,11 @@
     align-items: center;
     gap: 0.6rem;
     flex-wrap: wrap;
+    /* Fixed above the roster: never squeezed by it, and it carries the
+       right inset the container gave up (the matrix's scrollbar owns that
+       edge so it can keep hugging the window). */
+    flex-shrink: 0;
+    padding-right: 1.5rem;
   }
 
   &__title {
@@ -180,6 +190,12 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+    /* The roster is the panel's scroller: it reaches the window's right
+       edge, so this native scrollbar hugs it; the wider right padding keeps
+       the cards clear of the bar (padding-bottom pads the scrolled end). */
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 1.5rem 1rem 0;
 
     /* Single-sided battle (operations): the enemy list hides (its side is
        all scripted spawns) and the allies column keeps the two-column

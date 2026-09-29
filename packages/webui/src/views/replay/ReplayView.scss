@@ -907,6 +907,21 @@
       padding-right: 0;
     }
 
+    /* The map/mode/actions row pins while the stacked detail scrolls under
+       it (settings-page bar recipe): negative margins bleed the glass over
+       __main's phone padding, the padding restores the resting offset. */
+    &__meta {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      margin: -0.75rem -0.75rem 0;
+      padding: 0.75rem 0.75rem 0.5rem;
+      background: rgb(var(--color-surface) / 88%);
+      backdrop-filter: blur(var(--blur-md));
+      -webkit-backdrop-filter: blur(var(--blur-md));
+      border-bottom: 1px solid rgb(var(--color-border) / 15%);
+    }
+
     /* 3D map gets the full width and a usable height; any overflow inside
        the detail (roster columns, legend) stacks below it. */
     &__detail {

@@ -661,9 +661,12 @@ export default defineComponent({
           </div>
         </aside>
 
-        {/* Main content: overview card + per-ship list (player) or clan card */}
+        {/* Main content: overview card + per-ship list (player) or clan card.
+            The title row pins above __scroll — a long ship table must not
+            scroll the page title out of view. */}
         <div class="lookup-view__main">
           <h1 class="lookup-view__title">{t("nav.lookup")}</h1>
+          <div class="lookup-view__scroll">
           {mode.value === "player" && stats.error ? (
             <LookupErrorNotice
               payload={stats.lookupError}
@@ -834,6 +837,7 @@ export default defineComponent({
               </div>
             ) : null}
           </Transition>
+          </div>
         </div>
 
         {/* Ship detail popup — water-table context on the looked-up player:
