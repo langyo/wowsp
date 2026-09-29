@@ -845,8 +845,9 @@ export default defineComponent({
                       </span>
                     )}
                   </div>
-                  {/* Ship distribution: tier histogram + class pie — spot
-                      low-tier farmers / CV-SS specialists. */}
+                  {/* Ship distribution: tier histogram + class and nation
+                      pies — spot low-tier farmers / CV-SS specialists and
+                      one-nation grinders. */}
                   {shipDistList.value.length > 0 ? (
                     <div class="replay-view__postbattle-dist">
                       <div class="replay-view__postbattle-dist-title">

@@ -776,7 +776,16 @@ export default defineComponent({
             const chipLabel =
               [...cur.values]
                 .sort(byOrder)
-                .map((v) => catOptions.value[key].find((o) => o.value === v)?.label ?? v)
+                .map(
+                  (v) =>
+                    catOptions.value[key].find((o) => o.value === v)?.label ??
+                    // Stale picks can outlive their option rows (nation
+                    // options are data-derived, so a selected nation can
+                    // vanish from the current date range): resolve those
+                    // through the label chain so the chip still reads a
+                    // localized name instead of the raw code.
+                    (key === "nation" ? nationOptionLabel(v) : v),
+                )
                 .join("·") || t(def.allLabel);
             return (
               <div key={key} class="ship-filter-bar__chip-anchor">

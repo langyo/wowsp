@@ -106,9 +106,19 @@ function loadStoredShipTypeColors(): Record<ShipTypeColorKey, ShipTypeRgbColor> 
         const rec = parsed as Record<string, unknown>;
         for (const key of SHIP_TYPE_COLOR_ORDER) {
           const color = sanitizeStoredColor(rec[key]);
-          if (color) colors[key] = color;
-          // missing / invalid entry keeps the default
-          else healed = true;
+          if (color) {
+            colors[key] = color;
+            // Finite-but-adjusted values (clamped into 0–255, or rounded
+            // to an int) heal as well — the disk copy is normalized so the
+            // next boot reads it back verbatim.
+            const raw = rec[key] as { r: number; g: number; b: number };
+            if (raw.r !== color.r || raw.g !== color.g || raw.b !== color.b) {
+              healed = true;
+            }
+          } else {
+            // missing / invalid entry keeps the default
+            healed = true;
+          }
         }
         // unknown keys are dropped on the rewrite below
         for (const k of Object.keys(rec)) {
@@ -170,7 +180,7 @@ export function resetShipTypeColors(): void {
 
 /** Chart lookup by the ship-type key the pie aggregates on
  *  (case-insensitive); unknown or missing keys fall back to the auxiliary
- *  slate gray so a new class still gets a visible slice. */
+ *  class's own color so a new class still gets a visible slice. */
 export function shipTypeChartColor(key: string): ShipTypeRgbColor {
   const k = key.toLowerCase();
   if ((SHIP_TYPE_COLOR_ORDER as readonly string[]).includes(k)) {

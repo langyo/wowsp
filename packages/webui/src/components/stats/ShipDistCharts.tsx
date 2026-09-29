@@ -62,12 +62,17 @@ const NATION_COLORS: Record<string, string> = {
 };
 
 /** Legend row text "战列 43%" — ECharts hands the legend formatter only the
- *  slice NAME, so the value→percent mapping closes over the current data. */
-function legendPercentFormatter(data: { name: string; value: number }[], total: number) {
+ *  slice NAME, so the value→percent mapping closes over the current data.
+ *  The percentage base is the SUM OF SHOWN SLICES, not aggregate.total:
+ *  battles of ships with no type/nation entry never reach a slice, and
+ *  ECharts' own {d}% divides by the shown sum — this way the legend
+ *  percents always add up to 100 like the tooltips. */
+function legendPercentFormatter(data: { name: string; value: number }[]) {
   const byName = new Map(data.map((d) => [d.name, d.value]));
+  const shown = data.reduce((a, d) => a + d.value, 0);
   return (name: string): string => {
     const v = byName.get(name) ?? 0;
-    return `${name} ${Math.round((v / total) * 100)}%`;
+    return `${name} ${shown > 0 ? Math.round((v / shown) * 100) : 0}%`;
   };
 }
 
@@ -187,7 +192,7 @@ export default defineComponent({
           itemHeight: 8,
           itemGap: 6,
           textStyle: { color: ink.label, fontSize: 9 },
-          formatter: legendPercentFormatter(data, total),
+          formatter: legendPercentFormatter(data),
         },
         series: [
           {
