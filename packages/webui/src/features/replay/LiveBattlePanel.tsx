@@ -224,7 +224,6 @@ export default defineComponent({
         // event): the plugin clears players on quit, so an empty map IS a
         // reset; a fresh timestamp is required either way.
         if (Date.now() - payload.t > 30_000) return;
-        const bySide: { ally?: Set<string>; enemy?: Set<string> } = {};
         const ally = new Set<string>();
         const enemy = new Set<string>();
         const rosterNames = new Set<string>();
