@@ -86,6 +86,10 @@ new_sqlite_classes = ["Directory"]
 #       set, /api/health reports it as "upstream" and clients follow it
 #       (forwarding-station hand-off — no app redeploy needed).
 #   GATEWAY_NOTICE   — free-form operator message surfaced by /api/health.
+# TURNSTILE_SITEKEY is PUBLIC by design (it rides the /feedback HTML) —
+# the matching secret key lives in the worker secrets (TURNSTILE_SECRET).
+# Widget "wowsp-feedback" (managed mode, wowsp.langyo.xyz + localhost).
 [vars]
+TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 # GATEWAY_UPSTREAM = ""
 # GATEWAY_NOTICE = ""
