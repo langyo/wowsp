@@ -366,23 +366,23 @@
   &__ribbon {
     position: absolute;
     width: 26px;
-    height: 7px;
-    border-radius: 1px;
+    height: 8px;
     box-shadow: 0 0 3px rgb(0 0 0 / 45%);
 
-    /* Band centre sits 13/√2 ≈ 9.2px inside the corner on both axes, so
-       the 45° ends land exactly on the host edges and clip into a clean
-       miter instead of floating past the plate. */
+    /* The band's outer long edge runs through the plate corner itself, so
+       no bare plate shows between the band and the corner (centre sits
+       8/2 = 4px ⊥ inside it, i.e. at 53.2/53.2 on both axes). Both 45°
+       ends land past the host edges and clip into clean miters. */
     &--epic {
-      top: 5.7px;
-      left: -3.8px;
+      top: -1.2px;
+      left: -10.2px;
       transform: rotate(-45deg);
       background: linear-gradient(180deg, #7ce8a9, #2ea05d);
     }
 
     &--rec {
-      bottom: 5.7px;
-      right: -3.8px;
+      bottom: -1.2px;
+      right: -10.2px;
       transform: rotate(-45deg);
       background: linear-gradient(180deg, #ffe08a, #e0a72e);
     }
@@ -456,20 +456,22 @@
       position: absolute;
       width: 13px;
       height: 4px;
-      border-radius: 1px;
-      /* 6.5/√2 ≈ 4.6px off the corner — same miter math as the plate. */
+      /* Same corner-hug as the plate band: outer edge through the corner
+         (4px band → centre ≈ 1.4px inside it on both axes), ends clipped
+         off the 13px host edges. Thicker than plate scale so the wedge
+         stays legible at 13px. */
       transform: rotate(-45deg);
     }
 
     &--epic::after {
-      top: 2.6px;
-      left: -1.9px;
+      top: -0.59px;
+      left: -5.09px;
       background: linear-gradient(180deg, #7ce8a9, #2ea05d);
     }
 
     &--rec::after {
-      bottom: 2.6px;
-      right: -1.9px;
+      bottom: -0.59px;
+      right: -5.09px;
       background: linear-gradient(180deg, #ffe08a, #e0a72e);
     }
   }
