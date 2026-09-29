@@ -185,6 +185,62 @@
     }
   }
 
+  /* Waterline toggle (3D only) — same pill look; lights up purple to match
+     the waterline plane it reveals. */
+  &__wl {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-surface) / 75%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+  }
+
+  &__wl-btn {
+    padding: 0.22rem 0.65rem;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover { color: rgb(var(--color-text)); }
+
+    &.is-active {
+      color: #c084fc;
+      background: rgb(168 85 247 / 18%);
+    }
+  }
+
+  /* Light theme: the lavender active tint washes out on the pale surface —
+     drop to a deep purple that carries the same "waterline" hue. */
+  [data-mode="light"] &__wl-btn.is-active {
+    color: #7e22ce;
+    background: rgb(126 34 206 / 12%);
+  }
+
+  /* Draft label floating beside the midship waterline gauge. Positioned in
+     % of the canvas each frame; the text itself is plain HTML at a constant
+     pixel size, so camera zoom never scales it. */
+  &__wl-label {
+    position: absolute;
+    z-index: 1;
+    transform: translate(14px, -50%);
+    padding: 0.14rem 0.55rem;
+    border-radius: var(--radius-full);
+    border: 1px solid rgb(168 85 247 / 45%);
+    background: rgb(20 8 34 / 78%);
+    color: #d8b4fe;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+  }
+
   /* Armor thickness color axis — bottom-left overlay in armor mode. One
      evenly divided band segment per game color bucket; ruler-style numbers
      sit at the swatch seams (each color spans the gap between its

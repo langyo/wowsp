@@ -91,7 +91,9 @@
       "show": "미리보기 표시",
       "rotate": "자동 회전",
       "rotateOn": "자동 회전 중 · 클릭하여 일시정지",
-      "rotateOff": "일시정지됨 · 클릭하여 재개"
+      "rotateOff": "일시정지됨 · 클릭하여 재개",
+      "waterline": "수선",
+      "draft": "흘수"
     },
     "weapon": {
       "mainGun": "주포",

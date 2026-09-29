@@ -91,7 +91,9 @@
       "show": "プレビューを表示",
       "rotate": "自動回転",
       "rotateOn": "自動回転中 · クリックで一時停止",
-      "rotateOff": "停止中 · クリックで再開"
+      "rotateOff": "停止中 · クリックで再開",
+      "waterline": "喫水線",
+      "draft": "喫水"
     },
     "weapon": {
       "mainGun": "主砲",

@@ -91,7 +91,9 @@
       "show": "展示預覽",
       "rotate": "自動旋轉",
       "rotateOn": "自動旋轉中 · 點擊暫停",
-      "rotateOff": "已暫停 · 點擊繼續自動旋轉"
+      "rotateOff": "已暫停 · 點擊繼續自動旋轉",
+      "waterline": "水線",
+      "draft": "吃水"
     },
     "weapon": {
       "mainGun": "主砲組",

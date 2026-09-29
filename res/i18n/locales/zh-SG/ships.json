@@ -91,7 +91,9 @@
       "show": "展示预览",
       "rotate": "自动旋转",
       "rotateOn": "自动旋转中 · 点击暂停",
-      "rotateOff": "已暂停 · 点击继续自动旋转"
+      "rotateOff": "已暂停 · 点击继续自动旋转",
+      "waterline": "水线",
+      "draft": "吃水"
     },
     "weapon": {
       "mainGun": "主炮组",

@@ -270,7 +270,17 @@ export default defineComponent({
      *  commit state if a newer sync (or a teardown) superseded it. */
     let armorSyncGen = 0;
     let gridRef: THREE.GridHelper | null = null;
-    const _waterlinePlane: THREE.Mesh | null = null;
+    /** Shared normalization frame of the loaded visual model. Baked visual
+     *  GLBs keep the game's own model space, whose origin plane IS the
+     *  waterline (keel depth reads back the real draft across hulls), so the
+     *  normalized scene keeps native Y=0 at world Y=0. The armor overlay and
+     *  the waterline plane both lock onto this frame — centering each model's
+     *  own bbox instead is what made holo ↔ armor toggling shift the hull. */
+    const normScale = shallowRef(1);
+    /** Hull length (Z extent) of the visual model in native units. */
+    const normLenZ = shallowRef(200);
+    /** World Y of the keel after normalization (waterline sits at 0). */
+    const hullMinY = shallowRef(-25);
 
     // 2D fallback portrait: tracked via the shared useImage hook so a failed
     // CDN image lands in the same graceful noimg block as a missing one.
@@ -396,15 +406,24 @@ export default defineComponent({
                   armorSc.add(mesh);
                 }
               });
-              // Match the main model's normalized frame (200-unit box centred
-              // on the origin) so holo ↔ armor toggling doesn't rescale the
-              // camera subject.
+              // Lock the armor shell into the visual model's normalized frame
+              // (hull on a 200-unit length, waterline at world Y=0). Both
+              // shells span the whole hull, so scaling by HULL LENGTH is the
+              // one axis that matches 1:1; the keel is then lined up with the
+              // visual model's lowest point. Centering the armor bbox on the
+              // origin (the old behavior) parked the hull at a
+              // mast-height-dependent height — the holo ↔ armor jump.
               const box = new THREE.Box3().setFromObject(armorSc);
               const size = box.getSize(new THREE.Vector3());
-              const maxDim = Math.max(size.x, size.y, size.z, 1);
-              const scale = 200 / maxDim;
+              const armorLen = Math.max(size.z, 1);
+              const scale = (normScale.value * normLenZ.value) / armorLen;
               armorSc.scale.setScalar(scale);
-              armorSc.position.sub(box.getCenter(new THREE.Vector3()).multiplyScalar(scale));
+              const center = box.getCenter(new THREE.Vector3());
+              armorSc.position.set(
+                -center.x * scale,
+                hullMinY.value - box.min.y * scale,
+                -center.z * scale,
+              );
             }
           } catch { /* fall back to heuristic */ }
         }
@@ -444,24 +463,6 @@ export default defineComponent({
       const boxes = buildArmorOverlay(sections, props.armorZones ?? []);
       if (import.meta.env.DEV) console.log("[armor] boxes:", boxes ? boxes.children.length : "null", "zones:", props.armorZones?.map(z => `${z.name}=${z.thickness}mm`) ?? []);
       if (boxes) armorSc.add(boxes);
-
-      // Waterline plane + grid.
-      const midBox = sections.get("hull_mid");
-      if (midBox) {
-        const midH = midBox.max.y - midBox.min.y;
-        const wlY = midBox.min.y + midH * 0.12;
-        const wlGeo = new THREE.PlaneGeometry(600, 600);
-        const wlMat = new THREE.MeshBasicMaterial({
-          color: 0x0a3a5a, side: THREE.DoubleSide,
-          transparent: true, opacity: 0.30, depthWrite: false,
-        });
-        const plane = new THREE.Mesh(wlGeo, wlMat);
-        plane.rotation.x = -Math.PI / 2;
-        plane.position.y = wlY;
-        plane.renderOrder = -2;
-        armorSc.add(plane);
-        if (gridRef) gridRef.position.y = wlY;
-      }
       } // end fallback block
 
       if (armorSc.children.length === 0) {
@@ -495,6 +496,120 @@ export default defineComponent({
       showArmor.value = on;
       syncArmorOverlay();
     }
+
+    // ── Waterline plane toggle ────────────────────────────────────────────
+    const showWaterline = ref(false);
+    const waterlineGroup = shallowRef<THREE.Group | null>(null);
+    /** DOM tag tracking the gauge line's midpoint. It is a plain HTML
+     *  overlay (projected to screen px every frame), so its pixel size stays
+     *  constant no matter how far the camera zooms — same treatment as the
+     *  holographic map's point labels. */
+    let waterlineLabel: HTMLElement | null = null;
+    /** World-space point the label tracks (gauge line midpoint). */
+    const _wlAnchor = new THREE.Vector3();
+    const _wlScreen = new THREE.Vector3();
+
+    /** Tear the waterline group down without rebuilding (label hidden too). */
+    function clearWaterline() {
+      const sc = scene.value;
+      if (waterlineGroup.value && sc) {
+        sc.remove(waterlineGroup.value);
+        disposeGroupDeep(waterlineGroup.value);
+        waterlineGroup.value = null;
+      }
+      if (waterlineLabel) waterlineLabel.style.display = "none";
+    }
+
+    /** (Re)build the waterline group after the visual model normalizes: one
+     *  big translucent purple slab slicing the hull at its native waterline,
+     *  plus a midship gauge hairline down to the keel. World Y=0 anchors it,
+     *  so both the holo hull and the armor shell read against the same
+     *  plane. */
+    function rebuildWaterline() {
+      clearWaterline();
+      const box = modelBox.value;
+      if (!scene.value || !box) return;
+      const keelY = box.min.y;
+      const g = new THREE.Group();
+      g.name = "waterline";
+      g.visible = showWaterline.value;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(600, 600),
+        new THREE.MeshBasicMaterial({
+          color: 0xa855f7,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.22,
+          depthWrite: false,
+        }),
+      );
+      plane.rotation.x = -Math.PI / 2;
+      // Draw after the hull's transparent passes: the near half then composes
+      // over the ship while the far half loses the depth test against the
+      // hull's opaque depth anchors — a genuine "slice" rather than a sheet.
+      plane.renderOrder = 2;
+      g.add(plane);
+      // Midship gauge: waterline → keel, depthTest off so it stays readable
+      // straight through the hull. Lavender on the dark scene, deep purple on
+      // the light one (same dataset.mode check the holo opacity uses).
+      const gauge = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, keelY, 0),
+        ]),
+        new THREE.LineBasicMaterial({
+          color: document.documentElement.dataset.mode === "dark" ? 0xd8b4fe : 0x7e22ce,
+          transparent: true,
+          opacity: 0.9,
+          depthTest: false,
+        }),
+      );
+      gauge.renderOrder = 10;
+      g.add(gauge);
+      _wlAnchor.set(0, keelY / 2, 0);
+      scene.value!.add(g);
+      waterlineGroup.value = g;
+      if (waterlineLabel) waterlineLabel.style.display = showWaterline.value ? "block" : "none";
+    }
+
+    function toggleWaterline() {
+      showWaterline.value = !showWaterline.value;
+      if (waterlineGroup.value) {
+        waterlineGroup.value.visible = showWaterline.value;
+        // Only park the label once the group exists — before the model loads
+        // it has no anchor yet and would hang at the canvas edge.
+        if (waterlineLabel) waterlineLabel.style.display = showWaterline.value ? "block" : "none";
+      }
+    }
+
+    function updateWaterlineLabelText() {
+      if (!waterlineLabel) return;
+      const draft = props.waterlineDraft;
+      waterlineLabel.textContent = draft != null
+        ? `${t("ships.detail.stage.draft")} ${draft.toFixed(1)} m`
+        : `${t("ships.detail.stage.draft")} —`;
+    }
+
+    /** Project the gauge anchor to screen px for the HTML label. */
+    function updateWaterlineLabel() {
+      const el = waterlineLabel;
+      const cam = camera.value;
+      const g = waterlineGroup.value;
+      if (!el || !cam || !g || !g.visible) return;
+      _wlScreen.copy(_wlAnchor).project(cam);
+      if (_wlScreen.z < 1) {
+        el.style.display = "block";
+        el.style.left = `${((_wlScreen.x * 0.5 + 0.5) * 100).toFixed(2)}%`;
+        el.style.top = `${((-_wlScreen.y * 0.5 + 0.5) * 100).toFixed(2)}%`;
+      } else {
+        el.style.display = "none";
+      }
+    }
+
+    watch(
+      () => [props.waterlineDraft, i18n.global.locale.value] as const,
+      () => updateWaterlineLabelText(),
+    );
 
     watch(
       () => [props.armorZones?.length ?? 0, modelGroup.value != null] as const,
@@ -943,13 +1058,22 @@ export default defineComponent({
       key.position.set(120, 200, 120);
       sc.add(key);
 
-      // A faint ground grid at the ship's waterline (placed after model loads).
+      // A faint ground grid at the ship's keel (placed after model loads).
       const grid = new THREE.GridHelper(1200, 40, 0x1a3a55, 0x0e1f30);
       (grid.material as THREE.Material).transparent = true;
       (grid.material as THREE.Material).opacity = 0.4;
-      (grid as any).position.y = -25; // default below ship; fixed after model loads
+      grid.position.y = -25; // default below ship; fixed after model loads
       sc.add(grid);
       gridRef = grid;
+
+      // Waterline draft label — an HTML overlay over the canvas (created
+      // here so it dies with the scene; text set by updateWaterlineLabelText).
+      const wlLabel = document.createElement("div");
+      wlLabel.className = "ship-stage__wl-label";
+      wlLabel.style.display = "none";
+      el.appendChild(wlLabel);
+      waterlineLabel = wlLabel;
+      updateWaterlineLabelText();
 
       const ctrl = new OrbitControls(cam, rnd.domElement);
       ctrl.enableDamping = true;
@@ -980,6 +1104,7 @@ export default defineComponent({
         for (const u of _allHoloUniforms) tickHoloUniforms(u, dt);
         ctrl.update();
         rnd.render(sc, cam);
+        updateWaterlineLabel();
         rafId = requestAnimationFrame(tick);
       };
       tick();
@@ -1041,6 +1166,9 @@ export default defineComponent({
         if (!url) {
           hasModel.value = false;
           errorMsg.value = t("ships.detail.noModel");
+          // No new hull to anchor to — don't leave the previous ship's
+          // waterline plane/gauge floating over the error overlay.
+          clearWaterline();
           return;
         }
         hasModel.value = true;
@@ -1228,20 +1356,32 @@ export default defineComponent({
 
         if (scene.value) scene.value.add(model);
         modelGroup.value = model;
-        // Normalize: center + uniform-scale to a 200-unit box.
+        // Normalize: uniform-scale to a 200-unit box, XZ-centred on the hull
+        // axis. Y is NOT centred — the baked GLB's origin plane is the game's
+        // waterline, so anchoring native Y=0 at world Y=0 keeps the hull at
+        // one fixed height no matter how tall a ship's masts are, and the
+        // armor overlay (locked onto the same frame below) no longer makes
+        // the ship jump when the mode toggles.
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z, 1);
         const scale = 200 / maxDim;
         model.scale.setScalar(scale);
-        const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
-        model.position.sub(center);
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.set(-center.x * scale, 0, -center.z * scale);
         // Re-measure the normalized box for focus-zone placement.
         const normBox = new THREE.Box3().setFromObject(model);
         modelBox.value = normBox;
+        normScale.value = scale;
+        normLenZ.value = Math.max(size.z, 1);
+        hullMinY.value = normBox.min.y;
+        // Park the reference grid on the keel baseline.
+        if (gridRef) gridRef.position.y = normBox.min.y;
+        rebuildWaterline();
 
         focusZone("default");
       } catch (e) {
+        clearWaterline();
         errorMsg.value = (e as Error).message || String(e);
         toast.error(`3D model failed: ${errorMsg.value}`);
       } finally {
@@ -1283,6 +1423,11 @@ export default defineComponent({
       uniforms.value = null;
       armorGroup.value = null;
       showArmor.value = false;
+      // The scene traverse above already disposed the waterline group's
+      // geometries/materials; just drop the refs and the label element.
+      waterlineGroup.value = null;
+      waterlineLabel?.remove();
+      waterlineLabel = null;
       disposeArmorScene();
     }
 
@@ -1312,11 +1457,14 @@ export default defineComponent({
         // Hidden thickness classes are per-ship — a new hull starts clean.
         restoreArmorParts();
         if (viewMode.value === "3d" && !props.hidden) {
-          // Remove the old model, then load the new one.
+          // Remove the old model, then load the new one. disposeArmorScene
+          // also voids any in-flight armor GLB sync for the OLD ship — it
+          // must not commit against the NEW ship's normalization frame.
           if (modelGroup.value && scene.value) {
             scene.value.remove(modelGroup.value);
             modelGroup.value = null;
           }
+          disposeArmorScene();
           void loadModel();
         }
       },
@@ -1674,6 +1822,20 @@ export default defineComponent({
                       onClick={() => setArmor(true)}
                     >
                       {t("ships.detail.armor.short")}
+                    </button>
+                  </div>
+                ) : null}
+                {viewMode.value === "3d" ? (
+                  <div class="ship-stage__wl" role="group">
+                    <button
+                      type="button"
+                      class={["ship-stage__wl-btn", showWaterline.value ? "is-active" : ""].join(" ")}
+                      title={t("ships.detail.stage.waterline")}
+                      aria-label={t("ships.detail.stage.waterline")}
+                      aria-pressed={showWaterline.value}
+                      onClick={toggleWaterline}
+                    >
+                      {t("ships.detail.stage.waterline")}
                     </button>
                   </div>
                 ) : null}

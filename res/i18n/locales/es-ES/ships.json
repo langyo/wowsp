@@ -91,7 +91,9 @@
       "show": "Mostrar vista previa",
       "rotate": "Rotación automática",
       "rotateOn": "Girando solo · clic para pausar",
-      "rotateOff": "En pausa · clic para reanudar"
+      "rotateOff": "En pausa · clic para reanudar",
+      "waterline": "Línea de flotación",
+      "draft": "Calado"
     },
     "weapon": {
       "mainGun": "Batería principal",

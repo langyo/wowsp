@@ -91,7 +91,9 @@
       "show": "Afficher l'aperçu",
       "rotate": "Rotation auto",
       "rotateOn": "Rotation auto · cliquer pour suspendre",
-      "rotateOff": "Suspendu · cliquer pour reprendre"
+      "rotateOff": "Suspendu · cliquer pour reprendre",
+      "waterline": "Ligne de flottaison",
+      "draft": "Tirant d'eau"
     },
     "weapon": {
       "mainGun": "Artillerie principale",

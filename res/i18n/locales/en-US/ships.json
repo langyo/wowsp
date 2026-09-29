@@ -91,7 +91,9 @@
       "show": "Show preview",
       "rotate": "Auto-rotate",
       "rotateOn": "Auto-rotating · click to pause",
-      "rotateOff": "Paused · click to resume"
+      "rotateOff": "Paused · click to resume",
+      "waterline": "Waterline",
+      "draft": "Draft"
     },
     "weapon": {
       "mainGun": "Main Battery",
