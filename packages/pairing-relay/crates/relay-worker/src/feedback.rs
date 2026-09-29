@@ -159,7 +159,7 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     let kv = env.kv(KV)?;
     let now = now_ms();
     for (key, limit) in rate_keys(&ip, &sub.anon_id, now).iter().zip(rate_limits()) {
-        let count: u64 = kv.get(key).json::<u64>().await?.unwrap_or(0) + 1;
+        let count: u64 = kv.get(key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
         if count > limit {
             return err(429, "rate_limited");
         }
@@ -402,7 +402,7 @@ pub async fn handle_attachment(req: Request, env: Env) -> Result<Response> {
     )
     .await?;
     let tmp = v
-        .pointer("/data/tmp_download_url/0/tmp_download_url")
+        .pointer("/data/tmp_download_urls/0/tmp_download_url")
         .and_then(Value::as_str)
         .ok_or("tmp url missing")?;
     Response::redirect(Url::parse(tmp)?)
@@ -469,9 +469,12 @@ async fn feishu_json(method: Method, url: &str, token: &str, body: Value) -> Res
 
 /// Tenant token with a KV cache (Feishu issues 2h tokens; refresh 5 min
 /// early). Errors when the credentials var/secret pair is missing.
+/// Cache reads are best-effort: a malformed/legacy row is a MISS, never
+/// a failed request (KV values are ALWAYS written as plain JSON text —
+/// storing a `serde_json::Value` directly lands as "[object Object]").
 async fn feishu_token(env: &Env) -> Result<String> {
     let kv = env.kv(KV)?;
-    if let Some(cached) = kv.get(K_TOKEN).json::<TokenCache>().await? {
+    if let Some(cached) = kv.get(K_TOKEN).json::<TokenCache>().await.ok().flatten() {
         if cached.expire_at > now_ms() + 300_000 {
             return Ok(cached.token);
         }
@@ -501,11 +504,13 @@ async fn feishu_token(env: &Env) -> Result<String> {
         .ok_or("token missing")?
         .to_string();
     let expire = v.pointer("/expire").and_then(Value::as_i64).unwrap_or(7200);
+    let cache = TokenCache {
+        token: token.clone(),
+        expire_at: now_ms() + expire * 1000,
+    };
+    // Plain JSON text (NOT a serde_json::Value — see the fn doc).
     let _ = kv
-        .put(
-            K_TOKEN,
-            json!({ "token": token, "expire_at": now_ms() + expire * 1000 }),
-        )?
+        .put(K_TOKEN, serde_json::to_string(&cache)?)?
         .execute()
         .await;
     Ok(token)
@@ -531,13 +536,14 @@ async fn ensure_base(env: &Env, token: &str) -> Result<BitableIds> {
         let ids = BitableIds { app_token: app, table_id: tbl };
         // Skip the KV write when the pin is unchanged — every feedback API
         // call funnels through here, and list-polling agents would
-        // otherwise burn the free-tier daily KV write quota.
-        if kv.get(K_BASE).json::<BitableIds>().await?.as_ref() != Some(&ids) {
+        // otherwise burn the free-tier daily KV write quota. Best-effort
+        // read (a malformed row is just a miss).
+        if kv.get(K_BASE).json::<BitableIds>().await.ok().flatten().as_ref() != Some(&ids) {
             let _ = kv.put(K_BASE, serde_json::to_string(&ids)?)?.execute().await;
         }
         return Ok(ids);
     }
-    if let Some(ids) = kv.get(K_BASE).json::<BitableIds>().await? {
+    if let Some(ids) = kv.get(K_BASE).json::<BitableIds>().await.ok().flatten() {
         return Ok(ids);
     }
 
