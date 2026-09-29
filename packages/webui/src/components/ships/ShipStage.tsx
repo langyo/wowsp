@@ -12,11 +12,11 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
-import { Pause, Play, RotateCcw, X } from "@lucide/vue";
+import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
 import { HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { useImage } from "@wowsp/holo";
-import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
+import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
@@ -31,6 +31,14 @@ import "./ShipStage.scss";
 export interface ArmorZone {
   name: string;       /** "citadel", "mainBelt", "deck", "bow", "stern", … */
   thickness: number;  /** mm — 0 if unknown */
+}
+
+/** A carrier airframe the stage can swap in, fed from GameParams via the
+ *  parent: `index` is the baked GLB stem under models/planes/, `label` the
+ *  pretty airframe name ("Grumman TBF"). */
+export interface PlaneModelOption {
+  index: string;
+  label: string;
 }
 
 /**
@@ -132,6 +140,79 @@ function armorBucketForRgb(rgb: number): number {
  *  ("half the hull missing"). See makeHoloDepthMaterial. */
 const ShipStageDepthMaterial = makeHoloDepthMaterial();
 
+/** Mesh categories that render one hue step brighter (weapons pop off the
+ *  hull under the holographic palette). */
+const WEAPON_NAMES = new Set([
+  "main_battery", "secondary_battery", "aa_mount", "torpedo",
+  "weapon", "turret_part", "aircraft",
+]);
+
+/** Pre-defined base hues (0-360) for known category names.  Each
+ *  category name always maps to the same hue — no hash drift. */
+const PRESET_HUES: Record<string, number> = {
+  // Hull — ONE hue for the whole plating. The bow/mid/stern split is
+  // a bake-chunk boundary, not a visible structure: giving each chunk
+  // its own hue painted three mismatched pastel slabs over a
+  // continuous hull, one of the main "mushy patchwork" cues.
+  hull_bow:    195,
+  hull_mid:    195,
+  hull_stern:  195,
+  hull_body:   195,
+  deck_house:  220,
+  // Superstructure — green-cyan, distinct from blue hull body
+  superstructure: 148,
+  funnel:      240,
+  // Weapons — warm spectrum with 30–40° gaps
+  main_battery:      22,   // orange
+  secondary_battery: 55,   // amber
+  aa_mount:          6,    // red
+  torpedo:          172,   // teal
+  aircraft:         280,   // purple
+  weapon:            36,   // gold (generic)
+  turret_part:       44,   // darker gold
+  misc:             200,
+};
+
+/** Instance-suffixed bake names ("main_battery_249") still colour by
+ *  their category prefix, so every turret looks the same while
+ *  remaining individually addressable. */
+function categoryBase(name: string): string {
+  for (const key of Object.keys(PRESET_HUES)) {
+    if (name === key || name.startsWith(`${key}_`)) return key;
+  }
+  return name;
+}
+
+function colorForCategory(name: string): { base: THREE.Color; fresnel: THREE.Color } {
+  name = categoryBase(name);
+  let hue: number, sat: number, lit: number;
+  if (PRESET_HUES[name] != null) {
+    hue = PRESET_HUES[name];
+  } else {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) {
+      h = ((h << 5) - h) + name.charCodeAt(i);
+      h |= 0;
+    }
+    hue = (h >>> 0) % 360;
+  }
+  if (WEAPON_NAMES.has(name)) {
+    sat = 0.72;
+    lit = 0.35;
+  } else if (name.startsWith("hull_") || name === "deck_house" || name === "superstructure") {
+    sat = 0.48;
+    lit = 0.30;
+  } else if (name === "funnel") {
+    sat = 0.15; lit = 0.22;
+  } else {
+    sat = 0.50; lit = 0.32;
+  }
+  return {
+    base: new THREE.Color().setHSL(hue / 360, sat, lit),
+    fresnel: new THREE.Color().setHSL(hue / 360, sat * 0.85, Math.min(lit * 2.0, 0.85)),
+  };
+}
+
 /** userData bookkeeping written onto armor overlay meshes. */
 interface ArmorMeshUserData {
   /** Heuristic zone boxes: raw zone name ("deck"). */
@@ -224,6 +305,10 @@ export default defineComponent({
     ship: { type: Object as () => ShipInfo | null, required: true },
     armorZones: { type: Array as () => ArmorZone[], default: () => [] },
     waterlineDraft: { type: Number as () => number | null, default: null },
+    /** Ships with embarked squadrons (carriers, hybrids like Kearsarge) the
+     *  viewer can swap to. Empty for ships without squadrons — the model
+     *  picker dropdown hides then. */
+    planeModels: { type: Array as () => PlaneModelOption[], default: () => [] },
     /** Collapse the stage (water-table contexts open the modal with the
      *  hologram hidden): the canvas unmounts and only the control row —
      *  3D/2D toggle + this visibility switch — remains. */
@@ -244,6 +329,17 @@ export default defineComponent({
     const containerRef = ref<HTMLElement | null>(null);
     const viewMode = ref<"2d" | "3d">("3d");
     const loading = ref(false);
+    /** Any async stage load (hull or airframe). A counter, so concurrent
+     *  loads keep the spinner up until the LAST one settles. */
+    let busyCount = 0;
+    function busyStart() {
+      busyCount++;
+      loading.value = true;
+    }
+    function busyEnd() {
+      busyCount = Math.max(0, busyCount - 1);
+      if (busyCount === 0) loading.value = false;
+    }
     /** Set while the model pack downloads after a 3D toggle on a lite install. */
     const modelPackDownloading = ref(false);
     const errorMsg = ref<string | null>(null);
@@ -281,6 +377,21 @@ export default defineComponent({
     const normLenZ = shallowRef(200);
     /** World Y of the keel after normalization (waterline sits at 0). */
     const hullMinY = shallowRef(-25);
+    /** Normalized bounding box of the HULL (vs. modelBox, which tracks
+     *  whatever is staged — hull or airframe). */
+    const hullBox = shallowRef<THREE.Box3 | null>(null);
+    /** Currently staged model: "hull" or a baked plane GLB stem ("PAAB002").
+     *  Resets to the hull whenever the scene rebuilds (2D↔3D, hide, ship
+     *  switch) — same per-session semantics as showArmor. */
+    const modelSelection = ref<string>("hull");
+    const modelPickOpen = ref(false);
+    const modelPickRef = ref<HTMLElement | null>(null);
+    /** Loaded airframes, kept mounted (visible=false) so toggling back is
+     *  instant; disposed with the scene / on ship switch. */
+    const planeCache = new Map<string, { group: THREE.Group; box: THREE.Box3 }>();
+    /** In-flight plane GLB loads (stem → promise) so re-picking the same
+     *  entry can't kick off a second fetch. */
+    const planeLoads = new Map<string, Promise<void>>();
 
     // 2D fallback portrait: tracked via the shared useImage hook so a failed
     // CDN image lands in the same graceful noimg block as a missing one.
@@ -304,14 +415,16 @@ export default defineComponent({
     // rebuild is in flight the toggle no longer matches the scene. Both modes
     // are strictly user-driven through the 全息/装甲 switch.
 
-    /** Deep-dispose a detached group's geometries + materials. */
+    /** Deep-dispose a detached group's geometries + materials. The shared
+     *  depth-anchor material is module-level and outlives every group —
+     *  disposing it here would force a shader recompile mid-session. */
     function disposeGroupDeep(g: THREE.Group) {
       g.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.geometry) m.geometry.dispose();
         const mat = m.material as THREE.Material | THREE.Material[];
-        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-        else if (mat) mat.dispose();
+        if (Array.isArray(mat)) mat.forEach((x) => { if (x !== ShipStageDepthMaterial) x.dispose(); });
+        else if (mat && mat !== ShipStageDepthMaterial) mat.dispose();
       });
     }
 
@@ -1014,6 +1127,121 @@ export default defineComponent({
       return mat;
     }
 
+    /** Shared holographic dressing for any baked GLB (hull or carrier
+     *  airframe): rebuilds winding-agnostic normals, then assigns per-
+     *  category holo materials with an opaque depth-anchor twin per mesh.
+     *  NOT normalized here — hull and plane anchoring differ. */
+    function prepareHoloModel(model: THREE.Object3D): void {
+      // The baked GLBs drop POSITION accessor min/max (smaller files), so
+      // Box3.setFromObject can't infer bounds — compute them per-geometry first.
+      model.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.geometry && mesh.geometry.attributes.position) {
+          // The baked collision shells ship POSITION only and their triangle
+          // winding is essentially random (~72% of shared edges disagree),
+          // so any winding-trusting normal shades the hull as per-triangle
+          // patches under the holographic lighting. Rebuild winding-agnostic
+          // crease-aware normals for EVERY mesh: continuous panel runs share
+          // a normal, hard edges stay split. The crease angle must sit
+          // ABOVE the mesh's quantization step (~30–50° between adjacent
+          // faces on a curved region) and BELOW the real edges — right-
+          // angled chines, deck-to-side corners, box structures. 80° merged
+          // those true 90° structure edges into the smooth cluster too,
+          // smearing T-posts and deck steps into the plating; 65° keeps the
+          // whole quantized curve range merged while every ≈90° edge splits.
+          // Attributes other than position are stripped BEFORE the weld —
+          // mergeVertices only fuses vertices whose attributes all match —
+          // except the armour thickness vertex colours, which must survive
+          // for the armor overlay.
+          const welded = mesh.geometry.clone();
+          for (const attr of Object.keys(welded.attributes)) {
+            if (attr !== "position" && attr !== "color") welded.deleteAttribute(attr);
+          }
+          welded.morphAttributes = {};
+          mesh.geometry = computeSmoothNormals(mergeVertices(welded, 1e-4), 65);
+          mesh.geometry.computeBoundingBox();
+          mesh.geometry.computeBoundingSphere();
+        }
+      });
+
+      // ── Per-mesh-group holographic materials with deterministic colour ──
+      // Each mesh is named after its semantic category and gets a distinct hue
+      // drawn from pre-defined pools so the same part type is always the same
+      // colour across every ship, but different types are clearly separable.
+      const materialCache = new Map<string, THREE.ShaderMaterial>();
+
+      const meshes: THREE.Mesh[] = [];
+      model.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+      });
+      if (import.meta.env.DEV) console.log("[holo model] meshes:", meshes.length, "names:", meshes.map(m => m.name));
+
+      for (const mesh of meshes) {
+        const name = mesh.name || "misc";
+        let mat = materialCache.get(name);
+        if (!mat) {
+          mat = makeHoloMaterial();
+          const c = colorForCategory(name);
+          mat.uniforms.baseColor.value.copy(c.base);
+          mat.uniforms.fresnelColor.value.copy(c.fresnel);
+          // Definition layer: smooth-normal headlight + measuring grid so
+          // broad panels read as surfaces instead of a flat pastel fill.
+          // Both gains stay LOW: the baked hull's quantized plates sit at
+          // slightly different incidences, and big normal-driven terms
+          // amplify those differences into mottled patches across the
+          // flank (the headlight) or dense stripes at grazing (the grid).
+          mat.uniforms.uLightGain.value = 0.30;
+          mat.uniforms.uLinesGain.value = 0.12;
+          // Glassier hologram: the fill drops to roughly 60% of the legacy
+          // opacity in the dark theme (a tenth more in the light theme) so
+          // broadsides show the background through them (the
+          // depth anchor still hides the far side), the rim carries the
+          // silhouette, and three layered motions — fine screen rows, a
+          // climbing sweep band, a faint flicker — keep the surface reading
+          // as a transmitted projection rather than moulded plastic. The
+          // pale light-theme background washes a translucent fill out
+          // further, so it keeps a tenth more opacity there (same
+          // dataset.mode check the scene background uses; a mid-session
+          // theme flip takes effect on the next model load).
+          mat.uniforms.uBaseAlpha.value =
+            document.documentElement.dataset.mode === "dark" ? 0.45 : 0.55;
+          mat.uniforms.uRimAlpha.value = 0.55;
+          mat.uniforms.uScanGain.value = 0.50;
+          mat.uniforms.uSweepGain.value = 0.40;
+          mat.uniforms.uFlickerGain.value = 0.05;
+          // Confine the rim to the true silhouette (tuned in the holo lab
+          // against the crumpled-foil plate seams; see holoShader.ts).
+          mat.uniforms.uFresnelPow.value = 5.0;
+          mat.uniforms.uFresnelGain.value = 1.0;
+          materialCache.set(name, mat);
+        }
+        mesh.material = mat;
+        mesh.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
+
+        // Depth anchor: the holo material is transparent and writes no
+        // depth, so without an opaque anchor every interior / far-side face
+        // paints over the near hull (draw order decides — the classic
+        // "faces poking through the hull" artifact). An invisible
+        // colorWrite-off twin renders in the opaque queue first, and the
+        // transparent pass depth-tests against it: nearer surfaces now
+        // occlude farther ones while the ghost layering is preserved.
+        const depthAnchor = new THREE.Mesh(
+          mesh.geometry,
+          ShipStageDepthMaterial,
+        );
+        depthAnchor.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
+        mesh.add(depthAnchor);
+
+        // No structural-edge overlay: the baked hull is a coarse mesh, so an
+        // 8° crease threshold catches nearly every plate boundary and the
+        // line network reads as bright triangle edges drawn over the faces.
+        // Recolouring it to the part's own hue does not hide it either — the
+        // faces vary with Fresnel, so a constant-colour line still stands out.
+        // The shader's rim light already carries the shape; the silhouette
+        // comes from the geometry itself.
+      }
+    }
+
     // ── Scene lifecycle ───────────────────────────────────────────────────
     function initScene() {
       const el = containerRef.value;
@@ -1136,11 +1364,22 @@ export default defineComponent({
       }
     }
 
+    /** Generation token for loadModel: same-hull re-entry (A→B→A fast ship
+     *  switch) has identical shipId AND scene, so the identity guards below
+     *  can't see it — a bumped token is the only stale-commit detector. */
+    let hullLoadGen = 0;
+
     async function loadModel() {
       const ship = props.ship;
       if (!ship) return;
+      // Staleness guard for the awaits below — a ship switch (or a scene
+      // teardown) while the GLB flies must not commit the OLD hull into the
+      // NEW scene. Same treatment as loadPlaneModel.
+      const gen = ++hullLoadGen;
+      const shipAtStart = ship.shipId;
+      const sceneAtStart = scene.value;
       await ensurePackWired();
-      loading.value = true;
+      busyStart();
       errorMsg.value = null;
       try {
         let url = resolveShipModelByShipId(ship.shipId, ship.name);
@@ -1173,189 +1412,17 @@ export default defineComponent({
         }
         hasModel.value = true;
         const model = await loadGlbModel(url);
-        // The baked GLBs drop POSITION accessor min/max (smaller files), so
-        // Box3.setFromObject can't infer bounds — compute them per-geometry first.
-        model.traverse((child) => {
-          const mesh = child as THREE.Mesh;
-          if (mesh.geometry && mesh.geometry.attributes.position) {
-            // The baked collision shells ship POSITION only and their triangle
-            // winding is essentially random (~72% of shared edges disagree),
-            // so any winding-trusting normal shades the hull as per-triangle
-            // patches under the holographic lighting. Rebuild winding-agnostic
-            // crease-aware normals for EVERY mesh: continuous panel runs share
-            // a normal, hard edges stay split. The crease angle must sit
-            // ABOVE the mesh's quantization step (~30–50° between adjacent
-            // faces on a curved region) and BELOW the real edges — right-
-            // angled chines, deck-to-side corners, box structures. 80° merged
-            // those true 90° structure edges into the smooth cluster too,
-            // smearing T-posts and deck steps into the plating; 65° keeps the
-            // whole quantized curve range merged while every ≈90° edge splits.
-            // Attributes other than position are stripped BEFORE the weld —
-            // mergeVertices only fuses vertices whose attributes all match —
-            // except the armour thickness vertex colours, which must survive
-            // for the armor overlay.
-            const welded = mesh.geometry.clone();
-            for (const attr of Object.keys(welded.attributes)) {
-              if (attr !== "position" && attr !== "color") welded.deleteAttribute(attr);
-            }
-            welded.morphAttributes = {};
-            mesh.geometry = computeSmoothNormals(mergeVertices(welded, 1e-4), 65);
-            mesh.geometry.computeBoundingBox();
-            mesh.geometry.computeBoundingSphere();
-          }
-        });
+        // Superseded while fetching (ship switch / scene teardown): drop it
+        // instead of stacking the old hull into the fresh scene.
+        const sc = scene.value;
+        if (!sc || sc !== sceneAtStart || props.ship?.shipId !== shipAtStart || gen !== hullLoadGen) {
+          disposeGroupDeep(model);
+          return;
+        }
+        prepareHoloModel(model);
         modelGroup.value = model;
 
-        // ── Per-mesh-group holographic materials with deterministic colour ──
-        // Each mesh is named after its semantic category and gets a distinct hue
-        // drawn from pre-defined pools so the same part type is always the same
-        // colour across every ship, but different types are clearly separable.
-        const WEAPON_NAMES = new Set([
-          "main_battery", "secondary_battery", "aa_mount", "torpedo",
-          "weapon", "turret_part", "aircraft",
-        ]);
-
-        /** Pre-defined base hues (0-360) for known category names.  Each
-         *  category name always maps to the same hue — no hash drift. */
-        const PRESET_HUES: Record<string, number> = {
-          // Hull — ONE hue for the whole plating. The bow/mid/stern split is
-          // a bake-chunk boundary, not a visible structure: giving each chunk
-          // its own hue painted three mismatched pastel slabs over a
-          // continuous hull, one of the main "mushy patchwork" cues.
-          hull_bow:    195,
-          hull_mid:    195,
-          hull_stern:  195,
-          hull_body:   195,
-          deck_house:  220,
-          // Superstructure — green-cyan, distinct from blue hull body
-          superstructure: 148,
-          funnel:      240,
-          // Weapons — warm spectrum with 30–40° gaps
-          main_battery:      22,   // orange
-          secondary_battery: 55,   // amber
-          aa_mount:          6,    // red
-          torpedo:          172,   // teal
-          aircraft:         280,   // purple
-          weapon:            36,   // gold (generic)
-          turret_part:       44,   // darker gold
-          misc:             200,
-        };
-
-        /** Instance-suffixed bake names ("main_battery_249") still colour by
-         *  their category prefix, so every turret looks the same while
-         *  remaining individually addressable. */
-        function categoryBase(name: string): string {
-          for (const key of Object.keys(PRESET_HUES)) {
-            if (name === key || name.startsWith(`${key}_`)) return key;
-          }
-          return name;
-        }
-
-        function colorForCategory(name: string): { base: THREE.Color; fresnel: THREE.Color } {
-          name = categoryBase(name);
-          let hue: number, sat: number, lit: number;
-          if (PRESET_HUES[name] != null) {
-            hue = PRESET_HUES[name];
-          } else {
-            let h = 0;
-            for (let i = 0; i < name.length; i++) {
-              h = ((h << 5) - h) + name.charCodeAt(i);
-              h |= 0;
-            }
-            hue = (h >>> 0) % 360;
-          }
-          if (WEAPON_NAMES.has(name)) {
-            sat = 0.72;
-            lit = 0.35;
-          } else if (name.startsWith("hull_") || name === "deck_house" || name === "superstructure") {
-            sat = 0.48;
-            lit = 0.30;
-          } else if (name === "funnel") {
-            sat = 0.15; lit = 0.22;
-          } else {
-            sat = 0.50; lit = 0.32;
-          }
-          return {
-            base: new THREE.Color().setHSL(hue / 360, sat, lit),
-            fresnel: new THREE.Color().setHSL(hue / 360, sat * 0.85, Math.min(lit * 2.0, 0.85)),
-          };
-        }
-
-        const materialCache = new Map<string, THREE.ShaderMaterial>();
-
-        const meshes: THREE.Mesh[] = [];
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
-        });
-        if (import.meta.env.DEV) console.log("[loadModel] meshes:", meshes.length, "names:", meshes.map(m => m.name));
-
-        for (const mesh of meshes) {
-          const name = mesh.name || "misc";
-          let mat = materialCache.get(name);
-          if (!mat) {
-            mat = makeHoloMaterial();
-            const c = colorForCategory(name);
-            mat.uniforms.baseColor.value.copy(c.base);
-            mat.uniforms.fresnelColor.value.copy(c.fresnel);
-            // Definition layer: smooth-normal headlight + measuring grid so
-            // broad panels read as surfaces instead of a flat pastel fill.
-            // Both gains stay LOW: the baked hull's quantized plates sit at
-            // slightly different incidences, and big normal-driven terms
-            // amplify those differences into mottled patches across the
-            // flank (the headlight) or dense stripes at grazing (the grid).
-            mat.uniforms.uLightGain.value = 0.30;
-            mat.uniforms.uLinesGain.value = 0.12;
-            // Glassier hologram: the fill drops to roughly 60% of the legacy
-            // opacity in the dark theme (a tenth more in the light theme) so
-            // broadsides show the background through them (the
-            // depth anchor still hides the far side), the rim carries the
-            // silhouette, and three layered motions — fine screen rows, a
-            // climbing sweep band, a faint flicker — keep the surface reading
-            // as a transmitted projection rather than moulded plastic. The
-            // pale light-theme background washes a translucent fill out
-            // further, so it keeps a tenth more opacity there (same
-            // dataset.mode check the scene background uses; a mid-session
-            // theme flip takes effect on the next model load).
-            mat.uniforms.uBaseAlpha.value =
-              document.documentElement.dataset.mode === "dark" ? 0.45 : 0.55;
-            mat.uniforms.uRimAlpha.value = 0.55;
-            mat.uniforms.uScanGain.value = 0.50;
-            mat.uniforms.uSweepGain.value = 0.40;
-            mat.uniforms.uFlickerGain.value = 0.05;
-            // Confine the rim to the true silhouette (tuned in the holo lab
-            // against the crumpled-foil plate seams; see holoShader.ts).
-            mat.uniforms.uFresnelPow.value = 5.0;
-            mat.uniforms.uFresnelGain.value = 1.0;
-            materialCache.set(name, mat);
-          }
-          mesh.material = mat;
-          mesh.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
-
-          // Depth anchor: the holo material is transparent and writes no
-          // depth, so without an opaque anchor every interior / far-side face
-          // paints over the near hull (draw order decides — the classic
-          // "faces poking through the hull" artifact). An invisible
-          // colorWrite-off twin renders in the opaque queue first, and the
-          // transparent pass depth-tests against it: nearer surfaces now
-          // occlude farther ones while the ghost layering is preserved.
-          const depthAnchor = new THREE.Mesh(
-            mesh.geometry,
-            ShipStageDepthMaterial,
-          );
-          depthAnchor.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
-          mesh.add(depthAnchor);
-
-          // No structural-edge overlay: the baked hull is a coarse mesh, so an
-          // 8° crease threshold catches nearly every plate boundary and the
-          // line network reads as bright triangle edges drawn over the faces.
-          // Recolouring it to the part's own hue does not hide it either — the
-          // faces vary with Fresnel, so a constant-colour line still stands out.
-          // The shader's rim light already carries the shape; the silhouette
-          // comes from the geometry itself.
-        }
-
-        if (scene.value) scene.value.add(model);
-        modelGroup.value = model;
+        sc.add(model);
         // Normalize: uniform-scale to a 200-unit box, XZ-centred on the hull
         // axis. Y is NOT centred — the baked GLB's origin plane is the game's
         // waterline, so anchoring native Y=0 at world Y=0 keeps the hull at
@@ -1371,23 +1438,166 @@ export default defineComponent({
         model.position.set(-center.x * scale, 0, -center.z * scale);
         // Re-measure the normalized box for focus-zone placement.
         const normBox = new THREE.Box3().setFromObject(model);
-        modelBox.value = normBox;
+        hullBox.value = normBox;
         normScale.value = scale;
         normLenZ.value = Math.max(size.z, 1);
         hullMinY.value = normBox.min.y;
-        // Park the reference grid on the keel baseline.
-        if (gridRef) gridRef.position.y = normBox.min.y;
-        rebuildWaterline();
-
-        focusZone("default");
+        if (modelSelection.value === "hull") {
+          modelBox.value = normBox;
+          // Park the reference grid on the keel baseline.
+          if (gridRef) gridRef.position.y = normBox.min.y;
+          rebuildWaterline();
+          focusZone("default");
+        } else {
+          // An airframe was picked while the hull was still loading — restage
+          // (hides the hull and stages the cached airframe, or keeps the hull
+          // on stage behind the spinner until the airframe load lands).
+          applyStagedModel();
+        }
       } catch (e) {
         clearWaterline();
         errorMsg.value = (e as Error).message || String(e);
         toast.error(`3D model failed: ${errorMsg.value}`);
       } finally {
-        loading.value = false;
+        busyEnd();
       }
     }
+
+    // ── Carrier airframe viewer (baked plane GLBs) ────────────────────────
+    /** The staged model's box is tracked in modelBox (focus zones and the
+     *  waterline group read it); hullBox keeps the hull's own frame so
+     *  staging back is instant. */
+    function applyStagedModel(): void {
+      const sc = scene.value;
+      if (!sc) return;
+      const key = modelSelection.value;
+      const hull = modelGroup.value;
+      // Airframes have no armor shell: force the holo look and void any
+      // in-flight armor GLB sync for the hull.
+      if (key !== "hull" && showArmor.value) {
+        showArmor.value = false;
+        disposeArmorScene();
+      }
+      const target = key === "hull" ? null : planeCache.get(key);
+      // The hull stays on stage (behind the loading spinner) until the
+      // airframe is actually ready, so the view never goes blank mid-swap.
+      if (hull) hull.visible = target == null;
+      for (const [stem, entry] of planeCache) entry.group.visible = stem === key;
+      if (key === "hull") {
+        modelBox.value = hullBox.value;
+        if (gridRef && hullBox.value) gridRef.position.y = hullBox.value.min.y;
+        rebuildWaterline();
+        // The stage is live again even with an airframe still loading in the
+        // background — drop the spinner now; the later busyEnd stays balanced.
+        loading.value = false;
+        focusZone("default");
+      } else if (target) {
+        modelBox.value = target.box;
+        if (gridRef) gridRef.position.y = target.box.min.y;
+        // The waterline plane is a hull concept — never slice an airframe.
+        clearWaterline();
+        loading.value = false;
+        focusZone("default");
+      }
+    }
+
+    async function loadPlaneModel(stem: string): Promise<void> {
+      if (planeCache.has(stem)) return;
+      const inFlight = planeLoads.get(stem);
+      if (inFlight) return inFlight;
+      const shipAtStart = props.ship?.shipId;
+      const sceneAtStart = scene.value;
+      const load = (async () => {
+        const url = resolvePlaneModelUrl(stem);
+        if (!url) throw new Error(`no baked plane model for ${stem}`);
+        const model = await loadGlbModel(url);
+        // Superseded while fetching (scene teardown / 2D flip / ship switch —
+        // the new scene is a DIFFERENT object, so identity, not truthiness):
+        // drop it instead of leaking it into the fresh scene.
+        const sc = scene.value;
+        if (!sc || sc !== sceneAtStart || props.ship?.shipId !== shipAtStart) {
+          disposeGroupDeep(model);
+          return;
+        }
+        prepareHoloModel(model);
+        // Airframes carry no waterline: unlike the hull, the whole bbox
+        // centers on the origin, scaled to the same 200-unit stage.
+        const raw = new THREE.Box3().setFromObject(model);
+        const size = raw.getSize(new THREE.Vector3());
+        const scale = 200 / Math.max(size.x, size.y, size.z, 1);
+        model.scale.setScalar(scale);
+        const center = raw.getCenter(new THREE.Vector3());
+        model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+        const box = new THREE.Box3().setFromObject(model);
+        model.visible = false;
+        sc.add(model);
+        planeCache.set(stem, { group: model, box });
+        // Single staging point: hides the hull, force-offs the armor, clears
+        // the waterline, retargets modelBox/grid and flies the camera.
+        if (modelSelection.value === stem) {
+          // A staged airframe is usable even when the hull failed to load —
+          // drop that error overlay.
+          errorMsg.value = null;
+          applyStagedModel();
+        }
+      })()
+        .finally(() => {
+          // Only retire OUR entry — a newer concurrent load for the same stem
+          // must keep its slot.
+          if (planeLoads.get(stem) === load) planeLoads.delete(stem);
+        });
+      planeLoads.set(stem, load);
+      return load;
+    }
+
+    function setModelSelection(key: string): void {
+      modelPickOpen.value = false;
+      if (modelSelection.value === key) return;
+      modelSelection.value = key;
+      if (key === "hull" || planeCache.has(key)) {
+        applyStagedModel();
+        return;
+      }
+      // Not staged yet: the hull stays on stage (target == null) and the
+      // spinner takes over until the GLB lands.
+      busyStart();
+      loadPlaneModel(key)
+        .catch((e) => {
+          toast.error(`3D model failed: ${(e as Error).message || String(e)}`);
+          // Fall back to the hull so the stage is never left blank.
+          if (modelSelection.value === key) {
+            modelSelection.value = "hull";
+            applyStagedModel();
+          }
+        })
+        .finally(() => {
+          busyEnd();
+        });
+    }
+
+    const currentModelLabel = computed(() => {
+      const key = modelSelection.value;
+      if (key === "hull") return t("ships.detail.stage.hull");
+      return props.planeModels.find((p) => p.index === key)?.label ?? key;
+    });
+
+    function onModelPickDocPointerDown(e: PointerEvent): void {
+      const el = modelPickRef.value;
+      if (el && !el.contains(e.target as Node)) modelPickOpen.value = false;
+    }
+
+    function onModelPickDocKeyDown(e: KeyboardEvent): void {
+      if (e.key === "Escape") modelPickOpen.value = false;
+    }
+
+    watch(modelPickOpen, (open) => {
+      document.removeEventListener("pointerdown", onModelPickDocPointerDown);
+      document.removeEventListener("keydown", onModelPickDocKeyDown);
+      if (open) {
+        document.addEventListener("pointerdown", onModelPickDocPointerDown);
+        document.addEventListener("keydown", onModelPickDocKeyDown);
+      }
+    });
 
     function disposeScene() {
       cancelAnimationFrame(rafId);
@@ -1409,8 +1619,11 @@ export default defineComponent({
           const m = o as THREE.Mesh;
           if (m.geometry) m.geometry.dispose();
           const mat = m.material as THREE.Material | THREE.Material[];
-          if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-          else if (mat) mat.dispose();
+          // The module-level depth-anchor material outlives this scene (same
+          // skip as disposeGroupDeep) — disposing it would just force a
+          // shader recompile on the next session's first frame.
+          if (Array.isArray(mat)) mat.forEach((x) => { if (x !== ShipStageDepthMaterial) x.dispose(); });
+          else if (mat && mat !== ShipStageDepthMaterial) mat.dispose();
         });
       }
       if (r) {
@@ -1420,7 +1633,10 @@ export default defineComponent({
       scene.value = camera.value = renderer.value = controls.value = null;
       modelGroup.value = null;
       modelBox.value = null;
+      hullBox.value = null;
       uniforms.value = null;
+      // Every holo material died with the scene — stop ticking dead uniforms.
+      _allHoloUniforms.length = 0;
       armorGroup.value = null;
       showArmor.value = false;
       // The scene traverse above already disposed the waterline group's
@@ -1428,6 +1644,12 @@ export default defineComponent({
       waterlineGroup.value = null;
       waterlineLabel?.remove();
       waterlineLabel = null;
+      // Staged airframes die with the scene too (same traverse); sessions
+      // restart on the hull, matching showArmor's reset.
+      planeCache.clear();
+      planeLoads.clear();
+      modelSelection.value = "hull";
+      modelPickOpen.value = false;
       disposeArmorScene();
     }
 
@@ -1447,6 +1669,8 @@ export default defineComponent({
 
     onBeforeUnmount(() => {
       cancelAnimationFrame(showRafId);
+      document.removeEventListener("pointerdown", onModelPickDocPointerDown);
+      document.removeEventListener("keydown", onModelPickDocKeyDown);
       disposeScene();
     });
 
@@ -1456,13 +1680,25 @@ export default defineComponent({
       () => {
         // Hidden thickness classes are per-ship — a new hull starts clean.
         restoreArmorParts();
+        // Staged airframes are per-hull too: drop the cache (in-flight loads
+        // self-discard via the shipId check) and restage the body.
+        for (const { group } of planeCache.values()) {
+          if (scene.value) scene.value.remove(group);
+          disposeGroupDeep(group);
+        }
+        planeCache.clear();
+        planeLoads.clear();
+        modelSelection.value = "hull";
+        modelPickOpen.value = false;
         if (viewMode.value === "3d" && !props.hidden) {
           // Remove the old model, then load the new one. disposeArmorScene
           // also voids any in-flight armor GLB sync for the OLD ship — it
           // must not commit against the NEW ship's normalization frame.
           if (modelGroup.value && scene.value) {
-            scene.value.remove(modelGroup.value);
+            const oldHull = modelGroup.value;
+            scene.value.remove(oldHull);
             modelGroup.value = null;
+            disposeGroupDeep(oldHull);
           }
           disposeArmorScene();
           void loadModel();
@@ -1495,6 +1731,10 @@ export default defineComponent({
       const ctrl = controls.value;
       const box = modelBox.value;
       if (!cam || !ctrl || !box) return;
+      // Weapon-bar zones target hull regions via hull-bbox heuristics —
+      // meaningless against a staged airframe, so only the default framing
+      // (model swaps) applies there.
+      if (zone !== "default" && modelSelection.value !== "hull") return;
       // Park the turntable for the flight. The ref (the toolbar's state) is
       // left alone here: the default hero reveal resumes it after the tween,
       // a region focus clears it below.
@@ -1807,7 +2047,7 @@ export default defineComponent({
                     </button>
                   </div>
                 ) : null}
-                {viewMode.value === "3d" ? (
+                {viewMode.value === "3d" && modelSelection.value === "hull" ? (
                   <div class="ship-stage__armor-modes" role="group" aria-label={t("ships.detail.armor.toggle")}>
                     <button
                       type="button"
@@ -1825,7 +2065,50 @@ export default defineComponent({
                     </button>
                   </div>
                 ) : null}
-                {viewMode.value === "3d" ? (
+                {viewMode.value === "3d" && props.planeModels.length > 0 ? (
+                  <div class="ship-stage__model-pick" role="group" aria-label={t("ships.detail.stage.modelPicker")} ref={modelPickRef}>
+                    <button
+                      type="button"
+                      class={["ship-stage__model-pick-btn", modelSelection.value !== "hull" ? "is-active" : ""].join(" ")}
+                      title={t("ships.detail.stage.modelPicker")}
+                      aria-label={t("ships.detail.stage.modelPicker")}
+                      aria-expanded={modelPickOpen.value}
+                      aria-haspopup="listbox"
+                      onClick={() => { modelPickOpen.value = !modelPickOpen.value; }}
+                    >
+                      <Plane size={12} strokeWidth={2.2} />
+                      <span class="ship-stage__model-pick-label">{currentModelLabel.value}</span>
+                      <ChevronDown size={11} strokeWidth={2.2} />
+                    </button>
+                    {modelPickOpen.value ? (
+                      <div class="ship-stage__model-pick-menu" role="listbox" aria-label={t("ships.detail.stage.modelPicker")}>
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={modelSelection.value === "hull"}
+                          class={["ship-stage__model-pick-item", modelSelection.value === "hull" ? "is-active" : ""].join(" ")}
+                          onClick={() => setModelSelection("hull")}
+                        >
+                          {t("ships.detail.stage.hull")}
+                        </button>
+                        {props.planeModels.map((p) => (
+                          <button
+                            type="button"
+                            role="option"
+                            key={p.index}
+                            aria-selected={modelSelection.value === p.index}
+                            class={["ship-stage__model-pick-item", modelSelection.value === p.index ? "is-active" : ""].join(" ")}
+                            title={p.label}
+                            onClick={() => setModelSelection(p.index)}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {viewMode.value === "3d" && modelSelection.value === "hull" ? (
                   <div class="ship-stage__wl" role="group">
                     <button
                       type="button"

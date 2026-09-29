@@ -93,7 +93,9 @@
       "rotateOn": "自動回転中 · クリックで一時停止",
       "rotateOff": "停止中 · クリックで再開",
       "waterline": "喫水線",
-      "draft": "喫水"
+      "draft": "喫水",
+      "hull": "本体",
+      "modelPicker": "表示するモデルを選択"
     },
     "weapon": {
       "mainGun": "主砲",

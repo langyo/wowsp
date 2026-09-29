@@ -23,7 +23,7 @@ import BuildPlanner from "./BuildPlanner";
 import ShipMyStatsPanel from "./ShipMyStatsPanel";
 import ServerTrendPanel from "./ServerTrendPanel";
 import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
-import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
+import ShipStage, { type FocusZone, type ArmorZone, type PlaneModelOption } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
@@ -325,6 +325,36 @@ export default defineComponent({
       return num(hull.draft) ?? num(hull.maxDraft) ?? num(hull.Draft) ?? num(hull.MaxDraft) ?? null;
     });
 
+    // ── Baked plane models carried by this ship (carriers & hybrids) ──────
+    // Ships with embarked squadrons embed one top-level entry per squadron,
+    // shaped `{ planes: ["PAAB002_Grumman_TBF", …] }` — the entity name's
+    // index prefix ("PAAB002") is exactly the baked GLB stem under
+    // models/planes/. Several squadrons can field the same airframe, so
+    // dedupe by index. (Hybrid battleships like Kearsarge field planes too —
+    // data-driven, so they get the picker for free.)
+    const planeModels = computed<PlaneModelOption[]>(() => {
+      const gp = gameparams.value as Record<string, any> | null;
+      if (!gp) return [];
+      try {
+        const seen = new Set<string>();
+        const out: PlaneModelOption[] = [];
+        for (const v of Object.values(gp)) {
+          const planes = (v as { planes?: unknown })?.planes;
+          if (!Array.isArray(planes)) continue;
+          for (const name of planes) {
+            if (typeof name !== "string") continue;
+            const m = /^([A-Z]+\d+)_(.+)$/.exec(name);
+            if (!m || seen.has(m[1])) continue;
+            seen.add(m[1]);
+            out.push({ index: m[1], label: m[2].replace(/_/g, " ").trim() || m[1] });
+          }
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    });
+
     function nationLabel(code: string): string {
       // Follows the 素材翻译 setting (国服 → X-系 names), UI i18n fallback.
       return (
@@ -365,6 +395,7 @@ export default defineComponent({
                   ship={viewShip.value}
                   armorZones={armorZones.value}
                   waterlineDraft={waterlineDraft.value}
+                  planeModels={planeModels.value}
                   hidden={stageHidden.value}
                   onUpdate:hidden={(v: boolean) => (stageHidden.value = v)}
                 />

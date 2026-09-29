@@ -93,7 +93,9 @@
       "rotateOn": "Girando solo · clic para pausar",
       "rotateOff": "En pausa · clic para reanudar",
       "waterline": "Línea de flotación",
-      "draft": "Calado"
+      "draft": "Calado",
+      "hull": "Casco",
+      "modelPicker": "Elegir modelo"
     },
     "weapon": {
       "mainGun": "Batería principal",

@@ -93,7 +93,9 @@
       "rotateOn": "自动旋转中 · 点击暂停",
       "rotateOff": "已暂停 · 点击继续自动旋转",
       "waterline": "水线",
-      "draft": "吃水"
+      "draft": "吃水",
+      "hull": "本体",
+      "modelPicker": "选择查看的模型"
     },
     "weapon": {
       "mainGun": "主炮组",

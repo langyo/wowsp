@@ -93,7 +93,9 @@
       "rotateOn": "자동 회전 중 · 클릭하여 일시정지",
       "rotateOff": "일시정지됨 · 클릭하여 재개",
       "waterline": "수선",
-      "draft": "흘수"
+      "draft": "흘수",
+      "hull": "선체",
+      "modelPicker": "볼 모델 선택"
     },
     "weapon": {
       "mainGun": "주포",

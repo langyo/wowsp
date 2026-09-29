@@ -93,7 +93,9 @@
       "rotateOn": "自動旋轉中 · 點擊暫停",
       "rotateOff": "已暫停 · 點擊繼續自動旋轉",
       "waterline": "水線",
-      "draft": "吃水"
+      "draft": "吃水",
+      "hull": "本體",
+      "modelPicker": "選擇查看的模型"
     },
     "weapon": {
       "mainGun": "主砲組",

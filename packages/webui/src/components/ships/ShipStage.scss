@@ -245,6 +245,91 @@
     text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
   }
 
+  /* Carrier model picker (3D only, carriers): a compact dropdown in the same
+     pill language as the rest of the control row — the button shows the
+     staged model, the menu lists the hull plus every baked airframe. */
+  &__model-pick {
+    position: relative;
+    display: inline-flex;
+  }
+
+  &__model-pick-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    max-width: 200px;
+    padding: 0.22rem 0.6rem;
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-surface) / 75%);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover { color: rgb(var(--color-text)); }
+
+    /* Staging an airframe lights the pill up in the primary family, marking
+       "not the plain hull session". */
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 14%);
+    }
+  }
+
+  &__model-pick-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__model-pick-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 3;
+    min-width: 100%;
+    max-height: 240px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 3px;
+    border-radius: var(--radius-md);
+    background: rgb(var(--color-surface) / 92%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 30%);
+    animation: ship-stage-pop-in 0.16s ease;
+  }
+
+  &__model-pick-item {
+    display: block;
+    width: 100%;
+    max-width: 220px;
+    padding: 0.24rem 0.55rem;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover {
+      color: rgb(var(--color-text));
+      background: rgb(var(--color-primary) / 10%);
+    }
+
+    &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 14%);
+    }
+  }
+
   /* Armor thickness color axis — bottom-left overlay in armor mode. One
      evenly divided band segment per game color bucket; ruler-style numbers
      sit at the swatch seams (each color spans the gap between its
