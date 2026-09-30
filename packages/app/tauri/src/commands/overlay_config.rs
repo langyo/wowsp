@@ -57,7 +57,7 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\" | \"off\".\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\".\n\
                            # Invalid values are reset to the defaults by the app.\n";
 
 /// How long a cached read stays fresh. The file only changes when the user
@@ -88,8 +88,6 @@ pub(crate) enum RosterRecognition {
     /// pick): the screen-capture pipeline (row strip detection + luma sink
     /// solver) runs and the plugin is ignored even when installed.
     Passive,
-    /// Recognition off: chips follow the roster/index order.
-    Off,
 }
 
 impl TableAnchor {
@@ -106,7 +104,6 @@ impl RosterRecognition {
         match self {
             RosterRecognition::Plugin => "plugin",
             RosterRecognition::Passive => "passive",
-            RosterRecognition::Off => "off",
         }
     }
 }
@@ -146,12 +143,12 @@ fn parse_roster_field(raw: &str) -> RosterRecognition {
         // Migration (owner spec): the old "inferred"/"ocr" picks — the
         // pixel-comparison pipeline — move to the plugin as the primary
         // detector; only an explicit "passive" pick stays passive.
-        "inferred" | "ocr" => RosterRecognition::Plugin,
-        "plugin" => RosterRecognition::Plugin,
         "passive" => RosterRecognition::Passive,
-        "off" => RosterRecognition::Off,
-        // Anything unrecognized (incl. future values).
-        _ => RosterRecognition::Plugin,
+        // "off" is no longer a roster pick (the table switch owns the whole
+        // overlay's off state); stored off configs land on passive, the
+        // closest to what their chooser wanted.
+        "off" => RosterRecognition::Passive,
+        "inferred" | "ocr" | "plugin" | _ => RosterRecognition::Plugin,
     }
 }
 
@@ -401,9 +398,11 @@ mod tests {
         let cfg = parse_config(r#"{"table":"detect","roster":"passive"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Passive);
+        // A stored roster "off" lands on passive: the table switch owns the
+        // whole overlay's off state, so the roster pick no longer has one.
         let cfg = parse_config(r#"{"table":"detect","roster":"off"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
-        assert_eq!(cfg.roster, RosterRecognition::Off);
+        assert_eq!(cfg.roster, RosterRecognition::Passive);
     }
 
     /// v1 migration: `{enabled:true}` → detect + plugin,
@@ -471,14 +470,14 @@ mod tests {
     fn toml_parse_mirrors_json_contract() {
         let canonical = canonical_toml(OverlayConfig {
             table: TableAnchor::Off,
-            roster: RosterRecognition::Off,
+            roster: RosterRecognition::Passive,
         })
         .unwrap();
         assert_eq!(
             resolve_fields(fields_from_toml(&canonical)),
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Off,
+                roster: RosterRecognition::Passive,
             }
         );
         for raw in ["", "garbage [", "42", "[1,2]", "table = \"plugin\""] {

@@ -127,7 +127,7 @@
   "overlayTableOff": "關閉（停用 Tab 顯示）",
   "overlayRoster": "名單辨識",
   "overlayRosterPassive": "螢幕像素被動偵測",
-  "overlayRosterOff": "關閉",
+  "overlayRosterDisabledByTable": "已由上方「表格定位」開關停用：開啟後名單識別即恢復。",
   "overlayRosterPlugin": "插件主動偵測",
   "overlayRosterPluginMissing": "未在目前遊戲安裝中偵測到遊戲內插件。",
   "overlayRosterPluginPage": "查看插件頁面",

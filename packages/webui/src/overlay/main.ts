@@ -637,14 +637,13 @@ function render() {
     : arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
-  // Row → name attribution. INFERRED (the default and only naming mode):
-  // this page derives the mapping itself from the arena roster + the
-  // anchor's alive vector via the client's own Tab sort key
-  // (inferredRowMapping). "off" (or an older backend) keeps the legacy
-  // index mapping.
+  // Row → name attribution. Both modes name rows: this page derives the
+  // mapping itself from the arena roster + the anchor's alive vector via
+  // the client's own Tab sort key (inferredRowMapping). A missing/older
+  // backend field keeps the legacy index mapping.
   let players: (string | string[] | null)[] | null = null;
   let aliveArr: boolean[] | null = null;
-  if (anchor.rosterMode !== "off") {
+  if (anchor.rosterMode) {
     aliveArr = anchor.rowAlive ?? null;
     // The mapping replicates the client's own Tab sort key (decompiled —
     // see inferredOrder.ts), so battle-start rows arrive as EXACT names.

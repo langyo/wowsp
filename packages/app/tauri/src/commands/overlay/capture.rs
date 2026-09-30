@@ -172,9 +172,8 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     let mode = super::overlay_config::roster_mode();
     // Plugin and Passive both feed the anchor's alive vector: it is the
     // PRIMARY input in passive mode and the fallback in plugin mode (the
-    // plugin's telemetry overrides it in the frontend when fresh). Only
-    // Off skips the read.
-    let alive = if !detected || mode == super::overlay_config::RosterRecognition::Off {
+    // plugin's telemetry overrides it in the frontend when fresh).
+    let alive = if !detected {
         None
     } else {
         Some(overlay_detect::read_row_alive(

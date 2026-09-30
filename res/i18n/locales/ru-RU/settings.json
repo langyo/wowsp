@@ -127,7 +127,7 @@
   "overlayTableOff": "Выкл. (отключает оверлей Tab)",
   "overlayRoster": "Распознавание состава",
   "overlayRosterPassive": "Пассивное пиксельное обнаружение экрана",
-  "overlayRosterOff": "Выключено",
+  "overlayRosterDisabledByTable": "Отключено переключателем привязки таблицы выше: включите его, чтобы вернуть распознавание списка.",
   "overlayRosterPlugin": "Активное обнаружение плагином",
   "overlayRosterPluginMissing": "В активной установке игры не установлен внутриигровой плагин.",
   "overlayRosterPluginPage": "Открыть страницу плагина",

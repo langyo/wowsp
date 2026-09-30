@@ -127,7 +127,7 @@
   "overlayTableOff": "Desactivado (apaga la superposición de Tab)",
   "overlayRoster": "Reconocimiento de la lista",
   "overlayRosterPassive": "Detección pasiva por píxeles de pantalla",
-  "overlayRosterOff": "Desactivado",
+  "overlayRosterDisabledByTable": "Desactivado por el interruptor de anclaje de tabla de arriba: actívalo para restaurar el reconocimiento de la lista.",
   "overlayRosterPlugin": "Detección activa por plugin",
   "overlayRosterPluginMissing": "El plugin in-game no está instalado en la instalación del juego activa.",
   "overlayRosterPluginPage": "Abrir la página del plugin",

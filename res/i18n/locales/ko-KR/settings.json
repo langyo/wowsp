@@ -127,7 +127,7 @@
   "overlayTableOff": "끄기(Tab 오버레이 비활성화)",
   "overlayRoster": "명단 인식",
   "overlayRosterPassive": "화면 픽셀 수동 감지",
-  "overlayRosterOff": "끄기",
+  "overlayRosterDisabledByTable": "위의 표 위치 지정 스위치에 의해 비활성화되었습니다. 켜면 명단 인식이 복원됩니다.",
   "overlayRosterPlugin": "플러그인 능동 감지",
   "overlayRosterPluginMissing": "감지된 게임 설치에 게임 내 플러그인이 설치되어 있지 않습니다.",
   "overlayRosterPluginPage": "플러그인 페이지 열기",

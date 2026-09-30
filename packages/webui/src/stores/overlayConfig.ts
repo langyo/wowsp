@@ -34,7 +34,7 @@ export type TableAnchorMode = "detect" | "off";
 /** Roster attribution modes (schema v2 `roster` field): "plugin" = the
  *  in-game plugin is the primary detector; "passive" = the screen-capture
  *  pipeline (renamed from the retired "inferred" pick); "off" = off. */
-export type RosterRecognitionMode = "plugin" | "passive" | "off";
+export type RosterRecognitionMode = "plugin" | "passive";
 
 const DEFAULT_TABLE: TableAnchorMode = "detect";
 const DEFAULT_ROSTER: RosterRecognitionMode = "plugin";
@@ -45,11 +45,12 @@ function parseTable(raw: unknown): TableAnchorMode {
 }
 
 function parseRoster(raw: unknown): RosterRecognitionMode {
-  // Migration (owner spec): stored "inferred"/"ocr" picks — the retired
-  // pixel-comparison pipeline — move to the plugin as the primary.
-  if (raw === "off") return "off";
-  if (raw === "plugin") return "plugin";
+  // Migration: stored "inferred"/"ocr" picks — the retired pixel-
+  // comparison pipeline — move to the plugin as the primary; a stored
+  // "off" lands on passive (the table switch owns the overlay's off).
   if (raw === "passive") return "passive";
+  if (raw === "plugin") return "plugin";
+  if (raw === "off") return "passive";
   return DEFAULT_ROSTER;
 }
 

@@ -127,7 +127,7 @@
   "overlayTableOff": "关闭（停用 Tab 显示）",
   "overlayRoster": "名单识别",
   "overlayRosterPassive": "屏幕像素被动检测",
-  "overlayRosterOff": "关闭",
+  "overlayRosterDisabledByTable": "已由上方“表格定位”开关停用：打开后名单识别即恢复。",
   "overlayRosterPlugin": "插件主动检测",
   "overlayRosterPluginMissing": "未在当前游戏安装中检测到游戏内插件。",
   "overlayRosterPluginPage": "查看插件页面",

@@ -127,7 +127,7 @@
   "overlayTableOff": "Off (disables the tab overlay)",
   "overlayRoster": "Roster recognition",
   "overlayRosterPassive": "Screen pixel passive detection",
-  "overlayRosterOff": "Off",
+  "overlayRosterDisabledByTable": "Disabled by the table-anchoring switch above: turn it on to restore roster recognition.",
   "overlayRosterPlugin": "Plugin active detection",
   "overlayRosterPluginMissing": "The in-game plugin is not installed in the active game install.",
   "overlayRosterPluginPage": "Open the plugin page",

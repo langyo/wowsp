@@ -2051,6 +2051,10 @@ export default defineComponent({
               <HkSettingsHint>{t("settings.overlayFullscreenNote")}</HkSettingsHint>
             </HkSettingsSub>
             <HkSettingsSub title={t("settings.overlayRoster")}>
+              {/* No "off" here BY DESIGN: the table switch above owns the
+                  whole overlay's off state, and with it on, one of the two
+                  detectors is always in force. The whole strip auto-
+                  disables while the table switch is off. */}
               <HkTabs
                 block
                 variant="segmented"
@@ -2065,12 +2069,19 @@ export default defineComponent({
                     // Greyed until the in-game plugin actually sits in the
                     // active install's res_mods — the status refreshes with
                     // the install selection (see refreshIngamePlugin).
-                    disabled: !ingamePluginInstalled.value,
+                    disabled:
+                      !ingamePluginInstalled.value || overlayCfg.table === "off",
                   },
-                  { key: "passive", label: t("settings.overlayRosterPassive") },
-                  { key: "off", label: t("settings.overlayRosterOff") },
+                  {
+                    key: "passive",
+                    label: t("settings.overlayRosterPassive"),
+                    disabled: overlayCfg.table === "off",
+                  },
                 ]}
               />
+              {overlayCfg.table === "off" ? (
+                <HkSettingsHint>{t("settings.overlayRosterDisabledByTable")}</HkSettingsHint>
+              ) : null}
               {!ingamePluginInstalled.value ? (
                 <HkSettingsHint>{t("settings.overlayRosterPluginMissing")}</HkSettingsHint>
               ) : null}
