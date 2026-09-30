@@ -156,7 +156,7 @@
     "telemetryPluginHint": "In-game plugin connected: the TAB order comes from inside the client — exact, no inference",
     "telemetryIncomplete": "Plugin not connected",
     "telemetryIncompleteHint": "Plugin detection is selected but the plugin is missing from this install — running degraded on pixel-comparison analysis; install it below",
-    "telemetryInfer": "Pixel comparison",
+    "telemetryInfer": "Screen pixel passive",
     "telemetryInferHint": "The TAB order is inferred by pixel-comparison analysis (the default pipeline)",
     "idlePluginOffTitle": "In-game plugin not installed",
     "idlePluginOffDesc": "Installs the in-game bridge for the exact TAB order and more reliable detection; renders nothing in game",

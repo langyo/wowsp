@@ -2067,7 +2067,7 @@ export default defineComponent({
                     // the install selection (see refreshIngamePlugin).
                     disabled: !ingamePluginInstalled.value,
                   },
-                  { key: "inferred", label: t("settings.overlayRosterInferred") },
+                  { key: "passive", label: t("settings.overlayRosterPassive") },
                   { key: "off", label: t("settings.overlayRosterOff") },
                 ]}
               />

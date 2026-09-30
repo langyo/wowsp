@@ -156,7 +156,7 @@
     "telemetryPluginHint": "已连接游戏内插件：TAB 顺序来自客户端内部遥测，精确无推断",
     "telemetryIncomplete": "插件未连接",
     "telemetryIncompleteHint": "已选择插件检测，但当前安装未检测到插件——正在使用像素对比分析降级运行，可在下方安装插件",
-    "telemetryInfer": "像素对比分析",
+    "telemetryInfer": "屏幕像素被动",
     "telemetryInferHint": "使用像素对比分析推断 TAB 顺序（默认管线）",
     "idlePluginOffTitle": "游戏内插件未安装",
     "idlePluginOffDesc": "安装后实时对局获得精确 TAB 顺序与更可靠的检测信号，游戏内不渲染任何内容",

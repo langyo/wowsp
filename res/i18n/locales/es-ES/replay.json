@@ -156,7 +156,7 @@
     "telemetryPluginHint": "Plugin in-game conectado: el orden TAB llega desde dentro del cliente, exacto y sin inferencias",
     "telemetryIncomplete": "Plugin no conectado",
     "telemetryIncompleteHint": "La detección por plugin está seleccionada pero el plugin falta en esta instalación — ejecutando degradado con análisis por píxeles; instálalo abajo",
-    "telemetryInfer": "Análisis por píxeles",
+    "telemetryInfer": "Píxeles pasivos",
     "telemetryInferHint": "El orden TAB se infiere mediante análisis por píxeles (el conducto predeterminado)",
     "idlePluginOffTitle": "Plugin in-game no instalado",
     "idlePluginOffDesc": "Instala el puente in-game para el orden TAB exacto y una detección más fiable; no renderiza nada en el juego",

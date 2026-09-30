@@ -156,7 +156,7 @@
     "telemetryPluginHint": "게임 내 플러그인 연결됨: TAB 순서는 클라이언트 내부 텔레메트리에서 오며 추론 없이 정확합니다",
     "telemetryIncomplete": "플러그인 미연결",
     "telemetryIncompleteHint": "플러그인 감지가 선택되었으나 이 설치에서 플러그인을 찾을 수 없습니다 — 픽셀 비교 분석으로 축소 실행 중입니다. 아래에서 설치하세요",
-    "telemetryInfer": "픽셀 비교 분석",
+    "telemetryInfer": "화면 픽셀 수동",
     "telemetryInferHint": "TAB 순서를 픽셀 비교 분석으로 추정합니다(기본 파이프라인)",
     "idlePluginOffTitle": "게임 내 플러그인 미설치",
     "idlePluginOffDesc": "설치하면 정확한 TAB 순서와 더 신뢰할 수 있는 감지 신호를 얻습니다. 게임 내에는 아무것도 렌더링하지 않습니다",

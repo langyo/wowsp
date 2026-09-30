@@ -31,11 +31,13 @@ import { api } from "@/api";
 
 /** Table anchoring modes (schema v2 `table` field). */
 export type TableAnchorMode = "detect" | "off";
-/** Roster attribution modes (schema v2 `roster` field). */
-export type RosterRecognitionMode = "plugin" | "inferred" | "off";
+/** Roster attribution modes (schema v2 `roster` field): "plugin" = the
+ *  in-game plugin is the primary detector; "passive" = the screen-capture
+ *  pipeline (renamed from the retired "inferred" pick); "off" = off. */
+export type RosterRecognitionMode = "plugin" | "passive" | "off";
 
 const DEFAULT_TABLE: TableAnchorMode = "detect";
-const DEFAULT_ROSTER: RosterRecognitionMode = "inferred";
+const DEFAULT_ROSTER: RosterRecognitionMode = "plugin";
 
 /** Unknown values (incl. future ones) → the safe default. */
 function parseTable(raw: unknown): TableAnchorMode {
@@ -43,9 +45,11 @@ function parseTable(raw: unknown): TableAnchorMode {
 }
 
 function parseRoster(raw: unknown): RosterRecognitionMode {
-  // A stored "ocr" pick migrates to the derived mapping (its replacement).
+  // Migration (owner spec): stored "inferred"/"ocr" picks — the retired
+  // pixel-comparison pipeline — move to the plugin as the primary.
   if (raw === "off") return "off";
   if (raw === "plugin") return "plugin";
+  if (raw === "passive") return "passive";
   return DEFAULT_ROSTER;
 }
 

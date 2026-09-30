@@ -57,7 +57,7 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"inferred\" | \"plugin\" | \"off\".\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\" | \"off\".\n\
                            # Invalid values are reset to the defaults by the app.\n";
 
 /// How long a cached read stays fresh. The file only changes when the user
@@ -78,18 +78,16 @@ pub(crate) enum TableAnchor {
 /// Roster recognition switch (schema v2 `roster` field).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RosterRecognition {
-    /// Rule-inferred row→name mapping (the default and preferred mode): the
-    /// decompiled client's full Tab sort key (alive, class, tier, nation, ship
-    /// name, '[tag]nickname) turns the roster plus the luma probe's per-row alive flags into
-    /// the row order with ZERO OCR — the overlay page derives the mapping
-    /// itself from the arena roster the anchor's `row_alive` vector.
-    Inferred,
-    /// In-game plugin telemetry (packages/ingame-plugin): the PnFMods bridge
-    /// feeds the exact arena order with `isAlive` sinking and the TAB
-    /// screen's own tabModeIn/Out marks — strictly better than inference
-    /// when the plugin is installed. Until the bridge consumer lands (M2)
-    /// the overlay treats it like the inferred mapping.
+    /// In-game plugin telemetry (packages/ingame-plugin) is the PRIMARY
+    /// detector: the PnFMods bridge feeds the exact arena order with
+    /// `isAlive` sinking and the TAB screen's own tabModeIn/Out marks.
+    /// A missing/outdated plugin or a stale stream degrades that battle to
+    /// the passive capture pipeline.
     Plugin,
+    /// Passive capture-only detection (renamed from the old "inferred"
+    /// pick): the screen-capture pipeline (row strip detection + luma sink
+    /// solver) runs and the plugin is ignored even when installed.
+    Passive,
     /// Recognition off: chips follow the roster/index order.
     Off,
 }
@@ -106,8 +104,8 @@ impl TableAnchor {
 impl RosterRecognition {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            RosterRecognition::Inferred => "inferred",
             RosterRecognition::Plugin => "plugin",
+            RosterRecognition::Passive => "passive",
             RosterRecognition::Off => "off",
         }
     }
@@ -125,7 +123,7 @@ impl Default for OverlayConfig {
     fn default() -> Self {
         Self {
             table: TableAnchor::Detect,
-            roster: RosterRecognition::Inferred,
+            roster: RosterRecognition::Plugin,
         }
     }
 }
@@ -145,13 +143,15 @@ fn parse_table_field(raw: &str) -> TableAnchor {
 /// Parse the v2 `roster` field with the same unknown-value contract.
 fn parse_roster_field(raw: &str) -> RosterRecognition {
     match raw {
-        // The Windows OCR pipeline is gone; a stored `ocr` pick migrates
-        // to its replacement (the derived mapping is strictly stronger).
-        "ocr" => RosterRecognition::Inferred,
+        // Migration (owner spec): the old "inferred"/"ocr" picks — the
+        // pixel-comparison pipeline — move to the plugin as the primary
+        // detector; only an explicit "passive" pick stays passive.
+        "inferred" | "ocr" => RosterRecognition::Plugin,
         "plugin" => RosterRecognition::Plugin,
+        "passive" => RosterRecognition::Passive,
         "off" => RosterRecognition::Off,
-        // "inferred" and anything unrecognized (incl. future values).
-        _ => RosterRecognition::Inferred,
+        // Anything unrecognized (incl. future values).
+        _ => RosterRecognition::Plugin,
     }
 }
 
@@ -177,7 +177,7 @@ fn resolve_fields(fields: RawOverlayFields) -> OverlayConfig {
     };
     let roster = match fields.roster.as_deref() {
         Some(raw) => parse_roster_field(raw),
-        None => RosterRecognition::Inferred,
+        None => RosterRecognition::Plugin,
     };
     OverlayConfig { table, roster }
 }
@@ -391,20 +391,23 @@ mod tests {
     /// v2 round shape: both fields honored.
     #[test]
     fn parses_v2_fields() {
-        // A stored `ocr` pick migrates to `inferred` (the OCR pipeline is
-        // gone; the derived mapping is its strictly stronger replacement).
+        // Owner-spec migration: stored `ocr`/`inferred` picks (the retired
+        // pixel-comparison pipeline) move to the plugin as the primary.
         let cfg = parse_config(r#"{"table":"off","roster":"ocr"}"#);
         assert_eq!(cfg.table, TableAnchor::Off);
-        assert_eq!(cfg.roster, RosterRecognition::Inferred);
+        assert_eq!(cfg.roster, RosterRecognition::Plugin);
+        let cfg = parse_config(r#"{"roster":"inferred"}"#);
+        assert_eq!(cfg.roster, RosterRecognition::Plugin);
+        let cfg = parse_config(r#"{"table":"detect","roster":"passive"}"#);
+        assert_eq!(cfg.table, TableAnchor::Detect);
+        assert_eq!(cfg.roster, RosterRecognition::Passive);
         let cfg = parse_config(r#"{"table":"detect","roster":"off"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Off);
-        let cfg = parse_config(r#"{"roster":"inferred"}"#);
-        assert_eq!(cfg.roster, RosterRecognition::Inferred);
     }
 
-    /// v1 migration: `{enabled:true}` → detect + inferred,
-    /// `{enabled:false}` → off + inferred (recognition had no v1 switch and
+    /// v1 migration: `{enabled:true}` → detect + plugin,
+    /// `{enabled:false}` → off + plugin (recognition had no v1 switch and
     /// keeps its default).
     #[test]
     fn migrates_legacy_enabled() {
@@ -413,7 +416,7 @@ mod tests {
             cfg,
             OverlayConfig {
                 table: TableAnchor::Detect,
-                roster: RosterRecognition::Inferred,
+                roster: RosterRecognition::Plugin,
             }
         );
         let cfg = parse_config(r#"{"enabled":false}"#);
@@ -421,7 +424,7 @@ mod tests {
             cfg,
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Inferred,
+                roster: RosterRecognition::Plugin,
             }
         );
     }
@@ -434,7 +437,7 @@ mod tests {
                 parse_config(raw),
                 OverlayConfig {
                     table: TableAnchor::Detect,
-                    roster: RosterRecognition::Inferred,
+                    roster: RosterRecognition::Plugin,
                 },
                 "raw: {raw:?}"
             );
@@ -452,10 +455,10 @@ mod tests {
         assert_eq!(cfg.roster, RosterRecognition::Plugin);
         let cfg = parse_config(r#"{"table":"future","roster":"future"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
-        assert_eq!(cfg.roster, RosterRecognition::Inferred);
+        assert_eq!(cfg.roster, RosterRecognition::Plugin);
         let cfg = parse_config(r#"{"table":42,"roster":null}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
-        assert_eq!(cfg.roster, RosterRecognition::Inferred);
+        assert_eq!(cfg.roster, RosterRecognition::Plugin);
         // v2 field present wins over a leftover legacy `enabled: false`.
         let cfg = parse_config(r#"{"enabled":false,"table":"detect"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
@@ -489,7 +492,7 @@ mod tests {
             resolve_fields(fields_from_toml("enabled = false\n")),
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Inferred,
+                roster: RosterRecognition::Plugin,
             }
         );
     }
@@ -511,7 +514,7 @@ mod tests {
             read_uncached_from(&dir),
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Inferred,
+                roster: RosterRecognition::Plugin,
             }
         );
         assert!(dir.join(OVERLAY_CONFIG_FILE).exists());
@@ -523,7 +526,7 @@ mod tests {
             read_uncached_from(&dir),
             OverlayConfig {
                 table: TableAnchor::Off,
-                roster: RosterRecognition::Inferred,
+                roster: RosterRecognition::Plugin,
             }
         );
         assert_eq!(
