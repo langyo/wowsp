@@ -6,7 +6,7 @@ import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/Clan
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HkTabs } from "@celestia-island/hikari";
+import { HkSpinner, HkTabs } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
@@ -148,6 +148,13 @@ export default defineComponent({
     const lastPlayerQuery = ref("");
     const lastClanQuery = ref("");
 
+    /** Display name shown by the pending row while the WG request is in
+     *  flight — set right before the request starts: the submitted
+     *  nickname/UID for players, the clan tag in brackets when it is known
+     *  up front (suggestions, history, the card's clan jump), `#<id>`
+     *  otherwise (deep links only carry the numeric clan id). */
+    const pendingQuery = ref("");
+
     /** Whether this exact target was looked up successfully before —
      *  matched by displayed name (case-insensitive) or numeric id. */
     function seenInHistory(kind: LookupKind, query: string, rlm: string): boolean {
@@ -259,6 +266,7 @@ export default defineComponent({
       result.value = null;
       ranked.reset();
       lastPlayerQuery.value = nm;
+      pendingQuery.value = nm;
       const taskId = loadingTasks.begin(t("account.searching"));
       try {
         // Explicit user query — always re-pull from the WG API. `nm` may be
@@ -279,12 +287,16 @@ export default defineComponent({
       }
     }
 
-    async function doClanLookup(clanId: number, r?: string) {
+    /** `label` is the clan's display tag when the caller knows it up front
+     *  (suggestions / history / the card's clan jump); deep links only
+     *  carry the numeric id, so the pending row falls back to `#<id>`. */
+    async function doClanLookup(clanId: number, r?: string, label?: string) {
       const rl = r ?? realm.value;
       mode.value = "clan";
       realm.value = rl;
       clanResult.value = null;
       lastClanQuery.value = String(clanId);
+      pendingQuery.value = label || `#${clanId}`;
       const taskId = loadingTasks.begin(t("account.searching"));
       try {
         const clan = await clanStats.lookup(clanId, rl, { force: true });
@@ -300,7 +312,9 @@ export default defineComponent({
 
     function replayHistory(h: HistoryEntry) {
       if (h.kind === "clan") {
-        if (h.id != null) void doClanLookup(h.id, h.realm);
+        // History stores the tag as the clan's display name — reuse it for
+        // the pending row.
+        if (h.id != null) void doClanLookup(h.id, h.realm, `[${h.name}]`);
       } else {
         void doSearch(h.id != null ? String(h.id) : h.name, h.realm);
       }
@@ -315,7 +329,7 @@ export default defineComponent({
     const comboSelect = (item: unknown) => {
       if (mode.value === "clan") {
         const c = item as ClanSuggestion;
-        if (c.clanId != null) void doClanLookup(c.clanId, realm.value);
+        if (c.clanId != null) void doClanLookup(c.clanId, realm.value, `[${c.tag}]`);
       } else {
         const p = item as PlayerSuggestion;
         void doSearch(String(p.accountId), realm.value);
@@ -683,6 +697,21 @@ export default defineComponent({
               seenBefore={false}
             />
           ) : null}
+          {/* Pending state: while the WG query is in flight (stores' loading
+              flag; they also clear the error notices above at request start
+              and the result branches below stay null until the await
+              settles) the result area would otherwise be blank — name the
+              target being queried, realm tag styled like the history rows. */}
+          {(mode.value === "player" && stats.loading) ||
+          (mode.value === "clan" && clanStats.loading) ? (
+            <div class="lookup-view__pending" key="pending">
+              <HkSpinner size="sm" />
+              <span class="lookup-view__pending-text">
+                {t("lookup.searchingWho", { name: pendingQuery.value })}
+              </span>
+              <span class="lookup-view__pending-realm">{realm.value.toUpperCase()}</span>
+            </div>
+          ) : null}
           <Transition name="s-fade-slide" mode="out-in">
             {mode.value === "clan" && clanResult.value ? (
               <div class="lookup-view__result" key="clan">
@@ -707,7 +736,16 @@ export default defineComponent({
                   rankedBattles={ranked.battles}
                   onClanClick={
                     result.value.clanId != null
-                      ? () => void doClanLookup(result.value!.clanId!, realm.value)
+                      ? () => {
+                          // The player card carries the clan's tag — name
+                          // the pending row after it when present.
+                          const tag = result.value!.clanTag;
+                          void doClanLookup(
+                            result.value!.clanId!,
+                            realm.value,
+                            tag ? `[${tag}]` : undefined,
+                          );
+                        }
                       : undefined
                   }
                   v-slots={{

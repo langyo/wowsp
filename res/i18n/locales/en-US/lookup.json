@@ -7,6 +7,7 @@
   "searchClanPlaceholder": "Clan name or ID",
   "searchHint": "Type at least 3 characters (UID exempt)",
   "searching": "Searching…",
+  "searchingWho": "Looking up {name}…",
   "noResults": "No matches",
   "history": "History",
   "historyEmpty": "No lookups yet",

@@ -7,29 +7,35 @@
 }
 
 /* Tier histogram claims the larger share of the row; the min-widths push
-   the three charts onto separate lines once the viewport gets too narrow.
+   the three charts onto separate lines once the container gets too narrow.
    Flex bases 32 + 30 + 30 = 92% deliberately leave the remaining 8% for
    the row's two 12px gaps, so all three blocks DO share one line on wide
    containers. Verified wrap points (flex-wrap packs hypothetical sizes —
-   basis clamped up by min-width): one line from ≈ 918px up (there the
-   bar's 32% basis, ≈ 294px, already exceeds its 240px min, so the
-   binding constraint is 0.32W + 300 + 300 + 24 ≤ W, not the 864px sum of
-   bare min-widths); from 552px (240 + 300 + one gap) to ≈ 918px the bar
-   and the FIRST donut keep line 1 and only the second donut wraps; below
-   552px everything stacks one block per line. The min() caps keep the
-   fixed min-widths from overflowing phone-narrow containers (lookup
-   mobile content ≈ 280px, postbattle sheet ≈ 266px): there each block
-   simply fills the full row width. */
+   basis clamped up by min-width): the floors stop binding at 625px (bar
+   basis 0.32W ≥ 200px) and 800px (pie basis 0.30W ≥ 240px). One line from
+   ≈741px up: in the 625–800px band the pies sit at their 240px floor, so
+   the binding constraint is 0.32W + 240 + 240 + 24 ≤ W (0.68W ≥ 504 →
+   W ≥ 741.2); above 800px all three bases are free and the 92% rule
+   0.92W + 24 ≤ W holds automatically (any W ≥ 300); below 625px the sum
+   of floors 200 + 240 + 240 + 24 = 704 never fits. From 452px (200 +
+   240 + one gap) to ≈741px the bar and the FIRST donut keep line 1 and
+   only the second donut wraps; below 452px everything stacks one block
+   per line. At the 240px pie floor the block interior still works: the
+   donut svg's 96px min-width plus the 8px pie-body gap leaves 136px for
+   the legend — two ~63px columns fit and ellipsis trims long names. The
+   min() caps keep the fixed min-widths from overflowing phone-narrow
+   containers (lookup mobile content ≈ 280px, postbattle sheet ≈ 266px):
+   there each block simply fills the full row width. */
 .ship-dist-charts__bar {
   flex: 1 1 32%;
-  min-width: min(240px, 100%);
+  min-width: min(200px, 100%);
   display: block;
   height: 150px;
 }
 
 .ship-dist-charts__piewrap {
   flex: 1 1 30%;
-  min-width: min(300px, 100%);
+  min-width: min(240px, 100%);
 }
 
 .ship-dist-charts__pie-title {
@@ -108,8 +114,8 @@
 }
 
 /* Bar text runs 10 viewBox units (not the canvas-era 9px): preserve-
-   aspect "meet" renders the 320-unit box at ~0.75x once the flex item
-   hits its 240px min-width, and the extra unit keeps the digits legible
+   aspect "meet" renders the 320-unit box at ~0.625x once the flex item
+   hits its 200px min-width, and the extra unit keeps the digits legible
    at that scale. Headroom holds — the tallest bar's value label sits at
    baseline y=17, a 10-unit ascent ≈ 8 keeps the glyph top at y≈9, and
    the tier numbers' baseline y=144 plus ≈2.5 descent stays inside 150. */

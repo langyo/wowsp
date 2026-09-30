@@ -194,6 +194,32 @@
   gap: 14px;
 }
 
+/* Pending lookup: while a WG query is in flight the result area would
+   otherwise stay blank — a muted centered row (same idiom as
+   __ships-empty) names the target being queried, spinner leading. */
+.lookup-view__pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2rem;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+}
+
+.lookup-view__pending-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Realm tag mirrors the history rows' realm chip. */
+.lookup-view__pending-realm {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted) / 80%);
+  font-size: 0.625rem;
+}
+
 .lookup-view__dist-title {
   color: rgb(var(--color-muted));
   font-size: var(--text-2xs);

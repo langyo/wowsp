@@ -7,6 +7,7 @@
   "searchClanPlaceholder": "输入公会名或 ID",
   "searchHint": "输入至少 3 个字符（UID 不限）",
   "searching": "搜索中…",
+  "searchingWho": "正在查询 {name} …",
   "noResults": "没有匹配结果",
   "history": "查询记录",
   "historyEmpty": "暂无记录",

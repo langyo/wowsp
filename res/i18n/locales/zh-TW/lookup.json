@@ -7,6 +7,7 @@
   "searchClanPlaceholder": "輸入軍團名或 ID",
   "searchHint": "輸入至少 3 個字元（UID 不限）",
   "searching": "搜尋中…",
+  "searchingWho": "正在查詢 {name} …",
   "noResults": "沒有符合的結果",
   "history": "查詢紀錄",
   "historyEmpty": "尚無紀錄",

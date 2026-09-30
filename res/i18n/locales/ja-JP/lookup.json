@@ -7,6 +7,7 @@
   "searchClanPlaceholder": "クラン名または ID",
   "searchHint": "3 文字以上入力してください（UID は除く）",
   "searching": "検索中…",
+  "searchingWho": "{name} を検索中…",
   "noResults": "一致する結果がありません",
   "history": "履歴",
   "historyEmpty": "履歴はまだありません",

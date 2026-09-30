@@ -7,6 +7,7 @@
   "searchClanPlaceholder": "Nombre del clan o ID",
   "searchHint": "Escribe al menos 3 caracteres (el UID está exento)",
   "searching": "Buscando…",
+  "searchingWho": "Buscando a {name}…",
   "noResults": "Sin coincidencias",
   "history": "Historial",
   "historyEmpty": "Aún no hay búsquedas",
