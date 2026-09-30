@@ -609,10 +609,8 @@
     font-size: var(--text-md);
     font-weight: 600;
     color: rgb(var(--color-text));
-    /* The user copies these by hand into the phone — keep them selectable
-       even where the surrounding app suppresses selection. */
-    user-select: text;
-    -webkit-user-select: text;
+    /* Selectable via theme.scss's copyable-content whitelist — the user
+       copies these by hand into the phone. */
     white-space: nowrap;
   }
 

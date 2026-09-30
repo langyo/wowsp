@@ -175,6 +175,78 @@ body {
   -webkit-font-smoothing: antialiased;
   position: relative;
 }
+
+/* === Text selection policy ============================================
+   The app is not a document: UI text (menus, buttons, labels, settings
+   rows, table cells) must never pick up accidental drag selections, so
+   `none` is the app-wide default ON BODY. It used to live on .app-shell,
+   but every modal, toast, popover and tooltip is a Teleport portal
+   mounted as a direct child of <body> — outside .app-shell entirely,
+   and so is the custom title bar. Descendants resolve their `auto` to
+   the ancestor's `none`, so one body-level rule covers the whole tree.
+
+   Selection is re-enabled explicitly, only where reading stops and
+   copying starts; the whitelist below is the single auditable policy —
+   add copyable content here, not in per-component sheets. The one
+   sanctioned component-level exception is ShipDetailModal's spec values
+   (`user-select: all` + click-to-copy — the selection IS the affordance
+   there). Toasts stay unselectable by design (ephemeral — hikari
+   suppresses them, and the same facts always exist in-page in copyable
+   form). */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Editing surfaces always accept selection — a parent's `none` is not
+   reliably healed by the UA default in every engine. */
+input,
+textarea,
+select,
+[contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Copyable content: paths, raw errors, release notes, about text. */
+.install-card__path,
+.game-path-modal__current-path,
+.game-path-modal__install-path,
+.feedback__dir,
+/* Pairing address + PIN get copied by hand into the phone. */
+.settings-modal__pairing-value,
+.acct-modal__error,
+.settings-modal__pack-error,
+.changelog__release-version,
+.changelog__error,
+.release-md,
+.announce-content__body,
+/* Raw English backend message behind the collapsed summary. */
+.lookup-error-notice__raw code,
+.about-modal__version,
+.about-modal__subtitle,
+.about-modal__desc,
+.about-modal__notice,
+.about-modal__qq,
+/* The QQ number itself is a bare <button> — whitelist it directly rather
+   than leaning on the UA's appearance-dependent button behavior. */
+.about-modal__qq-number,
+.replay-view__placeholder--error,
+.replay-card__ship,
+.replay-card__val,
+.replay-card__players,
+.replay-view__map,
+.replay-view__meta-item:not(button),
+.replay-view__chat-text,
+.mod-detail__id,
+.mod-detail__paths li,
+.mod-detail__pkgs,
+.plan-card__detail,
+.plan-card__files,
+.mig-wizard__files {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* The wallpaper media layer: fixed, BELOW every app surface (z -1). */
 .wallpaper-layer {
   position: fixed;

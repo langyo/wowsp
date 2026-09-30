@@ -16,11 +16,10 @@
      the theme surface, so nothing changes visually there. */
   background: transparent;
   color: rgb(var(--color-text));
-  /* Disable text selection globally — the app is not a document. Interactive
-     elements (inputs, editable areas) re-enable it per-component. Copyable
-     values use click-to-copy + toast instead of selection. */
-  user-select: none;
-  -webkit-user-select: none;
+  /* Text selection is suppressed app-wide on <body> (theme.scss, which also
+     owns the copyable-content whitelist). This shell used to carry the rule
+     itself, but modals/toasts/popovers Teleport outside it, and so does the
+     title bar — the body level is the only vantage that sees them all. */
 
   /* The main column no longer scrolls itself: the hikari scroll container
      inside it is the single page scroll region (overlay scrollbar hugging
