@@ -22,7 +22,15 @@ import time
 from pathlib import Path
 
 MOD_DIR_NAME = 'WoWSPProbe'
-TEMPLATE = Path(__file__).resolve().parents[1] / 'packages' / 'ingame-plugin' / 'src' / 'Main.py'
+PLUGIN_SRC = Path(__file__).resolve().parents[1] / 'packages' / 'ingame-plugin' / 'src'
+TEMPLATE = PLUGIN_SRC / 'Main.py'
+# The visible half of the in-game display mode: the unbound view (the game
+# auto-discovers gui/unbound2/PnFMods/*.unbound) and its ForgeBlueprints
+# battle mount.
+VIEW = PLUGIN_SRC / 'WoWSPProbe.unbound'
+VIEW_DEST = Path('gui') / 'unbound2' / 'PnFMods' / 'WoWSPProbe.unbound'
+MOUNT = PLUGIN_SRC / 'WoWSPProbe.xml'
+MOUNT_DEST = Path('ForgeBlueprints') / 'WoWSPProbe.xml'
 GAME_EXES = ('WorldOfWarships64.exe', 'WorldOfWarships.exe')
 
 
@@ -97,10 +105,16 @@ def cmd_install(root, requested_bin):
         created_loader = True
 
     shutil.copyfile(TEMPLATE, mod_dir / 'Main.py')
+    for src_file, rel_dest in ((VIEW, VIEW_DEST), (MOUNT, MOUNT_DEST)):
+        dest = rm / rel_dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src_file, dest)
     record = {'created_loader': created_loader, 'bin': bin_dir.name,
               'installed_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'template': str(TEMPLATE)}
     (mod_dir / 'install_record.json').write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
     print('installed probe %s -> %s' % (MOD_DIR_NAME, mod_dir))
+    print('  panel view   %s' % (rm / VIEW_DEST))
+    print('  panel mount  %s' % (rm / MOUNT_DEST))
     print('  loader marker %s (%s)' % (loader, 'created' if created_loader else 'already present'))
     print('  start the game, then: python %s status --game <root>' % Path(__file__).name)
 
@@ -115,6 +129,11 @@ def cmd_uninstall(root, requested_bin):
         return
     record = read_record(mod_dir)
     shutil.rmtree(mod_dir)
+    for rel_dest in (VIEW_DEST, MOUNT_DEST):
+        dest = bin_dir / 'res_mods' / rel_dest
+        if dest.is_file():
+            dest.unlink()
+            print('removed %s' % dest)
     loader = bin_dir / 'res_mods' / 'PnFModsLoader.py'
     if record.get('created_loader') and loader.is_file() and loader.stat().st_size == 0:
         loader.unlink()

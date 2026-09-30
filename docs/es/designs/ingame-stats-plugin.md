@@ -124,7 +124,8 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
 // un archivo vacío (sin salto de línea final) significa «pendiente».
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json — se reescribe cada 1–2 s; obsoleto = mod muerto o juego
 // cerrado.

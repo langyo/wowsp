@@ -1372,6 +1372,14 @@ export const api = {
   getOverlayConfig: () => transport.invoke<{ table: string; roster: string }>(RPC.get_overlay_config),
   setOverlayConfig: (table: string, roster: string) =>
     transport.invoke<{ table: string; roster: string }>(RPC.set_overlay_config, { table, roster }),
+  /** The 游戏内展示 view mode's stats bridge (see commands/ingame_bridge.rs):
+   *  start answers the in-game plugin's request.json with stats rows (the
+   *  plugin then renders the panel inside the game), stop silences it.
+   *  `locale` picks the panel's column labels. Desktop only — phones reject
+   *  the invoke and callers treat that as "not running". */
+  startIngameBridge: (locale?: string) =>
+    transport.invoke<null>(RPC.ingame_bridge_start, { locale: locale ?? null }),
+  stopIngameBridge: () => transport.invoke<null>(RPC.ingame_bridge_stop),
   /** In-game stats plugin presence in a game install (see
    * commands/ingame_plugin.rs) — powers the roster "plugin detection"
    * option's enabled state and its Discussions page link. */

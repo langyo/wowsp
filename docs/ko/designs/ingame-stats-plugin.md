@@ -116,7 +116,8 @@ overlay order = arena vehicle order (tempArenaInfo — already parsed)
 // 한다; 빈 파일(끝에 줄바꿈 없음)은 "대기 중"을 뜻한다.
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json — 1–2 s마다 재작성; 오래되면 = 모드 사망 또는 게임 종료.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
@@ -130,7 +131,7 @@ overlay order = arena vehicle order (tempArenaInfo — already parsed)
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP가 재조회를 트리거하려고 새 epoch-ms
+// manual_refresh.flag — WoWSP가 재조회를 트리거하려고 새 epoch-seconds
 // 타임스탬프를 기록한다; 모드는 10 s 창 안에서 소비한다.
 ```
 

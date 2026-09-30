@@ -1,6 +1,6 @@
 {
   "productName": "WoWSP",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "identifier": "com.langyo.wowsp",
   "build": {
     "beforeBuildCommand": "pnpm --filter @wowsp/webui build",

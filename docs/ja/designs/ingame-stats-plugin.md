@@ -118,7 +118,8 @@ overlay order = arena vehicle order (tempArenaInfo — already parsed)
 // 増加でなければならない。空ファイル（末尾に改行なし）は「保留中」を意味する。
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json —— 1–2 秒ごとに書き直す。失効 = mod 死亡またはゲーム終了。
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",

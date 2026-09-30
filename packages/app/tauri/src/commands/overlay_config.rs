@@ -3,10 +3,14 @@
 //! switches the settings modal exposes both need enforcement outside the
 //! webui, on threads the store cannot reach:
 //!
-//! - `table` — table anchoring. `"detect"` (default) anchors the chips to
-//!   the pixel-detected team table; `"off"` disables the whole Tab overlay:
-//!   the webui never creates the overlay window, and the Rust Tab watcher
-//!   (belt-and-suspenders — see `watch_tab_tick`) suppresses every show.
+//! - `table` — the live-battle view mode. `"detect"` (default) is the
+//!   transparent window overlay anchored to the pixel-detected team table;
+//!   `"ingame"` renders the stats INSIDE the game through the first-party
+//!   plugin's unbound view — the webui never creates the overlay window,
+//!   the Rust Tab watcher suppresses every show (belt-and-suspenders — see
+//!   `watch_tab_tick`) and the `ingame_bridge` answers the plugin's
+//!   request.json instead; `"off"` disables the whole Tab overlay (no
+//!   window, no watcher shows, no bridge).
 //! - `roster` — roster attribution. `"inferred"` (default) derives the
 //!   row→name mapping from the decompiled client's full Tab sort key (alive,
 //!   class, tier, nation, ship name, '[tag]nickname) over the roster plus the luma probe's
@@ -18,10 +22,10 @@
 //!   reported.
 //!
 //! The values are deliberately parsed as plain enums with a per-field safe
-//! default, so a future third option (e.g. `"plugin"`) can be added to the
-//! schema without breaking older reads: an unknown value resolves to the
-//! field's default instead of erroring — and, since the TOML move, is
-//! FORCED back to disk so the correction sticks (see `settings_store`).
+//! default, so a future option can be added to the schema without breaking
+//! older reads: an unknown value resolves to the field's default instead of
+//! erroring — and, since the TOML move, is FORCED back to disk so the
+//! correction sticks (see `settings_store`).
 //!
 //! PERSISTENCE: a flat `overlay-config.toml` under the appdata root, written
 //! exclusively through [`set_overlay_config`] (the webui store's IPC call).
@@ -57,7 +61,7 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\".\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"ingame\" | \"off\", roster = \"plugin\" | \"passive\".\n\
                            # Invalid values are reset to the defaults by the app.\n";
 
 /// How long a cached read stays fresh. The file only changes when the user
@@ -66,11 +70,15 @@ const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\
 /// memcpy in the steady state.
 const CONFIG_TTL: Duration = Duration::from_secs(2);
 
-/// Table anchoring switch (schema v2 `table` field).
+/// Live-battle view mode (schema v2 `table` field).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TableAnchor {
-    /// Pixel detection — the current behavior (default).
+    /// Pixel detection + transparent window overlay (the default).
     Detect,
+    /// The stats render inside the game through the plugin's unbound
+    /// view; the overlay window stays down and `ingame_bridge` answers
+    /// the plugin's stats requests instead.
+    Ingame,
     /// The whole Tab overlay feature is off.
     Off,
 }
@@ -94,6 +102,7 @@ impl TableAnchor {
     fn as_str(self) -> &'static str {
         match self {
             TableAnchor::Detect => "detect",
+            TableAnchor::Ingame => "ingame",
             TableAnchor::Off => "off",
         }
     }
@@ -125,12 +134,13 @@ impl Default for OverlayConfig {
     }
 }
 
-/// Parse the v2 `table` field. Present-but-unknown values (a future
-/// `"plugin"`, a wrong type) fall back to the safe default — the overlay
-/// must never brick itself over a config typo. An ABSENT field defers to
-/// the legacy v1 master switch (see [`resolve_fields`]).
+/// Parse the v2 `table` field. Present-but-unknown values (a typo, a wrong
+/// type) fall back to the safe default — the overlay must never brick
+/// itself over a config typo. An ABSENT field defers to the legacy v1
+/// master switch (see [`resolve_fields`]).
 fn parse_table_field(raw: &str) -> TableAnchor {
     match raw {
+        "ingame" => TableAnchor::Ingame,
         "off" => TableAnchor::Off,
         // "detect" and anything unrecognized (incl. future values).
         _ => TableAnchor::Detect,
@@ -314,9 +324,27 @@ pub(crate) fn roster_mode() -> RosterRecognition {
     current().roster
 }
 
-/// Whether the whole Tab overlay (table anchoring) is switched OFF.
+/// Whether the transparent Tab overlay must stay down: the explicit `"off"`
+/// AND the `"ingame"` mode (the plugin renders instead) both suppress the
+/// overlay window and every watcher show.
 pub(crate) fn table_overlay_off() -> bool {
-    current().table == TableAnchor::Off
+    overlay_suppressed(current().table)
+}
+
+/// Pure core of [`table_overlay_off`], unit-testable without the cache.
+fn overlay_suppressed(table: TableAnchor) -> bool {
+    table != TableAnchor::Detect
+}
+
+/// Whether the in-game plugin's stats bridge should answer request.json —
+/// only the `"ingame"` view mode turns it on.
+pub(crate) fn ingame_view_mode() -> bool {
+    bridge_active(current().table)
+}
+
+/// Pure core of [`ingame_view_mode`].
+fn bridge_active(table: TableAnchor) -> bool {
+    table == TableAnchor::Ingame
 }
 
 // ── typed IPC surface (the webui store's only read/write path) ───────────
@@ -404,6 +432,10 @@ mod tests {
         let cfg = parse_config(r#"{"table":"detect","roster":"off"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Passive);
+        // The in-game display mode (plugin renders, overlay stays down).
+        let cfg = parse_config(r#"{"table":"ingame"}"#);
+        assert_eq!(cfg.table, TableAnchor::Ingame);
+        assert_eq!(cfg.roster, RosterRecognition::Plugin);
     }
 
     /// v1 migration: `{enabled:true}` → detect + plugin,
@@ -462,6 +494,21 @@ mod tests {
         // v2 field present wins over a leftover legacy `enabled: false`.
         let cfg = parse_config(r#"{"enabled":false,"table":"detect"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
+    }
+
+    /// The suppression/query helpers branch exactly on the view mode:
+    /// `ingame` keeps the overlay down but turns the bridge on; `off`
+    /// keeps both down; `detect` is overlay-only.
+    #[test]
+    fn view_mode_helpers_branch() {
+        for (table, suppressed, bridge) in [
+            (TableAnchor::Detect, false, false),
+            (TableAnchor::Ingame, true, true),
+            (TableAnchor::Off, true, false),
+        ] {
+            assert_eq!(overlay_suppressed(table), suppressed, "{table:?}");
+            assert_eq!(bridge_active(table), bridge, "{table:?}");
+        }
     }
 
     /// TOML parse: canonical text round-trips, garbage/non-table TOML and

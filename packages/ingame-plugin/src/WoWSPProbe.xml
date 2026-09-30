@@ -1,0 +1,13 @@
+<mod name="WoWSPProbe" version="1.0.0" priority="0">
+  <requires installer="&gt;=1.0.0"/>
+
+  <!-- Unbound 2 view; the .unbound file is auto-discovered, only the battle
+       mount is needed. hitTest=false keeps the panel click-through — the
+       overlay must never eat game input. rootElementId matches the root
+       element in gui/unbound2/PnFMods/WoWSPProbe.unbound. -->
+  <ubMountInBattle unbound="2"
+                   rootElementId="WoWSPProbeStatsPanel"
+                   name="unbound2WoWSPProbeStatsPanel"
+                   hitTest="false"
+                   after="MainHud"/>
+</mod>

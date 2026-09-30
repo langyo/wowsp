@@ -122,7 +122,8 @@ dataHub).
 // «обрабатывается».
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json — перезаписывается каждые 1–2 с; устаревший = мод мёртв
 // или игра закрыта.
@@ -138,7 +139,7 @@ dataHub).
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP записывает свежую метку epoch-ms для
+// manual_refresh.flag — WoWSP записывает свежую метку epoch-seconds для
 // запуска повторного запроса; мод потребляет её в пределах окна 10 с.
 ```
 

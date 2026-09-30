@@ -383,10 +383,11 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     let focused_on_game = game.is_some_and(|g| g.is_foreground());
     let tab_down = tab_key_down();
 
-    // Table-anchoring switch (`overlay-config.toml`, written by the
-    // settings modal): `table: "off"` disables the WHOLE Tab overlay.
-    // The webui never creates the overlay window + watcher while it is
-    // off and tears them down on the off edge; this cached read is the
+    // View-mode switch (`overlay-config.toml`, written by the settings
+    // modal): `table: "off"` AND `table: "ingame"` (the plugin renders
+    // inside the game instead) both disable the transparent Tab overlay.
+    // The webui never creates the overlay window + watcher while either is
+    // set and tears them down on the off edge; this cached read is the
     // Rust-side belt-and-suspenders — a stray tick (or a stale watcher
     // outliving the webui's teardown) must never show the window
     // against the setting, and an already-shown one hides again as soon

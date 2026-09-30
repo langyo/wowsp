@@ -1,26 +1,28 @@
 # -*- coding: utf-8 -*-
-"""WoWSP in-game bridge probe (stage-A experiment).
+"""WoWSP in-game bridge probe.
 
 Runs inside the game client via the WG Mods API (PnFMods loader). The
-sandbox has no networking, so this probe only observes and bridges:
-everything it learns goes to python.log (prefix WOWSP_PROBE) and to flat
-JSON files next to this Main.py. The wowsp companion process is expected
-to read request.json and write response.json back.
+sandbox has no networking, so this probe observes, bridges and (since the
+in-game display mode landed) renders:
 
-Product direction under test: the mod renders NOTHING in game. It is a
-precision telemetry source - while the transparent overlay window keeps
-doing the display, the mod feeds it the exact live ordering of the TAB
-team table (priority: mod telemetry > screen-capture inference > static
-roster order). No unbound overrides means no per-game-version UI copies.
+  - everything it learns goes to python.log (prefix WOWSP_PROBE) and to
+    flat JSON files next to this Main.py; the wowsp companion process is
+    expected to read request.json and write response.json back,
+  - the exact live ordering of the TAB team table is bridged out as
+    telemetry (priority: mod telemetry > screen-capture inference >
+    static roster order) for the transparent overlay window,
+  - when the companion answers response.json, the stats rows are rendered
+    INSIDE the game: the unbound view (WoWSPProbe.unbound, mounted via
+    ForgeBlueprints/WoWSPProbe.xml) watches this file's single
+    'wowspProbe.panel' data component and draws the ally/enemy stat
+    columns while Tab is held. No companion answer means no panel - the
+    transparent-overlay view mode simply never turns the bridge on.
 
-What this version measures:
+Still measured for diagnostics:
   1. load + heartbeat (heartbeat.json, phase port/battle),
-  2. the full raw schema of battle.getPlayersInfo() (roster_raw.json,
-     rewritten whenever any projected field changes - diff consecutive
-     writes during a battle to see which fields drive the TAB re-sort),
+  2. the full raw schema of battle.getPlayersInfo() (roster_raw.json),
   3. the sandbox API surface (dir() of every injected module, once),
-  4. request/response file bridge + Tab/Alt/V key events,
-  5. ui.createUiElement data components (later UI groundwork).
+  4. request/response file bridge + Tab/Alt/V key events.
 
 Keep the syntax conservative (no f-strings, 3.6-level) and never let an
 exception escape a callback: the game keeps running but the mod dies.
@@ -40,6 +42,12 @@ ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
 TELEMETRY_FILE = 'telemetry.json'
 JOURNAL_LIMIT = 300
 
+# The in-game panel's single data component: the unbound view watches this
+# key (getPrimWatcher(CC.mods_DataComponent, ...)) and redraws on every
+# updateUiElementData. All presentation decisions (colors, formatting) are
+# made here so the view stays a dumb template.
+PANEL_KEY = 'wowspProbe.panel'
+
 # SafeClass records hide their keys from dir(); probe likely field names so
 # the projection works even when no enumeration path succeeds.
 GUESS_FIELDS = ('name', 'accountDBID', 'shipParamsId', 'isBot', 'teamId', 'id',
@@ -53,6 +61,12 @@ import time
 
 def log(message):
     utils.logInfo(PREFIX + message)
+
+
+def bare_name(name):
+    """Avatar-entity names carry the clan tag ('[RCCK]Laneigedc') while
+    roster names (the stats/telemetry keys) are bare — strip the tag."""
+    return name.split(']', 1)[-1] if name.startswith('[') else name
 
 
 class Probe(object):
@@ -81,6 +95,16 @@ class Probe(object):
         self.const = None
         self.api_dumped = False
         self.comp_dumped = False
+        # In-game panel state: Tab visibility, the two sides' TAB order,
+        # the answered stats rows keyed by name, the companion's column
+        # labels, the freshest entity states (shared with the telemetry
+        # writer) and the last panel body (change gate for the UI update).
+        self.tab = False
+        self.order = {'ally': [], 'enemy': []}
+        self.stats = {}
+        self.labels = {}
+        self.states = {}
+        self.last_panel = ''
         self.resolve_api()
         self.api_probe('load')
         try:
@@ -326,7 +350,16 @@ class Probe(object):
         def handler(*args):
             try:
                 rows = []
+                names = []
                 for item in child.items:
+                    name = ''
+                    try:
+                        # Bare form: the roster/stats/alive keys are all
+                        # untagged (avatar entity names carry the clan tag).
+                        name = bare_name(str(item.avatar.name))
+                    except Exception:
+                        pass
+                    names.append(name)
                     row = []
                     for pick in (lambda: item.avatar.name, lambda: item.avatar.id,
                                  lambda: item.avatar.isBot, lambda: item.avatar.ttkStatus):
@@ -335,6 +368,11 @@ class Probe(object):
                         except Exception:
                             row.append('?')
                     rows.append(row)
+                # The panel consumes the exact rendered order; keep it even
+                # when the journal projection above only managed '?' fields.
+                if self.order.get(side) != names:
+                    self.order[side] = names
+                    self.refresh_panel()
                 self.journal.append('{"t":' + str(int(time.time() * 1000)) + ',"ev":"order.' + side +
                                     '","items":' + utils.jsonEncode(rows) + '}')
                 self.journal_flush()
@@ -390,6 +428,7 @@ class Probe(object):
         self.stable = 0
         self.busy = False
         self.details_reset()
+        self.states = {}
         self.clear_players()
         self.close_order()
         self.last_raw = ''
@@ -409,6 +448,14 @@ class Probe(object):
     def details_reset(self):
         self.revision = -1
         self.v_down = False
+        # Panel memory too: the entity itself goes away with clear_players,
+        # so the change gate must reopen or the next battle's first body
+        # (identical text) would be swallowed as "unchanged".
+        self.tab = False
+        self.order = {'ally': [], 'enemy': []}
+        self.stats = {}
+        self.labels = {}
+        self.last_panel = ''
 
     def clear_players(self):
         for key in list(self.entities):
@@ -564,13 +611,19 @@ class Probe(object):
             if not isinstance(rows, list) or len(rows) > 64:
                 return
             allowed = set(p['name'] for p in self.roster)
+            stats = dict(self.stats)
             for row in rows:
                 name = row.get('name', '')
                 if not name or name not in allowed:
                     continue
-                self.put('wowspProbe.player.' + name, row)
+                stats[name] = row
+            labels = data.get('labels')
+            if isinstance(labels, dict):
+                self.labels = labels
+            self.stats = stats
             self.revision = data.get('revision', -1)
             self.busy = False
+            self.refresh_panel()
             log('response applied revision=' + str(self.revision) + ' rows=' + str(len(rows)))
         except Exception as exc:
             # No response file yet is the normal state while nobody answers.
@@ -586,6 +639,12 @@ class Probe(object):
                     self.event_log_count += 1
                     log('sfm event ' + str(name))
             if name == 'input.tabModeIn' or name == 'input.tabModeOut':
+                # The panel's visibility driver: fires <=3 ms after the key
+                # and never for Tab typed in battle chat (design-doc-proven).
+                visible = name == 'input.tabModeIn'
+                if self.tab != visible:
+                    self.tab = visible
+                    self.refresh_panel()
                 self.journal_mark(name)
             if name == 'inputMapping.onAction':
                 name, data = data[0], data[1]
@@ -711,8 +770,10 @@ class Probe(object):
             # ever reported dead).
             states = {}
             for ename, row in self.entity_states().items():
-                bare = ename.split(']', 1)[-1] if ename.startswith('[') else ename
-                states[bare] = row
+                states[bare_name(ename)] = row
+            # Shared with the panel builder so alive flags cost one entity
+            # walk per tick, not two.
+            self.states = states
             players = {}
             for p in self.roster:
                 row = states.get(p['name'])
@@ -727,6 +788,74 @@ class Probe(object):
             stream.close()
         except Exception as exc:
             self.soft('telemetry failed=' + str(exc)[:120])
+        self.refresh_panel()
+
+    # -- in-game panel -------------------------------------------------------
+    # One data component ('wowspProbe.panel') carries the whole template's
+    # payload: visibility (Tab held), both sides' rows in exact TAB order
+    # with the answered stats merged in, and the companion's column labels.
+    # Everything visible is decided HERE (formatting, colors) so the unbound
+    # view stays a dumb template that cannot rot per game version.
+
+    def wr_color(self, wr):
+        # ARGB values, same form the unbound template literals use. Bands
+        # mirror the overlay page's winrate coloring.
+        if not isinstance(wr, (int, float)):
+            return 0xB4FFFFFF  # translucent white (no data)
+        if wr >= 53:
+            return 0xFF66FF66  # green
+        if wr >= 50:
+            return 0xFFFFEE66  # pale yellow
+        if wr >= 45:
+            return 0xFFFF9933  # orange
+        return 0xFFFF5555      # red
+
+    def pr_color(self, pr):
+        if not isinstance(pr, (int, float)):
+            return 0xB4FFFFFF
+        if pr >= 1700:
+            return 0xFFCC66FF  # purple
+        if pr >= 1450:
+            return 0xFF66FF66  # green
+        if pr >= 1150:
+            return 0xFFFFEE66  # pale yellow
+        return 0xFFCBBBBC      # grey
+
+    def panel_rows(self, side):
+        rows = []
+        for name in self.order.get(side, []):
+            if not name:
+                continue
+            state = self.states.get(name)
+            alive = state is None or state.get('alive') != 'False'
+            row = self.stats.get(name)
+            wr = row.get('wr') if isinstance(row, dict) else None
+            pr = row.get('pr') if isinstance(row, dict) else None
+            rows.append({'name': name,
+                         'wr': ('%.1f%%' % wr) if isinstance(wr, (int, float)) else '--',
+                         'pr': str(int(pr)) if isinstance(pr, (int, float)) else '--',
+                         'alive': alive,
+                         'wrColor': self.wr_color(wr),
+                         'prColor': self.pr_color(pr)})
+        return rows
+
+    def refresh_panel(self):
+        if not self.session:
+            return
+        try:
+            ally = self.panel_rows('ally')
+            enemy = self.panel_rows('enemy')
+            data = {'visible': bool(self.tab and (ally or enemy)),
+                    'ally': ally,
+                    'enemy': enemy,
+                    'labels': self.labels}
+            body = utils.jsonEncode(data)
+            if body == self.last_panel:
+                return
+            self.last_panel = body
+            self.put(PANEL_KEY, data)
+        except Exception as exc:
+            self.soft('panel failed=' + str(exc)[:120])
 
     def soft(self, message):
         # Deduplicated soft logging: a repeating error should appear once.

@@ -131,7 +131,8 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
 // session ; un fichier vide (sans newline final) signifie « en attente ».
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json — réécrit toutes les 1–2 s ; périmé = mod mort ou jeu
 // fermé.
@@ -147,7 +148,7 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP écrit un horodatage epoch-ms frais pour
+// manual_refresh.flag — WoWSP écrit un horodatage epoch-seconds frais pour
 // déclencher une nouvelle requête ; le mod le consomme dans une fenêtre
 // de 10 s.
 ```

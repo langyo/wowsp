@@ -108,7 +108,8 @@ WoWSP。該 mod **不渲染任何內容**——透明覆蓋層仍是顯示層—
 // 空檔案（無結尾換行）表示「處理中」。
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json —— 每 1–2 s 重寫一次；過期 = mod 已死或遊戲已關閉。
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
@@ -122,7 +123,7 @@ WoWSP。該 mod **不渲染任何內容**——透明覆蓋層仍是顯示層—
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag —— WoWSP 寫入新的 epoch-ms 時間戳以觸發重新
+// manual_refresh.flag —— WoWSP 寫入新的 epoch-seconds 時間戳以觸發重新
 // 查詢；mod 在 10 s 時間窗內消費。
 ```
 

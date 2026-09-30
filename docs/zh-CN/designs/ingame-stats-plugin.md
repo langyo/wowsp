@@ -3,6 +3,13 @@
 > **状态**：实验已收尾（2026-09-28），可进入实现。
 > 覆盖层的伴生文档：显示层仍由透明窗口承担；本插件是游戏内的数据源，
 > 让覆盖层的排序在任何环境（含独占全屏）下都精确。
+>
+> **更新（2026-10-01）**：新增第二种查看模式——游戏内展示。插件的 unbound 视图
+> （`gui/unbound2/PnFMods/WoWSPProbe.unbound` + ForgeBlueprints 挂载声明）把战绩
+> 直接绘制在游戏画面内，仅作用于新的 `table = "ingame"` 模式；本文其余部分描述
+> 的"插件不渲染、透明窗口为唯一显示层"仍是覆盖模式（`"detect"`）的设计。桥接层
+> （`commands/ingame_bridge.rs`）只在游戏内展示模式开启时应答 `request.json`，
+> 两种显示不会同时出现。
 
 ## 背景与目标
 
@@ -105,7 +112,8 @@ unbound 侧的 `$datahub.getCollection().getChildByPath('team.ally.sortedAlive')
 // 空文件（无结尾换行）表示"处理中"。
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json —— 每 1–2 s 重写；过期 = mod 死亡或游戏已关。
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",

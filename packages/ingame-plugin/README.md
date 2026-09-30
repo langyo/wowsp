@@ -9,9 +9,8 @@ here as a first-party subpackage. Design and evidence:
 
 A single Python file (`src/Main.py`) that runs inside the World of
 Warships client through Wargaming's official **Mods API** (PnFMods
-channel, `API_VERSION = 'API_v1.0'`). It renders nothing. It observes
-the battle and hands everything to the WoWSP app through flat JSON
-files in its own directory:
+channel, `API_VERSION = 'API_v1.0'`). It observes the battle and hands
+everything to the WoWSP app through flat JSON files in its own directory:
 
 - roster + identity (`battle.getPlayersInfo()`, includes `realm`),
 - sink attribution (`isAlive` flips, ≤1 s, validated against the game's
@@ -24,6 +23,27 @@ files in its own directory:
 
 The in-game reported version is pinned at `0.1.0` by owner decision;
 iteration happens in git history only.
+
+## The in-game display mode
+
+Besides feeding the transparent overlay window, the plugin can render
+the stats **inside the game** (the app's 游戏内展示 view mode): two stat
+tables (allies / enemies) in exact TAB order with winrate, PR and
+alive-state per player, shown while Tab is held. The pieces:
+
+- `src/WoWSPProbe.unbound` — the unbound 2 view (auto-discovered from
+  `gui/unbound2/PnFMods/`), a deliberately dumb template: it watches the
+  probe's single `wowspProbe.panel` data component and draws whatever
+  Main.py put there (rows, texts, colors, visibility are all decided in
+  Python).
+- `src/WoWSPProbe.xml` — the ForgeBlueprints mount declaration
+  (`res_mods/ForgeBlueprints/`), instantiating the view's root element
+  in battle, click-through.
+- Main.py merges the app's `response.json` stats rows into the TAB
+  order (`team.ally/enemy.sortedAlive` collections) and rewrites the
+  panel component whenever Tab state, ordering or alive flags change.
+  No answer from the app means no panel: the transparent-overlay view
+  mode simply never turns the bridge on.
 
 ## Sandbox rules the code must obey
 
@@ -40,9 +60,11 @@ before touching it.
 ```
 packages/ingame-plugin/
   src/Main.py                    the mod (installed to PnFMods/WoWSPProbe)
+  src/WoWSPProbe.unbound         in-game panel view (gui/unbound2/PnFMods)
+  src/WoWSPProbe.xml             battle mount (ForgeBlueprints)
   README.md                      this file
 ```
 
 `scripts/install_ingame_probe.py` (repo root `scripts/`) installs,
 uninstalls and inspects it against a chosen game root; the WoWSP app's
-`mod_install.rs` command is the production install path.
+`ingame_plugin_install` command is the production install path.

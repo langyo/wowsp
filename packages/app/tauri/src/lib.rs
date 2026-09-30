@@ -406,6 +406,13 @@ pub fn run() {
             commands::installer::installer_language,
             commands::overlay_config::get_overlay_config,
             commands::overlay_config::set_overlay_config,
+            // The 游戏内展示 bridge — desktop only, same reasoning as the
+            // overlay window (it answers the in-game plugin's stats
+            // requests; no game client runs on the phone build).
+            #[cfg(desktop)]
+            commands::ingame_bridge::ingame_bridge_start,
+            #[cfg(desktop)]
+            commands::ingame_bridge::ingame_bridge_stop,
             commands::game_config::get_game_config,
             commands::game_config::set_game_config,
             commands::open_external::open_external,

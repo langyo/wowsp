@@ -4,6 +4,15 @@
 > Companion doc for the overlay: the display layer stays the transparent
 > window; this plugin is the in-game data source that makes the overlay's
 > ordering exact on every setup, including exclusive fullscreen.
+>
+> **Update (2026-10-01)**: a second view mode landed — 游戏内展示 renders
+> the stats INSIDE the game through this plugin's unbound view
+> (`gui/unbound2/PnFMods/WoWSPProbe.unbound` + the ForgeBlueprints mount),
+> replacing this doc's "renders nothing" stance for the new `table =
+> "ingame"` mode only. The overlay mode (`"detect"`) keeps the original
+> data-source design below; the bridge (`commands/ingame_bridge.rs`)
+> answers `request.json` only while the ingame mode is active, so the two
+> displays never run at once.
 
 ## Background & goals
 
@@ -115,7 +124,8 @@ Bridge files (protocol v1, all in the mod directory):
 // an empty file (no trailing newline) means "pending".
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json — rewritten every 1–2 s; stale = mod dead or game closed.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
@@ -129,7 +139,7 @@ Bridge files (protocol v1, all in the mod directory):
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP writes a fresh epoch-ms stamp to trigger a
+// manual_refresh.flag — WoWSP writes a fresh epoch-seconds stamp to trigger a
 // re-query; the mod consumes it within a 10 s window.
 ```
 

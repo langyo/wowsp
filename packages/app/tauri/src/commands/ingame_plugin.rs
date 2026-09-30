@@ -17,8 +17,9 @@ const DISCUSSION_NUMBER: u64 = 640;
 
 /// PnFMods layout written by `scripts/install_ingame_probe.py` (and by the
 /// app's own auto-install once M2 lands) — the entry file is the presence
-/// probe.
-const MOD_DIR: &str = "WoWSPProbe";
+/// probe. Shared with `ingame_bridge` (the same directory hosts the
+/// request/response mailbox).
+pub(crate) const MOD_DIR: &str = "WoWSPProbe";
 const MOD_ENTRY: &str = "Main.py";
 
 #[derive(Debug, Serialize)]
@@ -26,10 +27,11 @@ const MOD_ENTRY: &str = "Main.py";
 pub struct IngamePluginStatus {
     /// Whether the plugin's entry file exists in the install's res_mods.
     pub installed: bool,
-    /// Installed but NOT the bytes this app ships (an older build, or a
-    /// hand-edited file): the UI offers a one-click update. The in-game
-    /// version string is pinned at 0.1.0 by owner decision, so the content
-    /// hash is the only reliable freshness signal.
+    /// Installed but NOT the bytes this app ships (an older build, a
+    /// missing unbound view/mount, or a hand-edited file): the UI offers a
+    /// one-click update. The in-game version string is pinned at 0.1.0 by
+    /// owner decision, so the content hashes over the whole shipped set
+    /// (Main.py + view + mount) are the only reliable freshness signal.
     pub outdated: bool,
     /// The res_mods directory that was inspected (diagnostics for the UI).
     pub res_mods: String,
@@ -46,17 +48,12 @@ pub fn ingame_plugin_status(game_root: String) -> Result<IngamePluginStatus, Str
     let entry = dir.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY);
     let installed = entry.is_file();
     let outdated = installed
-        && match std::fs::read(&entry) {
-            Ok(bytes) => {
-                use sha2::{Digest, Sha256};
-                let mut current = Sha256::new();
-                current.update(PLUGIN_SOURCE.as_bytes());
-                let mut on_disk = Sha256::new();
-                on_disk.update(&bytes);
-                current.finalize()[..] != on_disk.finalize()[..]
-            },
-            Err(_) => true, // unreadable is un-updatable — treat as stale
-        };
+        && !(file_fresh(
+            &dir,
+            &format!("PnFMods/{MOD_DIR}/{MOD_ENTRY}"),
+            PLUGIN_SOURCE,
+        ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW)
+            && file_fresh(&dir, MOUNT_DEST, PLUGIN_MOUNT));
     Ok(IngamePluginStatus {
         installed,
         outdated,
@@ -70,15 +67,42 @@ pub fn ingame_plugin_status(game_root: String) -> Result<IngamePluginStatus, Str
 /// script and one installed here are byte-identical.
 const PLUGIN_SOURCE: &str = include_str!("../../../../ingame-plugin/src/Main.py");
 
+/// The visible half of the 游戏内展示 view mode: the unbound 2 view
+/// (auto-discovered from `gui/unbound2/PnFMods/`) and its ForgeBlueprints
+/// battle mount (click-through; rootElementId matches the view's root
+/// element). Without these the plugin stays a telemetry-only probe.
+const PLUGIN_VIEW: &str = include_str!("../../../../ingame-plugin/src/WoWSPProbe.unbound");
+const PLUGIN_MOUNT: &str = include_str!("../../../../ingame-plugin/src/WoWSPProbe.xml");
+const VIEW_DEST: &str = "gui/unbound2/PnFMods/WoWSPProbe.unbound";
+const MOUNT_DEST: &str = "ForgeBlueprints/WoWSPProbe.xml";
+
+/// Whether `res_mods/<rel>` carries exactly `expected`'s bytes. Missing,
+/// unreadable and divergent files are all "not fresh" — the freshness
+/// signal behind the settings UI's one-click update.
+fn file_fresh(dir: &std::path::Path, rel: &str, expected: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    match std::fs::read(dir.join(rel)) {
+        Ok(bytes) => {
+            let mut wanted = Sha256::new();
+            wanted.update(expected.as_bytes());
+            let mut on_disk = Sha256::new();
+            on_disk.update(&bytes);
+            wanted.finalize()[..] == on_disk.finalize()[..]
+        },
+        Err(_) => false,
+    }
+}
+
 /// Loader marker content: the game only scans `res_mods` for mods when this
 /// 0-byte file exists; some modpacks (Aslain) ship it already.
 const LOADER_MARKER: &str = "PnFModsLoader.py";
 
 /// Install the plugin into the active install: `PnFMods/WoWSPProbe/Main.py`
-/// plus the 0-byte loader marker when missing. Gated like every res_mods
-/// mutation (mod-hub gate, game closed, res_mods active). Idempotent — an
-/// existing Main.py is overwritten in place (a broken install can be
-/// reinstalled over).
+/// plus the unbound view + ForgeBlueprints mount of the in-game display
+/// mode, and the 0-byte loader marker when missing. Gated like every
+/// res_mods mutation (mod-hub gate, game closed, res_mods active).
+/// Idempotent — existing files are overwritten in place (a broken install
+/// can be reinstalled over).
 #[tauri::command]
 pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
@@ -89,6 +113,16 @@ pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> 
     std::fs::create_dir_all(&mod_dir).map_err(|e| format!("create {}: {e}", mod_dir.display()))?;
     let entry = mod_dir.join(MOD_ENTRY);
     std::fs::write(&entry, PLUGIN_SOURCE).map_err(|e| format!("write {}: {e}", entry.display()))?;
+    // The view + mount land under their own res_mods subtrees; both are
+    // this install's own files (first-party names, no shared paths).
+    for (rel, source) in [(VIEW_DEST, PLUGIN_VIEW), (MOUNT_DEST, PLUGIN_MOUNT)] {
+        let dest = dir.join(rel);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(&dest, source).map_err(|e| format!("write {}: {e}", dest.display()))?;
+    }
     let loader = dir.join(LOADER_MARKER);
     if !loader.exists() {
         std::fs::write(&loader, "").map_err(|e| format!("write {}: {e}", loader.display()))?;
@@ -111,6 +145,15 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
     if mod_dir.is_dir() {
         std::fs::remove_dir_all(&mod_dir)
             .map_err(|e| format!("remove {}: {e}", mod_dir.display()))?;
+    }
+    // The view + mount are this layout's own files — always removed with
+    // the mod (a foreign file at the same path is not ours to touch, but
+    // the first-party names make that collision theoretical).
+    for rel in [VIEW_DEST, MOUNT_DEST] {
+        let dest = dir.join(rel);
+        if dest.is_file() {
+            let _ = std::fs::remove_file(&dest);
+        }
     }
     let loader = dir.join(LOADER_MARKER);
     let pnf = dir.join("PnFMods");

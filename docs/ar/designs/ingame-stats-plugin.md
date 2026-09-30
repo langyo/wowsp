@@ -116,7 +116,8 @@ PnFMods، بلا حقن وبلا كتابة في الذاكرة) أن يراقب
 // الملف الفارغ (بلا سطر جديد ختامي) يعني «قيد الانتظار».
 { "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
   "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ] }
+              "bf": { "battles": 8213, "ishidden": false } } ],
+  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
 
 // heartbeat.json — يُعاد كتابته كل 1–2 ث؛ التقادم = موت المود أو إغلاق اللعبة.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",

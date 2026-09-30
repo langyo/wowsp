@@ -1,0 +1,162 @@
+# WoWSP in-game stats panel (unbound 2 view).
+#
+# Watches the probe's single 'wowspProbe.panel' data component (written by
+# PnFMods/WoWSPProbe/Main.py) and draws the ally/enemy stat columns beside
+# the native TAB panel while Tab is held. The file is auto-discovered from
+# gui/unbound2/PnFMods/; the battle mount comes from
+# ForgeBlueprints/WoWSPProbe.xml (rootElementId must match the root element
+# below).
+#
+# The template is deliberately dumb: Main.py decides visibility, row order,
+# text and colors — everything this file does is layout. Keep it that way:
+# the DSL is the least testable surface of the plugin.
+#
+# Layout (1920x1080 reference): the native TAB panel spans roughly the
+# center 600px, so the ally table's right edge sits at stageWidth/2 - 330
+# and the enemy table starts at stageWidth/2 + 330. Each table is 244px
+# wide (148 name + 52 wr + 44 pr), which puts the ally table's left edge at
+# stageWidth/2 - 574. Rows are 22px high with a 2px vgap; the header is
+# 20px. stageWidth/stageHeight reach the side panels as arguments bound in
+# the root scope — the one place the STAGE_SIZE macro is declared.
+
+(def constant WOWSP_PANEL_KEY 'wowspProbe.panel')
+
+(def css $WowspPanelText()
+	(extends $TextDefaultNM)
+	(extends $FontEnableReadability)
+	(filters
+		(dropShadow
+			(distance = 1)
+			(angle = 90)
+			(color = 0x08222a)
+			(alpha = 0.6)
+			(blurX = 2.0)
+			(blurY = 2.0)
+			(strength = 1.5)
+			(quality = 2)
+		)
+	)
+)
+
+(def element WowspStatRow(_row:dict=null, _isAlly:bool=true)
+	(scope
+		(var alive:bool = "_row ? _row.alive != false : true")
+	)
+	(style
+		(flow = "Flow.HORIZONTAL")
+		(height = 22px)
+		(bind alpha "alive ? 1 : 0.45")
+	)
+	(tf
+		(class $WowspPanelText)
+		(style
+			(width = 148px)
+			(elideMode = true)
+			(bind textAlign "_isAlly ? right : left")
+			(bind textColor "alive ? 0xE8F4F4 : 0x9FB4B4")
+		)
+		(bind text "_row ? _row.name : ''")
+	)
+	(tf
+		(class $WowspPanelText)
+		(style
+			(width = 52px)
+			(bind textAlign "_isAlly ? right : left")
+		)
+		(bind textColor "_row ? _row.wrColor : 0xFFFFFFFF")
+		(bind text "_row ? _row.wr : ''")
+	)
+	(tf
+		(class $WowspPanelText)
+		(style
+			(width = 44px)
+			(bind textAlign "_isAlly ? right : left")
+		)
+		(bind textColor "_row ? _row.prColor : 0xFFFFFFFF")
+		(bind text "_row ? _row.pr : ''")
+	)
+)
+
+(def element WowspSidePanel(_isAlly:bool=true, _rows:array=null, _labels:dict=null, _stageW:number=0, _stageH:number=0)
+	(scope
+		(var rowCount:number = "_rows ? _rows.length : 0")
+	)
+	(style
+		(position = "absolute")
+		(bind left "_isAlly ? (_stageW / 2 - 574) : (_stageW / 2 + 330)")
+		(bind top "(_stageH / 2) - ((rowCount * 24 + 22) / 2)")
+		(vgap = 2px)
+	)
+	# Header: side name over the name column, then the two stat labels.
+	(block
+		(style
+			(flow = "Flow.HORIZONTAL")
+			(height = 20px)
+		)
+		(tf
+			(class $WowspPanelText)
+			(style
+				(width = 148px)
+				(elideMode = true)
+				(bind textAlign "_isAlly ? right : left")
+				(alpha = 0.85)
+			)
+			(bind text "_labels ? (_isAlly ? _labels.ally : _labels.enemy) : ''")
+		)
+		(tf
+			(class $WowspPanelText)
+			(style
+				(width = 52px)
+				(bind textAlign "_isAlly ? right : left")
+				(alpha = 0.85)
+			)
+			(bind text "_labels ? _labels.wr : ''")
+		)
+		(tf
+			(class $WowspPanelText)
+			(style
+				(width = 44px)
+				(bind textAlign "_isAlly ? right : left")
+				(alpha = 0.85)
+			)
+			(bind text "_labels ? _labels.pr : ''")
+		)
+	)
+	(controller $Repeat renderer='WowspStatRow'
+		(count = "rowCount")
+		(args
+			_row = "_rows ? _rows[$index] : null"
+			_isAlly = "_isAlly"
+		)
+	)
+)
+
+(def element WoWSPProbeStatsPanel() layout=true
+	(scope
+		(macro STAGE_SIZE)
+
+		(var panelWatcher:gfx = "$datahub.getPrimWatcher(CC.mods_DataComponent, WOWSP_PANEL_KEY)")
+		(var panelEntity:gfx = "panelWatcher.entity" (event "panelWatcher.event"))
+		(var dataComponent:gfx = "panelEntity ? panelEntity.mods_DataComponent : null" (event "panelEntity.evAdded"))
+
+		(var panelData:dict = "dataComponent ? dataComponent.data : null" (event "dataComponent.evDataChanged"))
+		(var allyRows:array = "panelData ? panelData.ally : null" (event "dataComponent.evDataChanged"))
+		(var enemyRows:array = "panelData ? panelData.enemy : null" (event "dataComponent.evDataChanged"))
+		(var labels:dict = "panelData ? panelData.labels : null" (event "dataComponent.evDataChanged"))
+	)
+
+	(style
+		(bind width "stageWidth")
+		(bind height "stageHeight")
+		(hitTest = false)
+	)
+
+	(block
+		(bind visible "panelData ? (panelData.visible == true) : false")
+		(style
+			(position = "absolute")
+		)
+		(element WowspSidePanel _isAlly="true" _rows="allyRows" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+		(element WowspSidePanel _isAlly="false" _rows="enemyRows" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+	)
+)

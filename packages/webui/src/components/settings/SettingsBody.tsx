@@ -2023,16 +2023,15 @@ export default defineComponent({
           ),
           overlay: () => (
           <>
-          {/* in-game overlay (Mode 2) — pre-creates the transparent window
-              + Tab watcher while the game runs; hold Tab in battle to see
-              per-player WR / avg damage over the team list. TWO independent
-              switches (radio-style so a future "plugin" mode can join each
-              later without schema churn): table anchoring pixel-detects the
-              team table, and its off state disables the WHOLE Tab overlay;
-              roster attribution picks the derived mapping (the
-              default — the game's own Tab sort key plus the sink solver,
-              no OCR at all) or the roster/index order fallback. The note under the first
-              switch explains why exclusive fullscreen can't work.
+          {/* in-game overlay (Mode 2) — the view mode picks which display
+              backend is up while the game runs: the transparent window over
+              the pixel-detected team table (hold Tab for per-player WR /
+              avg damage), the stats rendered INSIDE the game by the
+              first-party plugin's unbound view (bridge answers its
+              request.json; works in exclusive fullscreen too), or fully
+              off. The second switch (roster attribution) picks the plugin
+              telemetry (the default) or the screen-capture pipeline, and
+              its strip auto-disables while the view mode is off.
               Unreachable on the phone app build (no overlay window there —
               the rail filters the section out). */}
           <HkSettingsGroup title={t("settings.overlay")}>
@@ -2045,10 +2044,20 @@ export default defineComponent({
                 onUpdate:modelValue={(v: string) => void overlayCfg.setTable(v as TableAnchorMode)}
                 tabs={[
                   { key: "detect", label: t("settings.overlayTableDetect") },
+                  { key: "ingame", label: t("settings.overlayTableIngame") },
                   { key: "off", label: t("settings.overlayTableOff") },
                 ]}
               />
-              <HkSettingsHint>{t("settings.overlayFullscreenNote")}</HkSettingsHint>
+              {overlayCfg.table === "ingame" ? (
+                <>
+                  <HkSettingsHint>{t("settings.overlayTableIngameNote")}</HkSettingsHint>
+                  {!ingamePluginInstalled.value ? (
+                    <HkSettingsHint>{t("settings.overlayRosterPluginMissing")}</HkSettingsHint>
+                  ) : null}
+                </>
+              ) : (
+                <HkSettingsHint>{t("settings.overlayFullscreenNote")}</HkSettingsHint>
+              )}
             </HkSettingsSub>
             <HkSettingsSub title={t("settings.overlayRoster")}>
               {/* No "off" here BY DESIGN: the table switch above owns the

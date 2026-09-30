@@ -85,6 +85,8 @@ export const RPC = {
   set_network_config: "set_network_config",
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
+  ingame_bridge_start: "ingame_bridge_start",
+  ingame_bridge_stop: "ingame_bridge_stop",
   ingame_plugin_status: "ingame_plugin_status",
   ingame_plugin_install: "ingame_plugin_install",
   ingame_plugin_uninstall: "ingame_plugin_uninstall",

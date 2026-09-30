@@ -3,22 +3,23 @@
  * `overlay-config.toml` (schema v2) through the typed get/set commands —
  * TWO independent switches, each with its own off state:
  *
- * - `table` — table anchoring: "detect" (pixel detection, the default)
- *   anchors the chips to the detected team table; "off" disables the WHOLE
- *   Tab overlay (no overlay window, no watcher — `useOverlayLifecycle`
- *   never creates it, and the Rust watcher suppresses shows too).
- * - `roster` — roster attribution: "inferred" (the default and preferred:
- *   the row→name mapping derived from the game's own Tab sort key —
- *   class rank, tier descending, nation, ship name, '[tag]nickname — over
- *   the roster plus the luma probe's alive flags, kept exact mid-battle
- *   by the sink solver; no OCR), or "off" (chips follow roster/index
- *   order, the historical fallback). A stored "ocr" pick (the removed
- *   Windows pipeline) migrates to "inferred".
+ * - `table` — the live-battle view mode: "detect" (the transparent window
+ *   overlay on the pixel-detected team table, the default), "ingame" (the
+ *   stats render INSIDE the game through the first-party plugin's unbound
+ *   view — no overlay window; `useOverlayLifecycle` starts the stats
+ *   bridge instead, and the Rust watcher suppresses shows too), or "off"
+ *   (the WHOLE Tab overlay is disabled: no window, no watcher shows, no
+ *   bridge).
+ * - `roster` — roster attribution: "plugin" (the default and preferred:
+ *   the in-game plugin's telemetry is the primary detector) or "passive"
+ *   (the screen-capture pipeline; a stored "off" pick lands here — the
+ *   table switch owns the overlay's off state). Stored "inferred"/"ocr"
+ *   picks (the retired pixel-comparison pipeline) migrate to "plugin".
  *
  * The Rust side owns every on-disk concern: the flat TOML file, the
  * one-shot migration of the pre-TOML `overlay-config.json`, the v1
- * `{enabled: boolean}` shape (enabled → detect + inferred, disabled →
- * off + inferred), and the fallback that resets an unknown value to the
+ * `{enabled: boolean}` shape (enabled → detect + plugin, disabled →
+ * off + plugin), and the fallback that resets an unknown value to the
  * field's safe default and FORCES the corrected value back to disk (see
  * commands/overlay_config.rs). This store keeps a thin client-side guard
  * as defense in depth: values arriving from an older shell still land on
@@ -29,11 +30,12 @@ import { ref } from "vue";
 
 import { api } from "@/api";
 
-/** Table anchoring modes (schema v2 `table` field). */
-export type TableAnchorMode = "detect" | "off";
+/** Live-battle view modes (schema v2 `table` field). */
+export type TableAnchorMode = "detect" | "ingame" | "off";
 /** Roster attribution modes (schema v2 `roster` field): "plugin" = the
  *  in-game plugin is the primary detector; "passive" = the screen-capture
- *  pipeline (renamed from the retired "inferred" pick); "off" = off. */
+ *  pipeline (a stored "off" pick lands here — the table switch owns the
+ *  overlay's off state). */
 export type RosterRecognitionMode = "plugin" | "passive";
 
 const DEFAULT_TABLE: TableAnchorMode = "detect";
@@ -41,7 +43,9 @@ const DEFAULT_ROSTER: RosterRecognitionMode = "plugin";
 
 /** Unknown values (incl. future ones) → the safe default. */
 function parseTable(raw: unknown): TableAnchorMode {
-  return raw === "off" ? "off" : DEFAULT_TABLE;
+  if (raw === "off") return "off";
+  if (raw === "ingame") return "ingame";
+  return DEFAULT_TABLE;
 }
 
 function parseRoster(raw: unknown): RosterRecognitionMode {
