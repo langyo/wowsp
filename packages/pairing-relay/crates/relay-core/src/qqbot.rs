@@ -131,9 +131,16 @@ impl Binding {
 
 // ── Webhook：URL 校验（op 13/14）与事件验签 ────────────────────────────
 
-/// hex 解码（大小写容忍）。
-fn unhex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+/// hex 解码（大小写容忍；容忍控制台拷贝常见的空白与 0x 前缀）。
+fn unhex(raw: &str) -> Option<Vec<u8>> {
+    let s: String = raw
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    if s.is_empty() || s.len() % 2 != 0 {
         return None;
     }
     (0..s.len())
@@ -404,6 +411,19 @@ mod tests {
         );
         // 坏种子拒绝。
         assert!(validation_response("zz", "p", "t").is_none());
+    }
+
+    #[test]
+    fn hex_keys_tolerate_console_copy_artifacts() {
+        let key = SigningKey::from_bytes(&[3u8; 32]);
+        let clean = hex(&key.to_bytes());
+        // 0x 前缀、内嵌空白、大小写混排——都能解码到同一把种子。
+        let noisy = format!("0x{}  {}", &clean[..8], clean[8..].to_uppercase());
+        let resp_clean = validation_response(&clean, "pt", "42").unwrap();
+        let resp_noisy = validation_response(&noisy, "pt", "42").unwrap();
+        assert_eq!(resp_clean, resp_noisy);
+        assert!(validation_response("not hex!", "pt", "42").is_none());
+        assert!(validation_response("", "pt", "42").is_none());
     }
 
     #[test]

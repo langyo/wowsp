@@ -1998,7 +1998,10 @@ mod tests {
         assert_eq!(s.files[0].0.as_deref(), Some("日志evil.zip"));
 
         let mut s = sample();
-        s.files = vec![(Some(format!("{}.zip", "x".repeat(FILENAME_MAX + 50))), b"PK".to_vec())];
+        s.files = vec![(
+            Some(format!("{}.zip", "x".repeat(FILENAME_MAX + 50))),
+            b"PK".to_vec(),
+        )];
         assert!(normalize(&mut s).is_ok());
         let capped = s.files[0].0.as_deref().unwrap();
         assert!(capped.chars().count() <= FILENAME_MAX, "{capped}");
@@ -2030,8 +2033,7 @@ mod tests {
     #[test]
     fn attachment_and_schema_shapes() {
         assert_eq!(
-            attachment_update_body(&["ftok".into()])
-                .pointer("/fields/日志包/0/file_token"),
+            attachment_update_body(&["ftok".into()]).pointer("/fields/日志包/0/file_token"),
             Some(&json!("ftok"))
         );
         // 多附件（桌面端 截图+日志包）一次挂到数组字段上。
