@@ -104,6 +104,13 @@
   flex: 0 0 auto;
 }
 
+/* Full-width block host for the dist charts; the named inline-size
+   container `ship-dist-host` is what the chart-row collapse query in
+   ShipDistCharts.scss binds to. */
+.dashboard-view__dist {
+  container: ship-dist-host / inline-size;
+}
+
 /* ── Ranked history cards ────────────────────────────────────────────── */
 .dash-ranked {
   display: grid;

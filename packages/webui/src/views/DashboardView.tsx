@@ -7,6 +7,7 @@ import { HkTag, HkTabs, HkButton } from "@celestia-island/hikari";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
+import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import SScrollTop from "@/components/base/SScrollTop";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useAccountStore } from "@/stores/account";
@@ -40,14 +41,19 @@ import "./DashboardView.scss";
  * "My stats" dashboard — a rich personal stats page.
  *
  * Layout (top to bottom):
- *   1. Identity header: avatar + clan tag + nickname + realm (centered).
- *   2. KPI summary: the StatsCard (PR / winrate / battles / avgDamage / etc.).
- *   3. Date-range segmented control (1D / 7D / 30D / All) — filters the
+ *   1. Identity row: avatar + clan tag + nickname + realm, rendered at the
+ *      top of the StatsCard (not a standalone block).
+ *   2. KPI summary: the same StatsCard (PR / winrate / battles / avgDamage / etc.).
+ *   3. Ship-distribution charts (tier histogram + class/nation donuts) —
+ *      fed the UNFILTERED career ship list; like the lookup page they
+ *      never react to the date-range tabs or the filter chips below.
+ *   4. Ranked history: one card per loaded ranked season.
+ *   5. Date-range segmented control (1D / 7D / 30D / All) — filters the
  *      per-ship list below by lastBattleTime.
- *   4. Per-ship-type breakdown: battles / winrate / avgDamage by BB/CA/DD/CV/SS.
- *   5. Per-ship table: every ship played (in the selected range), sortable by
+ *   6. Per-ship-type breakdown: battles / winrate / avgDamage by BB/CA/DD/CV/SS.
+ *   7. Per-ship table: every ship played (in the selected range), sortable by
  *      battles / winrate / avgDamage, with color-coded winrate.
- *   6. Floating scroll-to-top button (appears on scroll).
+ *   8. Floating scroll-to-top button (appears on scroll).
  *
  * If no account is bound → centered bind prompt. Stats are fetched via the
  * stats store (account-level) + shipStats store (per-ship). Ship types are
@@ -346,6 +352,23 @@ export default defineComponent({
                   ),
                 }}
               />
+
+              {/* ── Ship distribution charts — fed the UNFILTERED career
+                  list (playerShips): like the lookup page, the tier
+                  histogram and both donuts must never react to the
+                  date-range tabs or the filter chips below. ── */}
+              {playerShips.value.length > 0 ? (
+                <section class="dash-section">
+                  <div class="dash-section__head">
+                    <h3>{t("dashboard.distTitle")}</h3>
+                  </div>
+                  <div class="dashboard-view__dist">
+                    <ShipDistCharts
+                      ships={playerShips.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
+                    />
+                  </div>
+                </section>
+              ) : null}
 
               {/* ── Ranked history ── */}
               {ranked.seasons.length > 0 ? (

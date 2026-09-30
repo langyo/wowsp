@@ -26,9 +26,10 @@
    only via fractional zoom) where the legacy 2+1 packing can persist.
 
    The query only matches an ancestor that is a size container NAMED
-   `ship-dist-host`, so BOTH hosts — `.lookup-view__dist`
-   (LookupView.scss) and `.replay-view__postbattle-dist`
-   (PostBattlePanel.scss) — must keep the named
+   `ship-dist-host`, so ALL THREE hosts — `.lookup-view__dist`
+   (LookupView.scss), `.replay-view__postbattle-dist`
+   (PostBattlePanel.scss) and `.dashboard-view__dist`
+   (DashboardView.scss) — must keep the named
    `container: ship-dist-host / inline-size` declaration. The name is
    the contract: a future nesting refactor that re-parents the charts
    under an unnamed (or differently named) container can no longer
