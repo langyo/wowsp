@@ -14,7 +14,7 @@
     "pickFiles": "Elegir archivos de repetición",
     "fromDesktop": "Obtener del PC",
     "emptyTitle": "Aún no hay repeticiones en el teléfono",
-    "emptyHint": "Elige archivos .wowsreplay guardados en el teléfono, o vincula el WoWSP de tu ordenador para explorar y descargar sus repeticiones.",
+    "emptyHint": "Elige archivos .wowsreplay / .korablireplay guardados en el teléfono, o vincula el WoWSP de tu ordenador para explorar y descargar sus repeticiones.",
     "importedToast": "{n} repetición(es) importada(s)"
   },
   "pairing": {

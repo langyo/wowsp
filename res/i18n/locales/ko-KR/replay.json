@@ -14,7 +14,7 @@
     "pickFiles": "리플레이 파일 선택",
     "fromDesktop": "PC에서 가져오기",
     "emptyTitle": "휴대폰에 리플레이가 없습니다",
-    "emptyHint": "휴대폰에 저장된 .wowsreplay 파일을 선택하거나, PC의 WoWSP와 페어링하여 리플레이를 탐색하고 다운로드하세요.",
+    "emptyHint": "휴대폰에 저장된 .wowsreplay / .korablireplay 파일을 선택하거나, PC의 WoWSP와 페어링하여 리플레이를 탐색하고 다운로드하세요.",
     "importedToast": "리플레이 {n}개를 가져왔습니다"
   },
   "pairing": {

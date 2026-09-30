@@ -169,19 +169,57 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
     let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
         .map_err(|e| format!("读取游戏资源索引失败（build {build}）：{e}"))?;
 
-    let mut bytes = Vec::new();
-    vfs.join("content/GameParams.data")
-        .map_err(|e| format!("定位 content/GameParams.data 失败：{e}"))?
-        .open_file()
-        .map_err(|e| format!("打开 GameParams.data 失败（游戏可能正在更新）：{e}"))?
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("读取 GameParams.data 失败：{e}"))?;
+    let bytes = read_game_params_bytes(&vfs)?;
 
     let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
         .map_err(|e| format!("解析 GameParams.data 失败：{e}"))?;
 
     ship_slice_from_pickle(&pickle, ship_id)
         .ok_or_else(|| format!("ship_id {ship_id} not found in GameParams"))
+}
+
+/// `content/GameParams.data` bytes out of the mounted install VFS. WG ships
+/// one file; the Lesta (Мир кораблей) client splits it into py2/py3 pickle
+/// variants — both decode through the same reverse+zlib+py2 pipeline, so the
+/// py2 variant is preferred and py3 is the last resort. A candidate that is
+/// merely absent (each client ships only its own variants) is skipped
+/// silently; candidates that exist but fail to read are all reported.
+#[cfg(desktop)]
+fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>, String> {
+    const CANDIDATES: [&str; 3] = [
+        "content/GameParams.data",
+        "content/GameParams_py2.data",
+        "content/GameParams_py3.data",
+    ];
+    let mut read_errors: Vec<String> = Vec::new();
+    for path in CANDIDATES {
+        let Ok(node) = vfs.join(path) else {
+            continue;
+        };
+        let mut file = match node.open_file() {
+            Ok(file) => file,
+            Err(e) => {
+                if !matches!(e.kind(), wowsunpack::vfs::error::VfsErrorKind::FileNotFound) {
+                    read_errors.push(format!("打开 {path} 失败（游戏可能正在更新）：{e}"));
+                }
+                continue;
+            },
+        };
+        let mut bytes = Vec::new();
+        match file.read_to_end(&mut bytes) {
+            Ok(_) if !bytes.is_empty() => return Ok(bytes),
+            Ok(_) => read_errors.push(format!("{path} 内容为空")),
+            Err(e) => read_errors.push(format!("读取 {path} 失败：{e}")),
+        }
+    }
+    let detail = if read_errors.is_empty() {
+        "三个候选文件均不存在".to_string()
+    } else {
+        read_errors.join("；")
+    };
+    Err(format!(
+        "GameParams 读取失败（WG 为 content/GameParams.data，莱服为 GameParams_py2/py3.data）：{detail}"
+    ))
 }
 
 /// The newest `bin/<build>/` that actually ships an `idx/` directory — Steam
@@ -305,13 +343,7 @@ fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value, Str
     })?;
     let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
         .map_err(|e| format!("读取游戏资源索引失败（build {build}）：{e}"))?;
-    let mut bytes = Vec::new();
-    vfs.join("content/GameParams.data")
-        .map_err(|e| format!("定位 content/GameParams.data 失败：{e}"))?
-        .open_file()
-        .map_err(|e| format!("打开 GameParams.data 失败（游戏可能正在更新）：{e}"))?
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("读取 GameParams.data 失败：{e}"))?;
+    let bytes = read_game_params_bytes(&vfs)?;
     let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
         .map_err(|e| format!("解析 GameParams.data 失败：{e}"))?;
 

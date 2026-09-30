@@ -171,8 +171,9 @@ export function mockImportedListing(): Record<string, unknown>[] {
 export const MOCK_COMMANDS: Record<string, MockHandler> = {
   async import_replay_file(args) {
     const name = String(args.name ?? "");
-    if (!name.toLowerCase().endsWith(".wowsreplay")) {
-      throw rpcError("import_replay_file", "not a .wowsreplay file");
+    // The Lesta client renames its replays to .korablireplay.
+    if (!/\.(wowsreplay|korablireplay)$/i.test(name)) {
+      throw rpcError("import_replay_file", "not a replay container file");
     }
     const bytes = Array.isArray(args.bytes) ? (args.bytes as number[]).length : 0;
     const path = `/mockdata/replays/${name}`;

@@ -90,8 +90,10 @@ pub(crate) fn managed_replays_dir() -> Result<PathBuf, String> {
 /// Reduce a caller-supplied "file name" to a safe single path component and
 /// normalize the extension. Strips any directory components (the basename
 /// wins), replaces Windows-forbidden / control characters with `_`, and
-/// appends the `.wowsreplay` suffix when missing. Rejects empty names,
-/// dotfiles and pure dot-junk.
+/// appends the `.wowsreplay` suffix when missing (the Lesta client's
+/// `.korablireplay` containers keep their own extension — the replay
+/// pipeline keys its explicit unsupported-format error off it). Rejects
+/// empty names, dotfiles and pure dot-junk.
 pub fn sanitize_replay_name(raw: &str) -> Result<String, String> {
     let base = raw
         .rsplit(['/', '\\'])
@@ -112,13 +114,14 @@ pub fn sanitize_replay_name(raw: &str) -> Result<String, String> {
             }
         })
         .collect();
-    // Length cap (chars, not bytes — the suffix is ASCII so this is safe):
-    // keep room for the extension.
-    let max_len = 180 + ".wowsreplay".len();
+    // Length cap (chars, not bytes — the suffixes are ASCII so this is
+    // safe): keep room for the longest extension.
+    let max_len = 180 + ".korablireplay".len();
     if cleaned.chars().count() > max_len {
         cleaned = cleaned.chars().take(max_len).collect();
     }
-    if !cleaned.to_ascii_lowercase().ends_with(".wowsreplay") {
+    let lower = cleaned.to_ascii_lowercase();
+    if !lower.ends_with(".wowsreplay") && !lower.ends_with(".korablireplay") {
         cleaned.push_str(".wowsreplay");
     }
     Ok(cleaned)
@@ -2059,6 +2062,16 @@ pub(crate) mod tests {
         assert_eq!(
             sanitize_replay_name("20250622_w.WowsReplay").unwrap(),
             "20250622_w.WowsReplay"
+        );
+        // The Lesta container keeps its own extension — the replay pipeline
+        // keys its explicit unsupported-format error off it.
+        assert_eq!(
+            sanitize_replay_name("20261001_024940_Kremlin.korablireplay").unwrap(),
+            "20261001_024940_Kremlin.korablireplay"
+        );
+        assert_eq!(
+            sanitize_replay_name("20261001_024940_Kremlin.KorabliReplay").unwrap(),
+            "20261001_024940_Kremlin.KorabliReplay"
         );
         // Windows-forbidden characters are replaced, not passed through.
         assert_eq!(

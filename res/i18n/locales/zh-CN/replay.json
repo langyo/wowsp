@@ -14,7 +14,7 @@
     "pickFiles": "选取录像文件",
     "fromDesktop": "从电脑获取",
     "emptyTitle": "手机上还没有录像",
-    "emptyHint": "选取保存在手机上的 .wowsreplay 文件，或与电脑上的 WoWSP 配对，浏览并下载它的录像。",
+    "emptyHint": "选取保存在手机上的 .wowsreplay / .korablireplay 文件，或与电脑上的 WoWSP 配对，浏览并下载它的录像。",
     "importedToast": "已导入 {n} 个录像"
   },
   "pairing": {

@@ -484,7 +484,12 @@ fn run() -> Result<(), Report> {
 
     if args.idx_files.is_empty() {
         let bin_dir = game_dir.join("bin");
-        if game_dir.join("WorldOfWarships.exe").exists() {
+        // WG builds root their client at WorldOfWarships.exe; Lesta's Мир
+        // кораблей renamed the stub to Korabli.exe (the layout is otherwise
+        // identical).
+        let is_game_root =
+            game_dir.join("WorldOfWarships.exe").exists() || game_dir.join("Korabli.exe").exists();
+        if is_game_root {
             let paths = fs::read_dir(&bin_dir).ok();
             if let Some(paths) = paths {
                 for path in paths {
@@ -1235,15 +1240,39 @@ fn value_to_dict(value: pickled::Value) -> Option<pickled::Dict> {
 }
 
 fn read_game_params_bytes(vfs: &VfsPath) -> Result<Vec<u8>, Report> {
-    let mut game_params_data: Vec<u8> = Vec::new();
-    vfs.join("content/GameParams.data")
-        .context("VFS path error")?
-        .open_file()
-        .context("Could not find GameParams.data in WoWs package")?
-        .read_to_end(&mut game_params_data)
-        .context("Failed to read GameParams")?;
-
-    Ok(game_params_data)
+    // WG ships a single content/GameParams.data; Lesta (Мир кораблей) splits
+    // it into py2/py3 pickle variants — prefer the py2 one, which keeps the
+    // WG-compatible encoding the pickled crate decodes. A candidate that is
+    // merely absent (each client ships only its own variants) is skipped
+    // silently; candidates that exist but fail to read are all reported.
+    const CANDIDATES: [&str; 3] = [
+        "content/GameParams.data",
+        "content/GameParams_py2.data",
+        "content/GameParams_py3.data",
+    ];
+    let mut read_errors: Vec<String> = Vec::new();
+    for path in CANDIDATES {
+        let Ok(node) = vfs.join(path) else { continue };
+        let mut file = match node.open_file() {
+            Ok(file) => file,
+            Err(e) => {
+                if !matches!(e.kind(), vfs::error::VfsErrorKind::FileNotFound) {
+                    read_errors.push(format!("{path}: {e}"));
+                }
+                continue;
+            },
+        };
+        let mut buf = Vec::new();
+        match file.read_to_end(&mut buf) {
+            Ok(_) if !buf.is_empty() => return Ok(buf),
+            Ok(_) => read_errors.push(format!("{path}: empty")),
+            Err(e) => read_errors.push(format!("{path}: read failed: {e}")),
+        }
+    }
+    if read_errors.is_empty() {
+        bail!("Could not find GameParams.data in WoWs package")
+    }
+    bail!("Failed to read GameParams: {}", read_errors.join("; "))
 }
 
 fn load_game_params(vfs: &VfsPath) -> Result<pickled::Value, Report> {

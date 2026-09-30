@@ -14,7 +14,7 @@
     "pickFiles": "Pick replay files",
     "fromDesktop": "Get from PC",
     "emptyTitle": "No replays on this phone yet",
-    "emptyHint": "Pick .wowsreplay files saved on this phone, or pair with the WoWSP on your computer to browse and download its replays.",
+    "emptyHint": "Pick .wowsreplay / .korablireplay files saved on this phone, or pair with the WoWSP on your computer to browse and download its replays.",
     "importedToast": "Imported {n} replay file(s)"
   },
   "pairing": {

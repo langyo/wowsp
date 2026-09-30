@@ -12,6 +12,12 @@
 //! dual-format reader also accepts the bare-JSON variant the client writes as
 //! `tempArenaInfo.json` (same logic ApeRadar's `FileUtils.ReadTempArenaInfoFile`
 //! uses). The packet-stream decode lands in M3.
+//!
+//! The Lesta (Мир кораблей) client renamed the container to
+//! `.korablireplay` and replaced this whole block layout with a new binary
+//! framing — those files are listed (a replays/ tree can hold both clients'
+//! output) but header/packet parsing rejects them with an explicit
+//! "unsupported" error until the new format is reverse-engineered.
 
 use std::fs;
 use std::path::PathBuf;
@@ -20,6 +26,26 @@ use wowsp_tauri_shared::{ReplayMeta, ReplayMetaLite, VehicleEntry};
 
 /// Replay magic — first 4 bytes of every `.wowsreplay`.
 const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
+
+/// Case-insensitive replay-container extension test: WG writes
+/// `.wowsreplay`, the Lesta build writes `.korablireplay`.
+fn is_replay_extension(ext: &str) -> bool {
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "wowsreplay" | "korablireplay"
+    )
+}
+
+/// The explicit error for a Lesta `.korablireplay` container — its layout is
+/// a new binary framing without the WG magic/JSON blocks, so the generic
+/// "magic mismatch" message would only mislead. `None` for every other path.
+fn lesta_container_error(path: &str) -> Option<String> {
+    PathBuf::from(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .filter(|e| e.eq_ignore_ascii_case("korablireplay"))
+        .map(|_| format!("{path}: the Lesta .korablireplay container is not supported yet"))
+}
 
 /// Read + parse the header of one `.wowsreplay` file into a [`ReplayMeta`].
 ///
@@ -34,6 +60,9 @@ const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
 #[tauri::command]
 pub async fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
     tokio::task::spawn_blocking(move || {
+        if let Some(err) = lesta_container_error(&path) {
+            return Err(err);
+        }
         let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
         let json = extract_descriptor_json(&bytes).ok_or_else(|| {
             format!("{path}: not a valid wowsreplay (magic mismatch or truncated)")
@@ -60,6 +89,9 @@ pub async fn read_replay_positions(
     path: String,
 ) -> Result<wowsp_tauri_shared::ReplayStream, String> {
     tokio::task::spawn_blocking(move || {
+        if let Some(err) = lesta_container_error(&path) {
+            return Err(err);
+        }
         let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
         let stream = packet_stream_after_blocks(&bytes)
             .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
@@ -396,6 +428,7 @@ pub async fn pick_replay_files() -> Result<Vec<String>, String> {
             rfd::FileDialog::new()
                 .set_title("Select World of Warships replays")
                 .add_filter("World of Warships replay", &["wowsreplay"])
+                .add_filter("Lesta Мир кораблей replay", &["korablireplay"])
                 .pick_files()
         })
         .await
@@ -533,10 +566,12 @@ fn read_first_block(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
 fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
     let path_str = path.to_string_lossy().into_owned();
     let date_time = parse_datetime_from_filename(&path_str);
-    // The walk only surfaces `*.wowsreplay` containers (never the bare-JSON
-    // tempArenaInfo variant), so the bounded first-block read is the only
-    // input path needed — the multi-MB packet stream behind the header is
-    // never touched. Any read/parse failure falls back to the path +
+    // The walk only surfaces replay containers (`*.wowsreplay`, and the
+    // Lesta `*.korablireplay` — whose header read fails and falls back to
+    // the path-only entry below), never the bare-JSON tempArenaInfo
+    // variant, so the bounded first-block read is the only input path
+    // needed — the multi-MB packet stream behind the header is never
+    // touched. Any read/parse failure falls back to the path +
     // filename-datetime entry below.
     let raw: Option<serde_json::Value> = read_first_block(path)
         .ok()
@@ -844,11 +879,20 @@ fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) 
         let Ok(meta) = ent.metadata() else { continue };
         if meta.is_dir() {
             walk_replays(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("wowsreplay") {
-            // The game writes a live temp.wowsreplay during a match; it is not
-            // a completed replay. The frontend renders it as a live-battle
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_replay_extension)
+        {
+            // The game writes a live temp container during a match (WG:
+            // temp.wowsreplay, Lesta: temp.korablireplay); it is not a
+            // completed replay. The frontend renders it as a live-battle
             // entry instead of listing it here.
-            if path.file_name().and_then(|n| n.to_str()) == Some("temp.wowsreplay") {
+            let is_temp = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n == "temp.wowsreplay" || n == "temp.korablireplay");
+            if is_temp {
                 continue;
             }
             if let Ok(mtime) = meta.modified() {
@@ -1000,6 +1044,67 @@ mod tests {
         static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         std::env::temp_dir().join(format!("{base}_{n}.wowsreplay"))
+    }
+
+    /// The walk surfaces both clients' containers (`.wowsreplay` and the
+    /// Lesta `.korablireplay`) but never either client's live temp file.
+    #[test]
+    fn walk_replays_lists_both_containers_and_skips_temps() {
+        let dir = std::env::temp_dir().join(format!(
+            "wowsp-test-walk-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in [
+            "20261001_024940_PRSB910-Kremlin_15_NE_north.wowsreplay",
+            "20261001_031102_PRSB910-Kremlin_15_NE_north.korablireplay",
+            "temp.wowsreplay",
+            "temp.korablireplay",
+            "tempArenaInfo.json",
+            "notes.txt",
+        ] {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        let mut out = Vec::new();
+        walk_replays(&dir, &mut out);
+        let mut names: Vec<_> = out
+            .iter()
+            .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "20261001_024940_PRSB910-Kremlin_15_NE_north.wowsreplay".to_string(),
+                "20261001_031102_PRSB910-Kremlin_15_NE_north.korablireplay".to_string(),
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Lesta containers are rejected with the explicit unsupported-format
+    /// message (not the generic magic error); everything else passes through
+    /// to the normal parse.
+    #[test]
+    fn lesta_container_error_names_only_korablireplay() {
+        assert!(lesta_container_error(r"D:\WoWS_Korabli\replays\b.korablireplay").is_some());
+        // Case-insensitive on the extension.
+        assert!(lesta_container_error(r"D:\replays\b.KorabliReplay").is_some());
+        assert_eq!(lesta_container_error(r"D:\replays\b.wowsreplay"), None);
+        assert_eq!(lesta_container_error(r"D:\replays\b"), None);
+    }
+
+    /// Extension test is case-insensitive and covers both spellings.
+    #[test]
+    fn is_replay_extension_matches_both_clients() {
+        assert!(is_replay_extension("wowsreplay"));
+        assert!(is_replay_extension("korablireplay"));
+        assert!(is_replay_extension("WoWsRePlay"));
+        assert!(!is_replay_extension("json"));
+        assert!(!is_replay_extension(""));
     }
 
     /// `lite_from_path` fills the summary fields from the FIRST block only:

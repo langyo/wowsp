@@ -64,6 +64,12 @@ N bytes  json_block  = match descriptor (roster, map, match type)
 ...      packets     = encrypted/zlib packet stream
 ```
 
+The Lesta (Мир кораблей) client renamed the container to `.korablireplay` and
+switched to a different binary framing — those files are listed and imported
+but header/packet parsing reports an explicit unsupported-format error until
+the new layout is reverse-engineered. `tempArenaInfo.json`, the live-battle
+arena descriptor, keeps its WG name and format.
+
 `commands/replay.rs` implements the magic check + JSON block extraction; the
 packet-stream decoder lives in `commands/packets/` (frames → payloads →
 per-entity events, with per-version method tables) and feeds the event

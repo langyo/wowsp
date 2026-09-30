@@ -1910,7 +1910,7 @@ export default defineComponent({
             ref={fileInput}
             type="file"
             multiple
-            accept=".wowsreplay"
+            accept=".wowsreplay,.korablireplay"
             class="replay-view__file-input"
             onChange={(e: Event) => void onFilesChosen(e)}
           />

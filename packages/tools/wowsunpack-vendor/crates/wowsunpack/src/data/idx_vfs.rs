@@ -200,7 +200,7 @@ where
         let primed = self.source.prime_volume(&file_entry.volume_filename, data_start..data_end)?;
         let source_bytes: &[u8] = primed.as_ref();
 
-        if file_entry.compression_info != 0 {
+        if crate::data::idx::compression_is_deflated(file_entry.compression_info) {
             let mut data = Vec::with_capacity(file_entry.unpacked_size as usize);
             let mut decoder = DeflateDecoder::new(source_bytes);
             std::io::copy(&mut decoder, &mut data).map_err(|e| VfsError::from(VfsErrorKind::IoError(e)))?;
@@ -315,7 +315,7 @@ mod async_impl {
             let primed = self.source.prime_volume(&file_entry.volume_filename, data_start..data_end).await?;
             let source_bytes: &[u8] = primed.as_ref();
 
-            if file_entry.compression_info != 0 {
+            if crate::data::idx::compression_is_deflated(file_entry.compression_info) {
                 let mut data = Vec::with_capacity(file_entry.unpacked_size as usize);
                 let mut decoder = DeflateDecoder::new(source_bytes);
                 std::io::copy(&mut decoder, &mut data).map_err(|e| VfsError::from(VfsErrorKind::IoError(e)))?;
