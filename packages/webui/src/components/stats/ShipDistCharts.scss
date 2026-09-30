@@ -39,12 +39,13 @@
    Column mode needs no overrides: `align-items: stretch` (the default
    here) makes each block fill the full row, and the fixed heights and
    min() caps are harmless stacked one per line. At the 240px pie floor
-   the block interior still works: the donut svg's 96px min-width plus
-   the 8px pie-body gap leaves 136px for the legend — two ~63px columns
-   fit and ellipsis trims long names. The min() caps keep the fixed
-   min-widths from overflowing phone-narrow containers (lookup mobile
-   content ≈ 280px, postbattle sheet ≈ 266px): there each block simply
-   fills the full row width. */
+   the block interior still works: the fixed 150px donut square plus the
+   8px pie-body gap leaves 82px for the legend — two ~30px CJK text
+   columns fit and ellipsis trims long names, while the flag legend
+   (~68px over three columns) fits with room to spare. The min() caps
+   keep the fixed min-widths from overflowing phone-narrow containers
+   (lookup mobile content ≈ 280px, postbattle sheet ≈ 266px): there each
+   block simply fills the full row width. */
 
 /* Below the one-row threshold, skip the greedy 2+1 packing entirely:
    collapse straight to a single column (three stacked rows). */
@@ -71,17 +72,24 @@
 }
 
 /* Donut svg and its DOM legend sit side by side, vertically centered.
-   The svg takes the remaining width (its square viewBox letterboxes via
-   preserveAspectRatio meet); the legend only ever shrinks (never grows),
-   so the donut keeps a stable diameter. */
+   The svg is a FIXED 150px square (see __pie below), so the legend only
+   ever shrinks (never grows) and the ring keeps a stable diameter. */
 .ship-dist-charts__pie-body {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+/* Fixed square canvas: both donuts render the identical 150×150 box (ring
+   ≈ 102px) no matter how wide each legend runs. The old flex-grow box
+   letterboxed the ring down whenever a wide legend (three nation text
+   columns) squeezed it, so the two rings could render at different
+   diameters side by side. Shrink permission stays (min-width 96px) only
+   as the sub-226px last resort for phone-narrow hosts, where the fixed
+   150px square plus the flag legend would no longer fit. */
 .ship-dist-charts__pie {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  width: 150px;
   min-width: 96px;
   display: block;
   height: 150px;
@@ -127,6 +135,14 @@
   font-size: var(--text-2xs);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Flag legend rows: the sm flag img is 12px tall while the missing-asset
+   letter badge is 16px — normalizing the row box to 16px keeps every row
+   in a column on the same rhythm when a letter badge (the "other" bucket)
+   shares a column with real flags. */
+.ship-dist-charts__legend .nation-flag {
+  height: 16px;
 }
 
 /* --- SVG ink: everything below styles through CSS variables, so light/

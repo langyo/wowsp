@@ -17,6 +17,7 @@
 import { computed, defineComponent } from "vue";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import NationFlag from "@/components/base/NationFlag";
 import {
   nationNameFromDb,
   shipOfflineEntry,
@@ -89,27 +90,32 @@ export function chunkLegendItems<T>(items: readonly T[], size: number): T[][] {
   return columns;
 }
 
-/** One DOM legend row: colored dot + "<localized name> <integer>%" keyed by
- *  the RAW aggregation code — two nations can share a display name (and an
- *  equal rounded percent), so the text is not unique enough to key on. */
+/** One DOM legend row, keyed by the RAW aggregation code — two nations can
+ *  share a display name (and an equal rounded percent), so neither the
+ *  text nor the flag is unique enough to key on. `text` is the bare
+ *  localized name (or the NationFlag label): percents are NOT row text —
+ *  they live only in `hint`, shown on hover, exactly the string the slice
+ *  tooltip renders. */
 interface LegendItem {
   code: string;
   color: string;
   text: string;
+  hint: string;
 }
 
-/** Legend rows built FROM the donut slices, so the row percent is
- *  DonutSlice.percentInt — the same integer the slice tooltip renders —
- *  and the two views of one aggregation can never disagree. The share
- *  base is the SUM OF SHOWN SLICES, not aggregate.total: battles of ships
- *  with no type/nation entry never reach a slice. Independent integer
- *  rounding can still leave a whole legend summing to 99 or 101 (three
- *  equal thirds) — expected display rounding, not drift. */
+/** Legend rows built FROM the donut slices — each row's hover hint is
+ *  sliceHint(s), the exact string the slice tooltip renders, so the two
+ *  views of one aggregation can never disagree. The share base is the SUM
+ *  OF SHOWN SLICES, not aggregate.total: battles of ships with no type/
+ *  nation entry never reach a slice. Independent integer rounding can
+ *  still leave a whole legend summing to 99 or 101 (three equal thirds) —
+ *  expected display rounding, not drift. */
 export function toLegendItems(slices: readonly DonutSlice[]): LegendItem[] {
   return slices.map((s) => ({
     code: s.code,
     color: s.fill,
-    text: `${s.label} ${s.percentInt}%`,
+    text: s.label,
+    hint: sliceHint(s),
   }));
 }
 
@@ -395,9 +401,9 @@ const DONUT_VIEWBOX = 150;
 // charter is to RETIRE native title tooltips app-wide, and every other
 // webui surface already speaks data-hint, so plain SVG <title> would
 // fight the app convention (the only in-repo <title>, RatingStamp,
-// predates it). Slice hints render DonutSlice.percentInt — the same
-// integer the DOM legend rows beside the donut show — so the two can
-// never disagree.
+// predates it). Slice hints render DonutSlice.percentInt, and the DOM
+// legend rows reuse sliceHint itself as their own hint, so the two views
+// of one aggregation can never disagree.
 export function sliceHint(s: DonutSlice): string {
   return `${s.label} · ${t("stats.dist.battles")} ${s.value} · ${s.percentInt}%`;
 }
@@ -439,27 +445,42 @@ export default defineComponent({
         colorOf: (k) => NATION_COLORS[k] ?? NATION_COLORS.other!,
       }),
     );
-    // Legend rows derive from the slices (shared percentInt), so the
-    // tooltip integer and the legend integer are the same value by
-    // construction.
+    // Legend rows derive from the slices — each row's hover hint IS the
+    // slice's hint string, so the two views of one aggregation can never
+    // disagree. The rows themselves carry no percent text; percents show
+    // only on hover.
     const typeLegend = computed(() => toLegendItems(typeSlices.value));
     const nationLegend = computed(() => toLegendItems(nationSlices.value));
 
-    // DOM legend for a donut — WG-site style: each row is a small colored
-    // dot followed by "<name> <percent>", rows stack vertically in columns
-    // of LEGEND_ROWS_PER_COLUMN, extra columns continue to the right.
-    // Rendered beside the SVG inside __pie-body (tiersOnly compact mode
-    // never reaches here — the whole piewrap block is gated).
-    const legendNode = (items: LegendItem[]) => (
+    // DOM legend for a donut — rows stack vertically in columns of
+    // LEGEND_ROWS_PER_COLUMN, extra columns continue to the right. Ship
+    // types render the WG-site dot + name row; nations render the in-game
+    // faction flag instead of a (truncation-prone) name — the flag speaks
+    // for the row and its data-hint carries the full "name · battles ·
+    // percent" string, so the percent shows only on hover. Rendered
+    // beside the SVG inside __pie-body (tiersOnly compact mode never
+    // reaches here — the whole piewrap block is gated).
+    const legendNode = (items: LegendItem[], flags: boolean) => (
       <div class="ship-dist-charts__legend">
         {chunkLegendItems(items, LEGEND_ROWS_PER_COLUMN).map((column, ci) => (
           <div class="ship-dist-charts__legend-col" key={ci}>
-            {column.map((it) => (
-              <span class="ship-dist-charts__legend-item" key={it.code}>
-                <span class="ship-dist-charts__legend-dot" style={{ background: it.color }} />
-                <span class="ship-dist-charts__legend-text">{it.text}</span>
-              </span>
-            ))}
+            {column.map((it) =>
+              flags ? (
+                <NationFlag
+                  key={it.code}
+                  nation={it.code}
+                  label={it.text}
+                  hint={it.hint}
+                  variant="flag"
+                  size="sm"
+                />
+              ) : (
+                <span class="ship-dist-charts__legend-item" key={it.code} data-hint={it.hint}>
+                  <span class="ship-dist-charts__legend-dot" style={{ background: it.color }} />
+                  <span class="ship-dist-charts__legend-text">{it.text}</span>
+                </span>
+              ),
+            )}
           </div>
         ))}
       </div>
@@ -532,7 +553,7 @@ export default defineComponent({
               <div class="ship-dist-charts__pie-title">{t("stats.dist.pieTitle")}</div>
               <div class="ship-dist-charts__pie-body">
                 {donutNode(typeSlices.value)}
-                {legendNode(typeLegend.value)}
+                {legendNode(typeLegend.value, false)}
               </div>
             </div>
           ) : null}
@@ -541,7 +562,7 @@ export default defineComponent({
               <div class="ship-dist-charts__pie-title">{t("stats.dist.nationPieTitle")}</div>
               <div class="ship-dist-charts__pie-body">
                 {donutNode(nationSlices.value)}
-                {legendNode(nationLegend.value)}
+                {legendNode(nationLegend.value, true)}
               </div>
             </div>
           ) : null}

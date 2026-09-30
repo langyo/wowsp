@@ -5,8 +5,9 @@
  *  5+5+4 over three). donutSlices / tierBars generate the hand-drawn SVG
  *  paths, so their angle math, radii, layout and the degenerate
  *  full-circle arc all carry exact-string coverage here; the percentInt
- *  tests pin the legend/tooltip integer agreement against double
- *  rounding. */
+ *  tests pin the legend-hint/tooltip integer agreement against double
+ *  rounding (legend rows show no percent text — percents live in the
+ *  hover hint only). */
 import { describe, expect, it } from "vitest";
 
 import { t } from "@/i18n";
@@ -136,11 +137,12 @@ describe("donutSlices", () => {
     expect(slices.map((s) => s.percentInt)).toEqual([33, 67]);
   });
 
-  it("feeds legend and hint the SAME integer from the raw share", () => {
+  it("keeps percents out of legend text and reuses sliceHint verbatim", () => {
     // 33496/100000 = 33.496%: the 2-decimal display value is 33.5, so
-    // re-rounding IT would show 34 in the tooltip while the legend shows
-    // 33. percentInt is rounded once from the raw share, and both the
-    // legend rows and the slice hint render that single field.
+    // re-rounding IT would show 34 while the raw share rounds to 33.
+    // percentInt is rounded once from the raw share; legend rows carry NO
+    // percent text — the row's hover hint IS sliceHint, the exact string
+    // the slice tooltip renders.
     expect(toLegendItems([])).toEqual([]);
     const slices = donutSlices(
       [
@@ -151,12 +153,13 @@ describe("donutSlices", () => {
     );
     expect(slices[0]!.percent).toBe(33.5);
     expect(slices[0]!.percentInt).toBe(33);
-    expect(toLegendItems(slices)[0]!.text).toBe("L(a) 33%");
+    const [legendItem] = toLegendItems(slices);
+    expect(legendItem!.text).toBe("L(a)");
+    expect(legendItem!.text).not.toContain("33");
     // Expected hint built with the SAME t() so the assertion holds whether
     // or not another test already loaded the locale messages.
-    expect(sliceHint(slices[0]!)).toBe(
-      `L(a) · ${t("stats.dist.battles")} 33496 · 33%`,
-    );
+    expect(legendItem!.hint).toBe(`L(a) · ${t("stats.dist.battles")} 33496 · 33%`);
+    expect(sliceHint(slices[0]!)).toBe(legendItem!.hint);
   });
 
   it("honors custom viewBox and radii", () => {
