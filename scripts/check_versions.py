@@ -13,6 +13,8 @@ Checked fields (all must be equal):
     exe's Windows version resource — was pinned at 0.1.0 through v0.3.0)
   - package.json              → version (root)
   - packages/{webui,website,holo}/package.json → version
+  - packages/pairing-relay/wrangler.toml → [vars] FEEDBACK_LATEST_VERSION
+    (the /feedback form's browser-side version default)
 """
 
 from __future__ import annotations
@@ -37,6 +39,10 @@ SOURCES: list[tuple[str, str]] = [
     ("packages/webui/package.json", "packages/webui/package.json"),
     ("packages/website/package.json", "packages/website/package.json"),
     ("packages/holo/package.json", "packages/holo/package.json"),
+    # The worker serves this to the /feedback form as the browser
+    # visitors' version default; it deploys only when the worker is
+    # re-deployed, so drift here ships a stale default silently.
+    ("pairing-relay wrangler.toml [vars]", "packages/pairing-relay/wrangler.toml"),
 ]
 
 
@@ -45,7 +51,11 @@ def read_version(label: str, rel_path: str) -> str:
     if not path.is_file():
         print(f"error: {label}: missing file {rel_path}", file=sys.stderr)
         sys.exit(2)
-    if path.suffix == ".toml":
+    if rel_path == "packages/pairing-relay/wrangler.toml":
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+        version = data.get("vars", {}).get("FEEDBACK_LATEST_VERSION")
+    elif path.suffix == ".toml":
         with path.open("rb") as fh:
             data = tomllib.load(fh)
         version = data.get("workspace", {}).get("package", {}).get("version")

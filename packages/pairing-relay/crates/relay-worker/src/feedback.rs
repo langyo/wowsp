@@ -25,7 +25,10 @@ use relay_core::feedback::{
 use relay_core::multipart;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use worker::{Env, Fetch, Headers, Method, Request, RequestInit, RequestRedirect, Response, Result, Url, js_sys};
+use worker::{
+    Env, Fetch, Headers, Method, Request, RequestInit, RequestRedirect, Response, Result, Url,
+    js_sys,
+};
 
 /// KV binding name (wrangler.toml `kv_namespaces`).
 const KV: &str = "FEEDBACK_KV";
@@ -47,12 +50,21 @@ struct BitableIds {
 // ── pages ──────────────────────────────────────────────────────────────
 
 /// GET /feedback — the embedded form (maintenance notice when the
-/// Turnstile sitekey is absent).
-pub fn page_feedback(origin: &str, env: &Env) -> Result<Response> {
+/// Turnstile sitekey is absent). The current release (wrangler var
+/// FEEDBACK_LATEST_VERSION, kept in sync by scripts/check_versions.py)
+/// and the request's User-Agent prefill the web form's editable
+/// version/system-info comboboxes.
+pub fn page_feedback(origin: &str, env: &Env, user_agent: Option<&str>) -> Result<Response> {
     let sitekey = env.var("TURNSTILE_SITEKEY").ok().map(|v| v.to_string());
+    let latest = env
+        .var("FEEDBACK_LATEST_VERSION")
+        .map(|v| v.to_string())
+        .unwrap_or_default();
     html(relay_core::feedback::feedback_page(
         sitekey.as_deref(),
         origin,
+        &latest,
+        user_agent.unwrap_or(""),
     ))
 }
 
@@ -63,7 +75,8 @@ pub fn page_erp(origin: &str) -> Result<Response> {
 
 fn html(body: String) -> Result<Response> {
     let mut resp = Response::from_bytes(body.into_bytes())?;
-    resp.headers_mut().set("Content-Type", "text/html; charset=utf-8")?;
+    resp.headers_mut()
+        .set("Content-Type", "text/html; charset=utf-8")?;
     resp.headers_mut().set("Cache-Control", "no-store")?;
     Ok(resp)
 }
@@ -131,7 +144,10 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         .headers()
         .get("CF-Connecting-IP")?
         .unwrap_or_else(|| "local".into());
-    let bypass_secret = env.secret("FEEDBACK_TURNSTILE_BYPASS").ok().map(|s| s.to_string());
+    let bypass_secret = env
+        .secret("FEEDBACK_TURNSTILE_BYPASS")
+        .ok()
+        .map(|s| s.to_string());
     let bypassed = bypass_secret
         .as_deref()
         .is_some_and(|b| !b.is_empty() && ct_eq(&bypass, b));
@@ -168,7 +184,11 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         if count > limit {
             return err(429, "rate_limited");
         }
-        let ttl = if key.starts_with("rl:ip:") { TTL_HOUR } else { TTL_DAY };
+        let ttl = if key.starts_with("rl:ip:") {
+            TTL_HOUR
+        } else {
+            TTL_DAY
+        };
         kv.put(key, count)?.expiration_ttl(ttl).execute().await?;
     }
 
@@ -178,7 +198,10 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
 
     let (_, v) = feishu_json(
         Method::Post,
-        &format!("{FEISHU}/bitable/v1/apps/{}/tables/{}/records", ids.app_token, ids.table_id),
+        &format!(
+            "{FEISHU}/bitable/v1/apps/{}/tables/{}/records",
+            ids.app_token, ids.table_id
+        ),
         &token,
         json!({ "fields": record_fields(&sub, now) }),
     )
@@ -196,7 +219,11 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
             &[
                 ("file_name".into(), None, name.clone().into_bytes()),
                 ("parent_type".into(), None, b"bitable_file".to_vec()),
-                ("parent_node".into(), None, ids.app_token.clone().into_bytes()),
+                (
+                    "parent_node".into(),
+                    None,
+                    ids.app_token.clone().into_bytes(),
+                ),
                 ("size".into(), None, bytes.len().to_string().into_bytes()),
                 ("file".into(), Some(name), bytes),
             ],
@@ -350,7 +377,10 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
     if count > relay_core::feedback::RATE_HISTORY_PER_HOUR {
         return err(429, "rate_limited");
     }
-    kv.put(&key, count)?.expiration_ttl(TTL_HOUR).execute().await?;
+    kv.put(&key, count)?
+        .expiration_ttl(TTL_HOUR)
+        .execute()
+        .await?;
 
     let token = feishu_token(&env).await.map_err(|e| e.to_string())?;
     let ids = ensure_base(&env, &token).await.map_err(|e| e.to_string())?;
@@ -415,11 +445,18 @@ pub async fn handle_update(mut req: Request, env: Env) -> Result<Response> {
     let Some(record_id) = body.get("record_id").and_then(Value::as_str) else {
         return err(400, "bad_request");
     };
-    if record_id.is_empty() || record_id.len() > 64 || !record_id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+    if record_id.is_empty()
+        || record_id.len() > 64
+        || !record_id.bytes().all(|b| b.is_ascii_alphanumeric())
+    {
         return err(400, "bad_request");
     }
     let status = body.get("status").and_then(Value::as_str).unwrap_or("");
-    let pr_link = body.get("pr_link").and_then(Value::as_str).unwrap_or("").trim();
+    let pr_link = body
+        .get("pr_link")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     if !status.is_empty() && !STATUSES.contains(&status) {
         return err(400, "bad_status");
     }
@@ -477,9 +514,7 @@ pub async fn handle_attachment(req: Request, env: Env) -> Result<Response> {
     let token = feishu_token(&env).await.map_err(|e| e.to_string())?;
     let (_, v) = feishu_json(
         Method::Get,
-        &format!(
-            "{FEISHU}/drive/v1/medias/batch_get_tmp_download_url?file_tokens={file_token}"
-        ),
+        &format!("{FEISHU}/drive/v1/medias/batch_get_tmp_download_url?file_tokens={file_token}"),
         &token,
         Value::Null,
     )
@@ -563,10 +598,7 @@ async fn feishu_token(env: &Env) -> Result<String> {
         }
     }
     let app_id = env.secret("FEISHU_APP_ID").ok().map(|s| s.to_string());
-    let app_secret = env
-        .secret("FEISHU_APP_SECRET")
-        .ok()
-        .map(|s| s.to_string());
+    let app_secret = env.secret("FEISHU_APP_SECRET").ok().map(|s| s.to_string());
     let (Some(app_id), Some(app_secret)) = (app_id, app_secret) else {
         return Err("feishu credentials missing".into());
     };
@@ -576,7 +608,11 @@ async fn feishu_token(env: &Env) -> Result<String> {
         Method::Post,
         &format!("{FEISHU}/auth/v3/tenant_access_token/internal"),
         headers,
-        Some(json!({ "app_id": app_id, "app_secret": app_secret }).to_string().into_bytes()),
+        Some(
+            json!({ "app_id": app_id, "app_secret": app_secret })
+                .to_string()
+                .into_bytes(),
+        ),
     )
     .await
     .map_err(|_| "token unreachable")?;
@@ -613,16 +649,34 @@ struct TokenCache {
 async fn ensure_base(env: &Env, token: &str) -> Result<BitableIds> {
     let kv = env.kv(KV)?;
     if let (Some(app), Some(tbl)) = (
-        env.var("FEEDBACK_BITABLE_APP_TOKEN").ok().map(|v| v.to_string()),
-        env.var("FEEDBACK_BITABLE_TABLE_ID").ok().map(|v| v.to_string()),
+        env.var("FEEDBACK_BITABLE_APP_TOKEN")
+            .ok()
+            .map(|v| v.to_string()),
+        env.var("FEEDBACK_BITABLE_TABLE_ID")
+            .ok()
+            .map(|v| v.to_string()),
     ) {
-        let ids = BitableIds { app_token: app, table_id: tbl };
+        let ids = BitableIds {
+            app_token: app,
+            table_id: tbl,
+        };
         // Skip the KV write when the pin is unchanged — every feedback API
         // call funnels through here, and list-polling agents would
         // otherwise burn the free-tier daily KV write quota. Best-effort
         // read (a malformed row is just a miss).
-        if kv.get(K_BASE).json::<BitableIds>().await.ok().flatten().as_ref() != Some(&ids) {
-            let _ = kv.put(K_BASE, serde_json::to_string(&ids)?)?.execute().await;
+        if kv
+            .get(K_BASE)
+            .json::<BitableIds>()
+            .await
+            .ok()
+            .flatten()
+            .as_ref()
+            != Some(&ids)
+        {
+            let _ = kv
+                .put(K_BASE, serde_json::to_string(&ids)?)?
+                .execute()
+                .await;
         }
         return Ok(ids);
     }
@@ -663,8 +717,14 @@ async fn ensure_base(env: &Env, token: &str) -> Result<BitableIds> {
         None => list_table_by_name(token, &app_token).await?,
     };
 
-    let ids = BitableIds { app_token, table_id };
-    let _ = kv.put(K_BASE, serde_json::to_string(&ids)?)?.execute().await;
+    let ids = BitableIds {
+        app_token,
+        table_id,
+    };
+    let _ = kv
+        .put(K_BASE, serde_json::to_string(&ids)?)?
+        .execute()
+        .await;
     if let Ok(open_id) = env.var("FEEDBACK_ADMIN_OPEN_ID").map(|v| v.to_string()) {
         grant_admin(token, &ids.app_token, &open_id).await;
     }

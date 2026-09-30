@@ -163,16 +163,19 @@ Before submitting, the relevant subset of `just lint` (or scoped
      PRs are allowed only when there is genuinely nothing to bundle (urgent
      hotfix, an isolated single-rule change).
 - **Version bumps ride along with the main PR**: when the version changes,
-  bump all seven places in the same feature/fix PR (`Cargo.toml` workspace
+  bump all eight places in the same feature/fix PR (`Cargo.toml` workspace
   version, `packages/app/tauri/tauri.conf.json`,
-  `packages/installer-shell/tauri.conf.json`, root `package.json`, and the
-  `version` field of `packages/webui`, `packages/website`, `packages/holo`);
+  `packages/installer-shell/tauri.conf.json`, root `package.json`, the
+  `version` field of `packages/webui`, `packages/website`, `packages/holo`,
+  and `packages/pairing-relay/wrangler.toml`'s `[vars]
+  FEEDBACK_LATEST_VERSION` — the /feedback form's browser-side version
+  default);
   `scripts/check_versions.py` enforces consistency in CI. **Do not** open
   version-bump-only PRs (unless the user explicitly asks).
 - **Version bump authorization tiers**: without explicit user consent, an
   agent may autonomously advance **at most the patch digit**. minor / major
   bumps must never be advanced unilaterally — first get the user's explicit
-  approval of the target version, then bump all seven places in the same PR.
+  approval of the target version, then bump all eight places in the same PR.
 - **Create PRs only when asked, or as a step of an approved workflow**;
   never open unsolicited PRs.
 
@@ -240,7 +243,7 @@ Before submitting, the relevant subset of `just lint` (or scoped
    - `ci.yml` — web (ubuntu: typecheck / lint / website build / i18n /
      pnpm audit), rust (windows: fmt / clippy / check / test), deny
      (cargo-deny native binary: advisories / licenses / sources), versions
-     (seven-version consistency via `scripts/check_versions.py`).
+     (eight-version consistency via `scripts/check_versions.py`).
    - `commit-msg-lint.yml` — PR title + every commit subject in the PR
      (via `scripts/commit_msg_lint.py`, bot authors exempt).
    - `release.yml` / `site.yml` — tag-driven build & release / site

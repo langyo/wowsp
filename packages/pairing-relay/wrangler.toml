@@ -91,5 +91,10 @@ new_sqlite_classes = ["Directory"]
 # Widget "wowsp-feedback" (managed mode, wowsp.langyo.xyz + localhost).
 [vars]
 TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
+# The latest published release, prefilling the /feedback form's version
+# combobox for browser visitors (desktop links carry their own build).
+# scripts/check_versions.py enforces this stays equal to the other seven
+# version fields.
+FEEDBACK_LATEST_VERSION = "0.4.11"
 # GATEWAY_UPSTREAM = ""
 # GATEWAY_NOTICE = ""

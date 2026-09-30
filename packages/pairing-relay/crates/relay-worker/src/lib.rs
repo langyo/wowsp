@@ -74,7 +74,9 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if req.method() != Method::Get {
                 return Response::error("method not allowed", 405);
             }
-            feedback::page_feedback(&origin, &env)
+            // headers().get() -> Result<Option<String>, Error>
+            let ua = req.headers().get("User-Agent").ok().flatten();
+            feedback::page_feedback(&origin, &env, ua.as_deref())
         },
         Route::ErpPage => {
             if req.method() != Method::Get {
@@ -86,9 +88,7 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         Route::FeedbackList => feedback::handle_list(req, env).await,
         Route::FeedbackHistory { contact: _ } => feedback::handle_history(req, env).await,
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,
-        Route::FeedbackAttachment { file_token: _ } => {
-            feedback::handle_attachment(req, env).await
-        },
+        Route::FeedbackAttachment { file_token: _ } => feedback::handle_attachment(req, env).await,
 
         Route::Control { room, role } => {
             let Some(room) = room.filter(|r| valid_room(r)) else {
