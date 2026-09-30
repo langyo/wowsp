@@ -154,9 +154,11 @@
     gap: 0.75rem;
   }
 
-  &__map {
-    font-size: var(--text-lg);
-    color: rgb(var(--color-text));
+  /* The map tag leads this header row and stands in for a page title, so
+     it reads one step larger than the tag's default voice (its colors and
+     pill shape live in MapNameTag.scss). */
+  .replay-view__map.map-tag {
+    font-size: var(--text-sm);
   }
 
   &__meta-item {

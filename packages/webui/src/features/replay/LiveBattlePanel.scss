@@ -114,11 +114,11 @@
     white-space: nowrap;
   }
 
-  /* The head's right-corner cluster starts at the map label and runs to
-     the manual-locate button — one centered line, no per-item overrides. */
+  /* The head's right-corner cluster starts at the map tag and runs to the
+     manual-locate button — one centered line, no per-item overrides. The
+     tag's own look lives in MapNameTag.scss; only its row placement (the
+     cluster's first item, pushed to the right end) is owned here. */
   &__map {
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
     margin-left: auto;
   }
 

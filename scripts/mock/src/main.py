@@ -607,6 +607,9 @@ async def cmd_read_temp_arena_info() -> dict | None:
     return {
         "matchGroup": "pvp",
         "dateTime": "12.07.2026 21:45:00",
+        # Same map the replay fixture names — exercises the map-name tag's
+        # preview/jump affordances in mock dev and the e2e harness.
+        "mapName": "17_NA_fault_line",
         "vehicles": _SAMPLE_ROSTER,
         "raw": {"vehicles": _SAMPLE_ROSTER},
     }

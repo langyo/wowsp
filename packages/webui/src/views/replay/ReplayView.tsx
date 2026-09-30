@@ -61,6 +61,7 @@ import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { damageColor, prTier, winrateColor } from "@/utils/winrate";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
+import MapNameTag from "@/features/replay/MapNameTag";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
@@ -1694,9 +1695,10 @@ export default defineComponent({
                 </div>
               ) : null}
               <header class="replay-view__meta">
-                <strong class="replay-view__map">
-                  {displayMapName(parser.current.value.mapName, mapLang.value)}
-                </strong>
+                {/* The map as a jump tag (shared with the live head): hover
+                    previews the map's bundled minimap, click opens the map's
+                    tactical board — see MapNameTag. */}
+                <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
                 <span class="replay-view__meta-item">
                   {formatDateTime(parser.current.value.dateTime)}
                 </span>

@@ -20,18 +20,19 @@
  * Scenario / special-mode maps (isPveSpace) keep their "incomplete support"
  * warning.
  */
-import { computed, defineComponent, onMounted, ref, watch, type DefineComponent } from "vue";
+import { computed, defineComponent, nextTick, onMounted, ref, watch, type DefineComponent } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { HkAlert, HkTabs } from "@celestia-island/hikari";
 
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
-import { resolveMapMinimapUrl } from "@/features/holographic/modelLoader";
 import TacticalPlanStage from "@/features/holographic/tactical/PlanStage";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
-import { MAP_NAMES, displayMapName, replaysDir } from "@/utils/mapNames";
-import { battleMapIds, bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
+import { displayMapName, replaysDir } from "@/utils/mapNames";
+import { ANALYSABLE_SPACE_IDS, isAnalysableSpace } from "@/utils/tacticsMaps";
+import { bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
 import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
 import { modeKey } from "@/utils/modeColors";
 import "./TacticsView.scss";
@@ -55,10 +56,6 @@ const FILTERS: { key: FilterKey; labelKey: string }[] = [
   { key: "clan", labelKey: "tactics.filter.clan" },
 ];
 
-/** The rail's map inventory: battle spaces of the bundled catalog whose
- *  minimap art ships with the app — synchronous, no game install required. */
-const RAIL_SPACE_IDS = battleMapIds(Object.keys(MAP_NAMES), (id) => resolveMapMinimapUrl(id) !== null);
-
 /** Pill order inside a card's badge row. */
 const BUCKET_ORDER: MapModeBucket[] = ["random", "ranked", "clan", "pve"];
 
@@ -79,6 +76,33 @@ export default defineComponent({
     const observed = ref<Map<string, Set<MapModeBucket>>>(new Map());
     const filter = ref<FilterKey>("all");
     const selected = ref<string | null>(null);
+
+    const route = useRoute();
+    const router = useRouter();
+    /** The rail's scroll container — the reveal pass below scrolls a
+     *  query-driven selection into view inside it. */
+    const listEl = ref<HTMLElement | null>(null);
+
+    /** Deep link (?map=<spaceId>): the live/replay map tags land here.
+     *  Only an analysable id selects; anything else leaves the rail as it
+     *  is rather than guessing a neighbor. */
+    function selectFromQuery(): void {
+      const q = route.query.map;
+      if (typeof q === "string" && isAnalysableSpace(q)) {
+        selected.value = q;
+        void revealSelection(q);
+      }
+    }
+
+    /** Bring a query-driven selection into view (a deep link can name a
+     *  map far down the rail). Local card clicks don't need this — the
+     *  clicked card is already on screen. */
+    async function revealSelection(id: string): Promise<void> {
+      await nextTick();
+      listEl.value
+        ?.querySelector<HTMLElement>(`[data-space-id="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    }
 
     /** Generation token for loadHistory: switching installs mid-scan lets
      *  the slower previous scan resolve last — without this it would
@@ -117,6 +141,9 @@ export default defineComponent({
     }
 
     onMounted(async () => {
+      // Deep link first (?map=): the catalog it reads is bundled, so the
+      // selection needs no install detection to land.
+      selectFromQuery();
       // Snapshot BEFORE detect(): the watcher below owns the "" → path
       // transition — including the one detect() itself causes — so reading
       // the history here as well would scan the replays dir twice on cold
@@ -128,6 +155,20 @@ export default defineComponent({
       await gd.detect();
       if (wasActive) {
         await loadHistory();
+      }
+    });
+    // Follow the URL both ways: a query change (a map tag's jump or a
+    // pasted link) selects the named map; a local card click writes the
+    // selection back with replace — the rail is UI state, not a history
+    // step. An invalid ?map stays in the URL untouched rather than being
+    // silently scrubbed, and only ever selects nothing.
+    watch(
+      () => route.query.map,
+      () => selectFromQuery(),
+    );
+    watch(selected, (id) => {
+      if (id != null && route.query.map !== id) {
+        void router.replace({ query: { ...route.query, map: id } });
       }
     });
     // Follow the sidebar's client switch: the catalog list (and with it the
@@ -163,7 +204,10 @@ export default defineComponent({
 
     const filtered = computed(() => {
       const f = filter.value;
-      return RAIL_SPACE_IDS.filter((id) => f === "all" || modeBuckets(id).has(f));
+      // The rail's inventory: the shared analysable-space list (battle
+      // spaces of the bundled catalog whose minimap art ships with the
+      // app — synchronous, no game install required).
+      return ANALYSABLE_SPACE_IDS.filter((id) => f === "all" || modeBuckets(id).has(f));
     });
 
     /** Selected incomplete map first, then incomplete/PVE maps, then the
@@ -211,7 +255,7 @@ export default defineComponent({
                 tabs={FILTERS.map((f) => ({ key: f.key, label: t(f.labelKey) }))}
               />
             </div>
-            <div class="tactics-view__list-scroll">
+            <div class="tactics-view__list-scroll" ref={listEl}>
               {list.length === 0 ? (
                 <p class="tactics-view__empty">{t("tactics.list.filterEmpty")}</p>
               ) : (
@@ -221,7 +265,7 @@ export default defineComponent({
                     const lineage = mapLineage(id);
                     const legacy = legacyMapOf(id);
                     return (
-                      <li key={id} class="tactics-view__item">
+                      <li key={id} class="tactics-view__item" data-space-id={id}>
                         <button
                           type="button"
                           class={["tactics-card", sel === id ? "tactics-card--active" : ""]}

@@ -38,12 +38,14 @@ import {
   Camera,
   Eye,
   EyeOff,
+  LocateFixed,
   Plug,
   RefreshCw,
   Rows2,
   Rows3,
   ScanEye,
   Unplug,
+  X,
 } from "@lucide/vue";
 import { useToast } from "@celestia-island/hikari";
 
@@ -56,8 +58,10 @@ import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { displayMapName } from "@/utils/mapNames";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
+import MapNameTag from "./MapNameTag";
 import PluginStatusCard from "./PluginStatusCard";
 import { WaitingRadarArt } from "./liveGuideArt";
 import { useNickMasking, useShareShot, rosterStatCols } from "./postBattleShare";
@@ -73,10 +77,7 @@ import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
 import { HkSpinner } from "@celestia-island/hikari";
-import mapNamesRaw from "@/data/map_names.json";
 import "./LiveBattlePanel.scss";
-
-const MAP_NAMES = mapNamesRaw as Record<string, Record<string, string>>;
 
 /** Stable refusal codes from `start_manual_locate` → the replay.live.*
  *  copy toasted next to the button shake. Module-level: the mapping is
@@ -86,17 +87,6 @@ const MANUAL_REFUSAL_KEYS: Record<string, string> = {
   "no-game": "replay.live.manualNoGame",
   "no-frame": "replay.live.manualNoFrame",
 };
-
-function displayMapName(spaceId?: string | null, lang?: string): string {
-  if (!spaceId) return t("replay.map.unknown");
-  const clean = spaceId.replace(/^spaces\//, "");
-  const names = MAP_NAMES[clean];
-  const official = names ? (names[lang ?? ""] ?? names["en"] ?? null) : null;
-  if (official) return official;
-  const key = "replay.map.names." + clean;
-  const lbl = t(key);
-  return lbl === key ? clean : lbl;
-}
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
  *  battle script / roster bots). */
@@ -904,9 +894,10 @@ export default defineComponent({
             {!props.ended && clockLabel.value ? (
               <span class="live-battle__clock">{clockLabel.value}</span>
             ) : null}
-            <span class="live-battle__map">
-              {displayMapName(props.arena.mapName, dataLanguage.value)}
-            </span>
+            {/* The map as a jump tag (shared with the replay-review head):
+                hover previews the map's bundled minimap, click opens the
+                map's tactical board — see MapNameTag. */}
+            <MapNameTag class="live-battle__map" spaceId={props.arena.mapName} lang={dataLanguage.value} />
             {/* Copy-share-shot: the roster as a watermarked PNG straight
                 onto the clipboard — the share path itself, no separate
                 post-battle window in between. Copy feedback rides the
@@ -1027,6 +1018,10 @@ export default defineComponent({
               disabled={manualBusy.value}
               onClick={() => void onManualButton()}
             >
+              {/* Icon = the action a click performs, matching the
+                  nickname/density toggles: crosshair while idle, X to
+                  clear an anchor that is live. */}
+              {manualActive.value ? <X size={13} /> : <LocateFixed size={13} />}
               {manualActive.value
                 ? t("replay.live.manualClear")
                 : t("replay.live.manualLocate")}
