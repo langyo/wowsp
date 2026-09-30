@@ -39,6 +39,47 @@ function saveIgnoredGamePaths(paths: string[]) {
   }
 }
 
+/** localStorage key for the user's custom install row order (settings 游戏路径
+ *  drag handles). The shell only persists the ACTIVE path (game-config.toml),
+ *  so the list order is presentation-level state owned by the webui (same
+ *  policy as IGNORED_GAME_PATHS_KEY) and re-applied to every scan. */
+const GAME_PATH_ORDER_KEY = "wowsp-game-path-order";
+
+function loadGamePathOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(GAME_PATH_ORDER_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGamePathOrder(paths: string[]) {
+  try {
+    localStorage.setItem(GAME_PATH_ORDER_KEY, JSON.stringify(paths));
+  } catch {
+    // storage unavailable (private mode) — the order just won't survive
+  }
+}
+
+/** Order a freshly scanned list by the remembered custom order: rows with a
+ *  saved position come first in that order (stable sort), rows the scan has
+ *  found since — never dragged — compare equal and keep scan order (stable
+ *  sort) after them. The comparator never mixes ranks with a sentinel, so
+ *  there is no NaN case for the engine's sort to mishandle. */
+function applySavedOrder(installs: GameInstall[], order: string[]): GameInstall[] {
+  const rank = new Map(order.map((p, idx) => [normalizeGamePath(p), idx]));
+  return [...installs].sort((a, b) => {
+    const ra = rank.get(normalizeGamePath(a.path));
+    const rb = rank.get(normalizeGamePath(b.path));
+    if (ra != null && rb != null) return ra - rb;
+    if (ra != null) return -1;
+    if (rb != null) return 1;
+    return 0;
+  });
+}
+
 /** Belt-and-braces dedupe on top of the Rust scan (commands/game_detect.rs
  *  `dedupe_installs`): one row per normalized folder, keeping the first
  *  occurrence. Guards the mock backend and any future source drift. */
@@ -60,6 +101,10 @@ export const useConfigStore = defineStore("config", () => {
   // Paths removed by the user (see IGNORED_GAME_PATHS_KEY); `detect()` filters
   // detected installs against this list.
   let ignoredPaths = loadIgnoredGamePaths();
+
+  // Custom row order dragged by the user (see GAME_PATH_ORDER_KEY); applied
+  // to the list on every scan.
+  let gamePathOrder = loadGamePathOrder();
 
   // Path remembered from the previous session (restored by `load()`, consumed
   // by `detect()` so a previously-selected client survives a rescan).
@@ -116,6 +161,9 @@ export const useConfigStore = defineStore("config", () => {
       if (resolved && !installs.value.some((i) => sameGamePath(i.path, resolved.path))) {
         installs.value = [...installs.value, resolved];
       }
+      // Restore the user's dragged row order on top of the fresh scan (rows
+      // found since the last drag keep scan order and append).
+      installs.value = applySavedOrder(installs.value, gamePathOrder);
       rememberedPath = null; // consumed
       await persist();
     } finally {
@@ -164,11 +212,28 @@ export const useConfigStore = defineStore("config", () => {
     if (target) {
       ignoredPaths = [...ignoredPaths, target.path];
       saveIgnoredGamePaths(ignoredPaths);
+      // Drop the row's custom-order rank too — unmatched ranks are ignored
+      // by applySavedOrder, but they would pile up in localStorage.
+      gamePathOrder = gamePathOrder.filter((p) => !sameGamePath(p, target.path));
+      saveGamePathOrder(gamePathOrder);
     }
     if (activeInstall.value && sameGamePath(activeInstall.value.path, path)) {
       activeInstall.value = installs.value[0] ?? null;
       await persist();
     }
+  }
+
+  /** Reorder the install list (settings 游戏路径 rows, drag handles). The
+   *  order is remembered webui-side (see GAME_PATH_ORDER_KEY) so it survives
+   *  both a restart and a re-scan. */
+  function reorderInstalls(from: number, to: number) {
+    const arr = [...installs.value];
+    const [moved] = arr.splice(from, 1);
+    if (!moved) return;
+    arr.splice(to, 0, moved);
+    installs.value = arr;
+    gamePathOrder = arr.map((i) => i.path);
+    saveGamePathOrder(gamePathOrder);
   }
 
   /** Persist the active install's path (just the path — `detect()` re-resolves
@@ -190,5 +255,6 @@ export const useConfigStore = defineStore("config", () => {
     selectInstall,
     setManualPath,
     removeInstall,
+    reorderInstalls,
   };
 });

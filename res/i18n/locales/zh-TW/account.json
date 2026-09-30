@@ -14,7 +14,6 @@
   "bound": "已綁定",
   "selectRealm": "選擇伺服器",
   "noAccounts": "尚未綁定帳號。點擊「新增玩家」搜尋暱稱以綁定。",
-  "preferred": "首選",
   "setPreferred": "設為首選",
   "autoSwitched": "已切換到 {name}"
 }

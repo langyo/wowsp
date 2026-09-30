@@ -1,9 +1,10 @@
 import { defineComponent, ref, watch, type PropType } from "vue";
-import { X, Trophy, Swords, Star, Plus } from "@lucide/vue";
+import { X, Trophy, Swords, Star, Plus, GripVertical } from "@lucide/vue";
 
 import { HkButton, HkInput, HkModal, HkSelect, HkTag } from "@celestia-island/hikari";
 
 import PlayerBadge from "@/components/base/PlayerBadge";
+import SortableList from "@/components/base/SortableList";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { winrateColor } from "@/utils/winrate";
@@ -186,90 +187,100 @@ export default defineComponent({
 
     return () => (
       <div class="acct-modal">
-        {/* bound accounts as cards + the dashed add row closing the list */}
+        {/* bound accounts as cards (drag a card's grip handle to reorder —
+            the array order is the persisted card order) + the dashed add row
+            closing the list */}
         <div class="acct-modal__list">
           {accounts.accounts.length === 0 ? (
             <p class="acct-modal__empty">{t("account.noAccounts")}</p>
           ) : (
-            accounts.accounts.map((a) => {
-              const isActive =
-                accounts.activeAccountId === a.accountId &&
-                accounts.activeRealm === a.realm;
-              const s = stats.cache.get(`${a.realm}_${a.accountId}`);
-              const preferred = accounts.preferredAccount(a.realm);
-              const isPreferred = preferred?.accountId === a.accountId;
-              const realmHasChoice =
-                accounts.accounts.filter((x) => x.realm === a.realm).length > 1;
-              return (
-                <div
-                  key={`${a.realm}_${a.accountId}`}
-                  class={[
-                    "acct-card",
-                    isActive ? "acct-card--active" : "",
-                  ]}
-                  onClick={() => void switchTo(a)}
-                >
-                  {/* Player service-record badge based on leveling tier.
-                      Falls back to tier 0 (bronze "?") when stats not yet
-                      loaded. Replaces the old pig-logo placeholder. */}
-                  <PlayerBadge tier={s?.levelingTier ?? 0} dogTag={s?.dogTag ?? null} size={38} />
-                  <div class="acct-card__body">
-                    <div class="acct-card__head">
-                      {s?.clanTag ? (
-                        <span class="acct-card__clan">[{s.clanTag}]</span>
-                      ) : null}
-                      <span class="acct-card__name">{a.nickname}</span>
-                      {isPreferred ? (
-                        <span class="acct-card__preferred" data-hint={t("account.preferred")}>
-                          <Star size={11} />
-                        </span>
-                      ) : null}
-                    </div>
-                    <div class="acct-card__meta">
-                      <HkTag variant="default" size="sm">{a.realm.toUpperCase()}</HkTag>
-                      {s ? (
-                        [
-                          s.battles != null ? (
-                            <span class="acct-card__stat" data-hint={t("stats.battles")}>
-                              <Swords size={11} /> {s.battles.toLocaleString()}
-                            </span>
-                          ) : null,
-                          s.winrate != null ? (
-                            <span
-                              class="acct-card__stat"
-                              style={{ color: winrateColor(s.winrate) }}
-                              data-hint={t("stats.winrate")}
-                            >
-                              <Trophy size={11} /> {s.winrate.toFixed(1)}%
-                            </span>
-                          ) : null,
-                          s.hidden ? (
-                            <HkTag variant="danger" size="sm">{t("stats.hidden")}</HkTag>
-                          ) : null,
-                        ]
-                      ) : null}
-                    </div>
-                  </div>
-                  {!isPreferred && realmHasChoice ? (
-                    <button
-                      class="acct-card__promote"
-                      onClick={(e) => void promote(a, e)}
-                      aria-label={t("account.setPreferred")}
-                      data-hint={t("account.setPreferred")}
-                    >
-                      <Star size={14} />
-                    </button>
-                  ) : null}
-                  <button
-                    class="acct-card__remove"
-                    onClick={(e) => void remove(a, e)}
-                    aria-label={t("account.remove")}
+            <SortableList
+              class="acct-modal__cards"
+              items={accounts.accounts}
+              getKey={(a: AccountProfile) => `${a.realm}_${a.accountId}`}
+              label={t("account.switcherTitle")}
+              onReorder={(from: number, to: number) => void accounts.reorderAccounts(from, to)}
+            >
+              {(slot: { item: AccountProfile }) => {
+                const a = slot.item;
+                const isActive =
+                  accounts.activeAccountId === a.accountId &&
+                  accounts.activeRealm === a.realm;
+                const s = stats.cache.get(`${a.realm}_${a.accountId}`);
+                const preferred = accounts.preferredAccount(a.realm);
+                const isPreferred = preferred?.accountId === a.accountId;
+                const realmHasChoice =
+                  accounts.accounts.filter((x) => x.realm === a.realm).length > 1;
+                return (
+                  <div
+                    class={[
+                      "acct-card",
+                      isActive ? "acct-card--active" : "",
+                    ]}
+                    onClick={() => void switchTo(a)}
                   >
-                    <X size={14} />
-                  </button>
-                </div>
-              );
-            })
+                    {/* Drag handle — reorders the card list (SortableList
+                        swallows the click a drag leaves behind). */}
+                    <span class="acct-card__handle" data-sortable-handle aria-hidden="true">
+                      <GripVertical size={14} />
+                    </span>
+                    {/* Player service-record badge based on leveling tier.
+                        Falls back to tier 0 (bronze "?") when stats not yet
+                        loaded. Replaces the old pig-logo placeholder. */}
+                    <PlayerBadge tier={s?.levelingTier ?? 0} dogTag={s?.dogTag ?? null} size={38} />
+                    <div class="acct-card__body">
+                      <div class="acct-card__head">
+                        {s?.clanTag ? (
+                          <span class="acct-card__clan">[{s.clanTag}]</span>
+                        ) : null}
+                        <span class="acct-card__name">{a.nickname}</span>
+                      </div>
+                      <div class="acct-card__meta">
+                        <HkTag variant="default" size="sm">{a.realm.toUpperCase()}</HkTag>
+                        {s ? (
+                          [
+                            s.battles != null ? (
+                              <span class="acct-card__stat" data-hint={t("stats.battles")}>
+                                <Swords size={11} /> {s.battles.toLocaleString()}
+                              </span>
+                            ) : null,
+                            s.winrate != null ? (
+                              <span
+                                class="acct-card__stat"
+                                style={{ color: winrateColor(s.winrate) }}
+                                data-hint={t("stats.winrate")}
+                              >
+                                <Trophy size={11} /> {s.winrate.toFixed(1)}%
+                              </span>
+                            ) : null,
+                            s.hidden ? (
+                              <HkTag variant="danger" size="sm">{t("stats.hidden")}</HkTag>
+                            ) : null,
+                          ]
+                        ) : null}
+                      </div>
+                    </div>
+                    {!isPreferred && realmHasChoice ? (
+                      <button
+                        class="acct-card__promote"
+                        onClick={(e) => void promote(a, e)}
+                        aria-label={t("account.setPreferred")}
+                        data-hint={t("account.setPreferred")}
+                      >
+                        <Star size={14} />
+                      </button>
+                    ) : null}
+                    <button
+                      class="acct-card__remove"
+                      onClick={(e) => void remove(a, e)}
+                      aria-label={t("account.remove")}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              }}
+            </SortableList>
           )}
           {/* dashed add placeholder — the last row of the list; opens the
               search → confirm-bind dialog instead of an inline search row. */}

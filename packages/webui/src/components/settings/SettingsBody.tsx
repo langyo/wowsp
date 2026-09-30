@@ -9,6 +9,7 @@ import {
   FolderCog,
   FolderOpen,
   Globe,
+  GripVertical,
   ImagePlus,
   Info,
   Languages,
@@ -114,6 +115,7 @@ import { AboutContent } from "@/components/layout/AboutModal";
 import { pickTelemetryNotice } from "@/components/layout/announcementVariants";
 import AccountManagerContent from "@/components/account/AccountManagerContent";
 import PlatformIcon from "@/components/base/PlatformIcon";
+import SortableList from "@/components/base/SortableList";
 import AuthorMark from "@/components/base/AuthorMark";
 import StatsPrefsControls from "@/components/stats/StatsPrefsControls";
 import SealCustomizer from "@/components/stats/SealCustomizer";
@@ -1288,30 +1290,48 @@ export default defineComponent({
               left, client + realm tag + path in the body; clicking a card
               activates it, which switches the app-wide client context
               (replay list, armor/ballistics loader, stats realm) and follows
-              that realm's preferred account. Each card carries a two-step
-              delete (arm → confirm, like the wallpaper strip) that removes
-              the row and ignores it on future scans. A dashed add row at the
-              end opens the dialog hosting detection and the native folder
-              picker. Unreachable on the phone app build (the rail filters
-              the section out). */}
+              that realm's preferred account. Rows reorder by dragging each
+              card's grip handle (the custom order survives rescans). Each
+              card carries a two-step delete (arm → confirm, like the
+              wallpaper strip) that removes the row and ignores it on future
+              scans. A dashed add row at the end opens the dialog hosting
+              detection and the native folder picker. Unreachable on the
+              phone app build (the rail filters the section out). */}
           <HkSettingsGroup title={t("settings.gamePath")}>
             <HkSettingsHint>{t("common.gamePath.desc")}</HkSettingsHint>
             {installRows.value.length === 0 ? (
               <HkSettingsHint>{t("common.gamePath.noneFound")}</HkSettingsHint>
             ) : (
-              <div class="settings-modal__installs">
-                {installRows.value.map((i) => {
+              // Rows reorder by dragging the card's grip handle; the custom
+              // order is remembered by the config store (localStorage) and
+              // re-applied on every scan.
+              <SortableList
+                class="settings-modal__installs"
+                items={installRows.value}
+                getKey={(i: GameInstall) => i.path}
+                label={t("settings.gamePath")}
+                onReorder={(from: number, to: number) => configStore.reorderInstalls(from, to)}
+              >
+                {(slot: { item: GameInstall }) => {
+                  const i = slot.item;
                   const active = sameGamePath(i.path, activePath.value);
+                  // The card is a button and buttons don't nest — the delete
+                  // control lives on a positioned wrapper beside it (same
+                  // structure as the wallpaper tiles).
                   return (
-                    // The card is a button and buttons don't nest — the
-                    // delete control lives on a positioned wrapper beside it
-                    // (same structure as the wallpaper tiles).
-                    <div key={i.path} class="settings-modal__install">
+                    <div class="settings-modal__install">
                       <button
                         type="button"
                         class={["install-card", active ? "install-card--active" : ""]}
                         onClick={() => void activateInstall(i)}
                       >
+                        <span
+                          class="install-card__handle"
+                          data-sortable-handle
+                          aria-hidden="true"
+                        >
+                          <GripVertical size={14} />
+                        </span>
                         <PlatformIcon kind={i.kind} size={38} />
                         <span class="install-card__body">
                           <span class="install-card__head">
@@ -1349,8 +1369,8 @@ export default defineComponent({
                       )}
                     </div>
                   );
-                })}
-              </div>
+                }}
+              </SortableList>
             )}
             {runningInstall.value ? (
               <div class="settings-modal__running">

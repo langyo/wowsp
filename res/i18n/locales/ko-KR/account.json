@@ -14,7 +14,6 @@
   "bound": "연동됨",
   "selectRealm": "서버 선택",
   "noAccounts": "아직 연동된 계정이 없습니다. '플레이어 추가'에서 닉네임을 검색해 연동하세요.",
-  "preferred": "우선 계정",
   "setPreferred": "우선으로 설정",
   "autoSwitched": "{name}(으)로 전환되었습니다"
 }

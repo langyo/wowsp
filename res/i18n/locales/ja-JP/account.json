@@ -14,7 +14,6 @@
   "bound": "連携済み",
   "selectRealm": "サーバーを選択",
   "noAccounts": "まだアカウントが連携されていません。「プレイヤーを追加」からニックネームを検索して連携してください。",
-  "preferred": "優先アカウント",
   "setPreferred": "優先に設定",
   "autoSwitched": "{name} に切り替えました"
 }

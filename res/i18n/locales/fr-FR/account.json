@@ -14,7 +14,6 @@
   "bound": "Lié",
   "selectRealm": "Sélectionner un serveur",
   "noAccounts": "Aucun compte lié pour l'instant. Utilisez « Ajouter un joueur » pour rechercher un pseudo et en lier un.",
-  "preferred": "Préféré",
   "setPreferred": "Définir comme préféré",
   "autoSwitched": "Basculé sur {name}"
 }

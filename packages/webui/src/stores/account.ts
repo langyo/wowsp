@@ -141,6 +141,18 @@ export const useAccountStore = defineStore("account", () => {
     await persist();
   }
 
+  /** Reorder the bound accounts (settings 账户 cards, drag handles). The
+   *  array order IS the card order — `persist()` writes it straight into
+   *  accounts.json, so a reorder survives a restart on its own. */
+  async function reorderAccounts(from: number, to: number) {
+    const arr = [...accounts.value];
+    const [moved] = arr.splice(from, 1);
+    if (!moved) return;
+    arr.splice(to, 0, moved);
+    accounts.value = arr;
+    await persist();
+  }
+
   /** Promote an account to its realm's preferred one (the ✦/首选 button). */
   async function setPreferred(realm: string, accountId: number) {
     preferredByRealm.value = { ...preferredByRealm.value, [realm]: accountId };
@@ -148,8 +160,9 @@ export const useAccountStore = defineStore("account", () => {
   }
 
   /** Follow a server/client switch: activate that realm's preferred account
-   *  (first bound one when none was promoted). No-op when the realm has no
-   *  bound account or the right one is already active. Returns the account
+   *  (the first one in the current card order when none was promoted — the
+   *  order follows the user's drags). No-op when the realm has no bound
+   *  account or the right one is already active. Returns the account
    *  switched to, if any. */
   async function autoSwitchRealm(realm: string): Promise<AccountProfile | null> {
     const target = preferredAccount.value(realm);
@@ -174,6 +187,7 @@ export const useAccountStore = defineStore("account", () => {
     removeAccount,
     setActive,
     setPreferred,
+    reorderAccounts,
     autoSwitchRealm,
   };
 });

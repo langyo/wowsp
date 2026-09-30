@@ -903,6 +903,21 @@
     padding-right: 2.2rem;
   }
 
+  /* Drag handle for the SortableList row — a quiet grip at the card's left
+     edge that darkens when the card is hovered; the list swallows the click
+     a drag leaves behind, so a drop never activates the card under it.
+     (The card-hover darkening lives in a top-level rule below — nesting it
+     in here would expand `&` to the full compound and never match.) */
+  &__handle {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    margin-left: -0.25rem;
+    color: rgb(var(--color-muted));
+    opacity: 0.4;
+    transition: opacity var(--duration-short) var(--ease-standard);
+  }
+
   &__body {
     flex: 1;
     min-width: 0;
@@ -937,4 +952,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+/* Grip darkens when the card is hovered (top level so the selector stays
+   `.hk-settings__pane .install-card:hover .install-card__handle`). */
+.hk-settings__pane .install-card:hover .install-card__handle {
+  opacity: 0.75;
 }

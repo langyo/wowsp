@@ -14,7 +14,6 @@
   "bound": "Bound",
   "selectRealm": "Select realm",
   "noAccounts": "No accounts bound yet. Use Add player to search a nickname and bind one.",
-  "preferred": "Preferred",
   "setPreferred": "Make preferred",
   "autoSwitched": "Switched to {name}"
 }

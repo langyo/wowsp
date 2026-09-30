@@ -1,0 +1,42 @@
+// Generic drag-to-reorder vertical list (see SortableList.tsx). Hosts own
+// the container's spacing and the row content via fallthrough classes; this
+// sheet only owns the drag interaction itself.
+
+.sortable-list {
+  position: relative;
+}
+
+.sortable-list__item {
+  position: relative;
+
+  // The dragged row floats above its neighbours while following the pointer.
+  &--dragging {
+    z-index: 10;
+  }
+}
+
+// Inner wrapper carrying the drag transform — separate from the row root so
+// the root's rect stays pure layout (the drag hit-test reads it).
+.sortable-list__item--dragging > .sortable-list__drag {
+  will-change: transform;
+  filter: drop-shadow(0 0.35rem 0.9rem rgb(0 0 0 / 40%));
+}
+
+// While a drag is live the other rows stop reacting to the pointer, so hover
+// styles don't flicker as the dragged row passes over them.
+.sortable-list--dragging .sortable-list__item:not(.sortable-list__item--dragging) {
+  pointer-events: none;
+}
+
+// Handles are plain elements marked by hosts with data-sortable-handle.
+// touch-action: none keeps a touch drag from turning into a list scroll.
+[data-sortable-handle] {
+  touch-action: none;
+  cursor: grab;
+}
+
+body.sortable-list--dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
