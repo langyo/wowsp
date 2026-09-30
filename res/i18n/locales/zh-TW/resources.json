@@ -96,13 +96,21 @@
   "migrateEmpty": "舊版本中沒有需要處理的模組檔案。",
   "migrateKeptCount": "保留 {kept}/{total}",
   "migrateCleanupNote": "重複檔案、同名舊副本與安裝登記檔案會自動清理；遷移不會覆蓋目前版本已有的任何檔案。",
+  "migrateToggleAll": "全部保留 / 全部不保留",
+  "migrateIgnore": "忽略——留在舊版本中，不做處理",
+  "migrateUnignore": "取消忽略（恢復為保留）",
+  "migrateIgnoreAll": "全部忽略",
+  "migrateUnignoreAll": "全部取消忽略",
+  "migrateDoneIgnored": "{ignored} 個檔案已忽略，原樣保留在 bin/{from} 中；之後可再次遷移。",
   "migrateGroup": {
     "duplicate": "重複檔案",
     "duplicateHint": "目前版本已存在內容完全相同的同名檔案，舊副本將直接刪除，不會遷移。",
     "superseded": "同名新版",
     "supersededHint": "目前版本已有同名但內容不同的檔案（視為新版已安裝），舊版本副本將被刪除。",
     "decide": "需要決定",
-    "decideHint": "以下檔案僅存在於舊版本中：勾選保留並遷移，取消勾選則刪除。"
+    "decideHint": "以下檔案僅存在於舊版本中：勾選保留並遷移，取消勾選則刪除；點擊行尾的忽略按鈕可將其留在舊版本中不做處理。",
+    "ignored": "已忽略",
+    "ignoredHint": "忽略的檔案原樣保留在舊版本 bin 中，本次遷移不做任何處理；之後仍可再次遷移。"
   },
   "safeModeOn": "安全模式已開啟——res_mods 內的全部模組已整體隔離（res_mods 已改名），遊戲將不載入它們。關閉安全模式前無法變更模組。",
   "safeModeHint": "遊戲不穩定？可一鍵隔離 res_mods 內的全部模組來排查——不會刪除任何檔案，一鍵即可恢復。",

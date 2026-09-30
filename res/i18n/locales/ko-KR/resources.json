@@ -96,13 +96,21 @@
   "migrateEmpty": "이전 버전에 처리할 모드 파일이 없습니다.",
   "migrateKeptCount": "{kept}/{total} 유지",
   "migrateCleanupNote": "중복 파일, 대체된 사본, 설치 기록 파일은 자동으로 정리됩니다. 마이그레이션이 현재 버전의 기존 파일을 덮어쓰지 않습니다.",
+  "migrateToggleAll": "모두 유지 / 모두 해제",
+  "migrateIgnore": "무시 — 이전 버전에 그대로 둡니다",
+  "migrateUnignore": "무시 해제(다시 유지)",
+  "migrateIgnoreAll": "모두 무시",
+  "migrateUnignoreAll": "모두 복원",
+  "migrateDoneIgnored": "{ignored}개 파일은 무시되어 bin/{from}에 그대로 남아 있습니다. 언제든 다시 마이그레이션할 수 있습니다.",
   "migrateGroup": {
     "duplicate": "중복 파일",
     "duplicateHint": "현재 버전에 내용이 완전히 같은 파일이 이미 있습니다. 이전 사본은 그대로 삭제되며 이동되지 않습니다.",
     "superseded": "같은 이름의 신규 버전",
     "supersededHint": "현재 버전에 같은 경로의 다른 내용 파일이 있습니다(신규 버전이 설치된 것으로 간주). 이전 사본은 삭제됩니다.",
     "decide": "결정 필요",
-    "decideHint": "다음 파일은 이전 버전에만 있습니다. 체크하면 이동하여 유지하고, 체크 해제하면 삭제합니다."
+    "decideHint": "다음 파일은 이전 버전에만 있습니다. 체크하면 이동하여 유지하고, 체크 해제하면 삭제합니다. 행 끝의 '무시'로 건드리지 않고 둘 수 있습니다.",
+    "ignored": "무시됨",
+    "ignoredHint": "무시한 파일은 이전 버전 bin에 그대로 남습니다. 이번 마이그레이션에서 처리되지 않으며 나중에 다시 마이그레이션할 수 있습니다."
   },
   "safeModeOn": "안전 모드가 켜져 있습니다 — res_mods의 모든 모드를 격리했습니다(res_mods 이름 변경). 게임은 이를 로드하지 않습니다. 끄기 전까지 모드를 변경할 수 없습니다.",
   "safeModeHint": "게임이 불안정한가요? res_mods의 모든 모드를 한 번에 격리하고 테스트해 보세요 — 파일은 삭제되지 않고 한 번의 클릭으로 복원됩니다.",

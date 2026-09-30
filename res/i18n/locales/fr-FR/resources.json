@@ -96,13 +96,21 @@
   "migrateEmpty": "L'ancienne version ne contient aucun fichier de mod à traiter.",
   "migrateKeptCount": "{kept}/{total} conservés",
   "migrateCleanupNote": "Les doublons, les copies remplacées et les fichiers de registre d'installation sont nettoyés automatiquement ; une migration n'écrase jamais un fichier déjà présent dans la version actuelle.",
+  "migrateToggleAll": "Tout conserver / tout décocher",
+  "migrateIgnore": "Ignorer — laisser dans l'ancienne version, sans y toucher",
+  "migrateUnignore": "Ne plus ignorer (conserver à nouveau)",
+  "migrateIgnoreAll": "Tout ignorer",
+  "migrateUnignoreAll": "Tout restaurer",
+  "migrateDoneIgnored": "{ignored} fichier(s) ignoré(s) et laissés tels quels dans bin/{from} ; migratez à nouveau quand vous voulez.",
   "migrateGroup": {
     "duplicate": "Doublons",
     "duplicateHint": "La version actuelle contient déjà un fichier au contenu identique — la copie ancienne est supprimée, rien n'est transféré.",
     "superseded": "Remplacés",
     "supersededHint": "La version actuelle possède déjà un fichier au même chemin avec un contenu différent (la nouvelle version est considérée comme installée) — la copie ancienne est supprimée.",
     "decide": "À décider",
-    "decideHint": "Ces fichiers n'existent que dans l'ancien arbre : cochez pour les migrer et les conserver, décochez pour les supprimer."
+    "decideHint": "Ces fichiers n'existent que dans l'ancien arbre : cochez pour les migrer et les conserver, décochez pour les supprimer — ou ignorez une ligne pour la laisser intacte.",
+    "ignored": "Ignorés",
+    "ignoredHint": "Les fichiers ignorés restent dans l'ancien bin exactement tels quels ; cette migration ne les touche pas, et vous pourrez migrer à nouveau plus tard."
   },
   "safeModeOn": "Le mode sans échec est actif — tous les mods de res_mods sont en quarantaine (res_mods renommé) ; le jeu ne les charge pas. Impossible de modifier les mods tant qu'il est activé.",
   "safeModeHint": "Le jeu est instable ? Mettez tous les mods de res_mods en quarantaine d'un clic et testez — rien n'est supprimé, un clic suffit pour les ramener.",

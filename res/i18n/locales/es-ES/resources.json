@@ -96,13 +96,21 @@
   "migrateEmpty": "La versión antigua no contiene archivos de mods que procesar.",
   "migrateKeptCount": "{kept}/{total} conservados",
   "migrateCleanupNote": "Los duplicados, las copias sustituidas y los archivos de registro de instalación se limpian automáticamente; la migración nunca sobrescribe un archivo que la versión actual ya tiene.",
+  "migrateToggleAll": "Conservar todos / no conservar ninguno",
+  "migrateIgnore": "Ignorar: dejar en la versión antigua, sin tocar",
+  "migrateUnignore": "Dejar de ignorar (conservar de nuevo)",
+  "migrateIgnoreAll": "Ignorar todos",
+  "migrateUnignoreAll": "Restaurar todos",
+  "migrateDoneIgnored": "{ignored} archivo(s) ignorados y dejados tal cual en bin/{from}; puede migrar de nuevo cuando quiera.",
   "migrateGroup": {
     "duplicate": "Duplicados",
     "duplicateHint": "La versión actual ya contiene un archivo con contenido idéntico: la copia antigua se elimina, no se traslada nada.",
     "superseded": "Sustituidos",
     "supersededHint": "La versión actual ya tiene un archivo en la misma ruta con contenido distinto (se considera instalada la versión más nueva): la copia antigua se elimina.",
     "decide": "Requieren decisión",
-    "decideHint": "Estos archivos solo existen en el árbol antiguo: marca para migrarlos y conservarlos, desmarca para eliminarlos."
+    "decideHint": "Estos archivos solo existen en el árbol antiguo: marque para migrarlos y conservarlos, desmarque para eliminarlos, o ignore una fila para dejarla intacta.",
+    "ignored": "Ignorados",
+    "ignoredHint": "Los archivos ignorados se quedan en el bin antiguo tal cual; esta migración no los toca, y puede migrar de nuevo más adelante."
   },
   "safeModeOn": "El modo seguro está activo: todos los mods de res_mods están en cuarentena (res_mods renombrado); el juego no los carga. No se pueden cambiar mods hasta desactivarlo.",
   "safeModeHint": "¿El juego es inestable? Ponga en cuarentena todos los mods de res_mods de un clic y pruebe — no se borra nada y un clic los devuelve.",

@@ -1750,17 +1750,19 @@ pub async fn mod_hub_migration_plan(
 
 /// Migration wizard step 2 — apply the reviewed plan: `keep` lists the
 /// decide-bucket paths (res_mods-relative, forward slashes) the user chose
-/// to carry over; everything else in the stale tree is cleaned up.
+/// to carry over, `ignore` the ones marked "leave alone"; everything else
+/// in the stale tree is cleaned up.
 #[tauri::command]
 pub async fn mod_hub_migration_execute(
     game_root: String,
     from_version: String,
     keep: Vec<String>,
+    ignore: Vec<String>,
 ) -> Result<MigrateReport, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
-    migration_execute_core(&game_root, &from_version, &keep)
+    migration_execute_core(&game_root, &from_version, &keep, &ignore)
 }
 
 /// Migration core (split from the command so tests drive it without the
@@ -1787,6 +1789,7 @@ fn migrate_stale_bin_core(game_root: &str, from_version: &str) -> Result<Migrate
         to_version: latest,
         moved_files: moved,
         skipped_files: skipped,
+        ignored_files: 0,
     })
 }
 
@@ -1987,25 +1990,44 @@ fn prune_empty_dirs(dir: &Path) {
 
 /// Wizard execute core: applies the reviewed plan. Everything not in `keep`
 /// (duplicates, superseded, dropped decide files, bookkeeping) is deleted
-/// from the stale tree; kept files move under the same keep-new rule the
-/// blind migration had — re-probed NOW, because the destination may have
-/// changed since planning — and anything the current tree already has is
-/// dropped instead of overwritten. Ledger records re-point at the new bin.
+/// from the stale tree; `ignore` files are left exactly where they are —
+/// neither moved nor deleted, so the stale bin survives them and the banner
+/// keeps counting them until a later migration handles them. Kept files move
+/// under the same keep-new rule the blind migration had — re-probed NOW,
+/// because the destination may have changed since planning — and anything
+/// the current tree already has is dropped instead of overwritten. Ledger
+/// records re-point at the new bin.
 fn migration_execute_core(
     game_root: &str,
     from_version: &str,
     keep: &[String],
+    ignore: &[String],
 ) -> Result<MigrateReport, String> {
     let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
     let keep: BTreeSet<String> = keep.iter().map(|k| k.replace('\\', "/")).collect();
+    let ignore: BTreeSet<String> = ignore.iter().map(|k| k.replace('\\', "/")).collect();
 
     let mut moved = 0usize;
     let mut skipped = 0usize;
+    let mut ignored = 0usize;
     for rel in collect_tree_files(&src)? {
         let s = src.join(&rel);
-        // Bookkeeping dies even when a stale plan listed it as keepable.
-        if is_migration_bookkeeping(&rel) || !keep.contains(&rel) {
+        // Bookkeeping dies even when the plan listed it as keepable or
+        // ignored — resurrecting it would corrupt the install ledger.
+        if is_migration_bookkeeping(&rel) {
+            let _ = fs::remove_file(&s);
+            skipped += 1;
+            continue;
+        }
+        // Ignored: untouched, and NOT counted as cleaned up — the file is
+        // still stranded, the stale-bin banner must keep seeing it. Wins
+        // over `keep` (the wizard keeps the sets disjoint; belt and braces).
+        if ignore.contains(&rel) {
+            ignored += 1;
+            continue;
+        }
+        if !keep.contains(&rel) {
             let _ = fs::remove_file(&s);
             skipped += 1;
             continue;
@@ -2041,12 +2063,20 @@ fn migration_execute_core(
     if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
         super::mod_catalog::save_ledger(&ledger)?;
     }
-    tracing::info!(from = %from_version, to = %latest, moved, skipped, "stale bin migrated (wizard)");
+    tracing::info!(
+        from = %from_version,
+        to = %latest,
+        moved,
+        skipped,
+        ignored,
+        "stale bin migrated (wizard)"
+    );
     Ok(MigrateReport {
         from_version: from_version.to_string(),
         to_version: latest,
         moved_files: moved,
         skipped_files: skipped,
+        ignored_files: ignored,
     })
 }
 
@@ -3707,7 +3737,7 @@ mod tests {
             "gui/disabled.png.bak".to_string(),
             "PnFMods/Mod/Main.py".to_string(),
         ];
-        let report = migration_execute_core(&game.to_string_lossy(), "1", &keep).unwrap();
+        let report = migration_execute_core(&game.to_string_lossy(), "1", &keep, &[]).unwrap();
         assert_eq!(report.to_version, "2");
         // Only the unblocked keep actually moved; everything else —
         // duplicate, superseded, the late destination surprise, the twin,
@@ -3724,6 +3754,49 @@ mod tests {
         assert!(!cur.join("installed_mods.xml").exists());
         // The stale tree emptied out entirely — skeleton dirs included.
         assert!(!old.exists());
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migration_execute_leaves_ignored_files_in_place() {
+        // The wizard's third verdict: "leave alone". Ignored files stay in
+        // the stale bin byte-for-byte — neither moved nor cleaned up — so
+        // the stale-bin banner keeps counting them, the stale tree survives
+        // (its directories must not be pruned away), and bookkeeping still
+        // dies even when ignored.
+        let tmp = std::env::temp_dir().join("wowsp_mig_ignore");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let old = game.join("bin/1/res_mods");
+        let cur = game.join("bin/2/res_mods");
+        fs::create_dir_all(old.join("PnFMods/Kept")).unwrap();
+        fs::create_dir_all(old.join("PnFMods/Skipped")).unwrap();
+        fs::create_dir_all(&cur).unwrap();
+        touch(&old.join("PnFMods/Kept/Main.py"));
+        fs::write(old.join("PnFMods/Skipped/Main.py"), b"untouched").unwrap();
+        fs::write(old.join("installed_mods.xml"), b"<data/>").unwrap();
+
+        // One decide file kept, one ignored; the manifest is ignored too —
+        // it must still be deleted (bookkeeping outranks ignore).
+        let keep = vec!["PnFMods/Kept/Main.py".to_string()];
+        let ignore = vec![
+            "PnFMods/Skipped/Main.py".to_string(),
+            "installed_mods.xml".to_string(),
+        ];
+        let report = migration_execute_core(&game.to_string_lossy(), "1", &keep, &ignore).unwrap();
+        assert_eq!(report.moved_files, 1, "{report:?}");
+        assert_eq!(report.skipped_files, 1, "{report:?}");
+        assert_eq!(report.ignored_files, 1, "{report:?}");
+        assert_eq!(
+            fs::read(old.join("PnFMods/Skipped/Main.py")).unwrap(),
+            b"untouched"
+        );
+        assert!(!old.join("installed_mods.xml").exists());
+        assert_eq!(fs::read(cur.join("PnFMods/Kept/Main.py")).unwrap(), b"x");
+
+        // The stale tree survives its ignored residents.
+        assert!(old.join("PnFMods/Skipped").is_dir());
 
         fs::remove_dir_all(&tmp).ok();
     }

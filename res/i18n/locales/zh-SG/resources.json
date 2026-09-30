@@ -96,13 +96,21 @@
   "migrateEmpty": "旧版本中没有需要处理的插件文件。",
   "migrateKeptCount": "保留 {kept}/{total}",
   "migrateCleanupNote": "重复文件、同名旧副本与安装登记文件会自动清理；迁移不会覆盖当前版本已有的任何文件。",
+  "migrateToggleAll": "全部保留 / 全部不保留",
+  "migrateIgnore": "忽略——留在旧版本中，不做处理",
+  "migrateUnignore": "取消忽略（恢复为保留）",
+  "migrateIgnoreAll": "全部忽略",
+  "migrateUnignoreAll": "全部取消忽略",
+  "migrateDoneIgnored": "{ignored} 个文件已忽略，原样保留在 bin/{from} 中；之后可再次迁移。",
   "migrateGroup": {
     "duplicate": "重复文件",
     "duplicateHint": "当前版本已存在内容完全相同的同名文件，旧副本将直接删除，不会迁移。",
     "superseded": "同名新版",
     "supersededHint": "当前版本已有同名但内容不同的文件（视为新版已安装），旧版本副本将被删除。",
     "decide": "需要决定",
-    "decideHint": "以下文件仅存在于旧版本中：勾选保留并迁移，取消勾选则删除。"
+    "decideHint": "以下文件仅存在于旧版本中：勾选保留并迁移，取消勾选则删除；点击行尾的忽略按钮可将其留在旧版本中不做处理。",
+    "ignored": "已忽略",
+    "ignoredHint": "忽略的文件原样保留在旧版本 bin 中，本次迁移不做任何处理；之后仍可再次迁移。"
   },
   "safeModeOn": "安全模式已开启——res_mods 内的全部插件已整体隔离（res_mods 已改名），游戏将不加载它们。关闭安全模式前无法变更插件。",
   "safeModeHint": "游戏不稳定？可一键隔离 res_mods 内的全部插件来排查——不会删除任何文件，一键即可恢复。",

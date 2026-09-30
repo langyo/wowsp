@@ -96,13 +96,21 @@
   "migrateEmpty": "The stale version holds no mod files to process.",
   "migrateKeptCount": "{kept}/{total} kept",
   "migrateCleanupNote": "Duplicates, superseded copies and install bookkeeping are cleaned up automatically; a migration never overwrites a file the current version already has.",
+  "migrateToggleAll": "Keep all / keep none",
+  "migrateIgnore": "Ignore — leave in the old version, untouched",
+  "migrateUnignore": "Un-ignore (keep again)",
+  "migrateIgnoreAll": "Ignore all",
+  "migrateUnignoreAll": "Restore all",
+  "migrateDoneIgnored": "{ignored} file(s) were ignored and left as-is in bin/{from}; migrate again anytime.",
   "migrateGroup": {
     "duplicate": "Duplicates",
     "duplicateHint": "The current version already carries a file with identical content — the stale copy is deleted, nothing is carried over.",
     "superseded": "Superseded",
     "supersededHint": "The current version already has a file at the same path with different content (treated as the newer install) — the stale copy is deleted.",
     "decide": "Needs a decision",
-    "decideHint": "These files exist only in the stale tree: check to migrate and keep, uncheck to delete."
+    "decideHint": "These files exist only in the stale tree: check to migrate and keep, uncheck to delete — or ignore a row to leave it untouched.",
+    "ignored": "Ignored",
+    "ignoredHint": "Ignored files stay in the old bin exactly as they are; this migration does not touch them, and you can migrate again later."
   },
   "safeModeOn": "Safe mode is active — every res_mods mod is quarantined (res_mods renamed); the game runs without them. No mods can be changed until it is turned off.",
   "safeModeHint": "Game crashing? Quarantine every res_mods mod at once and test — nothing is deleted, one click brings them back.",

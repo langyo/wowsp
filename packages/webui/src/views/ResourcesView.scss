@@ -896,9 +896,14 @@
     text-align: left;
     cursor: pointer;
 
-    /* The decide header is not a toggle — it only carries the kept count. */
+    /* The decide header is not a toggle — it carries the master checkbox,
+       the kept count, and the ignore-all escape hatch (pushed right). */
     &--static {
       cursor: default;
+
+      .hk-btn {
+        margin-left: auto;
+      }
     }
   }
 
@@ -957,12 +962,13 @@
     border-radius: var(--radius-sm);
   }
 
+  /* A decide/ignored row: div wrapper so the row-end ignore button never
+     lands inside the checkbox label; the label covers checkbox + text. */
   &__row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.4375rem 0.5rem;
-    cursor: pointer;
 
     & + & {
       border-top: 1px solid rgb(var(--color-border) / 15%);
@@ -971,6 +977,34 @@
     &:hover {
       background: rgb(var(--color-border) / 10%);
     }
+  }
+
+  /* The clickable (label) part of a decide row: clicking the text toggles
+     the checkbox without swallowing the ignore button's clicks. */
+  &__row-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+
+    .mig-wizard__row--ignored & {
+      cursor: default;
+    }
+  }
+
+  &__row--ignored {
+    .mig-wizard__row-name,
+    .mig-wizard__row-path {
+      color: rgb(var(--color-muted) / 70%);
+    }
+  }
+
+  &__group-foot {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 0.25rem;
   }
 
   &__row-main {

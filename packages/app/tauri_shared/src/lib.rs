@@ -1880,8 +1880,10 @@ pub struct StaleBinInfo {
 }
 
 /// What a stale-bin migration did: files moved into the current version's
-/// `res_mods`, and files kept as-is because the current tree already had
-/// them (the newer install wins, so migrations never overwrite).
+/// `res_mods`, files kept as-is because the current tree already had
+/// them (the newer install wins, so migrations never overwrite), and —
+/// wizard runs only — files the user marked "leave alone" that stayed in
+/// the stale bin untouched.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MigrateReport {
@@ -1889,6 +1891,10 @@ pub struct MigrateReport {
     pub to_version: String,
     pub moved_files: usize,
     pub skipped_files: usize,
+    /// Additive + default so payloads from the pre-ignore wizard keep
+    /// parsing.
+    #[serde(default)]
+    pub ignored_files: usize,
 }
 
 /// One stale-tree file in a [`MigrationPlan`], `res_mods`-relative with
@@ -4077,6 +4083,37 @@ mod tests {
             ],
         );
         assert_exact_keys(&v["decide"][0], &["path", "size", "identity"]);
+    }
+
+    /// Migration wizard report (client.ts: MigrateReport) — camelCase wire
+    /// keys with the additive `ignoredFiles` (absent payloads default to 0).
+    #[test]
+    fn migrate_report_renames_and_defaults_ignored_files() {
+        let report = MigrateReport {
+            from_version: "1".into(),
+            to_version: "2".into(),
+            moved_files: 3,
+            skipped_files: 4,
+            ignored_files: 5,
+        };
+        let v = round_trips(report);
+        assert_exact_keys(
+            &v,
+            &[
+                "fromVersion",
+                "toVersion",
+                "movedFiles",
+                "skippedFiles",
+                "ignoredFiles",
+            ],
+        );
+        assert_eq!(v["ignoredFiles"], 5);
+
+        let old = serde_json::from_str::<MigrateReport>(
+            r#"{"fromVersion":"1","toVersion":"2","movedFiles":3,"skippedFiles":4}"#,
+        )
+        .unwrap();
+        assert_eq!(old.ignored_files, 0);
     }
 
     /// The catalog's hash field must stay `sha256` — camelCase must not

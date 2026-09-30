@@ -1149,6 +1149,9 @@ export interface MigrateReport {
   toVersion: string;
   movedFiles: number;
   skippedFiles: number;
+  /** Wizard runs only: files marked "leave alone" that stayed in the old
+   *  bin. Absent (0) from one-click migrations and older payloads. */
+  ignoredFiles?: number;
 }
 
 /** One stale-tree file in a migration plan — res_mods-relative, forward
@@ -1718,12 +1721,19 @@ export const api = {
       fromVersion,
     }),
   /** Migration wizard step 2: apply the reviewed plan — `keep` lists the
-   *  decide paths to carry over, everything else is cleaned up. */
-  modHubMigrationExecute: (gameRoot: string, fromVersion: string, keep: string[]) =>
+   *  decide paths to carry over, `ignore` the ones to leave untouched in
+   *  the stale bin, everything else is cleaned up. */
+  modHubMigrationExecute: (
+    gameRoot: string,
+    fromVersion: string,
+    keep: string[],
+    ignore: string[],
+  ) =>
     transport.invoke<MigrateReport>(RPC.mod_hub_migration_execute, {
       gameRoot,
       fromVersion,
       keep,
+      ignore,
     }),
   /** Is safe mode visible (current res_mods quarantined, or a stranded
    *  twin in an old version dir)? */

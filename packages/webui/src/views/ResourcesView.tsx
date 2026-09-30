@@ -2,6 +2,7 @@ import { computed, defineComponent, onMounted, onUnmounted, ref, watch } from "v
 import {
   AlertTriangle,
   AudioLines,
+  Ban,
   ChevronDown,
   Ellipsis,
   ExternalLink,
@@ -56,6 +57,16 @@ import {
   type CatalogCat,
 } from "@/features/modhub/taxonomy";
 import { resolveIdentity } from "@/features/modhub/migrateIdentity";
+import {
+  ignoreAll,
+  ignoreFile,
+  keptPending,
+  masterChecked,
+  restoreAll,
+  restoreFile,
+  selectAll,
+  type DecideSelection,
+} from "@/features/modhub/migrationDecide";
 import { useRoute } from "vue-router";
 import { openExternal } from "@/utils/openExternal";
 import { sameGamePath } from "@/utils/gamePath";
@@ -152,11 +163,14 @@ export default defineComponent({
     );
     const migPlan = ref<MigrationPlan | null>(null);
     const migError = ref("");
-    // Decide-bucket paths the user checked (default: all keep).
-    const migKeep = ref(new Set<string>());
+    // Decide-bucket verdicts: `keep` moves the file into the current bin,
+    // `ignore` leaves it untouched in the stale one, neither deletes it.
+    // The sets are disjoint (ignore wins); default is keep-all.
+    const migDecide = ref<DecideSelection>({ keep: new Set(), ignore: new Set() });
     const migReport = ref<MigrateReport | null>(null);
-    // Which auto-cleaned group is expanded (duplicates / superseded).
-    const migGroupOpen = ref<"duplicate" | "superseded" | null>(null);
+    // Which auto-cleaned / reviewed group is expanded (duplicates /
+    // superseded / ignored).
+    const migGroupOpen = ref<"duplicate" | "superseded" | "ignored" | null>(null);
 
     // Safe mode: the whole current res_mods is quarantined under a
     // `.wowsp-disabled` rename — one click to test the game with every
@@ -416,6 +430,16 @@ export default defineComponent({
     const migIdentity = (f: PlanFile): string | null =>
       resolveIdentity(f.path, catalog.value, (e) => localized(e).name || e.nameEn || e.title);
 
+    /** Decide-bucket paths in plan order — the input every selection
+     *  helper (master checkbox, ignore-all) sweeps over. */
+    const decidePaths = (): string[] => migPlan.value?.decide.map((f) => f.path) ?? [];
+
+    /** Nothing left to decide — every decide file is ignored (or the list
+     *  is empty): the master checkbox and ignore-all both stand down. */
+    const decideAllIgnored = computed(
+      () => !decidePaths().some((p) => !migDecide.value.ignore.has(p)),
+    );
+
     async function loadMigPlan() {
       if (!gameRoot.value || !migFrom.value) return;
       migStep.value = "plan";
@@ -426,7 +450,7 @@ export default defineComponent({
       try {
         const p = await api.modHubMigrationPlan(gameRoot.value, migFrom.value);
         migPlan.value = p;
-        migKeep.value = new Set(p.decide.map((f) => f.path));
+        migDecide.value = { keep: new Set(p.decide.map((f) => f.path)), ignore: new Set() };
         migStep.value = "review";
       } catch (e) {
         migError.value = e instanceof Error ? e.message : String(e);
@@ -458,9 +482,35 @@ export default defineComponent({
       migPlan.value = null;
     }
 
+    /** Row checkbox: flips one file between keep (migrate) and drop
+     *  (delete). The ignore verdict has its own actions below. */
     function toggleMigKeep(path: string, keep: boolean) {
-      if (keep) migKeep.value.add(path);
-      else migKeep.value.delete(path);
+      const next = new Set(migDecide.value.keep);
+      if (keep) next.add(path);
+      else next.delete(path);
+      migDecide.value = { ...migDecide.value, keep: next };
+    }
+
+    /** Master checkbox over the decide list: one click selects (or clears)
+     *  every still-pending file; ignored files are never touched. */
+    function toggleMigKeepAll(keepAll: boolean) {
+      migDecide.value = selectAll(migDecide.value, decidePaths(), keepAll);
+    }
+
+    function ignoreMigPath(path: string) {
+      migDecide.value = ignoreFile(migDecide.value, path);
+    }
+
+    function restoreMigPath(path: string) {
+      migDecide.value = restoreFile(migDecide.value, path);
+    }
+
+    function ignoreMigAll() {
+      migDecide.value = ignoreAll(migDecide.value, decidePaths());
+    }
+
+    function restoreMigAll() {
+      migDecide.value = restoreAll(migDecide.value);
     }
 
     function closeMigrate() {
@@ -468,7 +518,7 @@ export default defineComponent({
       migStep.value = "confirm";
       migPlan.value = null;
       migError.value = "";
-      migKeep.value = new Set();
+      migDecide.value = { keep: new Set(), ignore: new Set() };
       migReport.value = null;
       migGroupOpen.value = null;
     }
@@ -480,9 +530,12 @@ export default defineComponent({
       migStep.value = "executing";
       migError.value = "";
       try {
-        const r = await api.modHubMigrationExecute(gameRoot.value, migFrom.value, [
-          ...migKeep.value,
-        ]);
+        const r = await api.modHubMigrationExecute(
+          gameRoot.value,
+          migFrom.value,
+          [...migDecide.value.keep],
+          [...migDecide.value.ignore],
+        );
         migReport.value = r;
         migStep.value = "done";
         await Promise.all([scan(), loadRecords()]);
@@ -1213,21 +1266,58 @@ export default defineComponent({
 
     /** A decide row: checkbox (= keep), the resolved identity name when the
      *  path maps to a catalog entry / known Aslain directory, the raw path,
-     *  and the size. */
+     *  the size, and the ignore action ("leave alone" in the stale bin).
+     *  The row is a div — the checkable part is its own label so the ignore
+     *  button never toggles the checkbox. */
     const renderMigRow = (f: PlanFile) => {
       const identity = migIdentity(f);
       return (
-        <label key={f.path} class="mig-wizard__row" title={f.path}>
-          <HkCheckbox
-            modelValue={migKeep.value.has(f.path)}
-            onUpdate:modelValue={(v: boolean) => toggleMigKeep(f.path, v)}
-          />
-          <span class="mig-wizard__row-main">
-            <span class="mig-wizard__row-name">{identity ?? f.path}</span>
-            {identity && <span class="mig-wizard__row-path">{f.path}</span>}
+        <div key={f.path} class="mig-wizard__row" title={f.path}>
+          <label class="mig-wizard__row-body">
+            <HkCheckbox
+              modelValue={migDecide.value.keep.has(f.path)}
+              onUpdate:modelValue={(v: boolean) => toggleMigKeep(f.path, v)}
+            />
+            <span class="mig-wizard__row-main">
+              <span class="mig-wizard__row-name">{identity ?? f.path}</span>
+              {identity && <span class="mig-wizard__row-path">{f.path}</span>}
+            </span>
+          </label>
+          <span class="mig-wizard__row-size">{migKb(f.size)}</span>
+          <HkIconButton
+            size={24}
+            variant="ghost"
+            data-hint={t("resources.migrateIgnore")}
+            onClick={() => ignoreMigPath(f.path)}
+          >
+            <Ban size={14} />
+          </HkIconButton>
+        </div>
+      );
+    };
+
+    /** An ignored row: no checkbox (the verdict is made), the identity/path
+     *  pair in a dimmer dress, and the way back (restore to kept). */
+    const renderMigIgnoredRow = (f: PlanFile) => {
+      const identity = migIdentity(f);
+      return (
+        <div key={f.path} class="mig-wizard__row mig-wizard__row--ignored" title={f.path}>
+          <span class="mig-wizard__row-body">
+            <span class="mig-wizard__row-main">
+              <span class="mig-wizard__row-name">{identity ?? f.path}</span>
+              {identity && <span class="mig-wizard__row-path">{f.path}</span>}
+            </span>
           </span>
           <span class="mig-wizard__row-size">{migKb(f.size)}</span>
-        </label>
+          <HkIconButton
+            size={24}
+            variant="ghost"
+            data-hint={t("resources.migrateUnignore")}
+            onClick={() => restoreMigPath(f.path)}
+          >
+            <Undo2 size={14} />
+          </HkIconButton>
+        </div>
       );
     };
 
@@ -1361,21 +1451,89 @@ export default defineComponent({
                     {renderMigGroup("superseded", plan.superseded)}
                     <div class="mig-wizard__group">
                       <div class="mig-wizard__group-head mig-wizard__group-head--static">
+                        <HkCheckbox
+                          modelValue={
+                            masterChecked(
+                              decidePaths(),
+                              migDecide.value.keep,
+                              migDecide.value.ignore,
+                            ) as boolean
+                          }
+                          disabled={decideAllIgnored.value}
+                          data-hint={t("resources.migrateToggleAll")}
+                          onUpdate:modelValue={(v: boolean) => toggleMigKeepAll(v)}
+                        />
                         <strong>{t("resources.migrateGroup.decide")}</strong>
                         <span class="mig-wizard__count">
-                          {t("resources.migrateKeptCount", {
-                            kept: migKeep.value.size,
-                            total: plan.decide.length,
-                          })}
+                          {(() => {
+                            const { kept, pending } = keptPending(
+                              decidePaths(),
+                              migDecide.value.keep,
+                              migDecide.value.ignore,
+                            );
+                            return t("resources.migrateKeptCount", {
+                              kept,
+                              total: pending,
+                            });
+                          })()}
                         </span>
+                        <HkButton
+                          variant="ghost"
+                          size="sm"
+                          disabled={decideAllIgnored.value}
+                          onClick={ignoreMigAll}
+                        >
+                          {t("resources.migrateIgnoreAll")}
+                        </HkButton>
                       </div>
                       <p class="mig-wizard__hint">{t("resources.migrateGroup.decideHint")}</p>
-                      {plan.decide.length > 0 && (
-                        <div class="mig-wizard__rows">
-                          {plan.decide.map(renderMigRow)}
-                        </div>
-                      )}
+                      {(() => {
+                        const ignore = migDecide.value.ignore;
+                        const rows = plan.decide.filter((f) => !ignore.has(f.path));
+                        return rows.length > 0 ? (
+                          <div class="mig-wizard__rows">
+                            {rows.map(renderMigRow)}
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
+                    {migDecide.value.ignore.size > 0 && (
+                      <div class="mig-wizard__group">
+                        <button
+                          type="button"
+                          class="mig-wizard__group-head"
+                          onClick={() =>
+                            (migGroupOpen.value =
+                              migGroupOpen.value === "ignored" ? null : "ignored")
+                          }
+                        >
+                          <ChevronDown
+                            size={14}
+                            class={[
+                              "mig-wizard__chevron",
+                              { open: migGroupOpen.value === "ignored" },
+                            ]}
+                          />
+                          <strong>{t("resources.migrateGroup.ignored")}</strong>
+                          <span class="mig-wizard__count">{migDecide.value.ignore.size}</span>
+                        </button>
+                        <p class="mig-wizard__hint">
+                          {t("resources.migrateGroup.ignoredHint")}
+                        </p>
+                        <div class="mig-wizard__group-foot">
+                          <HkButton variant="ghost" size="sm" onClick={restoreMigAll}>
+                            {t("resources.migrateUnignoreAll")}
+                          </HkButton>
+                        </div>
+                        {migGroupOpen.value === "ignored" && (
+                          <div class="mig-wizard__rows">
+                            {plan.decide
+                              .filter((f) => migDecide.value.ignore.has(f.path))
+                              .map(renderMigIgnoredRow)}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <p class="mig-wizard__hint mig-wizard__hint--foot">
                       {t("resources.migrateCleanupNote")}
                     </p>
@@ -1395,13 +1553,23 @@ export default defineComponent({
             )}
 
             {step === "done" && migReport.value && (
-              <div class="resources-banner resources-banner--ok">
-                {t("resources.migrateDone", {
-                  moved: migReport.value.movedFiles,
-                  to: migReport.value.toVersion,
-                  skipped: migReport.value.skippedFiles,
-                })}
-              </div>
+              <>
+                <div class="resources-banner resources-banner--ok">
+                  {t("resources.migrateDone", {
+                    moved: migReport.value.movedFiles,
+                    to: migReport.value.toVersion,
+                    skipped: migReport.value.skippedFiles,
+                  })}
+                </div>
+                {(migReport.value.ignoredFiles ?? 0) > 0 && (
+                  <p class="mig-wizard__status mig-wizard__status--muted">
+                    {t("resources.migrateDoneIgnored", {
+                      ignored: migReport.value.ignoredFiles,
+                      from: migReport.value.fromVersion,
+                    })}
+                  </p>
+                )}
+              </>
             )}
           </div>
         </HkModal>
