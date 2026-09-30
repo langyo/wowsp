@@ -20,6 +20,12 @@
  */
 import { t } from "@/i18n";
 import type { StampKind } from "@/utils/winrate";
+import stampAir from "../../res/stamps/stamp-air.png";
+import stampApe from "../../res/stamps/stamp-ape.png";
+import stampMaggot from "../../res/stamps/stamp-maggot.png";
+import stampMiracle from "../../res/stamps/stamp-miracle.png";
+import stampRat from "../../res/stamps/stamp-rat.png";
+import stampSub from "../../res/stamps/stamp-sub.png";
 
 /** App palette snapshot: CSS var triplets ("R G B") resolved at render time. */
 export interface ShotPalette {
@@ -233,26 +239,25 @@ export function drawFooter(
 /** Cinnabar seal ink — RatingStamp's frame color (RatingStamp.scss). */
 const STAMP_INK = "202 44 38";
 
-/** The seal face's text lines (same layout the RatingStamp SVG presses —
- *  four-char tags as two lines of two, the rest one line). */
-const STAMP_LINES: Record<StampKind, string[]> = {
-  miracle: ["神了"],
-  ape: ["海猴"],
-  maggot: ["蛆"],
-  rat: ["过街", "老鼠"],
-  air: ["空中", "小人"],
-  sub: ["水下", "小人"],
+/** The seal glyph bitmaps (same assets the RatingStamp SVG embeds). */
+export const STAMP_URL: Record<StampKind, string> = {
+  miracle: stampMiracle,
+  ape: stampApe,
+  maggot: stampMaggot,
+  rat: stampRat,
+  air: stampAir,
+  sub: stampSub,
 };
 
 /** RatingStamp's face redrawn in canvas — double rounded frame in cinnabar
- *  ink around the verdict wording as plain text (no bitmap glyphs), tilted
- *  by the shared −9° press (mini variant: no moiré weave at this size). */
+ *  ink around the glyph bitmap, tilted by the shared −9° press (mini
+ *  variant: no moiré weave at this size). */
 export function drawStampSeal(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
   size: number,
-  kind: StampKind,
+  img: HTMLImageElement | null,
 ): void {
   ctx.save();
   ctx.translate(cx, cy);
@@ -267,19 +272,10 @@ export function drawStampSeal(
   ctx.beginPath();
   ctx.roundRect(-35.5 * s, -35.5 * s, 71 * s, 71 * s, 3 * s);
   ctx.stroke();
-  // The wording, centered in the inner frame with the same line metrics
-  // the SVG face uses (font sizes 46 / 30 / 28 on the 100-box).
-  const lines = STAMP_LINES[kind];
-  const fontSize = (lines.length === 2 ? 28 : lines[0].length === 1 ? 46 : 30) * s;
-  ctx.globalAlpha *= 0.92;
-  ctx.fillStyle = rgba(STAMP_INK, 0.92);
-  ctx.font = `700 ${fontSize}px ${FONT_STACK}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  lines.forEach((line, i) => {
-    const y = (lines.length === 2 ? (i === 0 ? -14 : 21) : 0) * s;
-    ctx.fillText(line, 0, y);
-  });
+  if (img) {
+    ctx.globalAlpha *= 0.92;
+    ctx.drawImage(img, -33 * s, -33 * s, 66 * s, 66 * s);
+  }
   ctx.restore();
 }
 

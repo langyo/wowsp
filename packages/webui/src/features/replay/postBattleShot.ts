@@ -19,6 +19,7 @@ import {
   FOOT_H,
   LOGO_URL,
   PAD,
+  STAMP_URL,
   canvasToPngBytes,
   drawFooter,
   drawStampSeal,
@@ -203,6 +204,21 @@ export async function renderPostBattleShot(
     loadImage(LOGO_URL),
   ]);
   const logo = icons.pop() ?? null;
+  // Seal faces load in a second wave (bundled same-origin PNGs, so this
+  // settles near-instantly and only when seals are on at all).
+  const stampImages = new Map<CareerStamp, HTMLImageElement | null>();
+  if (hasStamps) {
+    const kinds = [
+      ...new Set(
+        cols
+          .flatMap((c) => c.rows.map((r) => r.stamp))
+          .filter((k): k is CareerStamp => !!k),
+      ),
+    ];
+    await Promise.all(
+      kinds.map(async (k) => stampImages.set(k, await loadImage(STAMP_URL[k]))),
+    );
+  }
   let iconIdx = 0;
   for (let ci = 0; ci < cols.length; ci++) {
     const col = cols[ci];
@@ -279,11 +295,16 @@ export async function renderPostBattleShot(
         ctx.fillStyle = s.color ?? rgba(palette.text, 0.85);
         ctx.fillText(s.text, x, cy);
       });
-      // The career seal: RatingStamp's face redrawn in canvas (plain text),
-      // pressed onto the row-end slot reserved above (mini variant, see
-      // drawStampSeal).
+      // The career seal: RatingStamp's face redrawn in canvas, pressed onto
+      // the row-end slot reserved above (mini variant, see drawStampSeal).
       if (row.stamp) {
-        drawStampSeal(ctx, cx + COL_WIDTH - 14 - STAMP_SIZE / 2, cy, STAMP_SIZE, row.stamp);
+        drawStampSeal(
+          ctx,
+          cx + COL_WIDTH - 14 - STAMP_SIZE / 2,
+          cy,
+          STAMP_SIZE,
+          stampImages.get(row.stamp) ?? null,
+        );
       }
       ctx.globalAlpha = 1;
       y += ROW_H + 6;

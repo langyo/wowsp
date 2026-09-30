@@ -5,17 +5,25 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { statsPrefsState } from "@/stores/statsPrefs";
 import { stampOverrideUrl } from "@/stores/stampOverrides";
 import type { StampKind } from "@/utils/winrate";
+import stampAir from "../../res/stamps/stamp-air.png";
+import stampApe from "../../res/stamps/stamp-ape.png";
+import stampMaggot from "../../res/stamps/stamp-maggot.png";
+import stampMiracle from "../../res/stamps/stamp-miracle.png";
+import stampRat from "../../res/stamps/stamp-rat.png";
+import stampSub from "../../res/stamps/stamp-sub.png";
 import "./RatingStamp.scss";
 
 let stampSeq = 0;
 
 /** Inked career-verdict seal: a procedural SVG frame (double border + moiré
- *  weave + ink-rough displacement filter) around the verdict wording as
- *  PLAIN TEXT — no pre-rendered calligraphy bitmaps anymore, so the glyphs
- *  follow the app font everywhere and stay crisp at every size. Four-char
- *  tags lay out as the classic 2x2 seal face (空中 over 小人, 过街 over
- *  老鼠), the rest as one centered line. Displacement seeds are fixed per
- *  kind → deterministic ink.
+ *  weave + ink-rough displacement filter) around pre-rendered glyph bitmaps.
+ *
+ *  The glyphs are baked to PNGs by `scripts/gen_stamp_bitmaps.py` (calligraphy
+ *  fonts: 神 in 毛体, the rest in 鲁迅行书; the four-char tags are laid out as
+ *  a 2x2 seal face — 空中 over 小人, 过街 over 老鼠). The fonts themselves are
+ *  commercial / unclear-license and are NOT bundled — bitmaps only, so the
+ *  seals look identical everywhere. Displacement seeds are fixed per kind →
+ *  deterministic ink.
  *   - "miracle" (神了): PR ≥ 2100 over 500+ battles
  *   - "ape" (海猴): PR < 750 with winrate ≥ 40%
  *   - "maggot" (蛆): PR < 750 with winrate < 40%
@@ -30,9 +38,22 @@ let stampSeq = 0;
  *  Hovering a seal shows its award criteria (stats.json `stats.seal*Desc`
  *  keys) as the native tooltip — the same copy the seal customizer rows use.
  *
- *  The seals are a Chinese-community artifact — they render nothing under any
- *  other UI language, and a seal switched off individually (statsPrefs
- *  sealDisabled) never renders either. */
+ *  Every surface outside the in-game Tab overlay shows the square 2x2
+ *  faces; the Tab overlay chips press the verdict wording as PLAIN TEXT
+ *  instead — their rows are far too short for a 2x2 face and the calligraphy
+ *  is wasted at that size — see overlay/main.ts.
+ *
+ * The seals are a Chinese-community artifact — they render nothing under any
+ * other UI language, and a seal switched off individually (statsPrefs
+ * sealDisabled) never renders either. */
+const STAMP_GLYPHS: Record<StampKind, string> = {
+  miracle: stampMiracle,
+  ape: stampApe,
+  maggot: stampMaggot,
+  rat: stampRat,
+  air: stampAir,
+  sub: stampSub,
+};
 const STAMP_TEXT: Record<StampKind, string> = {
   miracle: "神了",
   ape: "海猴",
@@ -40,16 +61,6 @@ const STAMP_TEXT: Record<StampKind, string> = {
   rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
-};
-/** The seal face's text lines — four-char tags press as two lines of two
- *  (the classic 2x2 seal layout), the rest as one line. */
-const STAMP_LINES: Record<StampKind, string[]> = {
-  miracle: ["神了"],
-  ape: ["海猴"],
-  maggot: ["蛆"],
-  rat: ["过街", "老鼠"],
-  air: ["空中", "小人"],
-  sub: ["水下", "小人"],
 };
 /** Award-criteria tooltip keys (stats.json) — shared with the seal
  *  customizer rows; hover copy explains why a seal was earned. */
@@ -84,7 +95,7 @@ export default defineComponent({
     const uid = `stamp-${++stampSeq}`;
 
     return () => {
-      // Three AND-composed gates: zh-only wording, the settings master
+      // Three AND-composed gates: zh-only bitmaps, the settings master
       // switch's seals toggle is checked by the hosts, and this per-kind
       // kill switch from the seal customizer.
       if (!uiLocale.value.startsWith("zh")) return null;
@@ -112,12 +123,6 @@ export default defineComponent({
       const id = (part: string) => `${uid}-${part}`;
       const url = (part: string) => `url(#${id(part)})`;
       const mini = props.variant === "mini";
-      const lines = STAMP_LINES[props.kind];
-      // Face metrics: the 2x2 two-line layout at 28, a lone glyph big at
-      // 46, a two-char line at 30 — each keeps the wording inside the
-      // inner frame with seal-appropriate air.
-      const fontSize = lines.length === 2 ? 28 : lines[0].length === 1 ? 46 : 30;
-      const yOf = (i: number) => (lines.length === 2 ? (i === 0 ? 37 : 71) : 50);
       return (
         <svg
           class="rating-stamp"
@@ -163,22 +168,10 @@ export default defineComponent({
             )}
             <rect class="rating-stamp__frame" x="5" y="5" width="90" height="90" rx="7" stroke-width="6" />
             <rect class="rating-stamp__frame" x="14.5" y="14.5" width="71" height="71" rx="3" stroke-width="2" />
-            {/* The verdict wording as plain text, centered in the inner
-                frame (2x2 for the four-char tags) — the wording IS the
-                face now, crisp at every rendered size. */}
-            {lines.map((line, i) => (
-              <text
-                class="rating-stamp__text"
-                key={line}
-                x="50"
-                y={yOf(i)}
-                font-size={fontSize}
-                text-anchor="middle"
-                dominant-baseline="central"
-              >
-                {line}
-              </text>
-            ))}
+            {/* Glyph bitmap (pre-centered cinnabar: single-glyph verdicts,
+                2x2 composition tags), inset to sit well inside the inner
+                frame — full-bleed glyphs read too heavy at seal sizes. */}
+            <image href={STAMP_GLYPHS[props.kind]} x="17" y="17" width="66" height="66" />
           </g>
         </svg>
       );

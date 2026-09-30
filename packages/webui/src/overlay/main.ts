@@ -304,10 +304,12 @@ function fmtBattles(n: number): string {
 }
 
 /** The seal node beside the chip numbers: the verdict wording as PLAIN
- *  TEXT in cinnabar (the old fixed calligraphy bitmaps are gone), or the
- *  user's custom picture when the seal customizer imported one. data-stamp
- *  carries the kind to chipFit's trim pass (comp seals before career
- *  verdicts when a chip must shrink to stay inside the window). */
+ *  TEXT in cinnabar — the overlay deliberately skips the calligraphy
+ *  bitmaps the in-app RatingStamp faces press (chips are too small for
+ *  the 2x2 face) — or the user's custom picture when the seal customizer
+ *  imported one. data-stamp carries the kind to chipFit's trim pass (comp
+ *  seals before career verdicts when a chip must shrink to stay inside
+ *  the window). */
 function stampNode(kind: StampKind): string {
   if (PREFS.sealsDisabled.has(kind)) return "";
   const label = STAMP_TEXT[kind];
