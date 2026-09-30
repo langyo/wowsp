@@ -701,9 +701,16 @@ export default defineComponent({
               flag; they also clear the error notices above at request start
               and the result branches below stay null until the await
               settles) the result area would otherwise be blank — name the
-              target being queried, realm tag styled like the history rows. */}
-          {(mode.value === "player" && stats.loading) ||
-          (mode.value === "clan" && clanStats.loading) ? (
+              target being queried, realm tag styled like the history rows.
+              The empty-label gate keeps a FOREIGN in-flight lookup (e.g. a
+              dashboard-triggered own-account refresh while this page opens,
+              before any local attempt has set a name) from rendering
+              "Looking up …" blank or co-rendering above a cache-seeded
+              result — pendingQuery only exists once this view started a
+              lookup of its own. */}
+          {pendingQuery.value !== "" &&
+          ((mode.value === "player" && stats.loading) ||
+            (mode.value === "clan" && clanStats.loading)) ? (
             <div class="lookup-view__pending" key="pending">
               <HkSpinner size="sm" />
               <span class="lookup-view__pending-text">
