@@ -144,11 +144,12 @@ fn parse_roster_field(raw: &str) -> RosterRecognition {
         // pixel-comparison pipeline — move to the plugin as the primary
         // detector; only an explicit "passive" pick stays passive.
         "passive" => RosterRecognition::Passive,
-        // "off" is no longer a roster pick (the table switch owns the whole
-        // overlay's off state); stored off configs land on passive, the
-        // closest to what their chooser wanted.
+        // A stored roster "off" lands on passive: the table switch owns the
+        // whole overlay's off state, so the roster pick no longer has one.
         "off" => RosterRecognition::Passive,
-        "inferred" | "ocr" | "plugin" | _ => RosterRecognition::Plugin,
+        // "inferred"/"ocr" (the retired pixel pipeline), "plugin" and
+        // anything unrecognized all land on the plugin primary.
+        _ => RosterRecognition::Plugin,
     }
 }
 
