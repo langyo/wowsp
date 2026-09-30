@@ -50,6 +50,12 @@ pub enum Route<'a> {
     FeedbackHistory { contact: Option<&'a str> },
     /// POST /api/feedback/update — status/PR-link write.
     FeedbackUpdate,
+    /// POST /api/qqbot/callback — QQ 开放平台 webhook（URL 校验 + 事件）。
+    QqBotCallback,
+    /// POST /api/feedback/qq/code — issue a group-verification code.
+    QqBotCode,
+    /// GET /api/feedback/qq/status?contact=… — verification state.
+    QqBotStatus,
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
     FeedbackAttachment { file_token: Option<&'a str> },
@@ -84,6 +90,9 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
             };
         },
         "/api/feedback/update" => return Route::FeedbackUpdate,
+        "/api/qqbot/callback" => return Route::QqBotCallback,
+        "/api/feedback/qq/code" => return Route::QqBotCode,
+        "/api/feedback/qq/status" => return Route::QqBotStatus,
         "/api/feedback/attachment" => {
             return Route::FeedbackAttachment {
                 file_token: query_get(query, "file_token"),
@@ -241,7 +250,10 @@ mod tests {
                 code: Some("123456")
             }
         );
-        assert_eq!(classify("/api/relay/resolve", ""), Route::Resolve { code: None });
+        assert_eq!(
+            classify("/api/relay/resolve", ""),
+            Route::Resolve { code: None }
+        );
     }
 
     #[test]
@@ -288,10 +300,7 @@ mod tests {
         assert_eq!(classify("/api/relay/data/a/b/c", ""), Route::NotFound);
         assert_eq!(classify("/api/relay/data/a//b", ""), Route::NotFound);
         assert_eq!(classify("/api/relay/data//b", ""), Route::NotFound);
-        assert_eq!(
-            classify("/api/relay/data/a/", "role=host"),
-            Route::NotFound
-        );
+        assert_eq!(classify("/api/relay/data/a/", "role=host"), Route::NotFound);
         assert_eq!(classify("/api/relay/data/a", ""), Route::NotFound);
         assert_eq!(classify("/api/relay/data/", "conn=x"), Route::NotFound);
         assert_eq!(classify("/api/relay/data", "conn=x"), Route::NotFound);
@@ -305,5 +314,15 @@ mod tests {
         assert_eq!(query_get("code=1", "cod"), None);
         assert_eq!(query_get("", "code"), None);
         assert_eq!(query_get("codec=1", "code"), None);
+    }
+
+    #[test]
+    fn classify_qqbot_routes() {
+        assert_eq!(classify("/api/qqbot/callback", ""), Route::QqBotCallback);
+        assert_eq!(classify("/api/feedback/qq/code", ""), Route::QqBotCode);
+        assert_eq!(
+            classify("/api/feedback/qq/status", "contact=10001"),
+            Route::QqBotStatus
+        );
     }
 }

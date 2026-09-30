@@ -139,6 +139,10 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     if let Err(code) = normalize(&mut sub) {
         return err(400, code);
     }
+    // QQ 联系方式必须先在群里 @机器人 完成验证（机器人未配置时放行）。
+    if let Err(code) = crate::qqbot::gate_submit(&env, &sub.contact).await {
+        return err(403, code);
+    }
 
     // Human check. The bypass secret exists purely so deploys can be
     // smoke-tested with curl; keep it absent in normal operation.
@@ -261,6 +265,10 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         .await?;
     }
 
+    // 受理通知：尽力而为（C2C 优先，配额/未绑定则跳过），不影响提交。
+    let head: String = sub.description.chars().take(24).collect();
+    let _ = crate::qqbot::notify_accepted(&env, &sub.contact, &head).await;
+
     ok(json!({
         "ok": true,
         "record_url": record_url(&ids, &record_id),
@@ -372,11 +380,7 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
         return err(400, "bad_request");
     };
     let kv = env.kv(KV)?;
-    let ip = req
-        .headers()
-        .get("CF-Connecting-IP")?
-        .unwrap_or_else(|| "local".into());
-    let key = relay_core::feedback::history_rate_key(&ip, now_ms());
+    let key = relay_core::feedback::history_rate_key(&client_ip(&req), now_ms());
     let count: u64 = kv.get(&key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
     if count > relay_core::feedback::RATE_HISTORY_PER_HOUR {
         return err(429, "rate_limited");
@@ -386,8 +390,16 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
         .execute()
         .await?;
 
-    let token = feishu_token(&env).await.map_err(|e| e.to_string())?;
-    let ids = ensure_base(&env, &token).await.map_err(|e| e.to_string())?;
+    let items = history_records(&env, &contact).await?;
+
+    ok(json!({ "ok": true, "items": items }))
+}
+
+/// One contact's newest submissions (time/status/description/pr only) —
+/// shared by the public history endpoint and the QQ bot's 查询 command.
+pub async fn history_records(env: &Env, contact: &str) -> Result<Vec<Value>> {
+    let token = feishu_token(env).await.map_err(|e| e.to_string())?;
+    let ids = ensure_base(env, &token).await.map_err(|e| e.to_string())?;
     let (_, v) = feishu_json(
         Method::Post,
         &format!(
@@ -409,8 +421,7 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
     )
     .await?;
 
-    let items = v
-        .pointer("/data/items")
+    Ok(v.pointer("/data/items")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default()
@@ -431,9 +442,26 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
                 }),
             })
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>())
+}
 
-    ok(json!({ "ok": true, "items": items }))
+/// 回读一条记录的联系方式（通知路由用）；读不到返回 None（跳过通知）。
+async fn record_contact(token: &str, ids: &BitableIds, record_id: &str) -> Option<String> {
+    let (_, v) = feishu_json(
+        Method::Get,
+        &format!(
+            "{FEISHU}/bitable/v1/apps/{}/tables/{}/records/{record_id}",
+            ids.app_token, ids.table_id
+        ),
+        token,
+        Value::Null,
+    )
+    .await
+    .ok()?;
+    let c = v
+        .pointer(&format!("/fields/{}", feedback::F_CONTACT))
+        .cloned();
+    Some(text_val(&c)).filter(|c| !c.is_empty())
 }
 
 /// POST /api/feedback/update {record_id, status?, pr_link?} — the console's
@@ -497,6 +525,23 @@ pub async fn handle_update(mut req: Request, env: Env) -> Result<Response> {
         json!({ "fields": fields }),
     )
     .await?;
+    // 处理结果通知（尽力而为）：回读记录拿联系方式，按状态选渠道。
+    if let Some(contact) = record_contact(&token, &ids, record_id).await {
+        let final_status = if status.is_empty() {
+            None
+        } else {
+            Some(status)
+        };
+        if let Some(st) = final_status {
+            let _ = crate::qqbot::notify_status(
+                &env,
+                &contact,
+                st,
+                if pr_link.is_empty() { "" } else { pr_link },
+            )
+            .await;
+        }
+    }
     ok(json!({ "ok": true }))
 }
 
@@ -551,6 +596,15 @@ fn ct_eq(a: &str, b: &str) -> bool {
 }
 
 // ── Feishu plumbing ────────────────────────────────────────────────────
+
+/// The caller's IP (CF header in production, "local" under wrangler dev).
+pub fn client_ip(req: &Request) -> String {
+    req.headers()
+        .get("CF-Connecting-IP")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "local".into())
+}
 
 fn now_ms() -> i64 {
     worker::Date::now().as_millis() as i64
@@ -774,7 +828,7 @@ async fn grant_admin(token: &str, app_token: &str, open_id: &str) {
 
 /// The one outbound-HTTP door: every third-party call (Turnstile, Feishu)
 /// goes through this so redirect/timeout behavior stays uniform.
-async fn http_call(
+pub(crate) async fn http_call(
     method: Method,
     url: &str,
     headers: Headers,
@@ -791,7 +845,7 @@ async fn http_call(
     Fetch::Request(req).send().await
 }
 
-fn json_headers(token: Option<&str>) -> Result<Headers> {
+pub(crate) fn json_headers(token: Option<&str>) -> Result<Headers> {
     let headers = Headers::new();
     headers.set("Content-Type", "application/json; charset=utf-8")?;
     if let Some(t) = token {

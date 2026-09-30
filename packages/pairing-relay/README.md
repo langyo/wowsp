@@ -130,6 +130,30 @@ old clients cannot talk to lands).
 
 ## Feedback pipeline (`/feedback`, `/erp`)
 
+### QQ 通知机器人（进群验证 + 受理/结果回访）
+
+QQ 官方机器人平台不给 QQ 号 ↔ openid 的互换接口，普通群也没有成员
+查询 API——所以“进群才能反馈”通过**交互证明**实现：
+
+1. 表单里 QQ 联系方式下方出现验证块，“获取验证码”拿一个 6 位码
+   （`POST /api/feedback/qq/code`，每 IP 每小时 5 次，码 30 分钟有效）。
+2. 用户在通知群里 @机器人 发送「验证 123456」（或私发，私聊同时补
+   c2c openid）。回调 `POST /api/qqbot/callback`（Ed25519 验签，URL
+   配置走 op 13/14）把 member/group openid 绑定到该 QQ 号（KV
+   `qqbind:*`，长期）。
+3. `POST /api/feedback/submit` 对 QQ 联系方式要求绑定存在，否则
+   `not_verified`；邮箱联系方式不受影响。
+4. 回访：受理成功 → C2C 私聊（自限额 3 条/人/月，留平台配额余量）；
+   `/erp` 状态改到「已开PR」→ 群内 markdown `<@member_openid>` 单独
+   @（群主动消息配额珍贵，只留给这个场景）。全部尽力而为，失败静默。
+   用户随时可在群里 @机器人 发「查询」被动拉取自己的最新处理状态。
+
+控制台配置（q.qq.com → 机器人 → 开发设置）：回调地址填
+`https://wowsp.langyo.xyz/api/qqbot/callback`，把页面给的 Ed25519
+种子/公钥分别 `wrangler secret put` 到 `QQBOT_ED25519_SEED` /
+`QQBOT_ED25519_PUB`（app 凭证为 `QQBOT_APPID`/`QQBOT_SECRET`）。
+
+
 The same worker also hosts WoWSP's self-service feedback flow. Everything
 is worker-first (`run_worker_first` in `wrangler.toml` routes `/feedback`
 and `/erp` past the static-asset layer):

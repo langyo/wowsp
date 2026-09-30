@@ -18,6 +18,7 @@ pub mod feedback;
 pub mod manifest;
 pub mod multipart;
 pub mod protocol;
+pub mod qqbot;
 pub mod room;
 pub mod route;
 

@@ -803,6 +803,16 @@ textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opa
 .contact-box input {{ flex: 1; min-width: 0; padding: var(--space-4) 0;
   background: transparent; border: none; outline: none;
   font: inherit; font-size: var(--text-base); color: rgb(var(--color-text)); }}
+.qq-verify {{ margin-top: var(--space-8); padding: var(--space-10) var(--space-12);
+  border-radius: var(--radius-md); font-size: var(--text-xs); line-height: 1.7;
+  color: rgb(var(--color-muted)); background: rgb(var(--color-surface) / 55%);
+  border: 1px solid rgb(var(--color-border) / 15%);
+  display: flex; gap: var(--space-10); align-items: center; flex-wrap: wrap; }}
+.qq-verify[hidden] {{ display: none; }}
+.qq-verify.is-ok {{ color: rgb(var(--color-success));
+  border-color: color-mix(in srgb, rgb(var(--color-success)) 30%, transparent); }}
+.qq-verify .code {{ font-weight: 700; color: rgb(var(--color-text));
+  font-variant-numeric: tabular-nums; }}
 /* ── editable combobox (HkSearchInput shell + chevron) ──────────────── */
 .combo {{ position: relative; }}
 .combo .field {{ padding-inline-end: var(--space-32); }}
@@ -1006,6 +1016,10 @@ a {{ color: rgb(var(--color-primary)); }}
       <button type="button" id="contactType" class="affix-chip" aria-haspopup="listbox"
         aria-expanded="false"><span id="ctLabel"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       <input type="text" id="contact" name="contact" maxlength="64">
+    </div>
+    <div class="qq-verify" id="qqVerify" hidden>
+      <span id="qqVerifyText"></span>
+      <button type="button" class="btn ghost" id="qqVerifyBtn" data-i18n="qqVerifyBtn"></button>
     </div>
     <label for="gameId" data-i18n="serverGameLabel"></label>
     <div class="contact-box">
@@ -1398,7 +1412,7 @@ a {{ color: rgb(var(--color-primary)); }}
       {{ value: "qq", label: t("contactTypeQQ"), selected: ct === "qq" }},
       {{ value: "email", label: t("contactTypeEmail"), selected: ct === "email" }}
     ];
-  }}, function (it) {{ setCt(it.value, true); }});
+  }}, function (it) {{ setCt(it.value, true); qqWatch(); }});
   setCt(ct, false);
   // ── main server chip + game id (hikari realm vocabulary) ─────────────
   var REALMS = ["ru", "eu", "na", "asia", "cn"];
@@ -1440,6 +1454,63 @@ a {{ color: rgb(var(--color-primary)); }}
     if (gameId.value) localStorage.setItem("wowsp-fb-gameid", gameId.value);
     else localStorage.removeItem("wowsp-fb-gameid");
   }});
+  // ── QQ 进群验证：签发验证码 → 群里 @机器人 发码 → 轮询绑定状态 ────
+  var qqBox = document.getElementById("qqVerify");
+  var qqText = document.getElementById("qqVerifyText");
+  var qqBtn = document.getElementById("qqVerifyBtn");
+  var qqTimer = null;
+  function qqActive() {{
+    return ct === "qq" && /^\d{{5,11}}$/.test(contact.value.trim());
+  }}
+  function qqSet(ok, html) {{
+    qqBox.hidden = !qqActive();
+    qqBox.classList.toggle("is-ok", !!ok);
+    qqText.innerHTML = html;
+  }}
+  function qqPoll() {{
+    if (!qqActive()) return;
+    fetch("{base_url}/api/feedback/qq/status?contact=" +
+        encodeURIComponent(contact.value.trim()))
+      .then(function (r) {{ return r.json(); }})
+      .then(function (j) {{
+        if (j.ok && j.verified) {{
+          clearInterval(qqTimer); qqTimer = null;
+          qqBtn.hidden = true;
+          qqSet(true, t("qqVerified"));
+        }}
+      }})
+      .catch(function () {{}});
+  }}
+  function qqWatch() {{
+    clearInterval(qqTimer); qqTimer = null;
+    qqBtn.hidden = false;
+    if (!qqActive()) {{ qqBox.hidden = true; return; }}
+    qqSet(false, t("qqVerifyHint"));
+    qqPoll();
+    qqTimer = setInterval(qqPoll, 5000);
+  }}
+  qqBtn.addEventListener("click", function () {{
+    qqBtn.disabled = true;
+    fetch("{base_url}/api/feedback/qq/code", {{
+      method: "POST",
+      headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{ contact: contact.value.trim() }})
+    }})
+      .then(function (r) {{ return r.json(); }})
+      .then(function (j) {{
+        if (j.ok) {{
+          qqSet(false, t("qqVerifyCode").replace(/#c/g, "<span class='code'>" + j.code + "</span>"));
+          if (!qqTimer) qqTimer = setInterval(qqPoll, 5000);
+        }} else {{
+          qqSet(false, t("qqVerifyFailed"));
+        }}
+      }})
+      .catch(function () {{ qqSet(false, t("qqVerifyFailed")); }})
+      .finally(function () {{ qqBtn.disabled = false; }});
+  }});
+  contact.addEventListener("change", qqWatch);
+  contact.addEventListener("input", qqWatch);
+  qqWatch();
   // Unambiguous input flips the category for you; anything else keeps
   // the explicit choice.
   contact.addEventListener("input", function () {{
@@ -1620,9 +1691,15 @@ a {{ color: rgb(var(--color-primary)); }}
           if (window.turnstile) turnstile.reset();
         }} else {{
           msg.className = "err";
-          msg.textContent = res.j.error === "maintenance"
-            ? t("maintenance")
-            : (t("e_" + (res.j.error || "upstream")) || t("e_upstream"));
+          if (res.j.error === "not_verified") {{
+            msg.textContent = t("e_not_verified");
+            qqBox.hidden = false;
+            qqBox.scrollIntoView({{ block: "center", behavior: "smooth" }});
+          }} else {{
+            msg.textContent = res.j.error === "maintenance"
+              ? t("maintenance")
+              : (t("e_" + (res.j.error || "upstream")) || t("e_upstream"));
+          }}
           if (window.turnstile) turnstile.reset();
         }}
       }})
@@ -2213,6 +2290,11 @@ mod tests {
         assert!(page.contains("height: 100vh; height: 100dvh;"));
         assert!(page.contains(r#".hk-scrollbar-track"#));
         assert!(page.contains(r#".hk-scrollbar-thumb"#));
+        // QQ 进群验证流程随表单下发。
+        assert!(page.contains(r#"id="qqVerify" hidden"#));
+        assert!(page.contains(r#"id="qqVerifyBtn" data-i18n="qqVerifyBtn""#));
+        assert!(page.contains("/api/feedback/qq/code"));
+        assert!(page.contains("/api/feedback/qq/status"));
         assert!(page.contains("hk-scrollbar-track\";"));
     }
 
