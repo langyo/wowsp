@@ -76,6 +76,7 @@ class Probe(object):
         self.discovered = False
         self.order_subs = {}
         self.journal = []
+        self.empty_ticks = 0
         self.dh = None
         self.const = None
         self.api_dumped = False
@@ -394,6 +395,7 @@ class Probe(object):
         self.last_raw = ''
         self.discovered = False
         self.comp_dumped = False
+        self.empty_ticks = 0
         try:
             stream = open(TELEMETRY_FILE, 'w')
             stream.write(utils.jsonEncode({'t': int(time.time() * 1000),
@@ -621,8 +623,12 @@ class Probe(object):
         handle = [0]
 
         def tick():
-            callbacks.cancel(handle[0])
             try:
+                # cancel is INSIDE the guard: scene teardowns invalidate
+                # pending handles, and an exception here used to escape
+                # before self.schedule() — silently killing the loop for
+                # the rest of the battle (observed 2026-09-30 15:37).
+                callbacks.cancel(handle[0])
                 self.tick()
             except Exception as exc:
                 self.soft('tick error=' + str(exc)[:160])
@@ -634,6 +640,7 @@ class Probe(object):
         self.observe_raw(records)
         roster = self.players(records)
         if roster:
+            self.empty_ticks = 0
             if roster == self.previous:
                 self.stable += 1
             else:
@@ -651,7 +658,16 @@ class Probe(object):
                 self.request(False)
                 log('roster stable players=' + str(len(roster)) + ' sample=' + utils.jsonEncode(roster[0]))
         elif self.session:
-            self.quit()
+            # A transient empty roster happens MID-BATTLE: the player's own
+            # death screen empties getPlayersInfo() for a second or two.
+            # Quitting on the first sighting tore the session down mid-
+            # battle (clear + rearm churn that killed the scheduler) —
+            # require the emptiness to persist before believing it.
+            self.empty_ticks += 1
+            if self.empty_ticks >= 3:
+                self.quit()
+        else:
+            self.empty_ticks = 0
         try:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': int(time.time() * 1000),
                                              'phase': 'battle' if self.session else 'port',
