@@ -538,6 +538,7 @@
     "nationTitle": "국가",
     "nationAll": "모든 국가",
     "hintMulti": "다중 선택 · 「전체…」 클릭 시 초기화",
+    "nationScrollHint": "드래그하거나 마우스 휠로 모든 국가를 탐색할 수 있습니다",
     "wrTitle": "승률",
     "wrAll": "전체 승률",
     "battlesTitle": "전투 수",

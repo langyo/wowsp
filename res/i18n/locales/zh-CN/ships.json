@@ -538,6 +538,7 @@
     "nationTitle": "国家",
     "nationAll": "全部国家",
     "hintMulti": "可多选 · 点击「全部…」重置",
+    "nationScrollHint": "按住拖动或滚动滚轮可查看全部国家",
     "wrTitle": "胜率",
     "wrAll": "全部胜率",
     "battlesTitle": "场次",

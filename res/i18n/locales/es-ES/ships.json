@@ -538,6 +538,7 @@
     "nationTitle": "Nación",
     "nationAll": "Todas las naciones",
     "hintMulti": "Selección múltiple · pulsa «Todo …» para restablecer",
+    "nationScrollHint": "Arrastra o usa la rueda del ratón para ver todas las naciones",
     "wrTitle": "Tasa de victorias",
     "wrAll": "Todas las tasas de victorias",
     "battlesTitle": "Batallas",

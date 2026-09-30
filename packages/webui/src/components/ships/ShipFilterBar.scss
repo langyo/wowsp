@@ -165,6 +165,15 @@
   padding: 10px 12px 8px;
 }
 
+/* Hard width cap for the anchored (non-sheet) panels: a category popup
+   must never outrun the viewport, and the nation strip's 14 flags give
+   the max-content panel every excuse to try. Sheet form factors size
+   themselves (full-width, hikari's own geometry) — excluded here so the
+   phone layout stays untouched. */
+.hk-popover-panel:not(.hk-is-sheet) .ship-filter-bar__pop {
+  max-width: min(92vw, 640px);
+}
+
 .ship-filter-bar__pop-head {
   display: flex;
   align-items: center;
@@ -236,6 +245,43 @@
   &:focus-visible {
     outline: 2px solid rgb(var(--color-primary));
     outline-offset: -2px;
+  }
+}
+
+/* ── Nation strip: one line, panned — never wrapped ──
+   The #667 wrap never engaged: HkPopover sizes its panel to max-content,
+   so a wrapping track always measured as ONE long line that ran off the
+   screen. The track is a real horizontal scroll container now — it
+   shrinks to the capped panel above and pans by wheel / mouse drag (the
+   TSX holds the pointer machinery: pointer capture, the 5px click/pan
+   threshold, the one-shot click swallow) while touch pans the overflow
+   natively (touch-action: pan-x). The scrollbar rides the app-wide
+   themed styling (theme.scss: thin + --color-border ink); repeated here
+   so the strip keeps that look even if the global ever narrows. */
+.ship-filter-bar__opts--scroll {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-border) / 40%) transparent;
+  /* The whole strip drags (the hint line says so), so the grab
+     affordance rides over the option buttons too. Clicks still select:
+     the 5px pan threshold keeps plain clicks click-shaped. */
+  cursor: grab;
+
+  .ship-filter-bar__opt {
+    cursor: grab;
+  }
+
+  &[data-panning] {
+    cursor: grabbing;
+    user-select: none;
+
+    .ship-filter-bar__opt {
+      cursor: grabbing;
+    }
   }
 }
 
@@ -385,6 +431,24 @@
     display: flex;
     flex-wrap: wrap;
     gap: 2px;
+  }
+
+  /* The nation strip relaxes back into the wrapping group on phones: the
+     sheet carries the full width, nothing pans there, and its gesture
+     hint would name an interaction the track does not have — hidden. */
+  .ship-filter-bar__opts--scroll {
+    flex-wrap: wrap;
+    overflow: visible;
+    touch-action: auto;
+    cursor: default;
+
+    .ship-filter-bar__opt {
+      cursor: pointer;
+    }
+  }
+
+  .ship-filter-bar__scroll-hint {
+    display: none;
   }
 
   .ship-filter-bar__search-panel {

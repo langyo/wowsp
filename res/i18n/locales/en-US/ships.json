@@ -538,6 +538,7 @@
     "nationTitle": "Nation",
     "nationAll": "All nations",
     "hintMulti": "Multi-select · click “All …” to reset",
+    "nationScrollHint": "Drag or use the mouse wheel to browse all nations",
     "wrTitle": "Win rate",
     "wrAll": "All win rates",
     "battlesTitle": "Battles",

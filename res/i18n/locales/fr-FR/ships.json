@@ -538,6 +538,7 @@
     "nationTitle": "Nation",
     "nationAll": "Toutes les nations",
     "hintMulti": "Choix multiples · cliquez sur « Tout … » pour réinitialiser",
+    "nationScrollHint": "Faites glisser ou utilisez la molette pour parcourir toutes les nations",
     "wrTitle": "Taux de victoire",
     "wrAll": "Tous les taux de victoire",
     "battlesTitle": "Batailles",

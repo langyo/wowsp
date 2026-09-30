@@ -29,7 +29,11 @@
  *    after "type", the legacy key swept and the v4 blob written back;
  *  - stale multi-select storage of the now-single categories is clamped
  *    to one pick on load;
- *  - selections survive an unmount/remount cycle.
+ *  - selections survive an unmount/remount cycle;
+ *  - the nation popup alone renders its options as a pannable strip with
+ *    a scroll hint (the other categories keep the plain track, and plain
+ *    clicks still select), and the extracted pan helpers (wheel delta
+ *    normalizer, 5px pan threshold) hold their contracts.
  *
  * The option popups render through hikari HkPopover: their DOM teleports to
  * document.body (overflow ancestors can never clip them), so popup queries
@@ -43,7 +47,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createPinia } from "pinia";
 import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
-import ShipFilterBar, { type FilterState } from "./ShipFilterBar";
+import ShipFilterBar, { panEngaged, stripWheelDelta, type FilterState } from "./ShipFilterBar";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { PlayerShipStats, ShipInfo } from "@/api";
 
@@ -501,5 +505,56 @@ describe("ShipFilterBar chips", () => {
     expect(chip(second, "winrate").classes()).toContain("ship-filter-bar__chip--on");
     expect(order(second)).toEqual([5]);
     second.unmount();
+  });
+
+  it("renders the nation popup alone as a pannable strip with a scroll hint", async () => {
+    const wrapper = mountBar();
+    await flushPromises();
+
+    await chip(wrapper, "nation").trigger("click");
+    await waitPops(1);
+    // Nation track: the strip modifier plus the gesture hint line beneath
+    // it (the popup itself is width-capped in CSS — not observable here).
+    expect(document.body.querySelector(".ship-filter-bar__opts--scroll")).not.toBeNull();
+    const hint = document.body.querySelector(".ship-filter-bar__scroll-hint");
+    expect(hint).not.toBeNull();
+    expect(hint!.textContent).not.toBe("");
+
+    // Another category keeps the plain track: no strip class, no hint.
+    await chip(wrapper, "tier").trigger("click");
+    await waitPops(1);
+    expect(document.body.querySelector(".ship-filter-bar__opts--scroll")).toBeNull();
+    expect(document.body.querySelector(".ship-filter-bar__scroll-hint")).toBeNull();
+
+    // Back to the nation strip: a plain click (no pan movement) still
+    // selects — the pan machinery never swallows threshold-free clicks.
+    await chip(wrapper, "nation").trigger("click");
+    await waitPops(1);
+    await popOpts()[1]!.trigger("click"); // japan
+    await flushPromises();
+    expect(chip(wrapper, "nation").classes()).toContain("ship-filter-bar__chip--on");
+  });
+});
+
+describe("nation strip pan helpers", () => {
+  it("translates the vertical wheel notch but honors a real horizontal swipe", () => {
+    expect(stripWheelDelta(0, 120)).toBe(120);
+    expect(stripWheelDelta(0, -120)).toBe(-120);
+    // Trackpad sideways swipes (and shift+wheel, reported as deltaX
+    // natively) win over the vertical delta.
+    expect(stripWheelDelta(-60, 120)).toBe(-60);
+    expect(stripWheelDelta(15, -90)).toBe(15);
+    expect(stripWheelDelta(0, 0)).toBe(0);
+  });
+
+  it("arms the pan only past the threshold on either axis", () => {
+    // Under the threshold on both axes: a click, not a pan.
+    expect(panEngaged(0, 0, 5)).toBe(false);
+    expect(panEngaged(4, 4, 5)).toBe(false);
+    expect(panEngaged(-4, 3, 5)).toBe(false);
+    // The threshold itself engages (the chip drag arms at the same >= 5).
+    expect(panEngaged(5, 0, 5)).toBe(true);
+    expect(panEngaged(0, -5, 5)).toBe(true);
+    expect(panEngaged(-9, 3, 5)).toBe(true);
   });
 });
