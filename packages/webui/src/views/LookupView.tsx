@@ -275,10 +275,11 @@ export default defineComponent({
         result.value = acc;
         lastLookup.value = { kind: "player", name: acc.name, realm: rl, id: acc.accountId };
         pushHistory({ kind: "player", name: acc.name, realm: rl, id: acc.accountId });
-        // Ranked seasons load in parallel (last 5, feeds the card's ranked
-        // split); per-ship stats load in the background (the loading chip
+        // Ranked seasons load in parallel (every listed season, unplayed
+        // ones dropped server-side — feeds the card's ranked split);
+        // per-ship stats load in the background (the loading chip
         // stays until done).
-        void ranked.load(acc.accountId, rl, 5);
+        void ranked.load(acc.accountId, rl);
         await shipStats.load(acc.accountId, rl).catch(() => {});
       } catch {
         // error surfaced via stats.error

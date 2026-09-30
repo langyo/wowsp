@@ -77,23 +77,27 @@ fn format_rank_display(league: i32, rank: i32) -> String {
     format!("{} {}", league_name(league), rank)
 }
 
-/// Fetch a player's ranked stats for the most recent N seasons.
+/// Fetch a player's ranked stats (every listed season unless a window is
+/// given).
 ///
 /// Calls `/wows/seasons/info/` to get the season IDs, then
 /// `/wows/seasons/accountinfo/` for the player's data. Returns a flat list
-/// of per-season summaries (most recent first).
+/// of per-season summaries (most recent first). `season_count = None`
+/// covers EVERY season the API lists — the flatten drops the unplayed
+/// ones — so a long ranked history stays complete; `Some(n)` keeps the
+/// old "n most recent" window (clamped to 1..=30).
 #[tauri::command]
 pub async fn get_ranked_stats(
     account_id: i64,
     realm: String,
     season_count: Option<i64>,
 ) -> Result<Vec<RankedSeasonStats>, String> {
-    let n = season_count.unwrap_or(5).min(30) as usize;
+    let window = season_count.map(|c| c.clamp(1, 30) as usize);
     // The CN cluster has no seasons API, but its vortex detail endpoint
     // embeds the same seasons/rank_info trees — `wg_api_cn::ranked_stats`
     // normalizes and flattens them through the shared path below.
     if realm == "cn" {
-        return super::wg_api_cn::ranked_stats(account_id, n).await;
+        return super::wg_api_cn::ranked_stats(account_id, window).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
@@ -124,7 +128,10 @@ pub async fn get_ranked_stats(
         .map(|d| d.keys().copied().collect())
         .unwrap_or_default();
     season_ids.sort_by(|a, b| b.cmp(a)); // descending
-    let recent_ids: Vec<i64> = season_ids.into_iter().take(n).collect();
+    let recent_ids: Vec<i64> = match window {
+        Some(n) => season_ids.into_iter().take(n).collect(),
+        None => season_ids, // every listed season; unplayed ones drop in the flatten
+    };
     if recent_ids.is_empty() {
         return Ok(Vec::new());
     }

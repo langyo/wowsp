@@ -30,7 +30,11 @@ export const useRankedStore = defineStore("ranked", () => {
    *  for a previous player must never clobber the current one's data. */
   let token = 0;
 
-  async function load(id: number, realm: string, seasonCount = 5) {
+  /** Load a player's ranked seasons. `seasonCount` omitted = EVERY season
+   *  the backend lists (unplayed ones drop server-side), so the per-season
+   *  cards and the aggregated winrate cover the full ranked history, not a
+   *  recent window. */
+  async function load(id: number, realm: string, seasonCount?: number) {
     const current = ++token;
     loading.value = true;
     error.value = null;

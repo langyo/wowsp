@@ -168,7 +168,7 @@ export default defineComponent({
       if (!acc || !props.ship) return;
       myStatsLoaded.value = true;
       void shipStats.load(acc.accountId, acc.realm).catch(() => {});
-      void ranked.load(acc.accountId, acc.realm, 5).catch(() => {});
+      void ranked.load(acc.accountId, acc.realm).catch(() => {});
       void trends.loadPlayer(acc.accountId, acc.realm).catch(() => {});
     }
 

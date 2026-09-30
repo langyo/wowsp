@@ -147,7 +147,7 @@ export default defineComponent({
         shipStats.load(acc.accountId, acc.realm),
         encyclopedia.load(acc.realm),
         trends.loadPlayer(acc.accountId, acc.realm),
-        ranked.load(acc.accountId, acc.realm, 5),
+        ranked.load(acc.accountId, acc.realm),
       ]);
       loadingTasks.end(taskId);
     }

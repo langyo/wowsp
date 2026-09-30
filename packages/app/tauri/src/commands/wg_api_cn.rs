@@ -759,10 +759,11 @@ pub(crate) async fn lookup_clan_info(clan_id: i64, algo: PrAlgo) -> Result<ClanI
 /// flatten consumes them verbatim. Season ids come from the player's own
 /// seasons map (there is no seasons/info metadata endpoint to list them);
 /// the id convention matches WG (1001 = Season 1), which the season naming
-/// in the flatten relies on.
+/// in the flatten relies on. `None` keeps every season the player's map
+/// carries; `Some(n)` truncates to the n most recent.
 pub(crate) async fn ranked_stats(
     account_id: i64,
-    season_count: usize,
+    season_count: Option<usize>,
 ) -> Result<Vec<super::ranked::RankedSeasonStats>, String> {
     let client = vortex_client()?;
     let node = account_info(&client, account_id)
@@ -779,7 +780,9 @@ pub(crate) async fn ranked_stats(
         .map(|o| o.keys().filter_map(|k| k.parse::<i64>().ok()).collect())
         .unwrap_or_default();
     season_ids.sort_by(|a, b| b.cmp(a)); // descending = most recent first
-    season_ids.truncate(season_count);
+    if let Some(n) = season_count {
+        season_ids.truncate(n);
+    }
 
     let player = serde_json::json!({
         "seasons": seasons,
