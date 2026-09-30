@@ -220,6 +220,12 @@
   font-size: 0.625rem;
 }
 
+/* Full-width block host for the dist charts; inline-size containment
+   drives the chart-row collapse breakpoint (see ShipDistCharts.scss). */
+.lookup-view__dist {
+  container-type: inline-size;
+}
+
 .lookup-view__dist-title {
   color: rgb(var(--color-muted));
   font-size: var(--text-2xs);

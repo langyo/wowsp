@@ -6,26 +6,46 @@
   width: 100%;
 }
 
-/* Tier histogram claims the larger share of the row; the min-widths push
-   the three charts onto separate lines once the container gets too narrow.
+/* Tier histogram claims the larger share of the row; the container query
+   below makes row-vs-stacked an all-or-nothing choice — flex-wrap alone
+   would greedily keep bar + first donut on line 1 in a 452–741px band.
    Flex bases 32 + 30 + 30 = 92% deliberately leave the remaining 8% for
-   the row's two 12px gaps, so all three blocks DO share one line on wide
-   containers. Verified wrap points (flex-wrap packs hypothetical sizes —
+   the row's two 12px gaps, so all three blocks CAN share one line on wide
+   containers. One-row threshold (flex-wrap packs hypothetical sizes —
    basis clamped up by min-width): the floors stop binding at 625px (bar
-   basis 0.32W ≥ 200px) and 800px (pie basis 0.30W ≥ 240px). One line from
-   ≈741px up: in the 625–800px band the pies sit at their 240px floor, so
-   the binding constraint is 0.32W + 240 + 240 + 24 ≤ W (0.68W ≥ 504 →
-   W ≥ 741.2); above 800px all three bases are free and the 92% rule
-   0.92W + 24 ≤ W holds automatically (any W ≥ 300); below 625px the sum
-   of floors 200 + 240 + 240 + 24 = 704 never fits. From 452px (200 +
-   240 + one gap) to ≈741px the bar and the FIRST donut keep line 1 and
-   only the second donut wraps; below 452px everything stacks one block
-   per line. At the 240px pie floor the block interior still works: the
-   donut svg's 96px min-width plus the 8px pie-body gap leaves 136px for
-   the legend — two ~63px columns fit and ellipsis trims long names. The
-   min() caps keep the fixed min-widths from overflowing phone-narrow
-   containers (lookup mobile content ≈ 280px, postbattle sheet ≈ 266px):
-   there each block simply fills the full row width. */
+   basis 0.32W ≥ 200px) and 800px (pie basis 0.30W ≥ 240px). In the
+   625–800px band the pies sit at their 240px floor, so the binding
+   constraint is 0.32W + 240 + 240 + 24 ≤ W (0.68W ≥ 504 → W ≥ 741.2);
+   above 800px all three bases are free and the 92% rule 0.92W + 24 ≤ W
+   holds automatically (any W ≥ 300); below 625px the sum of floors
+   200 + 240 + 240 + 24 = 704 never fits. One row therefore needs a
+   container of ≈741.2px: the @container rule collapses straight to a
+   single column (three stacked rows) at ≤741px — skipping the old 2+1
+   band entirely — and the natural rules keep one row from 742px up.
+
+   The query only matches when an ancestor is a size container, so BOTH
+   hosts — `.lookup-view__dist` (LookupView.scss) and
+   `.replay-view__postbattle-dist` (PostBattlePanel.scss) — must keep
+   `container-type: inline-size`. Content under a host that has no
+   container ancestor never matches the query and falls back to the
+   legacy wrapped-row packing below.
+
+   Column mode needs no overrides: `align-items: stretch` (the default
+   here) makes each block fill the full row, and the fixed heights and
+   min() caps are harmless stacked one per line. At the 240px pie floor
+   the block interior still works: the donut svg's 96px min-width plus
+   the 8px pie-body gap leaves 136px for the legend — two ~63px columns
+   fit and ellipsis trims long names. The min() caps keep the fixed
+   min-widths from overflowing phone-narrow containers (lookup mobile
+   content ≈ 280px, postbattle sheet ≈ 266px): there each block simply
+   fills the full row width. */
+
+/* Below the one-row threshold, skip the greedy 2+1 packing entirely:
+   collapse straight to a single column (three stacked rows). */
+@container (max-width: 741px) {
+  .ship-dist-charts { flex-direction: column; }
+}
+
 .ship-dist-charts__bar {
   flex: 1 1 32%;
   min-width: min(200px, 100%);
