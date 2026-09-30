@@ -144,6 +144,7 @@ _lint-full:
     cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
     {{PM}} -r lint
     @python scripts/check_i18n.py
+    @python scripts/export_feedback_theme.py --check
 
 _lint-rust:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
@@ -151,9 +152,17 @@ _lint-rust:
 
 _lint-webui:
     {{PM}} -r lint
+    @python scripts/export_feedback_theme.py --check
 
 _lint-i18n *FLAGS='':
     @python scripts/check_i18n.py {{FLAGS}}
+
+# Regenerate res/theme/feedback-hikari.css from the installed hikari
+# package (channels + scale tokens + the default preset's light/dark
+# palettes). relay-core embeds the file into the /feedback page; CI
+# verifies it stays in sync.
+feedback-theme:
+    @python scripts/export_feedback_theme.py
 
 lint target='full' *FLAGS='':
     @just _lint-{{target}} {{FLAGS}}

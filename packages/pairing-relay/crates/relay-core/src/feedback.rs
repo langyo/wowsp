@@ -403,6 +403,14 @@ fn feedback_locales_json() -> &'static str {
     })
 }
 
+/// The /feedback page's hikari design tokens — generated from the webui's
+/// `@celestia-island/hikari` dependency by `scripts/export_feedback_theme.py`
+/// (the channels + scale `:root` blocks plus the default preset's light/dark
+/// palettes, i.e. the exact pair the app's `initTheme()` applies at runtime).
+/// Checked in so the worker build needs no Node toolchain; CI re-runs the
+/// exporter with `--check` so a hikari bump cannot drift silently.
+const FEEDBACK_HIKARI_CSS: &str = include_str!("../../../../../res/theme/feedback-hikari.css");
+
 /// The /feedback form. `sitekey: None` renders the maintenance notice
 /// (deploy before the Turnstile widget exists / after pulling the key).
 pub fn feedback_page(sitekey: Option<&str>, base_url: &str) -> String {
@@ -419,6 +427,7 @@ pub fn feedback_page(sitekey: Option<&str>, base_url: &str) -> String {
     };
     let submit_disabled = if key.is_some() { "" } else { " disabled" };
     let locales_json = feedback_locales_json();
+    let hikari_css = FEEDBACK_HIKARI_CSS;
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -428,62 +437,136 @@ pub fn feedback_page(sitekey: Option<&str>, base_url: &str) -> String {
 <title>WoWSP Feedback</title>
 {turnstile_head}
 <style>
-:root {{ color-scheme: light dark; }}
+{hikari_css}
+</style>
+<style>
+/* Component rules speak hikari's token vocabulary only (mirroring
+ * HkButton / HkInput / HkTag / the settings-group + auth-card patterns
+ * from the library's own SCSS) — no hand-rolled palette. */
 * {{ box-sizing: border-box; }}
-body {{ margin: 0; font: 15px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
-  background: #f6f7f9; color: #1f2328; padding: 24px 12px; }}
-@media (prefers-color-scheme: dark) {{ body {{ background: #0d1117; color: #e6edf3; }} }}
-main {{ max-width: 620px; margin: 0 auto; }}
-.head {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; }}
-h1 {{ font-size: 1.35rem; margin: 0; }}
-#langSel {{ padding: 6px 10px; border: 1px solid #d0d7de; border-radius: 8px;
-  background: transparent; color: inherit; font: inherit; font-size: .85rem;
-  max-width: 46%; cursor: pointer; }}
-p.sub {{ margin: 4px 0 20px; color: #6b7280; }}
-label {{ display: block; margin: 14px 0 6px; font-weight: 600; font-size: .9rem; }}
-textarea, input[type=text] {{ width: 100%; padding: 8px 10px; border: 1px solid #d0d7de;
-  border-radius: 8px; font: inherit; background: transparent; color: inherit; }}
+:root {{ color-scheme: light dark; }}
+body {{ margin: 0; min-height: 100vh; display: flex; justify-content: center;
+  padding: var(--space-24) var(--viewport-gutter);
+  font-family: var(--font-sans); font-size: var(--text-md); line-height: 1.6;
+  background: rgb(var(--color-background)); color: rgb(var(--color-text)); }}
+main {{ width: 100%; max-width: 38rem; }}
+.card {{ background: color-mix(in srgb, rgb(var(--color-surface)) 70%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 12%, transparent);
+  border-radius: var(--radius-md); box-shadow: 0 2px 16px rgb(0 0 0 / 8%);
+  padding: var(--space-24) var(--space-20);
+  animation: card-in 0.45s var(--ease-out-expo) both; }}
+@media (prefers-reduced-motion: reduce) {{ .card {{ animation: none; }} }}
+@keyframes card-in {{
+  from {{ opacity: 0; transform: translateY(-16px) scale(0.92); }}
+  to {{ opacity: 1; transform: none; }}
+}}
+.head {{ display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); }}
+h1 {{ font-size: var(--text-xl); font-weight: 700; margin: 0; }}
+#langSel {{ padding: var(--space-4) var(--space-8); max-width: 46%;
+  background: color-mix(in srgb, rgb(var(--color-surface)) 55%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 14%, transparent);
+  border-radius: var(--radius-sm); color: rgb(var(--color-text));
+  font: inherit; font-size: var(--text-xs); cursor: pointer; }}
+#langSel:focus-visible {{ border-color: rgb(var(--color-focused-border));
+  box-shadow: var(--shadow-focus); outline: none; }}
+p.sub {{ margin: var(--space-4) 0 var(--space-20); color: rgb(var(--color-muted));
+  font-size: var(--text-sm); }}
+label {{ display: block; margin: var(--space-16) 0 var(--space-4); font-weight: 600;
+  font-size: var(--text-xs); letter-spacing: 0.02em;
+  color: rgb(var(--color-text) / 72%); }}
+textarea, input[type=text] {{ width: 100%; padding: var(--space-8) var(--space-12);
+  min-height: 2.5rem;
+  background: color-mix(in srgb, rgb(var(--color-surface)) 55%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 14%, transparent);
+  border-radius: var(--radius-sm); color: rgb(var(--color-text));
+  font: inherit; font-size: var(--text-base); line-height: 1.5;
+  transition-property: background-color, border-color, box-shadow;
+  transition-duration: var(--duration-normal);
+  transition-timing-function: var(--ease-standard); }}
+textarea:hover:not(:disabled), input[type=text]:hover:not(:disabled) {{
+  border-color: var(--c-primary-strong); }}
+textarea:focus, input[type=text]:focus {{ border-color: rgb(var(--color-focused-border));
+  box-shadow: var(--shadow-focus); background: rgb(var(--color-surface)); outline: none; }}
 textarea {{ min-height: 120px; resize: vertical; }}
 input[readonly] {{ opacity: .75; }}
-.filepick-row {{ margin-top: 2px; }}
-.filepick-row button {{ padding: 8px 14px; font-size: .9rem; }}
-button {{ padding: 9px 18px; border: 0; border-radius: 8px; font: inherit;
-  font-weight: 600; background: #2563eb; color: #fff; cursor: pointer; }}
+textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opacity: .6; }}
+button {{ display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--space-6); font-family: inherit; font-weight: 600; line-height: 1;
+  font-size: var(--text-sm); padding: var(--space-6) var(--space-12); min-height: 1.75rem;
+  border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer;
+  background: rgb(var(--color-primary)); color: rgb(var(--color-on-solid));
+  white-space: nowrap; user-select: none; outline: none;
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform, filter;
+  transition-duration: var(--duration-normal);
+  transition-timing-function: var(--ease-standard); }}
+button:hover:not(:disabled):not(:focus-visible) {{ filter: brightness(1.1);
+  box-shadow: var(--shadow-button); }}
+button:active:not(:disabled) {{ filter: brightness(0.95); }}
+button:focus-visible {{ box-shadow: 0 0 0 2px rgb(var(--color-surface)),
+  0 0 0 4px rgb(var(--color-primary)); }}
 button:disabled {{ opacity: .5; cursor: not-allowed; }}
-button.ghost {{ background: transparent; border: 1px solid #d0d7de; color: inherit; }}
-button#submit {{ width: 100%; margin-top: 4px; }}
-.cf-turnstile {{ margin: 16px 0 10px; }}
-.notice {{ padding: 12px; border-radius: 8px; background: rgb(255 159 10 / 12%); }}
-#msg {{ margin-top: 14px; white-space: pre-wrap; }}
-#msg.ok {{ color: #1a7f37; }} #msg.err {{ color: #cf222e; }}
-a {{ color: #2563eb; }}
-.media-row {{ display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }}
-.media-row button {{ padding: 8px 14px; font-size: .9rem; }}
-#recState {{ font-weight: 600; color: #cf222e; }}
-#attachInfo {{ margin-top: 8px; font-size: .85rem; color: #6b7280; display: flex;
-  gap: 8px; align-items: center; flex-wrap: wrap; }}
-#attachInfo button {{ padding: 2px 10px; font-size: .78rem; }}
-.privacy {{ margin-top: 18px; padding: 12px; border-radius: 8px; font-size: .82rem;
-  line-height: 1.7; color: #6b7280; background: rgb(110 118 129 / 10%); }}
-details.history {{ margin-top: 22px; }}
-details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem; }}
-.hist-row {{ display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }}
+button.second {{ background: rgb(var(--color-surface)); color: rgb(var(--color-text));
+  border-color: rgb(var(--color-border) / 20%); }}
+button.second:hover:not(:disabled):not(:focus-visible) {{ border-color: var(--c-primary-strong);
+  filter: none; box-shadow: none; }}
+button.danger {{ background: rgb(var(--color-error)); color: rgb(var(--color-on-solid)); }}
+button.danger:hover:not(:disabled):not(:focus-visible) {{ box-shadow: var(--shadow-button-danger); }}
+button.ghost {{ background: transparent; color: rgb(var(--color-text));
+  border-color: transparent; }}
+button.ghost:hover:not(:disabled):not(:focus-visible) {{ background: var(--c-primary-light);
+  filter: none; box-shadow: none; }}
+button#submit {{ width: 100%; margin-top: var(--space-4); padding: var(--space-8) var(--space-16);
+  min-height: 2.5rem; font-size: var(--text-base); }}
+.filepick-row {{ margin-top: 2px; }}
+.cf-turnstile {{ margin: var(--space-16) 0 var(--space-10); }}
+.notice {{ padding: var(--space-12); border-radius: 6px; font-size: var(--text-sm);
+  color: rgb(var(--color-warning));
+  background: color-mix(in srgb, rgb(var(--color-warning)) 10%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--color-warning)) 20%, transparent); }}
+#msg {{ margin-top: var(--space-12); white-space: pre-wrap; font-size: var(--text-sm); }}
+#msg.ok {{ color: rgb(var(--color-success)); }} #msg.err {{ color: rgb(var(--color-error)); }}
+a {{ color: rgb(var(--color-primary)); }}
+.media-row {{ display: flex; gap: var(--space-8); margin-top: var(--space-10);
+  flex-wrap: wrap; align-items: center; }}
+#recState {{ font-weight: 600; color: rgb(var(--color-error)); font-size: var(--text-sm); }}
+#attachInfo {{ margin-top: var(--space-8); font-size: var(--text-sm);
+  color: rgb(var(--color-muted)); display: flex; gap: var(--space-8);
+  align-items: center; flex-wrap: wrap; }}
+#attachInfo button {{ padding: 2px var(--space-8); font-size: var(--text-2xs); min-height: 0; }}
+.privacy {{ margin-top: var(--space-20); padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-md); font-size: var(--text-xs); line-height: 1.7;
+  color: rgb(var(--color-muted)); background: rgb(var(--color-surface) / 55%);
+  border: 1px solid rgb(var(--color-border) / 15%); }}
+details.history {{ margin-top: var(--space-20); }}
+details.history summary {{ cursor: pointer; font-weight: 600; font-size: var(--text-sm);
+  color: rgb(var(--color-text)); }}
+.hist-row {{ display: flex; gap: var(--space-8); margin: var(--space-12) 0; flex-wrap: wrap; }}
 .hist-row input {{ flex: 1; min-width: 200px; }}
 @media (max-width: 480px) {{
   .hist-row input, .hist-row button {{ width: 100%; flex: 1 1 100%; }}
 }}
-.hist-count {{ margin: 12px 0 8px; color: #6b7280; font-size: .85rem; }}
-.hist-item {{ padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 8px;
-  margin-bottom: 8px; font-size: .88rem; }}
-.hist-meta {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }}
-.hist-item .muted {{ color: #6b7280; font-size: .8rem; }}
-.badge {{ display: inline-block; padding: 0 8px; border-radius: 999px; font-size: .78rem;
-  background: rgb(37 99 235 / 14%); color: #2563eb; }}
-.badge.s2 {{ background: rgb(26 127 55 / 14%); color: #1a7f37; }}
+.hist-count {{ margin: var(--space-12) 0 var(--space-8); color: rgb(var(--color-muted));
+  font-size: var(--text-xs); }}
+.hist-item {{ padding: var(--space-12); margin-bottom: var(--space-8); font-size: var(--text-sm);
+  background: color-mix(in srgb, rgb(var(--color-surface)) 55%, transparent);
+  border: 1px solid rgb(var(--color-border) / 15%); border-radius: var(--radius-md); }}
+.hist-meta {{ display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap;
+  margin-bottom: var(--space-4); }}
+.hist-item .muted {{ color: rgb(var(--color-muted)); font-size: var(--text-xs); }}
+.badge {{ display: inline-flex; align-items: center; font-size: var(--text-2xs);
+  font-weight: 500; line-height: 1.4; border-radius: var(--radius-sm);
+  padding: 2px var(--space-8); border: 1px solid transparent;
+  background: color-mix(in srgb, rgb(var(--color-primary)) 10%, transparent);
+  color: rgb(var(--color-primary));
+  border-color: color-mix(in srgb, rgb(var(--color-primary)) 20%, transparent); }}
+.badge.s2 {{ background: color-mix(in srgb, rgb(var(--color-success)) 10%, transparent);
+  color: rgb(var(--color-success));
+  border-color: color-mix(in srgb, rgb(var(--color-success)) 20%, transparent); }}
 </style>
 </head>
 <body>
 <main>
+<div class="card">
 <div class="head">
   <h1>WoWSP Feedback</h1>
   <select id="langSel"></select>
@@ -503,12 +586,12 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
   <label for="file" data-i18n="fileLabel"></label>
   <input type="file" id="file" name="file" hidden accept=".zip,.log,.txt,.gz,.png,.jpg,.jpeg,.gif,.webp,.bmp,.webm,.mp4,.mov">
   <div class="filepick-row">
-    <button type="button" class="ghost" id="filePick" data-i18n="filePick"></button>
+    <button type="button" class="second" id="filePick" data-i18n="filePick"></button>
   </div>
   <div class="media-row">
-    <button type="button" class="ghost" id="shot" data-i18n="shotBtn"></button>
-    <button type="button" class="ghost" id="rec" data-i18n="recBtn"></button>
-    <button type="button" class="ghost" id="recStop" style="display:none" data-i18n="recStopBtn"></button>
+    <button type="button" class="second" id="shot" data-i18n="shotBtn"></button>
+    <button type="button" class="second" id="rec" data-i18n="recBtn"></button>
+    <button type="button" class="danger" id="recStop" style="display:none" data-i18n="recStopBtn"></button>
     <span id="recState"></span>
   </div>
   <div id="attachInfo" style="display:none">
@@ -528,9 +611,23 @@ details.history summary {{ cursor: pointer; font-weight: 600; font-size: .95rem;
   </div>
   <div id="histResult"></div>
 </details>
+</div>
 </main>
 <script>
 (function () {{
+  // ── theme mode — mirrors hikari useTheme's data-mode attribute, fed by
+  // the OS scheme so the token sheet's [data-mode="dark"] block tracks the
+  // system preference exactly like the app's solar mode would ───────────
+  var modeQuery = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
+  function applyMode() {{
+    document.documentElement.setAttribute("data-mode",
+      modeQuery && modeQuery.matches ? "dark" : "light");
+  }}
+  applyMode();
+  if (modeQuery && modeQuery.addEventListener) {{
+    modeQuery.addEventListener("change", applyMode);
+  }}
+
   // ── i18n runtime — same 9-locale table the app ships ─────────────────
   var LOCALES = {locales_json};
   var ORDER = ["en-US", "zh-CN", "zh-SG", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "fr-FR", "es-ES"];
@@ -1192,6 +1289,36 @@ mod tests {
         // native control.
         assert!(page.contains(r#"id="filePick" data-i18n="filePick""#));
         assert!(page.contains(r#"<input type="file" id="file" name="file" hidden"#));
+    }
+
+    #[test]
+    fn feedback_page_carries_hikari_tokens() {
+        // The vendored sheet is the real hikari vocabulary: channel palette,
+        // scale tokens, fonts, and both default-preset schemes behind the
+        // two documented selectors.
+        for marker in [
+            "--color-primary",
+            "--color-focused-border",
+            "--space-16",
+            "--radius-sm",
+            "--text-sm",
+            "--font-sans",
+            "--c-primary-light",
+            "--shadow-button",
+            "prefers-color-scheme: dark",
+            r#"html[data-mode="dark"]"#,
+        ] {
+            assert!(FEEDBACK_HIKARI_CSS.contains(marker), "tokens miss {marker}");
+        }
+        // The page embeds the sheet and flips it with hikari's own
+        // data-mode attribute; no hand-rolled palette may remain.
+        let page = feedback_page(Some("0x4AAAAsitekey"), "https://wowsp.langyo.xyz");
+        assert!(page.matches("data-mode").count() >= 2);
+        assert!(page.contains("--color-primary: 214 51 132")); // preset light
+        assert!(page.contains("--color-primary: 136 192 208")); // preset dark
+        for stale in ["#2563eb", "#d0d7de", "#0d1117", "#f6f7f9", "#6b7280"] {
+            assert!(!page.contains(stale), "hand-rolled color {stale} survived");
+        }
     }
 
     #[test]

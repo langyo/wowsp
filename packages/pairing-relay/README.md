@@ -136,11 +136,16 @@ and `/erp` past the static-asset layer):
 
 - **`GET /feedback`** — an embedded, dependency-free form localized in the
   same nine locales as the app's `res/i18n` files (language selector with
-  `?lang=`/localStorage/browser resolution, dark-mode aware) with a Cloudflare
-  Turnstile widget. The WoWSP desktop app's 设置 ▸ 问题反馈 pane links here
-  with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill (the history
-  lookup link adds `focus=history`); the form itself mints a localStorage
-  anonymous id and remembers the optional contact field.
+  `?lang=`/localStorage/browser resolution) and styled with hikari's design
+  tokens: `res/theme/feedback-hikari.css` is generated from the webui's
+  `@celestia-island/hikari` dependency by `scripts/export_feedback_theme.py`
+  (channels + scale tokens plus the default preset's light/dark palettes),
+  embedded at compile time, and flipped between schemes via the same
+  `data-mode` attribute the app's `useTheme` sets. A Cloudflare Turnstile
+  widget guards submissions. The WoWSP desktop app's 设置 ▸ 问题反馈 pane
+  links here with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill
+  (the history lookup link adds `focus=history`); the form itself mints a
+  localStorage anonymous id and remembers the optional contact field.
 - **`POST /api/feedback/submit`** (multipart) — normalize → Turnstile
   siteverify → KV rate limits (5/h per IP, 10/day per anonymous id, 300/day
   global) → a record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on
