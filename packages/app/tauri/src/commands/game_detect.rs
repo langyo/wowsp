@@ -4,14 +4,17 @@
 //! scan the Windows Uninstall registry for known Wargaming-family publishers
 //! (see [`PUBLISHER_PATTERNS`] — substring matching so the legacy KongZhong
 //! CN client and publisher-string variants are covered too), read each
-//! entry's `InstallLocation`, and accept it when `WorldOfWarships.exe` exists
-//! there. WoWSP additionally walks Steam library folders for
-//! `appmanifest_552990.acf` (Steam appid 552990 = World of Warships) — the
-//! case ApeRadar does not cover. A user can also pin a manual path.
+//! entry's `InstallLocation`, and accept it when a root stub exe from
+//! [`GAME_ROOT_STUBS`] exists there. WoWSP additionally walks Steam library
+//! folders for `appmanifest_552990.acf` (Steam appid 552990 = World of
+//! Warships) and reads Lesta Game Center's own bookkeeping under
+//! `%ProgramData%\Lesta\GameCenter` ([`scan_lesta_game_center`]) — the two
+//! cases ApeRadar does not cover. A user can also pin a manual path.
 //!
-//! All four distribution channels share the same on-disk layout
-//! (`WorldOfWarships.exe` stub at the root, `bin/<build>/bin64/` game
-//! binaries, `profile/`, `replays/`); only the launcher and the registry
+//! All distribution channels share the same on-disk layout (a root stub exe,
+//! `bin/<build>/bin64/` game binaries, `profile/`, `replays/`); only the
+//! launcher, the stub's name (the Lesta client renamed theirs to
+//! `Korabli.exe` when Lesta Games split from Wargaming) and the registry
 //! publisher differ, so kind/realm resolution below leans on those two
 //! signals plus the log-derived realm.
 //!
@@ -44,11 +47,20 @@ const PUBLISHER_PATTERNS: &[(&str, GameInstallKind)] = &[
 /// Steam appid for World of Warships.
 const STEAM_APPID: &str = "552990";
 
+/// Root stub executables that identify a WoWS install folder. The Lesta
+/// (Мир кораблей) client kept the WG on-disk layout but renamed the stub to
+/// `Korabli.exe` when Lesta Games split from Wargaming — its 64-bit game
+/// binary is `bin/<build>/bin64/Korabli64.exe` where the WG builds keep
+/// `WorldOfWarships.exe` / `WorldOfWarships64.exe`. Any one hit makes the
+/// folder a game root.
+const GAME_ROOT_STUBS: &[&str] = &["WorldOfWarships.exe", "Korabli.exe"];
+
 /// Auto-detect every World of Warships install on this machine: the
 /// `WOWSP_GAME_PATH` env pin, then the Uninstall-registry walk
 /// ([`scan_registry_uninstall_keys`], `HKCU` + `HKLM`
 /// `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*` filtered by
-/// [`PUBLISHER_PATTERNS`]), then the Steam `libraryfolders.vdf` +
+/// [`PUBLISHER_PATTERNS`]), then Lesta Game Center's own game index
+/// ([`scan_lesta_game_center`]), then the Steam `libraryfolders.vdf` +
 /// `appmanifest_<appid>.acf` parse ([`scan_steam_libraries`]).
 /// Sync scan core — also used by internal callers (replay/arena dir
 /// resolution) that cannot await.
@@ -69,10 +81,15 @@ pub(crate) fn scan_game_installs() -> Vec<GameInstall> {
     // 2. Registry scan (official / Lesta / 360 / legacy KongZhong).
     found.extend(scan_registry_uninstall_keys());
 
-    // 3. Steam scan.
+    // 3. Lesta Game Center's own game index — the Uninstall walk above only
+    //    catches a Lesta install when its (optional) uninstall entry exists
+    //    and is well-formed; LGC's preferences.xml / apps files always are.
+    found.extend(scan_lesta_game_center());
+
+    // 4. Steam scan.
     found.extend(scan_steam_libraries());
 
-    // 4. One row per folder — the sources overlap (see the module docs), and
+    // 5. One row per folder — the sources overlap (see the module docs), and
     // the settings list keys rows by path, so duplicates would render as two
     // "in use" cards for the same directory.
     dedupe_installs(found)
@@ -208,12 +225,12 @@ pub async fn set_game_path(path: String) -> Result<GameInstall, String> {
 }
 
 /// Shared validation for the picker + manual-path command: the folder must
-/// contain `WorldOfWarships.exe`; realm is read from clientrunner.log when
-/// available.
+/// contain a root stub exe ([`GAME_ROOT_STUBS`]); realm is read from
+/// clientrunner.log when available.
 fn validate_manual_path(path: &str) -> Result<GameInstall, String> {
     if !is_game_dir(path) {
         return Err(format!(
-            "所选目录不像《战舰世界》安装目录（缺少 WorldOfWarships.exe）：{path}"
+            "所选目录不像《战舰世界》安装目录（缺少 WorldOfWarships.exe，莱服客户端为 Korabli.exe）：{path}"
         ));
     }
     Ok(GameInstall {
@@ -223,15 +240,17 @@ fn validate_manual_path(path: &str) -> Result<GameInstall, String> {
     })
 }
 
-/// Does the folder look like a WoWS install root (stub exe present)? Shared
-/// with the unified game context, which validates every candidate root.
+/// Does the folder look like a WoWS install root (a stub exe from
+/// [`GAME_ROOT_STUBS`] present)? Shared with the unified game context,
+/// which validates every candidate root.
 pub(crate) fn is_game_dir(path: &str) -> bool {
-    PathBuf::from(path).join("WorldOfWarships.exe").is_file()
+    let dir = PathBuf::from(path);
+    GAME_ROOT_STUBS.iter().any(|exe| dir.join(exe).is_file())
 }
 
 /// Walk HKCU + HKLM `...\Uninstall\*`, filter by `PUBLISHER_PATTERNS`, and
 /// resolve each entry's install folder ([`uninstall_dir_candidates`], then the
-/// `WorldOfWarships.exe` check). Mirrors ApeRadar's
+/// [`is_game_dir`] stub check). Mirrors ApeRadar's
 /// `ConfigWindow.AutoDetectGamePath` but matches publishers as substrings (see
 /// [`PUBLISHER_PATTERNS`]) and survives entries whose `InstallLocation` the
 /// installer left empty. On Steam installs this usually yields nothing (Steam
@@ -278,15 +297,7 @@ fn scan_registry_uninstall_keys() -> Vec<GameInstall> {
                         if !is_game_dir(&dir) {
                             continue;
                         }
-                        // A WG-registered folder under a Steam library is the
-                        // Steam client (WGC adopts Steam installs) — label it
-                        // Steam so the list doesn't show a phantom 官服 row
-                        // next to the real Steam one.
-                        let kind = if install_path_key(&dir).contains("steamapps\\common") {
-                            GameInstallKind::Steam
-                        } else {
-                            kind.clone()
-                        };
+                        let kind = registry_folder_kind(&dir, kind.clone());
                         found.push(GameInstall {
                             realm: detect_realm(std::path::Path::new(&dir))
                                 .or_else(|| kind_fallback_realm(&kind)),
@@ -302,13 +313,31 @@ fn scan_registry_uninstall_keys() -> Vec<GameInstall> {
     found
 }
 
+/// Kind of a registry-resolved install folder. Two overrides on top of the
+/// publisher-derived kind: a folder under a Steam library is the Steam
+/// client (WGC adopts Steam installs — label it Steam so the list doesn't
+/// show a phantom 官服 row next to the real Steam one), and a Korabli-only
+/// root is the Lesta build no matter which channel registered it (the
+/// RU/CIS Steam region serves that build; [`kind_priority`] ranks Steam
+/// above Lesta, so this relabel — not dedupe — is what keeps the row's
+/// realm fallback on `ru`).
+fn registry_folder_kind(dir: &str, publisher_kind: GameInstallKind) -> GameInstallKind {
+    if lesta_build_dir(std::path::Path::new(dir)) {
+        GameInstallKind::Lesta
+    } else if install_path_key(dir).contains("steamapps\\common") {
+        GameInstallKind::Steam
+    } else {
+        publisher_kind
+    }
+}
+
 /// Candidate install folders from one Uninstall key, best signal first:
 /// `InstallLocation`, then `DisplayIcon`, then `UninstallString`. Installers
 /// in the wild sometimes leave `InstallLocation` empty (or one level off the
 /// real folder) while the icon / uninstall strings still name the game
 /// directory — falling back through the trio recovers those installs instead
 /// of dropping them (user-reported misses). Duplicates are removed; every
-/// candidate still has to pass the caller's `WorldOfWarships.exe` check.
+/// candidate still has to pass the caller's stub-exe check.
 fn uninstall_dir_candidates(
     install_location: &str,
     display_icon: &str,
@@ -409,9 +438,142 @@ pub(crate) fn kind_fallback_realm(kind: &GameInstallKind) -> Option<String> {
     }
 }
 
+// ── Lesta Game Center ───────────────────────────────────────────────────────
+
+/// Detect installs managed by Lesta Game Center (LGC — the launcher Lesta
+/// Games built from WGC's code when it took over the RU realm; same
+/// `%ProgramData%\…\GameCenter` data layout). LGC does not reliably expose
+/// the game folder through the Windows Uninstall hive (its `LGC-*` entries
+/// are optional and shaped around the launcher's own uninstaller), so read
+/// the launcher's own bookkeeping instead — verified against a real LGC
+/// install:
+///
+/// * `preferences.xml` — one `<working_dir>` per `<game>` under
+///   `<games_manager>`, plus `<current_game>` / `<active_game>` pointers;
+/// * `apps\<game-id>\<hash>` — one-line files mirroring each managed game's
+///   install root (`mk.ru.production` = Мир кораблей, the WoWS RU client).
+///
+/// The index lists every Lesta game (Мир танков too), so every candidate
+/// still passes [`is_game_dir`] — only the Korabli-named WoWS root survives.
+fn scan_lesta_game_center() -> Vec<GameInstall> {
+    let Some(center) = std::env::var_os("PROGRAMDATA")
+        .map(|base| PathBuf::from(base).join("Lesta").join("GameCenter"))
+    else {
+        return Vec::new();
+    };
+    scan_lesta_game_center_at(&center)
+}
+
+/// Testable core of [`scan_lesta_game_center`] against an explicit LGC data
+/// directory (the real one lives under the machine's `%ProgramData%`).
+fn scan_lesta_game_center_at(center: &std::path::Path) -> Vec<GameInstall> {
+    let mut candidates = Vec::new();
+    if let Ok(xml) = std::fs::read_to_string(center.join("preferences.xml")) {
+        candidates.extend(lgc_xml_dir_values(&xml));
+    }
+    candidates.extend(lgc_apps_paths(center));
+
+    // The two indexes repeat the same folder (preferences.xml AND the apps
+    // file both point at every managed game), so collapse here — the scan is
+    // one source and must emit one row per folder.
+    dedupe_installs(
+        candidates
+            .into_iter()
+            .filter_map(|raw| {
+                let dir = normalize_path_seps(raw.trim());
+                is_game_dir(&dir).then(|| GameInstall {
+                    realm: detect_realm(std::path::Path::new(&dir))
+                        .or_else(|| kind_fallback_realm(&GameInstallKind::Lesta)),
+                    kind: GameInstallKind::Lesta,
+                    path: dir,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Install roots recorded in LGC's `preferences.xml`: every `<working_dir>`
+/// (one per managed game) plus the `<current_game>` / `<active_game>`
+/// pointers. Same folder in practice — the pointer survives even when a
+/// `<game>` entry is pruned mid-reinstall — so distinctness is keyed on
+/// [`install_path_key`] like every other multi-source candidate list.
+fn lgc_xml_dir_values(xml: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |val: String| {
+        let key = install_path_key(&val);
+        if !key.is_empty() && !out.iter().any(|e| install_path_key(e) == key) {
+            out.push(val);
+        }
+    };
+    for tag in ["working_dir", "current_game", "active_game"] {
+        for val in xml_tag_values(xml, tag) {
+            push(val);
+        }
+    }
+    out
+}
+
+/// LGC's per-game index: every managed game keeps a one-line file at
+/// `apps\<game-id>\<hash>` whose content is the install root.
+fn lgc_apps_paths(center: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(apps) = std::fs::read_dir(center.join("apps")) else {
+        return out;
+    };
+    for game_dir in apps.flatten() {
+        let Ok(entries) = std::fs::read_dir(game_dir.path()) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(text) = std::fs::read_to_string(entry.path()) else {
+                continue;
+            };
+            // LGC writes a bare path with no newline; strip a possible BOM so
+            // `D:\…` does not become `\u{feff}D:\…`.
+            let line = text
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim_start_matches('\u{feff}')
+                .trim();
+            if !line.is_empty() {
+                out.push(line.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// A toy XML text extractor: the inner text of every `<tag>…</tag>`
+/// occurrence. LGC's preferences.xml is machine-written flat XML where the
+/// tags we read never nest or carry attributes, so no real parser is
+/// warranted (same stance as [`vdf_value`]). Only `&amp;` is unescaped —
+/// the one entity legal inside a Windows path.
+fn xml_tag_values(xml: &str, tag: &str) -> Vec<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut out = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find(&open) {
+        let body = &rest[start + open.len()..];
+        let Some(end) = body.find(&close) else {
+            break;
+        };
+        let val = body[..end].trim().replace("&amp;", "&");
+        if !val.is_empty() {
+            out.push(val);
+        }
+        rest = &body[end + close.len()..];
+    }
+    out
+}
+
 /// Parse Steam's `libraryfolders.vdf` + `appmanifest_{STEAM_APPID}.acf` to
 /// locate a Steam-installed World of Warships. The Steam app carries no
 /// Wargaming publisher registry entry, so this is the only way to detect it.
+/// In the RU/CIS Steam region appid 552990 serves the Lesta build (Мир
+/// кораблей, `Korabli.exe` stub) — those installs keep the Lesta kind so the
+/// realm falls back to `ru` instead of the Steam kind's none.
 fn scan_steam_libraries() -> Vec<GameInstall> {
     let mut found = Vec::new();
     // 1. Find the Steam install + every library root from libraryfolders.vdf.
@@ -431,17 +593,28 @@ fn scan_steam_libraries() -> Vec<GameInstall> {
             continue;
         };
         let game_root = lib.join("steamapps").join("common").join(&install_dir);
-        let exe = game_root.join("WorldOfWarships.exe");
-        if !exe.is_file() {
+        if !is_game_dir(&game_root.to_string_lossy()) {
             continue;
         }
+        let kind = if lesta_build_dir(&game_root) {
+            GameInstallKind::Lesta
+        } else {
+            GameInstallKind::Steam
+        };
         found.push(GameInstall {
-            kind: GameInstallKind::Steam,
+            realm: detect_realm(&game_root).or_else(|| kind_fallback_realm(&kind)),
+            kind,
             path: game_root.to_string_lossy().into_owned(),
-            realm: detect_realm(&game_root),
         });
     }
     found
+}
+
+/// A folder whose only root stub is `Korabli.exe` is a Lesta build of the
+/// client — the RU/CIS Steam distribution and any LGC install. Used to keep
+/// the Lesta kind (realm `ru`) on folders the Steam/registry scans found.
+fn lesta_build_dir(dir: &std::path::Path) -> bool {
+    dir.join("Korabli.exe").is_file() && !dir.join("WorldOfWarships.exe").is_file()
 }
 
 /// Discover Steam library roots by parsing `libraryfolders.vdf`. Looks for the
@@ -598,6 +771,30 @@ mod tests {
         assert_eq!(
             vdf_value(acf, "installdir").as_deref(),
             Some("World of Warships")
+        );
+    }
+
+    /// Live-machine smoke test (the Lesta mirror of
+    /// [`detects_steam_install_on_this_machine`]): prints what the LGC scan
+    /// finds on this machine. Soft-passes when no Lesta install exists.
+    #[test]
+    fn lesta_game_center_scan_on_this_machine() {
+        let installs = scan_lesta_game_center();
+        if installs.is_empty() {
+            eprintln!("[lgc-scan] no Lesta install on this machine — ok");
+            return;
+        }
+        for i in &installs {
+            eprintln!(
+                "[lgc-scan] found {:?}: {} (realm {:?})",
+                i.kind, i.path, i.realm
+            );
+        }
+        assert!(
+            installs
+                .iter()
+                .all(|i| i.kind == GameInstallKind::Lesta && i.realm.as_deref() == Some("ru")),
+            "every LGC-sourced install carries the Lesta kind and realm ru"
         );
     }
 
@@ -848,5 +1045,217 @@ mod tests {
         let roots =
             steam_library_roots_from_vdf(PathBuf::from(r"C:\Program Files (x86)\Steam"), None);
         assert_eq!(roots.len(), 1);
+    }
+
+    /// Unique-per-run scratch dir under the system temp root.
+    fn scratch_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "wowsp-test-{label}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The Lesta (Мир кораблей) client renamed the root stub to
+    /// `Korabli.exe` — a folder carrying only that exe must still validate as
+    /// a game install (this rename is why Lesta installs went undetected).
+    #[test]
+    fn is_game_dir_accepts_the_lesta_renamed_stub() {
+        let root = scratch_dir("lesta-stub");
+        let path = root.to_string_lossy().into_owned();
+        assert!(!is_game_dir(&path));
+        std::fs::write(root.join("Korabli.exe"), b"stub").unwrap();
+        assert!(is_game_dir(&path));
+
+        let wg = scratch_dir("wg-stub");
+        std::fs::write(wg.join("WorldOfWarships.exe"), b"stub").unwrap();
+        assert!(is_game_dir(&wg.to_string_lossy()));
+
+        std::fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&wg).unwrap();
+    }
+
+    /// `lesta_build_dir`: Korabli-only → Lesta build; either spelling with
+    /// `WorldOfWarships.exe` present → not (a WG install that also carries
+    /// stray Lesta files keeps its WG identity).
+    #[test]
+    fn lesta_build_dir_requires_korabli_without_the_wg_stub() {
+        let lesta = scratch_dir("lesta-build");
+        std::fs::write(lesta.join("Korabli.exe"), b"stub").unwrap();
+        assert!(lesta_build_dir(&lesta));
+
+        let wg = scratch_dir("wg-build");
+        std::fs::write(wg.join("WorldOfWarships.exe"), b"stub").unwrap();
+        assert!(!lesta_build_dir(&wg));
+
+        let both = scratch_dir("both-stubs");
+        std::fs::write(both.join("WorldOfWarships.exe"), b"stub").unwrap();
+        std::fs::write(both.join("Korabli.exe"), b"stub").unwrap();
+        assert!(!lesta_build_dir(&both));
+
+        for d in [lesta, wg, both] {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn xml_tag_values_extracts_every_occurrence() {
+        let xml = "<games>\
+                   <game><working_dir>D:\\Korabli</working_dir></game>\
+                   <game><working_dir></working_dir></game>\
+                   <game><working_dir>E:\\WoWS</working_dir></game>\
+                   </games>\
+                   <current_game>D:\\Korabli</current_game>";
+        assert_eq!(
+            xml_tag_values(xml, "working_dir"),
+            vec![r"D:\Korabli".to_string(), r"E:\WoWS".to_string()]
+        );
+        assert_eq!(
+            xml_tag_values(xml, "current_game"),
+            vec![r"D:\Korabli".to_string()]
+        );
+        // Absent tags and unterminated ones yield nothing.
+        assert!(xml_tag_values(xml, "selectedGames").is_empty());
+        assert!(xml_tag_values("<working_dir>D:\\X", "working_dir").is_empty());
+        // `&amp;` is unescaped (`&` is the one entity legal in a path).
+        assert_eq!(
+            xml_tag_values("<working_dir>D:\\A &amp; B</working_dir>", "working_dir"),
+            vec![r"D:\A & B".to_string()]
+        );
+    }
+
+    /// The registry relabel: a steamapps folder becomes Steam, a Korabli-only
+    /// root becomes Lesta even under a steamapps path (RU/CIS Steam region),
+    /// anything else keeps the publisher-derived kind.
+    #[test]
+    fn registry_folder_kind_relabels_steam_and_lesta_builds() {
+        let base = scratch_dir("relabel");
+        let steam_wg = base.join(r"SteamLibrary\steamapps\common\World of Warships");
+        std::fs::create_dir_all(&steam_wg).unwrap();
+        std::fs::write(steam_wg.join("WorldOfWarships.exe"), b"stub").unwrap();
+        let lesta_root = base.join("Korabli");
+        std::fs::create_dir_all(&lesta_root).unwrap();
+        std::fs::write(lesta_root.join("Korabli.exe"), b"stub").unwrap();
+        let lesta_under_steam = base.join(r"SteamLibrary\steamapps\common\Korabli");
+        std::fs::create_dir_all(&lesta_under_steam).unwrap();
+        std::fs::write(lesta_under_steam.join("Korabli.exe"), b"stub").unwrap();
+        let s = |p: &std::path::Path| p.to_string_lossy().into_owned();
+
+        // Plain WG publisher entry, plain folder → keeps the publisher kind.
+        assert_eq!(
+            registry_folder_kind(&s(&base.join("plain")), GameInstallKind::Wargaming),
+            GameInstallKind::Wargaming
+        );
+        // WG-registered Steam folder → Steam (the phantom-官服 fix).
+        assert_eq!(
+            registry_folder_kind(&s(&steam_wg), GameInstallKind::Wargaming),
+            GameInstallKind::Steam
+        );
+        // Korabli-only root → Lesta — publisher kind irrelevant, and even
+        // inside a Steam library.
+        assert_eq!(
+            registry_folder_kind(&s(&lesta_root), GameInstallKind::Lesta),
+            GameInstallKind::Lesta
+        );
+        assert_eq!(
+            registry_folder_kind(&s(&lesta_under_steam), GameInstallKind::Wargaming),
+            GameInstallKind::Lesta
+        );
+
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// `<working_dir>` per game plus the current/active pointers collapse to
+    /// one entry per distinct folder.
+    #[test]
+    fn lgc_xml_dir_values_merges_pointer_tags_without_duplicates() {
+        let xml = "<games_manager><games>\
+                   <game><working_dir>D:\\Korabli</working_dir></game>\
+                   <game><working_dir>D:\\Games\\Korabli</working_dir></game>\
+                   </games>\
+                   <current_game>d:\\korabli\\</current_game>\
+                   <active_game>D:\\Korabli</active_game></games_manager>";
+        assert_eq!(
+            lgc_xml_dir_values(xml),
+            vec![r"D:\Korabli".to_string(), r"D:\Games\Korabli".to_string()]
+        );
+    }
+
+    /// `apps\<game-id>\<hash>` files carry a bare install-root line each;
+    /// empty/garbage files and missing dirs yield nothing.
+    #[test]
+    fn lgc_apps_paths_reads_one_line_path_files() {
+        let center = scratch_dir("lgc-apps");
+        let game = center.join("apps").join("mk.ru.production");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("d6a9e1b5beef"), "D:\\WoWS_Korabli").unwrap();
+        std::fs::write(game.join("empty"), "").unwrap();
+        let other = center.join("apps").join("wn.ru.production");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("aaa"), "D:\\Tanki\n").unwrap();
+
+        // read_dir order is not contractual — compare as a sorted set.
+        let mut paths = lgc_apps_paths(&center);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![r"D:\Tanki".to_string(), r"D:\WoWS_Korabli".to_string()]
+        );
+        // No apps tree at all.
+        assert!(lgc_apps_paths(&scratch_dir("lgc-no-apps")).is_empty());
+        std::fs::remove_dir_all(&center).unwrap();
+    }
+
+    /// End-to-end LGC scan: preferences.xml + the apps index both point at a
+    /// real Korabli-stub folder (realm falls back to `ru`); Lesta's other
+    /// games (Мир танков) and dangling pointers are filtered out.
+    #[test]
+    fn scan_lesta_game_center_at_finds_korabli_root_and_skips_other_games() {
+        let center = scratch_dir("lgc-center");
+        let wows = scratch_dir("lgc-wows");
+        let tanks = scratch_dir("lgc-tanks");
+        std::fs::write(wows.join("Korabli.exe"), b"stub").unwrap();
+        std::fs::write(tanks.join("Tanki.exe"), b"stub").unwrap();
+
+        let wows_str = wows.to_string_lossy().into_owned();
+        let tanks_str = tanks.to_string_lossy().into_owned();
+        std::fs::write(
+            center.join("preferences.xml"),
+            format!(
+                "<protocol name=\"preferences\" version=\"3.26\">\
+                 <application><games_manager><games>\
+                 <game><working_dir>{wows_str}</working_dir></game>\
+                 <game><working_dir>{tanks_str}</working_dir></game>\
+                 </games><current_game>{wows_str}</current_game></games_manager>\
+                 </application></protocol>"
+            ),
+        )
+        .unwrap();
+        let apps = center.join("apps").join("mk.ru.production");
+        std::fs::create_dir_all(&apps).unwrap();
+        std::fs::write(apps.join("d6a9e1b5beef"), &wows_str).unwrap();
+        // A dangling pointer (an uninstalled game) must be filtered out, not
+        // panic the scan.
+        let gone = center.join("apps").join("wt.ru.production");
+        std::fs::create_dir_all(&gone).unwrap();
+        std::fs::write(gone.join("deadbeef"), "D:\\Does\\Not\\Exist").unwrap();
+
+        let installs = scan_lesta_game_center_at(&center);
+        assert_eq!(installs.len(), 1, "only the Korabli-stub folder survives");
+        assert_eq!(installs[0].kind, GameInstallKind::Lesta);
+        assert_eq!(installs[0].path, wows_str);
+        assert_eq!(installs[0].realm.as_deref(), Some("ru"));
+
+        // An LGC dir with no bookkeeping at all is an empty result, not an
+        // error.
+        assert!(scan_lesta_game_center_at(&scratch_dir("lgc-empty")).is_empty());
+
+        std::fs::remove_dir_all(&center).unwrap();
+        std::fs::remove_dir_all(&wows).unwrap();
+        std::fs::remove_dir_all(&tanks).unwrap();
     }
 }

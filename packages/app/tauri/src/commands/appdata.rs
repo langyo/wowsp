@@ -158,12 +158,15 @@ pub async fn get_game_process(
 /// `bin/<build>/bin64/`), falling back to the exe's own directory for the
 /// root-level launcher stub.
 ///
-/// The kind is inferred from path markers: every distribution channel keeps
-/// the same on-disk layout, but their install roots are telling — Steam lives
-/// under `steamapps`, the CN clients under a KongZhong/空中网/360 folder, the
-/// Lesta client under "Lesta Game Center". Anything else is treated as the
-/// Wargaming international client (the historical behavior that mislabeled
-/// the legacy CN clients — user-reported).
+/// The kind is inferred from the exe name first (the Lesta client renamed
+/// its binaries to `Korabli(.64).exe` while install roots often carry no
+/// "lesta" marker — the default is a plain `D:\Korabli`), then from path
+/// markers: every distribution channel keeps the same on-disk layout, but
+/// their install roots are telling — Steam lives under `steamapps`, the CN
+/// clients under a KongZhong/空中网/360 folder, the Lesta client under
+/// "Lesta Game Center". Anything else is treated as the Wargaming
+/// international client (the historical behavior that mislabeled the legacy
+/// CN clients — user-reported).
 #[cfg(target_os = "windows")]
 fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
     use wowsp_tauri_shared::{GameInstall, GameInstallKind};
@@ -171,7 +174,12 @@ fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> 
     let root = super::game_context::exe_game_root(exe)?;
     let norm = exe.replace('/', "\\");
     let lower = norm.to_lowercase();
-    let kind = if lower.contains("steamapps") {
+    let file = lower.rsplit('\\').next().unwrap_or_default();
+    let kind = if file == "korabli.exe" || file == "korabli64.exe" {
+        // The Lesta rename; checked before `steamapps` because RU/CIS Steam
+        // installs run the same Korabli binaries but need the Lesta realm.
+        GameInstallKind::Lesta
+    } else if lower.contains("steamapps") {
         GameInstallKind::Steam
     } else if lower.contains("kongzhong") || norm.contains("空中网") {
         GameInstallKind::CnKongzhong
@@ -308,6 +316,27 @@ mod tests {
         let cases: Vec<(String, wowsp_tauri_shared::GameInstallKind, Option<&str>)> = vec![
             (
                 wow("Lesta Game Center"),
+                wowsp_tauri_shared::GameInstallKind::Lesta,
+                Some("ru"),
+            ),
+            // The Lesta rename: the running client is Korabli(.64).exe even
+            // when the install root carries no "lesta" marker at all.
+            (
+                format!(r"{base}\WoWS_Korabli\bin\8821884\bin64\Korabli64.exe"),
+                wowsp_tauri_shared::GameInstallKind::Lesta,
+                Some("ru"),
+            ),
+            (
+                format!(r"{base}\Korabli\Korabli.exe"),
+                wowsp_tauri_shared::GameInstallKind::Lesta,
+                Some("ru"),
+            ),
+            // RU/CIS Steam installs run the Korabli binaries too — the exe
+            // name wins over the steamapps marker so the realm resolves.
+            (
+                format!(
+                    r"{base}\SteamLibrary\steamapps\common\World of Warships\bin\8821884\bin64\Korabli64.exe"
+                ),
                 wowsp_tauri_shared::GameInstallKind::Lesta,
                 Some("ru"),
             ),

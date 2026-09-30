@@ -48,7 +48,7 @@
     "addDesc": "Détecter automatiquement les clients installés sur cette machine, ou parcourir manuellement pour sélectionner un dossier d'installation.",
     "runningHint": "Jeu en cours d'exécution détecté : {path}",
     "useRunning": "Utiliser ce chemin",
-    "noneFound": "Aucune installation du jeu détectée. Sélectionnez manuellement le dossier d'installation (il doit contenir WorldOfWarships.exe et un dossier bin/).",
+    "noneFound": "Aucune installation du jeu détectée. Sélectionnez manuellement le dossier d'installation (il doit contenir WorldOfWarships.exe — Korabli.exe pour le client Lesta RU — et un dossier bin/).",
     "applied": "Chemin du jeu mis à jour",
     "invalid": "Le dossier sélectionné n'est pas valide",
     "setAction": "Définir le chemin du jeu",

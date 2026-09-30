@@ -35,7 +35,7 @@ flowchart TD
 
 ## 游戏安装检测
 
-`commands/game_detect.rs` 扫描 Windows 卸载注册表中的 Wargaming / Lesta / 360 发行商项（仿照 ApeRadar 的 `ConfigWindow.AutoDetectGamePath`），再额外遍历 Steam 游戏库目录寻找 `appmanifest_552990.acf`（Steam appid 552990 = 战舰世界）——这正是 ApeRadar 未覆盖的情况。用户也可手动指定路径。
+`commands/game_detect.rs` 扫描 Windows 卸载注册表中的 Wargaming / Lesta / 360 发行商项（仿照 ApeRadar 的 `ConfigWindow.AutoDetectGamePath`），再额外遍历 Steam 游戏库目录寻找 `appmanifest_552990.acf`（Steam appid 552990 = 战舰世界）——这正是 ApeRadar 未覆盖的情况；同时读取 Lesta Game Center 自身的游戏索引（`%ProgramData%\Lesta\GameCenter` 下的 preferences.xml `<working_dir>` 条目与 `apps\<game-id>\<hash>` 路径文件）。莱服（Мир кораблей）客户端根目录的引导程序已改名为 `Korabli.exe`，因此安装目录校验同时接受两种引导程序名，运行进程监视也跟踪 `Korabli(.64).exe`。用户也可手动指定路径。
 
 ## 录像文件格式
 

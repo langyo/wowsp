@@ -48,7 +48,7 @@
     "addDesc": "自動偵測本機已安裝的用戶端，或手動瀏覽安裝目錄。",
     "runningHint": "檢測到正在執行的遊戲：{path}",
     "useRunning": "使用此路徑",
-    "noneFound": "未檢測到遊戲安裝。請手動選擇安裝目錄（應包含 WorldOfWarships.exe 與 bin/ 資料夾）。",
+    "noneFound": "未檢測到遊戲安裝。請手動選擇安裝目錄（應包含 WorldOfWarships.exe（萊服為 Korabli.exe）與 bin/ 資料夾）。",
     "applied": "遊戲路徑已更新",
     "invalid": "所選目錄無效",
     "setAction": "指定遊戲路徑",

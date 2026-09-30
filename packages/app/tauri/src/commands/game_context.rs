@@ -161,14 +161,14 @@ pub(crate) fn running_root_matching(root: &str) -> Option<(u32, String)> {
         .find(|(_, running_root)| same_folder(running_root, root))
 }
 
-/// All running `WorldOfWarships*.exe` processes whose implied folder
-/// validates as a game install: `(pid, game_root)`. A process whose image
-/// path cannot be queried, or whose root lacks the `WorldOfWarships.exe`
-/// stub, is invisible here BY DESIGN — everything downstream (capture,
-/// roster, guards) keys on validated folders, so an exotic/partial tree is
-/// treated as "not running" rather than routing work to a bogus root. The
-/// exe-path query is Windows-only, so non-Windows targets (the mobile
-/// build) always see an empty list here.
+/// All running game-client processes whose implied folder validates as a
+/// game install: `(pid, game_root)`. A process whose image path cannot be
+/// queried, or whose root lacks a stub exe
+/// (`game_detect::is_game_dir`), is invisible here BY DESIGN — everything
+/// downstream (capture, roster, guards) keys on validated folders, so an
+/// exotic/partial tree is treated as "not running" rather than routing work
+/// to a bogus root. The exe-path query is Windows-only, so non-Windows
+/// targets (the mobile build) always see an empty list here.
 fn running_roots() -> Vec<(u32, String)> {
     #[cfg(target_os = "windows")]
     {
@@ -306,7 +306,9 @@ pub(crate) fn replays_dir(root: &Path) -> PathBuf {
 
 // ── process enumeration ─────────────────────────────────────────────────────
 
-/// PIDs of every running `WorldOfWarships.exe` / `WorldOfWarships64.exe`.
+/// PIDs of every running game client — the Wargaming/Steam builds run
+/// `WorldOfWarships(.64).exe`, the Lesta (Мир кораблей) build runs
+/// `Korabli(.64).exe` (see [`is_game_process_name`]).
 #[cfg(target_os = "windows")]
 fn snapshot_game_pids() -> Vec<u32> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -330,7 +332,7 @@ fn snapshot_game_pids() -> Vec<u32> {
             let name = String::from_utf16_lossy(&entry.szExeFile[..])
                 .trim_end_matches('\0')
                 .to_lowercase();
-            if name == "worldofwarships.exe" || name == "worldofwarships64.exe" {
+            if is_game_process_name(&name) {
                 pids.push(entry.th32ProcessID);
             }
             if Process32NextW(snapshot, &mut entry).is_err() {
@@ -340,6 +342,19 @@ fn snapshot_game_pids() -> Vec<u32> {
         let _ = windows::Win32::Foundation::CloseHandle(snapshot);
     }
     pids
+}
+
+/// Exact-match test against the known client process-image names (input is
+/// the snapshot's already-lowercased image name — the ToolHelp snapshot
+/// carries no directory part, so exact equality replaces fragile substring
+/// matching). The Lesta client renamed the binaries when it split from
+/// Wargaming: root stub `Korabli.exe`, game process
+/// `bin/<build>/bin64/Korabli64.exe`.
+fn is_game_process_name(lower_name: &str) -> bool {
+    matches!(
+        lower_name,
+        "worldofwarships.exe" | "worldofwarships64.exe" | "korabli.exe" | "korabli64.exe"
+    )
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -514,5 +529,32 @@ mod tests {
         let (build, _) = latest_bin_dir_with_idx(&tmp).expect("resolved");
         assert_eq!(build, 200);
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Every client build's process name matches — WG/Steam
+    /// (`WorldOfWarships(.64).exe`) and Lesta (`Korabli(.64).exe`) — while
+    /// lookalikes (the launcher, a renamed copy) do not.
+    #[test]
+    fn game_process_names_cover_wg_and_lesta_builds() {
+        for name in [
+            "worldofwarships.exe",
+            "worldofwarships64.exe",
+            "korabli.exe",
+            "korabli64.exe",
+        ] {
+            assert!(is_game_process_name(name), "{name} should match");
+        }
+        for lookalike in [
+            "wgc.exe",
+            "lgc.exe",
+            "korabli_launcher.exe",
+            "worldofwarships_monitor.exe",
+            "",
+        ] {
+            assert!(
+                !is_game_process_name(lookalike),
+                "{lookalike} must not match"
+            );
+        }
     }
 }

@@ -45,8 +45,13 @@ flowchart TD
 `commands/game_detect.rs` scans the Windows Uninstall registry for Wargaming /
 Lesta / 360 publishers (mirroring ApeRadar's `ConfigWindow.AutoDetectGamePath`),
 then additionally walks Steam library folders for `appmanifest_552990.acf`
-(Steam appid 552990 = World of Warships) — the case ApeRadar misses. A manual
-path can always be pinned.
+(Steam appid 552990 = World of Warships) — the case ApeRadar misses — and
+reads Lesta Game Center's own game index under `%ProgramData%\Lesta\GameCenter`
+(preferences.xml `<working_dir>` entries + `apps\<game-id>\<hash>` path
+files). The Lesta (Мир кораблей) client renamed its root stub to
+`Korabli.exe`, so install-folder validation accepts either stub name and the
+running-process watcher tracks `Korabli(.64).exe` as well. A manual path can
+always be pinned.
 
 ## Replay file format
 

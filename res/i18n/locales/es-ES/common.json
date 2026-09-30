@@ -48,7 +48,7 @@
     "addDesc": "Detectar automáticamente los clientes instalados en este equipo, o buscar manualmente una carpeta de instalación.",
     "runningHint": "Juego en ejecución detectado: {path}",
     "useRunning": "Usar esta ruta",
-    "noneFound": "No se detectó ninguna instalación del juego. Selecciona manualmente la carpeta de instalación (debe contener WorldOfWarships.exe y una carpeta bin/).",
+    "noneFound": "No se detectó ninguna instalación del juego. Selecciona manualmente la carpeta de instalación (debe contener WorldOfWarships.exe — o Korabli.exe para el cliente Lesta RU — y una carpeta bin/).",
     "applied": "Ruta del juego actualizada",
     "invalid": "La carpeta seleccionada no es válida",
     "setAction": "Establecer ruta del juego",
