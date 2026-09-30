@@ -28,6 +28,7 @@ import {
   onMounted,
   ref,
   type CSSProperties,
+  type VNode,
 } from "vue";
 import { useRouter } from "vue-router";
 import { Eye, EyeOff, X } from "@lucide/vue";
@@ -62,10 +63,20 @@ import { parsePostBattle, type PostBattleRibbon } from "./postBattle";
 import LiveShipMeta from "./LiveShipMeta";
 import {
   PostBattleShareBar,
+  rosterColumns,
+  rosterShotCells,
+  rosterShotColIndex,
+  rosterShotDashes,
   rosterStatCols,
+  rosterStatLine,
   useNickMasking,
   useShareShot,
 } from "./postBattleShare";
+import {
+  rosterStatView,
+  resolveRosterStatsMode,
+  type ResolvedStatsMode,
+} from "@/utils/statView";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import "./PostBattlePanel.scss";
 
@@ -278,9 +289,17 @@ export default defineComponent({
     const toggleFullMode = () =>
       statsPrefs.setPostbattleRosterFull(!fullMode.value);
 
+    /** Which battle-mode career the roster numbers read — the persisted
+     *  stats-source pref; "auto" follows the replayed battle's identity
+     *  (ranked → ranked careers). */
+    const statsMode = computed<ResolvedStatsMode>(() =>
+      resolveRosterStatsMode(prefs.value.overlayStatsMode, props.head ?? {}),
+    );
+
     /** One team's header aggregate — tier-weighted (per the stats prefs)
      *  mean winrate plus a plain mean PR over the players whose stats
-     *  landed. AI names, hidden profiles and stat misses sit out. */
+     *  landed, all in the roster's resolved stats-source view. AI names,
+     *  hidden profiles and stat misses sit out. */
     const teamAgg = (list: typeof rows.value) =>
       aggregateTeamStats(
         list.map((p) => {
@@ -288,10 +307,11 @@ export default defineComponent({
           if (!st || st.hidden) {
             return { winrate: null, pr: null, damage: null, tier: p.shipId != null ? shipTierOf(p.shipId) : null };
           }
+          const view = rosterStatView(st, statsMode.value);
           return {
-            winrate: st.winrate,
-            pr: st.pr,
-            damage: st.avgDamage,
+            winrate: view.winrate,
+            pr: view.pr,
+            damage: view.avgDamage,
             tier: p.shipId != null ? shipTierOf(p.shipId) : null,
           };
         }),
@@ -377,28 +397,15 @@ export default defineComponent({
             };
           })()
         : null;
+      /** One row's shot cells: the chip-gated columns of the roster's
+       *  stats-source view (the exact columns the panel shows) plus the
+       *  settlement XP — dashes for bots / misses. */
       const statTexts = (p: (typeof rows.value)[number]): ShotStat[] => {
         const ai = isAiName(p.name);
         const st = ai ? undefined : nameStats.value.get(p.name);
-        const cell = (
-          pick: (s: RosterStat) => number | null,
-          fmt: (v: number) => string,
-          colorOf: (v: number) => string,
-        ): ShotStat => {
-          if (!st) return { text: "—" };
-          const v = pick(st);
-          if (v == null) return { text: "—" };
-          return { text: fmt(v), color: colorOf(v) };
-        };
-        const out: ShotStat[] = [
-          cell((s) => s.winrate, (v) => `${v.toFixed(1)}%`, winrateColor),
-        ];
-        if (prefs.value.prEnabled) {
-          out.push(cell((s) => s.pr, (v) => `${Math.round(v)}`, (v) => prTier(v).color));
-        }
-        out.push(
-          cell((s) => s.avgDamage, (v) => Math.round(v).toLocaleString(), damageColor),
-        );
+        const out: ShotStat[] = !st
+          ? rosterShotDashes()
+          : rosterShotCells(rosterStatView(st, statsMode.value));
         out.push({ text: p.xp.toLocaleString() });
         return out;
       };
@@ -408,12 +415,17 @@ export default defineComponent({
       ): ShotColumn => {
         // Aggregate values carry their stat-column index so the shot's
         // header numbers right-align onto the cells below them.
+        // The aggregate mirrors the panel's column title: each labeled
+        // value follows its own chip toggle (PR additionally the rating
+        // master) and right-aligns onto its column's origin.
         let agg: ShotColumn["agg"];
-        if (prefs.value.prEnabled) {
+        {
+          const parts: NonNullable<ShotColumn["agg"]> = [];
           const a = teamAgg(list);
-          agg = [
-            {
-              col: 0,
+          const chips = prefs.value.overlayChips;
+          if (chips.winrate) {
+            parts.push({
+              col: rosterShotColIndex("winrate"),
               label: t(
                 prefs.value.weightedTeamWr
                   ? "replay.roster.teamWrWeighted"
@@ -421,14 +433,25 @@ export default defineComponent({
               ),
               value: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
               valueColor: a.winrate != null ? winrateColor(a.winrate) : undefined,
-            },
-            {
-              col: 1,
+            });
+          }
+          if (prefs.value.prEnabled && chips.pr) {
+            parts.push({
+              col: rosterShotColIndex("pr"),
               label: t("replay.roster.teamAvgPr"),
               value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
               valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
-            },
-          ];
+            });
+          }
+          if (chips.damage) {
+            parts.push({
+              col: rosterShotColIndex("damage"),
+              label: t("replay.postbattle.avgDamage"),
+              value: a.avgDamage != null ? Math.round(a.avgDamage).toLocaleString() : "—",
+              valueColor: a.avgDamage != null ? damageColor(a.avgDamage) : undefined,
+            });
+          }
+          agg = parts.length > 0 ? parts : undefined;
         }
         return {
           title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
@@ -480,7 +503,14 @@ export default defineComponent({
       const head = props.head;
       const colTitle = (label: string, list: typeof rows.value) => {
         const title = <span class="replay-view__postbattle-col-name">{label}</span>;
-        if (!prefs.value.prEnabled) {
+        const chips = prefs.value.overlayChips;
+        // Each labeled aggregate value follows its own chip toggle (PR
+        // additionally needs the rating master); bare title when nothing
+        // is labeled.
+        const showWr = chips.winrate;
+        const showPr = prefs.value.prEnabled && chips.pr;
+        const showDmg = chips.damage;
+        if (!showWr && !showPr && !showDmg) {
           return <div class="replay-view__postbattle-col-title">{title}</div>;
         }
         const agg = teamAgg(list);
@@ -493,28 +523,113 @@ export default defineComponent({
             <div class="replay-view__postbattle-col-title">
               {title}
               <span class="replay-view__postbattle-col-aggtext">
-                {t(
-                  prefs.value.weightedTeamWr
-                    ? "replay.roster.teamWrWeighted"
-                    : "replay.roster.teamWrPlain",
-                )}{" "}
-                <b
-                  style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}
-                >
-                  {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
-                </b>
-                {" · "}
-                {t("replay.roster.teamAvgPr")}{" "}
-                <b
-                  class={prBand.rainbow ? "rainbow-text" : undefined}
-                  style={prBand.rainbow ? undefined : { color: prBand.color }}
-                >
-                  {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
-                </b>
+                {showWr ? (
+                  <>
+                    {t(
+                      prefs.value.weightedTeamWr
+                        ? "replay.roster.teamWrWeighted"
+                        : "replay.roster.teamWrPlain",
+                    )}{" "}
+                    <b
+                      style={
+                        agg.winrate != null
+                          ? { color: winrateColor(agg.winrate) }
+                          : undefined
+                      }
+                    >
+                      {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+                    </b>
+                  </>
+                ) : null}
+                {showWr && (showPr || showDmg) ? " · " : null}
+                {showPr ? (
+                  <>
+                    {t("replay.roster.teamAvgPr")}{" "}
+                    <b
+                      class={prBand.rainbow ? "rainbow-text" : undefined}
+                      style={prBand.rainbow ? undefined : { color: prBand.color }}
+                    >
+                      {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+                    </b>
+                  </>
+                ) : null}
+                {showPr && showDmg ? " · " : null}
+                {showDmg ? (
+                  <>
+                    {t("replay.postbattle.avgDamage")}{" "}
+                    <b
+                      style={
+                        agg.avgDamage != null
+                          ? { color: damageColor(agg.avgDamage) }
+                          : undefined
+                      }
+                    >
+                      {agg.avgDamage != null
+                        ? Math.round(agg.avgDamage).toLocaleString()
+                        : "—"}
+                    </b>
+                  </>
+                ) : null}
               </span>
             </div>
           );
         }
+        // Compact rows: a two-line mini table header on a grid mirroring
+        // the row columns (rosterColumns + the XP cell), so each aggregate
+        // number lands exactly on its column. Battles and XP carry no
+        // team aggregate — their header cells stay empty fills.
+        const cols = rosterColumns();
+        const template = `minmax(0, 1fr) ${cols.map((c) => c.width).join(" ")} 6ch`;
+        const fill = <span class="replay-view__postbattle-col-hfill" />;
+        const labelOf: Record<string, VNode | null> = {
+          winrate: showWr ? (
+            <span class="replay-view__postbattle-col-hlbl">
+              {t(
+                prefs.value.weightedTeamWr
+                  ? "replay.roster.teamWrWeighted"
+                  : "replay.roster.teamWrPlain",
+              )}
+            </span>
+          ) : null,
+          pr: showPr ? (
+            <span class="replay-view__postbattle-col-hlbl">
+              {t("replay.roster.teamAvgPr")}
+            </span>
+          ) : null,
+          battles: null,
+          damage: showDmg ? (
+            <span class="replay-view__postbattle-col-hlbl">
+              {t("replay.postbattle.avgDamage")}
+            </span>
+          ) : null,
+        };
+        const valueOf: Record<string, VNode | null> = {
+          winrate: showWr ? (
+            <b
+              class="replay-view__postbattle-col-hval"
+              style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}
+            >
+              {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+            </b>
+          ) : null,
+          pr: showPr ? (
+            <b
+              class="replay-view__postbattle-col-hval"
+              style={{ color: prBand.color }}
+            >
+              {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+            </b>
+          ) : null,
+          battles: null,
+          damage: showDmg ? (
+            <b
+              class="replay-view__postbattle-col-hval"
+              style={agg.avgDamage != null ? { color: damageColor(agg.avgDamage) } : undefined}
+            >
+              {agg.avgDamage != null ? Math.round(agg.avgDamage).toLocaleString() : "—"}
+            </b>
+          ) : null,
+        };
         return (
           <div
             class={[
@@ -527,37 +642,19 @@ export default defineComponent({
                 ? "replay-view__postbattle-col-title--pad-seal"
                 : "replay-view__postbattle-col-title--pad-eye",
             ]}
+            style={{ gridTemplateColumns: template }}
           >
             {title}
-            <span class="replay-view__postbattle-col-hlbl">
-              {t(
-                prefs.value.weightedTeamWr
-                  ? "replay.roster.teamWrWeighted"
-                  : "replay.roster.teamWrPlain",
-              )}
-            </span>
-            <span class="replay-view__postbattle-col-hlbl">
-              {t("replay.roster.teamAvgPr")}
-            </span>
-            <span class="replay-view__postbattle-col-hfill" />
-            <span class="replay-view__postbattle-col-hfill" />
-            <b
-              class="replay-view__postbattle-col-hval"
-              style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}
-            >
-              {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
-            </b>
-            <b
-              class="replay-view__postbattle-col-hval"
-              style={{ color: prBand.color }}
-            >
-              {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
-            </b>
-            <span class="replay-view__postbattle-col-hfill" />
-            <span class="replay-view__postbattle-col-hfill" />
+            {cols.map((c) => labelOf[c.key] ?? fill)}
+            {fill}
+            {cols.map((c) => valueOf[c.key] ?? fill)}
+            {fill}
           </div>
         );
       };
+      /** One row's display numbers per the roster's resolved stats source
+       *  (the shared columns render them). */
+      const viewOf = (st: RosterStat) => rosterStatView(st, statsMode.value);
       /** Career seal for one row — the same guard chain the live panel uses
        *  (verdict-pending hidden profiles hold their stamp). */
       const sealOf = (p: (typeof rows.value)[number]) => {
@@ -651,7 +748,7 @@ export default defineComponent({
                 </span>
                 <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
               </span>
-              {rosterStatCols(p.name, nameStats.value, nameStatsLoading.value)}
+              {rosterStatCols(p.name, nameStats.value, nameStatsLoading.value, viewOf)}
               <span
                 class="replay-view__postbattle-cell-xp"
                 data-hint={t("replay.postbattle.xp")}
@@ -694,38 +791,25 @@ export default defineComponent({
               </span>
             );
           }
-          if (stat.winrate == null) return "—";
-          const tier = prTier(stat.pr);
-          return (
-            <span class="replay-view__postbattle-fcell-statline">
-              <b style={{ color: winrateColor(stat.winrate) }}>
-                {stat.winrate.toFixed(1)}%
-              </b>{" "}
-              WR
-              {prefs.value.prEnabled ? (
-                <>
-                  {" · "}
-                  <b
-                    class={tier.rainbow ? "rainbow-text" : undefined}
-                    style={tier.rainbow ? undefined : { color: tier.color }}
-                  >
-                    {stat.pr ?? "—"}
-                  </b>{" "}
-                  PR
-                </>
-              ) : null}
-            </span>
+          // The chips-enabled numbers of the resolved stats-source view —
+          // the same shared text line the live panel's full cards render.
+          const line = rosterStatLine(rosterStatView(stat, statsMode.value));
+          return line != null ? (
+            <span class="replay-view__postbattle-fcell-statline">{line}</span>
+          ) : (
+            "—"
           );
         };
+        const dmgView = stat ? rosterStatView(stat, statsMode.value) : null;
         const dmgBody = ai ? (
           <em>—</em>
         ) : !stat || nameStatsLoading.value ? (
           <HkSpinner size="xs" tone="current" />
-        ) : stat.avgDamage == null ? (
+        ) : dmgView?.avgDamage == null ? (
           <em>—</em>
         ) : (
-          <b style={{ color: damageColor(stat.avgDamage) }}>
-            {Math.round(stat.avgDamage).toLocaleString()}
+          <b style={{ color: damageColor(dmgView.avgDamage) }}>
+            {Math.round(dmgView.avgDamage).toLocaleString()}
           </b>
         );
         return (
@@ -764,11 +848,14 @@ export default defineComponent({
                   <LiveShipMeta shipId={p.shipId} ally={!enemy} />
                 ) : null}
               </span>
+              {/* Avg-damage column, gated by its chip toggle; the TRACK
+                  stays reserved when off so the XP/seal geometry never
+                  slides. */}
               <span
                 class="replay-view__postbattle-cell-stat replay-view__postbattle-cell-stat--dmg"
                 data-hint={t("replay.postbattle.avgDamage")}
               >
-                {dmgBody}
+                {prefs.value.overlayChips.damage ? dmgBody : null}
               </span>
               <span
                 class="replay-view__postbattle-fcell-xp"

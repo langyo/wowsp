@@ -232,8 +232,10 @@ pub async fn lookup_player_stats(
         stats.pr = expected_pr;
         // Same school-consistency guard as the batch (apply_batch_pr_algo):
         // the expected algorithm has no ranked per-ship path, so the
-        // winrate-proxy ranked PR must not ride along on the same card.
+        // winrate-proxy ranked/global PRs must not ride along on the same
+        // card.
         stats.ranked_pr = None;
+        stats.global_pr = None;
     }
     Ok(stats)
 }
@@ -465,8 +467,10 @@ pub(crate) fn apply_batch_pr_algo(stats: &mut PlayerStats, algo: PrAlgo) {
     if algo == PrAlgo::Expected {
         stats.pr = None;
         // The expected algorithm has no ranked per-ship path either — the
-        // same never-a-different-school argument as `pr` above.
+        // same never-a-different-school argument as `pr` above. The global
+        // blend builds on those winrate-proxy ratings, so it sits out too.
         stats.ranked_pr = None;
+        stats.global_pr = None;
     }
 }
 
@@ -514,6 +518,10 @@ fn player_stats_from_info(
         ranked_winrate: p.ranked.winrate,
         ranked_avg_damage: p.ranked.avg_damage,
         ranked_pr: p.ranked.pr,
+        global_battles: p.global.battles,
+        global_winrate: p.global.winrate,
+        global_avg_damage: p.global.avg_damage,
+        global_pr: p.global.pr,
     }
 }
 
@@ -1291,18 +1299,24 @@ pub(crate) fn parse_dog_tag(v: &serde_json::Value) -> Option<wowsp_tauri_shared:
     }
 }
 
-/// Career ranked (排位) stats extracted alongside the PvP block: summed
+/// Career totals for ONE battle mode: ranked (排位) is summed
 /// rank_solo/rank_div2/rank_div3 splits (WG realms, extra-gated on
 /// account/info) or the summed `seasons` tree (CN, vortex-normalized into
-/// the WG seasons shape by `wg_api_cn`). All fields None when the account
-/// never played ranked. Consumed by the Tab overlay's ranked stats source.
+/// the WG seasons shape by `wg_api_cn`); the global view merges the
+/// randoms and ranked careers into one (see `global_career_of`). All
+/// fields None when the account never played that mode.
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct RankedCareerStats {
+pub(crate) struct CareerModeStats {
     pub(crate) battles: Option<i64>,
     pub(crate) winrate: Option<f32>,
     pub(crate) avg_damage: Option<f32>,
     pub(crate) pr: Option<i64>,
 }
+
+/// Raw per-division counters for one career mode: (battles, wins, damage)
+/// × [solo, div2, div3]. Zeroed slots = that division never played. Feeds
+/// `ranked_career_of` and the global-mode split merge.
+pub(crate) type CareerSplits = [(i64, i64, i64); 3];
 
 /// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
 /// All fields are optional — hidden profiles yield null, and casual accounts
@@ -1327,8 +1341,10 @@ pub(crate) struct PvpStats {
     pub(crate) solo_battles: Option<i64>,
     pub(crate) div2_battles: Option<i64>,
     pub(crate) div3_battles: Option<i64>,
-    /// Career ranked stats (see [`RankedCareerStats`]).
-    pub(crate) ranked: RankedCareerStats,
+    /// Career ranked stats (see [`CareerModeStats`]).
+    pub(crate) ranked: CareerModeStats,
+    /// Combined randoms+ranked career totals (see [`global_career_of`]).
+    pub(crate) global: CareerModeStats,
 }
 
 impl PvpStats {
@@ -1341,13 +1357,16 @@ impl PvpStats {
         // Ranked extraction runs BEFORE the pvp early-returns below: an
         // account can carry ranked counters with a null pvp node (randoms
         // never played), and the ranked numbers must survive that.
-        let ranked = extract_ranked_career(statistics);
+        let (ranked, ranked_splits) = extract_ranked_parts(statistics);
         let pvp = statistics.get("pvp").filter(|v| !v.is_null());
         let pvp = match pvp {
             Some(p) => p,
             None => {
+                // Randoms never played: the global view IS the ranked career.
+                let global = global_career_of(None, [None, None, None], ranked, ranked_splits);
                 return Self {
                     ranked,
+                    global,
                     ..Self::empty()
                 };
             },
@@ -1416,6 +1435,17 @@ impl PvpStats {
             (Some(w), Some(b)) if b > 0 => compute_pr(Some((w, b)), None, None),
             _ => None,
         });
+        // Global career = randoms + ranked merged (raw pvp totals feed the
+        // winrate/damage blend; the split pairs feed the PR bucket merge).
+        let global = global_career_of(
+            match (battles, wins, damage) {
+                (Some(b), Some(w), Some(d)) if b > 0 => Some((b, w, d)),
+                _ => None,
+            },
+            [solo, div2, div3],
+            ranked,
+            ranked_splits,
+        );
 
         Self {
             battles,
@@ -1434,6 +1464,7 @@ impl PvpStats {
             div2_battles: div2.map(|(_, b)| b),
             div3_battles: div3.map(|(_, b)| b),
             ranked,
+            global,
         }
     }
 
@@ -1454,7 +1485,8 @@ impl PvpStats {
             solo_battles: None,
             div2_battles: None,
             div3_battles: None,
-            ranked: RankedCareerStats::default(),
+            ranked: CareerModeStats::default(),
+            global: CareerModeStats::default(),
         }
     }
 }
@@ -1473,19 +1505,19 @@ fn mode_split(node: Option<&serde_json::Value>) -> Option<(i64, i64, i64)> {
     Some((b, w, d))
 }
 
-/// Assemble [`RankedCareerStats`] out of summed raw counters plus the
+/// Assemble [`CareerModeStats`] out of summed raw counters plus the
 /// per-split (winrate, battles) pairs the PR proxy blends. Zero total
 /// battles → all-None (never played ranked).
-fn ranked_career_of(splits: [(i64, i64, i64); 3]) -> RankedCareerStats {
+fn ranked_career_of(splits: CareerSplits) -> CareerModeStats {
     let battles: i64 = splits.iter().map(|(b, _, _)| b).sum();
     if battles <= 0 {
-        return RankedCareerStats::default();
+        return CareerModeStats::default();
     }
     let wins: i64 = splits.iter().map(|(_, w, _)| w).sum();
     let damage: i64 = splits.iter().map(|(_, _, d)| d).sum();
     let winrate = 100.0 * wins as f32 / battles as f32;
     let wr_pair = |s: (i64, i64, i64)| (100.0 * s.1 as f32 / s.0 as f32, s.0);
-    RankedCareerStats {
+    CareerModeStats {
         battles: Some(battles),
         winrate: Some(winrate),
         avg_damage: Some(damage as f32 / battles as f32),
@@ -1501,8 +1533,12 @@ fn ranked_career_of(splits: [(i64, i64, i64); 3]) -> RankedCareerStats {
 /// shapes, first hit wins: the WG rank_solo/rank_div2/rank_div3 extra
 /// fields, then the CN `seasons` tree (season → shipType → rank_* mode,
 /// vortex-normalized into the WG field names by `wg_api_cn`) summed across
-/// every season and ship type.
-fn extract_ranked_career(statistics: &serde_json::Value) -> RankedCareerStats {
+/// every season and ship type. Returns the career totals PLUS the raw
+/// per-division splits — the global-mode merge (`global_career_of`) needs
+/// the split granularity even where the ranked PR itself runs on the
+/// collapsed overall bucket (the CN seasons tree keeps its historical
+/// one-bucket rating; only the global blend consumes its splits).
+fn extract_ranked_parts(statistics: &serde_json::Value) -> (CareerModeStats, CareerSplits) {
     let splits = [
         mode_split(statistics.get("rank_solo")),
         mode_split(statistics.get("rank_div2")),
@@ -1510,16 +1546,17 @@ fn extract_ranked_career(statistics: &serde_json::Value) -> RankedCareerStats {
     ];
     if splits.iter().any(|s| s.is_some()) {
         let unwrap_or_zero = |s: Option<(i64, i64, i64)>| s.unwrap_or((0, 0, 0));
-        return ranked_career_of([
+        let parts = [
             unwrap_or_zero(splits[0]),
             unwrap_or_zero(splits[1]),
             unwrap_or_zero(splits[2]),
-        ]);
+        ];
+        return (ranked_career_of(parts), parts);
     }
     let Some(seasons) = statistics.get("seasons").and_then(|s| s.as_object()) else {
-        return RankedCareerStats::default();
+        return (CareerModeStats::default(), [(0, 0, 0); 3]);
     };
-    let mut total = [0i64; 3]; // battles, wins, damage
+    let mut parts = [(0i64, 0i64, 0i64); 3]; // per-division (battles, wins, damage)
     for ships in seasons.values() {
         let Some(ships) = ships.as_object() else {
             continue;
@@ -1531,20 +1568,123 @@ fn extract_ranked_career(statistics: &serde_json::Value) -> RankedCareerStats {
             for (mode, node) in modes {
                 // Only the live ranked modes (rank_old_* never appears here,
                 // but the guard keeps the sum honest if one ever does).
-                if mode != "rank_solo" && mode != "rank_div2" && mode != "rank_div3" {
-                    continue;
-                }
+                let slot = match mode.as_str() {
+                    "rank_solo" => 0,
+                    "rank_div2" => 1,
+                    "rank_div3" => 2,
+                    _ => continue,
+                };
                 if let Some((b, w, d)) = mode_split(Some(node)) {
-                    total[0] += b;
-                    total[1] += w;
-                    total[2] += d;
+                    parts[slot].0 += b;
+                    parts[slot].1 += w;
+                    parts[slot].2 += d;
                 }
             }
         }
     }
-    // No per-mode split detail in the seasons tree — the overall fallback
-    // (one blended bucket) carries the PR.
-    ranked_career_of([(total[0], total[1], total[2]), (0, 0, 0), (0, 0, 0)])
+    // The seasons-tree rating keeps its historical one-bucket PR (the
+    // overall blended bucket) — only the returned splits carry the
+    // per-division detail for the global merge.
+    let total = (
+        parts[0].0 + parts[1].0 + parts[2].0,
+        parts[0].1 + parts[1].1 + parts[2].1,
+        parts[0].2 + parts[1].2 + parts[2].2,
+    );
+    (ranked_career_of([total, (0, 0, 0), (0, 0, 0)]), parts)
+}
+
+/// Battles-weighted merge of one division's two mode buckets: equivalent to
+/// summing the sides' raw wins, expressed over the (winrate, battles) pair
+/// shape `compute_pr` consumes. Either side absent → the other verbatim.
+fn merged_split(pvp: Option<(f32, i64)>, ranked: Option<(f32, i64)>) -> Option<(f32, i64)> {
+    match (pvp, ranked) {
+        (Some((wr1, b1)), Some((wr2, b2))) => {
+            let b = b1 + b2;
+            if b > 0 {
+                Some(((wr1 * b1 as f32 + wr2 * b2 as f32) / b as f32, b))
+            } else {
+                None
+            }
+        },
+        (s, None) | (None, s) => s,
+    }
+}
+
+/// The GLOBAL (全局) career view: randoms and ranked merged into one — the
+/// "everything this account played" numbers the stats-mode selector's
+/// `global` option shows. Either side may be absent (null pvp node / never
+/// played ranked); the global view then IS the present side, and both
+/// absent (hidden profile) yields all-None. Winrate/damage blend by battles
+/// (exactly what summing the raw counters would produce); PR merges the two
+/// modes' division splits bucket-for-bucket BEFORE the weighted blend, so
+/// each mode keeps its division mix. When NEITHER side carries split detail
+/// (casual accounts, CN's one-bucket seasons tree with no pvp splits), the
+/// battles-weighted blend of the two overall winrates carries the rating.
+/// When exactly ONE side carries splits, the split-less side's mass moves
+/// the global winrate/battles/damage but not the rating (a documented
+/// ceiling of the one-bucket source — on WG realms both sides share the
+/// same extra gate so the case is theoretical; on CN the pvp side lacks
+/// splits too and the overall blend fires).
+fn global_career_of(
+    pvp: Option<(i64, i64, i64)>,
+    pvp_splits: [Option<(f32, i64)>; 3],
+    ranked: CareerModeStats,
+    ranked_splits: CareerSplits,
+) -> CareerModeStats {
+    let rank_pair =
+        |s: (i64, i64, i64)| (s.0 > 0).then_some((100.0 * s.1 as f32 / s.0 as f32, s.0));
+    let ranked_pairs = [
+        rank_pair(ranked_splits[0]),
+        rank_pair(ranked_splits[1]),
+        rank_pair(ranked_splits[2]),
+    ];
+    let pvp_battles = pvp.map(|(b, _, _)| b).unwrap_or(0);
+    let pvp_pair = pvp.and_then(|(b, w, _)| (b > 0).then_some((100.0 * w as f32 / b as f32, b)));
+    let ranked_pair = match (ranked.winrate, ranked.battles) {
+        (Some(wr), Some(b)) if b > 0 => Some((wr, b)),
+        _ => None,
+    };
+    let battles = pvp_battles + ranked.battles.unwrap_or(0);
+    if battles <= 0 {
+        return CareerModeStats::default();
+    }
+    // Battles-weighted blend of the sides' winrates / avg damages — the
+    // same numbers summing the raw counters would give, derived from the
+    // per-side means both extractors already produced.
+    let blend = |pvp_v: Option<f32>, rank_v: Option<f32>| -> Option<f32> {
+        let v1 = match pvp_v {
+            Some(v) if pvp_battles > 0 => v,
+            _ => return rank_v,
+        };
+        match (rank_v, ranked.battles) {
+            (Some(v2), Some(b2)) if b2 > 0 => {
+                Some((v1 * pvp_battles as f32 + v2 * b2 as f32) / (pvp_battles + b2) as f32)
+            },
+            _ => Some(v1),
+        }
+    };
+    let merged = [
+        merged_split(pvp_splits[0], ranked_pairs[0]),
+        merged_split(pvp_splits[1], ranked_pairs[1]),
+        merged_split(pvp_splits[2], ranked_pairs[2]),
+    ];
+    let pr = if merged.iter().any(|s| s.is_some()) {
+        compute_pr(merged[0], merged[1], merged[2])
+    } else {
+        compute_pr(merged_split(pvp_pair, ranked_pair), None, None)
+    };
+    CareerModeStats {
+        battles: Some(battles),
+        winrate: blend(
+            pvp.and_then(|(b, w, _)| (b > 0).then_some(100.0 * w as f32 / b as f32)),
+            ranked.winrate,
+        ),
+        avg_damage: blend(
+            pvp.and_then(|(b, _, d)| (b > 0).then_some(d as f32 / b as f32)),
+            ranked.avg_damage,
+        ),
+        pr,
+    }
 }
 
 fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
@@ -2051,11 +2191,79 @@ mod tests {
     }
 
     #[test]
+    fn batch_expected_algo_nulls_ranked_and_global_pr() {
+        // The winrate-proxy rated modes (ranked / global) sit out under the
+        // expected algorithm too — never a different school on one card.
+        let mut stats = serde_json::from_value::<PlayerStats>(serde_json::json!({
+            "accountId": 42, "name": "player", "realm": "eu", "hidden": false,
+            "pr": 2_100, "rankedPr": 1_890, "globalPr": 2_050,
+        }))
+        .expect("PlayerStats parses with optional fields absent");
+        apply_batch_pr_algo(&mut stats, PrAlgo::Expected);
+        assert_eq!(stats.pr, None);
+        assert_eq!(stats.ranked_pr, None);
+        assert_eq!(stats.global_pr, None);
+    }
+
+    #[test]
     fn compute_pr_returns_none_for_missing_inputs() {
         assert_eq!(compute_pr(None, None, None), None);
         // A bucket with zero battles carries no weight.
         assert_eq!(compute_pr(Some((55.0, 0)), None, None), None);
         assert!(compute_pr(Some((55.0, 100)), None, None).is_some());
+    }
+
+    #[test]
+    fn global_career_of_merges_both_modes() {
+        // 3000 randoms battles @ 48% wr / 90k avg + 1000 ranked @ 60% / 60k.
+        let pvp = Some((3_000i64, 1_440i64, 270_000_000i64));
+        let ranked = CareerModeStats {
+            battles: Some(1_000),
+            winrate: Some(60.0),
+            avg_damage: Some(60_000.0),
+            pr: Some(2_100),
+        };
+        let g = global_career_of(pvp, [None, None, None], ranked, [(0, 0, 0); 3]);
+        assert_eq!(g.battles, Some(4_000));
+        // Battles-weighted means: (48·3000 + 60·1000)/4000 = 51.
+        assert!((g.winrate.unwrap() - 51.0).abs() < 0.01);
+        assert!((g.avg_damage.unwrap() - 82_500.0).abs() < 1.0);
+        // No split detail on either side → the blended overall winrate
+        // carries the rating (51% lands between the 47% and 52% anchors).
+        assert!(g.pr.unwrap() > 750 && g.pr.unwrap() < 1_350);
+    }
+
+    #[test]
+    fn global_career_of_handles_absent_sides() {
+        // Never played ranked: the global view IS the randoms career.
+        let pvp = Some((2_000i64, 1_000i64, 100_000_000i64));
+        let g = global_career_of(
+            pvp,
+            [None, None, None],
+            CareerModeStats::default(),
+            [(0, 0, 0); 3],
+        );
+        assert_eq!(g.battles, Some(2_000));
+        assert!((g.winrate.unwrap() - 50.0).abs() < 0.01);
+        // Null pvp node (randoms never played): the global view IS ranked.
+        let ranked = CareerModeStats {
+            battles: Some(500),
+            winrate: Some(55.0),
+            avg_damage: Some(70_000.0),
+            pr: Some(1_800),
+        };
+        let g = global_career_of(None, [None, None, None], ranked, [(0, 0, 0); 3]);
+        assert_eq!(g.battles, Some(500));
+        assert_eq!(g.winrate, Some(55.0));
+        // Hidden profile: both sides absent → all-None.
+        let g = global_career_of(
+            None,
+            [None, None, None],
+            CareerModeStats::default(),
+            [(0, 0, 0); 3],
+        );
+        assert_eq!(g.battles, None);
+        assert_eq!(g.pr, None);
     }
 
     #[test]

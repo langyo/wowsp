@@ -31,13 +31,14 @@ async function freshModule() {
 describe("loadStatsPrefs", () => {
   it("returns the defaults when nothing is stored", () => {
     expect(loadStatsPrefs()).toEqual(DEFAULT_STATS_PREFS);
-    // PR rating and the chip PR/battles ship opt-out; the fun wording,
-    // seals, the tier-weighted team winrate, the winrate/damage chips and
-    // the team-intel card ship on. Team averages ship off (dense already).
-    // Both roster-density overrides ship off: full cards on the live panel
-    // and compact rows post-battle are the defaults.
+    // The PR rating and ALL FOUR stat columns ship on (the roster reads
+    // winrate/PR/battles together, each individually switchable); the fun
+    // wording, seals and the tier-weighted team winrate ship on. Team
+    // averages ship off (dense already). Both roster-density overrides ship
+    // off: full cards on the live panel and compact rows post-battle are
+    // the defaults.
     expect(DEFAULT_STATS_PREFS).toEqual({
-      prEnabled: false,
+      prEnabled: true,
       prAlgo: "winrate",
       sealsEnabled: true,
       localizedTiers: true,
@@ -46,7 +47,7 @@ describe("loadStatsPrefs", () => {
       postbattleRosterFull: false,
       teamIntelEnabled: true,
       sealDisabled: {},
-      overlayChips: { winrate: true, pr: false, battles: false, damage: true },
+      overlayChips: { winrate: true, pr: true, battles: true, damage: true },
       overlayStatsMode: "auto",
       overlayIntel: { radar: true, hydro: true, smoke: true },
       overlayTeamAvg: { winrate: false, pr: false, damage: false },
@@ -178,6 +179,14 @@ describe("loadStatsPrefs", () => {
     );
     expect(loadStatsPrefs().overlayStatsMode).toBe("auto");
   });
+
+  it("accepts the global stats mode", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ overlayStatsMode: "global" }),
+    );
+    expect(loadStatsPrefs().overlayStatsMode).toBe("global");
+  });
 });
 
 describe("statsPrefs store", () => {
@@ -212,7 +221,7 @@ describe("statsPrefs store", () => {
       overlayChips: {
         winrate: false,
         pr: true,
-        battles: false,
+        battles: true,
         damage: true,
       },
       overlayStatsMode: "ranked",
@@ -250,9 +259,10 @@ describe("statsPrefs store", () => {
     const { useStatsPrefsStore: useFresh, prAlgoForRequest: prAlgoFresh } =
       await freshModule();
     const store = useFresh();
-    expect(store.prefs.prEnabled).toBe(false);
-    expect(prAlgoFresh()).toBeUndefined();
-    store.setPrEnabled(true);
+    // The rating ships ON now — the RPC param rides until it is turned off.
+    expect(store.prefs.prEnabled).toBe(true);
     expect(prAlgoFresh()).toBe("winrate");
+    store.setPrEnabled(false);
+    expect(prAlgoFresh()).toBeUndefined();
   });
 });

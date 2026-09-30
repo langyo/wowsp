@@ -1206,6 +1206,26 @@ pub struct PlayerStats {
     /// weighted-winrate formula as the overall `pr`).
     #[serde(default)]
     pub ranked_pr: Option<i64>,
+
+    // ── Global (全局 = randoms + ranked merged) career stats ───────────
+    /// Combined career battles (randoms + ranked). For an account that
+    /// never played ranked this equals `battles`; None = hidden profile /
+    /// no stats at all. Consumed by the stats-source "global" mode on the
+    /// roster surfaces.
+    #[serde(default)]
+    pub global_battles: Option<i64>,
+    /// Combined career winrate, percent (0–100) — the battles-weighted
+    /// blend of the two modes.
+    #[serde(default)]
+    pub global_winrate: Option<f32>,
+    /// Combined average damage per battle.
+    #[serde(default)]
+    pub global_avg_damage: Option<f32>,
+    /// PR proxy over the two modes' division splits merged bucket-for-
+    /// bucket (see the backend's `global_career_of`); None under the
+    /// expected PR algorithm.
+    #[serde(default)]
+    pub global_pr: Option<i64>,
 }
 
 /// One player name suggestion from the WG account/list autocomplete
@@ -3609,7 +3629,7 @@ mod tests {
     }
 
     /// Wire-critical payload: exact key set of the player card's data —
-    /// 28 keys, every multi-word one renamed (client.ts: PlayerStats).
+    /// 32 keys, every multi-word one renamed (client.ts: PlayerStats).
     #[test]
     fn player_stats_renames_every_deep_stat_field() {
         let stats = PlayerStats {
@@ -3647,6 +3667,10 @@ mod tests {
             ranked_winrate: Some(54.5),
             ranked_avg_damage: Some(77_777.0),
             ranked_pr: Some(1_890),
+            global_battles: Some(13_579),
+            global_winrate: Some(51.5),
+            global_avg_damage: Some(80_922.0),
+            global_pr: Some(2_390),
         };
         let v = round_trips(stats);
         assert_exact_keys(
@@ -3680,11 +3704,16 @@ mod tests {
                 "rankedWinrate",
                 "rankedAvgDamage",
                 "rankedPr",
+                "globalBattles",
+                "globalWinrate",
+                "globalAvgDamage",
+                "globalPr",
             ],
         );
         assert_eq!(v["clanTag"], "[SENT]");
         assert_eq!(v["div2Wr"], 52.25);
         assert_eq!(v["rankedPr"], 1_890);
+        assert_eq!(v["globalBattles"], 13_579);
     }
 
     /// Lookup sidebar autocomplete + the Tab-overlay seal verdicts

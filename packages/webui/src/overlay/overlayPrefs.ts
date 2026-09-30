@@ -1,4 +1,4 @@
-/** The Tab overlay's display-preferences reader + stat-source helpers.
+/** The Tab overlay's display-preferences reader.
  *
  *  The overlay page is bare DOM (no Vue), yet its content toggles live in
  *  the same `wowsp-stats-prefs` localStorage blob the main window's pinia
@@ -16,39 +16,38 @@ import {
   STATS_PREFS_STORAGE_KEY,
   type OverlayChipToggles,
   type OverlayIntelToggles,
-  type OverlayStatsMode,
+  type RosterStatsMode,
   type OverlayTeamAvgToggles,
   type PrAlgo,
 } from "@/stores/statsPrefs";
-import { modeKey } from "@/utils/modeColors";
+import {
+  resolveRosterStatsMode,
+  rosterStatView,
+  type ResolvedStatsMode,
+  type RosterModeNumbers,
+  type RosterStatViewSource,
+} from "@/utils/statView";
 import type { StampKind } from "@/utils/winrate";
 
-/** The stat view one roster row consumes: either the overall randoms
- *  numbers or the ranked (排位) career numbers, per the stats source. */
-export interface StatView {
-  winrate: number | null;
-  pr: number | null;
-  battles: number | null;
-  damage: number | null;
-}
+// The stat-view helpers the overlay renders through live in utils/statView
+// (shared with the main-window panels); re-exported so the overlay page
+// keeps its one import site.
+export { resolveRosterStatsMode, rosterStatView };
+export type { ResolvedStatsMode, RosterModeNumbers, RosterStatViewSource };
 
-/** The raw per-player stats the overlay caches (wire shape of
- * `lookup_players_stats_batch`; overall = randoms career). */
-export interface RawStat {
-  winrate: number | null;
-  avgDamage: number | null;
-  pr: number | null;
-  battles: number | null;
-  rankedWinrate: number | null;
-  rankedAvgDamage: number | null;
-  rankedPr: number | null;
-  rankedBattles: number | null;
+/** The raw per-player stats the overlay caches: the randoms career plus
+ *  the ranked / global per-mode payloads nested the way `rosterStatView`
+ *  reads them (the wire fields map in main.ts's batch handler). */
+export interface RawStat extends RosterStatViewSource {
+  clanId: number | null;
+  clanTag: string | null;
+  hidden: boolean;
 }
 
 /** Everything the overlay renders consumes this snapshot. */
 export interface OverlayDisplayPrefs {
   chips: OverlayChipToggles;
-  statsMode: OverlayStatsMode;
+  statsMode: RosterStatsMode;
   intel: OverlayIntelToggles;
   /** Team-intel card master switch. */
   teamIntel: boolean;
@@ -61,6 +60,9 @@ export interface OverlayDisplayPrefs {
   sealsDisabled: ReadonlySet<StampKind>;
   /** `prAlgo` forwarded to the stats RPC while the PR rating is on. */
   prAlgo: PrAlgo | undefined;
+  /** The PR master switch — the PR chip/average double-gates on it, the
+   *  same rule the roster panels' PR columns follow. */
+  prOn: boolean;
 }
 
 /** Known seal kinds — junk keys in the kill-switch map are dropped. */
@@ -107,8 +109,10 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
     const v = j?.prAlgo;
     prAlgo = v === "expected" ? "expected" : "winrate";
   }
-  const statsMode: OverlayStatsMode =
-    j?.overlayStatsMode === "random" || j?.overlayStatsMode === "ranked"
+  const statsMode: RosterStatsMode =
+    j?.overlayStatsMode === "random" ||
+    j?.overlayStatsMode === "ranked" ||
+    j?.overlayStatsMode === "global"
       ? j.overlayStatsMode
       : DEFAULT_STATS_PREFS.overlayStatsMode;
   return {
@@ -128,37 +132,6 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
       }),
     ),
     prAlgo,
+    prOn: prEnabled,
   };
-}
-
-/** Which battle-mode stats a battle renders: "auto" follows the current
- *  battle (ranked → ranked stats, everything else randoms), the fixed
- *  modes speak for themselves. */
-export function rankedStatsSource(
-  mode: OverlayStatsMode,
-  identity: { matchGroup?: string | null; scenario?: string | null; eventType?: string | null },
-): boolean {
-  if (mode === "ranked") return true;
-  if (mode === "random") return false;
-  return modeKey(identity.matchGroup, identity.scenario, identity.eventType) === "ranked";
-}
-
-/** Pick one player's display numbers per the stats source. Players without
- *  the requested mode (never played ranked) answer their nulls — the chips
- *  render the same "—" face as a stats miss. */
-export function statViewOf(st: RawStat | undefined, ranked: boolean): StatView {
-  if (!st) return { winrate: null, pr: null, battles: null, damage: null };
-  return ranked
-    ? {
-        winrate: st.rankedWinrate,
-        pr: st.rankedPr,
-        battles: st.rankedBattles,
-        damage: st.rankedAvgDamage,
-      }
-    : {
-        winrate: st.winrate,
-        pr: st.pr,
-        battles: st.battles,
-        damage: st.avgDamage,
-      };
 }

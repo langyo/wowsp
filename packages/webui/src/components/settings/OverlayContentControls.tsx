@@ -7,22 +7,24 @@ import {
   useStatsPrefsStore,
   type OverlayChipToggles,
   type OverlayIntelToggles,
-  type OverlayStatsMode,
   type OverlayTeamAvgToggles,
+  type RosterStatsMode,
 } from "@/stores/statsPrefs";
 // Same row pattern as the stats section's preference controls (label +
 // description left, control right; the sub rail for dependent clusters).
 import "../stats/StatsPrefsControls.scss";
 
 /**
- * The in-game Tab overlay's content-selection controls (settings → 游戏内
- * 水表): what the per-row chips show (winrate / PR / battles / avg damage,
- * any combination), which battle-mode stats feed them (follow the current
- * battle / fixed randoms / fixed ranked), the career seal stamps, the
- * team-intel card's items (radar / hydro / smoke) and the per-team average
- * line. Everything reads/writes the shared statsPrefs store — the overlay
- * window re-reads the blob the next time it is created, so a flip applies
- * from the next battle (or window recreate).
+ * The water-table content-selection controls (settings → 游戏内水表):
+ * what the per-row numbers show — on the in-game Tab overlay's chips AND
+ * the roster panels' columns alike (winrate / PR / battles / avg damage,
+ * any combination) — plus which battle-mode career feeds them (follow the
+ * current battle / fixed randoms / fixed ranked / the global merge), the
+ * career seal stamps, the team-intel card's items (radar / hydro / smoke)
+ * and the overlay's per-team average line. Everything reads/writes the
+ * shared statsPrefs store — the overlay window re-reads the blob the next
+ * time it is created, so a flip applies there from the next battle (or
+ * window recreate); the main-window panels apply it immediately.
  */
 export default defineComponent({
   name: "OverlayContentControls",
@@ -66,12 +68,13 @@ export default defineComponent({
             variant="segmented"
             modelValue={prefs.prefs.overlayStatsMode}
             onUpdate:modelValue={(v: string) =>
-              prefs.setOverlayStatsMode(v as OverlayStatsMode)
+              prefs.setOverlayStatsMode(v as RosterStatsMode)
             }
             tabs={[
               { key: "auto", label: t("settings.overlayContent.statsModeAuto") },
               { key: "random", label: t("settings.overlayContent.statsModeRandom") },
               { key: "ranked", label: t("settings.overlayContent.statsModeRanked") },
+              { key: "global", label: t("settings.overlayContent.statsModeGlobal") },
             ]}
           />
         </div>

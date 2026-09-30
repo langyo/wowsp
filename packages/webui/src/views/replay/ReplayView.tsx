@@ -37,7 +37,14 @@ import { isMobileApp } from "@/utils/platform";
 import { type PostBattleRibbon } from "@/features/replay/postBattle";
 import PostBattlePanel from "@/features/replay/PostBattlePanel";
 import {
+  resolveRosterStatsMode,
+  rosterStatView,
+  type ResolvedStatsMode,
+} from "@/utils/statView";
+import {
   PostBattleShareBar,
+  rosterShotCells,
+  rosterShotDashes,
   rosterStatCols,
   useNickMasking,
   useShareShot,
@@ -59,7 +66,6 @@ import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
-import { damageColor, prTier, winrateColor } from "@/utils/winrate";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
@@ -148,6 +154,9 @@ const PostBattleFallbackPanel = defineComponent({
      *  scenario team slots, not enemy semantics — the matrix renders a
      *  single allies column. */
     operation: { type: Boolean, default: false },
+    /** Resolved stats-source mode (the parent resolves the pref against
+     *  the replayed battle's identity — the fallback sees no head). */
+    statsMode: { type: String as () => ResolvedStatsMode, default: "random" },
   },
   emits: ["close"],
   setup(props, { emit }) {
@@ -167,25 +176,11 @@ const PostBattleFallbackPanel = defineComponent({
         rows: list.map((r): ShotRow => {
           const ai = AI_NAME.test(r.vehicle.name);
           const st = ai ? undefined : nameStats.value.get(r.vehicle.name);
-          const cell = (
-            pick: (x: RosterStat) => number | null,
-            fmt: (v: number) => string,
-            colorOf: (v: number) => string,
-          ): ShotStat => {
-            if (!st) return { text: "—" };
-            const v = pick(st);
-            if (v == null) return { text: "—" };
-            return { text: fmt(v), color: colorOf(v) };
-          };
-          const stats: ShotStat[] = [
-            cell((x) => x.winrate, (v) => `${v.toFixed(1)}%`, winrateColor),
-          ];
-          if (statsPrefsState.value.prEnabled) {
-            stats.push(cell((x) => x.pr, (v) => `${Math.round(v)}`, (v) => prTier(v).color));
-          }
-          stats.push(
-            cell((x) => x.avgDamage, (v) => Math.round(v).toLocaleString(), damageColor),
-          );
+          // The chip-gated columns of the SAME stats-source view the DOM
+          // matrix below renders — dashes for bots / misses.
+          const stats: ShotStat[] = !st
+            ? rosterShotDashes()
+            : rosterShotCells(rosterStatView(st, props.statsMode));
           return {
             nick: masking.maskOf(r.vehicle.name),
             clanTag: st?.clanTag ?? null,
@@ -412,7 +407,12 @@ const PostBattleFallbackPanel = defineComponent({
               </span>
               <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
             </span>
-            {rosterStatCols(r.vehicle.name, nameStats.value, nameStatsLoading.value)}
+            {rosterStatCols(
+              r.vehicle.name,
+              nameStats.value,
+              nameStatsLoading.value,
+              (st) => rosterStatView(st, props.statsMode),
+            )}
             <span class="replay-view__postbattle-cell-status">
               {!r.alive ? t("replay.legend.dead") : ""}
             </span>
@@ -1380,6 +1380,16 @@ export default defineComponent({
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
     const duration = ref(0);
+    /** Stats-source mode for the fallback matrix (the pref resolved
+     *  against the replayed battle's identity). */
+    const fallbackStatsMode = computed<ResolvedStatsMode>(() => {
+      const cur = parser.current.value;
+      return resolveRosterStatsMode(statsPrefsState.value.overlayStatsMode, {
+        matchGroup: cur?.matchGroup ?? null,
+        scenario: cur?.scenario ?? null,
+        eventType: cur?.eventType ?? null,
+      });
+    });
     /** Operation scenario (行动): single-team battle — drives the single
      *  allies column, the "N players" count and the icon variants. */
     const isOperation = computed(() => {
@@ -1805,6 +1815,7 @@ export default defineComponent({
                           damageStats={damageStats.value}
                           realm={realm.value}
                           operation={isOperation.value}
+                          statsMode={fallbackStatsMode.value}
                           onClose={() => (showResults.value = false)}
                         />
                       )}

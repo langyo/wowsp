@@ -9,15 +9,17 @@
  * no header — it used to duplicate this one).
  *
  * The head's density toggle compresses the roster to the post-battle
- * matrix's one-line rows (battle icon + the shared WR/PR/avg-damage
- * columns, ship-meta strip dropped) — a persisted stats pref, the mirror of
+ * matrix's one-line rows (battle icon + the shared WR/PR/battles/
+ * avg-damage columns, ship-meta strip dropped) — a persisted stats pref, the mirror of
  * the post-battle panel's own full-card expansion.
  *
  * Every human card is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles show a red notice instead of a fake "no data".
- * While the PR rating is on, each column title additionally carries the
- * team's aggregate — a tier-weighted (or plain, per the stats prefs) mean
- * winrate plus a mean PR over the players whose stats landed.
+ * Each column title additionally carries the team's aggregate per the
+ * chip toggles — a tier-weighted (or plain, per the stats prefs) mean
+ * winrate with its chip on, a mean PR while the rating AND its chip are
+ * on — over the players whose stats landed, all in the roster's resolved
+ * stats-source view.
  *
  * The head also carries the share actions: a copy-share-shot button (the
  * roster painted onto a watermarked PNG, same pipeline as the post-battle
@@ -60,11 +62,21 @@ import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
 import PluginStatusCard from "./PluginStatusCard";
 import { WaitingRadarArt } from "./liveGuideArt";
-import { useNickMasking, useShareShot, rosterStatCols } from "./postBattleShare";
+import {
+  rosterShotCells,
+  rosterShotColIndex,
+  rosterShotDashes,
+  rosterStatCols,
+  rosterStatLine,
+  rosterStatView,
+  useNickMasking,
+  useShareShot,
+} from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
+import { resolveRosterStatsMode, type ResolvedStatsMode } from "@/utils/statView";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useManualLocateStore } from "@/stores/manualLocate";
@@ -441,9 +453,18 @@ export default defineComponent({
       void router.push({ path: "/lookup", query: { name, realm: realm.value } });
     }
 
+    /** Which battle-mode career the roster numbers read — the persisted
+     *  stats-source pref; "auto" follows THIS battle (ranked battles read
+     *  the ranked careers, everything else randoms). Every row number, the
+     *  stat text lines and the team aggregates resolve through it. */
+    const statsMode = computed<ResolvedStatsMode>(() =>
+      resolveRosterStatsMode(prefs.prefs.overlayStatsMode, props.arena ?? {}),
+    );
+
     /** One team's header aggregate — tier-weighted (per the stats prefs)
      *  mean winrate plus a plain mean PR over the players whose stats
-     *  landed. AI names, hidden profiles and still-loading rows sit out. */
+     *  landed, all in the roster's resolved stats-source view. AI names,
+     *  hidden profiles and still-loading rows sit out. */
     const teamAgg = (entries: TabOrderedVehicle[]) =>
       aggregateTeamStats(
         entries.map((entry) => {
@@ -452,10 +473,11 @@ export default defineComponent({
           if (!st || st.loading || st.hidden || isAiName(v.name)) {
             return { winrate: null, pr: null, damage: null, tier: shipTierOf(v.shipId) };
           }
+          const view = rosterStatView(st, statsMode.value);
           return {
-            winrate: st.winrate,
-            pr: st.pr,
-            damage: st.avgDamage,
+            winrate: view.winrate,
+            pr: view.pr,
+            damage: view.avgDamage,
             tier: shipTierOf(v.shipId),
           };
         }),
@@ -489,28 +511,29 @@ export default defineComponent({
           background: c.background,
         };
       }
-      const statCell = (
-        v: VehicleEntry,
-        pick: (s: RosterStat) => number | null,
-        fmt: (v: number) => string,
-        colorOf: (v: number) => string,
-      ): ShotStat => {
-        if (isAiName(v.name)) return { text: "—" };
+      /** One row's shot cells: the chip-gated columns of the roster's
+       *  stats-source view — the exact columns the panel shows, dashes for
+       *  bots / misses / still-loading rows. */
+      const shotCellsOf = (v: VehicleEntry): ShotStat[] => {
+        if (isAiName(v.name)) return rosterShotDashes();
         const st = stats.get(v.id);
-        if (!st || st.loading || st.hidden) return { text: "—" };
-        const val = pick(st);
-        if (val == null) return { text: "—" };
-        return { text: fmt(val), color: colorOf(val) };
+        if (!st || st.loading || st.hidden) return rosterShotDashes();
+        return rosterShotCells(rosterStatView(st, statsMode.value));
       };
       const mkCol = (entries: TabOrderedVehicle[], enemy: boolean): ShotColumn => {
         // Aggregate values carry their stat-column index so the shot's
         // header numbers right-align onto the cells below them.
+        // The aggregate mirrors the panel's column title: each labeled
+        // value follows its own chip toggle (PR additionally the rating
+        // master) and right-aligns onto its column's origin.
         let agg: ShotColumn["agg"];
-        if (prefs.prefs.prEnabled) {
+        {
+          const parts: NonNullable<ShotColumn["agg"]> = [];
           const a = teamAgg(entries);
-          agg = [
-            {
-              col: 0,
+          const chips = prefs.prefs.overlayChips;
+          if (chips.winrate) {
+            parts.push({
+              col: rosterShotColIndex("winrate"),
               label: t(
                 prefs.prefs.weightedTeamWr
                   ? "replay.roster.teamWrWeighted"
@@ -518,14 +541,17 @@ export default defineComponent({
               ),
               value: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
               valueColor: a.winrate != null ? winrateColor(a.winrate) : undefined,
-            },
-            {
-              col: 1,
+            });
+          }
+          if (prefs.prefs.prEnabled && chips.pr) {
+            parts.push({
+              col: rosterShotColIndex("pr"),
               label: t("replay.roster.teamAvgPr"),
               value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
               valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
-            },
-          ];
+            });
+          }
+          agg = parts.length > 0 ? parts : undefined;
         }
         return {
           title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
@@ -548,19 +574,7 @@ export default defineComponent({
                   : operation.value || v.relation <= 1
                     ? "ally"
                     : "enemy",
-              stats: [
-                statCell(v, (s) => s.winrate, (val) => `${val.toFixed(1)}%`, winrateColor),
-                ...(prefs.prefs.prEnabled
-                  ? [
-                      statCell(
-                        v,
-                        (s) => s.pr,
-                        (val) => `${Math.round(val)}`,
-                        (val) => prTier(val).color,
-                      ),
-                    ]
-                  : []),
-              ],
+              stats: shotCellsOf(v),
             };
           }),
         };
@@ -580,11 +594,14 @@ export default defineComponent({
     }
 
     /** A column title (我方/敌方) with the team aggregate riding its right
-     *  end — only while the PR rating is on; the caption stays bare
-     *  otherwise. Values carry their tier colors (winrateColor / prTier). */
+     *  end — the winrate part while its chip is on, the PR part while the
+     *  rating AND its chip are on; the caption stays bare when neither
+     *  shows. Values carry their tier colors (winrateColor / prTier). */
     const colTitle = (label: string, entries: TabOrderedVehicle[]) => {
       const title = <span class="live-battle__col-name">{label}</span>;
-      if (!prefs.prefs.prEnabled) {
+      const showWr = prefs.prefs.overlayChips.winrate;
+      const showPr = prefs.prefs.prEnabled && prefs.prefs.overlayChips.pr;
+      if (!showWr && !showPr) {
         return <div class="live-battle__col-title">{title}</div>;
       }
       const agg = teamAgg(entries);
@@ -593,22 +610,34 @@ export default defineComponent({
         <div class="live-battle__col-title">
           {title}
           <span class="live-battle__col-agg">
-            {t(
-              prefs.prefs.weightedTeamWr
-                ? "replay.roster.teamWrWeighted"
-                : "replay.roster.teamWrPlain",
-            )}{" "}
-            <b style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}>
-              {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
-            </b>
-            {" · "}
-            {t("replay.roster.teamAvgPr")}{" "}
-            <b
-              class={prBand.rainbow ? "rainbow-text" : undefined}
-              style={prBand.rainbow ? undefined : { color: prBand.color }}
-            >
-              {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
-            </b>
+            {showWr ? (
+              <>
+                {t(
+                  prefs.prefs.weightedTeamWr
+                    ? "replay.roster.teamWrWeighted"
+                    : "replay.roster.teamWrPlain",
+                )}{" "}
+                <b
+                  style={
+                    agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined
+                  }
+                >
+                  {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+                </b>
+              </>
+            ) : null}
+            {showWr && showPr ? " · " : null}
+            {showPr ? (
+              <>
+                {t("replay.roster.teamAvgPr")}{" "}
+                <b
+                  class={prBand.rainbow ? "rainbow-text" : undefined}
+                  style={prBand.rainbow ? undefined : { color: prBand.color }}
+                >
+                  {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+                </b>
+              </>
+            ) : null}
           </span>
         </div>
       );
@@ -666,32 +695,15 @@ export default defineComponent({
             </span>
           );
         }
-        if (st.winrate != null) {
-          const tier = prTier(st.pr);
-          return (
-            <span class="live-battle__player-statline">
-              <b style={{ color: winrateColor(st.winrate) }}>
-                {st.winrate.toFixed(1)}%
-              </b>{" "}
-              WR
-              {/* Inline PR rides along only while the rating is on — the
-                  line keeps the bare winrate otherwise. */}
-              {prefs.prefs.prEnabled ? (
-                <>
-                  {" · "}
-                  <b
-                    class={tier.rainbow ? "rainbow-text" : undefined}
-                    style={tier.rainbow ? undefined : { color: tier.color }}
-                  >
-                    {st.pr ?? "—"}
-                  </b>{" "}
-                  PR
-                </>
-              ) : null}
-            </span>
-          );
-        }
-        return "—";
+        // The chips-enabled numbers of the roster's stats-source view —
+        // one shared text line with the post-battle full cards
+        // (rosterStatLine in postBattleShare).
+        const line = rosterStatLine(rosterStatView(st, statsMode.value));
+        return line != null ? (
+          <span class="live-battle__player-statline">{line}</span>
+        ) : (
+          "—"
+        );
       };
 
       // Compact mode reuses the post-battle matrix's row look verbatim —
@@ -705,9 +717,12 @@ export default defineComponent({
           if (st && !st.loading) nameStats.set(v.name, st);
         }
       }
+      /** One row's display numbers per the roster's resolved stats source
+       *  (the shared columns render them). */
+      const viewOf = (st: RosterStat) => rosterStatView(st, statsMode.value);
 
       /** One compact row: battle icon, nick/clan + ship stack, the shared
-       *  WR/PR/avg-damage columns and the career seal — one line, no
+       *  WR/PR/battles/avg-damage columns and the career seal — one line, no
        *  ship-meta strip. The whole row is the lookup jump (hover and
        *  clicks cover the seal), sunk rows dim like the full cards. */
       const compactCell = (entry: TabOrderedVehicle) => {
@@ -762,7 +777,7 @@ export default defineComponent({
               </span>
               <span class="live-battle__crow-ship">{shipName}</span>
             </span>
-            {rosterStatCols(v.name, nameStats, false)}
+            {rosterStatCols(v.name, nameStats, false, viewOf)}
             {/* Seal slot reserved whenever seals show at all (PR + settings
                 master) — the matrix's own alignment rule: rows without a
                 stamp (bots, misses, verdict holds) keep the stat columns

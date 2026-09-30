@@ -16,7 +16,14 @@
  * Coordinates arrive in physical px relative to the overlay window's own
  * origin; CSS px = physical / devicePixelRatio.
  */
-import { careerStamp, damageColor, prTier, winrateColor, type StampKind } from "@/utils/winrate";
+import {
+  battlesColor,
+  careerStamp,
+  damageColor,
+  prTier,
+  winrateColor,
+  type StampKind,
+} from "@/utils/winrate";
 // Pure-TS transport wrapper (no Vue/Pinia) — safe for this bare-DOM page,
 // same as @/utils/winrate above.
 import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
@@ -46,10 +53,11 @@ import {
 // once at window creation with the same tolerant contract as the store.
 import {
   readOverlayDisplayPrefs,
-  rankedStatsSource,
-  statViewOf,
+  resolveRosterStatsMode,
+  rosterStatView,
   type RawStat,
-  type StatView,
+  type RosterModeNumbers,
+  type ResolvedStatsMode,
 } from "./overlayPrefs";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
@@ -145,13 +153,31 @@ interface OverlayAnchor {
   rosterMode?: string;
 }
 
-interface Stat extends RawStat {
+/** The cached per-player stat (the wire row below, with the per-mode
+ *  payloads nested the way `rosterStatView` reads them). */
+type Stat = RawStat;
+
+/** Wire shape of one `lookup_players_stats_batch` row — flat per-mode
+ *  fields; the batch handler below nests them into a cached `Stat`. */
+interface BatchStat {
+  winrate?: number | null;
+  avgDamage?: number | null;
+  pr?: number | null;
+  battles?: number | null;
+  rankedWinrate?: number | null;
+  rankedPr?: number | null;
+  rankedBattles?: number | null;
+  rankedAvgDamage?: number | null;
+  globalWinrate?: number | null;
+  globalPr?: number | null;
+  globalBattles?: number | null;
+  globalAvgDamage?: number | null;
   /** Clan id from the batch answer (null = clanless / not found) — joins
    *  the hidden-profile 过街老鼠 clan gate below. */
-  clanId: number | null;
+  clanId?: number | null;
   /** Clan tag from the same answer — feeds the Tab sort key's display-name
    *  segment ('[TAG]name', exactly what the game's table sorts by). */
-  clanTag: string | null;
+  clanTag?: string | null;
   hidden: boolean;
 }
 
@@ -195,9 +221,10 @@ const SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
 // way the old single avg-stats switch did.
 const ANY_CHIP_ON =
   PREFS.chips.winrate || PREFS.chips.pr || PREFS.chips.battles || PREFS.chips.damage;
-// Which battle-mode stats the chips + team averages render, resolved per
-// battle in render() ("auto" follows the arena's mode key).
-let rankedSource = false;
+// Which battle-mode career the chips + team averages render, resolved per
+// battle in render() ("auto" follows the arena's mode key; the fixed modes
+// and the global merge pin it).
+let statsMode: ResolvedStatsMode = "random";
 
 // kind → Chinese label, copied from RatingStamp.tsx (bare DOM cannot reuse
 // that Vue component).
@@ -322,9 +349,10 @@ function stampNode(kind: StampKind): string {
 
 /** The per-row number block, one part per enabled chip toggle (winrate /
  *  PR / battles / avg damage) in that order, joined by dots. The values
- *  come from the stats source in force (randoms or ranked); a player
- *  without ANY of the enabled numbers renders the single muted dash. */
-function chipNumbers(v: StatView): string {
+ *  come from the stats source in force (randoms / ranked / global); a
+ *  player without ANY of the enabled numbers renders the single muted
+ *  dash. */
+function chipNumbers(v: RosterModeNumbers): string {
   const parts: string[] = [];
   const muted = `<b class="muted">—</b>`;
   if (PREFS.chips.winrate) {
@@ -334,18 +362,25 @@ function chipNumbers(v: StatView): string {
         : muted,
     );
   }
-  if (PREFS.chips.pr) {
+  if (PREFS.chips.pr && PREFS.prOn) {
     parts.push(
       v.pr != null ? `<b style="color:${prTier(v.pr).color}">${Math.round(v.pr)}</b>` : muted,
     );
   }
   if (PREFS.chips.battles) {
-    parts.push(v.battles != null ? `<b>${fmtBattles(v.battles)}</b>` : muted);
+    // Red under 200 battles (thin-sample warning), plain above — same rule
+    // as the roster panels' battles column (utils/winrate battlesColor).
+    const color = battlesColor(v.battles);
+    parts.push(
+      v.battles != null
+        ? `<b${color ? ` style="color:${color}"` : ""}>${fmtBattles(v.battles)}</b>`
+        : muted,
+    );
   }
   if (PREFS.chips.damage) {
     parts.push(
-      v.damage != null
-        ? `<b style="color:${damageColor(v.damage)}">${fmtDamage(v.damage)}</b>`
+      v.avgDamage != null
+        ? `<b style="color:${damageColor(v.avgDamage)}">${fmtDamage(v.avgDamage)}</b>`
         : muted,
     );
   }
@@ -361,7 +396,7 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
   if (!ANY_CHIP_ON) core = "";
   else if (!st) core = `<span class="muted">…</span>`;
   else if (st.hidden) core = `<span class="hidden">●</span>`;
-  else core = chipNumbers(statViewOf(st, rankedSource));
+  else core = chipNumbers(rosterStatView(st, statsMode));
   if (!SEALS_SHOWN) return core;
   // Every seal of a side sits on ONE flank: allies carry theirs to the
   // LEFT of the numbers, enemies to the RIGHT — no more splitting career
@@ -417,18 +452,19 @@ function candidatesChip(members: string[]): string {
     const st = stats.get(cacheKey(m));
     if (!st) return `<span class="muted">…</span>`;
     if (st.hidden) return `<span class="hidden">●</span>`;
-    const v = statViewOf(st, rankedSource);
+    const v = rosterStatView(st, statsMode);
     if (PREFS.chips.winrate && v.winrate != null) {
       return `<b style="color:${winrateColor(v.winrate)}">${v.winrate.toFixed(1)}%</b>`;
     }
-    if (PREFS.chips.damage && v.damage != null) {
-      return `<b style="color:${damageColor(v.damage)}">${fmtDamage(v.damage)}</b>`;
+    if (PREFS.chips.damage && v.avgDamage != null) {
+      return `<b style="color:${damageColor(v.avgDamage)}">${fmtDamage(v.avgDamage)}</b>`;
     }
-    if (PREFS.chips.pr && v.pr != null) {
+    if (PREFS.chips.pr && PREFS.prOn && v.pr != null) {
       return `<b style="color:${prTier(v.pr).color}">${Math.round(v.pr)}</b>`;
     }
     if (PREFS.chips.battles && v.battles != null) {
-      return `<b>${fmtBattles(v.battles)}</b>`;
+      const color = battlesColor(v.battles);
+      return `<b${color ? ` style="color:${color}"` : ""}>${fmtBattles(v.battles)}</b>`;
     }
     return `<span class="muted">—</span>`;
   };
@@ -491,11 +527,11 @@ function teamSummaryCard(
             .filter((v) => !AI_NAME.test(v.name))
             .map((v) => {
               const st = stats.get(cacheKey(v.name));
-              const v2 = st && !st.hidden ? statViewOf(st, rankedSource) : null;
+              const v2 = st && !st.hidden ? rosterStatView(st, statsMode) : null;
               return {
                 winrate: v2?.winrate ?? null,
                 pr: v2?.pr ?? null,
-                damage: v2?.damage ?? null,
+                damage: v2?.avgDamage ?? null,
                 tier: shipTierOf(v.shipId),
               };
             }),
@@ -512,7 +548,7 @@ function teamSummaryCard(
             agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—",
           )
         : "",
-      PREFS.teamAvg.pr
+      PREFS.teamAvg.pr && PREFS.prOn
         ? avgItem(localized("avgPr"), agg.avgPr != null ? `${Math.round(agg.avgPr)}` : "—")
         : "",
       PREFS.teamAvg.damage
@@ -611,7 +647,7 @@ function render() {
   // Which battle-mode stats this battle renders ("auto" resolves per
   // battle — ranked battles show the ranked career, everything else the
   // randoms career; the fixed modes pin it).
-  rankedSource = rankedStatsSource(PREFS.statsMode, arena);
+  statsMode = resolveRosterStatsMode(PREFS.statsMode, arena);
   const dpr = window.devicePixelRatio || 1;
   const rows = anchor.rowCenters;
   if (rows.length === 0) return;
@@ -956,7 +992,7 @@ async function runBatch() {
       names,
       realm,
       ...(PREFS.prAlgo != null ? { pr_algo: PREFS.prAlgo } : {}),
-    })) as Array<Stat | null>;
+    })) as Array<BatchStat | null>;
     names.forEach((name, i) => {
       const r = results[i];
       if (r) {
@@ -965,10 +1001,24 @@ async function runBatch() {
           avgDamage: r.avgDamage ?? null,
           pr: r.pr ?? null,
           battles: r.battles ?? null,
-          rankedWinrate: r.rankedWinrate ?? null,
-          rankedAvgDamage: r.rankedAvgDamage ?? null,
-          rankedPr: r.rankedPr ?? null,
-          rankedBattles: r.rankedBattles ?? null,
+          ranked:
+            r.rankedBattles != null || r.rankedWinrate != null
+              ? {
+                  winrate: r.rankedWinrate ?? null,
+                  pr: r.rankedPr ?? null,
+                  battles: r.rankedBattles ?? null,
+                  avgDamage: r.rankedAvgDamage ?? null,
+                }
+              : null,
+          global:
+            r.globalBattles != null || r.globalWinrate != null
+              ? {
+                  winrate: r.globalWinrate ?? null,
+                  pr: r.globalPr ?? null,
+                  battles: r.globalBattles ?? null,
+                  avgDamage: r.globalAvgDamage ?? null,
+                }
+              : null,
           clanId: r.clanId ?? null,
           clanTag: r.clanTag ?? null,
           hidden: r.hidden,
@@ -981,10 +1031,8 @@ async function runBatch() {
           avgDamage: null,
           pr: null,
           battles: null,
-          rankedWinrate: null,
-          rankedAvgDamage: null,
-          rankedPr: null,
-          rankedBattles: null,
+          ranked: null,
+          global: null,
           clanId: null,
           clanTag: null,
           hidden: false,

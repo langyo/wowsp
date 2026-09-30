@@ -2110,12 +2110,14 @@ export default defineComponent({
                 </HkButton>
               ) : null}
             </HkSettingsSub>
-            {/* Display content — what the Tab overlay renders: the per-row
-                chip numbers (any mix of winrate / PR / battles / avg
-                damage), which battle-mode stats feed them, the career
-                seal stamps, the team-intel items and the team averages.
-                All of it lives in the statsPrefs blob (the overlay window
-                re-reads it at creation, so flips apply next battle). */}
+            {/* Display content — what the water table renders everywhere:
+                the per-row numbers on the Tab overlay's chips AND the
+                roster panels' columns (any mix of winrate / PR / battles /
+                avg damage), which battle-mode career feeds them, the
+                career seal stamps, the team-intel items and the overlay's
+                team averages. All of it lives in the statsPrefs blob (the
+                overlay window re-reads it at creation, so its flips apply
+                next battle; the panels apply immediately). */}
             <HkSettingsSub title={t("settings.overlayContent.title")}>
               <HkSettingsHint>{t("settings.overlayContent.hint")}</HkSettingsHint>
               <OverlayContentControls />

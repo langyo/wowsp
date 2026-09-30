@@ -159,13 +159,15 @@
   }
 }
 /* With a team aggregate the title becomes a two-line mini table header
-   (tiny label over a mono value) on a grid mirroring the row cells:
-   [name][wr 6.5ch][pr 5ch][dmg 7.5ch][xp 6ch] with the same 8px gaps, so
-   the aggregate numbers land exactly on their columns. The grid element
-   carries the mono face so its ch matches the cells'. */
+   (tiny label over a mono value) on a grid mirroring the row cells —
+   [name][enabled roster columns][xp], the exact template set INLINE per
+   render (rosterColumns() + the 6ch XP cell) because the chip toggles
+   decide which columns exist. The template below is the all-on shape,
+   kept as the fallback/documentation. The grid element carries the mono
+   face so its ch matches the cells'. */
 .replay-view__postbattle-col-title--agg {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 6.5ch 5ch 7.5ch 6ch;
+  grid-template-columns: minmax(0, 1fr) 6.5ch 5ch 7ch 7.5ch 6ch;
   column-gap: 8px;
   row-gap: 1px;
   align-items: end;

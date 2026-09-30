@@ -18,6 +18,7 @@ import { onBeforeUnmount, reactive, watch } from "vue";
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
 import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
+import type { RosterModeNumbers } from "@/utils/statView";
 import { AI_NAME, isAiName } from "@/utils/aiNames";
 
 // Re-exports keep the historical import paths (`AI_NAME` was defined here
@@ -29,6 +30,13 @@ export interface RosterStat {
   pr: number | null;
   avgDamage: number | null;
   battles: number | null;
+  /** Ranked (排位) career numbers off the same batch answer; null = never
+   *  played ranked. Consumed by the stats-source mode selector
+   *  (utils/statView) on every roster surface. */
+  ranked: RosterModeNumbers | null;
+  /** Global career (randoms + ranked merged server-side); null = the
+   *  payload carried no stats at all (older shell). */
+  global: RosterModeNumbers | null;
   /** Clan id from the batch answer (null = clanless / not found) — joins
    *  the hidden-profile 过街老鼠 clan gate. */
   clanId: number | null;
@@ -62,11 +70,72 @@ const emptyStat = (loading: boolean): RosterStat => ({
   pr: null,
   avgDamage: null,
   battles: null,
+  ranked: null,
+  global: null,
   clanId: null,
   clanTag: null,
   hidden: false,
   loading,
 });
+
+/** The per-mode payloads a batch answer carries, or null when the mode's
+ *  numbers are entirely absent (never played / older shell without the
+ *  global fields). */
+function modeStatsOf(
+  has: boolean,
+  pick: () => RosterModeNumbers,
+): RosterModeNumbers | null {
+  return has ? pick() : null;
+}
+
+/** Map one batch-answer row onto a `RosterStat` (shared by the live
+ *  pipeline and the one-shot name lookup). */
+function rosterStatOf(r: {
+  winrate?: number | null;
+  pr?: number | null;
+  avgDamage?: number | null;
+  battles?: number | null;
+  rankedWinrate?: number | null;
+  rankedPr?: number | null;
+  rankedAvgDamage?: number | null;
+  rankedBattles?: number | null;
+  globalWinrate?: number | null;
+  globalPr?: number | null;
+  globalAvgDamage?: number | null;
+  globalBattles?: number | null;
+  clanId?: number | null;
+  clanTag?: string | null;
+  hidden: boolean;
+}): RosterStat {
+  return {
+    winrate: r.winrate ?? null,
+    pr: r.pr ?? null,
+    avgDamage: r.avgDamage ?? null,
+    battles: r.battles ?? null,
+    ranked: modeStatsOf(
+      r.rankedBattles != null || r.rankedWinrate != null,
+      () => ({
+        winrate: r.rankedWinrate ?? null,
+        pr: r.rankedPr ?? null,
+        battles: r.rankedBattles ?? null,
+        avgDamage: r.rankedAvgDamage ?? null,
+      }),
+    ),
+    global: modeStatsOf(
+      r.globalBattles != null || r.globalWinrate != null,
+      () => ({
+        winrate: r.globalWinrate ?? null,
+        pr: r.globalPr ?? null,
+        battles: r.globalBattles ?? null,
+        avgDamage: r.globalAvgDamage ?? null,
+      }),
+    ),
+    clanId: r.clanId ?? null,
+    clanTag: r.clanTag ?? null,
+    hidden: r.hidden,
+    loading: false,
+  };
+}
 
 /** Kick the hidden-profile clan gate for one landed stat: hidden + clanful +
  *  not-yet-judged entries resolve the clan's winrate (cached and deduped in
@@ -210,16 +279,7 @@ export function useRosterStats(options: UseRosterStatsOptions) {
       names.forEach((name, i) => {
         const r = results[i];
         const st = r
-          ? {
-              winrate: r.winrate ?? null,
-              pr: r.pr ?? null,
-              avgDamage: r.avgDamage ?? null,
-              battles: r.battles ?? null,
-              clanId: r.clanId ?? null,
-              clanTag: r.clanTag ?? null,
-              hidden: r.hidden,
-              loading: false,
-            }
+          ? rosterStatOf(r)
           : // Not found on this realm — resolve to "no data" so the card
             // doesn't spin forever.
             emptyStat(false);
@@ -399,18 +459,7 @@ export async function fetchRosterStatsByNames(
     const results = await api.lookupPlayersStatsBatch(misses, realm, prAlgoForRequest());
     misses.forEach((name, i) => {
       const r = results[i];
-      const st = r
-        ? {
-            winrate: r.winrate ?? null,
-            pr: r.pr ?? null,
-            avgDamage: r.avgDamage ?? null,
-            battles: r.battles ?? null,
-            clanId: r.clanId ?? null,
-            clanTag: r.clanTag ?? null,
-            hidden: r.hidden,
-            loading: false,
-          }
-        : emptyStat(false);
+      const st = r ? rosterStatOf(r) : emptyStat(false);
       const key = rosterCacheKey(realm, name);
       if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
       statCache.set(key, st);

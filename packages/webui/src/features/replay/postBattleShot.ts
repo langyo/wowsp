@@ -34,7 +34,8 @@ import {
 } from "@/features/share/shotKit";
 import type { CareerStamp } from "@/utils/winrate";
 
-/** One right-aligned stat cell of a row (WR / PR / avg damage / base XP). */
+/** One right-aligned stat cell of a row (WR / PR / battles / avg damage
+ *  / base XP — whichever columns the chip toggles admit). */
 export interface ShotStat {
   text: string;
   /** Tier color for the value (winrateColor / prTier / damageColor output). */

@@ -13,13 +13,18 @@ export type PrAlgo = "winrate" | "expected";
  *  blob stays small and new kinds default to visible. */
 export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 
-/** Which battle-mode stats feed the Tab overlay's numbers (per-row chips
- *  and the team averages): follow the current battle (ranked battles show
- *  ranked stats, everything else randoms) or a fixed mode. */
-export type OverlayStatsMode = "auto" | "random" | "ranked";
+/** Which battle-mode career feeds the roster numbers — on EVERY surface
+ *  now (the Tab overlay's chips and team averages, the live panel's rows,
+ *  both post-battle panels): follow the current battle (ranked battles
+ *  show the ranked career, everything else randoms), a fixed mode, or the
+ *  global merge of randoms + ranked. The stored FIELD keeps its historical
+ *  `overlayStatsMode` name for blob compatibility. */
+export type RosterStatsMode = "auto" | "random" | "ranked" | "global";
 
-/** Per-row chip content switches (Tab overlay). At least one on → the chip
- *  renders numbers; all off → only the seal stamps remain. */
+/** Per-row stat content switches — the Tab overlay's chips and the roster
+ *  panels' columns alike (winrate / PR / battles / avg damage). At least
+ *  one on → numbers render; all off → only the seal stamps remain (the
+ *  panels additionally keep their battle-local XP column). */
 export interface OverlayChipToggles {
   winrate: boolean;
   pr: boolean;
@@ -49,7 +54,8 @@ export interface OverlayTeamAvgToggles {
 export interface StatsPrefs {
   /** Master switch for every PR rating surface (account card hero, per-ship
    *  panel, live roster lines, clan card). Winrate coloring never depends on
-   *  this. Defaults OFF — the rating is opt-in. */
+   *  this. Defaults ON — the roster columns ship with winrate/PR/battles
+   *  together; turning it off hides every PR number and the seals. */
   prEnabled: boolean;
   /** Rating algorithm forwarded to the stats RPCs when `prEnabled`. */
   prAlgo: PrAlgo;
@@ -75,11 +81,12 @@ export interface StatsPrefs {
   teamIntelEnabled: boolean;
   /** Per-seal visibility toggles (settings' seal customizer). */
   sealDisabled: SealDisableMap;
-  /** Tab overlay per-row chip content (winrate / PR / battles / avg
-   *  damage). */
+  /** Tab overlay per-row chip / roster panel column content (winrate / PR /
+   *  battles / avg damage). */
   overlayChips: OverlayChipToggles;
-  /** Which battle-mode stats the Tab overlay displays. */
-  overlayStatsMode: OverlayStatsMode;
+  /** Which battle-mode career the roster surfaces display (see
+   *  `RosterStatsMode`; the field name is historical). */
+  overlayStatsMode: RosterStatsMode;
   /** Team-intel card items (master switch `teamIntelEnabled`). */
   overlayIntel: OverlayIntelToggles;
   /** Team-average line items under each team. */
@@ -93,7 +100,7 @@ export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
 const STAMP_KINDS = ["miracle", "ape", "maggot", "rat", "air", "sub"] as const;
 
 export const DEFAULT_STATS_PREFS: StatsPrefs = {
-  prEnabled: false,
+  prEnabled: true,
   prAlgo: "winrate",
   sealsEnabled: true,
   localizedTiers: true,
@@ -102,7 +109,9 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   postbattleRosterFull: false,
   teamIntelEnabled: true,
   sealDisabled: {},
-  overlayChips: { winrate: true, pr: false, battles: false, damage: true },
+  // All four stat columns ship on: the roster reads winrate / PR / battles
+  // together (each still individually switchable in the settings).
+  overlayChips: { winrate: true, pr: true, battles: true, damage: true },
   overlayStatsMode: "auto",
   overlayIntel: { radar: true, hydro: true, smoke: true },
   overlayTeamAvg: { winrate: false, pr: false, damage: false },
@@ -112,8 +121,8 @@ function isPrAlgo(v: unknown): v is PrAlgo {
   return v === "winrate" || v === "expected";
 }
 
-function isOverlayStatsMode(v: unknown): v is OverlayStatsMode {
-  return v === "auto" || v === "random" || v === "ranked";
+function isRosterStatsMode(v: unknown): v is RosterStatsMode {
+  return v === "auto" || v === "random" || v === "ranked" || v === "global";
 }
 
 /** Read a toggles object of shape T off a raw blob: known boolean keys are
@@ -150,14 +159,17 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
     const j = JSON.parse(raw) as Partial<StatsPrefs> & { avgStatsEnabled?: unknown };
     if (j == null || typeof j !== "object") return null;
     // Migration: the old single "per-row avg stats" switch seeds the chip
-    // toggles the first time a pre-overlayChips blob is read (winrate +
-    // damage followed it; PR / battles stay opt-in).
+    // toggles the first time a pre-overlayChips blob is read — its spirit
+    // was "show the stat numbers", so it seeds the whole shipped set.
     const legacyAvg =
       typeof j.avgStatsEnabled === "boolean" ? j.avgStatsEnabled : null;
     const seededChips: OverlayChipToggles =
       legacyAvg == null
         ? DEFAULT_STATS_PREFS.overlayChips
-        : { winrate: legacyAvg, pr: false, battles: false, damage: legacyAvg };
+        : // The legacy switch's spirit was "show the stat numbers" — it
+          // seeds the whole shipped set now (all four on), not the old
+          // winrate+damage-only pair.
+          { winrate: legacyAvg, pr: legacyAvg, battles: legacyAvg, damage: legacyAvg };
     return {
       prEnabled:
         typeof j.prEnabled === "boolean" ? j.prEnabled : DEFAULT_STATS_PREFS.prEnabled,
@@ -188,7 +200,7 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
           : DEFAULT_STATS_PREFS.teamIntelEnabled,
       sealDisabled: parseSealDisabled(j.sealDisabled),
       overlayChips: parseToggles(j.overlayChips, seededChips),
-      overlayStatsMode: isOverlayStatsMode(j.overlayStatsMode)
+      overlayStatsMode: isRosterStatsMode(j.overlayStatsMode)
         ? j.overlayStatsMode
         : DEFAULT_STATS_PREFS.overlayStatsMode,
       overlayIntel: parseToggles(j.overlayIntel, DEFAULT_STATS_PREFS.overlayIntel),
@@ -309,7 +321,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
-  function setOverlayStatsMode(v: OverlayStatsMode) {
+  function setOverlayStatsMode(v: RosterStatsMode) {
     prefs.value.overlayStatsMode = v;
     persist({ ...prefs.value });
   }

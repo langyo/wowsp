@@ -646,11 +646,19 @@ export interface PlayerStats {
   // ── Ranked (排位) career stats ──────────────────────────────────────
   /** Career ranked battles; null = never played ranked / hidden. Absent
    *  on cache files written before these fields existed. Consumed by the
-   *  Tab overlay's ranked stats source. */
+   *  roster stats-source mode selector (utils/statView). */
   rankedBattles?: number | null;
   rankedWinrate?: number | null;
   rankedAvgDamage?: number | null;
   rankedPr?: number | null;
+  // ── Global (全局 = randoms + ranked merged) career stats ────────────
+  /** Combined career battles (randoms + ranked); equals `battles` for an
+   *  account that never played ranked. Absent on cache files written
+   *  before these fields existed. */
+  globalBattles?: number | null;
+  globalWinrate?: number | null;
+  globalAvgDamage?: number | null;
+  globalPr?: number | null;
 }
 
 /** Player-name autocomplete item (WG account/list). Mirrors `wowsp_tauri_shared::PlayerSuggestion`. */

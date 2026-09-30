@@ -469,11 +469,18 @@ fn player_stats_of(
         div3_battles: p.div3_battles,
         // Ranked career comes off the normalized `seasons` tree (the extract
         // reads it); the coop fallback never touches ranked counters, so the
-        // coop-only guard above does not apply here.
+        // coop-only guard above does not apply here. The global view merges
+        // that with the pvp career the same extract produced.
         ranked_battles: p.ranked.battles,
         ranked_winrate: p.ranked.winrate,
         ranked_avg_damage: p.ranked.avg_damage,
         ranked_pr: p.ranked.pr,
+        global_battles: p.global.battles,
+        global_winrate: p.global.winrate,
+        global_avg_damage: p.global.avg_damage,
+        // Same co-op guard as `pr` above: the global blend would distill
+        // the same fantasy rating out of the co-op counters.
+        global_pr: if coop_fallback { None } else { p.global.pr },
     }
 }
 
@@ -516,8 +523,10 @@ pub(crate) async fn lookup_player_stats(
     if algo == PrAlgo::Expected {
         stats.pr = super::wg_api::account_expected_pr_for("cn", stats.account_id).await;
         // Same school-consistency guard as the WG arm / the batch: no ranked
-        // per-ship path under the expected algorithm.
+        // per-ship path under the expected algorithm (the global blend
+        // builds on the winrate-proxy ratings, so it sits out too).
         stats.ranked_pr = None;
+        stats.global_pr = None;
     }
     Ok(stats)
 }

@@ -5,9 +5,10 @@
    mode — a route-level code split must never strand these rules in an
    unrelated view's CSS chunk. */
 
-/* Roster stat columns (overall WR / PR / avg damage) right-aligned in a
-   mono face; values are tier-colored inline; fixed ch widths keep each
-   column aligned across rows on every surface. */
+/* Roster stat columns (overall WR / PR / battles / avg damage) right-aligned
+   in a mono face; values are tier-colored inline (battles: red under 200
+   battles, plain above — the count carries no tier color); fixed ch widths
+   keep each column aligned across rows on every surface. */
 .replay-view__postbattle-cell-stat {
   flex: 0 0 auto;
   text-align: right;
@@ -19,5 +20,6 @@
   b { font-weight: 600; }
   &--wr { min-width: 6.5ch; }
   &--pr { min-width: 5ch; }
+  &--battles { min-width: 7ch; }
   &--dmg { min-width: 7.5ch; }
 }

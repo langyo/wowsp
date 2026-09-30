@@ -5,24 +5,35 @@
  * shot" flow that renders the matrix to a watermarked PNG and pushes it onto
  * the system clipboard (the copy flow itself lives in the shared share kit —
  * features/share/useShareImage.ts), and the aligned roster-stat columns
- * (`rosterStatCols`) every compact roster row renders — post-battle rows and
- * the live panel's compact mode share the exact same columns.
+ * (`rosterStatCols` / `rosterColumns` / `rosterStatLine`) every roster row
+ * renders — which columns appear follows the stats prefs' chip toggles, and
+ * the numbers themselves follow the stats-source mode (utils/statView).
  *
  * Masking state is deliberately per-view and ephemeral — it is a share-time
  * privacy choice, not a preference. The fixed-width mask is NOT
  * length-preserving: a nick's length is itself information.
  */
-import { defineComponent, ref } from "vue";
+import { defineComponent, ref, type VNode } from "vue";
 import { Camera, Eye, EyeOff, Rows2, Rows3 } from "@lucide/vue";
 import { HkSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { statsPrefsState } from "@/stores/statsPrefs";
-import { damageColor, prTier, winrateColor } from "@/utils/winrate";
+import {
+  battlesColor,
+  damageColor,
+  prTier,
+  winrateColor,
+} from "@/utils/winrate";
+import {
+  EMPTY_ROSTER_VIEW,
+  rosterStatView,
+  type RosterModeNumbers,
+} from "@/utils/statView";
 import { isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { shareFooterStrings } from "@/features/share/shotKit";
 import { useShareImage } from "@/features/share/useShareImage";
-import { renderPostBattleShot, type ShotModel } from "./postBattleShot";
+import { renderPostBattleShot, type ShotModel, type ShotStat } from "./postBattleShot";
 import "./postBattleShare.scss";
 
 /** Display replacement for a hidden nickname (fixed width, see header). */
@@ -60,80 +71,236 @@ export function useShareShot(getModel: () => ShotModel, getEl: () => HTMLElement
   );
 }
 
-/** The aligned roster-stat columns for one player name — overall winrate, PR
- *  (while the rating pref is on) and avg damage, tier-colored (the XVM-style
- *  level coloring from utils/winrate). A tiny spinner rides while the batch
- *  lookup runs; bots / hidden profiles / lookup misses render a muted "—".
- *  Shared by every compact roster row surface: the post-battle results
- *  panel, the replay view's fallback matrix and the live panel's compact
- *  mode — one definition, identical geometry everywhere. */
+/** The default view resolver: the randoms career (the pre-mode behavior). */
+const randomsView = (st: RosterStat): RosterModeNumbers => ({
+  winrate: st.winrate,
+  pr: st.pr,
+  battles: st.battles,
+  avgDamage: st.avgDamage,
+});
+
+/** One enabled career-stat column of a roster row. */
+export interface RosterColumnSpec {
+  key: "winrate" | "pr" | "battles" | "damage";
+  /** Column header / tooltip label. */
+  title: string;
+  /** Fixed ch track so the columns align across rows (and the aggregate
+   *  header grids can mirror the template). */
+  width: string;
+}
+
+/** The enabled career-stat columns in render order, per the stats prefs'
+ *  chip toggles (+ the PR master switch on the PR column). Every compact
+ *  roster row and every aggregate header builds off this ONE list, so the
+ *  toggles move columns and headers together. */
+export function rosterColumns(): RosterColumnSpec[] {
+  const chips = statsPrefsState.value.overlayChips;
+  const out: RosterColumnSpec[] = [];
+  if (chips.winrate) {
+    out.push({
+      key: "winrate",
+      title: t("replay.postbattle.winrate"),
+      width: "6.5ch",
+    });
+  }
+  if (chips.pr && statsPrefsState.value.prEnabled) {
+    out.push({ key: "pr", title: "PR", width: "5ch" });
+  }
+  if (chips.battles) {
+    out.push({ key: "battles", title: t("replay.roster.battles"), width: "7ch" });
+  }
+  if (chips.damage) {
+    out.push({
+      key: "damage",
+      title: t("replay.postbattle.avgDamage"),
+      width: "7.5ch",
+    });
+  }
+  return out;
+}
+
+/** One column's number formatting/coloring (battles: red under 200 battles,
+ *  plain above — a count carries no tier color). `empty` marks a null
+ *  value so the caller can retip the cell for hidden profiles. */
+function rosterColumnCell(
+  key: RosterColumnSpec["key"],
+  view: RosterModeNumbers,
+): { body: VNode; empty: boolean } {
+  const v = key === "damage" ? view.avgDamage : view[key];
+  if (v == null) return { body: <em>—</em>, empty: true };
+  if (key === "battles") {
+    const color = battlesColor(v);
+    return {
+      body: (
+        <b style={color ? { color } : undefined}>{Math.round(v).toLocaleString()}</b>
+      ),
+      empty: false,
+    };
+  }
+  if (key === "winrate") {
+    return { body: <b style={{ color: winrateColor(v) }}>{v.toFixed(1)}%</b>, empty: false };
+  }
+  if (key === "pr") {
+    return {
+      body: <b style={{ color: prTier(v).color }}>{Math.round(v)}</b>,
+      empty: false,
+    };
+  }
+  return {
+    body: <b style={{ color: damageColor(v) }}>{Math.round(v).toLocaleString()}</b>,
+    empty: false,
+  };
+}
+
+const COLUMN_MOD: Record<RosterColumnSpec["key"], string> = {
+  winrate: "wr",
+  pr: "pr",
+  battles: "battles",
+  damage: "dmg",
+};
+
+/** The aligned roster-stat columns for one player name — the chip-enabled
+ *  columns of the player's resolved stats-source view (randoms / ranked /
+ *  global — pass a `viewOf` resolver; the default reads the randoms
+ *  career). A tiny spinner rides while the batch lookup runs; bots /
+ *  hidden profiles / lookup misses render a muted "—". Shared by every
+ *  roster row surface: the post-battle results panel, the replay view's
+ *  fallback matrix and the live panel's compact mode — one definition,
+ *  identical geometry everywhere. */
 export function rosterStatCols(
   name: string,
   stats: Map<string, RosterStat>,
   loading: boolean,
+  viewOf: (st: RosterStat) => RosterModeNumbers = randomsView,
 ) {
   const ai = isAiName(name);
   const stat = ai ? undefined : stats.get(name);
-  const col = (
-    mod: string,
-    title: string,
-    pick: (s: RosterStat) => number | null,
-    colorOf: (v: number) => string,
-    fmt: (v: number) => string,
-  ) => {
-    let tip = title;
-    let body;
-    if (ai) {
-      tip = t("replay.botNote");
-      body = <em>—</em>;
-    } else if (!stat || loading) {
-      body = <HkSpinner size="xs" tone="current" />;
-    } else {
-      const v = pick(stat);
-      if (v == null) {
-        if (stat.hidden) tip = t("replay.live.hiddenProfile");
-        body = <em>—</em>;
-      } else {
-        body = <b style={{ color: colorOf(v) }}>{fmt(v)}</b>;
-      }
-    }
-    return (
-      <span
-        class={`replay-view__postbattle-cell-stat ${mod}`}
-        data-hint={tip}
-      >
-        {body}
-      </span>
-    );
-  };
+  const view = stat ? viewOf(stat) : EMPTY_ROSTER_VIEW;
   return (
     <>
-      {col(
-        "replay-view__postbattle-cell-stat--wr",
-        t("replay.postbattle.winrate"),
-        (s) => s.winrate,
-        winrateColor,
-        (v) => `${v.toFixed(1)}%`,
-      )}
-      {statsPrefsState.value.prEnabled ? (
-        col(
-          "replay-view__postbattle-cell-stat--pr",
-          "PR",
-          (s) => s.pr,
-          (v) => prTier(v).color,
-          (v) => `${Math.round(v)}`,
-        )
-      ) : null}
-      {col(
-        "replay-view__postbattle-cell-stat--dmg",
-        t("replay.postbattle.avgDamage"),
-        (s) => s.avgDamage,
-        damageColor,
-        (v) => Math.round(v).toLocaleString(),
-      )}
+      {rosterColumns().map((col) => {
+        let tip = col.title;
+        let body;
+        if (ai) {
+          tip = t("replay.botNote");
+          body = <em>—</em>;
+        } else if (!stat || loading) {
+          body = <HkSpinner size="xs" tone="current" />;
+        } else {
+          const cell = rosterColumnCell(col.key, view);
+          body = cell.body;
+          if (cell.empty && stat.hidden) tip = t("replay.live.hiddenProfile");
+        }
+        return (
+          <span
+            class={`replay-view__postbattle-cell-stat replay-view__postbattle-cell-stat--${COLUMN_MOD[col.key]}`}
+            data-hint={tip}
+          >
+            {body}
+          </span>
+        );
+      })}
     </>
   );
 }
+
+/** The full card's stat text line: the chip-enabled numbers of one resolved
+ *  view inline (`52.3% WR · 1733 PR · 12,345 场次`), values tier-colored
+ *  (PR keeps its rainbow 彩表 band; battles renders red under 200, plain
+ *  above — a count carries no tier). An enabled number with no value keeps
+ *  its slot with a bare "—" placeholder (the compact columns' face); the
+ *  line is null when none of the winrate / PR / battles chips is on (avg
+ *  damage is a column, not part of the text line) — callers then render
+ *  their own "—". Loading / hidden states stay with the caller (each panel
+ *  owns its pipeline). */
+export function rosterStatLine(view: RosterModeNumbers) {
+  const chips = statsPrefsState.value.overlayChips;
+  const parts: VNode[] = [];
+  if (chips.winrate) {
+    parts.push(
+      <>
+        <b
+          style={
+            view.winrate != null ? { color: winrateColor(view.winrate) } : undefined
+          }
+        >
+          {view.winrate != null ? `${view.winrate.toFixed(1)}%` : "—"}
+        </b>{" "}
+        WR
+      </>,
+    );
+  }
+  if (chips.pr && statsPrefsState.value.prEnabled) {
+    const tier = prTier(view.pr);
+    parts.push(
+      <>
+        <b
+          class={tier.rainbow ? "rainbow-text" : undefined}
+          style={tier.rainbow ? undefined : { color: tier.color }}
+        >
+          {view.pr ?? "—"}
+        </b>{" "}
+        PR
+      </>,
+    );
+  }
+  if (chips.battles) {
+    const color = battlesColor(view.battles);
+    parts.push(
+      <>
+        <b style={color ? { color } : undefined}>
+          {view.battles != null ? Math.round(view.battles).toLocaleString() : "—"}
+        </b>{" "}
+        {t("replay.roster.battles")}
+      </>,
+    );
+  }
+  if (parts.length === 0) return null;
+  const line: VNode[] = [];
+  parts.forEach((p, i) => {
+    if (i > 0) line.push(<>{" · "}</>);
+    line.push(p);
+  });
+  return <>{line}</>;
+}
+
+/** Dashed cells for as many columns as are enabled — the share-shot face
+ *  of a bot row / stats miss (rosterShotCells' counterpart). */
+export function rosterShotDashes(): ShotStat[] {
+  return rosterColumns().map(() => ({ text: "—" }));
+}
+
+/** The chip-gated career-stat cells of one resolved view, in
+ *  rosterColumns() order — the share-shot rows render the EXACT columns
+ *  the panels show, battles red-under-200 warning included, so the copied
+ *  image never contradicts the roster on screen beside the copy button. */
+export function rosterShotCells(view: RosterModeNumbers): ShotStat[] {
+  return rosterColumns().map((col) => {
+    const v = col.key === "damage" ? view.avgDamage : view[col.key];
+    if (v == null) return { text: "—" };
+    if (col.key === "battles") {
+      const color = battlesColor(v);
+      return { text: Math.round(v).toLocaleString(), ...(color ? { color } : {}) };
+    }
+    if (col.key === "winrate") {
+      return { text: `${v.toFixed(1)}%`, color: winrateColor(v) };
+    }
+    if (col.key === "pr") {
+      return { text: `${Math.round(v)}`, color: prTier(v).color };
+    }
+    return { text: Math.round(v).toLocaleString(), color: damageColor(v) };
+  });
+}
+
+/** Column index of one stat key within the enabled rosterColumns() — the
+ *  share-shot aggregate entries right-align their values onto it. */
+export function rosterShotColIndex(key: RosterColumnSpec["key"]): number {
+  return rosterColumns().findIndex((c) => c.key === key);
+}
+
+/** Re-exported for the panels' team aggregates: resolve one RosterStat's
+ *  display view (randoms / ranked / global). */
+export { rosterStatView };
 
 /** Toolbar riding the post-battle panel top: hide-all-nicknames toggle (with
  *  the per-row eye hint), the optional roster-density toggle (compact rows ⇄

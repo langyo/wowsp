@@ -164,3 +164,16 @@ export function damageColor(avg: number | null | undefined): string {
   if (avg >= 25000) return "rgb(230 170 50)";
   return "rgb(220 80 80)";
 }
+
+/** Low-volume career threshold for the battles column: below it the
+ *  numbers are too thin to trust, so the count renders red (winrate's red
+ *  tone). At or above it the count keeps the PLAIN text color — a battle
+ *  count carries no tier, and coloring it would pretend one. Mirrors
+ *  `compositionStamps`' career floor. */
+export const LOW_BATTLES = 200;
+
+/** Battles-column color: red while the career is under [`LOW_BATTLES`]
+ *  battles (an unreliable-stats flag), otherwise none (plain text). */
+export function battlesColor(battles: number | null | undefined): string | undefined {
+  return battles != null && battles < LOW_BATTLES ? "rgb(220 80 80)" : undefined;
+}
