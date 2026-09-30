@@ -538,13 +538,26 @@ describe("ShipFilterBar chips", () => {
 
 describe("nation strip pan helpers", () => {
   it("translates the vertical wheel notch but honors a real horizontal swipe", () => {
-    expect(stripWheelDelta(0, 120)).toBe(120);
-    expect(stripWheelDelta(0, -120)).toBe(-120);
+    // Pixel mode (the common engine default).
+    expect(stripWheelDelta(0, 0, 120)).toBe(120);
+    expect(stripWheelDelta(0, 0, -120)).toBe(-120);
     // Trackpad sideways swipes (and shift+wheel, reported as deltaX
     // natively) win over the vertical delta.
-    expect(stripWheelDelta(-60, 120)).toBe(-60);
-    expect(stripWheelDelta(15, -90)).toBe(15);
-    expect(stripWheelDelta(0, 0)).toBe(0);
+    expect(stripWheelDelta(0, -60, 120)).toBe(-60);
+    expect(stripWheelDelta(0, 15, -90)).toBe(15);
+    expect(stripWheelDelta(0, 0, 0)).toBe(0);
+  });
+
+  it("normalizes Firefox line-mode wheel notches to pixels", () => {
+    // deltaMode 1 (lines): one notch is ~3 lines — scaled by 40px/line so
+    // a notch pans a wheel-like distance instead of ~3px.
+    expect(stripWheelDelta(1, 0, 3)).toBe(120);
+    expect(stripWheelDelta(1, 0, -1)).toBe(-40);
+    // A horizontal line-mode delta scales the same way.
+    expect(stripWheelDelta(1, -2, 0)).toBe(-80);
+    // Page mode (2) passes through raw — effectively extinct, and
+    // inventing a page height would guess wrong.
+    expect(stripWheelDelta(2, 0, 1)).toBe(1);
   });
 
   it("arms the pan only past the threshold on either axis", () => {

@@ -169,7 +169,10 @@
    must never outrun the viewport, and the nation strip's 14 flags give
    the max-content panel every excuse to try. Sheet form factors size
    themselves (full-width, hikari's own geometry) — excluded here so the
-   phone layout stays untouched. */
+   phone layout stays untouched. NOTE: this reaches beyond this bar —
+   ShipPickerModal's FilterCategoryChip imports this SCSS and renders
+   `.ship-filter-bar__pop` too, so its popups are capped by the same
+   rule; a future selector change here silently alters the picker. */
 .hk-popover-panel:not(.hk-is-sheet) .ship-filter-bar__pop {
   max-width: min(92vw, 640px);
 }

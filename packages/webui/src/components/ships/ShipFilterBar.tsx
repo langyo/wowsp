@@ -187,13 +187,20 @@ const isSingleSel = (key: CatKey) => SINGLE_CATS.includes(key);
 const PURE_CATS: readonly CatKey[] = ["type", "nation"];
 const isPureCat = (key: CatKey) => PURE_CATS.includes(key);
 
+/** Firefox line-height wheel mode (deltaMode 1): one notch reports ~3
+ *  lines, not pixels — normalized here so a notch pans a wheel-like
+ *  distance on every engine (40px/line, the classic WebKit line height).
+ *  Page mode (deltaMode 2, effectively extinct) passes through raw. */
+const WHEEL_LINE_PX = 40;
+
 /** Horizontal pan distance for a wheel gesture over the nation strip: a
  *  real horizontal wheel/trackpad swipe (deltaX — shift+wheel reports as
  *  deltaX natively too) wins; a plain vertical wheel notch is translated
  *  onto the horizontal axis instead. Mirrors hikari HkScrollContainer's
- *  wheel rule. */
-export function stripWheelDelta(deltaX: number, deltaY: number): number {
-  return deltaX !== 0 ? deltaX : deltaY;
+ *  wheel rule, plus the line-mode→pixels normalization. */
+export function stripWheelDelta(deltaMode: number, deltaX: number, deltaY: number): number {
+  const raw = deltaX !== 0 ? deltaX : deltaY;
+  return deltaMode === 1 ? raw * WHEEL_LINE_PX : raw;
 }
 
 /** Press→pan decision for the nation strip drag: once the pointer strays
@@ -770,7 +777,7 @@ export default defineComponent({
     function onStripWheel(e: WheelEvent) {
       const el = stripEl.value;
       if (!el || el.scrollWidth <= el.clientWidth) return;
-      const delta = stripWheelDelta(e.deltaX, e.deltaY);
+      const delta = stripWheelDelta(e.deltaMode, e.deltaX, e.deltaY);
       if (delta === 0) return;
       const prev = el.scrollLeft;
       el.scrollLeft += delta;
@@ -846,6 +853,13 @@ export default defineComponent({
       prev?.removeEventListener("click", onStripClickCapture, true);
       el?.addEventListener("wheel", onStripWheel, { passive: false });
       el?.addEventListener("click", onStripClickCapture, true);
+    });
+    // A popover that closed before the pan's trailing click (window blur
+    // mid-drag — pointerup lost) must not carry the swallow flag into the
+    // reopened panel: the flag only ever eats the click of the pan that
+    // armed it, and that click can only land while the popup still stands.
+    watch(openPop, (key) => {
+      if (key !== "nation") stripDragged = false;
     });
     onBeforeUnmount(() => {
       stripEl.value?.removeEventListener("wheel", onStripWheel);
