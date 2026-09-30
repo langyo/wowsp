@@ -138,10 +138,25 @@
   border-bottom: 1px solid rgb(var(--color-text) / 0.1);
 
   /* Right-edge compensation so the header grid sits over the stat columns
-     below: rows spend width on the mask eye (22px + gaps), plus the career
-     seal slot when seals are enabled. */
+     below: rows spend width on the mask eye (22px + gaps + the button's
+     right padding), plus the widened career-seal slot when seals are
+     enabled. */
   &--pad-eye { padding-right: 34px; }
-  &--pad-seal { padding-right: 64px; }
+  &--pad-seal { padding-right: 78px; }
+}
+/* Full-card mode's aggregate: no aligned columns sit under the title, so
+   the numbers ride its right end as inline text (the live panel's column
+   title treatment). */
+.replay-view__postbattle-col-aggtext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: normal;
+  white-space: nowrap;
+
+  b {
+    font-weight: 600;
+  }
 }
 /* With a team aggregate the title becomes a two-line mini table header
    (tiny label over a mono value) on a grid mirroring the row cells:
@@ -181,9 +196,10 @@
   line-height: 1.2;
 }
 
-/* Row = card wrapper (background + dead/self states) holding the
-   drill-down button, the career seal and the per-row mask toggle; the
-   wrapper is a div so the eye stays a real button (no nested buttons). */
+/* Row wrapper (background + dead/self states) holding the drill-down
+   button and the per-row mask toggle; the wrapper is a div so the eye
+   stays a real button (no nested buttons). The career seal rides INSIDE
+   the button (see the stampslot rule below). */
 .replay-view__postbattle-cell {
   display: flex;
   align-items: center;
@@ -216,6 +232,7 @@
   cursor: pointer;
   transition: background 0.15s;
   &:hover { background: rgb(var(--color-text) / 0.1); }
+  &:focus-visible { outline: 1px solid rgb(var(--color-text) / 0.4); }
 }
 .replay-view__postbattle-cell-ico {
   flex: 0 0 auto;
@@ -257,11 +274,14 @@
   white-space: nowrap;
 }
 /* Career seal pressed onto the card's right edge (live panel look). The
-   slot itself is a reserved 26px column between the XP cell and the mask
-   eye — present whenever seals are enabled at all, so the eyes align
-   across rows whether or not a given player earned a stamp. */
+   slot rides INSIDE the drill-down button — after the XP cell — so the
+   hover highlight and the click target cover the seal too; it is reserved
+   whenever seals are enabled at all, so the mask eyes align across rows
+   whether or not a given player earned a stamp. Wider than the 26px stamp
+   on purpose: the extra air keeps the seal clear of the XP digits on the
+   left and the eye on the right. */
 .replay-view__postbattle-cell-stampslot {
-  flex: 0 0 26px;
+  flex: 0 0 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -293,27 +313,147 @@
     color: rgb(var(--color-primary));
   }
 }
-/* Roster stat columns (overall WR / PR / avg damage) left of the XP —
-   values are tier-colored inline; fixed ch widths keep each column
-   aligned across rows. */
-.replay-view__postbattle-cell-stat {
-  flex: 0 0 auto;
-  text-align: right;
-  font-family: var(--font-mono);
-  em {
-    font-style: normal;
-    color: rgb(var(--color-text) / 0.35);
-  }
-  b { font-weight: 600; }
-  &--wr { min-width: 6.5ch; }
-  &--pr { min-width: 5ch; }
-  &--dmg { min-width: 7.5ch; }
-}
 .replay-view__postbattle-cell-xp {
   flex: 0 0 auto;
   min-width: 6ch;
   text-align: right;
   font-family: var(--font-mono);
+}
+
+/* ── Full-card rows (the live panel's card look) ───────────────────────
+   Mirrors .live-battle__player in LiveBattlePanel.scss: a fixed
+   name/ship/stat text stack, an elastic-but-clipping middle for the
+   LiveShipMeta strip, then this panel's own avg-damage / XP numbers and a
+   fixed seal track. The whole card is the drill-down button (hover and
+   clicks cover the seal); the mask eye rides outside it. */
+.replay-view__postbattle-fcell {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  padding: 0 4px 0 0;
+  border-radius: 6px;
+  color: rgb(var(--color-text));
+  font-size: var(--text-xs);
+
+  /* Sunk in-battle: the window's own dead-row voice (0.55, no grayscale)
+     — a post-battle matrix is mostly dead rows, so the live panel's
+     heavier mid-battle sunk fading would wash the whole sheet out. */
+  &--dead {
+    opacity: 0.55;
+  }
+  &--self {
+    outline: 1px solid rgb(var(--color-text) / 0.7);
+    outline-offset: -1px;
+  }
+}
+/* The eye keeps its fixed 22px height inside the stretched wrapper —
+   without an explicit center it would pin to the row's top edge (stretch
+   falls back to flex-start for definite-height items). */
+.replay-view__postbattle-fcell .replay-view__postbattle-cell-eye {
+  align-self: center;
+}
+.replay-view__postbattle-fcell-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 1.75rem;
+  column-gap: 10px;
+  align-items: center;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 6px;
+  background: rgb(var(--color-text) / 0.04);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background 0.15s;
+  &:hover { background: rgb(var(--color-text) / 0.1); }
+  &:focus-visible { outline: 1px solid rgb(var(--color-text) / 0.4); }
+}
+.replay-view__postbattle-fcell-main {
+  grid-column: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.replay-view__postbattle-fcell-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+.replay-view__postbattle-fcell-nick {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Clan tag after the nick — same muted voice everywhere. */
+.replay-view__postbattle-fcell-clan {
+  flex: none;
+  color: rgb(var(--color-text) / 0.5);
+  font-size: 0.78em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.replay-view__postbattle-fcell-ship {
+  color: rgb(var(--color-text) / 0.45);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.replay-view__postbattle-fcell-stat {
+  display: flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text) / 0.7);
+
+  b { font-weight: 600; }
+}
+.replay-view__postbattle-fcell-statline {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Hidden profile: a red notice, not a bare "—" (same voice as the live
+   panel's roster lines). */
+.replay-view__postbattle-fcell-hidden {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(var(--color-error));
+}
+/* LiveShipMeta host: pins the middle grid track; an empty ship keeps the
+   track reserved so the columns keep their geometry. */
+.replay-view__postbattle-fcell-meta {
+  grid-column: 2;
+  display: block;
+  min-width: 0;
+}
+/* The shared dmg column + this panel's XP cell, pinned onto their tracks. */
+.replay-view__postbattle-fcell-btn .replay-view__postbattle-cell-stat--dmg {
+  grid-column: 3;
+}
+.replay-view__postbattle-fcell-xp {
+  grid-column: 4;
+  justify-self: end;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+.replay-view__postbattle-fcell-btn .replay-view__postbattle-cell-stampslot {
+  grid-column: 5;
+  flex-basis: auto;
+  justify-self: center;
 }
 .replay-view__postbattle-detail {
   position: relative;
@@ -562,6 +702,17 @@
   }
   .replay-view__postbattle-cell-btn {
     padding: 0.4rem 0.4rem 0.4rem 0.5rem;
+  }
+  /* Full cards: the 10rem name track + fixed columns don't fit a phone
+     sheet — shrink the name track and let the ship-meta middle collapse
+     first (compact rows remain the comfortable phone look). */
+  .replay-view__postbattle-fcell {
+    min-height: 44px;
+  }
+  .replay-view__postbattle-fcell-btn {
+    grid-template-columns:
+      minmax(0, 42%) minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 1.75rem;
+    padding: 0.4rem 0.5rem;
   }
   .replay-view__postbattle-jump {
     min-height: 44px;

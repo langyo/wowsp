@@ -126,7 +126,9 @@
     "avgDamage": "Ср. урон",
     "teamWrWeighted": "Взвешенная победность",
     "teamWrPlain": "Средняя победность",
-    "teamAvgPr": "Средний PR"
+    "teamAvgPr": "Средний PR",
+    "compactMode": "Компактный режим",
+    "fullMode": "Полный режим"
   },
   "minimap": {
     "zoom": "Увеличенная карта",

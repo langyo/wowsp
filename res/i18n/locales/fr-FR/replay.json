@@ -126,7 +126,9 @@
     "avgDamage": "Dégâts moy.",
     "teamWrWeighted": "TV pondérée par palier",
     "teamWrPlain": "TV moyenne",
-    "teamAvgPr": "PR moyen"
+    "teamAvgPr": "PR moyen",
+    "compactMode": "Mode compact",
+    "fullMode": "Mode complet"
   },
   "minimap": {
     "zoom": "Carte agrandie",

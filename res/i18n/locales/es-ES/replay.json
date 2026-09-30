@@ -126,7 +126,9 @@
     "avgDamage": "Daño medio",
     "teamWrWeighted": "WR ponderado por nivel",
     "teamWrPlain": "WR medio",
-    "teamAvgPr": "PR medio"
+    "teamAvgPr": "PR medio",
+    "compactMode": "Modo compacto",
+    "fullMode": "Modo completo"
   },
   "minimap": {
     "zoom": "Mapa ampliado",

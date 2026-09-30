@@ -126,7 +126,9 @@
     "avgDamage": "场均",
     "teamWrWeighted": "加权胜率",
     "teamWrPlain": "平均胜率",
-    "teamAvgPr": "平均 PR"
+    "teamAvgPr": "平均 PR",
+    "compactMode": "紧凑模式",
+    "fullMode": "完整模式"
   },
   "minimap": {
     "zoom": "放大地图",

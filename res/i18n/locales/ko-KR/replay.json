@@ -126,7 +126,9 @@
     "avgDamage": "평균 데미지",
     "teamWrWeighted": "티어 가중 승률",
     "teamWrPlain": "평균 승률",
-    "teamAvgPr": "평균 PR"
+    "teamAvgPr": "평균 PR",
+    "compactMode": "컴팩트 모드",
+    "fullMode": "전체 모드"
   },
   "minimap": {
     "zoom": "확대 맵",

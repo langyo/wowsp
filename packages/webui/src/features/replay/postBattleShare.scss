@@ -1,0 +1,23 @@
+/* Styles for the shared compact-row pieces in postBattleShare.tsx.
+   Kept in their own sheet (NOT PostBattlePanel.scss) because the module
+   rides every chunk that renders roster rows: the replay view's 结果
+   modal, its incomplete-results fallback AND the live panel's compact
+   mode — a route-level code split must never strand these rules in an
+   unrelated view's CSS chunk. */
+
+/* Roster stat columns (overall WR / PR / avg damage) right-aligned in a
+   mono face; values are tier-colored inline; fixed ch widths keep each
+   column aligned across rows on every surface. */
+.replay-view__postbattle-cell-stat {
+  flex: 0 0 auto;
+  text-align: right;
+  font-family: var(--font-mono);
+  em {
+    font-style: normal;
+    color: rgb(var(--color-text) / 0.35);
+  }
+  b { font-weight: 600; }
+  &--wr { min-width: 6.5ch; }
+  &--pr { min-width: 5ch; }
+  &--dmg { min-width: 7.5ch; }
+}

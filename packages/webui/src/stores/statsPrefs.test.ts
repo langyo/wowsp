@@ -34,12 +34,16 @@ describe("loadStatsPrefs", () => {
     // PR rating and the chip PR/battles ship opt-out; the fun wording,
     // seals, the tier-weighted team winrate, the winrate/damage chips and
     // the team-intel card ship on. Team averages ship off (dense already).
+    // Both roster-density overrides ship off: full cards on the live panel
+    // and compact rows post-battle are the defaults.
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: false,
       prAlgo: "winrate",
       sealsEnabled: true,
       localizedTiers: true,
       weightedTeamWr: true,
+      liveRosterCompact: false,
+      postbattleRosterFull: false,
       teamIntelEnabled: true,
       sealDisabled: {},
       overlayChips: { winrate: true, pr: false, battles: false, damage: true },
@@ -184,6 +188,8 @@ describe("statsPrefs store", () => {
     store.setSealsEnabled(false);
     store.setLocalizedTiers(false);
     store.setWeightedTeamWr(false);
+    store.setLiveRosterCompact(true);
+    store.setPostbattleRosterFull(true);
     store.setTeamIntelEnabled(false);
     store.setOverlayChip("winrate", false);
     store.setOverlayChip("pr", true);
@@ -199,6 +205,8 @@ describe("statsPrefs store", () => {
       sealsEnabled: false,
       localizedTiers: false,
       weightedTeamWr: false,
+      liveRosterCompact: true,
+      postbattleRosterFull: true,
       teamIntelEnabled: false,
       sealDisabled: {},
       overlayChips: {

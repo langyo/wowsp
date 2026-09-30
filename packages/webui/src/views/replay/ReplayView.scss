@@ -219,8 +219,9 @@
   }
   &__modal-panel {
     /* Wide enough for two 12-row roster columns without ellipsizing every
-     * mid-length nickname (the results matrix lives here). */
-    width: min(980px, 92vw);
+     * mid-length nickname (the results matrix lives here), with the extra
+     * room the widened seal slot and the full-card mode need. */
+    width: min(1100px, 94vw);
     max-height: 82vh;
     display: flex;
     flex-direction: column;

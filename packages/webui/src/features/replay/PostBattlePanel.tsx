@@ -5,8 +5,10 @@
  * settlement base exp (裸经验 — bots report 0, legacy short arrays fall back
  * to an estimate) and carry the same roster dressing as the live-battle
  * panel: clan tags, PR column, career seals, team aggregates in the column
- * titles and the battle mode/map head — except ship parameters, which stay a
- * live-battle-only feature (the settled battle no longer needs them).
+ * titles and the battle mode/map head. Rows default to the compact one-line
+ * look; the share bar's mode toggle expands them to the live panel's full
+ * cards (name/ship/stat stack + the LiveShipMeta ship strip), a persisted
+ * stats pref.
  *
  * Share-time privacy: nicknames can be masked wholesale or per player (the
  * row-end eye), and "复制截图" paints the matrix into a watermarked PNG on
@@ -16,7 +18,8 @@
  *
  * Clicking a player opens a second-level modal with the match result +
  * on-demand global stats (title bar chip while loading) and a jump link
- * into the lookup screen.
+ * into the lookup screen. The whole row — career seal included — is the
+ * click target; only the per-row mask eye sits outside it.
  */
 import {
   computed,
@@ -42,7 +45,7 @@ import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
-import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
+import { prAlgoForRequest, statsPrefsState, useStatsPrefsStore } from "@/stores/statsPrefs";
 import { careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from "@/utils/winrate";
 import { formatEta } from "@/utils/format";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
@@ -56,7 +59,13 @@ import {
   type RosterStat,
 } from "@/composables/useRosterStats";
 import { parsePostBattle, type PostBattleRibbon } from "./postBattle";
-import { PostBattleShareBar, useNickMasking, useShareShot } from "./postBattleShare";
+import LiveShipMeta from "./LiveShipMeta";
+import {
+  PostBattleShareBar,
+  rosterStatCols,
+  useNickMasking,
+  useShareShot,
+} from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import "./PostBattlePanel.scss";
 
@@ -115,79 +124,6 @@ export function shotMetaLine(head: PostBattleHead | null): string | null {
     parts.push(`${t("replay.duration")} ${formatEta(head.durationSec)}`);
   }
   return parts.length > 0 ? parts.join(" · ") : null;
-}
-
-/** The aligned roster-stat columns for one player name — overall winrate, PR
- *  (while the rating pref is on) and avg damage, tier-colored (the XVM-style
- *  level coloring from utils/winrate). A tiny spinner rides while the batch
- *  lookup runs; bots / hidden profiles / lookup misses render a muted "—".
- *  Shared by both post-battle panels (the results panel and the fallback). */
-export function rosterStatCols(
-  name: string,
-  stats: Map<string, RosterStat>,
-  loading: boolean,
-) {
-  const ai = isAiName(name);
-  const stat = ai ? undefined : stats.get(name);
-  const col = (
-    mod: string,
-    title: string,
-    pick: (s: RosterStat) => number | null,
-    colorOf: (v: number) => string,
-    fmt: (v: number) => string,
-  ) => {
-    let tip = title;
-    let body;
-    if (ai) {
-      tip = t("replay.botNote");
-      body = <em>—</em>;
-    } else if (!stat || loading) {
-      body = <HkSpinner size="xs" tone="current" />;
-    } else {
-      const v = pick(stat);
-      if (v == null) {
-        if (stat.hidden) tip = t("replay.live.hiddenProfile");
-        body = <em>—</em>;
-      } else {
-        body = <b style={{ color: colorOf(v) }}>{fmt(v)}</b>;
-      }
-    }
-    return (
-      <span
-        class={`replay-view__postbattle-cell-stat ${mod}`}
-        data-hint={tip}
-      >
-        {body}
-      </span>
-    );
-  };
-  return (
-    <>
-      {col(
-        "replay-view__postbattle-cell-stat--wr",
-        t("replay.postbattle.winrate"),
-        (s) => s.winrate,
-        winrateColor,
-        (v) => `${v.toFixed(1)}%`,
-      )}
-      {statsPrefsState.value.prEnabled ? (
-        col(
-          "replay-view__postbattle-cell-stat--pr",
-          "PR",
-          (s) => s.pr,
-          (v) => prTier(v).color,
-          (v) => `${Math.round(v)}`,
-        )
-      ) : null}
-      {col(
-        "replay-view__postbattle-cell-stat--dmg",
-        t("replay.postbattle.avgDamage"),
-        (s) => s.avgDamage,
-        damageColor,
-        (v) => Math.round(v).toLocaleString(),
-      )}
-    </>
-  );
 }
 
 export default defineComponent({
@@ -333,6 +269,14 @@ export default defineComponent({
      *  under it) and need PR data to grade — one gate for the DOM slot,
      *  the header pad and the share shot alike. */
     const sealsShown = computed(() => prefs.value.prEnabled && prefs.value.sealsEnabled);
+
+    /** Roster density: compact rows (the default) or the live panel's full
+     *  cards — a persisted stats pref, flipped from the share bar's mode
+     *  toggle (PostBattleShareBar). */
+    const statsPrefs = useStatsPrefsStore();
+    const fullMode = computed(() => prefs.value.postbattleRosterFull);
+    const toggleFullMode = () =>
+      statsPrefs.setPostbattleRosterFull(!fullMode.value);
 
     /** One team's header aggregate — tier-weighted (per the stats prefs)
      *  mean winrate plus a plain mean PR over the players whose stats
@@ -541,6 +485,36 @@ export default defineComponent({
         }
         const agg = teamAgg(list);
         const prBand = prTier(agg.avgPr);
+        // Full cards carry no aligned stat columns under the title, so the
+        // aggregate rides the title's right end as inline text — the live
+        // panel's own column-title treatment.
+        if (fullMode.value) {
+          return (
+            <div class="replay-view__postbattle-col-title">
+              {title}
+              <span class="replay-view__postbattle-col-aggtext">
+                {t(
+                  prefs.value.weightedTeamWr
+                    ? "replay.roster.teamWrWeighted"
+                    : "replay.roster.teamWrPlain",
+                )}{" "}
+                <b
+                  style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}
+                >
+                  {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+                </b>
+                {" · "}
+                {t("replay.roster.teamAvgPr")}{" "}
+                <b
+                  class={prBand.rainbow ? "rainbow-text" : undefined}
+                  style={prBand.rainbow ? undefined : { color: prBand.color }}
+                >
+                  {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+                </b>
+              </span>
+            </div>
+          );
+        }
         return (
           <div
             class={[
@@ -584,27 +558,54 @@ export default defineComponent({
           </div>
         );
       };
-      const cell = (p: (typeof allies.value)[number]) => {
-        const enemy = !props.operation && isEnemy(p);
+      /** Career seal for one row — the same guard chain the live panel uses
+       *  (verdict-pending hidden profiles hold their stamp). */
+      const sealOf = (p: (typeof rows.value)[number]) => {
         const ai = isAiName(p.name);
         const stat = ai ? undefined : nameStats.value.get(p.name);
-        // Career seal — same guard chain as the live panel (verdict-pending
-        // hidden profiles hold their stamp).
         const stamp =
           stat &&
           !stat.loading &&
           !(stat.hidden && stat.clanId != null && stat.clanWinrate === undefined)
             ? careerStamp(stat.pr, stat.battles, stat.winrate, stat.hidden, stat.clanWinrate)
             : null;
-        const seal =
-          stamp && prefs.value.prEnabled && prefs.value.sealsEnabled ? (
-            <RatingStamp
-              kind={stamp}
-              size={26}
-              variant="mini"
-              class="replay-view__postbattle-cell-stamp"
-            />
-          ) : null;
+        return stamp && sealsShown.value ? (
+          <RatingStamp
+            kind={stamp}
+            size={26}
+            variant="mini"
+            class="replay-view__postbattle-cell-stamp"
+          />
+        ) : null;
+      };
+      /** Per-row nickname-mask eye — a sibling AFTER the row button so it
+       *  stays a real button (no nested buttons). */
+      const eyeBtn = (name: string) => (
+        <button
+          class={[
+            "replay-view__postbattle-cell-eye",
+            { "replay-view__postbattle-cell-eye--on": masking.isHidden(name) },
+          ]}
+          type="button"
+          data-hint={
+            masking.isHidden(name)
+              ? t("replay.postbattle.showName")
+              : t("replay.postbattle.hideName")
+          }
+          aria-label={
+            masking.isHidden(name)
+              ? t("replay.postbattle.showName")
+              : t("replay.postbattle.hideName")
+          }
+          onClick={() => masking.toggleOne(name)}
+        >
+          {masking.isHidden(name) ? <EyeOff size={12} /> : <Eye size={12} />}
+        </button>
+      );
+      const cell = (p: (typeof allies.value)[number]) => {
+        const enemy = !props.operation && isEnemy(p);
+        const ai = isAiName(p.name);
+        const stat = ai ? undefined : nameStats.value.get(p.name);
         return (
           <div
             class={[
@@ -614,6 +615,8 @@ export default defineComponent({
             ]}
             key={p.accountId}
           >
+            {/* The whole row minus the eye is the drill-down button: hover
+                and clicks cover the career seal too. */}
             <button
               class="replay-view__postbattle-cell-btn"
               type="button"
@@ -655,38 +658,135 @@ export default defineComponent({
               >
                 {p.xp.toLocaleString()}
               </span>
+              {/* Career-seal slot: reserved whenever seals show at all (PR +
+                  settings master), so the mask eyes align across rows whether
+                  or not a given player earned a stamp. Living INSIDE the
+                  button keeps the hover highlight and the click target on
+                  the row's full width — the seal is part of the row, not an
+                  ornament bolted past its hit area. */}
+              {sealsShown.value ? (
+                <span class="replay-view__postbattle-cell-stampslot">
+                  {sealOf(p)}
+                </span>
+              ) : null}
             </button>
-            {/* Career-seal slot: reserved whenever seals show at all (PR +
-                settings master), so the mask eyes align across rows whether
-                or not a given player earned a stamp. */}
-            {sealsShown.value ? (
-              <span class="replay-view__postbattle-cell-stampslot">{seal}</span>
-            ) : null}
-            {ai ? null : (
-              <button
-                class={[
-                  "replay-view__postbattle-cell-eye",
-                  { "replay-view__postbattle-cell-eye--on": masking.isHidden(p.name) },
-                ]}
-                type="button"
-                data-hint={
-                  masking.isHidden(p.name)
-                    ? t("replay.postbattle.showName")
-                    : t("replay.postbattle.hideName")
-                }
-                aria-label={
-                  masking.isHidden(p.name)
-                    ? t("replay.postbattle.showName")
-                    : t("replay.postbattle.hideName")
-                }
-                onClick={() => masking.toggleOne(p.name)}
-              >
-                {masking.isHidden(p.name) ? <EyeOff size={12} /> : <Eye size={12} />}
-              </button>
-            )}
+            {ai ? null : eyeBtn(p.name)}
           </div>
         );
       };
+      /** Full-card row (the live panel's card look): name/ship/WR·PR text
+       *  stack, the LiveShipMeta strip, then this panel's own avg-damage
+       *  and XP numbers as aligned columns ahead of the career seal. Like
+       *  the compact row, the whole card minus the eye is one button. */
+      const fullCell = (p: (typeof allies.value)[number]) => {
+        const enemy = !props.operation && isEnemy(p);
+        const ai = isAiName(p.name);
+        const stat = ai ? undefined : nameStats.value.get(p.name);
+        const statLine = () => {
+          if (ai) return "—";
+          if (!stat || nameStatsLoading.value) {
+            return <HkSpinner size="xs" tone="current" />;
+          }
+          if (stat.hidden) {
+            return (
+              <span class="replay-view__postbattle-fcell-hidden">
+                {t("replay.live.hiddenProfile")}
+              </span>
+            );
+          }
+          if (stat.winrate == null) return "—";
+          const tier = prTier(stat.pr);
+          return (
+            <span class="replay-view__postbattle-fcell-statline">
+              <b style={{ color: winrateColor(stat.winrate) }}>
+                {stat.winrate.toFixed(1)}%
+              </b>{" "}
+              WR
+              {prefs.value.prEnabled ? (
+                <>
+                  {" · "}
+                  <b
+                    class={tier.rainbow ? "rainbow-text" : undefined}
+                    style={tier.rainbow ? undefined : { color: tier.color }}
+                  >
+                    {stat.pr ?? "—"}
+                  </b>{" "}
+                  PR
+                </>
+              ) : null}
+            </span>
+          );
+        };
+        const dmgBody = ai ? (
+          <em>—</em>
+        ) : !stat || nameStatsLoading.value ? (
+          <HkSpinner size="xs" tone="current" />
+        ) : stat.avgDamage == null ? (
+          <em>—</em>
+        ) : (
+          <b style={{ color: damageColor(stat.avgDamage) }}>
+            {Math.round(stat.avgDamage).toLocaleString()}
+          </b>
+        );
+        return (
+          <div
+            class={[
+              "replay-view__postbattle-fcell",
+              p.alive ? "" : "replay-view__postbattle-fcell--dead",
+              p.accountId === pb.selfId ? "replay-view__postbattle-fcell--self" : "",
+            ]}
+            key={p.accountId}
+          >
+            <button
+              class="replay-view__postbattle-fcell-btn"
+              type="button"
+              onClick={() => openDetail(p)}
+            >
+              <span class="replay-view__postbattle-fcell-main">
+                <span class="replay-view__postbattle-fcell-name">
+                  <span class="replay-view__postbattle-fcell-nick">
+                    {masking.maskOf(p.name)}
+                  </span>
+                  {stat?.clanTag ? (
+                    <span class="replay-view__postbattle-fcell-clan">[{stat.clanTag}]</span>
+                  ) : null}
+                  {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
+                </span>
+                <span class="replay-view__postbattle-fcell-ship">{p.shipName}</span>
+                <span class="replay-view__postbattle-fcell-stat">{statLine()}</span>
+              </span>
+              {/* Ship identity + parameters ride the card's middle ground
+                  (ally rows get the consumable badges too); the host span
+                  pins grid track 2, and a ship missing from the offline DBs
+                  leaves the track reserved so nothing slides. */}
+              <span class="replay-view__postbattle-fcell-meta">
+                {p.shipId != null ? (
+                  <LiveShipMeta shipId={p.shipId} ally={!enemy} />
+                ) : null}
+              </span>
+              <span
+                class="replay-view__postbattle-cell-stat replay-view__postbattle-cell-stat--dmg"
+                data-hint={t("replay.postbattle.avgDamage")}
+              >
+                {dmgBody}
+              </span>
+              <span
+                class="replay-view__postbattle-fcell-xp"
+                data-hint={t("replay.postbattle.xp")}
+              >
+                {p.xp.toLocaleString()}
+              </span>
+              {sealsShown.value ? (
+                <span class="replay-view__postbattle-cell-stampslot">
+                  {sealOf(p)}
+                </span>
+              ) : null}
+            </button>
+            {ai ? null : eyeBtn(p.name)}
+          </div>
+        );
+      };
+      const rowOf = fullMode.value ? fullCell : cell;
       const sel = selected.value;
       const enemyRows = props.operation ? [] : enemies.value;
       return (
@@ -725,8 +825,11 @@ export default defineComponent({
           <PostBattleShareBar
             hideAll={masking.hideAll.value}
             shotBusy={shot.busy.value}
+            showModeToggle
+            fullMode={fullMode.value}
             onToggleAll={() => masking.toggleAll()}
             onShot={() => void shot.copyShot()}
+            onToggleMode={toggleFullMode}
           />
           <div
             class={[
@@ -736,12 +839,12 @@ export default defineComponent({
           >
             <div class="replay-view__postbattle-col">
               {colTitle(t("replay.roster.allies"), allies.value)}
-              {allies.value.map(cell)}
+              {allies.value.map(rowOf)}
             </div>
             {enemyRows.length > 0 ? (
               <div class="replay-view__postbattle-col">
                 {colTitle(t("replay.roster.enemies"), enemyRows)}
-                {enemyRows.map(cell)}
+                {enemyRows.map(rowOf)}
               </div>
             ) : null}
           </div>

@@ -8,6 +8,11 @@
  * card. The panel's head title is the /live page title (the view itself has
  * no header — it used to duplicate this one).
  *
+ * The head's density toggle compresses the roster to the post-battle
+ * matrix's one-line rows (battle icon + the shared WR/PR/avg-damage
+ * columns, ship-meta strip dropped) — a persisted stats pref, the mirror of
+ * the post-battle panel's own full-card expansion.
+ *
  * Every human card is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles show a red notice instead of a fake "no data".
  * While the PR rating is on, each column title additionally carries the
@@ -29,11 +34,22 @@ import {
   type CSSProperties,
 } from "vue";
 import { useRouter } from "vue-router";
-import { Camera, Eye, EyeOff, Plug, RefreshCw, ScanEye, Unplug } from "@lucide/vue";
+import {
+  Camera,
+  Eye,
+  EyeOff,
+  Plug,
+  RefreshCw,
+  Rows2,
+  Rows3,
+  ScanEye,
+  Unplug,
+} from "@lucide/vue";
 import { useToast } from "@celestia-island/hikari";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
+import BattleIcon from "@/components/base/BattleIcon";
 import { useAccountStore } from "@/stores/account";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
@@ -44,7 +60,7 @@ import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
 import PluginStatusCard from "./PluginStatusCard";
 import { WaitingRadarArt } from "./liveGuideArt";
-import { useNickMasking, useShareShot } from "./postBattleShare";
+import { useNickMasking, useShareShot, rosterStatCols } from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
@@ -119,6 +135,10 @@ export default defineComponent({
     const accounts = useAccountStore();
     const router = useRouter();
     const prefs = useStatsPrefsStore();
+    /** Roster density: full cards (the default) or the post-battle matrix's
+     *  compact one-line rows — a persisted stats pref flipped from the
+     *  head's density toggle. */
+    const compact = computed(() => prefs.prefs.liveRosterCompact);
     const manualLocate = useManualLocateStore();
     const toast = useToast();
     const { dataLanguage } = useLanguage();
@@ -674,7 +694,108 @@ export default defineComponent({
         return "—";
       };
 
+      // Compact mode reuses the post-battle matrix's row look verbatim —
+      // including the shared rosterStatCols — so it needs a name-keyed view
+      // of this panel's id-keyed stats. Rows still loading drop out of the
+      // view (their columns then carry the spinner like every surface).
+      const nameStats = new Map<string, RosterStat>();
+      if (compact.value) {
+        for (const v of props.arena.vehicles) {
+          const st = stats.get(v.id);
+          if (st && !st.loading) nameStats.set(v.name, st);
+        }
+      }
+
+      /** One compact row: battle icon, nick/clan + ship stack, the shared
+       *  WR/PR/avg-damage columns and the career seal — one line, no
+       *  ship-meta strip. The whole row is the lookup jump (hover and
+       *  clicks cover the seal), sunk rows dim like the full cards. */
+      const compactCell = (entry: TabOrderedVehicle) => {
+        const v = entry.vehicle;
+        const ai = isAiName(v.name);
+        const st = ai ? null : stats.get(v.id);
+        const shipName =
+          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
+        // Career seal — the full card's guard chain (verdict-pending hidden
+        // profiles hold their stamp).
+        const stamp =
+          st &&
+          !st.loading &&
+          !(st.hidden && st.clanId != null && st.clanWinrate === undefined)
+            ? careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate)
+            : null;
+        const seal =
+          stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
+            <RatingStamp
+              kind={stamp}
+              size={26}
+              variant="mini"
+              class="live-battle__crow-stamp"
+            />
+          ) : null;
+        const content = (
+          <>
+            <span class="live-battle__crow-ico">
+              {v.shipId != null ? (
+                <BattleIcon
+                  type={shipOfflineEntry(v.shipId)?.type ?? ""}
+                  variant={
+                    entry.sunk
+                      ? "sunk"
+                      : v.relation === 0
+                        ? "white"
+                        : operation.value || v.relation <= 1
+                          ? "ally"
+                          : "enemy"
+                  }
+                  size={20}
+                />
+              ) : null}
+            </span>
+            <span class="live-battle__crow-main">
+              <span class="live-battle__crow-name">
+                <span class="live-battle__crow-nick">{masking.maskOf(v.name)}</span>
+                {st?.clanTag ? (
+                  <span class="live-battle__crow-clan">[{st.clanTag}]</span>
+                ) : null}
+                {ai ? <em class="live-battle__crow-bot">{t("replay.bot")}</em> : null}
+              </span>
+              <span class="live-battle__crow-ship">{shipName}</span>
+            </span>
+            {rosterStatCols(v.name, nameStats, false)}
+            {/* Seal slot reserved whenever seals show at all (PR + settings
+                master) — the matrix's own alignment rule: rows without a
+                stamp (bots, misses, verdict holds) keep the stat columns
+                at the same x as sealed rows instead of zigzagging. */}
+            {prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
+              <span class="live-battle__crow-stampslot">{seal}</span>
+            ) : null}
+          </>
+        );
+        const classes = [
+          "live-battle__crow",
+          { "live-battle__crow--link": !ai },
+          { "live-battle__crow--sunk": entry.sunk },
+        ];
+        return !ai ? (
+          <button
+            class={classes}
+            key={v.id}
+            type="button"
+            data-hint={t("replay.live.viewProfile")}
+            onClick={() => openLookup(v.name)}
+          >
+            {content}
+          </button>
+        ) : (
+          <div class={classes} key={v.id}>
+            {content}
+          </div>
+        );
+      };
+
       const cell = (entry: TabOrderedVehicle) => {
+        if (compact.value) return compactCell(entry);
         const v = entry.vehicle;
         const shipName =
           shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
@@ -822,6 +943,23 @@ export default defineComponent({
             >
               {rosterRefreshing.value ? <HkSpinner size="xs" tone="current" /> : <RefreshCw size={13} />}
               {t("replay.live.refreshStats")}
+            </button>
+            {/* Roster density: the post-battle matrix's one-line rows ⇄ the
+                full cards (persisted stats pref). Icon and label both show
+                the mode a click switches TO — Rows2 = the compact two-line
+                row, Rows3 = the full three-line card. */}
+            <button
+              class={[
+                "live-battle__density-btn",
+                { "live-battle__density-btn--on": compact.value },
+              ]}
+              type="button"
+              onClick={() => prefs.setLiveRosterCompact(!compact.value)}
+            >
+              {compact.value ? <Rows3 size={13} /> : <Rows2 size={13} />}
+              {compact.value
+                ? t("replay.roster.fullMode")
+                : t("replay.roster.compactMode")}
             </button>
             {/* Hide-all-nicknames toggle — the post-battle share bar's
                 masking button, dressed in the head's pill voice. */}

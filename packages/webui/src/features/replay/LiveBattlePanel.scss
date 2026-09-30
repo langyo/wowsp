@@ -141,11 +141,12 @@
     color: rgb(var(--color-success, 74 222 128));
   }
 
-  /* Head action pills (copy-shot / hide-nicknames / manual-locate) share
-     one voice: a quiet neutral pill; the nicknames toggle flips green
-     while masking is on. */
+  /* Head action pills (copy-shot / hide-nicknames / density / manual-locate)
+     share one voice: a quiet neutral pill; the nicknames and density
+     toggles flip green while their mode is on. */
   &__shot-btn,
   &__mask-btn,
+  &__density-btn,
   &__manual-btn {
     display: inline-flex;
     align-items: center;
@@ -170,6 +171,13 @@
   /* Nicknames are masked: the toggle reads "show nicknames" in the same
      success green as the manual-anchor button and the detected badge. */
   &__mask-btn--on {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    color: rgb(var(--color-success, 74 222 128));
+  }
+
+  /* Compact rows are on: the density toggle reads "full mode" in the same
+     green. */
+  &__density-btn--on {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     color: rgb(var(--color-success, 74 222 128));
   }
@@ -389,6 +397,122 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: rgb(var(--color-error));
+  }
+
+  /* ── Compact rows (the post-battle matrix's one-line look) ──────────
+     Mirrors .replay-view__postbattle-cell / -cell-btn in
+     PostBattlePanel.scss: battle icon, nick/clan + ship stack, the shared
+     rosterStatCols columns (their own SCSS) and the career seal — one
+     line, no ship-meta strip. The whole row is the lookup jump, so hover
+     and clicks cover the seal too. */
+  &__crow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 6px;
+    background: rgb(var(--color-text) / 0.04);
+    color: rgb(var(--color-text));
+    /* Kill the UA button font, then re-apply the compact size — one rule
+       covers the button and the plain-div (bot) variants alike. */
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+  }
+
+  &__crow-ico {
+    flex: 0 0 auto;
+    display: inline-flex;
+  }
+
+  &__crow-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__crow-name {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  &__crow-nick {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__crow-clan {
+    flex: none;
+    color: rgb(var(--color-text) / 0.5);
+    font-size: 0.78em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  &__crow-ship {
+    color: rgb(var(--color-text) / 0.45);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__crow-bot {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 1.2em;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgb(var(--color-text) / 0.14);
+    color: rgb(var(--color-text) / 0.62);
+    font-size: 0.72em;
+    font-style: normal;
+    line-height: 1;
+  }
+
+  /* Career seal slot: reserved whenever seals show at all (mirroring the
+     post-battle matrix's own rule), so the shared stat columns keep their
+     x position on every row — sealed or not — and the seal keeps air on
+     both sides. */
+  &__crow-stampslot {
+    flex: 0 0 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+  }
+
+  &__crow-stamp {
+    flex: 0 0 auto;
+  }
+
+  &__crow--link {
+    color: rgb(var(--color-text));
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover {
+      background: rgb(var(--color-text) / 0.1);
+    }
+
+    &:focus-visible {
+      outline: 1px solid rgb(var(--color-text) / 0.4);
+    }
+  }
+
+  &__crow--sunk {
+    opacity: 0.45;
+    filter: grayscale(0.9);
   }
 }
 

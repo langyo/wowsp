@@ -126,7 +126,9 @@
     "avgDamage": "平均ダメージ",
     "teamWrWeighted": "ティア加重勝率",
     "teamWrPlain": "平均勝率",
-    "teamAvgPr": "平均 PR"
+    "teamAvgPr": "平均 PR",
+    "compactMode": "コンパクト表示",
+    "fullMode": "フル表示"
   },
   "minimap": {
     "zoom": "拡大マップ",

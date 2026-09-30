@@ -35,9 +35,10 @@ import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { isMobileApp } from "@/utils/platform";
 import { type PostBattleRibbon } from "@/features/replay/postBattle";
-import PostBattlePanel, { rosterStatCols } from "@/features/replay/PostBattlePanel";
+import PostBattlePanel from "@/features/replay/PostBattlePanel";
 import {
   PostBattleShareBar,
+  rosterStatCols,
   useNickMasking,
   useShareShot,
 } from "@/features/replay/postBattleShare";

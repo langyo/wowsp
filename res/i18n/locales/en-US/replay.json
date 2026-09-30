@@ -126,7 +126,9 @@
     "avgDamage": "Avg dmg",
     "teamWrWeighted": "Tier-weighted WR",
     "teamWrPlain": "Avg WR",
-    "teamAvgPr": "Avg PR"
+    "teamAvgPr": "Avg PR",
+    "compactMode": "Compact mode",
+    "fullMode": "Full mode"
   },
   "minimap": {
     "zoom": "Zoomed map",

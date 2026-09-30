@@ -62,6 +62,14 @@ export interface StatsPrefs {
   /** Live-battle team winrate aggregation: tier-weighted (higher tiers
    *  count more) or the plain arithmetic mean. */
   weightedTeamWr: boolean;
+  /** Live-battle roster rows compressed to the post-battle matrix's
+   *  one-line look (battle icon + WR/PR/avg-damage columns + the career
+   *  seal, no ship-meta strip). Full cards stay the default. */
+  liveRosterCompact: boolean;
+  /** Post-battle roster rows expanded to the live panel's full-card look
+   *  (name/ship/stat stack + ship-meta strip + career seal + XP column).
+   * Compact rows stay the default. */
+  postbattleRosterFull: boolean;
   /** Tab overlay team-intel cards flanking the roster (radar/hydro/smoke
    *  estimate counts + the side's longest radar range). */
   teamIntelEnabled: boolean;
@@ -90,6 +98,8 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   sealsEnabled: true,
   localizedTiers: true,
   weightedTeamWr: true,
+  liveRosterCompact: false,
+  postbattleRosterFull: false,
   teamIntelEnabled: true,
   sealDisabled: {},
   overlayChips: { winrate: true, pr: false, battles: false, damage: true },
@@ -164,6 +174,14 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.weightedTeamWr === "boolean"
           ? j.weightedTeamWr
           : DEFAULT_STATS_PREFS.weightedTeamWr,
+      liveRosterCompact:
+        typeof j.liveRosterCompact === "boolean"
+          ? j.liveRosterCompact
+          : DEFAULT_STATS_PREFS.liveRosterCompact,
+      postbattleRosterFull:
+        typeof j.postbattleRosterFull === "boolean"
+          ? j.postbattleRosterFull
+          : DEFAULT_STATS_PREFS.postbattleRosterFull,
       teamIntelEnabled:
         typeof j.teamIntelEnabled === "boolean"
           ? j.teamIntelEnabled
@@ -260,6 +278,16 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
+  function setLiveRosterCompact(v: boolean) {
+    prefs.value.liveRosterCompact = v;
+    persist({ ...prefs.value });
+  }
+
+  function setPostbattleRosterFull(v: boolean) {
+    prefs.value.postbattleRosterFull = v;
+    persist({ ...prefs.value });
+  }
+
   function setTeamIntelEnabled(v: boolean) {
     prefs.value.teamIntelEnabled = v;
     persist({ ...prefs.value });
@@ -306,6 +334,8 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setSealsEnabled,
     setLocalizedTiers,
     setWeightedTeamWr,
+    setLiveRosterCompact,
+    setPostbattleRosterFull,
     setTeamIntelEnabled,
     setSealDisabled,
     setOverlayChip,
