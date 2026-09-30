@@ -16,7 +16,7 @@
 //! 本模块不含任何 Cloudflare/HTTP 类型：验签、回调解析、命令解析、
 //! 验证码/绑定 KV 形状、消息文案组装都在这里单测；worker 壳只做 IO。
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -153,54 +153,48 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// 回调 URL 配置校验（op 13）：对 `event_ts + plain_token` 用机器人的
-/// Ed25519 私钥（种子，开放平台控制台给出）签名，回 op 14。
-/// 种子 hex 非法时返回 None（worker 应答 503）。
-pub fn validation_response(seed_hex: &str, plain_token: &str, event_ts: &str) -> Option<Value> {
-    let seed = unhex(seed_hex)?;
-    let key: SigningKey = SigningKey::from_bytes(&{
-        // 种子既可能是 32 字节原文，也可能是 64 字节 (seed||pub) 形式。
-        let mut s = [0u8; 32];
-        if seed.len() == 64 {
-            s.copy_from_slice(&seed[..32]);
-        } else if seed.len() == 32 {
-            s.copy_from_slice(&seed);
-        } else {
-            return None;
-        }
-        s
-    });
+/// 平台官方方案（wiki event-emit.html / sign.html）：Ed25519 种子不由
+/// 控制台下发，而是把机器人 Secret 重复翻倍到 ≥32 字节后取前 32 字节。
+fn expand_seed(secret: &str) -> [u8; 32] {
+    let mut seed: Vec<u8> = secret.as_bytes().to_vec();
+    if seed.is_empty() {
+        return [0u8; 32];
+    }
+    while seed.len() < 32 {
+        let dup = seed.clone();
+        seed.extend_from_slice(&dup);
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&seed[..32]);
+    out
+}
+
+fn signing_key(secret: &str) -> SigningKey {
+    SigningKey::from_bytes(&expand_seed(secret))
+}
+
+/// 回调 URL 配置校验（op 13）：对 `event_ts + plain_token` 用 Secret 派生
+/// 的 Ed25519 私钥签名，回 op 14。
+pub fn validation_response(secret: &str, plain_token: &str, event_ts: &str) -> Option<Value> {
     let msg = format!("{event_ts}{plain_token}");
-    let sig = key.sign(msg.as_bytes());
+    let sig = signing_key(secret).sign(msg.as_bytes());
     Some(json!({
         "op": 14,
         "d": { "plain_token": plain_token, "signature": hex(&sig.to_bytes()) }
     }))
 }
 
-/// 事件推送验签：`X-Signature-Ed25519` 是对
-/// `timestamp 字节串 + 原始 body` 的 Ed25519 签名，用控制台公钥校验。
-pub fn verify_event_signature(pub_hex: &str, timestamp: &str, body: &[u8], sig_hex: &str) -> bool {
-    let (Some(pub_bytes), Some(sig_bytes)) = (unhex(pub_hex), unhex(sig_hex)) else {
-        return false;
-    };
-    let Ok(verifying) = VerifyingKey::from_bytes(&{
-        // 兼容既给 32 字节公钥、又给 64 字节 (pub||seed) 的控制台拷贝。
-        let mut p = [0u8; 32];
-        if pub_bytes.len() == 64 {
-            p.copy_from_slice(&pub_bytes[..32]);
-        } else if pub_bytes.len() == 32 {
-            p.copy_from_slice(&pub_bytes);
-        } else {
-            return false;
-        }
-        p
-    }) else {
+/// 事件推送验签：`X-Signature-Ed25519`（hex）是对
+/// `timestamp 字节串 + 原始 body` 的 Ed25519 签名，用同一 Secret 派生
+/// 的公钥校验。
+pub fn verify_event_signature(secret: &str, timestamp: &str, body: &[u8], sig_hex: &str) -> bool {
+    let Some(sig_bytes) = unhex(sig_hex) else {
         return false;
     };
     let Ok(sig) = Signature::from_slice(&sig_bytes) else {
         return false;
     };
+    let verifying = signing_key(secret).verifying_key();
     let mut msg = timestamp.as_bytes().to_vec();
     msg.extend_from_slice(body);
     verifying.verify(&msg, &sig).is_ok()
@@ -393,56 +387,59 @@ mod tests {
     }
 
     #[test]
-    fn validation_signature_round_trips() {
-        let (seed, pubhex) = seed_pair();
-        let resp = validation_response(&seed, "plain-abc", "1690000000").unwrap();
+    fn validation_signature_matches_official_recipe() {
+        // 官方 Go 示例：seed = secret 翻倍到 32 字节；msg = event_ts + plain_token。
+        let secret = "DG5g3B4j9X2KOErG"; // wiki 示例用的 16 字节短 secret
+        let resp = validation_response(secret, "plain-abc", "1690000000").unwrap();
         assert_eq!(resp["op"], 14);
         assert_eq!(resp["d"]["plain_token"], "plain-abc");
         let sig = resp["d"]["signature"].as_str().unwrap();
-        let pb = unhex(&pubhex).unwrap();
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&pb);
-        let verifying = VerifyingKey::from_bytes(&arr).unwrap();
+        // 用同一派生公钥能验开。
+        let verifying = signing_key(secret).verifying_key();
         let msg = b"1690000000plain-abc";
         assert!(
             verifying
                 .verify(msg, &Signature::from_slice(&unhex(sig).unwrap()).unwrap())
                 .is_ok()
         );
-        // 坏种子拒绝。
-        assert!(validation_response("zz", "p", "t").is_none());
+        // 换一个 secret 就不该验开。
+        let other = signing_key("another-secret-1234").verifying_key();
+        assert!(
+            other
+                .verify(msg, &Signature::from_slice(&unhex(sig).unwrap()).unwrap())
+                .is_err()
+        );
     }
 
     #[test]
-    fn hex_keys_tolerate_console_copy_artifacts() {
-        let key = SigningKey::from_bytes(&[3u8; 32]);
-        let clean = hex(&key.to_bytes());
-        // 0x 前缀、内嵌空白、大小写混排——都能解码到同一把种子。
-        let noisy = format!("0x{}  {}", &clean[..8], clean[8..].to_uppercase());
-        let resp_clean = validation_response(&clean, "pt", "42").unwrap();
-        let resp_noisy = validation_response(&noisy, "pt", "42").unwrap();
-        assert_eq!(resp_clean, resp_noisy);
-        assert!(validation_response("not hex!", "pt", "42").is_none());
-        assert!(validation_response("", "pt", "42").is_none());
+    fn expand_seed_doubles_short_secrets() {
+        // 16 字节 secret → 重复一次 → 取前 32；32 字节 secret 原样。
+        let s16 = b"0123456789abcdef";
+        let mut want = Vec::from(s16);
+        want.extend_from_slice(s16);
+        assert_eq!(&expand_seed("0123456789abcdef")[..], &want[..]);
+        let s32 = "0123456789abcdef0123456789abcdef";
+        assert_eq!(&expand_seed(s32)[..], s32.as_bytes());
     }
 
     #[test]
     fn event_signature_verifies() {
-        let key = SigningKey::from_bytes(&[9u8; 32]);
-        let pubhex = hex(key.verifying_key().as_bytes());
+        let secret = "mptx-test-secret-0123456789";
+        let key = signing_key(secret);
         let body = br#"{"op":0}"#;
         let ts = "1690000123";
         let msg = [ts.as_bytes(), body].concat();
         let sig = hex(&key.sign(&msg).to_bytes());
-        assert!(verify_event_signature(&pubhex, ts, body, &sig));
+        assert!(verify_event_signature(secret, ts, body, &sig));
         assert!(!verify_event_signature(
-            &pubhex,
+            secret,
             &format!("{ts}1"),
             body,
             &sig
         ));
-        assert!(!verify_event_signature(&pubhex, ts, b"tampered", &sig));
-        assert!(!verify_event_signature(&pubhex, ts, body, "deadbeef"));
+        assert!(!verify_event_signature(secret, ts, b"tampered", &sig));
+        assert!(!verify_event_signature("wrong-secret", ts, body, &sig));
+        assert!(!verify_event_signature(secret, ts, body, "deadbeef"));
     }
 
     #[test]

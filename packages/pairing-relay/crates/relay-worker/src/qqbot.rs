@@ -9,23 +9,19 @@ use worker::*;
 const QQ_API: &str = "https://api.sgroup.qq.com";
 const QQ_TOKEN_URL: &str = "https://bots.qq.com/app/getAppAccessToken";
 
+/// AppID + Secret 就够：Ed25519 密钥按官方方案从 Secret 派生（wiki
+/// event-emit.html / sign.html），控制台不下发单独的密钥对。
 #[derive(Clone)]
 struct Creds {
+    #[allow(dead_code)]
     appid: String,
     secret: String,
-    seed: Option<String>,
-    pubhex: Option<String>,
 }
 
 fn creds(env: &Env) -> Option<Creds> {
     let appid = env.var("QQBOT_APPID").ok()?.to_string();
     let secret = env.var("QQBOT_SECRET").ok()?.to_string();
-    Some(Creds {
-        appid,
-        secret,
-        seed: env.var("QQBOT_ED25519_SEED").ok().map(|v| v.to_string()),
-        pubhex: env.var("QQBOT_ED25519_PUB").ok().map(|v| v.to_string()),
-    })
+    Some(Creds { appid, secret })
 }
 
 fn now_ms() -> i64 {
@@ -149,20 +145,12 @@ pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
         CallbackEvent::Validation {
             plain_token,
             event_ts,
-        } => {
-            let Some(seed) = c.seed.as_deref() else {
-                return Response::error("ed25519 seed not configured", 503);
-            };
-            match qqbot::validation_response(seed, &plain_token, &event_ts) {
-                Some(resp) => Response::from_json(&resp),
-                None => Response::error("bad seed", 500),
-            }
+        } => match qqbot::validation_response(&c.secret, &plain_token, &event_ts) {
+            Some(resp) => Response::from_json(&resp),
+            None => Response::error("bad request", 400),
         },
         event => {
-            // 事件推送必须验签（公钥未配置时拒收，避免裸奔）。
-            let Some(pubhex) = c.pubhex.as_deref() else {
-                return Response::error("ed25519 pub not configured", 503);
-            };
+            // 事件推送必须验签（Secret 派生公钥）。
             // headers().get() -> Result<Option<String>, Error>
             let sig = req
                 .headers()
@@ -178,7 +166,7 @@ pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
                 .unwrap_or_default();
             if sig.is_empty()
                 || ts.is_empty()
-                || !qqbot::verify_event_signature(pubhex, &ts, body.as_bytes(), &sig)
+                || !qqbot::verify_event_signature(&c.secret, &ts, body.as_bytes(), &sig)
             {
                 return Response::error("bad signature", 401);
             }

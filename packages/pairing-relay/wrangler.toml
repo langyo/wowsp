@@ -97,10 +97,10 @@ TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 # version fields.
 FEEDBACK_LATEST_VERSION = "0.4.12"
 # ── QQ 通知机器人（可选，缺失即整链路静默停用）───────────────────────
-# QQBOT_APPID / QQBOT_SECRET          — 开放平台凭证（wrangler secret put）
-# QQBOT_ED25519_SEED                  — 回调 URL 校验签名用的私钥种子（hex）
-# QQBOT_ED25519_PUB                   — 事件推送验签用的公钥（hex）
-# 后两把钥匙来自 q.qq.com 控制台“回调配置”页；写入后把回调地址设为
-# https://wowsp.langyo.xyz/api/qqbot/callback
+# QQBOT_APPID / QQBOT_SECRET — 开放平台凭证（wrangler secret put）。
+# 回调验签的 Ed25519 密钥按官方方案直接从 Secret 派生（wiki
+# event-emit.html / sign.html：Secret 翻倍到 32 字节作种子），无需任何
+# 控制台密钥；把回调地址设为 https://wowsp.langyo.xyz/api/qqbot/callback
+# 即可通过平台的 URL 校验。
 # GATEWAY_UPSTREAM = ""
 # GATEWAY_NOTICE = ""

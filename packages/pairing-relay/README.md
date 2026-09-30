@@ -149,9 +149,11 @@ QQ 官方机器人平台不给 QQ 号 ↔ openid 的互换接口，普通群也�
    用户随时可在群里 @机器人 发「查询」被动拉取自己的最新处理状态。
 
 控制台配置（q.qq.com → 机器人 → 开发设置）：回调地址填
-`https://wowsp.langyo.xyz/api/qqbot/callback`，把页面给的 Ed25519
-种子/公钥分别 `wrangler secret put` 到 `QQBOT_ED25519_SEED` /
-`QQBOT_ED25519_PUB`（app 凭证为 `QQBOT_APPID`/`QQBOT_SECRET`）。
+`https://wowsp.langyo.xyz/api/qqbot/callback` 即可——回调校验的
+Ed25519 密钥按官方方案从 `QQBOT_SECRET` 直接派生（Secret 翻倍到
+32 字节作种子，见 wiki event-emit.html / sign.html），不需要也从
+不存在控制台下发的密钥对；secrets 只需 `QQBOT_APPID` 与
+`QQBOT_SECRET` 两项。
 
 
 The same worker also hosts WoWSP's self-service feedback flow. Everything
