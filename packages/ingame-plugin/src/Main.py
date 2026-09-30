@@ -704,7 +704,15 @@ class Probe(object):
         if not self.session:
             return
         try:
-            states = self.entity_states()
+            # Avatar entity names carry the clan tag ('[RCCK]Laneigedc')
+            # while roster names are bare ('Laneigedc') — index the states
+            # by the tag-stripped form or every tagged player's death is
+            # invisible (observed 2026-10-01: only untagged players were
+            # ever reported dead).
+            states = {}
+            for ename, row in self.entity_states().items():
+                bare = ename.split(']', 1)[-1] if ename.startswith('[') else ename
+                states[bare] = row
             players = {}
             for p in self.roster:
                 row = states.get(p['name'])
