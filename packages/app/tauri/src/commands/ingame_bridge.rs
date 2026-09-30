@@ -66,6 +66,11 @@ struct BridgeRequest {
 struct BridgeRequestPlayer {
     #[serde(default)]
     name: String,
+    /// The plugin's roster rows carry the exact WG account id (Main.py's
+    /// `account_id`) — retained so the session hub can upgrade an
+    /// arena-nickname match to an id match. Older plugins omit it.
+    #[serde(default)]
+    account_id: Option<i64>,
 }
 
 /// One `response.json` row (protocol v1): `wr`/`pr` stay `null` when the
@@ -234,6 +239,16 @@ async fn bridge_cycle(
     if request.session.is_empty() || request.players.is_empty() {
         return unchanged();
     }
+    // Feed the session hub's nickname→id map BEFORE the answered/backoff
+    // gates: the roster is the freshest identity data in the cycle even
+    // when the stats answer is a deduped repeat (see commands/session.rs).
+    super::session::note_plugin_roster(
+        &request
+            .players
+            .iter()
+            .map(|p| (p.name.clone(), p.account_id))
+            .collect::<Vec<_>>(),
+    );
     let key = (request.session.clone(), request.created);
     if answered == Some(&key) {
         return unchanged();

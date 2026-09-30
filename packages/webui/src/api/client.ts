@@ -31,6 +31,46 @@ export interface GameProcessInfo {
   matchedInstall?: GameInstall | null;
 }
 
+/** Mirrors `wowsp_tauri_shared::AccountProfile` — one remembered account as
+ *  the webui's own accounts.json writes it (and the Rust session hub reads
+ *  it back for playing-account matching). */
+export interface AccountProfileRef {
+  accountId: number;
+  nickname: string;
+  realm: string;
+}
+
+/** Mirrors `wowsp_tauri_shared::PlayingAccount` — the player OBSERVED
+ *  playing on the running client (battle roster nickname, exact account id
+ *  when the in-game plugin bridge supplied one). */
+export interface PlayingAccount {
+  realm: string;
+  nickname: string;
+  accountId: number | null;
+  source: "arena" | "plugin";
+}
+
+/** Mirrors `wowsp_tauri_shared::SessionPlayer` — the resolved player the
+ *  status surfaces display: the playing account when identified (registered
+ *  or not), else the active selection. */
+export interface SessionPlayer {
+  accountId: number | null;
+  nickname: string;
+  realm: string;
+  registered: boolean;
+  playing: boolean;
+}
+
+/** Mirrors `wowsp_tauri_shared::SessionSnapshot` — the Rust session hub's
+ *  full state (`wowsp://session-changed` payload / get_session_state reply).
+ *  Both windows (main shell + tray panel) render from this one shape. */
+export interface SessionSnapshot {
+  process: GameProcessInfo;
+  playing: PlayingAccount | null;
+  active: AccountProfileRef | null;
+  display: SessionPlayer | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::VehicleEntry`. */
 export interface VehicleEntry {
   id: number;
@@ -1405,6 +1445,22 @@ export const api = {
   isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
   getGameProcess: (installs: GameInstall[]) =>
     transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
+  /** Rust session hub snapshot (commands/session.rs) — the running process
+   *  plus the resolved "who is playing" identity. Live updates arrive via
+   *  listenSessionChanged; this is the boot/fetch side. */
+  getSessionState: () => transport.invoke<SessionSnapshot>(RPC.get_session_state),
+  /** Mirror the active-account selection into the Rust session hub so every
+   *  window (tray panel included) sees a settings switch immediately. */
+  syncActiveAccount: (realm: string | null, accountId: number | null) =>
+    transport.invoke<null>(RPC.sync_active_account, { realm, accountId }),
+  /** The tray panel's menu buttons (show/hide/dismiss/quit — mirrors the
+   *  native tray menu's handlers, desktop shell only). */
+  trayPanelAction: (action: "show" | "hide" | "dismiss" | "quit") =>
+    transport.invoke<null>(RPC.tray_panel_action, { action }),
+  /** Session-hub push: the resolved snapshot whenever the process state,
+   *  playing identity, or active selection changed. */
+  listenSessionChanged: (handler: (snapshot: SessionSnapshot) => void) =>
+    transport.listen?.<SessionSnapshot>("wowsp://session-changed", handler),
   detectGameInstall: () => transport.invoke<GameInstall[]>(RPC.detect_game_install),
   setGamePath: (path: string) => transport.invoke<GameInstall>(RPC.set_game_path, { path }),
   /** Native folder picker for the manual game-location entry. Null = the

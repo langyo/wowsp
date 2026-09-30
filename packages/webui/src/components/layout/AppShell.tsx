@@ -10,11 +10,13 @@ import {
   HkScrollContainer,
   HkToast,
   useBreakpoint,
+  useToast,
 } from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useSessionStore } from "@/stores/session";
 import { useUpdaterStore } from "@/stores/updater";
 import { useCacheStore } from "@/stores/cache";
 import { useNavUiStore } from "@/stores/navUi";
@@ -67,6 +69,8 @@ export default defineComponent({
     const config = useConfigStore();
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
+    const session = useSessionStore();
+    const toast = useToast();
     const updater = useUpdaterStore();
     const cacheStore = useCacheStore();
     const navUi = useNavUiStore();
@@ -286,6 +290,33 @@ export default defineComponent({
         .catch(() => {});
       void accounts.load();
       gameStatus.start();
+      session.start();
+      // Follow the playing identity: when a battle roster identifies the
+      // account actually logged in (the Rust session hub's display, matched
+      // against the bound profiles), switch the active selection to it —
+      // realm-keyed autoSwitchRealm cannot tell same-realm alts apart, but
+      // the roster nickname can. Waits for the account registry to load
+      // (a switch before that would persist an empty list), and follows
+      // each identity only ONCE (per identity): a manual switch the user
+      // makes while that identity is current is never fought over — only
+      // the NEXT identity (the next alt's roster) follows.
+      let followedAccountId: number | null = null;
+      watch(
+        () => [session.display, accounts.loading] as const,
+        ([d, loading]) => {
+          if (loading || !d?.playing || !d.registered || d.accountId == null) return;
+          if (d.accountId === followedAccountId) return;
+          followedAccountId = d.accountId;
+          const cur = accounts.activeAccount;
+          if (cur && cur.realm === d.realm && cur.accountId === d.accountId) return;
+          void accounts
+            .setActive(d.realm, d.accountId)
+            .then(() => {
+              toast.info(t("account.autoSwitched", { name: d.nickname }));
+            })
+            .catch(() => undefined);
+        },
+      );
 
       // Shun auto-update: probe portable mode, then a delayed version check.
       // The check itself is silent — failures live in the store for
@@ -321,6 +352,7 @@ export default defineComponent({
     });
     onBeforeUnmount(() => {
       gameStatus.stop();
+      session.stop();
       unlistenClose?.();
     });
 

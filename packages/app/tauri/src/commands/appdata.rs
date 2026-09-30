@@ -108,17 +108,33 @@ pub async fn is_game_running() -> bool {
 pub async fn get_game_process(
     installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
+    compute_process_info(&installs)
+}
+
+/// The offline projection every non-running answer shares.
+fn offline_process() -> wowsp_tauri_shared::GameProcessInfo {
+    wowsp_tauri_shared::GameProcessInfo {
+        running: false,
+        pid: None,
+        kind: None,
+        realm: None,
+        exe_path: None,
+        matched_install: None,
+    }
+}
+
+/// Shared core of [`get_game_process`] — also the session poller's per-tick
+/// body (it resolves the same preferred PID + install matching without a
+/// webui round-trip). Pure w.r.t. its inputs, so the poller and the command
+/// can never disagree about which client is running.
+#[cfg(target_os = "windows")]
+pub(crate) fn compute_process_info(
+    installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessInfo {
     use wowsp_tauri_shared::GameProcessInfo;
 
     let Some(pid) = find_game_pid() else {
-        return GameProcessInfo {
-            running: false,
-            pid: None,
-            kind: None,
-            realm: None,
-            exe_path: None,
-            matched_install: None,
-        };
+        return offline_process();
     };
 
     // Resolve the exe's full path, then match it against the known installs to
@@ -130,7 +146,7 @@ pub async fn get_game_process(
     let exe_path = query_process_image_path(pid);
     let owned_matched = exe_path
         .as_deref()
-        .and_then(|exe| match_install(&installs, exe))
+        .and_then(|exe| match_install(installs, exe))
         .cloned()
         .or_else(|| exe_path.as_deref().and_then(infer_install_from_exe));
     let matched = owned_matched.as_ref();
@@ -151,6 +167,13 @@ pub async fn get_game_process(
         exe_path,
         matched_install: owned_matched,
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn compute_process_info(
+    _installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessInfo {
+    offline_process()
 }
 
 /// Synthesize an install for a running exe that no detected install claims.
@@ -207,14 +230,7 @@ fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> 
 pub async fn get_game_process(
     _installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
-    wowsp_tauri_shared::GameProcessInfo {
-        running: false,
-        pid: None,
-        kind: None,
-        realm: None,
-        exe_path: None,
-        matched_install: None,
-    }
+    offline_process()
 }
 
 /// Non-Windows builds never see the client, so the game-running guard used
@@ -264,6 +280,41 @@ pub(crate) fn query_process_image_path(pid: u32) -> Option<String> {
             None
         }
     }
+}
+
+/// The process's creation time as unix SECONDS (None when the handle or the
+/// time query fails). The session hub uses it to reject battle rosters that
+/// predate the running client — a `tempArenaInfo.json` left behind by a
+/// crashed session must never re-identify the player under the new one.
+#[cfg(target_os = "windows")]
+pub(crate) fn query_process_start_unix(pid: u32) -> Option<i64> {
+    use windows::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // FILETIME epoch (1601-01-01) vs unix epoch, in 100ns ticks.
+    const FILETIME_UNIX_EPOCH: u64 = 116_444_736_000_000_000;
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        let ok = GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user);
+        let _ = CloseHandle(handle);
+        if ok.is_err() {
+            return None;
+        }
+        let ticks = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+        ticks
+            .checked_sub(FILETIME_UNIX_EPOCH)
+            .map(|t| (t / 10_000_000) as i64)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn query_process_start_unix(_pid: u32) -> Option<i64> {
+    None
 }
 
 /// Match a running exe path against the known installs. An install matches

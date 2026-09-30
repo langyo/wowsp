@@ -5,5 +5,7 @@
   "quit": "Выйти",
   "remember": "Запомнить выбор",
   "show": "Показать WoWSP",
-  "hide": "Скрыть"
+  "hide": "Скрыть",
+  "playing": "Играет",
+  "notRegistered": "Не привязан"
 }

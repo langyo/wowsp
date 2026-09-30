@@ -227,8 +227,9 @@ static SCAN_CACHE: Mutex<Option<(Instant, Vec<GameInstall>)>> = Mutex::new(None)
 
 /// [`super::game_detect::scan_game_installs`] with a short TTL. The
 /// `detect_game_install` command keeps the uncached scan (the settings UI
-/// re-detect button must see fresh state).
-fn cached_scan() -> Vec<GameInstall> {
+/// re-detect button must see fresh state); the session poller shares this
+/// cache so the two 3 s cadences cost one registry walk per TTL window.
+pub(crate) fn cached_scan() -> Vec<GameInstall> {
     let mut guard = SCAN_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((at, installs)) = guard.as_ref() {
         if at.elapsed() < SCAN_TTL {

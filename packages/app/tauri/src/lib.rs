@@ -133,6 +133,25 @@ pub fn run() {
             // no tray, so the system back gesture simply closes the app.
             #[cfg(desktop)]
             {
+                // The tray panel hides — never closes — on blur and on
+                // programmatic close requests: it is a persistent popup
+                // anchored to the tray icon, and destroying it would give
+                // every toggle the first-show webview load cost back. The
+                // stamped hide (tray_panel::hide_panel) is what lets a tray
+                // click right after the blur read as the toggle-OFF half.
+                if window.label() == commands::tray_panel::TRAY_PANEL_LABEL {
+                    match event {
+                        WindowEvent::Focused(false) => {
+                            commands::tray_panel::hide_panel(window.app_handle());
+                        },
+                        WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            commands::tray_panel::hide_panel(window.app_handle());
+                        },
+                        _ => {},
+                    }
+                    return;
+                }
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     // Only the main window routes to the quit-confirm dialog.
                     // Tauri raises CloseRequested for programmatic close() too
@@ -181,6 +200,13 @@ pub fn run() {
             // authoritative sink/order source when the roster mode is
             // "plugin" (see docs/en/designs/ingame-stats-plugin.md).
             commands::ingame_plugin::spawn_telemetry_poller(app.handle().clone());
+            // The session hub's process poller (commands/session): the
+            // Rust-side source of truth for "what is running / who is
+            // playing", broadcast to every window as wowsp://session-changed.
+            // Desktop only — mobile has no tray panel, no game process and
+            // no arena watcher to feed it.
+            #[cfg(desktop)]
+            commands::session::spawn_session_poller(app.handle().clone());
             {
                 let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
                 tracing::debug!(?data_dir, ?cache_dir, "writable roots resolved");
@@ -276,10 +302,12 @@ pub fn run() {
             }
 
             // ── System tray (desktop) ────────────────────────────────────
-            // Menu: Show / Hide / Quit. Menu labels are localized based on the
-            // detected OS locale (zh → Chinese, else English). Clicking the
-            // tray icon restores the main window. The close button (above)
-            // triggers a frontend confirm dialog (quit vs. minimize).
+            // Right click keeps the native menu (Show / Hide / Quit,
+            // localized zh/en from the OS locale) as the always-works
+            // fallback; LEFT click toggles the hikari-rendered tray panel
+            // window (commands/tray_panel.rs) instead. The close button
+            // (above) triggers a frontend confirm dialog (quit vs.
+            // minimize).
             #[cfg(desktop)]
             {
                 let is_zh = prefs.locale.starts_with("zh");
@@ -314,13 +342,35 @@ pub fn run() {
                     .menu(&menu)
                     .show_menu_on_left_click(false)
                     .on_tray_icon_event(|tray, event| {
-                        if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
-                            let app = tray.app_handle();
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.unminimize();
-                                let _ = w.set_focus();
-                            }
+                        use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+                        match event {
+                            // Left click → the hikari tray panel (session
+                            // status + actions), anchored to the icon.
+                            TrayIconEvent::Click {
+                                button: MouseButton::Left,
+                                button_state: MouseButtonState::Up,
+                                position,
+                                rect,
+                                ..
+                            } => commands::tray_panel::toggle_from_tray(
+                                tray.app_handle(),
+                                &position,
+                                &rect,
+                            ),
+                            // Double click keeps its legacy meaning: restore
+                            // the main window. The panel (which the first
+                            // click of the pair may have opened) closes so
+                            // the two surfaces never overlap.
+                            TrayIconEvent::DoubleClick { .. } => {
+                                let app = tray.app_handle();
+                                commands::tray_panel::hide_panel(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.show();
+                                    let _ = w.unminimize();
+                                    let _ = w.set_focus();
+                                }
+                            },
+                            _ => {},
                         }
                     })
                     .on_menu_event(|app, event| match event.id.as_ref() {
@@ -373,6 +423,14 @@ pub fn run() {
             commands::appdata::appdata_delete,
             commands::appdata::is_game_running,
             commands::appdata::get_game_process,
+            // Session hub (commands/session.rs): snapshot + the main window's
+            // active-account mirror push.
+            commands::session::get_session_state,
+            commands::session::sync_active_account,
+            // The tray panel's action buttons (desktop only — the panel
+            // window itself is tray-bound).
+            #[cfg(desktop)]
+            commands::tray_panel::tray_panel_action,
             commands::game_detect::detect_game_install,
             commands::game_detect::set_game_path,
             commands::game_detect::pick_game_folder,

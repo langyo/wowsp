@@ -31,7 +31,20 @@ function hikariLocaleOf(locale: string): string {
   return locale.startsWith("zh") ? "zh-Hans" : "en";
 }
 
-export function bootstrap(): void {
+/** Which surface [`bootstrap`] is initializing. The tray panel — a small
+ *  FIXED-SIZE popup created lazily, long after the main window booted —
+ *  must skip the DPI interface-scale preference (its 320px window width
+ *  would trip the scale's risky-rollback wipe and erase the preference the
+ *  main window shares) and must not cancel a manual-locate pick the MAIN
+ *  window may legitimately have in flight at that arbitrary moment. */
+export type BootstrapSurface = "main" | "tray";
+
+export interface BootstrapOptions {
+  surface?: BootstrapSurface;
+}
+
+export function bootstrap(options: BootstrapOptions = {}): void {
+  const isMain = (options.surface ?? "main") === "main";
   // Mobile UX contract (hikari #325): normalize the viewport meta before
   // first paint. No-op for the desktop webview's standard meta, but keeps
   // the browser window honest on phones.
@@ -55,10 +68,13 @@ export function bootstrap(): void {
   initUiOpacityPreference();
   // WoWSP's interface-scale (DPI) preference writes a root CSS `zoom` over
   // the whole shell — same authoritative-key-wins contract as above. Only
-  // this main-window bootstrap runs it: the game overlay window has its
-  // own separate non-Vue bootstrap and never calls bootstrap(), so the
-  // zoom cannot leak into its screen-coordinate math.
-  initDpiPrefs();
+  // a MAIN-window bootstrap runs it: the game overlay has its own separate
+  // non-Vue bootstrap, and the tray panel is a fixed-size popup whose
+  // 320px width would trip the scale's risky-rollback wipe (erasing the
+  // shared preference) and whose card must not zoom at all.
+  if (isMain) {
+    initDpiPrefs();
+  }
   initFontContext();
 
   // Delegated tooltip hook: everything that used to lean on native
@@ -69,8 +85,12 @@ export function bootstrap(): void {
   // recovery) wipes this window's manual-locate picker-layer state while
   // the Rust-side open flag would stay set — at boot the layer is closed
   // by definition, so clearing is always safe. Rejected off the desktop
-  // shell (browser dev), ignored.
-  void api.cancelManualLocate().catch(() => {});
+  // shell (browser dev), ignored. MAIN window only: the tray panel loads
+  // lazily at an arbitrary moment, and its boot must never stand down a
+  // pick the main window has in flight.
+  if (isMain) {
+    void api.cancelManualLocate().catch(() => {});
+  }
 
   // One-shot deep link (?theme=light|dark): force the mode for this load
   // WITHOUT persisting it — same semantics as the pre-hikari theme manager.

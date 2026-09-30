@@ -149,6 +149,13 @@ pub async fn read_temp_arena_info(
     if let Some(mtime) = mtime {
         note_arena_seen(&info, mtime);
     }
+    // Same identity feed as the watcher path above — the poll covers the
+    // window where the notify watcher is not yet (re)targeted. The mtime
+    // feeds the session hub's freshness gate (crash leftovers must not
+    // re-identify the player under a relaunched client).
+    if let Some(name) = super::session::local_player_of(&info.vehicles) {
+        super::session::note_playing_from_arena(&app, name, mtime.map(unix_secs));
+    }
     Ok(Some(info))
 }
 
@@ -265,6 +272,23 @@ pub(crate) fn read_arena_snapshot() -> Option<(ArenaInfo, String)> {
     read_arena_file_with_raw(&path).ok()
 }
 
+/// The session poller's identity feed: the latest roster's LOCAL player
+/// (relation 0) plus the file's mtime, but only when that mtime (unix secs)
+/// is NEWER than `since`. `None` covers every skip case — no dir resolved,
+/// no file, not newer, unparseable, or no real player row — so the poller
+/// stays a cheap stat on the fast path and only parses on a fresh battle.
+pub(crate) fn newer_arena_local_player(since: i64) -> Option<(String, i64)> {
+    let dir = resolve_arena_dir(None).ok()?;
+    let path = find_latest_arena_info(&dir)?;
+    let mtime = unix_secs(path.metadata().and_then(|m| m.modified()).ok()?);
+    if mtime <= since {
+        return None;
+    }
+    let info = read_arena_file(&path).ok()?;
+    let name = super::session::local_player_of(&info.vehicles)?.to_string();
+    Some((name, mtime))
+}
+
 /// Build + spawn the notify watcher. The watcher runs on its own thread (notify
 /// is callback-based); the callback captures the AppHandle to emit Tauri events
 /// and tracks the last-seen mtime so only *newer* files trigger (ApeRadar's
@@ -366,6 +390,13 @@ fn handle_watch_event(
                 "fresh tempArenaInfo.json — emitting arena-info event"
             );
             note_arena_seen(&info, mtime);
+            // The local player (relation 0) is the one observable moment the
+            // logged-in ACCOUNT becomes identifiable — the session hub
+            // matches it against the bound profiles so multi-account
+            // machines follow the alt actually playing (commands/session.rs).
+            if let Some(name) = super::session::local_player_of(&info.vehicles) {
+                super::session::note_playing_from_arena(app, name, Some(unix_secs(mtime)));
+            }
             // A NEW battle voids the Tab watcher's pinned anchor for the
             // PREVIOUS one. Pushed as a FIFO command (not applied here) so
             // the watcher applies it in-order with the manual-anchor

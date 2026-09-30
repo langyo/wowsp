@@ -105,6 +105,12 @@ export const useAccountStore = defineStore("account", () => {
     if (activeAccountId.value) {
       localStorage.setItem("wowsp-active-account", String(activeAccountId.value));
     }
+    // Mirror the selection into the Rust session hub (immediate cross-window
+    // sync for the tray panel; the file write above is the backstop). Fire
+    // and forget — browser dev has no hub and must not fail the persist.
+    void api
+      .syncActiveAccount(activeRealm.value, activeAccountId.value)
+      .catch(() => undefined);
   }
 
   /** Add a new account profile (after WG API search confirms accountId). The

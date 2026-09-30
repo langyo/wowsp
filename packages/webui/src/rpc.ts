@@ -17,6 +17,10 @@ export const RPC = {
   appdata_delete: "appdata_delete",
   is_game_running: "is_game_running",
   get_game_process: "get_game_process",
+  // Rust session hub (commands/session.rs) + the tray panel actions.
+  get_session_state: "get_session_state",
+  sync_active_account: "sync_active_account",
+  tray_panel_action: "tray_panel_action",
   detect_game_install: "detect_game_install",
   set_game_path: "set_game_path",
   pick_game_folder: "pick_game_folder",

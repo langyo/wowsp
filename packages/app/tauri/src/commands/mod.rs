@@ -116,10 +116,17 @@ pub mod replay;
 pub mod res_mods;
 #[cfg(desktop)]
 pub mod screenshot;
+// Session hub: the Rust-side source of truth for "what is running / who is
+// playing", broadcast to every window (see commands/session.rs).
+pub mod session;
 pub mod ship_stats;
 pub mod stamps;
 pub mod supporters;
+// The tray panel webview window (tray.html) — desktop only, like the tray
+// itself.
 pub mod tab_dump;
+#[cfg(desktop)]
+pub mod tray_panel;
 pub mod trends;
 #[cfg(windows)]
 pub mod update;

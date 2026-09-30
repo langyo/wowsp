@@ -5,5 +5,7 @@
   "quit": "종료",
   "remember": "이 선택 기억하기",
   "show": "WoWSP 표시",
-  "hide": "숨기기"
+  "hide": "숨기기",
+  "playing": "플레이 중",
+  "notRegistered": "미연동"
 }

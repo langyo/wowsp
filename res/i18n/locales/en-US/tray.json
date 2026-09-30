@@ -5,5 +5,7 @@
   "quit": "Quit",
   "remember": "Remember my choice",
   "show": "Show WoWSP",
-  "hide": "Hide"
+  "hide": "Hide",
+  "playing": "Playing",
+  "notRegistered": "Not bound"
 }

@@ -5,5 +5,7 @@
   "quit": "結束",
   "remember": "記住我的選擇",
   "show": "顯示 WoWSP",
-  "hide": "隱藏"
+  "hide": "隱藏",
+  "playing": "當前遊玩",
+  "notRegistered": "未綁定"
 }

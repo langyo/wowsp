@@ -1,0 +1,210 @@
+/**
+ * Tray panel — the window is transparent + frameless (see
+ * commands/tray_panel.rs), so this card IS the visible surface: rounded,
+ * shadowed, glass-filled, matching the shell's hikari theme. The 10px outer
+ * padding keeps the CSS box-shadow (which the transparent window alone
+ * cannot draw) inside the window bounds on every side.
+ */
+.tray-panel {
+  width: 100vw;
+  height: 100vh;
+  padding: 10px;
+  box-sizing: border-box;
+  overflow: hidden;
+  user-select: none;
+  background: transparent;
+}
+
+.tray-panel__card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem 0.9rem 0.7rem;
+  box-sizing: border-box;
+  border-radius: calc(var(--radius-md) + 2px);
+  border: 1px solid rgb(var(--color-border) / 25%);
+  background: rgb(var(--color-surface) / 92%);
+  background: rgb(var(--color-surface) / min(100%, calc(92% * var(--ui-opacity, 1))));
+  backdrop-filter: blur(var(--blur-lg));
+  -webkit-backdrop-filter: blur(var(--blur-lg));
+  box-shadow:
+    0 12px 32px rgb(var(--color-shadow, 0 0 0) / 45%),
+    0 2px 8px rgb(var(--color-shadow, 0 0 0) / 30%);
+  color: rgb(var(--color-text));
+  font-size: var(--text-sm);
+}
+
+.tray-panel__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Literal rem, NOT var(--text-*): brand identity must not scale with the
+     font-size preference (same policy as the sidebar brand). */
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgb(var(--color-primary));
+  letter-spacing: 0.02em;
+}
+
+.tray-panel__brand-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+/* Compact running-state pip on the brand row's trailing edge. */
+.tray-panel__brand-dot {
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &--on {
+    background: rgb(var(--color-success));
+    box-shadow: 0 0 6px rgb(var(--color-success));
+  }
+  &--off {
+    background: rgb(var(--color-border));
+  }
+}
+
+/* Session status block — same grammar as the sidebar footer's indicator. */
+.tray-panel__status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-border) / 8%);
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+
+  &.is-running {
+    background: rgb(var(--color-success) / 8%);
+  }
+}
+
+.tray-panel__status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tray-panel__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(var(--color-muted));
+  flex-shrink: 0;
+
+  &--on {
+    background: rgb(var(--color-success));
+    box-shadow: 0 0 6px rgb(var(--color-success));
+  }
+  &--off {
+    background: rgb(var(--color-border));
+  }
+}
+
+.tray-panel__status-text {
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text));
+}
+
+.tray-panel__status-detail {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 0.45rem;
+  row-gap: 0.15rem;
+  padding-left: 1.05rem; /* align under the status text, past the 8px dot */
+  text-align: left;
+}
+
+.tray-panel__status-client {
+  color: rgb(var(--color-text));
+}
+
+.tray-panel__status-pid {
+  color: rgb(var(--color-muted));
+}
+
+/* Player row — the resolved "who is playing" identity. */
+.tray-panel__player {
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-primary) / 6%);
+}
+
+.tray-panel__player-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.tray-panel__player-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: rgb(var(--color-text));
+}
+
+.tray-panel__player-none {
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+}
+
+/* Menu actions — the native tray menu's Show / Hide / Quit as rows. */
+.tray-panel__menu {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tray-panel__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.65rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-primary) / 10%);
+  }
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 1px;
+  }
+
+  &--danger {
+    &:hover {
+      color: rgb(var(--color-danger));
+      background: rgb(var(--color-danger) / 10%);
+    }
+  }
+}
+
+.tray-panel__menu-icon {
+  flex-shrink: 0;
+  display: flex;
+  width: 1.1rem;
+  height: 1.1rem;
+}

@@ -1,7 +1,11 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for WoWSP windows (main + overlay)",
-  "windows": ["main", "overlay"],
+  "description": "Default capabilities for WoWSP windows (main + overlay + tray panel)",
+  "windows": [
+    "main",
+    "overlay",
+    "tray-panel"
+  ],
   "permissions": [
     "core:default",
     "core:window:default",

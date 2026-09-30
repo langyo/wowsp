@@ -9,13 +9,14 @@ import PlatformIcon from "@/components/base/PlatformIcon";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useSessionStore } from "@/stores/session";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { useStatsStore } from "@/stores/stats";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { kindLabel } from "@/utils/installLabel";
-import type { PlayerStats } from "@/api";
+import type { PlayerStats, SessionPlayer } from "@/api";
 import "./Sidebar.scss";
 
 /**
@@ -52,11 +53,32 @@ export default defineComponent({
     const accounts = useAccountStore();
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
+    const session = useSessionStore();
     const stats = useStatsStore();
     const ui = useSettingsUiStore();
     const { copy } = useClipboard();
 
-    // Cached stats for the active account — only the emblem (dog tag /
+    // The account row's player: the session hub's RESOLVED identity when
+    // the hub is reachable — it carries the actually-playing account (the
+    // battle roster's local player, matched against the bound profiles, so
+    // same-realm alts are told apart) and even unregistered alts the store
+    // cannot represent. Falls back to the store's active selection (browser
+    // dev / older shell, where the hub snapshot stays null).
+    const shownPlayer = computed<SessionPlayer | null>(() => {
+      if (session.display) return session.display;
+      const a = accounts.activeAccount;
+      return a
+        ? {
+            accountId: a.accountId,
+            nickname: a.nickname,
+            realm: a.realm,
+            registered: true,
+            playing: false,
+          }
+        : null;
+    });
+
+    // Cached stats for the displayed account — only the emblem (dog tag /
     // service-record tier) feeds the sidebar avatar. READ THROUGH the
     // shared stats store's cache — the same reactive snapshot the
     // dashboard header renders — so a dashboard refresh (or any other
@@ -64,15 +86,17 @@ export default defineComponent({
     // local copy. Hydration below stays cache-only (loadCached), never
     // the API (same policy as the account cards).
     const activeStats = computed<PlayerStats | null>(() => {
-      const a = accounts.activeAccount;
-      return a ? stats.cache.get(`${a.realm}_${a.accountId}`) ?? null : null;
+      const a = shownPlayer.value;
+      return a?.accountId != null
+        ? stats.cache.get(`${a.realm}_${a.accountId}`) ?? null
+        : null;
     });
     watch(
-      () => accounts.activeAccount,
+      () => shownPlayer.value,
       async (a) => {
         // Warm the shared cache from disk so the emblem is there on cold
         // start; the computed above reacts when the map fills.
-        if (a) await stats.loadCached(a.realm, a.accountId);
+        if (a?.accountId != null) await stats.loadCached(a.realm, a.accountId);
       },
       { immediate: true },
     );
@@ -223,23 +247,37 @@ export default defineComponent({
           </HkTooltip>
           ) : null}
 
-          {/* active account — opens settings on the 账户 section */}
+          {/* active account — opens settings on the 账户 section. Shows the
+              session-resolved identity: when a battle identified the
+              actually-playing account it is tagged (and unregistered alts
+              say so — the settings modal is where they get bound). */}
           <button type="button" class="sidebar__footer-btn" onClick={() => ui.show("account")}>
             <span class="sidebar__footer-btn-key">{t("settings.account")}</span>
             <span class="sidebar__footer-btn-value">
-              {accounts.activeAccount ? (
+              {shownPlayer.value ? (
                 <>
-                  <PlayerBadge
-                    tier={activeStats.value?.levelingTier ?? 0}
-                    dogTag={activeStats.value?.dogTag ?? null}
-                    size={22}
-                  />
+                  {shownPlayer.value.accountId != null ? (
+                    <PlayerBadge
+                      tier={activeStats.value?.levelingTier ?? 0}
+                      dogTag={activeStats.value?.dogTag ?? null}
+                      size={22}
+                    />
+                  ) : null}
                   <span class="sidebar__footer-btn-text">
-                    {accounts.activeAccount.nickname}
+                    {shownPlayer.value.nickname}
                   </span>
                   <HkTag variant="default" size="sm">
-                    {accounts.activeAccount.realm.toUpperCase()}
+                    {shownPlayer.value.realm.toUpperCase()}
                   </HkTag>
+                  {shownPlayer.value.playing ? (
+                    <HkTag variant="primary" size="sm">
+                      {t("tray.playing")}
+                    </HkTag>
+                  ) : shownPlayer.value.registered ? null : (
+                    <HkTag variant="warning" size="sm">
+                      {t("tray.notRegistered")}
+                    </HkTag>
+                  )}
                 </>
               ) : (
                 <span class="sidebar__footer-btn-text">{t("account.notBound")}</span>
