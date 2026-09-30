@@ -12,6 +12,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { api, type LogsOverview } from "@/api";
+import { useAccountStore } from "@/stores/account";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useClipboard } from "@/composables/useClipboard";
@@ -75,6 +76,7 @@ export default defineComponent({
   name: "FeedbackSection",
   setup() {
     const toast = useToast();
+    const accounts = useAccountStore();
     const lang = useLanguage();
     const { copy } = useClipboard();
 
@@ -99,6 +101,12 @@ export default defineComponent({
         channel: "desktop",
         lang: lang.uiLocale.value,
       });
+      // The active account prefills the form's server + game-ID row.
+      const active = accounts.activeAccount;
+      if (active) {
+        q.set("server", active.realm);
+        q.set("game_id", String(active.accountId));
+      }
       return `${WEB_FORM_URL}?${q.toString()}`;
     });
 

@@ -15,5 +15,6 @@
   "selectRealm": "Selecciona un servidor",
   "noAccounts": "Aún no hay cuentas vinculadas. Usa «Añadir jugador» para buscar un apodo y vincular una.",
   "setPreferred": "Marcar como preferida",
+  "preferredBadge": "Cuenta principal",
   "autoSwitched": "Cambiado a {name}"
 }

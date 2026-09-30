@@ -153,9 +153,20 @@ export const useAccountStore = defineStore("account", () => {
     await persist();
   }
 
-  /** Promote an account to its realm's preferred one (the ✦/首选 button). */
+  /** Promote an account to its realm's preferred one (the ✦/首选 button).
+   *  The promoted card also floats to the front of its realm's run, so
+   *  the list reads primary-first without touching the other realms'
+   *  manual drag order. */
   async function setPreferred(realm: string, accountId: number) {
     preferredByRealm.value = { ...preferredByRealm.value, [realm]: accountId };
+    const arr = [...accounts.value];
+    const firstOfRealm = arr.findIndex((a) => a.realm === realm);
+    const idx = arr.findIndex((a) => a.realm === realm && a.accountId === accountId);
+    if (idx > firstOfRealm) {
+      const [moved] = arr.splice(idx, 1);
+      if (moved) arr.splice(firstOfRealm, 0, moved);
+      accounts.value = arr;
+    }
     await persist();
   }
 

@@ -15,5 +15,6 @@
   "selectRealm": "Sélectionner un serveur",
   "noAccounts": "Aucun compte lié pour l'instant. Utilisez « Ajouter un joueur » pour rechercher un pseudo et en lier un.",
   "setPreferred": "Définir comme préféré",
+  "preferredBadge": "Compte principal",
   "autoSwitched": "Basculé sur {name}"
 }

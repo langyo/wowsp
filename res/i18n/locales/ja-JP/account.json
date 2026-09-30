@@ -15,5 +15,6 @@
   "selectRealm": "サーバーを選択",
   "noAccounts": "まだアカウントが連携されていません。「プレイヤーを追加」からニックネームを検索して連携してください。",
   "setPreferred": "優先に設定",
+  "preferredBadge": "メインアカウント",
   "autoSwitched": "{name} に切り替えました"
 }

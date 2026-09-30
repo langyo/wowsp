@@ -260,7 +260,15 @@ export default defineComponent({
                         ) : null}
                       </div>
                     </div>
-                    {!isPreferred && realmHasChoice ? (
+                    {isPreferred ? (
+                      <span
+                        class="acct-card__primary"
+                        aria-label={t("account.preferredBadge")}
+                        data-hint={t("account.preferredBadge")}
+                      >
+                        <Star size={14} fill="currentColor" />
+                      </span>
+                    ) : realmHasChoice ? (
                       <button
                         class="acct-card__promote"
                         onClick={(e) => void promote(a, e)}

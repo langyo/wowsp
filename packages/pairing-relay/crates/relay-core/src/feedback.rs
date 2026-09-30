@@ -15,10 +15,15 @@ pub const F_VERSION: &str = "应用版本";
 pub const F_SYS: &str = "系统信息";
 pub const F_CHANNEL: &str = "渠道";
 pub const F_ANON: &str = "匿名ID";
+pub const F_SERVER: &str = "主要服务器";
+pub const F_GAME_ID: &str = "游戏ID";
 pub const F_LOG: &str = "日志包";
 pub const F_STATUS: &str = "处理状态";
 pub const F_PR: &str = "PR链接";
 pub const F_TIME: &str = "提交时间";
+
+/// The five game servers a submission can name (the app's realm ids).
+pub const REALMS: [&str; 5] = ["ru", "eu", "na", "asia", "cn"];
 
 /// Base + table names the bootstrap pass creates.
 pub const BASE_NAME: &str = "WoWSP 反馈";
@@ -115,6 +120,8 @@ pub struct Submission {
     pub sysinfo: String,
     pub channel: String,
     pub anon_id: String,
+    pub server: String,
+    pub game_id: String,
     pub file_name: Option<String>,
     pub file_bytes: Option<Vec<u8>>,
 }
@@ -146,6 +153,15 @@ pub fn normalize(sub: &mut Submission) -> Result<(), &'static str> {
     sub.version = clean(&sub.version, META_MAX);
     sub.sysinfo = clean(&sub.sysinfo, META_MAX);
     sub.anon_id = clean(&sub.anon_id, ANON_MAX);
+    // Server is a single-select: lowercase and keep only known realms so
+    // the Bitable column never sees junk; game id is a short opaque token.
+    let server = clean(&sub.server, 16).to_lowercase();
+    sub.server = if REALMS.contains(&server.as_str()) {
+        server
+    } else {
+        String::new()
+    };
+    sub.game_id = clean(&sub.game_id, 32);
 
     if sub.description.is_empty() {
         return Err("empty_description");
@@ -216,6 +232,12 @@ pub fn record_fields(sub: &Submission, now_ms: i64) -> Map<String, Value> {
     if !sub.sysinfo.is_empty() {
         m.insert(F_SYS.into(), json!(sub.sysinfo));
     }
+    if !sub.server.is_empty() {
+        m.insert(F_SERVER.into(), json!(sub.server));
+    }
+    if !sub.game_id.is_empty() {
+        m.insert(F_GAME_ID.into(), json!(sub.game_id));
+    }
     m.insert(F_CHANNEL.into(), json!(sub.channel));
     m.insert(F_ANON.into(), json!(sub.anon_id));
     m.insert(F_STATUS.into(), json!(STATUS_NEW));
@@ -240,6 +262,11 @@ pub fn table_schema() -> Value {
                 { "field_name": F_CONTACT, "type": 1 },
                 { "field_name": F_VERSION, "type": 1 },
                 { "field_name": F_SYS, "type": 1 },
+                { "field_name": F_SERVER, "type": 3, "property": { "options": REALMS
+                    .iter()
+                    .map(|r| json!({ "name": r }))
+                    .collect::<Vec<_>>() } },
+                { "field_name": F_GAME_ID, "type": 1 },
                 { "field_name": F_CHANNEL, "type": 3, "property": { "options": [
                     { "name": "desktop" }, { "name": "web" }, { "name": "android" }
                 ] } },
@@ -623,12 +650,13 @@ pub fn feedback_page(
  * — no hand-rolled palette. */
 * {{ box-sizing: border-box; }}
 :root {{ color-scheme: light dark; }}
-body {{ margin: 0; min-height: 100vh; display: flex; justify-content: center;
-  padding: var(--space-24) var(--viewport-gutter);
+body {{ margin: 0; height: 100vh; height: 100dvh; display: flex;
+  justify-content: center;
+  padding: var(--space-16) var(--viewport-gutter);
   font-family: var(--font-sans); font-size: var(--text-md); line-height: 1.6;
   background: rgb(var(--color-background)); color: rgb(var(--color-text)); }}
-main {{ width: 100%; max-width: 56rem; }}
-.card {{ display: flex; align-items: stretch;
+main {{ width: 100%; max-width: 56rem; height: 100%; }}
+.card {{ display: flex; align-items: stretch; height: 100%;
   background: color-mix(in srgb, rgb(var(--color-surface)) 70%, transparent);
   border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 12%, transparent);
   border-radius: var(--radius-md); box-shadow: 0 2px 16px rgb(0 0 0 / 8%);
@@ -718,7 +746,16 @@ h1.brand {{ font-size: var(--text-lg); font-weight: 700; margin: 0;
 .hk-opt .opt-note {{ margin-inline-start: auto; font-size: var(--text-2xs);
   color: rgb(var(--color-muted)); font-weight: 400; }}
 /* ── views ───────────────────────────────────────────────────────────── */
-.content {{ flex: 1; min-width: 0; padding: var(--space-24) var(--space-20); }}
+.content-wrap {{ position: relative; flex: 1; min-width: 0; height: 100%;
+  display: flex; }}
+.content {{ flex: 1; min-width: 0; min-height: 0;
+  padding: var(--space-24) var(--space-28) var(--space-24) var(--space-20);
+  overflow-y: auto; overscroll-behavior: contain;
+  /* Overlay scrollbar (hk-scrollbar grammar) — native chrome hidden; the
+   * rail lives on .content-wrap, the non-scrolling viewport per hikari's
+   * useOverlayScrollbar host contract. */
+  scrollbar-width: none; }}
+.content::-webkit-scrollbar {{ display: none; }}
 .view[hidden] {{ display: none; }}
 h2.view-title {{ font-size: var(--text-lg); font-weight: 600; margin: 0 0 var(--space-8); }}
 p.sub {{ margin: 0 0 var(--space-20); color: rgb(var(--color-muted));
@@ -903,6 +940,20 @@ a {{ color: rgb(var(--color-primary)); }}
 @keyframes lb-in {{ from {{ opacity: 0; transform: translateY(5%); }}
   to {{ opacity: 1; transform: none; }} }}
 @media (prefers-reduced-motion: reduce) {{ .lb-stage {{ animation: none; }} }}
+/* ── overlay scrollbar (hikari .hk-scrollbar-track/thumb grammar) ───── */
+.hk-scrollbar-track {{ position: absolute; z-index: 10; background: transparent;
+  top: 4px; bottom: 4px; right: 2px; width: 6px;
+  pointer-events: none; opacity: 0;
+  transition: opacity var(--hi-duration-fast, 0.15s) ease; }}
+.hk-scrollbar-track.is-scrolling, .hk-scrollbar-track.is-hovering {{
+  opacity: 1; pointer-events: auto; }}
+.hk-scrollbar-thumb {{ position: absolute; top: 0; left: 0; width: 100%;
+  min-height: 20px; border-radius: 3px;
+  background: color-mix(in srgb, rgb(var(--color-muted)) 35%, transparent);
+  transition: background var(--hi-duration-fast, 0.15s) ease; }}
+.hk-scrollbar-track.is-hovering .hk-scrollbar-thumb,
+.hk-scrollbar-thumb.is-dragging {{
+  background: color-mix(in srgb, rgb(var(--color-muted)) 55%, transparent); }}
 /* ── responsive: sidebar becomes a tab strip under 768px ────────────── */
 @media (max-width: 767px) {{
   .card {{ flex-direction: column; }}
@@ -914,6 +965,7 @@ a {{ color: rgb(var(--color-primary)); }}
   .nav-item {{ flex: 1; justify-content: center; }}
   .nav-item span {{ overflow: visible; }}
   .side-foot {{ margin-top: var(--space-8); padding-top: 0; }}
+  .content-wrap {{ flex: 1; min-height: 0; }}
   .content {{ padding: var(--space-16); }}
   .lb-stage {{ width: 100%; height: 100vh; height: 100dvh; padding: var(--space-8); }}
   .lb-canvas {{ border-radius: 0; }}
@@ -942,6 +994,7 @@ a {{ color: rgb(var(--color-primary)); }}
     </button>
   </div>
 </aside>
+<div class="content-wrap">
 <div class="content">
 <section class="view" id="viewForm">
   <p class="sub" data-i18n="subtitle"></p>
@@ -954,6 +1007,13 @@ a {{ color: rgb(var(--color-primary)); }}
         aria-expanded="false"><span id="ctLabel"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       <input type="text" id="contact" name="contact" maxlength="64">
     </div>
+    <label for="gameId" data-i18n="serverGameLabel"></label>
+    <div class="contact-box">
+      <button type="button" id="serverChip" class="affix-chip" aria-haspopup="listbox"
+        aria-expanded="false"><span id="serverLabel"></span><svg class="ic-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <input type="text" id="gameId" name="game_id" maxlength="32" data-i18n-placeholder="gameIdPh">
+    </div>
+    <input type="hidden" name="server" id="serverField">
     <label for="version" data-i18n="versionLabel"></label>
     <div class="combo">
       <input type="text" id="version" name="version" class="field" value="{version_default}">
@@ -1026,6 +1086,79 @@ a {{ color: rgb(var(--color-primary)); }}
     modeQuery.addEventListener("change", applyMode);
   }}
 
+  // ── overlay scrollbar — mirrors hikari useOverlayScrollbar over the
+  // .content region: a 6px rail with a proportional thumb that appears
+  // while scrolling or hovering, draggable, native bar hidden in CSS ────
+  (function () {{
+    var el = document.querySelector(".content");
+    if (!el) return;
+    // hikari's host contract: the rail's parent must be the NON-scrolling
+    // viewport wrapper, so the rail never translates with the content.
+    var host = el.parentElement;
+    var track = document.createElement("div");
+    track.className = "hk-scrollbar-track";
+    var thumb = document.createElement("div");
+    thumb.className = "hk-scrollbar-thumb";
+    track.appendChild(thumb);
+    host.appendChild(track);
+    var hoverTimer = null;
+    function sync() {{
+      var max = el.scrollHeight - el.clientHeight;
+      if (max <= 0) {{ thumb.style.height = "0"; return; }}
+      // Thumb geometry lives in TRACK coordinates (the track already
+      // carries the 4px insets), so size and travel read off the track —
+      // mirroring hikari's useOverlayScrollbar engine.
+      var railH = track.clientHeight;
+      var h = Math.max(20, (el.clientHeight / el.scrollHeight) * railH);
+      var y = (el.scrollTop / max) * (railH - h);
+      thumb.style.height = h + "px";
+      thumb.style.transform = "translateY(" + y + "px)";
+    }}
+    function show(cls, on) {{ track.classList.toggle(cls, on); }}
+    el.addEventListener("scroll", function () {{
+      sync(); show("is-scrolling", true);
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(function () {{
+        show("is-scrolling", false);
+      }}, 600);
+    }}, {{ passive: true }});
+    el.addEventListener("mouseenter", function () {{ show("is-hovering", true); sync(); }});
+    el.addEventListener("mouseleave", function () {{
+      show("is-hovering", false);
+    }});
+    // Drag the thumb to scrub.
+    var dragging = false, dragY = 0, startTop = 0;
+    thumb.addEventListener("pointerdown", function (ev) {{
+      dragging = true; dragY = ev.clientY; startTop = el.scrollTop;
+      thumb.classList.add("is-dragging");
+      thumb.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    }});
+    thumb.addEventListener("pointermove", function (ev) {{
+      if (!dragging) return;
+      var max = el.scrollHeight - el.clientHeight;
+      if (max <= 0) return;
+      // track.clientHeight already excludes the 4px top/bottom insets —
+      // same numbers the render path uses.
+      var railH = track.clientHeight;
+      var th = thumb.getBoundingClientRect().height;
+      var dy = ev.clientY - dragY;
+      el.scrollTop = startTop + (dy / Math.max(1, railH - th)) * max;
+    }});
+    function endDrag(ev) {{
+      if (!dragging) return;
+      dragging = false;
+      thumb.classList.remove("is-dragging");
+      if (thumb.hasPointerCapture && thumb.hasPointerCapture(ev.pointerId)) {{
+        thumb.releasePointerCapture(ev.pointerId);
+      }}
+    }}
+    thumb.addEventListener("pointerup", endDrag);
+    thumb.addEventListener("pointercancel", endDrag);
+    window.addEventListener("resize", sync);
+    sync();
+  }})();
+
   // ── i18n runtime — same 9-locale table the app ships ─────────────────
   var LOCALES = {locales_json};
   // Editable-combobox suggestions: the current release + the
@@ -1082,6 +1215,7 @@ a {{ color: rgb(var(--color-primary)); }}
     var ln = document.getElementById("langName");
     if (ln) ln.textContent = NAMES[lang] || lang;
     updateContactPh();
+    applyServer();
   }}
   // ── dropdown menu (hikari HkSelect popout + menu-item grammar) ──────
   // One factory serves the language selector, the contact-type chip and
@@ -1266,6 +1400,46 @@ a {{ color: rgb(var(--color-primary)); }}
     ];
   }}, function (it) {{ setCt(it.value, true); }});
   setCt(ct, false);
+  // ── main server chip + game id (hikari realm vocabulary) ─────────────
+  var REALMS = ["ru", "eu", "na", "asia", "cn"];
+  var serverChip = document.getElementById("serverChip");
+  var serverLabel = document.getElementById("serverLabel");
+  var serverField = document.getElementById("serverField");
+  var gameId = document.getElementById("gameId");
+  var server = localStorage.getItem("wowsp-fb-server") || "";
+  if (q.get("server") && REALMS.indexOf(q.get("server")) >= 0) server = q.get("server");
+  if (q.get("game_id")) gameId.value = q.get("game_id");
+  function serverName(code) {{
+    var key = "server" + code.toUpperCase();
+    return t(key) || code.toUpperCase();
+  }}
+  function applyServer() {{
+    // Called from applyI18n too, which fires before this block initializes
+    // its elements — skip until then.
+    if (!serverLabel) return;
+    serverLabel.textContent = server ? serverName(server) : t("serverNone");
+    serverField.value = server;
+  }}
+  makeMenu(serverChip, function () {{
+    return [
+      {{ value: "", label: t("serverNone"), selected: server === "" }}
+    ].concat(REALMS.map(function (r) {{
+      return {{ value: r, label: serverName(r), selected: server === r }};
+    }}));
+  }}, function (it) {{
+    server = it.value;
+    if (server) localStorage.setItem("wowsp-fb-server", server);
+    else localStorage.removeItem("wowsp-fb-server");
+    applyServer();
+  }});
+  applyServer();
+  if (!q.get("game_id")) {{
+    gameId.value = localStorage.getItem("wowsp-fb-gameid") || gameId.value;
+  }}
+  gameId.addEventListener("change", function () {{
+    if (gameId.value) localStorage.setItem("wowsp-fb-gameid", gameId.value);
+    else localStorage.removeItem("wowsp-fb-gameid");
+  }});
   // Unambiguous input flips the category for you; anything else keeps
   // the explicit choice.
   contact.addEventListener("input", function () {{
@@ -1435,6 +1609,8 @@ a {{ color: rgb(var(--color-primary)); }}
           document.querySelector('[name="channel"]').value = pre.channel;
           document.getElementById("anon").value = anon;
           contact.value = localStorage.getItem("wowsp_fb_contact") || "";
+          gameId.value = localStorage.getItem("wowsp-fb-gameid") || "";
+          applyServer();
           setAttachment(null, null);
           if (res.j.record_url) {{
             var a = document.createElement("a");
@@ -1608,6 +1784,13 @@ a {{ color: #2563eb; }}
         "<td>" + esc(fmtTime(it.time)) + "</td>" +
         "<td>" + esc(it.description) +
           (it.sysinfo ? '<div class="muted">' + esc(it.sysinfo) + "</div>" : "") +
+          ((it.server || it.game_id)
+            ? '<div class="muted">' +
+              (it.server ? "🌐 " + esc(it.server.toUpperCase()) : "") +
+              (it.server && it.game_id ? " · " : "") +
+              (it.game_id ? "🆔 " + esc(it.game_id) : "") +
+              "</div>"
+            : "") +
           (it.record_url ? '<div class="row-actions"><a href="' + esc(it.record_url) + '" target="_blank">记录</a></div>' : "") + "</td>" +
         "<td>" + esc(it.contact || "—") + "</td>" +
         "<td>" + esc(it.version || "—") + "</td>" +
@@ -1684,6 +1867,8 @@ mod tests {
             sysinfo: "windows x86_64".into(),
             channel: "desktop".into(),
             anon_id: "anon-1".into(),
+            server: " ASIA ".into(),
+            game_id: " 123456 ".into(),
             file_name: Some("wowsp.zip".into()),
             file_bytes: Some(b"PK".to_vec()),
         }
@@ -1775,9 +1960,25 @@ mod tests {
             .iter()
             .map(|f| f["field_name"].as_str().unwrap())
             .collect();
-        assert_eq!(names.len(), 10);
+        assert_eq!(names.len(), 12);
         assert!(names.contains(&F_LOG));
         assert!(names.contains(&F_STATUS));
+        assert!(names.contains(&F_SERVER));
+        assert!(names.contains(&F_GAME_ID));
+        // The server column is a single-select offering the five realms.
+        let server_field = schema["table"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["field_name"] == F_SERVER)
+            .unwrap();
+        let opts: Vec<&str> = server_field["property"]["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(opts, REALMS);
     }
 
     #[test]
@@ -2003,6 +2204,16 @@ mod tests {
         assert!(page.contains(r#"class="attach-thumb" id="attachThumb""#));
         assert!(page.contains(r#"id="lightbox" class="lb" hidden"#));
         assert!(page.contains(r#"id="lbClose""#));
+        // Server + game-ID row: chip menu, hidden server field, game input.
+        assert!(page.contains(r#"id="serverChip" class="affix-chip""#));
+        assert!(page.contains(r#"id="gameId" name="game_id" maxlength="32""#));
+        assert!(page.contains(r#"name="server" id="serverField""#));
+        assert!(page.contains("REALMS = [\"ru\", \"eu\", \"na\", \"asia\", \"cn\"]"));
+        // Full-height shell + overlay scrollbar wiring.
+        assert!(page.contains("height: 100vh; height: 100dvh;"));
+        assert!(page.contains(r#".hk-scrollbar-track"#));
+        assert!(page.contains(r#".hk-scrollbar-thumb"#));
+        assert!(page.contains("hk-scrollbar-track\";"));
     }
 
     #[test]

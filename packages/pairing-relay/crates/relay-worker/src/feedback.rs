@@ -125,6 +125,8 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
             "sysinfo" => sub.sysinfo = text(),
             "channel" => sub.channel = text(),
             "anon" => sub.anon_id = text(),
+            "server" => sub.server = text(),
+            "game_id" => sub.game_id = text(),
             "file" => {
                 sub.file_name = part.filename;
                 sub.file_bytes = Some(part.bytes);
@@ -323,6 +325,8 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
                 "contact": text_val(&f(feedback::F_CONTACT)),
                 "version": text_val(&f(feedback::F_VERSION)),
                 "sysinfo": text_val(&f(feedback::F_SYS)),
+                "server": text_val(&f(feedback::F_SERVER)),
+                "game_id": text_val(&f(feedback::F_GAME_ID)),
                 "channel": text_val(&f(feedback::F_CHANNEL)),
                 "status": text_val(&f(feedback::F_STATUS)),
                 "pr": f(feedback::F_PR).and_then(|v| {

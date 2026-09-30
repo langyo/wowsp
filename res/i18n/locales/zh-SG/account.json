@@ -15,5 +15,6 @@
   "selectRealm": "选择区服",
   "noAccounts": "尚未绑定账户。点击「新增玩家」搜索昵称以绑定。",
   "setPreferred": "设为首选",
+  "preferredBadge": "主账号",
   "autoSwitched": "已切换到 {name}"
 }

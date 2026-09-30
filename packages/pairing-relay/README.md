@@ -144,8 +144,9 @@ and `/erp` past the static-asset layer):
   `data-mode` attribute the app's `useTheme` sets. A Cloudflare Turnstile
   widget guards submissions. The WoWSP desktop app's 设置 ▸ 问题反馈 pane
   links here with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill
-  (the history lookup link adds `focus=history`); the form itself mints a
-  localStorage anonymous id and remembers the optional contact field.
+  (plus `server`/`game_id` when an account is bound; the history lookup
+  link adds `focus=history`); the form itself mints a localStorage
+  anonymous id and remembers the contact, server and game-ID fields.
 - **`POST /api/feedback/submit`** (multipart) — normalize → Turnstile
   siteverify → KV rate limits (5/h per IP, 10/day per anonymous id, 300/day
   global) → a record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on

@@ -15,5 +15,6 @@
   "selectRealm": "選擇伺服器",
   "noAccounts": "尚未綁定帳號。點擊「新增玩家」搜尋暱稱以綁定。",
   "setPreferred": "設為首選",
+  "preferredBadge": "主帳號",
   "autoSwitched": "已切換到 {name}"
 }

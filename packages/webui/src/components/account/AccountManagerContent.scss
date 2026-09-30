@@ -273,6 +273,16 @@
 
   /* Promote-to-preferred star (offered only when the realm has several
      bound accounts and this one isn't the preferred). */
+  /* The realm's primary-account marker (filled star, primary ink). */
+  &__primary {
+    flex-shrink: 0;
+    padding: 0.35rem;
+    color: rgb(var(--color-primary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   &__promote {
     flex-shrink: 0;
     background: transparent;
