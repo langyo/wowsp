@@ -124,7 +124,7 @@ export default defineComponent({
     }
 
     // Fresh read on every entry: the pane unmounts when its section loses
-    // focus (HkSettingsBody renders only the active slot) or when the
+    // focus (the settings shell renders only the active slot) or when the
     // settings surface closes, so mount IS the reopen event — sizes and
     // file counts drift while the app runs.
     onMounted(() => void refresh());

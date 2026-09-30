@@ -1,5 +1,10 @@
 {
   "title": "설정",
+  "groupGeneral": "일반",
+  "groupGame": "게임",
+  "groupConnection": "계정 및 네트워크",
+  "groupApp": "앱",
+  "groupAbout": "도움말 및 정보",
   "language": "언어",
   "uiLanguage": "인터페이스 언어",
   "dataLanguage": "게임 데이터 언어",

@@ -36,7 +36,6 @@ import {
   HkIconButton,
   HkInput,
   HkModal,
-  HkSettingsBody,
   HkSettingsGroup,
   HkSettingsHint,
   HkSettingsSub,
@@ -51,7 +50,6 @@ import {
   useTheme,
   useToast,
   type ModalAction,
-  type HkSettingsSection,
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
@@ -101,8 +99,9 @@ import {
   type TableAnchorMode,
 } from "@/stores/overlayConfig";
 import {
-  availableSettingsSections,
+  availableSettingsGroups,
   useSettingsUiStore,
+  type SettingsGroupId,
   type SettingsSection,
 } from "@/stores/settingsUi";
 import { useCloseBehaviorStore, type CloseAction } from "@/stores/closeBehavior";
@@ -122,6 +121,7 @@ import FontSizeControl from "@/components/layout/FontSizeControl";
 import ChangelogSection from "@/components/settings/ChangelogSection";
 import FeedbackSection from "@/components/settings/FeedbackSection";
 import ThemeSchemeDialog from "@/components/settings/ThemeSchemeDialog";
+import SettingsShell, { type SettingsRailGroup } from "@/components/settings/SettingsShell";
 import {
   RESOURCE_ATTRIBUTIONS,
   UPSTREAM_ATTRIBUTIONS,
@@ -809,18 +809,30 @@ export default defineComponent({
       about: t("settings.about"),
       attributions: t("settings.attributions"),
     }));
-    const sections = computed(() => availableSettingsSections());
-    // The rail entries handed to HkSettingsBody — icons + labels resolved
-    // here so the shared component owns only the rendering.
-    const railSections = computed<HkSettingsSection[]>(() =>
-      sections.value.map((id) => ({
+    // The rail is grouped: five titled clusters (first level) over the
+    // section entries (second level), so fourteen entries read as a few
+    // named families instead of one flat list. Labels are resolved here —
+    // icons for the entries, i18n titles for the groups — so the shell
+    // owns only the rendering; build-hidden sections drop out with their
+    // group (availableSettingsGroups never returns an empty one).
+    const GROUP_LABEL_KEYS: Record<SettingsGroupId, string> = {
+      general: "settings.groupGeneral",
+      game: "settings.groupGame",
+      connection: "settings.groupConnection",
+      app: "settings.groupApp",
+      about: "settings.groupAbout",
+    };
+    const railGroups = computed<SettingsRailGroup[]>(() =>
+      availableSettingsGroups().map(({ id, sections }) => ({
         key: id,
-        label: sectionLabels.value[id],
-        icon: SECTION_ICONS[id],
+        label: t(GROUP_LABEL_KEYS[id]),
+        sections: sections.map((id) => ({
+          key: id,
+          label: sectionLabels.value[id],
+          icon: SECTION_ICONS[id],
+        })),
       })),
     );
-    // (Pane scroll ownership moved into HkSettingsBody — the shared
-    // component restarts the pane from the top on section switches.)
 
     return () => {
       // Staged-or-persisted notch for the DPI slider/readout (null = Auto)
@@ -830,15 +842,16 @@ export default defineComponent({
       const warningVisible = pending != null && isDpiRisky(pending, window.innerWidth);
       return (
         <>
-        {/* The shell is hikari's HkSettingsBody now (the settings-window
-            grammar this app's own rail+pane anatomy upstreamed,
-            2026-09-23): rail rendering, active-section state, pane
-            scrolling and the switch-restarts-at-top behavior all come
-            from the shared component; this body keeps only the section
-            content. Section identity stays in the settingsUi store so
-            openers can land on a specific section. */}
-        <HkSettingsBody
-          sections={railSections.value}
+        {/* The shell is the local SettingsShell — hikari's HkSettingsBody
+            anatomy (the settings-window grammar this app upstreamed,
+            2026-09-23) extended with a grouped rail: titled clusters over
+            the nav entries. Active-section state, pane scrolling and the
+            switch-restarts-at-top behavior follow the shared component's
+            contract; this body keeps only the section content. Section
+            identity stays in the settingsUi store so openers can land on
+            a specific section. */}
+        <SettingsShell
+          groups={railGroups.value}
           section={ui.section}
           onUpdate:section={(key: string) => (ui.section = key as SettingsSection)}
           navLabel={t("settings.title")}
@@ -2142,7 +2155,7 @@ export default defineComponent({
           </>
           ),
           }}
-        </HkSettingsBody>
+        </SettingsShell>
 
         {/* DPI preview confirm — a pure view over dpiPrefs' app-level
             countdown store (all keep/revert logic lives there): it floats

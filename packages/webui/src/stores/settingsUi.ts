@@ -4,7 +4,8 @@ import { ref } from "vue";
 import { router } from "@/router";
 import { isMobileApp, isPhoneLayout } from "@/utils/platform";
 
-/** Settings sections, in rail order (mirrors SettingsBody). */
+/** Settings sections. The id set only — rail order comes from
+ *  SETTINGS_GROUPS below (the union's textual order is not meaningful). */
 export type SettingsSection =
   | "language"
   | "appearance"
@@ -21,22 +22,35 @@ export type SettingsSection =
   | "about"
   | "attributions";
 
-export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = [
-  "language",
-  "appearance",
-  "closeBehavior",
-  "stats",
-  "gamePath",
-  "account",
-  "network",
-  "pairing",
-  "updates",
-  "changelog",
-  "overlay",
-  "feedback",
-  "about",
-  "attributions",
+/** Rail groups (first level): titled clusters of related sections (the
+ *  second level). Rail order is group order, then member order —
+ *  SETTINGS_SECTION_IDS derives from this, so the flat list can never
+ *  drift out of the grouped anatomy. */
+export type SettingsGroupId =
+  | "general"
+  | "game"
+  | "connection"
+  | "app"
+  | "about";
+
+export interface SettingsGroupSpec {
+  id: SettingsGroupId;
+  /** Member sections, in rail order within the group. */
+  sections: readonly SettingsSection[];
+}
+
+export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
+  { id: "general", sections: ["language", "appearance", "closeBehavior"] },
+  { id: "game", sections: ["stats", "overlay", "gamePath"] },
+  { id: "connection", sections: ["account", "network", "pairing"] },
+  { id: "app", sections: ["updates", "changelog"] },
+  { id: "about", sections: ["feedback", "about", "attributions"] },
 ];
+
+/** All sections in rail order (group order, then member order). */
+export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = SETTINGS_GROUPS.flatMap(
+  (group) => group.sections,
+);
 
 /** Sections that make no sense on the phone app build: no local game
  *  install to pick (gamePath), no second overlay window (overlay), and no
@@ -61,10 +75,21 @@ export function normalizeSettingsSection(s: SettingsSection): SettingsSection {
   return isMobileApp() && MOBILE_HIDDEN_SECTIONS.includes(s) ? "language" : s;
 }
 
-/** Sections available on this build, rail order. */
-export function availableSettingsSections(): SettingsSection[] {
+/** A group as the current build may show it: hidden members filtered out. */
+export interface SettingsGroupView {
+  id: SettingsGroupId;
+  sections: SettingsSection[];
+}
+
+/** Groups available on this build, rail order; a group whose every member
+ *  is hidden on this build is dropped entirely, so the rail never shows an
+ *  empty title. */
+export function availableSettingsGroups(): SettingsGroupView[] {
   const hidden = isMobileApp();
-  return SETTINGS_SECTION_IDS.filter((id) => !hidden || !MOBILE_HIDDEN_SECTIONS.includes(id));
+  return SETTINGS_GROUPS.map(({ id, sections }) => ({
+    id,
+    sections: sections.filter((id) => !hidden || !MOBILE_HIDDEN_SECTIONS.includes(id)),
+  })).filter((group) => group.sections.length > 0);
 }
 
 /**

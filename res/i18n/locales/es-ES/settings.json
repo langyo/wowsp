@@ -1,5 +1,10 @@
 {
   "title": "Ajustes",
+  "groupGeneral": "General",
+  "groupGame": "Juego",
+  "groupConnection": "Cuenta y red",
+  "groupApp": "Aplicación",
+  "groupAbout": "Ayuda y acerca de",
   "language": "Idioma",
   "uiLanguage": "Idioma de la interfaz",
   "dataLanguage": "Idioma de los datos del juego",

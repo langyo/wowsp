@@ -74,10 +74,11 @@
 
 /* ── Re-hosting the shared .settings-modal shell in a page context ────── */
 
-/* The shell is hikari's HSettingsBody (.hk-settings*) now; the page
-   still needs the modal-host assumptions neutralized — the host class is
-   absent on the page (those rules only apply under .hk-settings-host),
-   so only the sizing override below remains necessary. */
+/* The shell is the local SettingsShell (.hk-settings*, the grouped rail
+   over hikari's settings grammar); the page still needs the modal-host
+   assumptions neutralized — the host class is absent on the page (those
+   rules only apply under .hk-settings-host), so only the sizing override
+   below remains necessary. */
 .settings-page__body .hk-settings {
   /* Page grows with content; the app shell's scroll viewport scrolls. */
   height: auto;
@@ -105,6 +106,11 @@
     }
 
     &__rail-label {
+      display: none;
+    }
+
+    &__rail-heading {
+      /* Icon strip: the cluster titles are words, not icons — out. */
       display: none;
     }
   }

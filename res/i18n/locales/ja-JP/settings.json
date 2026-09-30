@@ -1,5 +1,10 @@
 {
   "title": "設定",
+  "groupGeneral": "全般",
+  "groupGame": "ゲーム",
+  "groupConnection": "接続とアカウント",
+  "groupApp": "アプリ",
+  "groupAbout": "ヘルプと情報",
   "language": "言語",
   "uiLanguage": "表示言語",
   "dataLanguage": "ゲームデータ言語",

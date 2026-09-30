@@ -1,5 +1,10 @@
 {
   "title": "设置",
+  "groupGeneral": "通用",
+  "groupGame": "游戏",
+  "groupConnection": "账户与网络",
+  "groupApp": "应用",
+  "groupAbout": "帮助与关于",
   "language": "语言",
   "uiLanguage": "界面语言",
   "dataLanguage": "素材翻译",

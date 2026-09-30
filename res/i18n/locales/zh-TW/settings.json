@@ -1,5 +1,10 @@
 {
   "title": "設定",
+  "groupGeneral": "一般",
+  "groupGame": "遊戲",
+  "groupConnection": "帳戶與網路",
+  "groupApp": "應用程式",
+  "groupAbout": "協助與關於",
   "language": "語言",
   "uiLanguage": "介面語言",
   "dataLanguage": "素材翻譯",

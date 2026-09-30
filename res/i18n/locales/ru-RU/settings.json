@@ -1,5 +1,10 @@
 {
   "title": "Настройки",
+  "groupGeneral": "Общие",
+  "groupGame": "Игра",
+  "groupConnection": "Аккаунт и сеть",
+  "groupApp": "Приложение",
+  "groupAbout": "Помощь и о программе",
   "language": "Язык",
   "uiLanguage": "Язык интерфейса",
   "dataLanguage": "Язык игровых данных",
