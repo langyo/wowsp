@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// (mirroring ApeRadar's `ConfigWindow.AutoDetectGamePath`) and additionally
 /// walks Steam library folders for `appmanifest_552990.acf` — the Steam variant
 /// ApeRadar does not cover.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GameInstallKind {
     /// Official Wargaming Game Center install.

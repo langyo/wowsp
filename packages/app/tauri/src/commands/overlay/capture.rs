@@ -12,6 +12,9 @@ use super::*;
 pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor> {
     let team_sizes = super::arena_info::last_known_team_sizes();
     let game_rect = rect_from_win32(game.rect);
+    // Per-client tuning (WG vs Lesta scoreboard geometry), resolved once
+    // per capture from the window's process.
+    let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
     let Some((rgba, w, h)) = capture_game_rgba_cached(&game.rect) else {
         tracing::warn!("game window capture returned no pixels");
         return None;
@@ -30,6 +33,7 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     let key = GeometryKey {
         game_size: (game_rect.width, game_rect.height),
         style_bits: window_style_bits(game.hwnd),
+        kind: game.kind,
     };
     let mut verify_missed = false;
     let mut band_verified = false;
@@ -65,6 +69,7 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
                 h,
                 team_sizes,
                 Some(measured),
+                &profile,
             );
             cache.roster = det.clone();
             cache.team_sizes = team_sizes;
@@ -129,7 +134,7 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     let (roster_rel, rows, split, detected) = if let Some(det) = cached {
         (det.rect, det.row_centers, det.team_split, true)
     } else {
-        match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes) {
+        match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes, &profile) {
             Some((band, det)) => {
                 // Confirmed detection → (re)fill the cache. Fallback
                 // geometry never enters it (table_detected == false never
@@ -179,10 +184,13 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
             &rgba,
             w,
             h,
-            &roster_rel,
-            &rows,
-            split,
-            team_sizes.0,
+            overlay_detect::StripTable {
+                roster: &roster_rel,
+                row_centers: &rows,
+                team_split: split,
+                ally_rows: team_sizes.0,
+            },
+            &profile,
         ))
     };
     let (overlay, mut anchor) =
@@ -237,6 +245,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
             });
         };
         let team_sizes = super::arena_info::last_known_team_sizes();
+        let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
         let (anchor, png) = match capture_game_rgba_cached(&game.rect) {
             Some((rgba, w, h)) => {
                 // Same dual-channel scene gate as `compute_anchor`: the HUD
@@ -245,7 +254,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                 let in_scene = overlay_detect::detect_battle_scene(&rgba, w, h)
                     || overlay_detect::header_bars_present(&rgba, w, h);
                 let det = if in_scene {
-                    match overlay_detect::detect_roster(&rgba, w, h, team_sizes) {
+                    match overlay_detect::detect_roster(&rgba, w, h, team_sizes, &profile) {
                         Some(d) => Some(
                             overlay_detect::build_anchor(
                                 &rect_from_win32(game.rect),

@@ -40,11 +40,14 @@ pub(super) fn pin_matches(
     pin_battle: i64,
     pin_rect: &Rect,
     pin_table_detected: bool,
+    pin_kind: wowsp_tauri_shared::GameInstallKind,
     battle: i64,
     game_rect: Option<Rect>,
+    game_kind: Option<wowsp_tauri_shared::GameInstallKind>,
 ) -> bool {
     pin_table_detected
         && pin_battle == battle
+        && game_kind == Some(pin_kind)
         && game_rect.is_some_and(|r| rect_same_within(&r, pin_rect))
 }
 
@@ -158,6 +161,7 @@ pub(super) fn revalidate_pinned_anchor(
         fsm.pinned_anchor = Some(PinnedAnchor {
             battle: super::arena_info::last_arena_stamp(),
             game_rect: rect_from_win32(g.rect),
+            kind: g.kind,
             anchor: fresh.clone(),
         });
         place_and_show(app, &fresh);
@@ -210,6 +214,7 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
     let Some((rgba, w, h)) = capture_game_rgba_cached(&game.rect) else {
         return;
     };
+    let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
     let (roster, rows, split, ally_rows) = {
         let pin = fsm.pinned_anchor.as_ref().expect("checked above");
         let anchor = &pin.anchor;
@@ -260,8 +265,18 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
     // One strip crop serves BOTH channels: the luma classification (alive
     // flags, as before) and the occupancy fingerprints the sink solver
     // diffs across this transition.
-    let strips =
-        overlay_detect::crop_row_name_strips(&rgba, w, h, &roster, &rows, split, ally_rows);
+    let strips = overlay_detect::crop_row_name_strips(
+        &rgba,
+        w,
+        h,
+        overlay_detect::StripTable {
+            roster: &roster,
+            row_centers: &rows,
+            team_split: split,
+            ally_rows,
+        },
+        &profile,
+    );
     let fresh: Vec<bool> = strips
         .iter()
         .map(|s| match s {

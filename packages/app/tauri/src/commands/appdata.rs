@@ -136,7 +136,7 @@ pub async fn get_game_process(
     let matched = owned_matched.as_ref();
 
     let (kind, realm) = match &matched {
-        Some(m) => (Some(m.kind.clone()), m.realm.clone()),
+        Some(m) => (Some(m.kind), m.realm.clone()),
         None => {
             // No exe path at all — nothing to infer from.
             (None, None)
@@ -168,7 +168,7 @@ pub async fn get_game_process(
 /// international client (the historical behavior that mislabeled the legacy
 /// CN clients — user-reported).
 #[cfg(target_os = "windows")]
-fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
+pub(crate) fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
     use wowsp_tauri_shared::{GameInstall, GameInstallKind};
 
     let root = super::game_context::exe_game_root(exe)?;

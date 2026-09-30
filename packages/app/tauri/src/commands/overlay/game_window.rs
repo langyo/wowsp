@@ -5,12 +5,15 @@ use super::*;
 
 /// The game's top-level window: handle + on-screen bounds (physical px,
 /// already clamped to the window's monitor so the capture and the overlay
-/// cover exactly the same region — multi-monitor / negative-origin safe).
+/// cover exactly the same region — multi-monitor / negative-origin safe) +
+/// the client kind behind it (resolved from the process image; drives the
+/// per-client detection profile in `overlay_detect`).
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Copy)]
 pub(super) struct GameWindow {
     pub(super) hwnd: windows::Win32::Foundation::HWND,
     pub(super) rect: windows::Win32::Foundation::RECT,
+    pub(super) kind: wowsp_tauri_shared::GameInstallKind,
 }
 
 #[cfg(target_os = "windows")]
@@ -85,7 +88,15 @@ pub(super) fn find_game_window() -> Option<GameWindow> {
     }
     let (hwnd, _) = ctx.best?;
     let rect = window_bounds_clamped(hwnd)?;
-    Some(GameWindow { hwnd, rect })
+    // Client kind for the detection profile: same inference the process
+    // watcher uses (exe name/path markers), defaulting to the WG client —
+    // the WG profile is also the unknown-client fallback downstream.
+    let kind = super::appdata::query_process_image_path(pid)
+        .as_deref()
+        .and_then(super::appdata::infer_install_from_exe)
+        .map(|install| install.kind)
+        .unwrap_or(wowsp_tauri_shared::GameInstallKind::Wargaming);
+    Some(GameWindow { hwnd, rect, kind })
 }
 
 /// Window bounds in physical screen px: DWM extended frame bounds (visible

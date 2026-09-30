@@ -265,18 +265,21 @@ pub async fn manual_locate_context() -> Result<ManualLocateContext, String> {
             return Ok(ManualLocateContext::default());
         };
         let team_sizes = super::arena_info::last_known_team_sizes();
-        let guides = match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes) {
-            Some((_, det)) => {
-                let seam = (det.rect.x as f64 + f64::from(det.rect.width) * det.team_split as f64)
-                    .round() as i32;
-                ManualLocateGuides {
-                    table_rect: Some(det.rect),
-                    row_lines: det.row_centers,
-                    seam_x: Some(seam),
-                }
-            },
-            None => ManualLocateGuides::default(),
-        };
+        let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
+        let guides =
+            match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes, &profile) {
+                Some((_, det)) => {
+                    let seam = (det.rect.x as f64
+                        + f64::from(det.rect.width) * det.team_split as f64)
+                        .round() as i32;
+                    ManualLocateGuides {
+                        table_rect: Some(det.rect),
+                        row_lines: det.row_centers,
+                        seam_x: Some(seam),
+                    }
+                },
+                None => ManualLocateGuides::default(),
+            };
         let (image_base64, image_width, image_height) = encode_picker_image(&rgba, w, h);
         Ok(ManualLocateContext {
             image_base64,

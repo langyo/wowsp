@@ -297,7 +297,7 @@ fn scan_registry_uninstall_keys() -> Vec<GameInstall> {
                         if !is_game_dir(&dir) {
                             continue;
                         }
-                        let kind = registry_folder_kind(&dir, kind.clone());
+                        let kind = registry_folder_kind(&dir, kind);
                         found.push(GameInstall {
                             realm: detect_realm(std::path::Path::new(&dir))
                                 .or_else(|| kind_fallback_realm(&kind)),
@@ -421,7 +421,7 @@ fn publisher_kind(publisher: &str) -> Option<GameInstallKind> {
     PUBLISHER_PATTERNS
         .iter()
         .find(|(pat, _)| lower.contains(pat))
-        .map(|(_, kind)| kind.clone())
+        .map(|(_, kind)| *kind)
 }
 
 /// Realm implied by the client kind alone, used when the install carries no

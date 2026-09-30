@@ -36,7 +36,7 @@
 //! on purpose, so scenario / co-op layouts anchor just as well as random
 //! battles.
 
-use wowsp_tauri_shared::Rect;
+use wowsp_tauri_shared::{GameInstallKind, Rect};
 
 /// Downscaled working width — caps the analysis cost on QHD/4K captures.
 const MAX_WORK_WIDTH: u32 = 800;
@@ -74,19 +74,82 @@ const ROW_BAND_MIN_H: usize = 2;
 /// Vertical range below the header scanned for the white-text profile used
 /// by the phase refinement.
 const ROW_SCAN_MAX_SPAN_FRAC: f32 = 0.45;
-/// Row pitch PRIOR = header-bar height × this factor. Measured on real
-/// captures: 52/55 ≈ 0.95 (1440p) and 48/54 ≈ 0.89 (1080p) — bars and rows
-/// share the same UI scale. This is no longer used verbatim for the grid:
-/// [`fit_row_grid`] reads the TRUE pitch off the frame's own text bands
-/// (the single ratio left a per-resolution error that accumulated down the
-/// table — the "chips drift off the bottom rows" report) and only falls back
-/// to this prior when too few bands vote.
-const PITCH_PER_HEADER: f32 = 0.92;
 /// Minimum rows of height the overlay window always gets, even when the
 /// current roster is smaller (12v12 is the largest standard battle; extra
 /// window height is invisible — transparent, click-through — but a short
 /// window would clip the chips of a bigger table).
 const MIN_WINDOW_ROWS: f32 = 12.0;
+
+/// Per-client tuning of the header-anchored detector: the measurements that
+/// DO differ between the WG-family clients and the Lesta (Мир кораблей)
+/// build. Everything else in the detector is a proportion of the capture and
+/// shared; the header colors (teal/brick) are shared too — verified against
+/// a real Lesta capture, rgb(90,153,150) / rgb(160,90,99) both classify
+/// under the WG predicates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DetectProfile {
+    /// Row pitch PRIOR = header-bar height × this factor. WG measured
+    /// 52/55 ≈ 0.95 (1440p) and 48/54 ≈ 0.89 (1080p); the Lesta client
+    /// scales its rows WITH the bar — 56/56 = 1.00 exactly (3072x1920
+    /// capture). This is no longer used verbatim for the grid:
+    /// [`fit_row_grid`] reads the TRUE pitch off the frame's own text bands
+    /// (the single ratio left a per-resolution error that accumulated down
+    /// the table — the "chips drift off the bottom rows" report) and only
+    /// falls back to this prior when too few bands vote — but the prior
+    /// still centers the plausibility clamp, so it must match the client:
+    /// the Lesta pitch (1.00 × bar) sits OUTSIDE the clamp window the WG
+    /// prior (0.92 × bar) would impose.
+    pub(crate) pitch_per_header: f32,
+    /// Name-strip column bounds inside each sub-table half, as fractions of
+    /// that half's width (see [`row_name_strip_rect`]). WG: ally names hug
+    /// the left edge, enemy names right-align near the outer edge (the #372
+    /// tab dumps). Lesta: BOTH name columns hug their panel's left edge —
+    /// measured (3072x1920 capture, split ≈ 0.50) at table fractions
+    /// 0.00–0.33 (ally) and 0.58–0.88 (enemy), which in half coordinates is
+    /// 0.00–0.66 and 0.15–0.78; WG's enemy window (0.62 of the half ≈ 0.81
+    /// of the table) would miss almost the entire Lesta enemy column.
+    pub(crate) ally_strip_x0_frac: f32,
+    pub(crate) ally_strip_x1_frac: f32,
+    pub(crate) enemy_strip_x0_frac: f32,
+    pub(crate) enemy_strip_x1_frac: f32,
+}
+
+impl DetectProfile {
+    /// The WG-family layout — Wargaming / Steam / the CN clients (and the
+    /// fallback for unknown clients and manual pins).
+    pub(crate) const WG: DetectProfile = DetectProfile {
+        pitch_per_header: 0.92,
+        ally_strip_x0_frac: 0.02,
+        ally_strip_x1_frac: 0.40,
+        enemy_strip_x0_frac: 0.62,
+        enemy_strip_x1_frac: 0.96,
+    };
+
+    /// The Lesta (Мир кораблей) layout. Measured on a real 3072x1920
+    /// capture: header bars ~26% of the frame width each (WG ~18–20%) with
+    /// a ~9.5% center seam (WG ~3%) — both still inside every gate's
+    /// tolerance — rows exactly one bar-height apart, and both name columns
+    /// left-aligned in their panels (strip fractions here are HALF-relative:
+    /// ally table 0.00–0.33 / enemy 0.58–0.88 with the seam at ≈0.50).
+    pub(crate) const LESTA: DetectProfile = DetectProfile {
+        pitch_per_header: 1.00,
+        ally_strip_x0_frac: 0.00,
+        ally_strip_x1_frac: 0.66,
+        enemy_strip_x0_frac: 0.15,
+        enemy_strip_x1_frac: 0.78,
+    };
+
+    /// The profile for the client behind a capture. Only the Lesta build is
+    /// known to differ; every other kind (and an unknown client) uses the
+    /// WG layout.
+    pub(crate) fn for_kind(kind: &GameInstallKind) -> DetectProfile {
+        if *kind == GameInstallKind::Lesta {
+            Self::LESTA
+        } else {
+            Self::WG
+        }
+    }
+}
 
 /// Detector output: everything needed to anchor the overlay chips, in
 /// physical pixels relative to the capture (game window) origin.
@@ -118,8 +181,9 @@ pub(crate) fn detect_roster(
     width: u32,
     height: u32,
     team_sizes: (usize, usize),
+    profile: &DetectProfile,
 ) -> Option<DetectedRoster> {
-    detect_roster_with_band(rgba, width, height, team_sizes).map(|(_, det)| det)
+    detect_roster_with_band(rgba, width, height, team_sizes, profile).map(|(_, det)| det)
 }
 
 /// [`detect_roster`] plus the located [`HeaderBand`] — the cacheable
@@ -131,6 +195,7 @@ pub(crate) fn detect_roster_with_band(
     width: u32,
     height: u32,
     team_sizes: (usize, usize),
+    profile: &DetectProfile,
 ) -> Option<(HeaderBand, DetectedRoster)> {
     let (expected_allies, expected_enemies) = team_sizes;
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
@@ -148,7 +213,7 @@ pub(crate) fn detect_roster_with_band(
     //    `find_header_band`; the band's bar height — the row pitch's
     //    source — is measured inside it too) ────────────────────────────────
     let band = find_header_band(&px, w, h)?;
-    let (prof_top, pitch, first) = grid_origin(band, h);
+    let (prof_top, pitch, first) = grid_origin(band, h, profile);
     let gx0 = band.green.0;
     let gx1 = band.green.1;
 
@@ -365,12 +430,13 @@ fn fit_row_grid(
 /// Pure geometry shared by the full detector and the cache rebuild: header
 /// band → the row-grid origin, in working px. `prof_top` is where the
 /// player rows start (clamped to the working frame, as the original inline
-/// computation was), `pitch` the row pitch (header-bar height ×
-/// [`PITCH_PER_HEADER`] — bars and rows share the UI scale), `first` the
-/// first row's center (half a pitch below the header).
-fn grid_origin(band: HeaderBand, h: usize) -> (usize, f32, f32) {
+/// computation was), `pitch` the row pitch prior (header-bar height × the
+/// profile's [`DetectProfile::pitch_per_header`] — bars and rows share the
+/// UI scale, but the exact ratio is per-client), `first` the first row's
+/// center (half a pitch below the header).
+fn grid_origin(band: HeaderBand, h: usize, profile: &DetectProfile) -> (usize, f32, f32) {
     let prof_top = (band.top + band.height).min(h);
-    let pitch = band.height as f32 * PITCH_PER_HEADER;
+    let pitch = band.height as f32 * profile.pitch_per_header;
     let first = prof_top as f32 + pitch * 0.5;
     (prof_top, pitch, first)
 }
@@ -388,7 +454,8 @@ fn finish_roster(
     centers: Vec<f32>,
     pitch_eff: f32,
 ) -> DetectedRoster {
-    let (prof_top, _, _) = grid_origin(band, h);
+    // Rows start right under the header — profile-independent geometry.
+    let prof_top = (band.top + band.height).min(h);
     let last = *centers.last().unwrap_or(&(prof_top as f32));
     // Window height floor: 12v12 is the largest standard roster, and the
     // overlay window must never be shorter than that even when the current
@@ -438,7 +505,7 @@ fn finish_roster(
 /// [`detect_roster`]. All coordinates are WORKING px (the downscaled
 /// analysis frame; `scale = width.div_ceil(MAX_WORK_WIDTH)` maps them back
 /// to physical), spans end-exclusive. Carries the measured BAR HEIGHT too:
-/// the row pitch is derived from it ([`PITCH_PER_HEADER`]), so band + height
+/// the row pitch is derived from it (the profile's pitch prior), so band + height
 /// is everything [`rebuild_roster_from_band`] needs to re-emit a grid
 /// without rescanning the frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -856,19 +923,21 @@ pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &He
 /// suppress). `measured_pitch` (physical px, per side, from
 /// [`measured_pitch_from_centers`] on the cached detection) keeps the pitch
 /// the previous frame actually measured instead of the constant prior;
-/// `None` (or a non-positive value) falls back to [`PITCH_PER_HEADER`]. The
-/// geometry matches [`detect_roster`]'s unrefined grid because both go
-/// through [`grid_origin`] / [`finish_roster`].
+/// `None` (or a non-positive value) falls back to the profile's
+/// [`DetectProfile::pitch_per_header`] prior. The geometry matches
+/// [`detect_roster`]'s unrefined grid because both go through
+/// [`grid_origin`] / [`finish_roster`].
 pub(crate) fn rebuild_roster_from_band(
     band: &HeaderBand,
     width: u32,
     height: u32,
     team_sizes: (usize, usize),
     measured_pitch: Option<(f32, f32)>,
+    profile: &DetectProfile,
 ) -> DetectedRoster {
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let h_work = (height / scale) as usize;
-    let (prof_top, pitch_const, _) = grid_origin(*band, h_work);
+    let (prof_top, pitch_const, _) = grid_origin(*band, h_work, profile);
     let pitch_of = |measured: Option<f32>| -> f32 {
         measured
             .filter(|p| *p > 0.0)
@@ -1568,29 +1637,22 @@ pub(crate) fn anchor_meaningfully_moved(
 // Row name-strip cropping (the sink solver's fingerprint input)
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Horizontal bounds of the player-name column INSIDE one sub-table half, as
-/// fractions of that half's width. The two halves are MIRRORED (measured on
-/// the #372 tab dumps, 3072x1920, countdown + combat layouts):
-///
-/// - ally half (left→right): icon column (~0–0.03), player nickname column
-///   (~0.04–0.37, long names ellipsized by the panel), ship silhouette
-///   (~0.42), ship name — the strip hugs the LEFT edge;
-/// - enemy half: ship name column (~0.09–0.27), ship silhouette, then the
-///   player nicknames RIGHT-ALIGNED near the outer edge (~0.64–0.93) — the
-///   strip hugs the RIGHT edge.
-///
-/// Both strips stop short of the silhouette/ship columns so the strip
-/// input stays mostly nickname.
-const ALLY_NAME_STRIP_X0_FRAC: f32 = 0.02;
-const ALLY_NAME_STRIP_X1_FRAC: f32 = 0.40;
-const ENEMY_NAME_STRIP_X0_FRAC: f32 = 0.62;
-const ENEMY_NAME_STRIP_X1_FRAC: f32 = 0.96;
-
 /// Vertical half-extent of one row's name strip as a fraction of the row
 /// pitch. One row's glyphs sit well inside ±0.5 pitch; staying under it
 /// keeps the neighboring rows' text out of the crop (mis-pitching by half a
 /// row is exactly the wrong-name failure this pipeline fights).
 const NAME_STRIP_HALF_PITCH_FRAC: f32 = 0.42;
+
+/// One detected table's strip-reading geometry, bundled to keep the strip
+/// readers' argument lists flat: the roster rect, its row centers and the
+/// ally/enemy split + block size the strip placement keys on.
+#[derive(Clone, Copy)]
+pub(crate) struct StripTable<'a> {
+    pub(crate) roster: &'a Rect,
+    pub(crate) row_centers: &'a [i32],
+    pub(crate) team_split: f32,
+    pub(crate) ally_rows: usize,
+}
 
 /// One row's name-strip crop rectangle, PHYSICAL px relative to the CAPTURE
 /// (game window) origin — the same space `detect_roster` emits. `row` indexes
@@ -1600,12 +1662,16 @@ const NAME_STRIP_HALF_PITCH_FRAC: f32 = 0.42;
 /// left half, enemy names in the right half of the team split. Returns `None`
 /// for out-of-range rows and degenerate geometry.
 pub(crate) fn row_name_strip_rect(
-    roster: &Rect,
-    row_centers: &[i32],
-    team_split: f32,
-    ally_rows: usize,
+    table: StripTable<'_>,
     row: usize,
+    profile: &DetectProfile,
 ) -> Option<Rect> {
+    let (roster, row_centers, team_split, ally_rows) = (
+        table.roster,
+        table.row_centers,
+        table.team_split,
+        table.ally_rows,
+    );
     if row >= row_centers.len() {
         return None;
     }
@@ -1626,15 +1692,15 @@ pub(crate) fn row_name_strip_rect(
         (
             roster.x as f32,
             roster.width as f32 * split,
-            ALLY_NAME_STRIP_X0_FRAC,
-            ALLY_NAME_STRIP_X1_FRAC,
+            profile.ally_strip_x0_frac,
+            profile.ally_strip_x1_frac,
         )
     } else {
         (
             roster.x as f32 + roster.width as f32 * split,
             roster.width as f32 * (1.0 - split),
-            ENEMY_NAME_STRIP_X0_FRAC,
-            ENEMY_NAME_STRIP_X1_FRAC,
+            profile.enemy_strip_x0_frac,
+            profile.enemy_strip_x1_frac,
         )
     };
     if half_w <= 0.0 {
@@ -1741,14 +1807,12 @@ pub(crate) fn crop_row_name_strips(
     rgba: &[u8],
     width: u32,
     height: u32,
-    roster: &Rect,
-    row_centers: &[i32],
-    team_split: f32,
-    ally_rows: usize,
+    table: StripTable<'_>,
+    profile: &DetectProfile,
 ) -> Vec<Option<(Vec<u8>, u32, u32)>> {
-    (0..row_centers.len())
+    (0..table.row_centers.len())
         .map(|row| {
-            row_name_strip_rect(roster, row_centers, team_split, ally_rows, row)
+            row_name_strip_rect(table, row, profile)
                 .and_then(|rect| crop_rgba(rgba, width, height, &rect))
         })
         .collect()
@@ -1766,26 +1830,16 @@ pub(crate) fn read_row_alive(
     rgba: &[u8],
     width: u32,
     height: u32,
-    roster: &Rect,
-    row_centers: &[i32],
-    team_split: f32,
-    ally_rows: usize,
+    table: StripTable<'_>,
+    profile: &DetectProfile,
 ) -> Vec<bool> {
-    crop_row_name_strips(
-        rgba,
-        width,
-        height,
-        roster,
-        row_centers,
-        team_split,
-        ally_rows,
-    )
-    .into_iter()
-    .map(|strip| match strip {
-        Some((buf, _, _)) => row_strip_alive(strip_max_luma(&buf)),
-        None => true,
-    })
-    .collect()
+    crop_row_name_strips(rgba, width, height, table, profile)
+        .into_iter()
+        .map(|strip| match strip {
+            Some((buf, _, _)) => row_strip_alive(strip_max_luma(&buf)),
+            None => true,
+        })
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2106,11 +2160,207 @@ mod tests {
         (img, rect, centers)
     }
 
+    /// Lesta (Мир кораблей) scoreboard synth: proportions measured on a real
+    /// 3072x1920 capture — bars ~26% of the width each with a ~9.5% center
+    /// seam (WG: ~18-20% bars, ~3% seam), rows exactly one bar-height apart
+    /// (pitch factor 1.00; WG 0.92), and BOTH name columns left-aligned in
+    /// their panels (WG's enemy names right-align).
+    fn synth_lesta_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
+        let mut img = vec![0u8; (w * h * 4) as usize];
+        let mut noise = Noise(0x9abC_def0);
+        for y in 0..h {
+            for x in 0..w {
+                let l = noise.next_f32(125.0, 175.0) as u8;
+                let i = ((y * w + x) * 4) as usize;
+                img[i] = l;
+                img[i + 1] = l;
+                img[i + 2] = l;
+                img[i + 3] = 255;
+            }
+        }
+        let tx = (w as f32 * 0.176) as u32;
+        let tw = (w as f32 * 0.625) as u32;
+        let ty = (h as f32 * 0.0875) as u32;
+        let bar_h = (h as f32 * 0.0292) as u32;
+        let pitch = bar_h; // measured 56/56 px @1920p — factor 1.00
+        let green_x1 = tx + (w as f32 * 0.264) as u32;
+        let red_x0 = tx + (w as f32 * 0.359) as u32;
+        let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = c.0;
+            img[i + 1] = c.1;
+            img[i + 2] = c.2;
+            img[i + 3] = 255;
+        };
+        // Header bars, white captions punched into the middle (both pass the
+        // shared WG predicates: measured rgb(90,153,150) / rgb(160,90,99)).
+        let lesta_teal = (90u8, 153, 150);
+        let lesta_brick = (160u8, 90, 99);
+        for y in ty..ty + bar_h {
+            for x in tx..green_x1 {
+                put(&mut img, x, y, lesta_teal);
+            }
+            for x in red_x0..tx + tw {
+                put(&mut img, x, y, lesta_brick);
+            }
+        }
+        // Captions near the panels' OUTER edges: the longest colored run of
+        // a caption row must stay the seam-hugging segment (the adjacency
+        // gate measures green END → red START); the real Lesta captions leave
+        // exactly that.
+        for y in ty + 2..ty + bar_h - 2 {
+            for x in tx + 4..tx + 4 + (green_x1 - tx) / 4 {
+                put(&mut img, x, y, (245, 245, 245));
+            }
+            for x in tx + tw - 4 - (tx + tw - red_x0) / 4..tx + tw - 4 {
+                put(&mut img, x, y, (245, 245, 245));
+            }
+        }
+        // Player rows: white name text LEFT-aligned in BOTH panels (measured
+        // ally ≈ 0.00-0.33, enemy ≈ 0.58-0.88 of the table rect).
+        let name_w = (tw as f32 * 0.20) as u32;
+        let mut centers = Vec::new();
+        for k in 0..rows {
+            let yc = ty as f32 + bar_h as f32 + pitch as f32 * (k as f32 + 0.5);
+            centers.push(yc);
+            let y0 = yc as u32;
+            for y in y0..(y0 + 8).min(ty + bar_h + pitch * (k as u32 + 1)) {
+                for x in tx + 4..tx + 4 + name_w {
+                    put(&mut img, x, y, (240, 240, 240));
+                }
+                for x in red_x0 + 4..red_x0 + 4 + name_w {
+                    put(&mut img, x, y, (240, 240, 240));
+                }
+            }
+        }
+        let rect = Rect {
+            x: tx as i32,
+            y: ty as i32,
+            width: tw as i32,
+            height: (ty + bar_h + pitch * rows as u32 - ty) as i32,
+        };
+        (img, rect, centers)
+    }
+
+    /// The Lesta layout is detected with the Lesta profile, and the grid
+    /// tracks the true row centers (pitch = exactly one bar height).
+    #[test]
+    fn detects_lesta_layout_with_the_lesta_profile() {
+        let (w, h) = (1600u32, 900u32);
+        let rows = 12;
+        let (img, _rect, truth) = synth_lesta_table(w, h, rows);
+        let det = detect_roster(&img, w, h, (rows, rows), &DetectProfile::LESTA)
+            .expect("Lesta table must be detected");
+        assert_eq!(det.row_centers.len(), rows * 2);
+        // Ally block (first `rows` centers) tracks the synth grid.
+        for (got, want) in det.row_centers.iter().take(rows).zip(&truth) {
+            assert!(
+                (got - *want as i32).abs() <= 3,
+                "row center {got} vs truth {want}"
+            );
+        }
+    }
+
+    /// The WG profile on the Lesta layout is the failure this split exists
+    /// for: the true pitch (1.00 x bar) sits outside the WG prior's
+    /// plausibility clamp (0.80..1.05 x 0.92 x bar), so the grid keeps the
+    /// WG prior and drifts off the bottom rows — the Lesta profile must be
+    /// measurably tighter.
+    #[test]
+    fn wg_profile_drifts_on_the_lesta_layout() {
+        let (w, h) = (1600u32, 900u32);
+        let rows = 12;
+        let (img, _rect, truth) = synth_lesta_table(w, h, rows);
+        let det = detect_roster(&img, w, h, (rows, rows), &DetectProfile::WG)
+            .expect("detection still anchors (bars pass the shared gates)");
+        let lesta_err = det
+            .row_centers
+            .iter()
+            .take(rows)
+            .zip(&truth)
+            .map(|(got, want)| (got - *want as i32).abs())
+            .max()
+            .unwrap();
+        assert!(
+            lesta_err >= 5,
+            "WG-prior grid should drift on the Lesta layout (max err {lesta_err}px)"
+        );
+    }
+
+    /// Lesta name strips must actually COVER the drawn name columns of the
+    /// synth (both panels, left-aligned) — pinned as per-row x-overlap, the
+    /// shape the sink solver's luma/fingerprint reads depend on. The WG
+    /// enemy window, right-aligned, starts right of the Lesta enemy column.
+    #[test]
+    fn lesta_name_strips_cover_the_left_aligned_columns() {
+        let (w, h) = (1600u32, 900u32);
+        let rows = 6;
+        let (img, _rect, _centers) = synth_lesta_table(w, h, rows);
+        let det = detect_roster(&img, w, h, (rows, rows), &DetectProfile::LESTA)
+            .expect("Lesta table detected");
+        // Where the synth drew the names (mirrors synth_lesta_table).
+        let tx = (w as f32 * 0.176) as i32;
+        let tw = (w as f32 * 0.625) as i32;
+        let red_x0 = tx + (w as f32 * 0.359) as i32;
+        let name_w = (tw as f32 * 0.20) as i32;
+        let ally_names = (tx + 4, tx + 4 + name_w);
+        let enemy_names = (red_x0 + 4, red_x0 + 4 + name_w);
+        // The DETECTED grid (both blocks: allies then enemies) is what the
+        // strip readers run against in production.
+        assert_eq!(det.row_centers.len(), rows * 2);
+        let table = StripTable {
+            roster: &det.rect,
+            row_centers: &det.row_centers,
+            team_split: det.team_split,
+            ally_rows: rows,
+        };
+        for row in 0..rows {
+            let ally = row_name_strip_rect(table, row, &DetectProfile::LESTA)
+                .unwrap_or_else(|| panic!("ally strip for row {row}"));
+            assert!(
+                ally.x <= ally_names.1 && ally.x + ally.width >= ally_names.0,
+                "ally strip {ally:?} misses the name column {ally_names:?}"
+            );
+            let enemy = row_name_strip_rect(table, rows + row, &DetectProfile::LESTA)
+                .unwrap_or_else(|| panic!("enemy strip for row {row}"));
+            assert!(
+                enemy.x <= enemy_names.1 && enemy.x + enemy.width >= enemy_names.0,
+                "enemy strip {enemy:?} misses the name column {enemy_names:?}"
+            );
+        }
+        // The WG enemy window misses the Lesta enemy column's left edge.
+        let wg_enemy = row_name_strip_rect(table, rows, &DetectProfile::WG).unwrap();
+        assert!(
+            wg_enemy.x > enemy_names.0,
+            "WG enemy strip should start right of the Lesta names ({wg_enemy:?} vs {enemy_names:?})"
+        );
+    }
+
+    /// Profile selection: only the Lesta kind gets the Lesta layout.
+    #[test]
+    fn detect_profile_selects_by_install_kind() {
+        use wowsp_tauri_shared::GameInstallKind;
+        assert_eq!(
+            DetectProfile::for_kind(&GameInstallKind::Lesta),
+            DetectProfile::LESTA
+        );
+        for kind in [
+            GameInstallKind::Wargaming,
+            GameInstallKind::Steam,
+            GameInstallKind::Cn360,
+            GameInstallKind::CnKongzhong,
+            GameInstallKind::Manual,
+        ] {
+            assert_eq!(DetectProfile::for_kind(&kind), DetectProfile::WG);
+        }
+    }
+
     #[test]
     fn detects_header_anchored_table_12v12() {
         let (w, h) = (1280u32, 720u32);
         let (img, rect, centers) = synth_header_table(w, h, 12);
-        let det = detect_roster(&img, w, h, (12, 12)).expect("table must be detected");
+        let det = detect_roster(&img, w, h, (12, 12), &DetectProfile::WG)
+            .expect("table must be detected");
         assert_eq!(det.row_centers.len(), 24, "12 allies + 12 enemies");
         assert!((det.rect.x - rect.x).abs() <= 12, "x: {rect:?} vs {det:?}");
         assert!((det.rect.y - rect.y).abs() <= 12, "y: {rect:?} vs {det:?}");
@@ -2136,7 +2386,8 @@ mod tests {
     fn detects_header_anchored_table_6v6() {
         let (w, h) = (1280u32, 720u32);
         let (img, _rect, centers) = synth_header_table(w, h, 6);
-        let det = detect_roster(&img, w, h, (6, 6)).expect("table must be detected");
+        let det =
+            detect_roster(&img, w, h, (6, 6), &DetectProfile::WG).expect("table must be detected");
         assert_eq!(det.row_centers.len(), 12, "6 allies + 6 enemies");
         for (k, &c) in det.row_centers.iter().take(6).enumerate() {
             assert!((c as f32 - centers[k]).abs() <= 8.0, "row {k}: {c}");
@@ -2163,7 +2414,8 @@ mod tests {
                 }
             }
         }
-        let det = detect_roster(&img, w, h, (5, 5)).expect("partial table must still anchor");
+        let det = detect_roster(&img, w, h, (5, 5), &DetectProfile::WG)
+            .expect("partial table must still anchor");
         // Two blocks: allies + enemies, each the arena hint's count.
         assert_eq!(det.row_centers.len(), 10, "5 + 5 centers");
         for (k, &c) in det.row_centers.iter().take(5).enumerate() {
@@ -2187,7 +2439,8 @@ mod tests {
         let (w, h) = img.dimensions();
         assert_eq!((w, h), (768, 480));
         let rgba = img.into_raw();
-        let det = detect_roster(&rgba, w, h, (5, 5)).expect("real table must be detected");
+        let det = detect_roster(&rgba, w, h, (5, 5), &DetectProfile::WG)
+            .expect("real table must be detected");
         assert_eq!(det.row_centers.len(), 10, "5 allies + 5 enemies");
         // Truth (physical px of the source capture ÷ 4): header top 444→111,
         // bars 796..2274 → 199..568.5, row centers ≈ 531/583/635/687/739 ÷ 4.
@@ -2221,7 +2474,7 @@ mod tests {
         // Bright scene, no table → no teal+brick pair anywhere.
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 0);
-        assert!(detect_roster(&img, w, h, (12, 12)).is_none());
+        assert!(detect_roster(&img, w, h, (12, 12), &DetectProfile::WG).is_none());
     }
 
     #[test]
@@ -2249,7 +2502,7 @@ mod tests {
                 img[i + 2] = TEAL.2;
             }
         }
-        assert!(detect_roster(&img, w, h, (5, 5)).is_none());
+        assert!(detect_roster(&img, w, h, (5, 5), &DetectProfile::WG).is_none());
     }
 
     /// The MOD scoreboard draws a teal bar in the top-left corner and a
@@ -2278,7 +2531,8 @@ mod tests {
                 put(&mut img, x, y, BRICK);
             }
         }
-        let det = detect_roster(&img, w, h, (5, 5)).expect("real table must win");
+        let det =
+            detect_roster(&img, w, h, (5, 5), &DetectProfile::WG).expect("real table must win");
         // The anchor must be on the TABLE (y ≈ 22% of the frame), not the
         // decoy (y ≈ 6%): check the first row center against the drawn rows.
         assert!(
@@ -2382,7 +2636,8 @@ mod tests {
     fn detects_single_team_pve_table() {
         let (w, h) = (1280u32, 720u32);
         let (img, rect, centers) = synth_single_team_table(w, h, 7, 0, true);
-        let det = detect_roster(&img, w, h, (7, 0)).expect("single-team table must be detected");
+        let det = detect_roster(&img, w, h, (7, 0), &DetectProfile::WG)
+            .expect("single-team table must be detected");
         assert_eq!(det.row_centers.len(), 7, "ally hint only — no enemy half");
         assert!((det.rect.x - rect.x).abs() <= 12, "x: {rect:?} vs {det:?}");
         assert!((det.rect.y - rect.y).abs() <= 12, "y: {rect:?} vs {det:?}");
@@ -2408,7 +2663,7 @@ mod tests {
     fn single_team_band_rejected_without_row_text() {
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_single_team_table(w, h, 7, 0, false);
-        assert!(detect_roster(&img, w, h, (7, 0)).is_none());
+        assert!(detect_roster(&img, w, h, (7, 0), &DetectProfile::WG).is_none());
         assert!(!header_bars_present(&img, w, h));
     }
 
@@ -2437,7 +2692,7 @@ mod tests {
                 put(&mut img, x, y, BRICK);
             }
         }
-        assert!(detect_roster(&img, w, h, (7, 0)).is_none());
+        assert!(detect_roster(&img, w, h, (7, 0), &DetectProfile::WG).is_none());
         assert!(!header_bars_present(&img, w, h));
     }
 
@@ -2450,7 +2705,8 @@ mod tests {
     fn verify_header_band_accepts_single_team_frame_and_rejects_shift() {
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_single_team_table(w, h, 6, 0, true);
-        let (band, _) = detect_roster_with_band(&img, w, h, (6, 0)).expect("detect");
+        let (band, _) =
+            detect_roster_with_band(&img, w, h, (6, 0), &DetectProfile::WG).expect("detect");
         assert!(band.red.is_none(), "single-team detection yields red: None");
         assert!(verify_header_band(&img, w, h, &band), "same frame verifies");
         // 16 physical px = 8 working px right: the teal bar now covers the
@@ -2475,9 +2731,10 @@ mod tests {
     fn rebuild_roster_from_band_single_team_builds_ally_grid_only() {
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_single_team_table(w, h, 7, 0, true);
-        let (band, _) = detect_roster_with_band(&img, w, h, (7, 0)).expect("detect");
+        let (band, _) =
+            detect_roster_with_band(&img, w, h, (7, 0), &DetectProfile::WG).expect("detect");
         assert!(band.red.is_none());
-        let rebuilt = rebuild_roster_from_band(&band, w, h, (7, 3), None);
+        let rebuilt = rebuild_roster_from_band(&band, w, h, (7, 3), None, &DetectProfile::WG);
         assert_eq!(rebuilt.row_centers.len(), 7, "enemy hint ignored");
         assert_eq!(rebuilt.team_split, 1.0);
     }
@@ -2499,7 +2756,8 @@ mod tests {
         assert_ne!(off_grid.rem_euclid(scale), 0, "fixture must be off-grid");
         let (img, rect, centers) = synth_single_team_table(w, h, 7, off_grid - tx, true);
         assert_eq!(rect.x, off_grid);
-        let det = detect_roster(&img, w, h, (7, 0)).expect("table must be detected");
+        let det =
+            detect_roster(&img, w, h, (7, 0), &DetectProfile::WG).expect("table must be detected");
         assert!(
             (det.rect.x - off_grid).abs() <= 1,
             "x: {off_grid} vs {:?}",
@@ -2528,7 +2786,8 @@ mod tests {
         // rows — rows are computed, not counted from pixels.
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 6);
-        let det = detect_roster(&img, w, h, (12, 12)).expect("header alone must anchor");
+        let det = detect_roster(&img, w, h, (12, 12), &DetectProfile::WG)
+            .expect("header alone must anchor");
         assert_eq!(det.row_centers.len(), 24, "12 + 12 centers");
         // The 6 drawn rows must coincide with grid rows 0..6.
         let pitch = h as f32 * 0.028 * 0.92;
@@ -2546,7 +2805,8 @@ mod tests {
         // mapping relies on centers being allies-block first, then enemies.
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 12);
-        let det = detect_roster(&img, w, h, (12, 6)).expect("asym table must anchor");
+        let det =
+            detect_roster(&img, w, h, (12, 6), &DetectProfile::WG).expect("asym table must anchor");
         assert_eq!(det.row_centers.len(), 18, "12 + 6 centers");
         // Both blocks start at the same first row (shared header).
         let pitch = h as f32 * 0.028 * 0.92;
@@ -2563,7 +2823,8 @@ mod tests {
         // on the header (real flows always pass the hint).
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 12);
-        let det = detect_roster(&img, w, h, (0, 0)).expect("detect without hint");
+        let det =
+            detect_roster(&img, w, h, (0, 0), &DetectProfile::WG).expect("detect without hint");
         assert_eq!(det.row_centers.len(), 10, "5 + 5 fallback rows: {det:?}");
     }
 
@@ -2719,8 +2980,28 @@ mod tests {
         };
         // Uniform 50 px pitch, allies rows 0-2, enemies rows 3-5.
         let rows: Vec<i32> = (0..6).map(|i| 340 + 50 * i).collect();
-        let ally = row_name_strip_rect(&roster, &rows, 0.5, 3, 0).expect("ally strip");
-        let enemy = row_name_strip_rect(&roster, &rows, 0.5, 3, 3).expect("enemy strip");
+        let ally = row_name_strip_rect(
+            StripTable {
+                roster: &roster,
+                row_centers: &rows,
+                team_split: 0.5,
+                ally_rows: 3,
+            },
+            0,
+            &DetectProfile::WG,
+        )
+        .expect("ally strip");
+        let enemy = row_name_strip_rect(
+            StripTable {
+                roster: &roster,
+                row_centers: &rows,
+                team_split: 0.5,
+                ally_rows: 3,
+            },
+            3,
+            &DetectProfile::WG,
+        )
+        .expect("enemy strip");
         // The halves are MIRRORED (measured on the #372 dumps): ally names
         // hug the left edge of the left half, enemy names the right edge of
         // the right half.
@@ -2739,12 +3020,46 @@ mod tests {
         assert!(ally.x + ally.width <= 1600);
         assert!(enemy.x >= 1600);
         // Out-of-range rows yield nothing.
-        assert!(row_name_strip_rect(&roster, &rows, 0.5, 3, 6).is_none());
-        assert!(row_name_strip_rect(&roster, &rows, 0.5, 3, 100).is_none());
+        assert!(
+            row_name_strip_rect(
+                StripTable {
+                    roster: &roster,
+                    row_centers: &rows,
+                    team_split: 0.5,
+                    ally_rows: 3
+                },
+                6,
+                &DetectProfile::WG
+            )
+            .is_none()
+        );
+        assert!(
+            row_name_strip_rect(
+                StripTable {
+                    roster: &roster,
+                    row_centers: &rows,
+                    team_split: 0.5,
+                    ally_rows: 3
+                },
+                100,
+                &DetectProfile::WG
+            )
+            .is_none()
+        );
         // ally_rows beyond the emitted rows is degenerate but well-defined:
         // every row stays an ALLY row (the frontend's slice() mapping), so
         // row 5 must still resolve to a LEFT-half strip.
-        let degenerate = row_name_strip_rect(&roster, &rows, 0.5, 100, 5).expect("ally row");
+        let degenerate = row_name_strip_rect(
+            StripTable {
+                roster: &roster,
+                row_centers: &rows,
+                team_split: 0.5,
+                ally_rows: 100,
+            },
+            5,
+            &DetectProfile::WG,
+        )
+        .expect("ally row");
         assert!(degenerate.x + degenerate.width <= 1600, "left half only");
     }
 
@@ -2845,13 +3160,44 @@ mod tests {
         };
         paint(
             &mut img,
-            &row_name_strip_rect(&roster, &rows, 0.5, 2, 0).unwrap(),
+            &row_name_strip_rect(
+                StripTable {
+                    roster: &roster,
+                    row_centers: &rows,
+                    team_split: 0.5,
+                    ally_rows: 2,
+                },
+                0,
+                &DetectProfile::WG,
+            )
+            .unwrap(),
         );
         paint(
             &mut img,
-            &row_name_strip_rect(&roster, &rows, 0.5, 2, 2).unwrap(),
+            &row_name_strip_rect(
+                StripTable {
+                    roster: &roster,
+                    row_centers: &rows,
+                    team_split: 0.5,
+                    ally_rows: 2,
+                },
+                2,
+                &DetectProfile::WG,
+            )
+            .unwrap(),
         );
-        let strips = crop_row_name_strips(&img, w, h, &roster, &rows, 0.5, 2);
+        let strips = crop_row_name_strips(
+            &img,
+            w,
+            h,
+            StripTable {
+                roster: &roster,
+                row_centers: &rows,
+                team_split: 0.5,
+                ally_rows: 2,
+            },
+            &DetectProfile::WG,
+        );
         assert_eq!(strips.len(), 4);
         let mean_luma = |c: &(Vec<u8>, u32, u32)| {
             let (buf, cw, ch) = c;
@@ -2998,7 +3344,8 @@ mod tests {
     fn verify_header_band_accepts_cached_frame_and_rejects_moved_table() {
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 6);
-        let (band, _) = detect_roster_with_band(&img, w, h, (6, 6)).expect("detect");
+        let (band, _) =
+            detect_roster_with_band(&img, w, h, (6, 6), &DetectProfile::WG).expect("detect");
         // The frame the band was detected on trivially verifies.
         assert!(verify_header_band(&img, w, h, &band), "same frame verifies");
         // HUD phase moved the table away: paint scene noise over the band's
@@ -3046,7 +3393,8 @@ mod tests {
             .to_rgba8();
         let (w, h) = img.dimensions();
         let rgba = img.into_raw();
-        let (band, _) = detect_roster_with_band(&rgba, w, h, (5, 5)).expect("real detect");
+        let (band, _) =
+            detect_roster_with_band(&rgba, w, h, (5, 5), &DetectProfile::WG).expect("real detect");
         assert!(verify_header_band(&rgba, w, h, &band), "fixture verifies");
         // And the identical band still verifies when the table content below
         // it changes (rows re-sorted by sinks) — only the BAND region counts.
@@ -3075,7 +3423,8 @@ mod tests {
     fn verify_header_band_rejects_horizontal_shift() {
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 6);
-        let (band, _) = detect_roster_with_band(&img, w, h, (6, 6)).expect("detect");
+        let (band, _) =
+            detect_roster_with_band(&img, w, h, (6, 6), &DetectProfile::WG).expect("detect");
         assert!(verify_header_band(&img, w, h, &band), "baseline verifies");
         // 16 physical px = 8 working px right: the brick bar now covers the
         // cached band's right counter columns.
@@ -3096,12 +3445,13 @@ mod tests {
     fn rebuild_roster_from_band_resizes_the_grid_without_a_rescan() {
         let (w, h) = (1280u32, 720u32);
         let (img, _, _) = synth_header_table(w, h, 12);
-        let (band, det) = detect_roster_with_band(&img, w, h, (12, 12)).expect("detect");
+        let (band, det) =
+            detect_roster_with_band(&img, w, h, (12, 12), &DetectProfile::WG).expect("detect");
         // Same team sizes: the rebuild (here without a measured-pitch hint)
         // matches the detector's grid and rect. Pitch compares within ±1 px:
         // both paths round working-px centers to physical, so a fractional
         // pitch (18.4 working × scale 2) alternates 18/19 deltas.
-        let rebuilt = rebuild_roster_from_band(&band, w, h, (12, 12), None);
+        let rebuilt = rebuild_roster_from_band(&band, w, h, (12, 12), None, &DetectProfile::WG);
         assert_eq!(rebuilt.row_centers.len(), 24);
         let pitch_det = det.row_centers[1] - det.row_centers[0];
         let pitch_re = rebuilt.row_centers[1] - rebuilt.row_centers[0];
@@ -3113,17 +3463,17 @@ mod tests {
         assert_eq!(rebuilt.rect.x, det.rect.x);
         // New battle shape on the same window (7v7 after 12v12): the row
         // COUNT follows the new hint, the pitch does not move.
-        let small = rebuild_roster_from_band(&band, w, h, (6, 6), None);
+        let small = rebuild_roster_from_band(&band, w, h, (6, 6), None, &DetectProfile::WG);
         assert_eq!(small.row_centers.len(), 12);
         assert!(
             (small.row_centers[1] - small.row_centers[0] - pitch_re).abs() <= 1,
             "rebuild pitch is uniform"
         );
         // Asym counts work per side.
-        let asym = rebuild_roster_from_band(&band, w, h, (12, 6), None);
+        let asym = rebuild_roster_from_band(&band, w, h, (12, 6), None, &DetectProfile::WG);
         assert_eq!(asym.row_centers.len(), 18);
         // No hint → the same conservative 5+5 grid detect_roster uses.
-        let unhinted = rebuild_roster_from_band(&band, w, h, (0, 0), None);
+        let unhinted = rebuild_roster_from_band(&band, w, h, (0, 0), None, &DetectProfile::WG);
         assert_eq!(unhinted.row_centers.len(), 10);
     }
 
@@ -3135,11 +3485,13 @@ mod tests {
     fn rebuild_roster_from_band_keeps_the_measured_pitch() {
         let (w, h) = (2560u32, 1440u32);
         let (img, _, _) = synth_table(w, h, 12, 0, 0.97);
-        let (band, det) = detect_roster_with_band(&img, w, h, (12, 12)).expect("detect");
+        let (band, det) =
+            detect_roster_with_band(&img, w, h, (12, 12), &DetectProfile::WG).expect("detect");
         let measured = measured_pitch_from_centers(&det.row_centers, 12);
         let span = |cs: &[i32]| (cs[cs.len() - 1] - cs[0]) as f32 / (cs.len() - 1) as f32;
-        let hinted = rebuild_roster_from_band(&band, w, h, (6, 6), Some(measured));
-        let prior = rebuild_roster_from_band(&band, w, h, (6, 6), None);
+        let hinted =
+            rebuild_roster_from_band(&band, w, h, (6, 6), Some(measured), &DetectProfile::WG);
+        let prior = rebuild_roster_from_band(&band, w, h, (6, 6), None, &DetectProfile::WG);
         let pitch_hinted = span(&hinted.row_centers[..6]);
         let pitch_prior = span(&prior.row_centers[..6]);
         let pitch_det = span(&det.row_centers[..12]);
@@ -3162,7 +3514,8 @@ mod tests {
         for factor in [0.86f32, 0.97f32] {
             let (w, h) = (1280u32, 720u32);
             let (img, _, centers) = synth_table(w, h, 12, 0, factor);
-            let det = detect_roster(&img, w, h, (12, 12)).expect("table must be detected");
+            let det = detect_roster(&img, w, h, (12, 12), &DetectProfile::WG)
+                .expect("table must be detected");
             assert_eq!(det.row_centers.len(), 24);
             for (k, &c) in det.row_centers.iter().take(12).enumerate() {
                 assert!(
@@ -3192,7 +3545,8 @@ mod tests {
         assert_ne!(off_grid.rem_euclid(scale), 0, "fixture must be off-grid");
         let (img, rect, centers) = synth_table(w, h, 6, off_grid - tx, 0.92);
         assert_eq!(rect.x, off_grid);
-        let det = detect_roster(&img, w, h, (6, 6)).expect("table must be detected");
+        let det =
+            detect_roster(&img, w, h, (6, 6), &DetectProfile::WG).expect("table must be detected");
         assert!(
             (det.rect.x - off_grid).abs() <= 1,
             "x: {off_grid} vs {:?}",
@@ -3219,7 +3573,7 @@ mod tests {
     fn native_refinement_degrades_to_the_input() {
         let (w, h) = (2560u32, 1440u32);
         let (img, _, _) = synth_header_table(w, h, 6);
-        let det = detect_roster(&img, w, h, (6, 6)).expect("detect");
+        let det = detect_roster(&img, w, h, (6, 6), &DetectProfile::WG).expect("detect");
         let mut empty = det.clone();
         empty.row_centers.clear();
         let out = refine_roster_native(&img, w, h, &empty, det.rect.y + 40);
@@ -3274,13 +3628,44 @@ mod tests {
         // and 2 left dark = sunk. The vec follows row_centers order.
         paint(
             &mut img,
-            &row_name_strip_rect(&roster, &rows, 0.5, 2, 0).unwrap(),
+            &row_name_strip_rect(
+                StripTable {
+                    roster: &roster,
+                    row_centers: &rows,
+                    team_split: 0.5,
+                    ally_rows: 2,
+                },
+                0,
+                &DetectProfile::WG,
+            )
+            .unwrap(),
         );
         paint(
             &mut img,
-            &row_name_strip_rect(&roster, &rows, 0.5, 2, 3).unwrap(),
+            &row_name_strip_rect(
+                StripTable {
+                    roster: &roster,
+                    row_centers: &rows,
+                    team_split: 0.5,
+                    ally_rows: 2,
+                },
+                3,
+                &DetectProfile::WG,
+            )
+            .unwrap(),
         );
-        let alive = read_row_alive(&img, w, h, &roster, &rows, 0.5, 2);
+        let alive = read_row_alive(
+            &img,
+            w,
+            h,
+            StripTable {
+                roster: &roster,
+                row_centers: &rows,
+                team_split: 0.5,
+                ally_rows: 2,
+            },
+            &DetectProfile::WG,
+        );
         assert_eq!(alive, vec![true, false, false, true]);
     }
 

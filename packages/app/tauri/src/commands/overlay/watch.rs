@@ -79,22 +79,31 @@ pub async fn stop_overlay_tab_watch() -> Result<(), String> {
 pub(super) struct PinnedAnchor {
     pub(super) battle: i64,
     pub(super) game_rect: Rect,
+    /// Client kind the pin was detected under — a pin acquired while the
+    /// kind resolution briefly failed (it defaults to Wargaming) must not
+    /// survive into a correctly-resolved session: the two profiles' row
+    /// grids differ, and only the FIRST row center moves little enough for
+    /// the move check to notice.
+    pub(super) kind: wowsp_tauri_shared::GameInstallKind,
     pub(super) anchor: OverlayAnchor,
 }
 
-/// Geometry-cache identity: the game window's SIZE and its style bits —
-/// deliberately NOT its origin. The cached band/grid is CAPTURE-relative
-/// (the capture always covers the clamped game rect), so a pure window
-/// MOVE leaves the pixel geometry identical and re-detecting would only
-/// burn a full scan (and flicker a re-acquisition). A size change — real
-/// resize, or the monitor-edge clamp biting differently — or a window-MODE
-/// switch (borderless ↔ windowed can keep the outer size while
-/// `GWL_STYLE`/`GWL_EXSTYLE` change) retires the cache.
+/// Geometry-cache identity: the game window's SIZE, its style bits and the
+/// client KIND — deliberately NOT its origin. The cached band/grid is
+/// CAPTURE-relative (the capture always covers the clamped game rect), so a
+/// pure window MOVE leaves the pixel geometry identical and re-detecting
+/// would only burn a full scan (and flicker a re-acquisition). A size change
+/// — real resize, or the monitor-edge clamp biting differently — a window-
+/// MODE switch (borderless ↔ windowed can keep the outer size while
+/// `GWL_STYLE`/`GWL_EXSTYLE` change) or a different client (the Lesta
+/// scoreboard pitches differently than WG's at the same window size — the
+/// cached grid would be systematically wrong) retires the cache.
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct GeometryKey {
     pub(super) game_size: (i32, i32),
     pub(super) style_bits: u64,
+    pub(super) kind: wowsp_tauri_shared::GameInstallKind,
 }
 
 /// One full detection's worth of pixel geometry, cached per game-window
@@ -425,6 +434,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
 
     let battle = super::arena_info::last_arena_stamp();
     let game_rect = game.map(|g| rect_from_win32(g.rect));
+    let game_kind = game.map(|g| g.kind);
     // MANUAL anchor first: while a user-drawn box is in force for THIS
     // battle on THIS game-window geometry, it replaces the entire
     // automatic machine for the tick — no capture, no detector, no pin.
@@ -488,8 +498,10 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 p.battle,
                 &p.game_rect,
                 p.anchor.table_detected,
+                p.kind,
                 battle,
                 game_rect,
+                game_kind,
             )
         });
         let held = held_status(
@@ -569,6 +581,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 fsm.pinned_anchor = Some(PinnedAnchor {
                     battle,
                     game_rect: rect_from_win32(g.rect),
+                    kind: g.kind,
                     anchor: anchor.clone(),
                 });
                 // A fresh pin restarts the sink lifecycle. The strip

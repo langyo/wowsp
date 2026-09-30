@@ -83,13 +83,63 @@ fn pin_validity_uses_the_jitter_tolerance() {
     let r = game_rect();
     let mut jitter = r;
     jitter.y -= 3;
-    assert!(pin_matches(7, &r, true, 7, Some(jitter)));
+    assert!(pin_matches(
+        7,
+        &r,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        Some(jitter),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
     let mut moved = r;
     moved.x -= 12;
-    assert!(!pin_matches(7, &r, true, 7, Some(moved)));
-    assert!(!pin_matches(7, &r, true, 8, Some(r)));
-    assert!(!pin_matches(7, &r, false, 7, Some(r)));
-    assert!(!pin_matches(7, &r, true, 7, None));
+    assert!(!pin_matches(
+        7,
+        &r,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        Some(moved),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
+    assert!(!pin_matches(
+        7,
+        &r,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        8,
+        Some(r),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
+    assert!(!pin_matches(
+        7,
+        &r,
+        false,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        Some(r),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
+    assert!(!pin_matches(
+        7,
+        &r,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        None,
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
+    // Client switch voids the pin even with everything else matching.
+    assert!(!pin_matches(
+        7,
+        &r,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        Some(r),
+        Some(wowsp_tauri_shared::GameInstallKind::Lesta)
+    ));
 }
 /// Hand-built anchor for the watcher tests: only the fields those
 /// decisions read are varied.
@@ -322,13 +372,29 @@ fn detected_pin_never_degrades_to_searching() {
     // With a pin valid for the current battle + rect the report is
     // ALWAYS the pin path (Detected) — a Tab re-press within one battle
     // must not flash Searching before the chips come back.
-    assert!(pin_matches(7, &game, true, 7, Some(game)));
+    assert!(pin_matches(
+        7,
+        &game,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        Some(game),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
     assert_eq!(held_status(true, false), HeldStatus::Pin);
     // Even a leftover Fallback label cannot outrank a live pin.
     assert_eq!(held_status(true, true), HeldStatus::Pin);
     // Battle changed → the pin is void, Searching (or the fallback
     // continuation) is the honest report.
-    assert!(!pin_matches(7, &game, true, 8, Some(game)));
+    assert!(!pin_matches(
+        7,
+        &game,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        8,
+        Some(game),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
     assert_eq!(held_status(false, false), HeldStatus::Searching);
     // Game rect changed (moved/resized window) → same.
     let moved = Rect {
@@ -337,10 +403,37 @@ fn detected_pin_never_degrades_to_searching() {
         width: 2560,
         height: 1440,
     };
-    assert!(!pin_matches(7, &game, true, 7, Some(moved)));
-    assert!(!pin_matches(7, &game, true, 7, None), "no rect to match");
+    assert!(!pin_matches(
+        7,
+        &game,
+        true,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        Some(moved),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
+    assert!(
+        !pin_matches(
+            7,
+            &game,
+            true,
+            wowsp_tauri_shared::GameInstallKind::Wargaming,
+            7,
+            None,
+            Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+        ),
+        "no rect to match"
+    );
     // A fallback anchor never counts as a pin (hint keeps acquiring).
-    assert!(!pin_matches(7, &game, false, 7, Some(game)));
+    assert!(!pin_matches(
+        7,
+        &game,
+        false,
+        wowsp_tauri_shared::GameInstallKind::Wargaming,
+        7,
+        Some(game),
+        Some(wowsp_tauri_shared::GameInstallKind::Wargaming)
+    ));
     // Fallback continuation: the hint is on screen, keep labeling it.
     assert_eq!(held_status(false, true), HeldStatus::Fallback);
 }
@@ -481,6 +574,7 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
     fsm.pinned_anchor = Some(PinnedAnchor {
         battle: 42,
         game_rect: game,
+        kind: wowsp_tauri_shared::GameInstallKind::Wargaming,
         anchor: anchor_with(10, true, None),
     });
     let r4 = apply_watch_command(&mut fsm, WatchCommand::ManualAnchorCleared);
@@ -492,6 +586,7 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
         key: GeometryKey {
             game_size: (game.width, game.height),
             style_bits: 1,
+            kind: wowsp_tauri_shared::GameInstallKind::Wargaming,
         },
         band: overlay_detect::HeaderBand {
             top: 10,

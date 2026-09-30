@@ -35,8 +35,8 @@
 //!   owner and the only `overlay-status` emitter, so command ordering is
 //!   deterministic and the last-status dedup mirror covers every emission.
 //! - GEOMETRY CACHE: the table's pixel geometry is fully detected once per
-//!   game-window mode (rect + style bits, [`GeometryKey`]) and cached;
-//!   every later capture only re-verifies the cached header band
+//!   game-window mode (size + style bits + client kind, [`GeometryKey`]) and
+//!   cached; every later capture only re-verifies the cached header band
 //!   ([`overlay_detect::verify_header_band`], band-area cost) and reuses
 //!   the cached grid — a new battle shape on the same window is rebuilt
 //!   from the band without a rescan. Three consecutive verify misses (a
