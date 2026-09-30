@@ -1605,6 +1605,40 @@ export const api = {
    *  `<data>/feedback-shot-<ts>.png`, reveals it in the file manager,
    *  returns the path. Windows-only (errors elsewhere). */
   feedbackCaptureScreen: () => transport.invoke<string>(RPC.feedback_capture_screen),
+  /** In-app form: native screenshot with an in-form base64 preview. */
+  feedbackShot: () =>
+    transport.invoke<{ path: string; preview: string }>(RPC.feedback_shot),
+  /** In-app form: submit multipart straight to the worker (desktop channel). */
+  feedbackSubmit: (args: {
+    description: string;
+    contact: string;
+    server: string;
+    gameId: string;
+    version: string;
+    screenshotPath?: string | null;
+    attachLogs: boolean;
+  }) =>
+    transport.invoke<{ ok: boolean; record_url: string }>(RPC.feedback_submit, {
+      args: {
+        description: args.description,
+        contact: args.contact,
+        server: args.server,
+        gameId: args.gameId,
+        version: args.version,
+        screenshotPath: args.screenshotPath ?? "",
+        attachLogs: args.attachLogs,
+      },
+    }),
+  /** In-app form: QQ group verification code (proxied — webview CORS). */
+  feedbackQqCode: (contact: string) =>
+    transport.invoke<{ ok: boolean; code: string }>(RPC.feedback_qq_code, {
+      contact,
+    }),
+  /** In-app form: QQ group verification status (proxied). */
+  feedbackQqStatus: (contact: string) =>
+    transport.invoke<{ ok: boolean; verified: boolean }>(RPC.feedback_qq_status, {
+      contact,
+    }),
   /** Native save dialog for tactical-board exports (screenshots/video).
    *  Null = the user cancelled the dialog. */
   pickExportPath: (defaultName: string, filterName: string, filterExts: string[]) =>

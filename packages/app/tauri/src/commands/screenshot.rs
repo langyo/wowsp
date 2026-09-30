@@ -196,10 +196,16 @@ pub(crate) fn capture_window_png(
     Err("screenshot capture is Windows-only".into())
 }
 
+/// In-app form capture: the plain full-screen PNG WITHOUT the reveal-in-
+/// Explorer side effect — the embedded feedback form shows its own
+/// preview thumbnail and submits the file itself.
+pub(crate) fn capture_screen_for_feedback(out_path: &std::path::Path) -> Result<(), String> {
+    capture_screen_png(out_path)
+}
+
 /// Capture the ENTIRE virtual screen (all monitors) and save as PNG to
 /// `<data>/feedback-shot-<ts>.png`, then reveal the file in the system
-/// file manager. The feedback flow's 全屏截图 quick action — the user
-/// attaches the revealed file to the web form (or shares it manually).
+/// file manager (kept for the browser-form fallback flow).
 #[tauri::command]
 pub fn feedback_capture_screen(app: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_opener::OpenerExt;

@@ -171,7 +171,9 @@ and `/erp` past the static-asset layer):
   (plus `server`/`game_id` when an account is bound; the history lookup
   link adds `focus=history`); the form itself mints a localStorage
   anonymous id and remembers the contact, server and game-ID fields.
-- **`POST /api/feedback/submit`** (multipart) — normalize → Turnstile
+- **`POST /api/feedback/submit`** (multipart, multi-file) — normalize →
+  QQ 进群门控 → Turnstile siteverify（`channel=desktop` 免验——控件域名
+  锁定网页端，Tauri WebView 内无法渲染；KV 限流照常） → KV rate limits
   siteverify → KV rate limits (5/h per IP, 10/day per anonymous id, 300/day
   global) → a record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on
   first use; see below) → optional log-bundle upload via

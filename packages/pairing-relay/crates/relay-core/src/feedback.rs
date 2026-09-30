@@ -122,8 +122,9 @@ pub struct Submission {
     pub anon_id: String,
     pub server: String,
     pub game_id: String,
-    pub file_name: Option<String>,
-    pub file_bytes: Option<Vec<u8>>,
+    /// Every `file` part of the submission, in order (the desktop form
+    /// sends a screenshot AND a log bundle in one request).
+    pub files: Vec<(Option<String>, Vec<u8>)>,
 }
 
 /// Strip control characters and clamp length — every free-text field runs
@@ -172,20 +173,22 @@ pub fn normalize(sub: &mut Submission) -> Result<(), &'static str> {
     if sub.anon_id.is_empty() {
         sub.anon_id = "anon".into();
     }
-    if let Some(name) = sub.file_name.as_mut() {
+    for (name, _) in sub.files.iter_mut() {
         // The name rides an outbound Content-Disposition header line —
         // strip everything that could break the quoting/framing, cap the
         // length (stem-only, extension preserved)…
-        *name = name
-            .chars()
-            .filter(|c| *c != '"' && *c != '\r' && *c != '\n' && *c != '\\')
-            .collect();
-        *name = cap_name(name, FILENAME_MAX);
+        *name = name.take().map(|n| {
+            let cleaned: String = n
+                .chars()
+                .filter(|c| *c != '"' && *c != '\r' && *c != '\n' && *c != '\\')
+                .collect();
+            cap_name(&cleaned, FILENAME_MAX)
+        });
     }
     // …then the kind check (extension) and the per-kind size cap run on
-    // the FINAL name.
-    if let Some(bytes) = sub.file_bytes.as_ref() {
-        let Some(name) = sub.file_name.as_deref().filter(|n| !n.is_empty()) else {
+    // the FINAL name — for every attachment.
+    for (name, bytes) in sub.files.iter() {
+        let Some(name) = name.as_deref().filter(|n| !n.is_empty()) else {
             return Err("bad_file_type");
         };
         match attach_kind(name) {
@@ -247,8 +250,11 @@ pub fn record_fields(sub: &Submission, now_ms: i64) -> Map<String, Value> {
 }
 
 /// `PUT records/{id}` body attaching an uploaded file to the 日志包 field.
-pub fn attachment_update_body(file_token: &str) -> Value {
-    json!({ "fields": { F_LOG: [ { "file_token": file_token } ] } })
+pub fn attachment_update_body(file_tokens: &[String]) -> Value {
+    json!({ "fields": { F_LOG: file_tokens
+        .iter()
+        .map(|t| json!({ "file_token": t }))
+        .collect::<Vec<_>>() } })
 }
 
 /// The 反馈 table schema the bootstrap pass creates (Bitable field types:
@@ -1946,8 +1952,7 @@ mod tests {
             anon_id: "anon-1".into(),
             server: " ASIA ".into(),
             game_id: " 123456 ".into(),
-            file_name: Some("wowsp.zip".into()),
-            file_bytes: Some(b"PK".to_vec()),
+            files: vec![(Some("wowsp.zip".into()), b"PK".to_vec())],
         }
     }
 
@@ -1969,17 +1974,16 @@ mod tests {
         assert_eq!(normalize(&mut s), Err("bad_channel"));
 
         let mut s = sample();
-        s.file_bytes = Some(vec![0u8; FILE_MAX + 1]);
+        s.files = vec![(Some("logs.zip".into()), vec![0u8; FILE_MAX + 1])];
         assert_eq!(normalize(&mut s), Err("file_too_large"));
 
         let mut s = sample();
-        s.file_name = Some("payload.exe".into());
+        s.files = vec![(Some("payload.exe".into()), vec![1])];
         assert_eq!(normalize(&mut s), Err("bad_file_type"));
 
         // No file at all is fine.
         let mut s = sample();
-        s.file_name = None;
-        s.file_bytes = None;
+        s.files = Vec::new();
         assert!(normalize(&mut s).is_ok());
     }
 
@@ -1989,22 +1993,21 @@ mod tests {
         // CR/LF must go, absurd length must clamp WITHOUT losing the
         // extension (the ext verdict must apply to the FINAL name).
         let mut s = sample();
-        s.file_name = Some("日志\"evil\r\n.zip".into());
+        s.files = vec![(Some("日志\"evil\r\n.zip".into()), b"PK".to_vec())];
         assert!(normalize(&mut s).is_ok());
-        assert_eq!(s.file_name.as_deref(), Some("日志evil.zip"));
+        assert_eq!(s.files[0].0.as_deref(), Some("日志evil.zip"));
 
         let mut s = sample();
-        s.file_name = Some(format!("{}.zip", "x".repeat(FILENAME_MAX + 50)));
+        s.files = vec![(Some(format!("{}.zip", "x".repeat(FILENAME_MAX + 50))), b"PK".to_vec())];
         assert!(normalize(&mut s).is_ok());
-        let capped = s.file_name.as_deref().unwrap();
+        let capped = s.files[0].0.as_deref().unwrap();
         assert!(capped.chars().count() <= FILENAME_MAX, "{capped}");
         assert!(capped.ends_with(".zip"), "extension survives the cap");
 
         // An extension that only exists before sanitization/truncation
         // cannot sneak through: the verdict uses the final name.
         let mut s = sample();
-        s.file_name = Some("no-ext".into());
-        s.file_bytes = Some(b"x".to_vec());
+        s.files = vec![(Some("no-ext".into()), b"x".to_vec())];
         assert_eq!(normalize(&mut s), Err("bad_file_type"));
     }
 
@@ -2027,8 +2030,15 @@ mod tests {
     #[test]
     fn attachment_and_schema_shapes() {
         assert_eq!(
-            attachment_update_body("ftok").pointer("/fields/日志包/0/file_token"),
+            attachment_update_body(&["ftok".into()])
+                .pointer("/fields/日志包/0/file_token"),
             Some(&json!("ftok"))
+        );
+        // 多附件（桌面端 截图+日志包）一次挂到数组字段上。
+        let two = attachment_update_body(&["t1".into(), "t2".into()]);
+        assert_eq!(
+            two.pointer("/fields/日志包/1/file_token"),
+            Some(&json!("t2"))
         );
         let schema = table_schema();
         let names: Vec<&str> = schema["table"]["fields"]
@@ -2115,19 +2125,17 @@ mod tests {
     fn media_sizes_validate_per_kind() {
         // A 5 MB png is fine (image cap 10 MB) but a 5 MB zip is not.
         let mut s = sample();
-        s.file_name = Some("shot.png".into());
-        s.file_bytes = Some(vec![0u8; 5 * 1024 * 1024]);
+        s.files = vec![(Some("shot.png".into()), vec![0u8; 5 * 1024 * 1024])];
         assert!(normalize(&mut s).is_ok());
 
         let mut s = sample();
-        s.file_name = Some("logs.zip".into());
-        s.file_bytes = Some(vec![0u8; 5 * 1024 * 1024]);
+        s.files = vec![(Some("logs.zip".into()), vec![0u8; 5 * 1024 * 1024])];
+
         assert_eq!(normalize(&mut s), Err("file_too_large"));
 
         // A 12 MB webm recording passes (video cap 18 MB).
         let mut s = sample();
-        s.file_name = Some("rec.webm".into());
-        s.file_bytes = Some(vec![0u8; 12 * 1024 * 1024]);
+        s.files = vec![(Some("rec.webm".into()), vec![0u8; 12 * 1024 * 1024])];
         assert!(normalize(&mut s).is_ok());
     }
 

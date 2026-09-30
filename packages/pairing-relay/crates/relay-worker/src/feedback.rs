@@ -127,10 +127,7 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
             "anon" => sub.anon_id = text(),
             "server" => sub.server = text(),
             "game_id" => sub.game_id = text(),
-            "file" => {
-                sub.file_name = part.filename;
-                sub.file_bytes = Some(part.bytes);
-            },
+            "file" => sub.files.push((part.filename, part.bytes)),
             "cf-turnstile-response" => turnstile_response = text(),
             "_bypass" => bypass = text(),
             _ => {},
@@ -157,7 +154,12 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     let bypassed = bypass_secret
         .as_deref()
         .is_some_and(|b| !b.is_empty() && ct_eq(&bypass, b));
-    if !bypassed {
+    // Desktop submissions come from the app itself: the Turnstile widget
+    // is domain-locked to the web form and cannot render inside the
+    // Tauri webview. The IP/anon/contact/global KV limits below still
+    // apply, and QQ contacts still require the group verification.
+    let desktop = sub.channel == "desktop";
+    if !bypassed && !desktop {
         let Some(secret) = env.secret("TURNSTILE_SECRET").ok().map(|s| s.to_string()) else {
             return err(503, "maintenance");
         };
@@ -218,41 +220,48 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         .ok_or("record id missing")?
         .to_string();
 
-    if let Some(bytes) = sub.file_bytes {
-        let name = sub.file_name.clone().unwrap_or_else(|| "logs.zip".into());
-        let (mp_boundary, mp_body) = multipart::build_seeded(
-            now_ms() as u64,
-            &[
-                ("file_name".into(), None, name.clone().into_bytes()),
-                ("parent_type".into(), None, b"bitable_file".to_vec()),
-                (
-                    "parent_node".into(),
-                    None,
-                    ids.app_token.clone().into_bytes(),
-                ),
-                ("size".into(), None, bytes.len().to_string().into_bytes()),
-                ("file".into(), Some(name), bytes),
-            ],
-        );
-        let headers = Headers::new();
-        headers.set(
-            "Content-Type",
-            &format!("multipart/form-data; boundary={mp_boundary}"),
-        )?;
-        headers.set("Authorization", &format!("Bearer {token}"))?;
-        let mut resp = http_call(
-            Method::Post,
-            &format!("{FEISHU}/drive/v1/medias/upload_all"),
-            headers,
-            Some(mp_body),
-        )
-        .await
-        .map_err(|_| "upload unreachable")?;
-        let v: Value = resp.json().await.unwrap_or(Value::Null);
-        let file_token = v
-            .pointer("/data/file_token")
-            .and_then(Value::as_str)
-            .ok_or("file token missing")?;
+    // 每个附件上传一次，收齐 file_token 后一次 PUT 挂到记录上（F_LOG
+    // 是数组字段，桌面端一次可能带 截图 + 日志包 两件）。
+    if !sub.files.is_empty() {
+        let mut tokens: Vec<String> = Vec::new();
+        for (name, bytes) in &sub.files {
+            let name = name.clone().unwrap_or_else(|| "logs.zip".into());
+            let (mp_boundary, mp_body) = multipart::build_seeded(
+                now_ms() as u64 + tokens.len() as u64,
+                &[
+                    ("file_name".into(), None, name.clone().into_bytes()),
+                    ("parent_type".into(), None, b"bitable_file".to_vec()),
+                    (
+                        "parent_node".into(),
+                        None,
+                        ids.app_token.clone().into_bytes(),
+                    ),
+                    ("size".into(), None, bytes.len().to_string().into_bytes()),
+                    ("file".into(), Some(name), bytes.clone()),
+                ],
+            );
+            let headers = Headers::new();
+            headers.set(
+                "Content-Type",
+                &format!("multipart/form-data; boundary={mp_boundary}"),
+            )?;
+            headers.set("Authorization", &format!("Bearer {token}"))?;
+            let mut resp = http_call(
+                Method::Post,
+                &format!("{FEISHU}/drive/v1/medias/upload_all"),
+                headers,
+                Some(mp_body),
+            )
+            .await
+            .map_err(|_| "upload unreachable")?;
+            let v: Value = resp.json().await.unwrap_or(Value::Null);
+            let file_token = v
+                .pointer("/data/file_token")
+                .and_then(Value::as_str)
+                .ok_or("file token missing")?
+                .to_string();
+            tokens.push(file_token);
+        }
         feishu_json(
             Method::Put,
             &format!(
@@ -260,7 +269,7 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
                 ids.app_token, ids.table_id
             ),
             &token,
-            attachment_update_body(file_token),
+            attachment_update_body(&tokens),
         )
         .await?;
     }
