@@ -159,12 +159,15 @@ html.overlay-hidden body {
    Same dark-glass chip skin and side anchoring as the row chips, stacked
    as lines so the card stays inside the window's reserved side pad; the
    fit pass treats it as a chip of its side (no seals inside → straight to
-   the edge clamp). */
+   the edge clamp). Unlike the row chips it is TOP-anchored (no centering
+   transform): its top edge parks a full row pitch under the last row's
+   center, and extra lines must grow downward, never straddle that anchor. */
 .overlay-chip--intel {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.1em;
   padding: 0.16em 0.6em;
+  transform: none;
 }
 
 .overlay-intel-line {

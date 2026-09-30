@@ -450,7 +450,9 @@ function candidatesChip(members: string[]): string {
  *  is gone (null) — the side label rides whichever line renders first.
  *  Styled and anchored as a chip of the same side, so chipFit's clamp pass
  *  covers this card exactly like the row chips; `topCss` is the desired
- *  CSS-px center line. */
+ *  CSS-px TOP edge — `.overlay-chip--intel` opts out of the base chip's
+ *  centering transform, so a tall card grows downward from it instead of
+ *  straddling the anchor. */
 function teamSummaryCard(
   side: "ally" | "enemy",
   vehicles: Vehicle[],
@@ -774,7 +776,10 @@ function render() {
   // (mean winrate / PR / avg damage), one card directly BELOW its own
   // column (ally card under the allies, enemy card under the enemies) in
   // the empty band the game leaves under the table, aligned to the
-  // column's outer edge and growing inward. Match-start capability
+  // column's outer edge and growing inward. The card is TOP-anchored a
+  // full row pitch under the last row's center: that clears the table's
+  // bottom frame whatever the card's line count (center-anchoring let a
+  // three-line card ride back up onto the frame). Match-start capability
   // BY DESIGN: the intel numbers do not decrement as ships sink — the
   // mid-battle row→ship attribution is inferred, and silently
   // miscounting radars would be worse than a static "what each team
@@ -785,14 +790,16 @@ function render() {
     const intelFontSize = Math.min(13, Math.max(9, pitch * 0.4));
     // The window's top/bottom edges can crowd the table in odd aspect
     // ratios — keep each card fully inside, measured post-append (the
-    // horizontal fit pass below covers both cards already).
+    // horizontal fit pass below covers both cards already). The card is
+    // top-anchored (no centering transform), so style.top IS the box's
+    // top edge.
     const clampVertically = (el: HTMLDivElement): void => {
       const box = el.getBoundingClientRect();
-      if (box.top < 0) el.style.top = `${box.height / 2 + 2}px`;
+      if (box.top < 0) el.style.top = "2px";
       if (box.bottom > document.documentElement.clientHeight) {
         el.style.top = `${Math.max(
-          4,
-          document.documentElement.clientHeight - box.height / 2 - 2,
+          2,
+          document.documentElement.clientHeight - box.height - 2,
         )}px`;
       }
     };
@@ -800,6 +807,8 @@ function render() {
       const el = teamSummaryCard(
         "ally",
         allies,
+        // Top edge one full row pitch below the last row's center —
+        // clears the table's bottom frame at any line count.
         allyBlock[allyBlock.length - 1] / dpr + pitch,
         intelFontSize,
       );
@@ -813,6 +822,7 @@ function render() {
       const el = teamSummaryCard(
         "enemy",
         enemies,
+        // Same top-edge anchor as the ally card.
         enemyBlock[enemyBlock.length - 1] / dpr + pitch,
         intelFontSize,
       );
