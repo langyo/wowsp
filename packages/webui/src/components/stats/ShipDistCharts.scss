@@ -18,17 +18,23 @@
    constraint is 0.32W + 240 + 240 + 24 ≤ W (0.68W ≥ 504 → W ≥ 741.2);
    above 800px all three bases are free and the 92% rule 0.92W + 24 ≤ W
    holds automatically (any W ≥ 300); below 625px the sum of floors
-   200 + 240 + 240 + 24 = 704 never fits. One row therefore needs a
-   container of ≈741.2px: the @container rule collapses straight to a
-   single column (three stacked rows) at ≤741px — skipping the old 2+1
-   band entirely — and the natural rules keep one row from 742px up.
+   200 + 240 + 240 + 24 = 704 never fits. One row therefore holds from
+   ≈741.2px up: the @container rule collapses straight to a single
+   column (three stacked rows) at ≤741px — skipping the old 2+1 band —
+   and the natural rules already fit one row from ≈741.2px, so the only
+   residual middle state is the 741–741.18px sub-pixel sliver (reachable
+   only via fractional zoom) where the legacy 2+1 packing can persist.
 
-   The query only matches when an ancestor is a size container, so BOTH
-   hosts — `.lookup-view__dist` (LookupView.scss) and
-   `.replay-view__postbattle-dist` (PostBattlePanel.scss) — must keep
-   `container-type: inline-size`. Content under a host that has no
-   container ancestor never matches the query and falls back to the
-   legacy wrapped-row packing below.
+   The query only matches an ancestor that is a size container NAMED
+   `ship-dist-host`, so BOTH hosts — `.lookup-view__dist`
+   (LookupView.scss) and `.replay-view__postbattle-dist`
+   (PostBattlePanel.scss) — must keep the named
+   `container: ship-dist-host / inline-size` declaration. The name is
+   the contract: a future nesting refactor that re-parents the charts
+   under an unnamed (or differently named) container can no longer
+   silently re-bind the breakpoint to the wrong box. Content under a
+   host without that named container ancestor never matches the query
+   and falls back to the legacy wrapped-row packing below.
 
    Column mode needs no overrides: `align-items: stretch` (the default
    here) makes each block fill the full row, and the fixed heights and
@@ -42,7 +48,7 @@
 
 /* Below the one-row threshold, skip the greedy 2+1 packing entirely:
    collapse straight to a single column (three stacked rows). */
-@container (max-width: 741px) {
+@container ship-dist-host (max-width: 741px) {
   .ship-dist-charts { flex-direction: column; }
 }
 

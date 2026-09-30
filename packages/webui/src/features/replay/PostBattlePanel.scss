@@ -506,9 +506,9 @@
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid rgb(var(--color-text) / 0.1);
-  /* Inline-size containment drives the chart-row collapse breakpoint
-     (see ShipDistCharts.scss). */
-  container-type: inline-size;
+  /* Named inline-size container `ship-dist-host` — the chart-row
+     collapse query in ShipDistCharts.scss binds to this name. */
+  container: ship-dist-host / inline-size;
 }
 .replay-view__postbattle-dist-title {
   color: rgb(var(--color-text) / 0.55);
