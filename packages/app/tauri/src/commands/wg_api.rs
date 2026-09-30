@@ -78,6 +78,17 @@ pub(crate) fn roster_cache_get(realm: &str, name: &str) -> Option<Option<PlayerS
     cache.get(&(realm.to_string(), name.to_string())).cloned()
 }
 
+/// Wipe the process-lifetime roster cache — the manual "refresh stats"
+/// button clears this before re-queueing the roster so the batch is a true
+/// from-scratch request instead of instant session-cache answers.
+#[tauri::command]
+pub fn clear_roster_stats_cache() -> Result<(), String> {
+    if let Ok(mut cache) = ROSTER_STATS_CACHE.lock() {
+        cache.clear();
+    }
+    Ok(())
+}
+
 /// Store one roster name's PRE-algo answer. See [`roster_cache_get`].
 pub(crate) fn roster_cache_insert(realm: &str, name: &str, stats: Option<PlayerStats>) {
     if let Ok(mut cache) = ROSTER_STATS_CACHE.lock() {
@@ -348,6 +359,10 @@ pub async fn lookup_players_stats_batch(
             .await
     };
     if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
+        // The frontend retries with backoff and then re-probes slowly, but
+        // a field report needs the failure HERE: until this line existed a
+        // dead-battle report had zero server-side evidence.
+        tracing::warn!(error = %e, realm = %realm, names = names.len(), "roster stats batch failed");
         return Err(e.clone());
     }
     let candidates: Vec<Vec<AccountListEntry>> =

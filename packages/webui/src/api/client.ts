@@ -1520,6 +1520,10 @@ export const api = {
       realm,
       prAlgo: prAlgo ?? null,
     }),
+  /** Wipe the process-lifetime roster stats cache (the live panel's
+   *  manual "refresh stats" button): the next batch is a true
+   *  from-scratch request. */
+  clearRosterStatsCache: () => transport.invoke<null>(RPC.clear_roster_stats_cache),
   /** Composition-seal verdicts (Tab overlay seals): one entry per input
    *  name, in order; null = not found / hidden profile / insufficient data
    *  / that player's lookup failed (the backend degrades per-name failures

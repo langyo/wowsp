@@ -179,6 +179,8 @@
     "viewProfile": "View this player's stats",
     "detectedRows": "Located · {n} rows",
     "searching": "Locating",
+    "refreshStats": "Refresh stats",
+    "refreshStatsHint": "Clears the cache and re-requests every roster stat from scratch; loaded data stays on screen until the request succeeds",
     "manualLocate": "Manual locate",
     "manualClear": "Clear locate",
     "manualRows": "Manually located · {n} rows",

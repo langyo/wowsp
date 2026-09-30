@@ -179,6 +179,8 @@
     "viewProfile": "Ver las estadísticas de este jugador",
     "detectedRows": "Ubicado · {n} filas",
     "searching": "Localizando",
+    "refreshStats": "Actualizar estadísticas",
+    "refreshStatsHint": "Borra la caché y vuelve a pedir todas las estadísticas; los datos cargados se mantienen hasta que la petición tenga éxito",
     "manualLocate": "Ubicación manual",
     "manualClear": "Quitar ubicación manual",
     "manualRows": "Ubicado manualmente · {n} filas",

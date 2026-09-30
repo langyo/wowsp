@@ -46,6 +46,7 @@ export const RPC = {
   manual_locate_context: "manual_locate_context",
   lookup_player_stats: "lookup_player_stats",
   lookup_players_stats_batch: "lookup_players_stats_batch",
+  clear_roster_stats_cache: "clear_roster_stats_cache",
   lookup_players_composition: "lookup_players_composition",
   suggest_players: "suggest_players",
   suggest_clans: "suggest_clans",

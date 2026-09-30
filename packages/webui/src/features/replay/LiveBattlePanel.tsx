@@ -29,7 +29,7 @@ import {
   type CSSProperties,
 } from "vue";
 import { useRouter } from "vue-router";
-import { Camera, Eye, EyeOff, Plug, ScanEye, Unplug } from "@lucide/vue";
+import { Camera, Eye, EyeOff, Plug, RefreshCw, ScanEye, Unplug } from "@lucide/vue";
 import { useToast } from "@celestia-island/hikari";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
@@ -130,7 +130,7 @@ export default defineComponent({
       () => props.realm || accounts.activeRealm || "asia",
     );
 
-    const { stats } = useRosterStats({
+    const { stats, forceRefresh } = useRosterStats({
       realm: () => realm.value,
       arena: () => props.arena,
     });
@@ -180,6 +180,9 @@ export default defineComponent({
     let telemetryAuthoritative = false;
     let unlistenSinkAttrib: (() => void) | null = null;
     let unlistenTelemetry: (() => void) | null = null;
+    /** Manual stats-refresh button state (approximate: the composable
+     *  settles row spinners itself, the button just needs a cooldown). */
+    const rosterRefreshing = ref(false);
     /** The side's believed alive order for resolving sink-attrib rows:
      *  the predicted key order minus the trusted sunk set. */
     const sideAliveOrder = (side: SunkSide): string[] => {
@@ -795,6 +798,30 @@ export default defineComponent({
             >
               {shot.busy.value ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
               {t("share.copyShot")}
+            </button>
+            {/* Manual full stats refresh: wipes the backend session cache
+                and re-requests the WHOLE roster. Already-loaded rows keep
+                their values (a failed re-request must not blank the
+                panel); the spinner rides the button while in flight. */}
+            <button
+              class={[
+                "live-battle__mask-btn",
+                { "live-battle__mask-btn--on": rosterRefreshing.value },
+              ]}
+              type="button"
+              disabled={rosterRefreshing.value}
+              data-hint={t("replay.live.refreshStatsHint")}
+              onClick={() => {
+                rosterRefreshing.value = true;
+                void forceRefresh();
+                // The batch settles spinners itself; release the button on
+                // the next render tick after the request pipeline drains
+                // (the composable flips loading flags per row).
+                setTimeout(() => (rosterRefreshing.value = false), 4000);
+              }}
+            >
+              {rosterRefreshing.value ? <HkSpinner size="xs" tone="current" /> : <RefreshCw size={13} />}
+              {t("replay.live.refreshStats")}
             </button>
             {/* Hide-all-nicknames toggle — the post-battle share bar's
                 masking button, dressed in the head's pill voice. */}

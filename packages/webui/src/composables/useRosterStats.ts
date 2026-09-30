@@ -111,6 +111,12 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   /** Batch retries left for the current battle (reset on battle change) —
    *  keeps a hard-down WG API from being probed all battle long. */
   let retriesLeft = 2;
+  /** Names whose last batch attempt FAILED (transport / WG limits) — they
+   *  ride the slow re-probe below until the network heals. Kept apart from
+   *  the retry burst so a hard-down API is still not probed at burst rate. */
+  const failedNames = new Set<string>();
+  let reprobeTimer: ReturnType<typeof setTimeout> | null = null;
+  let reprobesLeft = 0;
 
   function cacheKey(name: string): string {
     return rosterCacheKey(options.realm(), name);
@@ -194,6 +200,13 @@ export function useRosterStats(options: UseRosterStatsOptions) {
         prAlgoForRequest(),
       );
       if (gen !== battleGen) return;
+      // Success: failures from earlier rounds are answered now — stop the
+      // slow re-probe and forget them.
+      for (const name of names) failedNames.delete(name);
+      if (failedNames.size === 0 && reprobeTimer) {
+        clearTimeout(reprobeTimer);
+        reprobeTimer = null;
+      }
       names.forEach((name, i) => {
         const r = results[i];
         const st = r
@@ -221,11 +234,17 @@ export function useRosterStats(options: UseRosterStatsOptions) {
       // long). Cards show "—" until a retry lands.
       for (const name of names) {
         for (const v of options.arena()?.vehicles ?? []) {
-          if (v.name === name && stats.get(v.id)?.loading) {
-            stats.set(v.id, emptyStat(false));
+          const prev = stats.get(v.id);
+          if (v.name === name && prev?.loading) {
+            // A failed batch must not wipe already-loaded stats: keep the
+            // previous values (spinner off) and only true spinners resolve
+            // to "—" — the manual refresh relies on this too.
+            const hasData = prev.winrate != null || prev.pr != null || prev.avgDamage != null;
+            stats.set(v.id, hasData ? { ...prev, loading: false } : emptyStat(false));
           }
         }
       }
+      for (const name of names) failedNames.add(name);
       if (retriesLeft > 0) {
         retriesLeft -= 1;
         for (const name of names) retryNames.add(name);
@@ -239,6 +258,24 @@ export function useRosterStats(options: UseRosterStatsOptions) {
               batchTimer = setTimeout(runBatch, 100);
             }
           }, 3000);
+        }
+      } else {
+        // Burst retries exhausted (an outage longer than ~9 s): park the
+        // failures on a SLOW re-probe — once per 30 s, a bounded number of
+        // times per battle — so stats appear the moment the network heals
+        // instead of staying dead for the whole battle.
+        for (const name of names) retryNames.add(name);
+        if (reprobesLeft > 0 && !reprobeTimer) {
+          reprobeTimer = setTimeout(() => {
+            reprobeTimer = null;
+            if (gen !== battleGen) return;
+            reprobesLeft -= 1;
+            for (const name of retryNames) pendingNames.add(name);
+            retryNames.clear();
+            if (!batchTimer && !inFlight && pendingNames.size > 0) {
+              batchTimer = setTimeout(runBatch, 100);
+            }
+          }, 30_000);
         }
       }
     } finally {
@@ -272,11 +309,39 @@ export function useRosterStats(options: UseRosterStatsOptions) {
       stats.clear();
       pendingNames.clear();
       retryNames.clear();
+      failedNames.clear();
+      if (reprobeTimer) {
+        clearTimeout(reprobeTimer);
+        reprobeTimer = null;
+      }
       retriesLeft = 2;
+      reprobesLeft = 10;
       if (a) ensureStats(a.vehicles);
     },
     { immediate: true },
   );
+
+  /** Manual full refresh: wipe the backend session cache, re-queue the
+   *  WHOLE roster, and mark every loaded row as refreshing WITHOUT
+   *  clearing its values (a failed re-request keeps what was shown). */
+  async function forceRefresh() {
+    const arena = options.arena();
+    if (!arena || inFlight) return;
+    try {
+      await api.clearRosterStatsCache();
+    } catch {
+      // older shell — the re-request may answer from cache; still useful
+    }
+    const vehicles = arena.vehicles.filter((v) => !isAiName(v.name));
+    for (const v of vehicles) {
+      const prev = stats.get(v.id);
+      if (prev && !prev.loading) stats.set(v.id, { ...prev, loading: true });
+    }
+    for (const v of vehicles) pendingNames.add(v.name);
+    if (!batchTimer && !inFlight && pendingNames.size > 0) {
+      batchTimer = setTimeout(runBatch, 100);
+    }
+  }
 
   // A late-resolved (or switched) realm changes every cache key — re-seed
   // the roster so lookups fire against the right realm instead of spinning
@@ -299,7 +364,8 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     retryNames.clear();
   });
 
-  return { stats };
+  return {
+    forceRefresh, stats };
 }
 
 /**

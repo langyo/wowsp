@@ -433,6 +433,7 @@ pub fn run() {
             commands::pairing_relay::pairing_reallocate_code,
             commands::wg_api::lookup_player_stats,
             commands::wg_api::lookup_players_stats_batch,
+            commands::wg_api::clear_roster_stats_cache,
             commands::wg_composition::lookup_players_composition,
             commands::wg_api::suggest_players,
             commands::wg_api::suggest_clans,
