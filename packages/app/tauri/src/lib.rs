@@ -533,14 +533,6 @@ pub fn run() {
             commands::trends::get_community_ship_trend,
             commands::trends::get_ship_server_stats,
             commands::screenshot::capture_main_window,
-            // Feedback quick action: full virtual-screen capture (Windows
-            // GDI); the revealed PNG is attached to the web feedback form.
-            // In-app feedback form commands (see commands/feedback_form.rs).
-            commands::feedback_form::feedback_qq_code,
-            commands::feedback_form::feedback_qq_status,
-            commands::feedback_form::feedback_shot,
-            commands::feedback_form::feedback_submit,
-            commands::screenshot::feedback_capture_screen,
             commands::exports::pick_export_path,
             commands::exports::write_export_bytes,
             commands::exports::copy_image_to_clipboard,

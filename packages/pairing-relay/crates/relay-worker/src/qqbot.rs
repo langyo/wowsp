@@ -1,7 +1,8 @@
-//! QQ 机器人接入的 worker 壳：webhook 回调、验证码签发/查询 API、
-//! 提交门控与受理/结果通知。策略与解析都在 relay_core::qqbot。
+//! QQ 机器人接入的 worker 壳：webhook 回调（自报绑定 + 进度查询）与
+//! 受理/结果通知。策略与解析都在 relay_core::qqbot；提交反馈不再要求
+//! 任何验证，绑定只服务于回访通知与查询。
 
-use crate::feedback::{client_ip, history_records, http_call, json_headers};
+use crate::feedback::{history_records, http_call, json_headers};
 use relay_core::qqbot::{self, Binding, CallbackEvent, Command};
 use serde_json::{Value, json};
 use worker::*;
@@ -30,11 +31,6 @@ fn now_ms() -> i64 {
 
 fn yyyymm() -> String {
     qqbot::yyyymm(now_ms())
-}
-
-fn err(status: u16, code: &str) -> Result<Response> {
-    let resp = Response::from_json(&json!({ "ok": false, "error": code }))?;
-    Ok(resp.with_status(status))
 }
 
 // ── access token（KV 缓存，TTL 留缓冲） ────────────────────────────────
@@ -211,7 +207,7 @@ async fn handle_event(env: &Env, c: &Creds, event: CallbackEvent) -> Result<()> 
     }
 }
 
-/// 命令处理：验证码绑定（群=进群证明，私聊=补 c2c openid）与进度查询。
+/// 命令处理：自报绑定（群消息补 member/group openid，私聊补 c2c openid）与进度查询。
 /// 回复一律走被动（带 msg_id），不消耗主动消息配额。
 async fn reply_to_command(
     env: &Env,
@@ -251,29 +247,22 @@ async fn reply_to_command(
         }
     };
     match qqbot::parse_command(content) {
-        Command::Verify(code) => {
-            let stored: Option<String> = kv.get(&qqbot::code_key(&code)).text().await?;
-            match stored {
-                Some(contact) => {
-                    let merged = kv
-                        .get(&qqbot::bind_key(&contact))
-                        .json::<Binding>()
-                        .await
-                        .ok()
-                        .flatten()
-                        .unwrap_or_default()
-                        .merge(Binding {
-                            contact: contact.clone(),
-                            ..incoming
-                        });
-                    kv.put(&qqbot::bind_key(&contact), &merged)?
-                        .execute()
-                        .await?;
-                    kv.delete(&qqbot::code_key(&code)).await?;
-                    reply(qqbot::verify_ok_reply().to_string()).await
-                },
-                None => reply("验证码无效或已过期，请在表单里重新获取。".to_string()).await,
-            }
+        Command::Bind(contact) => {
+            let merged = kv
+                .get(&qqbot::bind_key(&contact))
+                .json::<Binding>()
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+                .merge(Binding {
+                    contact: contact.clone(),
+                    ..incoming
+                });
+            kv.put(&qqbot::bind_key(&contact), &merged)?
+                .execute()
+                .await?;
+            reply(qqbot::bind_ok_reply(&contact)).await
         },
         Command::Status => {
             // 反查 openid → 联系方式，再借反馈管线拉最新记录。
@@ -327,7 +316,7 @@ async fn reply_to_command(
                     }
                 },
                 None => {
-                    reply("未绑定：请先在反馈表单获取验证码，再发送“验证 123456”。".to_string())
+                    reply("尚未绑定：发送“绑定 你的QQ号”后即可查询进度并接收回访通知。".to_string())
                         .await
                 },
             }
@@ -336,101 +325,7 @@ async fn reply_to_command(
     }
 }
 
-// ── POST /api/feedback/qq/code · GET /api/feedback/qq/status ──────────
-
-/// 签发验证码：QQ 联系方式才允许；每 IP 每小时 5 次（复用反馈计数习惯）。
-pub async fn handle_code(mut req: Request, env: &Env) -> Result<Response> {
-    if !creds(&env).is_some() {
-        return err(503, "qq_not_configured");
-    }
-    let body: Value = req.json().await?;
-    let contact = body
-        .get("contact")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if !qqbot::contact_is_qq(&contact) {
-        return err(400, "bad_contact");
-    }
-    let kv = env.kv("FEEDBACK_KV")?;
-    let ip = client_ip(&req);
-    let hour = now_ms() / 3_600_000;
-    let key = format!("qq:code-rl:{ip}:{hour}");
-    let count: u64 = kv.get(&key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
-    if count > 5 {
-        return err(429, "rate_limited");
-    }
-    kv.put(&key, count)?.expiration_ttl(3_660).execute().await?;
-    // 验证码来自时间+联系方式哈希，冲突时自增；TTL 30 分钟。
-    let mut seed = (now_ms() as u64).wrapping_mul(6_364_136_223_846_793_005) ^ fxhash(&contact);
-    let code = loop {
-        let code = format!("{:06}", seed % 1_000_000);
-        if kv.get(&qqbot::code_key(&code)).text().await?.is_none() {
-            kv.put(&qqbot::code_key(&code), &contact)?
-                .expiration_ttl(qqbot::CODE_TTL)
-                .execute()
-                .await?;
-            break code;
-        }
-        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
-    };
-    Response::from_json(&json!({ "ok": true, "code": code }))
-}
-
-fn fxhash(s: &str) -> u64 {
-    let mut h: u64 = 0x517c_c1b7_2722_0a95;
-    for b in s.bytes() {
-        h = (h.rotate_left(5) ^ b as u64).wrapping_mul(0x2545_f491_4f6c_dd1d);
-    }
-    h
-}
-
-pub async fn handle_status(req: Request, env: &Env) -> Result<Response> {
-    if !creds(&env).is_some() {
-        return err(503, "qq_not_configured");
-    }
-    let url = req.url()?;
-    let contact = url
-        .query_pairs()
-        .find(|(k, _)| k == "contact")
-        .map(|(_, v)| v.to_string())
-        .unwrap_or_default();
-    if !qqbot::contact_is_qq(&contact) {
-        return err(400, "bad_contact");
-    }
-    let kv = env.kv("FEEDBACK_KV")?;
-    let bound = kv
-        .get(&qqbot::bind_key(&contact))
-        .json::<Binding>()
-        .await
-        .ok()
-        .flatten()
-        .is_some_and(|b| b.group_verified());
-    Response::from_json(&json!({ "ok": true, "verified": bound }))
-}
-
-// ── 门控与通知（反馈管线调用） ─────────────────────────────────────────
-
-/// 提交门控：QQ 联系方式必须已完成进群验证（机器人未配置时放行）。
-pub async fn gate_submit(env: &Env, contact: &str) -> Result<(), &'static str> {
-    let Some(c) = creds(env) else {
-        return Ok(());
-    };
-    let _ = c;
-    if !qqbot::contact_is_qq(contact) {
-        return Ok(());
-    }
-    let kv = env.kv("FEEDBACK_KV")?;
-    let bound = kv
-        .get(&qqbot::bind_key(contact))
-        .json::<Binding>()
-        .await
-        .ok()
-        .flatten()
-        .is_some_and(|b| b.group_verified());
-    if bound { Ok(()) } else { Err("not_verified") }
-}
+// ── 通知（反馈管线调用） ──────────────────────────────────────────────
 
 /// 受理通知：仅私聊（月配额内的自限额）；群配额留给处理结果。
 pub async fn notify_accepted(env: &Env, contact: &str, head: &str) -> Result<()> {

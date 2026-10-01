@@ -105,9 +105,6 @@ pub mod packets;
 pub mod pairing;
 // LAN UDP discovery for pairing (desktop broadcaster + phone listener).
 pub mod pairing_discovery;
-// In-app feedback form: native capture + multipart submit + QQ proxies.
-#[cfg(desktop)]
-pub mod feedback_form;
 // Internet pairing relay: Cloudflare Worker tunnel (config + desktop host
 // bridge + phone client transport).
 pub mod pairing_relay;

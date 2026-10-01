@@ -5,16 +5,16 @@
 //!   官方互换接口**（unionid 也只是同主体跨应用标识）；
 //! - 普通 QQ 群不向机器人开放成员列表/按号查成员（频道接口需私域权限，
 //!   且返回的仍是平台 ID）。
-//!   因此“按 QQ 号查是否在群”不可行——进群只能通过**交互证明**：表单发
-//!   验证码，用户在群里 @机器人 发码，`GROUP_AT_MESSAGE_CREATE` 回调
-//!   即同时给出 member_openid + group_openid 与“此人确在群里”的证明；
-//!   私聊场景的 `C2C_MESSAGE_CREATE` 同理给出 c2c openid。
+//!   因此机器人侧的“绑定”是**自报联系方式**：用户在群里 @机器人 或私聊
+//!   发送「绑定 QQ号」，回调（`GROUP_AT_MESSAGE_CREATE` /
+//!   `C2C_MESSAGE_CREATE`）给出对应 openid，与号码合并进绑定记录。
+//!   提交反馈不要求绑定——绑定只服务于回访通知与进度查询。
 //! - 配额：C2C 主动消息约 4 条/人/月、群主动消息约 4 条/群/月；带
 //!   `msg_id` 的被动回复（群 5 分钟/单聊 60 分钟窗口）不限量。主动
 //!   通知一律尽力而为（失败静默），进度查询走“用户 @机器人”的被动回复。
 //!
 //! 本模块不含任何 Cloudflare/HTTP 类型：验签、回调解析、命令解析、
-//! 验证码/绑定 KV 形状、消息文案组装都在这里单测；worker 壳只做 IO。
+//! 绑定 KV 形状、消息文案组装都在这里单测；worker 壳只做 IO。
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use serde::{Deserialize, Serialize};
@@ -22,17 +22,11 @@ use serde_json::{Map, Value, json};
 
 /// KV 键：机器人 access_token 缓存（FEEDBACK_KV）。
 pub const K_TOKEN: &str = "qq:token";
-/// KV 键前缀：验证码 → 联系方式（短 TTL）。
-pub const K_CODE: &str = "qqcode:";
 /// KV 键前缀：联系方式 → 绑定的 openid 组合（长期）。
 pub const K_BIND: &str = "qqbind:";
 /// KV 键前缀：C2C 主动消息的自限额计数（qqdm:{contact}:{yyyymm}）。
 pub const K_DM: &str = "qqdm:";
 
-/// 验证码有效期（秒）；KV TTL 下限 60s。
-pub const CODE_TTL: u64 = 1_800;
-/// 验证码长度（纯数字）。
-pub const CODE_LEN: usize = 6;
 /// C2C 主动消息每月自限额（平台 4 条/人/月，自家计数留 1 条余量）。
 pub const DM_MONTHLY_CAP: u64 = 3;
 
@@ -40,15 +34,6 @@ pub const DM_MONTHLY_CAP: u64 = 3;
 pub fn contact_is_qq(contact: &str) -> bool {
     let n = contact.trim();
     (5..=11).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// 验证码合法性（CODE_LEN 位数字）。
-pub fn code_valid(code: &str) -> bool {
-    code.len() == CODE_LEN && code.bytes().all(|b| b.is_ascii_digit())
-}
-
-pub fn code_key(code: &str) -> String {
-    format!("{K_CODE}{code}")
 }
 
 pub fn bind_key(contact: &str) -> String {
@@ -76,7 +61,7 @@ pub fn yyyymm(now_ms: i64) -> String {
     format!("{y:04}{m:02}")
 }
 
-/// 绑定记录：三路 openid 按事件来源增量合并（群消息给
+/// 绑定记录：自报联系方式 + 三路 openid 按事件来源增量合并（群消息给
 /// member/group，私聊给 c2c），从不互相覆盖。
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Binding {
@@ -96,7 +81,7 @@ pub struct Binding {
 }
 
 impl Binding {
-    /// 进群验证成立的最低条件：群消息事件到过。
+    /// 群通知可达的最低条件：群消息事件到过（绑定过群 openid）。
     pub fn group_verified(&self) -> bool {
         !self.member_openid.is_empty() && !self.group_openid.is_empty()
     }
@@ -211,7 +196,7 @@ pub enum CallbackEvent {
         plain_token: String,
         event_ts: String,
     },
-    /// 群 @ 消息（进群证明 + member/group openid）。
+    /// 群 @ 消息（member/group openid，自报绑定的群内来源）。
     GroupMessage {
         group_openid: String,
         member_openid: String,
@@ -304,8 +289,9 @@ pub fn parse_callback(body: &Value) -> CallbackEvent {
 /// 群/私聊里用户可用的命令。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
-    /// 验证/绑定/verify + 6 位验证码。
-    Verify(String),
+    /// 验证/绑定/verify/bind + 5–11 位 QQ 号（自报联系方式，用于
+    /// 回访通知与进度查询；提交反馈不要求绑定）。
+    Bind(String),
     /// 查询/进度/status：查自己反馈的处理状态（被动回复，不耗配额）。
     Status,
     None,
@@ -315,12 +301,14 @@ pub enum Command {
 pub fn parse_command(content: &str) -> Command {
     let text = content.trim();
     let lower = text.to_lowercase();
-    let has_word = ["验证", "绑定", "verify"].iter().any(|w| lower.contains(w));
+    let has_word = ["验证", "绑定", "verify", "bind"]
+        .iter()
+        .any(|w| lower.contains(w));
     if has_word {
-        // 取最后一段连续数字，长度 6 才算码。
+        // 收取消息里的全部数字：恰好是合法 QQ 号（5–11 位）即绑定。
         let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
-        if code_valid(&digits) {
-            return Command::Verify(digits);
+        if contact_is_qq(&digits) {
+            return Command::Bind(digits);
         }
     }
     if ["查询", "进度", "状态", "status"]
@@ -354,14 +342,16 @@ pub fn status_markdown(status: &str, pr: &str) -> String {
     format!("📣 反馈处理结果：{status}{pr_part}")
 }
 
-/// 机器人被动回复的验证成功文案。
-pub fn verify_ok_reply() -> &'static str {
-    "✅ 验证成功，该 QQ 已与反馈表单绑定。之后可随时发“查询”看处理进度。"
+/// 机器人被动回复的绑定成功文案。
+pub fn bind_ok_reply(contact: &str) -> String {
+    format!(
+        "✅ 已绑定 {contact}。之后可随时发“查询”看处理进度；需要进一步确认时，管理员会通过私聊联系你。"
+    )
 }
 
 /// 机器人被动回复的帮助文案。
 pub fn help_reply() -> &'static str {
-    "用法：发送“验证 123456”绑定反馈表单的验证码；发送“查询”查看自己的反馈进度。"
+    "用法：发送“绑定 你的QQ号”接收回访通知（进群后 @机器人 发送同样有效）；发送“查询”查看自己的反馈进度。"
 }
 
 /// 从绑定表（KV 全量 qqbind:* 值）反查 openid 所属的联系 QQ。
@@ -486,19 +476,16 @@ mod tests {
 
     #[test]
     fn commands() {
-        assert_eq!(
-            parse_command("验证 123456"),
-            Command::Verify("123456".into())
-        );
+        assert_eq!(parse_command("验证 123456"), Command::Bind("123456".into()));
         assert_eq!(
             parse_command("/verify 654321"),
-            Command::Verify("654321".into())
+            Command::Bind("654321".into())
         );
-        assert_eq!(
-            parse_command("绑定 000000"),
-            Command::Verify("000000".into())
-        );
-        assert_eq!(parse_command("验证 12345"), Command::None); // 5 位不算
+        assert_eq!(parse_command("绑定 000000"), Command::Bind("000000".into()));
+        assert_eq!(parse_command("/bind 10001"), Command::Bind("10001".into()));
+        // 4 位 / 12 位都不是合法 QQ 号，不触发绑定。
+        assert_eq!(parse_command("绑定 1234"), Command::None);
+        assert_eq!(parse_command("绑定 123456789012"), Command::None);
         assert_eq!(parse_command("查询"), Command::Status);
         assert_eq!(parse_command(" 查询进度 "), Command::Status);
         assert_eq!(parse_command("status"), Command::Status);
@@ -534,7 +521,6 @@ mod tests {
         assert!(merged.group_verified());
         assert_eq!(merged.c2c_openid, "U");
         assert_eq!(merged.bound_at, 99);
-        assert_eq!(code_key("123456"), "qqcode:123456");
         assert_eq!(bind_key(" 10001 "), "qqbind:10001");
         assert_eq!(dm_key("10001", "202610"), "qqdm:10001:202610");
     }

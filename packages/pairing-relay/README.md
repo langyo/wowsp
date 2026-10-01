@@ -130,23 +130,22 @@ old clients cannot talk to lands).
 
 ## Feedback pipeline (`/feedback`, `/erp`)
 
-### QQ 通知机器人（进群验证 + 受理/结果回访）
+### QQ 通知机器人（自报绑定 + 受理/结果回访）
 
-QQ 官方机器人平台不给 QQ 号 ↔ openid 的互换接口，普通群也没有成员
-查询 API——所以“进群才能反馈”通过**交互证明**实现：
+提交反馈**不要求任何验证**；机器人只负责回访通知与进度查询。QQ 官方
+机器人平台不给 QQ 号 ↔ openid 的互换接口，普通群也没有成员查询 API，
+所以“绑定”是用户**自报联系方式**：
 
-1. 表单里 QQ 联系方式下方出现验证块，“获取验证码”拿一个 6 位码
-   （`POST /api/feedback/qq/code`，每 IP 每小时 5 次，码 30 分钟有效）。
-2. 用户在通知群里 @机器人 发送「验证 123456」（或私发，私聊同时补
-   c2c openid）。回调 `POST /api/qqbot/callback`（Ed25519 验签，URL
-   配置走 op 13/14）把 member/group openid 绑定到该 QQ 号（KV
-   `qqbind:*`，长期）。
-3. `POST /api/feedback/submit` 对 QQ 联系方式要求绑定存在，否则
-   `not_verified`；邮箱联系方式不受影响。
-4. 回访：受理成功 → C2C 私聊（自限额 3 条/人/月，留平台配额余量）；
+1. 用户在通知群里 @机器人 或私聊发送「绑定 12345678」（旧口令
+   「验证」同样接受）。回调 `POST /api/qqbot/callback`（Ed25519 验签，
+   URL 配置走 op 13/14）把该号码与 member/group openid（群内）或
+   c2c openid（私聊）合并进绑定记录（KV `qqbind:*`，长期）。
+2. 回访：受理成功 → C2C 私聊（自限额 3 条/人/月，留平台配额余量）；
    `/erp` 状态改到「已开PR」→ 群内 markdown `<@member_openid>` 单独
    @（群主动消息配额珍贵，只留给这个场景）。全部尽力而为，失败静默。
-   用户随时可在群里 @机器人 发「查询」被动拉取自己的最新处理状态。
+3. 用户随时可在群里 @机器人 发「查询」被动拉取自己的最新处理状态；
+   未绑定时机器人会提示先绑定。表单里 QQ 联系方式旁的 ? 弹窗只给出
+   加群建议与“管理员可私聊跟进”的说明。
 
 控制台配置（q.qq.com → 机器人 → 开发设置）：回调地址填
 `https://wowsp.langyo.xyz/api/qqbot/callback` 即可——回调校验的
@@ -174,10 +173,11 @@ and `/erp` past the static-asset layer):
   link adds `focus=history`); the form itself mints a localStorage
   anonymous id and remembers the contact, server and game-ID fields.
 - **`POST /api/feedback/submit`** (multipart, multi-file) — normalize →
-  QQ 进群门控 → Turnstile siteverify（`channel=desktop` 免验——控件域名
-  锁定网页端，Tauri WebView 内无法渲染；KV 限流照常） → KV rate limits
-  siteverify → KV rate limits (5/h per IP, 10/day per anonymous id, 300/day
-  global) → a record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on
+  Turnstile siteverify (`channel=desktop` skips it — the widget is
+  domain-locked to the web page and cannot render inside the Tauri
+  webview; the KV limits below still apply) → KV rate limits (5/h per IP,
+  10/day per anonymous id, 300/day global) → a record in the
+  飞书多维表「WoWSP 反馈」(created/bootstrapped on
   first use; see below) → optional log-bundle upload via
   `drive/v1/medias/upload_all` attached to the record's 日志包 field.
 - **`GET /erp`** — the maintainer's review console (admin-key gated):

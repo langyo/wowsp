@@ -1,19 +1,13 @@
-import { computed, defineComponent, onMounted, onUnmounted, ref } from "vue";
+import { computed, defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { Camera, Copy, ExternalLink, FolderSearch, HelpCircle, History, PackageOpen } from "@lucide/vue";
+import { Copy, ExternalLink, FolderSearch, History, PackageOpen } from "@lucide/vue";
 
 import {
   HkButton,
-  HkCheckbox,
-  HkModal,
   HkIconButton,
-  HkInput,
-  HkSelect,
   HkSettingsGroup,
   HkSettingsHint,
   HkSpinner,
-  HkTag,
-  HkTextarea,
   useToast,
 } from "@celestia-island/hikari";
 
@@ -68,13 +62,11 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * FeedbackSection — the settings' 问题反馈 pane. The app keeps a
- * daily-rolling UTF-8 diagnostics log (Rust `logging` module, under
- * `<data>/logs`); this pane surfaces it locally (reveal the newest file,
- * copy the tail, export a zip bundle) and hands off to the web feedback
- * form (wowsp.langyo.xyz/feedback, Turnstile-protected) whose submissions
- * land in the 飞书多维表 review pipeline — export the bundle first, then
- * attach it in the form.
+ * FeedbackSection — the settings' 问题反馈 pane. Feedback itself lives on
+ * the online form (wowsp.langyo.xyz/feedback): this pane surfaces the
+ * app's daily-rolling diagnostics log locally (reveal the newest file,
+ * copy the tail, export a zip bundle to attach there) and hands off with
+ * the local build identity prefilled into the form.
  */
 const WEB_FORM_URL = "https://wowsp.langyo.xyz/feedback";
 
@@ -180,167 +172,6 @@ export default defineComponent({
         exporting.value = false;
       }
     }
-
-    // ── 内嵌表单 ────────────────────────────────────────────────────────
-    const desc = ref("");
-    const contact = ref("");
-    const ctType = ref<"qq" | "email">("qq");
-    const server = ref("");
-    const gameId = ref("");
-    const attachLogs = ref(false);
-    const shot = ref<{ path: string; preview: string } | null>(null);
-    const shooting = ref(false);
-    const qqCode = ref("");
-    const qqVerified = ref(false);
-    const qqBusy = ref(false);
-    const submitting = ref(false);
-    const recordUrl = ref("");
-    const formError = ref("");
-    let qqTimer: ReturnType<typeof setInterval> | null = null;
-
-    // Active account prefills the server + game-ID row (editable).
-    const active = computed(() => accounts.activeAccount);
-    onMounted(() => {
-      if (active.value) {
-        server.value = active.value.realm;
-        gameId.value = String(active.value.accountId);
-      }
-    });
-
-    const isQq = computed(() =>
-      ctType.value === "qq" && /^\d{5,11}$/.test(contact.value.trim()));
-    const errKey = computed(() => {
-      if (!formError.value) return "";
-      const map: Record<string, string> = {
-        not_verified: "settings.feedbackErrNotVerified",
-        rate_limited: "settings.feedbackErrRate",
-        file_too_large: "settings.feedbackErrFile",
-        empty_description: "settings.feedbackErrEmpty",
-        unreachable: "settings.feedbackErrUnreachable",
-      };
-      return map[formError.value] || "settings.feedbackErrUpstream";
-    });
-
-    function stopQqPoll() {
-      if (qqTimer) {
-        clearInterval(qqTimer);
-        qqTimer = null;
-      }
-    }
-
-    async function pollQq() {
-      if (!isQq.value) return;
-      try {
-        const r = await api.feedbackQqStatus(contact.value.trim());
-        if (r.ok && r.verified) {
-          qqVerified.value = true;
-          stopQqPoll();
-        }
-      } catch {
-        // Proxied call failed — the next tick retries.
-      }
-    }
-
-    function watchContact() {
-      qqVerified.value = false;
-      qqCode.value = "";
-      stopQqPoll();
-      // Unambiguous input flips the category.
-      const v = contact.value.trim();
-      if (v.includes("@")) ctType.value = "email";
-      else if (/^\d+$/.test(v) && v) ctType.value = "qq";
-      if (isQq.value) {
-        void pollQq();
-        qqTimer = setInterval(() => void pollQq(), 5000);
-      }
-    }
-
-    async function getQqCode() {
-      if (!isQq.value) return;
-      qqBusy.value = true;
-      try {
-        const r = await api.feedbackQqCode(contact.value.trim());
-        if (r.ok) {
-          qqCode.value = r.code;
-          if (!qqTimer) qqTimer = setInterval(() => void pollQq(), 5000);
-        }
-      } catch (e) {
-        toast.error((e as Error).message || String(e));
-      } finally {
-        qqBusy.value = false;
-      }
-    }
-
-    // ── 验证向导：QQ 输入框旁 ? 按钮的三步弹窗 ────────────────────────
-    const wizardOpen = ref(false);
-    const wizardCopied = ref(false);
-    let copyFlash: ReturnType<typeof setTimeout> | null = null;
-
-    function openWizard() {
-      wizardCopied.value = false;
-      wizardOpen.value = true;
-    }
-
-    async function wizardCopy() {
-      if (!qqCode.value) return;
-      await copy(`验证 ${qqCode.value}`);
-      wizardCopied.value = true;
-      if (copyFlash) clearTimeout(copyFlash);
-      copyFlash = setTimeout(() => (wizardCopied.value = false), 1600);
-    }
-
-    async function takeShot() {
-      shooting.value = true;
-      try {
-        shot.value = await api.feedbackShot();
-      } catch (e) {
-        toast.error(`${t("settings.feedbackShot")}\n${(e as Error).message || e}`);
-      } finally {
-        shooting.value = false;
-      }
-    }
-
-    async function submitForm() {
-      if (!desc.value.trim() || submitting.value) return;
-      submitting.value = true;
-      formError.value = "";
-      recordUrl.value = "";
-      try {
-        const r = await api.feedbackSubmit({
-          description: desc.value.trim(),
-          contact: contact.value.trim(),
-          server: server.value,
-          gameId: gameId.value.trim(),
-          version: version.value,
-          screenshotPath: shot.value?.path ?? "",
-          attachLogs: attachLogs.value,
-        });
-        recordUrl.value = r.record_url;
-        toast.success(t("settings.feedbackSubmitted"));
-        desc.value = "";
-        shot.value = null;
-        attachLogs.value = false;
-      } catch (e) {
-        formError.value = (e as Error).message || String(e);
-      } finally {
-        submitting.value = false;
-      }
-    }
-
-    // The pane unmounts on section switch — clear the poll (and any
-    // pending copy-flash timer) there.
-    onUnmounted(() => {
-      stopQqPoll();
-      if (copyFlash) clearTimeout(copyFlash);
-    });
-
-    const realmOptions = [
-      { value: "", label: t("settings.feedbackServerNone") },
-      ...["ru", "eu", "na", "asia", "cn"].map((r) => ({
-        value: r,
-        label: r.toUpperCase(),
-      })),
-    ];
 
     /** The web form's history panel, focused (the browser remembers the
      *  contact id in its own localStorage). Same lang handoff as the form
@@ -449,250 +280,20 @@ export default defineComponent({
             {t("settings.feedbackExport")}
           </HkButton>
         </div>
-      </HkSettingsGroup>
 
-      <HkSettingsGroup title={t("settings.feedbackForm")}>
-        <HkSettingsHint>{t("settings.feedbackFormHint")}</HkSettingsHint>
-
-        <div class="feedback__form">
-          <label class="feedback__field-label">{t("settings.feedbackDesc")}</label>
-          <HkTextarea
-            modelValue={desc.value}
-            onUpdate:modelValue={(v: string) => (desc.value = v)}
-            placeholder={t("settings.feedbackDescPh")}
-            rows={4}
-            maxLength={5000}
-          />
-
-          <label class="feedback__field-label">{t("settings.feedbackContact")}</label>
-          <div class="feedback__contact">
-            <HkButton
-              size="sm"
-              variant={ctType.value === "qq" ? "primary" : "ghost"}
-              onClick={() => {
-                ctType.value = "qq";
-                watchContact();
-              }}
-            >
-              {t("settings.feedbackContactQq")}
-            </HkButton>
-            <HkButton
-              size="sm"
-              variant={ctType.value === "email" ? "primary" : "ghost"}
-              onClick={() => {
-                ctType.value = "email";
-                watchContact();
-              }}
-            >
-              {t("settings.feedbackContactEmail")}
-            </HkButton>
-            <HkInput
-              modelValue={contact.value}
-              onUpdate:modelValue={(v: string) => {
-                contact.value = v;
-                watchContact();
-              }}
-              placeholder={
-                ctType.value === "qq"
-                  ? t("settings.feedbackContactPhQq")
-                  : t("settings.feedbackContactPhEmail")
-              }
-            />
-            {ctType.value === "qq" ? (
-              <HkIconButton
-                size={24}
-                variant="ghost"
-                aria-label={t("settings.feedbackWizardTitle")}
-                data-hint={t("settings.feedbackWizardTitle")}
-                onClick={openWizard}
-              >
-                <HelpCircle size={14} />
-              </HkIconButton>
-            ) : null}
-          </div>
-
-          {isQq.value && !qqVerified.value ? (
-            <div class="feedback__qq-verify">
-              <span>
-                {qqCode.value
-                  ? t("settings.feedbackQqVerifyCode").replace(/#c/g, qqCode.value)
-                  : t("settings.feedbackQqVerifyHint")}
-              </span>
-              <HkButton
-                size="sm"
-                loading={qqBusy.value}
-                disabled={qqBusy.value}
-                onClick={() => void getQqCode()}
-              >
-                {t("settings.feedbackQqVerifyBtn")}
-              </HkButton>
-            </div>
-          ) : isQq.value && qqVerified.value ? (
-            <div class="feedback__qq-verify feedback__qq-verify--ok">
-              <HkTag variant="success" size="sm">
-                {t("settings.feedbackQqVerified")}
-              </HkTag>
-            </div>
-          ) : null}
-
-          <label class="feedback__field-label">
-            {t("settings.feedbackServerGame")}
-          </label>
-          <div class="feedback__contact">
-            <div class="feedback__server-select">
-              <HkSelect
-                modelValue={server.value}
-                onUpdate:modelValue={(v: string) => (server.value = v)}
-                options={realmOptions}
-              />
-            </div>
-            <HkInput
-              modelValue={gameId.value}
-              onUpdate:modelValue={(v: string) => (gameId.value = v)}
-              placeholder={t("settings.feedbackGameIdPh")}
-            />
-          </div>
-
-          <div class="feedback__attach">
-            <HkButton
-              size="sm"
-              loading={shooting.value}
-              disabled={shooting.value}
-              onClick={() => void takeShot()}
-            >
-              <Camera size={14} />
-              {t("settings.feedbackShotAttach")}
-            </HkButton>
-            {shot.value ? (
-              <div class="feedback__shot">
-                <img
-                  class="feedback__shot-preview"
-                  src={`data:image/png;base64,${shot.value.preview}`}
-                  alt=""
-                />
-                <HkButton
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => (shot.value = null)}
-                >
-                  {t("settings.feedbackShotRemove")}
-                </HkButton>
-              </div>
-            ) : null}
-            <HkCheckbox
-              modelValue={attachLogs.value}
-              onUpdate:modelValue={(v: boolean) => (attachLogs.value = v)}
-            >
-              {t("settings.feedbackAttachLogs")}
-            </HkCheckbox>
-          </div>
-
-          {formError.value ? (
-            <p class="feedback__error">{t(errKey.value)}</p>
-          ) : null}
-          {recordUrl.value ? (
-            <p class="feedback__ok">
-              {t("settings.feedbackSubmitted")}
-              <a href={recordUrl.value} target="_blank" rel="noreferrer">
-                {t("settings.feedbackViewRecord")}
-              </a>
-            </p>
-          ) : null}
-
-          <div class="feedback__actions">
-            <HkButton
-              variant="primary"
-              size="sm"
-              loading={submitting.value}
-              disabled={submitting.value || !desc.value.trim()}
-              onClick={() => void submitForm()}
-            >
-              {t("settings.feedbackSubmitBtn")}
-            </HkButton>
-          </div>
-          <HkSettingsHint>{t("settings.feedbackPrivacy")}</HkSettingsHint>
-        </div>
-
-        <HkModal
-          modelValue={wizardOpen.value}
-          onUpdate:modelValue={(v: boolean) => (wizardOpen.value = v)}
-          title={t("settings.feedbackWizardTitle")}
-          width="26rem"
-        >
-          <div class="feedback__wizard">
-            <div class="feedback__wizard-step">
-              <span class="feedback__wizard-no">1</span>
-              <span class="feedback__wizard-body">
-                {t("settings.feedbackWizardStep1", {
-                  group: t("about.qqGroupNumber"),
-                })}
-                <HkButton
-                  size="sm"
-                  onClick={() => void openExternal(t("about.links.qqGroup"))}
-                >
-                  {t("settings.feedbackWizardJoin")}
-                </HkButton>
-              </span>
-            </div>
-            <div class="feedback__wizard-step">
-              <span class="feedback__wizard-no">2</span>
-              <span class="feedback__wizard-body">
-                {t("settings.feedbackWizardStep2")}
-              </span>
-            </div>
-            <div class="feedback__wizard-step">
-              <span class="feedback__wizard-no">3</span>
-              <span class="feedback__wizard-body">
-                {qqVerified.value ? (
-                  t("settings.feedbackQqVerified")
-                ) : (
-                  <>
-                    {qqCode.value
-                      ? t("settings.feedbackWizardStep3", { code: qqCode.value })
-                      : t("settings.feedbackQqVerifyHint")}
-                    <div class="feedback__wizard-actions">
-                      {qqCode.value ? (
-                        <HkButton size="sm" onClick={() => void wizardCopy()}>
-                          <Copy size={14} />
-                          {wizardCopied.value
-                            ? t("settings.feedbackWizardCopied")
-                            : t("settings.feedbackWizardCopy")}
-                        </HkButton>
-                      ) : (
-                        <HkButton
-                          size="sm"
-                          loading={qqBusy.value}
-                          disabled={qqBusy.value || !isQq.value}
-                          onClick={() => void getQqCode()}
-                        >
-                          {t("settings.feedbackQqVerifyBtn")}
-                        </HkButton>
-                      )}
-                    </div>
-                  </>
-                )}
-              </span>
-            </div>
-            <div class="feedback__wizard-actions">
-              <HkButton
-                variant="primary"
-                size="sm"
-                onClick={() => (wizardOpen.value = false)}
-              >
-                {t("settings.feedbackWizardDone")}
-              </HkButton>
-            </div>
-          </div>
-        </HkModal>
-
+        <HkSettingsHint>{t("settings.feedbackOnlineHint")}</HkSettingsHint>
         <div class="feedback__actions">
+          <HkButton
+            variant="primary"
+            size="sm"
+            onClick={() => void openExternal(webFormUrl.value)}
+          >
+            <ExternalLink size={14} />
+            {t("settings.feedbackWeb")}
+          </HkButton>
           <HkButton size="sm" onClick={openHistory}>
             <History size={14} />
             {t("settings.feedbackHistoryBtn")}
-          </HkButton>
-          <HkButton size="sm" onClick={() => void openExternal(webFormUrl.value)}>
-            <ExternalLink size={14} />
-            {t("settings.feedbackWeb")}
           </HkButton>
           <HkButton size="sm" onClick={() => void openExternal(t("about.links.issues"))}>
             GitHub Issues

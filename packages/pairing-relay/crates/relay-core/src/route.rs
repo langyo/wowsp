@@ -52,10 +52,6 @@ pub enum Route<'a> {
     FeedbackUpdate,
     /// POST /api/qqbot/callback — QQ 开放平台 webhook（URL 校验 + 事件）。
     QqBotCallback,
-    /// POST /api/feedback/qq/code — issue a group-verification code.
-    QqBotCode,
-    /// GET /api/feedback/qq/status?contact=… — verification state.
-    QqBotStatus,
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
     FeedbackAttachment { file_token: Option<&'a str> },
@@ -91,8 +87,6 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         },
         "/api/feedback/update" => return Route::FeedbackUpdate,
         "/api/qqbot/callback" => return Route::QqBotCallback,
-        "/api/feedback/qq/code" => return Route::QqBotCode,
-        "/api/feedback/qq/status" => return Route::QqBotStatus,
         "/api/feedback/attachment" => {
             return Route::FeedbackAttachment {
                 file_token: query_get(query, "file_token"),
@@ -319,10 +313,8 @@ mod tests {
     #[test]
     fn classify_qqbot_routes() {
         assert_eq!(classify("/api/qqbot/callback", ""), Route::QqBotCallback);
-        assert_eq!(classify("/api/feedback/qq/code", ""), Route::QqBotCode);
-        assert_eq!(
-            classify("/api/feedback/qq/status", "contact=10001"),
-            Route::QqBotStatus
-        );
+        // The retired verification endpoints (qq/code, qq/status) stay gone.
+        assert_eq!(classify("/api/feedback/qq/code", ""), Route::NotFound);
+        assert_eq!(classify("/api/feedback/qq/status", ""), Route::NotFound);
     }
 }

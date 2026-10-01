@@ -90,8 +90,6 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         Route::FeedbackHistory { contact: _ } => feedback::handle_history(req, env).await,
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,
         Route::QqBotCallback => qqbot::handle_callback(req, &env).await,
-        Route::QqBotCode => qqbot::handle_code(req, &env).await,
-        Route::QqBotStatus => qqbot::handle_status(req, &env).await,
         Route::FeedbackAttachment { file_token: _ } => feedback::handle_attachment(req, env).await,
 
         Route::Control { room, role } => {

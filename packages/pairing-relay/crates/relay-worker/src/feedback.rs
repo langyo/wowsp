@@ -136,10 +136,6 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     if let Err(code) = normalize(&mut sub) {
         return err(400, code);
     }
-    // QQ 联系方式必须先在群里 @机器人 完成验证（机器人未配置时放行）。
-    if let Err(code) = crate::qqbot::gate_submit(&env, &sub.contact).await {
-        return err(403, code);
-    }
 
     // Human check. The bypass secret exists purely so deploys can be
     // smoke-tested with curl; keep it absent in normal operation.
@@ -157,7 +153,7 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     // Desktop submissions come from the app itself: the Turnstile widget
     // is domain-locked to the web form and cannot render inside the
     // Tauri webview. The IP/anon/contact/global KV limits below still
-    // apply, and QQ contacts still require the group verification.
+    // apply.
     let desktop = sub.channel == "desktop";
     if !bypassed && !desktop {
         let Some(secret) = env.secret("TURNSTILE_SECRET").ok().map(|s| s.to_string()) else {

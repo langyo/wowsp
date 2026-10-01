@@ -809,16 +809,6 @@ textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opa
 .contact-box input {{ flex: 1; min-width: 0; padding: var(--space-4) 0;
   background: transparent; border: none; outline: none;
   font: inherit; font-size: var(--text-base); color: rgb(var(--color-text)); }}
-.qq-verify {{ margin-top: var(--space-8); padding: var(--space-10) var(--space-12);
-  border-radius: var(--radius-md); font-size: var(--text-xs); line-height: 1.7;
-  color: rgb(var(--color-muted)); background: rgb(var(--color-surface) / 55%);
-  border: 1px solid rgb(var(--color-border) / 15%);
-  display: flex; gap: var(--space-10); align-items: center; flex-wrap: wrap; }}
-.qq-verify[hidden] {{ display: none; }}
-.qq-verify.is-ok {{ color: rgb(var(--color-success));
-  border-color: color-mix(in srgb, rgb(var(--color-success)) 30%, transparent); }}
-.qq-verify .code {{ font-weight: 700; color: rgb(var(--color-text));
-  font-variant-numeric: tabular-nums; }}
 .contact-help {{ flex: none; display: inline-flex; align-items: center;
   justify-content: center; width: 1.25rem; height: 1.25rem; padding: 0;
   border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 14%, transparent);
@@ -830,7 +820,7 @@ textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opa
 .contact-help:focus-visible {{ outline: 2px solid rgb(var(--color-primary));
   outline-offset: 1px; }}
 .contact-help[hidden] {{ display: none; }}
-/* ── 验证向导弹窗（HkModal overlay + 卡片语法） ─────────────────────── */
+/* ── 联系方式 ? 提示弹窗（HkModal overlay + 卡片语法） ──────────────── */
 .fb-modal {{ position: fixed; inset: 0; z-index: 1000; display: flex;
   align-items: center; justify-content: center; }}
 .fb-modal[hidden] {{ display: none; }}
@@ -847,19 +837,9 @@ textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opa
 @media (prefers-reduced-motion: reduce) {{ .fb-modal .card {{ animation: none; }} }}
 .fb-modal h3 {{ margin: 0 0 var(--space-12); font-size: var(--text-md);
   font-weight: 600; }}
-.fb-modal ol {{ margin: 0; padding: 0; list-style: none;
-  display: flex; flex-direction: column; gap: var(--space-12); }}
-.fb-modal li {{ display: flex; gap: var(--space-10); align-items: flex-start;
-  font-size: var(--text-sm); line-height: 1.6; }}
-.fb-modal .step-no {{ flex: none; width: 1.375rem; height: 1.375rem;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-full); font-size: var(--text-2xs); font-weight: 700;
-  background: color-mix(in srgb, rgb(var(--color-primary)) 15%, transparent);
-  color: rgb(var(--color-primary)); }}
-.fb-modal .step-body {{ flex: 1; min-width: 0; }}
-.fb-modal .step-body a {{ color: rgb(var(--color-primary)); }}
-.fb-modal .wiz-code {{ font-weight: 700; color: rgb(var(--color-text));
-  font-variant-numeric: tabular-nums; }}
+.fb-modal p {{ margin: 0 0 var(--space-10); font-size: var(--text-sm);
+  line-height: 1.7; color: rgb(var(--color-text) / 85%); }}
+.fb-modal .help-join {{ margin-bottom: var(--space-12); }}
 .fb-modal .wiz-actions {{ display: flex; gap: var(--space-8); flex-wrap: wrap;
   margin-top: var(--space-16); }}
 /* ── editable combobox (HkSearchInput shell + chevron) ──────────────── */
@@ -1066,11 +1046,7 @@ a {{ color: rgb(var(--color-primary)); }}
         aria-expanded="false"><span id="ctLabel"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       <input type="text" id="contact" name="contact" maxlength="64">
       <button type="button" id="qqHelp" class="contact-help" hidden
-        aria-label="?" data-i18n-aria="qqWizardTitle">?</button>
-    </div>
-    <div class="qq-verify" id="qqVerify" hidden>
-      <span id="qqVerifyText"></span>
-      <button type="button" class="btn ghost" id="qqVerifyBtn" data-i18n="qqVerifyBtn"></button>
+        aria-label="?" data-i18n-aria="qqHelpTitle">?</button>
     </div>
     <label for="gameId" data-i18n="serverGameLabel"></label>
     <div class="contact-box">
@@ -1129,21 +1105,16 @@ a {{ color: rgb(var(--color-primary)); }}
 </div>
 </div>
 </main>
-<div id="qqWizard" class="fb-modal" hidden role="dialog" aria-modal="true">
+<div id="qqHelpModal" class="fb-modal" hidden role="dialog" aria-modal="true">
   <div class="scrim"></div>
   <div class="card">
-    <h3 data-i18n="qqWizardTitle"></h3>
-    <ol>
-      <li><span class="step-no">1</span><span class="step-body"
-        ><span data-i18n="qqWizardStep1"></span>
-        <a id="wizJoin" target="_blank" rel="noreferrer" data-i18n="qqWizardJoin"></a></span></li>
-      <li><span class="step-no">2</span><span class="step-body"
-        data-i18n="qqWizardStep2"></span></li>
-      <li><span class="step-no">3</span><span class="step-body"
-        ><span id="wizStep3"></span></span></li>
-    </ol>
+    <h3 data-i18n="qqHelpTitle"></h3>
+    <p data-i18n="qqHelpGroup"></p>
+    <p class="help-join"><a id="helpJoin" target="_blank" rel="noreferrer"
+      data-i18n="qqHelpJoin"></a></p>
+    <p data-i18n="qqHelpFollow"></p>
     <div class="wiz-actions">
-      <button type="button" class="btn" id="wizDone" data-i18n="qqWizardDone"></button>
+      <button type="button" class="btn" id="helpDone" data-i18n="qqHelpDone"></button>
     </div>
   </div>
 </div>
@@ -1481,7 +1452,7 @@ a {{ color: rgb(var(--color-primary)); }}
       {{ value: "qq", label: t("contactTypeQQ"), selected: ct === "qq" }},
       {{ value: "email", label: t("contactTypeEmail"), selected: ct === "email" }}
     ];
-  }}, function (it) {{ setCt(it.value, true); qqWatch(); }});
+  }}, function (it) {{ setCt(it.value, true); }});
   setCt(ct, false);
   // ── main server chip + game id (hikari realm vocabulary) ─────────────
   var REALMS = ["ru", "eu", "na", "asia", "cn"];
@@ -1523,142 +1494,25 @@ a {{ color: rgb(var(--color-primary)); }}
     if (gameId.value) localStorage.setItem("wowsp-fb-gameid", gameId.value);
     else localStorage.removeItem("wowsp-fb-gameid");
   }});
-  // ── QQ 进群验证：签发验证码 → 群里 @机器人 发码 → 轮询绑定状态 ────
-  var qqBox = document.getElementById("qqVerify");
-  var qqText = document.getElementById("qqVerifyText");
-  var qqBtn = document.getElementById("qqVerifyBtn");
-  var qqTimer = null;
-  var qqCode = "";
-  function qqActive() {{
-    return ct === "qq" && /^\d{{5,11}}$/.test(contact.value.trim());
-  }}
-  function qqSet(ok, html) {{
-    qqBox.hidden = !qqActive();
-    qqBox.classList.toggle("is-ok", !!ok);
-    qqText.innerHTML = html;
-  }}
-  function qqPoll() {{
-    if (!qqActive()) return;
-    fetch("{base_url}/api/feedback/qq/status?contact=" +
-        encodeURIComponent(contact.value.trim()))
-      .then(function (r) {{ return r.json(); }})
-      .then(function (j) {{
-        if (j.ok && j.verified) {{
-          clearInterval(qqTimer); qqTimer = null;
-          qqBtn.hidden = true;
-          qqSet(true, t("qqVerified"));
-        }}
-      }})
-      .catch(function () {{}});
-  }}
-  function qqWatch() {{
-    clearInterval(qqTimer); qqTimer = null;
-    qqBtn.hidden = false;
-    qqCode = "";
-    // 联系方式不再可验证时清掉 is-ok，避免向导读到过期的“已验证”。
-    if (!qqActive()) {{
-      qqBox.classList.remove("is-ok");
-      qqBox.hidden = true;
-      return;
-    }}
-    qqSet(false, t("qqVerifyHint"));
-    qqPoll();
-    qqTimer = setInterval(qqPoll, 5000);
-  }}
-  qqBtn.addEventListener("click", function () {{
-    qqBtn.disabled = true;
-    fetch("{base_url}/api/feedback/qq/code", {{
-      method: "POST",
-      headers: {{ "Content-Type": "application/json" }},
-      body: JSON.stringify({{ contact: contact.value.trim() }})
-    }})
-      .then(function (r) {{ return r.json(); }})
-      .then(function (j) {{
-        if (j.ok) {{
-          qqCode = j.code;
-          qqSet(false, t("qqVerifyCode").replace(/#c/g, "<span class='code'>" + j.code + "</span>"));
-          if (!qqTimer) qqTimer = setInterval(qqPoll, 5000);
-        }} else {{
-          qqSet(false, t("qqVerifyFailed"));
-        }}
-      }})
-      .catch(function () {{ qqSet(false, t("qqVerifyFailed")); }})
-      .finally(function () {{ qqBtn.disabled = false; }});
-  }});
-  // ── 验证向导：QQ 输入框旁的 ? 按钮三步引导 ─────────────────────────
+  // ── 联系方式 ? 提示：建议加群，管理员可私聊跟进 ────────────────────
   var qqHelp = document.getElementById("qqHelp");
-  var wiz = document.getElementById("qqWizard");
-  var wizStep3 = document.getElementById("wizStep3");
-  var wizJoin = document.getElementById("wizJoin");
-  function wizardRefresh() {{
-    if (!wizStep3) return;
-    if (qqVerified()) {{
-      wizStep3.textContent = t("qqVerified");
-      return;
-    }}
-    if (qqCode) {{
-      var msg = t("qqWizardStep3").replace("{{code}}", qqCode);
-      wizStep3.innerHTML = "";
-      var text = document.createElement("span");
-      text.innerHTML = esc(msg).replace(qqCode,
-        '<span class="wiz-code">' + esc(qqCode) + "</span>");
-      wizStep3.appendChild(text);
-      var copy = document.createElement("button");
-      copy.type = "button"; copy.className = "btn ghost";
-      copy.style.marginTop = "var(--space-6)";
-      copy.textContent = t("qqWizardCopy");
-      copy.onclick = function () {{
-        var text2 = "验证 " + qqCode;
-        var done = function () {{
-          copy.textContent = t("qqWizardCopied");
-          setTimeout(function () {{ copy.textContent = t("qqWizardCopy"); }}, 1600);
-        }};
-        if (navigator.clipboard && navigator.clipboard.writeText) {{
-          navigator.clipboard.writeText(text2).then(done, done);
-        }} else {{
-          var ta = document.createElement("textarea");
-          ta.value = text2; document.body.appendChild(ta);
-          ta.select(); try {{ document.execCommand("copy"); }} catch (e) {{}}
-          document.body.removeChild(ta); done();
-        }}
-      }};
-      wizStep3.appendChild(document.createElement("br"));
-      wizStep3.appendChild(copy);
-    }} else {{
-      var get = document.createElement("button");
-      get.type = "button"; get.className = "btn";
-      get.textContent = t("qqVerifyBtn");
-      get.onclick = function () {{
-          qqBtn.click();
-          setTimeout(wizardRefresh, 900);
-          setTimeout(wizardRefresh, 2500);
-        }};
-      wizStep3.textContent = "";
-      wizStep3.appendChild(get);
-    }}
-  }}
-  function qqVerified() {{
-    return qqBox.classList.contains("is-ok");
-  }}
+  var helpModal = document.getElementById("qqHelpModal");
+  var helpJoin = document.getElementById("helpJoin");
   function setCtHelpVis() {{
     qqHelp.hidden = ct !== "qq";
   }}
   qqHelp.addEventListener("click", function () {{
-    wizJoin.href = t("qqWizardJoinUrl");
-    wizardRefresh();
-    wiz.hidden = false;
+    helpJoin.href = t("qqHelpJoinUrl");
+    helpModal.hidden = false;
   }});
-  wiz.querySelector(".scrim").addEventListener("click", function () {{ wiz.hidden = true; }});
-  document.getElementById("wizDone").addEventListener("click", function () {{ wiz.hidden = true; }});
+  helpModal.querySelector(".scrim").addEventListener("click", function () {{ helpModal.hidden = true; }});
+  document.getElementById("helpDone").addEventListener("click", function () {{ helpModal.hidden = true; }});
   window.addEventListener("keydown", function (ev) {{
-    if (ev.key === "Escape" && !wiz.hidden) wiz.hidden = true;
+    if (ev.key === "Escape" && !helpModal.hidden) helpModal.hidden = true;
   }});
   var oldSetCt = setCt;
   setCt = function (type, save) {{ oldSetCt(type, save); setCtHelpVis(); }};
   setCtHelpVis();
-  contact.addEventListener("change", qqWatch);
-  contact.addEventListener("input", qqWatch);
-  qqWatch();
   // Unambiguous input flips the category for you; anything else keeps
   // the explicit choice.
   contact.addEventListener("input", function () {{
@@ -1839,15 +1693,9 @@ a {{ color: rgb(var(--color-primary)); }}
           if (window.turnstile) turnstile.reset();
         }} else {{
           msg.className = "err";
-          if (res.j.error === "not_verified") {{
-            msg.textContent = t("e_not_verified");
-            qqBox.hidden = false;
-            qqBox.scrollIntoView({{ block: "center", behavior: "smooth" }});
-          }} else {{
-            msg.textContent = res.j.error === "maintenance"
-              ? t("maintenance")
-              : (t("e_" + (res.j.error || "upstream")) || t("e_upstream"));
-          }}
+          msg.textContent = res.j.error === "maintenance"
+            ? t("maintenance")
+            : (t("e_" + (res.j.error || "upstream")) || t("e_upstream"));
           if (window.turnstile) turnstile.reset();
         }}
       }})
@@ -2442,16 +2290,15 @@ mod tests {
         assert!(page.contains("height: 100vh; height: 100dvh;"));
         assert!(page.contains(r#".hk-scrollbar-track"#));
         assert!(page.contains(r#".hk-scrollbar-thumb"#));
-        // QQ 进群验证流程随表单下发。
-        assert!(page.contains(r#"id="qqVerify" hidden"#));
-        assert!(page.contains(r#"id="qqVerifyBtn" data-i18n="qqVerifyBtn""#));
-        assert!(page.contains("/api/feedback/qq/code"));
-        assert!(page.contains("/api/feedback/qq/status"));
-        // 三步验证向导：QQ 输入框旁的 ? 按钮 + 弹窗。
+        // 提交不再要求进群验证：验证块与签发/查询端点都不随页面下发。
+        assert!(!page.contains("qqVerify"));
+        assert!(!page.contains("/api/feedback/qq/code"));
+        assert!(!page.contains("/api/feedback/qq/status"));
+        // ? 按钮弹窗只给加群建议与私聊跟进提示。
         assert!(page.contains(r#"id="qqHelp" class="contact-help" hidden"#));
-        assert!(page.contains(r#"id="qqWizard" class="fb-modal" hidden"#));
-        assert!(page.contains(r#"id="wizStep3""#));
-        assert!(page.contains(r#"id="wizDone" data-i18n="qqWizardDone""#));
+        assert!(page.contains(r#"id="qqHelpModal" class="fb-modal" hidden"#));
+        assert!(page.contains(r#"id="helpJoin""#));
+        assert!(page.contains(r#"id="helpDone" data-i18n="qqHelpDone""#));
         assert!(page.contains("hk-scrollbar-track\";"));
     }
 
