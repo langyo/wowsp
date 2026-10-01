@@ -1,14 +1,28 @@
 /**
  * Tray panel — the window is transparent + frameless (see
  * commands/tray_panel.rs), so this card IS the visible surface: rounded,
- * shadowed, glass-filled, matching the shell's hikari theme. The 10px outer
+ * shadowed, glass-filled, matching the shell's hikari theme. The 14px outer
  * padding keeps the CSS box-shadow (which the transparent window alone
- * cannot draw) inside the window bounds on every side.
+ * cannot draw) inside the window bounds on every side; the shadow is tuned
+ * to fade near that boundary — offset+blur must stay small enough that the
+ * straight clip edge at the padding line is not perceptible.
  */
+
+/* Unlike the overlay page (bare HTML, literal colors), this entry loads the
+   app theme — and theme.scss paints the CANVAS via body's wallpaper-solid
+   background. On a transparent window that shows up as an opaque theme-tint
+   rectangle floating around the card (the "native window skin"). Paint the
+   canvas back to transparent; this file imports after theme.scss (component
+   import order), so the override wins the cascade. */
+html,
+body {
+  background: transparent;
+}
+
 .tray-panel {
   width: 100vw;
   height: 100vh;
-  padding: 10px;
+  padding: 14px;
   box-sizing: border-box;
   overflow: hidden;
   user-select: none;
@@ -28,9 +42,11 @@
   background: rgb(var(--color-surface) / min(100%, calc(92% * var(--ui-opacity, 1))));
   backdrop-filter: blur(var(--blur-lg));
   -webkit-backdrop-filter: blur(var(--blur-lg));
+  /* Bottom extent = 6px offset + 10px blur ≈ the 14px padding: the drop
+     fades out just before the window edge instead of showing a cut. */
   box-shadow:
-    0 12px 32px rgb(var(--color-shadow, 0 0 0) / 45%),
-    0 2px 8px rgb(var(--color-shadow, 0 0 0) / 30%);
+    0 6px 10px rgb(var(--color-shadow, 0 0 0) / 38%),
+    0 1px 4px rgb(var(--color-shadow, 0 0 0) / 26%);
   color: rgb(var(--color-text));
   font-size: var(--text-sm);
 }
