@@ -3,8 +3,18 @@
     "title": "Replays",
     "empty": "Aucun replay trouvé dans le dossier du client sélectionné.",
     "count": "{n} replays",
+    "countFiltered": "{n} / {total} replays",
     "noClient": "Aucun client de jeu détecté. Lancez une analyse sur le tableau de bord, ou définissez un chemin manuellement.",
     "openExternal": "Ouvrir des replays externes…"
+  },
+  "filter": {
+    "mode": "Mode de combat",
+    "allModes": "Tous les modes",
+    "sort": "Tri",
+    "sortNewest": "Plus récentes d'abord",
+    "sortOldest": "Plus anciennes d'abord",
+    "sortHint": "Choix unique · « Plus récentes d'abord » par défaut",
+    "noMatch": "Aucun replay ne correspond aux filtres actuels."
   },
   "external": {
     "tag": "Externe",

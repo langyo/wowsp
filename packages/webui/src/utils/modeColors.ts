@@ -46,6 +46,11 @@ const MODE_HEX: Record<string, string> = {
 /** Fallback colour (accent gold) for unknown modes. */
 const FALLBACK_HEX = "e6a817";
 
+/** Canonical display order of the mode keys — the replay list filter
+ *  orders its data-derived mode options by it (keys this table doesn't
+ *  know yet sort after). */
+export const MODE_KEY_ORDER: readonly string[] = Object.keys(MODE_HEX);
+
 /**
  * Resolve a battle's canonical mode key from its layered identity fields.
  * Battle-script (eventType) wins, then the custom-room subdivision, then
@@ -188,8 +193,14 @@ export function modeColor(
   botCount = 0,
   scriptedUnitCount = 0,
 ): ModeColor {
-  const key = modeKey(matchGroup, scenario, eventType, botCount, scriptedUnitCount);
-  const hex = (key && MODE_HEX[key]) || FALLBACK_HEX;
+  return modeColorOfKey(modeKey(matchGroup, scenario, eventType, botCount, scriptedUnitCount));
+}
+
+/** Colour triple for an ALREADY-RESOLVED canonical mode key — for callers
+ *  that grouped entries through `modeKey` and only hold the key (the replay
+ *  list filter's option dots). */
+export function modeColorOfKey(key: string): ModeColor {
+  const hex = MODE_HEX[key] || FALLBACK_HEX;
   return {
     background: `rgb(${parseHex(hex)} / 18%)`,
     color: `#${hex}`,

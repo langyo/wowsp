@@ -45,6 +45,10 @@ export default defineComponent({
       type: Function as PropType<(value: string) => VNode>,
       default: undefined,
     },
+    /** Bottom hint line. Defaults to the ships filter's multi-select hint;
+     *  hosts with other semantics (e.g. the replay sort chip's radio)
+     *  override it. */
+    hint: { type: String, default: undefined },
   },
   emits: {
     "update:open": (_v: boolean) => true,
@@ -174,7 +178,7 @@ export default defineComponent({
                 </button>
               ))}
             </div>
-            <div class="ship-filter-bar__pop-hint">{t("ships.filter.hintMulti")}</div>
+            <div class="ship-filter-bar__pop-hint">{props.hint ?? t("ships.filter.hintMulti")}</div>
           </div>
         </HkPopover>
       </div>

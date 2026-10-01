@@ -3,8 +3,18 @@
     "title": "Repeticiones",
     "empty": "No se encontraron repeticiones en la carpeta del cliente seleccionado.",
     "count": "{n} repeticiones",
+    "countFiltered": "{n} / {total} repeticiones",
     "noClient": "No se detectó ningún cliente del juego. Ejecuta un escaneo en el panel de inicio o define una ruta manualmente.",
     "openExternal": "Abrir repeticiones externas…"
+  },
+  "filter": {
+    "mode": "Modo de combate",
+    "allModes": "Todos los modos",
+    "sort": "Orden",
+    "sortNewest": "Más recientes primero",
+    "sortOldest": "Más antiguos primero",
+    "sortHint": "Selección única · «Más recientes primero» es el predeterminado",
+    "noMatch": "Ninguna repetición coincide con los filtros actuales."
   },
   "external": {
     "tag": "Externa",

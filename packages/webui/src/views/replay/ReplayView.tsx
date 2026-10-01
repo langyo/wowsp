@@ -68,6 +68,11 @@ import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import MapNameTag from "@/features/replay/MapNameTag";
+import ReplayListFilter, {
+  modeLabelOfKey,
+  useReplayListFilter,
+  type ReplaySortDir,
+} from "@/features/replay/ReplayListFilter";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
@@ -84,12 +89,7 @@ function modeLabel(
   botCount = 0,
   scriptedUnitCount = 0,
 ): string {
-  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
-  if (!key) return t("replay.mode._fallback");
-  const i18nKey = `replay.mode.${key}`;
-  const lbl = t(i18nKey);
-  // t() returns the key when missing — fall back to the generic battle label.
-  return lbl === i18nKey ? t("replay.mode._fallback") : lbl;
+  return modeLabelOfKey(modeKey(group, scenario, eventType, botCount, scriptedUnitCount));
 }
 
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
@@ -1163,6 +1163,9 @@ export default defineComponent({
     const { dataLanguage } = useLanguage();
     const mapLang = computed(() => dataLanguage.value);
     const gameStatus = useGameStatusStore();
+    // Rail filter — mode multi-select + match-time order (persisted); see
+    // ReplayListFilter for the interaction model.
+    const listFilter = useReplayListFilter(parser.list, parser.external);
     /**
      * What the main pane currently shows — a proper little state machine
      * (Rust-flavoured: None | Archive(Server, ID)). Invariant: exactly one
@@ -1647,10 +1650,31 @@ export default defineComponent({
               <p class="replay-view__no-client">{t("replay.list.noClient")}</p>
             ) : null}
 
+            {/* The count stays scoped to the scanned list (externals are
+                session-temporary picks), even though the filter below also
+                applies to them. */}
             {parser.list.value.length > 0 ? (
               <span class="replay-view__count">
-                {t("replay.list.count", { n: parser.list.value.length })}
+                {listFilter.filterActive.value
+                  ? t("replay.list.countFiltered", {
+                      n: listFilter.visibleList.value.length,
+                      total: parser.list.value.length,
+                    })
+                  : t("replay.list.count", { n: parser.list.value.length })}
               </span>
+            ) : null}
+            {/* The strip renders whenever ANYTHING can be filtered —
+                external picks included — so a persisted selection is
+                always inspectable and clearable; gated on the scanned list
+                alone it would dead-end the no-match state below. */}
+            {parser.list.value.length + parser.external.value.length > 0 ? (
+              <ReplayListFilter
+                modeOptions={listFilter.modeOptions.value}
+                selectedModes={listFilter.selectedModes.value}
+                sortDir={listFilter.sortDir.value}
+                onUpdate:selectedModes={(s: Set<string>) => (listFilter.selectedModes.value = s)}
+                onUpdate:sortDir={(d: ReplaySortDir) => (listFilter.sortDir.value = d)}
+              />
             ) : null}
           </div>
 
@@ -1685,12 +1709,18 @@ export default defineComponent({
               ) : (
                 <p class="replay-view__empty">{t("replay.list.empty")}</p>
               )
+            ) : listFilter.visibleExternal.value.length === 0 &&
+                listFilter.visibleList.value.length === 0 ? (
+              /* Everything is filtered out — the strip above stays reachable
+                 so the state is self-explanatory (and clearable). */
+              <p class="replay-view__empty">{t("replay.filter.noMatch")}</p>
             ) : (
               <ul class="replay-view__items">
-                {/* Manually picked files (session-temporary) sit above the
-                    scanned list — newest picks on top. */}
-                {parser.external.value.map((r) => renderReplayCard(r, true))}
-                {parser.list.value.map((r) => renderReplayCard(r, false))}
+                {/* Manually picked files (session-temporary) stay pinned
+                    above the scanned list; the filter and the sort apply to
+                    both blocks independently. */}
+                {listFilter.visibleExternal.value.map((r) => renderReplayCard(r, true))}
+                {listFilter.visibleList.value.map((r) => renderReplayCard(r, false))}
               </ul>
             )}
           </div>

@@ -3,8 +3,18 @@
     "title": "리플레이 목록",
     "empty": "선택한 클라이언트 폴더에서 리플레이를 찾을 수 없습니다.",
     "count": "리플레이 {n}개",
+    "countFiltered": "리플레이 {n} / {total}개",
     "noClient": "게임 클라이언트가 감지되지 않았습니다. 홈에서 검사를 실행하거나 경로를 직접 지정하세요.",
     "openExternal": "외부 리플레이 열기…"
+  },
+  "filter": {
+    "mode": "전투 모드",
+    "allModes": "모든 모드",
+    "sort": "정렬",
+    "sortNewest": "최신순",
+    "sortOldest": "오래된순",
+    "sortHint": "단일 선택 · 「최신순」이 기본값입니다",
+    "noMatch": "필터에 일치하는 리플레이가 없습니다."
   },
   "external": {
     "tag": "외부",

@@ -3,8 +3,18 @@
     "title": "Replays",
     "empty": "No replays found in the selected client's folder.",
     "count": "{n} replays",
+    "countFiltered": "{n} / {total} replays",
     "noClient": "No game client detected. Run a scan on the dashboard, or set a path manually.",
     "openExternal": "Open external replays…"
+  },
+  "filter": {
+    "mode": "Battle mode",
+    "allModes": "All modes",
+    "sort": "Sort",
+    "sortNewest": "Newest first",
+    "sortOldest": "Oldest first",
+    "sortHint": "Single pick · “Newest first” is the default",
+    "noMatch": "No replays match the current filters."
   },
   "external": {
     "tag": "External",

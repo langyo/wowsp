@@ -3,8 +3,18 @@
     "title": "錄影列表",
     "empty": "所選用戶端目錄下找不到錄影檔案。",
     "count": "{n} 個錄影",
+    "countFiltered": "{n} / {total} 個錄影",
     "noClient": "未偵測到遊戲用戶端，請先在首頁掃描或手動指定路徑。",
     "openExternal": "開啟外部錄影…"
+  },
+  "filter": {
+    "mode": "戰鬥模式",
+    "allModes": "全部模式",
+    "sort": "排序",
+    "sortNewest": "最新優先",
+    "sortOldest": "最早優先",
+    "sortHint": "單選 · 「最新優先」為預設排序",
+    "noMatch": "沒有符合篩選條件的錄影。"
   },
   "external": {
     "tag": "外部",
