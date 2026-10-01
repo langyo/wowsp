@@ -1,5 +1,6 @@
 {
   "title": "Analyse tactique",
+  "devWarning": "Cette fonctionnalité est en cours de développement et n'est pas encore disponible.",
   "count": "{n} cartes",
   "filter": {
     "all": "Tout",

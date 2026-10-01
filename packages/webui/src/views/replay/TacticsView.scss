@@ -1,9 +1,27 @@
 /* Tactics-analysis page — same two-pane skeleton as ReplayView (320px rail
    + flex main, phone stacks). BEM `tactics-view__…` and the same CSS-var
    tokens / breakpoints. */
+.tactics-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+
+  /* The dev-warning alert spans both panes; the explorer below keeps the
+     full remaining height. */
+  .hk-alert {
+    flex-shrink: 0;
+    margin: 0.6rem 0.75rem 0;
+  }
+
+  .tactics-view {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
 .tactics-view {
   display: flex;
-  height: 100%;
   min-height: 0;
 
   &__list {

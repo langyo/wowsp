@@ -1,5 +1,6 @@
 {
   "title": "Análisis táctico",
+  "devWarning": "Esta función está en desarrollo y todavía no está disponible.",
   "count": "{n} mapas",
   "filter": {
     "all": "Todas",

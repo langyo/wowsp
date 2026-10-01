@@ -240,7 +240,14 @@ export default defineComponent({
       const list = sorted.value;
       const sel = selected.value;
       return (
-        <main class="tactics-view">
+        <div class="tactics-page">
+          {/* The plan board is still mid-development — say so up front
+              (hikari's ready-made alert, slim variant, not dismissible:
+              the page has nothing else to offer yet). */}
+          <SlotHAlert variant="warning" size="sm">
+            {t("tactics.devWarning")}
+          </SlotHAlert>
+          <main class="tactics-view">
           <aside class="tactics-view__list">
             <div class="tactics-view__list-head">
               <div class="tactics-view__list-head-row">
@@ -357,6 +364,7 @@ export default defineComponent({
             )}
           </section>
         </main>
+        </div>
       );
     };
   },
