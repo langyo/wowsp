@@ -272,5 +272,6 @@
     "avgDamage": "Daño medio de equipo",
     "avgDamageDesc": "Daño medio por equipo bajo las listas del overlay (solo el overlay del juego)."
   },
-  "schemeDefaultName": "Por defecto"
+  "schemeDefaultName": "Por defecto",
+  "pairingWip": "El emparejamiento con el teléfono está en desarrollo y aún no está terminado."
 }

@@ -272,5 +272,6 @@
     "avgDamage": "Dégâts moyens d'équipe",
     "avgDamageDesc": "Dégâts moyens par équipe sous les listes de l'overlay (overlay en jeu uniquement)."
   },
-  "schemeDefaultName": "Par défaut"
+  "schemeDefaultName": "Par défaut",
+  "pairingWip": "Le jumelage téléphonique est en cours de développement et pas encore terminé."
 }

@@ -272,5 +272,6 @@
     "avgDamage": "팀 평균 데미지",
     "avgDamageDesc": "오버레이 팀 목록 아래에 양 팀 평균 데미지 표시(게임 내 오버레이 전용)."
   },
-  "schemeDefaultName": "기본"
+  "schemeDefaultName": "기본",
+  "pairingWip": "휴대폰 페어링 기능은 개발 중이며 아직 완성되지 않았습니다."
 }

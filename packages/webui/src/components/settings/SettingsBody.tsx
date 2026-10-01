@@ -49,6 +49,7 @@ import {
   useTheme,
   useToast,
   type ModalAction,
+  HkAlert,
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
@@ -1475,6 +1476,7 @@ export default defineComponent({
               action opens the replay view's pairing wizard (deep-linked
               via ?pairing=1), plus the paired computers with forget
               buttons and last-synced info. */}
+          <HkAlert variant="warning" size="sm" message={t("settings.pairingWip")} />
           <HkSettingsGroup title={t("settings.pairingMobile")}>
             <HkSettingsHint>{t("settings.pairingMobileHint")}</HkSettingsHint>
             <div class="settings-modal__pairing-open">
@@ -1526,6 +1528,7 @@ export default defineComponent({
               desktop falls back to its LAN PIN and shows a LAN-only hint.
               There is deliberately NO relay URL field: the gateway endpoint
               is built into both apps. */}
+          <HkAlert variant="warning" size="sm" message={t("settings.pairingWip")} />
           <HkSettingsGroup title={t("settings.pairing")}>
             <HkSettingsHint>{t("settings.pairingHint")}</HkSettingsHint>
             <HkTabs

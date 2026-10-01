@@ -16,6 +16,7 @@ import {
   useTheme,
 } from "@celestia-island/hikari";
 
+import { removeBuiltinShadowingCustomThemes } from "./theme";
 import { installGlobalTooltip } from "./composables/globalTooltip";
 import { api } from "./api";
 import { initDpiPrefs } from "./theme/dpiPrefs";
@@ -51,6 +52,11 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   applyViewportPolicy();
 
   initTheme();
+  // One-time repair: drop custom schemes that shadow builtin preset ids
+  // (see removeBuiltinShadowingCustomThemes — the dark-mode-shows-light
+  // report). Before the mode preference applies, so the re-apply lands on
+  // the repaired table.
+  removeBuiltinShadowingCustomThemes();
   // WoWSP's own three-way mode preference (dark/light/solar) sits on top of
   // hikari's mode and must run AFTER initTheme so the authoritative
   // `wowsp-theme-mode` key wins over whatever hikari restored.

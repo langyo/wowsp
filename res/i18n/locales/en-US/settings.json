@@ -272,5 +272,6 @@
     "avgDamage": "Team average damage",
     "avgDamageDesc": "Mean average damage per team under the overlay's team lists (in-game overlay only)."
   },
-  "schemeDefaultName": "Default"
+  "schemeDefaultName": "Default",
+  "pairingWip": "Phone pairing is under development and not finished yet."
 }

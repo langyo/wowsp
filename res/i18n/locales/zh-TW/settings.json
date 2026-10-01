@@ -272,5 +272,6 @@
     "avgDamage": "隊伍場均傷害",
     "avgDamageDesc": "懸浮窗隊伍列表下方顯示雙方平均場均傷害（僅遊戲內懸浮窗）。"
   },
-  "schemeDefaultName": "預設"
+  "schemeDefaultName": "預設",
+  "pairingWip": "手機配對功能正在開發中，尚未完工"
 }

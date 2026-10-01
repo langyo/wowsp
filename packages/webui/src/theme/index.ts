@@ -9,7 +9,7 @@
 
 // Imported as well as re-exported (below): an indirect `export … from`
 // binds no local name, and themePresetIds reads the table per call.
-import { themePresets } from "@celestia-island/hikari";
+import { removeCustomTheme, themePresets, useTheme } from "@celestia-island/hikari";
 
 /** Preferred display order of the shipped color presets, used by the
  *  onboarding wizard's theme step (the settings appearance section now
@@ -53,6 +53,27 @@ export function themePresetIds(known: readonly string[] = Object.keys(themePrese
   const ordered: string[] = THEME_PRESET_ORDER.filter((id) => present.has(id));
   const named = new Set(ordered);
   return [...ordered, ...known.filter((id) => !named.has(id))];
+}
+
+/** One-time repair for the scheme-editor shadowing era: hikari resolves a
+ *  custom theme OVER the builtin preset of the same id, and the editor
+ *  used to allow saving such a shadow of `default` — whose dark palette
+ *  could carry light-seeded values, rendering dark mode with light
+ *  surfaces forever (the "dark mode shows light content" report). The
+ *  default scheme is view-only now, so a shadow cannot be recreated:
+ *  drop every custom that shadows a builtin id — the documented delete
+ *  semantic ("restore the factory preset") — and re-apply when one of
+ *  them was active. Returns how many shadows were dropped. */
+export function removeBuiltinShadowingCustomThemes(): number {
+  const theme = useTheme();
+  const builtin = new Set(Object.keys(themePresets));
+  const shadows = theme.customThemes.value.filter((c) => builtin.has(c.id));
+  for (const shadow of shadows) removeCustomTheme(shadow.id);
+  const activeWasShadowed = shadows.some((s) => s.id === theme.currentTheme.value);
+  if (shadows.length > 0) {
+    theme.setTheme(activeWasShadowed || theme.currentTheme.value === "default" ? "default" : theme.currentTheme.value);
+  }
+  return shadows.length;
 }
 
 export {
