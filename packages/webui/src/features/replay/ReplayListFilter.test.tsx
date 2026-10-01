@@ -59,7 +59,11 @@ async function clickPopOption(index: number) {
   await new DOMWrapper(el).trigger("click");
 }
 
-function mountBar(selected: Set<string> = new Set(), sort: ReplaySortDir = "desc") {
+function mountBar(
+  selected: Set<string> = new Set(),
+  sort: ReplaySortDir = "desc",
+  extra: { modeAllSort?: boolean; modeDir?: ReplaySortDir } = {},
+) {
   return mount(ReplayListFilter, {
     props: {
       modeOptions: [
@@ -68,6 +72,8 @@ function mountBar(selected: Set<string> = new Set(), sort: ReplaySortDir = "desc
       ],
       selectedModes: selected,
       sortDir: sort,
+      modeAllSort: extra.modeAllSort ?? false,
+      modeDir: extra.modeDir ?? "asc",
     },
   });
 }
@@ -144,6 +150,24 @@ describe("sortReplays", () => {
     expect(sortReplays(input, "desc").map((r) => r.path)).toEqual(["x", "y"]);
     expect(input.map((r) => r.path)).toEqual(["x", "y"]);
   });
+
+  it("an engaged mode 全部…-sort groups by the canonical mode order first", () => {
+    const rows = [
+      meta({ path: "ranked-new", scenario: "ranked_kids", dateTime: "20260301_000000" }),
+      meta({ path: "pvp-old", matchGroup: "pvp", dateTime: "20250101_000000" }),
+      meta({ path: "pvp-new", matchGroup: "pvp", dateTime: "20260201_000000" }),
+      meta({ path: "unknown", matchGroup: "space", dateTime: "20260401_000000" }),
+    ];
+    // Canonical order first (pvp before ranked, unknown keys last); within
+    // a group the match-time order still applies (asc here).
+    expect(
+      sortReplays(rows, "asc", { dir: "asc" }).map((r) => r.path),
+    ).toEqual(["pvp-old", "pvp-new", "ranked-new", "unknown"]);
+    // The direction flips the group order, not the time order within it.
+    expect(
+      sortReplays(rows, "desc", { dir: "desc" }).map((r) => r.path),
+    ).toEqual(["unknown", "ranked-new", "pvp-new", "pvp-old"]);
+  });
 });
 
 describe("useReplayListFilter", () => {
@@ -167,6 +191,8 @@ describe("useReplayListFilter", () => {
     expect(JSON.parse(localStorage.getItem(PERSIST_KEY)!)).toEqual({
       modes: ["pvp", "ranked"],
       sort: "desc",
+      modeAllSort: false,
+      modeDir: "asc",
     });
   });
 
@@ -178,6 +204,50 @@ describe("useReplayListFilter", () => {
     const f = useReplayListFilter(ref([]), ref([]));
     expect([...f.selectedModes.value]).toEqual([]);
     expect(f.sortDir.value).toBe("desc");
+  });
+
+  it("defaults the mode 全部…-sort to disengaged ascending", () => {
+    const f = useReplayListFilter(ref([]), ref([]));
+    expect(f.modeAllSort.value).toBe(false);
+    expect(f.modeDir.value).toBe("asc");
+  });
+
+  it("persists the mode 全部…-sort state and restores it", async () => {
+    localStorage.setItem(
+      PERSIST_KEY,
+      JSON.stringify({ modes: [], sort: "desc", modeAllSort: true, modeDir: "desc" }),
+    );
+    const f = useReplayListFilter(ref([]), ref([]));
+    expect(f.modeAllSort.value).toBe(true);
+    expect(f.modeDir.value).toBe("desc");
+
+    // An old blob without the fields degrades to the defaults…
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ modes: [], sort: "asc" }));
+    const fresh = useReplayListFilter(ref([]), ref([]));
+    expect(fresh.modeAllSort.value).toBe(false);
+    expect(fresh.modeDir.value).toBe("asc");
+
+    // …and every change re-persists the full shape.
+    fresh.modeAllSort.value = true;
+    await nextTick();
+    expect(JSON.parse(localStorage.getItem(PERSIST_KEY)!)).toEqual({
+      modes: [],
+      sort: "asc",
+      modeAllSort: true,
+      modeDir: "asc",
+    });
+  });
+
+  it("applies the engaged mode sort to the visible blocks", () => {
+    const list = ref([
+      meta({ path: "ranked-new", scenario: "ranked_kids", dateTime: "20260301_000000" }),
+      meta({ path: "pvp-old", matchGroup: "pvp", dateTime: "20250101_000000" }),
+    ]);
+    const f = useReplayListFilter(list, ref([]));
+    f.modeAllSort.value = true;
+    expect(f.visibleList.value.map((r) => r.path)).toEqual(["pvp-old", "ranked-new"]);
+    f.modeDir.value = "desc";
+    expect(f.visibleList.value.map((r) => r.path)).toEqual(["ranked-new", "pvp-old"]);
   });
 
   it("drops the empty-string no-identity key from a persisted selection", () => {
@@ -248,8 +318,54 @@ describe("ReplayListFilter chip strip", () => {
       new Set(["pvp", "ranked"]),
     );
 
-    await clickPopOption(0); // 全部 → clear
+    await clickPopOption(0); // 全部 with a selection → reset (sort off too)
     expect(wrapper.emitted("update:selectedModes")!.at(-1)![0]).toEqual(new Set());
+    expect(wrapper.emitted("update:modeAllSort")!.at(-1)![0]).toBe(false);
+  });
+
+  it("the mode 全部… pill engages and flips the mode sort (ships-bar contract)", async () => {
+    const wrapper = mountBar();
+    await wrapper.findAll(".ship-filter-bar__chip")[0]!.trigger("click");
+    // Empty selection: first click engages in the displayed (asc) direction.
+    await clickPopOption(0);
+    expect(wrapper.emitted("update:modeAllSort")!.at(-1)![0]).toBe(true);
+
+    // Engaged: re-click flips the direction…
+    wrapper.unmount();
+    const engaged = mountBar(new Set(), "desc", { modeAllSort: true, modeDir: "asc" });
+    await engaged.findAll(".ship-filter-bar__chip")[0]!.trigger("click");
+    await clickPopOption(0);
+    expect(engaged.emitted("update:modeDir")!.at(-1)![0]).toBe("desc");
+    // …and the chip wears the intermediate --sort look while unpicked.
+    expect(
+      engaged.findAll(".ship-filter-bar__chip")[0]!.classes().includes("ship-filter-bar__chip--sort"),
+    ).toBe(true);
+  });
+
+  it("popup arrows: the 全部… pill always carries one; pure picks never do", async () => {
+    const wrapper = mountBar();
+    await wrapper.findAll(".ship-filter-bar__chip")[0]!.trigger("click");
+    await vi.waitFor(() => {
+      expect(document.body.querySelectorAll(".ship-filter-bar__opt")).toHaveLength(3);
+    });
+    // Mode chip is pure: only the 全部模式 pill shows the direction arrow.
+    const opts = document.body.querySelectorAll(".ship-filter-bar__opt");
+    expect(opts[0]!.querySelectorAll(".ship-filter-bar__dir")).toHaveLength(1);
+    expect(opts[1]!.querySelectorAll(".ship-filter-bar__dir")).toHaveLength(0);
+    expect(opts[2]!.querySelectorAll(".ship-filter-bar__dir")).toHaveLength(0);
+  });
+
+  it("the sort chip's picked concrete option carries its direction arrow", async () => {
+    const wrapper = mountBar(new Set(), "asc");
+    await wrapper.findAll(".ship-filter-bar__chip")[1]!.trigger("click");
+    await vi.waitFor(() => {
+      expect(document.body.querySelectorAll(".ship-filter-bar__opt")).toHaveLength(2);
+    });
+    const opts = document.body.querySelectorAll(".ship-filter-bar__opt");
+    // 最新优先 (the 全部 pill) always shows the arrow; 最早优先 shows it
+    // while picked (asc) — the single-select-with-direction grammar.
+    expect(opts[0]!.querySelectorAll(".ship-filter-bar__dir")).toHaveLength(1);
+    expect(opts[1]!.querySelectorAll(".ship-filter-bar__dir")).toHaveLength(1);
   });
 
   it("sort chip flips desc → asc → desc through its single concrete option", async () => {

@@ -251,24 +251,63 @@
   }
 }
 
-/* ── Nation strip: one line, panned — never wrapped ──
+/* ── Option strip: one line, panned — never wrapped ──
    The #667 wrap never engaged: HkPopover sizes its panel to max-content,
    so a wrapping track always measured as ONE long line that ran off the
    screen. The track is a real horizontal scroll container now — it
    shrinks to the capped panel above and pans by wheel / mouse drag (the
-   TSX holds the pointer machinery: pointer capture, the 5px click/pan
-   threshold, the one-shot click swallow) while touch pans the overflow
-   natively (touch-action: pan-x). The scrollbar rides the app-wide
-   themed styling (theme.scss: thin + --color-border ink); repeated here
-   so the strip keeps that look even if the global ever narrows. */
+   pointer machinery lives in optionStrip.ts: pointer capture, the 5px
+   click/pan threshold, the one-shot click swallow) while touch pans the
+   overflow natively (touch-action: pan-x). Shared by the nation popup
+   and every FilterCategoryChip popup.
+   Overflow affordance = hikari HkScrollContainer's edge-fade contract:
+   optionStrip senses which inline edges still hide content onto
+   data-h-overflow (start / end / both), and only those sides dissolve
+   under a mask — no content hidden, no fade. The classic scrollbar
+   steps aside (it would sit inside the masked paint); the fades, the
+   grab cursor and the popup's gesture hint carry the affordance
+   instead. Fade size mirrors hikari's --hk-scroll-fade-size so the
+   look matches the library's scroll containers exactly. */
 .ship-filter-bar__opts--scroll {
   flex-wrap: nowrap;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   touch-action: pan-x;
-  scrollbar-width: thin;
-  scrollbar-color: rgb(var(--color-border) / 40%) transparent;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  --hk-scroll-fade-size: var(--space-24);
+
+  &[data-h-overflow="end"] {
+    -webkit-mask-image: linear-gradient(to left, transparent 0, #000 var(--hk-scroll-fade-size));
+    mask-image: linear-gradient(to left, transparent 0, #000 var(--hk-scroll-fade-size));
+  }
+
+  &[data-h-overflow="start"] {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--hk-scroll-fade-size));
+    mask-image: linear-gradient(to right, transparent 0, #000 var(--hk-scroll-fade-size));
+  }
+
+  &[data-h-overflow="both"] {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--hk-scroll-fade-size),
+      #000 calc(100% - var(--hk-scroll-fade-size)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--hk-scroll-fade-size),
+      #000 calc(100% - var(--hk-scroll-fade-size)),
+      transparent 100%
+    );
+  }
   /* The whole strip drags (the hint line says so), so the grab
      affordance rides over the option buttons too. Clicks still select:
      the 5px pan threshold keeps plain clicks click-shaped. */

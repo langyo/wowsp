@@ -47,7 +47,8 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createPinia } from "pinia";
 import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
-import ShipFilterBar, { panEngaged, stripWheelDelta, type FilterState } from "./ShipFilterBar";
+import ShipFilterBar, { type FilterState } from "./ShipFilterBar";
+import { panEngaged, stripWheelDelta } from "./optionStrip";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { PlayerShipStats, ShipInfo } from "@/api";
 

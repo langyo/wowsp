@@ -1672,8 +1672,12 @@ export default defineComponent({
                 modeOptions={listFilter.modeOptions.value}
                 selectedModes={listFilter.selectedModes.value}
                 sortDir={listFilter.sortDir.value}
+                modeAllSort={listFilter.modeAllSort.value}
+                modeDir={listFilter.modeDir.value}
                 onUpdate:selectedModes={(s: Set<string>) => (listFilter.selectedModes.value = s)}
                 onUpdate:sortDir={(d: ReplaySortDir) => (listFilter.sortDir.value = d)}
+                onUpdate:modeAllSort={(on: boolean) => (listFilter.modeAllSort.value = on)}
+                onUpdate:modeDir={(d: ReplaySortDir) => (listFilter.modeDir.value = d)}
               />
             ) : null}
           </div>

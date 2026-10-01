@@ -57,6 +57,7 @@ import NationFlag from "@/components/base/NationFlag";
 import { useLanguage } from "@/i18n/useLanguage";
 import { matchShipNames } from "@/features/search/pinyinSearch";
 import { t } from "@/i18n";
+import { useOptionStrip } from "./optionStrip";
 import "./ShipFilterBar.scss";
 
 type CatKey = "type" | "nation" | "tier" | "winrate" | "battles";
@@ -186,29 +187,6 @@ const isSingleSel = (key: CatKey) => SINGLE_CATS.includes(key);
  *  category's canonical rank order). */
 const PURE_CATS: readonly CatKey[] = ["type", "nation"];
 const isPureCat = (key: CatKey) => PURE_CATS.includes(key);
-
-/** Firefox line-height wheel mode (deltaMode 1): one notch reports ~3
- *  lines, not pixels — normalized here so a notch pans a wheel-like
- *  distance on every engine (40px/line, the classic WebKit line height).
- *  Page mode (deltaMode 2, effectively extinct) passes through raw. */
-const WHEEL_LINE_PX = 40;
-
-/** Horizontal pan distance for a wheel gesture over the nation strip: a
- *  real horizontal wheel/trackpad swipe (deltaX — shift+wheel reports as
- *  deltaX natively too) wins; a plain vertical wheel notch is translated
- *  onto the horizontal axis instead. Mirrors hikari HkScrollContainer's
- *  wheel rule, plus the line-mode→pixels normalization. */
-export function stripWheelDelta(deltaMode: number, deltaX: number, deltaY: number): number {
-  const raw = deltaX !== 0 ? deltaX : deltaY;
-  return deltaMode === 1 ? raw * WHEEL_LINE_PX : raw;
-}
-
-/** Press→pan decision for the nation strip drag: once the pointer strays
- *  ≥ threshold px on EITHER axis the press turns into a pan; below it the
- *  gesture stays a click (and clicks must keep selecting options). */
-export function panEngaged(dx: number, dy: number, threshold: number): boolean {
-  return Math.abs(dx) >= threshold || Math.abs(dy) >= threshold;
-}
 
 /** Concrete option values of a category in canonical (display) order —
  *  used to clamp stale multi-select storage down to the single-select
@@ -757,116 +735,17 @@ export default defineComponent({
     //    Fourteen flags cannot fit any sane popup width, and the old wrap
     //    never engaged (HkPopover sizes its panel to max-content, so the
     //    track always measured as ONE long line that ran off-screen). The
-    //    track is now a real horizontal scroll container (SCSS), panned by
-    //    wheel — deltaY → scrollLeft, hikari HkScrollContainer's rule:
-    //    only claim the gesture when the strip actually moves — and by
-    //    mouse drag: pointer capture plus the same 5px threshold the chip
-    //    drag uses to tell a pan from a click; the click a pan leaves
-    //    behind is swallowed exactly once. Touch pans the overflow
-    //    natively (touch-action: pan-x), so the pointer machinery arms
-    //    for mouse pointers only. ──
-    const stripEl = ref<HTMLElement | null>(null);
-    const PAN_ENGAGE_PX = 5;
-    const stripPanning = ref(false);
-    let panPressX = 0;
-    let panPressY = 0;
-    let panLastX = 0;
-    let panArmed = false;
-    let stripDragged = false;
-
-    function onStripWheel(e: WheelEvent) {
-      const el = stripEl.value;
-      if (!el || el.scrollWidth <= el.clientWidth) return;
-      const delta = stripWheelDelta(e.deltaMode, e.deltaX, e.deltaY);
-      if (delta === 0) return;
-      const prev = el.scrollLeft;
-      el.scrollLeft += delta;
-      // A saturated edge lets the wheel keep scrolling the page behind.
-      if (el.scrollLeft !== prev) e.preventDefault();
-    }
-
-    function onStripPointerDown(e: PointerEvent) {
-      if (e.pointerType !== "mouse" || e.button !== 0) return;
-      // A pan released off-strip leaves no click behind; clear the stale
-      // swallow flag so this press's own click always lands (chip rule).
-      stripDragged = false;
-      panPressX = panLastX = e.clientX;
-      panPressY = e.clientY;
-      panArmed = false;
-      window.addEventListener("pointermove", onStripPointerMove);
-      window.addEventListener("pointerup", onStripPointerUp, { once: true });
-      window.addEventListener("pointercancel", onStripPointerCancel, { once: true });
-    }
-
-    function onStripPointerMove(e: PointerEvent) {
-      if (!panArmed) {
-        if (!panEngaged(e.clientX - panPressX, e.clientY - panPressY, PAN_ENGAGE_PX)) return;
-        // Engage: capture the pointer so the pan keeps tracking off-panel,
-        // flag the strip (grabbing cursor + selection off) and arm the
-        // one-shot click swallow — with capture held, the trailing click
-        // retargets to the strip anyway, never onto an option.
-        panArmed = true;
-        stripPanning.value = true;
-        stripDragged = true;
-        stripEl.value?.setPointerCapture(e.pointerId);
-      }
-      e.preventDefault();
-      const el = stripEl.value;
-      if (!el) return;
-      el.scrollLeft -= e.clientX - panLastX;
-      panLastX = e.clientX;
-    }
-
-    function teardownStripPan() {
-      panArmed = false;
-      stripPanning.value = false;
-      window.removeEventListener("pointermove", onStripPointerMove);
-    }
-
-    function onStripPointerUp() {
-      teardownStripPan();
-    }
-
-    function onStripPointerCancel() {
-      // A cancelled gesture never leaves a click — no swallow to hold.
-      stripDragged = false;
-      teardownStripPan();
-    }
-
-    /** The click a completed pan leaves behind must never select an
-     *  option: swallowed exactly once, capture phase (ahead of every
-     *  option handler). Plain clicks pass untouched. */
-    function onStripClickCapture(e: MouseEvent) {
-      if (!stripDragged) return;
-      stripDragged = false;
-      e.stopPropagation();
-    }
-
-    // The strip lives inside the teleported popover content — its element
-    // mounts/unmounts with the popup, so its non-passive wheel listener
-    // and the capture-phase click swallow ride the ref transitions (a JSX
-    // onWheel prop is passive in some paths and could not preventDefault,
-    // and JSX has no capture-phase click prop — the bar's outside-close
-    // uses the same addEventListener capture idiom).
-    watch(stripEl, (el, prev) => {
-      prev?.removeEventListener("wheel", onStripWheel);
-      prev?.removeEventListener("click", onStripClickCapture, true);
-      el?.addEventListener("wheel", onStripWheel, { passive: false });
-      el?.addEventListener("click", onStripClickCapture, true);
-    });
+    //    track is a real horizontal scroll container (SCSS) shared with
+    //    every FilterCategoryChip popup: wheel-panned, mouse-drag-panned,
+    //    touch pans natively, and the overflow edges fade (optionStrip's
+    //    data-h-overflow sensing drives the SCSS masks). ──
+    const strip = useOptionStrip();
     // A popover that closed before the pan's trailing click (window blur
     // mid-drag — pointerup lost) must not carry the swallow flag into the
     // reopened panel: the flag only ever eats the click of the pan that
     // armed it, and that click can only land while the popup still stands.
     watch(openPop, (key) => {
-      if (key !== "nation") stripDragged = false;
-    });
-    onBeforeUnmount(() => {
-      stripEl.value?.removeEventListener("wheel", onStripWheel);
-      stripEl.value?.removeEventListener("click", onStripClickCapture, true);
-      window.removeEventListener("pointermove", onStripPointerMove);
-      window.removeEventListener("pointerup", onStripPointerUp);
-      window.removeEventListener("pointercancel", onStripPointerCancel);
+      if (key !== "nation") strip.resetDragged();
     });
 
     /** Popup explainer — four shapes: types/nations are pure filters
@@ -1007,10 +886,10 @@ export default defineComponent({
                         track alone is a one-line pannable strip — wrapped
                         only by the phone sheet (see the SCSS). */}
                     <div
-                      ref={key === "nation" ? stripEl : undefined}
+                      ref={key === "nation" ? strip.stripEl : undefined}
                       class={["ship-filter-bar__opts", key === "nation" && "ship-filter-bar__opts--scroll"]}
-                      data-panning={key === "nation" && stripPanning.value ? "" : undefined}
-                      onPointerdown={key === "nation" ? onStripPointerDown : undefined}
+                      data-panning={key === "nation" && strip.panning.value ? "" : undefined}
+                      onPointerdown={key === "nation" ? strip.onPointerDown : undefined}
                     >
                       {catOptions.value[key].map((o) => {
                         const isAll = o.value === "";

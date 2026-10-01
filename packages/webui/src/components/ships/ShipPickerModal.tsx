@@ -176,7 +176,7 @@ export default defineComponent({
                   open={openCat.value === "tier"}
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "tier" : null)}
                   onToggle={(v: string) => (selectedTiers.value = toggleSet(selectedTiers.value, v))}
-                  onClear={() => (selectedTiers.value = new Set())}
+                  onAll={() => (selectedTiers.value = new Set())}
                 />
                 <FilterCategoryChip
                   title={t("ships.filter.typeTitle")}
@@ -186,7 +186,7 @@ export default defineComponent({
                   open={openCat.value === "type"}
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "type" : null)}
                   onToggle={(v: string) => (selectedTypes.value = toggleSet(selectedTypes.value, v))}
-                  onClear={() => (selectedTypes.value = new Set())}
+                  onAll={() => (selectedTypes.value = new Set())}
                 />
                 <FilterCategoryChip
                   title={t("ships.filter.nationTitle")}
@@ -196,7 +196,7 @@ export default defineComponent({
                   open={openCat.value === "nation"}
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "nation" : null)}
                   onToggle={(v: string) => (selectedNations.value = toggleSet(selectedNations.value, v))}
-                  onClear={() => (selectedNations.value = new Set())}
+                  onAll={() => (selectedNations.value = new Set())}
                   edge
                 />
                 <HkSearchInput

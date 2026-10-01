@@ -1,14 +1,26 @@
 /**
  * FilterCategoryChip — one collapsed filter category rendered as a chip that
- * opens a small popup of pill-style multi-select options. A PURE filter: no
- * sorting and no drag reorder, so — unlike ShipFilterBar's own chips — there
- * is no grip icon and no `--sort` state.
+ * opens a small popup of pill-style multi-select options. A PURE filter by
+ * default: no sorting and no drag reorder, so — unlike ShipFilterBar's own
+ * chips — there is no grip icon and no `--sort` state. Hosts whose category
+ * DOES carry a direction (the replay rail's mode/sort chips) pass `dir`:
+ * the popup then shows the ↑/↓ arrow after the 全部… pill (always) and
+ * after picked concrete options (unless `pure`), exactly like the 水表
+ * bar's popups — the arrow itself stays dumb, the host owns the semantics
+ * behind the `all` event.
  *
  * The markup reuses ShipFilterBar's FLAT global classes so the chips look
  * identical to the 水表查询 filter bar. This module imports that SCSS itself:
  * views are lazy-loaded per route, and a component landing in the ships
  * chunk cannot rely on the LookupView chunk to carry the styles (Vite
  * dedupes the CSS module, so both surfaces stay in lockstep).
+ *
+ * The option track is the shared one-line pannable strip (`__opts--scroll`,
+ * optionStrip composable): HkPopover sizes its panel to max-content, so a
+ * wrapping track always measured as ONE long line that ran off-screen —
+ * the strip caps the panel instead and pans the overflow (wheel / mouse
+ * drag / native touch), with the edges fading while content hides. The
+ * phone sheet relaxes the track back into a wrapping group (SCSS).
  *
  * The popup renders through hikari HkPopover: it teleports to body level and
  * positions against the chip button, so an overflow ancestor (the ship
@@ -17,9 +29,10 @@
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type VNode } from "vue";
 
 import { HkPopover, useBreakpoint } from "@celestia-island/hikari";
-import { X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, X } from "@lucide/vue";
 
 import { t } from "@/i18n";
+import { useOptionStrip } from "./optionStrip";
 import "./ShipFilterBar.scss";
 
 export default defineComponent({
@@ -49,11 +62,26 @@ export default defineComponent({
      *  hosts with other semantics (e.g. the replay sort chip's radio)
      *  override it. */
     hint: { type: String, default: undefined },
+    /** The category's shared sort direction. Undefined (default) renders a
+     *  direction-free popup; set, the 全部… pill and picked concrete
+     *  options carry the ↑/↓ arrow (picked options skip it when `pure`). */
+    dir: {
+      type: String as PropType<"asc" | "desc">,
+      default: undefined,
+    },
+    /** Pure-filter categories (types/nations/modes): a concrete pick carries
+     *  no direction, so only the 全部… pill shows the arrow. */
+    pure: { type: Boolean, default: false },
+    /** 全部…-sort engaged while nothing is picked — the chip wears the
+     *  intermediate `--sort` style (sorting without filtering). */
+    allSort: { type: Boolean, default: false },
   },
   emits: {
     "update:open": (_v: boolean) => true,
     toggle: (_value: string) => true,
-    clear: () => true,
+    /** The 全部… pill was clicked — the HOST decides what it means (reset,
+     *  or engage/flip the 全部…-sort; the ships-bar contract). */
+    all: () => true,
   },
   setup(props, { emit }) {
     // Phone layout signal for the HkPopover sheet dock (sheetOnMobile +
@@ -70,6 +98,8 @@ export default defineComponent({
     // an outside press (it would kill the panel before the option's click).
     const chipBtn = ref<HTMLButtonElement | null>(null);
     const panelEl = ref<HTMLElement | null>(null);
+    // The pannable option track (wheel / drag / touch + edge fades).
+    const strip = useOptionStrip();
 
     function close() {
       emit("update:open", false);
@@ -93,6 +123,10 @@ export default defineComponent({
         } else {
           document.removeEventListener("pointerdown", onDocPointerDown, true);
         }
+        // A popup that closed before a pan's trailing click (window blur
+        // mid-drag — pointerup lost) must not carry the swallow flag into
+        // the reopened panel.
+        strip.resetDragged();
       },
     );
     onBeforeUnmount(() => {
@@ -108,6 +142,13 @@ export default defineComponent({
       return labels.length > 0 ? labels.join("·") : props.allLabel;
     });
 
+    const dirIcon = (d: "asc" | "desc") =>
+      d === "desc" ? (
+        <ArrowDown size={11} class="ship-filter-bar__dir" />
+      ) : (
+        <ArrowUp size={11} class="ship-filter-bar__dir" />
+      );
+
     return () => (
       <div ref={root} class="ship-filter-bar__chip-anchor">
         <button
@@ -115,7 +156,11 @@ export default defineComponent({
           ref={chipBtn}
           class={[
             "ship-filter-bar__chip",
-            props.selected.size ? "ship-filter-bar__chip--on" : "ship-filter-bar__chip--all",
+            props.selected.size
+              ? "ship-filter-bar__chip--on"
+              : props.allSort
+                ? "ship-filter-bar__chip--sort"
+                : "ship-filter-bar__chip--all",
           ]}
           onClick={() => emit("update:open", !props.open)}
         >
@@ -150,20 +195,25 @@ export default defineComponent({
                 <X size={12} />
               </button>
             </div>
-            {/* Wrap unconditionally: this component may host long option
-                lists (13 nations) inside a narrow modal, unlike the short
-                categories ShipFilterBar styles the track for. */}
+            {/* One-line pannable strip, shared with the 水表 bar's nation
+                popup: capped by the panel, panned by wheel / drag / touch,
+                fading where content still hides (optionStrip senses the
+                overflow sides onto data-h-overflow). The phone sheet
+                relaxes the track back into a wrapping group (SCSS). */}
             <div
-              class="ship-filter-bar__opts"
-              style={{ flexWrap: "wrap", justifyContent: "flex-start" }}
+              ref={strip.stripEl}
+              class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
+              data-panning={strip.panning.value || undefined}
+              onPointerdown={strip.onPointerDown}
             >
               <button
                 type="button"
                 class="ship-filter-bar__opt"
                 data-active={props.selected.size === 0 || undefined}
-                onClick={() => emit("clear")}
+                onClick={() => emit("all")}
               >
                 <span>{props.allLabel}</span>
+                {props.dir ? dirIcon(props.dir) : null}
               </button>
               {props.options.map((o) => (
                 <button
@@ -175,6 +225,9 @@ export default defineComponent({
                 >
                   {props.renderOptionIcon ? props.renderOptionIcon(o.value) : null}
                   <span>{o.label}</span>
+                  {props.dir && !props.pure && props.selected.has(o.value)
+                    ? dirIcon(props.dir)
+                    : null}
                 </button>
               ))}
             </div>
