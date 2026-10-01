@@ -120,6 +120,12 @@ export default defineComponent({
     }
 
     function onSave() {
+      // The factory default scheme is view-only (its tile carries no edit
+      // affordance); a save here would shadow it with a same-id custom.
+      if (props.schemeId === "default") {
+        close();
+        return;
+      }
       const draft = editorRef.value?.getDraft();
       if (!draft) return;
       // Ship palette first: the editor's ship slots ARE the global store

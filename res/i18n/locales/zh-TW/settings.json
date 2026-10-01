@@ -308,5 +308,6 @@
     "avgPrDesc": "懸浮窗隊伍列表下方顯示雙方平均 PR（僅遊戲內懸浮窗）。",
     "avgDamage": "隊伍場均傷害",
     "avgDamageDesc": "懸浮窗隊伍列表下方顯示雙方平均場均傷害（僅遊戲內懸浮窗）。"
-  }
+  },
+  "schemeDefaultName": "預設"
 }

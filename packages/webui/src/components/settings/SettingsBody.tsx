@@ -165,6 +165,11 @@ export default defineComponent({
     /** Row being edited (null = the new-scheme row opened a blank canvas). */
     const editSchemeId = ref<string | null>(null);
     function openSchemeEditor(id: string | null) {
+      // The factory default scheme is view-only: it has no editable
+      // identity of its own (a save would shadow it with a same-id
+      // custom), so its tile carries no edit affordance and the editor
+      // refuses it here too — belt for any future caller.
+      if (id === "default") return;
       editSchemeId.value = id;
       schemeDialogOpen.value = true;
     }
@@ -939,18 +944,25 @@ export default defineComponent({
                             }}
                           />
                         ) : null}
-                        <span class="settings-modal__theme-name">{th.name}</span>
+                        <span class="settings-modal__theme-name">
+                          {th.id === "default" ? t("settings.schemeDefaultName") : th.name}
+                        </span>
                         {on ? <Check size={12} class="settings-modal__theme-check" /> : null}
                       </button>
                       <span class="settings-modal__theme-actions">
-                        <HkIconButton
-                          size={24}
-                          variant="ghost"
-                          aria-label={t("settings.themeEdit")}
-                          onClick={() => openSchemeEditor(th.id)}
-                        >
-                          <SquarePen size={14} />
-                        </HkIconButton>
+                        {/* The factory default is view-only — no edit
+                            affordance (its name is fixed, and a save would
+                            only shadow it with a same-id custom). */}
+                        {th.id !== "default" ? (
+                          <HkIconButton
+                            size={24}
+                            variant="ghost"
+                            aria-label={t("settings.themeEdit")}
+                            onClick={() => openSchemeEditor(th.id)}
+                          >
+                            <SquarePen size={14} />
+                          </HkIconButton>
+                        ) : null}
                         {th.isCustom ? (
                           <HkIconButton
                             size={24}

@@ -308,5 +308,6 @@
     "avgPrDesc": "PR moyen par équipe sous les listes de l'overlay (overlay en jeu uniquement).",
     "avgDamage": "Dégâts moyens d'équipe",
     "avgDamageDesc": "Dégâts moyens par équipe sous les listes de l'overlay (overlay en jeu uniquement)."
-  }
+  },
+  "schemeDefaultName": "Par défaut"
 }
