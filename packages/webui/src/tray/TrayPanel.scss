@@ -40,8 +40,12 @@ body {
   border: 1px solid rgb(var(--color-border) / 25%);
   background: rgb(var(--color-surface) / 92%);
   background: rgb(var(--color-surface) / min(100%, calc(92% * var(--ui-opacity, 1))));
-  backdrop-filter: blur(var(--blur-lg));
-  -webkit-backdrop-filter: blur(var(--blur-lg));
+  /* NO backdrop-filter, deliberately: on WebView2 a backdrop-filter
+     poisons a transparent window's composition — the blurred backdrop
+     composites against opaque white and the whole canvas becomes the
+     "native window skin" again — and over a transparent window it could
+     never sample the desktop anyway. The 92% surface carries the glass
+     look on its own. */
   /* Bottom extent = 6px offset + 10px blur ≈ the 14px padding: the drop
      fades out just before the window edge instead of showing a cut. */
   box-shadow:
