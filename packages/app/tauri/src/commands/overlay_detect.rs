@@ -1078,7 +1078,7 @@ pub(crate) fn refine_roster_native(
     let rx1 = (det.rect.x + det.rect.width) as i64;
     let is_header_row = |y: i64| -> bool {
         if single_team {
-            row_mean(y, gx0, rx1).is_some_and(&is_green)
+            row_mean(y, gx0, rx1).is_some_and(is_green)
         } else {
             matches!(
                 (row_mean(y, gx0, gx1), row_mean(y, gx1, rx1)),
