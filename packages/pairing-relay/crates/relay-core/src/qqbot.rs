@@ -178,9 +178,10 @@ fn signing_key(secret: &str) -> SigningKey {
 pub fn validation_response(secret: &str, plain_token: &str, event_ts: &str) -> Option<Value> {
     let msg = format!("{event_ts}{plain_token}");
     let sig = signing_key(secret).sign(msg.as_bytes());
+    // 官方示例的应答体是扁平的两字段（无 op/d 信封）——平台按此解析。
     Some(json!({
-        "op": 14,
-        "d": { "plain_token": plain_token, "signature": hex(&sig.to_bytes()) }
+        "plain_token": plain_token,
+        "signature": hex(&sig.to_bytes()),
     }))
 }
 
@@ -391,9 +392,8 @@ mod tests {
         // 官方 Go 示例：seed = secret 翻倍到 32 字节；msg = event_ts + plain_token。
         let secret = "DG5g3B4j9X2KOErG"; // wiki 示例用的 16 字节短 secret
         let resp = validation_response(secret, "plain-abc", "1690000000").unwrap();
-        assert_eq!(resp["op"], 14);
-        assert_eq!(resp["d"]["plain_token"], "plain-abc");
-        let sig = resp["d"]["signature"].as_str().unwrap();
+        assert_eq!(resp["plain_token"], "plain-abc");
+        let sig = resp["signature"].as_str().unwrap();
         // 用同一派生公钥能验开。
         let verifying = signing_key(secret).verifying_key();
         let msg = b"1690000000plain-abc";
