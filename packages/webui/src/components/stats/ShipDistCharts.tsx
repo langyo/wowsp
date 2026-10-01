@@ -430,7 +430,9 @@ export default defineComponent({
     // Slice colors keyed by the aggregated code itself (not data order):
     // each fill resolves the palette from theme/shipTypeColors, so a class
     // keeps its color across players, filters and locale switches — and
-    // settings-picker edits repaint live (the computed reads the ref).
+    // scheme-editor palette edits repaint live (the lookup reads the
+    // store ref against the effective mode, so dark/light switches do
+    // too).
     const typeSlices = computed(() =>
       donutSlices(positiveEntries(dist.value.types), {
         labelOf: typeLabel,

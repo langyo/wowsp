@@ -20,7 +20,6 @@ import {
   Plus,
   Power,
   RefreshCw,
-  RotateCcw,
   Smartphone,
   ScrollText,
   SquarePen,
@@ -32,7 +31,6 @@ import {
 
 import {
   HkButton,
-  HkColorPicker,
   HkDivider,
   HkIconButton,
   HkInput,
@@ -65,13 +63,6 @@ import {
   themeModePreference,
   type ThemeModePreference,
 } from "@/theme/themeModePreference";
-import {
-  SHIP_TYPE_COLOR_LABEL_KEYS,
-  SHIP_TYPE_COLOR_ORDER,
-  resetShipTypeColors,
-  setShipTypeColor,
-  shipTypeColors,
-} from "@/theme/shipTypeColors";
 import {
   DPI_MAX,
   DPI_MIN,
@@ -913,16 +904,16 @@ export default defineComponent({
 
             {/* color scheme — the live theme list in hikari's picker
                 grammar (what shittim-chest shows): builtin presets plus the
-                user's custom schemes, ONE row per id (a custom shadowing a
-                builtin id dedupes to one row flagged custom — its delete
-                doubles as "restore the factory preset"). A row click
+                user's custom schemes, one tile per id (a custom shadowing a
+                builtin id dedupes to one tile flagged custom — its delete
+                doubles as "restore the factory preset"). A tile click
                 applies the theme live; the pencil raises the full scheme
-                editor window (ThemeSchemeDialog) prefilled with that row;
-                the dashed row at the end starts a blank custom scheme.
-                Unlike the old preset-card grid this list can never go
-                stale against the installed hikari: it reads the theme
-                engine's own merged view (allThemeList), not a local
-                whitelist. */}
+                editor window (ThemeSchemeDialog — host of the ship-type
+                pie palette too) prefilled with that tile; the dashed tile
+                at the end starts a blank custom scheme. Unlike the old
+                preset-card grid this list can never go stale against the
+                installed hikari: it reads the theme engine's own merged
+                view (allThemeList), not a local whitelist. */}
             <HkSettingsSub title={t("settings.themePreset")}>
               <div class="settings-modal__themes">
                 {theme.allThemeList.value.map((th) => {
@@ -984,45 +975,6 @@ export default defineComponent({
                 </button>
               </div>
               <HkSettingsHint>{t("settings.themeSchemeHint")}</HkSettingsHint>
-            </HkSettingsSub>
-
-            <HkDivider />
-
-            {/* ship-type pie colors — the fixed per-class palette behind the
-                ship-distribution donut (theme/shipTypeColors): one picker
-                row per ship type, labeled by the full class name. Edits
-                apply (and persist) immediately; the chart repaints live
-                through its palette-ref watch. */}
-            <HkSettingsSub title={t("settings.shipTypeColors")}>
-              <div class="settings-modal__ship-colors">
-                {SHIP_TYPE_COLOR_ORDER.map((key) => {
-                  const c = shipTypeColors.value[key];
-                  return (
-                    <HkColorPicker
-                      key={key}
-                      r={c.r}
-                      g={c.g}
-                      b={c.b}
-                      layout="row"
-                      label={t(`ships.type.${SHIP_TYPE_COLOR_LABEL_KEYS[key]}`)}
-                      onChange={(next: { r: number; g: number; b: number }) =>
-                        setShipTypeColor(key, next)
-                      }
-                    />
-                  );
-                })}
-              </div>
-              <div class="settings-modal__ship-colors-reset">
-                <HkIconButton
-                  size={24}
-                  variant="ghost"
-                  aria-label={t("settings.shipTypeColorsReset")}
-                  onClick={resetShipTypeColors}
-                >
-                  <RotateCcw size={14} />
-                </HkIconButton>
-              </div>
-              <HkSettingsHint>{t("settings.shipTypeColorsHint")}</HkSettingsHint>
             </HkSettingsSub>
 
             <HkDivider />
