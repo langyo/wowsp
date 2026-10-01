@@ -1,10 +1,11 @@
 import { computed, defineComponent, onMounted, onUnmounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { Camera, Copy, ExternalLink, FolderSearch, History, PackageOpen } from "@lucide/vue";
+import { Camera, Copy, ExternalLink, FolderSearch, HelpCircle, History, PackageOpen } from "@lucide/vue";
 
 import {
   HkButton,
   HkCheckbox,
+  HkModal,
   HkIconButton,
   HkInput,
   HkSelect,
@@ -270,6 +271,24 @@ export default defineComponent({
       }
     }
 
+    // ── 验证向导：QQ 输入框旁 ? 按钮的三步弹窗 ────────────────────────
+    const wizardOpen = ref(false);
+    const wizardCopied = ref(false);
+    let copyFlash: ReturnType<typeof setTimeout> | null = null;
+
+    function openWizard() {
+      wizardCopied.value = false;
+      wizardOpen.value = true;
+    }
+
+    async function wizardCopy() {
+      if (!qqCode.value) return;
+      await copy(`验证 ${qqCode.value}`);
+      wizardCopied.value = true;
+      if (copyFlash) clearTimeout(copyFlash);
+      copyFlash = setTimeout(() => (wizardCopied.value = false), 1600);
+    }
+
     async function takeShot() {
       shooting.value = true;
       try {
@@ -308,8 +327,12 @@ export default defineComponent({
       }
     }
 
-    // The pane unmounts on section switch — clear the poll there.
-    onUnmounted(stopQqPoll);
+    // The pane unmounts on section switch — clear the poll (and any
+    // pending copy-flash timer) there.
+    onUnmounted(() => {
+      stopQqPoll();
+      if (copyFlash) clearTimeout(copyFlash);
+    });
 
     const realmOptions = [
       { value: "", label: t("settings.feedbackServerNone") },
@@ -475,6 +498,17 @@ export default defineComponent({
                   : t("settings.feedbackContactPhEmail")
               }
             />
+            {ctType.value === "qq" ? (
+              <HkIconButton
+                size={24}
+                variant="ghost"
+                aria-label={t("settings.feedbackWizardTitle")}
+                data-hint={t("settings.feedbackWizardTitle")}
+                onClick={openWizard}
+              >
+                <HelpCircle size={14} />
+              </HkIconButton>
+            ) : null}
           </div>
 
           {isQq.value && !qqVerified.value ? (
@@ -578,6 +612,78 @@ export default defineComponent({
           </div>
           <HkSettingsHint>{t("settings.feedbackPrivacy")}</HkSettingsHint>
         </div>
+
+        <HkModal
+          modelValue={wizardOpen.value}
+          onUpdate:modelValue={(v: boolean) => (wizardOpen.value = v)}
+          title={t("settings.feedbackWizardTitle")}
+          width="26rem"
+        >
+          <div class="feedback__wizard">
+            <div class="feedback__wizard-step">
+              <span class="feedback__wizard-no">1</span>
+              <span class="feedback__wizard-body">
+                {t("settings.feedbackWizardStep1", {
+                  group: t("about.qqGroupNumber"),
+                })}
+                <HkButton
+                  size="sm"
+                  onClick={() => void openExternal(t("about.links.qqGroup"))}
+                >
+                  {t("settings.feedbackWizardJoin")}
+                </HkButton>
+              </span>
+            </div>
+            <div class="feedback__wizard-step">
+              <span class="feedback__wizard-no">2</span>
+              <span class="feedback__wizard-body">
+                {t("settings.feedbackWizardStep2")}
+              </span>
+            </div>
+            <div class="feedback__wizard-step">
+              <span class="feedback__wizard-no">3</span>
+              <span class="feedback__wizard-body">
+                {qqVerified.value ? (
+                  t("settings.feedbackQqVerified")
+                ) : (
+                  <>
+                    {qqCode.value
+                      ? t("settings.feedbackWizardStep3", { code: qqCode.value })
+                      : t("settings.feedbackQqVerifyHint")}
+                    <div class="feedback__wizard-actions">
+                      {qqCode.value ? (
+                        <HkButton size="sm" onClick={() => void wizardCopy()}>
+                          <Copy size={14} />
+                          {wizardCopied.value
+                            ? t("settings.feedbackWizardCopied")
+                            : t("settings.feedbackWizardCopy")}
+                        </HkButton>
+                      ) : (
+                        <HkButton
+                          size="sm"
+                          loading={qqBusy.value}
+                          disabled={qqBusy.value || !isQq.value}
+                          onClick={() => void getQqCode()}
+                        >
+                          {t("settings.feedbackQqVerifyBtn")}
+                        </HkButton>
+                      )}
+                    </div>
+                  </>
+                )}
+              </span>
+            </div>
+            <div class="feedback__wizard-actions">
+              <HkButton
+                variant="primary"
+                size="sm"
+                onClick={() => (wizardOpen.value = false)}
+              >
+                {t("settings.feedbackWizardDone")}
+              </HkButton>
+            </div>
+          </div>
+        </HkModal>
 
         <div class="feedback__actions">
           <HkButton size="sm" onClick={openHistory}>

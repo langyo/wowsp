@@ -174,3 +174,47 @@
     color: var(--hi-color-primary);
   }
 }
+
+// ── QQ 验证向导（HkModal 内容） ────────────────────────────────────────
+.feedback__wizard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hi-space-12, 12px);
+}
+
+.feedback__wizard-step {
+  display: flex;
+  gap: var(--hi-space-10, 10px);
+  align-items: flex-start;
+  font-size: var(--text-sm, 0.8125rem);
+  line-height: 1.6;
+}
+
+.feedback__wizard-no {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--text-2xs, 0.625rem);
+  font-weight: 700;
+  background: rgb(var(--color-primary) / 15%);
+  color: var(--hi-color-primary, inherit);
+}
+
+.feedback__wizard-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hi-space-8, 8px);
+  align-items: flex-start;
+}
+
+.feedback__wizard-actions {
+  display: flex;
+  gap: var(--hi-space-8, 8px);
+  flex-wrap: wrap;
+}
