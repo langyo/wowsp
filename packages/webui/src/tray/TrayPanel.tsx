@@ -1,5 +1,5 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, watch } from "vue";
-import { Eye, EyeOff, LogOut } from "@lucide/vue";
+import { Eye, LogOut } from "@lucide/vue";
 
 import { HkTag } from "@celestia-island/hikari";
 
@@ -154,10 +154,6 @@ export default defineComponent({
             <button type="button" class="tray-panel__menu-item" onClick={() => act("show")}>
               <Eye size={15} class="tray-panel__menu-icon" />
               <span>{t("tray.show")}</span>
-            </button>
-            <button type="button" class="tray-panel__menu-item" onClick={() => act("hide")}>
-              <EyeOff size={15} class="tray-panel__menu-icon" />
-              <span>{t("tray.hide")}</span>
             </button>
             <button
               type="button"
