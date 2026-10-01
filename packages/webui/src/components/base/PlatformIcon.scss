@@ -29,9 +29,14 @@
   /* Steam: the piston mark inset on the official navy-to-azure roundel
      gradient. Net mark ≈78% of the disc (0.9 inner clearance in the svg
      so the mark never sits tangent to its viewport — tangent edges shave
-     flat — times the 87% svg box). */
+     flat — times the 87% svg box). Origin must stay border-box, declared
+     after the shorthand that resets it: the rim border is translucent,
+     and the default padding-box origin sizes the gradient tile inside
+     the border, so the tile wraps under the rim — the 1px cap reads the
+     gradient's opposite end (azure on top, navy on bottom). */
   &--steam {
     background: linear-gradient(180deg, #151d3a 0%, #05669a 100%);
+    background-origin: border-box;
 
     svg:not(.platform-icon__glyph) {
       width: 87%;
