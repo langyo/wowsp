@@ -453,34 +453,35 @@ export default defineComponent({
     const nationLegend = computed(() => toLegendItems(nationSlices.value));
 
     // DOM legend for a donut — rows stack vertically in columns of
-    // LEGEND_ROWS_PER_COLUMN, extra columns continue to the right. Ship
-    // types render the WG-site dot + name row; nations render the in-game
-    // faction flag instead of a (truncation-prone) name — the flag speaks
-    // for the row and its data-hint carries the full "name · battles ·
-    // percent" string, so the percent shows only on hover. Rendered
-    // beside the SVG inside __pie-body (tiersOnly compact mode never
-    // reaches here — the whole piewrap block is gated).
+    // LEGEND_ROWS_PER_COLUMN, extra columns continue to the right. Every
+    // row leads with the slice-color dot: without it the flag rows give
+    // no cue which ring slice a nation owns. After the dot ship types
+    // render the localized name, nations the in-game faction flag
+    // instead of a (truncation-prone) name — the flag speaks for the row
+    // and its data-hint carries the full "name · battles · percent"
+    // string, so the percent shows only on hover. Rendered beside the
+    // SVG inside __pie-body (tiersOnly compact mode never reaches here —
+    // the whole piewrap block is gated).
     const legendNode = (items: LegendItem[], flags: boolean) => (
       <div class="ship-dist-charts__legend">
         {chunkLegendItems(items, LEGEND_ROWS_PER_COLUMN).map((column, ci) => (
           <div class="ship-dist-charts__legend-col" key={ci}>
-            {column.map((it) =>
-              flags ? (
-                <NationFlag
-                  key={it.code}
-                  nation={it.code}
-                  label={it.text}
-                  hint={it.hint}
-                  variant="flag"
-                  size="sm"
-                />
-              ) : (
-                <span class="ship-dist-charts__legend-item" key={it.code} data-hint={it.hint}>
-                  <span class="ship-dist-charts__legend-dot" style={{ background: it.color }} />
+            {column.map((it) => (
+              <span class="ship-dist-charts__legend-item" key={it.code} data-hint={it.hint}>
+                <span class="ship-dist-charts__legend-dot" style={{ background: it.color }} />
+                {flags ? (
+                  <NationFlag
+                    nation={it.code}
+                    label={it.text}
+                    hint={it.hint}
+                    variant="flag"
+                    size="sm"
+                  />
+                ) : (
                   <span class="ship-dist-charts__legend-text">{it.text}</span>
-                </span>
-              ),
-            )}
+                )}
+              </span>
+            ))}
           </div>
         ))}
       </div>

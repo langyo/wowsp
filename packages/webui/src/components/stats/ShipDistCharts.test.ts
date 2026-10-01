@@ -1,23 +1,57 @@
-/** Column math + SVG geometry for the ship-distribution charts.
- *  chunkLegendItems must be pure, order-preserving and fully deterministic
- *  — the number of columns a donut's legend shows depends only on it (5
- *  rows per column: 6 ship types → 5+1 over two columns, 14 nations →
- *  5+5+4 over three). donutSlices / tierBars generate the hand-drawn SVG
- *  paths, so their angle math, radii, layout and the degenerate
- *  full-circle arc all carry exact-string coverage here; the percentInt
- *  tests pin the legend-hint/tooltip integer agreement against double
- *  rounding (legend rows show no percent text — percents live in the
- *  hover hint only). */
-import { describe, expect, it } from "vitest";
+/** Column math, SVG geometry and the mounted DOM legend for the
+ *  ship-distribution charts. chunkLegendItems must be pure, order-
+ *  preserving and fully deterministic — the number of columns a donut's
+ *  legend shows depends only on it (5 rows per column: 6 ship types →
+ *  5+1 over two columns, 14 nations → 5+5+4 over three). donutSlices /
+ *  tierBars generate the hand-drawn SVG paths, so their angle math,
+ *  radii, layout and the degenerate full-circle arc all carry
+ *  exact-string coverage here; the percentInt tests pin the
+ *  legend-hint/tooltip integer agreement against double rounding (legend
+ *  rows show no percent text — percents live in the hover hint only).
+ *
+ *  The mounted tests stub the offline ship DB (shipOfflineEntry) and pin
+ *  the presentational contract the pure helpers cannot see: EVERY legend
+ *  row of both donuts leads with the slice-color dot — paired with the
+ *  localized name for ship types, the nation flag for nations (a flag
+ *  row without its dot gives no cue which ring slice the nation owns). */
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 
 import { t } from "@/i18n";
-import {
+import ShipDistCharts, {
   chunkLegendItems,
   donutSlices,
   sliceHint,
   tierBars,
   toLegendItems,
+  type DistDatum,
 } from "./ShipDistCharts";
+
+// The mounted tests below aggregate through shipOfflineEntry; stubbing the
+// module keeps the real bundled game-data DB (and its shifting ship IDs)
+// out of the test. Three classes across three canonical nations fill both
+// legends deterministically (battles-desc is the input order).
+const OFFLINE_DB = vi.hoisted(() => {
+  const entry = (index: string, tier: number, type: string, nation: string) => ({
+    index,
+    tier,
+    type,
+    nation,
+    names: {},
+  });
+  return {
+    11: entry("A11", 10, "AirCarrier", "japan"),
+    22: entry("B22", 8, "Battleship", "usa"),
+    33: entry("D33", 6, "Destroyer", "germany"),
+  } as Record<string, ReturnType<typeof entry>>;
+});
+
+vi.mock("@/features/holographic/modelLoader", () => ({
+  shipOfflineEntry: (shipId: number | string | undefined) =>
+    shipId == null ? null : (OFFLINE_DB[String(shipId)] ?? null),
+  nationNameFromDb: () => null,
+}));
 
 /** Shorthand: the per-column item counts for a chunking run. */
 function shape(items: number[], size: number): number[] {
@@ -278,5 +312,44 @@ describe("tierBars", () => {
     expect(bars[0]!.centerX).toBe(29); // 8 + 42 × 0.5
     expect(bars[0]!.barWidth).toBe(5);
     expect(bars[0]!.barHeight).toBe(20); // (60−18−22) × 1.0
+  });
+});
+
+describe("mounted DOM legend", () => {
+  enableAutoUnmount(afterEach);
+
+  const ships: DistDatum[] = [
+    { shipId: 11, battles: 10 },
+    { shipId: 22, battles: 8 },
+    { shipId: 33, battles: 4 },
+  ];
+
+  it("leads every legend row of both donuts with the slice-color dot", () => {
+    const wrapper = mount(ShipDistCharts, { props: { ships } });
+    // Three ship types + three nations → three rows per legend, six total.
+    const rows = wrapper.findAll(".ship-dist-charts__legend-item");
+    expect(rows).toHaveLength(6);
+    for (const row of rows) {
+      // The dot paints the slice color inline — without it a flag row
+      // gives no cue which ring slice the nation owns.
+      const dot = row.find(".ship-dist-charts__legend-dot");
+      expect(dot.exists()).toBe(true);
+      expect(dot.attributes("style")).toContain("background");
+    }
+    // Both aggregations produced visible slices for the rows to map onto.
+    expect(wrapper.findAll(".ship-dist-charts__slice")).toHaveLength(6);
+  });
+
+  it("pairs the dot with the name for ship types and with the flag for nations", () => {
+    const wrapper = mount(ShipDistCharts, { props: { ships } });
+    const [typeBody, nationBody] = wrapper.findAll(".ship-dist-charts__pie-body");
+    for (const row of typeBody!.findAll(".ship-dist-charts__legend-item")) {
+      expect(row.find(".ship-dist-charts__legend-text").exists()).toBe(true);
+      expect(row.find(".nation-flag").exists()).toBe(false);
+    }
+    for (const row of nationBody!.findAll(".ship-dist-charts__legend-item")) {
+      expect(row.find(".nation-flag").exists()).toBe(true);
+      expect(row.find(".ship-dist-charts__legend-text").exists()).toBe(false);
+    }
   });
 });
