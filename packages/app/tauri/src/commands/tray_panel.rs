@@ -123,6 +123,46 @@ pub fn hide_panel(app: &AppHandle) {
     }
 }
 
+/// Debug/dev affordance (the `WOWSP_AUTOSTART_TRAY_PANEL` env var, wired in
+/// `lib.rs`'s setup beside the `WOWSP_AUTOSTART_PAIRING` precedent): open the
+/// panel WITHOUT a tray click, anchored to the primary work area's
+/// bottom-right corner — the same placement a bottom taskbar tray click
+/// produces. Manual/visual verification flows only; never compiled into
+/// release builds.
+#[cfg(all(debug_assertions, desktop))]
+pub fn debug_show(app: &AppHandle) {
+    let Some(win) = ensure_tray_panel(app) else {
+        return;
+    };
+    if win.is_visible().unwrap_or(false) {
+        return;
+    }
+    // PRIMARY monitor, not the window's current one: the panel is created
+    // hidden, and a hidden window has no monitor attachment yet —
+    // current_monitor() answers None and the whole placement would no-op
+    // (the panel would stay at its creation-default position, still hidden).
+    let Some(monitor) = win.primary_monitor().ok().flatten() else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let wa = monitor.work_area();
+    let panel = (PANEL_LOGICAL.0 * scale, PANEL_LOGICAL.1 * scale);
+    let work = (
+        wa.position.x as f64,
+        wa.position.y as f64,
+        wa.size.width as f64,
+        wa.size.height as f64,
+    );
+    // A synthetic 40×40 tray-icon cell just inside the work area's
+    // bottom-right corner: panel_origin opens above it and clamps.
+    let icon = (work.0 + work.2 - 60.0, work.1 + work.3 - 60.0, 40.0, 40.0);
+    let (x, y) = panel_origin(icon, panel, work);
+    let _ = win.set_size(PhysicalSize::new(panel.0, panel.1));
+    let _ = win.set_position(PhysicalPosition::new(x as i32, y as i32));
+    let _ = win.show();
+    let _ = win.set_focus();
+}
+
 /// Create the panel window on first use (idempotent). Starts hidden —
 /// [`place_and_show`] positions and reveals it. Errors are logged, not
 /// propagated: a failed panel creation must never take the tray click down

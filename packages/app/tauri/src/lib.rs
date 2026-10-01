@@ -386,6 +386,30 @@ pub fn run() {
                 }
             }
 
+            // Debug-only helper: open the tray panel at launch (anchored to
+            // the primary work area's bottom-right) so manual/visual checks
+            // don't need a real tray click. Deferred + retried: startup focus
+            // churn (the main webview finishing its load) blur-hides an
+            // instantly-shown panel, so the show is re-asserted for a few
+            // seconds until it sticks — debug_show is a no-op while visible.
+            #[cfg(all(debug_assertions, desktop))]
+            if std::env::var("WOWSP_AUTOSTART_TRAY_PANEL").is_ok() {
+                let handle = app.handle().clone();
+                std::thread::Builder::new()
+                    .name("wowsp-traypanel-autopen".into())
+                    .spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(1200));
+                        for _ in 0..8 {
+                            let opened = handle.clone();
+                            let _ = handle.run_on_main_thread(move || {
+                                commands::tray_panel::debug_show(&opened);
+                            });
+                            std::thread::sleep(std::time::Duration::from_millis(700));
+                        }
+                    })
+                    .expect("spawn tray panel autopen thread");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
