@@ -27,24 +27,32 @@
   }
 
   /* Steam: the piston mark inset on the official navy-to-azure roundel
-     (the mark alone fills its viewBox, so pad the svg inside the disc). */
+     gradient. Net mark ≈78% of the disc (0.9 inner clearance in the svg
+     so the mark never sits tangent to its viewport — tangent edges shave
+     flat — times the 87% svg box). */
   &--steam {
     background: linear-gradient(180deg, #151d3a 0%, #05669a 100%);
 
     svg:not(.platform-icon__glyph) {
-      width: 78%;
-      height: 78%;
+      width: 87%;
+      height: 87%;
     }
   }
 
   /* WG / Lesta: the SVG draws the official plate itself (anchor shield /
-     hexagon), so the disc chrome is dropped — radius included, or the
+     hexagon) at 88% of the box — full-bleed read heavier than the round
+     badges beside it. Disc chrome is dropped — radius included, or the
      circular overflow clip would shave the plate's square corners. */
   &--wg,
   &--lesta {
     border: 0;
     border-radius: 0;
     background: none;
+
+    svg:not(.platform-icon__glyph) {
+      width: 88%;
+      height: 88%;
+    }
   }
 
   &--cn {

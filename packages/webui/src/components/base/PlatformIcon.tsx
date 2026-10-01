@@ -86,7 +86,12 @@ export default defineComponent({
         >
           {key === "steam" ? (
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d={STEAM_PATH} fill="currentColor" />
+              {/* The simple-icons mark is tangent to its viewBox; left as-is
+                  it shaves flat at the svg viewport's top/bottom edges. */
+              }
+              <g transform="translate(1.2 1.2) scale(0.9)">
+                <path d={STEAM_PATH} fill="currentColor" />
+              </g>
             </svg>
           ) : key === "wg" ? (
             <svg viewBox="0 0 24 24" aria-hidden="true">

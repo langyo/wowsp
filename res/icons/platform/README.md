@@ -8,9 +8,9 @@ for docs, store listings, and issue reports.
 
 | File              | Platform                        | Mark                                                     |
 | ----------------- | ------------------------------- | -------------------------------------------------------- |
-| `steam.webp`      | Steam (`steam`)                 | Piston mark (simple-icons, CC0) inset 78% on the official navy-to-azure roundel gradient `#151d3a → #05669a` |
-| `wargaming.webp`  | Wargaming (`wargaming`)         | World of Warships anchor shield: white rim, `#1e94cf` field |
-| `lesta.webp`      | Lesta (`lesta`)                 | Мир кораблей cyan hexagon `#00d7eb` with navy `#010a19` anchor |
+| `steam.webp`      | Steam (`steam`)                 | Piston mark (simple-icons, CC0), net inset ≈78% on the official navy-to-azure roundel gradient `#151d3a → #05669a` |
+| `wargaming.webp`  | Wargaming (`wargaming`)         | World of Warships anchor shield at 88% of the badge: white rim, `#1e94cf` field |
+| `lesta.webp`      | Lesta (`lesta`)                 | Мир кораблей cyan hexagon `#00d7eb` with navy `#010a19` anchor, 88% of the badge |
 | `cn360.webp`      | CN 360 (`cn360`, `cnKongzhong`) | `#6fbe2c` disc with white "360" digits (Roboto Bold outlines, Apache 2.0) |
 
 Provenance: the WG shield and Lesta hexagon are hand-traced from the
