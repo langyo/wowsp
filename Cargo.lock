@@ -617,9 +617,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.25.1"
+version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6aedf8ae72766347502cf3cb4f41cf5e9cc37d28bee90f1fdaaae15f9cf9424"
+checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -8325,19 +8325,3 @@ dependencies = [
  "syn 3.0.6",
  "winnow 1.0.4",
 ]
-
-[[patch.unused]]
-name = "plana"
-version = "0.2.1"
-
-[[patch.unused]]
-name = "plana-celestia-config"
-version = "0.1.29"
-
-[[patch.unused]]
-name = "plana-rpc-client"
-version = "0.2.2"
-
-[[patch.unused]]
-name = "plana-rpc-server"
-version = "0.1.0"
