@@ -6,18 +6,15 @@
 //! it, and it shows the same session state the main window's bottom-left
 //! footer does (running client + who is playing — see `commands/session`)
 //! plus the old native menu's actions (show / hide / quit). The window is
-//! created lazily on the first click and then kept alive hidden, so
-//! subsequent toggles are instant.
+//! declared in `tauri.conf.json` and created hidden at boot, so toggles are
+//! instant (see [`ensure_tray_panel`] for why it is NOT builder-created).
 //!
 //! Unlike the overlay it is a normal activatable window: it takes focus on
 //! show (so a click anywhere outside — `Focused(false)` in `lib.rs`'s window
 //! handler — hides it again) and its buttons work. `WS_EX_TOOLWINDOW` keeps
 //! it out of Alt-Tab; `always_on_top` keeps it above the app it floats over.
 
-use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 /// Window label (must be listed in `capabilities/default.json`).
 pub const TRAY_PANEL_LABEL: &str = "tray-panel";
@@ -61,6 +58,7 @@ pub fn toggle_from_tray(app: &AppHandle, cursor: &PhysicalPosition<f64>, icon: &
     let Some(win) = ensure_tray_panel(app) else {
         return;
     };
+    ensure_styled(&win);
     if win.is_visible().unwrap_or(false) {
         let _ = win.hide();
         note_hidden();
@@ -134,6 +132,7 @@ pub fn debug_show(app: &AppHandle) {
     let Some(win) = ensure_tray_panel(app) else {
         return;
     };
+    ensure_styled(&win);
     if win.is_visible().unwrap_or(false) {
         return;
     }
@@ -163,57 +162,38 @@ pub fn debug_show(app: &AppHandle) {
     let _ = win.set_focus();
 }
 
-/// Create the panel window on first use (idempotent). Starts hidden —
-/// [`place_and_show`] positions and reveals it. Errors are logged, not
-/// propagated: a failed panel creation must never take the tray click down
-/// with it (double-click still restores the main window, whose close dialog
-/// carries quit — the escape hatch now that no native menu exists).
+/// The panel window, created ONCE from the `tray-panel` entry in
+/// `tauri.conf.json` (created hidden at boot alongside the main window).
+///
+/// It used to be created lazily via `WebviewWindowBuilder` here — and that
+/// path turned out to be the whole "native window skin" bug: on this
+/// runtime, a `WebviewWindowBuilder`-created window came up with its full
+/// native frame intact (caption + borders + opaque redirection surface)
+/// even though every builder flag said otherwise, verified with
+/// WindowFromPoint + GetWindowLongPtr against a release build. The
+/// `WindowConfig` path (`tauri.conf.json` — the same one the main window
+/// has ridden since forever) applies all of it correctly, so the panel
+/// lives there now: pre-created hidden, zero cost, and [`place_and_show`]
+/// just positions and reveals it. Mobile note: the config entry also
+/// creates a hidden panel webview there — invisible and harmless.
 fn ensure_tray_panel(app: &AppHandle) -> Option<WebviewWindow> {
-    if let Some(win) = app.get_webview_window(TRAY_PANEL_LABEL) {
-        return Some(win);
+    let win = app.get_webview_window(TRAY_PANEL_LABEL);
+    if win.is_none() {
+        tracing::warn!("tray panel window missing (config entry not created?)");
     }
-    // Seed the OS locale/scheme prefs BEFORE any page JS runs (the main
-    // setup only evals the seed into the FIRST window it finds, so a
-    // lazily-created panel would otherwise locale-detect from
-    // navigator.language alone — see os_prefs + the i18n detect). An
-    // initialization SCRIPT rides every navigation, unlike a post-build
-    // eval whose ordering against the first load is not guaranteed.
-    let prefs = crate::os_prefs::detect();
-    let seed = crate::os_prefs::initialization_script(&prefs);
-    let win =
-        WebviewWindowBuilder::new(app, TRAY_PANEL_LABEL, WebviewUrl::App("/tray.html".into()))
-            .title("WoWSP Tray")
-            .transparent(true)
-            .decorations(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .resizable(false)
-            .visible(false)
-            .inner_size(PANEL_LOGICAL.0, PANEL_LOGICAL.1)
-            .initialization_script(seed)
-            .build();
-    match win {
-        Ok(win) => {
-            post_create_setup(&win);
-            Some(win)
-        },
-        Err(e) => {
-            tracing::warn!(error = %e, "create tray panel window failed");
-            None
-        },
-    }
+    win
 }
 
-/// Windows-specific styling: TOOLWINDOW keeps the borderless window out of
+/// One-time Win32 styling for the config-created panel (called from
+/// `lib.rs`'s setup): TOOLWINDOW keeps the borderless window out of
 /// Alt-Tab; DWM non-client rendering is disabled so the transparent window
 /// shows no 1px system border (same rationale as the overlay's setup, minus
 /// the click-through/no-activate bits — the panel must accept clicks and
 /// focus).
 #[cfg(target_os = "windows")]
-fn post_create_setup(win: &WebviewWindow) {
+pub fn post_create_setup(win: &WebviewWindow) {
     use windows::Win32::Graphics::Dwm::{
-        DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
-        DWMWCP_DONOTROUND, DwmSetWindowAttribute,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_TOOLWINDOW,
@@ -223,16 +203,13 @@ fn post_create_setup(win: &WebviewWindow) {
         unsafe {
             let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
             let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_TOOLWINDOW.0 as isize);
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_NCRENDERING_POLICY,
-                &(DWMNCRP_DISABLED.0) as *const _ as *const core::ffi::c_void,
-                4,
-            );
+            // The window IS the card: DWM rounds the corners and draws the
+            // drop shadow (conf `shadow: true`), so the opaque popup still
+            // reads as a floating panel.
             let _ = DwmSetWindowAttribute(
                 hwnd,
                 DWMWA_WINDOW_CORNER_PREFERENCE,
-                &(DWMWCP_DONOTROUND.0) as *const _ as *const core::ffi::c_void,
+                &(DWMWCP_ROUND.0) as *const _ as *const core::ffi::c_void,
                 4,
             );
         }
@@ -240,7 +217,38 @@ fn post_create_setup(win: &WebviewWindow) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn post_create_setup(_win: &WebviewWindow) {}
+pub fn post_create_setup(_win: &WebviewWindow) {}
+
+/// One-time Win32 styling for the panel — TOOLWINDOW (out of Alt-Tab) plus
+/// the DWM pins that HIDE the native frame on a transparent window
+/// (NCRENDERING_POLICY=DISABLED stops DWM from painting the caption +
+/// thickframe accent tint — WITHOUT it a `transparent: true` window shows
+/// its whole native chrome as the "native window skin" — and DONOTROUND
+/// keeps the corners square).
+///
+/// Idempotent and applied lazily before every show path, NOT from setup:
+/// the tauri 2 setup hook runs BEFORE the config windows exist, so a
+/// get_webview_window there answers None and the styling would silently
+/// never happen (that was the skin bug's last piece).
+#[cfg(target_os = "windows")]
+fn ensure_styled(win: &WebviewWindow) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static STYLED: AtomicBool = AtomicBool::new(false);
+    if STYLED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    // tao #72: a builder/config `decorations: false` alone leaves DWM
+    // painting a ghost caption + accent frame over a transparent window
+    // (the frame styles stay in the style bits and the WM_NCCALCSIZE
+    // suppression never triggers a frame recalc). Re-asserting the flag
+    // POST-CREATION goes through set_window_flags → apply_diff, which
+    // forces the SWP_FRAMECHANGED recalc that actually removes it.
+    let _ = win.set_decorations(false);
+    post_create_setup(win);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ensure_styled(_win: &WebviewWindow) {}
 
 /// Position the panel next to the tray icon (inside that monitor's work
 /// area) and show + focus it. The monitor is resolved from the CURSOR

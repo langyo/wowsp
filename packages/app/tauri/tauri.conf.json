@@ -43,6 +43,22 @@
         "minimizable": true,
         "maximizable": true,
         "closable": true
+      },
+      {
+        "label": "tray-panel",
+        "title": "WoWSP Tray",
+        "url": "/tray.html",
+        "width": 320,
+        "height": 372,
+        "resizable": false,
+        "visible": false,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "closable": false,
+        "focus": false,
+        "shadow": true
       }
     ],
     "security": {

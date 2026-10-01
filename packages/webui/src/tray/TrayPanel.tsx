@@ -77,7 +77,6 @@ export default defineComponent({
 
     return () => (
       <div class="tray-panel">
-        <div class="tray-panel__card">
           <div class="tray-panel__brand">
             <img src="/logo.webp" alt="WoWSP" class="tray-panel__brand-logo" />
             <span class="tray-panel__brand-name">{t("common.app.name")}</span>
@@ -168,7 +167,6 @@ export default defineComponent({
               <LogOut size={15} class="tray-panel__menu-icon" />
               <span>{t("tray.quit")}</span>
             </button>
-          </div>
         </div>
       </div>
     );

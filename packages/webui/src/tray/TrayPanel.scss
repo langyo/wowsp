@@ -1,59 +1,43 @@
 /**
- * Tray panel — the window is transparent + frameless (see
- * commands/tray_panel.rs), so this card IS the visible surface: rounded,
- * shadowed, glass-filled, matching the shell's hikari theme. The 14px outer
- * padding keeps the CSS box-shadow (which the transparent window alone
- * cannot draw) inside the window bounds on every side; the shadow is tuned
- * to fade near that boundary — offset+blur must stay small enough that the
- * straight clip edge at the padding line is not perceptible.
+ * Tray panel — the window is FRAMELESS but OPAQUE (see
+ * commands/tray_panel.rs): it is the card. An opaque surface is a hard
+ * requirement, not a style choice — WebView2 (wry ≥0.54) unconditionally
+ * enables non-client region support, and on a *transparent* window that
+ * combination composites a native ghost caption + tinted frame over the
+ * canvas (the "native window skin" reported twice), while backdrop-filter
+ * additionally tints the whole surface white. The DWM rounds the window's
+ * corners (DWMWCP_ROUND in post_create_setup) and draws its drop shadow,
+ * so the panel still reads as a floating popup — just without fighting
+ * the compositor.
  */
 
-/* Unlike the overlay page (bare HTML, literal colors), this entry loads the
-   app theme — and theme.scss paints the CANVAS via body's wallpaper-solid
-   background. On a transparent window that shows up as an opaque theme-tint
-   rectangle floating around the card (the "native window skin"). Paint the
-   canvas back to transparent; this file imports after theme.scss (component
-   import order), so the override wins the cascade. */
+/* The window IS the card: theme.scss's body wallpaper-solid background is
+   overridden with the opaque surface so the whole viewport reads as one
+   panel (this file imports after theme.scss, so it wins the cascade).
+   --ui-opacity is deliberately NOT applied: a translucent popup canvas
+   reintroduces the transparent-composition bugs above. */
 html,
 body {
-  background: transparent;
+  background: rgb(var(--color-surface));
 }
 
 .tray-panel {
   width: 100vw;
   height: 100vh;
-  padding: 14px;
   box-sizing: border-box;
   overflow: hidden;
   user-select: none;
-  background: transparent;
-}
-
-.tray-panel__card {
-  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
   padding: 0.9rem 0.9rem 0.7rem;
-  box-sizing: border-box;
-  border-radius: calc(var(--radius-md) + 2px);
-  border: 1px solid rgb(var(--color-border) / 25%);
-  background: rgb(var(--color-surface) / 92%);
-  background: rgb(var(--color-surface) / min(100%, calc(92% * var(--ui-opacity, 1))));
-  /* NO backdrop-filter, deliberately: on WebView2 a backdrop-filter
-     poisons a transparent window's composition — the blurred backdrop
-     composites against opaque white and the whole canvas becomes the
-     "native window skin" again — and over a transparent window it could
-     never sample the desktop anyway. The 92% surface carries the glass
-     look on its own. */
-  /* Bottom extent = 6px offset + 10px blur ≈ the 14px padding: the drop
-     fades out just before the window edge instead of showing a cut. */
-  box-shadow:
-    0 6px 10px rgb(var(--color-shadow, 0 0 0) / 38%),
-    0 1px 4px rgb(var(--color-shadow, 0 0 0) / 26%);
   color: rgb(var(--color-text));
   font-size: var(--text-sm);
+  /* Hairline inner edge so the card reads against same-colored windows
+     behind it (the DWM border is the accent color, not a surface edge). */
+  box-shadow: inset 0 0 0 1px rgb(var(--color-border) / 25%);
 }
+
 
 .tray-panel__brand {
   display: flex;
