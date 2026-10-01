@@ -8,15 +8,17 @@ in-game display mode landed) renders:
   - everything it learns goes to python.log (prefix WOWSP_PROBE) and to
     flat JSON files next to this Main.py; the wowsp companion process is
     expected to read request.json and write response.json back,
-  - the exact live ordering of the TAB team table is bridged out as
-    telemetry (priority: mod telemetry > screen-capture inference >
-    static roster order) for the transparent overlay window,
+  - live alive flags are bridged out as telemetry for the transparent
+    overlay window (priority: mod telemetry > screen-capture inference >
+    static roster order),
   - when the companion answers response.json, the stats rows are rendered
-    INSIDE the game: the unbound view (WoWSPProbe.unbound, mounted via
-    ForgeBlueprints/WoWSPProbe.xml) watches this file's single
-    'wowspProbe.panel' data component and draws the ally/enemy stat
-    columns while Tab is held. No companion answer means no panel - the
-    transparent-overlay view mode simply never turns the bridge on.
+    INSIDE the game: the unbound view (WoWSPProbe.unbound, installed to
+    gui/unbound2/mods/ where the game auto-discovers + mounts battle
+    views) watches this file's single 'wowspProbe.panel' data component
+    and draws the ally/enemy stat columns while Tab is held. The sides
+    and row order come from the per-tick relation walk (entity_walk);
+    no companion answer means no panel - the transparent-overlay view
+    mode simply never turns the bridge on.
 
 Still measured for diagnostics:
   1. load + heartbeat (heartbeat.json, phase port/battle),
@@ -88,7 +90,6 @@ class Probe(object):
         self.v_down = False
         self.last_raw = ''
         self.discovered = False
-        self.order_subs = {}
         self.journal = []
         self.empty_ticks = 0
         self.dead_latch = set()
@@ -102,6 +103,7 @@ class Probe(object):
         # writer) and the last panel body (change gate for the UI update).
         self.tab = False
         self.order = {'ally': [], 'enemy': []}
+        self.alive_last = {'ally': {}, 'enemy': {}}
         self.stats = {}
         self.labels = {}
         self.states = {}
@@ -190,13 +192,13 @@ class Probe(object):
     def start(self, *args):
         self.last_error = ''
         self.explore_shell('battleStart')
-        self.watch_order()
+        self.api_probe('battleStart')
         log('battle start')
 
-    # -- reactive TAB-order watch -------------------------------------------
-    # The game's own team lists render getCollection(CC.avatar) children at
-    # 'team.ally.sortedAlive' / 'team.enemy.sortedAlive' driven by evUpdated;
-    # subscribing to the same collections yields the exact rendered order.
+    # -- panel sides & order come from the per-tick entity walk (see
+    # entity_walk): the sortedAlive collections the game's own team lists
+    # render from have no Python-side getCollection, so a subscription
+    # there can never fire.
 
     # -- verified ModsShell API access (TeamHP-proven patterns) -------------
     # The loader injects events/ui/utils/battle/callbacks/dataHub/constants
@@ -230,7 +232,10 @@ class Probe(object):
                 log('constants resolve failed=' + str(exc)[:160])
 
     def on_players_list(self, *args):
-        self.journal_mark('playersListUpdated')
+        try:
+            self.journal_mark('playersListUpdated')
+        except Exception as exc:
+            self.soft('players list journal failed=' + str(exc)[:120])
 
     def api_probe(self, phase):
         if not self.api_dumped:
@@ -289,7 +294,8 @@ class Probe(object):
 
     def entity_states(self):
         """Per-avatar live state from entity components (health path is
-        TeamHP-proven; enemy values are spotting-dependent per its notes)."""
+        TeamHP-proven; enemy values are spotting-dependent per its notes).
+        Diagnostics-only since the panel moved to entity_walk()."""
         if self.dh is None or self.const is None:
             return {}
         cc = self.const.UiComponents
@@ -317,69 +323,111 @@ class Probe(object):
             self.soft('entity states failed=' + str(exc)[:120])
         return states
 
-    def watch_order(self):
-        self.close_order()
-        self.api_probe('battleStart')
+    def entity_walk(self):
+        """ONE entity walk feeding the panel + telemetry: per-avatar live
+        state plus the ally/enemy side split and row order.
+
+        The unbound-side 'team.*.sortedAlive' collections have NO
+        Python-side equivalent — the injected dataHub has no getCollection,
+        so that subscription failed EVERY battle (observed 2026-09-30
+        through 2026-10-01: 'order collection failed'). The side split is
+        therefore the TeamHP-proven relation component
+        (PlayerRelation.SELF/ALLY = ally, everything else = enemy), and
+        the row order is the arena rule: first sighting keeps its spot,
+        the dead re-append at the tail.
+
+        Returns (states, sides): states keyed by the BARE name (entity
+        names carry the clan tag), sides mapping 'ally'/'enemy' to
+        [(name, alive), ...] in walk order.
+        """
         if self.dh is None or self.const is None:
-            log('order unavailable: no dataHub/constants')
-            return
+            return {}, {'ally': [], 'enemy': []}
+        cc = self.const.UiComponents
         try:
-            collection = self.dh.getCollection(self.const.UiComponents.avatar)
+            ally_relations = (self.const.PlayerRelation.SELF, self.const.PlayerRelation.ALLY)
         except Exception as exc:
-            self.soft('order collection failed=' + str(exc)[:160])
+            self.soft('PlayerRelation resolve failed=' + str(exc)[:120])
+            return {}, {'ally': [], 'enemy': []}
+        states = {}
+        sides = {'ally': [], 'enemy': []}
+        try:
+            for entity in self.dh.getEntityCollections('avatar'):
+                try:
+                    name = bare_name(str(entity[cc.avatar].name))
+                except Exception:
+                    continue
+                if not name:
+                    continue
+                alive = True
+                row = {}
+                try:
+                    health = entity[cc.health]
+                    alive = bool(health.isAlive)
+                    row['hp'] = str(health.value) + '/' + str(health.max)
+                except Exception:
+                    pass
+                # Death latch (#716): isAlive can flicker back for a tick
+                # while the sinking animation settles; random battles have
+                # no resurrects — once dead in this battle, stay dead. The
+                # latch feeds telemetry, row order AND panel rows from this
+                # single point, so a flicker can never resurrect a row.
+                if name in self.dead_latch:
+                    alive = False
+                elif not alive:
+                    self.dead_latch.add(name)
+                    alive = False
+                row['alive'] = str(alive)
+                side = 'enemy'
+                try:
+                    if cc.relation in entity and entity[cc.relation].value in ally_relations:
+                        side = 'ally'
+                    row['relation'] = str(entity[cc.relation].value)
+                except Exception:
+                    pass
+                states[name] = row
+                sides[side].append((name, alive))
+        except Exception as exc:
+            self.soft('entity walk failed=' + str(exc)[:120])
+        return states, sides
+
+    def merge_order(self, sides):
+        """Fold one walk's sides into the panel row order. Alive rows keep
+        their relative spots; the dead slide to a tail that preserves
+        SINKING order (the previous tail first, then this tick's newly
+        dead in their former front order); unseen names append in walk
+        order. `self.alive_last` carries each side's previous alive map —
+        without it a newly dead row would land by list position instead
+        of chronology."""
+        if not sides.get('ally') and not sides.get('enemy'):
+            # A walk that saw nothing (no dataHub, PlayerRelation failure,
+            # a mid-iteration abort) must not fold: empty pairs would
+            # promote every dead row back to the front and wipe the sink
+            # chronology. The next real walk folds as usual.
             return
-        for side, path in (('ally', 'team.ally.sortedAlive'), ('enemy', 'team.enemy.sortedAlive')):
-            try:
-                child = collection.getChildByPath(path)
-                handler = self.order_handler(side, child)
-                child.evUpdated.add(handler)
-                self.order_subs[side] = (child, handler)
-                log('order subscribed ' + side + ' path=' + path)
-                handler('initial')
-            except Exception as exc:
-                self.soft('order sub ' + side + ' failed=' + str(exc)[:160])
-
-    def close_order(self):
-        for side in list(self.order_subs):
-            child, handler = self.order_subs.pop(side)
-            try:
-                child.evUpdated.remove(handler)
-            except Exception as exc:
-                self.soft('order unsub ' + side + ' failed=' + str(exc)[:120])
-
-    def order_handler(self, side, child):
-        def handler(*args):
-            try:
-                rows = []
-                names = []
-                for item in child.items:
-                    name = ''
-                    try:
-                        # Bare form: the roster/stats/alive keys are all
-                        # untagged (avatar entity names carry the clan tag).
-                        name = bare_name(str(item.avatar.name))
-                    except Exception:
-                        pass
-                    names.append(name)
-                    row = []
-                    for pick in (lambda: item.avatar.name, lambda: item.avatar.id,
-                                 lambda: item.avatar.isBot, lambda: item.avatar.ttkStatus):
-                        try:
-                            row.append(str(pick()))
-                        except Exception:
-                            row.append('?')
-                    rows.append(row)
-                # The panel consumes the exact rendered order; keep it even
-                # when the journal projection above only managed '?' fields.
-                if self.order.get(side) != names:
-                    self.order[side] = names
-                    self.refresh_panel()
-                self.journal.append('{"t":' + str(int(time.time() * 1000)) + ',"ev":"order.' + side +
-                                    '","items":' + utils.jsonEncode(rows) + '}')
-                self.journal_flush()
-            except Exception as exc:
-                self.soft('order handler failed=' + str(exc)[:120])
-        return handler
+        for side, pairs in sides.items():
+            alive_now = {}
+            for name, alive in pairs:
+                if name and name not in alive_now:
+                    alive_now[name] = alive
+            # A latched name is dead even when its entity vanished from the
+            # walk (sunk ships tear down) — without this a vanished wreck
+            # would be treated as alive and promoted back to the front.
+            for name in self.dead_latch:
+                if alive_now.get(name) is not False:
+                    alive_now[name] = False
+            prev = self.order.get(side, [])
+            last = self.alive_last.get(side, {})
+            front = [n for n in prev if alive_now.get(n) is not False]
+            tail = [n for n in prev if last.get(n) is False and alive_now.get(n) is False]
+            tail += [n for n in prev if last.get(n) is not False and alive_now.get(n) is False]
+            for name, alive in pairs:
+                if name and name not in prev and name not in front and name not in tail:
+                    if alive is not False:
+                        front.append(name)
+                    else:
+                        tail.append(name)
+            self.order[side] = front + tail
+            self.alive_last[side] = alive_now
 
     def explore_shell(self, phase):
         """Map the wider ModsShell surface real modules expose.
@@ -431,7 +479,6 @@ class Probe(object):
         self.details_reset()
         self.states = {}
         self.clear_players()
-        self.close_order()
         self.last_raw = ''
         self.discovered = False
         self.comp_dumped = False
@@ -452,9 +499,13 @@ class Probe(object):
         self.v_down = False
         # Panel memory too: the entity itself goes away with clear_players,
         # so the change gate must reopen or the next battle's first body
-        # (identical text) would be swallowed as "unchanged".
+        # (identical text) would be swallowed as "unchanged". The death
+        # latch resets per battle as well (both quit and a new stable
+        # roster land here).
         self.tab = False
         self.order = {'ally': [], 'enemy': []}
+        self.alive_last = {'ally': {}, 'enemy': {}}
+        self.dead_latch = set([])
         self.stats = {}
         self.labels = {}
         self.last_panel = ''
@@ -762,21 +813,16 @@ class Probe(object):
         whether or not anything sank and whether or not Tab is held, and
         consumers can tell a live stream from a dead one by freshness
         instead of a timeout. Cleared once (empty players) on battle
-        quit; port ticks write nothing."""
+        quit; port ticks write nothing. The same walk feeds the panel's
+        sides + row order (see entity_walk)."""
         if not self.session:
             return
         try:
-            # Avatar entity names carry the clan tag ('[RCCK]Laneigedc')
-            # while roster names are bare ('Laneigedc') — index the states
-            # by the tag-stripped form or every tagged player's death is
-            # invisible (observed 2026-10-01: only untagged players were
-            # ever reported dead).
-            states = {}
-            for ename, row in self.entity_states().items():
-                states[bare_name(ename)] = row
-            # Shared with the panel builder so alive flags cost one entity
-            # walk per tick, not two.
+            states, sides = self.entity_walk()
+            # Shared with the panel builder so alive flags + sides cost one
+            # entity walk per tick, not two.
             self.states = states
+            self.merge_order(sides)
             players = {}
             for p in self.roster:
                 name = p['name']
@@ -804,8 +850,8 @@ class Probe(object):
 
     # -- in-game panel -------------------------------------------------------
     # One data component ('wowspProbe.panel') carries the whole template's
-    # payload: visibility (Tab held), both sides' rows in exact TAB order
-    # with the answered stats merged in, and the companion's column labels.
+    # payload: visibility (Tab held), both sides' rows in walk order with
+    # the answered stats merged in, and the companion's column labels.
     # Everything visible is decided HERE (formatting, colors) so the unbound
     # view stays a dumb template that cannot rot per game version.
 
@@ -839,7 +885,9 @@ class Probe(object):
             if not name:
                 continue
             state = self.states.get(name)
-            alive = state is None or state.get('alive') != 'False'
+            # Latched names are dead even with their entity gone.
+            alive = name not in self.dead_latch and (
+                state is None or state.get('alive') != 'False')
             row = self.stats.get(name)
             wr = row.get('wr') if isinstance(row, dict) else None
             pr = row.get('pr') if isinstance(row, dict) else None

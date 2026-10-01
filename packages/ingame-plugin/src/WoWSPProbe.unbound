@@ -1,23 +1,23 @@
 # WoWSP in-game stats panel (unbound 2 view).
 #
 # Watches the probe's single 'wowspProbe.panel' data component (written by
-# PnFMods/WoWSPProbe/Main.py) and draws the ally/enemy stat columns beside
-# the native TAB panel while Tab is held. The file is auto-discovered from
-# gui/unbound2/PnFMods/; the battle mount comes from
-# ForgeBlueprints/WoWSPProbe.xml (rootElementId must match the root element
-# below).
+# PnFMods/WoWSPProbe/Main.py) and draws the ally/enemy stat columns while
+# Tab is held. The file is auto-discovered AND auto-mounted by the game
+# from gui/unbound2/mods/ — the folder every working battle view lives in
+# (radar_timer, shot_timer, …); the game instantiates the file's
+# layout=true element (the root at the bottom, the only one).
 #
 # The template is deliberately dumb: Main.py decides visibility, row order,
 # text and colors — everything this file does is layout. Keep it that way:
 # the DSL is the least testable surface of the plugin.
 #
-# Layout (1920x1080 reference): the native TAB panel spans roughly the
-# center 600px, so the ally table's right edge sits at stageWidth/2 - 330
-# and the enemy table starts at stageWidth/2 + 330. Each table is 244px
-# wide (148 name + 52 wr + 44 pr), which puts the ally table's left edge at
-# stageWidth/2 - 574. Rows are 22px high with a 2px vgap; the header is
-# 20px. stageWidth/stageHeight reach the side panels as arguments bound in
-# the root scope — the one place the STAGE_SIZE macro is declared.
+# Layout: each table anchors to its SCREEN EDGE (ally left, enemy right,
+# 24px margin) and centers vertically — never colliding with the native
+# TAB panel, which widens past the screen center in 24-player battles.
+# Each table is 244px wide (148 name + 52 wr + 44 pr). Rows are 22px high
+# with a 2px vgap; the header is 20px. stageWidth/stageHeight reach the
+# side panels as arguments bound in the root scope — the one place the
+# STAGE_SIZE macro is declared.
 
 (def constant WOWSP_PANEL_KEY 'wowspProbe.panel')
 
@@ -83,7 +83,7 @@
 	)
 	(style
 		(position = "absolute")
-		(bind left "_isAlly ? (_stageW / 2 - 574) : (_stageW / 2 + 330)")
+		(bind left "_isAlly ? 24px : (_stageW - 24px - 244px)")
 		(bind top "(_stageH / 2) - ((rowCount * 24 + 22) / 2)")
 		(vgap = 2px)
 	)

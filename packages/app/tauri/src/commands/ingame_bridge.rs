@@ -122,7 +122,29 @@ fn plugin_dir() -> Option<PathBuf> {
     let resolved =
         super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning)?;
     let res_mods = super::game_context::res_mods_dir(&resolved.root).ok()?;
-    Some(res_mods.join(super::ingame_plugin::MOD_DIR))
+    Some(plugin_dir_under(&res_mods))
+}
+
+/// Pure core of [`plugin_dir`]: the mod lives at
+/// `res_mods/PnFMods/WoWSPProbe` — the `PnFMods` segment is load-bearing.
+/// Losing it silently reads/writes a directory that never exists (shipped
+/// as `res_mods/WoWSPProbe` once; the bridge then answered nothing, with
+/// no gate to log the miss — hence this helper being the tested seam).
+fn plugin_dir_under(res_mods: &std::path::Path) -> PathBuf {
+    res_mods.join("PnFMods").join(super::ingame_plugin::MOD_DIR)
+}
+
+/// The realm of a game root, the same chain the process watcher feeds the
+/// webui: the launch log first, then the detected-install scan (a Steam
+/// client may pick a realm long after its log line scrolled away).
+fn detect_bridge_realm(root: &std::path::Path) -> Option<String> {
+    super::game_detect::detect_realm(root).or_else(|| {
+        let root_str = root.to_string_lossy();
+        super::game_context::cached_scan()
+            .into_iter()
+            .find(|install| super::game_context::same_folder(&install.path, &root_str))
+            .and_then(|install| install.realm)
+    })
 }
 
 /// Monotonic per-process response revision — the plugin's staleness gate.
@@ -263,7 +285,7 @@ async fn bridge_cycle(
     let realm = {
         let resolved =
             super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning);
-        match resolved.and_then(|r| super::game_detect::detect_realm(&r.root)) {
+        match resolved.and_then(|r| detect_bridge_realm(&r.root)) {
             Some(realm) => realm,
             None => return unchanged(),
         }
@@ -384,5 +406,21 @@ mod tests {
         assert_eq!(req.players.len(), 2);
         assert_eq!(req.players[0].name, "alpha");
         assert_eq!(req.players[1].name, "beta");
+    }
+
+    /// Regression (shipped once wrong): the mod lives UNDER `PnFMods/` —
+    /// a flat `res_mods/WoWSPProbe` path silently matches no file and the
+    /// whole bridge idles without a single log line.
+    #[test]
+    fn plugin_dir_includes_pnfmods_segment() {
+        let dir = plugin_dir_under(std::path::Path::new("Z:/game/bin/1/res_mods"));
+        let expected = std::path::Path::new("Z:/game/bin/1/res_mods")
+            .join("PnFMods")
+            .join(super::super::ingame_plugin::MOD_DIR);
+        assert_eq!(dir, expected);
+        assert!(
+            dir.components().any(|c| c.as_os_str() == "PnFMods"),
+            "path must carry the PnFMods segment: {dir:?}"
+        );
     }
 }

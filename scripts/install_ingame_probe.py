@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """Install / uninstall / inspect the WoWSP in-game bridge probe.
 
-Stage-A experiment tool: copies packages/app/mod_templates/ingame_probe/Main.py
-into <game>/bin/<latest>/res_mods/PnFMods/WoWSPProbe/ and makes sure the
+Dev tool: copies packages/ingame-plugin/src/Main.py plus the in-game
+panel's unbound view into <game>/bin/<latest>/res_mods/ and makes sure the
 0-byte PnFModsLoader.py marker exists (the game's Mods API scans for it).
 Never touches files it does not own; everything it writes is recorded in
 PnFMods/WoWSPProbe/install_record.json and undone by `uninstall`.
@@ -24,13 +24,16 @@ from pathlib import Path
 MOD_DIR_NAME = 'WoWSPProbe'
 PLUGIN_SRC = Path(__file__).resolve().parents[1] / 'packages' / 'ingame-plugin' / 'src'
 TEMPLATE = PLUGIN_SRC / 'Main.py'
-# The visible half of the in-game display mode: the unbound view (the game
-# auto-discovers gui/unbound2/PnFMods/*.unbound) and its ForgeBlueprints
-# battle mount.
+# The visible half of the in-game display mode: the unbound view, auto
+# discovered + mounted by the game from gui/unbound2/mods/ (the folder the
+# working battle views live in; a ForgeBlueprints/ manifest was tried first
+# and never worked - those XMLs are installer-only metadata).
 VIEW = PLUGIN_SRC / 'WoWSPProbe.unbound'
-VIEW_DEST = Path('gui') / 'unbound2' / 'PnFMods' / 'WoWSPProbe.unbound'
-MOUNT = PLUGIN_SRC / 'WoWSPProbe.xml'
-MOUNT_DEST = Path('ForgeBlueprints') / 'WoWSPProbe.xml'
+VIEW_DEST = Path('gui') / 'unbound2' / 'mods' / 'WoWSPProbe.unbound'
+LEGACY_DESTS = (
+    Path('gui') / 'unbound2' / 'PnFMods' / 'WoWSPProbe.unbound',
+    Path('ForgeBlueprints') / 'WoWSPProbe.xml',
+)
 GAME_EXES = ('WorldOfWarships64.exe', 'WorldOfWarships.exe')
 
 
@@ -105,16 +108,18 @@ def cmd_install(root, requested_bin):
         created_loader = True
 
     shutil.copyfile(TEMPLATE, mod_dir / 'Main.py')
-    for src_file, rel_dest in ((VIEW, VIEW_DEST), (MOUNT, MOUNT_DEST)):
+    view_dest = rm / VIEW_DEST
+    view_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(VIEW, view_dest)
+    for rel_dest in LEGACY_DESTS:
         dest = rm / rel_dest
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src_file, dest)
+        if dest.is_file():
+            dest.unlink()
     record = {'created_loader': created_loader, 'bin': bin_dir.name,
               'installed_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'template': str(TEMPLATE)}
     (mod_dir / 'install_record.json').write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
     print('installed probe %s -> %s' % (MOD_DIR_NAME, mod_dir))
-    print('  panel view   %s' % (rm / VIEW_DEST))
-    print('  panel mount  %s' % (rm / MOUNT_DEST))
+    print('  panel view   %s' % view_dest)
     print('  loader marker %s (%s)' % (loader, 'created' if created_loader else 'already present'))
     print('  start the game, then: python %s status --game <root>' % Path(__file__).name)
 
@@ -129,7 +134,7 @@ def cmd_uninstall(root, requested_bin):
         return
     record = read_record(mod_dir)
     shutil.rmtree(mod_dir)
-    for rel_dest in (VIEW_DEST, MOUNT_DEST):
+    for rel_dest in (VIEW_DEST,) + LEGACY_DESTS:
         dest = bin_dir / 'res_mods' / rel_dest
         if dest.is_file():
             dest.unlink()

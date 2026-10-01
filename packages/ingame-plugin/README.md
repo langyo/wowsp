@@ -31,19 +31,20 @@ the stats **inside the game** (the app's 游戏内展示 view mode): two stat
 tables (allies / enemies) in exact TAB order with winrate, PR and
 alive-state per player, shown while Tab is held. The pieces:
 
-- `src/WoWSPProbe.unbound` — the unbound 2 view (auto-discovered from
-  `gui/unbound2/PnFMods/`), a deliberately dumb template: it watches the
-  probe's single `wowspProbe.panel` data component and draws whatever
-  Main.py put there (rows, texts, colors, visibility are all decided in
+- `src/WoWSPProbe.unbound` — the unbound 2 view, auto-discovered AND
+  auto-mounted by the game from `gui/unbound2/mods/` (the folder the
+  working battle views live in; a ForgeBlueprints/ manifest was tried
+  first and never worked — those XMLs are installer-only metadata the
+  game ignores). A deliberately dumb template: it watches the probe's
+  single `wowspProbe.panel` data component and draws whatever Main.py
+  put there (rows, texts, colors, visibility are all decided in
   Python).
-- `src/WoWSPProbe.xml` — the ForgeBlueprints mount declaration
-  (`res_mods/ForgeBlueprints/`), instantiating the view's root element
-  in battle, click-through.
-- Main.py merges the app's `response.json` stats rows into the TAB
-  order (`team.ally/enemy.sortedAlive` collections) and rewrites the
-  panel component whenever Tab state, ordering or alive flags change.
-  No answer from the app means no panel: the transparent-overlay view
-  mode simply never turns the bridge on.
+- Main.py merges the app's `response.json` stats rows into the
+  relation-walk sides (`entity_walk`: PlayerRelation.SELF/ALLY — the
+  game's sortedAlive collections have no Python-side getCollection) and
+  rewrites the panel component whenever Tab state, ordering or alive
+  flags change. No answer from the app means no panel: the
+  transparent-overlay view mode simply never turns the bridge on.
 
 ## Sandbox rules the code must obey
 
@@ -60,8 +61,7 @@ before touching it.
 ```
 packages/ingame-plugin/
   src/Main.py                    the mod (installed to PnFMods/WoWSPProbe)
-  src/WoWSPProbe.unbound         in-game panel view (gui/unbound2/PnFMods)
-  src/WoWSPProbe.xml             battle mount (ForgeBlueprints)
+  src/WoWSPProbe.unbound         in-game panel view (gui/unbound2/mods)
   README.md                      this file
 ```
 

@@ -7,7 +7,7 @@
 >
 > **Update (2026-10-01)**: a second view mode landed — 游戏内展示 renders
 > the stats INSIDE the game through this plugin's unbound view
-> (`gui/unbound2/PnFMods/WoWSPProbe.unbound` + the ForgeBlueprints mount),
+> (`gui/unbound2/mods/WoWSPProbe.unbound`, the game-scanned battle-view folder),
 > replacing this doc's "renders nothing" stance for the new `table =
 > "ingame"` mode only. The overlay mode (`"detect"`) keeps the original
 > data-source design below; the bridge (`commands/ingame_bridge.rs`)

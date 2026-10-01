@@ -28,10 +28,10 @@ pub struct IngamePluginStatus {
     /// Whether the plugin's entry file exists in the install's res_mods.
     pub installed: bool,
     /// Installed but NOT the bytes this app ships (an older build, a
-    /// missing unbound view/mount, or a hand-edited file): the UI offers a
+    /// missing unbound view, or a hand-edited file): the UI offers a
     /// one-click update. The in-game version string is pinned at 0.1.0 by
     /// owner decision, so the content hashes over the whole shipped set
-    /// (Main.py + view + mount) are the only reliable freshness signal.
+    /// (Main.py + view) are the only reliable freshness signal.
     pub outdated: bool,
     /// The res_mods directory that was inspected (diagnostics for the UI).
     pub res_mods: String,
@@ -52,8 +52,7 @@ pub fn ingame_plugin_status(game_root: String) -> Result<IngamePluginStatus, Str
             &dir,
             &format!("PnFMods/{MOD_DIR}/{MOD_ENTRY}"),
             PLUGIN_SOURCE,
-        ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW)
-            && file_fresh(&dir, MOUNT_DEST, PLUGIN_MOUNT));
+        ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW));
     Ok(IngamePluginStatus {
         installed,
         outdated,
@@ -67,14 +66,19 @@ pub fn ingame_plugin_status(game_root: String) -> Result<IngamePluginStatus, Str
 /// script and one installed here are byte-identical.
 const PLUGIN_SOURCE: &str = include_str!("../../../../ingame-plugin/src/Main.py");
 
-/// The visible half of the 游戏内展示 view mode: the unbound 2 view
-/// (auto-discovered from `gui/unbound2/PnFMods/`) and its ForgeBlueprints
-/// battle mount (click-through; rootElementId matches the view's root
-/// element). Without these the plugin stays a telemetry-only probe.
+/// The visible half of the 游戏内展示 view mode: the unbound 2 view, auto
+/// discovered + mounted by the game from `gui/unbound2/mods/` — the folder
+/// every working battle view on real installs lives in (radar_timer,
+/// shot_timer, …). A `ForgeBlueprints/` manifest was tried first and never
+/// worked: those XMLs are installer-only metadata the game ignores, and
+/// `gui/unbound2/PnFMods/` is outside the scan set. No view file means the
+/// plugin stays a telemetry-only probe.
 const PLUGIN_VIEW: &str = include_str!("../../../../ingame-plugin/src/WoWSPProbe.unbound");
-const PLUGIN_MOUNT: &str = include_str!("../../../../ingame-plugin/src/WoWSPProbe.xml");
-const VIEW_DEST: &str = "gui/unbound2/PnFMods/WoWSPProbe.unbound";
-const MOUNT_DEST: &str = "ForgeBlueprints/WoWSPProbe.xml";
+const VIEW_DEST: &str = "gui/unbound2/mods/WoWSPProbe.unbound";
+/// The layout #694 shipped, retired by this fix — an install (or update)
+/// over it removes both leftovers.
+const LEGACY_VIEW_DEST: &str = "gui/unbound2/PnFMods/WoWSPProbe.unbound";
+const LEGACY_MOUNT_DEST: &str = "ForgeBlueprints/WoWSPProbe.xml";
 
 /// Whether `res_mods/<rel>` carries exactly `expected`'s bytes. Missing,
 /// unreadable and divergent files are all "not fresh" — the freshness
@@ -98,11 +102,11 @@ fn file_fresh(dir: &std::path::Path, rel: &str, expected: &str) -> bool {
 const LOADER_MARKER: &str = "PnFModsLoader.py";
 
 /// Install the plugin into the active install: `PnFMods/WoWSPProbe/Main.py`
-/// plus the unbound view + ForgeBlueprints mount of the in-game display
-/// mode, and the 0-byte loader marker when missing. Gated like every
-/// res_mods mutation (mod-hub gate, game closed, res_mods active).
-/// Idempotent — existing files are overwritten in place (a broken install
-/// can be reinstalled over).
+/// plus the game-scanned unbound view of the in-game display mode, and the
+/// 0-byte loader marker when missing. Gated like every res_mods mutation
+/// (mod-hub gate, game closed, res_mods active). Idempotent — existing
+/// files are overwritten in place (a broken install can be reinstalled
+/// over), and the #694 layout's leftovers are removed.
 #[tauri::command]
 pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
@@ -113,15 +117,22 @@ pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> 
     std::fs::create_dir_all(&mod_dir).map_err(|e| format!("create {}: {e}", mod_dir.display()))?;
     let entry = mod_dir.join(MOD_ENTRY);
     std::fs::write(&entry, PLUGIN_SOURCE).map_err(|e| format!("write {}: {e}", entry.display()))?;
-    // The view + mount land under their own res_mods subtrees; both are
-    // this install's own files (first-party names, no shared paths).
-    for (rel, source) in [(VIEW_DEST, PLUGIN_VIEW), (MOUNT_DEST, PLUGIN_MOUNT)] {
+    // The view lands under its own res_mods subtree — this install's own
+    // first-party file, no shared paths.
+    let view_dest = dir.join(VIEW_DEST);
+    if let Some(parent) = view_dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+    }
+    std::fs::write(&view_dest, PLUGIN_VIEW)
+        .map_err(|e| format!("write {}: {e}", view_dest.display()))?;
+    // The #694 layout's leftovers (installer-only mount manifest + an
+    // unscanned view path) are this install's own files — remove them so
+    // an update can't leave a stale half-layout behind.
+    for rel in [LEGACY_VIEW_DEST, LEGACY_MOUNT_DEST] {
         let dest = dir.join(rel);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+        if dest.is_file() {
+            let _ = std::fs::remove_file(&dest);
         }
-        std::fs::write(&dest, source).map_err(|e| format!("write {}: {e}", dest.display()))?;
     }
     let loader = dir.join(LOADER_MARKER);
     if !loader.exists() {
@@ -146,10 +157,11 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
         std::fs::remove_dir_all(&mod_dir)
             .map_err(|e| format!("remove {}: {e}", mod_dir.display()))?;
     }
-    // The view + mount are this layout's own files — always removed with
-    // the mod (a foreign file at the same path is not ours to touch, but
-    // the first-party names make that collision theoretical).
-    for rel in [VIEW_DEST, MOUNT_DEST] {
+    // The view is this layout's own file (plus the #694 leftovers) —
+    // always removed with the mod (a foreign file at the same path is not
+    // ours to touch, but the first-party names make that collision
+    // theoretical).
+    for rel in [VIEW_DEST, LEGACY_VIEW_DEST, LEGACY_MOUNT_DEST] {
         let dest = dir.join(rel);
         if dest.is_file() {
             let _ = std::fs::remove_file(&dest);
