@@ -1453,8 +1453,8 @@ export const api = {
    *  window (tray panel included) sees a settings switch immediately. */
   syncActiveAccount: (realm: string | null, accountId: number | null) =>
     transport.invoke<null>(RPC.sync_active_account, { realm, accountId }),
-  /** The tray panel's menu buttons (show/hide/dismiss/quit — mirrors the
-   *  native tray menu's handlers, desktop shell only). */
+  /** The tray panel's menu buttons (show/hide/dismiss/quit — the tray menu's
+   *  actions, desktop shell only). */
   trayPanelAction: (action: "show" | "hide" | "dismiss" | "quit") =>
     transport.invoke<null>(RPC.tray_panel_action, { action }),
   /** Session-hub push: the resolved snapshot whenever the process state,

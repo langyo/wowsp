@@ -2,12 +2,12 @@
 //! icon, rendering the hikari-styled session panel (`tray.html`, a third
 //! Vite entry beside the main shell and the overlay page).
 //!
-//! The native right-click menu (Show / Hide / Quit in `lib.rs`) stays as the
-//! always-works fallback; a LEFT click on the tray icon toggles this panel
-//! instead, which shows the same session state the main window's bottom-left
+//! This panel IS the tray menu: any tray-icon click (left or right) toggles
+//! it, and it shows the same session state the main window's bottom-left
 //! footer does (running client + who is playing — see `commands/session`)
-//! plus the menu actions. The window is created lazily on the first click
-//! and then kept alive hidden, so subsequent toggles are instant.
+//! plus the old native menu's actions (show / hide / quit). The window is
+//! created lazily on the first click and then kept alive hidden, so
+//! subsequent toggles are instant.
 //!
 //! Unlike the overlay it is a normal activatable window: it takes focus on
 //! show (so a click anywhere outside — `Focused(false)` in `lib.rs`'s window
@@ -75,9 +75,9 @@ pub fn toggle_from_tray(app: &AppHandle, cursor: &PhysicalPosition<f64>, icon: &
     place_and_show(&win, cursor, icon);
 }
 
-/// The panel's copy of the menu actions (its buttons invoke this). `dismiss`
-/// is the panel's own Esc/outside-click close. Mirrors the native menu's
-/// handlers in `lib.rs` — including the graceful drain on quit.
+/// The panel's copy of the old native menu's actions (its buttons invoke
+/// this). `dismiss` is the panel's own Esc/outside-click close. Quit runs
+/// the same graceful drain the main window's close dialog does.
 #[cfg(desktop)]
 #[tauri::command]
 pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
@@ -126,7 +126,8 @@ pub fn hide_panel(app: &AppHandle) {
 /// Create the panel window on first use (idempotent). Starts hidden —
 /// [`place_and_show`] positions and reveals it. Errors are logged, not
 /// propagated: a failed panel creation must never take the tray click down
-/// with it (the native right-click menu remains the fallback UI).
+/// with it (double-click still restores the main window, whose close dialog
+/// carries quit — the escape hatch now that no native menu exists).
 fn ensure_tray_panel(app: &AppHandle) -> Option<WebviewWindow> {
     if let Some(win) = app.get_webview_window(TRAY_PANEL_LABEL) {
         return Some(win);

@@ -19,9 +19,9 @@ import "./TrayPanel.scss";
  *  - session status: running client (dot + kind · realm + PID) and the
  *    resolved player (the identity the battle roster pinned, falling back
  *    to the active selection) with its emblem;
- *  - the menu actions the native tray menu also carries (show / hide /
- *    quit), routed through the same Rust handler (`tray_panel_action`) so
- *    quit still runs the graceful drain.
+ *  - the old native tray menu's actions (show / hide / quit), routed
+ *    through the Rust handler (`tray_panel_action`) so quit still runs the
+ *    graceful drain.
  *
  * The panel closes on Esc and on focus loss (the Rust window handler hides
  * it on `Focused(false)`); clicking any action closes it too.
@@ -150,7 +150,7 @@ export default defineComponent({
             )}
           </div>
 
-          {/* menu actions — same handlers as the native tray menu */}
+          {/* menu actions — the old native tray menu, as rows */}
           <div class="tray-panel__menu" role="menu">
             <button type="button" class="tray-panel__menu-item" onClick={() => act("show")}>
               <Eye size={15} class="tray-panel__menu-icon" />

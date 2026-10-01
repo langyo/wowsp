@@ -127,10 +127,10 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("media", commands::media::handler)
         .manage(drain)
         .on_window_event(move |window, event| {
-            // Close button → minimize to tray (the tray's "Quit" is the real
-            // exit). The arena watcher / overlay capture wind down on the real
-            // drain triggered by the tray Quit item. Desktop only: mobile has
-            // no tray, so the system back gesture simply closes the app.
+            // Close button → minimize to tray (the tray panel's "Quit" is the
+            // real exit). The arena watcher / overlay capture wind down on the
+            // real drain triggered by that quit. Desktop only: mobile has no
+            // tray, so the system back gesture simply closes the app.
             #[cfg(desktop)]
             {
                 // The tray panel hides — never closes — on blur and on
@@ -302,27 +302,25 @@ pub fn run() {
             }
 
             // ── System tray (desktop) ────────────────────────────────────
-            // Right click keeps the native menu (Show / Hide / Quit,
-            // localized zh/en from the OS locale) as the always-works
-            // fallback; LEFT click toggles the hikari-rendered tray panel
-            // window (commands/tray_panel.rs) instead. The close button
-            // (above) triggers a frontend confirm dialog (quit vs.
-            // minimize).
+            // The hikari-rendered tray panel (commands/tray_panel.rs) IS the
+            // tray menu: ANY click (left or right — right is the habitual
+            // "open tray menu" button on Windows) toggles it, and the panel
+            // carries the old menu's actions (show / hide / quit, quit with
+            // the graceful drain). No native menu is attached: one can't
+            // have the native popup AND a custom panel on the same button,
+            // and a mixed left/right split read as "half of it is still the
+            // old UI" (user-reported). Escape hatch if the panel webview
+            // ever fails to create: double-click still restores the main
+            // window, and its close dialog offers quit. The close button
+            // (above) triggers that frontend confirm dialog.
             #[cfg(desktop)]
             {
                 let is_zh = prefs.locale.starts_with("zh");
-                let (show_label, hide_label, quit_label, tooltip) = if is_zh {
-                    ("显示 WoWSP", "隐藏", "退出 WoWSP", "WoWSP — 战舰世界战况面板")
+                let tooltip = if is_zh {
+                    "WoWSP — 战舰世界战况面板"
                 } else {
-                    ("Show WoWSP", "Hide", "Quit WoWSP", "WoWSP — World of WarShip Panel")
+                    "WoWSP — World of WarShip Panel"
                 };
-                let show =
-                    tauri::menu::MenuItem::with_id(app, "show", show_label, true, None::<&str>)?;
-                let hide =
-                    tauri::menu::MenuItem::with_id(app, "hide", hide_label, true, None::<&str>)?;
-                let quit =
-                    tauri::menu::MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
-                let menu = tauri::menu::Menu::with_items(app, &[&show, &hide, &quit])?;
 
                 // ── Tray icon (small, for notification area) ──────────
                 // Windows tray icons are tiny: 16×16 at 100% DPI, 20×20 at
@@ -339,15 +337,14 @@ pub fn run() {
                 let _tray = tauri::tray::TrayIconBuilder::new()
                     .icon(tray_icon)
                     .tooltip(tooltip)
-                    .menu(&menu)
-                    .show_menu_on_left_click(false)
                     .on_tray_icon_event(|tray, event| {
                         use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
                         match event {
-                            // Left click → the hikari tray panel (session
-                            // status + actions), anchored to the icon.
+                            // Left OR right click → the hikari tray panel
+                            // (session status + actions), anchored to the
+                            // icon.
                             TrayIconEvent::Click {
-                                button: MouseButton::Left,
+                                button: MouseButton::Left | MouseButton::Right,
                                 button_state: MouseButtonState::Up,
                                 position,
                                 rect,
@@ -372,30 +369,6 @@ pub fn run() {
                             },
                             _ => {},
                         }
-                    })
-                    .on_menu_event(|app, event| match event.id.as_ref() {
-                        "show" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.unminimize();
-                                let _ = w.set_focus();
-                            }
-                        }
-                        "hide" => {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.hide();
-                            }
-                        }
-                        "quit" => {
-                            tracing::info!("tray quit → graceful drain + exit");
-                            // Trigger graceful drain so background tasks wind
-                            // down, then exit.
-                            if let Some(d) = app.try_state::<malkuth::DrainController>() {
-                                d.begin_drain(malkuth::ShutdownKind::Graceful);
-                            }
-                            app.exit(0);
-                        }
-                        _ => {}
                     })
                     .build(app)?;
             }
