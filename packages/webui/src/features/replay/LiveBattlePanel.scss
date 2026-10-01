@@ -114,12 +114,13 @@
     white-space: nowrap;
   }
 
-  /* The head's right-corner cluster starts at the map tag and runs to the
-     manual-locate button — one centered line, no per-item overrides. The
-     tag's own look lives in MapNameTag.scss; only its row placement (the
-     cluster's first item, pushed to the right end) is owned here. */
-  &__map {
-    margin-left: auto;
+  /* The map tag rides with the head's left info group (title, status and
+     mode pills, clock): no auto margin, it just follows the row gap. The
+     compound selector outguns MapNameTag.scss's base font so the tag speaks
+     the head's compact pill voice here (the replay-review head keeps its
+     larger voice via the same trick in ReplayView.scss). */
+  &__map.map-tag {
+    font-size: var(--text-2xs);
   }
 
   .live-battle__pill--status-detected {
@@ -166,6 +167,13 @@
       cursor: wait;
       opacity: 0.6;
     }
+  }
+
+  /* The head's right-corner action cluster starts at the copy-shot button
+     and runs to the manual-locate button — the auto margin pulls the whole
+     group to the right end of the line. */
+  &__shot-btn {
+    margin-left: auto;
   }
 
   /* Nicknames are masked: the toggle reads "show nicknames" in the same
