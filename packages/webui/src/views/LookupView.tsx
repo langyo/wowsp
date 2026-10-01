@@ -2,6 +2,7 @@ import { computed, defineComponent, onMounted, ref, Transition } from "vue";
 import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
+import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
 import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/ClanCard";
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
@@ -170,6 +171,11 @@ export default defineComponent({
     // Ship detail popup (opened from the per-ship table rows). The player
     // context is the LOOKED-UP account, not the bound one.
     const shipDetail = useShipDetail();
+
+    // Ranked season-timeline modal — opened from the StatsCard's ranked
+    // split; shows the LOOKED-UP player's seasons (the ranked store slot
+    // doSearch fills is theirs).
+    const rankedModal = ref(false);
 
     /** Unified ship metadata: encyclopedia first, offline DB fallback. */
     const infoOf = (shipId: number) => {
@@ -742,6 +748,7 @@ export default defineComponent({
                   stats={result.value}
                   rankedWr={ranked.winrate}
                   rankedBattles={ranked.battles}
+                  onRankedClick={() => (rankedModal.value = true)}
                   onClanClick={
                     result.value.clanId != null
                       ? () => {
@@ -899,6 +906,14 @@ export default defineComponent({
           realm={result.value ? realm.value : null}
           gameRoot={shipDetail.gameRoot.value}
           onClose={() => shipDetail.closeShip()}
+        />
+
+        {/* Ranked season timeline for the LOOKED-UP player — the ranked
+            store slot doSearch fills is theirs; the modal presents it. */}
+        <RankedSeasonModal
+          modelValue={rankedModal.value}
+          onUpdate:modelValue={(v: boolean) => (rankedModal.value = v)}
+          playerName={result.value?.name ?? ""}
         />
       </div>
     );

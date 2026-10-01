@@ -15,7 +15,7 @@
   "div3": "3人分隊",
   "ranked": "ランク戦",
   "coop": "協同作戦",
-  "rankedHint": "直近5シーズンの合計",
+  "rankedHint": "全ランク戦シーズンの合計",
   "weighted": "加重勝率",
   "ships": "艦艇",
   "rank": "ティア",
@@ -45,5 +45,11 @@
     "shipType": "艦種",
     "pieTitle": "艦種別構成",
     "nationPieTitle": "国家構成"
-  }
+  },
+  "rankedSeasons": "ランク戦シーズン",
+  "rankedOpenHint": "クリックでシーズン履歴を表示",
+  "noRankedSeasons": "ランク戦の記録はありません",
+  "bestRank": "最高ランク",
+  "avgFrags": "平均撃破数",
+  "maxDamage": "最大与ダメージ"
 }

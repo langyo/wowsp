@@ -1,0 +1,256 @@
+/** Ranked-season timeline modal (HoK style): a horizontal chronological
+ *  strip of season nodes over a shared line + a detail card below. Node
+ *  geometry is coordinated through the custom props below — the track line
+ *  must pass exactly through the dot centers. */
+$node-w: 4.75rem;
+$dot: 12px;
+/* tag row (1.25rem) + row gap (0.3rem) → the line y within a node's
+   content box; the track adds its own offset below. */
+$dot-y-in-node: calc(1.25rem + 0.3rem + #{$dot * 0.5});
+
+/* Best-rank league metals, theme-adaptive: the light theme needs darkened
+   variants (silver on white washes out otherwise); the dark theme carries
+   the bright ones. Both feed dot fills and the metal-colored rank texts. */
+.ranked-modal {
+  --metal-gold: #a97b16;
+  --metal-silver: #6f7f94;
+  --metal-bronze: #9a6430;
+}
+
+[data-mode="dark"] .ranked-modal {
+  --metal-gold: #e8b54d;
+  --metal-silver: #b9c3d1;
+  --metal-bronze: #c98d55;
+}
+
+.ranked-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  &__who {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  /* Loading / empty / error states share one centered block. */
+  &__state {
+    margin: 0;
+    padding: 2.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    text-align: center;
+    color: rgb(var(--color-muted));
+
+    &--error {
+      color: rgb(var(--color-error));
+    }
+  }
+
+  /* ── Horizontal timeline strip ── */
+  &__strip {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  &__track {
+    position: relative;
+    display: flex;
+    width: max-content;
+    min-width: 100%;
+    /* Half a node's width of side padding so the first/last dots sit
+       exactly one node-center inside the scroll box and never clip. */
+    padding: 0.4rem calc(#{$node-w * 0.5}) 0.3rem;
+
+    /* The shared line: from the first dot center to the last (first
+       center = side padding + half node = one full node inset). */
+    &::before {
+      content: "";
+      position: absolute;
+      top: calc(0.4rem + #{$dot-y-in-node});
+      left: #{$node-w};
+      right: #{$node-w};
+      height: 2px;
+      border-radius: 1px;
+      background: rgb(var(--color-border) / 45%);
+    }
+  }
+
+  &__node {
+    position: relative;
+    z-index: 1;
+    flex: 1 0 #{$node-w};
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.25rem 0.45rem;
+    border: none;
+    background: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--duration-short);
+
+    &:hover {
+      background: rgb(var(--color-primary) / 6%);
+    }
+
+    &:focus-visible {
+      outline: 1px solid rgb(var(--color-primary) / 60%);
+    }
+  }
+
+  /* Best-rank league tints — the dot + selected glow pick these up. */
+  &__node--gold {
+    --metal: var(--metal-gold);
+  }
+
+  &__node--silver {
+    --metal: var(--metal-silver);
+  }
+
+  &__node--bronze {
+    --metal: var(--metal-bronze);
+  }
+
+  &__node-tag {
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-muted));
+    transition: color var(--duration-short), transform var(--duration-short);
+  }
+
+  &__node-dot {
+    width: $dot;
+    height: $dot;
+    border-radius: 50%;
+    background: var(--metal, rgb(var(--color-muted)));
+    box-shadow: 0 0 0 3px rgb(var(--color-surface));
+    transition: transform var(--duration-short), background var(--duration-short),
+      box-shadow var(--duration-short);
+  }
+
+  &__node-rank {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    white-space: nowrap;
+  }
+
+  &__node-wr {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Selected node: the tag lights up, the dot grows into a metal-colored
+     bead with a soft glow — the HoK "current season" look. */
+  &__node--sel {
+    .ranked-modal__node-tag {
+      color: rgb(var(--color-text));
+      transform: scale(1.2);
+    }
+
+    .ranked-modal__node-dot {
+      transform: scale(1.35);
+      background: var(--metal, rgb(var(--color-primary)));
+      box-shadow:
+        0 0 0 3px rgb(var(--color-surface)),
+        0 0 10px var(--metal, rgb(var(--color-primary)));
+    }
+
+    .ranked-modal__node-rank {
+      color: var(--metal, rgb(var(--color-text)));
+      font-weight: 600;
+    }
+  }
+
+  /* ── Selected season detail ── */
+  &__detail {
+    background: rgb(var(--color-bg));
+    border-radius: var(--radius-sm);
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  &__detail-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  &__detail-name {
+    font-size: var(--text-md);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__detail-rank {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+
+    &--gold {
+      color: var(--metal-gold);
+    }
+
+    &--silver {
+      color: var(--metal-silver);
+    }
+
+    &--bronze {
+      color: var(--metal-bronze);
+    }
+  }
+
+  &__kpis {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.4rem;
+  }
+
+  &__kpi {
+    background: rgb(var(--color-surface) / 55%);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.15rem;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  &__kpi-label {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  &__kpi-value {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 900px) {
+    &__kpis {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+}

@@ -15,7 +15,7 @@
   "div3": "三轮车",
   "ranked": "排位",
   "coop": "联合作战",
-  "rankedHint": "近 5 个赛季排位战合计",
+  "rankedHint": "历届排位赛季合计",
   "weighted": "加权胜率",
   "ships": "船只",
   "rank": "等级",
@@ -45,5 +45,11 @@
     "shipType": "舰种",
     "pieTitle": "舰种构成",
     "nationPieTitle": "国家构成"
-  }
+  },
+  "rankedSeasons": "排位赛季",
+  "rankedOpenHint": "点击查看赛季历程",
+  "noRankedSeasons": "暂无排位战记录",
+  "bestRank": "最高段位",
+  "avgFrags": "场均击杀",
+  "maxDamage": "最高伤害"
 }

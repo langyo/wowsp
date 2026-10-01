@@ -15,7 +15,7 @@
   "div3": "Div3",
   "ranked": "Clasificatoria",
   "coop": "Cooperativo",
-  "rankedHint": "Suma de las últimas 5 temporadas",
+  "rankedHint": "Suma de todas las temporadas clasificatorias",
   "weighted": "WR ponderado",
   "ships": "Buques",
   "rank": "Nivel",
@@ -45,5 +45,11 @@
     "shipType": "Tipo",
     "pieTitle": "Por clase",
     "nationPieTitle": "Por nación"
-  }
+  },
+  "rankedSeasons": "Temporadas clasificatorias",
+  "rankedOpenHint": "Haz clic para ver la línea de tiempo de temporadas",
+  "noRankedSeasons": "Sin batallas clasificatorias registradas",
+  "bestRank": "Mejor rango",
+  "avgFrags": "Fragment. prom.",
+  "maxDamage": "Daño máx."
 }

@@ -15,7 +15,7 @@
   "div3": "Div3",
   "ranked": "Classé",
   "coop": "Coopératif",
-  "rankedHint": "Cumul sur les 5 dernières saisons",
+  "rankedHint": "Cumul sur toutes les saisons classées",
   "weighted": "TV pondérée",
   "ships": "Navires",
   "rank": "Palier",
@@ -45,5 +45,11 @@
     "shipType": "Type",
     "pieTitle": "Par classe",
     "nationPieTitle": "Par nation"
-  }
+  },
+  "rankedSeasons": "Saisons classées",
+  "rankedOpenHint": "Cliquer pour parcourir la chronologie des saisons",
+  "noRankedSeasons": "Aucune bataille classée enregistrée",
+  "bestRank": "Meilleur rang",
+  "avgFrags": "Frag moy.",
+  "maxDamage": "Dégâts max"
 }

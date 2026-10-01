@@ -38,6 +38,9 @@ export default defineComponent({
     rankedWr: { type: Number as PropType<number | null>, default: null },
     /** Combined ranked battles across the loaded seasons (null = unknown). */
     rankedBattles: { type: Number as PropType<number | null>, default: null },
+    /** Ranked split clicked → open the season-timeline modal. The split
+     *  renders as a link only when the host view passes this handler. */
+    onRankedClick: Function as PropType<() => void>,
     /** Clan tag clicked → jump to the clan view. Rendered as a link only
      *  when the stats carry a clan id. */
     onClanClick: Function as PropType<() => void>,
@@ -121,8 +124,12 @@ export default defineComponent({
     /** Division splits: solo / div2 / div3 / ranked winrates. Ranked is fed
      *  from the ranked store via the `rankedWr` prop (null = no data).
      *  Displayed in a compact row below the main winrate; the tooltip on
-     *  each slot names how many battles the split is built from. */
-    const divisions = computed<{ label: string; wr: number | null; hint?: string | null }[]>(() => [
+     *  each slot names how many battles the split is built from. The
+     *  ranked slot carries the host's open-modal handler when provided —
+     *  its tile then renders as a link into the season timeline. */
+    const divisions = computed<
+      { label: string; wr: number | null; hint?: string | null; onClick?: () => void }[]
+    >(() => [
       {
         label: t("stats.solo"),
         wr: props.stats.soloWr ?? null,
@@ -144,6 +151,7 @@ export default defineComponent({
         hint: [t("stats.rankedHint"), battlesHint(props.rankedBattles)]
           .filter(Boolean)
           .join(" · "),
+        onClick: props.onRankedClick,
       },
     ]);
 
@@ -232,21 +240,44 @@ export default defineComponent({
           ) : null}
         </div>
 
-        {/* Division splits: 4 columns centered (solo / div2 / div3 / ranked) */}
+        {/* Division splits: 4 columns centered (solo / div2 / div3 / ranked).
+            The ranked tile opens the season-timeline modal when the host
+            passed onRankedClick — keyboard + hint included. */}
         {divisions.value.some((d) => d.wr != null) ? (
           <div class="stats-card__divisions">
-            {divisions.value.map((d) => (
-              <div class="stats-card__division" key={d.label}>
-                <span
-                  class="stats-card__division-wr"
-                  style={d.wr != null ? { color: winrateColor(d.wr) } : undefined}
-                  data-hint={d.hint}
+            {divisions.value.map((d) => {
+              const clickable = d.onClick != null;
+              const hint = clickable
+                ? [d.hint, t("stats.rankedOpenHint")].filter(Boolean).join(" · ")
+                : d.hint;
+              return (
+                <div
+                  class={["stats-card__division", clickable ? "stats-card__division--open" : null]}
+                  key={d.label}
+                  role={clickable ? "button" : undefined}
+                  tabindex={clickable ? 0 : undefined}
+                  data-hint={hint}
+                  onClick={clickable ? () => d.onClick?.() : undefined}
+                  onKeydown={
+                    clickable
+                      ? (e: KeyboardEvent) => {
+                          if (e.key !== "Enter" && e.key !== " ") return;
+                          e.preventDefault();
+                          d.onClick?.();
+                        }
+                      : undefined
+                  }
                 >
-                  {d.wr != null ? `${d.wr.toFixed(1)}%` : "—"}
-                </span>
-                <span class="stats-card__division-label">{d.label}</span>
-              </div>
-            ))}
+                  <span
+                    class="stats-card__division-wr"
+                    style={d.wr != null ? { color: winrateColor(d.wr) } : undefined}
+                  >
+                    {d.wr != null ? `${d.wr.toFixed(1)}%` : "—"}
+                  </span>
+                  <span class="stats-card__division-label">{d.label}</span>
+                </div>
+              );
+            })}
           </div>
         ) : null}
 

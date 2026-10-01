@@ -15,7 +15,7 @@
   "div3": "3인 분대",
   "ranked": "랭크",
   "coop": "협동전",
-  "rankedHint": "최근 5시즌 합산",
+  "rankedHint": "전체 랭크 시즌 합산",
   "weighted": "가중 승률",
   "ships": "함선",
   "rank": "티어",
@@ -45,5 +45,11 @@
     "shipType": "함종",
     "pieTitle": "함종 구성",
     "nationPieTitle": "국가 구성"
-  }
+  },
+  "rankedSeasons": "랭크 시즌",
+  "rankedOpenHint": "클릭하면 시즌 타임라인이 열립니다",
+  "noRankedSeasons": "랭크 전투 기록이 없습니다",
+  "bestRank": "최고 등급",
+  "avgFrags": "평균 격침",
+  "maxDamage": "최대 피해량"
 }

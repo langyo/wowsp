@@ -2,6 +2,7 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
+import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
 import { HkTag, HkTabs, HkButton } from "@celestia-island/hikari";
 
@@ -47,7 +48,8 @@ import "./DashboardView.scss";
  *   3. Ship-distribution charts (tier histogram + class/nation donuts) —
  *      fed the UNFILTERED career ship list; like the lookup page they
  *      never react to the date-range tabs or the filter chips below.
- *   4. Ranked history: one card per loaded ranked season.
+ *   4. Ranked history: NOT listed inline — the StatsCard's ranked split
+ *      opens the season-timeline modal (RankedSeasonModal) on click.
  *   5. Date-range segmented control (1D / 7D / 30D / All) — filters the
  *      per-ship list below by lastBattleTime.
  *   6. Per-ship-type breakdown: battles / winrate / avgDamage by BB/CA/DD/CV/SS.
@@ -76,6 +78,9 @@ export default defineComponent({
     const root = ref<HTMLElement | null>(null);
 
     const showModal = ref(false);
+    // Ranked season-timeline modal — opened from the StatsCard's ranked
+    // split (the inline season cards are gone from this page).
+    const rankedModal = ref(false);
     const dateRange = ref<DateRange>("all");
 
     // Ship detail modal (opened by clicking a row in the per-ship table).
@@ -331,6 +336,7 @@ export default defineComponent({
                 stats={currentStats.value}
                 rankedWr={ranked.winrate}
                 rankedBattles={ranked.battles}
+                onRankedClick={() => (rankedModal.value = true)}
                 onClanClick={
                   currentStats.value.clanId != null
                     ? () =>
@@ -370,34 +376,8 @@ export default defineComponent({
                 </section>
               ) : null}
 
-              {/* ── Ranked history ── */}
-              {ranked.seasons.length > 0 ? (
-                <section class="dash-section">
-                  <div class="dash-section__head">
-                    <h3>{t("dashboard.ranked")}</h3>
-                  </div>
-                  <div class="dash-ranked">
-                    {ranked.seasons.map((rs) => {
-                      const wr = rs.battles > 0 ? (rs.wins / rs.battles) * 100 : 0;
-                      return (
-                        <div class="dash-ranked__card" key={rs.seasonId}>
-                          <div class="dash-ranked__season">{rs.seasonName}</div>
-                          {rs.bestRankDisplay ? (
-                            <div class="dash-ranked__rank" data-hint={t("dashboard.bestRank")}>
-                              {rs.bestRankDisplay}
-                            </div>
-                          ) : null}
-                          <div class="dash-ranked__stats">
-                            <span>{rs.battles} {t("dashboard.battles")}</span>
-                            <span style={{ color: winrateColor(wr) }}>{wr.toFixed(1)}%</span>
-                            <span>{rs.damageDealt > 0 ? Math.round(rs.damageDealt / rs.battles).toLocaleString() : "—"} {t("dashboard.avgDamage")}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              ) : null}
+              {/* ── Ranked history lives in the season-timeline modal —
+                  opened from the StatsCard's ranked split above. ── */}
 
               {/* ── Ship stats: date range + inline filter chips ── */}
               <section class="dash-section">
@@ -521,6 +501,14 @@ export default defineComponent({
           modelValue={showModal.value}
           onUpdate:modelValue={(v: boolean) => (showModal.value = v)}
           onBound={() => void refresh()}
+        />
+
+        {/* Ranked season timeline — the store already holds this account's
+            seasons (loaded in refresh()); the modal only presents them. */}
+        <RankedSeasonModal
+          modelValue={rankedModal.value}
+          onUpdate:modelValue={(v: boolean) => (rankedModal.value = v)}
+          playerName={currentStats.value?.name ?? ""}
         />
       </div>
     );

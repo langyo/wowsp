@@ -481,27 +481,55 @@ async def cmd_get_upgrade_prices(request: Request) -> dict:
     }
 
 
+# A full ranked history (newest first, mirrors RankedSeasonStats): season
+# ids follow the backend convention (1000 + season number), a few seasons
+# are missing (unplayed ones drop server-side), and the best ranks cover
+# all three league metals so the season-timeline modal shows its tints.
+_RANKED_FIXTURE: list[dict] = [
+    {"seasonId": 1030, "battles": 53, "wins": 33, "bestRank": 5, "bestRankDisplay": "Gold 5"},
+    {"seasonId": 1029, "battles": 108, "wins": 54, "bestRank": 5, "bestRankDisplay": "Silver 5"},
+    {"seasonId": 1028, "battles": 53, "wins": 31, "bestRank": 10, "bestRankDisplay": "Silver 10"},
+    {"seasonId": 1025, "battles": 6, "wins": 5, "bestRank": 6, "bestRankDisplay": "Bronze 6"},
+    {"seasonId": 1024, "battles": 104, "wins": 53, "bestRank": 7, "bestRankDisplay": "Silver 7"},
+    {"seasonId": 1023, "battles": 278, "wins": 136, "bestRank": 1, "bestRankDisplay": "Silver 1"},
+    {"seasonId": 1022, "battles": 218, "wins": 113, "bestRank": 2, "bestRankDisplay": "Silver 2"},
+    {"seasonId": 1021, "battles": 26, "wins": 12, "bestRank": 4, "bestRankDisplay": "Bronze 4"},
+    {"seasonId": 1020, "battles": 12, "wins": 6, "bestRank": 6, "bestRankDisplay": "Bronze 6"},
+    {"seasonId": 1019, "battles": 7, "wins": 4, "bestRank": 7, "bestRankDisplay": "Bronze 7"},
+    {"seasonId": 1017, "battles": 12, "wins": 7, "bestRank": 6, "bestRankDisplay": "Bronze 6"},
+    {"seasonId": 1016, "battles": 4, "wins": 0, "bestRank": 10, "bestRankDisplay": "Bronze 10"},
+    {"seasonId": 1015, "battles": 178, "wins": 107, "bestRank": 3, "bestRankDisplay": "Silver 3"},
+    {"seasonId": 1013, "battles": 117, "wins": 64, "bestRank": 1, "bestRankDisplay": "Bronze 1"},
+]
+
+
 @app.post("/api/get_ranked_stats")
 async def cmd_get_ranked_stats(request: Request) -> list[dict]:
-    """Three fake ranked seasons (mirrors RankedSeasonStats) so the stats
-    card's ranked split and the dashboard's season list have data in a
+    """A fake full ranked history (mirrors RankedSeasonStats) so the stats
+    card's ranked split and the season-timeline modal have data in a
     browser. The seasonCount arg is accepted but ignored."""
     body = await request.json()
     _ = body.get("accountId")
-    return [
-        {"seasonId": 511, "seasonName": "Ranked Sprint 5", "battles": 180, "wins": 101,
-         "losses": 79, "damageDealt": 15840000, "frags": 212, "maxDamage": 214500,
-         "maxXp": 2870, "survivedBattles": 74, "planesKilled": 88,
-         "currentRank": 10, "bestRank": 8, "bestRankDisplay": "8"},
-        {"seasonId": 505, "seasonName": "Ranked Sprint 4", "battles": 142, "wins": 68,
-         "losses": 74, "damageDealt": 11560000, "frags": 151, "maxDamage": 187300,
-         "maxXp": 2415, "survivedBattles": 52, "planesKilled": 63,
-         "currentRank": None, "bestRank": 12, "bestRankDisplay": "12"},
-        {"seasonId": 498, "seasonName": "Ranked Sprint 3", "battles": 95, "wins": 44,
-         "losses": 51, "damageDealt": 7410000, "frags": 97, "maxDamage": 162800,
-         "maxXp": 2120, "survivedBattles": 31, "planesKilled": 40,
-         "currentRank": None, "bestRank": 15, "bestRankDisplay": "15"},
-    ]
+    out = []
+    for f in _RANKED_FIXTURE:
+        losses = f["battles"] - f["wins"]
+        out.append({
+            "seasonId": f["seasonId"],
+            "seasonName": f"Season {f['seasonId'] - 1000}",
+            "battles": f["battles"],
+            "wins": f["wins"],
+            "losses": losses,
+            "damageDealt": f["battles"] * 61_000 + f["seasonId"] * 137,
+            "frags": round(f["battles"] * 0.87),
+            "maxDamage": 142_000 + (f["seasonId"] % 9) * 9_500,
+            "maxXp": 2_100 + (f["seasonId"] % 7) * 160,
+            "survivedBattles": round(f["battles"] * 0.34),
+            "planesKilled": round(f["battles"] * 1.6),
+            "currentRank": f["bestRank"],
+            "bestRank": f["bestRank"],
+            "bestRankDisplay": f["bestRankDisplay"],
+        })
+    return out
 
 
 @app.post("/api/read_ship_stats_history")

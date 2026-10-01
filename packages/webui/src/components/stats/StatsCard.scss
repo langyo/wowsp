@@ -140,6 +140,25 @@
     font-weight: 700;
   }
 
+  /* Ranked split with an open-modal handler: reads as a link into the
+     season timeline (hover glow + label accent; the hint names it). */
+  &__division--open {
+    cursor: pointer;
+    transition: background var(--duration-short);
+
+    &:hover {
+      background: rgb(var(--color-primary) / 6%);
+
+      .stats-card__division-label {
+        color: rgb(var(--color-primary));
+      }
+    }
+
+    &:focus-visible {
+      outline: 1px solid rgb(var(--color-primary) / 60%);
+    }
+  }
+
   /* ── KPI strip: all six metrics on ONE row ── */
   &__kpis {
     display: grid;

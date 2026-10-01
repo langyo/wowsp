@@ -15,7 +15,7 @@
   "div3": "Div3",
   "ranked": "Ranked",
   "coop": "Co-op",
-  "rankedHint": "Combined over the last 5 seasons",
+  "rankedHint": "Combined across all ranked seasons",
   "weighted": "Weighted WR",
   "ships": "Ships",
   "rank": "Rank",
@@ -45,5 +45,11 @@
     "shipType": "Type",
     "pieTitle": "By class",
     "nationPieTitle": "By nation"
-  }
+  },
+  "rankedSeasons": "Ranked seasons",
+  "rankedOpenHint": "Click to browse the season timeline",
+  "noRankedSeasons": "No ranked battles on record",
+  "bestRank": "Best rank",
+  "avgFrags": "Avg frags",
+  "maxDamage": "Max damage"
 }
