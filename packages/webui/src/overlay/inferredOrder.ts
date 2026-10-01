@@ -153,3 +153,47 @@ function rangeNames(full: string[], lo: number, hi: number): RowAttribution {
   const h = Math.max(l, Math.min(hi, full.length - 1));
   return l === h ? full[l] : full.slice(l, h + 1);
 }
+
+/**
+ * Plugin-authoritative row mapping: the in-game plugin's alive telemetry is
+ * the truth, so the split by sunk-set membership is UNCONDITIONAL — no
+ * alive-vector agreement check, no candidate ranges. Every row gets exactly
+ * one name (a sink the detector missed leaves that row chipless in the
+ * caller's 1:1 positional zip instead of misattributing a player onto it).
+ *
+ * Same block structure as {@link inferredRowMapping}: allies first, enemies
+ * after (operations map the whole roster as one allies block).
+ */
+export function pluginRowMapping(
+  vehicles: InferredVehicle[],
+  sunk: { ally?: Set<string> | null; enemy?: Set<string> | null },
+  options: InferredOrderOptions = {},
+): RowAttribution[] {
+  const locale = options.locale ?? "en-US";
+  const out: RowAttribution[] = [];
+  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = options.operation
+    ? [[vehicles, "ally"]]
+    : [
+        [vehicles.filter((v) => v.relation <= 1), "ally"],
+        [vehicles.filter((v) => v.relation > 1), "enemy"],
+      ];
+  for (const [list, sideKey] of sides) {
+    const full = list
+      .map((v) => ({
+        v,
+        key: gameTabRowKey(v, true, locale, options.clanTagOf),
+      }))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+      .map(({ v }) => v.name);
+    const sunkSet = sideKey === "ally" ? sunk.ally : sunk.enemy;
+    if (sunkSet == null) {
+      // No trusted set for this side (stale stream): the full key order —
+      // battle-start layout, nobody sunk yet.
+      for (const name of full) out.push(name);
+      continue;
+    }
+    for (const name of full) if (!sunkSet.has(name)) out.push(name);
+    for (const name of full) if (sunkSet.has(name)) out.push(name);
+  }
+  return out;
+}

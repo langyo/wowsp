@@ -60,6 +60,7 @@ import {
   type ResolvedStatsMode,
 } from "./overlayPrefs";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
+import { pluginRowMapping } from "./inferredOrder";
 import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
 import { isOperationBattle } from "@/utils/modeColors";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
@@ -268,6 +269,9 @@ const sunk = new SunkTracker();
 // anchor's capture-derived alive vector then LAGS the plugin (it only
 // updates on Tab holds), so its reconcile must not degrade the sets.
 let telemetryAuthoritative = false;
+/** The plugin's trusted sunk names, flat — stamps and the authoritative
+ *  mapping branch read this instead of the capture alive vector. */
+let pluginSunkNames: Set<string> | null = null;
 // Latest `wowsp://overlay-status` detection state (mirrors OverlayState on
 // the wire; null before the first event). Picks the two-level hint copy:
 // only `fallback` is a tried-and-failed state, everything else still reads
@@ -708,12 +712,28 @@ function render() {
     };
     reconcileSide("ally", allyN, 0);
     if (!operation) reconcileSide("enemy", enemyN, allyN);
-    players = inferredRowMapping(arena.vehicles, aliveArr, {
-      locale,
-      clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
-      operation,
-      sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
-    });
+    if (telemetryAuthoritative && pluginSunkNames) {
+      // Plugin-authoritative layout: split by set membership
+      // unconditionally — no alive-vector agreement check, no candidate
+      // ranges, stamps by membership. A sink the row detector missed
+      // leaves that row chipless in the positional zip below instead of
+      // misattributing a player onto it.
+      players = pluginRowMapping(arena.vehicles, {
+        ally: sunk.sunkNames("ally"),
+        enemy: sunk.sunkNames("enemy"),
+      }, {
+        locale,
+        clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
+        operation,
+      });
+    } else {
+      players = inferredRowMapping(arena.vehicles, aliveArr, {
+        locale,
+        clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
+        operation,
+        sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
+      });
+    }
   }
 
   const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
@@ -750,7 +770,12 @@ function render() {
           // cache lookup works unchanged.
           mappedName = mapped;
           html = chipContent(mapped, side);
-          sunk = aliveArr?.[blockOffset + i] === false;
+          // Authoritative plugin sets stamp by MEMBERSHIP: the capture
+          // alive vector lags/misreads during sinking animations, and
+          // reading it here is what made rows flip sunk↔alive.
+          sunk = telemetryAuthoritative && pluginSunkNames
+            ? pluginSunkNames.has(mapped)
+            : aliveArr?.[blockOffset + i] === false;
         } else if (Array.isArray(mapped)) {
           // A mid-battle candidate RANGE (sinks made the alive subset
           // unknowable — contiguous in the Tab key order): the chip lists
@@ -1227,6 +1252,7 @@ async function start() {
     if (Date.now() - (payload.t ?? 0) > 30_000) {
       // Stale stream: release the authoritative lock (resume inference).
       telemetryAuthoritative = false;
+      pluginSunkNames = null;
       return;
     }
     const operation = isOperationBattle(
@@ -1248,6 +1274,7 @@ async function start() {
     }
     telemetryAuthoritative = true;
     sunk.applyNamedSunk(bySide, rosterNames);
+    pluginSunkNames = new Set([...bySide.ally!, ...bySide.enemy!]);
     render();
   });
   await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {

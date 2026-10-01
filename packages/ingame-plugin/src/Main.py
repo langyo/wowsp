@@ -91,6 +91,7 @@ class Probe(object):
         self.order_subs = {}
         self.journal = []
         self.empty_ticks = 0
+        self.dead_latch = set()
         self.dh = None
         self.const = None
         self.api_dumped = False
@@ -435,6 +436,7 @@ class Probe(object):
         self.discovered = False
         self.comp_dumped = False
         self.empty_ticks = 0
+        self.dead_latch = set()
         try:
             stream = open(TELEMETRY_FILE, 'w')
             stream.write(utils.jsonEncode({'t': int(time.time() * 1000),
@@ -710,6 +712,7 @@ class Probe(object):
                 # the log so the roster schema is documented where it happens.
                 self.clear_players()
                 self.roster = roster
+                self.dead_latch = set()
                 self.session = str(int(time.time() * 1000))
                 self.details_reset()
                 self.busy = False
@@ -776,10 +779,19 @@ class Probe(object):
             self.states = states
             players = {}
             for p in self.roster:
-                row = states.get(p['name'])
+                name = p['name']
+                row = states.get(name)
                 # No entity yet (loading / never spotted-and-gone): alive.
                 alive = row is None or row.get('alive') != 'False'
-                players[p['name']] = alive
+                # Death latch: the isAlive bit can flicker back for a tick
+                # while the sinking animation settles. Random battles have
+                # no resurrects — once dead in this battle, stay dead.
+                if name in self.dead_latch:
+                    alive = False
+                elif not alive:
+                    self.dead_latch.add(name)
+                    alive = False
+                players[name] = alive
             body = utils.jsonEncode({'t': int(time.time() * 1000),
                                      'battle': self.session,
                                      'players': players})
