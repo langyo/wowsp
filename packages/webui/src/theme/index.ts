@@ -77,6 +77,12 @@ export function removeBuiltinShadowingCustomThemes(): number {
 }
 
 export {
+  applyModeTokens,
+  startModeTokenBridge,
+  stopModeTokenBridge,
+} from "./modeTokens";
+
+export {
   initTheme,
   useTheme,
   themePresets,

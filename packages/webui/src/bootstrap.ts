@@ -16,7 +16,7 @@ import {
   useTheme,
 } from "@celestia-island/hikari";
 
-import { removeBuiltinShadowingCustomThemes } from "./theme";
+import { removeBuiltinShadowingCustomThemes, startModeTokenBridge } from "./theme";
 import { installGlobalTooltip } from "./composables/globalTooltip";
 import { api } from "./api";
 import { initDpiPrefs } from "./theme/dpiPrefs";
@@ -57,6 +57,11 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // report). Before the mode preference applies, so the re-apply lands on
   // the repaired table.
   removeBuiltinShadowingCustomThemes();
+  // Mode token bridge: write the resolved palette as INLINE styles on
+  // <html> (hikari's documented consumer contract) and follow theme/mode
+  // changes — hikari's own deltas block has been observed losing the
+  // cascade in dark mode (static light table shows through).
+  startModeTokenBridge();
   // WoWSP's own three-way mode preference (dark/light/solar) sits on top of
   // hikari's mode and must run AFTER initTheme so the authoritative
   // `wowsp-theme-mode` key wins over whatever hikari restored.
