@@ -216,6 +216,15 @@
 
 .ship-filter-bar__opt {
   display: flex;
+  /* An option never compresses: the nation strip runs as a flex row
+     capped by the panel (the 92vw/640px cap on `.ship-filter-bar__pop`
+     plus the track's own max-width: 100%), and shrink pressure there
+     would narrow each option toward its own min-content floor — a floor
+     that replaced-element icons (the nation flags; see NationFlag's
+     max-width note) contribute nothing to, so flag-bearing options collapsed one
+     icon-width and their labels spilled past the pill. The strip's
+     contract is overflow scrolls (optionStrip pans it), never squeeze. */
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-6);
   padding: var(--space-4) var(--space-12);
