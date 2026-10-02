@@ -10,11 +10,8 @@
   "filter": {
     "mode": "Mode de combat",
     "allModes": "Tous les modes",
-    "sort": "Tri",
-    "sortNewest": "Plus récentes d'abord",
-    "sortOldest": "Plus anciennes d'abord",
-    "sortHint": "Choix unique · « Plus récentes d'abord » par défaut",
-    "noMatch": "Aucun replay ne correspond aux filtres actuels."
+    "noMatch": "Aucun replay ne correspond aux filtres actuels.",
+    "modeHint": "Sélection multiple · « Tous les modes » réinitialise, ou inverse du plus récent au plus ancien si rien n'est choisi"
   },
   "external": {
     "tag": "Externe",

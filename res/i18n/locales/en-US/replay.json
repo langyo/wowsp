@@ -10,11 +10,8 @@
   "filter": {
     "mode": "Battle mode",
     "allModes": "All modes",
-    "sort": "Sort",
-    "sortNewest": "Newest first",
-    "sortOldest": "Oldest first",
-    "sortHint": "Single pick · “Newest first” is the default",
-    "noMatch": "No replays match the current filters."
+    "noMatch": "No replays match the current filters.",
+    "modeHint": "Multi-select · “All modes” resets, or flips newest/oldest first when nothing is picked"
   },
   "external": {
     "tag": "External",

@@ -1,24 +1,22 @@
 /**
- * ReplayListFilter — the filter strip on top of the 录像复盘 replay rail.
+ * ReplayListFilter — the replay rail's single filter trigger.
  *
- * Two chips in the 水表 filter-bar look (FilterCategoryChip renders
- * ShipFilterBar's flat classes, so the strip reads as the same control
- * family as 我的水表 — button-group-like, but popup-hosted, with the
- * same popup grammar: one-line pannable option strip + 全部… pill
- * carrying the ↑/↓ direction arrow):
- *   - mode chip — data-derived MULTI-select of the battle modes actually
+ * The trigger is a funnel icon button living in the rail head's action row
+ * (left of the open-external picker — FilterCategoryChip's `icon` anchor,
+ * styled as the same ghost toolbar icon button family); its popup is the
+ * 水表 filter-bar look (ShipFilterBar's flat classes): one-line pannable
+ * option strip with the 全部模式 pill carrying the ↑/↓ direction arrow.
+ *   - mode options — data-derived MULTI-select of the battle modes actually
  *     present in the rail, canonicalized through `modeKey`: the same key
  *     that colors the card pills, so chip options (which carry the mode's
  *     color dot) and cards share one vocabulary. Pure filter (picks never
- *     reorder), but its 全部模式 pill carries the ships-bar 全部…-sort
- *     contract: with a selection it resets; without one it engages the
- *     mode-order sort (first click in the displayed direction, further
- *     clicks flip it) — the rail then groups by the canonical mode order
- *     before the match-time order applies within each group;
- *   - sort chip — match-time order presented through the same chip as a
- *     radio: 最新优先 is the 全部… pill (active by default — newest-first
- *     matches the historical mtime-desc scan order) and 最早优先 the only
- *     concrete option; re-clicking it falls back to newest-first.
+ *     reorder); clicking a mode toggles it, clicking the 全部模式 pill
+ *     clears the selection;
+ *   - the ↑/↓ arrow on the 全部模式 pill IS the match-time order: ↓
+ *     newest-first (the default, matching the historical mtime-desc scan
+ *     order), ↑ oldest-first. With a selection the pill just resets; with
+ *     none it flips the direction — one button, the arrow states the
+ *     order, no separate sort chip.
  *
  * External picks (session-temporary files from outside the replays folder)
  * stay PINNED above the scanned list; the filter and the sort apply to both
@@ -28,6 +26,8 @@
  * collectModeOptions.
  */
 import { computed, defineComponent, ref, watch, type PropType, type Ref } from "vue";
+
+import { Filter } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import type { ReplayMetaLite } from "@/api";
@@ -57,8 +57,8 @@ export function modeLabelOfKey(key: string): string {
  *  the colour table doesn't know yet appended after in stable
  *  alphabetical order. Dead options never render. `extras` (the persisted
  *  selection) forces absent-but-picked keys back into the list — a client
- *  switch / rescan must not leave the chip wearing its engaged look over
- *  an "all modes" label; the stale pick stays visible and droppable. */
+ *  switch / rescan must not leave the trigger wearing its engaged look over
+ *  an empty selection; the stale pick stays visible and droppable. */
 export function collectModeOptions(
   metas: Iterable<ReplayMetaLite>,
   extras: Iterable<string> = [],
@@ -93,24 +93,9 @@ export type ReplaySortDir = "asc" | "desc";
 
 /** Sort by match time (`YYYYMMDD[_HHMMSS]` — lexicographic IS numeric
  *  here). Entries without a parsable date always sink to the end,
- *  regardless of direction; equal keys keep their input order.
- *  `modeSort` (the mode chip's engaged 全部…-sort) takes precedence:
- *  entries group by the canonical mode order (unknown keys last) and the
- *  match-time order applies within each group. */
-export function sortReplays<T extends ReplayMetaLite>(
-  metas: T[],
-  dir: ReplaySortDir,
-  modeSort?: { dir: ReplaySortDir },
-): T[] {
-  const rank = (key: string) => {
-    const i = MODE_KEY_ORDER.indexOf(key);
-    return i >= 0 ? i : MODE_KEY_ORDER.length;
-  };
+ *  regardless of direction; equal keys keep their input order. */
+export function sortReplays<T extends ReplayMetaLite>(metas: T[], dir: ReplaySortDir): T[] {
   return [...metas].sort((a, b) => {
-    if (modeSort) {
-      const d = rank(replayModeKeyOf(a)) - rank(replayModeKeyOf(b));
-      if (d !== 0) return modeSort.dir === "asc" ? d : -d;
-    }
     const ad = a.dateTime;
     const bd = b.dateTime;
     if (!ad && !bd) return 0;
@@ -124,21 +109,17 @@ export function sortReplays<T extends ReplayMetaLite>(
 interface PersistedFilter {
   modes: string[];
   sort: ReplaySortDir;
-  /** Mode chip's 全部…-sort (the ships-bar contract): engaged while the
-   *  selection is empty, the rail groups by canonical mode order. */
-  modeAllSort: boolean;
-  modeDir: ReplaySortDir;
 }
 
 const DEFAULT_FILTER: PersistedFilter = {
   modes: [],
   sort: "desc",
-  modeAllSort: false,
-  modeDir: "asc",
 };
 
 /** Load the persisted filter, defending against missing / corrupt /
- *  future blobs: anything unparseable degrades to the session default. */
+ *  future blobs: anything unparseable degrades to the session default.
+ *  Unknown fields (the retired mode-group sort of wowsp.replayFilter.v1)
+ *  are ignored on read and dropped on the next write. */
 function loadPersisted(): PersistedFilter {
   try {
     const raw = localStorage.getItem(PERSIST_KEY);
@@ -152,8 +133,6 @@ function loadPersisted(): PersistedFilter {
         ? v.modes.filter((m): m is string => typeof m === "string" && m.length > 0)
         : [],
       sort: v?.sort === "asc" ? "asc" : "desc",
-      modeAllSort: v?.modeAllSort === true,
-      modeDir: v?.modeDir === "desc" ? "desc" : "asc",
     };
   } catch {
     return { ...DEFAULT_FILTER };
@@ -171,20 +150,16 @@ export function useReplayListFilter(
   const initial = loadPersisted();
   const selectedModes = ref(new Set<string>(initial.modes));
   const sortDir = ref<ReplaySortDir>(initial.sort);
-  const modeAllSort = ref(initial.modeAllSort);
-  const modeDir = ref<ReplaySortDir>(initial.modeDir);
 
   // Persist on every change; selections are always replaced as a whole Set
   // (never mutated in place), so the watch stays shallow.
-  watch([selectedModes, sortDir, modeAllSort, modeDir], () => {
+  watch([selectedModes, sortDir], () => {
     try {
       localStorage.setItem(
         PERSIST_KEY,
         JSON.stringify({
           modes: [...selectedModes.value],
           sort: sortDir.value,
-          modeAllSort: modeAllSort.value,
-          modeDir: modeDir.value,
         } satisfies PersistedFilter),
       );
     } catch {
@@ -195,29 +170,17 @@ export function useReplayListFilter(
   const modeOptions = computed(() =>
     collectModeOptions([...external.value, ...list.value], selectedModes.value),
   );
-  // The engaged mode 全部…-sort rides ahead of the match-time order.
-  const modeSort = computed(() => (modeAllSort.value ? { dir: modeDir.value } : undefined));
   const visibleExternal = computed(() =>
-    sortReplays(
-      filterReplays([...external.value], selectedModes.value),
-      sortDir.value,
-      modeSort.value,
-    ),
+    sortReplays(filterReplays([...external.value], selectedModes.value), sortDir.value),
   );
   const visibleList = computed(() =>
-    sortReplays(
-      filterReplays([...list.value], selectedModes.value),
-      sortDir.value,
-      modeSort.value,
-    ),
+    sortReplays(filterReplays([...list.value], selectedModes.value), sortDir.value),
   );
   const filterActive = computed(() => selectedModes.value.size > 0);
 
   return {
     selectedModes,
     sortDir,
-    modeAllSort,
-    modeDir,
     modeOptions,
     visibleExternal,
     visibleList,
@@ -226,8 +189,11 @@ export function useReplayListFilter(
 }
 
 /**
- * The chip strip itself: a view over the composable's state (the hosting
- * view owns the state so it can also consume the visible lists).
+ * The filter trigger itself: a view over the composable's state (the
+ * hosting view owns the state so it can also consume the visible lists).
+ * Renders the funnel icon button for the rail head's action row — the
+ * popup (mode multi-select + the direction-bearing 全部模式 pill) opens
+ * anchored to it.
  */
 export default defineComponent({
   name: "ReplayListFilter",
@@ -238,19 +204,14 @@ export default defineComponent({
     },
     selectedModes: { type: Object as PropType<Set<string>>, required: true },
     sortDir: { type: String as PropType<ReplaySortDir>, default: "desc" },
-    modeAllSort: { type: Boolean, default: false },
-    modeDir: { type: String as PropType<ReplaySortDir>, default: "asc" },
   },
   emits: {
     "update:selectedModes": (_modes: Set<string>) => true,
     "update:sortDir": (_dir: ReplaySortDir) => true,
-    "update:modeAllSort": (_on: boolean) => true,
-    "update:modeDir": (_dir: ReplaySortDir) => true,
   },
   setup(props, { emit }) {
-    // Popover open flags are pure UI state — each chip manages its own.
+    // Popover open flag is pure UI state — the trigger manages its own.
     const modeOpen = ref(false);
-    const sortOpen = ref(false);
 
     function toggleMode(value: string) {
       const next = new Set(props.selectedModes);
@@ -259,61 +220,37 @@ export default defineComponent({
       emit("update:selectedModes", next);
     }
 
-    /** The mode chip's 全部模式 pill — the ships-bar 全部… contract:
-     *  with a selection it resets (mode sort off too), without one it
-     *  engages the mode-order sort in the displayed direction, further
-     *  clicks flip it. */
+    /** The 全部模式 pill: with a selection it resets; without one it
+     *  flips the match-time direction the arrow displays. */
     function modeAllClick() {
       if (props.selectedModes.size > 0) {
         emit("update:selectedModes", new Set<string>());
-        emit("update:modeAllSort", false);
-      } else if (props.modeAllSort) {
-        emit("update:modeDir", props.modeDir === "desc" ? "asc" : "desc");
       } else {
-        emit("update:modeAllSort", true);
+        emit("update:sortDir", props.sortDir === "desc" ? "asc" : "desc");
       }
     }
 
     return () => (
-      <div class="replay-view__filters">
-        <FilterCategoryChip
-          title={t("replay.filter.mode")}
-          allLabel={t("replay.filter.allModes")}
-          options={props.modeOptions}
-          selected={props.selectedModes}
-          open={modeOpen.value}
-          onUpdate:open={(v: boolean) => (modeOpen.value = v)}
-          onToggle={toggleMode}
-          onAll={modeAllClick}
-          dir={props.modeDir}
-          pure
-          allSort={props.modeAllSort}
-          renderOptionIcon={(value: string) => (
-            <span
-              class="replay-view__mode-dot"
-              style={{ background: modeColorOfKey(value).color }}
-            />
-          )}
-        />
-        {/* The sort chip rides FilterCategoryChip as a radio: 最新优先 is
-            the 全部… pill (data-active while nothing is picked — it IS the
-            default order, matching the historical mtime-desc scan) and
-            最早优先 the only concrete option, so toggling it flips between
-            the two directions and clearing means newest-first. */}
-        <FilterCategoryChip
-          title={t("replay.filter.sort")}
-          allLabel={t("replay.filter.sortNewest")}
-          options={[{ value: "asc", label: t("replay.filter.sortOldest") }]}
-          selected={props.sortDir === "asc" ? new Set(["asc"]) : new Set<string>()}
-          open={sortOpen.value}
-          onUpdate:open={(v: boolean) => (sortOpen.value = v)}
-          onToggle={() => emit("update:sortDir", props.sortDir === "asc" ? "desc" : "asc")}
-          onAll={() => emit("update:sortDir", "desc")}
-          dir={props.sortDir}
-          hint={t("replay.filter.sortHint")}
-          edge
-        />
-      </div>
+      <FilterCategoryChip
+        title={t("replay.filter.mode")}
+        allLabel={t("replay.filter.allModes")}
+        options={props.modeOptions}
+        selected={props.selectedModes}
+        open={modeOpen.value}
+        onUpdate:open={(v: boolean) => (modeOpen.value = v)}
+        onToggle={toggleMode}
+        onAll={modeAllClick}
+        dir={props.sortDir}
+        pure
+        icon={<Filter size={14} />}
+        hint={t("replay.filter.modeHint")}
+        renderOptionIcon={(value: string) => (
+          <span
+            class="replay-view__mode-dot"
+            style={{ background: modeColorOfKey(value).color }}
+          />
+        )}
+      />
     );
   },
 });

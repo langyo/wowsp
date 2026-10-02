@@ -29,7 +29,8 @@
     gap: 0.5rem;
   }
 
-  /* Head action pair: open-external picker + list refresh. */
+  /* Head action row: the funnel filter trigger leading, then the
+     open-external picker (or the phone acquisition pair) + list refresh. */
   &__list-head-actions {
     display: inline-flex;
     align-items: center;
@@ -199,32 +200,6 @@
     border-radius: var(--radius-full);
     color: rgb(var(--color-primary));
     font-size: var(--text-2xs);
-  }
-
-  /* Filter strip (mode chips + sort) — the chips borrow the 水表 filter
-     bar's flat classes (see FilterCategoryChip); the strip only lays them
-     out and clamps labels to the narrow rail. */
-  &__filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    align-items: center;
-  }
-
-  &__filters .ship-filter-bar__chip {
-    /* Not draggable here — a plain trigger, not the bar's grab, and a
-       swipe that starts on it must still scroll the page (the bar's
-       touch-action: none exists for its pointer-drag chips). */
-    cursor: pointer;
-    touch-action: auto;
-
-    span {
-      display: block;
-      max-width: 9.5rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
   }
 
   /* Detail: the holographic battle map fills the remaining height. */

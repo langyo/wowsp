@@ -132,6 +132,34 @@
       color: rgb(var(--color-primary));
     }
   }
+
+  /* Icon-only anchor — a ghost toolbar icon button (HkButton ghost sm
+     proportions) for hosts that keep the trigger inside a button row, not
+     a chip strip (the replay rail's funnel). Never drag-reorderable: a
+     plain trigger, and a swipe starting on it must still scroll the page. */
+  &--icon {
+    justify-content: center;
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    padding: var(--space-6);
+    cursor: pointer;
+    touch-action: auto;
+    background: transparent;
+    border-color: transparent;
+
+    &:hover {
+      background: var(--c-primary-light);
+      color: rgb(var(--color-text));
+    }
+
+    /* A concrete selection still reads as active — the --on recipe wins
+       over the ghost chrome (compound selector beats the single class). */
+    &.ship-filter-bar__chip--on {
+      color: rgb(var(--color-primary));
+      background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
+      border-color: rgb(var(--color-primary) / 25%);
+    }
+  }
 }
 
 .ship-filter-bar__chip-grip {

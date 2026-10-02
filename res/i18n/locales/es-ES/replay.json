@@ -10,11 +10,8 @@
   "filter": {
     "mode": "Modo de combate",
     "allModes": "Todos los modos",
-    "sort": "Orden",
-    "sortNewest": "Más recientes primero",
-    "sortOldest": "Más antiguos primero",
-    "sortHint": "Selección única · «Más recientes primero» es el predeterminado",
-    "noMatch": "Ninguna repetición coincide con los filtros actuales."
+    "noMatch": "Ninguna repetición coincide con los filtros actuales.",
+    "modeHint": "Multiselección · «Todos los modos» restablece, o cambia de más reciente a más antiguo si no hay nada seleccionado"
   },
   "external": {
     "tag": "Externa",

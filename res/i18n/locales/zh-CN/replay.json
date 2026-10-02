@@ -10,11 +10,8 @@
   "filter": {
     "mode": "战斗模式",
     "allModes": "全部模式",
-    "sort": "排序",
-    "sortNewest": "最新优先",
-    "sortOldest": "最早优先",
-    "sortHint": "单选 · 「最新优先」为默认排序",
-    "noMatch": "没有符合筛选条件的录像。"
+    "noMatch": "没有符合筛选条件的录像。",
+    "modeHint": "可多选 · 点击「全部模式」重置；未选中时切换最新/最早优先"
   },
   "external": {
     "tag": "外部",

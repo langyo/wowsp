@@ -1596,6 +1596,21 @@ export default defineComponent({
             <div class="replay-view__list-head-row">
               <h2 class="replay-view__list-title">{t("replay.list.title")}</h2>
               <span class="replay-view__list-head-actions">
+                {/* The filter trigger leads the action row (the funnel, left
+                    of the open-external picker); it renders whenever ANYTHING
+                    can be filtered — external picks included — so a
+                    persisted selection is always inspectable and clearable;
+                    gated on the scanned list alone it would dead-end the
+                    no-match state below. */}
+                {parser.list.value.length + parser.external.value.length > 0 ? (
+                  <ReplayListFilter
+                    modeOptions={listFilter.modeOptions.value}
+                    selectedModes={listFilter.selectedModes.value}
+                    sortDir={listFilter.sortDir.value}
+                    onUpdate:selectedModes={(s: Set<string>) => (listFilter.selectedModes.value = s)}
+                    onUpdate:sortDir={(d: ReplaySortDir) => (listFilter.sortDir.value = d)}
+                  />
+                ) : null}
                 {isMobileApp() ? (
                   <>
                     {/* Phone build: the native pick dialog is unavailable
@@ -1651,7 +1666,7 @@ export default defineComponent({
             ) : null}
 
             {/* The count stays scoped to the scanned list (externals are
-                session-temporary picks), even though the filter below also
+                session-temporary picks), even though the filter above also
                 applies to them. */}
             {parser.list.value.length > 0 ? (
               <span class="replay-view__count">
@@ -1662,23 +1677,6 @@ export default defineComponent({
                     })
                   : t("replay.list.count", { n: parser.list.value.length })}
               </span>
-            ) : null}
-            {/* The strip renders whenever ANYTHING can be filtered —
-                external picks included — so a persisted selection is
-                always inspectable and clearable; gated on the scanned list
-                alone it would dead-end the no-match state below. */}
-            {parser.list.value.length + parser.external.value.length > 0 ? (
-              <ReplayListFilter
-                modeOptions={listFilter.modeOptions.value}
-                selectedModes={listFilter.selectedModes.value}
-                sortDir={listFilter.sortDir.value}
-                modeAllSort={listFilter.modeAllSort.value}
-                modeDir={listFilter.modeDir.value}
-                onUpdate:selectedModes={(s: Set<string>) => (listFilter.selectedModes.value = s)}
-                onUpdate:sortDir={(d: ReplaySortDir) => (listFilter.sortDir.value = d)}
-                onUpdate:modeAllSort={(on: boolean) => (listFilter.modeAllSort.value = on)}
-                onUpdate:modeDir={(d: ReplaySortDir) => (listFilter.modeDir.value = d)}
-              />
             ) : null}
           </div>
 

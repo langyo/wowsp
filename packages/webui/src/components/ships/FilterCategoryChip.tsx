@@ -3,11 +3,13 @@
  * opens a small popup of pill-style multi-select options. A PURE filter by
  * default: no sorting and no drag reorder, so — unlike ShipFilterBar's own
  * chips — there is no grip icon and no `--sort` state. Hosts whose category
- * DOES carry a direction (the replay rail's mode/sort chips) pass `dir`:
+ * DOES carry a direction (the replay rail's mode chip) pass `dir`:
  * the popup then shows the ↑/↓ arrow after the 全部… pill (always) and
  * after picked concrete options (unless `pure`), exactly like the 水表
  * bar's popups — the arrow itself stays dumb, the host owns the semantics
- * behind the `all` event.
+ * behind the `all` event. An `icon` anchor swaps the collapsed text chip
+ * for a ghost toolbar icon button (hosts that keep the trigger inside a
+ * button row instead of a chip strip).
  *
  * The markup reuses ShipFilterBar's FLAT global classes so the chips look
  * identical to the 水表查询 filter bar. This module imports that SCSS itself:
@@ -56,6 +58,13 @@ export default defineComponent({
      *  existing callers are unaffected. */
     renderOptionIcon: {
       type: Function as PropType<(value: string) => VNode>,
+      default: undefined,
+    },
+    /** Icon-only anchor: the collapsed chip renders this glyph instead of
+     *  the label text, styled as a ghost toolbar icon button (the replay
+     *  rail's funnel). `title` doubles as the button's aria-label. */
+    icon: {
+      type: Object as PropType<VNode>,
       default: undefined,
     },
     /** Bottom hint line. Defaults to the ships filter's multi-select hint;
@@ -156,15 +165,17 @@ export default defineComponent({
           ref={chipBtn}
           class={[
             "ship-filter-bar__chip",
+            props.icon ? "ship-filter-bar__chip--icon" : "",
             props.selected.size
               ? "ship-filter-bar__chip--on"
               : props.allSort
                 ? "ship-filter-bar__chip--sort"
                 : "ship-filter-bar__chip--all",
           ]}
+          aria-label={props.icon ? props.title : undefined}
           onClick={() => emit("update:open", !props.open)}
         >
-          <span>{chipLabel.value}</span>
+          {props.icon ?? <span>{chipLabel.value}</span>}
         </button>
         {/* Desktop keeps closeOnBackdrop off: HkPopover's own document
             listener would close on the re-click of the open chip before
