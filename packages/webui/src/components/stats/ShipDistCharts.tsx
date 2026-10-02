@@ -14,7 +14,7 @@
  * computeds below read those palettes (and t()), so locale switches and
  * palette edits repaint the SVG live with zero watches.
  */
-import { computed, defineComponent } from "vue";
+import { computed, defineComponent, ref, watch, type Ref } from "vue";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import NationFlag from "@/components/base/NationFlag";
@@ -412,6 +412,21 @@ function barHint(b: TierBarSlot): string {
   return `${t("ships.tier")} ${b.tier} · ${t("stats.dist.battles")} ${b.value}`;
 }
 
+/** Shared hover-focus class resolver for one chart block: `hovered` is the
+ *  block's hover key (tier number or slice code) and `key` the element's
+ *  own — the hovered element lifts (is-hot), its siblings dim (is-dim).
+ *  Class names only; the paint lives in SCSS (opacity/filter), so the
+ *  geometry never changes — highlight without scaling any shape. */
+function focusState<T>(
+  hovered: T | null,
+  key: T,
+): { "is-hot": boolean; "is-dim": boolean } {
+  return {
+    "is-hot": hovered === key,
+    "is-dim": hovered != null && hovered !== key,
+  };
+}
+
 export default defineComponent({
   name: "ShipDistCharts",
   props: {
@@ -454,6 +469,26 @@ export default defineComponent({
     const typeLegend = computed(() => toLegendItems(typeSlices.value));
     const nationLegend = computed(() => toLegendItems(nationSlices.value));
 
+    // Hover focus keys — one per block (tier histogram / type donut /
+    // nation donut) so a highlight never leaks across blocks. A donut's
+    // slice and its legend row share the block's ref: hovering EITHER
+    // side lifts both and dims the rest of that block, tying the ring to
+    // its legend. Purely presentational (classes in, classes out).
+    const hoverTier = ref<number | null>(null);
+    const hoverType = ref<string | null>(null);
+    const hoverNation = ref<string | null>(null);
+    // A hover key lives on a DOM element; when the data swaps under a held
+    // pointer, the hovered element can unmount WITHOUT firing mouseleave
+    // (browsers skip removed nodes) — a dead key would then dim the whole
+    // block until the pointer deliberately re-entered it. Resetting on
+    // every aggregation repaint costs nothing (a resting pointer only
+    // ever clears nulls) and can never stick.
+    watch(dist, () => {
+      hoverTier.value = null;
+      hoverType.value = null;
+      hoverNation.value = null;
+    });
+
     // DOM legend for a donut — rows stack vertically in columns of
     // LEGEND_ROWS_PER_COLUMN, extra columns continue to the right. Every
     // row leads with the slice-color dot: without it the flag rows give
@@ -461,15 +496,28 @@ export default defineComponent({
     // render the localized name, nations the in-game faction flag
     // instead of a (truncation-prone) name — the flag speaks for the row
     // and its data-hint carries the full "name · battles · percent"
-    // string, so the percent shows only on hover. Rendered beside the
-    // SVG inside __pie-body (tiersOnly compact mode never reaches here —
-    // the whole piewrap block is gated).
-    const legendNode = (items: LegendItem[], flags: boolean) => (
+    // string, so the percent shows only on hover. Rows also drive the
+    // block's hover focus (hovered = the block's ref): entering a row
+    // lifts it AND its ring slice, dimming the rest of the block.
+    const legendNode = (items: LegendItem[], flags: boolean, hovered: Ref<string | null>) => (
       <div class="ship-dist-charts__legend">
         {chunkLegendItems(items, LEGEND_ROWS_PER_COLUMN).map((column, ci) => (
           <div class="ship-dist-charts__legend-col" key={ci}>
             {column.map((it) => (
-              <span class="ship-dist-charts__legend-item" key={it.code} data-hint={it.hint}>
+              <span
+                class={{
+                  "ship-dist-charts__legend-item": true,
+                  ...focusState(hovered.value, it.code),
+                }}
+                key={it.code}
+                data-hint={it.hint}
+                onMouseenter={() => {
+                  hovered.value = it.code;
+                }}
+                onMouseleave={() => {
+                  hovered.value = null;
+                }}
+              >
                 <span class="ship-dist-charts__legend-dot" style={{ background: it.color }} />
                 {flags ? (
                   <NationFlag
@@ -491,8 +539,10 @@ export default defineComponent({
 
     // One donut: dead-center ring, no in-canvas labels or legend (the
     // legend is DOM, see legendNode) — the WG-page presentation the old
-    // ECharts pies kept.
-    const donutNode = (slices: DonutSlice[]) => (
+    // ECharts pies kept. `hovered` is the block's focus ref so entering
+    // a slice lifts it (brightness/saturation only, never a scale) and
+    // dims its sibling slices.
+    const donutNode = (slices: DonutSlice[], hovered: Ref<string | null>) => (
       <svg
         class="ship-dist-charts__pie"
         viewBox={`0 0 ${DONUT_VIEWBOX} ${DONUT_VIEWBOX}`}
@@ -501,10 +551,19 @@ export default defineComponent({
         {slices.map((s) => (
           <path
             key={s.code}
-            class="ship-dist-charts__slice"
+            class={{
+              "ship-dist-charts__slice": true,
+              ...focusState(hovered.value, s.code),
+            }}
             d={s.path}
             fill={s.fill}
             data-hint={sliceHint(s)}
+            onMouseenter={() => {
+              hovered.value = s.code;
+            }}
+            onMouseleave={() => {
+              hovered.value = null;
+            }}
           />
         ))}
       </svg>
@@ -535,13 +594,29 @@ export default defineComponent({
               <g key={b.tier}>
                 {b.path ? (
                   <path
-                    class="ship-dist-charts__bar-rect"
+                    class={{
+                      "ship-dist-charts__bar-rect": true,
+                      ...focusState(hoverTier.value, b.tier),
+                    }}
                     d={b.path}
                     data-hint={barHint(b)}
+                    onMouseenter={() => {
+                      hoverTier.value = b.tier;
+                    }}
+                    onMouseleave={() => {
+                      hoverTier.value = null;
+                    }}
                   />
                 ) : null}
                 {b.labelY != null ? (
-                  <text class="ship-dist-charts__bar-value" x={b.centerX} y={b.labelY}>
+                  <text
+                    class={{
+                      "ship-dist-charts__bar-value": true,
+                      "is-dim": hoverTier.value != null && hoverTier.value !== b.tier,
+                    }}
+                    x={b.centerX}
+                    y={b.labelY}
+                  >
                     {b.value}
                   </text>
                 ) : null}
@@ -555,8 +630,8 @@ export default defineComponent({
             <div class="ship-dist-charts__piewrap">
               <div class="ship-dist-charts__pie-title">{t("stats.dist.pieTitle")}</div>
               <div class="ship-dist-charts__pie-body">
-                {donutNode(typeSlices.value)}
-                {legendNode(typeLegend.value, false)}
+                {donutNode(typeSlices.value, hoverType)}
+                {legendNode(typeLegend.value, false, hoverType)}
               </div>
             </div>
           ) : null}
@@ -564,8 +639,8 @@ export default defineComponent({
             <div class="ship-dist-charts__piewrap">
               <div class="ship-dist-charts__pie-title">{t("stats.dist.nationPieTitle")}</div>
               <div class="ship-dist-charts__pie-body">
-                {donutNode(nationSlices.value)}
-                {legendNode(nationLegend.value, true)}
+                {donutNode(nationSlices.value, hoverNation)}
+                {legendNode(nationLegend.value, true, hoverNation)}
               </div>
             </div>
           ) : null}

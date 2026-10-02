@@ -204,3 +204,70 @@
 .ship-dist-charts__slice {
   stroke: none;
 }
+
+/* --- Hover focus: hovering one shape (or its legend row) dims its
+   siblings within the same block and lifts the hovered one. Paint-only —
+   opacity/filter, geometry never scales or moves. Each block (bar, both
+   donuts + their legends) carries its own hover key, so focus never
+   leaks across blocks; a donut's slice and legend row share the key, so
+   hovering either side lights the pair up. --- */
+
+.ship-dist-charts__slice,
+.ship-dist-charts__bar-rect {
+  transition:
+    opacity 0.16s ease,
+    filter 0.16s ease;
+}
+
+/* The dimmed tier's value label fades with its bar (same key in the TSX);
+   tier numbers stay put — they belong to the axis, not to any bar. */
+.ship-dist-charts__bar-value,
+.ship-dist-charts__legend-item {
+  transition: opacity 0.16s ease;
+}
+
+.ship-dist-charts__slice.is-dim,
+.ship-dist-charts__bar-rect.is-dim,
+.ship-dist-charts__bar-value.is-dim,
+.ship-dist-charts__legend-item.is-dim {
+  opacity: 0.3;
+}
+
+/* The lift is a gentle brightness/saturation push — the hovered shape
+   keeps its exact footprint. */
+.ship-dist-charts__slice.is-hot,
+.ship-dist-charts__bar-rect.is-hot {
+  filter: brightness(1.07) saturate(1.2);
+}
+
+/* Hovered legend row: full ink instead of the resting 75%, and a soft
+   halo on the dot tying the row to its ring slice — box-shadow, so the
+   row's layout never shifts. The two paints transition on the elements
+   that carry them, so the row lights up on the same 0.16s beat the
+   sibling dimming fades on. */
+.ship-dist-charts__legend-item.is-hot .ship-dist-charts__legend-text {
+  color: rgb(var(--color-text));
+}
+
+.ship-dist-charts__legend-item.is-hot .ship-dist-charts__legend-dot {
+  box-shadow: 0 0 0 3px rgb(var(--color-text) / 0.14);
+}
+
+.ship-dist-charts__legend-text {
+  transition: color 0.16s ease;
+}
+
+.ship-dist-charts__legend-dot {
+  transition: box-shadow 0.16s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ship-dist-charts__slice,
+  .ship-dist-charts__bar-rect,
+  .ship-dist-charts__bar-value,
+  .ship-dist-charts__legend-item,
+  .ship-dist-charts__legend-text,
+  .ship-dist-charts__legend-dot {
+    transition: none;
+  }
+}

@@ -352,4 +352,87 @@ describe("mounted DOM legend", () => {
       expect(row.find(".ship-dist-charts__legend-text").exists()).toBe(false);
     }
   });
+
+  // Hover focus contract: the hovered shape (bar / slice / legend row)
+  // gets is-hot, its siblings in the SAME block get is-dim, and nothing
+  // ever leaks across blocks. Class-level only here — the paint (opacity/
+  // filter) is SCSS; geometry stays frozen by contract.
+
+  it("hovering a slice lifts it, dims its siblings and lights its legend row", async () => {
+    const wrapper = mount(ShipDistCharts, { props: { ships } });
+    const [typeBody, nationBody] = wrapper.findAll(".ship-dist-charts__pie-body");
+    const slices = typeBody!.findAll(".ship-dist-charts__slice");
+    const rows = typeBody!.findAll(".ship-dist-charts__legend-item");
+    await slices[0]!.trigger("mouseenter");
+    expect(slices[0]!.classes()).toContain("is-hot");
+    expect(slices[1]!.classes()).toContain("is-dim");
+    expect(slices[2]!.classes()).toContain("is-dim");
+    // The legend row of the same block follows the slice…
+    expect(rows[0]!.classes()).toContain("is-hot");
+    expect(rows[1]!.classes()).toContain("is-dim");
+    // …and the other blocks stay untouched (no cross-block leaking).
+    const nationSlices = nationBody!.findAll(".ship-dist-charts__slice");
+    for (const slice of nationSlices) {
+      expect(slice.classes()).not.toContain("is-hot");
+      expect(slice.classes()).not.toContain("is-dim");
+    }
+    expect(wrapper.find(".ship-dist-charts__bar-rect").classes()).not.toContain("is-dim");
+    await slices[0]!.trigger("mouseleave");
+    expect(slices[0]!.classes()).not.toContain("is-hot");
+    expect(slices[1]!.classes()).not.toContain("is-dim");
+  });
+
+  it("hovering a legend row highlights its ring slice back", async () => {
+    const wrapper = mount(ShipDistCharts, { props: { ships } });
+    const [typeBody, nationBody] = wrapper.findAll(".ship-dist-charts__pie-body");
+    const rows = typeBody!.findAll(".ship-dist-charts__legend-item");
+    await rows[2]!.trigger("mouseenter");
+    expect(rows[2]!.classes()).toContain("is-hot");
+    expect(rows[0]!.classes()).toContain("is-dim");
+    const slices = typeBody!.findAll(".ship-dist-charts__slice");
+    expect(slices[2]!.classes()).toContain("is-hot");
+    expect(slices[0]!.classes()).toContain("is-dim");
+    // Nation block untouched by a type-block hover.
+    for (const slice of nationBody!.findAll(".ship-dist-charts__slice")) {
+      expect(slice.classes()).not.toContain("is-dim");
+    }
+  });
+
+  it("hovering a bar dims the sibling bars and fades their value labels", async () => {
+    const wrapper = mount(ShipDistCharts, { props: { ships } });
+    const bars = wrapper.findAll(".ship-dist-charts__bar-rect");
+    await bars[1]!.trigger("mouseenter");
+    expect(bars[1]!.classes()).toContain("is-hot");
+    expect(bars[0]!.classes()).toContain("is-dim");
+    // Bars render in tier order (6, 8, 10 here) — the dimmed tier's value
+    // label fades with its bar, the hovered tier's keeps the resting ink.
+    const values = wrapper.findAll(".ship-dist-charts__bar-value");
+    expect(values[0]!.classes()).toContain("is-dim");
+    expect(values[1]!.classes()).not.toContain("is-dim");
+    // Tier numbers belong to the axis, never to a bar — no dim classes.
+    for (const num of wrapper.findAll(".ship-dist-charts__tier-num")) {
+      expect(num.classes()).not.toContain("is-dim");
+    }
+  });
+
+  it("a data swap under a held pointer clears the dead hover key", async () => {
+    // The hovered element can unmount without firing mouseleave (browsers
+    // skip removed nodes); the watch on the aggregation must reset the
+    // block's key, or every surviving row would stay stuck at is-dim.
+    const wrapper = mount(ShipDistCharts, { props: { ships } });
+    const slices = wrapper.findAll(".ship-dist-charts__slice");
+    await slices[0]!.trigger("mouseenter");
+    expect(slices[1]!.classes()).toContain("is-dim");
+    await wrapper.setProps({ ships: [{ shipId: 33, battles: 4 }] });
+    // Scope to the type donut — the wrapper-wide query would count the
+    // nation donut's surviving slice too.
+    const after = wrapper
+      .findAll(".ship-dist-charts__pie-body")[0]!
+      .findAll(".ship-dist-charts__slice");
+    // Only the destroyer survives — the vanished carrier key must not
+    // dim it (nor leave it hot).
+    expect(after).toHaveLength(1);
+    expect(after[0]!.classes()).not.toContain("is-dim");
+    expect(after[0]!.classes()).not.toContain("is-hot");
+  });
 });
