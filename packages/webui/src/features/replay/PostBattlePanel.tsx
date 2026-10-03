@@ -187,8 +187,8 @@ export default defineComponent({
     const globalStats = ref<PlayerStats | null>(null);
     const globalLoading = ref(false);
     const globalError = ref(false);
-    /** Battles per tier (index 1..10) and per ship type — for spotting
-     *  low-tier farmers / CV-SS specialists. */
+    /** Battles per tier (index 1..11, superships in the 11th bin) and per
+     *  ship type — for spotting low-tier farmers / CV-SS specialists. */
     const shipDistList = ref<DistDatum[]>([]);
 
     /** Load the player's per-ship stats and aggregate tier/type distribution. */

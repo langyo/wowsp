@@ -15,6 +15,7 @@
  * palette edits repaint the SVG live with zero watches.
  */
 import { computed, defineComponent, ref, watch, type Ref } from "vue";
+import { Star } from "@lucide/vue";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import NationFlag from "@/components/base/NationFlag";
@@ -135,15 +136,29 @@ export interface DistDatum {
   battles: number;
 }
 
+/** Supership tier: WG's post-X tier. Its histogram slot swaps the axis
+ *  numeral for the lucide Star mark — the same ★ convention the ship
+ *  table, picker and tech-tree view already use for tier 11. */
+const SUPERSHIP_TIER = 11;
+
+/** Star glyph box in bar-viewBox units: the numerals' 10-unit optical box
+ *  (baseline y=144, digits span ≈137–144), so the mark reads as one of
+ *  the axis labels, not an ornament. `x`/`y` position the nested <svg>
+ *  the icon renders; ink (stroke via currentColor, solid fill) lives in
+ *  SCSS with the other theme-variable-styled chart ink. */
+const TIER_STAR = { size: 10, dy: -8.5 };
+
 function aggregate(ships: DistDatum[]) {
-  const tiers = new Array(11).fill(0);
+  // Bin 0 unused; bins 1..11 — tier 11 is the supership tier the offline
+  // DB carries, so supership battles land in their own star-marked slot.
+  const tiers = new Array(SUPERSHIP_TIER + 1).fill(0);
   const types: Record<string, number> = {};
   const nations: Record<string, number> = {};
   let total = 0;
   for (const s of ships) {
     const off = shipOfflineEntry(s.shipId);
     const tier = off?.tier ?? 0;
-    if (tier >= 1 && tier <= 10) tiers[tier] += s.battles;
+    if (tier >= 1 && tier <= SUPERSHIP_TIER) tiers[tier] += s.battles;
     const t = (off?.type ?? "").toLowerCase();
     if (t) types[t] = (types[t] ?? 0) + s.battles;
     // Canonical nation code (uk/ussr/europe …); event/rental ships and
@@ -307,12 +322,13 @@ export interface TierBarLayout {
   bars: TierBarSlot[];
 }
 
-/** Tier histogram bins (index 0 = tier 1) → per-slot geometry. Ten equal
- *  slots across the plot, each bar centered in its slot (as the retired
- *  ECharts category axis did), height proportional to the bin's share of
- *  the maximum, top corners rounded rx≈2 only (ECharts borderRadius
- *  [2,2,0,0]). Pure and length-agnostic; the default 320×150 viewBox and
- *  the 12-unit bar width reproduce the old fixed-pixel look at 1:1. */
+/** Tier histogram bins (index 0 = tier 1) → per-slot geometry. Equal
+ *  slots across the plot (eleven with the supership bin), each bar
+ *  centered in its slot (as the retired ECharts category axis did),
+ *  height proportional to the bin's share of the maximum, top corners
+ *  rounded rx≈2 only (ECharts borderRadius [2,2,0,0]). Pure and
+ *  length-agnostic; the default 320×150 viewBox and the 12-unit bar
+ *  width reproduce the old fixed-pixel look at 1:1. */
 export function tierBars(
   tiers: readonly number[],
   opts: {
@@ -573,11 +589,11 @@ export default defineComponent({
       const layout = tierLayout.value;
       return (
         <div class="ship-dist-charts">
-          {/* ALL ten tier bins always render — an unplayed tier stays an
-              empty gap on the axis instead of the neighbours stretching
-              over it, and the fixed bar width keeps bars identical no
-              matter how many tiers carry battles. Zero bins hide only
-              their top value label (and their bar path). */}
+          {/* ALL eleven tier bins always render — an unplayed tier stays
+              an empty gap on the axis instead of the neighbours
+              stretching over it, and the fixed bar width keeps bars
+              identical no matter how many tiers carry battles. Zero bins
+              hide only their top value label (and their bar path). */}
           <svg
             class="ship-dist-charts__bar"
             viewBox={`0 0 ${BAR_VIEWBOX.width} ${BAR_VIEWBOX.height}`}
@@ -620,9 +636,23 @@ export default defineComponent({
                     {b.value}
                   </text>
                 ) : null}
-                <text class="ship-dist-charts__tier-num" x={b.centerX} y={layout.tierLabelY}>
-                  {b.tier}
-                </text>
+                {b.tier === SUPERSHIP_TIER ? (
+                  // The supership slot's axis mark: the lucide Star as a
+                  // nested <svg> positioned over the slot center — an
+                  // icon component, never a text ★ glyph. The hover hint
+                  // keeps the numeric tier, so the mark stays
+                  // self-explanatory.
+                  <Star
+                    class="ship-dist-charts__tier-star"
+                    size={TIER_STAR.size}
+                    x={fmt(b.centerX - TIER_STAR.size / 2)}
+                    y={layout.tierLabelY + TIER_STAR.dy}
+                  />
+                ) : (
+                  <text class="ship-dist-charts__tier-num" x={b.centerX} y={layout.tierLabelY}>
+                    {b.tier}
+                  </text>
+                )}
               </g>
             ))}
           </svg>

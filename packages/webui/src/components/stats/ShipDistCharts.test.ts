@@ -31,7 +31,8 @@ import ShipDistCharts, {
 // The mounted tests below aggregate through shipOfflineEntry; stubbing the
 // module keeps the real bundled game-data DB (and its shifting ship IDs)
 // out of the test. Three classes across three canonical nations fill both
-// legends deterministically (battles-desc is the input order).
+// legends deterministically (battles-desc is the input order); the tier-11
+// supership entry mounts only in the tier-histogram star test.
 const OFFLINE_DB = vi.hoisted(() => {
   const entry = (index: string, tier: number, type: string, nation: string) => ({
     index,
@@ -44,6 +45,7 @@ const OFFLINE_DB = vi.hoisted(() => {
     11: entry("A11", 10, "AirCarrier", "japan"),
     22: entry("B22", 8, "Battleship", "usa"),
     33: entry("D33", 6, "Destroyer", "germany"),
+    44: entry("S44", 11, "Cruiser", "usa"),
   } as Record<string, ReturnType<typeof entry>>;
 });
 
@@ -227,18 +229,19 @@ describe("donutSlices", () => {
 
 describe("tierBars", () => {
   // Default frame: 320×150, side pad 8, top pad 22, baseline y=132, tier
-  // numbers at y=144 → plot height 110, ten 30.4-unit slots.
-  const VALUES = [0, 5, 10, 0, 0, 0, 0, 0, 0, 0];
+  // numbers at y=144 → plot height 110, eleven 304/11-unit slots (the
+  // supership bin makes the eleventh).
+  const VALUES = [0, 5, 10, 0, 0, 0, 0, 0, 0, 0, 2];
 
   it("always returns one slot per tier, evenly spaced and in order", () => {
     const { bars } = tierBars(VALUES);
-    expect(bars.map((b) => b.tier)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    expect(bars[0]!.centerX).toBe(23.2); // 8 + 30.4 × 0.5
+    expect(bars.map((b) => b.tier)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(bars[0]!.centerX).toBe(21.82); // 8 + (304 / 11) × 0.5
     const step = bars[1]!.centerX - bars[0]!.centerX;
     for (let i = 1; i < bars.length; i++) {
-      expect(bars[i]!.centerX - bars[i - 1]!.centerX).toBeCloseTo(step, 10);
+      expect(bars[i]!.centerX - bars[i - 1]!.centerX).toBeCloseTo(step, 1);
     }
-    expect(step).toBeCloseTo(30.4, 10);
+    expect(step).toBeCloseTo(304 / 11, 1);
   });
 
   it("exposes the axis baseline frame", () => {
@@ -257,18 +260,19 @@ describe("tierBars", () => {
     const { bars } = tierBars(VALUES);
     expect(bars[2]!.barHeight).toBe(110); // max bin fills the plot
     expect(bars[1]!.barHeight).toBe(55); // half
+    expect(bars[10]!.barHeight).toBe(22); // supership bin: 2/10 of the max
     expect(bars[0]!.barHeight).toBe(0); // empty bin
   });
 
   it("rounds only the top corners and anchors at the baseline", () => {
     const { bars } = tierBars(VALUES);
-    // Tier 3 (max): centered at 84, bar 12 wide, top at y=22, rx=2.
+    // Tier 3 (max): centered at 77.09, bar 12 wide, top at y=22, rx=2.
     expect(bars[2]!.path).toBe(
-      "M 78 132 L 78 24 Q 78 22 80 22 L 88 22 Q 90 22 90 24 L 90 132 Z",
+      "M 71.09 132 L 71.09 24 Q 71.09 22 73.09 22 L 81.09 22 Q 83.09 22 83.09 24 L 83.09 132 Z",
     );
     // Tier 2 (half height): same width, top at y=77.
     expect(bars[1]!.path).toBe(
-      "M 47.6 132 L 47.6 79 Q 47.6 77 49.6 77 L 57.6 77 Q 59.6 77 59.6 79 L 59.6 132 Z",
+      "M 43.45 132 L 43.45 79 Q 43.45 77 45.45 77 L 53.45 77 Q 55.45 77 55.45 79 L 55.45 132 Z",
     );
   });
 
@@ -285,12 +289,13 @@ describe("tierBars", () => {
     // 40 tiers on the 320 box → 7.6-unit slots shrink the 12-unit bar.
     const { bars } = tierBars(new Array(40).fill(1));
     expect(bars[0]!.barWidth).toBeCloseTo(7.6, 10);
-    // Default case: slots are 30.4 wide, so the 12-unit bar survives.
+    // Default case: slots are 304/11 ≈ 27.64 wide, so the 12-unit bar
+    // survives.
     expect(tierBars(VALUES).bars[0]!.barWidth).toBe(12);
   });
 
   it("renders all-zero data without dividing by zero", () => {
-    const { bars } = tierBars(new Array(10).fill(0));
+    const { bars } = tierBars(new Array(11).fill(0));
     expect(bars.every((b) => b.path === "" && b.labelY === null)).toBe(true);
     expect(bars.every((b) => Number.isFinite(b.centerX))).toBe(true);
   });
@@ -351,6 +356,32 @@ describe("mounted DOM legend", () => {
       expect(row.find(".nation-flag").exists()).toBe(true);
       expect(row.find(".ship-dist-charts__legend-text").exists()).toBe(false);
     }
+  });
+
+  it("counts supership battles in the tier-11 slot, star-marked", () => {
+    const wrapper = mount(ShipDistCharts, {
+      props: { ships: [{ shipId: 44, battles: 3 }] },
+    });
+    // The supership's battles reach the eleventh bin: one bar renders,
+    // and its hint keeps the numeric tier so the star mark stays
+    // self-explanatory.
+    const bars = wrapper.findAll(".ship-dist-charts__bar-rect");
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.attributes("data-hint")).toBe(
+      `${t("ships.tier")} 11 · ${t("stats.dist.battles")} 3`,
+    );
+    // Tiers 1–10 keep their numeral; the supership slot swaps the numeral
+    // for the lucide Star icon — a nested <svg> sized and positioned over
+    // the slot like the numerals' glyph box, never a text ★ glyph.
+    expect(wrapper.findAll(".ship-dist-charts__tier-num")).toHaveLength(10);
+    const star = wrapper.find(".ship-dist-charts__tier-star");
+    expect(star.exists()).toBe(true);
+    expect(star.element.tagName.toLowerCase()).toBe("svg");
+    expect(star.attributes("width")).toBe("10");
+    // Slot 11 center x = 8 + (304/11) × 10.5 ≈ 298.18 → star box at 293.18;
+    // y centers the 10-unit box on the numerals' optical middle (144 − 8.5).
+    expect(star.attributes("x")).toBe("293.18");
+    expect(star.attributes("y")).toBe("135.5");
   });
 
   // Hover focus contract: the hovered shape (bar / slice / legend row)

@@ -193,6 +193,18 @@
   text-anchor: middle;
 }
 
+/* Supership (tier 11) axis mark: the lucide Star icon the template
+   renders as a nested <svg>, riding the same 60% text ink as the
+   numerals — `color` feeds the icon's stroke="currentColor", and this
+   CSS fill beats the icon's fill="none" presentation attribute so the
+   star reads solid, matching the ★ glyph the ship table draws for
+   superships. The 10-unit box spans y≈135.5–145.5, inside the 150-unit
+   viewBox like the numerals' descent headroom above. */
+.ship-dist-charts__tier-star {
+  color: rgb(var(--color-text) / 0.6);
+  fill: currentColor;
+}
+
 .ship-dist-charts__axis {
   stroke: rgb(var(--color-text) / 0.15);
   stroke-width: 1;
