@@ -382,7 +382,7 @@ fn extends_occluded_rows_to_expected() {
 /// to the detector's 800-wide working size from a 3072×1920 capture.
 #[test]
 fn detects_real_captured_frame() {
-    let png = include_bytes!("testdata/tab_table_768x480.png");
+    let png = include_bytes!("../testdata/tab_table_768x480.png");
     let img = image::load_from_memory(png)
         .expect("fixture decodes")
         .to_rgba8();
@@ -1335,7 +1335,7 @@ fn verify_header_band_accepts_cached_frame_and_rejects_moved_table() {
 /// a full detection.
 #[test]
 fn verify_header_band_passes_on_the_real_fixture() {
-    let png = include_bytes!("testdata/tab_table_768x480.png");
+    let png = include_bytes!("../testdata/tab_table_768x480.png");
     let img = image::load_from_memory(png)
         .expect("fixture decodes")
         .to_rgba8();
