@@ -191,7 +191,7 @@
     "refreshStats": "重新整理戰績",
     "refreshStatsHint": "清空快取並從頭重新請求全部名單戰績；已載入的資料在請求成功前保持顯示",
     "statsSourceTitle": "統計來源",
-    "statsSourceHint": "與設定中的「顯示內容」同步；改動即時生效於本面板與戰後面板。",
+    "statsSourceHint": "與設定中的「顯示內容」同步；改動即時生效於主視窗面板，Tab 懸浮窗自下一次建立起生效。",
     "manualLocate": "手動定位",
     "manualClear": "清除定位",
     "manualRows": "已手動定位 · {n} 行",

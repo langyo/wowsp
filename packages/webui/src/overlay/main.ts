@@ -52,9 +52,10 @@ import {
 // Display prefs (content toggles + the ranked/random stats source), read
 // once at window creation with the same tolerant contract as the store.
 import {
+  dimsNeedShipStats,
   readOverlayDisplayPrefs,
   resolveRosterBattleScope,
-  rosterStatView,
+  scopedRosterView,
   type RawStat,
   type RosterModeNumbers,
   type ResolvedStatsMode,
@@ -161,6 +162,8 @@ type Stat = RawStat;
 /** Wire shape of one `lookup_players_stats_batch` row — flat per-mode
  *  fields; the batch handler below nests them into a cached `Stat`. */
 interface BatchStat {
+  /** WG account id — the key the ship-scoped pipeline fetches through. */
+  accountId?: number | null;
   winrate?: number | null;
   avgDamage?: number | null;
   pr?: number | null;
@@ -206,7 +209,7 @@ const locale = new URLSearchParams(window.location.search).get("locale") || "en-
 // ── Display prefs (chips / stats source / intel / team averages / seals) ─
 // One tolerant read of the statsPrefs blob the main window's store owns
 // (see overlayPrefs.ts for the contract): the seal gates, the per-row chip
-// content toggles, the ranked/random stats source, the team-intel items
+// content toggles, the three-dimension stats source, the team-intel items
 // and the team-average line. Display-only — read once at window creation,
 // so a settings flip applies the next time the overlay window is
 // (re)created. The chips follow the same AND-composition as the webui
@@ -223,9 +226,15 @@ const SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
 const ANY_CHIP_ON =
   PREFS.chips.winrate || PREFS.chips.pr || PREFS.chips.battles || PREFS.chips.damage;
 // Which battle-mode career the chips + team averages render, resolved per
-// battle in render() ("auto" follows the arena's mode key; the fixed modes
-// and the global merge pin it).
+// battle in render() ("follow" tracks the arena's mode key; the fixed
+// scopes and the global merge pin it).
 let statsMode: ResolvedStatsMode = "random";
+// A ship-scoped dimension is on (ship scope beyond the account careers, or
+// the solo filter): every landed human stat then also carries the player's
+// full per-ship list, and the chip/team-average views aggregate it through
+// the SAME utils/shipStatsScope the main-window panels use. Fixed for this
+// window's life (the prefs snapshot is read once above).
+const SHIP_SCOPE_ON = dimsNeedShipStats(PREFS.statsDims);
 
 // kind → Chinese label, copied from RatingStamp.tsx (bare DOM cannot reuse
 // that Vue component).
@@ -326,6 +335,32 @@ function scheduleClanGates() {
 
 const cacheKey = (name: string) => `${realm}:${name}`;
 
+/** The row's ship id by nickname (the chips are name-keyed; the arena's
+ *  vehicles carry the id — per-row scoping keys off the ship that player
+ *  is sailing in THIS battle). Rosters are small and renders are
+ *  anchor-driven, so a fresh scan per call beats keeping a map in sync. */
+function shipIdOfName(name: string): number | null {
+  for (const v of arena?.vehicles ?? []) {
+    if (v.name === name) return v.shipId ?? null;
+  }
+  return null;
+}
+
+/** One player's display numbers under the FULL three-dimension stats
+ *  source: the account careers while the dims allow it, the aggregated
+ *  per-ship view otherwise — the same utils/shipStatsScope module the
+ *  main-window panels resolve through. */
+function scopedStatView(name: string): RosterModeNumbers {
+  const st = stats.get(cacheKey(name));
+  return scopedRosterView(
+    st,
+    shipIdOfName(name),
+    PREFS.statsDims,
+    statsMode,
+    PREFS.prAlgo ?? "winrate",
+  );
+}
+
 function fmtDamage(avg: number): string {
   return avg >= 100000 ? `${Math.round(avg / 1000)}k` : `${(avg / 1000).toFixed(1)}k`;
 }
@@ -400,7 +435,12 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
   if (!ANY_CHIP_ON) core = "";
   else if (!st) core = `<span class="muted">…</span>`;
   else if (st.hidden) core = `<span class="hidden">●</span>`;
-  else core = chipNumbers(rosterStatView(st, statsMode));
+  // Ship-scoped source with the per-ship list still on its way: keep the
+  // "querying" face instead of dashes — dashes read as "never played in
+  // this scope", which the landed numbers would contradict a beat later.
+  else if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
+    core = `<span class="muted">…</span>`;
+  } else core = chipNumbers(scopedStatView(name));
   if (!SEALS_SHOWN) return core;
   // Every seal of a side sits on ONE flank: allies carry theirs to the
   // LEFT of the numbers, enemies to the RIGHT — no more splitting career
@@ -456,7 +496,12 @@ function candidatesChip(members: string[]): string {
     const st = stats.get(cacheKey(m));
     if (!st) return `<span class="muted">…</span>`;
     if (st.hidden) return `<span class="hidden">●</span>`;
-    const v = rosterStatView(st, statsMode);
+    // Same pending face as chipContent: dashes would read as "never
+    // played in this scope" a beat before the landed numbers arrive.
+    if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
+      return `<span class="muted">…</span>`;
+    }
+    const v = scopedStatView(m);
     if (PREFS.chips.winrate && v.winrate != null) {
       return `<b style="color:${winrateColor(v.winrate)}">${v.winrate.toFixed(1)}%</b>`;
     }
@@ -533,7 +578,16 @@ function teamSummaryCard(
             .filter((v) => !AI_NAME.test(v.name))
             .map((v) => {
               const st = stats.get(cacheKey(v.name));
-              const v2 = st && !st.hidden ? rosterStatView(st, statsMode) : null;
+              const v2 =
+                st && !st.hidden
+                  ? scopedRosterView(
+                      st,
+                      v.shipId ?? null,
+                      PREFS.statsDims,
+                      statsMode,
+                      PREFS.prAlgo ?? "winrate",
+                    )
+                  : null;
               return {
                 winrate: v2?.winrate ?? null,
                 pr: v2?.pr ?? null,
@@ -991,6 +1045,95 @@ function scheduleNotFoundRetry() {
   }, NOT_FOUND_RETRY_DELAY_MS);
 }
 
+// ── Ship-scoped pipeline (the SHARED per-ship source) ───────────────────
+// While SHIP_SCOPE_ON, every landed human stat additionally carries the
+// player's full per-ship list. The fetch rides the backend's shared
+// facility — the SAME single-flight + process-lifetime session cache the
+// main window's roster uses (lookup_player_ship_stats with sessionCache) —
+// so both windows together cost ONE WG request per player per process,
+// whichever asks first; the manual "refresh stats" button wipes that
+// shared cache Rust-side, keeping a forced refresh forced. Failures budget
+// at one attempt per account per battle (reset on battle switch), the
+// same discipline the main pipeline keeps.
+const shipFetched = new Set<number>();
+let shipTimer: ReturnType<typeof setTimeout> | null = null;
+let shipsInFlight = false;
+
+/** True when at least one roster stat still owes its per-ship list. */
+function shipListsPending(): boolean {
+  if (!arena) return false;
+  for (const v of arena.vehicles) {
+    if (AI_NAME.test(v.name)) continue;
+    const st = stats.get(cacheKey(v.name));
+    if (!st || st.hidden || st.accountId == null) continue;
+    if (st.ships !== undefined || shipFetched.has(st.accountId)) continue;
+    return true;
+  }
+  return false;
+}
+
+function scheduleShipLists() {
+  if (!SHIP_SCOPE_ON || !tauri || !realm) return;
+  if (shipTimer || shipsInFlight) return;
+  if (shipListsPending()) shipTimer = setTimeout(runShipBatch, 300);
+}
+
+/** Write one account's list into every same-account stat. The name-keyed
+ *  cache persists across battles and so does the attached list — per-ship
+ *  careers are session-stable. */
+function applyShips(accountId: number, ships: NonNullable<RawStat["ships"]> | null) {
+  for (const st of stats.values()) {
+    if (st.accountId === accountId && st.ships === undefined) st.ships = ships;
+  }
+}
+
+async function runShipBatch() {
+  shipTimer = null;
+  if (!tauri || !realm || shipsInFlight) return;
+  const ids = new Set<number>();
+  for (const v of arena?.vehicles ?? []) {
+    if (AI_NAME.test(v.name)) continue;
+    const st = stats.get(cacheKey(v.name));
+    if (!st || st.hidden || st.accountId == null) continue;
+    if (st.ships !== undefined || shipFetched.has(st.accountId)) continue;
+    ids.add(st.accountId);
+  }
+  if (ids.size === 0) return;
+  shipsInFlight = true;
+  try {
+    const list = [...ids];
+    // Chunk-serial: the same WG-friendly width the main window's fetcher
+    // and the backend's own fan-out keep.
+    for (let i = 0; i < list.length; i += 4) {
+      await Promise.all(
+        list.slice(i, i + 4).map(async (id) => {
+          try {
+            const ships = (await tauri.core.invoke("lookup_player_ship_stats", {
+              accountId: id,
+              realm,
+              // Tauri v2 matches command args camelCase (ArgumentCase::Camel):
+              // a snake_case key here is silently dropped and the command
+              // would run the winrate algorithm under an expected-PR pref.
+              ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
+              sessionCache: true,
+            })) as NonNullable<RawStat["ships"]>;
+            applyShips(id, ships ?? null);
+          } catch {
+            // One attempt per battle — a hard-down API must not be probed
+            // on every anchor event (the battle switch re-arms below).
+            shipFetched.add(id);
+            applyShips(id, null);
+          }
+        }),
+      );
+    }
+    render();
+  } finally {
+    shipsInFlight = false;
+    scheduleShipLists();
+  }
+}
+
 function scheduleBatch() {
   if (!arena || !tauri) return;
   // Names whose stats already landed may still owe a composition verdict or
@@ -999,6 +1142,7 @@ function scheduleBatch() {
   // cadence, not the seals').
   scheduleCompBatch();
   scheduleClanGates();
+  scheduleShipLists();
   // No detected realm → no lookups; chips stay muted ("…") rather than
   // showing numbers fetched from a guessed realm.
   if (!realm) return;
@@ -1026,12 +1170,16 @@ async function runBatch() {
     const results = (await tauri.core.invoke("lookup_players_stats_batch", {
       names,
       realm,
-      ...(PREFS.prAlgo != null ? { pr_algo: PREFS.prAlgo } : {}),
+      // camelCase key (Tauri v2 ArgumentCase::Camel) — the snake_case
+      // spelling that used to live here was silently dropped, so chip PRs
+      // kept the winrate proxy while the expected algorithm was selected.
+      ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
     })) as Array<BatchStat | null>;
     names.forEach((name, i) => {
       const r = results[i];
       if (r) {
         stats.set(cacheKey(name), {
+          accountId: r.accountId ?? null,
           winrate: r.winrate ?? null,
           avgDamage: r.avgDamage ?? null,
           pr: r.pr ?? null,
@@ -1062,6 +1210,7 @@ async function runBatch() {
         notFoundRetry.delete(name);
       } else {
         stats.set(cacheKey(name), {
+          accountId: null,
           winrate: null,
           avgDamage: null,
           pr: null,
@@ -1082,10 +1231,11 @@ async function runBatch() {
     retryDelayMs = 2000;
     scheduleNotFoundRetry();
     // Freshly landed stats unlock the composition-seal lookups for those
-    // names (seals only queue names that already have their stats) and the
-    // hidden-profile clan gates alike.
+    // names (seals only queue names that already have their stats), the
+    // hidden-profile clan gates and the ship-scoped lists alike.
     scheduleCompBatch();
     scheduleClanGates();
+    scheduleShipLists();
     render();
   } catch {
     // Transient WG hiccup: retry the same (still-uncached) names after a
@@ -1209,6 +1359,15 @@ async function start() {
       if (compRetryTimer) {
         clearTimeout(compRetryTimer);
         compRetryTimer = null;
+      }
+      // Ship-scoped lists retry their failures with the new battle: drop
+      // this battle's marks and the null verdicts they wrote (successful
+      // attachments persist — the data is session-stable).
+      if (SHIP_SCOPE_ON) {
+        shipFetched.clear();
+        for (const st of stats.values()) {
+          if (st.ships === null) st.ships = undefined;
+        }
       }
     }
     arena = next;

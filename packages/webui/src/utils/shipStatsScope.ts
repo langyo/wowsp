@@ -34,8 +34,10 @@ import {
   type PrAlgo,
   type RosterShipScope,
 } from "@/stores/statsPrefs";
-import { shipOfflineEntry } from "@/features/holographic/modelLoader";
-import { shipTierOf } from "@/utils/shipClass";
+// shipClass only (NOT features/holographic/modelLoader): this module is
+// shared with the bare-DOM Tab overlay page, which must stay free of the
+// three.js/model-pack dependency chain. Same offline database either way.
+import { shipTierOf, shipTypeOf } from "@/utils/shipClass";
 import {
   EMPTY_ROSTER_VIEW,
   dimsNeedShipStats,
@@ -87,8 +89,9 @@ export type ShipMetaResolver = (shipId: number) => ShipScopeMeta | null;
  *  roster rows' class icons and tier weighting read). */
 const defaultShipMeta: ShipMetaResolver = (shipId) => {
   const tier = shipTierOf(shipId);
-  const type = shipOfflineEntry(shipId)?.type ?? null;
-  return tier == null && type == null ? null : { tier, type };
+  const type = shipTypeOf(shipId);
+  if (tier == null && type === "") return null;
+  return { tier, type: type === "" ? null : type };
 };
 
 /** Additive counters behind one aggregated view. */

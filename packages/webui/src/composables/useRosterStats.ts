@@ -217,7 +217,11 @@ async function fetchShipList(
   if (running) return running;
   const epoch = shipListEpoch;
   const p = api
-    .lookupPlayerShipStats(accountId, realm, prAlgoForRequest())
+    // sessionCache: the roster surface rides the backend's shared per-ship
+    // source — the Tab overlay window asks through the SAME single-flight
+    // + process cache, so both windows together cost one WG request per
+    // player per process (the manual refresh wipes it Rust-side too).
+    .lookupPlayerShipStats(accountId, realm, prAlgoForRequest(), true)
     .then((ships) => {
       // Superseded mid-flight (the entries were forgotten under this key):
       // answer the caller but keep the cache clean for the true re-fetch.

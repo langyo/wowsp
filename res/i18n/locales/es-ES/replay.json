@@ -191,7 +191,7 @@
     "refreshStats": "Actualizar estadísticas",
     "refreshStatsHint": "Borra la caché y vuelve a pedir todas las estadísticas; los datos cargados se mantienen hasta que la petición tenga éxito",
     "statsSourceTitle": "Fuente de estadísticas",
-    "statsSourceHint": "Se mantiene sincronizado con la sección de «Contenido mostrado» de los ajustes; los cambios se aplican de inmediato a este panel y a los paneles de poscombate.",
+    "statsSourceHint": "Se mantiene sincronizado con la sección de «Contenido mostrado» de los ajustes; los cambios se aplican de inmediato a los paneles de la ventana principal y al overlay de Tab a partir de su próxima creación.",
     "manualLocate": "Ubicación manual",
     "manualClear": "Quitar ubicación manual",
     "manualRows": "Ubicado manualmente · {n} filas",

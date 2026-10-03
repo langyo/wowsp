@@ -11,6 +11,7 @@
  *
  *  Read ONCE at window creation (display-only knobs): a settings flip
  *  applies the next time the overlay window is (re)created. */
+import type { PlayerShipStats } from "@/api";
 import {
   DEFAULT_STATS_PREFS,
   STATS_PREFS_STORAGE_KEY,
@@ -20,39 +21,52 @@ import {
   type OverlayTeamAvgToggles,
   type PrAlgo,
   type RosterBattleScope,
+  type RosterShipScope,
+  type RosterSoloScope,
 } from "@/stores/statsPrefs";
 import {
+  dimsNeedShipStats,
   resolveRosterBattleScope,
   rosterStatView,
   type ResolvedStatsMode,
   type RosterModeNumbers,
   type RosterStatViewSource,
+  type RosterStatsDims,
 } from "@/utils/statView";
+import { scopedRosterView } from "@/utils/shipStatsScope";
 import type { StampKind } from "@/utils/winrate";
 
-// The stat-view helpers the overlay renders through live in utils/statView
-// (shared with the main-window panels); re-exported so the overlay page
-// keeps its one import site.
-export { resolveRosterBattleScope, rosterStatView };
-export type { ResolvedStatsMode, RosterModeNumbers, RosterStatViewSource };
+// The stat-view helpers the overlay renders through live in
+// utils/statView + utils/shipStatsScope (shared with the main-window
+// panels; the aggregation module is deliberately free of the Vue/three.js
+// dependency chains so this bare-DOM page can import it); re-exported so
+// the overlay page keeps its one import site.
+export { dimsNeedShipStats, resolveRosterBattleScope, rosterStatView, scopedRosterView };
+export type { ResolvedStatsMode, RosterModeNumbers, RosterStatViewSource, RosterStatsDims };
 
 /** The raw per-player stats the overlay caches: the randoms career plus
  *  the ranked / global per-mode payloads nested the way `rosterStatView`
- *  reads them (the wire fields map in main.ts's batch handler). */
+ *  reads them (the wire fields map in main.ts's batch handler), and the
+ *  per-ship list the ship-scoped source attaches (shared backend
+ *  facility — see utils/shipStatsScope and main.ts's ship pipeline). */
 export interface RawStat extends RosterStatViewSource {
   clanId: number | null;
   clanTag: string | null;
   hidden: boolean;
+  /** WG account id off the batch answer — the ship-scoped fetch key. */
+  accountId: number | null;
+  /** undefined = not requested; null = requested but unavailable. The
+   *  overlay has no spinner face, so no separate loading flag: pending
+   *  rows render the muted "querying" ellipsis until the list lands. */
+  ships?: readonly PlayerShipStats[] | null;
 }
 
-/** The stats source as the overlay consumes it: the battle dimension only
- *  (raw — resolved per battle in main.ts). The ship/solo dimensions are
- *  main-window surfaces (the live/post-battle panels aggregate per-ship
- *  payloads); the overlay's bare-DOM pipeline keeps the account careers,
- *  so they are deliberately not modeled in this snapshot. */
-export interface OverlayStatsDims {
-  battle: RosterBattleScope;
-}
+/** The stats source's three dimensions as the overlay consumes them: the
+ *  battle dimension is resolved per battle in main.ts; the ship/solo
+ *  dimensions drive the page's per-ship pipeline (same aggregation module
+ *  the main-window panels use). Fixed for the window's life — the prefs
+ *  snapshot is read once at creation. */
+export type OverlayStatsDims = RosterStatsDims;
 
 /** Everything the overlay renders consumes this snapshot. */
 export interface OverlayDisplayPrefs {
@@ -129,9 +143,15 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
       ? j.overlayBattleScope
       : (legacyBattleScopeOf(j?.overlayStatsMode) ??
         DEFAULT_STATS_PREFS.overlayBattleScope);
+  const ship: RosterShipScope =
+    j?.overlayShipScope === "class" || j?.overlayShipScope === "tier" || j?.overlayShipScope === "ship"
+      ? j.overlayShipScope
+      : DEFAULT_STATS_PREFS.overlayShipScope;
+  const solo: RosterSoloScope =
+    j?.overlaySoloScope === "solo" ? "solo" : DEFAULT_STATS_PREFS.overlaySoloScope;
   return {
     chips: readToggles(j, "overlayChips", DEFAULT_STATS_PREFS.overlayChips),
-    statsDims: { battle },
+    statsDims: { battle, ship, solo },
     intel: readToggles(j, "overlayIntel", DEFAULT_STATS_PREFS.overlayIntel),
     teamIntel: readFlag(j, "teamIntelEnabled", DEFAULT_STATS_PREFS.teamIntelEnabled),
     teamAvg: readToggles(j, "overlayTeamAvg", DEFAULT_STATS_PREFS.overlayTeamAvg),

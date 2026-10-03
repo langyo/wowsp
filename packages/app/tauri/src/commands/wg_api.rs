@@ -80,12 +80,16 @@ pub(crate) fn roster_cache_get(realm: &str, name: &str) -> Option<Option<PlayerS
 
 /// Wipe the process-lifetime roster cache — the manual "refresh stats"
 /// button clears this before re-queueing the roster so the batch is a true
-/// from-scratch request instead of instant session-cache answers.
+/// from-scratch request instead of instant session-cache answers. The
+/// per-ship session cache (the ship-scoped roster source both windows
+/// share — see ship_stats.rs) rides along, so a forced refresh stays
+/// forced there too.
 #[tauri::command]
 pub fn clear_roster_stats_cache() -> Result<(), String> {
     if let Ok(mut cache) = ROSTER_STATS_CACHE.lock() {
         cache.clear();
     }
+    super::ship_stats::clear_ship_stats_session_cache();
     Ok(())
 }
 

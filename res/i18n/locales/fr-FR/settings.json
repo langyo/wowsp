@@ -249,7 +249,7 @@
     "chipsDamage": "Dégâts moyens",
     "chipsDamageDesc": "Les dégâts moyens de chaque ligne.",
     "shipScope": "Portée des navires",
-    "shipScopeDesc": "Les navires couverts par les chiffres de chaque ligne : toute la carrière du compte, ou l'agrégat des navires de la même classe / du même niveau / du navire exact que le joueur utilise dans cette bataille (panneaux en direct et d'après-combat uniquement).",
+    "shipScopeDesc": "Les navires couverts par les chiffres de chaque ligne : toute la carrière du compte, ou l'agrégat des navires de la même classe / du même niveau / du navire exact que le joueur utilise dans cette bataille.",
     "shipScopeAll": "Tous",
     "shipScopeClass": "Classe actuelle",
     "shipScopeTier": "Niveau actuel",

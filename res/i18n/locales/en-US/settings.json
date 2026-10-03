@@ -249,7 +249,7 @@
     "chipsDamage": "Average damage",
     "chipsDamageDesc": "The per-row average damage number.",
     "shipScope": "Ship scope",
-    "shipScopeDesc": "Which ships each row's numbers cover: the whole account career, or the ships sharing that player's current-ship class / tier, or exactly that ship (live and post-battle panels only).",
+    "shipScopeDesc": "Which ships each row's numbers cover: the whole account career, or the ships sharing that player's current-ship class / tier, or exactly that ship.",
     "shipScopeAll": "All",
     "shipScopeClass": "Class",
     "shipScopeTier": "Tier",

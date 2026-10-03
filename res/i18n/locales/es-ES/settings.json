@@ -249,7 +249,7 @@
     "chipsDamage": "Daño medio",
     "chipsDamageDesc": "El daño medio de cada fila.",
     "shipScope": "Alcance de buques",
-    "shipScopeDesc": "Qué buques cubren las cifras de cada fila: toda la carrera de la cuenta, o el agregado de los buques de la misma clase / del mismo nivel / del buque exacto que usa el jugador en esta batalla (solo paneles en vivo y poscombate).",
+    "shipScopeDesc": "Qué buques cubren las cifras de cada fila: toda la carrera de la cuenta, o el agregado de los buques de la misma clase / del mismo nivel / del buque exacto que usa el jugador en esta batalla.",
     "shipScopeAll": "Todos",
     "shipScopeClass": "Solo clase actual",
     "shipScopeTier": "Solo nivel actual",

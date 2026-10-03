@@ -191,7 +191,7 @@
     "refreshStats": "刷新战绩",
     "refreshStatsHint": "清空缓存并从头重新请求全部名单战绩；已加载的数据在请求成功前保持显示",
     "statsSourceTitle": "统计来源",
-    "statsSourceHint": "与设置中的「显示内容」同步；改动即时生效于本面板与战后面板。",
+    "statsSourceHint": "与设置中的「显示内容」同步；改动即时生效于主窗口面板，Tab 悬浮窗自下一次创建起生效。",
     "manualLocate": "手动定位",
     "manualClear": "清除定位",
     "manualRows": "已手动定位 · {n} 行",

@@ -26,16 +26,24 @@ use super::wg_api::{ExpectedPrRow, PrAlgo};
 /// `pr_algo` selects the per-ship PR algorithm ("winrate" default /
 /// "expected" = wows-numbers against the server-average table); see
 /// [`apply_pr_algo`].
+///
+/// `session_cache` opts a caller into the process-wide read-through cache
+/// (the in-flight single-flight, see [`raw_ship_stats_shared`], applies to
+/// every caller) — the
+/// roster surfaces (the main window's live panel AND the Tab overlay
+/// window) pass it so both windows share ONE WG request per player per
+/// process instead of each re-fetching the other's answers. Default
+/// (None/false) keeps the historical always-fresh contract the per-ship
+/// detail panel relies on.
 #[tauri::command]
 pub async fn lookup_player_ship_stats(
     account_id: i64,
     realm: String,
     pr_algo: Option<String>,
+    session_cache: Option<bool>,
 ) -> Result<Vec<PlayerShipStats>, String> {
     let algo = PrAlgo::from_param(pr_algo.as_deref());
     let cache_file = format!("ship-stats/{realm}_{account_id}.json");
-    // We always re-fetch on demand (the player may have played new battles);
-    // the cache is just a fallback when the API is unreachable.
     let name_map = load_ship_name_map();
     // Expected algorithm: load the wows-numbers table once for the whole
     // list (downloaded on cache miss, see `trends`). None when it can't be
@@ -46,20 +54,30 @@ pub async fn lookup_player_ship_stats(
     } else {
         None
     };
+    let enrich = |raw: &RawShipStats| -> PlayerShipStats {
+        let mut p: PlayerShipStats = raw.into();
+        p.name = name_map.get(&raw.ship_id).cloned().unwrap_or_default();
+        apply_pr_algo(&mut p, algo, &expected_table);
+        p
+    };
 
-    let result = fetch_ship_stats(account_id, &realm, true).await;
+    // Session read-through (roster surfaces): the raw counters are shared
+    // verbatim; PR is a pure function of them and is re-derived per the
+    // caller's algorithm, so both PR calibers ride one cached fetch.
+    if session_cache.unwrap_or(false) {
+        if let Some(raw) = ship_stats_session_get(&realm, account_id) {
+            return Ok(raw.iter().map(&enrich).collect());
+        }
+    }
+
+    // The shared single-writer fetch: concurrent callers (either window)
+    // join the ONE in-flight request instead of stacking duplicate WG
+    // hits; a success lands in the session cache before the round closes.
+    let result = raw_ship_stats_shared(&realm, account_id).await;
     let stats = match result {
         Ok(s) => {
             // Persist cache.
-            let enriched: Vec<PlayerShipStats> = s
-                .iter()
-                .map(|raw| {
-                    let mut p: PlayerShipStats = raw.into();
-                    p.name = name_map.get(&raw.ship_id).cloned().unwrap_or_default();
-                    apply_pr_algo(&mut p, algo, &expected_table);
-                    p
-                })
-                .collect();
+            let enriched: Vec<PlayerShipStats> = s.iter().map(&enrich).collect();
             let _ = write_appdata_json(
                 &cache_file,
                 &serde_json::to_string(&enriched).unwrap_or_default(),
@@ -86,6 +104,158 @@ pub async fn lookup_player_ship_stats(
         },
     };
     Ok(stats)
+}
+
+// ── Shared per-ship data source (one writer, many readers) ─────────────
+//
+// The main window's roster pipeline and the Tab overlay window are separate
+// JS contexts that each ask for the same players' per-ship lists every
+// battle. Mirroring the roster batch's process-lifetime cache (see
+// ROSTER_STATS_CACHE in wg_api.rs), the RAW counters live here behind:
+//
+//   - an in-flight single-flight: the first caller per (realm, account)
+//     becomes THE writer and holds the per-key lock while the WG request
+//     is out; callers arriving mid-flight wait on the same lock and read
+//     the round's shared answer — never a duplicate concurrent request;
+//   - a session cache: one process-wide answer per player, served to
+//     `session_cache` callers with PR re-derived per their algorithm.
+//     Wiped together with the roster cache by the manual "refresh stats"
+//     button (clear_roster_stats_cache), so a forced refresh stays forced.
+//
+// Non-session callers (the per-ship detail panel) skip the cache read but
+// still join an in-flight round when one exists — exact-concurrency
+// deduplication only, keeping their always-fresh contract intact.
+
+/// Process-lifetime RAW per-ship answers, keyed (realm, account_id). The
+/// raw counters predate the PR algorithm; enrichment is a pure per-caller
+/// transform (see the command above).
+type ShipStatsSessionCache =
+    std::collections::HashMap<(String, i64), std::sync::Arc<Vec<RawShipStats>>>;
+static SHIP_STATS_SESSION: std::sync::LazyLock<std::sync::Mutex<ShipStatsSessionCache>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Session generation, bumped by every clear: a fetch that STARTED before
+/// the clear must not land its (pre-refresh) answer afterwards — the
+/// writer captures the epoch and the insert compares it.
+static SHIP_SESSION_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Session-entry cap, mirroring the frontend caches this serves — a long
+/// session's rosters must not grow the map without bound; the whole-map
+/// clear keeps the eviction trivial (same policy as the client caches).
+const SHIP_STATS_SESSION_MAX: usize = 1000;
+
+/// One in-flight raw-fetch round: `Some` once the round's writer finished;
+/// waiters read the shared answer (success OR failure) after the lock.
+type ShipFetchRound =
+    std::sync::Arc<tokio::sync::Mutex<Option<std::sync::Arc<Result<Vec<RawShipStats>, String>>>>>;
+static SHIP_FETCH_INFLIGHT: std::sync::LazyLock<
+    tokio::sync::Mutex<std::collections::HashMap<(String, i64), ShipFetchRound>>,
+> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Session-cache read for `session_cache` callers. Infallible on a poisoned
+/// lock (degrades to a cache miss → a fresh fetch).
+fn ship_stats_session_get(
+    realm: &str,
+    account_id: i64,
+) -> Option<std::sync::Arc<Vec<RawShipStats>>> {
+    let cache = SHIP_STATS_SESSION.lock().ok()?;
+    cache.get(&(realm.to_string(), account_id)).cloned()
+}
+
+/// Store one player's RAW answer. Every actual network fetch lands here —
+/// including the detail panel's fresh fetches (the cache is only SERVED to
+/// opt-in callers, so inserting is always safe). `round_epoch` is the
+/// session epoch the fetch STARTED under: a clear that happened mid-flight
+/// (the manual refresh) makes the insert a no-op, so a forced refresh
+/// stays forced even against a round that was already out.
+fn ship_stats_session_insert(realm: &str, account_id: i64, raw: &[RawShipStats], round_epoch: u64) {
+    if let Ok(mut cache) = SHIP_STATS_SESSION.lock() {
+        // Compare under the map lock: a clear completing between an outer
+        // check and the insert would otherwise let one stale pre-refresh
+        // answer slip into the freshly wiped cache.
+        if round_epoch != SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire) {
+            return;
+        }
+        if cache.len() >= SHIP_STATS_SESSION_MAX {
+            cache.clear();
+        }
+        cache.insert(
+            (realm.to_string(), account_id),
+            std::sync::Arc::new(raw.to_vec()),
+        );
+    }
+}
+
+/// Wiped together with the roster batch cache by the manual "refresh
+/// stats" button — both windows' next ship-scoped view then re-fetches for
+/// real instead of answering each other's pre-refresh round. The epoch
+/// bump additionally invalidates any fetch still in flight (its result
+/// will no longer land in the cache), and the in-flight map is drained
+/// (best-effort try_lock — the epoch bump already guards anything that
+/// slips past) so post-refresh callers avoid joining a pre-refresh round.
+pub(crate) fn clear_ship_stats_session_cache() {
+    SHIP_SESSION_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Release);
+    if let Ok(mut cache) = SHIP_STATS_SESSION.lock() {
+        cache.clear();
+    }
+    if let Ok(mut inflight) = SHIP_FETCH_INFLIGHT.try_lock() {
+        inflight.clear();
+    }
+}
+
+/// The single-writer raw fetch. The first caller per key becomes the round's
+/// writer (holding the per-key lock across the WG request); concurrent
+/// callers clone the round handle, wait on the lock, then read the shared
+/// answer. The round leaves the map once complete — later calls either
+/// serve from the session cache (inserted by the writer before the round
+/// closes, so no window exists where a newcomer re-fetches) or, for
+/// always-fresh callers, start a genuinely new round.
+async fn raw_ship_stats_shared(realm: &str, account_id: i64) -> Result<Vec<RawShipStats>, String> {
+    let key = (realm.to_string(), account_id);
+    let round = {
+        let mut map = SHIP_FETCH_INFLIGHT.lock().await;
+        map.entry(key.clone()).or_default().clone()
+    };
+    let mut guard = round.lock().await;
+    if let Some(shared) = guard.as_ref().cloned() {
+        // A waiter that read a COMPLETED round removes it from the map when
+        // it is still the live entry — a writer dropped between finishing
+        // and its own removal would otherwise strand the round forever (and
+        // always-fresh callers would keep joining the stale answer).
+        drop(guard);
+        remove_live_round(&key, &round).await;
+        return match shared.as_ref() {
+            Ok(raw) => Ok(raw.clone()),
+            Err(e) => Err(e.clone()),
+        };
+    }
+    // We are this round's single writer.
+    let round_epoch = SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire);
+    let result = fetch_ship_stats(account_id, realm, true).await;
+    if let Ok(raw) = &result {
+        ship_stats_session_insert(realm, account_id, raw, round_epoch);
+    }
+    *guard = Some(std::sync::Arc::new(result.clone()));
+    drop(guard);
+    // Remove only OUR round: an unconditional delete could drop a NEWER
+    // round's entry (installed after a waiter cleaned ours or a clear
+    // drained the map) and briefly allow a duplicate concurrent fetch.
+    remove_live_round(&key, &round).await;
+    result
+}
+
+/// Remove `round` from the in-flight map iff it is still the live entry
+/// for `key` (Arc identity) — shared by the writer and waiter paths, so a
+/// finished round can never delete a NEWER round's entry (which would
+/// briefly allow a duplicate concurrent fetch).
+async fn remove_live_round(key: &(String, i64), round: &ShipFetchRound) {
+    let mut map = SHIP_FETCH_INFLIGHT.lock().await;
+    if map
+        .get(key)
+        .is_some_and(|live| std::sync::Arc::ptr_eq(live, round))
+    {
+        map.remove(key);
+    }
 }
 
 /// Re-derive one row's PR for the selected algorithm from the row's own
@@ -808,6 +978,55 @@ struct WgError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ship_stats_session_cache_roundtrip_clear_and_cap() {
+        // Unique ids so the shared process-lifetime map stays isolated from
+        // any other test touching it in the same binary.
+        let raw = vec![RawShipStats {
+            ship_id: 987_654_321,
+            battles: 10,
+            wins: 6,
+            damage_caused: 100_000,
+            frags: 4,
+            survived_battles: 3,
+            last_battle_time: 0,
+            xp: 0,
+            modes: None,
+        }];
+        assert!(ship_stats_session_get("eu", 987_654_321).is_none());
+        let epoch = SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire);
+        ship_stats_session_insert("eu", 987_654_321, &raw, epoch);
+        let hit = ship_stats_session_get("eu", 987_654_321).expect("inserted");
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].ship_id, 987_654_321);
+        // Keyed per realm: another realm's answer is a different entry.
+        assert!(ship_stats_session_get("na", 987_654_321).is_none());
+        // The manual refresh wipes the whole map.
+        clear_ship_stats_session_cache();
+        assert!(ship_stats_session_get("eu", 987_654_321).is_none());
+        // The cap evicts everything at once (the client caches' policy): the
+        // MAX+1-th insert sees a full map and clears it first.
+        clear_ship_stats_session_cache();
+        let epoch = SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire);
+        for id in 0..=SHIP_STATS_SESSION_MAX as i64 {
+            ship_stats_session_insert("eu", id, &[], epoch);
+        }
+        assert!(ship_stats_session_get("eu", 0).is_none());
+        assert!(ship_stats_session_get("eu", SHIP_STATS_SESSION_MAX as i64).is_some());
+
+        // A fetch that started BEFORE a clear must not land afterwards (the
+        // manual refresh stays forced against in-flight rounds).
+        clear_ship_stats_session_cache();
+        let stale = SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire);
+        clear_ship_stats_session_cache();
+        ship_stats_session_insert("eu", 987_654_322, &raw, stale);
+        assert!(ship_stats_session_get("eu", 987_654_322).is_none());
+
+        // Leave the process-lifetime map clean for whichever test runs next.
+        clear_ship_stats_session_cache();
+        assert!(ship_stats_session_get("eu", 987_654_321).is_none());
+    }
 
     #[test]
     fn raw_ship_stats_from_wg_parses() {

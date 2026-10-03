@@ -249,7 +249,7 @@
     "chipsDamage": "場均傷害",
     "chipsDamageDesc": "每行的場均傷害數字。",
     "shipScope": "艦船範圍",
-    "shipScopeDesc": "每行數字覆蓋的艦船範圍：全域為整個帳號生涯，其餘按該玩家本局所乘艦船的艦種 / 階級 / 單艦聚合（僅即時與戰後對局面板生效）。",
+    "shipScopeDesc": "每行數字覆蓋的艦船範圍：全域為整個帳號生涯，其餘按該玩家本局所乘艦船的艦種 / 階級 / 單艦聚合。",
     "shipScopeAll": "全域",
     "shipScopeClass": "僅當前艦種",
     "shipScopeTier": "僅當前階級",

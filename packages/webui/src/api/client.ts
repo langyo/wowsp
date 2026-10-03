@@ -1620,12 +1620,23 @@ export const api = {
   getGameVersion: () => transport.invoke<GameVersionInfo>(RPC.get_game_version),
   getShipEncyclopedia: (realm: string, forceRefresh: boolean, language?: string) =>
     transport.invoke<ShipInfo[]>(RPC.get_ship_encyclopedia, { realm, forceRefresh, language }),
-  /** Per-ship stats list. `prAlgo` as in lookupPlayerStats. */
-  lookupPlayerShipStats: (accountId: number, realm: string, prAlgo?: PrAlgo) =>
+  /** Per-ship stats list. `prAlgo` as in lookupPlayerStats. `sessionCache`
+   *  opts into the backend's shared per-ship source (process-lifetime
+   *  read-through cache; the single-flight applies to every caller) — the
+   *  roster surfaces in BOTH windows pass it so they share one WG request
+   *  per player; the per-ship detail panel keeps the default always-fresh
+   *  contract. */
+  lookupPlayerShipStats: (
+    accountId: number,
+    realm: string,
+    prAlgo?: PrAlgo,
+    sessionCache?: boolean,
+  ) =>
     transport.invoke<PlayerShipStats[]>(RPC.lookup_player_ship_stats, {
       accountId,
       realm,
       prAlgo: prAlgo ?? null,
+      sessionCache: sessionCache ?? null,
     }),
   /** Per-ship history points — baselines for "recent N days" deltas. */
   readShipStatsHistory: (accountId: number, realm: string) =>
