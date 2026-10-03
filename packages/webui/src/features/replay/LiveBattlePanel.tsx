@@ -63,6 +63,7 @@ import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/
 import { displayMapName } from "@/utils/mapNames";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
+import LiveStatsModeChip from "./LiveStatsModeChip";
 import MapNameTag from "./MapNameTag";
 import PluginStatusCard from "./PluginStatusCard";
 import { WaitingRadarArt } from "./liveGuideArt";
@@ -72,7 +73,6 @@ import {
   rosterShotDashes,
   rosterStatCols,
   rosterStatLine,
-  rosterStatView,
   useNickMasking,
   useShareShot,
 } from "./postBattleShare";
@@ -80,9 +80,15 @@ import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot"
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
-import { resolveRosterStatsMode, type ResolvedStatsMode } from "@/utils/statView";
+import {
+  dimsNeedShipStats,
+  resolveRosterBattleScope,
+  rosterDimsOf,
+  type ResolvedStatsMode,
+} from "@/utils/statView";
+import { scopedRosterView } from "@/utils/shipStatsScope";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
-import { useStatsPrefsStore } from "@/stores/statsPrefs";
+import { prAlgoForRequest, useStatsPrefsStore } from "@/stores/statsPrefs";
 import { useManualLocateStore } from "@/stores/manualLocate";
 import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
@@ -443,13 +449,34 @@ export default defineComponent({
       void router.push({ path: "/lookup", query: { name, realm: realm.value } });
     }
 
-    /** Which battle-mode career the roster numbers read — the persisted
-     *  stats-source pref; "auto" follows THIS battle (ranked battles read
-     *  the ranked careers, everything else randoms). Every row number, the
-     *  stat text lines and the team aggregates resolve through it. */
-    const statsMode = computed<ResolvedStatsMode>(() =>
-      resolveRosterStatsMode(prefs.prefs.overlayStatsMode, props.arena ?? {}),
+    /** The stats-source dimensions (ship scope / battle scope / solo
+     *  filter — the persisted pref the head's mode tag and the settings
+     *  both write) resolved for THIS battle: "follow" reads the battle's
+     *  own mode (ranked battles read the ranked careers, everything else
+     *  randoms). Every row number, the stat text lines, the team
+     *  aggregates and the share shot resolve through the row view below. */
+    const statsDims = computed(() => rosterDimsOf(prefs.prefs));
+    const battleScope = computed<ResolvedStatsMode>(() =>
+      resolveRosterBattleScope(statsDims.value.battle, props.arena ?? {}),
     );
+    /** A ship-scoped dimension is on: rows then read the per-ship lists
+     *  (attached by the roster pipeline) and their spinners additionally
+     *  ride `shipsLoading`. */
+    const shipScopeOn = computed(() => dimsNeedShipStats(statsDims.value));
+    /** One row's display numbers under the full three-dimension model —
+     *  the account-career path while the dims allow it, the aggregated
+     *  per-ship view otherwise (see utils/shipStatsScope). */
+    const rowViewOf = (
+      st: RosterStat | null | undefined,
+      shipId: number | null,
+    ) =>
+      scopedRosterView(
+        st,
+        shipId,
+        statsDims.value,
+        battleScope.value,
+        prAlgoForRequest() ?? "winrate",
+      );
 
     /** One team's header aggregate — tier-weighted (per the stats prefs)
      *  mean winrate plus a plain mean PR over the players whose stats
@@ -460,10 +487,16 @@ export default defineComponent({
         entries.map((entry) => {
           const v = entry.vehicle;
           const st = stats.get(v.id);
-          if (!st || st.loading || st.hidden || isAiName(v.name)) {
+          if (
+            !st ||
+            st.loading ||
+            (shipScopeOn.value && st.shipsLoading) ||
+            st.hidden ||
+            isAiName(v.name)
+          ) {
             return { winrate: null, pr: null, damage: null, tier: shipTierOf(v.shipId) };
           }
-          const view = rosterStatView(st, statsMode.value);
+          const view = rowViewOf(st, v.shipId);
           return {
             winrate: view.winrate,
             pr: view.pr,
@@ -507,8 +540,15 @@ export default defineComponent({
       const shotCellsOf = (v: VehicleEntry): ShotStat[] => {
         if (isAiName(v.name)) return rosterShotDashes();
         const st = stats.get(v.id);
-        if (!st || st.loading || st.hidden) return rosterShotDashes();
-        return rosterShotCells(rosterStatView(st, statsMode.value));
+        if (
+          !st ||
+          st.loading ||
+          (shipScopeOn.value && st.shipsLoading) ||
+          st.hidden
+        ) {
+          return rosterShotDashes();
+        }
+        return rosterShotCells(rowViewOf(st, v.shipId));
       };
       const mkCol = (entries: TabOrderedVehicle[], enemy: boolean): ShotColumn => {
         // Aggregate values carry their stat-column index so the shot's
@@ -677,7 +717,9 @@ export default defineComponent({
       const statLine = (v: VehicleEntry) => {
         if (isAiName(v.name)) return "—";
         const st = stats.get(v.id);
-        if (!st || st.loading) return <HkSpinner size="xs" tone="current" />;
+        if (!st || st.loading || (shipScopeOn.value && st.shipsLoading)) {
+          return <HkSpinner size="xs" tone="current" />;
+        }
         if (st.hidden) {
           return (
             <span class="live-battle__player-hidden">
@@ -688,7 +730,7 @@ export default defineComponent({
         // The chips-enabled numbers of the roster's stats-source view —
         // one shared text line with the post-battle full cards
         // (rosterStatLine in postBattleShare).
-        const line = rosterStatLine(rosterStatView(st, statsMode.value));
+        const line = rosterStatLine(rowViewOf(st, v.shipId));
         return line != null ? (
           <span class="live-battle__player-statline">{line}</span>
         ) : (
@@ -708,8 +750,9 @@ export default defineComponent({
         }
       }
       /** One row's display numbers per the roster's resolved stats source
-       *  (the shared columns render them). */
-      const viewOf = (st: RosterStat) => rosterStatView(st, statsMode.value);
+       *  (the shared columns render them) — scoped per the row's own ship
+       *  while a ship-scoped dimension is on. */
+      const viewOf = (st: RosterStat, shipId: number | null) => rowViewOf(st, shipId);
 
       /** One compact row: battle icon, nick/clan + ship stack, the shared
        *  WR/PR/battles/avg-damage columns and the career seal — one line, no
@@ -767,7 +810,15 @@ export default defineComponent({
               </span>
               <span class="live-battle__crow-ship">{shipName}</span>
             </span>
-            {rosterStatCols(v.name, nameStats, false, viewOf)}
+            {rosterStatCols(
+              v.name,
+              nameStats,
+              Boolean(
+                stats.get(v.id)?.loading ||
+                  (shipScopeOn.value && stats.get(v.id)?.shipsLoading),
+              ),
+              (st) => viewOf(st, v.shipId),
+            )}
             {/* Seal slot reserved whenever seals show at all (PR + settings
                 master) — the matrix's own alignment rule: rows without a
                 stamp (bots, misses, verdict holds) keep the stat columns
@@ -913,6 +964,10 @@ export default defineComponent({
                 hover previews the map's bundled minimap, click opens the
                 map's tactical board — see MapNameTag. */}
             <MapNameTag class="live-battle__map" spaceId={props.arena.mapName} lang={dataLanguage.value} />
+            {/* Stats-source mode tag: shows the current ship/battle/solo
+                dimensions and opens the same selector the settings page
+                hosts (one shared store — both stay in sync live). */}
+            <LiveStatsModeChip />
             {/* Copy-share-shot: the roster as a watermarked PNG straight
                 onto the clipboard — the share path itself, no separate
                 post-battle window in between. Copy feedback rides the

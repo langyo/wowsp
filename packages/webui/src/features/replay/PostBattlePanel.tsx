@@ -27,6 +27,7 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  watch,
   type CSSProperties,
   type VNode,
 } from "vue";
@@ -73,10 +74,12 @@ import {
   useShareShot,
 } from "./postBattleShare";
 import {
-  rosterStatView,
-  resolveRosterStatsMode,
+  dimsNeedShipStats,
+  resolveRosterBattleScope,
+  rosterDimsOf,
   type ResolvedStatsMode,
 } from "@/utils/statView";
+import { scopedRosterView } from "@/utils/shipStatsScope";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import "./PostBattlePanel.scss";
 
@@ -289,11 +292,36 @@ export default defineComponent({
     const toggleFullMode = () =>
       statsPrefs.setPostbattleRosterFull(!fullMode.value);
 
-    /** Which battle-mode career the roster numbers read — the persisted
-     *  stats-source pref; "auto" follows the replayed battle's identity
-     *  (ranked → ranked careers). */
-    const statsMode = computed<ResolvedStatsMode>(() =>
-      resolveRosterStatsMode(prefs.value.overlayStatsMode, props.head ?? {}),
+    /** The stats-source dimensions (ship scope / battle scope / solo
+     *  filter — the persisted pref the settings and the live head's mode
+     *  tag both write) resolved against the replayed battle's identity
+     *  ("follow": ranked → ranked careers). Rows read them through
+     *  `rowViewOf`, which aggregates the per-ship lists the one-shot
+     *  pipeline attaches while a ship-scoped dimension is on. */
+    const statsDims = computed(() => rosterDimsOf(prefs.value));
+    const battleScope = computed<ResolvedStatsMode>(() =>
+      resolveRosterBattleScope(statsDims.value.battle, props.head ?? {}),
+    );
+    const shipScopeOn = computed(() => dimsNeedShipStats(statsDims.value));
+    const rowViewOf = (st: RosterStat | null | undefined, shipId: number | null) =>
+      scopedRosterView(
+        st,
+        shipId,
+        statsDims.value,
+        battleScope.value,
+        prAlgoForRequest() ?? "winrate",
+      );
+    // Flipping the stats-source dimensions (or the PR algorithm) after the
+    // one-shot load re-runs it: fetchRosterStatsByNames only attaches the
+    // per-ship lists the dims in force AT LOAD TIME requested, and without
+    // this the rows would sit on silent dashes instead of re-resolving
+    // (the live panel gets the same flip for free from its composable
+    // watch).
+    watch(
+      () => [dimsNeedShipStats(statsDims.value), prAlgoForRequest()] as const,
+      ([need]) => {
+        if (need) void loadNameStats();
+      },
     );
 
     /** One team's header aggregate — tier-weighted (per the stats prefs)
@@ -304,10 +332,10 @@ export default defineComponent({
       aggregateTeamStats(
         list.map((p) => {
           const st = !isAiName(p.name) ? nameStats.value.get(p.name) : undefined;
-          if (!st || st.hidden) {
+          if (!st || st.hidden || (shipScopeOn.value && st.shipsLoading)) {
             return { winrate: null, pr: null, damage: null, tier: p.shipId != null ? shipTierOf(p.shipId) : null };
           }
-          const view = rosterStatView(st, statsMode.value);
+          const view = rowViewOf(st, p.shipId ?? null);
           return {
             winrate: view.winrate,
             pr: view.pr,
@@ -405,7 +433,7 @@ export default defineComponent({
         const st = ai ? undefined : nameStats.value.get(p.name);
         const out: ShotStat[] = !st
           ? rosterShotDashes()
-          : rosterShotCells(rosterStatView(st, statsMode.value));
+          : rosterShotCells(rowViewOf(st, p.shipId ?? null));
         out.push({ text: p.xp.toLocaleString() });
         return out;
       };
@@ -653,8 +681,9 @@ export default defineComponent({
         );
       };
       /** One row's display numbers per the roster's resolved stats source
-       *  (the shared columns render them). */
-      const viewOf = (st: RosterStat) => rosterStatView(st, statsMode.value);
+       *  (the shared columns render them) — scoped per the row's own ship
+       *  while a ship-scoped dimension is on. */
+      const viewOf = (st: RosterStat, shipId: number | null) => rowViewOf(st, shipId);
       /** Career seal for one row — the same guard chain the live panel uses
        *  (verdict-pending hidden profiles hold their stamp). */
       const sealOf = (p: (typeof rows.value)[number]) => {
@@ -748,7 +777,13 @@ export default defineComponent({
                 </span>
                 <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
               </span>
-              {rosterStatCols(p.name, nameStats.value, nameStatsLoading.value, viewOf)}
+              {rosterStatCols(
+                p.name,
+                nameStats.value,
+                nameStatsLoading.value ||
+                  Boolean(shipScopeOn.value && nameStats.value.get(p.name)?.shipsLoading),
+                (st) => viewOf(st, p.shipId ?? null),
+              )}
               <span
                 class="replay-view__postbattle-cell-xp"
                 data-hint={t("replay.postbattle.xp")}
@@ -781,7 +816,11 @@ export default defineComponent({
         const stat = ai ? undefined : nameStats.value.get(p.name);
         const statLine = () => {
           if (ai) return "—";
-          if (!stat || nameStatsLoading.value) {
+          if (
+            !stat ||
+            nameStatsLoading.value ||
+            (shipScopeOn.value && stat.shipsLoading)
+          ) {
             return <HkSpinner size="xs" tone="current" />;
           }
           if (stat.hidden) {
@@ -793,17 +832,19 @@ export default defineComponent({
           }
           // The chips-enabled numbers of the resolved stats-source view —
           // the same shared text line the live panel's full cards render.
-          const line = rosterStatLine(rosterStatView(stat, statsMode.value));
+          const line = rosterStatLine(rowViewOf(stat, p.shipId ?? null));
           return line != null ? (
             <span class="replay-view__postbattle-fcell-statline">{line}</span>
           ) : (
             "—"
           );
         };
-        const dmgView = stat ? rosterStatView(stat, statsMode.value) : null;
+        const dmgView = stat ? rowViewOf(stat, p.shipId ?? null) : null;
         const dmgBody = ai ? (
           <em>—</em>
-        ) : !stat || nameStatsLoading.value ? (
+        ) : !stat ||
+            nameStatsLoading.value ||
+            (shipScopeOn.value && stat.shipsLoading) ? (
           <HkSpinner size="xs" tone="current" />
         ) : dmgView?.avgDamage == null ? (
           <em>—</em>

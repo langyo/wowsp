@@ -8,7 +8,9 @@ import {
   type OverlayChipToggles,
   type OverlayIntelToggles,
   type OverlayTeamAvgToggles,
-  type RosterStatsMode,
+  type RosterBattleScope,
+  type RosterShipScope,
+  type RosterSoloScope,
 } from "@/stores/statsPrefs";
 // Same row pattern as the stats section's preference controls (label +
 // description left, control right; the sub rail for dependent clusters).
@@ -59,22 +61,61 @@ export default defineComponent({
         {chipRow("battles", t("settings.overlayContent.chipsBattles"), t("settings.overlayContent.chipsBattlesDesc"))}
         {chipRow("damage", t("settings.overlayContent.chipsDamage"), t("settings.overlayContent.chipsDamageDesc"))}
 
+        {/* The stats source is THREE orthogonal dimensions — ship scope /
+            battle scope / solo filter — the same groups the live panel
+            head's mode tag hosts (one shared store, both stay in sync). */}
         <div class="stats-prefs__row">
           <span class="stats-prefs__row-text">
-            <span class="stats-prefs__row-label">{t("settings.overlayContent.statsMode")}</span>
-            <span class="stats-prefs__row-desc">{t("settings.overlayContent.statsModeDesc")}</span>
+            <span class="stats-prefs__row-label">{t("settings.overlayContent.shipScope")}</span>
+            <span class="stats-prefs__row-desc">{t("settings.overlayContent.shipScopeDesc")}</span>
           </span>
           <HkTabs
             variant="segmented"
-            modelValue={prefs.prefs.overlayStatsMode}
+            modelValue={prefs.prefs.overlayShipScope}
             onUpdate:modelValue={(v: string) =>
-              prefs.setOverlayStatsMode(v as RosterStatsMode)
+              prefs.setOverlayShipScope(v as RosterShipScope)
             }
             tabs={[
-              { key: "auto", label: t("settings.overlayContent.statsModeAuto") },
-              { key: "random", label: t("settings.overlayContent.statsModeRandom") },
-              { key: "ranked", label: t("settings.overlayContent.statsModeRanked") },
-              { key: "global", label: t("settings.overlayContent.statsModeGlobal") },
+              { key: "all", label: t("settings.overlayContent.shipScopeAll") },
+              { key: "class", label: t("settings.overlayContent.shipScopeClass") },
+              { key: "tier", label: t("settings.overlayContent.shipScopeTier") },
+              { key: "ship", label: t("settings.overlayContent.shipScopeShip") },
+            ]}
+          />
+        </div>
+        <div class="stats-prefs__row">
+          <span class="stats-prefs__row-text">
+            <span class="stats-prefs__row-label">{t("settings.overlayContent.battleScope")}</span>
+            <span class="stats-prefs__row-desc">{t("settings.overlayContent.battleScopeDesc")}</span>
+          </span>
+          <HkTabs
+            variant="segmented"
+            modelValue={prefs.prefs.overlayBattleScope}
+            onUpdate:modelValue={(v: string) =>
+              prefs.setOverlayBattleScope(v as RosterBattleScope)
+            }
+            tabs={[
+              { key: "follow", label: t("settings.overlayContent.battleFollow") },
+              { key: "random", label: t("settings.overlayContent.battleRandom") },
+              { key: "ranked", label: t("settings.overlayContent.battleRanked") },
+              { key: "all", label: t("settings.overlayContent.battleAll") },
+            ]}
+          />
+        </div>
+        <div class="stats-prefs__row">
+          <span class="stats-prefs__row-text">
+            <span class="stats-prefs__row-label">{t("settings.overlayContent.soloScope")}</span>
+            <span class="stats-prefs__row-desc">{t("settings.overlayContent.soloScopeDesc")}</span>
+          </span>
+          <HkTabs
+            variant="segmented"
+            modelValue={prefs.prefs.overlaySoloScope}
+            onUpdate:modelValue={(v: string) =>
+              prefs.setOverlaySoloScope(v as RosterSoloScope)
+            }
+            tabs={[
+              { key: "all", label: t("settings.overlayContent.soloAll") },
+              { key: "solo", label: t("settings.overlayContent.soloOnly") },
             ]}
           />
         </div>

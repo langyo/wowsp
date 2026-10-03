@@ -190,6 +190,8 @@
     "searching": "位置特定中",
     "refreshStats": "戦績を更新",
     "refreshStatsHint": "キャッシュを破棄して全名簿の戦績を再取得します。取得が成功するまで既存のデータは保持されます",
+    "statsSourceTitle": "統計ソース",
+    "statsSourceHint": "設定の「表示内容」と同期しています。変更はこのパネルと戦後パネルに即時反映されます。",
     "manualLocate": "手動で位置合わせ",
     "manualClear": "配置を解除",
     "manualRows": "手動配置済み · {n} 行",

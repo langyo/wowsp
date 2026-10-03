@@ -190,6 +190,8 @@
     "searching": "Locating",
     "refreshStats": "Refresh stats",
     "refreshStatsHint": "Clears the cache and re-requests every roster stat from scratch; loaded data stays on screen until the request succeeds",
+    "statsSourceTitle": "Stats source",
+    "statsSourceHint": "Stays in sync with the settings' display-content section; changes apply to this panel and the post-battle panels immediately.",
     "manualLocate": "Manual locate",
     "manualClear": "Clear locate",
     "manualRows": "Manually located · {n} rows",

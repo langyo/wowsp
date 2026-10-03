@@ -37,10 +37,12 @@ import { isMobileApp } from "@/utils/platform";
 import { type PostBattleRibbon } from "@/features/replay/postBattle";
 import PostBattlePanel from "@/features/replay/PostBattlePanel";
 import {
-  resolveRosterStatsMode,
-  rosterStatView,
+  dimsNeedShipStats,
+  resolveRosterBattleScope,
+  rosterDimsOf,
   type ResolvedStatsMode,
 } from "@/utils/statView";
+import { scopedViewOf } from "@/utils/shipStatsScope";
 import {
   PostBattleShareBar,
   rosterShotCells,
@@ -155,8 +157,9 @@ const PostBattleFallbackPanel = defineComponent({
      *  scenario team slots, not enemy semantics — the matrix renders a
      *  single allies column. */
     operation: { type: Boolean, default: false },
-    /** Resolved stats-source mode (the parent resolves the pref against
-     *  the replayed battle's identity — the fallback sees no head). */
+    /** Resolved stats-source battle scope (the parent resolves the pref
+     *  against the replayed battle's identity — the fallback sees no
+     *  head). The ship/solo dimensions ride the shared prefs directly. */
     statsMode: { type: String as () => ResolvedStatsMode, default: "random" },
   },
   emits: ["close"],
@@ -181,7 +184,7 @@ const PostBattleFallbackPanel = defineComponent({
           // matrix below renders — dashes for bots / misses.
           const stats: ShotStat[] = !st
             ? rosterShotDashes()
-            : rosterShotCells(rosterStatView(st, props.statsMode));
+            : rosterShotCells(scopedViewOf(st, r.vehicle.shipId, props.statsMode));
           return {
             nick: masking.maskOf(r.vehicle.name),
             clanTag: st?.clanTag ?? null,
@@ -228,6 +231,16 @@ const PostBattleFallbackPanel = defineComponent({
         nameStatsLoading.value = false;
       }
     }
+    // Flipping the stats-source dimensions (or the PR algorithm) after the
+    // one-shot load re-runs it — the fetch only attaches the per-ship
+    // lists the dims in force at load time requested.
+    watch(
+      () =>
+        [dimsNeedShipStats(rosterDimsOf(statsPrefsState.value)), prAlgoForRequest()] as const,
+      ([need]) => {
+        if (need) void loadNameStats();
+      },
+    );
     onMounted(() => {
       void loadNameStats();
     });
@@ -412,7 +425,7 @@ const PostBattleFallbackPanel = defineComponent({
               r.vehicle.name,
               nameStats.value,
               nameStatsLoading.value,
-              (st) => rosterStatView(st, props.statsMode),
+              (st) => scopedViewOf(st, r.vehicle.shipId, props.statsMode),
             )}
             <span class="replay-view__postbattle-cell-status">
               {!r.alive ? t("replay.legend.dead") : ""}
@@ -1388,7 +1401,7 @@ export default defineComponent({
      *  against the replayed battle's identity). */
     const fallbackStatsMode = computed<ResolvedStatsMode>(() => {
       const cur = parser.current.value;
-      return resolveRosterStatsMode(statsPrefsState.value.overlayStatsMode, {
+      return resolveRosterBattleScope(statsPrefsState.value.overlayBattleScope, {
         matchGroup: cur?.matchGroup ?? null,
         scenario: cur?.scenario ?? null,
         eventType: cur?.eventType ?? null,

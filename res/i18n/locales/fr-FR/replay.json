@@ -190,6 +190,8 @@
     "searching": "Localisation",
     "refreshStats": "Actualiser les stats",
     "refreshStatsHint": "Vide le cache et redemande toutes les statistiques ; les données chargées restent affichées jusqu'au succès",
+    "statsSourceTitle": "Source des statistiques",
+    "statsSourceHint": "Reste synchronisé avec la section « Contenu affiché » des réglages ; les changements s'appliquent immédiatement à ce panneau et aux panneaux d'après-combat.",
     "manualLocate": "Positionnement manuel",
     "manualClear": "Effacer le positionnement",
     "manualRows": "Positionné manuellement · {n} lignes",

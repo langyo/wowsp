@@ -14,14 +14,15 @@
 import {
   DEFAULT_STATS_PREFS,
   STATS_PREFS_STORAGE_KEY,
+  legacyBattleScopeOf,
   type OverlayChipToggles,
   type OverlayIntelToggles,
-  type RosterStatsMode,
   type OverlayTeamAvgToggles,
   type PrAlgo,
+  type RosterBattleScope,
 } from "@/stores/statsPrefs";
 import {
-  resolveRosterStatsMode,
+  resolveRosterBattleScope,
   rosterStatView,
   type ResolvedStatsMode,
   type RosterModeNumbers,
@@ -32,7 +33,7 @@ import type { StampKind } from "@/utils/winrate";
 // The stat-view helpers the overlay renders through live in utils/statView
 // (shared with the main-window panels); re-exported so the overlay page
 // keeps its one import site.
-export { resolveRosterStatsMode, rosterStatView };
+export { resolveRosterBattleScope, rosterStatView };
 export type { ResolvedStatsMode, RosterModeNumbers, RosterStatViewSource };
 
 /** The raw per-player stats the overlay caches: the randoms career plus
@@ -44,10 +45,19 @@ export interface RawStat extends RosterStatViewSource {
   hidden: boolean;
 }
 
+/** The stats source as the overlay consumes it: the battle dimension only
+ *  (raw — resolved per battle in main.ts). The ship/solo dimensions are
+ *  main-window surfaces (the live/post-battle panels aggregate per-ship
+ *  payloads); the overlay's bare-DOM pipeline keeps the account careers,
+ *  so they are deliberately not modeled in this snapshot. */
+export interface OverlayStatsDims {
+  battle: RosterBattleScope;
+}
+
 /** Everything the overlay renders consumes this snapshot. */
 export interface OverlayDisplayPrefs {
   chips: OverlayChipToggles;
-  statsMode: RosterStatsMode;
+  statsDims: OverlayStatsDims;
   intel: OverlayIntelToggles;
   /** Team-intel card master switch. */
   teamIntel: boolean;
@@ -109,15 +119,19 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
     const v = j?.prAlgo;
     prAlgo = v === "expected" ? "expected" : "winrate";
   }
-  const statsMode: RosterStatsMode =
-    j?.overlayStatsMode === "random" ||
-    j?.overlayStatsMode === "ranked" ||
-    j?.overlayStatsMode === "global"
-      ? j.overlayStatsMode
-      : DEFAULT_STATS_PREFS.overlayStatsMode;
+  // Migration parity with the store's parsePrefs: a blob last written by a
+  // pre-split build carries only the retired `overlayStatsMode` enum.
+  const battle: RosterBattleScope =
+    j?.overlayBattleScope === "follow" ||
+    j?.overlayBattleScope === "random" ||
+    j?.overlayBattleScope === "ranked" ||
+    j?.overlayBattleScope === "all"
+      ? j.overlayBattleScope
+      : (legacyBattleScopeOf(j?.overlayStatsMode) ??
+        DEFAULT_STATS_PREFS.overlayBattleScope);
   return {
     chips: readToggles(j, "overlayChips", DEFAULT_STATS_PREFS.overlayChips),
-    statsMode,
+    statsDims: { battle },
     intel: readToggles(j, "overlayIntel", DEFAULT_STATS_PREFS.overlayIntel),
     teamIntel: readFlag(j, "teamIntelEnabled", DEFAULT_STATS_PREFS.teamIntelEnabled),
     teamAvg: readToggles(j, "overlayTeamAvg", DEFAULT_STATS_PREFS.overlayTeamAvg),

@@ -13,13 +13,36 @@ export type PrAlgo = "winrate" | "expected";
  *  blob stays small and new kinds default to visible. */
 export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 
-/** Which battle-mode career feeds the roster numbers — on EVERY surface
- *  now (the Tab overlay's chips and team averages, the live panel's rows,
- *  both post-battle panels): follow the current battle (ranked battles
- *  show the ranked career, everything else randoms), a fixed mode, or the
- *  global merge of randoms + ranked. The stored FIELD keeps its historical
- *  `overlayStatsMode` name for blob compatibility. */
-export type RosterStatsMode = "auto" | "random" | "ranked" | "global";
+/** Which SHIPS a roster row's numbers cover — dimension 1 of the
+ *  stats-source model: the whole account (career), the ships sharing the
+ *  row's own current-ship class / tier, or exactly that ship ("跟随单船"
+ *  — each row reads the player's stats on the ship they are sailing in
+ *  this battle). */
+export type RosterShipScope = "all" | "class" | "tier" | "ship";
+
+/** Which battle-type career the numbers read — dimension 2: "follow"
+ *  tracks the current battle (ranked battles read the ranked career,
+ *  everything else randoms), the fixed scopes pin randoms / ranked, and
+ *  "all" is the global merge of the two. */
+export type RosterBattleScope = "follow" | "random" | "ranked" | "all";
+
+/** Whether the numbers are restricted to solo-queue battles — dimension
+ *  3. The split only exists on the randoms side (solo/div2/div3); ranked
+ *  passes through unsplit. */
+export type RosterSoloScope = "all" | "solo";
+
+/** The retired pre-split single enum ("跟随对局/随机/排位/全局") — still
+ *  read as a MIGRATION SEED so a blob last written by an older build maps
+ *  onto the three-dimension model instead of resetting to defaults. */
+export type LegacyRosterStatsMode = "auto" | "random" | "ranked" | "global";
+
+/** Old blob value → battle dimension ("auto" WAS "follow the battle"). */
+export function legacyBattleScopeOf(v: unknown): RosterBattleScope | null {
+  if (v === "auto") return "follow";
+  if (v === "random" || v === "ranked") return v;
+  if (v === "global") return "all";
+  return null;
+}
 
 /** Per-row stat content switches — the Tab overlay's chips and the roster
  *  panels' columns alike (winrate / PR / battles / avg damage). At least
@@ -84,9 +107,14 @@ export interface StatsPrefs {
   /** Tab overlay per-row chip / roster panel column content (winrate / PR /
    *  battles / avg damage). */
   overlayChips: OverlayChipToggles;
-  /** Which battle-mode career the roster surfaces display (see
-   *  `RosterStatsMode`; the field name is historical). */
-  overlayStatsMode: RosterStatsMode;
+  /** Stats-source ship scope — dimension 1 of the roster numbers (see
+   *  `RosterShipScope`). */
+  overlayShipScope: RosterShipScope;
+  /** Stats-source battle-type scope — dimension 2 (see
+   *  `RosterBattleScope`). */
+  overlayBattleScope: RosterBattleScope;
+  /** Stats-source solo filter — dimension 3 (see `RosterSoloScope`). */
+  overlaySoloScope: RosterSoloScope;
   /** Team-intel card items (master switch `teamIntelEnabled`). */
   overlayIntel: OverlayIntelToggles;
   /** Team-average line items under each team. */
@@ -112,7 +140,9 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   // All four stat columns ship on: the roster reads winrate / PR / battles
   // together (each still individually switchable in the settings).
   overlayChips: { winrate: true, pr: true, battles: true, damage: true },
-  overlayStatsMode: "auto",
+  overlayShipScope: "all",
+  overlayBattleScope: "follow",
+  overlaySoloScope: "all",
   overlayIntel: { radar: true, hydro: true, smoke: true },
   overlayTeamAvg: { winrate: false, pr: false, damage: false },
 };
@@ -121,8 +151,16 @@ function isPrAlgo(v: unknown): v is PrAlgo {
   return v === "winrate" || v === "expected";
 }
 
-function isRosterStatsMode(v: unknown): v is RosterStatsMode {
-  return v === "auto" || v === "random" || v === "ranked" || v === "global";
+function isRosterShipScope(v: unknown): v is RosterShipScope {
+  return v === "all" || v === "class" || v === "tier" || v === "ship";
+}
+
+function isRosterBattleScope(v: unknown): v is RosterBattleScope {
+  return v === "follow" || v === "random" || v === "ranked" || v === "all";
+}
+
+function isRosterSoloScope(v: unknown): v is RosterSoloScope {
+  return v === "all" || v === "solo";
 }
 
 /** Read a toggles object of shape T off a raw blob: known boolean keys are
@@ -156,7 +194,13 @@ function parseSealDisabled(v: unknown): SealDisableMap {
 function parsePrefs(raw: string | null): StatsPrefs | null {
   if (raw == null) return null;
   try {
-    const j = JSON.parse(raw) as Partial<StatsPrefs> & { avgStatsEnabled?: unknown };
+    // `overlayStatsMode` is the RETIRED pre-split stats-source enum — kept
+    // on the raw shape only, as a migration seed (see the battle-scope
+    // parse below).
+    const j = JSON.parse(raw) as Partial<StatsPrefs> & {
+      avgStatsEnabled?: unknown;
+      overlayStatsMode?: unknown;
+    };
     if (j == null || typeof j !== "object") return null;
     // Migration: the old single "per-row avg stats" switch seeds the chip
     // toggles the first time a pre-overlayChips blob is read — its spirit
@@ -200,9 +244,21 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
           : DEFAULT_STATS_PREFS.teamIntelEnabled,
       sealDisabled: parseSealDisabled(j.sealDisabled),
       overlayChips: parseToggles(j.overlayChips, seededChips),
-      overlayStatsMode: isRosterStatsMode(j.overlayStatsMode)
-        ? j.overlayStatsMode
-        : DEFAULT_STATS_PREFS.overlayStatsMode,
+      // Migration: a blob written before the three-dimension split only
+      // carries the retired `overlayStatsMode` enum — it seeds the battle
+      // dimension (ship/solo start "all"); the healed rewrite then drops
+      // the legacy key for good.
+      overlayShipScope: isRosterShipScope(j.overlayShipScope)
+        ? j.overlayShipScope
+        : DEFAULT_STATS_PREFS.overlayShipScope,
+      overlayBattleScope:
+        isRosterBattleScope(j.overlayBattleScope)
+          ? j.overlayBattleScope
+          : legacyBattleScopeOf(j.overlayStatsMode) ??
+            DEFAULT_STATS_PREFS.overlayBattleScope,
+      overlaySoloScope: isRosterSoloScope(j.overlaySoloScope)
+        ? j.overlaySoloScope
+        : DEFAULT_STATS_PREFS.overlaySoloScope,
       overlayIntel: parseToggles(j.overlayIntel, DEFAULT_STATS_PREFS.overlayIntel),
       overlayTeamAvg: parseToggles(j.overlayTeamAvg, DEFAULT_STATS_PREFS.overlayTeamAvg),
     };
@@ -321,8 +377,18 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
-  function setOverlayStatsMode(v: RosterStatsMode) {
-    prefs.value.overlayStatsMode = v;
+  function setOverlayShipScope(v: RosterShipScope) {
+    prefs.value.overlayShipScope = v;
+    persist({ ...prefs.value });
+  }
+
+  function setOverlayBattleScope(v: RosterBattleScope) {
+    prefs.value.overlayBattleScope = v;
+    persist({ ...prefs.value });
+  }
+
+  function setOverlaySoloScope(v: RosterSoloScope) {
+    prefs.value.overlaySoloScope = v;
     persist({ ...prefs.value });
   }
 
@@ -351,7 +417,9 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setTeamIntelEnabled,
     setSealDisabled,
     setOverlayChip,
-    setOverlayStatsMode,
+    setOverlayShipScope,
+    setOverlayBattleScope,
+    setOverlaySoloScope,
     setOverlayIntel,
     setOverlayTeamAvg,
   };

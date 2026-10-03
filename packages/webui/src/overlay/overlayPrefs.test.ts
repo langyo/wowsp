@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   readOverlayDisplayPrefs,
-  resolveRosterStatsMode,
+  resolveRosterBattleScope,
   rosterStatView,
   type RawStat,
 } from "./overlayPrefs";
@@ -41,7 +41,7 @@ describe("readOverlayDisplayPrefs", () => {
   it("answers the store defaults when nothing is stored", () => {
     expect(readOverlayDisplayPrefs()).toEqual({
       chips: { winrate: true, pr: true, battles: true, damage: true },
-      statsMode: "auto",
+      statsDims: { battle: "follow" },
       intel: { radar: true, hydro: true, smoke: true },
       teamIntel: true,
       teamAvg: { winrate: false, pr: false, damage: false },
@@ -64,6 +64,7 @@ describe("readOverlayDisplayPrefs", () => {
         weightedTeamWr: false,
         teamIntelEnabled: false,
         overlayChips: { winrate: false, battles: true, voodoo: true },
+        overlayShipScope: "tier",
         overlayStatsMode: "ranked",
         overlayIntel: { radar: false },
         overlayTeamAvg: { winrate: true, pr: true, damage: true },
@@ -71,7 +72,10 @@ describe("readOverlayDisplayPrefs", () => {
     );
     const p = readOverlayDisplayPrefs();
     expect(p.chips).toEqual({ winrate: false, pr: true, battles: true, damage: true });
-    expect(p.statsMode).toBe("ranked");
+    // The battle scope reads through (and migrates off the legacy enum);
+    // the ship/solo dimensions are main-window-only and stay unmodeled
+    // here (the overlay renders the account careers).
+    expect(p.statsDims.battle).toBe("ranked");
     expect(p.intel).toEqual({ radar: false, hydro: true, smoke: true });
     expect(p.teamIntel).toBe(false);
     expect(p.teamAvg).toEqual({ winrate: true, pr: true, damage: true });
@@ -81,19 +85,32 @@ describe("readOverlayDisplayPrefs", () => {
     expect(p.prAlgo).toBe("expected");
   });
 
-  it("accepts the global stats mode", () => {
+  it("accepts the global battle scope and migrates the legacy enum", () => {
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({ overlayBattleScope: "all" }),
+    );
+    expect(readOverlayDisplayPrefs().statsDims.battle).toBe("all");
+
+    // A blob last written by a pre-split build: the retired enum seeds the
+    // battle dimension ("global" WAS the merged career).
     localStorage.setItem(
       "wowsp-stats-prefs",
       JSON.stringify({ overlayStatsMode: "global" }),
     );
-    expect(readOverlayDisplayPrefs().statsMode).toBe("global");
+    expect(readOverlayDisplayPrefs().statsDims.battle).toBe("all");
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({ overlayStatsMode: "auto" }),
+    );
+    expect(readOverlayDisplayPrefs().statsDims.battle).toBe("follow");
   });
 
   it("falls back to defaults on a corrupt blob", () => {
     localStorage.setItem("wowsp-stats-prefs", "{not json");
     const p = readOverlayDisplayPrefs();
     expect(p.chips.winrate).toBe(true);
-    expect(p.statsMode).toBe("auto");
+    expect(p.statsDims.battle).toBe("follow");
     expect(p.sealsOn).toBe(true);
     expect(p.prAlgo).toBe("winrate");
   });
@@ -110,21 +127,21 @@ describe("readOverlayDisplayPrefs", () => {
   });
 });
 
-describe("resolveRosterStatsMode", () => {
-  it("fixed modes speak for themselves", () => {
-    expect(resolveRosterStatsMode("ranked", { matchGroup: "pvp" })).toBe("ranked");
-    expect(resolveRosterStatsMode("random", { matchGroup: "ranked" })).toBe("random");
-    expect(resolveRosterStatsMode("global", { matchGroup: "ranked" })).toBe("global");
+describe("resolveRosterBattleScope", () => {
+  it("fixed scopes speak for themselves", () => {
+    expect(resolveRosterBattleScope("ranked", { matchGroup: "pvp" })).toBe("ranked");
+    expect(resolveRosterBattleScope("random", { matchGroup: "ranked" })).toBe("random");
+    expect(resolveRosterBattleScope("all", { matchGroup: "ranked" })).toBe("all");
   });
 
-  it("auto follows the battle's mode key", () => {
-    expect(resolveRosterStatsMode("auto", { matchGroup: "ranked" })).toBe("ranked");
+  it("follow tracks the battle's mode key", () => {
+    expect(resolveRosterBattleScope("follow", { matchGroup: "ranked" })).toBe("ranked");
     expect(
-      resolveRosterStatsMode("auto", { matchGroup: "pvp", scenario: "epic_12v12" }),
+      resolveRosterBattleScope("follow", { matchGroup: "pvp", scenario: "epic_12v12" }),
     ).toBe("random");
     // Scenario-level ranked fingerprints (modeKey's lower layers).
     expect(
-      resolveRosterStatsMode("auto", { matchGroup: "pve", scenario: "ranked_arena_12" }),
+      resolveRosterBattleScope("follow", { matchGroup: "pve", scenario: "ranked_arena_12" }),
     ).toBe("ranked");
   });
 });
@@ -149,7 +166,7 @@ describe("rosterStatView", () => {
   });
 
   it("global source answers the merged numbers", () => {
-    expect(rosterStatView(RAW, "global")).toEqual({
+    expect(rosterStatView(RAW, "all")).toEqual({
       winrate: 51.9,
       pr: 1550,
       battles: 12300,
@@ -176,7 +193,7 @@ describe("rosterStatView", () => {
   });
 
   it("a payload without global fields falls back to the randoms view", () => {
-    expect(rosterStatView({ ...RAW, global: null }, "global")).toEqual({
+    expect(rosterStatView({ ...RAW, global: null }, "all")).toEqual({
       winrate: 52.5,
       pr: 1600,
       battles: 12000,

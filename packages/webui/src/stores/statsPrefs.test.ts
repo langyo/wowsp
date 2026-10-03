@@ -48,7 +48,9 @@ describe("loadStatsPrefs", () => {
       teamIntelEnabled: true,
       sealDisabled: {},
       overlayChips: { winrate: true, pr: true, battles: true, damage: true },
-      overlayStatsMode: "auto",
+      overlayShipScope: "all",
+      overlayBattleScope: "follow",
+      overlaySoloScope: "all",
       overlayIntel: { radar: true, hydro: true, smoke: true },
       overlayTeamAvg: { winrate: false, pr: false, damage: false },
     });
@@ -127,7 +129,9 @@ describe("loadStatsPrefs", () => {
     expect(prefs.teamIntelEnabled).toBe(true);
     expect(prefs.sealDisabled).toEqual({});
     expect(prefs.overlayChips).toEqual(DEFAULT_STATS_PREFS.overlayChips);
-    expect(prefs.overlayStatsMode).toBe("auto");
+    expect(prefs.overlayShipScope).toBe("all");
+    expect(prefs.overlayBattleScope).toBe("follow");
+    expect(prefs.overlaySoloScope).toBe("all");
     expect(prefs.overlayIntel).toEqual(DEFAULT_STATS_PREFS.overlayIntel);
     expect(prefs.overlayTeamAvg).toEqual(DEFAULT_STATS_PREFS.overlayTeamAvg);
   });
@@ -172,20 +176,61 @@ describe("loadStatsPrefs", () => {
     expect(loadStatsPrefs().prAlgo).toBe("winrate");
   });
 
-  it("rejects an unknown stats-mode value", () => {
+  it("rejects an unknown battle-scope value", () => {
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
-      JSON.stringify({ overlayStatsMode: "solo" }),
+      JSON.stringify({ overlayBattleScope: "solo" }),
     );
-    expect(loadStatsPrefs().overlayStatsMode).toBe("auto");
+    expect(loadStatsPrefs().overlayBattleScope).toBe("follow");
   });
 
-  it("accepts the global stats mode", () => {
+  it("rejects an unknown ship-scope value", () => {
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
-      JSON.stringify({ overlayStatsMode: "global" }),
+      JSON.stringify({ overlayShipScope: "fleet" }),
     );
-    expect(loadStatsPrefs().overlayStatsMode).toBe("global");
+    expect(loadStatsPrefs().overlayShipScope).toBe("all");
+  });
+
+  it("rejects an unknown solo-scope value", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ overlaySoloScope: "div2" }),
+    );
+    expect(loadStatsPrefs().overlaySoloScope).toBe("all");
+  });
+
+  it("migrates the legacy single-enum stats mode onto the battle dimension", () => {
+    // A pre-split blob carries only the retired `overlayStatsMode`; each
+    // value seeds the battle scope, and the normalized rewrite drops the
+    // legacy key so it never comes back.
+    const cases: [string, "follow" | "random" | "ranked" | "all"][] = [
+      ["auto", "follow"],
+      ["random", "random"],
+      ["ranked", "ranked"],
+      ["global", "all"],
+    ];
+    for (const [legacy, battle] of cases) {
+      localStorage.setItem(
+        STATS_PREFS_STORAGE_KEY,
+        JSON.stringify({ overlayStatsMode: legacy }),
+      );
+      const prefs = loadStatsPrefs();
+      expect(prefs.overlayBattleScope).toBe(battle);
+      expect(prefs.overlayShipScope).toBe("all");
+      expect(prefs.overlaySoloScope).toBe("all");
+      expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).not.toContain(
+        "overlayStatsMode",
+      );
+    }
+  });
+
+  it("an explicit battle scope wins over the legacy seed", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ overlayStatsMode: "ranked", overlayBattleScope: "all" }),
+    );
+    expect(loadStatsPrefs().overlayBattleScope).toBe("all");
   });
 });
 
@@ -202,7 +247,9 @@ describe("statsPrefs store", () => {
     store.setTeamIntelEnabled(false);
     store.setOverlayChip("winrate", false);
     store.setOverlayChip("pr", true);
-    store.setOverlayStatsMode("ranked");
+    store.setOverlayShipScope("ship");
+    store.setOverlayBattleScope("ranked");
+    store.setOverlaySoloScope("solo");
     store.setOverlayIntel("radar", false);
     store.setOverlayTeamAvg("pr", true);
 
@@ -224,7 +271,9 @@ describe("statsPrefs store", () => {
         battles: true,
         damage: true,
       },
-      overlayStatsMode: "ranked",
+      overlayShipScope: "ship",
+      overlayBattleScope: "ranked",
+      overlaySoloScope: "solo",
       overlayIntel: { radar: false, hydro: true, smoke: true },
       overlayTeamAvg: { winrate: false, pr: true, damage: false },
     };

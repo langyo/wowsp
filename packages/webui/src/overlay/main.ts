@@ -53,7 +53,7 @@ import {
 // once at window creation with the same tolerant contract as the store.
 import {
   readOverlayDisplayPrefs,
-  resolveRosterStatsMode,
+  resolveRosterBattleScope,
   rosterStatView,
   type RawStat,
   type RosterModeNumbers,
@@ -650,10 +650,10 @@ function render() {
     return;
   }
   if (!arena) return;
-  // Which battle-mode stats this battle renders ("auto" resolves per
+  // Which battle-mode stats this battle renders ("follow" resolves per
   // battle — ranked battles show the ranked career, everything else the
-  // randoms career; the fixed modes pin it).
-  statsMode = resolveRosterStatsMode(PREFS.statsMode, arena);
+  // randoms career; the fixed scopes pin it).
+  statsMode = resolveRosterBattleScope(PREFS.statsDims.battle, arena);
   const dpr = window.devicePixelRatio || 1;
   const rows = anchor.rowCenters;
   if (rows.length === 0) return;
