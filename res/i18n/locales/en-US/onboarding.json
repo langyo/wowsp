@@ -1,7 +1,7 @@
 {
   "title": "Setup wizard",
   "stepWelcome": "Notice",
-  "stepGame": "Game",
+  "stepGame": "Game install detection",
   "stepPreferences": "Preferences",
   "next": "Next",
   "prev": "Back",

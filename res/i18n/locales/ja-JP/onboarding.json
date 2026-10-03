@@ -1,7 +1,7 @@
 {
   "title": "初期セットアップウィザード",
   "stepWelcome": "確認",
-  "stepGame": "ゲーム",
+  "stepGame": "ゲームインストール検出",
   "stepPreferences": "環境設定",
   "next": "次へ",
   "prev": "戻る",

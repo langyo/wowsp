@@ -1,7 +1,7 @@
 {
   "title": "Asistente de configuración inicial",
   "stepWelcome": "Aviso",
-  "stepGame": "Juego",
+  "stepGame": "Detección de juegos instalados",
   "stepPreferences": "Preferencias",
   "next": "Siguiente",
   "prev": "Atrás",

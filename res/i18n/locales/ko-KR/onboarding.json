@@ -1,7 +1,7 @@
 {
   "title": "초기 설정 마법사",
   "stepWelcome": "확인",
-  "stepGame": "게임",
+  "stepGame": "게임 설치 감지",
   "stepPreferences": "환경 설정",
   "next": "다음",
   "prev": "이전",
