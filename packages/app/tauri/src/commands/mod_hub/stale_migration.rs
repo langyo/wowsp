@@ -1,0 +1,496 @@
+use super::installed_units::classify_installed_root;
+use super::*;
+
+// ── Stale bin detection & migration ─────────────────────────────────────────
+
+/// Older `bin/<version>/` directories whose `res_mods` still carries files.
+/// After a game update the client only loads `bin/<latest>`, so those mods
+/// vanish from the hub's installed list while staying on disk — surfacing
+/// them is the first step of the migration flow (mod-hub.md §4).
+#[tauri::command]
+pub fn mod_hub_stale_versions(game_root: String) -> Result<Vec<StaleBinInfo>, String> {
+    let Some((latest, _)) = latest_bin_version(&game_root) else {
+        return Ok(Vec::new());
+    };
+    let Ok(latest_num) = latest.parse::<u64>() else {
+        return Ok(Vec::new());
+    };
+    let bin = Path::new(&game_root).join("bin");
+    let mut out = Vec::new();
+    for ent in fs::read_dir(&bin)
+        .map_err(|e| format!("read {}: {e}", bin.display()))?
+        .flatten()
+    {
+        let name = ent.file_name().to_string_lossy().into_owned();
+        let Ok(num) = name.parse::<u64>() else {
+            continue;
+        };
+        if num >= latest_num {
+            continue;
+        }
+        let res_mods = ent.path().join("res_mods");
+        if !res_mods.is_dir() {
+            continue;
+        }
+        let file_count = count_tree_files(&res_mods);
+        if file_count == 0 {
+            continue;
+        }
+        let mods = classify_installed_root(&res_mods)
+            .into_iter()
+            .filter(|m| !m.paths.is_empty())
+            .map(|m| m.name)
+            .collect();
+        out.push(StaleBinInfo {
+            bin_version: name,
+            mods,
+            file_count,
+        });
+    }
+    // Newest stale bin first — numeric, so bin/10 sorts after bin/2 and the
+    // one-button migrate always moves the freshest leftovers (which then
+    // win keep-new conflicts against older strays).
+    out.sort_by_key(|i| std::cmp::Reverse(i.bin_version.parse::<u64>().unwrap_or(0)));
+    Ok(out)
+}
+
+fn count_tree_files(root: &Path) -> u64 {
+    let mut count = 0u64;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let p = ent.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+/// Move a stranded old-version `res_mods` into the current one. Conflict
+/// policy is keep-new: a file the current tree already has (live or as a
+/// disabled `.bak` twin) is left untouched — the newer install wins, so a
+/// migration can never overwrite or roll back what the player currently
+/// runs. Ledger records are re-pointed at the new version so their uninstall
+/// still finds the files.
+#[tauri::command]
+pub async fn mod_hub_migrate_stale_bin(
+    game_root: String,
+    from_version: String,
+) -> Result<MigrateReport, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
+    migrate_stale_bin_core(&game_root, &from_version)
+}
+
+/// Migration wizard step 1 — classify the stale tree (read-only) so the
+/// user reviews duplicates, superseded files and per-file keep decisions
+/// before anything moves.
+#[tauri::command]
+pub async fn mod_hub_migration_plan(
+    game_root: String,
+    from_version: String,
+) -> Result<MigrationPlan, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
+    migration_plan_core(&game_root, &from_version)
+}
+
+/// Migration wizard step 2 — apply the reviewed plan: `keep` lists the
+/// decide-bucket paths (res_mods-relative, forward slashes) the user chose
+/// to carry over, `ignore` the ones marked "leave alone"; everything else
+/// in the stale tree is cleaned up.
+#[tauri::command]
+pub async fn mod_hub_migration_execute(
+    game_root: String,
+    from_version: String,
+    keep: Vec<String>,
+    ignore: Vec<String>,
+) -> Result<MigrateReport, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
+    migration_execute_core(&game_root, &from_version, &keep, &ignore)
+}
+
+/// Migration core (split from the command so tests drive it without the
+/// async gate).
+pub(crate) fn migrate_stale_bin_core(
+    game_root: &str,
+    from_version: &str,
+) -> Result<MigrateReport, String> {
+    let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
+    fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
+
+    let mut moved = 0usize;
+    let mut skipped = 0usize;
+    migrate_tree(&src, &dst, &mut moved, &mut skipped)?;
+    // A fully migrated res_mods disappears entirely (empty-only remove, so
+    // leftovers survive when files were kept).
+    let _ = fs::remove_dir(&src);
+
+    // Stranded ledger records now describe files in the current bin.
+    let mut ledger = super::mod_catalog::load_ledger();
+    if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
+        super::mod_catalog::save_ledger(&ledger)?;
+    }
+    tracing::info!(from = %from_version, to = %latest, moved, skipped, "stale bin migrated");
+    Ok(MigrateReport {
+        from_version: from_version.to_string(),
+        to_version: latest,
+        moved_files: moved,
+        skipped_files: skipped,
+        ignored_files: 0,
+    })
+}
+
+/// Validate the (stale → current) pair every migration path goes through:
+/// numeric versions on both sides (a hand-made leading-zero dir `bin/01`
+/// next to `bin/1` must be recognized as the current version, or src would
+/// equal dst and the keep-new probe would eat the current tree), the stale
+/// version strictly older than the latest, and a `res_mods` actually present
+/// under the stale bin. Returns `(latest version, stale res_mods, current
+/// res_mods)` without touching the disk beyond those probes.
+fn stale_migration_pair(
+    game_root: &str,
+    from_version: &str,
+) -> Result<(String, PathBuf, PathBuf), String> {
+    let from_num = from_version
+        .parse::<u64>()
+        .map_err(|_| format!("{from_version:?} is not a numeric bin version"))?;
+    let (latest, ver_dir) = latest_bin_version(game_root)
+        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+    if from_num >= latest.parse::<u64>().unwrap_or(u64::MAX) {
+        return Err(format!(
+            "{from_version} is the current version — nothing to migrate"
+        ));
+    }
+    let src = Path::new(game_root)
+        .join("bin")
+        .join(from_version)
+        .join("res_mods");
+    if !src.is_dir() {
+        return Err(format!("no res_mods under bin/{from_version}"));
+    }
+    let dst = ver_dir.join("res_mods");
+    Ok((latest, src, dst))
+}
+
+/// Per-install bookkeeping that must never migrate: Aslain's manifest and
+/// loader markers describe the OLD install, and this app's own ledger lives
+/// in the data dir, not the game tree. They are deleted outright, in both
+/// the plan (absent from every bucket) and the execute sweep.
+fn is_migration_bookkeeping(rel: &str) -> bool {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    if name.eq_ignore_ascii_case("installed_mods.xml")
+        || name.eq_ignore_ascii_case("PnFModsLoader.py")
+    {
+        return true;
+    }
+    let mut parts = rel.rsplitn(2, '/');
+    let _file = parts.next();
+    matches!(parts.next(), Some(parent) if parent.eq_ignore_ascii_case("mods"))
+        && name.eq_ignore_ascii_case("installed.json")
+}
+
+/// SHA-256 of a file's bytes — the content equality half of the duplicate
+/// probe (size is checked first because it is free).
+fn file_sha256(path: &Path) -> Result<[u8; 32], String> {
+    let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    Ok(Sha256::digest(&bytes).into())
+}
+
+/// Every file under `root`, as forward-slash `root`-relative paths.
+fn collect_tree_files(root: &Path) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = fs::read_dir(&dir).map_err(|e| format!("read {}: {e}", dir.display()))?;
+        for ent in entries.flatten() {
+            let p = ent.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                let rel = p
+                    .strip_prefix(root)
+                    .map_err(|e| format!("relativize {}: {e}", p.display()))?
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                out.push(rel);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// The wizard's plan: bucket every file of the stale tree by what execution
+/// will do — duplicate (identical content in the destination: delete),
+/// superseded (same path, different content: the newer destination copy
+/// wins, delete the stale one) or decide (stale-only: the user chooses).
+/// Read-only by design — planning must never mutate the game tree.
+pub(crate) fn migration_plan_core(
+    game_root: &str,
+    from_version: &str,
+) -> Result<MigrationPlan, String> {
+    let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
+    let mut plan = MigrationPlan {
+        from_version: from_version.to_string(),
+        to_version: latest,
+        duplicate: Vec::new(),
+        superseded: Vec::new(),
+        decide: Vec::new(),
+    };
+    for rel in collect_tree_files(&src)? {
+        if is_migration_bookkeeping(&rel) {
+            continue;
+        }
+        let size = match fs::metadata(src.join(&rel)) {
+            Ok(m) => m.len(),
+            // Vanished between the walk and the probe — a plan built on a
+            // file that no longer exists would offer a no-op decision.
+            Err(_) => continue,
+        };
+        let file = PlanFile {
+            path: rel.clone(),
+            size,
+            identity: None,
+        };
+        let counterpart = dst.join(&rel);
+        let bucket = if counterpart.is_file() {
+            let same = fs::metadata(&counterpart).is_ok_and(|m| m.len() == size)
+                && file_sha256(&counterpart) == file_sha256(&src.join(&rel));
+            if same {
+                &mut plan.duplicate
+            } else {
+                &mut plan.superseded
+            }
+        } else {
+            // A stale-only file (or a destination DIRECTORY parked on the
+            // same path — the move would fail, so the stale copy must go).
+            &mut plan.decide
+        };
+        bucket.push(file);
+    }
+    Ok(plan)
+}
+
+/// Recursive keep-new move. Same-volume renames per file; directories the
+/// move emptied are removed on the way out (post-order), so a fully
+/// migrated `res_mods` disappears entirely.
+fn migrate_tree(
+    src: &Path,
+    dst: &Path,
+    moved: &mut usize,
+    skipped: &mut usize,
+) -> Result<(), String> {
+    let Ok(entries) = fs::read_dir(src) else {
+        return Ok(());
+    };
+    for ent in entries.flatten() {
+        let s = ent.path();
+        let d = dst.join(ent.file_name());
+        if s.is_dir() {
+            migrate_tree(&s, &d, moved, skipped)?;
+            let _ = fs::remove_dir(&s); // succeeds only when empty
+            continue;
+        }
+        // Aslain's manifest is per-install bookkeeping — transplanting it
+        // would resurrect rows for files the current tree never got. It
+        // dies with the stranded directory instead.
+        let name = ent.file_name().to_string_lossy().into_owned();
+        if name.eq_ignore_ascii_case("installed_mods.xml") {
+            let _ = fs::remove_file(&s);
+            *skipped += 1;
+            continue;
+        }
+        // Keep-new: the current tree already has this file — live, as a
+        // disabled twin, or as the live counterpart of this stranded twin —
+        // so the (older) stranded copy is dropped. Migrating a lone `.bak`
+        // next to a live file would silently break later toggles.
+        let bare = name.strip_suffix(".bak").unwrap_or(&name).to_string();
+        let live = d.with_file_name(&bare);
+        if d.is_file() || sibling_with_suffix(&d, ".bak").is_file() || live.is_file() {
+            let _ = fs::remove_file(&s);
+            *skipped += 1;
+            continue;
+        }
+        if let Some(parent) = d.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        fs::rename(&s, &d).map_err(|e| format!("move {}: {e}", s.display()))?;
+        *moved += 1;
+    }
+    Ok(())
+}
+
+/// Post-order empty-directory sweep of the migrated stale tree — the file
+/// sweep leaves the directory skeleton behind, and only a fully emptied
+/// `res_mods` should disappear (leftover files survive).
+fn prune_empty_dirs(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for ent in entries.flatten() {
+        let p = ent.path();
+        if p.is_dir() {
+            prune_empty_dirs(&p);
+            let _ = fs::remove_dir(&p); // succeeds only when empty
+        }
+    }
+}
+
+/// Wizard execute core: applies the reviewed plan. Everything not in `keep`
+/// (duplicates, superseded, dropped decide files, bookkeeping) is deleted
+/// from the stale tree; `ignore` files are left exactly where they are —
+/// neither moved nor deleted, so the stale bin survives them and the banner
+/// keeps counting them until a later migration handles them. Kept files move
+/// under the same keep-new rule the blind migration had — re-probed NOW,
+/// because the destination may have changed since planning — and anything
+/// the current tree already has is dropped instead of overwritten. Ledger
+/// records re-point at the new bin.
+pub(crate) fn migration_execute_core(
+    game_root: &str,
+    from_version: &str,
+    keep: &[String],
+    ignore: &[String],
+) -> Result<MigrateReport, String> {
+    let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
+    fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
+    let keep: BTreeSet<String> = keep.iter().map(|k| k.replace('\\', "/")).collect();
+    let ignore: BTreeSet<String> = ignore.iter().map(|k| k.replace('\\', "/")).collect();
+
+    let mut moved = 0usize;
+    let mut skipped = 0usize;
+    let mut ignored = 0usize;
+    for rel in collect_tree_files(&src)? {
+        let s = src.join(&rel);
+        // Bookkeeping dies even when the plan listed it as keepable or
+        // ignored — resurrecting it would corrupt the install ledger.
+        if is_migration_bookkeeping(&rel) {
+            let _ = fs::remove_file(&s);
+            skipped += 1;
+            continue;
+        }
+        // Ignored: untouched, and NOT counted as cleaned up — the file is
+        // still stranded, the stale-bin banner must keep seeing it. Wins
+        // over `keep` (the wizard keeps the sets disjoint; belt and braces).
+        if ignore.contains(&rel) {
+            ignored += 1;
+            continue;
+        }
+        if !keep.contains(&rel) {
+            let _ = fs::remove_file(&s);
+            skipped += 1;
+            continue;
+        }
+        let d = dst.join(&rel);
+        let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
+        let bare = name.strip_suffix(".bak").unwrap_or(&name).to_string();
+        let live = d.with_file_name(&bare);
+        // Keep-new, re-checked at execute time: a destination file (live or
+        // as a disabled twin) that appeared since planning must never be
+        // overwritten or handed a stranded `.bak` sibling.
+        if d.is_file() || sibling_with_suffix(&d, ".bak").is_file() || live.is_file() {
+            let _ = fs::remove_file(&s);
+            skipped += 1;
+            tracing::info!(
+                path = %rel,
+                "destination appeared since planning — stale copy dropped"
+            );
+            continue;
+        }
+        if let Some(parent) = d.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        fs::rename(&s, &d).map_err(|e| format!("move {}: {e}", s.display()))?;
+        moved += 1;
+    }
+    prune_empty_dirs(&src);
+    // A fully migrated res_mods disappears entirely (empty-only remove, so
+    // leftovers survive when files were kept).
+    let _ = fs::remove_dir(&src);
+
+    let mut ledger = super::mod_catalog::load_ledger();
+    if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
+        super::mod_catalog::save_ledger(&ledger)?;
+    }
+    tracing::info!(
+        from = %from_version,
+        to = %latest,
+        moved,
+        skipped,
+        ignored,
+        "stale bin migrated (wizard)"
+    );
+    Ok(MigrateReport {
+        from_version: from_version.to_string(),
+        to_version: latest,
+        moved_files: moved,
+        skipped_files: skipped,
+        ignored_files: ignored,
+    })
+}
+
+/// Re-point THIS install's records from one bin version to another.
+/// Records of other game installs (non-empty `game_root` stamp that does
+/// not match) keep their version — the ledger is global, and re-pointing
+/// a foreign record would strand it in a version its files do not live
+/// in. Returns whether anything changed.
+pub(crate) fn repoint_records(
+    installs: &mut [ModInstallRecord],
+    from: &str,
+    to: &str,
+    game_root: &str,
+) -> bool {
+    let mut touched = false;
+    for record in installs.iter_mut() {
+        if record.bin_version == from
+            && (record.game_root.is_empty() || record.game_root == game_root)
+        {
+            record.bin_version = to.to_string();
+            touched = true;
+        }
+    }
+    touched
+}
+
+/// Which other installed mods the freshly written files overlap — the
+/// design doc's conflict policy made real: later installs win, but the
+/// report must say whose files they clobbered (the overwrite itself is
+/// already snapshotted, so a later uninstall restores them).
+pub(crate) fn conflict_warnings(
+    written: &[String],
+    installs: &[ModInstallRecord],
+    exclude_id: &str,
+    bin_version: &str,
+    game_root: &str,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for record in installs {
+        if record.id == exclude_id
+            || record.bin_version != bin_version
+            || (!record.game_root.is_empty() && record.game_root != game_root)
+        {
+            continue;
+        }
+        let hits = written.iter().filter(|w| record.files.contains(*w)).count();
+        if hits > 0 {
+            out.push(format!(
+                "overwrites {hits} file(s) also installed by {:?}",
+                record.name
+            ));
+        }
+    }
+    out
+}
