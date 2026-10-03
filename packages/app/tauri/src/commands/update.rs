@@ -401,7 +401,12 @@ struct RaceSnapshot {
 }
 
 fn snapshot(state: &SharedState) -> RaceSnapshot {
-    let s = state.lock().expect("race state mutex poisoned");
+    // A poisoned mutex only means a racer thread panicked mid-update; the
+    // guarded fields stay individually valid, so recover the data instead of
+    // panicking the reading command.
+    let s = state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     RaceSnapshot {
         total: s.total,
         bytes: s.bytes.clone(),

@@ -206,7 +206,12 @@ pub fn run() {
             // Desktop only — mobile has no tray panel, no game process and
             // no arena watcher to feed it.
             #[cfg(desktop)]
-            commands::session::spawn_session_poller(app.handle().clone());
+            if let Err(err) = commands::session::spawn_session_poller(app.handle().clone()) {
+                tracing::error!(
+                    %err,
+                    "session process poller did not start; live session state stays offline",
+                );
+            }
             {
                 let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
                 tracing::debug!(?data_dir, ?cache_dir, "writable roots resolved");

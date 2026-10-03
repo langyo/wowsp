@@ -480,7 +480,7 @@ pub fn sync_active_account(
 /// process. Never spawned on mobile — no tray panel, no game process and no
 /// arena file to feed it.
 #[cfg(desktop)]
-pub fn spawn_session_poller(app: AppHandle) {
+pub fn spawn_session_poller(app: AppHandle) -> Result<(), String> {
     std::thread::Builder::new()
         .name("wowsp-session".into())
         .spawn(move || {
@@ -522,7 +522,8 @@ pub fn spawn_session_poller(app: AppHandle) {
                 std::thread::sleep(POLL_INTERVAL);
             }
         })
-        .expect("spawn session poller thread");
+        .map(|_| ())
+        .map_err(|e| format!("failed to spawn the session poller thread: {e}"))
 }
 
 // ── tests ───────────────────────────────────────────────────────────────────
