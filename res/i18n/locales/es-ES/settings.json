@@ -273,5 +273,11 @@
     "avgDamageDesc": "Daño medio por equipo bajo las listas del overlay (solo el overlay del juego)."
   },
   "schemeDefaultName": "Por defecto",
-  "pairingWip": "El emparejamiento con el teléfono está en desarrollo y aún no está terminado."
+  "pairingWip": "El emparejamiento con el teléfono está en desarrollo y aún no está terminado.",
+  "pluginPromptGroup": "Aviso del complemento dentro del juego",
+  "pluginPromptHint": "Si al iniciar se detecta un juego sin el complemento dentro del juego, una ventana sugiere instalarlo. Marcar «No volver a preguntar» desactiva el aviso automático; aquí siempre puedes volver a comprobarlo.",
+  "pluginPromptRecheck": "Comprobar de nuevo",
+  "pluginPromptStateInstalled": "El complemento está instalado para el juego activo.",
+  "pluginPromptStateAbsent": "El complemento no está instalado para el juego activo.",
+  "pluginPromptStateNoGame": "No hay ruta de juego configurada."
 }

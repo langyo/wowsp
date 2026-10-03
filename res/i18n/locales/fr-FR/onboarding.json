@@ -1,6 +1,7 @@
 {
   "title": "Assistant de configuration",
   "stepWelcome": "Avis",
+  "stepGame": "Jeu",
   "stepPreferences": "Préférences",
   "next": "Suivant",
   "prev": "Retour",
@@ -31,5 +32,13 @@
   "sealsToggle": "Sceaux d'évaluation",
   "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
   "localizedTiersToggle": "Libellés de palier localisés",
-  "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard."
+  "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard.",
+  "gameDesc": "WoWSP a analysé ce PC à la recherche d'installations de World of Warships — cliquez sur le client à confirmer, ou relancez la détection / choisissez le dossier manuellement.",
+  "gameDetecting": "Recherche des jeux installés…",
+  "pluginSection": "Plugin en jeu",
+  "pluginDesc": "Pensez à installer le plugin WoWSP en jeu : les batailles en direct gagnent l'ordre TAB précis et des signaux de détection plus fiables, rien n'est affiché en jeu et la désinstallation reste possible à tout moment.",
+  "pluginInstall": "Installer le plugin",
+  "pluginSkip": "Plus tard",
+  "pluginSkipCountdown": "Plus tard ({n} s)",
+  "pluginDone": "Plugin en jeu installé — les batailles en direct l'utilisent automatiquement."
 }

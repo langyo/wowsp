@@ -1,6 +1,7 @@
 {
   "title": "초기 설정 마법사",
   "stepWelcome": "확인",
+  "stepGame": "게임",
   "stepPreferences": "환경 설정",
   "next": "다음",
   "prev": "이전",
@@ -31,5 +32,13 @@
   "sealsToggle": "평가 인장",
   "sealsToggleDesc": "«神了/海猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
   "localizedTiersToggle": "현지화 등급 표기",
-  "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급이 표시됩니다."
+  "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급이 표시됩니다.",
+  "gameDesc": "WoWSP가 이 PC의 World of Warships 설치 위치를 자동으로 감지했습니다. 사용할 클라이언트를 클릭해 확인하거나, 다시 검색하거나 폴더를 직접 선택하세요.",
+  "gameDetecting": "설치된 게임 검색 중…",
+  "pluginSection": "게임 내 플러그인",
+  "pluginDesc": "WoWSP 게임 내 플러그인 설치를 권장합니다. 실시간 전투에서 정확한 TAB 순서와 더 안정적인 감지 신호를 얻을 수 있고, 게임 안에는 아무것도 표시하지 않으며 언제든 제거할 수 있습니다.",
+  "pluginInstall": "플러그인 설치",
+  "pluginSkip": "나중에",
+  "pluginSkipCountdown": "나중에({n}초)",
+  "pluginDone": "게임 내 플러그인이 설치되었습니다. 실시간 전투에서 자동으로 활성화됩니다."
 }

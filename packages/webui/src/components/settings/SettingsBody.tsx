@@ -98,6 +98,8 @@ import {
   type SettingsSection,
 } from "@/stores/settingsUi";
 import { useCloseBehaviorStore, type CloseAction } from "@/stores/closeBehavior";
+import { usePluginPromptStore } from "@/stores/pluginPrompt";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useCacheStore } from "@/stores/cache";
 import { useUpdaterStore } from "@/stores/updater";
 import { useChangelogStore } from "@/stores/changelog";
@@ -154,6 +156,7 @@ export default defineComponent({
   setup(props) {
     const ui = useSettingsUiStore();
     const closeBehavior = useCloseBehaviorStore();
+    const pluginPrompt = usePluginPromptStore();
     const theme = useTheme();
     const wallpaper = useWallpaper();
 
@@ -245,6 +248,45 @@ export default defineComponent({
       }
     }
     watch(activePath, () => void refreshIngamePlugin());
+
+    // The shared plugin store (probed at boot by AppShell; the install
+    // prompt's 一键安装 lands there too) keeps the local ref fresh —
+    // without this mirror the section's status hint would still read
+    // "not installed" after an install through the re-check window.
+    const ingamePluginStore = useIngamePluginStore();
+    watch(
+      () => [ingamePluginStore.probed, ingamePluginStore.installed] as const,
+      ([probed, installed]) => {
+        if (probed) ingamePluginInstalled.value = installed;
+      },
+      { immediate: true },
+    );
+
+    /** The closeBehavior section's 重新检查 button: re-probe through the
+     *  shared plugin store (one source of truth — the mirror above keeps
+     *  this section's hint in step), then raise the shared install prompt
+     *  when still absent (or toast the fresh state). Deliberately ignores
+     *  the 不再提示 marker — this entry IS the way back in after a
+     *  decline. */
+    async function recheckIngamePlugin() {
+      if (!activePath.value) {
+        toast.info(t("settings.pluginPromptStateNoGame"));
+        return;
+      }
+      await ingamePluginStore.refresh();
+      if (!ingamePluginStore.probed) {
+        // older shell / probe failure — the same offline key the plugin
+        // lifecycle actions return
+        toast.error(t("common.game.offline"));
+        return;
+      }
+      ingamePluginInstalled.value = ingamePluginStore.installed;
+      if (ingamePluginStore.installed) {
+        toast.info(t("settings.pluginPromptStateInstalled"));
+      } else {
+        pluginPrompt.open();
+      }
+    }
 
     // The process watcher synthesizes an install for a running exe that no
     // detected install claims — a one-click fallback row above the actions.
@@ -1244,6 +1286,30 @@ export default defineComponent({
             />
             <HkSettingsHint>{t("settings.closeBehaviorHint")}</HkSettingsHint>
             <HkSettingsHint>{t("settings.closeRememberHint")}</HkSettingsHint>
+          </HkSettingsGroup>
+
+          {/* In-game plugin install ask — shares the closeBehavior page (a
+              "default app behavior" sibling of the close action): status of
+              the boot-time ask, and the manual re-check that re-opens the
+              install prompt regardless of the 不再提示 marker. */}
+          <HkSettingsGroup title={t("settings.pluginPromptGroup")}>
+            <HkSettingsHint>
+              {activePath.value
+                ? ingamePluginInstalled.value
+                  ? t("settings.pluginPromptStateInstalled")
+                  : t("settings.pluginPromptStateAbsent")
+                : t("settings.pluginPromptStateNoGame")}
+            </HkSettingsHint>
+            <HkSettingsHint>{t("settings.pluginPromptHint")}</HkSettingsHint>
+            <div>
+              <HkButton
+                size="sm"
+                variant="secondary"
+                onClick={() => void recheckIngamePlugin()}
+              >
+                {t("settings.pluginPromptRecheck")}
+              </HkButton>
+            </div>
           </HkSettingsGroup>
 
           </>

@@ -273,5 +273,11 @@
     "avgDamageDesc": "悬浮窗队伍列表下方显示双方平均场均伤害（仅游戏内悬浮窗）。"
   },
   "schemeDefaultName": "默认",
-  "pairingWip": "手机配对功能正在开发中，尚未完工"
+  "pairingWip": "手机配对功能正在开发中，尚未完工",
+  "pluginPromptGroup": "游戏内插件询问",
+  "pluginPromptHint": "启动时若检测到游戏但未安装游戏内插件，会弹窗建议安装；勾选「不再提示」后不再自动询问，可随时在这里重新发起检查。",
+  "pluginPromptRecheck": "重新检查",
+  "pluginPromptStateInstalled": "当前游戏已安装游戏内插件。",
+  "pluginPromptStateAbsent": "当前游戏未安装游戏内插件。",
+  "pluginPromptStateNoGame": "尚未设置游戏路径。"
 }

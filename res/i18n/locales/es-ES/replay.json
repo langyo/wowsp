@@ -217,7 +217,11 @@
     "card": {
       "noData": "No hay especificaciones para este buque"
     },
-    "tier": "Nivel"
+    "tier": "Nivel",
+    "pluginPromptTitle": "Instalar el complemento dentro del juego",
+    "pluginPromptDesc": "El juego activo no tiene el complemento de WoWSP. Instalarlo da a las batallas en directo el orden TAB preciso y señales de detección más fiables; no muestra nada dentro del juego y se puede desinstalar en cualquier momento.",
+    "pluginPromptLater": "Por ahora no",
+    "pluginPromptDontAsk": "No volver a preguntar"
   },
   "postbattle": {
     "loadingGlobal": "Cargando las estadísticas globales de {name}…",

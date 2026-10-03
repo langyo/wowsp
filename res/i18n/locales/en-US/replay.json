@@ -217,7 +217,11 @@
     "card": {
       "noData": "No parameters for this ship"
     },
-    "tier": "Tier"
+    "tier": "Tier",
+    "pluginPromptTitle": "Install the in-game plugin",
+    "pluginPromptDesc": "The active game has no WoWSP in-game plugin installed. Installing it gives live battles the precise TAB ordering and more reliable detection signals; it renders nothing in-game and uninstalls anytime.",
+    "pluginPromptLater": "Not now",
+    "pluginPromptDontAsk": "Don't ask again"
   },
   "postbattle": {
     "loadingGlobal": "Loading {name}'s global stats…",

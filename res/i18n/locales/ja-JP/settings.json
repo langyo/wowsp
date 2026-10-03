@@ -273,5 +273,11 @@
     "avgDamageDesc": "オーバーレイのチームリスト下に双方の平均ダメージを表示（ゲーム内オーバーレイのみ）。"
   },
   "schemeDefaultName": "デフォルト",
-  "pairingWip": "スマホ連携機能は開発中で、まだ完成していません。"
+  "pairingWip": "スマホ連携機能は開発中で、まだ完成していません。",
+  "pluginPromptGroup": "ゲーム内プラグインの確認",
+  "pluginPromptHint": "起動時にゲームを検出したもののゲーム内プラグインがない場合、インストールを提案するウィンドウを表示します。「今後表示しない」をチェックすると自動確認は行われませんが、ここからいつでも再確認できます。",
+  "pluginPromptRecheck": "再確認",
+  "pluginPromptStateInstalled": "現在のゲームにはゲーム内プラグインがインストールされています。",
+  "pluginPromptStateAbsent": "現在のゲームにはゲーム内プラグインがインストールされていません。",
+  "pluginPromptStateNoGame": "ゲームパスが未設定です。"
 }

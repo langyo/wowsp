@@ -1,6 +1,7 @@
 {
   "title": "Asistente de configuración inicial",
   "stepWelcome": "Aviso",
+  "stepGame": "Juego",
   "stepPreferences": "Preferencias",
   "next": "Siguiente",
   "prev": "Atrás",
@@ -31,5 +32,13 @@
   "sealsToggle": "Sellos de evaluación",
   "sealsToggleDesc": "Sellos de veredicto 神了/海猴/蛆: solo se muestran con la interfaz en chino.",
   "localizedTiersToggle": "Etiquetas de nivel localizadas",
-  "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar."
+  "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar.",
+  "gameDesc": "WoWSP buscó automáticamente instalaciones de World of Warships en este equipo: haz clic en el cliente que quieras confirmar, o vuelve a detectar / elige la carpeta manualmente.",
+  "gameDetecting": "Buscando juegos instalados…",
+  "pluginSection": "Complemento dentro del juego",
+  "pluginDesc": "Recomendamos instalar el complemento de WoWSP dentro del juego: las batallas en directo ganan el orden TAB preciso y señales de detección más fiables, no muestra nada dentro del juego y se puede desinstalar en cualquier momento.",
+  "pluginInstall": "Instalar complemento",
+  "pluginSkip": "Por ahora no",
+  "pluginSkipCountdown": "Por ahora no ({n} s)",
+  "pluginDone": "Complemento instalado: las batallas en directo lo usan automáticamente."
 }

@@ -273,5 +273,11 @@
     "avgDamageDesc": "懸浮窗隊伍列表下方顯示雙方平均場均傷害（僅遊戲內懸浮窗）。"
   },
   "schemeDefaultName": "預設",
-  "pairingWip": "手機配對功能正在開發中，尚未完工"
+  "pairingWip": "手機配對功能正在開發中，尚未完工",
+  "pluginPromptGroup": "遊戲內插件詢問",
+  "pluginPromptHint": "啟動時若偵測到遊戲但未安裝遊戲內插件，會彈窗建議安裝；勾選「不再提示」後不再自動詢問，可隨時在這裡重新發起檢查。",
+  "pluginPromptRecheck": "重新檢查",
+  "pluginPromptStateInstalled": "目前遊戲已安裝遊戲內插件。",
+  "pluginPromptStateAbsent": "目前遊戲未安裝遊戲內插件。",
+  "pluginPromptStateNoGame": "尚未設定遊戲路徑。"
 }

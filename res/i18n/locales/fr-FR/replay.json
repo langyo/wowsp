@@ -217,7 +217,11 @@
     "card": {
       "noData": "Aucune caractéristique pour ce navire"
     },
-    "tier": "Palier"
+    "tier": "Palier",
+    "pluginPromptTitle": "Installer le plugin en jeu",
+    "pluginPromptDesc": "Le jeu actif n'a pas le plugin WoWSP en jeu. L'installer donne aux batailles en direct l'ordre TAB précis et des signaux de détection plus fiables ; rien n'est affiché en jeu et la désinstallation reste possible à tout moment.",
+    "pluginPromptLater": "Plus tard",
+    "pluginPromptDontAsk": "Ne plus demander"
   },
   "postbattle": {
     "loadingGlobal": "Chargement des statistiques globales de {name}…",

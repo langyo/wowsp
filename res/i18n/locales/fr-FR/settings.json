@@ -273,5 +273,11 @@
     "avgDamageDesc": "Dégâts moyens par équipe sous les listes de l'overlay (overlay en jeu uniquement)."
   },
   "schemeDefaultName": "Par défaut",
-  "pairingWip": "Le jumelage téléphonique est en cours de développement et pas encore terminé."
+  "pairingWip": "Le jumelage téléphonique est en cours de développement et pas encore terminé.",
+  "pluginPromptGroup": "Demande du plugin en jeu",
+  "pluginPromptHint": "Au lancement, si un jeu est détecté sans le plugin en jeu, une fenêtre propose l'installation. Cocher « Ne plus demander » désactive la demande automatique ; la revérification reste toujours possible ici.",
+  "pluginPromptRecheck": "Revérifier",
+  "pluginPromptStateInstalled": "Le plugin en jeu est installé pour le jeu actif.",
+  "pluginPromptStateAbsent": "Le plugin en jeu n'est pas installé pour le jeu actif.",
+  "pluginPromptStateNoGame": "Aucun chemin de jeu défini."
 }

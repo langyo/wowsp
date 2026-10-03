@@ -215,4 +215,99 @@
     background-size: cover;
     background-position: center;
   }
+
+  /* ── game step: detection confirmation + plugin offer ── */
+
+  &__game-scan {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.25rem;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+  }
+
+  &__installs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  /* Install row — the game-path modal's pick list in wizard chrome: label
+     on top, mono path under it, reserved border + primary accent when the
+     row is the confirmed active install. */
+  &__install {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    background: rgb(var(--color-surface) / 45%);
+    background: rgb(var(--color-surface) / min(100%, calc(45% * var(--ui-opacity, 1))));
+    border: 2px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard),
+      background-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      background: rgb(var(--color-surface) / 70%);
+      background: rgb(var(--color-surface) / min(100%, calc(70% * var(--ui-opacity, 1))));
+      border-color: rgb(var(--color-border) / 35%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &.is-active {
+      border-color: rgb(var(--color-primary));
+    }
+  }
+
+  &__install-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__install-check {
+    color: rgb(var(--color-primary));
+  }
+
+  &__install-path {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    word-break: break-all;
+  }
+
+  &__game-actions,
+  &__plugin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  &__plugin {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+  }
+
+  &__plugin-done {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-primary));
+  }
 }

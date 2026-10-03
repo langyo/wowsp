@@ -1,6 +1,7 @@
 {
   "title": "初始设置向导",
   "stepWelcome": "确认",
+  "stepGame": "游戏",
   "stepPreferences": "偏好",
   "next": "下一步",
   "prev": "上一步",
@@ -31,5 +32,13 @@
   "sealsToggle": "评价印章",
   "sealsToggleDesc": "盖印「神了/海猴/蛆」评价印章，仅中文界面显示。",
   "localizedTiersToggle": "本土化档位文案",
-  "localizedTiersToggleDesc": "使用趣味本土化档位文案，关闭时显示标准英文档位。"
+  "localizedTiersToggleDesc": "使用趣味本土化档位文案，关闭时显示标准英文档位。",
+  "gameDesc": "WoWSP 已自动检测本机《战舰世界》安装，点击确认要使用的客户端；也可以重新检测或手动选择安装目录。",
+  "gameDetecting": "正在检测已安装的游戏…",
+  "pluginSection": "游戏内插件",
+  "pluginDesc": "建议安装 WoWSP 游戏内插件：实时对局将获得精确 TAB 顺序与更可靠的检测信号，游戏内不渲染任何内容，随时可卸载。",
+  "pluginInstall": "安装插件",
+  "pluginSkip": "暂不安装",
+  "pluginSkipCountdown": "暂不安装（{n} 秒）",
+  "pluginDone": "游戏内插件已安装，实时对局将自动启用。"
 }

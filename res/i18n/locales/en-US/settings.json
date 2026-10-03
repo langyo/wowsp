@@ -273,5 +273,11 @@
     "avgDamageDesc": "Mean average damage per team under the overlay's team lists (in-game overlay only)."
   },
   "schemeDefaultName": "Default",
-  "pairingWip": "Phone pairing is under development and not finished yet."
+  "pairingWip": "Phone pairing is under development and not finished yet.",
+  "pluginPromptGroup": "In-game plugin ask",
+  "pluginPromptHint": "When a launch finds a game but no in-game plugin, a window suggests installing it. Checking \"Don't ask again\" silences the auto-ask; this re-check is always the way back in.",
+  "pluginPromptRecheck": "Check again",
+  "pluginPromptStateInstalled": "The in-game plugin is installed for the active game.",
+  "pluginPromptStateAbsent": "The in-game plugin is not installed for the active game.",
+  "pluginPromptStateNoGame": "No game path is set."
 }

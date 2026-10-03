@@ -1,6 +1,7 @@
 {
   "title": "初期セットアップウィザード",
   "stepWelcome": "確認",
+  "stepGame": "ゲーム",
   "stepPreferences": "環境設定",
   "next": "次へ",
   "prev": "戻る",
@@ -31,5 +32,13 @@
   "sealsToggle": "評価の印章",
   "sealsToggleDesc": "「神了/海猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
   "localizedTiersToggle": "ローカライズ段階表記",
-  "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階になります。"
+  "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階になります。",
+  "gameDesc": "WoWSP がこの PC 内の World of Warships インストールを自動検出しました。使用するクライアントをクリックして確定するか、再検出または手動でフォルダーを選択してください。",
+  "gameDetecting": "インストール済みゲームを検出中…",
+  "pluginSection": "ゲーム内プラグイン",
+  "pluginDesc": "WoWSP ゲーム内プラグインのインストールをおすすめします。リアルタイム対戦で正確な TAB 順序とより信頼できる検出シグナルを得られます。ゲーム内には何も描画せず、いつでもアンインストールできます。",
+  "pluginInstall": "プラグインをインストール",
+  "pluginSkip": "後で",
+  "pluginSkipCountdown": "後で（{n} 秒）",
+  "pluginDone": "ゲーム内プラグインをインストールしました。リアルタイム対戦で自動的に有効になります。"
 }

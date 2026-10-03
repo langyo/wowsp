@@ -217,7 +217,11 @@
     "card": {
       "noData": "暂无该舰参数"
     },
-    "tier": "等级"
+    "tier": "等级",
+    "pluginPromptTitle": "安装游戏内插件",
+    "pluginPromptDesc": "检测到当前游戏未安装 WoWSP 游戏内插件。安装后实时对局将获得精确 TAB 顺序与更可靠的检测信号，游戏内不渲染任何内容，随时可卸载。",
+    "pluginPromptLater": "暂不安装",
+    "pluginPromptDontAsk": "不再提示"
   },
   "postbattle": {
     "loadingGlobal": "加载 {name} 全局战绩…",

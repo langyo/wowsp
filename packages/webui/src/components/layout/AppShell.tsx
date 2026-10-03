@@ -22,6 +22,8 @@ import { useCacheStore } from "@/stores/cache";
 import { useNavUiStore } from "@/stores/navUi";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { useCloseBehaviorStore } from "@/stores/closeBehavior";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
+import { usePluginPromptStore } from "@/stores/pluginPrompt";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { peekLastRunVersion } from "@/utils/lastRunVersion";
@@ -30,6 +32,7 @@ import { api } from "@/api";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import OnboardingWizard from "./OnboardingWizard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
+import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import UpdateToast from "./UpdateToast";
@@ -76,6 +79,8 @@ export default defineComponent({
     const navUi = useNavUiStore();
     const settingsUi = useSettingsUiStore();
     const closeBehavior = useCloseBehaviorStore();
+    const ingamePlugin = useIngamePluginStore();
+    const pluginPrompt = usePluginPromptStore();
     const route = useRoute();
     const router = useRouter();
     // Phone LAYOUT (viewport width — NOT the phone-app platform gate):
@@ -102,20 +107,71 @@ export default defineComponent({
       localStorage.getItem("wowsp-onboarding-completed") === null,
     );
     // Game-path setup: pops on any launch where detection ends without an
-    // active install (first launch, moved/unplugged library) so the user is
-    // asked to locate the game right away instead of discovering it through
-    // a failed armor load later — but never while the onboarding wizard is
-    // up (it would cover the wizard); completing the wizard releases it.
-    // The phone app build has no local game install to locate — never pops.
+    // active install (moved/unplugged library) so the user is asked to
+    // locate the game right away instead of discovering it through a
+    // failed armor load later — but never while the onboarding wizard is
+    // up (it would cover the wizard), and never right after a wizard run:
+    // its game step IS the same ask (detection list + browse + redetect),
+    // so popping the modal again would double-prompt the question the user
+    // just consciously answered or skipped. The phone app build has no
+    // local game install to locate — never pops.
     const gamePathMissing = ref(false);
     const showGamePathSetup = ref(false);
+    // True from the moment a wizard run completes this boot (starts true
+    // whenever the wizard is up) — see syncGamePathSetup below.
+    const wizardHandledGameSetup = ref(showOnboarding.value);
     let unlistenClose: UnlistenFn | null = null;
 
     function syncGamePathSetup() {
-      showGamePathSetup.value = gamePathMissing.value && !showOnboarding.value;
+      showGamePathSetup.value =
+        gamePathMissing.value && !showOnboarding.value && !wizardHandledGameSetup.value;
     }
 
     watch(showOnboarding, () => syncGamePathSetup());
+
+    // Boot-time in-game plugin ask — the second chance for existing
+    // installs the wizard's plugin offer never covered (their onboarding
+    // predates it, or a game path only appeared later). Fires ONCE per
+    // boot, gated on the FIRST settled probe's snapshot — a mid-session
+    // uninstall or client switch must not pop the window over a user who
+    // just made that choice deliberately (the wizard's decline writes the
+    // dismissal marker for the same reason). Never while the wizard runs
+    // (its game step asks the same question), and never again once 不再提示
+    // is checked (the settings' closeBehavior section keeps the manual way
+    // back in).
+    const pluginPromptFired = ref(false);
+    let bootPluginAbsent: boolean | null = null;
+    watch(
+      () =>
+        [
+          showOnboarding.value,
+          wizardHandledGameSetup.value,
+          config.activeInstall?.path ?? "",
+          ingamePlugin.probed,
+          ingamePlugin.state,
+          pluginPrompt.dismissed,
+        ] as const,
+      ([onboarding, wizardRan, root, probed, state, dismissed]) => {
+        if (probed && bootPluginAbsent === null) {
+          bootPluginAbsent = state === "absent";
+        }
+        if (
+          pluginPromptFired.value ||
+          onboarding ||
+          wizardRan ||
+          mobileApp ||
+          dismissed ||
+          !root ||
+          !probed ||
+          bootPluginAbsent !== true
+        ) {
+          return;
+        }
+        pluginPromptFired.value = true;
+        pluginPrompt.open();
+      },
+      { immediate: true },
+    );
 
     // Drawer hygiene: any navigation (nav link, footer button, settings
     // gear) closes the phone-layout drawer.
@@ -476,6 +532,13 @@ export default defineComponent({
             onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}
           />
         ) : null}
+
+        {/* In-game plugin install prompt — the boot-time second-chance ask
+            for existing installs (auto-raised above) and the settings'
+            manual re-check; visibility lives in the pluginPrompt store so
+            both entry points share one window. Desktop-app only: the
+            phone app has no game install to write the plugin into. */}
+        {!mobileApp ? <PluginInstallPromptModal /> : null}
 
         {/* Settings modal — the DESKTOP-layout surface of the shared
             settings body, app-singleton, opened from the title-bar gear or

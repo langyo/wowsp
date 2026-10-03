@@ -217,7 +217,11 @@
     "card": {
       "noData": "暫無該艦參數"
     },
-    "tier": "階級"
+    "tier": "階級",
+    "pluginPromptTitle": "安裝遊戲內插件",
+    "pluginPromptDesc": "偵測到目前遊戲未安裝 WoWSP 遊戲內插件。安裝後即時對局將獲得精確 TAB 順序與更可靠的偵測訊號，遊戲內不渲染任何內容，隨時可解除安裝。",
+    "pluginPromptLater": "暫不安裝",
+    "pluginPromptDontAsk": "不再提示"
   },
   "postbattle": {
     "loadingGlobal": "載入 {name} 的全域戰績…",

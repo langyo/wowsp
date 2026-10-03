@@ -217,7 +217,11 @@
     "card": {
       "noData": "この艦の諸元はありません"
     },
-    "tier": "ティア"
+    "tier": "ティア",
+    "pluginPromptTitle": "ゲーム内プラグインをインストール",
+    "pluginPromptDesc": "現在のゲームに WoWSP ゲーム内プラグインが見つかりません。インストールすると、リアルタイム対戦で正確な TAB 順序とより信頼できる検出シグナルを得られます。ゲーム内には何も描画せず、いつでもアンインストールできます。",
+    "pluginPromptLater": "後で",
+    "pluginPromptDontAsk": "今後表示しない"
   },
   "postbattle": {
     "loadingGlobal": "{name} の全体戦績を読み込み中…",

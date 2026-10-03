@@ -1,6 +1,7 @@
 {
   "title": "Setup wizard",
   "stepWelcome": "Notice",
+  "stepGame": "Game",
   "stepPreferences": "Preferences",
   "next": "Next",
   "prev": "Back",
@@ -31,5 +32,13 @@
   "sealsToggle": "Rating stamps",
   "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — Chinese UI only.",
   "localizedTiersToggle": "Localized tier labels",
-  "localizedTiersToggleDesc": "Fun localized tier wording; off shows the standard English bands."
+  "localizedTiersToggleDesc": "Fun localized tier wording; off shows the standard English bands.",
+  "gameDesc": "WoWSP scanned this machine for World of Warships installs — click one to confirm it as the active client, or re-scan / browse for the folder manually.",
+  "gameDetecting": "Scanning for installed games…",
+  "pluginSection": "In-game plugin",
+  "pluginDesc": "Consider installing the WoWSP in-game plugin: live battles gain the precise TAB ordering and more reliable detection signals, it renders nothing in-game, and it uninstalls anytime.",
+  "pluginInstall": "Install plugin",
+  "pluginSkip": "Not now",
+  "pluginSkipCountdown": "Not now ({n}s)",
+  "pluginDone": "In-game plugin installed — live battles pick it up automatically."
 }

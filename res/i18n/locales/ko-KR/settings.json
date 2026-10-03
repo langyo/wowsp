@@ -273,5 +273,11 @@
     "avgDamageDesc": "오버레이 팀 목록 아래에 양 팀 평균 데미지 표시(게임 내 오버레이 전용)."
   },
   "schemeDefaultName": "기본",
-  "pairingWip": "휴대폰 페어링 기능은 개발 중이며 아직 완성되지 않았습니다."
+  "pairingWip": "휴대폰 페어링 기능은 개발 중이며 아직 완성되지 않았습니다.",
+  "pluginPromptGroup": "게임 내 플러그인 확인",
+  "pluginPromptHint": "실행 시 게임은 감지되었지만 게임 내 플러그인이 없으면 설치를 제안하는 창이 나타납니다. \"다시 표시하지 않음\"을 선택하면 자동 확인이 꺼지며, 언제든 여기서 다시 확인할 수 있습니다.",
+  "pluginPromptRecheck": "다시 확인",
+  "pluginPromptStateInstalled": "현재 게임에 게임 내 플러그인이 설치되어 있습니다.",
+  "pluginPromptStateAbsent": "현재 게임에 게임 내 플러그인이 설치되어 있지 않습니다.",
+  "pluginPromptStateNoGame": "게임 경로가 설정되지 않았습니다."
 }
