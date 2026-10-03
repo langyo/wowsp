@@ -30,9 +30,11 @@ rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
 license = "MIT"  # inherited ONLY by the vendored wowsunpack/wows-core members
 # (upstream wows-toolkit is MIT — their own workspace root declares the
-# same). Every first-party crate pins `license = "SySL-1.0"` in its own
-# manifest, so nothing first-party can inherit this field; removing it
-# breaks the vendored members' `license.workspace = true` resolution.
+# same). Every first-party crate in this workspace pins `license = "SySL-1.0"`
+# in its own manifest, so nothing first-party can inherit this field
+# (the standalone pairing-relay workspace keeps its own MIT declaration —
+# see the README License section); removing it breaks the vendored members'
+# `license.workspace = true` resolution.
 description = "World of WarShip Panel — replay review & in-game overlay"
 repository = "https://github.com/langyo/wowsp"
 

@@ -66,3 +66,11 @@ Source: [wowsp](https://github.com/langyo/wowsp).
 ## Feedback
 
 Testing feedback is collected in our QQ group — feel free to join: **1125770228**. Report bugs, share replays, and follow development there.
+
+## License
+
+The main body of WoWSP is licensed under the **Synthetic Source License, Version 1.0** (**SySL-1.0**, full text in [`LICENSE`](./LICENSE)) — a custom license designed for software whose source is substantially AI-generated. In short: the copyright and patent grants are equivalent in scope to Apache-2.0, distributing object code alone carries no source-sharing obligation, and the license binds as a contract regardless of copyright status — in exchange, every copy and derivative must retain the AI-generation disclosure notice. Every first-party crate in the app workspace pins `license = "SySL-1.0"` in its own manifest (the standalone pairing-relay Worker workspace declares its own `MIT` — see below).
+
+The MIT-licensed corners of the tree are exactly two. First, the vendored toolkit under [`packages/tools/wowsunpack-vendor/`](./packages/tools/wowsunpack-vendor): a vendored snapshot of [landaire/wows-toolkit](https://github.com/landaire/wows-toolkit) that keeps its upstream **MIT** license (the directory carries the upstream `LICENSE`, © Lander Brandt). The root `Cargo.toml` declares `license = "MIT"` at the `[workspace.package]` level purely so the vendored `wowsunpack` / `wows-core` members resolve `license.workspace = true` when built from the app workspace — every first-party member overrides the field, so nothing first-party in this workspace inherits MIT. Second, [`packages/pairing-relay`](./packages/pairing-relay) — the pairing relay's Rust→wasm Cloudflare Worker — is a standalone Cargo workspace excluded from the root one, and its `relay-core` / `relay-worker` crates are **MIT** under their own `[workspace.package]` declaration.
+
+Vendor sync policy: the directory is a plain in-tree snapshot, not a submodule, refreshed from upstream manually when the crates WoWSP consumes (`wowsunpack`, `wows-core`) need an upstream fix or feature. Local changes on top of the snapshot (for example the Lesta/Korabli client adaptations) are recorded as ordinary commits in this repository's history — `git log -- packages/tools/wowsunpack-vendor` is the authoritative record, as no separate patch queue is kept in-tree.
