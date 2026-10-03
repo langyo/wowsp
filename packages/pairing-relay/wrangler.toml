@@ -38,7 +38,7 @@ command = "worker-build --release crates/relay-worker"
 # Pages-hosted docs, and run_worker_first routes /api + /docs into the
 # worker; everything else resolves statically. `assets/` is generated
 # (gitignored). Static responses carry the security header matrix via
-# the `_headers` file bundled from packages/website/public/ (honored at
+# the `_headers` file bundled from packages/website/src/res/ (honored at
 # the assets ROOT only — see justfile `bundle-site`); the worker-served
 # routes below get the same matrix from crates/relay-core/src/headers.rs.
 [assets]
