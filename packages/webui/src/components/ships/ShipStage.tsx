@@ -1953,17 +1953,21 @@ export default defineComponent({
                       <span class="ship-stage__armor-axis-hint"> · {t("ships.detail.armor.pickHint")}</span>
                     </span>
                     <div class="ship-stage__armor-axis-band" role="group" aria-label={t("ships.detail.armor.legend")}>
-                      {ARMOR_LEGEND.map((s, i) => (
-                        <button
-                          type="button"
-                          key={s.label}
-                          class={["ship-stage__armor-swatch", soloBucket.value === i ? "is-solo" : ""].join(" ")}
-                          style={{ background: s.css }}
-                          title={`${s.range} · ${t("ships.detail.armor.solo")}`}
-                          aria-pressed={soloBucket.value === i}
-                          onClick={() => toggleArmorSolo(i)}
-                        />
-                      ))}
+                      {ARMOR_LEGEND.map((s, i) => {
+                        const hint = `${s.range} · ${t("ships.detail.armor.solo")}`;
+                        return (
+                          <button
+                            type="button"
+                            key={s.label}
+                            class={["ship-stage__armor-swatch", soloBucket.value === i ? "is-solo" : ""].join(" ")}
+                            style={{ background: s.css }}
+                            data-hint={hint}
+                            aria-label={hint}
+                            aria-pressed={soloBucket.value === i}
+                            onClick={() => toggleArmorSolo(i)}
+                          />
+                        );
+                      })}
                     </div>
                     {/* Ruler-style: one number at each swatch boundary — a
                         color spans the gap between its neighbours' numbers. */}
@@ -1971,7 +1975,7 @@ export default defineComponent({
                       {ARMOR_SCALE.slice(0, -1).map(([bp], i) => (
                         <span
                           key={bp}
-                          title={String(bp)}
+                          data-hint={String(bp)}
                           style={{ left: `${(((i + 1) / ARMOR_SCALE.length) * 100).toFixed(2)}%` }}
                         >
                           {bp}
@@ -1988,7 +1992,7 @@ export default defineComponent({
                           <button
                             type="button"
                             class="ship-stage__armor-chip is-solo"
-                            title={soloChip.value.label}
+                            data-hint={soloChip.value.label}
                             onClick={() => toggleArmorSolo(soloBucket.value ?? 0)}
                           >
                             <span class="ship-stage__armor-chip-swatch" style={{ background: soloChip.value.css }} />
@@ -2001,7 +2005,7 @@ export default defineComponent({
                             type="button"
                             key={c.key}
                             class="ship-stage__armor-chip"
-                            title={c.label}
+                            data-hint={c.label}
                             onClick={() => toggleArmorPart(c.key)}
                           >
                             <span class="ship-stage__armor-chip-swatch" style={{ background: c.css }} />
