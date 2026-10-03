@@ -5422,9 +5422,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shun"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44626f17d458dfdfacf86b4ac5b202d44f94c64a1a658e0ed6bc66ba07ca8d5e"
+checksum = "d594021c015868517e564faf5adbd65e5fcd429ef9ccd1bbcbd06b0db728c466"
 dependencies = [
  "clap",
  "image",
@@ -8325,19 +8325,3 @@ dependencies = [
  "syn 3.0.6",
  "winnow 1.0.4",
 ]
-
-[[patch.unused]]
-name = "plana"
-version = "0.2.1"
-
-[[patch.unused]]
-name = "plana-celestia-config"
-version = "0.1.29"
-
-[[patch.unused]]
-name = "plana-rpc-client"
-version = "0.2.2"
-
-[[patch.unused]]
-name = "plana-rpc-server"
-version = "0.1.0"
