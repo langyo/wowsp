@@ -57,4 +57,4 @@ Bug 与测试反馈：QQ 群 **1125770228**，或[官网](https://wowsp.langyo.x
 
 ## 许可证
 
-WoWSP 主体采用 **合成源码许可证 1.0**（[全文](https://github.com/langyo/wowsp/blob/master/LICENSE)）—— 面向源码主要由 AI 生成的软件，授权范围与 Apache-2.0 相当，唯一额外义务是每份副本与衍生作品都必须保留 AI 生成披露声明。仓内 vendored 的 [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) 快照与独立的 [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) Worker 保留其上游 **MIT** 许可证。
+WoWSP 主体采用 **合成源码许可证 1.0**（[全文](https://github.com/langyo/wowsp/blob/master/LICENSE)）—— 面向源码主要由 AI 生成的软件，授权范围与 Apache-2.0 相当，唯一额外义务是每份副本与衍生作品都必须保留 AI 生成披露声明。仓内 vendored 的 [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) 快照保留其上游 **MIT** 许可证；其余部分——包括独立的 [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) Worker——均采用 SySL-1.0。
