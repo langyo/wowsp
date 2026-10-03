@@ -1,0 +1,20 @@
+# Security response headers for the STATIC site shell (every path the
+# [assets] layer answers — `/`, the SPA fallback and the /wowsp/**
+# fallback copies). The worker-served responses (/api, /feedback, /erp)
+# get the same matrix from the worker itself
+# (crates/relay-core/src/headers.rs — keep the two in sync; a
+# relay-core unit test diffs the CSP below against the Rust constant).
+#
+# CSP on non-document responses (JS/CSS/images) is ignored by browsers,
+# so serving one splat row for everything is equivalent to
+# HTML-only-with-universal-trio and keeps this file dead simple.
+#
+# 'unsafe-inline' in script-src is a known residue: the shell's inline
+# fallback loader carries a build-time entry hash, so hash-based CSP is
+# not workable today (follow-up: move the loader off inline).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://langyo.github.io; connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

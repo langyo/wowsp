@@ -15,6 +15,7 @@
 
 pub mod directory;
 pub mod feedback;
+pub mod headers;
 pub mod manifest;
 pub mod multipart;
 pub mod protocol;

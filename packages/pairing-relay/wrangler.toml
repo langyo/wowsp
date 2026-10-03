@@ -37,7 +37,10 @@ command = "worker-build --release crates/relay-worker"
 # justfile `bundle-site` (WOWSP_SITE_ASSET_BASE). /docs redirects to the
 # Pages-hosted docs, and run_worker_first routes /api + /docs into the
 # worker; everything else resolves statically. `assets/` is generated
-# (gitignored).
+# (gitignored). Static responses carry the security header matrix via
+# the `_headers` file bundled from packages/website/public/ (honored at
+# the assets ROOT only — see justfile `bundle-site`); the worker-served
+# routes below get the same matrix from crates/relay-core/src/headers.rs.
 [assets]
 directory = "./assets"
 binding = "ASSETS"

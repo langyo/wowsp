@@ -114,6 +114,10 @@ def main() -> int:
     shutil.copytree(src_dir, out_dir, dirs_exist_ok=True)
     shutil.rmtree(out_dir / "assets", ignore_errors=True)
     (out_dir / "404.html").unlink(missing_ok=True)
+    # _headers is honored ONLY at the assets root (see the [assets]
+    # comment in packages/pairing-relay/wrangler.toml); the nested
+    # wowsp/ copy would ship as a stray static file — drop it.
+    (out_dir / "wowsp" / "_headers").unlink(missing_ok=True)
     # The JS swapped only the FIRST </body> (regex without /g) — keep that.
     (out_dir / "index.html").write_text(
         shell.replace("</body>", loader + "\n</body>", 1),

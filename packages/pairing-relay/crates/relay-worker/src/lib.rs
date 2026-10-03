@@ -39,6 +39,11 @@ const RESOLVE_SOCKET_LIFETIME_MS: u32 = 10_000;
 
 #[event(fetch)]
 async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+    with_security_headers(route(req, env).await?).await
+}
+
+/// The request router (every response this worker answers itself).
+async fn route(req: Request, env: Env) -> Result<Response> {
     let url = req.url()?;
     let path = url.path().to_string();
 
@@ -198,4 +203,39 @@ async fn resolve(req: Request, env: Env, code: Option<&str>) -> Result<Response>
     });
 
     Ok(Response::from_websocket(pair.client)?)
+}
+
+/// The one response exit: every response this worker sends to a client
+/// is decorated here with the security header matrix from
+/// [`relay_core::headers`] (the policy itself — which headers on which
+/// kind, and why — is unit-tested there). WebSocket upgrades (101, the
+/// resolve/control/data handshakes) pass through byte-identical.
+///
+/// Header values from subrequests (the Durable Object stubs) carry
+/// workerd's immutable guard — a failed `set` falls back to rebuilding
+/// the response with a fresh, locally owned `Headers` object.
+async fn with_security_headers(resp: Response) -> Result<Response> {
+    let content_type = resp.headers().get("Content-Type").ok().flatten();
+    let kind = relay_core::headers::response_kind(resp.status_code(), content_type.as_deref());
+    let extra = relay_core::headers::security_headers(kind);
+    if extra.is_empty() {
+        return Ok(resp);
+    }
+
+    let mut out = resp;
+    for (name, value) in extra {
+        if out.headers_mut().set(name, value).is_err() {
+            // Immutable-guarded headers (DO-stub responses): rebuild.
+            // Only non-101 responses get here, so the body is small
+            // JSON/empty and buffering it is free.
+            let status = out.status_code();
+            let bytes = out.bytes().await?;
+            let headers = Headers::from_iter(out.headers().entries());
+            out = Response::from_bytes(bytes)?
+                .with_status(status)
+                .with_headers(headers);
+            out.headers_mut().set(name, value)?;
+        }
+    }
+    Ok(out)
 }
