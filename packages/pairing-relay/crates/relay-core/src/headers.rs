@@ -15,7 +15,7 @@
 //! - The static site shell (`/` and every SPA path) never reaches this
 //!   code — wrangler serves it from the `[assets]` layer, which carries
 //!   the same matrix via the bundled `_headers` file
-//!   (packages/website/public/_headers).
+//!   (packages/website/src/res/_headers).
 //!
 //! `'unsafe-inline'` in `script-src` is a known, documented residue: the
 //! site shell ships a build-time-injected inline fallback loader whose
@@ -106,7 +106,12 @@ pub fn response_kind(status: u16, content_type: Option<&str>) -> ResponseKind {
         return ResponseKind::WebsocketUpgrade;
     }
     match content_type {
-        Some(ct) if ct.to_ascii_lowercase().trim_start().starts_with("text/html") => {
+        Some(ct)
+            if ct
+                .to_ascii_lowercase()
+                .trim_start()
+                .starts_with("text/html") =>
+        {
             ResponseKind::HtmlDocument
         },
         _ => ResponseKind::Other,
@@ -133,7 +138,11 @@ mod tests {
                 "Permissions-Policy",
             ]
         );
-        let csp = got.iter().find(|(k, _)| *k == "Content-Security-Policy").unwrap().1;
+        let csp = got
+            .iter()
+            .find(|(k, _)| *k == "Content-Security-Policy")
+            .unwrap()
+            .1;
         for directive in [
             "default-src 'self'",
             "script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'",
@@ -151,8 +160,14 @@ mod tests {
         let by_name = |name: &str| got.iter().find(|(k, _)| *k == name).unwrap().1;
         assert_eq!(by_name("X-Frame-Options"), "DENY");
         assert_eq!(by_name("X-Content-Type-Options"), "nosniff");
-        assert_eq!(by_name("Referrer-Policy"), "strict-origin-when-cross-origin");
-        assert_eq!(by_name("Permissions-Policy"), "camera=(), microphone=(), geolocation=()");
+        assert_eq!(
+            by_name("Referrer-Policy"),
+            "strict-origin-when-cross-origin"
+        );
+        assert_eq!(
+            by_name("Permissions-Policy"),
+            "camera=(), microphone=(), geolocation=()"
+        );
     }
 
     /// /api JSON (health, feedback pipeline, errors) carries the three
@@ -211,13 +226,31 @@ mod tests {
         let mut csp_lines = text
             .lines()
             .filter(|l| l.trim_start().starts_with("Content-Security-Policy:"))
-            .map(|l| l.trim().strip_prefix("Content-Security-Policy:").unwrap().trim());
+            .map(|l| {
+                l.trim()
+                    .strip_prefix("Content-Security-Policy:")
+                    .unwrap()
+                    .trim()
+            });
         let shell_csp = csp_lines.next().expect("_headers CSP row");
         assert!(
             csp_lines.next().is_none(),
             "more than one CSP row in _headers"
         );
-        assert_eq!(shell_csp, CSP_HTML, "shell _headers CSP drifted from CSP_HTML");
+        // Compare against the EMITTED matrix (not the bare constant) so
+        // this test also goes red when `security_headers` itself is
+        // mutated — the file must track whatever the worker actually
+        // sends. (The constant vs matrix equality is asserted by
+        // `html_documents_carry_the_full_matrix`.)
+        let worker_csp = security_headers(ResponseKind::HtmlDocument)
+            .iter()
+            .find(|(name, _)| *name == "Content-Security-Policy")
+            .expect("CSP present in the HTML matrix")
+            .1;
+        assert_eq!(
+            shell_csp, worker_csp,
+            "shell _headers CSP drifted from the worker matrix"
+        );
         // The universal trio rides the same splat row.
         for header in [
             "X-Frame-Options: DENY",
@@ -225,10 +258,7 @@ mod tests {
             "Referrer-Policy: strict-origin-when-cross-origin",
             "Permissions-Policy: camera=(), microphone=(), geolocation=()",
         ] {
-            assert!(
-                text.contains(header),
-                "_headers missing `{header}`"
-            );
+            assert!(text.contains(header), "_headers missing `{header}`");
         }
     }
 
@@ -236,7 +266,10 @@ mod tests {
     /// case/format tolerant.
     #[test]
     fn kind_detection_is_content_type_driven() {
-        assert_eq!(response_kind(200, Some("TEXT/HTML")), ResponseKind::HtmlDocument);
+        assert_eq!(
+            response_kind(200, Some("TEXT/HTML")),
+            ResponseKind::HtmlDocument
+        );
         assert_eq!(
             response_kind(200, Some(" text/html;charset=utf-8")),
             ResponseKind::HtmlDocument
@@ -245,7 +278,10 @@ mod tests {
             response_kind(200, Some("text/html-validator-nope")),
             ResponseKind::HtmlDocument
         );
-        assert_eq!(response_kind(200, Some("application/json")), ResponseKind::Other);
+        assert_eq!(
+            response_kind(200, Some("application/json")),
+            ResponseKind::Other
+        );
         assert_eq!(response_kind(200, None), ResponseKind::Other);
     }
 }
