@@ -24,7 +24,7 @@ pub(crate) fn scan_root(game_root: &str) -> Result<PathBuf, String> {
 /// `installed_mods.xml` (the modpack installer writes it at the res_mods
 /// root). `span` covers the raw `<mod …` text up to (excluding) the `/>` so
 /// rows can be cut out surgically when their unit is uninstalled.
-struct ManifestEntry {
+pub(crate) struct ManifestEntry {
     pub(crate) name: String,
     pub(crate) version: Option<String>,
     pub(crate) span: (usize, usize),
