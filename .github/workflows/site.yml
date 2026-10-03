@@ -48,6 +48,18 @@ jobs:
         run: |
           cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
           lagrange build --src docs --out _site/docs --site-url https://langyo.github.io/wowsp/docs
+          # lagrange drops language-directory static assets, so the
+          # per-language screenshot folders are copied in by hand (the
+          # language dirs themselves don't exist in its output either —
+          # hence the mkdir). The website gallery links
+          # <siteBase>docs/<lang>/screenshots/*.webp, and the rendered
+          # README pages reference ../screenshots/ from /docs/guides/ —
+          # hence the default language also lands at /docs/screenshots/.
+          for lang in en zh-CN zh-TW ja ko fr es ru; do
+            mkdir -p "_site/docs/$lang"
+            cp -r "docs/$lang/screenshots" "_site/docs/$lang/screenshots"
+          done
+          cp -r docs/en/screenshots _site/docs/screenshots
 
       - uses: pnpm/action-setup@v6
         # Version comes from the "packageManager" field in package.json.

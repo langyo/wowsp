@@ -20,6 +20,21 @@ export default {
     modsStat: "Mod リソース",
   },
   showcase: {
+    gallery: {
+      titleA: "実際のアプリを、",
+      titleB: "まるごと一枚で",
+      desc: "デスクトップアプリから直接キャプチャ — すべての画面が今読んでいる言語で表示されています。クリックで拡大できます",
+      shots: {
+        dashboard: "ダッシュボード",
+        lookup: "戦績検索",
+        ships: "艦船百科",
+        replay: "リプレイレビュー",
+        live: "戦闘ライブ",
+        tactics: "マップ戦術",
+        resources: "MODとリソース",
+        settings: "設定",
+      },
+    },
     ships: {
       eyebrow: "艦船ビューア",
       titleA: "すべての艦を、",

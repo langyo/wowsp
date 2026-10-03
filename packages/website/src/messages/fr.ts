@@ -20,6 +20,21 @@ export default {
     modsStat: "ressources de mods",
   },
   showcase: {
+    gallery: {
+      titleA: "L'application réelle,",
+      titleB: "sous tous les angles",
+      desc: "Captures directes de l'application de bureau — chaque interface dans la langue que vous lisez actuellement. Cliquez pour agrandir",
+      shots: {
+        dashboard: "Tableau de bord",
+        lookup: "Recherche de stats",
+        ships: "Encyclopédie des navires",
+        replay: "Revue de replay",
+        live: "Match en direct",
+        tactics: "Tactiques de carte",
+        resources: "Mods et ressources",
+        settings: "Paramètres",
+      },
+    },
     ships: {
       eyebrow: "Visionneuse de navires",
       titleA: "Chaque navire,",

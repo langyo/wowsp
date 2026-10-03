@@ -386,3 +386,41 @@ html {
     border-radius: var(--radius-lg);
   }
 }
+
+/* ── Screenshot gallery — real captures of the desktop app, one set per
+ * UI language, published under docs/<lang>/screenshots by the site
+ * workflow. Thumbnails are aspect-shaped; the section escapes the fixed
+ * 100dvh grid on short viewports so the two rows never clip. */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-16);
+  align-content: center;
+  flex: 1;
+  width: 100%;
+}
+
+.gallery__item {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.gallery__caption {
+  font-size: var(--text-sm);
+  color: rgb(var(--color-text-secondary));
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .gallery { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-height: 700px) {
+  .showcase--gallery {
+    height: auto;
+    min-height: calc(100dvh - 4rem);
+    overflow: visible;
+  }
+}

@@ -20,6 +20,21 @@ export default {
     modsStat: "모드 리소스",
   },
   showcase: {
+    gallery: {
+      titleA: "실제 앱을",
+      titleB: "한눈에",
+      desc: "데스크톱 앱에서 직접 캡처한 화면입니다 — 모든 화면이 현재 읽고 있는 언어로 표시됩니다. 클릭하면 확대할 수 있습니다",
+      shots: {
+        dashboard: "대시보드",
+        lookup: "전적 조회",
+        ships: "함선 백과",
+        replay: "리플레이 리뷰",
+        live: "실시간 관전",
+        tactics: "맵 전술",
+        resources: "모드와 리소스",
+        settings: "설정",
+      },
+    },
     ships: {
       eyebrow: "함선 뷰어",
       titleA: "모든 함선을,",

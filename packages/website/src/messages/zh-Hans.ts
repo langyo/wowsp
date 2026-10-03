@@ -20,6 +20,21 @@ export default {
     modsStat: "插件资源",
   },
   showcase: {
+    gallery: {
+      titleA: "真实界面，",
+      titleB: "一屏尽览",
+      desc: "以下截图全部来自桌面应用实机截取——每个界面都以你当前阅读的语言呈现，点击可放大查看",
+      shots: {
+        dashboard: "主面板",
+        lookup: "战绩查询",
+        ships: "舰船百科",
+        replay: "录像复盘",
+        live: "对局实时",
+        tactics: "地图战术",
+        resources: "模组与资源",
+        settings: "设置",
+      },
+    },
     ships: {
       eyebrow: "战舰展示",
       titleA: "每一艘舰，",

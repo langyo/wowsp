@@ -20,6 +20,21 @@ export default {
     modsStat: "mod resources",
   },
   showcase: {
+    gallery: {
+      titleA: "The real app,",
+      titleB: "every view",
+      desc: "Captured straight from the desktop app — every interface, localized in the language you are reading now. Click any shot to zoom in",
+      shots: {
+        dashboard: "Dashboard",
+        lookup: "Stats lookup",
+        ships: "Ship encyclopedia",
+        replay: "Replay review",
+        live: "Live battle watch",
+        tactics: "Map tactics",
+        resources: "Mod hub & resources",
+        settings: "Settings",
+      },
+    },
     ships: {
       eyebrow: "Ship viewer",
       titleA: "Every ship,",

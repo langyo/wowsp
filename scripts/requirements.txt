@@ -13,3 +13,6 @@ pydantic~=2.9
 # Data formats
 numpy~=2.0
 toml~=0.10
+
+# Image post-processing (visual-suite WebP conversion)
+pillow~=11.0

@@ -1,12 +1,13 @@
-import { defineAsyncComponent, defineComponent, onBeforeUnmount, onMounted } from "vue";
+import { computed, defineAsyncComponent, defineComponent, onBeforeUnmount, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import {
   MonitorPlay, Eye, BarChart3, ChevronDown, ChevronRight, Download,
 } from "@lucide/vue";
-import { HkButton } from "@celestia-island/hikari";
+import { HkButton, HkImagePreview } from "@celestia-island/hikari";
 import GithubMark from "@/components/GithubMark";
 import { LinkButton, Reveal, FitScale } from "@/components/ui";
+import { siteBase } from "@/composables/siteBase";
 import ModWindow from "@/components/showcase/ModWindow";
 import LookupWindow from "@/components/showcase/LookupWindow";
 import StatsWindow from "@/components/showcase/StatsWindow";
@@ -22,7 +23,23 @@ const GITHUB = "https://github.com/langyo/wowsp";
 export default defineComponent({
   name: "HomeView",
   setup() {
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
+
+    // Screenshot gallery — real captures of the desktop app, one set per
+    // UI language. The WebP files live under docs/<lang>/screenshots in
+    // the repo and are published at <siteBase>docs/<lang>/screenshots by
+    // the site workflow (lagrange itself drops language-dir statics, so
+    // the workflow copies them in after the docs build). Site locales
+    // map 1:1 onto docs locales except the two Chinese variants.
+    const DOCS_LANG: Record<string, string> = {
+      "zh-Hans": "zh-CN",
+      "zh-Hant": "zh-TW",
+    };
+    const docsLang = computed(() => DOCS_LANG[locale.value] ?? locale.value);
+    const galleryShots = [
+      "dashboard", "lookup", "ships", "replay",
+      "live", "tactics", "resources", "settings",
+    ] as const;
 
     // Paged 1/3-page scrolling — the gesture ITSELF steps, no post-scroll
     // correction: every wheel notch / key press moves exactly one grid
@@ -263,6 +280,36 @@ export default defineComponent({
           </div>
           <Reveal delay={260} class="container showcase__fit">
             <FitScale><ModWindow /></FitScale>
+          </Reveal>
+        </section>
+
+        {/* ── SHOWCASE · 界面画廊 ───────────────────────────── */}
+        <section id="gallery" class="showcase showcase--gallery section-bg">
+
+          <div class="container showcase__head">
+            <Reveal delay={80}>
+              <h2 class="showcase__title">
+                <span class="showcase__title-seg">{t("showcase.gallery.titleA")}</span>
+                <span class="showcase__title-seg">{t("showcase.gallery.titleB")}</span>
+              </h2>
+            </Reveal>
+            <Reveal delay={160}>
+              <p class="showcase__desc">{t("showcase.gallery.desc")}</p>
+            </Reveal>
+          </div>
+          <Reveal delay={200} class="container gallery">
+            {galleryShots.map((key) => (
+              <figure class="gallery__item" key={key}>
+                <HkImagePreview
+                  src={`${siteBase}docs/${docsLang.value}/screenshots/${key}.webp`}
+                  alt={t(`showcase.gallery.shots.${key}`)}
+                  ratio="16 / 10"
+                />
+                <figcaption class="gallery__caption">
+                  {t(`showcase.gallery.shots.${key}`)}
+                </figcaption>
+              </figure>
+            ))}
           </Reveal>
         </section>
 

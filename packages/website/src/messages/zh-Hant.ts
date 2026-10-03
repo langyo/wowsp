@@ -20,6 +20,21 @@ export default {
     modsStat: "模組資源",
   },
   showcase: {
+    gallery: {
+      titleA: "真實介面，",
+      titleB: "一覽無遺",
+      desc: "以下截圖全部來自桌面應用實機擷取——每個介面都以你目前閱讀的語言呈現，點擊可放大檢視",
+      shots: {
+        dashboard: "主面板",
+        lookup: "戰績查詢",
+        ships: "艦船百科",
+        replay: "重播複盤",
+        live: "對局即時",
+        tactics: "地圖戰術",
+        resources: "模組與資源",
+        settings: "設定",
+      },
+    },
     ships: {
       eyebrow: "戰艦展示",
       titleA: "每一艘艦，",

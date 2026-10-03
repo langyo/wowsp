@@ -2,12 +2,13 @@
 
 <h1 align="center">WoWSP</h1>
 
-<p align="center"><strong>World of WarShip Panel — replay review &amp; in-game overlay</strong></p>
+<p align="center"><strong>Free, open-source battle panel for World of Warships — replay review, in-game roster overlay, and stats lookup, for Windows.</strong></p>
 
 <div align="center">
 
 [![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/langyo/wowsp/blob/master/LICENSE)
-[![GitHub](https://img.shields.io/badge/github-langyo%2Fwowsp-blue.svg)](https://github.com/langyo/wowsp)
+[![Release](https://img.shields.io/github/v/release/langyo/wowsp)](https://github.com/langyo/wowsp/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/langyo/wowsp/total)](https://github.com/langyo/wowsp/releases)
 
 </div>
 
@@ -25,52 +26,37 @@
 
 </div>
 
+![WoWSP dashboard](./docs/en/screenshots/dashboard.webp)
+
 > [!IMPORTANT]
-> **警告：本软件完全免费且开源，仅通过官方 [GitHub Releases](https://github.com/langyo/wowsp/releases) 分发。任何渠道收费出售均与作者无关——请勿付款；如已付费，请尽快申请退款并举报卖家。**
->
-> **Warning: this software is completely free and open source, distributed only via the official [GitHub Releases](https://github.com/langyo/wowsp/releases). Anyone charging for it is NOT the author — do not pay; if you already have, request a refund and report the seller as soon as possible.**
->
-> **Внимание: это ПО полностью бесплатно и с открытым кодом и распространяется только через официальный [GitHub Releases](https://github.com/langyo/wowsp/releases). Тот, кто его продаёт, — не автор: не платите; если уже заплатили, как можно скорее требуйте возврат средств и пожалуйтесь на продавца.**
+> **WoWSP is completely free and open source, distributed only via the official [GitHub Releases](https://github.com/langyo/wowsp/releases). Anyone charging money for it is not the author — do not pay; if you already have, request a refund and report the seller.**
 
-WoWSP is a next-generation battle analysis dashboard for **World of Warships**. It runs in two modes:
+WoWSP is a desktop panel for **World of Warships** on Windows. It auto-detects your game install (Wargaming launcher, Steam, Lesta, or 360) and works in two modes:
 
-1. **Standalone review** — auto-detects your game install (official WG launcher, Steam, Lesta, or 360), parses `.wowsreplay` files, and renders every ship on a holographic 3D map so you can replay a match without ever launching the game. Built on three.js with model-conversion scripts so new maps and ships can be added without touching app code.
+- **Standalone review** — open any `.wowsreplay` and re-watch the match on a holographic 3D map: every ship's track, shells, torpedoes, and planes, plus per-player battle results, without ever launching the game.
+- **In-game overlay** — while the game runs, hold `Tab` to see both teams' roster and stats layered on top of the match; the overlay re-anchors itself on every press.
 
-2. **In-game overlay** — installs as a mod that auto-launches WoWSP when the game starts. A transparent overlay window detects both teams at match start and renders a roster on top of the game, shown only while you hold `Tab`. On each Tab press WoWSP captures the screen, locates the team-list region, and re-anchors the overlay to the correct position.
+Around those two it also gives you:
 
-## Android edition
+- Player and clan stats lookup with water-meter career cards.
+- A ship encyclopedia with the full tech tree, specs, and armor viewer.
+- A mod hub and resource center for popular community mods.
+- An Android companion that pulls replays straight from your desktop over Wi-Fi, or from anywhere via a six-digit pairing code.
 
-WoWSP also ships a phone edition — the same review dashboard with phone-native layouts that pulls replays straight from your desktop: the computer shows up automatically on the same Wi-Fi, or from anywhere by entering its six-digit pairing code (relayed through the built-in Cloudflare Worker at `wowsp.langyo.xyz`; source and one-command deploy instructions live in [`packages/pairing-relay`](./packages/pairing-relay/README.md)). The APK bundles the 3D model pack and the offline ship-data pack, so reviews render with no network at all once the replays are on the phone.
+## Download
 
-Building it from source needs the Android SDK + NDK 26.1 and a JDK 17 (`ANDROID_HOME` / `NDK_HOME` / `JAVA_HOME` can be overridden in the environment — see the android notes in the [`justfile`](./justfile)):
+Windows 10/11 — grab the latest `WoWSP_<version>_x64-setup-webview2.exe` from [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (WebView2 is bundled), or use the mirror-aware [download page](https://wowsp.langyo.xyz/download) if GitHub is slow where you are. The Android edition is built from source — see the [building guide](./docs/en/guides/building.md).
 
-```sh
-just fetch-models       # one-time ~1.3 GB model-pack download (cached, skipped when present)
-just build android-apk  # arm64 debug APK; --release output is unsigned until a keystore is wired in
-```
-
-The default build targets arm64 (`aarch64`); for an emulator use `just build android --apk --target x86_64` instead.
-
-The replay parsing, game-detection, and `tempArenaInfo.json` polling principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell, build infrastructure, and licensing model are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
+Screenshots of every view, in every UI language, are on the [website gallery](https://wowsp.langyo.xyz/#gallery).
 
 ## Documentation
 
-Architecture, design, and guides live under [`docs/`](./docs) in nine languages (English and 简体中文 are fully translated; the other seven mirror the English technical guides with localized index and hub pages), built with [lagrange](https://github.com/celestia-island/lagrange).
+Architecture, design notes, and guides live in [`docs/`](./docs) in nine languages (English and 简体中文 fully translated), built with [lagrange](https://github.com/celestia-island/lagrange). WoWSP reports minimal anonymous usage telemetry — exactly what is collected (and never collected) is documented in the [telemetry notice](./docs/en/license/usage-telemetry.md).
 
-Source: [wowsp](https://github.com/langyo/wowsp).
+## Feedback & credits
 
-## Status
-
-🎉 **Ready for the initial release** — all 9 feature milestones (M1–M9) are complete: game detection, replay decoding, holographic 3D review, model converters, mod installer, live roster, Tab-triggered re-anchoring, and WG stat lookups. See [`PLAN.md`](./PLAN.md) for the roadmap history and [`docs/`](./docs) for architecture details.
-
-## Feedback
-
-Testing feedback is collected in our QQ group — feel free to join: **1125770228**. Report bugs, share replays, and follow development there.
+Bugs and testing feedback: QQ group **1125770228**, or the feedback form on the [website](https://wowsp.langyo.xyz). Replay parsing and game-detection principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell and build infrastructure are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
 ## License
 
-The main body of WoWSP is licensed under the **Synthetic Source License, Version 1.0** (**SySL-1.0**, full text in [`LICENSE`](./LICENSE)) — a custom license designed for software whose source is substantially AI-generated. In short: the copyright and patent grants are equivalent in scope to Apache-2.0, distributing object code alone carries no source-sharing obligation, and the license binds as a contract regardless of copyright status — in exchange, every copy and derivative must retain the AI-generation disclosure notice. Every first-party crate in the app workspace pins `license = "SySL-1.0"` in its own manifest (the standalone pairing-relay Worker workspace declares its own `MIT` — see below).
-
-The MIT-licensed corners of the tree are exactly two. First, the vendored toolkit under [`packages/tools/wowsunpack-vendor/`](./packages/tools/wowsunpack-vendor): a vendored snapshot of [landaire/wows-toolkit](https://github.com/landaire/wows-toolkit) that keeps its upstream **MIT** license (the directory carries the upstream `LICENSE`, © Lander Brandt). The root `Cargo.toml` declares `license = "MIT"` at the `[workspace.package]` level purely so the vendored `wowsunpack` / `wows-core` members resolve `license.workspace = true` when built from the app workspace — every first-party member overrides the field, so nothing first-party in this workspace inherits MIT. Second, [`packages/pairing-relay`](./packages/pairing-relay) — the pairing relay's Rust→wasm Cloudflare Worker — is a standalone Cargo workspace excluded from the root one, and its `relay-core` / `relay-worker` crates are **MIT** under their own `[workspace.package]` declaration.
-
-Vendor sync policy: the directory is a plain in-tree snapshot, not a submodule, refreshed from upstream manually when the crates WoWSP consumes (`wowsunpack`, `wows-core`) need an upstream fix or feature. Local changes on top of the snapshot (for example the Lesta/Korabli client adaptations) are recorded as ordinary commits in this repository's history — `git log -- packages/tools/wowsunpack-vendor` is the authoritative record, as no separate patch queue is kept in-tree.
+WoWSP is licensed under the **Synthetic Source License 1.0** ([full text](./LICENSE)) — Apache-2.0-equivalent grants for a substantially AI-generated codebase, whose only extra obligation is keeping the AI-generation disclosure notice on every copy and derivative. The vendored [wows-toolkit](./packages/tools/wowsunpack-vendor) snapshot and the standalone [pairing-relay](./packages/pairing-relay) worker keep their upstream **MIT** licenses.
