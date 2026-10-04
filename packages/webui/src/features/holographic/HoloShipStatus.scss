@@ -1,0 +1,161 @@
+/**
+ * HoloShipStatus — below-hull combat status rows. Chrome matches the
+ * floating dog tags (same HUD tokens); the block hangs from the hull's
+ * lower screen edge (anchor set per frame in labelOverlay.ts).
+ */
+.holo-ship-status {
+  position: absolute;
+  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+  z-index: 2;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    background: var(--holo-hud-bg);
+    border: 1px solid var(--holo-hud-border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--holo-hud-shadow);
+  }
+
+  /* ── Row 1: action tiles ─────────────────────────────────────────── */
+
+  &__chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+
+  &__icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    overflow: hidden;
+    border-radius: 4px;
+    border: 1px solid var(--holo-hud-border);
+    color: rgb(var(--color-primary));
+
+    /* Progress bar hugs the tile's bottom edge (flash = full, cooldown =
+       draining, active = effect time left). */
+    .holo-ship-status__bar {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: 3px;
+      background: currentcolor;
+      opacity: 0.9;
+    }
+  }
+
+  &__secs {
+    font-size: 9px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+  }
+
+  &__chip.is-cooldown &__icon {
+    opacity: 0.65;
+  }
+
+  &__chip.is-gun.is-flash &__icon,
+  &__chip.is-gun.is-cooldown &__icon {
+    color: #ffcc33;
+  }
+
+  &__chip.is-torp &__icon {
+    color: #7dd3fc;
+  }
+
+  &__chip.is-smoke &__icon {
+    color: #e2e8f0;
+  }
+
+  &__chip.is-repair &__icon {
+    color: #4ade80;
+  }
+
+  &__chip.is-torp.is-flash &__icon {
+    color: #7dd3fc;
+  }
+
+  /* ── Row 2: hit pills + dot chips ────────────────────────────────── */
+
+  &__hit {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--holo-hud-border);
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  &__ammo {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+
+    &.is-HE {
+      color: #ffcc33;
+    }
+    &.is-AP {
+      color: #c8d0e0;
+    }
+    &.is-SAP {
+      color: #9aa0a8;
+    }
+    &.is-CS {
+      color: #ffa07a;
+    }
+    &.is-torpedo-icon {
+      color: #7dd3fc;
+      display: inline-flex;
+    }
+  }
+
+  &__dmg {
+    font-size: 9px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #ff8f8f;
+  }
+
+  &__hit.is-torpedo &__dmg {
+    color: #a5d8ff;
+  }
+
+  &__dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 9px;
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid transparent;
+
+    &.is-fire {
+      color: #ff9f43;
+      border-color: rgba(255, 159, 67, 0.45);
+      background: rgba(255, 159, 67, 0.12);
+    }
+    &.is-flood {
+      color: #74c0fc;
+      border-color: rgba(116, 192, 252, 0.45);
+      background: rgba(116, 192, 252, 0.12);
+    }
+  }
+}

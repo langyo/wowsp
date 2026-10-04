@@ -39,6 +39,7 @@ import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
 import HoloSelfCard from "./HoloSelfCard";
+import HoloShipStatus from "./HoloShipStatus";
 import type {
   AchievementEvent,
   ArenaPlayer,
@@ -273,7 +274,15 @@ export default defineComponent({
     const hudSheetOpen = computed(() => speedMenuOpen.value || cameraMenuOpen.value);
     watch(cameraMode, (m) => {
       originalView.value = m === "original";
-      if (m !== "follow") selectedEntityId.value = null;
+      if (m !== "follow") {
+        endFreeLook();
+        // Free/original modes keep the stock right-drag pan; only following
+        // an actual ship repurposes RMB as the free-look orbit (selectShip
+        // flips the mapping once a target exists).
+        const ctrl = api.value?.controls;
+        if (ctrl) ctrl.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+        selectedEntityId.value = null;
+      }
     });
     /** Player stats shown in the follow menu (entityId → "WR% · battles").
      *  Resolved lazily when the menu opens; missing/failed lookups render "—". */
@@ -311,6 +320,27 @@ export default defineComponent({
     // First-person follow: the entity id whose marker the camera tracks
     // (null = free orbit). Set by clicking a ship marker/label.
     const selectedEntityId = ref<number | null>(null);
+    // Hold-RMB free look inside follow mode: while held, followSelected
+    // keeps only the orbit TARGET pinned to the ship (so rotating / zooming
+    // stays anchored to it) and stops hard-setting the camera pose; on
+    // release the chase view snaps back immediately.
+    const freeLook = ref(false);
+    function endFreeLook(): void {
+      if (!freeLook.value) return;
+      freeLook.value = false;
+      window.removeEventListener("pointerup", onFreeLookUp);
+      window.removeEventListener("pointercancel", onFreeLookUp);
+      window.removeEventListener("blur", onFreeLookUp);
+    }
+    // Window-level release handlers are registered per-hold so releasing
+    // the button outside the canvas still snaps the chase view back. The
+    // blur listener shares the signature (window "blur" carries a plain
+    // Event, hence the loose typing); pointercancel always ends the hold —
+    // browsers report button 0 on cancel, so it can't be filtered by button.
+    const onFreeLookUp = (e: Event): void => {
+      if (e.type === "pointerup" && (e as PointerEvent).button !== 2) return;
+      endFreeLook();
+    };
     // 2D minimap enlarged overlay state.
     const minimapZoom = ref(props.initialMinimapZoom);
     const minimapShowTrails = ref(true);
@@ -1091,7 +1121,19 @@ export default defineComponent({
       if (!ctrl || !cam) return;
       const marker = ctx.shipMarkers.find((m) => m.userData.entityId === id);
       if (!marker || !marker.visible) return;
+      // RMB orbits in follow mode (the hold-to-free-look gesture); the mode
+      // watcher restores the stock pan mapping when follow is left. Applied
+      // per-frame so a mode flip before scene readiness still lands.
+      ctrl.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
       const pos = marker.position;
+      // Held-RMB free look: keep the orbit pivot glued to the (moving) ship
+      // and hand the camera pose to OrbitControls until the button releases.
+      // No extra controls.update() here — the tick loop already runs one per
+      // frame, and doubling it would decay the damping inertia twice as fast.
+      if (freeLook.value) {
+        ctrl.target.copy(pos);
+        return;
+      }
       const yaw = marker.rotation.y;
       // Framing tracks the true hull scale (≈1.1 ship lengths behind, half a
       // length up) so a followed BB fills the view about like in-game.
@@ -1141,6 +1183,11 @@ export default defineComponent({
       // Clicking a ship switches to chase mode; clicking empty space returns
       // to the free orbit camera.
       cameraMode.value = entityId != null ? "follow" : "free";
+      // Following a real ship hands RMB to the free-look orbit (the per-frame
+      // assignment in followSelected re-asserts it; this covers the first
+      // frames before that runs).
+      const ctrl = api.value?.controls;
+      if (ctrl) ctrl.mouseButtons.RIGHT = entityId != null ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
     }
 
     /** Canvas click → raycast the nearest visible ship marker (within a
@@ -1343,6 +1390,7 @@ export default defineComponent({
 
     onBeforeUnmount(() => {
       cancelAnimationFrame(playRaf);
+      endFreeLook();
       if (tipHideTimer != null) {
         window.clearTimeout(tipHideTimer);
         tipHideTimer = null;
@@ -1389,7 +1437,23 @@ export default defineComponent({
         <div
           ref={container}
           class="holo-map__canvas"
-          onPointerdown={(e: PointerEvent) => { _downPt = { x: e.clientX, y: e.clientY }; }}
+          onPointerdown={(e: PointerEvent) => {
+            if (
+              e.button === 2 &&
+              cameraMode.value === "follow" &&
+              selectedEntityId.value != null
+            ) {
+              // Hold-RMB free look around the followed ship; the window
+              // pointerup listener (registered here) snaps the chase view
+              // back even when the button releases off-canvas.
+              freeLook.value = true;
+              window.addEventListener("pointerup", onFreeLookUp);
+              window.addEventListener("pointercancel", onFreeLookUp);
+              window.addEventListener("blur", onFreeLookUp);
+              return;
+            }
+            if (e.button === 0) _downPt = { x: e.clientX, y: e.clientY };
+          }}
           onClick={(e) => {
             if (_downPt && Math.hypot(e.clientX - _downPt.x, e.clientY - _downPt.y) > 6) {
               // This was a drag, not a click — clear any selection so the
@@ -1429,8 +1493,17 @@ export default defineComponent({
               }}
             />
           ))}
+          {/* Below-hull combat status rows (close-range only — the gate
+              lives in labelOverlay's projection pass). */}
+          {shipLabels.value.map((lbl) =>
+            lbl.kind === "plane" ? null : (
+              <HoloShipStatus key={lbl.entityId} label={lbl} />
+            ),
+          )}
         </div>
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
+        {/* Follow-mode free look: centered mode banner while RMB is held. */}
+        {freeLook.value ? <div class="holo-map__freelook">{i18nT("replay.camera.freeLook")}</div> : null}
         {props.replayPath ? (
           <>
           <div class="holo-map__scorebar-wrap">

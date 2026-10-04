@@ -73,6 +73,38 @@
     bottom: 12px;
   }
 
+  /* Follow-mode free look banner (hold RMB): centered near the top so it
+     never covers the followed ship itself. */
+  &__freelook {
+    position: absolute;
+    top: 9%;
+    left: 50%;
+    translate: -50% 0;
+    padding: 5px 14px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: rgb(var(--color-primary));
+    background: var(--holo-hud-bg);
+    border: 1px solid var(--holo-hud-border);
+    border-radius: 999px;
+    box-shadow: var(--holo-hud-shadow);
+    pointer-events: none;
+    z-index: 6;
+    animation: holo-freelook-in 160ms ease-out;
+  }
+
+  @keyframes holo-freelook-in {
+    from {
+      opacity: 0;
+      translate: -50% 6px;
+    }
+    to {
+      opacity: 1;
+      translate: -50% 0;
+    }
+  }
+
   &__overlay-info {
     bottom: 12px;
     max-width: calc(100% - 24px);

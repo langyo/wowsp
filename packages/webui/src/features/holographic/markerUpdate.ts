@@ -22,6 +22,7 @@ import { updateCapsAndScore } from "./capSimulator";
 import { updateLabelPositions } from "./labelOverlay";
 import { formationOffsets } from "./planeFormation";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
+import { shipStatusAt } from "./shipStatusModel";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { ShipInfo, SquadronPlane, VehicleEntry } from "@/api";
 import type { FeedEntry } from "./HoloEventFeed";
@@ -160,6 +161,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         if (label) {
           label.visible = true;
           label.ghostText = i18nT("replay.legend.gone", { n: t.toFixed(0) });
+          label.status = null;
         }
       }
       continue;
@@ -194,6 +196,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // Sunk ships keep the dead tag — no "gone for N s" counter.
         label.visible = true;
         label.ghostText = null;
+        label.status = null;
       }
       if (!marker.userData._countedDead) {
         marker.userData._countedDead = true;
@@ -270,6 +273,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const currentHp = hpAtTime(traj.hpSamples, tEff);
       if (currentHp != null) label.hp = currentHp;
       label.maxHp ??= currentHp ?? label.maxHp;
+      // Below-hull combat status rows (actions / hits / dots) track the
+      // same effective clock — a dying ship freezes at its death instant.
+      label.status = shipStatusAt(ctx.shipStatus.get(entityId), tEff);
     }
   }
   // Capture-zone ownership + estimated score at this instant.

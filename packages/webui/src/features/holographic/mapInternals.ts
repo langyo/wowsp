@@ -39,6 +39,7 @@ import type {
 } from "@/api";
 import type { ArenaPlayer } from "@/api";
 import type { PostBattleData } from "@/features/replay/postBattle";
+import type { ShipStatusIndex } from "./shipStatusModel";
 import type { ThreeScene } from "./useThreeScene";
 import { disposeMarker } from "./shipMarker";
 import { disposeAny } from "./sceneUtils";
@@ -191,6 +192,10 @@ export interface TorpedoMeshState {
   launchT0: number;
   launchBase: THREE.Vector3;
   launchDir: THREE.Vector3;
+  /** Joined detonation position (shotKills join) — the below-hull status
+   *  rows reuse it for torpedo-hit attribution; null = ran out of fuel. */
+  killX: number | null;
+  killZ: number | null;
   /** Absolute battle time at which the fish disappears (launch + 240 s,
    *  or its detonation instant when a shotKill joins). Absolute — not a
    *  relative life — because steering rebases t0 forward. */
@@ -299,6 +304,9 @@ export interface MapInternals extends MapInternalsDeps {
   wardRings: WardRingState[];
   /** In-flight torpedo meshes + wakes (see TorpedoMeshState). */
   torpedoMeshes: TorpedoMeshState[];
+  /** Per-ship below-hull combat status index (see shipStatusModel.ts),
+   *  rebuilt alongside the actors and queried per playhead tick. */
+  shipStatus: Map<number, ShipStatusIndex>;
   /** Scratch orientation basis for in-flight shells/torpedoes. */
   _shellUp: THREE.Vector3;
   _shellDir: THREE.Vector3;
@@ -406,6 +414,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     shellTraceSlots: [],
     wardRings: [],
     torpedoMeshes: [],
+    shipStatus: new Map(),
     _shellUp: new THREE.Vector3(0, 1, 0),
     _shellDir: new THREE.Vector3(),
     lockLine: null,
@@ -516,6 +525,7 @@ export function clearActors(ctx: MapInternals) {
     }
   }
   ctx.smokeClusters = [];
+  ctx.shipStatus.clear();
   for (const slot of ctx.shellTraceSlots) {
     scene.remove(slot.line);
     slot.line.geometry.dispose();

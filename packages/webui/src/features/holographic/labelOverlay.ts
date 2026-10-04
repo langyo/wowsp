@@ -9,6 +9,17 @@ import { CAP_SPRITE_PX, SMOKE_SPRITE_PX } from "./screenOverlays";
 import type { SquadronPlane } from "@/api";
 import type { MapInternals } from "./mapInternals";
 
+/** Camera distance under which the below-hull combat status rows render —
+ *  at chase-cam range (~60 units) they always show; past this the whole
+ *  map reads as labels anyway, and rows would turn to noise. */
+export const STATUS_ROWS_MAX_DIST = 520;
+/** Half a nominal hull along the heading, for the bow/stern screen-edge
+ *  projection the rows anchor to (cosmetic — a BB's extra length just
+ *  nudges the rows a few px). */
+const HULL_HALF_LEN = 30;
+/** Gap between the hull's lower screen edge and the first row. */
+const STATUS_ROW_GAP_PX = 10;
+
 /** Project every visible marker's world position into screen pixels and
  *  write them into `ctx.shipLabels` so the overlay <div>s track the ships. */
 export function updateLabelPositions(ctx: MapInternals) {
@@ -29,6 +40,7 @@ export function updateLabelPositions(ctx: MapInternals) {
       ctx.current.value >= (marker.userData.deathTime as number);
     if (!marker.visible && !dead) {
       label.visible = false;
+      label.belowVisible = false;
       continue;
     }
     // Sunk markers are hidden, but their position keeps tracking the live
@@ -43,6 +55,36 @@ export function updateLabelPositions(ctx: MapInternals) {
     label.x = (ctx._projVec.x * hw) + hw;
     label.y = (-ctx._projVec.y * hh) + hh;
     label.visible = ctx._projVec.z < 1;
+    // Below-hull status rows: anchor at the hull's lower screen edge —
+    // project bow and stern along the heading and take whichever sits
+    // lower, so the rows hug the hull at any camera angle.
+    const near =
+      label.visible && !dead && cam.position.distanceTo(marker.position) <= STATUS_ROWS_MAX_DIST;
+    let bottomY: number | null = null;
+    if (near) {
+      const yaw = marker.rotation.y;
+      const fx = Math.sin(yaw) * HULL_HALF_LEN;
+      const fz = -Math.cos(yaw) * HULL_HALF_LEN;
+      for (const side of [1, -1]) {
+        ctx._projVec.set(
+          marker.position.x + fx * side,
+          marker.position.y,
+          marker.position.z + fz * side,
+        );
+        ctx._projVec.project(cam);
+        if (ctx._projVec.z >= 1) {
+          bottomY = null;
+          break;
+        }
+        const py = (-ctx._projVec.y * hh) + hh;
+        if (bottomY == null || py > bottomY) bottomY = py;
+      }
+    }
+    label.belowVisible = near && bottomY != null;
+    if (bottomY != null) {
+      label.belowX = label.x;
+      label.belowY = bottomY + STATUS_ROW_GAP_PX;
+    }
   }
   // Aircraft labels project above the carrier's currently airborne
   // squadrons (the newest sample of the newest sortie).

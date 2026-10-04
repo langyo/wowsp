@@ -332,6 +332,10 @@ export function resolvePlaneCarriers(
       x: 0, y: 0,
       visible: false,
       dead: false,
+      status: null,
+      belowX: 0,
+      belowY: 0,
+      belowVisible: false,
     });
     ctx.planeLabelCarriers.set(2_000_000_000 + Number(carrierId), carrierId);
   }

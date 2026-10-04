@@ -309,15 +309,22 @@ export function buildTorpedoTraces(
       launchDir: new THREE.Vector3(tp.dirX, 0, -tp.dirZ).normalize(),
       ownerId: tp.ownerId,
       shotId: tp.shotId,
+      killX: null,
+      killZ: null,
     });
   }
   // Torpedoes stop at their kill: a fish that connects detonates instead
   // of running out its full ~240 s lane. Absolute end time — steering
   // rebases t0 forward, so a relative life would extend the swim past
-  // the detonation.
+  // the detonation. The kill position rides along for the below-hull
+  // status rows' torpedo-hit attribution.
   for (const tm of ctx.torpedoMeshes) {
     const k = killFor(tm.ownerId, tm.shotId, tm.t0, tm.t0 + 240);
-    if (k) tm.endT = Math.max(tm.t0, k.time);
+    if (k) {
+      tm.endT = Math.max(tm.t0, k.time);
+      tm.killX = k.x;
+      tm.killZ = k.z;
+    }
   }
 }
 

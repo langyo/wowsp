@@ -4,6 +4,7 @@
  * (label list + per-frame screen projection) and the camera follow menu.
  */
 import type { TeamRole } from "./teamColors";
+import type { ShipStatusSnapshot } from "./shipStatusModel";
 
 /** Per-marker display info for the floating HTML labels. Rebuilt alongside
  *  the markers; positions are updated each frame by projecting the marker's
@@ -31,4 +32,13 @@ export interface ShipLabel {
   y: number;
   visible: boolean;
   dead: boolean;
+  /** Below-hull combat status rows (action chips / hit pills / dot chips).
+   *  Data refreshes with the playhead; null = nothing to show. */
+  status: ShipStatusSnapshot | null;
+  /** Screen-space anchor for the status rows (hull's lower screen edge),
+   *  refreshed per frame together with x/y. */
+  belowX: number;
+  belowY: number;
+  /** Rows render only when the camera is close enough for them to read. */
+  belowVisible: boolean;
 }

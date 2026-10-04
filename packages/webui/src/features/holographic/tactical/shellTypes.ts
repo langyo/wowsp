@@ -41,6 +41,15 @@ export function shellAmmoOf(paramsId?: number): { ammo: string; color: number } 
   return { ammo, color: SHELL_COLORS[ammo] ?? SHELL_COLORS.unknown };
 }
 
+/** Reverse of the SHELL_COLORS tint map: flight states store only the
+ *  resolved color, and the below-hull status rows want the ammo family. */
+export function ammoOfColor(color: number): string {
+  for (const [ammo, hex] of Object.entries(SHELL_COLORS)) {
+    if (hex === color) return ammo;
+  }
+  return "unknown";
+}
+
 /** squadron paramsId → behavioural family ("torpedo" | "dive" | …). */
 export function planeRoleOf(paramsId?: number): string {
   if (paramsId == null) return "unknown";

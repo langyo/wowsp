@@ -37,6 +37,8 @@ import { updateMarkersAt } from "./markerUpdate";
 import { updateLabelPositions } from "./labelOverlay";
 import { buildShellStates, buildShellTracePool, buildTorpedoTraces, swapTracePropModels } from "./shellWarfare";
 import { buildPlaneTrails, buildPlaneCloud, buildPlaneFormations, resolvePlaneCarriers } from "./planeWarfare";
+import { buildShipStatusIndex } from "./shipStatusModel";
+import { ammoOfColor } from "./tactical/shellTypes";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import type { EntityTrajectory } from "@/api";
@@ -172,6 +174,41 @@ export function rebuildActors(ctx: MapInternals) {
   buildShellTracePool(ctx, scene);
   buildTorpedoTraces(ctx, scene, killFor);
   swapTracePropModels(ctx, scene, epoch);
+
+  // Below-hull combat status rows: per-ship action/hit/dot index derived
+  // from the same decoded signals the traces above already resolved
+  // (joined shell impacts, torpedo detonations, smoke clusters, HP
+  // timelines). Queried per playhead tick by updateMarkersAt.
+  ctx.shipStatus = buildShipStatusIndex({
+    trajectories: ctx.props.trajectories,
+    shellLaunches: ctx.props.shellLaunches,
+    torpedoes: ctx.props.torpedoes,
+    shellImpacts: ctx.shellStates
+      .filter((st) => st.joined)
+      .map((st) => ({
+        t: st.t1,
+        x: st.to.x,
+        z: -st.to.z,
+        ownerId: st.ownerId,
+        ammo: ammoOfColor(st.color),
+      })),
+    torpImpacts: ctx.torpedoMeshes
+      .filter((tm) => tm.killX != null && tm.killZ != null)
+      .filter((tm) => {
+        // Shot ids recycle across the shared shotKills stream and the
+        // torpedo join scans a 240 s window, so a same-owner shell impact
+        // can masquerade as the fish's detonation. Reject kills outside
+        // the straight-run envelope (homing bends get a generous slack).
+        const launchX = tm.launchBase.x;
+        const launchZ = -tm.launchBase.z; // scene z is mirrored
+        const dx = (tm.killX as number) - launchX;
+        const dz = (tm.killZ as number) - launchZ;
+        const reach = 7 * (tm.endT - tm.t0) * 2.5 + 300;
+        return Math.hypot(dx, dz) <= reach;
+      })
+      .map((tm) => ({ t: tm.endT, x: tm.killX as number, z: tm.killZ as number, ownerId: tm.ownerId })),
+    smokes: ctx.smokeClusters.map((cl) => ({ t0: cl.t0, endT: cl.endT, x: cl.sx, z: cl.sz })),
+  });
 
   // Fighter-patrol wards (receive_wardAdded): flat rings at the patrol
   // centre. World metres map straight onto scene units — position (x, h,
@@ -459,6 +496,10 @@ export function rebuildActors(ctx: MapInternals) {
       x: 0, y: 0,
       visible: false,
       dead: false,
+      status: null,
+      belowX: 0,
+      belowY: 0,
+      belowVisible: false,
     });
   }
   resolvePlaneCarriers(ctx, newLabels, minimapAddFirst);
