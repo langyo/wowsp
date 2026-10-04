@@ -417,6 +417,32 @@ impl VisualPrototype {
         Some(self.nodes.matrices[node_idx as usize].0)
     }
 
+    /// World-space transform for a node referenced by its name_id (resolved
+    /// through the name→node map, no string table needed), walking the parent
+    /// chain. Vehicle visuals author some render sets (propeller, antenna
+    /// wire, slung payload) in their bone-local space; this is the matrix
+    /// that places them in model space.
+    pub fn node_world_transform_by_name_id(&self, name_id: u32) -> Option<[f32; 16]> {
+        let map_idx = self.nodes.name_map_name_ids.iter().position(|&nid| nid == name_id)?;
+        let node_idx = self.nodes.name_map_node_ids[map_idx] as usize;
+        if node_idx >= self.nodes.matrices.len() {
+            return None;
+        }
+
+        let mut result = self.nodes.matrices[node_idx].0;
+        let mut current = node_idx;
+        loop {
+            let parent = self.nodes.parent_ids[current];
+            if parent == 0xFFFF || parent as usize >= self.nodes.matrices.len() {
+                break;
+            }
+            result = mat4_mul(&self.nodes.matrices[parent as usize].0, &result);
+            current = parent as usize;
+        }
+
+        Some(result)
+    }
+
     /// Check whether `node_idx` is a descendant of `ancestor_idx` in the
     /// skeleton hierarchy.
     pub fn is_descendant_of(&self, mut node_idx: u16, ancestor_idx: u16) -> bool {
