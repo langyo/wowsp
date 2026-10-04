@@ -45,7 +45,10 @@
   flex-direction: column;
   gap: 0.55rem;
   min-width: 17rem;
-  padding: 0.35rem 0.15rem 0.15rem;
+  /* The popover chrome's own padding is a bare 4px (hikari
+     .hii-dropdown-content) — the slot content owns the real inset, the
+     same family voice as .ship-filter-bar__pop / .async-search-combo__panel. */
+  padding: 10px 12px 8px;
 
   .live-battle__mode-group {
     display: flex;
@@ -59,10 +62,11 @@
     color: rgb(var(--color-text) / 65%);
   }
 
-  .live-battle__mode-pop-hint {
-    margin-top: 0.15rem;
-    font-size: var(--text-2xs);
-    line-height: 1.5;
-    color: rgb(var(--color-text) / 45%);
+  /* HkTabs' scroll wrapper centers its shrink-wrapped strip by default
+     (align="center" — the page-bar look); inside this anchored panel the
+     groups read as a filter form, so pin every strip to the inline start
+     under its label. */
+  .hk-scroll-container-aligner {
+    margin-inline: 0;
   }
 }

@@ -93,9 +93,10 @@ export default defineComponent({
         prefs.prefs.overlaySoloScope !== "all",
     );
 
-    /** The non-default dimensions joined with " · "; the default face is
-     *  the battle scope's own label ("跟随对局") so the chip always says
-     *  what the numbers currently read. */
+    /** The non-default dimensions joined with " · "; the resting face is
+     *  the chip's own name ("战绩筛选") — never the battle scope's option
+     *  label, which would collide with the identically-named option inside
+     *  the popup. */
     const label = computed(() => {
       const parts: string[] = [];
       if (prefs.prefs.overlayShipScope !== "all") {
@@ -109,7 +110,7 @@ export default defineComponent({
       }
       return parts.length > 0
         ? parts.join(" · ")
-        : t(BATTLE_SCOPE_LABEL.follow);
+        : t("replay.live.statsSourceTitle");
     });
 
     /** One labeled segmented group row — the same HkTabs control (and
@@ -189,9 +190,6 @@ export default defineComponent({
                 { key: "solo" as RosterSoloScope, label: t(SOLO_SCOPE_LABEL.solo) },
               ],
             )}
-            <div class="live-battle__mode-pop-hint">
-              {t("replay.live.statsSourceHint")}
-            </div>
           </div>
         </HkPopover>
       </div>
