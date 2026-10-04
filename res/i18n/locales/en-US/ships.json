@@ -147,7 +147,8 @@
       "range30d": "Last 30 days",
       "avgFrags": "Avg. kills",
       "noBaseline": "No history baseline yet",
-      "divisionsHint": "Account-wide mode split, not this ship's own record"
+      "divisionsHint": "Account-wide mode split, not this ship's own record",
+      "modeNotPlayed": "No battles in this mode on this ship"
     },
     "server": {
       "title": "Server averages",

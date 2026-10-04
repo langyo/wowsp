@@ -147,7 +147,8 @@
       "range30d": "近30天",
       "avgFrags": "場均擊殺",
       "noBaseline": "尚無足夠歷史基線",
-      "divisionsHint": "帳號整體分模式資料，非該艦單船成績"
+      "divisionsHint": "帳號整體分模式資料，非該艦單船成績",
+      "modeNotPlayed": "該艦在此模式未出戰"
     },
     "server": {
       "title": "全服均值報告",

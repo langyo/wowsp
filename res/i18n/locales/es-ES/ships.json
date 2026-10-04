@@ -147,7 +147,8 @@
       "range30d": "Últ. 30 días",
       "avgFrags": "Bajas medias",
       "noBaseline": "Aún no hay base histórica",
-      "divisionsHint": "Datos de toda la cuenta, no de este buque"
+      "divisionsHint": "Datos de toda la cuenta, no de este buque",
+      "modeNotPlayed": "Sin batallas en este modo con este buque"
     },
     "server": {
       "title": "Promedios del servidor",

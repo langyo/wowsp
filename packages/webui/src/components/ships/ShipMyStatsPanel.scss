@@ -112,7 +112,7 @@
     color: rgb(var(--color-muted));
   }
 
-  /* ── Four division tiles (account-wide context) ── */
+  /* ── Four mode tiles (per-ship splits, account-wide fallback) ── */
   &__divisions {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

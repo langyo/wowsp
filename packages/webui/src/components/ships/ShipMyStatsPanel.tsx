@@ -6,7 +6,7 @@ import RatingStamp from "@/components/base/RatingStamp";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useStatsStore } from "@/stores/stats";
 import { useRankedStore } from "@/stores/ranked";
-import type { PlayerShipStats } from "@/api";
+import type { PlayerShipStats, ShipModeStats } from "@/api";
 import { t } from "@/i18n";
 import {
   careerStamp,
@@ -25,10 +25,11 @@ import "./ShipMyStatsPanel.scss";
  * "My Stats" tab of the ship detail modal — the water-table header (StatsCard)
  * re-cut for a single ship, mirroring the account card's layout: centered hero
  * winrate with the PR block behind a divider, the per-ship 神了/猴/蛆 PR
- * verdict stamp, the account-wide four-division winrate row, the KPI strip,
- * and the 1/7/30-day recent windows against the locally recorded per-ship
- * history baselines. Works for any viewed player (the modal passes the
- * accountId of whoever's water table opened it), not just the bound account.
+ * verdict stamp, the four-mode winrate row (this ship's own splits, with the
+ * account-wide row as fallback), the KPI strip, and the 1/7/30-day recent
+ * windows against the locally recorded per-ship history baselines. Works for
+ * any viewed player (the modal passes the accountId of whoever's water table
+ * opened it), not just the bound account.
  */
 export default defineComponent({
   name: "ShipMyStatsPanel",
@@ -53,7 +54,8 @@ export default defineComponent({
       return shipStats.history.get(`${props.realm}_${props.accountId}`) ?? [];
     });
 
-    /** The viewed player's account-level card (feeds the division row). */
+    /** The viewed player's account-level card (feeds the fallback division
+     *  row when the per-ship mode breakdown is absent). */
     const accountStats = computed(() => {
       if (props.accountId == null || !props.realm) return null;
       return stats.cache.get(`${props.realm}_${props.accountId}`) ?? null;
@@ -89,33 +91,57 @@ export default defineComponent({
     const battlesHint = (battles: number | null | undefined) =>
       battles != null ? `${t("stats.battles")}: ${battles.toLocaleString()}` : null;
 
-    /** The account-wide four-division winrates (same numbers as the account
-     *  card). WG's per-ship endpoint serves no battle-type split, so this row
-     *  is context, not per-ship — hinted as such. */
-    const divisions = computed<{ label: string; wr: number | null; hint: string | null }[]>(() => [
-      {
-        label: t("stats.solo"),
-        wr: accountStats.value?.soloWr ?? null,
-        hint: battlesHint(accountStats.value?.soloBattles),
-      },
-      {
-        label: t("stats.div2"),
-        wr: accountStats.value?.div2Wr ?? null,
-        hint: battlesHint(accountStats.value?.div2Battles),
-      },
-      {
-        label: t("stats.div3"),
-        wr: accountStats.value?.div3Wr ?? null,
-        hint: battlesHint(accountStats.value?.div3Battles),
-      },
-      {
-        label: t("stats.ranked"),
-        wr: rankedWr.value,
-        hint: [t("stats.rankedHint"), battlesHint(rankedBattles.value)]
-          .filter(Boolean)
-          .join(" · "),
-      },
-    ]);
+    /** The four-mode winrate row, this ship's own splits whenever the
+     *  backend serves the battle-type breakdown (both transports fetch
+     *  pvp_solo/div2/div3 plus the rank_* trio per ship). A mode this ship
+     *  never played shows "—" with a not-played hint — it must not borrow
+     *  the account's number, which would repeat the old bug of the same
+     *  four winrates under every ship. Rows without a breakdown (caches
+     *  written before the field existed, or a transport that served no
+     *  splits) fall back to the account-wide row, hinted as such. */
+    const divisions = computed<{ label: string; wr: number | null; hint: string | null }[]>(() => {
+      const m = props.stats?.modes ?? null;
+      if (m) {
+        const slot = (mode: ShipModeStats | null | undefined, label: string) => ({
+          label,
+          wr: mode != null ? mode.winrate : null,
+          hint:
+            mode != null
+              ? battlesHint(mode.battles)
+              : t("ships.detail.my.modeNotPlayed"),
+        });
+        return [
+          slot(m.solo, t("stats.solo")),
+          slot(m.div2, t("stats.div2")),
+          slot(m.div3, t("stats.div3")),
+          slot(m.ranked, t("stats.ranked")),
+        ];
+      }
+      return [
+        {
+          label: t("stats.solo"),
+          wr: accountStats.value?.soloWr ?? null,
+          hint: battlesHint(accountStats.value?.soloBattles),
+        },
+        {
+          label: t("stats.div2"),
+          wr: accountStats.value?.div2Wr ?? null,
+          hint: battlesHint(accountStats.value?.div2Battles),
+        },
+        {
+          label: t("stats.div3"),
+          wr: accountStats.value?.div3Wr ?? null,
+          hint: battlesHint(accountStats.value?.div3Battles),
+        },
+        {
+          label: t("stats.ranked"),
+          wr: rankedWr.value,
+          hint: [t("stats.rankedHint"), battlesHint(rankedBattles.value)]
+            .filter(Boolean)
+            .join(" · "),
+        },
+      ];
+    });
 
     /** Career KPIs — the per-ship slice of the account card's KPI strip. */
     const kpis = computed(() => {
@@ -221,8 +247,8 @@ export default defineComponent({
               ) : null}
             </div>
 
-            {/* Account-wide division winrates — always four slots to mirror
-                the account card (per-ship mode splits aren't served by WG). */}
+            {/* Four-mode winrates — this ship's own splits; the account-wide
+                row renders only when no breakdown was served. */}
             <div class="ship-my-stats__divisions">
               {divisions.value.map((d) => (
                 <div

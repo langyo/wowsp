@@ -147,7 +147,8 @@
       "range30d": "Sur 30 jours",
       "avgFrags": "Frags moyens",
       "noBaseline": "Pas encore d'historique de référence",
-      "divisionsHint": "Données du compte entier, pas de ce navire"
+      "divisionsHint": "Données du compte entier, pas de ce navire",
+      "modeNotPlayed": "Aucune bataille dans ce mode sur ce navire"
     },
     "server": {
       "title": "Moyennes du serveur",
