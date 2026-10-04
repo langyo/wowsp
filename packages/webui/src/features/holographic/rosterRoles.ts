@@ -49,9 +49,11 @@ export function arenaIdentities(
  *  entry. Entities with no roster hit get `null` and fall back to the
  *  spawn-order team heuristic in `resolveMarkerContext`.
  *
- *  Operation scenarios (`operation`, 行动) skip the side split entirely —
- *  their relation values follow scenario team slots, so there is just one
- *  pool and ambiguous entities take the first unclaimed entry. */
+ *  Operation scenarios (`operation`, 行动) still join as one pool — every
+ *  marker reads as an ally there (the map colors ops as one fleet), so a
+ *  side split would only starve the pool; the roster relations themselves
+ *  do carry enemy semantics, but that matters to the LIST surfaces, not
+ *  this marker join. */
 export function resolveRosterAssignments(
   shipTrajs: EntityTrajectory[],
   vehicles: VehicleEntry[],
@@ -139,8 +141,9 @@ export function resolveRosterAssignments(
  *  role fall back to the entity-id spawn-order heuristic: the client
  *  spawns team A before team B, so the first half of ships (by entity id)
  *  are treated as allies. Operation scenarios (`operation`) read every
- *  roster entry as ally — their relation values follow scenario team
- *  slots, not enemy semantics. */
+ *  entry as ally — a deliberate map-visual choice (ops render as one
+ *  fleet); the roster relations themselves still carry side semantics
+ *  for the LIST surfaces. */
 export function resolveMarkerContext(
   traj: EntityTrajectory,
   shipEntityIds: number[],

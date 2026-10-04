@@ -652,22 +652,13 @@ function statusCard(text: string): HTMLDivElement {
 
 /** The roster's believed full-key order for one side — the same ordering
  *  inferredRowMapping applies (see utils/shipClass for the decompiled
- *  rule). Operation scenarios map the whole roster as the ally block. */
+ *  rule). Operations keep the relation split: their rosters carry real
+ *  side semantics (allied escort waves ≤ 1, enemy warships > 1). */
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
-  const operation = isOperationBattle(
-    arena.matchGroup,
-    arena.scenario,
-    arena.eventType,
-    arena.vehicles.map((v) => v.name),
+  const list = arena.vehicles.filter((v) =>
+    side === "enemy" ? v.relation > 1 : v.relation <= 1,
   );
-  // Operations (行动) map the WHOLE roster as the ally block — their
-  // relation values follow scenario team slots, not enemy semantics.
-  const list = operation
-    ? side === "enemy"
-      ? []
-      : arena.vehicles
-    : arena.vehicles.filter((v) => (side === "enemy" ? v.relation > 1 : v.relation <= 1));
   return list
     .map((v, i) => ({
       v,
@@ -715,19 +706,18 @@ function render() {
   // The anchor carries TWO grid blocks concatenated: allies first, then
   // enemies (asymmetrical battles 12v6 render sub-tables of different
   // heights). Each side maps onto its OWN block — the enemy block starts
-  // where the ally block ends. Operation scenarios (行动) are the
-  // exception: their relation values follow scenario team slots, and the
-  // game's Tab table shows a single team — the whole roster is the one
-  // ally block (matching the Rust-side team sizes).
+  // where the ally block ends. Operation scenarios (行动) keep the same
+  // relation split on the ally side (their rosters carry real enemy
+  // semantics — the fixtures put enemy warships at relation > 1); only
+  // their ENEMY block is dropped (all scripted spawns, and mid-battle
+  // waves grow past the roster tempArenaInfo ever sees).
   const operation = isOperationBattle(
     arena.matchGroup,
     arena.scenario,
     arena.eventType,
     arena.vehicles.map((v) => v.name),
   );
-  const allies = operation
-    ? arena.vehicles
-    : arena.vehicles.filter((v) => v.relation <= 1);
+  const allies = arena.vehicles.filter((v) => v.relation <= 1);
   const enemies = operation
     ? []
     : arena.vehicles.filter((v) => v.relation > 1);
@@ -750,10 +740,7 @@ function render() {
     // falls back to provable CANDIDATE RANGES. Clan tags feed the key's
     // display-name segment, and the mapping re-derives on every render —
     // when the WG batch lands a tag, the next render re-sorts with it.
-    // Operation scenarios map the whole roster as a single allies block.
-    const allyN = operation
-      ? arena.vehicles.length
-      : arena.vehicles.filter((v) => v.relation <= 1).length;
+    const allyN = allies.length;
     const enemyN = operation ? 0 : arena.vehicles.length - allyN;
     const reconcileSide = (rel: "ally" | "enemy", n: number, off: number) => {
       // Plugin telemetry outranks the capture alive vector: its sets are
@@ -764,6 +751,10 @@ function render() {
       const aliveCount = slice == null ? n : slice.lastIndexOf(true) + 1;
       sunk.reconcile(rel, n - aliveCount);
     };
+    // The ally block always reconciles (its roster is complete). The ops
+    // enemy block does not: its Tab rows grow mid-battle as waves spawn
+    // past the roster tempArenaInfo captured, so a fixed-count reconcile
+    // would misattribute.
     reconcileSide("ally", allyN, 0);
     if (!operation) reconcileSide("enemy", enemyN, allyN);
     if (telemetryAuthoritative && pluginSunkNames) {
@@ -778,13 +769,11 @@ function render() {
       }, {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
-        operation,
       });
     } else {
       players = inferredRowMapping(arena.vehicles, aliveArr, {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
-        operation,
         sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
       });
     }
@@ -1414,12 +1403,6 @@ async function start() {
       pluginSunkNames = null;
       return;
     }
-    const operation = isOperationBattle(
-      arena.matchGroup,
-      arena.scenario,
-      arena.eventType,
-      arena.vehicles.map((v) => v.name),
-    );
     const bySide: { ally?: Set<string>; enemy?: Set<string> } = {
       ally: new Set(),
       enemy: new Set(),
@@ -1428,7 +1411,10 @@ async function start() {
     for (const v of arena.vehicles) {
       rosterNames.add(v.name);
       if (payload.players[v.name] !== false) continue;
-      if (operation || v.relation <= 1) bySide.ally!.add(v.name);
+      // The plain relation split — operations included (their enemy
+      // scripted units sit at relation > 1, same convention as
+      // sideFullOrder and the Rust sink solver).
+      if (v.relation <= 1) bySide.ally!.add(v.name);
       else bySide.enemy!.add(v.name);
     }
     telemetryAuthoritative = true;

@@ -590,8 +590,9 @@ export function clearActors(ctx: MapInternals) {
  *  (computed in rebuildActors), so trails and markers can never disagree.
  *  Ships without an assignment (older replays, decode gaps) fall back to
  *  the entity-id spawn-order heuristic: the client spawns team A first.
- *  Operation scenarios (行动) read every entry as ally — their relation
- *  values follow scenario team slots, not enemy semantics. */
+ *  Operation scenarios (行动) read every entry as ally — the deliberate
+ *  one-fleet map visual (the roster relations still carry side semantics
+ *  for the LIST surfaces). */
 export function resolveRoleQuick(ctx: MapInternals, tr: EntityTrajectory): TeamRole {
   const entry = ctx.rosterAssignments.get(tr.entityId);
   if (entry) return roleFromRelation(entry.relation, ctx.props.operation);

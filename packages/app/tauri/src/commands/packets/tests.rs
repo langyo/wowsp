@@ -895,7 +895,7 @@ fn decodes_arena_state_players() {
         (&b_id, &5_370_374i64),
         (&b_isbot, &1i64),
         (&b_health, &14_080i64),
-        (&b_name, &"perfunctory_fighter".to_string()),
+        (&b_name, &"provisional_gunner".to_string()),
         (&b_ship, &7_561_099i64),
         (&b_params, &3_542_005_040i64),
         (&b_team, &0i64),
@@ -921,7 +921,7 @@ fn decodes_arena_state_players() {
     assert!(bot.is_bot);
     assert_eq!(bot.team_id, 0);
     assert_eq!(bot.ship_params_id, 3_542_005_040);
-    assert_eq!(bot.name, "perfunctory_fighter");
+    assert_eq!(bot.name, "provisional_gunner");
     assert_eq!(bot.avatar_id, None);
     // Truncated / garbage args never panic, just yield None.
     assert!(decode_arena_state(&args[..9], Some((15, 8, 0))).is_none());

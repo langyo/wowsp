@@ -114,7 +114,7 @@ describe("arena identities", () => {
   // Mirror match: both teams sail the same ship (shared shipId 300), so the
   // shipId join is ambiguous and the spawn-side heuristic got it wrong —
   // the arena's player-id join is the authority.
-  const vehicles = [veh(1, "langyo", 0, 300), veh(2, "Wraithaur77", 2, 300)];
+  const vehicles = [veh(1, "langyo", 0, 300), veh(2, "Player02", 2, 300)];
   const trajs = [traj(11, 300, 0, 0), traj(12, 300, 100, 100)];
   const players: ArenaPlayer[] = [
     {
@@ -133,7 +133,7 @@ describe("arena identities", () => {
       playerId: 2,
       shipParamsId: 300,
       maxHealth: 14080,
-      name: "Wraithaur77",
+      name: "Player02",
       avatarId: 20,
       isSelf: false,
     },
@@ -143,7 +143,7 @@ describe("arena identities", () => {
     const identities = arenaIdentities(players)!;
     const a = resolveRosterAssignments(trajs, vehicles, false, identities);
     expect(a.get(11)?.name).toBe("langyo");
-    expect(a.get(12)?.name).toBe("Wraithaur77");
+    expect(a.get(12)?.name).toBe("Player02");
   });
 
   it("splits mirror picks by spawn side when the arena state is missing", () => {

@@ -186,18 +186,21 @@ describe("inferredRowMapping", () => {
     ]);
   });
 
-  it("maps the whole roster as one block in operation scenarios", () => {
-    // An operation roster (行动): relation values follow scenario team
-    // slots — the `relation: 3` entries are escort allies, not enemies —
-    // so `operation` collapses everything into a single allies block.
-    // Class order (CA < DD < SS) decides the row order.
+  it("splits operation rosters by relation, not into one block", () => {
+    // An operation roster (行动) carries real side semantics: scripted
+    // escort allies sit at relation ≤ 1 and enemy warships at relation
+    // > 1 (verified against the operation replay fixtures) — so the
+    // enemy scripted block lands in the enemy block, never in the allies
+    // one. Class order (CA < DD < SS) decides the order inside a block.
     const vehicles = [
       veh("langyo", SHIPS.leone, 0),
-      veh("IDS_OP_15_DUMMY_01", SHIPS.konigsberg, 3),
-      veh("IDS_OP_15_ALLY_DD_01", SHIPS.undine, 3),
+      veh("IDS_OP_02_03_AT_TRANSPORT_A_1", SHIPS.undine, 1),
+      veh("IDS_OP_02_03_AT_ATTAKA_US_A1", SHIPS.konigsberg, 2),
     ];
-    expect(
-      inferredRowMapping(vehicles, null, { locale: "zh-CN", operation: true }),
-    ).toEqual(["IDS_OP_15_DUMMY_01", "langyo", "IDS_OP_15_ALLY_DD_01"]);
+    expect(inferredRowMapping(vehicles, null, { locale: "zh-CN" })).toEqual([
+      "langyo",
+      "IDS_OP_02_03_AT_TRANSPORT_A_1",
+      "IDS_OP_02_03_AT_ATTAKA_US_A1",
+    ]);
   });
 });
