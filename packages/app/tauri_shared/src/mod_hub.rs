@@ -184,6 +184,22 @@ pub struct CatalogEntryI18n {
     pub description: String,
 }
 
+/// One named scheme (preset) of a catalog entry — e.g. a marker mod's
+/// color palette. Each preset carries its own packages; installing with a
+/// preset id downloads those instead of the entry's default list. The
+/// FIRST preset is the default scheme (the indexer backfills the entry's
+/// plain packages from it).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogPreset {
+    pub id: String,
+    /// Scheme label (Chinese); the UI prefers it for zh locales.
+    pub name_zh: String,
+    /// Scheme label (English) — the non-zh fallback.
+    pub name_en: String,
+    pub packages: Vec<CatalogPackage>,
+}
+
 /// The `latest` version payload of one mod in `mod-index.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -205,6 +221,11 @@ pub struct CatalogEntry {
     /// indexer derives it from the discussion's closed state.
     #[serde(default)]
     pub delisted: bool,
+    /// Named install-time schemes (color palette, position, display mode…)
+    /// parsed from the thread's `wowsp:presets` block; empty for plain
+    /// entries. The first preset is the default scheme.
+    #[serde(default)]
+    pub presets: Vec<CatalogPreset>,
     pub title: String,
     pub name_zh: String,
     pub name_en: String,

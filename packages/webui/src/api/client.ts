@@ -1156,6 +1156,16 @@ export interface CatalogEntryI18n {
   description: string;
 }
 
+/** One named scheme of a catalog entry — e.g. a marker mod's color
+ *  palette. Installing with a preset id downloads its packages instead of
+ *  the entry's default list. */
+export interface CatalogPreset {
+  id: string;
+  nameZh: string;
+  nameEn: string;
+  packages: CatalogPackage[];
+}
+
 /** The latest version payload of one mod in `mod-index.json`. */
 export interface CatalogEntry {
   id: string;
@@ -1171,6 +1181,9 @@ export interface CatalogEntry {
   /** Withdrawn from the catalog (its discussion thread was closed) —
    *  hidden from lists/search; deep links surface an unavailable notice. */
   delisted?: boolean;
+  /** Named install-time schemes (palette, position, display mode…); the
+   *  first one is the default and mirrors the plain package list. */
+  presets?: CatalogPreset[];
   title: string;
   nameZh: string;
   nameEn: string;
@@ -1866,8 +1879,12 @@ export const api = {
   /** Fetch (or serve cached) `mod-index.json` from the mod-hub release. */
   modCatalogRefresh: (force: boolean) =>
     transport.invoke<CatalogIndex>(RPC.mod_catalog_refresh, { force }),
-  modCatalogInstall: (modId: string, gameRoot: string) =>
-    transport.invoke<InstallReport>(RPC.mod_catalog_install, { modId, gameRoot }),
+  modCatalogInstall: (modId: string, gameRoot: string, preset?: string) =>
+    transport.invoke<InstallReport>(RPC.mod_catalog_install, {
+      modId,
+      gameRoot,
+      preset: preset ?? null,
+    }),
   modCatalogUninstall: (modId: string, gameRoot: string) =>
     transport.invoke<UninstallReport>(RPC.mod_catalog_uninstall, { modId, gameRoot }),
   modHubRecords: () => transport.invoke<ModInstallRecord[]>(RPC.mod_hub_records),

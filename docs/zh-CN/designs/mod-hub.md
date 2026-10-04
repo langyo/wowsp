@@ -103,6 +103,22 @@ Discussions 资源帖模板（节选）：
 
 用 Discussions 而不是 Releases 的原因：评论区就是用户反馈与兼容性回报（"14.6 实测可用"会被索引器吸收为兼容性信号），Watch/通知即订阅，零后端成本。
 
+#### 安装时方案（`wowsp:presets`）
+
+内置多种预置配置（例如标记的配色、面板的位置）的插件，以命名「方案」声明它们，而不是拆成 `-v1`/`-v2` 条目——插件滚动更新，版本号不承载变体。线程携带一个隐藏标签块与带方案标注的下载行：
+
+    <!--
+    wowsp:presets
+    sasagcy: Sasagcy 配色 | Sasagcy palette
+    classic: 经典配色 | Classic palette
+    wowsp:presets
+    -->
+
+    - [`smi-sasagcy.zip`](url) — 1 KB · SHA-256 `…` · preset `sasagcy`
+    - [`smi-classic.zip`](url) — 1 KB · SHA-256 `…` · preset `classic`
+
+规则：每方案一行标签 `id: <中文> | <英文>`（id 限 `[a-z0-9-]`，声明顺序即目录顺序）；方案下载行是普通下载行加尾部 `· preset `id``；全部下载行都带方案标注的线程，其顶层包列表回填为第一个（默认）方案，保证旧版本应用仍能安装合理内容。应用在详情面板渲染分段方案选择器，安装时下载所选方案的包；没有包的标签会被索引器丢弃。
+
 ### 3. 安装器
 
 写入路径严格遵循 Aslain 约定：

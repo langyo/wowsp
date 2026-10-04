@@ -183,6 +183,31 @@ Why Discussions and not Releases: the comment thread *is* the feedback and
 compatibility channel ("works on 14.6" reports get absorbed by the indexer
 as compatibility signals), Watch = subscription, zero backend cost.
 
+#### Install-time schemes (`wowsp:presets`)
+
+Mods that ship several prebuilt configurations (a marker's color palette, a
+panel's position) declare them as named presets instead of splitting into
+`-v1`/`-v2` listings — plugins roll forward, versions are not variants. A
+thread carries a hidden label block plus preset-tagged download lines:
+
+    <!--
+    wowsp:presets
+    sasagcy: Sasagcy 配色 | Sasagcy palette
+    classic: 经典配色 | Classic palette
+    wowsp:presets
+    -->
+
+    - [`smi-sasagcy.zip`](url) — 1 KB · SHA-256 `…` · preset `sasagcy`
+    - [`smi-classic.zip`](url) — 1 KB · SHA-256 `…` · preset `classic`
+
+Rules: one label line per preset, `id: <zh> | <en>` (ids are
+`[a-z0-9-]`, declaration order is catalog order); a preset line is a normal
+download line plus a trailing `· preset `id``; a fully preset-driven
+thread backfills its plain package list from the first (default) preset, so
+pre-preset app builds keep installing something sane. The app renders the
+schemes as a segmented picker on the detail pane and installs the chosen
+preset's packages; a label without packages is dropped by the indexer.
+
 ### 3. Installer
 
 Writes strictly follow the Aslain convention:

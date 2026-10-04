@@ -692,6 +692,23 @@
     white-space: nowrap;
   }
 
+  /* Install-time scheme selector (palette / position / display mode):
+     a quiet label above the segmented strip, mirroring the sidebar's
+     filter-stack voice. */
+  &__presets {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  &__presets-label {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
   &__badges {
     display: flex;
     flex-wrap: wrap;

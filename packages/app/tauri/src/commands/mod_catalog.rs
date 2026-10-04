@@ -20,8 +20,8 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 
 use wowsp_tauri_shared::{
-    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogProgress, InstallReport,
-    ModInstallRecord,
+    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogPreset, CatalogProgress,
+    InstallReport, ModInstallRecord,
 };
 
 use super::mod_hub;
@@ -189,6 +189,17 @@ struct RawMod {
 }
 
 #[derive(Clone, Deserialize)]
+struct RawPreset {
+    id: String,
+    #[serde(default)]
+    name_zh: String,
+    #[serde(default)]
+    name_en: String,
+    #[serde(default)]
+    packages: Option<Vec<RawPackage>>,
+}
+
+#[derive(Clone, Deserialize)]
 struct RawVersion {
     #[serde(default)]
     game: Option<String>,
@@ -214,6 +225,11 @@ struct RawVersion {
     author_url: Option<String>,
     #[serde(default)]
     packages: Option<Vec<RawPackage>>,
+    /// Named install-time schemes, declaration order preserved. Version-
+    /// level like every other catalog-facing payload (the indexer writes
+    /// them beside `packages`).
+    #[serde(default)]
+    presets: Vec<RawPreset>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -235,6 +251,27 @@ struct RawPackage {
     name: Option<String>,
 }
 
+/// Raw wire packages → DTO (name falls back to the last URL segment).
+fn raw_packages(list: Vec<RawPackage>) -> Vec<CatalogPackage> {
+    list.into_iter()
+        .map(|p| {
+            let name = p.name.unwrap_or_else(|| {
+                p.url
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("package.zip")
+                    .to_string()
+            });
+            CatalogPackage {
+                url: p.url,
+                sha256: p.sha256.unwrap_or_default(),
+                size: p.size.unwrap_or(0),
+                name,
+            }
+        })
+        .collect()
+}
+
 /// Tolerant `mod-index.json` → DTO: community-crawled indexes fill fewer
 /// fields than the publisher's; entries without packages are not installable
 /// and get dropped here so the UI only ever renders actionable rows.
@@ -253,27 +290,7 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
         let Some(ver) = m.versions.get(&latest) else {
             continue;
         };
-        let packages: Vec<CatalogPackage> = ver
-            .packages
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| {
-                let name = p.name.unwrap_or_else(|| {
-                    p.url
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or("package.zip")
-                        .to_string()
-                });
-                CatalogPackage {
-                    url: p.url,
-                    sha256: p.sha256.unwrap_or_default(),
-                    size: p.size.unwrap_or(0),
-                    name,
-                }
-            })
-            .collect();
+        let packages: Vec<CatalogPackage> = raw_packages(ver.packages.clone().unwrap_or_default());
         // Entries with no packages ship inside the app itself (the in-game
         // stats plugin is the first) — they stay listed, marked
         // bundled-installed by the UI, and are not downloadable. A delisted
@@ -291,6 +308,23 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
             game: ver.game.clone().unwrap_or_else(|| "*".into()),
             bundled: ver.bundled.unwrap_or(false),
             delisted,
+            presets: ver
+                .presets
+                .clone()
+                .into_iter()
+                .filter_map(|p| {
+                    let pkgs = raw_packages(p.packages.clone().unwrap_or_default());
+                    if pkgs.is_empty() {
+                        return None;
+                    }
+                    Some(CatalogPreset {
+                        id: p.id,
+                        name_zh: p.name_zh,
+                        name_en: p.name_en,
+                        packages: pkgs,
+                    })
+                })
+                .collect(),
             title: ver.title.clone().unwrap_or_else(|| id.clone()),
             name_zh: ver.name_zh.clone().unwrap_or_default(),
             name_en: ver
@@ -380,6 +414,9 @@ pub async fn mod_catalog_install(
     mod_id: String,
     game_root: String,
     app: AppHandle,
+    // Named scheme to install (see CatalogPreset); None/empty resolves to
+    // the entry's default package list (which mirrors the first preset).
+    preset: Option<String>,
 ) -> Result<InstallReport, String> {
     let index = load_cached_index()
         .ok_or_else(|| "catalog not loaded yet — refresh the online list first".to_string())?;
@@ -394,6 +431,17 @@ pub async fn mod_catalog_install(
             "{mod_id} has been delisted from the catalog — its discussion thread is closed"
         ));
     }
+    // A scheme IS a different prebuilt payload, not an overlay: the chosen
+    // preset's packages fully replace the default list for this install.
+    let packages: Vec<CatalogPackage> = match preset.as_deref().filter(|p| !p.is_empty()) {
+        Some(pid) => entry
+            .presets
+            .iter()
+            .find(|p| p.id == pid)
+            .map(|p| p.packages.clone())
+            .ok_or_else(|| format!("{mod_id} has no preset `{pid}`"))?,
+        None => entry.packages.clone(),
+    };
 
     // Fail fast when the TARGET client is running — mutating res_mods under
     // a live client tears half-loaded mods (root-scoped: another install's
@@ -410,9 +458,9 @@ pub async fn mod_catalog_install(
         id: entry.id.clone(),
         phase: "downloading".into(),
         package: 0,
-        packages: entry.packages.len() as u32,
+        packages: packages.len() as u32,
         received: 0,
-        total: entry.packages.iter().map(|p| p.size).sum(),
+        total: packages.iter().map(|p| p.size).sum(),
     });
 
     let client = super::network::build_http_client()?;
@@ -427,8 +475,8 @@ pub async fn mod_catalog_install(
     fs::create_dir_all(&work.0).map_err(|e| format!("create workdir: {e}"))?;
 
     let mut received_total = 0u64;
-    let total = entry.packages.iter().map(|p| p.size).sum::<u64>().max(1);
-    for (i, pkg) in entry.packages.iter().enumerate() {
+    let total = packages.iter().map(|p| p.size).sum::<u64>().max(1);
+    for (i, pkg) in packages.iter().enumerate() {
         // GitHub direct first, then the CN mirrors — a plain `github.com`
         // download 404s/timeout for many CN users, which used to fail every
         // install even though the catalog itself had loaded through a mirror.
@@ -438,7 +486,7 @@ pub async fn mod_catalog_install(
         for url in &candidates {
             let mut since_emit = 0u64;
             let id = entry.id.clone();
-            let packages = entry.packages.len() as u32;
+            let package_count = packages.len() as u32;
             // A mirror dying mid-transfer must not keep its bytes counted —
             // rewind so the retry does not inflate the progress bar.
             let attempt_start = received_total;
@@ -451,7 +499,7 @@ pub async fn mod_catalog_install(
                         id: id.clone(),
                         phase: "downloading".into(),
                         package: (i + 1) as u32,
-                        packages,
+                        packages: package_count,
                         received: received_total,
                         total,
                     });
@@ -495,7 +543,7 @@ pub async fn mod_catalog_install(
             id: entry.id.clone(),
             phase: "downloading".into(),
             package: (i + 1) as u32,
-            packages: entry.packages.len() as u32,
+            packages: packages.len() as u32,
             received: received_total,
             total,
         });
@@ -504,8 +552,8 @@ pub async fn mod_catalog_install(
     progress(CatalogProgress {
         id: entry.id.clone(),
         phase: "installing".into(),
-        package: entry.packages.len() as u32,
-        packages: entry.packages.len() as u32,
+        package: packages.len() as u32,
+        packages: packages.len() as u32,
         received: received_total,
         total,
     });
@@ -522,7 +570,7 @@ pub async fn mod_catalog_install(
     // async runtime threads.
     let unpack_id = entry.id.clone();
     let unpack_root = game_root.clone();
-    let unpack_pkgs = entry.packages.clone();
+    let unpack_pkgs = packages.clone();
     let unpack_work = work.0.clone();
     let (outcome, mut ledger) = tauri::async_runtime::spawn_blocking(move || {
         // Reinstall = rewind first: restore the vanilla files the previous
@@ -600,8 +648,8 @@ pub async fn mod_catalog_install(
     progress(CatalogProgress {
         id: entry.id.clone(),
         phase: "done".into(),
-        package: entry.packages.len() as u32,
-        packages: entry.packages.len() as u32,
+        package: packages.len() as u32,
+        packages: packages.len() as u32,
         received: received_total,
         total,
     });
@@ -1435,6 +1483,48 @@ mod tests {
         assert_eq!(m.packages[0].size, 10);
         assert_eq!(m.i18n.len(), 2, "both locales survive the round-trip");
         assert_eq!(m.i18n["ja-JP"].name, "射撃後タイマー");
+    }
+
+    #[test]
+    fn preset_entries_parse_with_ordered_schemes() {
+        // Presets ride the entry in declaration order; a preset without
+        // packages is dropped at the parse boundary (nothing to install).
+        let raw = serde_json::json!({
+            "schema": 1,
+            "mods": {
+                "battle.marker.traffic": {
+                    "id": "battle.marker.traffic",
+                    "category": "battle",
+                    "discussion": 122,
+                    "latest": "15.7.0.10",
+                    "versions": {
+                        "15.7.0.10": {
+                            "game": ">=15.7 <15.8",
+                            "title": "SMI",
+                            "packages": [
+                                {"url": "https://github.com/x/v4.zip", "sha256": "aa", "size": 1, "name": "v4.zip"}
+                            ],
+                            "presets": [
+                                {"id": "sasagcy", "name_zh": "Sasagcy 配色", "name_en": "Sasagcy palette",
+                                 "packages": [{"url": "https://github.com/x/v4.zip", "sha256": "aa", "size": 1, "name": "v4.zip"}]},
+                                {"id": "classic", "name_zh": "经典配色", "name_en": "Classic palette",
+                                 "packages": [{"url": "https://github.com/x/v1.zip", "sha256": "bb", "size": 1, "name": "v1.zip"}]},
+                                {"id": "ghost", "name_zh": "无包", "name_en": "No packages", "packages": []}
+                            ]
+                        }
+                    }
+                }
+            }
+        });
+        let index = parse_index(&raw).unwrap();
+        let m = &index.mods[0];
+        assert_eq!(m.presets.len(), 2, "package-less presets are dropped");
+        assert_eq!(m.presets[0].id, "sasagcy");
+        assert_eq!(m.presets[0].name_zh, "Sasagcy 配色");
+        assert_eq!(m.presets[1].packages[0].name, "v1.zip");
+        // The default list mirrors the first preset (indexer backfill).
+        assert_eq!(m.packages.len(), 1);
+        assert_eq!(m.packages[0].name, "v4.zip");
     }
 
     #[test]

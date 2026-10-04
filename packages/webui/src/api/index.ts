@@ -22,6 +22,7 @@ export type {
   PackagePlan,
   InstallReport,
   CatalogPackage,
+  CatalogPreset,
   CatalogEntry,
   CatalogEntryI18n,
   CatalogIndex,

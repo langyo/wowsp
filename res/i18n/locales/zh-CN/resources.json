@@ -47,6 +47,7 @@
   "pickHint": "从左侧选择一个模组查看详情。",
   "delistedTitle": "此插件已下架",
   "delistedHint": "「{name}」已从插件目录中移除，不再提供安装。已安装的副本不受影响，可在「已安装」列表中继续管理。",
+  "presetLabel": "方案",
   "install": "安装",
   "update": "升级",
   "installedBadge": "已安装",

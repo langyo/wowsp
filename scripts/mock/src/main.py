@@ -266,6 +266,14 @@ _MOCK_CATALOG = {
             },
             "packages": [{"url": "https://example.com/a.zip", "sha256": "",
                           "size": 13312, "name": "a.zip"}],
+            "presets": [
+                {"id": "default", "nameZh": "标准", "nameEn": "Standard",
+                 "packages": [{"url": "https://example.com/a.zip", "sha256": "",
+                               "size": 13312, "name": "a.zip"}]},
+                {"id": "compact", "nameZh": "紧凑", "nameEn": "Compact",
+                 "packages": [{"url": "https://example.com/a-compact.zip", "sha256": "",
+                               "size": 8192, "name": "a-compact.zip"}]},
+            ],
         },
         {
             "id": "port-mods-sessionstats-ollin", "category": "port",

@@ -34,6 +34,7 @@ import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
 import {
   api,
   type CatalogEntry,
+  type CatalogPreset,
   type CatalogProgress,
   type InstalledMod,
   type MigrationPlan,
@@ -112,6 +113,10 @@ export default defineComponent({
     const { uiLocale, dataLanguage } = useLanguage();
 
     const source = ref<"online" | "installed">("online");
+    // Chosen scheme of the catalog entry on the pane — "" = the entry's
+    // default package list. Reset on every pane change (rows, folder flow,
+    // delisted notice) so a stale choice never leaks across entries.
+    const selectedPreset = ref("");
     const bigCat = ref<BigCat>("function");
     // Shared filter box — one query across both sources keeps the row (and
     // the muscle memory) stable while swapping lists.
@@ -287,6 +292,7 @@ export default defineComponent({
         return;
       }
       pendingDeepLink.value = "";
+      selectedPreset.value = "";
       if (hit.delisted) {
         // Force-opened a withdrawn mod (closed discussion thread): explain
         // instead of opening the detail — there is nothing to install. An
@@ -314,13 +320,13 @@ export default defineComponent({
     /** Installed units are keyed by their primary path (unique per unit). */
     const unitKey = (m: InstalledMod) => m.relPath;
 
-    async function installMod(entry: CatalogEntry) {
+    async function installMod(entry: CatalogEntry, preset?: string) {
       if (!gameRoot.value || busy.value.has(entry.id) || gameRunning() || safeModeBlocked()) {
         return;
       }
       busy.value.set(entry.id, "install");
       try {
-        const r = await api.modCatalogInstall(entry.id, gameRoot.value);
+        const r = await api.modCatalogInstall(entry.id, gameRoot.value, preset);
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
         for (const c of r.conflicts ?? []) toast.info(c);
         await Promise.all([scan(), loadRecords()]);
@@ -646,6 +652,23 @@ export default defineComponent({
       filter.value = "all";
     });
 
+    /** A preset's label: zh locales take the Chinese name, everything
+     *  else the English one (presets carry just the two). */
+    function presetLabel(p: CatalogPreset): string {
+      return uiLocale.value.toLowerCase().startsWith("zh")
+        ? p.nameZh || p.nameEn
+        : p.nameEn || p.nameZh;
+    }
+
+    /** The scheme the pane shows as active: the explicit choice, else the
+     *  first preset (the default scheme). */
+    function activePreset(entry: CatalogEntry): string {
+      const list = entry.presets ?? [];
+      return list.some((p) => p.id === selectedPreset.value)
+        ? selectedPreset.value
+        : (list[0]?.id ?? "");
+    }
+
     /** Localized name/description from the thread's wowsp:i18n block:
      *  UI locale first, then the game-data language, then en-US. Matching
      *  falls back to the language subtag so `zh-SG` still finds `zh-CN`. */
@@ -725,18 +748,21 @@ export default defineComponent({
 
     function selectCatalog(entry: CatalogEntry) {
       delistedHit.value = null;
+      selectedPreset.value = "";
       source.value = "online";
       selection.value = { mode: "catalog", entry };
     }
 
     function selectInstalled(mod: InstalledMod) {
       delistedHit.value = null;
+      selectedPreset.value = "";
       source.value = "installed";
       selection.value = { mode: "installed", mod };
     }
 
     function openLocal() {
       delistedHit.value = null;
+      selectedPreset.value = "";
       selection.value = { mode: "local" };
     }
 
@@ -748,6 +774,7 @@ export default defineComponent({
       if (next === source.value) return;
       source.value = next;
       delistedHit.value = null;
+      selectedPreset.value = "";
       const mode = selection.value?.mode;
       if (mode === "catalog" || mode === "installed") selection.value = null;
     }
@@ -970,6 +997,22 @@ export default defineComponent({
                 </span>
               )}
             </div>
+            {entry.presets && entry.presets.length > 0 && (
+              <div class="mod-detail__presets">
+                <span class="mod-detail__presets-label">{t("resources.presetLabel")}</span>
+                <HkTabs
+                  variant="segmented"
+                  block
+                  modelValue={activePreset(entry)}
+                  onUpdate:modelValue={(v: string) => (selectedPreset.value = v)}
+                  tabs={(entry.presets ?? []).map((p) => ({
+                    key: p.id,
+                    label: presetLabel(p),
+                  }))}
+                  renderPanels={false}
+                />
+              </div>
+            )}
             {(text.desc || entry.description) && (
               <p class="mod-detail__desc">{text.desc || entry.description}</p>
             )}
@@ -1034,7 +1077,14 @@ export default defineComponent({
                     variant="primary"
                     disabled={!!busyState || !gameRoot.value}
                     loading={busyInstall}
-                    onClick={() => installMod(entry)}
+                    onClick={() =>
+                      installMod(
+                        entry,
+                        entry.presets?.length
+                          ? selectedPreset.value || entry.presets[0].id
+                          : undefined,
+                      )
+                    }
                   >
                     {busyInstall
                       ? t("resources.installingMod")

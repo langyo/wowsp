@@ -47,6 +47,7 @@
   "pickHint": "Pick a mod on the left to see its details.",
   "delistedTitle": "This mod has been delisted",
   "delistedHint": "\"{name}\" has been withdrawn from the catalog and can no longer be installed. Existing installs keep working and stay manageable under Installed.",
+  "presetLabel": "Scheme",
   "install": "Install",
   "update": "Update",
   "installedBadge": "Installed",

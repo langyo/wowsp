@@ -44,6 +44,27 @@ SIGNAL_RE = re.compile(r"\bgame\s+([0-9][\w.]*)\s+(ok|broken)\b", re.IGNORECASE)
 DOWNLOAD_RE = re.compile(
     r"-\s*\[`([^`]+)`\]\((https?://[^)]+)\)\s*[—-]\s*(\d+)\s*KB\s*[·.]\s*SHA-256\s*`([0-9a-fA-F]{64})`"
 )
+# A download line additionally tagged as one named preset (scheme) of the
+# entry — same shape as DOWNLOAD_RE plus a trailing `· preset \`id\``:
+#   - [`asset.zip`](url) — 57 KB · SHA-256 `abc…` · preset `colorblind`
+# Preset lines are swept out of the body BEFORE the plain DOWNLOAD_RE pass so
+# they never leak into the entry's default package list.
+PRESET_LINE_RE = re.compile(
+    # Same-line only ([ 	], never \s): a plain download line followed by a
+    # line starting with " · preset …" must not merge into one preset.
+    DOWNLOAD_RE.pattern + r"[ 	]*[·.][ 	]*preset[ 	]*`([a-z0-9][a-z0-9-]*)`"
+)
+# Hidden preset label block (same invisible-comment pattern as wowsp:i18n):
+#   <!--
+#   wowsp:presets
+#   sasagcy: Sasagcy 配色 | Sasagcy palette
+#   classic: 经典配色 | Classic palette
+#   wowsp:presets
+#   -->
+# One line per preset: `id: <zh label> | <en label>`; declaration order is
+# the catalog-facing order and the FIRST preset is the default scheme.
+PRESETS_BLOCK_RE = re.compile(r"wowsp:presets\n(.*?)\nwowsp:presets", re.DOTALL)
+PRESET_LABEL_RE = re.compile(r"^([a-z0-9][a-z0-9-]*):\s*(.+)$")
 # Hidden localization block (invisible when rendered, present in raw body):
 #   <!--
 #   wowsp:i18n
@@ -67,6 +88,48 @@ def parse_i18n(body: str) -> dict:
             continue
         name, _, desc = loc.group(2).partition("|")
         out[loc.group(1)] = {"name": name.strip(), "desc": desc.strip()}
+    return out
+
+
+def parse_presets(body: str) -> list[dict]:
+    r"""Ordered preset list from a thread body: package lines tagged
+    `· preset `id`` joined with the wowsp:presets label block. A preset
+    without a label falls back to the id itself as its label; a label
+    without packages is dropped (nothing to install)."""
+    labels: dict[str, dict[str, str]] = {}
+    order: list[str] = []
+    m = PRESETS_BLOCK_RE.search(body or "")
+    if m:
+        for line in m.group(1).splitlines():
+            lab = PRESET_LABEL_RE.match(line.strip())
+            if not lab:
+                continue
+            zh, _, en = lab.group(2).partition("|")
+            pid = lab.group(1)
+            labels[pid] = {"name_zh": zh.strip(), "name_en": en.strip() or zh.strip()}
+            order.append(pid)
+    packages: dict[str, list[dict]] = {}
+    for name, url, kb, digest, pid in PRESET_LINE_RE.findall(body or ""):
+        packages.setdefault(pid, []).append(
+            {"url": url, "sha256": digest.lower(), "size": int(kb) * 1024, "name": name}
+        )
+    out: list[dict] = []
+    seen: set[str] = set()
+    for pid in order + [p for p in packages if p not in labels]:
+        if pid in seen:
+            continue
+        pkgs = packages.get(pid)
+        if not pkgs:
+            continue
+        seen.add(pid)
+        out.append(
+            {
+                "id": pid,
+                "name_zh": labels.get(pid, {}).get("name_zh", pid),
+                "name_en": labels.get(pid, {}).get("name_en", pid),
+                "packages": pkgs,
+            }
+        )
     return out
 
 
@@ -125,10 +188,19 @@ def index_discussions(nodes: list[dict]) -> dict:
             },
         )
         version = meta.get("version", "0")
+        body = d.get("body") or ""
+        presets = parse_presets(body)
+        # Preset lines must not double-count as the entry's plain packages —
+        # sweep them out before the generic download scan.
         packages = [
             {"url": url, "sha256": digest.lower(), "size": int(kb) * 1024, "name": name}
-            for name, url, kb, digest in DOWNLOAD_RE.findall(d.get("body") or "")
+            for name, url, kb, digest in DOWNLOAD_RE.findall(PRESET_LINE_RE.sub("", body))
         ]
+        if presets and not packages:
+            # A fully preset-driven thread: the first declared scheme is the
+            # default, so the entry's plain package list (what pre-preset
+            # app builds install) mirrors it.
+            packages = presets[0]["packages"]
         entry["versions"][version] = {
             "game": meta.get("game", "*"),
             "title": d.get("title"),
@@ -144,6 +216,8 @@ def index_discussions(nodes: list[dict]) -> dict:
             entry["versions"][version]["bundled"] = True
         if packages:
             entry["versions"][version]["packages"] = packages
+        if presets:
+            entry["versions"][version]["presets"] = presets
         i18n = parse_i18n(d.get("body") or "")
         if i18n:
             entry["versions"][version]["i18n"] = i18n
@@ -233,6 +307,45 @@ def main(argv: list[str] | None = None) -> int:
         v9_gone = index_discussions([node(1, "15.7.0.10", False), node(2, "15.7.0.9", True)])
         assert v9_gone["mods"]["m"]["latest"] == "15.7.0.10"
         assert "delisted" not in v9_gone["mods"]["m"]
+        # Presets: tagged download lines ride entry.presets in label order,
+        # never leak into the plain package list, and a fully preset-driven
+        # thread backfills its plain list from the first (default) scheme.
+        sha = "a" * 64
+        sha2 = "b" * 64
+        preset_body = (
+            "---\nwowsp-mod: smi\nversion: 1\ncategory: battle\n---\n"
+            "<!--\nwowsp:presets\n"
+            "sasagcy: Sasagcy 配色 | Sasagcy palette\n"
+            "classic: 经典配色 | Classic palette\n"
+            "wowsp:presets\n-->\n"
+            f"- [`smi-v4.zip`](https://x/v4.zip) — 1 KB · SHA-256 `{sha}` · preset `sasagcy`\n"
+            f"- [`smi-v1.zip`](https://x/v1.zip) — 1 KB · SHA-256 `{sha2}` · preset `classic`\n"
+        )
+        idx = index_discussions([
+            {"number": 1, "title": "t", "author": {"login": "a"}, "closed": False,
+             "body": preset_body, "comments": {"nodes": []}},
+        ])
+        v = idx["mods"]["smi"]["versions"]["1"]
+        assert [p["id"] for p in v["presets"]] == ["sasagcy", "classic"], v.get("presets")
+        assert v["presets"][0]["name_zh"] == "Sasagcy 配色"
+        assert v["presets"][0]["name_en"] == "Sasagcy palette"
+        assert v["presets"][1]["packages"][0]["sha256"] == sha2
+        assert [p["name"] for p in v["packages"]] == ["smi-v4.zip"], "first preset backfills the default"
+        # Mixed body: plain lines stay plain, preset lines don't leak in, and
+        # an unlabeled preset falls back to its id as the label.
+        mixed_body = (
+            "---\nwowsp-mod: mx\nversion: 1\ncategory: battle\n---\n"
+            f"- [`mx.zip`](https://x/mx.zip) — 1 KB · SHA-256 `{sha}`\n"
+            f"- [`mx-pct.zip`](https://x/pct.zip) — 1 KB · SHA-256 `{sha2}` · preset `percent`\n"
+        )
+        idx2 = index_discussions([
+            {"number": 2, "title": "t", "author": {"login": "a"}, "closed": False,
+             "body": mixed_body, "comments": {"nodes": []}},
+        ])
+        v2 = idx2["mods"]["mx"]["versions"]["1"]
+        assert [p["name"] for p in v2["packages"]] == ["mx.zip"]
+        assert [p["id"] for p in v2["presets"]] == ["percent"]
+        assert v2["presets"][0]["name_zh"] == "percent"
         print("selftest ok")
         return 0
 

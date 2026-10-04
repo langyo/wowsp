@@ -47,6 +47,7 @@
   "pickHint": "Sélectionnez un mod à gauche pour voir ses détails.",
   "delistedTitle": "Ce mod a été retiré du catalogue",
   "delistedHint": "« {name} » a été retiré du catalogue et ne peut plus être installé. Les copies déjà installées ne sont pas affectées et restent gérables dans « Installés ».",
+  "presetLabel": "Schéma",
   "install": "Installer",
   "update": "Mettre à jour",
   "installedBadge": "Installé",
