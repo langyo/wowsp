@@ -29,7 +29,7 @@ query($owner: String!, $name: String!, $cursor: String) {
     discussions(first: 50, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title body author { login }
+        number title body closed author { login }
         comments(first: 50) { nodes { body author { login } } }
       }
     }
@@ -93,6 +93,17 @@ def parse_signals(comments: list[dict]) -> dict[str, list[str]]:
     return signals
 
 
+def version_sort_key(v: str) -> tuple:
+    """Numeric-aware ordering for dotted version strings: `15.7.0.10` must
+    sort AFTER `15.7.0.9` (plain string order gets that backwards). Each dot-
+    separated segment compares as a number when it is one, else lexically
+    after every numeric segment (pre-releases like `15.8.0-beta1`)."""
+    key = []
+    for seg in re.split(r"[.\-+]", v or ""):
+        key.append((0, int(seg)) if seg.isdigit() else (1, seg))
+    return tuple(key)
+
+
 def index_discussions(nodes: list[dict]) -> dict:
     """Aggregate raw discussion nodes into the mod-index.json shape."""
     mods: dict[str, dict] = {}
@@ -123,6 +134,11 @@ def index_discussions(nodes: list[dict]) -> dict:
             "title": d.get("title"),
             "author": (d.get("author") or {}).get("login"),
         }
+        if d.get("closed"):
+            # Delisting signal: a closed thread means "this release is
+            # withdrawn". Kept per-version so the entry verdict below can
+            # tell "old release withdrawn, current one still live" apart.
+            entry["versions"][version]["delisted"] = True
         if meta.get("bundled", "").lower() in ("true", "yes", "1"):
             # Ships inside the WoWSP app — listed without download packages.
             entry["versions"][version]["bundled"] = True
@@ -134,10 +150,16 @@ def index_discussions(nodes: list[dict]) -> dict:
         for ver, reporters in signals.items():
             entry["signals"].setdefault(ver, []).extend(reporters)
     # Only the newest version is catalog-facing; keep compatibility verdicts.
+    # A mod is delisted when the thread carrying its NEWEST version is
+    # closed — closing an old release's thread while a newer one is live
+    # does not delist the mod. Consumers hide delisted entries from the
+    # list and surface an "unavailable" notice on deep links.
     for entry in mods.values():
-        latest = sorted(entry["versions"])[-1]
+        latest = max(entry["versions"], key=version_sort_key)
         entry["latest"] = latest
         entry["game"] = entry["versions"][latest]["game"]
+        if entry["versions"][latest].get("delisted"):
+            entry["delisted"] = True
     return {"schema": 1, "mods": mods}
 
 
@@ -190,6 +212,27 @@ def main(argv: list[str] | None = None) -> int:
         assert i18n["en-US"] == {"name": "Shot Timer", "desc": "Counts down 20s"}, i18n
         assert i18n["zh-CN"]["name"] == "开火后倒计时20s", i18n
         assert parse_i18n("no block here") == {}
+        # Delisting: a closed thread on the newest release flags the entry;
+        # the same verdict on an OLD release (newer one live) does not.
+        def node(num, ver, closed):
+            return {"number": num, "title": "t", "author": {"login": "a"}, "closed": closed,
+                    "body": f"---\nwowsp-mod: m\nversion: {ver}\ncategory: battle\n---\nx",
+                    "comments": {"nodes": []}}
+        gone = index_discussions([node(1, "2", True), node(2, "1", False)])
+        assert gone["mods"]["m"]["delisted"] is True
+        live = index_discussions([node(1, "2", False), node(2, "1", True)])
+        assert "delisted" not in live["mods"]["m"]
+        open_mod = index_discussions([node(1, "1", False)])
+        assert "delisted" not in open_mod["mods"]["m"]
+        # Newest picks numerically: 15.7.0.10 > 15.7.0.9 (string order would
+        # say otherwise), so a closed .10 with a live .9 is a real delist
+        # while a closed .9 under a live .10 is not.
+        v10_gone = index_discussions([node(1, "15.7.0.10", True), node(2, "15.7.0.9", False)])
+        assert v10_gone["mods"]["m"]["latest"] == "15.7.0.10"
+        assert v10_gone["mods"]["m"]["delisted"] is True
+        v9_gone = index_discussions([node(1, "15.7.0.10", False), node(2, "15.7.0.9", True)])
+        assert v9_gone["mods"]["m"]["latest"] == "15.7.0.10"
+        assert "delisted" not in v9_gone["mods"]["m"]
         print("selftest ok")
         return 0
 

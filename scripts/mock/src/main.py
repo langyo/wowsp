@@ -282,6 +282,23 @@ _MOCK_CATALOG = {
             "packages": [{"url": "https://example.com/b.zip", "sha256": "",
                           "size": 87040, "name": "b.zip"}],
         },
+        {
+            # Withdrawn sample (closed discussion thread): exercises the
+            # delisting path — hidden from list/search, deep-link notice.
+            "id": "battle-marker-traffic", "category": "battle",
+            "discussion": 93, "version": "15.7.0.10",
+            "game": ">=15.7 <15.8", "delisted": True,
+            "title": "Ship Movement Indicator / 运动状态指示器",
+            "nameZh": "运动状态指示器（红绿灯）", "nameEn": "Ship Movement Indicator",
+            "description": "Superseded by SMI v4.",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Ship Movement Indicator", "description": "Superseded by SMI v4."},
+                "zh-CN": {"name": "运动状态指示器（红绿灯）", "description": "已被红绿灯 v4 取代。"},
+            },
+            "packages": [{"url": "https://example.com/c.zip", "sha256": "",
+                          "size": 1024, "name": "c.zip"}],
+        },
     ],
 }
 _MOCK_RECORDS: list[dict] = []

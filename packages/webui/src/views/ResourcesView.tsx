@@ -56,6 +56,7 @@ import {
   type BigCat,
   type CatalogCat,
 } from "@/features/modhub/taxonomy";
+import { listedEntries } from "@/features/modhub/catalogListed";
 import { resolveIdentity } from "@/features/modhub/migrateIdentity";
 import {
   ignoreAll,
@@ -267,6 +268,10 @@ export default defineComponent({
       },
       { immediate: true },
     );
+    /** A deep link that resolved to a DELISTED entry — the pane then says
+     *  so instead of opening a detail (the entry stays in the index only
+     *  for this explanation; lists and search never show it). */
+    const delistedHit = ref<CatalogEntry | null>(null);
     let deepLinkForced = false;
     watch(catalog, (mods) => {
       const want = pendingDeepLink.value;
@@ -282,6 +287,16 @@ export default defineComponent({
         return;
       }
       pendingDeepLink.value = "";
+      if (hit.delisted) {
+        // Force-opened a withdrawn mod (closed discussion thread): explain
+        // instead of opening the detail — there is nothing to install. An
+        // open selection would mask the notice (the pane prefers it), so
+        // the deep link takes over the pane.
+        selection.value = null;
+        delistedHit.value = hit;
+        return;
+      }
+      delistedHit.value = null;
       source.value = "online";
       bigCat.value = catBig(hit.category);
       catalogFilter.value = "all";
@@ -618,7 +633,7 @@ export default defineComponent({
     // ── Marketplace filtering: big category → chips → shared query ──
 
     const catalogInCat = computed(() =>
-      catalog.value.filter((m) => catBig(m.category) === bigCat.value),
+      listedEntries(catalog.value).filter((m) => catBig(m.category) === bigCat.value),
     );
     const installedInCat = computed(() =>
       installed.value.filter((m) => KIND_BIG[m.kind] === bigCat.value),
@@ -705,18 +720,23 @@ export default defineComponent({
     });
 
     // ── Row → pane selection (the master/detail pair) ──
+    // Every real selection replaces the delisted notice (it only exists to
+    // answer a deep link until the user picks something).
 
     function selectCatalog(entry: CatalogEntry) {
+      delistedHit.value = null;
       source.value = "online";
       selection.value = { mode: "catalog", entry };
     }
 
     function selectInstalled(mod: InstalledMod) {
+      delistedHit.value = null;
       source.value = "installed";
       selection.value = { mode: "installed", mod };
     }
 
     function openLocal() {
+      delistedHit.value = null;
       selection.value = { mode: "local" };
     }
 
@@ -727,6 +747,7 @@ export default defineComponent({
     function pickSource(next: "online" | "installed") {
       if (next === source.value) return;
       source.value = next;
+      delistedHit.value = null;
       const mode = selection.value?.mode;
       if (mode === "catalog" || mode === "installed") selection.value = null;
     }
@@ -749,7 +770,7 @@ export default defineComponent({
       const q = query.trim().toLowerCase();
       if (!q) return [];
       return source.value === "online"
-        ? catalog.value.filter((m) => entryMatches(m, q)).slice(0, 12)
+        ? listedEntries(catalog.value).filter((m) => entryMatches(m, q)).slice(0, 12)
         : installed.value.filter((m) => modMatches(m, q)).slice(0, 12);
     }
 
@@ -798,8 +819,9 @@ export default defineComponent({
     const catalogEmptyNote = () => {
       if (catalogLoading.value) return emptyNote(t("resources.refreshing"));
       if (catalogError.value) return null;
+      const listed = listedEntries(catalog.value);
       return emptyNote(
-        catalog.value.length === 0 ? t("resources.catalogEmpty") : t("resources.empty"),
+        listed.length === 0 ? t("resources.catalogEmpty") : t("resources.empty"),
       );
     };
 
@@ -1214,6 +1236,27 @@ export default defineComponent({
     }
 
     function renderPane() {
+      // A deep link into a delisted mod explains itself BEFORE the empty
+      // state — the entry is real, just not openable anymore.
+      const gone = delistedHit.value;
+      if (!selection.value && gone) {
+        const text = localized(gone);
+        return (
+          <div class="mod-detail mod-detail--empty">
+            <div class="mod-detail__placeholder">
+              <Ban size={30} />
+              <strong class="mod-detail__placeholder-title">
+                {t("resources.delistedTitle")}
+              </strong>
+              <p>
+                {t("resources.delistedHint", {
+                  name: text.name || gone.nameEn || gone.title,
+                })}
+              </p>
+            </div>
+          </div>
+        );
+      }
       const sel = selection.value;
       if (!sel) {
         return (

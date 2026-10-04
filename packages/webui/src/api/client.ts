@@ -1137,6 +1137,9 @@ export interface CatalogEntry {
   game: string;
   /** Ships inside the WoWSP app — listed, not downloadable. */
   bundled?: boolean;
+  /** Withdrawn from the catalog (its discussion thread was closed) —
+   *  hidden from lists/search; deep links surface an unavailable notice. */
+  delisted?: boolean;
   title: string;
   nameZh: string;
   nameEn: string;

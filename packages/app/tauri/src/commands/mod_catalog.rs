@@ -180,6 +180,10 @@ struct RawMod {
     discussion: Option<u64>,
     #[serde(default)]
     latest: Option<String>,
+    /// Withdrawn from the catalog (its discussion thread was closed);
+    /// the entry is kept so deep links can explain the delisting.
+    #[serde(default)]
+    delisted: Option<bool>,
     #[serde(default)]
     versions: std::collections::HashMap<String, RawVersion>,
 }
@@ -272,8 +276,11 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
             .collect();
         // Entries with no packages ship inside the app itself (the in-game
         // stats plugin is the first) — they stay listed, marked
-        // bundled-installed by the UI, and are not downloadable.
-        if !ver.bundled.unwrap_or(false) && packages.is_empty() {
+        // bundled-installed by the UI, and are not downloadable. A delisted
+        // entry survives package-less too: deep links need it to explain
+        // the withdrawal even if the closed thread lost its links.
+        let delisted = m.delisted.unwrap_or(false);
+        if !ver.bundled.unwrap_or(false) && packages.is_empty() && !delisted {
             continue;
         }
         mods.push(CatalogEntry {
@@ -283,6 +290,7 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
             version: latest,
             game: ver.game.clone().unwrap_or_else(|| "*".into()),
             bundled: ver.bundled.unwrap_or(false),
+            delisted,
             title: ver.title.clone().unwrap_or_else(|| id.clone()),
             name_zh: ver.name_zh.clone().unwrap_or_default(),
             name_en: ver
@@ -381,6 +389,11 @@ pub async fn mod_catalog_install(
         .find(|m| m.id == mod_id)
         .ok_or_else(|| format!("{mod_id} is not in the cached catalog"))?
         .clone();
+    if entry.delisted {
+        return Err(format!(
+            "{mod_id} has been delisted from the catalog — its discussion thread is closed"
+        ));
+    }
 
     // Fail fast when the TARGET client is running — mutating res_mods under
     // a live client tears half-loaded mods (root-scoped: another install's
@@ -1422,6 +1435,62 @@ mod tests {
         assert_eq!(m.packages[0].size, 10);
         assert_eq!(m.i18n.len(), 2, "both locales survive the round-trip");
         assert_eq!(m.i18n["ja-JP"].name, "射撃後タイマー");
+    }
+
+    #[test]
+    fn delisted_entries_survive_with_flag() {
+        // A closed discussion thread flags the entry as withdrawn: the entry
+        // STAYS in the parsed list (deep links need it to explain the state)
+        // but carries delisted=true for the UI to filter on.
+        let raw = serde_json::json!({
+            "schema": 1,
+            "mods": {
+                "battle.marker.traffic": {
+                    "id": "battle.marker.traffic",
+                    "category": "battle",
+                    "discussion": 118,
+                    "latest": "15.7.0.10",
+                    "delisted": true,
+                    "versions": {
+                        "15.7.0.10": {
+                            "game": ">=15.7 <15.8",
+                            "title": "Ship Movement Indicator",
+                            "packages": [
+                                {"url": "https://github.com/x/a.zip", "sha256": "aa", "size": 1, "name": "a.zip"}
+                            ]
+                        }
+                    }
+                },
+                "still-listed": {
+                    "id": "still-listed",
+                    "category": "battle",
+                    "latest": "1",
+                    "versions": {
+                        "1": {
+                            "game": "*",
+                            "title": "Live",
+                            "packages": [
+                                {"url": "https://github.com/x/b.zip", "sha256": "bb", "size": 1, "name": "b.zip"}
+                            ]
+                        }
+                    }
+                }
+            }
+        });
+        let index = parse_index(&raw).unwrap();
+        assert_eq!(
+            index.mods.len(),
+            2,
+            "delisted entries are kept, not dropped"
+        );
+        let delisted = index
+            .mods
+            .iter()
+            .find(|m| m.id == "battle.marker.traffic")
+            .unwrap();
+        assert!(delisted.delisted, "the flag reaches the DTO");
+        let live = index.mods.iter().find(|m| m.id == "still-listed").unwrap();
+        assert!(!live.delisted, "absent flag defaults to false");
     }
 
     #[test]

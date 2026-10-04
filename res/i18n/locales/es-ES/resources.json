@@ -45,6 +45,8 @@
   "listFilter": "Filtrar mods…",
   "countLine": "{count} en total",
   "pickHint": "Selecciona un mod a la izquierda para ver sus detalles.",
+  "delistedTitle": "Este mod ha sido retirado del catálogo",
+  "delistedHint": "«{name}» ha sido retirado del catálogo y ya no se puede instalar. Las copias ya instaladas no se ven afectadas y se siguen gestionando en «Instalados».",
   "install": "Instalar",
   "update": "Actualizar",
   "installedBadge": "Instalado",

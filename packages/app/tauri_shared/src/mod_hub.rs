@@ -200,6 +200,11 @@ pub struct CatalogEntry {
     /// as bundled). First-party plugins use this.
     #[serde(default)]
     pub bundled: bool,
+    /// The thread carrying this release was closed — the mod is withdrawn
+    /// from the catalog (hidden from the list, uninstall still works). The
+    /// indexer derives it from the discussion's closed state.
+    #[serde(default)]
+    pub delisted: bool,
     pub title: String,
     pub name_zh: String,
     pub name_en: String,

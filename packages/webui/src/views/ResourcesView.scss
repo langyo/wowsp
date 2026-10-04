@@ -653,6 +653,12 @@
     }
   }
 
+  /* The delisted notice's heading line (the placeholder body stays muted). */
+  &__placeholder-title {
+    font-size: var(--text-md);
+    color: rgb(var(--color-text));
+  }
+
   &__head {
     flex: none;
     display: flex;
