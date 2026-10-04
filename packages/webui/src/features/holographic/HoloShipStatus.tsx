@@ -6,7 +6,9 @@
  *           icon tiles with a draining progress bar + seconds).
  *   row 2 — what it SUFFERS: shell / torpedo hit pills with the damage
  *           they took, plus persistent fire / flooding chips counting
- *           their remaining burn time.
+ *           down from their class base duration.
+ * Every countdown renders BELOW its icon (fixed row height — only the
+ * damage pills read horizontally); sub-10-second counts show one decimal.
  * Data comes precomputed per playhead tick via ShipLabel.status; this
  * component is pure rendering + styling.
  */
@@ -39,6 +41,13 @@ const AMMO_TEXT: Record<string, string> = {
   SAP: "SAP",
   CS: "CS",
 };
+
+/** Countdown text: whole seconds above ten, one decimal below — the last
+ *  ten seconds of a reload or burn deserve the extra resolution. The
+ *  threshold sits at 9.95 so rounding never prints "10.0" below "10". */
+export function fmtSecs(v: number): string {
+  return v < 9.95 ? v.toFixed(1) : String(Math.ceil(v));
+}
 
 export default defineComponent({
   name: "HoloShipStatus",
@@ -95,17 +104,34 @@ function ActionChip({ chip }: { chip: ShipActionChip }) {
           style={{ width: `${Math.round(chip.frac * 100)}%` }}
         />
       </span>
-      {chip.secs != null && chip.phase !== "flash" ? (
-        <span class="holo-ship-status__secs">{chip.secs}</span>
-      ) : null}
+      {/* The seconds line is always mounted (blank during a flash) so the
+          tile keeps a fixed height and the row never jumps. */}
+      <span class="holo-ship-status__secs">
+        {chip.phase !== "flash" && chip.secs != null ? fmtSecs(chip.secs) : ""}
+      </span>
+    </span>
+  );
+}
+
+function DotChip({ chip }: { chip: ShipDotChip }) {
+  const Icon = chip.key === "fire" ? Flame : Droplets;
+  return (
+    <span class={["holo-ship-status__chip", `is-${chip.key}`]}>
+      <span class="holo-ship-status__icon">
+        <Icon size={11} strokeWidth={2.4} />
+        <span
+          class="holo-ship-status__bar"
+          style={{ width: `${Math.round(chip.frac * 100)}%` }}
+        />
+      </span>
+      <span class="holo-ship-status__secs">{fmtSecs(chip.secs)}</span>
     </span>
   );
 }
 
 function HitChip({ chip }: { chip: ShipHitChip }) {
   // Torpedoes get the fish glyph; shells get a tinted ammo badge — except
-  // unresolvable params ids, which fall back to the same fish glyph is
-  // wrong, so they render the bare damage number.
+  // unresolvable params ids, which fall back to the bare damage number.
   const ammo = chip.kind === "shell" ? chip.ammo : null;
   return (
     <span
@@ -124,16 +150,6 @@ function HitChip({ chip }: { chip: ShipHitChip }) {
         </span>
       ) : null}
       <span class="holo-ship-status__dmg">-{chip.dmg.toLocaleString()}</span>
-    </span>
-  );
-}
-
-function DotChip({ chip }: { chip: ShipDotChip }) {
-  const Icon = chip.key === "fire" ? Flame : Droplets;
-  return (
-    <span class={["holo-ship-status__dot", `is-${chip.key}`]}>
-      <Icon size={10} strokeWidth={2.4} />
-      <span>{chip.secs}</span>
     </span>
   );
 }

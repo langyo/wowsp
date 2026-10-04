@@ -57,11 +57,15 @@
     }
   }
 
+  /* Always-mounted seconds line: blank during a flash still occupies the
+     height, so every tile (and therefore the row) keeps a fixed height. */
   &__secs {
+    height: 11px;
     font-size: 9px;
-    line-height: 1;
+    line-height: 11px;
     font-variant-numeric: tabular-nums;
     opacity: 0.85;
+    white-space: nowrap;
   }
 
   &__chip.is-cooldown &__icon {
@@ -85,8 +89,16 @@
     color: #4ade80;
   }
 
-  &__chip.is-torp.is-flash &__icon {
-    color: #7dd3fc;
+  /* Fire / flooding tiles share the action-tile geometry, tinted by dot
+     kind (the draining bar = remaining fraction of the base duration). */
+  &__chip.is-fire &__icon {
+    color: #ff9f43;
+    border-color: rgba(255, 159, 67, 0.45);
+  }
+
+  &__chip.is-flood &__icon {
+    color: #74c0fc;
+    border-color: rgba(116, 192, 252, 0.45);
   }
 
   /* ── Row 2: hit pills + dot chips ────────────────────────────────── */
@@ -134,28 +146,5 @@
 
   &__hit.is-torpedo &__dmg {
     color: #a5d8ff;
-  }
-
-  &__dot {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-size: 9px;
-    line-height: 1.4;
-    font-variant-numeric: tabular-nums;
-    border: 1px solid transparent;
-
-    &.is-fire {
-      color: #ff9f43;
-      border-color: rgba(255, 159, 67, 0.45);
-      background: rgba(255, 159, 67, 0.12);
-    }
-    &.is-flood {
-      color: #74c0fc;
-      border-color: rgba(116, 192, 252, 0.45);
-      background: rgba(116, 192, 252, 0.12);
-    }
   }
 }

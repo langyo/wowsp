@@ -31,7 +31,8 @@ export interface ShipActionChip {
   phase: "flash" | "cooldown" | "active";
   /** 0..1 remaining fraction of the current phase. */
   frac: number;
-  /** Ceil remaining seconds; null when the end is unknowable. */
+  /** Remaining seconds (fractional — the view renders sub-10 s values
+   *  with one decimal); null when the end is unknowable. */
   secs: number | null;
 }
 
@@ -44,10 +45,13 @@ export interface ShipHitChip {
   dmg: number;
 }
 
-/** One row-two damage-over-time chip with its remaining burn seconds. */
+/** One row-two damage-over-time chip: counts down from the class base
+ *  duration (fire 60/30 s, flood 40/30 s) while its ticks keep landing;
+ *  `frac` is the remaining fraction of that base. */
 export interface ShipDotChip {
   key: "fire" | "flood";
   secs: number;
+  frac: number;
 }
 
 export interface ShipStatusSnapshot {
@@ -89,6 +93,31 @@ const DOT_TICK_FRAC = 0.025;
 const DOT_MIN_TICKS = 3;
 /** Flooding can only follow a torpedo hit this recently. */
 const FLOOD_ARM_S = 15;
+/** DoT base durations (live-game values): fires burn 60 s on battleships
+ *  and carriers, 30 s on everyone else; flooding lasts 40 s, 30 s on
+ *  carriers and submarines. The countdown counts down from these bases —
+ *  build modifiers (fire/flood-duration upgrades and skills, -15 %ish)
+ *  are unknowable from the replay, so the base is the best projection. */
+const FIRE_BASE_BB_CV_S = 60;
+const FIRE_BASE_OTHER_S = 30;
+const FLOOD_BASE_S = 40;
+const FLOOD_BASE_CV_SUB_S = 30;
+
+/** Fire countdown base for a ship's WG class string ("Battleship", …).
+ *  Hybrids carry the Auxiliary species in GameParams but burn like the
+ *  battleships they are built on (60 s). */
+function fireBaseS(type: string | null | undefined): number {
+  return type === "Battleship" || type === "AirCarrier" || type === "Auxiliary"
+    ? FIRE_BASE_BB_CV_S
+    : FIRE_BASE_OTHER_S;
+}
+
+/** Flooding countdown base for a ship's WG class string. */
+function floodBaseS(type: string | null | undefined): number {
+  return type === "AirCarrier" || type === "Submarine"
+    ? FLOOD_BASE_CV_SUB_S
+    : FLOOD_BASE_S;
+}
 
 // ── Build-time inputs ───────────────────────────────────────────────────
 
@@ -125,6 +154,9 @@ export interface ShipStatusSource {
   shellImpacts: ShellImpact[];
   torpImpacts: TorpedoImpact[];
   smokes: SmokeCluster[];
+  /** entityId → WG class string ("Battleship"/"Cruiser"/…), driving the
+   *  per-class DoT countdown bases. Missing entries read as "other". */
+  shipTypes?: Map<number, string | null>;
 }
 
 // ── Per-ship index ──────────────────────────────────────────────────────
@@ -141,8 +173,14 @@ interface StoredHit {
   dmg: number;
 }
 
-interface DotWindow extends TimeWindow {
+/** One ignition: the first/last observed DoT ticks plus the countdown base
+ *  the chip counts down from (NOT the observed burn length — an early DCP
+ *  just cuts the countdown short; the display still starts at the base). */
+interface DotWindow {
   kind: "fire" | "flood";
+  t0: number;
+  lastTick: number;
+  base: number;
 }
 
 export interface ShipStatusIndex {
@@ -166,13 +204,14 @@ export function buildShipStatusIndex(src: ShipStatusSource): Map<number, ShipSta
   const out = new Map<number, ShipStatusIndex>();
   for (const tr of shipTrajs) {
     const maxHp = peakHp(tr);
+    const type = src.shipTypes?.get(tr.entityId) ?? null;
     const idx: ShipStatusIndex = {
       gun: gunSalvosFor(src.shellLaunches, tr.entityId),
       torp: torpedoSalvosFor(src.torpedoes, tr.entityId, shipIds),
       repairs: repairWindows(tr, maxHp),
       smokes: [],
       hits: [],
-      dots: dotWindows(tr, maxHp, src.torpImpacts, tr.entityId),
+      dots: dotWindows(tr, maxHp, src.torpImpacts, tr.entityId, type),
     };
     out.set(tr.entityId, idx);
   }
@@ -196,7 +235,7 @@ export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipS
       key: "smoke",
       phase: "active",
       frac: (w.t1 - t) / Math.max(0.001, w.t1 - w.t0),
-      secs: Math.ceil(w.t1 - t),
+      secs: w.t1 - t,
     });
     break;
   }
@@ -206,7 +245,7 @@ export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipS
       key: "repair",
       phase: "active",
       frac: (w.t1 - t) / Math.max(0.001, w.t1 - w.t0),
-      secs: Math.ceil(w.t1 - t),
+      secs: w.t1 - t,
     });
     break;
   }
@@ -218,8 +257,16 @@ export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipS
   }
   const dots: ShipDotChip[] = [];
   for (const d of idx.dots) {
-    if (t < d.t0 || t > d.t1) continue;
-    dots.push({ key: d.kind, secs: Math.ceil(d.t1 - t) });
+    if (t < d.t0) continue;
+    // Countdown runs from the ignition + class base — NOT from the observed
+    // tick span (a 3-second DCP'd fire still starts its chip at 60/30 and
+    // then simply disappears once the ticks fall silent).
+    const rem = d.t0 + d.base - t;
+    if (rem <= 0) continue;
+    // Ticks stream continuously while the effect lives; silence longer than
+    // the tick gap means it was extinguished — end the chip there.
+    if (t - d.lastTick > DOT_GAP_S) continue;
+    dots.push({ key: d.kind, secs: rem, frac: rem / d.base });
   }
   if (actions.length === 0 && hits.length === 0 && dots.length === 0) return null;
   return { actions, hits, dots };
@@ -261,7 +308,7 @@ function weaponChip(
     key,
     phase: "cooldown",
     frac: (next - t) / reload,
-    secs: Math.ceil(next - t),
+    secs: next - t,
   };
 }
 
@@ -349,27 +396,56 @@ function peakHp(tr: EntityTrajectory): number {
   return m;
 }
 
-/** Burn / flood windows: maximal runs of SMALL hp drops with gaps ≤
- *  DOT_GAP_S, needing DOT_MIN_TICKS ticks. Classification: flooding can
- *  only exist when a torpedo detonated ON this ship (within reach and
- *  FLOOD_ARM_S before the first tick); everything else is fire. */
+/** Ignition windows: maximal runs of SMALL hp drops with gaps ≤ DOT_GAP_S,
+ *  needing DOT_MIN_TICKS ticks. Each window keeps its LAST tick — the query
+ *  uses it to detect early extinguish (ticks fall silent) while the chip
+ *  countdown runs from the ignition + class base, not the observed span.
+ *  Classification: flooding can only exist when a torpedo detonated ON this
+ *  ship (within reach and FLOOD_ARM_S before the first tick); everything
+ *  else is fire. */
 function dotWindows(
   tr: EntityTrajectory,
   maxHp: number,
   torpImpacts: TorpedoImpact[],
   entityId: number,
+  type: string | null,
 ): DotWindow[] {
   const drops = hpDrops(tr, maxHp).filter((d) => d.small);
   const wins: DotWindow[] = [];
   let run: HpDrop[] = [];
   const flush = (): void => {
-    if (run.length >= DOT_MIN_TICKS) {
+    // A run can outlive one base duration (chained fires: natural expiry +
+    // instant re-light never splits the run). Slice it into successive
+    // ignitions: ticks at/after t0 + base start the NEXT window, so the
+    // chip counts each fire's own full countdown instead of vanishing at
+    // the first boundary. A tail too short to read as its own ignition is
+    // dropped (no 1-tick phantom chips).
+    while (run.length >= DOT_MIN_TICKS) {
       const t0 = run[0].t;
-      const t1 = run[run.length - 1].t + 1; // tick cadence tail
       const flooded = torpImpacts.some(
-        (k) => k.ownerId !== entityId && k.t <= t0 && t0 - k.t <= FLOOD_ARM_S && landedOn(tr, k),
+        (k) =>
+          k.ownerId !== entityId &&
+          k.t <= t0 &&
+          t0 - k.t <= FLOOD_ARM_S &&
+          landedOn(tr, k),
       );
-      wins.push({ t0, t1, kind: flooded ? "flood" : "fire" });
+      const base = flooded ? floodBaseS(type) : fireBaseS(type);
+      const expire = t0 + base;
+      let cut = run.length;
+      for (let i = 0; i < run.length; i++) {
+        if (run[i].t >= expire) {
+          cut = i;
+          break;
+        }
+      }
+      const chunk = run.slice(0, Math.max(cut, DOT_MIN_TICKS));
+      wins.push({
+        kind: flooded ? "flood" : "fire",
+        t0,
+        lastTick: chunk[chunk.length - 1].t,
+        base,
+      });
+      run = run.slice(chunk.length);
     }
     run = [];
   };
@@ -378,15 +454,10 @@ function dotWindows(
     run.push(d);
   }
   flush();
-  // Merge same-kind windows separated by a large hit's interruption (the
-  // burn continues after the pen is healed into the HP curve).
-  const merged: DotWindow[] = [];
-  for (const w of wins.sort((a, b) => a.t0 - b.t0)) {
-    const last = merged[merged.length - 1];
-    if (last && last.kind === w.kind && w.t0 - last.t1 <= DOT_GAP_S) last.t1 = Math.max(last.t1, w.t1);
-    else merged.push({ ...w });
-  }
-  return merged;
+  // No window merging: an extinguished effect re-lit later is a NEW
+  // ignition (own 60/30 s countdown), and the query's silence rule already
+  // ends the previous chip at its last tick.
+  return wins;
 }
 
 /** Whether a torpedo detonation landed on this ship: the impact point must

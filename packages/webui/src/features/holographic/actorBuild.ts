@@ -178,7 +178,23 @@ export function rebuildActors(ctx: MapInternals) {
   // Below-hull combat status rows: per-ship action/hit/dot index derived
   // from the same decoded signals the traces above already resolved
   // (joined shell impacts, torpedo detonations, smoke clusters, HP
-  // timelines). Queried per playhead tick by updateMarkersAt.
+  // timelines). Queried per playhead tick by updateMarkersAt. Ship classes
+  // ride along so fire/flood countdowns start from the class-true base
+  // durations (fire 60/30 s, flood 40/30 s) instead of the observed burn.
+  const shipTypes = new Map<number, string | null>();
+  for (const tr of ctx.props.trajectories) {
+    if (!isShip(tr)) continue;
+    const { shipInfo, entry } = resolveMarkerContext(
+      tr,
+      ctx.shipEntityIds,
+      assignments,
+      ctx.props.encyclopedia,
+      ctx.props.operation,
+      ctx.arenaIdentities,
+    );
+    const offline = shipOfflineEntry((entry?.shipId ?? tr.kind?.shipId) ?? undefined);
+    shipTypes.set(tr.entityId, shipInfo?.type ?? offline?.type ?? null);
+  }
   ctx.shipStatus = buildShipStatusIndex({
     trajectories: ctx.props.trajectories,
     shellLaunches: ctx.props.shellLaunches,
@@ -208,6 +224,7 @@ export function rebuildActors(ctx: MapInternals) {
       })
       .map((tm) => ({ t: tm.endT, x: tm.killX as number, z: tm.killZ as number, ownerId: tm.ownerId })),
     smokes: ctx.smokeClusters.map((cl) => ({ t0: cl.t0, endT: cl.endT, x: cl.sx, z: cl.sz })),
+    shipTypes,
   });
 
   // Fighter-patrol wards (receive_wardAdded): flat rings at the patrol

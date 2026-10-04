@@ -6,6 +6,7 @@ import {
   type ShellImpact,
   type ShipStatusSource,
 } from "./shipStatusModel";
+import { fmtSecs } from "./HoloShipStatus";
 import type { EntityTrajectory, ShellLaunchEvent, TorpedoLaunch } from "@/api";
 
 const launch = (time: number, ownerId: number): ShellLaunchEvent =>
@@ -207,14 +208,95 @@ describe("hit pills", () => {
 });
 
 describe("damage-over-time chips", () => {
-  it("classifies small repeating drops as fire and counts down", () => {
+  it("counts a fire down from the class base (30 s), not the observed span", () => {
     const hp = [{ time: 0, value: 20000 }];
     for (let i = 0; i < 10; i++) {
       hp.push({ time: 20 + i, value: 20000 - (i + 1) * 150 });
     }
-    const idx = buildShipStatusIndex(src({ trajectories: [ship(1, { hp })] }));
+    const idx = buildShipStatusIndex(
+      src({ trajectories: [ship(1, { hp })] }),
+    );
+    // Ignited at t=20, class-less ship → 30 s base: at t=25 that's 25 s
+    // left (the old behaviour read 5 s — the observed burn length).
     const snap = shipStatusAt(idx.get(1), 25);
-    expect(snap?.dots).toContainEqual({ key: "fire", secs: 5 });
+    expect(snap?.dots).toContainEqual({ key: "fire", secs: 25, frac: 25 / 30 });
+  });
+
+  it("uses the 60 s fire base for battleships, carriers and hybrids", () => {
+    const hp = [{ time: 0, value: 60000 }];
+    for (let i = 0; i < 13; i++) {
+      hp.push({ time: 100 + i, value: 60000 - (i + 1) * 150 });
+    }
+    for (const type of ["Battleship", "AirCarrier", "Auxiliary"]) {
+      const idx = buildShipStatusIndex(
+        src({
+          trajectories: [ship(1, { hp })],
+          shipTypes: new Map([[1, type]]),
+        }),
+      );
+      const snap = shipStatusAt(idx.get(1), 110);
+      expect(snap?.dots).toContainEqual(
+        expect.objectContaining({ key: "fire", secs: 50 }),
+      );
+    }
+  });
+
+  it("uses the 30 s flood base for carriers and submarines", () => {
+    const hp = [{ time: 0, value: 20000 }];
+    for (let i = 0; i < 8; i++) {
+      hp.push({ time: 30 + i, value: 20000 - (i + 1) * 200 });
+    }
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [ship(1, { hp })],
+        torpImpacts: [{ t: 28, x: 0, z: 0, ownerId: 99 }],
+        shipTypes: new Map([[1, "AirCarrier"]]),
+      }),
+    );
+    expect(shipStatusAt(idx.get(1), 32)?.dots).toContainEqual(
+      expect.objectContaining({ key: "flood", secs: 28 }),
+    );
+  });
+
+  it("re-anchors chained fires instead of vanishing at the base boundary", () => {
+    const hp = [{ time: 0, value: 40000 }];
+    for (let i = 0; i < 60; i++) {
+      hp.push({ time: 20 + i, value: 40000 - (i + 1) * 150 });
+    }
+    const idx = buildShipStatusIndex(src({ trajectories: [ship(1, { hp })] }));
+    // One continuous tick run from t=20 (base 30): the second ignition
+    // anchors at t=50, so the chip must still show at t=55 — counting its
+    // own fresh 30 s (25 left), not the dead first window.
+    const late = shipStatusAt(idx.get(1), 55);
+    expect(late?.dots).toContainEqual(expect.objectContaining({ key: "fire" }));
+    expect(late?.dots[0].secs).toBeCloseTo(25, 5);
+  });
+
+  it("ends the chip when the ticks fall silent (early DCP)", () => {
+    const hp = [
+      { time: 0, value: 20000 },
+      { time: 20, value: 19850 },
+      { time: 21, value: 19700 },
+      { time: 22, value: 19550 },
+    ];
+    const idx = buildShipStatusIndex(src({ trajectories: [ship(1, { hp })] }));
+    // Still inside the tick-gap grace after the last tick → counting.
+    expect(shipStatusAt(idx.get(1), 23)?.dots).toContainEqual(
+      expect.objectContaining({ key: "fire" }),
+    );
+    // Ticks silent past the gap → extinguished, chip gone (even though the
+    // 30 s base hasn't elapsed).
+    expect(shipStatusAt(idx.get(1), 27)?.dots ?? []).toHaveLength(0);
+  });
+
+  it("keeps fractional seconds for the sub-ten tail of a burn", () => {
+    const hp = [{ time: 0, value: 20000 }];
+    for (let i = 0; i < 24; i++) {
+      hp.push({ time: 100 + i, value: 20000 - (i + 1) * 150 });
+    }
+    const idx = buildShipStatusIndex(src({ trajectories: [ship(1, { hp })] }));
+    const snap = shipStatusAt(idx.get(1), 121.7);
+    expect(snap?.dots[0].secs).toBeCloseTo(8.3, 2);
   });
 
   it("arms flooding after a nearby torpedo detonation", () => {
@@ -229,7 +311,7 @@ describe("damage-over-time chips", () => {
       }),
     );
     expect(shipStatusAt(idx.get(1), 32)?.dots).toContainEqual(
-      expect.objectContaining({ key: "flood" }),
+      expect.objectContaining({ key: "flood", secs: 38 }),
     );
   });
 
@@ -264,6 +346,18 @@ describe("damage-over-time chips", () => {
       }),
     );
     expect(shipStatusAt(idx.get(1), 12)?.dots ?? []).toHaveLength(0);
+  });
+});
+
+describe("fmtSecs", () => {
+  it("shows one decimal below ten seconds, whole seconds above", () => {
+    expect(fmtSecs(8.34)).toBe("8.3");
+    expect(fmtSecs(9.94)).toBe("9.9");
+    // Threshold at 9.95: rounding must never print "10.0" below "10".
+    expect(fmtSecs(9.95)).toBe("10");
+    expect(fmtSecs(10)).toBe("10");
+    expect(fmtSecs(15.2)).toBe("16");
+    expect(fmtSecs(60)).toBe("60");
   });
 });
 
