@@ -48,6 +48,10 @@ pub(crate) fn scan_foreign(
     let pairs = catalog.map(|cat| {
         cat.mods
             .iter()
+            // Delisted entries are withdrawn — pairing a foreign unit
+            // against one would badge it "paired" while the entry itself
+            // is unopenable.
+            .filter(|entry| !entry.delisted)
             .map(|entry| {
                 (
                     entry_names(entry)

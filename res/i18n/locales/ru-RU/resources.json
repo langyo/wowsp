@@ -48,6 +48,17 @@
   "delistedTitle": "Этот мод снят с каталога",
   "delistedHint": "«{name}» удалён из каталога и больше недоступен для установки. Уже установленные копии продолжают работать и доступны в списке «Установленные».",
   "presetLabel": "Схема",
+  "foreignCopy": "Другая копия этого мода установлена через {source}, а не через WoWSP. Для лучшего опыта рекомендуется переустановить его здесь.",
+  "foreignSource": {
+    "aslain": "сборка Aslain",
+    "modstation": "WG ModStation"
+  },
+  "foreignBadge": "Установлено: {source}",
+  "foreignManaged": "{name} установлено через {source}; WoWSP не управляет его файлами. Удаление выполняйте в самом {source}.",
+  "foreignPaired": "Сопоставлено с каталогом",
+  "foreignUnpaired": "Нет совпадения в каталоге",
+  "foreignPairedHint": "Сопоставляется с «{name}» в онлайн-каталоге.",
+  "foreignOpenPaired": "Открыть в каталоге",
   "install": "Установить",
   "update": "Обновить",
   "installedBadge": "Установлен",

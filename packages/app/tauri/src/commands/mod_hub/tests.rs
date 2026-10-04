@@ -1400,3 +1400,136 @@ fn find_dir_within(root: &Path, marker: &str) -> Option<PathBuf> {
     }
     None
 }
+
+/// Realistic Aslain-installed layout, end to end: the modpack's manifest
+/// rows + its CamelCase PnFMods trees + a voice bank + an orphan gui
+/// fragment. Recognition must see EVERY row (foreign section), pair the
+/// rows the catalog knows (identity), and the installed-list classification
+/// must anchor on the manifest rows (their names, not raw directory names).
+#[test]
+fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
+    use wowsp_tauri_shared::{CatalogEntry, CatalogIndex, CatalogPackage};
+
+    let tmp = std::env::temp_dir().join("wowsp_aslain_e2e");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let res_mods = tmp.join("bin/1/res_mods");
+    for dir in [
+        "PnFMods/AdjustableMarkers",
+        "PnFMods/ShotTimer",
+        "PnFMods/TeamPanelTTaro",
+        "gui/unbound2/SomeMod",
+        "banks/mods/Hoshino",
+    ] {
+        std::fs::create_dir_all(res_mods.join(dir)).unwrap();
+    }
+    std::fs::write(res_mods.join("PnFMods/AdjustableMarkers/Main.py"), b"").unwrap();
+    std::fs::write(res_mods.join("PnFMods/ShotTimer/Main.py"), b"").unwrap();
+    std::fs::write(res_mods.join("PnFMods/TeamPanelTTaro/Main.py"), b"").unwrap();
+    std::fs::write(res_mods.join("gui/unbound2/SomeMod/view.xml"), b"<x/>").unwrap();
+    std::fs::write(res_mods.join("banks/mods/Hoshino/mod.xml"), b"<voice/>").unwrap();
+    std::fs::write(res_mods.join("PnFModsLoader.py"), b"").unwrap();
+    // The modpack's own ledger — row names ARE the install directory names
+    // (CamelCase), plus a voice pack row with no matching tree here.
+    std::fs::write(
+        res_mods.join("installed_mods.xml"),
+        "<data>\
+         <mod name=\"AdjustableMarkers\" version=\"15.7.0\" installer=\"aslain\"/>\
+         <mod name=\"ShotTimer\" version=\"15.7.0\" installer=\"aslain\"/>\
+         <mod name=\"TeamPanelTTaro\" installer=\"aslain\"/>\
+         <mod name=\"HoshinoVoice\" installer=\"aslain\"/>\
+         </data>",
+    )
+    .unwrap();
+
+    let cat = |id: &str, en: &str| CatalogEntry {
+        id: id.into(),
+        category: "battle".into(),
+        discussion: Some(1),
+        version: "1".into(),
+        game: "*".into(),
+        bundled: false,
+        delisted: false,
+        presets: Vec::new(),
+        title: format!("[Mod] {en} {id} 1"),
+        name_zh: String::new(),
+        name_en: en.into(),
+        description: String::new(),
+        author_url: String::new(),
+        i18n: std::collections::HashMap::new(),
+        packages: vec![CatalogPackage {
+            url: "https://x/a.zip".into(),
+            sha256: String::new(),
+            size: 1,
+            name: "a.zip".into(),
+        }],
+    };
+    let catalog = CatalogIndex {
+        source_version: String::new(),
+        game_version: String::new(),
+        fetched_at: String::new(),
+        mods: vec![
+            cat("battle.marker.adjustable", "Adjustable Markers"),
+            cat("battle.timer.shot", "Shot Timer"),
+            cat("battle.panel.ttaro", "Team Panels by TTaro"),
+        ],
+    };
+
+    // ── Recognition: every manifest row lands in [foreign.aslain.*] with
+    //    the right pairing (CamelCase dir name normalizes onto the catalog's
+    //    spaced display name); the catalog-unknown voice row stays unpaired.
+    let foreign = super::foreign::scan_foreign(&res_mods, &tmp.join("bin/1/mods"), Some(&catalog));
+    let aslain = &foreign["aslain"];
+    assert_eq!(aslain.len(), 4, "every row recognized: {aslain:?}");
+    assert_eq!(
+        aslain["adjustablemarkers"].identity.as_deref(),
+        Some("battle.marker.adjustable")
+    );
+    assert_eq!(
+        aslain["shottimer"].identity.as_deref(),
+        Some("battle.timer.shot")
+    );
+    // "TeamPanelTTaro" vs "Team Panels by TTaro" normalize differently —
+    // no false-positive pairing for a name the catalog words differently.
+    assert_eq!(aslain["teampanelttaro"].identity, None);
+    assert_eq!(aslain["hoshinovoice"].identity, None);
+    assert!(foreign["modstation"].is_empty());
+    assert_eq!(aslain["shottimer"].version.as_deref(), Some("15.7.0"));
+
+    // ── Classification: the installed list anchors on the manifest rows
+    //    (row names, file order), trees hang under them; the orphan gui
+    //    fragment stays its own (unanchored) group instead of vanishing.
+    let units = classify_installed_root(&res_mods);
+    let names: Vec<&str> = units.iter().map(|u| u.name.as_str()).collect();
+    // Final ordering groups by kind then name (the list's stable display
+    // order) — the ANCHORING contract is that every manifest row appears
+    // under its own row name, not as raw directory groups.
+    for row in [
+        "AdjustableMarkers",
+        "ShotTimer",
+        "TeamPanelTTaro",
+        "HoshinoVoice",
+    ] {
+        assert!(names.contains(&row), "row {row} anchored: {names:?}");
+    }
+    let adjustable = units
+        .iter()
+        .find(|u| u.name == "AdjustableMarkers")
+        .unwrap();
+    assert!(
+        adjustable
+            .paths
+            .iter()
+            .any(|p| p.starts_with("PnFMods/AdjustableMarkers")),
+        "tree anchored under its row: {:?}",
+        adjustable.paths
+    );
+    // The orphan unbound view stays its own Gui group (real layout:
+    // unbound2/<Mod>/ directories are the battle-view mod units).
+    let orphan = units
+        .iter()
+        .find(|u| u.paths.iter().any(|p| p.starts_with("gui/unbound2")))
+        .expect("orphan gui group kept");
+    assert_eq!(orphan.name, "SomeMod");
+
+    std::fs::remove_dir_all(&tmp).ok();
+}

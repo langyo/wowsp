@@ -293,6 +293,23 @@ pub struct StaleBinInfo {
     pub file_count: u64,
 }
 
+/// One foreign-installer unit surfaced to the webui: a unit another
+/// installer (Aslain's modpack, WG's ModStation) put on disk, with the
+/// best-effort catalog pairing. WoWSP describes these, never manages them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignModUnit {
+    /// `aslain | modstation`.
+    pub installer: String,
+    /// Stable manifest key (slug of the display name).
+    pub key: String,
+    /// The unit's own display name (manifest row / directory name).
+    pub name: String,
+    pub version: Option<String>,
+    /// Catalog id this unit pairs against, when a match existed.
+    pub identity: Option<String>,
+}
+
 /// What a stale-bin migration did: files moved into the current version's
 /// `res_mods`, files kept as-is because the current tree already had
 /// them (the newer install wins, so migrations never overwrite), and —

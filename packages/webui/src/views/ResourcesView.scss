@@ -151,6 +151,28 @@
     color: rgb(var(--color-muted) / 80%);
   }
 
+  /* Foreign-installer units the res_mods scan cannot see (ModStation):
+     a quiet strip under the installed list, same row voice. */
+  &__foreign-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem 0;
+    border-top: 1px dashed rgb(var(--color-border) / 25%);
+    /* Many foreign units must not crowd out the installed list above. */
+    max-height: 30%;
+    overflow-y: auto;
+  }
+
+  &__foreign-strip-title {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
   /* One quiet metadata line (the online catalog's source + fetch date);
      the count itself lives in the pill above. */
   &__side-foot {
@@ -315,6 +337,13 @@
       color: rgb(var(--color-muted));
       background: rgb(var(--color-border) / 14%);
       border: 1px solid rgb(var(--color-border) / 25%);
+    }
+
+    // Provenance (e.g. the Aslain modpack) — neutral, informational.
+    &--src {
+      color: rgb(var(--color-muted));
+      background: rgb(var(--color-border) / 10%);
+      border: 1px solid rgb(var(--color-border) / 20%);
     }
   }
 
@@ -690,6 +719,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* The "another copy exists, installed by someone else" note — leads
+     the scroll body so the reinstall decision it suggests reads first. */
+  &__foreign-copy {
+    padding: 0.55rem 0.75rem;
+    border-left: 3px solid rgb(var(--color-primary) / 60%);
+    background: rgb(var(--color-primary) / 8%);
+    border-radius: var(--radius-xs);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    color: rgb(var(--color-text) / 88%);
   }
 
   /* Install-time scheme selector (palette / position / display mode):

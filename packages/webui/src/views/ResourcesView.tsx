@@ -35,6 +35,7 @@ import {
   api,
   type CatalogEntry,
   type CatalogPreset,
+  type ForeignModUnit,
   type CatalogProgress,
   type InstalledMod,
   type MigrationPlan,
@@ -84,6 +85,7 @@ import "./ResourcesView.scss";
 type Selection =
   | { mode: "catalog"; entry: CatalogEntry }
   | { mode: "installed"; mod: InstalledMod }
+  | { mode: "foreign"; unit: ForeignModUnit }
   | { mode: "local" };
 
 const REPO = "langyo/wowsp";
@@ -126,6 +128,7 @@ export default defineComponent({
     const selection = ref<Selection | null>(null);
 
     const installed = ref<InstalledMod[]>([]);
+    const foreignUnits = ref<ForeignModUnit[]>([]);
     const scanning = ref(false);
 
     const sourcePath = ref("");
@@ -422,6 +425,10 @@ export default defineComponent({
       scanning.value = true;
       try {
         installed.value = await api.modHubScanInstalled(gameRoot.value);
+        foreignUnits.value = await api.modHubForeignUnits(gameRoot.value).catch((e) => {
+          console.warn("foreign-unit detection failed", e);
+          return [];
+        });
         staleBins.value = await api.modHubStaleVersions(gameRoot.value).catch((e) => {
           console.warn("stale-bin detection failed", e);
           return [];
@@ -652,6 +659,36 @@ export default defineComponent({
       filter.value = "all";
     });
 
+    /** Installer display name for badges/notes. */
+    function installerLabel(installer: string): string {
+      if (installer === "aslain") return t("resources.foreignSource.aslain");
+      if (installer === "modstation") return t("resources.foreignSource.modstation");
+      return installer;
+    }
+
+    /** The non-WoWSP copy of a catalog entry, when a foreign unit paired
+     *  against it (and WoWSP itself has no record of installing it). */
+    function foreignCopyOf(entry: CatalogEntry): ForeignModUnit | null {
+      if (recordOf(entry.id)) return null;
+      return foreignUnits.value.find((f) => f.identity === entry.id) ?? null;
+    }
+
+    /** Aslain rows are already anchored into the installed list by the
+     *  res_mods scan — badge them by name match instead of re-listing. */
+    const aslainNames = computed(() => {
+      const names = new Set<string>();
+      for (const f of foreignUnits.value) {
+        if (f.installer === "aslain") names.add(f.name);
+      }
+      return names;
+    });
+
+    /** ModStation units live in bin/<ver>/mods/ — the res_mods scan never
+     *  sees them, so the installed source lists them in their own strip. */
+    const modstationUnits = computed(() =>
+      foreignUnits.value.filter((f) => f.installer === "modstation"),
+    );
+
     /** A preset's label: zh locales take the Chinese name, everything
      *  else the English one (presets carry just the two). */
     function presetLabel(p: CatalogPreset): string {
@@ -760,6 +797,13 @@ export default defineComponent({
       selection.value = { mode: "installed", mod };
     }
 
+    function selectForeign(unit: ForeignModUnit) {
+      delistedHit.value = null;
+      selectedPreset.value = "";
+      source.value = "installed";
+      selection.value = { mode: "foreign", unit };
+    }
+
     function openLocal() {
       delistedHit.value = null;
       selectedPreset.value = "";
@@ -776,7 +820,9 @@ export default defineComponent({
       delistedHit.value = null;
       selectedPreset.value = "";
       const mode = selection.value?.mode;
-      if (mode === "catalog" || mode === "installed") selection.value = null;
+      if (mode === "catalog" || mode === "installed" || mode === "foreign") {
+        selection.value = null;
+      }
     }
 
     const selectedRowKey = computed(() => {
@@ -961,6 +1007,7 @@ export default defineComponent({
     function renderCatalogDetail(entry: CatalogEntry) {
       const text = localized(entry);
       const record = recordOf(entry.id);
+      const foreignCopy = foreignCopyOf(entry);
       const upToDate = !!record && record.version === entry.version;
       const busyState = busy.value.get(entry.id);
       const busyInstall = busyState === "install";
@@ -981,6 +1028,13 @@ export default defineComponent({
             </div>
           </div>
           <div class="mod-detail__scroll">
+            {foreignCopy && (
+              <div class="mod-detail__foreign-copy">
+                {t("resources.foreignCopy", {
+                  source: installerLabel(foreignCopy.installer),
+                })}
+              </div>
+            )}
             <div class="mod-detail__badges">
               {isCatalogCat(entry.category) && (
                 <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
@@ -1180,6 +1234,62 @@ export default defineComponent({
       );
     }
 
+    function renderForeignDetail(unit: ForeignModUnit) {
+      const paired = unit.identity
+        ? listedEntries(catalog.value).find((e) => e.id === unit.identity)
+        : undefined;
+      return (
+        <div class="mod-detail">
+          <div class="mod-detail__head">
+            <span class="mod-row__tile mod-row__tile--cat mod-row__tile--lg">
+              <Puzzle size={24} />
+            </span>
+            <div class="mod-detail__id">
+              <div class="mod-detail__name">{unit.name}</div>
+              <div class="mod-detail__en">{installerLabel(unit.installer)}</div>
+            </div>
+          </div>
+          <div class="mod-detail__scroll">
+            <div class="mod-detail__badges">
+              <span class="mod-detail__badge">
+                {t("resources.foreignBadge", { source: installerLabel(unit.installer) })}
+              </span>
+              {unit.version && <span class="mod-detail__badge">v{unit.version}</span>}
+              {paired && (
+                <span class="mod-detail__badge mod-detail__badge--ok">
+                  {t("resources.foreignPaired")}
+                </span>
+              )}
+            </div>
+            <p class="mod-detail__desc">
+              {t("resources.foreignManaged", {
+                name: unit.name,
+                source: installerLabel(unit.installer),
+              })}
+            </p>
+            {paired && (
+              <p class="mod-detail__hint">
+                {t("resources.foreignPairedHint", { name: localized(paired).name })}
+              </p>
+            )}
+          </div>
+          <div class="mod-detail__foot">
+            <div class="mod-detail__foot-row">
+              {paired && (
+                <HkButton
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => selectCatalog(paired)}
+                >
+                  {t("resources.foreignOpenPaired")}
+                </HkButton>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function renderLocalDetail() {
       return (
         <div class="mod-detail">
@@ -1323,6 +1433,8 @@ export default defineComponent({
           return renderCatalogDetail(sel.entry);
         case "installed":
           return renderInstalledDetail(sel.mod);
+        case "foreign":
+          return renderForeignDetail(sel.unit);
         case "local":
           return renderLocalDetail();
       }
@@ -2006,11 +2118,49 @@ export default defineComponent({
                                 {t("resources.disabled")}
                               </span>
                             ) : null}
+                            {aslainNames.value.has(m.name) && (
+                              <span class="mod-row__badge mod-row__badge--src">
+                                {t("resources.foreignSource.aslain")}
+                              </span>
+                            )}
                           </span>
                         </button>
                       );
                     })}
             </div>
+
+            {source.value === "installed" && modstationUnits.value.length > 0 && (
+              <div class="resources-view__foreign-strip">
+                <span class="resources-view__foreign-strip-title">
+                  {t("resources.foreignSource.modstation")}
+                </span>
+                {modstationUnits.value.map((unit) => (
+                  <button
+                    key={`${unit.installer}/${unit.key}`}
+                    class={[
+                      "mod-row",
+                      selection.value?.mode === "foreign" &&
+                        selection.value.unit.key === unit.key &&
+                        selection.value.unit.installer === unit.installer &&
+                        "mod-row--active",
+                    ]}
+                    onClick={() => selectForeign(unit)}
+                  >
+                    <span class="mod-row__tile mod-row__tile--cat">
+                      <Puzzle size={20} />
+                    </span>
+                    <span class="mod-row__body">
+                      <span class="mod-row__name">{unit.name}</span>
+                      <span class="mod-row__sub">
+                        {unit.identity
+                          ? t("resources.foreignPaired")
+                          : t("resources.foreignUnpaired")}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Catalog metadata rides a quiet footer (the count itself moved
                 into the pill above); the installed list has none — its count

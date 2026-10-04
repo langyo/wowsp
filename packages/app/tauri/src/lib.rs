@@ -541,6 +541,7 @@ pub fn run() {
             commands::exports::pick_export_path,
             commands::exports::write_export_bytes,
             commands::exports::copy_image_to_clipboard,
+            commands::mod_hub::mod_hub_foreign_units,
             commands::mod_hub::mod_hub_scan_installed,
             commands::mod_hub::mod_hub_classify_path,
             commands::mod_hub::mod_hub_install,

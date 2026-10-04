@@ -48,6 +48,17 @@
   "delistedTitle": "このModは掲載終了しました",
   "delistedHint": "「{name}」はカタログから削除されたため、新たにインストールできません。導入済みのコピーには影響せず、「インストール済み」で管理できます。",
   "presetLabel": "スキーム",
+  "foreignCopy": "このModの別のコピーが {source} によってインストールされています（WoWSP 経由ではありません）。快適に使うにはここから再インストールすることをおすすめします。",
+  "foreignSource": {
+    "aslain": "Aslain MODパック",
+    "modstation": "WG ModStation"
+  },
+  "foreignBadge": "{source} によりインストール",
+  "foreignManaged": "{name} は {source} によってインストールされており、WoWSP はそのファイルを管理しません。アンインストールは {source} 側で行ってください。",
+  "foreignPaired": "カタログと照合済み",
+  "foreignUnpaired": "カタログ照合なし",
+  "foreignPairedHint": "オンラインカタログの「{name}」と照合されます。",
+  "foreignOpenPaired": "カタログ項目を開く",
   "install": "インストール",
   "update": "アップデート",
   "installedBadge": "インストール済み",

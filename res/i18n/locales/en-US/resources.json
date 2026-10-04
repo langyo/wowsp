@@ -48,6 +48,17 @@
   "delistedTitle": "This mod has been delisted",
   "delistedHint": "\"{name}\" has been withdrawn from the catalog and can no longer be installed. Existing installs keep working and stay manageable under Installed.",
   "presetLabel": "Scheme",
+  "foreignCopy": "Another copy of this mod is installed by {source} — not through WoWSP. Reinstalling here is recommended for the best experience.",
+  "foreignSource": {
+    "aslain": "Aslain's modpack",
+    "modstation": "WG ModStation"
+  },
+  "foreignBadge": "Installed by {source}",
+  "foreignManaged": "{name} was installed by {source}; WoWSP does not manage its files. Uninstall it from {source} itself.",
+  "foreignPaired": "Paired with the catalog",
+  "foreignUnpaired": "No catalog match",
+  "foreignPairedHint": "Pairs with \"{name}\" in the online catalog.",
+  "foreignOpenPaired": "Open the catalog entry",
   "install": "Install",
   "update": "Update",
   "installedBadge": "Installed",

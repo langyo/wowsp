@@ -1234,6 +1234,19 @@ export interface ModInstallRecord {
   gameRoot?: string;
 }
 
+/** One foreign-installer unit (mirrors `wowsp_tauri_shared::ForeignModUnit`):
+ *  a mod Aslain's modpack or WG's ModStation put on disk, with a best-effort
+ *  catalog pairing. WoWSP describes these, never manages them. */
+export interface ForeignModUnit {
+  /** `aslain | modstation`. */
+  installer: string;
+  key: string;
+  name: string;
+  version?: string | null;
+  /** Catalog id this unit pairs against, when a match existed. */
+  identity?: string | null;
+}
+
 /** An older `bin/<version>/` whose `res_mods` still carries files —
  *  stranded by a game update, invisible to the hub's installed list. */
 export interface StaleBinInfo {
@@ -1833,6 +1846,8 @@ export const api = {
   // ── Mod Hub ──
   modHubScanInstalled: (gameRoot: string) =>
     transport.invoke<InstalledMod[]>(RPC.mod_hub_scan_installed, { gameRoot }),
+  modHubForeignUnits: (gameRoot: string) =>
+    transport.invoke<ForeignModUnit[]>(RPC.mod_hub_foreign_units, { gameRoot }),
   modHubClassifyPath: (sourcePath: string) =>
     transport.invoke<PackagePlan>(RPC.mod_hub_classify_path, { sourcePath }),
   modHubInstall: (sourceRoot: string, gameRoot: string, plan: PackagePlan) =>

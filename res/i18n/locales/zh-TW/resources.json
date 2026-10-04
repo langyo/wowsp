@@ -48,6 +48,17 @@
   "delistedTitle": "此插件已下架",
   "delistedHint": "「{name}」已從外掛目錄中移除，不再提供安裝。已安裝的副本不受影響，可在「已安裝」列表中繼續管理。",
   "presetLabel": "方案",
+  "foreignCopy": "已安裝本外掛的另一份不來自 WoWSP 的副本（來自 {source}）；可以選擇重新安裝以獲得最佳體驗。",
+  "foreignSource": {
+    "aslain": "Aslain 整合包",
+    "modstation": "WG ModStation"
+  },
+  "foreignBadge": "由 {source} 安裝",
+  "foreignManaged": "{name} 由 {source} 安裝，WoWSP 不管理它的檔案；如需解除安裝請在 {source} 中操作。",
+  "foreignPaired": "已配對目錄條目",
+  "foreignUnpaired": "未配對目錄條目",
+  "foreignPairedHint": "與線上目錄中的「{name}」配對。",
+  "foreignOpenPaired": "開啟目錄條目",
   "install": "安裝",
   "update": "升級",
   "installedBadge": "已安裝",

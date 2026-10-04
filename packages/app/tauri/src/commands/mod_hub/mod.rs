@@ -471,6 +471,9 @@ pub use safe_mode::{
     __cmd__mod_hub_set_safe_mode, __tauri_command_name_mod_hub_set_safe_mode, mod_hub_set_safe_mode,
 };
 pub use scan_installed::{
+    __cmd__mod_hub_foreign_units, __tauri_command_name_mod_hub_foreign_units, mod_hub_foreign_units,
+};
+pub use scan_installed::{
     __cmd__mod_hub_scan_installed, __tauri_command_name_mod_hub_scan_installed,
     mod_hub_scan_installed,
 };

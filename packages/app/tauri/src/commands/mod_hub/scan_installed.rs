@@ -39,6 +39,38 @@ fn refresh_foreign(res_mods: &Path, ver_dir: &Path) {
     }
 }
 
+/// Foreign-installer units of one install, surfaced for the UI: ModStation
+/// trees the res_mods scan cannot see, plus the Aslain pairing verdicts.
+/// Read-only — the scan command already persists the same rows into
+/// wowsp.toml's `[foreign.*]` sections.
+#[tauri::command]
+pub fn mod_hub_foreign_units(
+    game_root: String,
+) -> Result<Vec<wowsp_tauri_shared::ForeignModUnit>, String> {
+    let res_mods = scan_root(&game_root)?;
+    let ver_dir = res_mods
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| res_mods.clone());
+    let catalog = super::mod_catalog::load_cached_index();
+    Ok(
+        foreign::scan_foreign(&res_mods, &ver_dir.join("mods"), catalog.as_ref())
+            .into_iter()
+            .flat_map(|(installer, units)| {
+                units
+                    .into_iter()
+                    .map(move |(key, entry)| wowsp_tauri_shared::ForeignModUnit {
+                        installer: installer.clone(),
+                        key,
+                        name: entry.name,
+                        version: entry.version,
+                        identity: entry.identity,
+                    })
+            })
+            .collect(),
+    )
+}
+
 /// Resolve `bin/<latest>/res_mods` for a game install.
 pub(crate) fn scan_root(game_root: &str) -> Result<PathBuf, String> {
     let (_, ver_dir) = latest_bin_version(game_root)

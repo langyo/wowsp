@@ -24,6 +24,7 @@ export type {
   CatalogPackage,
   CatalogPreset,
   CatalogEntry,
+  ForeignModUnit,
   CatalogEntryI18n,
   CatalogIndex,
   ModInstallRecord,

@@ -48,6 +48,17 @@
   "delistedTitle": "이 모드는 목록에서 제거되었습니다",
   "delistedHint": "\"{name}\" 모드가 카탈로그에서 제거되어 더 이상 설치할 수 없습니다. 이미 설치한 복사본에는 영향이 없으며 \"설치됨\" 목록에서 계속 관리할 수 있습니다.",
   "presetLabel": "스킴",
+  "foreignCopy": "이 모드의 WoWSP가 아닌 다른 사본({source} 설치)이 이미 있습니다. 최상의 경험을 위해 여기서 다시 설치할 수 있습니다.",
+  "foreignSource": {
+    "aslain": "Aslain 모드팩",
+    "modstation": "WG ModStation"
+  },
+  "foreignBadge": "{source} 설치",
+  "foreignManaged": "{name} 은(는) {source} 이(가) 설치했으며 WoWSP는 파일을 관리하지 않습니다. 제거는 {source} 에서 진행하세요.",
+  "foreignPaired": "카탈로그와 매칭됨",
+  "foreignUnpaired": "카탈로그 매칭 없음",
+  "foreignPairedHint": "온라인 카탈로그의 \"{name}\" 와(과) 매칭됩니다.",
+  "foreignOpenPaired": "카탈로그 항목 열기",
   "install": "설치",
   "update": "업데이트",
   "installedBadge": "설치됨",

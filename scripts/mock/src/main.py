@@ -166,6 +166,11 @@ _MOCK_INSTALLED = [
     {"kind": "skin", "name": "Hina_Moskva", "detail": "RSC110_Pr_66_Moskva",
      "relPath": "PnFMods/Hina_Moskva", "paths": ["PnFMods/Hina_Moskva"],
      "disabled": False, "version": None},
+    # An Aslain-anchored row: same name as the mock's foreign aslain unit,
+    # so the installed list shows the provenance badge.
+    {"kind": "gui", "name": "Shot Timer", "detail": None,
+     "relPath": "PnFMods/ShotTimer", "paths": ["PnFMods/ShotTimer"],
+     "disabled": False, "version": "15.7.0"},
     {"kind": "script", "name": "SmokeMarker", "detail": None,
      "relPath": "PnFMods/SmokeMarkerPy", "paths": ["PnFMods/SmokeMarkerPy"],
      "disabled": False, "version": "1.4.0"},
@@ -177,6 +182,21 @@ _MOCK_INSTALLED = [
      "relPath": "ime_config.xml", "paths": ["ime_config.xml"],
      "disabled": False, "version": None},
 ]
+
+
+@app.post("/api/mod_hub_foreign_units")
+async def cmd_mod_hub_foreign_units(request: Request) -> list[dict]:
+    # Sample: an Aslain row that pairs with the mock catalog's shot-timer
+    # entry (drives the "another non-WoWSP copy" note on its detail pane),
+    # plus two ModStation units (one paired, one not) for the side strip.
+    return [
+        {"installer": "aslain", "key": "shot-timer", "name": "Shot Timer",
+         "version": "15.7.0", "identity": "ui-timers-shot-timer"},
+        {"installer": "modstation", "key": "sessionstats", "name": "SessionStats",
+         "version": None, "identity": "port-mods-sessionstats-ollin"},
+        {"installer": "modstation", "key": "custom-crosshair", "name": "CustomCrosshair",
+         "version": None, "identity": None},
+    ]
 
 
 @app.post("/api/mod_hub_scan_installed")
