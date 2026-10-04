@@ -33,6 +33,7 @@ import {
 import { isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { shareFooterStrings } from "@/features/share/shotKit";
 import { useShareImage } from "@/features/share/useShareImage";
+import LiveStatsModeChip from "./LiveStatsModeChip";
 import { renderPostBattleShot, type ShotModel, type ShotStat } from "./postBattleShot";
 import "./postBattleShare.scss";
 
@@ -302,8 +303,11 @@ export function rosterShotColIndex(key: RosterColumnSpec["key"]): number {
  *  display view (randoms / ranked / global). */
 export { rosterStatView };
 
-/** Toolbar riding the post-battle panel top: hide-all-nicknames toggle (with
- *  the per-row eye hint), the optional roster-density toggle (compact rows ⇄
+/** Toolbar riding the post-battle panel top: the stats-source chip (the
+ *  identical selector the live panel's head carries — one shared statsPrefs
+ *  store, so a flip here re-resolves the roster and shows up in the live
+ *  head / settings immediately), the hide-all-nicknames toggle (with the
+ *  per-row eye hint), the optional roster-density toggle (compact rows ⇄
  *  the live panel's full cards — rendered only when the host passes the
  *  props) and the copy-share-shot action. Shared by the results panel and
  *  the incomplete-results fallback so both post-battle windows expose the
@@ -324,6 +328,10 @@ export const PostBattleShareBar = defineComponent({
   setup(props, { emit }) {
     return () => (
       <div class="replay-view__postbattle-toolbar">
+        {/* Stats-source filter: ship/battle/solo dimensions, the same chip
+            the live head mounts — the rows below already resolve through
+            the shared prefs, so flips apply without host wiring. */}
+        <LiveStatsModeChip />
         <button
           class={[
             "replay-view__postbattle-tool",

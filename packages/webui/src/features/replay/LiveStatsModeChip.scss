@@ -1,0 +1,68 @@
+/* Styles for the stats-source mode chip (LiveStatsModeChip). Kept in their
+   own sheet (NOT LiveBattlePanel.scss) because the chip now rides every
+   chunk that renders a roster head or toolbar: the live panel's head AND
+   both post-battle panels' share bar (the replay results modal + its
+   incomplete-results fallback) — a route-level code split must never strand
+   these rules in an unrelated view's CSS chunk (same contract as
+   postBattleShare.scss). The flat `live-battle__mode-*` names keep the
+   chip's historical prefix across both hosts. */
+
+/* The chip pill: the same quiet voice as the head action pills; any
+   stats-source dimension off its default flips it to the active green
+   face (see --on below). */
+.live-battle__mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-text) / 20%);
+  background: transparent;
+  color: rgb(var(--color-text) / 75%);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+}
+
+/* Any stats-source dimension off its default: the chip reads green like
+   every active head toggle. */
+.live-battle__mode-btn--on {
+  border-color: rgb(var(--color-success, 74 222 128) / 55%);
+  color: rgb(var(--color-success, 74 222 128));
+}
+
+/* The popup teleports to body level (HkPopover), so these rules stay
+   top-level on purpose — the flat classes reach it there. */
+.live-battle__mode-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 17rem;
+  padding: 0.35rem 0.15rem 0.15rem;
+
+  .live-battle__mode-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .live-battle__mode-group-label {
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    color: rgb(var(--color-text) / 65%);
+  }
+
+  .live-battle__mode-pop-hint {
+    margin-top: 0.15rem;
+    font-size: var(--text-2xs);
+    line-height: 1.5;
+    color: rgb(var(--color-text) / 45%);
+  }
+}

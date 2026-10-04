@@ -144,12 +144,12 @@
 
   /* Head action pills (copy-shot / hide-nicknames / density / manual-locate)
      share one voice: a quiet neutral pill; the nicknames and density
-     toggles flip green while their mode is on. */
+     toggles flip green while their mode is on. (The stats-source mode tag
+     keeps the same voice from its own sheet — LiveStatsModeChip.scss.) */
   &__shot-btn,
   &__mask-btn,
   &__density-btn,
-  &__manual-btn,
-  &__mode-btn {
+  &__manual-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -175,13 +175,6 @@
      group to the right end of the line. */
   &__shot-btn {
     margin-left: auto;
-  }
-
-  /* Any stats-source dimension off its default: the mode tag reads green
-     like every active head toggle. */
-  &__mode-btn--on {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    color: rgb(var(--color-success, 74 222 128));
   }
 
   /* Nicknames are masked: the toggle reads "show nicknames" in the same
@@ -547,36 +540,5 @@
   }
   75% {
     transform: translateX(-2px);
-  }
-}
-
-/* ── Stats-source mode popup (LiveStatsModeChip) ───────────────────────
-   Top-level like the keyframes above: the popup teleports to body level,
-   but this stylesheet is intentionally unscoped, so the flat classes
-   reach it there (the filter bar's popups rely on the same property). */
-.live-battle__mode-pop {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  min-width: 17rem;
-  padding: 0.35rem 0.15rem 0.15rem;
-
-  .live-battle__mode-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-
-  .live-battle__mode-group-label {
-    font-size: var(--text-2xs);
-    font-weight: 700;
-    color: rgb(var(--color-text) / 65%);
-  }
-
-  .live-battle__mode-pop-hint {
-    margin-top: 0.15rem;
-    font-size: var(--text-2xs);
-    line-height: 1.5;
-    color: rgb(var(--color-text) / 45%);
   }
 }

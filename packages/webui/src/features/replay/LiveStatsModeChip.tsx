@@ -1,10 +1,15 @@
 /**
- * LiveStatsModeChip — the live panel head's stats-source tag: a pill that
- * shows the CURRENT three-dimension selection (ship scope / battle scope /
- * solo filter) and opens a filter-style popup hosting the very segmented
- * groups the settings page renders (OverlayContentControls) — identical
- * option sets, reading and writing the SAME statsPrefs store fields, so a
- * flip here shows up in the settings and vice versa, immediately.
+ * LiveStatsModeChip — the stats-source tag: a pill that shows the CURRENT
+ * three-dimension selection (ship scope / battle scope / solo filter) and
+ * opens a filter-style popup hosting the very segmented groups the settings
+ * page renders (OverlayContentControls) — identical option sets, reading
+ * and writing the SAME statsPrefs store fields, so a flip here shows up in
+ * the settings and vice versa, immediately.
+ *
+ * Mounted in two hosts: the live panel's head and the post-battle share
+ * bar (PostBattleShareBar — riding the replay results modal and its
+ * incomplete-results fallback), so both windows offer the identical
+ * selector and every flip re-resolves the roster through the shared store.
  *
  * The popup frame follows the filter-bar popup pattern (FilterCategoryChip):
  * HkPopover teleported to body level and anchored bottom-start, outside
@@ -24,6 +29,7 @@ import {
   type RosterShipScope,
   type RosterSoloScope,
 } from "@/stores/statsPrefs";
+import "./LiveStatsModeChip.scss";
 
 /** scope value → its option label key (the settings rows use the same). */
 const SHIP_SCOPE_LABEL: Record<RosterShipScope, string> = {

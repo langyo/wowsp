@@ -1,7 +1,7 @@
-/* Post-battle panel styles — shared by the replay view's 结果 modal and the
- live view's post-battle window (the component lives in
- features/replay/PostBattlePanel.tsx; the class prefix keeps the historical
- `replay-view__postbattle-*` names both views already render). */
+/* Post-battle panel styles — the replay view's 结果 modal (the component
+   lives in features/replay/PostBattlePanel.tsx and is mounted by
+   ReplayView; the class prefix keeps the historical
+   `replay-view__postbattle-*` names earlier views rendered). */
 
 
 /* Post-battle: two-column team matrix + drill-down panel. The stats
@@ -54,12 +54,17 @@
   font-size: var(--text-xs);
 }
 
-/* Share toolbar: hide-all-nicknames toggle + per-row eye hint (left) and
-   the copy-share-shot action (right); copy feedback rides the global
-   toast surface instead of an inline note. */
+/* Share toolbar: stats-source chip + hide-all-nicknames toggle + per-row
+   eye hint (left) and the copy-share-shot action (right); copy feedback
+   rides the global toast surface instead of an inline note. (The chip's
+   own pill styles live in LiveStatsModeChip.scss — it rides every chunk
+   this toolbar does.) Wraps like the live head on narrow widths — a
+   long-locale chip label must never push the row into a horizontal
+   scrollbar. */
 .replay-view__postbattle-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -99,7 +104,13 @@
   }
 }
 .replay-view__postbattle-toolbar-hint {
-  flex: 1 1 auto;
+  /* basis 0 (not auto): flex line-breaking measures each item's
+     hypothetical size BEFORE shrinking, so an auto-basis hint counts at
+     its full unwrapped width and would push the pills onto a second row
+     while shrinking could still have saved the line. Basis 0 keeps the
+     hint a pure filler — the row wraps only when the pills themselves
+     genuinely can't fit. */
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

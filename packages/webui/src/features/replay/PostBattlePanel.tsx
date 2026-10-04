@@ -1,14 +1,17 @@
 /**
  * Post-battle panel: the two-column result matrix shown by the replay
- * "结果" modal AND by the live view's post-battle window (opened once the
- * settling .wowsreplay carries its BattleResults payload). Rows sort by
+ * "结果" modal (mounted by ReplayView once the replay carries its
+ * BattleResults payload; the live view reads its own roster straight from
+ * the arena store instead). Rows sort by
  * settlement base exp (裸经验 — bots report 0, legacy short arrays fall back
  * to an estimate) and carry the same roster dressing as the live-battle
  * panel: clan tags, PR column, career seals, team aggregates in the column
  * titles and the battle mode/map head. Rows default to the compact one-line
  * look; the share bar's mode toggle expands them to the live panel's full
  * cards (name/ship/stat stack + the LiveShipMeta ship strip), a persisted
- * stats pref.
+ * stats pref. The share bar also leads with the stats-source chip — the
+ * identical selector the live panel's head mounts (one shared statsPrefs
+ * store; a flip re-resolves these rows immediately).
  *
  * Share-time privacy: nicknames can be masked wholesale or per player (the
  * row-end eye), and "复制截图" paints the matrix into a watermarked PNG on
