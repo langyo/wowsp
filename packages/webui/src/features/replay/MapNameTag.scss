@@ -1,19 +1,21 @@
 /* Map-name tag — the shared "which map am I on" chip (live battle head,
    replay-review header). Interactive voice: the accent tint marks the tag
-   as a jump, distinct from the quiet neutral action pills beside it; the
-   --plain variant (a space /tactics cannot board) keeps the shape but
-   drops the affordance colors. The preview card lives at <body> level,
-   teleported and fixed-positioned — placement rules in MapNameTag.tsx. */
+   as a jump, distinct from the quiet neutral action pills beside it, and
+   its box IS the compact pill voice (--text-2xs / 600 / 1.5 / 0.1rem
+   0.55rem / full radius) — no host override needed anywhere. The --plain
+   variant (a space /tactics cannot board) keeps the shape but drops the
+   affordance colors. The preview card lives at <body> level, teleported
+   and fixed-positioned — placement rules in MapNameTag.tsx. */
 .map-tag {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.1rem 0.6rem;
+  padding: 0.1rem 0.55rem;
   border-radius: 999px;
   border: 1px solid rgb(var(--color-accent) / 40%);
   background: rgb(var(--color-accent) / 12%);
   color: rgb(var(--color-accent));
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;

@@ -154,8 +154,8 @@ export default defineComponent({
     });
 
     // Callers pass their layout hook as class (live-battle__map and
-    // replay-view__map both hold the tag at their header rows' compact
-    // pill voice) — but
+    // replay-view__map only position the tag inside their header rows —
+    // the compact pill voice itself is MapNameTag.scss's base) — but
     // the teleported card makes this a multi-root component, so Vue skips
     // fallthrough entirely and the class must be merged by hand (the
     // AssetImage pattern).

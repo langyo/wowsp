@@ -155,13 +155,8 @@
     gap: 0.75rem;
   }
 
-  /* The map tag rides with the meta row at the same compact pill voice the
-     live battle head gives it — the compound selector outguns
-     MapNameTag.scss's base font so both heads read identically (the tag's
-     colors and pill shape live in MapNameTag.scss). */
-  .replay-view__map.map-tag {
-    font-size: var(--text-2xs);
-  }
+  /* The map tag rides with the meta row speaking MapNameTag.scss's own
+     compact pill voice — identical to the live battle head, no override. */
 
   &__meta-item {
     font-size: var(--text-sm);
@@ -169,11 +164,14 @@
   }
 
   &__pill {
-    padding: 0.1rem 0.5rem;
+    padding: 0.1rem 0.55rem;
     background: rgb(var(--color-accent) / 20%);
     border-radius: var(--radius-full);
     color: rgb(var(--color-accent));
     font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
     text-transform: uppercase;
     border: none;
     cursor: pointer;
@@ -196,11 +194,14 @@
   }
 
   &__count {
-    padding: 0.1rem 0.5rem;
+    padding: 0.1rem 0.55rem;
     background: rgb(var(--color-primary) / 12%);
     border-radius: var(--radius-full);
     color: rgb(var(--color-primary));
     font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
   }
 
   /* Detail: the holographic battle map fills the remaining height. */
@@ -639,11 +640,14 @@
 
   &__pill {
     flex-shrink: 0;
-    padding: 0.05rem 0.45rem;
+    padding: 0.1rem 0.55rem;
     background: rgb(var(--color-accent) / 20%);
     border-radius: var(--radius-full);
     color: rgb(var(--color-accent));
     font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
     text-transform: uppercase;
 
     &--live {
@@ -736,7 +740,7 @@
   }
 
   &__clock {
-    padding: 0.05rem 0.45rem;
+    padding: 0.1rem 0.55rem;
     border-radius: var(--radius-full);
     background: rgb(var(--color-text) / 8%);
     color: rgb(var(--color-text) / 85%);
@@ -778,10 +782,13 @@
   }
 
   &__count {
-    padding: 0.02rem 0.4rem;
+    padding: 0.1rem 0.55rem;
     background: rgb(var(--color-border) / 25%);
     border-radius: var(--radius-full);
     font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
   }
 
   &__totalhp {

@@ -61,11 +61,14 @@
 
   &__count {
     flex-shrink: 0;
-    padding: 0.1rem 0.5rem;
+    padding: 0.1rem 0.55rem;
     background: rgb(var(--color-primary) / 12%);
     border-radius: var(--radius-full);
     color: rgb(var(--color-primary));
     font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
   }
 
   &__list-scroll {
@@ -145,11 +148,14 @@
 
   /* Version marker next to the selected map's name. */
   &__detail-note {
-    padding: 0.05rem 0.45rem;
+    padding: 0.1rem 0.55rem;
     background: rgb(var(--color-muted) / 22%);
     border-radius: var(--radius-full);
     color: rgb(var(--color-muted));
     font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
     text-decoration: line-through;
   }
 
@@ -214,11 +220,14 @@
   }
 
   &__badge {
-    padding: 0.05rem 0.45rem;
+    padding: 0.1rem 0.55rem;
     background: rgb(var(--color-accent) / 20%);
     border-radius: var(--radius-full);
     color: rgb(var(--color-accent));
     font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
 
     /* Scenario / special-mode maps — the amber "incomplete" marker. */
     &--limited {

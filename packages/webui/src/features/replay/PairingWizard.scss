@@ -325,10 +325,12 @@
 
   &__entry-pill {
     flex: none;
-    padding: 0.05rem 0.45rem;
+    padding: 0.1rem 0.55rem;
     border-radius: 999px;
-    font-size: var(--text-2xs, 0.7rem);
+    font-size: var(--text-2xs);
+    font-weight: 600;
     line-height: 1.5;
+    white-space: nowrap;
   }
 
   &__entry-sub {
@@ -361,7 +363,7 @@
     position: absolute;
     right: 0;
     top: -1.15rem;
-    font-size: var(--text-2xs, 0.7rem);
+    font-size: var(--text-2xs);
     font-family: var(--font-mono, monospace);
     color: rgb(var(--color-text-tertiary) / 95%);
   }

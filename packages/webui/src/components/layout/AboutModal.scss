@@ -120,8 +120,11 @@
 
   &__tech-tag {
     font-size: var(--text-2xs);
-    padding: 0.15rem 0.45rem;
-    border-radius: var(--radius-xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
     background: rgb(var(--color-primary) / 10%);
     color: rgb(var(--color-primary));
     border: none;
