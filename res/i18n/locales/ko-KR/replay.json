@@ -122,7 +122,21 @@
     "avgDamage": "평균 데미지",
     "battles": "전투 수",
     "survival": "생존",
-    "hitRate": "명중"
+    "hitRate": "명중",
+    "career": "통산 전적",
+    "state": "현재 상태",
+    "careerLoading": "전적 조회 중…",
+    "player": "플레이어",
+    "status": "상태",
+    "afloat": "생존",
+    "position": "위치",
+    "positionUnknown": "실종 — 위치 미상",
+    "neverSpotted": "미발견",
+    "noTrajectory": "항적 데이터 없음",
+    "load": "표준 장비",
+    "loadNote": "리플레이에는 개별 플레이어의 실제 장비와 함장이 포함되지 않아 이 함선의 표준 구성 능력을 표시합니다.",
+    "specs": "함선 제원",
+    "holdTab": "Tab 길게 눌러 전체 플레이어 목록 보기"
   },
   "roster": {
     "allies": "아군",
@@ -135,7 +149,11 @@
     "teamWrPlain": "평균 승률",
     "teamAvgPr": "평균 PR",
     "compactMode": "컴팩트 모드",
-    "fullMode": "전체 모드"
+    "fullMode": "전체 모드",
+    "kills": "격침",
+    "sunkAt": "{time} 침몰",
+    "aliveCount": "생존 {alive}/{total}",
+    "ship": "함선"
   },
   "minimap": {
     "zoom": "확대 맵",

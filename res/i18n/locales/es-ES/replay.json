@@ -122,7 +122,21 @@
     "avgDamage": "Daño medio",
     "battles": "Batallas",
     "survival": "Supervivencia",
-    "hitRate": "Precisión"
+    "hitRate": "Precisión",
+    "career": "Estadísticas",
+    "state": "Estado actual",
+    "careerLoading": "Buscando estadísticas…",
+    "player": "Jugador",
+    "status": "Estado",
+    "afloat": "A flote",
+    "position": "Posición",
+    "positionUnknown": "Perdido, posición desconocida",
+    "neverSpotted": "Aún sin detectar",
+    "noTrajectory": "Sin datos de trayectoria",
+    "load": "Configuración estándar",
+    "loadNote": "Las repeticiones no incluyen los módulos ni el comandante reales de cada jugador; se muestran las capacidades estándar del buque.",
+    "specs": "Características",
+    "holdTab": "Mantén Tab para ver la lista completa de jugadores"
   },
   "roster": {
     "allies": "Aliados",
@@ -135,7 +149,11 @@
     "teamWrPlain": "WR medio",
     "teamAvgPr": "PR medio",
     "compactMode": "Modo compacto",
-    "fullMode": "Modo completo"
+    "fullMode": "Modo completo",
+    "kills": "Hundimientos",
+    "sunkAt": "hundido a las {time}",
+    "aliveCount": "{alive}/{total} vivos",
+    "ship": "Buque"
   },
   "minimap": {
     "zoom": "Mapa ampliado",

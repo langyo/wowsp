@@ -131,6 +131,48 @@
   &.is-sunk { opacity: 0.55; filter: grayscale(0.85); }
 }
 
+/* One ship slot: the icon plus (when the hull is hurt) a thin HP bar
+   hanging just under it, team-coloured like the in-game strip. The bar is
+   absolutely positioned inside the reserved 15+3px slot box so appearing
+   never shifts the row. Interactive slots re-enable pointer events (the
+   app's scorebar wrapper disables them for map pass-through) for the
+   hover tooltip. */
+.holo-scorebar__slot {
+  position: relative;
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+
+  &.is-interactive {
+    pointer-events: auto;
+    cursor: default;
+  }
+}
+
+.holo-scorebar__slot-hp {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  width: 15px;
+  height: 3px;
+  border-radius: 2px;
+  /* Dark rail on either glass so the fill reads on light pills too. */
+  background: rgb(9 13 22 / 65%);
+  overflow: hidden;
+  pointer-events: none;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: var(--slot-hp-pct, 100%);
+    border-radius: inherit;
+  }
+
+  &--ally::after { background: var(--holo-ally); }
+  &--enemy::after { background: var(--holo-enemy); }
+}
+
 .holo-scorebar__ships-sep {
   width: 1px;
   height: 12px;

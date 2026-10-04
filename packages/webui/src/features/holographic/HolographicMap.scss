@@ -873,20 +873,119 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 3rem 0;
+  padding: 2.2rem 1rem;
   pointer-events: none;
   color: var(--holo-hud-text);
+}
 
-  table { border-collapse: collapse; width: 100%; max-width: 600px; }
-  th {
-    text-align: left;
-    padding: 0.35rem 0.6rem;
-    font-size: var(--text-xs);
-    color: var(--holo-hud-dim);
-    border-bottom: 1px solid var(--holo-hud-border);
+/* The Tab scoreboard: one board, one or two team tables side by side (the
+   game's own layout), rows in the game's own order. The decisive width is
+   the MAP PANE's, not the window's (the replay view's side rail leaves a
+   ~670px pane even on a 1280px window) — so the stacking breakpoint is a
+   container query against .holo-map's inline size, and the column shares
+   ride on <colgroup> (with table-layout fixed, widths on any row but the
+   first are ignored — a colspan title row made every column equal). */
+.holo-map__roster-board {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1040px;
+}
+
+/* Narrow map pane: stack the two tables — 300px per table cannot hold the
+   five columns, stacked each table gets the pane's full width. */
+@container (max-width: 899px) {
+  .holo-map__roster-board {
+    flex-direction: column;
+    gap: 1rem;
   }
-  td {
-    padding: 0.25rem 0.6rem;
-    font-size: var(--text-sm);
-  }
+}
+
+.holo-roster__team {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.holo-roster__team-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.3rem 0.45rem;
+  border-bottom: 1px solid var(--holo-hud-border);
+}
+
+.holo-roster__table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.holo-roster__col--icon { width: 1.7rem; }
+.holo-roster__col--player { width: 32%; }
+.holo-roster__col--ship { width: 28%; }
+.holo-roster__col--kills { width: 3.5ch; }
+/* Status column takes the remainder — sized to hold 沉没于 mm:ss even in
+   the 425px-per-table side-by-side layout. */
+
+.holo-roster__th {
+  text-align: left;
+  padding: 0.3rem 0.45rem;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--holo-hud-dim);
+  border-bottom: 1px solid var(--holo-hud-border);
+  white-space: nowrap;
+
+  &--icon { padding-right: 0; }
+  &--num { text-align: center; }
+}
+
+.holo-roster__td {
+  padding: 0.22rem 0.45rem;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &--icon { padding-right: 0; }
+  &--num { text-align: center; font-variant-numeric: tabular-nums; }
+}
+
+.holo-roster__title--ally { color: #4ade80; font-weight: 800; }
+.holo-roster__title--enemy { color: #f87171; font-weight: 800; }
+
+.holo-roster__alive {
+  font-weight: 600;
+  color: var(--holo-hud-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.holo-roster__row--dead {
+  td { opacity: 0.55; }
+}
+
+.holo-roster__self {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--holo-hud-strong);
+}
+
+.holo-roster__tier {
+  margin-right: 0.35rem;
+  font-weight: 800;
+  color: var(--holo-hud-strong);
+}
+
+.holo-roster__ship {
+  color: var(--holo-hud-dim);
+}
+
+.holo-roster__zero { color: var(--holo-hud-dim); opacity: 0.7; }
+
+.holo-roster__afloat { color: var(--holo-hud-dim); }
+
+.holo-roster__sunk {
+  color: #f87171;
+  font-variant-numeric: tabular-nums;
 }

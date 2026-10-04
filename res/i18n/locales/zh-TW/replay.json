@@ -122,7 +122,21 @@
     "avgDamage": "場均",
     "battles": "場次",
     "survival": "存活",
-    "hitRate": "命中"
+    "hitRate": "命中",
+    "career": "歷史戰績",
+    "state": "當前狀態",
+    "careerLoading": "戰績查詢中…",
+    "player": "玩家",
+    "status": "狀態",
+    "afloat": "存活",
+    "position": "位置",
+    "positionUnknown": "已消失，位置未知",
+    "neverSpotted": "尚未被發現",
+    "noTrajectory": "無軌跡資料",
+    "load": "標準配置",
+    "loadNote": "錄像不包含玩家的實際配件與艦長，此處為該艦的通用配置能力",
+    "specs": "船隻屬性",
+    "holdTab": "按住 Tab 查看完整玩家列表"
   },
   "roster": {
     "allies": "我方",
@@ -135,7 +149,11 @@
     "teamWrPlain": "平均勝率",
     "teamAvgPr": "平均 PR",
     "compactMode": "緊湊模式",
-    "fullMode": "完整模式"
+    "fullMode": "完整模式",
+    "kills": "擊殺",
+    "sunkAt": "沉沒於 {time}",
+    "aliveCount": "存活 {alive}/{total}",
+    "ship": "艦船"
   },
   "minimap": {
     "zoom": "放大地圖",

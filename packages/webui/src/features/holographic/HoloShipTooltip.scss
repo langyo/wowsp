@@ -1,0 +1,268 @@
+/* HoloShipTooltip — the rich hover card for one scorebar ship slot.
+   Teleported to <body>, OUTSIDE .holo-map, so the HUD custom properties do
+   not resolve here: the card paints the same neutral translucent glass the
+   scorebar pill uses (readable on the dark map AND the light one) and the
+   team accents are the scorebar's own green/red tokens. */
+.holo-ship-tip {
+  --tip-ally: #4ade80;
+  --tip-enemy: #f87171;
+
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.65rem 0.8rem 0.5rem;
+  border-radius: 12px;
+  /* Same neutral grey glass as .holo-scorebar — readable over either map
+     theme; numbers carry the meaning, the glass only frames them. */
+  background: rgb(96 108 126 / 42%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 35%), inset 0 1px 0 rgb(255 255 255 / 6%);
+  color: rgb(var(--color-text, 235 240 248));
+  font-size: 0.75rem;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+
+  /* Left rail picks the side tint so the card reads ally/enemy at a glance. */
+  &--enemy { border-left: 3px solid var(--tip-enemy); }
+  &:not(&--enemy) { border-left: 3px solid var(--tip-ally); }
+
+  &__head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 0.45rem;
+    border-bottom: 1px solid rgb(var(--color-border, 200 210 220) / 18%);
+  }
+
+  &__name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  &__name {
+    font-weight: 700;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__clan { opacity: 0.85; margin-right: 2px; }
+
+  &__tag {
+    flex: none;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 35%);
+    color: rgb(255 255 255 / 85%);
+    font-size: 0.625rem;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  &__ship-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: rgb(var(--color-text, 235 240 248) / 78%);
+    min-width: 0;
+
+    img { display: block; flex: none; }
+  }
+
+  &__tier {
+    color: var(--color-text, inherit);
+    font-weight: 800;
+  }
+
+  &__ship-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__type {
+    flex: none;
+    font-size: 0.625rem;
+    font-weight: 700;
+    opacity: 0.7;
+  }
+
+  &__section {
+    padding: 0.45rem 0 0.35rem;
+    border-bottom: 1px solid rgb(var(--color-border, 200 210 220) / 12%);
+
+    &:last-of-type { border-bottom: none; }
+  }
+
+  &__sec-title {
+    margin-bottom: 0.3rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+  }
+
+  &__dim {
+    margin: 0;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+    font-size: 0.7rem;
+  }
+
+  &__note { margin-top: 0.35rem; font-size: 0.625rem; }
+
+  &__loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  /* Career metrics: a 4-up grid, value over label. */
+  &__metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.3rem 0.4rem;
+  }
+
+  &__metric {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+
+    b {
+      font-size: 0.8rem;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    > span {
+      font-size: 0.625rem;
+      color: rgb(var(--color-text, 235 240 248) / 50%);
+      white-space: nowrap;
+    }
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  &__row-label {
+    flex: none;
+    font-size: 0.7rem;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+  }
+
+  &__row-value {
+    font-weight: 700;
+    text-align: right;
+
+    &--dead { color: var(--tip-enemy); }
+    &--dim {
+      font-weight: 500;
+      color: rgb(var(--color-text, 235 240 248) / 55%);
+    }
+  }
+
+  /* Hull HP bar — dark rail so the team-coloured fill reads on either
+     glass, same recipe as the scorebar slot bar. */
+  &__hpbar {
+    position: relative;
+    height: 5px;
+    margin: 2px 0 3px;
+    border-radius: 3px;
+    background: rgb(9 13 22 / 65%);
+    overflow: hidden;
+  }
+
+  &__hpbar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    transition: width 0.15s linear;
+
+    &--ally { background: var(--tip-ally); }
+    &--enemy { background: var(--tip-enemy); }
+  }
+
+  &__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 30%);
+    border: 1px solid rgb(255 255 255 / 12%);
+    font-size: 0.625rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* Generous fold height — most ships' full spec list fits without the
+     inner scrollbar, so group titles don't get cut mid-block at the fold. */
+  &__specs {
+    max-height: min(340px, 42vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
+  }
+
+  &__spec-group + &__spec-group {
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px dashed rgb(var(--color-border, 200 210 220) / 14%);
+  }
+
+  &__spec-title {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+    margin-bottom: 2px;
+  }
+
+  &__spec-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.7rem;
+
+    > span:first-child {
+      color: rgb(var(--color-text, 235 240 248) / 60%);
+    }
+    > span:last-child { font-weight: 600; }
+  }
+
+  &__foot {
+    padding-top: 0.4rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-text, 235 240 248) / 42%);
+    text-align: center;
+  }
+}

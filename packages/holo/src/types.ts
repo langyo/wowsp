@@ -28,6 +28,14 @@ export interface HoloShip {
   heading?: number;
   /** Recent trail (world coords, oldest → newest). */
   trail?: { x: number; z: number }[];
+  /** Stable slot identity (the app passes the roster player id) — row
+   *  keying survives the alive/sunk reshuffle and hover callbacks can map
+   *  a slot back to its player. Callers without identity keep index keys. */
+  key?: string | number;
+  /** Hull HP at the playhead (null = not streamed / unknown). */
+  hp?: number | null;
+  /** Ship's maximum HP — the mini HP bar's denominator. */
+  maxHp?: number | null;
 }
 
 /** Capture zone state for the scorebar letters. */

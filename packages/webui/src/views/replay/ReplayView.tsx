@@ -2026,6 +2026,8 @@ export default defineComponent({
                       mapName={parser.current.value.mapName ?? ""}
                       initialTime={initialSeek}
                       initialMinimapZoom={route.query.mm === "1"}
+                      realm={realm.value}
+                      statsMode={fallbackStatsMode.value}
                     />
                   )}
                 </div>

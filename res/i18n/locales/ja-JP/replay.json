@@ -122,7 +122,21 @@
     "avgDamage": "平均ダメージ",
     "battles": "対戦数",
     "survival": "生存率",
-    "hitRate": "命中率"
+    "hitRate": "命中率",
+    "career": "通算戦績",
+    "state": "現在の状態",
+    "careerLoading": "戦績を照会中…",
+    "player": "プレイヤー",
+    "status": "状態",
+    "afloat": "生存",
+    "position": "位置",
+    "positionUnknown": "失跡・位置不明",
+    "neverSpotted": "未発見",
+    "noTrajectory": "航跡データなし",
+    "load": "標準構成",
+    "loadNote": "リプレイには各プレイヤーの実際の装備や艦長が含まれないため、この艦の標準的な構成能力を表示しています。",
+    "specs": "艦艇性能",
+    "holdTab": "Tab 長押しで全プレイヤー一覧を表示"
   },
   "roster": {
     "allies": "味方",
@@ -135,7 +149,11 @@
     "teamWrPlain": "平均勝率",
     "teamAvgPr": "平均 PR",
     "compactMode": "コンパクト表示",
-    "fullMode": "フル表示"
+    "fullMode": "フル表示",
+    "kills": "撃沈",
+    "sunkAt": "{time} に沈没",
+    "aliveCount": "生存 {alive}/{total}",
+    "ship": "艦艇"
   },
   "minimap": {
     "zoom": "拡大マップ",

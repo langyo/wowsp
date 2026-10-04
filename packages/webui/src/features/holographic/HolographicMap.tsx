@@ -17,6 +17,8 @@ import { clearShipMarkerCache } from "./shipMarker";
 import { clearPropMarkerCache } from "./propMarker";
 import { sampleAt, hpAtTime } from "./trajectoryMath";
 import { shouldReserveTabKey } from "./tabKeyGate";
+import { arenaIdentities, resolveRosterAssignments } from "./rosterRoles";
+import HoloShipTooltip from "./HoloShipTooltip";
 import {
   clearActors,
   computeFullMapBounds,
@@ -63,6 +65,9 @@ import type {
   WeaponLockEvent,
 } from "@/api";
 import { foldDamageStats } from "@/api";
+import { parsePostBattle } from "@/features/replay/postBattle";
+import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
+import type { ResolvedStatsMode } from "@/utils/statView";
 import planeIcon from "./planeIcons";
 import { shipIconUrl } from "./shipIcons";
 import {
@@ -204,6 +209,12 @@ export default defineComponent({
     initialTime: { type: Number, default: 0 },
     /** Open with the enlarged 2D minimap shown (deep-link/dev aid). */
     initialMinimapZoom: { type: Boolean, default: false },
+    /** Query realm for the strip-tooltip career stats (shared with the
+     *  parent view — the replay belongs to the install, not the account). */
+    realm: { type: String, default: "asia" },
+    /** Resolved stats-source battle scope for the tooltip's stat numbers
+     *  (the same mode the post-battle panels show). */
+    statsMode: { type: String as () => ResolvedStatsMode, default: "random" },
   },
   setup(props, { expose }) {
     const container = ref<HTMLElement | null>(null);
@@ -367,49 +378,77 @@ export default defineComponent({
     // Ships alive = total - sunk count at current time
     const allyAlive = ref(allyTotal.value);
     const enemyAlive = ref(enemyTotal.value);
-    // Death time per roster ship. With the arena assignments (entity →
-    // roster entry) the join is per player — mirror picks (both teams on
-    // the same ship) sink at different times and used to overwrite each
-    // other when keyed by the shared shipId. Before the first actor
-    // rebuild (assignments empty) fall back to the shipId-keyed map.
-    const deathTimeByShipId = computed(() => {
-      const m = new Map<number, number | null>();
-      for (const tr of props.trajectories) {
-        if (tr.kind?.shipId != null) m.set(tr.kind.shipId, tr.deathTime ?? null);
+    // Per-roster-player live state, joined through the roster→trajectory
+    // assignment — arena-authoritative when the decoded arena state is in
+    // (mirror picks can never cross), spawn-centroid heuristic otherwise —
+    // and it carries the HP stream the strip's damaged-only mini bars, the
+    // hover tooltip and the Tab scoreboard read.
+    interface RosterShipState {
+      traj: EntityTrajectory | null;
+      deathTime: number | null;
+      maxHp: number | null;
+    }
+    const rosterState = computed<Map<number, RosterShipState>>(() => {
+      const shipTrajs = props.trajectories.filter((tr) => tr.kind?.entityType === 2);
+      // Prefer the assignments the actor rebuild already resolved (they
+      // carry the arena identities); before the first rebuild compute the
+      // same map locally — replacing the old shipId-keyed join whose
+      // mirror-pick overwrite this computed exists to fix.
+      const assignments =
+        ctx?.rosterAssignments.size
+          ? ctx.rosterAssignments
+          : resolveRosterAssignments(
+              shipTrajs,
+              props.vehicles,
+              props.operation,
+              arenaIdentities(props.arenaPlayers),
+            );
+      const trajById = new Map(shipTrajs.map((tr) => [tr.entityId, tr]));
+      const byPlayer = new Map<number, RosterShipState>();
+      for (const [entityId, v] of assignments) {
+        if (!v || byPlayer.has(v.id)) continue;
+        const traj = trajById.get(entityId) ?? null;
+        let maxHp: number | null = null;
+        for (const s of traj?.hpSamples ?? []) {
+          if (maxHp == null || s.value > maxHp) maxHp = s.value;
+        }
+        byPlayer.set(v.id, { traj, deathTime: traj?.deathTime ?? null, maxHp });
       }
-      return m;
-    });
-    const deathTimeByRosterId = computed(() => {
-      const m = new Map<number, number | null>();
-      if (ctx?.rosterAssignments.size === 0) return m;
-      for (const [entityId, entry] of ctx?.rosterAssignments ?? []) {
-        if (!entry) continue;
-        const tr = props.trajectories.find((t) => t.entityId === entityId);
-        if (tr) m.set(entry.id, tr.deathTime ?? null);
+      // Roster entries with no trajectory stream still get a stub so every
+      // consumer can rely on the map being roster-complete.
+      for (const v of props.vehicles) {
+        if (!byPlayer.has(v.id)) {
+          byPlayer.set(v.id, { traj: null, deathTime: null, maxHp: null });
+        }
       }
-      return m;
+      return byPlayer;
     });
     /** Roster rows for the ship-icon strip under the scorebar: team icons in
      *  roster order, sunk ships pushed to the far edge and greyed out. */
     interface ShipRowEntry {
       key: number;
+      vehicle: VehicleEntry;
       type: string | null;
       dead: boolean;
+      hp: number | null;
+      maxHp: number | null;
     }
     const shipRows = computed(() => {
-      const byRoster = deathTimeByRosterId.value;
-      const byShip = deathTimeByShipId.value;
-      const deathOf = (v: VehicleEntry): number | null | undefined =>
-        byRoster.has(v.id) ? byRoster.get(v.id) : byShip.get(v.shipId!);
+      const rs = rosterState.value;
       const mk = (v: VehicleEntry): ShipRowEntry => {
-        const d = v.shipId != null ? deathOf(v) : undefined;
+        const st = rs.get(v.id);
+        const d = st?.deathTime ?? null;
         const dead = d != null && d <= current.value;
         const info = props.encyclopedia.get(v.shipId) as ShipInfo | undefined;
         const offline = shipOfflineEntry(v.shipId);
+        const hp = !dead && st?.traj ? hpAtTime(st.traj.hpSamples, current.value) : null;
         return {
           key: v.id,
+          vehicle: v,
           type: info?.type ?? offline?.type ?? null,
           dead,
+          hp,
+          maxHp: st?.maxHp ?? null,
         };
       };
       const allies = (
@@ -504,6 +543,129 @@ export default defineComponent({
       }
       return { hits, damage, frags, taken, planeDamage: folded?.planeDamage ?? 0 };
     });
+    /** Post-battle payload (memoized per battleResults string) — the source
+     *  of the killer attribution behind the live kill counts. */
+    const pbData = computed(() => parsePostBattle(props.battleResults || null));
+    /** Victim vehicle → the killer's ROSTER player id (the id space the
+     *  strip/tooltip/scoreboard key players by). BattleResults ids are WG
+     *  account ids, which do NOT coincide with the descriptor roster ids
+     *  on every replay — resolve account → name → roster for both the
+     *  victim and the killer (the same name bridge the kill feed uses).
+     *  Null when the replay carries no BattleResults packet at all. */
+    const killerRosterIdOf = computed<((v: VehicleEntry) => number | null) | null>(() => {
+      const pb = pbData.value;
+      if (!pb?.players) return null;
+      const pbByAccount = new Map<number, (typeof pb.players)[number]>();
+      const pbByName = new Map<string, (typeof pb.players)[number]>();
+      for (const p of pb.players) {
+        if (p.accountId) pbByAccount.set(p.accountId, p);
+        const n = (p.name ?? "").trim().toLowerCase();
+        if (n) pbByName.set(n, p);
+      }
+      const vehicleByAccount = new Map<number, VehicleEntry>();
+      const vehicleByName = new Map<string, VehicleEntry>();
+      for (const v of props.vehicles) {
+        if (v.id) vehicleByAccount.set(v.id, v);
+        const n = (v.name ?? "").trim().toLowerCase();
+        if (n) vehicleByName.set(n, v);
+      }
+      const vehicleOfPb = (p: (typeof pb.players)[number] | undefined): VehicleEntry | null =>
+        (p?.accountId ? vehicleByAccount.get(p.accountId) : undefined) ??
+        (p ? vehicleByName.get((p.name ?? "").trim().toLowerCase()) ?? null : null);
+      return (v: VehicleEntry) => {
+        const victim =
+          (v.id ? pbByAccount.get(v.id) : undefined) ??
+          pbByName.get((v.name ?? "").trim().toLowerCase());
+        const killerId = victim?.killerId;
+        if (killerId == null) return null;
+        // killerId is an account id — land it back on the roster (direct
+        // id hit first, then the pb name bridge).
+        const killerVehicle =
+          vehicleByAccount.get(killerId) ??
+          vehicleOfPb(pbByAccount.get(killerId));
+        return killerVehicle?.id ?? null;
+      };
+    });
+    /** Kills credited to each roster player (roster id keyed) by battle
+     *  time t: a kill counts once the victim's death time is crossed AND
+     *  the post-battle payload attributes it to this player. Scrub-safe —
+     *  recomputed from scratch, never incremented. */
+    const EMPTY_KILLS: Map<number, number> = new Map();
+    function killsByPlayerAt(t: number): Map<number, number> {
+      const m = new Map<number, number>();
+      const killerOf = killerRosterIdOf.value;
+      if (!killerOf) return m;
+      const rs = rosterState.value;
+      for (const v of props.vehicles) {
+        const d = rs.get(v.id)?.deathTime;
+        if (d == null || d > t) continue;
+        const killer = killerOf(v);
+        if (killer == null) continue;
+        m.set(killer, (m.get(killer) ?? 0) + 1);
+      }
+      return m;
+    }
+    /** Career stats for the strip tooltip and the Tab scoreboard's clan
+     *  tags — one WG batch per replay, armed lazily by the first strip
+     *  hover or Tab hold (nobody pays for stats they never look at). */
+    const nameStats = ref<Map<string, RosterStat>>(new Map());
+    const nameStatsLoading = ref(false);
+    let nameStatsLoadedFor = "";
+    function ensureRosterStats(): void {
+      if (nameStatsLoadedFor === props.replayPath) return;
+      const names = [...new Set(props.vehicles.map((v) => v.name))].filter(
+        (n) => !AI_NAME.test(n),
+      );
+      if (names.length === 0 || !props.realm) return;
+      const path = props.replayPath;
+      nameStatsLoadedFor = path;
+      nameStatsLoading.value = true;
+      fetchRosterStatsByNames(names, props.realm)
+        .then((m) => {
+          if (nameStatsLoadedFor === path) nameStats.value = m;
+        })
+        .finally(() => {
+          if (nameStatsLoadedFor === path) nameStatsLoading.value = false;
+        });
+    }
+    /** Strip-icon hover tooltip: which roster player, anchored to which
+     *  slot element. Stays mounted a beat after both icon and card are
+     *  left so the pointer can travel between them. */
+    const tipVehicleId = ref<number | null>(null);
+    const tipAnchorEl = ref<HTMLElement | null>(null);
+    const tipIconHover = ref(false);
+    const tipCardHover = ref(false);
+    let tipHideTimer: number | null = null;
+    function syncTipPresence(): void {
+      if (tipIconHover.value || tipCardHover.value) {
+        if (tipHideTimer != null) {
+          window.clearTimeout(tipHideTimer);
+          tipHideTimer = null;
+        }
+        return;
+      }
+      if (tipHideTimer != null) return;
+      tipHideTimer = window.setTimeout(() => {
+        tipHideTimer = null;
+        if (!tipIconHover.value && !tipCardHover.value) {
+          tipVehicleId.value = null;
+          tipAnchorEl.value = null;
+        }
+      }, 180);
+    }
+    watch([tipIconHover, tipCardHover], syncTipPresence);
+    function onShipEnter(ship: HoloShip, el: HTMLElement): void {
+      ensureRosterStats();
+      if (typeof ship.key !== "number") return;
+      tipVehicleId.value = ship.key;
+      tipAnchorEl.value = el;
+      tipIconHover.value = true;
+      syncTipPresence();
+    }
+    function onShipLeave(): void {
+      tipIconHover.value = false;
+      syncTipPresence();
+    }
     /** Ship class for a shipId (encyclopedia → offline DB → "". */
     // Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy
     const capStatus = ref([0, 0, 0]);
@@ -582,6 +744,9 @@ export default defineComponent({
           if (shouldReserveTabKey(e.target)) {
             e.preventDefault();
             showRoster.value = true;
+            // The scoreboard's game-faithful order leans on clan tags —
+            // arm the one-shot roster stats batch on first hold too.
+            ensureRosterStats();
           }
         }
         if (e.key === "Alt") showCapEta.value = true;
@@ -856,10 +1021,14 @@ export default defineComponent({
       }));
       const ships: HoloShip[] = [
         ...shipRows.value.allies.map((s) => ({
-          x: 0, z: 0, yaw: 0, role: "ally" as const, dead: s.dead, shipType: s.type ?? undefined,
+          x: 0, z: 0, yaw: 0, key: s.key, name: s.vehicle.name,
+          role: "ally" as const, dead: s.dead, shipType: s.type ?? undefined,
+          hp: s.hp, maxHp: s.maxHp,
         })),
         ...shipRows.value.enemies.map((s) => ({
-          x: 0, z: 0, yaw: 0, role: "enemy" as const, dead: s.dead, shipType: s.type ?? undefined,
+          x: 0, z: 0, yaw: 0, key: s.key, name: s.vehicle.name,
+          role: "enemy" as const, dead: s.dead, shipType: s.type ?? undefined,
+          hp: s.hp, maxHp: s.maxHp,
         })),
       ];
       return {
@@ -1039,6 +1208,18 @@ export default defineComponent({
     watch(
       () => props.replayPath,
       () => {
+        // Roster stats belong to ONE replay — drop them so the next open
+        // re-arms the batch (and stale in-flight answers are gated out).
+        nameStatsLoadedFor = "";
+        nameStats.value = new Map();
+        tipVehicleId.value = null;
+        tipAnchorEl.value = null;
+        tipIconHover.value = false;
+        tipCardHover.value = false;
+        if (tipHideTimer != null) {
+          window.clearTimeout(tipHideTimer);
+          tipHideTimer = null;
+        }
         if (ready.value) {
           current.value = 0;
           playing.value = false;
@@ -1164,6 +1345,10 @@ export default defineComponent({
 
     onBeforeUnmount(() => {
       cancelAnimationFrame(playRaf);
+      if (tipHideTimer != null) {
+        window.clearTimeout(tipHideTimer);
+        tipHideTimer = null;
+      }
       clearActors(ctx);
       clearMapModel(ctx);
       if (ctx.waterFloor) {
@@ -1189,7 +1374,19 @@ export default defineComponent({
     // which is exactly what it did when called from this JSX component.
     expose({ current, duration, playing, seek: seekBattleTime });
 
-    return () => (
+    return () => {
+      // Shared playhead-derived kill board (tooltip + Tab scoreboard read
+      // the same numbers in the same frame). Computed only while one of
+      // them is on screen — otherwise it'd run every playback frame.
+      const killsNow =
+        tipVehicleId.value != null || showRoster.value
+          ? killsByPlayerAt(current.value)
+          : EMPTY_KILLS;
+      const tipVehicle =
+        tipVehicleId.value != null
+          ? props.vehicles.find((v) => v.id === tipVehicleId.value) ?? null
+          : null;
+      return (
       <div class="holo-map">
         <div
           ref={container}
@@ -1238,7 +1435,13 @@ export default defineComponent({
         {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
         {props.replayPath ? (
           <>
-          <div class="holo-map__scorebar-wrap"><HoloScorebar state={scorebarState.value} /></div>
+          <div class="holo-map__scorebar-wrap">
+            <HoloScorebar
+              state={scorebarState.value}
+              onShipEnter={onShipEnter}
+              onShipLeave={onShipLeave}
+            />
+          </div>
           </>
         ) : null}
         {/* Bottom-left event feed — sink notifications + player chat +
@@ -1449,9 +1652,36 @@ export default defineComponent({
           </div>
         ) : null}
         {showRoster.value ? (
-          <HoloRosterOverlay vehicles={props.vehicles} operation={props.operation} />
+          <HoloRosterOverlay
+            vehicles={props.vehicles}
+            operation={props.operation}
+            time={current.value}
+            rosterState={rosterState.value}
+            kills={killsNow}
+            showKills={killerRosterIdOf.value != null}
+            stats={nameStats.value}
+          />
+        ) : null}
+        {tipVehicle && tipAnchorEl.value ? (
+          <HoloShipTooltip
+            vehicle={tipVehicle}
+            anchorEl={tipAnchorEl.value}
+            time={current.value}
+            state={rosterState.value.get(tipVehicle.id) ?? null}
+            kills={killsNow.get(tipVehicle.id) ?? 0}
+            showKills={killerRosterIdOf.value != null}
+            stats={nameStats.value}
+            statsLoading={nameStatsLoading.value}
+            statsMode={props.statsMode}
+            operation={props.operation}
+            encyclopedia={props.encyclopedia}
+            onCardHover={(b: boolean) => {
+              tipCardHover.value = b;
+            }}
+          />
         ) : null}
       </div>
-    );
+      );
+    };
   },
 });

@@ -122,28 +122,60 @@ function shipIconUrlFor(ship: HoloShip): string | null {
 
 /** One ship-icon slot. A real component (not a render-loop helper) so the
  *  useImage() hook is called per instance and tracks each slot's load state;
- *  a failed icon stays hidden instead of surfacing a broken-image glyph. */
+ *  a failed icon stays hidden instead of surfacing a broken-image glyph.
+ *
+ *  The slot also carries the damaged-only mini HP bar (like the in-game
+ *  strip: nothing at full HP, a thin team-coloured bar once the hull is
+ *  hurt) and forwards enter/leave to the caller's hover handlers — the
+ *  app hangs its rich player tooltip off those. */
 const ShipIcon = defineComponent({
   name: "HoloScorebarShipIcon",
   props: {
     ship: { type: Object as PropType<HoloShip>, required: true },
+    onEnter: { type: Function as PropType<(ship: HoloShip, el: HTMLElement) => void>, default: null },
+    onLeave: { type: Function as PropType<(ship: HoloShip) => void>, default: null },
   },
   setup(props) {
     const img = useImage(() => shipIconUrlFor(props.ship));
     return () => {
       const ship = props.ship;
       if (!img.src.value) return null;
+      // Bar shows only while the hull is hurt (the game hides full and sunk
+      // bars — sunk slots already read through the greyed icon).
+      const hp = ship.hp;
+      const maxHp = ship.maxHp;
+      const hurt =
+        !ship.dead &&
+        hp != null &&
+        maxHp != null &&
+        maxHp > 0 &&
+        hp < maxHp;
+      const pct = hurt ? Math.max(0, Math.min(1, hp! / maxHp!)) : 0;
+      const interactive = !!(props.onEnter || props.onLeave);
       return (
-        <img
-          class={["holo-scorebar__ship", ship.dead ? "is-sunk" : ""].join(" ")}
-          src={img.src.value}
-          alt={ship.shipType ?? ""}
-          width="15"
-          height="15"
-          style={{ visibility: img.status.value === "loaded" ? "visible" : "hidden" }}
-          onLoad={img.onLoad}
-          onError={img.onError}
-        />
+        <span
+          class={["holo-scorebar__slot", interactive ? "is-interactive" : ""].join(" ")}
+          onMouseenter={props.onEnter ? (e: MouseEvent) => props.onEnter!(ship, e.currentTarget as HTMLElement) : undefined}
+          onMouseleave={props.onLeave ? () => props.onLeave!(ship) : undefined}
+        >
+          <img
+            class={["holo-scorebar__ship", ship.dead ? "is-sunk" : ""].join(" ")}
+            src={img.src.value}
+            alt={ship.name ?? ship.shipType ?? ""}
+            width="15"
+            height="15"
+            style={{ visibility: img.status.value === "loaded" ? "visible" : "hidden" }}
+            onLoad={img.onLoad}
+            onError={img.onError}
+          />
+          {hurt ? (
+            <span
+              class={`holo-scorebar__slot-hp holo-scorebar__slot-hp--${ship.role === "enemy" ? "enemy" : "ally"}`}
+              aria-hidden="true"
+              style={{ "--slot-hp-pct": `${Math.round(pct * 100)}%` } as Record<string, string>}
+            />
+          ) : null}
+        </span>
       );
     };
   },
@@ -153,14 +185,22 @@ export default defineComponent({
   name: "HoloScorebar",
   props: {
     state: { type: Object as PropType<HoloHudState>, required: true },
+    /** Hover plumbing for the caller's rich tooltip (enter carries the
+     *  slot's anchor element; leave fires when the pointer quits it). */
+    onShipEnter: { type: Function as PropType<(ship: HoloShip, el: HTMLElement) => void>, default: null },
+    onShipLeave: { type: Function as PropType<(ship: HoloShip) => void>, default: null },
   },
   setup(props) {
     return () => {
       const s = props.state;
       // Team order is owned by the caller (the app mirrors icons by ship
-      // size; the site sorts alive-first) — we only split by side.
+      // size; the site sorts alive-first) — we only split by side. Keys use
+      // the caller's stable slot key when present so the alive/sunk
+      // reshuffle reuses DOM nodes instead of remounting icons.
       const allies = s.ships.filter((sh) => sh.role !== "enemy");
       const enemies = s.ships.filter((sh) => sh.role === "enemy");
+      const enter = props.onShipEnter ?? undefined;
+      const leave = props.onShipLeave ?? undefined;
       return (
         <div class="holo-scorebar">
           <span class="holo-scorebar__main">
@@ -178,9 +218,13 @@ export default defineComponent({
           </span>
           {s.ships.length ? (
             <span class="holo-scorebar__ships">
-              {allies.map((sh, i) => <ShipIcon key={`a${i}`} ship={sh} />)}
+              {allies.map((sh, i) => (
+                <ShipIcon key={sh.key ?? `a${i}`} ship={sh} onEnter={enter} onLeave={leave} />
+              ))}
               <span class="holo-scorebar__ships-sep" />
-              {enemies.map((sh, i) => <ShipIcon key={`e${i}`} ship={sh} />)}
+              {enemies.map((sh, i) => (
+                <ShipIcon key={sh.key ?? `e${i}`} ship={sh} onEnter={enter} onLeave={leave} />
+              ))}
             </span>
           ) : null}
         </div>

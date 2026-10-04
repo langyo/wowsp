@@ -122,7 +122,21 @@
     "avgDamage": "Avg dmg",
     "battles": "Battles",
     "survival": "Survival",
-    "hitRate": "Hit rate"
+    "hitRate": "Hit rate",
+    "career": "Career stats",
+    "state": "Current state",
+    "careerLoading": "Looking up stats…",
+    "player": "Player",
+    "status": "Status",
+    "afloat": "Afloat",
+    "position": "Position",
+    "positionUnknown": "Lost — position unknown",
+    "neverSpotted": "Not yet spotted",
+    "noTrajectory": "No trajectory data",
+    "load": "Standard loadout",
+    "loadNote": "Replays carry no per-player fittings or commander — these are the ship's standard slots.",
+    "specs": "Ship specs",
+    "holdTab": "Hold Tab for the full player list"
   },
   "roster": {
     "allies": "Allies",
@@ -135,7 +149,11 @@
     "teamWrPlain": "Avg WR",
     "teamAvgPr": "Avg PR",
     "compactMode": "Compact mode",
-    "fullMode": "Full mode"
+    "fullMode": "Full mode",
+    "kills": "Kills",
+    "sunkAt": "sunk at {time}",
+    "aliveCount": "{alive}/{total} alive",
+    "ship": "Ship"
   },
   "minimap": {
     "zoom": "Zoomed map",
