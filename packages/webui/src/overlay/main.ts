@@ -61,6 +61,7 @@ import {
   type ResolvedStatsMode,
 } from "./overlayPrefs";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
+import { isKnownRealm } from "@/utils/realms";
 import { pluginRowMapping } from "./inferredOrder";
 import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
 import { isOperationBattle } from "@/utils/modeColors";
@@ -205,8 +206,20 @@ const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
 // Realm is forwarded by create_overlay_window only when it was detected; an
 // empty value DISABLES the batch lookups below instead of falling back to a
 // guess — querying a wrong realm would silently pin lookalike accounts'
-// stats onto the chips.
-const realm = new URLSearchParams(window.location.search).get("realm") ?? "";
+// stats onto the chips. The ONE sanctioned unlock is the probe's ground
+// truth (below): a realm-reporting plugin telemetry payload carries the
+// local player's cluster straight off the game's roster records.
+let realm = new URLSearchParams(window.location.search).get("realm") ?? "";
+// ── Probe identity (realm-reporting plugin builds) ──────────────────────
+// Per-name ground-truth realms off the game's own roster records, plus the
+// local player's cluster. Roster stats route each name to its reported
+// cluster (cross-realm guessing stays off for those rows); the per-battle
+// map resets on the telemetry's battle id so rows from the previous battle
+// cannot bleed into the next one's routing. Validation rides the shared
+// utils/realms list (the bare page cannot load Pinia stores, but it can
+// load the util).
+let identityRealms: Record<string, string> = {};
+let identityBattle = "";
 // App locale forwarded by create_overlay_window — picks the hint copy.
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
 
@@ -1188,22 +1201,48 @@ async function runBatch() {
   pending.clear();
   inFlight = true;
   try {
-    // pr_algo rides along while the PR rating is on — the same param the
-    // main window injects (prAlgoForRequest), so chip PRs never disagree
-    // with the app's cards under the expected algorithm.
-    const results = (await tauri.core.invoke("lookup_players_stats_batch", {
-      names,
-      realm,
-      // camelCase key (Tauri v2 ArgumentCase::Camel) — the snake_case
-      // spelling that used to live here was silently dropped, so chip PRs
-      // kept the winrate proxy while the expected algorithm was selected.
-      ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
-      // Cross-server Clan Battles probe the other WG clusters for names
-      // this realm cannot explain; adopted rows carry their true realm.
-      ...(crossRealmBattle() ? { crossRealm: true } : {}),
-    })) as Array<BatchStat | null>;
-    names.forEach((name, i) => {
-      const r = results[i];
+    // Ground-truth per-name realms (the realm-reporting probe reports each
+    // player's cluster straight off the game's roster records): routed
+    // groups resolve on their REPORTED realm with the cross pass off (the
+    // realm is known — probing would be guessing); rows the probe could
+    // not report ride the window realm + the cross pass. Groups run
+    // sequentially, keeping the request storm at WG-friendly widths
+    // whatever the roster's cluster mix.
+    const groups: Array<{ realm: string; names: string[]; cross: boolean }> = [];
+    const rest: string[] = [];
+    for (const name of names) {
+      const reported = identityRealms[name];
+      if (reported) {
+        const group = groups.find((g) => g.realm === reported);
+        if (group) group.names.push(name);
+        else groups.push({ realm: reported, names: [name], cross: false });
+      } else {
+        rest.push(name);
+      }
+    }
+    if (rest.length > 0) {
+      groups.push({ realm, names: rest, cross: crossRealmBattle() });
+    }
+    const byName = new Map<string, BatchStat | null>();
+    for (const group of groups) {
+      // pr_algo rides along while the PR rating is on — the same param the
+      // main window injects (prAlgoForRequest), so chip PRs never disagree
+      // with the app's cards under the expected algorithm.
+      const results = (await tauri.core.invoke("lookup_players_stats_batch", {
+        names: group.names,
+        realm: group.realm,
+        // camelCase key (Tauri v2 ArgumentCase::Camel) — the snake_case
+        // spelling that used to live here was silently dropped, so chip PRs
+        // kept the winrate proxy while the expected algorithm was selected.
+        ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
+        // Cross-server Clan Battles probe the other WG clusters for names
+        // this realm cannot explain; adopted rows carry their true realm.
+        ...(group.cross ? { crossRealm: true } : {}),
+      })) as Array<BatchStat | null>;
+      group.names.forEach((name, i) => byName.set(name, results[i] ?? null));
+    }
+    names.forEach((name) => {
+      const r = byName.get(name) ?? null;
       if (r) {
         stats.set(cacheKey(name), {
           accountId: r.accountId ?? null,
@@ -1431,7 +1470,38 @@ async function start() {
     // file → no events → the inference chain stays untouched. A render
     // follows so visible chips re-grade immediately; the next anchor
     // carries the matching alive vector.
-    const payload = e.payload as { t?: number; players?: Record<string, boolean> } | null;
+    const payload = e.payload as {
+      t?: number;
+      battle?: string;
+      players?: Record<string, boolean>;
+      self?: { name?: string; realm?: string };
+      identity?: Record<string, { account_id?: number; realm?: string }>;
+    } | null;
+    // Ground truth first, in every roster mode: the realm-reporting probe
+    // carries each player's cluster (identity) and the local player's
+    // (self) straight off the game's roster records. Roster stats route
+    // per name, and a window created with NO detected realm (lookups
+    // normally stay disabled rather than guess) unlocks on the probe's
+    // self realm.
+    if (payload?.t && Date.now() - payload.t <= 30_000 && payload.identity) {
+      if (payload.battle && payload.battle !== identityBattle) {
+        identityBattle = payload.battle;
+        identityRealms = {};
+      }
+      const map: Record<string, string> = { ...identityRealms };
+      for (const [name, row] of Object.entries(payload.identity)) {
+        const realmCode = (row?.realm ?? "").trim().toLowerCase();
+        if (isKnownRealm(realmCode)) map[name] = realmCode;
+      }
+      identityRealms = map;
+      const selfRealmCode = (payload.self?.realm ?? "").trim().toLowerCase();
+      if (isKnownRealm(selfRealmCode) && !realm) {
+        // No detected realm (the "don't guess" gate): the probe's ground
+        // truth replaces it — batch lookups unlock on the next schedule.
+        realm = selfRealmCode;
+        scheduleBatch();
+      }
+    }
     if (!payload?.players || !arena) return;
     if (Date.now() - (payload.t ?? 0) > 30_000) return;
     if ((anchor?.rosterMode ?? "") !== "plugin") {

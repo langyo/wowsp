@@ -23,12 +23,14 @@ import { api } from "@/api";
 import { i18n } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
 
 export function useOverlayLifecycle() {
   const game = useGameStatusStore();
   const installs = useConfigStore();
   const overlayCfg = useOverlayConfigStore();
+  const plugin = useIngamePluginStore();
   void overlayCfg.load();
 
   // Mirrors the last state we asked the backend for, so the watcher only
@@ -46,8 +48,11 @@ export function useOverlayLifecycle() {
     const mode = overlayCfg.table;
     const wantOverlay = running && mode === "detect";
     const wantBridge = running && mode === "ingame";
-    // Realm of the running client, else of the selected install.
-    const realm = game.process.realm ?? installs.activeInstall?.realm ?? null;
+    // Realm of the running client: the probe's ground truth while its
+    // telemetry stream is fresh (the local player's cluster straight off
+    // the game's roster), else the process/install detection.
+    const realm =
+      plugin.liveSelfRealm || (game.process.realm ?? installs.activeInstall?.realm ?? null);
     // The realm is baked into the overlay window's URL — recreate the window
     // when it changes while active (e.g. a different client started).
     if (wantOverlay && active && realm !== createdRealm) {
@@ -93,7 +98,18 @@ export function useOverlayLifecycle() {
   }
 
   watch(
-    [() => game.process.running, () => overlayCfg.table, () => game.process.realm],
+    [
+      () => game.process.running,
+      () => overlayCfg.table,
+      () => game.process.realm,
+      // The probe's ground-truth realm is part of the same decision: it
+      // both corrects a wrong detection (the window recreates with the
+      // true realm) and lapses back to detection when the identity
+      // expires (the store clears it 35 s after the stream stops) —
+      // without it here, a lapsed or corrected value would leave a stale
+      // window realm with no path to re-sync.
+      () => plugin.liveSelfRealm,
+    ],
     () => void sync(),
     { immediate: true },
   );

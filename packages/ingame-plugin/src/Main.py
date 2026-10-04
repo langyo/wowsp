@@ -103,7 +103,7 @@ PANEL_KEY = 'wowspProbe.panel'
 
 # SafeClass records hide their keys from dir(); probe likely field names so
 # the projection works even when no enumeration path succeeds.
-GUESS_FIELDS = ('name', 'accountDBID', 'shipParamsId', 'isBot', 'teamId', 'id',
+GUESS_FIELDS = ('name', 'accountDBID', 'realm', 'shipParamsId', 'isBot', 'teamId', 'id',
                 'vehicleId', 'shipId', 'shipName', 'score', 'frags', 'kills',
                 'deaths', 'damageDealt', 'isAlive', 'isHidden', 'isTeamKiller',
                 'clanAbbrev', 'clanID', 'level', 'relation', 'planeKills',
@@ -389,18 +389,24 @@ class Probe(object):
 
         Returns (states, sides): states keyed by the BARE name (entity
         names carry the clan tag), sides mapping 'ally'/'enemy' to
-        [(name, alive), ...] in walk order.
+        [(name, alive), ...] in walk order. Also latches the SELF avatar's
+        bare name onto self.self_name (the identity telemetry reports as
+        the local player) — cleared up front so an early return cannot
+        leak the previous battle's name.
         """
+        self.self_name = ''
         if self.dh is None or self.const is None:
             return {}, {'ally': [], 'enemy': []}
         cc = self.const.UiComponents
         try:
             ally_relations = (self.const.PlayerRelation.SELF, self.const.PlayerRelation.ALLY)
+            self_relation = self.const.PlayerRelation.SELF
         except Exception as exc:
             self.soft('PlayerRelation resolve failed=' + str(exc)[:120])
             return {}, {'ally': [], 'enemy': []}
         states = {}
         sides = {'ally': [], 'enemy': []}
+        self_name = ''
         try:
             for entity in self.dh.getEntityCollections('avatar'):
                 try:
@@ -430,8 +436,11 @@ class Probe(object):
                 row['alive'] = str(alive)
                 side = 'enemy'
                 try:
-                    if cc.relation in entity and entity[cc.relation].value in ally_relations:
-                        side = 'ally'
+                    if cc.relation in entity:
+                        if entity[cc.relation].value in ally_relations:
+                            side = 'ally'
+                        if entity[cc.relation].value == self_relation:
+                            self_name = name
                     row['relation'] = str(entity[cc.relation].value)
                 except Exception:
                     pass
@@ -439,6 +448,7 @@ class Probe(object):
                 sides[side].append((name, alive))
         except Exception as exc:
             self.soft('entity walk failed=' + str(exc)[:120])
+        self.self_name = self_name
         return states, sides
 
     def merge_order(self, sides):
@@ -559,6 +569,10 @@ class Probe(object):
         self.dead_latch = set([])
         self.stats = {}
         self.labels = {}
+        # The SELF latch rides the same reset story as the rest of the
+        # battle state (a new battle must not inherit the previous one's
+        # local player).
+        self.self_name = ''
         self.last_panel = ''
 
     def clear_players(self):
@@ -586,8 +600,19 @@ class Probe(object):
                     aid = int(p['accountDBID'])
                 except Exception:
                     aid = 0
+                # The record carries the player's realm (the game's own
+                # roster data — see the design doc's evidence table).
+                # Reporting it lets the companion route each row to ITS
+                # cluster instead of inferring one realm for the whole
+                # battle; '' when a build stops exposing it, and the
+                # companion falls back to its detection chain.
+                try:
+                    realm = str(p['realm'] or '')
+                except Exception:
+                    realm = ''
                 result.append({'name': p['name'], 'account_id': max(0, aid),
-                               'avatar_id': int(key), 'ship_id': int(p['shipParamsId'])})
+                               'avatar_id': int(key), 'ship_id': int(p['shipParamsId']),
+                               'realm': realm})
         except Exception as exc:
             self.soft('players error=' + str(exc)[:120])
             return []
@@ -865,7 +890,16 @@ class Probe(object):
         consumers can tell a live stream from a dead one by freshness
         instead of a timeout. Cleared once (empty players) on battle
         quit; port ticks write nothing. The same walk feeds the panel's
-        sides + row order (see entity_walk)."""
+        sides + row order (see entity_walk).
+
+        Since the realm-reporting change the payload also carries the
+        roster's GROUND-TRUTH identity straight off the game's own
+        records — `self` (the local player's bare name + realm, so the
+        companion stops inferring the realm from logs/install kind) and
+        `identity` (name → {account_id, realm}, so cross-server Clan
+        Battles rows resolve on their own cluster with no guessing).
+        Both stay in every battle write; consumers treat missing/empty
+        values as "probe build predates this" and fall back."""
         if not self.session:
             return
         try:
@@ -875,6 +909,7 @@ class Probe(object):
             self.states = states
             self.merge_order(sides)
             players = {}
+            identity = {}
             for p in self.roster:
                 name = p['name']
                 row = states.get(name)
@@ -889,9 +924,20 @@ class Probe(object):
                     self.dead_latch.add(name)
                     alive = False
                 players[name] = alive
+                if p.get('account_id') or p.get('realm'):
+                    identity[name] = {'account_id': p.get('account_id', 0),
+                                      'realm': p.get('realm', '')}
+            self_name = getattr(self, 'self_name', '') or ''
+            self_realm = ''
+            for p in self.roster:
+                if p['name'] == self_name and p.get('realm'):
+                    self_realm = p['realm']
+                    break
             body = utils.jsonEncode({'t': int(time.time() * 1000),
                                      'battle': self.session,
-                                     'players': players})
+                                     'players': players,
+                                     'self': {'name': self_name, 'realm': self_realm},
+                                     'identity': identity})
             stream = open(TELEMETRY_FILE, 'w')
             stream.write(body + '\n')
             stream.close()

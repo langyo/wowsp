@@ -15,7 +15,7 @@
  */
 import { onBeforeUnmount, reactive, watch } from "vue";
 
-import { api, type ArenaInfo, type PlayerShipStats, type VehicleEntry } from "@/api";
+import { api, type ArenaInfo, type PlayerShipStats, type PlayerStats, type VehicleEntry } from "@/api";
 import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { dimsNeedShipStats, rosterDimsOf, type RosterModeNumbers } from "@/utils/statView";
@@ -194,6 +194,12 @@ export interface UseRosterStatsOptions {
    *  batch rides the backend's cross-realm pass for names the home realm
    *  cannot explain. Omitted = same-realm only (today's behavior). */
   crossRealm?: () => boolean;
+  /** Ground-truth per-name realms (the in-game probe reports each
+   *  player's cluster straight off the game's roster records). Names
+   *  found here resolve on THEIR realm — no cross-realm guessing for
+   *  them; the rest ride the panel realm + the cross pass as before.
+   *  Omitted / null / empty = single-realm behavior. */
+  realms?: () => Record<string, string> | null;
 }
 
 // ── Ship-scoped pipeline (per-player full ship lists) ─────────────────
@@ -510,84 +516,129 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     pendingNames.clear();
     const gen = battleGen;
     inFlight = true;
-    try {
-      const results = await api.lookupPlayersStatsBatch(
+    // Ground-truth per-name realms (the in-game probe reports each
+    // player's cluster straight off the game's roster records):
+    // partition the batch — routed groups resolve on their REPORTED realm
+    // with the cross pass off (the realm is known; probing would be
+    // guessing), everything the probe could not report (older build /
+    // no plugin) rides the panel realm with the cross-realm pass as
+    // before. Groups run sequentially, keeping the request storm at
+    // WG-friendly widths whatever the roster's cluster mix.
+    const realmMap = options.realms?.() ?? null;
+    const groups: Array<{ realm: string; names: string[]; cross: boolean }> = [];
+    if (realmMap) {
+      const rest: string[] = [];
+      for (const name of names) {
+        const reported = realmMap[name];
+        if (reported) {
+          const group = groups.find((g) => g.realm === reported);
+          if (group) group.names.push(name);
+          else groups.push({ realm: reported, names: [name], cross: false });
+        } else {
+          rest.push(name);
+        }
+      }
+      if (rest.length > 0) {
+        groups.push({
+          realm: options.realm(),
+          names: rest,
+          cross: options.crossRealm?.() ?? false,
+        });
+      }
+    } else {
+      groups.push({
+        realm: options.realm(),
         names,
-        options.realm(),
-        prAlgoForRequest(),
-        options.crossRealm?.() ?? false,
-      );
+        cross: options.crossRealm?.() ?? false,
+      });
+    }
+    const landed: Array<{ name: string; row: PlayerStats | null }> = [];
+    const failed: string[] = [];
+    try {
+      for (const group of groups) {
+        try {
+          const rows = await api.lookupPlayersStatsBatch(
+            group.names,
+            group.realm,
+            prAlgoForRequest(),
+            group.cross,
+          );
+          group.names.forEach((name, i) => landed.push({ name, row: rows[i] ?? null }));
+        } catch {
+          failed.push(...group.names);
+        }
+      }
       if (gen !== battleGen) return;
-      // Success: failures from earlier rounds are answered now — stop the
-      // slow re-probe and forget them.
-      for (const name of names) failedNames.delete(name);
+      // Success: landed failures from earlier rounds are answered now —
+      // stop the slow re-probe once nothing is left waiting on it.
+      for (const { name } of landed) failedNames.delete(name);
       if (failedNames.size === 0 && reprobeTimer) {
         clearTimeout(reprobeTimer);
         reprobeTimer = null;
       }
-      names.forEach((name, i) => {
-        const r = results[i];
-        const st = r
-          ? rosterStatOf(r)
+      for (const { name, row } of landed) {
+        const st = row
+          ? rosterStatOf(row)
           : // Not found on this realm — resolve to "no data" so the card
             // doesn't spin forever.
             emptyStat(false);
         applyStat(name, st);
         gateClanWinrate(name, st, gen);
-      });
+      }
       // The answers carry the account ids the ship-scoped pipeline keys
       // on — start attaching the moment they exist.
       ensureShipLists();
-    } catch {
-      if (gen !== battleGen) return;
-      // Transient (WG limits / network): settle the spinners, then retry
-      // the failed batch after a backoff pause — at most `retriesLeft`
-      // times per battle (a hard-down API must not be probed all battle
-      // long). Cards show "—" until a retry lands.
-      for (const name of names) {
-        for (const v of options.arena()?.vehicles ?? []) {
-          const prev = stats.get(v.id);
-          if (v.name === name && prev?.loading) {
-            // A failed batch must not wipe already-loaded stats: keep the
-            // previous values (spinner off) and only true spinners resolve
-            // to "—" — the manual refresh relies on this too.
-            const hasData = prev.winrate != null || prev.pr != null || prev.avgDamage != null;
-            stats.set(v.id, hasData ? { ...prev, loading: false } : emptyStat(false));
+      if (failed.length > 0) {
+        // Transient (WG limits / network): settle the failed groups'
+        // spinners, then retry them after a backoff pause — at most
+        // `retriesLeft` times per battle (a hard-down API must not be
+        // probed all battle long). Cards show "—" until a retry lands.
+        for (const name of failed) {
+          for (const v of options.arena()?.vehicles ?? []) {
+            const prev = stats.get(v.id);
+            if (v.name === name && prev?.loading) {
+              // A failed batch must not wipe already-loaded stats: keep the
+              // previous values (spinner off) and only true spinners resolve
+              // to "—" — the manual refresh relies on this too.
+              const hasData =
+                prev.winrate != null || prev.pr != null || prev.avgDamage != null;
+              stats.set(v.id, hasData ? { ...prev, loading: false } : emptyStat(false));
+            }
           }
         }
-      }
-      for (const name of names) failedNames.add(name);
-      if (retriesLeft > 0) {
-        retriesLeft -= 1;
-        for (const name of names) retryNames.add(name);
-        if (!retryTimer) {
-          retryTimer = setTimeout(() => {
-            retryTimer = null;
-            if (gen !== battleGen) return;
-            for (const name of retryNames) pendingNames.add(name);
-            retryNames.clear();
-            if (!batchTimer && !inFlight && pendingNames.size > 0) {
-              batchTimer = setTimeout(runBatch, 100);
-            }
-          }, 3000);
-        }
-      } else {
-        // Burst retries exhausted (an outage longer than ~9 s): park the
-        // failures on a SLOW re-probe — once per 30 s, a bounded number of
-        // times per battle — so stats appear the moment the network heals
-        // instead of staying dead for the whole battle.
-        for (const name of names) retryNames.add(name);
-        if (reprobesLeft > 0 && !reprobeTimer) {
-          reprobeTimer = setTimeout(() => {
-            reprobeTimer = null;
-            if (gen !== battleGen) return;
-            reprobesLeft -= 1;
-            for (const name of retryNames) pendingNames.add(name);
-            retryNames.clear();
-            if (!batchTimer && !inFlight && pendingNames.size > 0) {
-              batchTimer = setTimeout(runBatch, 100);
-            }
-          }, 30_000);
+        for (const name of failed) failedNames.add(name);
+        if (retriesLeft > 0) {
+          retriesLeft -= 1;
+          for (const name of failed) retryNames.add(name);
+          if (!retryTimer) {
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              if (gen !== battleGen) return;
+              for (const name of retryNames) pendingNames.add(name);
+              retryNames.clear();
+              if (!batchTimer && !inFlight && pendingNames.size > 0) {
+                batchTimer = setTimeout(runBatch, 100);
+              }
+            }, 3000);
+          }
+        } else {
+          // Burst retries exhausted (an outage longer than ~9 s): park the
+          // failures on a SLOW re-probe — once per 30 s, a bounded number of
+          // times per battle — so stats appear the moment the network heals
+          // instead of staying dead for the whole battle.
+          for (const name of failed) retryNames.add(name);
+          if (reprobesLeft > 0 && !reprobeTimer) {
+            reprobeTimer = setTimeout(() => {
+              reprobeTimer = null;
+              if (gen !== battleGen) return;
+              reprobesLeft -= 1;
+              for (const name of retryNames) pendingNames.add(name);
+              retryNames.clear();
+              if (!batchTimer && !inFlight && pendingNames.size > 0) {
+                batchTimer = setTimeout(runBatch, 100);
+              }
+            }, 30_000);
+          }
         }
       }
     } finally {
@@ -708,6 +759,44 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     () => {
       const a = options.arena();
       if (a) ensureStats(a.vehicles);
+    },
+  );
+
+  // The probe's identity lands seconds after the roster (a stable roster
+  // plus the poller cadence), so the FIRST batch usually fires before any
+  // per-name realm exists. Rows the ground truth then contradicts —
+  // settled "no data" under the panel realm, or arbitrated onto another
+  // cluster by the cross pass — re-queue under their REPORTED realm, or
+  // the truth never reaches them (ensureStats skips rows that already
+  // settled).
+  watch(
+    () => options.realms?.() ?? null,
+    (map, prev) => {
+      const a = options.arena();
+      if (!map || !a) return;
+      let gained = false;
+      for (const name of Object.keys(map)) {
+        if (map[name] && map[name] !== (prev?.[name] ?? "")) {
+          gained = true;
+          break;
+        }
+      }
+      if (!gained) return;
+      const panelRealm = options.realm();
+      for (const v of a.vehicles) {
+        if (isAiName(v.name)) continue;
+        const reported = map[v.name];
+        if (!reported || reported === panelRealm) continue;
+        const st = stats.get(v.id);
+        if (!st || st.loading) continue;
+        if (st.accountId == null || (st.realm ?? panelRealm) !== reported) {
+          stats.delete(v.id);
+          pendingNames.add(v.name);
+        }
+      }
+      if (pendingNames.size > 0 && !batchTimer && !inFlight) {
+        batchTimer = setTimeout(runBatch, 250);
+      }
     },
   );
 

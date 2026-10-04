@@ -19,6 +19,7 @@ import { computed, ref, watch } from "vue";
 
 import { api } from "@/api";
 import { useConfigStore } from "@/stores/config";
+import { isKnownRealm } from "@/utils/realms";
 
 export const useIngamePluginStore = defineStore("ingamePlugin", () => {
   const installed = ref(false);
@@ -115,6 +116,72 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
   // first detection on cold start) re-probes.
   watch(gameRoot, () => void refresh(), { immediate: true });
 
+  // ── Ground-truth identity off the probe's telemetry ──────────────────
+  // The realm-reporting probe change adds `self` + `identity` to every
+  // telemetry payload — the local player's cluster and a per-name
+  // name→realm map straight off the game's own roster records. Consumers
+  // use them to stop INFERRING the realm (install logs / kind fallbacks):
+  // roster stats route each name to its reported cluster, and the live
+  // surfaces prefer `liveSelfRealm` over every detection chain while the
+  // stream is fresh.
+  const selfRealm = ref("");
+  const playerRealms = ref<Record<string, string>>({});
+  /** Reactive so `liveSelfRealm` re-evaluates when the stamp moves. */
+  const identityAt = ref(0);
+  let identityBattle = "";
+  // The expiry that makes the freshness window REAL: a computed reading
+  // Date.now() never re-runs on its own, so a stream that simply stops
+  // (battle over, game closed, /live unmounted) would pin its last realm
+  // forever. Every payload re-arms this timer; when it fires the identity
+  // lapses and every consumer falls back to its detection chain.
+  let identityExpiry: ReturnType<typeof setTimeout> | null = null;
+
+  /** Fold one telemetry payload's identity block in. Stale or older-probe
+   *  payloads (no identity fields) leave the state untouched; `self` and
+   *  `identity` gate independently (the SELF latch can fail an early walk
+   *  while the per-name map is fully valid, and vice versa); a new battle
+   *  id resets the per-name map so rows from the previous battle cannot
+   *  bleed into the next one's routing. */
+  function applyTelemetryIdentity(payload: {
+    t?: number;
+    battle?: string;
+    self?: { name?: string; realm?: string };
+    identity?: Record<string, { account_id?: number; realm?: string }>;
+  }): void {
+    if (!payload || !payload.t || Date.now() - payload.t > 30_000) return;
+    const selfCode = (payload.self?.realm ?? "").trim().toLowerCase();
+    const hasIdentity = !!payload.identity;
+    if (!selfCode && !hasIdentity) return;
+    if (payload.battle && payload.battle !== identityBattle) {
+      identityBattle = payload.battle;
+      playerRealms.value = {};
+    }
+    identityAt.value = Date.now();
+    if (identityExpiry) clearTimeout(identityExpiry);
+    identityExpiry = setTimeout(() => {
+      identityExpiry = null;
+      identityAt.value = 0;
+      selfRealm.value = "";
+      playerRealms.value = {};
+    }, 35_000);
+    if (isKnownRealm(selfCode)) selfRealm.value = selfCode;
+    if (hasIdentity) {
+      const map = { ...playerRealms.value };
+      for (const [name, row] of Object.entries(payload.identity!)) {
+        const realm = (row?.realm ?? "").trim().toLowerCase();
+        if (isKnownRealm(realm)) map[name] = realm;
+      }
+      playerRealms.value = map;
+    }
+  }
+
+  /** The local player's probe-reported realm while the identity is live
+   *  (the expiry timer lapses it), else "" — consumers fall back to their
+   *  detection chains. */
+  const liveSelfRealm = computed(() =>
+    identityAt.value > 0 ? selfRealm.value : "",
+  );
+
   const state = computed<"absent" | "outdated" | "installed">(() => {
     if (!installed.value) return "absent";
     return outdated.value ? "outdated" : "installed";
@@ -132,5 +199,8 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     install,
     update,
     uninstall,
+    applyTelemetryIdentity,
+    playerRealms,
+    liveSelfRealm,
   };
 });

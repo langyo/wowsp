@@ -1622,8 +1622,17 @@ export const api = {
     transport.listen?.<SinkAttribution>("wowsp://sink-attrib", handler),
   /** In-game plugin telemetry broadcast (commands/ingame_plugin.rs poller):
    *  { t, battle, players: { [name]: alive } } — the authoritative alive
-   *  set when the roster mode is "plugin". */
-  listenIngameTelemetry: (handler: (payload: { t: number; battle: string; players: Record<string, boolean> }) => void) =>
+   *  set when the roster mode is "plugin". Probe builds with realm
+   *  reporting add ground-truth identity: `self` (the local player's name
+   *  + realm) and `identity` (name → account/realm) straight off the
+   *  game's own roster records; older builds omit both. */
+  listenIngameTelemetry: (handler: (payload: {
+    t: number;
+    battle: string;
+    players: Record<string, boolean>;
+    self?: { name?: string; realm?: string };
+    identity?: Record<string, { account_id?: number; realm?: string }>;
+  }) => void) =>
     transport.listen?.("wowsp://ingame-telemetry", handler),
   /** Player stats lookup. `prAlgo` picks the PR formula ("winrate" =
    *  ApeRadar weighted winrate, "expected" = wows-numbers expected values);

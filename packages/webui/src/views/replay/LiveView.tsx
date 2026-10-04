@@ -22,6 +22,7 @@ import LiveIdleGuide from "@/features/replay/LiveIdleGuide";
 import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayStore } from "@/stores/overlay";
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
@@ -51,6 +52,7 @@ export default defineComponent({
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
     const overlay = useOverlayStore();
+    const plugin = useIngamePluginStore();
 
     const activePath = computed(() => gd.config.activeInstall?.path ?? "");
 
@@ -63,16 +65,20 @@ export default defineComponent({
       () => gameStatus.process.matchedInstall?.path ?? activePath.value,
     );
 
-    /** The realm to query live-roster stats against. Prefer the RUNNING
-     *  client's realm (the roster belongs to it), then the selected
-     *  install's, then the bound account's, else the default. */
+    /** The realm to query live-roster stats against. Prefer the probe's
+     *  ground truth while its telemetry stream is fresh (the local
+     *  player's cluster straight off the game's roster records — beats
+     *  every install/log inference), then the RUNNING client's detected
+     *  realm (the roster belongs to it), then the selected install's,
+     *  then the bound account's, else the default. */
     const realm = computed(
       () =>
-        gameStatus.process.matchedInstall?.realm ??
-        gd.config.activeInstall?.realm ??
-        accounts.activeAccount?.realm ??
-        accounts.activeRealm ??
-        "asia",
+        plugin.liveSelfRealm ||
+        (gameStatus.process.matchedInstall?.realm ??
+          gd.config.activeInstall?.realm ??
+          accounts.activeAccount?.realm ??
+          accounts.activeRealm ??
+          "asia"),
     );
 
     /** Live battle clock (from tempArenaInfo's dateTime) — feeds the

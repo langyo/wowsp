@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { api } from "@/api";
+import { KNOWN_REALMS } from "@/utils/realms";
 
 /** One bound Wargaming account (no login — just a remembered profile). */
 export interface AccountProfile {
@@ -12,8 +13,9 @@ export interface AccountProfile {
 
 const ACCOUNTS_FILE = "accounts.json";
 
-/** The five WG realms an `activeRealm` value may carry. */
-const REALMS = ["ru", "eu", "na", "asia", "cn"] as const;
+/** The five WG realms an `activeRealm` value may carry (utils/realms — the
+ *  one shared list). */
+const REALMS = KNOWN_REALMS;
 
 /** Seed the active realm from localStorage, validating against the realm
  *  list: a stale/garbage value resets to the default ("asia") AND is forced

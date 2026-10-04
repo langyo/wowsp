@@ -150,6 +150,11 @@ export default defineComponent({
     const manualLocate = useManualLocateStore();
     const toast = useToast();
     const { dataLanguage } = useLanguage();
+    // Declared BEFORE useRosterStats below: the composable's watches run
+    // their getters synchronously at registration, and the `realms` option
+    // closes over this store — a later declaration would be a TDZ throw
+    // that unmounts the whole panel.
+    const plugin = useIngamePluginStore();
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
     );
@@ -170,6 +175,11 @@ export default defineComponent({
       realm: () => realm.value,
       arena: () => props.arena,
       crossRealm,
+      // The probe's ground-truth per-name realms (straight off the game's
+      // roster records): names found here resolve on THEIR cluster — the
+      // cross-realm pass only remains for rows the probe could not report
+      // (older build / roster mode without the plugin).
+      realms: () => (plugin.installed ? plugin.playerRealms : null),
     });
 
     /** Realm chip for a row whose stats resolved on ANOTHER cluster
@@ -270,6 +280,10 @@ export default defineComponent({
       // the mode is off are ignored so the inference chain stays the sole
       // owner there.
       unlistenTelemetry = (await api.listenIngameTelemetry((payload) => {
+        // Ground truth first, in every roster mode: the probe's identity
+        // block (per-name realms + the local player's cluster) steers
+        // stats routing even when alive-sets come from another source.
+        plugin.applyTelemetryIdentity(payload);
         if (overlayCfg.roster !== "plugin" || !plugin.installed) return;
         if (!props.arena) return;
         // Stale file from a previous battle (game closed without a quit
@@ -347,7 +361,6 @@ export default defineComponent({
     // the pill says so — staged per the owner's spec. Until the M2 bridge
     // consumer lands, a connected plugin renders the same order as
     // inference; the pill already reflects the source, not the pipeline.
-    const plugin = useIngamePluginStore();
     const overlayCfg = useOverlayConfigStore();
     const telemetryGrade = computed<"plugin" | "incomplete" | "infer">(() => {
       if (overlayCfg.roster !== "plugin") return "infer";
