@@ -320,6 +320,18 @@ html[data-wallpaper-art="true"] body::before {
 @media (min-width: 768px) {
   :root {
     --hk-modal-bg: var(--hi-color-surface);
+    /* HkModal paints fixed 1.5rem "gutter covers" over the body's top and
+       bottom padding (HkScrollPin's mask, defaulting to --hk-modal-bg) so
+       scrolled content never slides through the whitespace. That default
+       assumes an OPAQUE frame: over this glass the cover re-paints the
+       same translucent fill ON TOP of the already-painted body, and the
+       stacked alpha (0.8 over 0.8 ≈ 0.96) surfaces as two visibly denser
+       24px bands above and below the settings shell. The settings body
+       never scrolls anyway (the host contract keeps the shell fitting),
+       and no wowsp modal relies on the mask — let the padding read as the
+       plain glass it is. Scoped beside the bg re-theme; phone sheets stay
+       opaque, so their covers are invisible either way. */
+    --hk-scroll-pin-cover-bg: transparent;
   }
   :root[data-ui-glass] {
     --hk-modal-blur: blur(var(--blur-md));
