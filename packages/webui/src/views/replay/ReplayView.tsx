@@ -97,7 +97,8 @@ function modeLabel(
 
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
  *  relation), single-sided modes (PvE, ops) show the raw count. Operations
- *  skip the split entirely — their relation values follow scenario slots. */
+ *  keep the relation split available but render the raw count (their
+ *  scripted enemy block is nobody's "v" opponent). */
 function formatPlayerCount(
   vehicles: { relation: number }[],
   operation = false,
@@ -154,9 +155,9 @@ const PostBattleFallbackPanel = defineComponent({
     /** Query realm (shared with the parent view) — the replay belongs to
      *  the client install, not to the bound account. */
     realm: { type: String, default: "asia" },
-    /** Operation scenario (行动): the roster's relation values follow
-     *  scenario team slots, not enemy semantics — the matrix renders a
-     *  single allies column. */
+    /** Operation scenario (行动): the matrix renders a single allies
+     *  column — the scripted enemy block is a list nobody reads (the
+     *  ally rows themselves still split by relation). */
     operation: { type: Boolean, default: false },
     /** The arena's initial player state — the authoritative entity→roster
      *  join for the per-row HP/death columns (mirror picks share one
@@ -201,7 +202,7 @@ const PostBattleFallbackPanel = defineComponent({
               ? "sunk"
               : r.vehicle.relation === 0
                 ? "white"
-                : props.operation || r.vehicle.relation <= 1
+                : r.vehicle.relation <= 1
                   ? "ally"
                   : "enemy",
             stats,
@@ -211,10 +212,10 @@ const PostBattleFallbackPanel = defineComponent({
       return {
         title: t("replay.results"),
         botLabel: t("replay.bot"),
-        // Mirror the DOM's single-column rule (operations and any
-        // single-sided roster edge).
+        // Mirror the DOM's single-column rule (operations hide the enemy
+        // column, as does any single-sided roster edge).
         columns:
-          props.operation || enemies.value.length === 0
+          enemies.value.length === 0
             ? [mkCol(allies.value, false)]
             : [mkCol(allies.value, false), mkCol(enemies.value, true)],
       };
@@ -374,10 +375,7 @@ const PostBattleFallbackPanel = defineComponent({
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     };
     const allies = computed(() =>
-      (props.operation
-        ? rows.value
-        : rows.value.filter((r) => r.vehicle.relation <= 1)
-      ).sort(sortRows),
+      rows.value.filter((r) => r.vehicle.relation <= 1).sort(sortRows),
     );
     const enemies = computed(() =>
       (props.operation
@@ -451,7 +449,7 @@ const PostBattleFallbackPanel = defineComponent({
                     ? "sunk"
                     : r.vehicle.relation === 0
                       ? "white"
-                      : props.operation || r.vehicle.relation <= 1
+                      : r.vehicle.relation <= 1
                         ? "ally"
                         : "enemy"
                 }
@@ -558,7 +556,7 @@ const PostBattleFallbackPanel = defineComponent({
                         variant={
                           !sel.alive
                             ? "sunk"
-                            : props.operation || sel.vehicle.relation <= 1
+                            : sel.vehicle.relation <= 1
                               ? "ally"
                               : "enemy"
                         }
@@ -804,14 +802,12 @@ const CHANNEL_KEYS: ChatChannelKey[] = ["team", "all", "division", "private"];
  *  read another player's HP. Mirrors HolographicMap's
  *  `resolveRosterAssignments`: unique shipIds join directly; each ambiguous
  *  trajectory takes the same-side (nearest ally/enemy spawn centroid)
- *  unclaimed roster entry, never stealing a claimed one. Operation
- *  scenarios (`operation`, 行动) skip the side split — their relation
- *  values follow scenario team slots, so ambiguous picks just take the
- *  first unclaimed entry. */
+ *  unclaimed roster entry, never stealing a claimed one. The relation side
+ *  split holds in operations (行动) too — their rosters carry real enemy
+ *  semantics. */
 function assignTrajectoriesByVehicle(
   vehicles: VehicleEntry[],
   trajectories: EntityTrajectory[],
-  operation = false,
   arenaPlayers?: ArenaPlayer[],
 ): Map<number, EntityTrajectory> {
   const shipTrajs = trajectories.filter((tr) => tr.kind?.entityType === 2);
@@ -856,13 +852,13 @@ function assignTrajectoriesByVehicle(
       const v = vehicles.find((x) => x.id === vid);
       if (!v) continue;
       const s = spawnOf(traj);
-      if (operation || v.relation <= 1) { ax += s.x; az += s.z; an++; }
+      if (v.relation <= 1) { ax += s.x; az += s.z; an++; }
       else { ex += s.x; ez += s.z; en++; }
     }
     for (const { traj, entries } of ambiguous) {
       const unclaimed = entries.filter((e) => !claimed.has(e.id));
       let pick: VehicleEntry | undefined;
-      if (!operation && an > 0 && en > 0) {
+      if (an > 0 && en > 0) {
         const s = spawnOf(traj);
         const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
         const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
@@ -916,9 +912,6 @@ const ChatLogPanel = defineComponent({
     events: { type: Array as () => ChatEvent[], required: true },
     vehicles: { type: Array as () => VehicleEntry[], required: true },
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
-    /** Operation scenario (行动): the vehicle→trajectory join skips the
-     *  ally/enemy spawn split (relation follows scenario team slots). */
-    operation: { type: Boolean, default: false },
     /** The arena's initial player state — the authoritative entity→roster
      *  join for the sender tooltips (mirror picks share one shipId). */
     arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
@@ -940,7 +933,6 @@ const ChatLogPanel = defineComponent({
       const trajByVehicle = assignTrajectoriesByVehicle(
         props.vehicles,
         props.trajectories,
-        props.operation,
         props.arenaPlayers,
       );
       return props.events
@@ -959,9 +951,7 @@ const ChatLogPanel = defineComponent({
             name: v?.name ?? "",
             message: c.message,
             channel: chatChannelOf(c.namespace),
-            // Operations: relation follows scenario slots — nobody reads
-            // as enemy (same gate as the event feed's tint).
-            enemy: !props.operation && (v?.relation ?? 0) >= 2,
+            enemy: (v?.relation ?? 0) >= 2,
             shipId: v?.shipId ?? 0,
             shipType: v ? shipOfflineEntry(v.shipId)?.type ?? "" : "",
             shipName:
@@ -1972,7 +1962,6 @@ export default defineComponent({
                         events={chatMessages.value}
                         vehicles={parser.current.value.vehicles}
                         trajectories={trajectories.value}
-                        operation={isOperation.value}
                         arenaPlayers={arenaPlayers.value}
                         duration={duration.value}
                         realm={realm.value}

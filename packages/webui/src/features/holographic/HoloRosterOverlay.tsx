@@ -2,7 +2,9 @@
  * Tab-held scoreboard overlay of the holographic map — the in-game Tab
  * table rebuilt from the replay streams at the CURRENT playhead:
  *
- *   - both teams' players (operations render the single allies table),
+ *   - both teams' players (operations render one allies table — their
+ *     relation values still split sides, the enemy scripted block is
+ *     simply not listed),
  *   - kills credited so far (post-battle killer attribution joined with
  *     the crossed death times — hidden entirely when the replay carries
  *     no BattleResults packet),
@@ -182,9 +184,12 @@ export default defineComponent({
         .sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
     });
 
-    const allies = computed(() =>
-      (props.operation ? rows.value : rows.value.filter((r) => r.vehicle.relation <= 1)),
-    );
+    // The relation split holds in operations (行动) too — their rosters
+    // carry real side semantics (allied escort waves ≤ 1, enemy warships
+    // > 1), so the enemy scripted block never rolls into the allies table;
+    // only the enemy TABLE stays hidden for them (scripted spawns, and a
+    // list nobody reads).
+    const allies = computed(() => rows.value.filter((r) => r.vehicle.relation <= 1));
     const enemies = computed(() =>
       props.operation ? [] : rows.value.filter((r) => r.vehicle.relation > 1),
     );

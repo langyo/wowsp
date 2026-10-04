@@ -214,15 +214,13 @@ export default defineComponent({
     /** The side's believed alive order for resolving sink-attrib rows:
      *  the predicted key order minus the trusted sunk set. */
     const sideAliveOrder = (side: SunkSide): string[] => {
-      // Operations (行动) map the whole roster as the ally block — the
-      // Rust sink solver indexes their rows the same way (team_sizes
-      // carries the whole roster as allies).
-      const list =
-        operation.value && side === "ally"
-          ? props.arena?.vehicles ?? []
-          : (props.arena?.vehicles ?? []).filter((v) =>
-              side === "enemy" ? v.relation > 1 : v.relation <= 1,
-            );
+      // The plain relation split — operations (行动) included: their
+      // rosters carry real side semantics too (allied escort waves at
+      // relation ≤ 1, enemy warships at relation > 1), and the Rust sink
+      // solver indexes the ally block the same way.
+      const list = (props.arena?.vehicles ?? []).filter((v) =>
+        side === "enemy" ? v.relation > 1 : v.relation <= 1,
+      );
       const order = orderForTab(list, predictedOptionsFor(side)).map(
         (e) => e.vehicle.name,
       );
@@ -264,18 +262,14 @@ export default defineComponent({
         const ally = new Set<string>();
         const enemy = new Set<string>();
         const rosterNames = new Set<string>();
-        const operation = isOperationBattle(
-          props.arena.matchGroup,
-          props.arena.scenario,
-          props.arena.eventType,
-        );
         for (const v of props.arena.vehicles) {
           rosterNames.add(v.name);
           const dead = payload.players[v.name] === false;
           if (!dead) continue;
-          // Operations (行动) map the whole roster as the ally block — the
-          // same convention the sink solver uses (see sideAliveOrder).
-          if (operation || v.relation <= 1) ally.add(v.name);
+          // The plain relation split — operations (行动) included: their
+          // enemy scripted units sit at relation > 1 (see
+          // sideAliveOrder), so they never land in the ally sunk set.
+          if (v.relation <= 1) ally.add(v.name);
           else enemy.add(v.name);
         }
         telemetryAuthoritative = true;
@@ -384,11 +378,11 @@ export default defineComponent({
     // verbatim — sunk-ship regrouping included, with sunk players dimmed —
     // and without one a predicted class-grouped order approximates the
     // game's layout far better than tempArenaInfo.json's join order.
-    // Operation scenarios (行动) whose relation values follow scenario team
-    // slots (escort waves, target ships) rather than enemy semantics keep
-    // the whole roster on the ally side here — the Rust sink solver indexes
-    // its rows the same way (team_sizes carries the whole roster as
-    // allies), so sink attributions stay name-matched.
+    // Operation scenarios (行动) keep the relation side split here too —
+    // their rosters carry real enemy semantics (the fixture captures put
+    // enemy warships at relation > 1), so the enemy scripted block is not
+    // rolled into the allies column; the Rust sink solver indexes the ally
+    // block off the same split, keeping sink attributions name-matched.
     const operation = computed(() =>
       isOperationBattle(
         props.arena?.matchGroup,
@@ -415,20 +409,18 @@ export default defineComponent({
           props.arena?.scriptedUnitCount ?? 0,
         ) === "operation",
     );
-    // The ally side: real operations field the whole roster as one block
-    // (their relation values are scenario slots, and the Rust sink solver
-    // indexes them the same way); every other battle keeps the relation
-    // split, which for the new-account escort op IS our team — its scripted
-    // spawns sit at relation>1 and drop out of the panel below.
+    // The ally side: the plain relation split, operations (行动) included —
+    // their rosters carry real side semantics (allied escort waves sit at
+    // relation ≤ 1, enemy warships at relation > 1), so the enemy scripted
+    // block drops out of the panel here instead of being listed under 我方
+    // (operation captures in the fixtures verify the split).
     // Inputs for the predicted order's full Tab key come from
     // `predictedOptionsFor` above (locale + clan tag + that side's trusted
     // sunk set) — the orders re-derive reactively when the WG batch lands a
     // tag or a sink event bumps `sinkEpoch`.
     const allies = computed(() =>
       orderForTab(
-        operation.value
-          ? props.arena?.vehicles ?? []
-          : props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
+        props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
         predictedOptionsFor("ally"),
       ),
     );
@@ -601,7 +593,7 @@ export default defineComponent({
                 ? "sunk"
                 : v.relation === 0
                   ? "white"
-                  : operation.value || v.relation <= 1
+                  : v.relation <= 1
                     ? "ally"
                     : "enemy",
               stats: shotCellsOf(v),
@@ -614,10 +606,10 @@ export default defineComponent({
         mode,
         mapLabel: arena?.mapName ? displayMapName(arena.mapName, dataLanguage.value) : null,
         botLabel: t("replay.bot"),
-        // Mirror the DOM's single-column rule (operations and any
-        // single-sided roster edge).
+        // Mirror the DOM's single-column rule (operations hide the enemy
+        // column, as does any single-sided roster edge).
         columns:
-          operation.value || enemies.value.length === 0
+          enemies.value.length === 0
             ? [mkCol(allies.value, false)]
             : [mkCol(allies.value, false), mkCol(enemies.value, true)],
       };
@@ -792,7 +784,7 @@ export default defineComponent({
                       ? "sunk"
                       : v.relation === 0
                         ? "white"
-                        : operation.value || v.relation <= 1
+                        : v.relation <= 1
                           ? "ally"
                           : "enemy"
                   }
@@ -918,7 +910,7 @@ export default defineComponent({
                 ally rows additionally carry the consumable/module/flag
                 summary. Enemies get parameters only — and operations have
                 no enemies at all. */}
-            <LiveShipMeta shipId={v.shipId} ally={operation.value || v.relation <= 1} />
+            <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
             {seal}
           </>
         );

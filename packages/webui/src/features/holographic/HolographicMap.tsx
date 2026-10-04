@@ -365,12 +365,12 @@ export default defineComponent({
       return `${formatTime(c)} / ${formatTime(d)}`;
     }
 
-    // Score bar data. Operations count the WHOLE roster as the one team —
-    // their relation values follow scenario slots, not enemy semantics.
+    // Score bar data. The ally count keeps the relation split in
+    // operations (行动) too — their rosters carry real side semantics
+    // (allied escort waves ≤ 1, enemy warships > 1); only the enemy total
+    // reads 0 there (the scripted enemy fleet is nobody's scoreboard).
     const allyTotal = computed(() =>
-      props.operation
-        ? props.vehicles.length
-        : props.vehicles.filter(v => v.relation <= 1).length,
+      props.vehicles.filter(v => v.relation <= 1).length,
     );
     const enemyTotal = computed(() =>
       props.operation ? 0 : props.vehicles.filter(v => v.relation > 1).length,
@@ -451,9 +451,7 @@ export default defineComponent({
           maxHp: st?.maxHp ?? null,
         };
       };
-      const allies = (
-        props.operation ? props.vehicles : props.vehicles.filter((v) => v.relation <= 1)
-      ).map(mk);
+      const allies = props.vehicles.filter((v) => v.relation <= 1).map(mk);
       const enemies = (
         props.operation ? [] : props.vehicles.filter((v) => v.relation > 1)
       ).map(mk);

@@ -38,21 +38,14 @@ fn unix_secs(t: SystemTime) -> i64 {
 }
 
 /// Record both team sizes and the battle's start stamp (the arena file's
-/// mtime). Allies = relation ≤ 1 — EXCEPT in operation scenarios (行动),
-/// whose `relation` values follow scenario team slots (escort waves, target
-/// ships) instead of enemy semantics, and whose in-game Tab table shows ONE
-/// team: there the whole roster is the single ally block.
+/// mtime). Allies = relation ≤ 1 — in operation scenarios (行动) too: their
+/// rosters carry real side semantics (allied escort waves sit at
+/// relation ≤ 1, enemy warships at relation > 1 — verified against the
+/// operation replay fixtures), and the game's Tab table leads with our
+/// team's block, so the sink solver must key the ally block on the same
+/// split instead of rolling the whole roster into it.
 fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime) {
-    let single_team = wowsp_tauri_shared::is_operation_arena(
-        info.scenario.as_deref(),
-        info.event_type.as_deref(),
-        &info.vehicles,
-    );
-    let allies = if single_team {
-        info.vehicles.len()
-    } else {
-        info.vehicles.iter().filter(|v| v.relation <= 1).count()
-    };
+    let allies = info.vehicles.iter().filter(|v| v.relation <= 1).count();
     let enemies = info.vehicles.len() - allies;
     LAST_TEAM_SIZES.store(
         (allies << 16) | enemies,
@@ -483,6 +476,45 @@ mod tests {
         assert_eq!(info.match_group.as_deref(), Some("pvp"));
         assert_eq!(info.vehicles.len(), 1);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// note_arena_seen keys the ally block on the relation split — in
+    /// operation scenarios (行动) too: their scripted escort allies sit at
+    /// relation ≤ 1 and their enemy warships at relation > 1 (verified
+    /// against the operation replay fixtures in wowsunpack-vendor), so the
+    /// sink solver's ally-row count must not swallow the enemy scripted
+    /// block into the ally grid.
+    #[test]
+    fn team_sizes_split_by_relation_even_in_operations() {
+        let vehicle = |id: i64, name: &str, relation: i64| wowsp_tauri_shared::VehicleEntry {
+            id,
+            name: name.to_string(),
+            relation,
+            ship_id: 4_180_000_000 + id,
+            ship_name: None,
+        };
+        let info = wowsp_tauri_shared::ArenaInfo {
+            match_group: Some("pve".into()),
+            date_time: None,
+            map_name: None,
+            scenario: Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL".into()),
+            event_type: None,
+            bot_count: 0,
+            scripted_unit_count: 3,
+            vehicles: vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "teammate", 1),
+                vehicle(-1, "IDS_OP_02_03_AT_TRANSPORT_A_1", 1),
+                vehicle(-2, "IDS_OP_02_03_AT_ATTAKA_US_A1", 2),
+                vehicle(-3, "IDS_OP_02_03_AT_TRANSPORT_E_5", 2),
+            ],
+            raw: serde_json::Value::Null,
+        };
+        note_arena_seen(&info, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (3, 2));
+        // Restore the process-global the sink solver keys on (other tests
+        // in this binary may run after this one).
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// find_latest_arena_info picks the only tempArenaInfo.json in a dir tree.
