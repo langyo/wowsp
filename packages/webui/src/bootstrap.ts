@@ -17,6 +17,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { removeBuiltinShadowingCustomThemes, startModeTokenBridge } from "./theme";
+import { applyDefaultSchemeBrand } from "./theme/defaultSchemeBrand";
 import { installGlobalTooltip } from "./composables/globalTooltip";
 import { api } from "./api";
 import { initDpiPrefs } from "./theme/dpiPrefs";
@@ -51,6 +52,12 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // the browser window honest on phones.
   applyViewportPolicy();
 
+  // Brand the factory default scheme BEFORE initTheme resolves it: the
+  // collapsed preset's light secondary is hikari's inherited violet, and
+  // the pink swap must be on the table before the first palette application
+  // (see theme/defaultSchemeBrand — the swatch, the mode-token bridge and
+  // every secondary-driven surface read the table live).
+  applyDefaultSchemeBrand();
   initTheme();
   // One-time repair: drop custom schemes that shadow builtin preset ids
   // (see removeBuiltinShadowingCustomThemes — the dark-mode-shows-light

@@ -10,12 +10,16 @@
      floating cards, where a heavier fill aids contrast, but at full column
      height it reads as a solid panel (the wallpaper's contribution also
      shrinks further under theme.scss's readability scrim), so the rail
-     needs a lighter surface to actually read as glass. The deeper blur
-     diffuses the now-stronger wallpaper so nav text keeps its contrast. */
+     needs a lighter surface to actually read as glass. The blur is the
+     shared glass strength (--blur-md), NOT the deeper --blur-lg the rail
+     once carried: over a full column height the heavy diffusion turned the
+     artwork behind the nav into a smeared haze — the 55% fill already does
+     the contrast work, so the lighter blur keeps the art legible while nav
+     text stays readable. */
   background: rgb(var(--color-surface) / 55%);
   background: rgb(var(--color-surface) / min(100%, calc(55% * var(--ui-opacity, 1))));
-  backdrop-filter: blur(var(--blur-lg));
-  -webkit-backdrop-filter: blur(var(--blur-lg));
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
   border-right: 1px solid rgb(var(--color-border) / 20%);
   user-select: none;
 

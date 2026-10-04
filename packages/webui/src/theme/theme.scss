@@ -267,14 +267,16 @@ select,
    the wallpaper while translucent chrome (sidebar, cards, modals) samples
    the scrim-adjusted image. Gated by the renderer: solid backgrounds never
    draw one. Strength is the user's overlay preference
-   (--wallpaper-overlay-opacity, WallpaperRenderer). */
+   (--wallpaper-overlay-opacity, WallpaperRenderer); the 0.8 fallback is
+   wallpaperOverlay.ts's shipped default, restated for the pre-render
+   frame. */
 html[data-wallpaper-art="true"] body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 0;
   background: rgb(var(--color-background));
-  opacity: var(--wallpaper-overlay-opacity, 0.75);
+  opacity: var(--wallpaper-overlay-opacity, 0.8);
   pointer-events: none;
 }
 

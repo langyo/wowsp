@@ -6,7 +6,7 @@
  *   0   → wallpaper at full brightness
  *   100 → wallpaper fully washed into the theme background
  *
- * Stored as an integer percent under `wowsp-wallpaper-overlay`; the 75
+ * Stored as an integer percent under `wowsp-wallpaper-overlay`; the 80
  * default keeps body text comfortably readable over the shipped artwork
  * (it stacks with the content-column wash, AppShell.scss). Solid fallbacks
  * never draw a scrim, so the value only matters while an image wallpaper
@@ -15,7 +15,7 @@
 import { ref } from "vue";
 
 export const WALLPAPER_OVERLAY_STORAGE_KEY = "wowsp-wallpaper-overlay";
-export const WALLPAPER_OVERLAY_DEFAULT = 75;
+export const WALLPAPER_OVERLAY_DEFAULT = 80;
 export const WALLPAPER_OVERLAY_MIN = 0;
 export const WALLPAPER_OVERLAY_MAX = 100;
 
