@@ -23,7 +23,7 @@ import { makeShipHoloDepthMaterial, makeShipHoloMaterial, tickHolo } from "./hol
 export const MESH_PREFIXES = [
   "main_battery", "secondary_battery", "aa_mount", "torpedo", "aircraft",
   "weapon", "turret_part", "hull_body", "hull_bow", "hull_mid", "hull_stern",
-  "deck_house", "superstructure", "funnel", "misc",
+  "deck_house", "superstructure", "funnel", "propeller", "misc",
 ] as const;
 
 export function meshCategory(name: string): string {

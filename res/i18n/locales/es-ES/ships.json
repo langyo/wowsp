@@ -566,5 +566,22 @@
     "torpedoBomber": "Torpedero",
     "skipBomber": "Bombardero de rebote",
     "flightControl": "Control de vuelo"
+  },
+  "plane": {
+    "torpedo": "Torpedero",
+    "heBomber": "Bombardero HE",
+    "apBomber": "Bombardero AP",
+    "heSkip": "Bombardero de rebote HE",
+    "apSkip": "Bombardero de rebote AP",
+    "rocket": "Avión de cohetes",
+    "fighter": "Caza",
+    "interceptor": "Interceptor",
+    "scout": "Explorador",
+    "asw": "Avión antisubmarino",
+    "mine": "Avión minador",
+    "cfg": {
+      "stock": "stock",
+      "top": "top"
+    }
   }
 }

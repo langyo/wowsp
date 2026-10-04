@@ -35,7 +35,8 @@ export interface ArmorZone {
 
 /** A carrier airframe the stage can swap in, fed from GameParams via the
  *  parent: `index` is the baked GLB stem under models/planes/, `label` the
- *  pretty airframe name ("Grumman TBF"). */
+ *  i18n'd combat role ("鱼雷机" / "AP轰炸机"), qualified when a ship fields
+ *  two airframes of the same role. */
 export interface PlaneModelOption {
   index: string;
   label: string;
@@ -170,6 +171,7 @@ const PRESET_HUES: Record<string, number> = {
   aircraft:         280,   // purple
   weapon:            36,   // gold (generic)
   turret_part:       44,   // darker gold
+  propeller:        200,   // screws share the misc hue
   misc:             200,
 };
 

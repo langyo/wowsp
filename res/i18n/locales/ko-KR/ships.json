@@ -566,5 +566,22 @@
     "torpedoBomber": "뇌격기",
     "skipBomber": "도탄 폭격기",
     "flightControl": "항공 통제"
+  },
+  "plane": {
+    "torpedo": "뇌격기",
+    "heBomber": "HE폭격기",
+    "apBomber": "AP폭격기",
+    "heSkip": "HE도탄 폭격기",
+    "apSkip": "AP도탄 폭격기",
+    "rocket": "로켓기",
+    "fighter": "전투기",
+    "interceptor": "요격기",
+    "scout": "정찰기",
+    "asw": "대잠기",
+    "mine": "기뢰부설기",
+    "cfg": {
+      "stock": "초기",
+      "top": "최종"
+    }
   }
 }

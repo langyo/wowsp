@@ -566,5 +566,22 @@
     "torpedoBomber": "鱼雷机",
     "skipBomber": "跳弹轰炸机",
     "flightControl": "飞行控制"
+  },
+  "plane": {
+    "torpedo": "鱼雷机",
+    "heBomber": "HE轰炸机",
+    "apBomber": "AP轰炸机",
+    "heSkip": "HE跳弹轰炸机",
+    "apSkip": "AP跳弹轰炸机",
+    "rocket": "火箭机",
+    "fighter": "战斗机",
+    "interceptor": "截击机",
+    "scout": "侦察机",
+    "asw": "反潜机",
+    "mine": "布雷机",
+    "cfg": {
+      "stock": "白板",
+      "top": "顶级"
+    }
   }
 }

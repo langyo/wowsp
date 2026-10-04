@@ -28,7 +28,38 @@ import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import { tierToRoman } from "@wowsp/holo";
+import planeTypesDb from "@/data/plane_types.json";
 import "./ShipDetailModal.scss";
+
+// ── Plane picker role labels ──────────────────────────────────────────────
+// plane_types.json carries a `role` per airframe (derived from the carried
+// ammunition by scripts/model_convert/extract_plane_types.py): a GameParams
+// suffix like "Hakuryu stock" is a hull config, not an aircraft type, and
+// three squadrons of one ship share it. The order below also groups the
+// picker entries by role.
+const PLANE_ROLE_ORDER = [
+  "torpedo", "heBomber", "apBomber", "heSkip", "apSkip",
+  "rocket", "fighter", "scout", "asw", "mine",
+];
+
+const planeRoleByIndex = new Map<string, string>(
+  (Object.values(planeTypesDb) as Array<{ index: string; role?: string }>).map(
+    (m) => [m.index, m.role ?? ""],
+  ),
+);
+
+function planeRoleOf(index: string): string {
+  return planeRoleByIndex.get(index) ?? "";
+}
+
+/** Translated role name; unmapped roles (special airstrike planes etc.) fall
+ *  back to `fallback` — the raw entity suffix. */
+function planeRoleLabel(role: string, fallback: string): string {
+  if (!role) return fallback;
+  const key = `ships.plane.${role}`;
+  const msg = t(key, {});
+  return msg === key ? fallback : msg;
+}
 
 /**
  * Ship detail modal with tabs:
@@ -332,12 +363,18 @@ export default defineComponent({
     // models/planes/. Several squadrons can field the same airframe, so
     // dedupe by index. (Hybrid battleships like Kearsarge field planes too —
     // data-driven, so they get the picker for free.)
+    //
+    // Entries are labelled by combat role and sorted into role groups; when
+    // a ship fields two airframes of the same role ("Hakuryu stock" vs
+    // "Hakuryu top" dive bombers), a qualifier distilled from the raw suffix
+    // (stock → 白板, B5N2 → B5N2) keeps the picker entries distinguishable.
     const planeModels = computed<PlaneModelOption[]>(() => {
       const gp = gameparams.value as Record<string, any> | null;
       if (!gp) return [];
       try {
         const seen = new Set<string>();
         const out: PlaneModelOption[] = [];
+        const rawTailOf = new Map<string, string>();
         for (const v of Object.values(gp)) {
           const planes = (v as { planes?: unknown })?.planes;
           if (!Array.isArray(planes)) continue;
@@ -346,8 +383,52 @@ export default defineComponent({
             const m = /^([A-Z]+\d+)_(.+)$/.exec(name);
             if (!m || seen.has(m[1])) continue;
             seen.add(m[1]);
-            out.push({ index: m[1], label: m[2].replace(/_/g, " ").trim() || m[1] });
+            out.push({ index: m[1], label: m[1] });
+            rawTailOf.set(m[1], m[2].replace(/_/g, " ").trim());
           }
+        }
+        const fallbackRank = PLANE_ROLE_ORDER.length;
+        const roleRank = (p: PlaneModelOption): number => {
+          const i = PLANE_ROLE_ORDER.indexOf(planeRoleOf(p.index));
+          return i < 0 ? fallbackRank : i;
+        };
+        out.sort((a, b) => roleRank(a) - roleRank(b));
+        // Ship-name tokens (encyclopedia name + the GameParams entity name's
+        // "PJSA917_TST_Hakuryu" tail) are stripped from the raw suffix so the
+        // qualifier distills to stock/top-style residue.
+        const gpName = String(gp.name ?? "");
+        const gpTail = /^[A-Z]+\d+_(.*)$/.exec(gpName)?.[1] ?? gpName;
+        const shipTokens = `${viewShip.value?.name ?? ""} ${gpTail}`
+          .toLowerCase()
+          .split(/[\s_]+/)
+          .filter(Boolean);
+        const roleCounts = new Map<string, number>();
+        for (const p of out) {
+          const role = planeRoleOf(p.index);
+          roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1);
+        }
+        for (const p of out) {
+          const role = planeRoleOf(p.index);
+          const raw = rawTailOf.get(p.index) ?? "";
+          const key = `ships.plane.${role}`;
+          const translated = role && t(key, {}) !== key;
+          // Unmapped roles already fall back to the raw suffix, which then
+          // carries its own qualifier — appending another would duplicate it.
+          let label = planeRoleLabel(role, raw || p.index);
+          if (translated && (roleCounts.get(role) ?? 0) > 1 && raw) {
+            let qual = raw
+              .split(" ")
+              .filter((tok) => !shipTokens.includes(tok.toLowerCase()))
+              .join(" ");
+            const cfg = qual.toLowerCase();
+            if (cfg === "stock" || cfg === "top") {
+              const cfgKey = `ships.plane.cfg.${cfg}`;
+              const msg = t(cfgKey, {});
+              if (msg !== cfgKey) qual = msg;
+            }
+            if (qual && qual !== label) label += ` · ${qual}`;
+          }
+          p.label = label;
         }
         return out;
       } catch {

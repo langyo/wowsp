@@ -566,5 +566,22 @@
     "torpedoBomber": "Bombardier-torpilleur",
     "skipBomber": "Bombardier à ricochet",
     "flightControl": "Contrôle aérien"
+  },
+  "plane": {
+    "torpedo": "Bombardier-torpilleur",
+    "heBomber": "Bombardier HE",
+    "apBomber": "Bombardier AP",
+    "heSkip": "Bombardier à ricochet HE",
+    "apSkip": "Bombardier à ricochet AP",
+    "rocket": "Avion à roquettes",
+    "fighter": "Chasseur",
+    "interceptor": "Intercepteur",
+    "scout": "Éclaireur",
+    "asw": "Avion ASM",
+    "mine": "Poseur de mines",
+    "cfg": {
+      "stock": "stock",
+      "top": "top"
+    }
   }
 }

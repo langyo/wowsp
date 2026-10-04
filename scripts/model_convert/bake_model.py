@@ -102,6 +102,13 @@ def _classify_node(node_name: str) -> str:
     if "torpedo" in nl or "jtr" in nl or "tube" in nl:
         return "torpedo"
 
+    # ── Propellers (ship shafts) ──
+    # Classified separately from misc so each screw keeps its own bake
+    # instance and a decimation floor — clustered at misc's raw-triangle
+    # share they collapse into lumps (thin twisted blades weld through).
+    if "propeller" in nl or "prop_" in nl:
+        return "propeller"
+
     # ── Aircraft ──
     if "catapult" in nl or "aircraft" in nl or "plane" in nl or "seaplane" in nl:
         return "aircraft"
@@ -174,9 +181,11 @@ def extract_by_category(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
 # Weapon HP-instance categories: each AGM/AGS/AGA/… node is one physical
 # mount. extract_by_instance keeps them SEPARATE (main_battery_0..N) so the
 # frontend can address individual turrets while still colouring by category.
+# Propellers join them so each screw is decimated (and floored) on its own
+# instead of sharing one bucket with boats and deck fittings.
 WEAPON_INSTANCE_CATS = {
     "main_battery", "secondary_battery", "aa_mount", "torpedo",
-    "aircraft", "weapon", "turret_part",
+    "aircraft", "weapon", "turret_part", "propeller",
 }
 
 _INSTANCE_NO = re.compile(r"\(HP_\w+_(\d+)\)|_(\d+)\s*$")
@@ -315,6 +324,11 @@ def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], li
         num = m.group(1) or m.group(2) if m else None
         return num if num is not None else str(ni)
 
+    # Stage every primitive first: the tiny-part cutoff is RELATIVE to the
+    # whole model's extent (planes export at ~1 unit overall, so the old
+    # absolute 0.2 was erasing spinners and pitot tubes on them), and the
+    # billboard cull needs per-primitive shape stats anyway.
+    staged: list[tuple[str, str, np.ndarray, np.ndarray]] = []
     for mesh in gjson.get("meshes", []):
         if not mesh.get("primitives"):
             continue
@@ -344,8 +358,6 @@ def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], li
                         inst = instance_label(p, pc)
                         break
                     cur = p
-            target = buckets[cat].setdefault(inst, ([], []))
-            verts_target, idx_target = target
             for prim in mesh["primitives"]:
                 if not prim.get("attributes") or prim["attributes"].get("POSITION") is None:
                     continue
@@ -362,23 +374,46 @@ def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], li
                 else:
                     vt = np.array(verts, dtype=np.float64).reshape(-1, 3)
 
-                bb_min = vt.min(axis=0)
-                bb_max = vt.max(axis=0)
-                extent = bb_max - bb_min
-                if extent.max() < 0.2:
-                    continue
-
-                base_vert = len(verts_target) // 3
-                verts_target.extend(vt.flatten().tolist())
-
                 if prim.get("indices") is not None:
                     idx_vals, _ = get_accessor_data(prim["indices"])
-                    idx_target.extend(int(v) + base_vert for v in idx_vals)
+                    prim_idx = np.asarray(idx_vals, dtype=np.int64)
                 else:
                     n_verts = len(verts) // 3
-                    for i in range(0, n_verts, 3):
-                        if i + 2 < n_verts:
-                            idx_target.extend([base_vert + i, base_vert + i + 1, base_vert + i + 2])
+                    prim_idx = np.arange(n_verts, dtype=np.int64).reshape(-1, 3).reshape(-1)
+                staged.append((cat, inst, vt, prim_idx))
+
+    # Relative cutoffs: drop sub-0.2% slivers (same spirit as the old
+    # absolute 0.2 on full-scale ships) and texture-billboard quads — flat
+    # ≤8-vertex sheets are prop-blur discs, flags and decals that render as
+    # translucent rectangles under the holographic material.
+    dropped_tiny = 0
+    dropped_billboard = 0
+    if staged:
+        gmin = np.min([s[2].min(axis=0) for s in staged], axis=0)
+        gmax = np.max([s[2].max(axis=0) for s in staged], axis=0)
+        model_extent = float((gmax - gmin).max())
+    else:
+        model_extent = 0.0
+    min_extent = min(0.2, model_extent * 0.002) if model_extent > 0 else 0.2
+    for cat, inst, vt, prim_idx in staged:
+        bb_min = vt.min(axis=0)
+        bb_max = vt.max(axis=0)
+        extent = bb_max - bb_min
+        if extent.max() < min_extent:
+            dropped_tiny += 1
+            continue
+        if len(vt) <= 8 and len(prim_idx) <= 8 and extent.min() < extent.max() * 0.005:
+            dropped_billboard += 1
+            continue
+        target = buckets[cat].setdefault(inst, ([], []))
+        verts_target, idx_target = target
+        base_vert = len(verts_target) // 3
+        verts_target.extend(vt.flatten().tolist())
+        idx_target.extend(int(i) + base_vert for i in prim_idx)
+
+    if dropped_tiny or dropped_billboard:
+        print(f"[bake] culled {dropped_tiny} tiny / {dropped_billboard} billboard parts "
+              f"(min extent {min_extent:.4f})")
 
     # Report
     for cat in sorted(buckets):
@@ -391,12 +426,45 @@ def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], li
     return {cat: insts for cat, insts in buckets.items() if any(len(i) > 0 for _, (_, i) in insts.items())}
 
 
-def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float):
+def _face_normal_bins(verts: np.ndarray, faces: np.ndarray, bins: int) -> np.ndarray:
+    """Quantize each face's normal direction into a `bins`×`bins` octahedral
+    class. Opposite faces of a thin sheet land in different classes, which is
+    what keeps clustering from welding them into a blob."""
+    tri = verts[faces]
+    fn = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    ln = np.linalg.norm(fn, axis=1)
+    ok = ln > 1e-12
+    fn[ok] /= ln[ok][:, None]
+    l1 = np.abs(fn).sum(axis=1) + 1e-12
+    ax = fn[:, 0] / l1
+    ay = fn[:, 1] / l1
+    # Octahedral fold: the z<0 hemisphere maps onto the square's border, so
+    # ±z normals land in different classes (horizontal thin sheets too).
+    # sign() is branchless ±1 (never 0) — exact ±z poles would otherwise
+    # collapse back onto the +z pole through the fold.
+    neg = fn[:, 2] < 0
+    sx = np.where(fn[:, 0] >= 0, 1.0, -1.0)
+    sy = np.where(fn[:, 1] >= 0, 1.0, -1.0)
+    axf = np.where(neg, (1 - np.abs(ay)) * sx, ax)
+    ayf = np.where(neg, (1 - np.abs(ax)) * sy, ay)
+    qx = np.clip(((axf * 0.5 + 0.5) * bins).astype(np.int64), 0, bins - 1)
+    qy = np.clip(((ayf * 0.5 + 0.5) * bins).astype(np.int64), 0, bins - 1)
+    return qx * bins + qy
+
+
+def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float,
+                  normal_bins: int = 0):
     """One pass of vertex clustering at a fixed voxel `pitch`.
 
     Each vertex is quantized to its voxel cell; vertices sharing a cell collapse
-    to the cell centroid. Faces whose three corners land in the same cell become
-    degenerate and are dropped. Duplicate (now-merged) faces are removed.
+    to the cell centroid. Faces whose three corners land in the same cluster
+    become degenerate and are dropped. Duplicate (now-merged) faces are removed.
+
+    With `normal_bins` > 0 the cluster key also carries a quantized FACE-normal
+    class, and clusters are computed per face corner. Thin structures (propeller
+    blades, railings, chain plates) keep their opposite surfaces as separate
+    sheets instead of collapsing into a single welded centroid — the classic
+    failure that turned propellers into blobs at plane budgets.
 
     Returns (new_verts, new_faces) or (None, None) if nothing survives.
     """
@@ -412,13 +480,27 @@ def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float):
         + cells_off[:, 1] * dims[2]
         + cells_off[:, 2]
     )
-    uniq, inv = np.unique(keys, return_inverse=True)
-    # Centroid of each occupied cell (mean of its member vertices).
-    new_verts = np.zeros((len(uniq), 3), dtype=np.float64)
-    np.add.at(new_verts, inv, verts)
-    new_verts /= np.bincount(inv)[:, None]
-    # Remap faces into the compact cluster id space.
-    new_faces = inv[faces]
+
+    if normal_bins > 0:
+        # Normal-aware pass: cluster per face corner under (voxel, orientation).
+        nb = normal_bins * normal_bins
+        fbin = _face_normal_bins(verts, faces, normal_bins)
+        corner_keys = (keys[faces] * nb + fbin[:, None]).reshape(-1)
+        corner_pos = verts[faces.reshape(-1)]
+        uniq, inv = np.unique(corner_keys, return_inverse=True)
+        new_verts = np.zeros((len(uniq), 3), dtype=np.float64)
+        np.add.at(new_verts, inv, corner_pos)
+        cnt = np.bincount(inv, minlength=len(uniq))[:, None]
+        new_verts /= np.maximum(cnt, 1)
+        new_faces = inv.reshape(-1, 3)
+    else:
+        uniq, inv = np.unique(keys, return_inverse=True)
+        # Centroid of each occupied cell (mean of its member vertices).
+        new_verts = np.zeros((len(uniq), 3), dtype=np.float64)
+        np.add.at(new_verts, inv, verts)
+        new_verts /= np.bincount(inv)[:, None]
+        # Remap faces into the compact cluster id space.
+        new_faces = inv[faces]
     keep = ~(
         (new_faces[:, 0] == new_faces[:, 1])
         | (new_faces[:, 1] == new_faces[:, 2])
@@ -440,7 +522,8 @@ def _cluster_once(verts: np.ndarray, faces: np.ndarray, pitch: float):
     return new_verts, new_faces
 
 
-def decimate(vertices: list[float], indices: list[int], target_tris: int) -> tuple[list[float], list[int]]:
+def decimate(vertices: list[float], indices: list[int], target_tris: int,
+             normal_bins: int = 3) -> tuple[list[float], list[int]]:
     """Vertex-clustering decimation that preserves surface continuity.
 
     The previous implementation kept every Nth triangle by index, which shreds
@@ -449,6 +532,13 @@ def decimate(vertices: list[float], indices: list[int], target_tris: int) -> tup
     every patch. Vertex clustering instead quantizes the geometry onto a voxel
     grid and collapses each cell to its centroid, so neighbouring triangles stay
     welded and the silhouette stays watertight-ish.
+
+    The reduction passes are normal-aware (`normal_bins` × `normal_bins`
+    orientation classes in the cluster key): opposite sides of thin geometry no
+    longer weld into one centroid, so propellers, railings and hull fittings
+    survive as readable sheets instead of collapsing into blobs. The exact
+    weld used for already-small meshes keeps `normal_bins=0` — there we want
+    byte-identical geometry, just deduped.
 
     The voxel pitch is searched (binary-search-ish refinement) so the output
     lands near `target_tris` rather than at an arbitrary resolution. When the
@@ -492,7 +582,7 @@ def decimate(vertices: list[float], indices: list[int], target_tris: int) -> tup
     best = None
     for _ in range(24):
         mid = (lo + hi) * 0.5
-        nv, nf = _cluster_once(verts, faces, mid)
+        nv, nf = _cluster_once(verts, faces, mid, normal_bins=normal_bins)
         if nv is None:
             # Too aggressive — this pitch erased everything. Back off.
             hi = mid
@@ -512,7 +602,7 @@ def decimate(vertices: list[float], indices: list[int], target_tris: int) -> tup
         # calibration: face count ≈ (extent/pitch)² on a surface, so
         # pitch ≈ extent / sqrt(target).
         pitch = extent / (max(target_tris, 1) ** 0.5)
-        nv, nf = _cluster_once(verts, faces, pitch)
+        nv, nf = _cluster_once(verts, faces, pitch, normal_bins=normal_bins)
         if nv is None:
             # Last resort: return the welded-original (faces intact, vertices
             # deduped) rather than the bloated per-face-duplicated buffer.
@@ -871,7 +961,12 @@ def main() -> int:
             for inst, (v, idx) in insts.items():
                 if not v or not idx:
                     continue
-                dv, di = decimate(v, idx, tgt)
+                inst_tgt = tgt
+                if cat == "propeller":
+                    # Each screw keeps a readability floor — at the raw-triangle
+                    # share a prop gets ~100 tris, which reads as a lump.
+                    inst_tgt = max(tgt, min(len(idx) // 3, 400))
+                dv, di = decimate(v, idx, inst_tgt)
                 if len(di) > 0:
                     # instance-suffixed name: category_<instance>. The frontend
                     # colours by category prefix, addresses mounts individually.

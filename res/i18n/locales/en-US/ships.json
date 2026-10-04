@@ -566,5 +566,22 @@
     "torpedoBomber": "Torpedo Bomber",
     "skipBomber": "Skip Bomber",
     "flightControl": "Flight Control"
+  },
+  "plane": {
+    "torpedo": "Torpedo Bomber",
+    "heBomber": "HE Bomber",
+    "apBomber": "AP Bomber",
+    "heSkip": "HE Skip Bomber",
+    "apSkip": "AP Skip Bomber",
+    "rocket": "Rocket Plane",
+    "fighter": "Fighter",
+    "interceptor": "Interceptor",
+    "scout": "Scout",
+    "asw": "ASW Aircraft",
+    "mine": "Minelayer",
+    "cfg": {
+      "stock": "stock",
+      "top": "top"
+    }
   }
 }
