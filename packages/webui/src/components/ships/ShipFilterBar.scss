@@ -20,13 +20,6 @@
      against the floor exceeding a narrow host). */
   flex: 1 1 0;
   min-width: min(280px, 100%);
-
-  /* While a chip drag is live, keep text selection off so pointer moves
-     don't paint highlights across the strip. */
-  &[data-dragging] {
-    cursor: grabbing;
-    user-select: none;
-  }
 }
 
 /* Two fixed rows instead of one drifting wrap line. The meta group takes
@@ -60,10 +53,10 @@
   margin-left: auto;
 }
 
-/* ── Filter chips: collapsed categories, drag-reorderable ──
-   Leftmost sorting chip = primary sort key. A chip purely sorting from its
-   全部… state (no filter) wears --sort; a chip with a concrete selection
-   wears --on; an inert chip is grayed --all and takes no part in anything. */
+/* ── Filter chips: collapsed categories in the fixed canonical order
+   (= the sort-priority order). A chip purely sorting from its 全部… state
+   (no filter) wears --sort; a chip with a concrete selection wears --on; an
+   inert chip is grayed --all and takes no part in anything. */
 .ship-filter-bar__chip-anchor {
   position: relative;
 }
@@ -72,18 +65,16 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-6, 6px);
-  /* Vertical padding = trigger padding + one track step: the strip shares
-     its row with a hikari segmented HkTabs track, whose chrome adds
-     var(--space-2) + a 1px border around var(--space-4)-padded triggers —
-     a bare var(--space-4) chip lands two --space-2 steps short of it. */
-  padding: calc(var(--space-4) + var(--space-2)) var(--space-12);
+  /* The exact hikari segmented trigger box (same padding, type and weight):
+     the chips must read as the same size as the date-range buttons beside
+     them, not as the taller track chrome around those buttons. */
+  padding: var(--space-4) var(--space-12);
   font-family: inherit;
   font-size: var(--text-sm);
   font-weight: 600;
   color: rgb(var(--color-muted));
   white-space: nowrap;
-  cursor: grab;
-  touch-action: none;
+  cursor: pointer;
   /* Track-chrome border, but a solid HkButton-style surface fill: a lone
      chip must carry its own opaque body — the track's 60% glass fill lets
      the wallpaper bleed through and the chip reads as a hole in the strip. */
@@ -99,13 +90,8 @@
     color: rgb(var(--color-text));
   }
 
-  &:active:not([data-dragging]) {
+  &:active {
     transform: scale(0.96);
-  }
-
-  &[data-dragging] {
-    cursor: grabbing;
-    box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
   }
 
   /* Concrete selection — the active trigger's primary ink + indicator tint,
@@ -135,15 +121,12 @@
 
   /* Icon-only anchor — a ghost toolbar icon button (HkButton ghost sm
      proportions) for hosts that keep the trigger inside a button row, not
-     a chip strip (the replay rail's funnel). Never drag-reorderable: a
-     plain trigger, and a swipe starting on it must still scroll the page. */
+     a chip strip (the replay rail's funnel). */
   &--icon {
     justify-content: center;
     min-width: 1.75rem;
     min-height: 1.75rem;
     padding: var(--space-6);
-    cursor: pointer;
-    touch-action: auto;
     background: transparent;
     border-color: transparent;
 
@@ -160,11 +143,6 @@
       border-color: rgb(var(--color-primary) / 25%);
     }
   }
-}
-
-.ship-filter-bar__chip-grip {
-  opacity: 0.5;
-  flex: 0 0 auto;
 }
 
 .ship-filter-bar__dir {
@@ -206,25 +184,11 @@
 }
 
 .ship-filter-bar__pop-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* Title-only head — the panels close by tapping outside / re-clicking
+     the chip (the sheet chrome adds its own close on phones). */
   margin-bottom: 8px;
   font-size: var(--text-sm);
   font-weight: 600;
-}
-
-.ship-filter-bar__pop-close {
-  border: none;
-  background: transparent;
-  color: rgb(var(--color-muted));
-  font-size: 0.75rem;
-  cursor: pointer;
-  padding: 2px 4px;
-
-  &:hover {
-    color: rgb(var(--color-text));
-  }
 }
 
 /* ── Chip popup option group ──
@@ -384,8 +348,9 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  /* Same track-height arithmetic as the chips: trigger padding + the
-     segmented track's var(--space-2) chrome step. */
+  /* Track-height arithmetic: trigger padding + the segmented track's
+     var(--space-2) chrome step — the button sits on the date tabs' line
+     and matches the tabs control's outer height. */
   padding: calc(var(--space-4) + var(--space-2)) var(--space-12);
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
@@ -458,25 +423,11 @@
 }
 
 .ship-filter-bar__search-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* Title-only head — the panel closes by re-clicking the search button
+     or tapping outside (the sheet chrome adds its own close on phones). */
   margin-bottom: 8px;
   font-size: var(--text-sm);
   font-weight: 600;
-}
-
-.ship-filter-bar__search-close {
-  border: none;
-  background: transparent;
-  color: rgb(var(--color-muted));
-  font-size: 0.75rem;
-  cursor: pointer;
-  padding: 2px 4px;
-
-  &:hover {
-    color: rgb(var(--color-text));
-  }
 }
 
 .ship-filter-bar__search-hint {

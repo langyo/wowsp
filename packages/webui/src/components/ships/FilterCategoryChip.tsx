@@ -1,15 +1,14 @@
 /**
  * FilterCategoryChip — one collapsed filter category rendered as a chip that
  * opens a small popup of pill-style multi-select options. A PURE filter by
- * default: no sorting and no drag reorder, so — unlike ShipFilterBar's own
- * chips — there is no grip icon and no `--sort` state. Hosts whose category
- * DOES carry a direction (the replay rail's mode chip) pass `dir`:
- * the popup then shows the ↑/↓ arrow after the 全部… pill (always) and
- * after picked concrete options (unless `pure`), exactly like the 水表
- * bar's popups — the arrow itself stays dumb, the host owns the semantics
- * behind the `all` event. An `icon` anchor swaps the collapsed text chip
- * for a ghost toolbar icon button (hosts that keep the trigger inside a
- * button row instead of a chip strip).
+ * default: no sorting of its own — hosts whose category DOES carry a
+ * direction (the replay rail's mode chip) pass `dir`, and an allSort-engaged
+ * chip wears the intermediate `--sort` style. The popup then shows the ↑/↓
+ * arrow after the 全部… pill and after picked concrete options (unless
+ * `pure`), exactly like the 水表 bar's popups — the arrow itself stays dumb,
+ * the host owns the semantics behind the `all` event. An `icon` anchor
+ * swaps the collapsed text chip for a ghost toolbar icon button (hosts that
+ * keep the trigger inside a button row instead of a chip strip).
  *
  * The markup reuses ShipFilterBar's FLAT global classes so the chips look
  * identical to the 水表查询 filter bar. This module imports that SCSS itself:
@@ -31,7 +30,7 @@
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type VNode } from "vue";
 
 import { HkPopover, useBreakpoint } from "@celestia-island/hikari";
-import { ArrowDown, ArrowUp, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { useOptionStrip } from "./optionStrip";
@@ -202,9 +201,6 @@ export default defineComponent({
           <div ref={panelEl} class="ship-filter-bar__pop">
             <div class="ship-filter-bar__pop-head">
               <span>{props.title}</span>
-              <button type="button" class="ship-filter-bar__pop-close" onClick={close}>
-                <X size={12} />
-              </button>
             </div>
             {/* One-line pannable strip, shared with the 水表 bar's nation
                 popup: capped by the panel, panned by wheel / drag / touch,

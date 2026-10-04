@@ -1,8 +1,8 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref, type PropType } from "vue";
 import "./SortableList.scss";
 
-/** Press-to-drag arm distance — same threshold as the ship filter chips
- *  (ShipFilterBar), so a plain click on a handle never starts a drag. */
+/** Press-to-drag arm distance — a plain click on a handle never starts a
+ *  drag. */
 const ARM_PX = 5;
 
 /**
@@ -14,12 +14,12 @@ const ARM_PX = 5;
  * fallthrough class/attrs, row keys via `getKey`, and the new order is
  * reported as `reorder(from, to)` for the host's store to apply.
  *
- * Interaction follows the app's existing chip drag: a press on the handle
- * arms past a 5px threshold, the row then tracks the pointer 1:1 (the offset
- * lives on an inner wrapper, so row rects stay pure layout for hit-testing),
- * and the row swaps with a neighbour as the pointer crosses its vertical
- * midpoint. The click that follows a completed drag is swallowed so a drop
- * never re-activates the card under the release point.
+ * Interaction: a press on the handle arms past a 5px threshold, the row
+ * then tracks the pointer 1:1 (the offset lives on an inner wrapper, so row
+ * rects stay pure layout for hit-testing), and the row swaps with a
+ * neighbour as the pointer crosses its vertical midpoint. The click that
+ * follows a completed drag is swallowed so a drop never re-activates the
+ * card under the release point.
  *
  * ```tsx
  * <SortableList class="rows" items={rows} getKey={(r) => r.id}

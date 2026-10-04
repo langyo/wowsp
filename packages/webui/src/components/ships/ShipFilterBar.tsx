@@ -25,28 +25,30 @@
  *     scrollLeft) or mouse drag (5px click/pan threshold, the pan's
  *     trailing click swallowed), touch pans natively; a hint line names
  *     the gesture. The phone sheet still wraps the track.
- *   - The 全部… option always shows the direction arrow too: with a concrete
- *     selection it resets the category to the gray state; without one it
- *     engages the "sort while unfiltered" mode (first click sorts in the
- *     displayed direction, further clicks flip it). A chip that only sorts —
- *     sitting at 全部… — wears the intermediate --sort style.
+ *   - The 全部… option runs the all-state sort through a three-click cycle
+ *     while nothing is picked: first click engages the "sort while
+ *     unfiltered" mode in the category's canonical direction, the second
+ *     flips it, the third switches it off entirely (the chip falls back to
+ *     the gray state). With a concrete selection it resets the category to
+ *     that same gray state. The direction arrow renders only while a sort
+ *     is actually engaged. A chip that only sorts — sitting at 全部… —
+ *     wears the intermediate --sort style.
  *   - A category is a sort key while it has a concrete selection or an
  *     engaged 全部…-sort (types only via the latter, so a type pick filters
- *     without reordering). Chips drag left/right (pointer-based adjacent
- *     swap) to reorder sort priority: the leftmost sorting chip is the
- *     primary key, the next sorting chip breaks ties, and so on; battles
- *     desc is the final fallback so the untouched view matches the
- *     pre-chip behaviour.
+ *     without reordering). Sort priority follows the fixed canonical chip
+ *     order: the earlier sorting category is the primary key, the next
+ *     sorting category breaks ties, and so on; battles desc is the final
+ *     fallback so the untouched view matches the pre-chip behaviour.
  *   - Fuzzy search (multilingual + pinyin) bypasses the category filters but
  *     keeps the multi-key sort.
  *
  * Data source: the ship encyclopedia (full WG API ship list, loaded lazily
  * by realm) with the offline database as fallback — so new ships never
- * vanish from filters. Chip order + selections persist to localStorage.
+ * vanish from filters. Selections persist to localStorage.
  */
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { PlayerShipStats } from "@/api";
-import { ArrowDown, ArrowUp, GripHorizontal, Search, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, Search } from "@lucide/vue";
 
 import { HkPopover, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
 
@@ -174,6 +176,17 @@ const CAT_DEFS: Record<CatKey, CatDef> = {
 
 const CAT_KEYS: CatKey[] = ["type", "nation", "tier", "winrate", "battles"];
 const DEFAULT_ORDER: CatKey[] = [...CAT_KEYS];
+/** The direction a category's 全部…-sort first engages in (and re-arms to
+ *  whenever it switches off): types read in the canonical BB→CV→CA→DD→SS
+ *  order, everything else leads with the useful end (high tier / good
+ *  winrate / most battles). */
+const DEFAULT_DIR: Record<CatKey, SortDir> = {
+  type: "asc",
+  nation: "asc",
+  tier: "desc",
+  winrate: "desc",
+  battles: "desc",
+};
 
 /** Winrate and battles brackets carve up ONE numeric axis, so picking
  *  several at once ORs thresholds that subsume each other (≥30 ∪ ≥100 is
@@ -209,9 +222,10 @@ function canonicalValues(key: CatKey): string[] {
 
 // ── localStorage persistence (shared by every view hosting the bar) ──
 
-const PERSIST_KEY = "wowsp.shipFilter.v4";
-/** The pre-nation format (four categories, no "nation" key). */
-const LEGACY_PERSIST_KEY = "wowsp.shipFilter.v3";
+const PERSIST_KEY = "wowsp.shipFilter.v5";
+/** Pre-v5 formats ({ order, sel }): the drag-reorderable chip order died
+ *  with the drag gesture — only the selections carry forward. */
+const LEGACY_PERSIST_KEYS = ["wowsp.shipFilter.v4", "wowsp.shipFilter.v3"];
 
 /** Per-category state: multi-select filter values + the SHARED sort
  *  direction + whether the category also sorts while sitting at 全部…
@@ -223,7 +237,6 @@ interface CatSel {
 }
 
 interface Persisted {
-  order: CatKey[];
   sel: Partial<Record<CatKey, CatSel>>;
 }
 
@@ -251,65 +264,34 @@ function isValidValue(key: CatKey, v: string): boolean {
   }
 }
 
-/** `order` is exactly the given keys in some order (a permutation). */
-function isPermutationOf(order: unknown, keys: readonly CatKey[]): order is CatKey[] {
-  return (
-    Array.isArray(order) &&
-    order.length === keys.length &&
-    keys.every((k) => (order as unknown[]).includes(k))
-  );
-}
-
-const LEGACY_CAT_KEYS: readonly CatKey[] = ["type", "tier", "winrate", "battles"];
-
-/** Insert the "nation" category right after "type" (its default slot). */
-function withNationAfterType(order: CatKey[]): CatKey[] {
-  const idx = order.indexOf("type");
-  const next = [...order];
-  next.splice(idx >= 0 ? idx + 1 : next.length, 0, "nation");
-  return next;
-}
-
 function loadPersisted(): Persisted | null {
   try {
-    const rawV4 = localStorage.getItem(PERSIST_KEY);
-    if (rawV4) {
-      const p = JSON.parse(rawV4) as Persisted;
-      // Order must be a permutation of the five categories, else fall back.
-      // Heal-write: the invalid blob is swept (absence = the canonical
-      // defaults) so the stale value is corrected once, not every boot.
-      if (!isPermutationOf(p.order, CAT_KEYS)) {
-        localStorage.removeItem(PERSIST_KEY);
-        return null;
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (raw) {
+      // No structural validation beyond JSON.parse: `sel` entries are
+      // validated per-key by the caller, everything else is ignored.
+      return { sel: (JSON.parse(raw) as Partial<Persisted>).sel ?? {} };
+    }
+    // Pre-v5 migration: only the selections carry forward (the stored chip
+    // order is dead state). The v5 blob is written back IMMEDIATELY and the
+    // legacy key swept — the migrated state must survive a session with no
+    // further interaction, not re-migrate from defaults on the next boot.
+    for (const legacy of LEGACY_PERSIST_KEYS) {
+      const rawLegacy = localStorage.getItem(legacy);
+      if (!rawLegacy) continue;
+      const migrated: Persisted = { sel: (JSON.parse(rawLegacy) as Partial<Persisted>).sel ?? {} };
+      try {
+        localStorage.setItem(PERSIST_KEY, JSON.stringify(migrated));
+      } catch {
+        /* storage full — the migrated state still holds for the session */
       }
-      return p;
+      localStorage.removeItem(legacy);
+      return migrated;
     }
-    // v3 → v4 migration: the legacy four-key order (any permutation) is
-    // accepted with "nation" inserted after "type". The v4 blob is written
-    // back IMMEDIATELY and the v3 key swept — the migrated state must
-    // survive a session with no further interaction, not re-migrate from
-    // defaults on the next boot.
-    const rawV3 = localStorage.getItem(LEGACY_PERSIST_KEY);
-    if (!rawV3) return null;
-    const legacy = JSON.parse(rawV3) as Persisted;
-    if (!isPermutationOf(legacy.order, LEGACY_CAT_KEYS)) {
-      localStorage.removeItem(LEGACY_PERSIST_KEY);
-      return null;
-    }
-    const migrated: Persisted = {
-      order: withNationAfterType(legacy.order),
-      sel: legacy.sel ?? {},
-    };
-    try {
-      localStorage.setItem(PERSIST_KEY, JSON.stringify(migrated));
-    } catch {
-      /* storage full — the migrated state still holds for the session */
-    }
-    localStorage.removeItem(LEGACY_PERSIST_KEY);
-    return migrated;
+    return null;
   } catch {
     localStorage.removeItem(PERSIST_KEY);
-    localStorage.removeItem(LEGACY_PERSIST_KEY);
+    for (const legacy of LEGACY_PERSIST_KEYS) localStorage.removeItem(legacy);
     return null;
   }
 }
@@ -335,12 +317,11 @@ export default defineComponent({
     // popup as a bottom sheet instead of an anchored floating panel.
     const { isMobile } = useBreakpoint();
 
-    // ── Chip state: drag order (= sort priority) + per-category multi-select.
-    //    Types start ascending (the canonical BB→CV→CA→DD→SS reading order),
-    //    everything else descending (high tier / good winrate / most battles
-    //    first) so the first engagement lands on the useful direction. ──
+    // ── Chip state: per-category multi-select. Types start ascending (the
+    //    canonical BB→CV→CA→DD→SS reading order), everything else descending
+    //    (high tier / good winrate / most battles first) so the first
+    //    engagement lands on the useful direction. ──
     const stored = loadPersisted();
-    const order = ref<CatKey[]>(stored ? [...stored.order] : [...DEFAULT_ORDER]);
     const sel = ref<Record<CatKey, CatSel>>({
       type: { values: [], dir: "asc", allSort: false },
       nation: { values: [], dir: "asc", allSort: false },
@@ -358,21 +339,23 @@ export default defineComponent({
         const values = isSingleSel(k)
           ? [...valid].sort((a, b) => canonicalValues(k).indexOf(a) - canonicalValues(k).indexOf(b)).slice(0, 1)
           : valid;
+        const allSort = s.allSort === true;
         sel.value[k] = {
           values,
-          dir: s.dir,
-          allSort: s.allSort === true,
+          // An idle category (no pick, no 全部…-sort) re-arms from its
+          // canonical direction — storage from the free-flip era may hold a
+          // stale off-canonical dir, and the 全部… cycle below must always
+          // start from the same end.
+          dir: allSort || values.length > 0 ? s.dir : DEFAULT_DIR[k],
+          allSort,
         };
       }
     }
     watch(
-      [order, sel],
+      sel,
       () => {
         try {
-          localStorage.setItem(
-            PERSIST_KEY,
-            JSON.stringify({ order: order.value, sel: sel.value } satisfies Persisted),
-          );
+          localStorage.setItem(PERSIST_KEY, JSON.stringify({ sel: sel.value } satisfies Persisted));
         } catch {
           /* storage full / unavailable — ignore */
         }
@@ -381,7 +364,6 @@ export default defineComponent({
     );
 
     const openPop = ref<CatKey | null>(null);
-    const chipDragging = ref<CatKey | null>(null);
 
     // ── Search state (kept verbatim from v1) ──
     const shipQuery = ref("");
@@ -452,9 +434,6 @@ export default defineComponent({
     onBeforeUnmount(() => {
       document.removeEventListener("pointerdown", onDocPointerDown, true);
       indentObserver?.disconnect();
-      window.removeEventListener("pointermove", onChipPointerMove);
-      window.removeEventListener("pointerup", onChipPointerUp);
-      window.removeEventListener("pointercancel", onChipPointerCancel);
     });
 
     onMounted(() => {
@@ -581,7 +560,7 @@ export default defineComponent({
         rows = rows.filter((s) => hitNames.value.has(s.shipId));
       } else {
         // Within a category the picked options OR together; categories AND.
-        for (const key of order.value) {
+        for (const key of DEFAULT_ORDER) {
           const { values } = sel.value[key];
           if (!values.length) continue;
           const def = CAT_DEFS[key];
@@ -591,9 +570,10 @@ export default defineComponent({
           });
         }
       }
-      // Multi-key sort: sorting chips earlier in the drag order win; the
-      // final battles-desc tiebreak keeps the untouched view stable.
-      const sortCats = order.value.filter(isSortCat);
+      // Multi-key sort: sorting categories earlier in the canonical chip
+      // order win; the final battles-desc tiebreak keeps the untouched view
+      // stable.
+      const sortCats = DEFAULT_ORDER.filter(isSortCat);
       return [...rows].sort((a, b) => {
         for (const key of sortCats) {
           const def = CAT_DEFS[key];
@@ -615,23 +595,30 @@ export default defineComponent({
 
     /** Click one option in a category popup. The 全部… option carries dual
      *  semantics: with a concrete selection it resets the whole category
-     *  (filter AND all-state sort off); without one it toggles/flips the
-     *  all-state sort — the first click engages in the displayed direction,
-     *  later clicks flip it. Concrete options join the selection when
-     *  unpicked (replacing it outright in the single-select categories);
-     *  when picked they flip the category's shared direction — except the
-     *  pure categories (types/nations), which carry no direction and
-     *  simply drop out. */
+     *  (filter AND all-state sort off, direction re-armed to canonical);
+     *  without one it runs the all-state sort through a three-click cycle —
+     *  engage in the canonical direction, flip, switch off. Concrete
+     *  options join the selection when unpicked (replacing it outright in
+     *  the single-select categories); when picked they flip the category's
+     *  shared direction — except the pure categories (types/nations), which
+     *  carry no direction and simply drop out. */
     function clickOption(key: CatKey, value: string) {
       const s = sel.value[key];
       if (value === "") {
         if (s.values.length > 0) {
           s.values = [];
           s.allSort = false;
+          s.dir = DEFAULT_DIR[key];
         } else if (s.allSort) {
-          s.dir = s.dir === "desc" ? "asc" : "desc";
+          if (s.dir === DEFAULT_DIR[key]) {
+            s.dir = s.dir === "desc" ? "asc" : "desc";
+          } else {
+            s.allSort = false;
+            s.dir = DEFAULT_DIR[key];
+          }
         } else {
           s.allSort = true;
+          s.dir = DEFAULT_DIR[key];
         }
         return;
       }
@@ -646,87 +633,10 @@ export default defineComponent({
       }
     }
 
-    // ── Chip dragging: pointer press → arm past a 5px threshold → live
-    //    adjacent swaps as the pointer crosses a neighbour's midpoint.
-    //    The click that follows a drag is swallowed so it never re-opens
-    //    the popup that the drag just closed. ──
+    // Chip elements double as the teleported popups' anchor refs.
     const chipEls = new Map<CatKey, HTMLElement | null>();
-    let pressKey: CatKey | null = null;
-    let pressX = 0;
-    let pressY = 0;
-    let armed = false;
-    let draggedKey: CatKey | null = null;
-
-    function swapChips(i: number, j: number) {
-      const arr = order.value;
-      const tmp = arr[i]!;
-      arr[i] = arr[j]!;
-      arr[j] = tmp;
-    }
-
-    function onChipPointerDown(e: PointerEvent, key: CatKey) {
-      if (e.button !== 0) return;
-      // A drag released off-chip leaves no click behind; clear the stale
-      // swallow flag so this press's own click always lands.
-      draggedKey = null;
-      pressKey = key;
-      pressX = e.clientX;
-      pressY = e.clientY;
-      armed = false;
-      window.addEventListener("pointermove", onChipPointerMove);
-      window.addEventListener("pointerup", onChipPointerUp, { once: true });
-      window.addEventListener("pointercancel", onChipPointerCancel, { once: true });
-    }
-
-    function onChipPointerMove(e: PointerEvent) {
-      if (pressKey == null) return;
-      if (!armed) {
-        if (Math.abs(e.clientX - pressX) < 5 && Math.abs(e.clientY - pressY) < 5) return;
-        armed = true;
-        chipDragging.value = pressKey;
-        openPop.value = null;
-        searchOpen.value = false;
-      }
-      e.preventDefault();
-      const from = order.value.indexOf(pressKey);
-      if (from > 0) {
-        const r = chipEls.get(order.value[from - 1]!)?.getBoundingClientRect();
-        if (r && e.clientX < r.left + r.width / 2) {
-          swapChips(from, from - 1);
-          return;
-        }
-      }
-      if (from >= 0 && from < order.value.length - 1) {
-        const r = chipEls.get(order.value[from + 1]!)?.getBoundingClientRect();
-        if (r && e.clientX > r.left + r.width / 2) swapChips(from, from + 1);
-      }
-    }
-
-    function teardownPress() {
-      pressKey = null;
-      window.removeEventListener("pointermove", onChipPointerMove);
-    }
-
-    function onChipPointerUp() {
-      // A completed drag suppresses the trailing click; a plain click falls
-      // through to onClick (popup toggle) untouched.
-      if (armed) draggedKey = pressKey;
-      armed = false;
-      chipDragging.value = null;
-      teardownPress();
-    }
-
-    function onChipPointerCancel() {
-      armed = false;
-      chipDragging.value = null;
-      teardownPress();
-    }
 
     function onChipClick(key: CatKey) {
-      if (draggedKey === key) {
-        draggedKey = null;
-        return;
-      }
       searchOpen.value = false;
       openPop.value = openPop.value === key ? null : key;
     }
@@ -777,7 +687,6 @@ export default defineComponent({
         ref={chipsRow}
         class="ship-filter-bar"
         style={{ "--sfb-indent": `${chipIndent.value}px` }}
-        data-dragging={chipDragging.value || undefined}
       >
         {/* Two fixed rows (styled in ShipFilterBar.scss): the chip group
             always claims a full row of its own while the meta group rides
@@ -785,7 +694,7 @@ export default defineComponent({
             stay first in the DOM so tab order is unchanged — the visual
             order is flex `order`'s job, not the markup's. */}
         <div class="ship-filter-bar__chips">
-          {order.value.map((key) => {
+          {DEFAULT_ORDER.map((key) => {
             const def = CAT_DEFS[key];
             const cur = sel.value[key];
             // Labels render in canonical option order (not click order) so a
@@ -826,12 +735,9 @@ export default defineComponent({
                         : "ship-filter-bar__chip--all",
                   ]}
                   data-chip={key}
-                  data-dragging={chipDragging.value === key || undefined}
                   data-hint={chipTitle(key)}
-                  onPointerdown={(e: PointerEvent) => onChipPointerDown(e, key)}
                   onClick={() => onChipClick(key)}
                 >
-                  <GripHorizontal size={12} class="ship-filter-bar__chip-grip" />
                   <span>{chipLabel}</span>
                   {isSortCat(key) ? dirIcon(cur.dir) : null}
                 </button>
@@ -855,7 +761,7 @@ export default defineComponent({
                   // The right-most chip's popup opens leftwards so it never
                   // leaves the strip (the old data-edge CSS hook).
                   placement={
-                    key === order.value[order.value.length - 1] ? "bottom-end" : "bottom-start"
+                    key === DEFAULT_ORDER[DEFAULT_ORDER.length - 1] ? "bottom-end" : "bottom-start"
                   }
                   closeOnBackdrop={isMobile.value}
                   sheetOnMobile
@@ -869,22 +775,16 @@ export default defineComponent({
                   >
                     <div class="ship-filter-bar__pop-head">
                       <span>{t(def.title)}</span>
-                      <button
-                        type="button"
-                        class="ship-filter-bar__pop-close"
-                        onClick={() => (openPop.value = null)}
-                      >
-                        <X size={12} />
-                      </button>
                     </div>
                     {/* Option group in the segmented track look (multi-select
                         for type/nation/tier, single for winrate/battles).
-                        全部… always shows the direction arrow; concrete pure
-                        categories (types/nations) never do. Nation options
-                        lead with their flag (NationFlag swaps to a letter
-                        badge when the asset is missing), and the nation
-                        track alone is a one-line pannable strip — wrapped
-                        only by the phone sheet (see the SCSS). */}
+                        The 全部… pill carries the direction arrow only while
+                        its all-state sort is engaged; concrete pure
+                        categories (types/nations) never show one. Nation
+                        options lead with their flag (NationFlag swaps to a
+                        letter badge when the asset is missing), and the
+                        nation track alone is a one-line pannable strip —
+                        wrapped only by the phone sheet (see the SCSS). */}
                     <div
                       ref={key === "nation" ? strip.stripEl : undefined}
                       class={["ship-filter-bar__opts", key === "nation" && "ship-filter-bar__opts--scroll"]}
@@ -906,7 +806,7 @@ export default defineComponent({
                               <NationFlag nation={o.value} label={o.label} variant="flag" size="sm" />
                             ) : null}
                             <span>{o.label}</span>
-                            {isAll || (on && !isPureCat(key)) ? dirIcon(cur.dir) : null}
+                            {(isAll ? cur.allSort : on && !isPureCat(key)) ? dirIcon(cur.dir) : null}
                           </button>
                         );
                       })}
@@ -968,13 +868,6 @@ export default defineComponent({
               <div ref={searchPanelEl} class="ship-filter-bar__search-panel">
                 <div class="ship-filter-bar__search-panel-head">
                   <span>{t("common.search.fuzzy")}</span>
-                  <button
-                    type="button"
-                    class="ship-filter-bar__search-close"
-                    onClick={() => (searchOpen.value = false)}
-                  >
-                    <X size={12} />
-                  </button>
                 </div>
                 <HkSearchInput
                   modelValue={shipQuery.value}

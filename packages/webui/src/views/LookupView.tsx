@@ -188,7 +188,7 @@ export default defineComponent({
     };
 
     /** Filtered + multi-key-sorted ships and search-hit names, from
-     *  ShipFilterBar (the chip drag order defines the sort priority). */
+     *  ShipFilterBar (the fixed canonical chip order defines the sort priority). */
     const filterState = ref<{
       ships: PlayerShipStats[];
       hits: Map<number, string>;
@@ -823,7 +823,7 @@ export default defineComponent({
                   </div>
                 ) : null}
                 {/* Flat ship table — multi-key sorted by the filter chips'
-                    drag order (leftmost active chip = primary key). Two
+                    fixed canonical order (earlier sorting category = primary key). Two
                     empty states: the range itself played nothing vs. the
                     range has ships that the filters/search all exclude. */}
                 <div class="lookup-view__ships">

@@ -9,9 +9,10 @@
  *    bracket replaces the old one). Re-clicking the picked option flips
  *    the category's SHARED 正序/倒序 flag (every arrow in the category
  *    follows), and 全部… resets the category when a selection exists;
- *  - 全部… itself always shows the direction arrow: without a selection it
- *    engages the sort-in-全部-state mode (first click sorts in the shown
- *    direction, further clicks flip it) — the chip wears the --sort style;
+ *  - 全部… runs the all-state sort through a THREE-click cycle while
+ *    nothing is picked: engage in the canonical direction (--sort style),
+ *    flip, switch off entirely (the chip returns to the gray state) — and
+ *    the direction arrow renders only while a sort is actually engaged;
  *  - concrete ship types and nations are pure filters: no arrows anywhere,
  *    re-clicking one deselects it, and only the 全部… option can make the
  *    category sort;
@@ -23,10 +24,11 @@
  *    with the queried data, so a pick with no matches in the current range
  *    keeps its popup entry, chip label and re-click deselect (an empty
  *    result is the hosting view's business);
- *  - the chip drag order (persisted, hence seedable via localStorage) is
- *    the multi-key sort priority: leftmost sorting chip is the primary key;
- *  - the v3 four-category storage migrates to v4 with "nation" inserted
- *    after "type", the legacy key swept and the v4 blob written back;
+ *  - the multi-key sort priority is the FIXED canonical chip order: the
+ *    earlier sorting category is the primary key, the next breaks ties;
+ *  - the v4 drag-era storage migrates to v5 carrying only the selections
+ *    (the drag order is dead state), the legacy key swept and the v5 blob
+ *    written back;
  *  - stale multi-select storage of the now-single categories is clamped
  *    to one pick on load;
  *  - selections survive an unmount/remount cycle;
@@ -39,9 +41,6 @@
  * document.body (overflow ancestors can never clip them), so popup queries
  * scope to body and each open/close is polled to let the popover machine's
  * timer-driven enter/leave settle.
- *
- * The drag gesture itself is pointer-driven and exercised by hand; the
- * priority mechanics it feeds are covered here through the persisted order.
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createPinia } from "pinia";
@@ -52,8 +51,8 @@ import { panEngaged, stripWheelDelta } from "./optionStrip";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { PlayerShipStats, ShipInfo } from "@/api";
 
-const PERSIST_KEY = "wowsp.shipFilter.v4";
-const LEGACY_PERSIST_KEY = "wowsp.shipFilter.v3";
+const PERSIST_KEY = "wowsp.shipFilter.v5";
+const LEGACY_PERSIST_KEY = "wowsp.shipFilter.v4";
 
 // A popover left open by one test must not leak into the next test's
 // body-level queries — unmount every wrapper after each test.
@@ -194,16 +193,16 @@ describe("ShipFilterBar chips", () => {
     expect(activeOpts().length).toBe(1); // only 全部胜率 itself
   });
 
-  it("engages a 全部… sort (arrow always shown) and flips it like any key", async () => {
+  it("cycles the 全部… sort through engage → flip → off in three clicks", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
     await chip(wrapper, "winrate").trigger("click");
     await waitPops(1);
-    // 全部胜率 shows its direction arrow before anything is engaged.
-    expect(popOpts()[0]!.find(".ship-filter-bar__dir").exists()).toBe(true);
+    // Nothing engaged yet: the 全部胜率 pill carries no direction arrow.
+    expect(popOpts()[0]!.find(".ship-filter-bar__dir").exists()).toBe(false);
 
-    // First click sorts in the displayed (descending) direction while the
+    // First click engages in the canonical (descending) direction while the
     // chip keeps filtering nothing — the intermediate --sort style.
     await popOpts()[0]!.trigger("click");
     await flushPromises();
@@ -211,17 +210,32 @@ describe("ShipFilterBar chips", () => {
     expect(chip(wrapper, "winrate").find(".lucide-arrow-down").exists()).toBe(true);
     expect(order(wrapper)).toEqual([5, 3, 1, 2, 4]);
 
-    // Further clicks flip the direction.
+    // Second click flips the direction.
     await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(chip(wrapper, "winrate").find(".lucide-arrow-up").exists()).toBe(true);
     expect(order(wrapper)).toEqual([4, 2, 1, 3, 5]);
 
-    // A concrete pick keeps the direction and adds the filter on top.
+    // Third click switches the sort OFF entirely: the chip returns to the
+    // gray state, drops its arrow and the historical battles-desc order.
+    await popOpts()[0]!.trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "winrate").find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
+
+    // The cycle re-arms from the canonical direction, not the flipped one.
+    await popOpts()[0]!.trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "winrate").find(".lucide-arrow-down").exists()).toBe(true);
+    expect(order(wrapper)).toEqual([5, 3, 1, 2, 4]);
+
+    // A concrete pick keeps the direction (descending, freshly re-engaged)
+    // and adds the filter on top.
     await popOpts()[3]!.trigger("click"); // 50–60%
     await flushPromises();
     expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--on");
-    expect(order(wrapper)).toEqual([2, 1, 3]);
+    expect(order(wrapper)).toEqual([3, 1, 2]);
 
     // 全部胜率 with a selection resets the category completely — the
     // all-state sort goes off with the filter.
@@ -286,6 +300,14 @@ describe("ShipFilterBar chips", () => {
     await popOpts()[0]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([4, 3, 5, 1, 2]); // DD → CA → BB
+
+    // The third 全部舰种 click switches the sort off entirely — the gray
+    // state and the historical battles-desc order return.
+    await popOpts()[0]!.trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "type").find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
   });
 
   it("filters by nation (multi-select) with offline spellings normalized", async () => {
@@ -408,40 +430,27 @@ describe("ShipFilterBar chips", () => {
     expect(order(wrapper)).toEqual([1, 2, 3, 5]);
   });
 
-  it("uses the persisted chip order as the multi-key sort priority", async () => {
-    // Drag order seeded as battles → winrate: battles is the primary key,
-    // winrate only breaks ties.
-    localStorage.setItem(
-      PERSIST_KEY,
-      JSON.stringify({ order: ["battles", "winrate", "tier", "type", "nation"], sel: {} }),
-    );
+  it("sorts by the fixed canonical priority when several categories sort", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    await chip(wrapper, "battles").trigger("click");
+    // Engage winrate first, tier second — the priority is the canonical
+    // chip order, not the engagement order: tier (earlier) is the primary
+    // key, winrate only breaks ties.
+    await chip(wrapper, "winrate").trigger("click");
     await waitPops(1);
-    await popOpts()[1]!.trigger("click"); // ≥30 场
+    await popOpts()[0]!.trigger("click"); // 全部胜率 → winrate sort (desc)
     // Chip-to-chip switches swap teleported popovers — the retired panel
     // must be fully gone before the next option query or its options
     // pollute the indices.
-    await chip(wrapper, "winrate").trigger("click");
+    await chip(wrapper, "tier").trigger("click");
     await waitPops(1);
-    await popOpts()[3]!.trigger("click"); // 50–60%
+    await popOpts()[0]!.trigger("click"); // 全部等级 → tier sort (desc)
     await flushPromises();
 
-    // Both filters pass ids {1, 2, 3} (id 5 is above the bracket). Battles
-    // desc leads; the 100-battle tie resolves by the secondary winrate key
-    // (55 before 52).
-    expect(order(wrapper)).toEqual([1, 2, 3]);
-
-    // Flipping the primary (battles) to ascending reorders everything; the
-    // 100-battle pair still resolves by winrate desc (55 before 52).
-    // (Only one popup is open at a time — reopen the battles chip first.)
-    await chip(wrapper, "battles").trigger("click");
-    await waitPops(1);
-    await popOpts()[1]!.trigger("click");
-    await flushPromises();
-    expect(order(wrapper)).toEqual([3, 1, 2]);
+    // Tier desc leads (T10 T10 T9 T8 T6); the T10 tie resolves by the
+    // secondary winrate key (65 before 40).
+    expect(order(wrapper)).toEqual([5, 4, 2, 1, 3]);
   });
 
   it("clamps stale multi-select storage of the now-single categories to one pick", async () => {
@@ -450,7 +459,6 @@ describe("ShipFilterBar chips", () => {
     localStorage.setItem(
       PERSIST_KEY,
       JSON.stringify({
-        order: ["battles", "winrate", "tier", "type", "nation"],
         sel: {
           winrate: { values: ["gte60", "50-60"], dir: "desc", allSort: false },
           battles: { values: ["100", "30"], dir: "desc", allSort: false },
@@ -464,15 +472,19 @@ describe("ShipFilterBar chips", () => {
     // threshold — the latter is exactly what the old OR filtered by.
     expect(chip(wrapper, "winrate").text()).toContain("50–60%");
     expect(chip(wrapper, "battles").text()).toContain("≥30");
-    expect(order(wrapper)).toEqual([1, 2, 3]);
+    // Both filters pass ids {1, 2, 3}; with the fixed canonical priority
+    // the earlier winrate slot sorts desc (58, 55, 52) and battles only
+    // breaks ties.
+    expect(order(wrapper)).toEqual([3, 1, 2]);
   });
 
-  it("migrates the v3 four-category storage to v4 with nation after type", async () => {
-    // A v3-era blob (four keys, any drag order, a live selection)…
+  it("carries the v4 drag-era storage into v5 as selections only", async () => {
+    // A v4-era blob (any drag order plus a live selection): the order side
+    // is dead state now, only the selection migrates.
     localStorage.setItem(
       LEGACY_PERSIST_KEY,
       JSON.stringify({
-        order: ["battles", "winrate", "tier", "type"],
+        order: ["battles", "winrate", "tier", "type", "nation"],
         sel: {
           winrate: { values: ["gte60"], dir: "desc", allSort: false },
         },
@@ -481,15 +493,54 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    // …is accepted with "nation" inserted after "type" — the carried-over
-    // selection still filters…
+    // The carried-over selection still filters…
     expect(order(wrapper)).toEqual([5]);
-    // …the v4 blob is written back immediately (the state must survive a
-    // no-interaction session, not re-migrate from defaults next boot)…
-    const persisted = JSON.parse(localStorage.getItem(PERSIST_KEY)!) as { order: string[] };
-    expect(persisted.order).toEqual(["battles", "winrate", "tier", "type", "nation"]);
+    // …the v5 blob is written back immediately, selections only (the state
+    // must survive a no-interaction session, not re-migrate next boot)…
+    const persisted = JSON.parse(localStorage.getItem(PERSIST_KEY)!) as {
+      sel?: Record<string, unknown>;
+      order?: unknown;
+    };
+    expect(persisted.sel?.winrate).toBeDefined();
+    expect(persisted.order).toBeUndefined();
     // …and the legacy key is swept so the migration runs exactly once.
     expect(localStorage.getItem(LEGACY_PERSIST_KEY)).toBe(null);
+  });
+
+  it("maps a migrated engaged 全部…-sort onto the cycle's legal states", async () => {
+    // A v4-era blob can hold an engaged sort whose direction was flipped
+    // freely: the load keeps it (it IS a legal mid-cycle state), so the
+    // first 全部… click lands on OFF and the cycle re-arms from the
+    // canonical direction afterwards.
+    localStorage.setItem(
+      LEGACY_PERSIST_KEY,
+      JSON.stringify({
+        order: ["type", "nation", "tier", "winrate", "battles"],
+        sel: {
+          winrate: { values: [], dir: "asc", allSort: true },
+        },
+      }),
+    );
+    const wrapper = mountBar();
+    await flushPromises();
+
+    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--sort");
+    expect(chip(wrapper, "winrate").find(".lucide-arrow-up").exists()).toBe(true);
+    expect(order(wrapper)).toEqual([4, 2, 1, 3, 5]); // winrate asc
+
+    await chip(wrapper, "winrate").trigger("click");
+    await waitPops(1);
+    await popOpts()[0]!.trigger("click");
+    await flushPromises();
+    // The migrated flipped state reads as mid-cycle: first click switches
+    // the sort off entirely…
+    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
+    expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
+    // …and the next engagement starts from the canonical direction again.
+    await popOpts()[0]!.trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "winrate").find(".lucide-arrow-down").exists()).toBe(true);
+    expect(order(wrapper)).toEqual([5, 3, 1, 2, 4]);
   });
 
   it("keeps selections across an unmount/remount cycle", async () => {
@@ -566,7 +617,7 @@ describe("nation strip pan helpers", () => {
     expect(panEngaged(0, 0, 5)).toBe(false);
     expect(panEngaged(4, 4, 5)).toBe(false);
     expect(panEngaged(-4, 3, 5)).toBe(false);
-    // The threshold itself engages (the chip drag arms at the same >= 5).
+    // The threshold itself engages.
     expect(panEngaged(5, 0, 5)).toBe(true);
     expect(panEngaged(0, -5, 5)).toBe(true);
     expect(panEngaged(-9, 3, 5)).toBe(true);
