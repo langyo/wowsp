@@ -19,7 +19,7 @@ import "./TrayPanel.scss";
  *  - session status: running client (dot + kind · realm + PID) and the
  *    resolved player (the identity the battle roster pinned, falling back
  *    to the active selection) with its emblem;
- *  - the old native tray menu's actions (show / hide / quit), routed
+ *  - the old native tray menu's actions (show / quit), routed
  *    through the Rust handler (`tray_panel_action`) so quit still runs the
  *    graceful drain.
  *

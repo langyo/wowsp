@@ -49,7 +49,7 @@
         "title": "WoWSP Tray",
         "url": "/tray.html",
         "width": 320,
-        "height": 372,
+        "height": 248,
         "resizable": false,
         "visible": false,
         "decorations": false,

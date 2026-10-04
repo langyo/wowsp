@@ -192,7 +192,9 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 0.15rem;
-    padding-left: 1.05rem; /* align under the status text, past the 8px dot */
+    /* 22px icon slot + 0.4rem gap: under the status text — the same left
+       edge the footer buttons' text column starts at. */
+    padding-left: 1.775rem;
     text-align: left;
   }
 
@@ -226,18 +228,31 @@
     color: rgb(var(--color-primary));
   }
 
+  /* The pip rides a 22×22 icon slot — the same column the footer buttons'
+     platform/avatar marks occupy — with the circle drawn centered inside it
+     via ::before, so the pip optically aligns with the icons below and the
+     status text shares their text column's left edge. */
   &__status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: rgb(var(--color-muted));
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
 
-    &--on {
+    &::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgb(var(--color-muted));
+    }
+
+    &--on::before {
       background: rgb(var(--color-success));
       box-shadow: 0 0 6px rgb(var(--color-success));
     }
-    &--off {
+    &--off::before {
       background: rgb(var(--color-border));
     }
   }

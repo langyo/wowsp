@@ -74,12 +74,15 @@ body {
   }
 }
 
-/* Session status block — same grammar as the sidebar footer's indicator. */
+/* Session status block — same grammar as the sidebar footer's indicator.
+   The horizontal padding matches the menu rows' inset and the pip rides a
+   1.1rem icon slot, so the dot optically aligns with the menu icon column
+   and the status text shares the menu labels' left edge. */
 .tray-panel__status {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  padding: 0.5rem 0.6rem;
+  padding: 0.5rem 0.65rem;
   border-radius: var(--radius-sm);
   background: rgb(var(--color-border) / 8%);
   font-size: var(--text-2xs);
@@ -93,21 +96,32 @@ body {
 .tray-panel__status-row {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.55rem;
 }
 
+/* The pip's icon slot: same 1.1rem column the menu icons occupy, circle
+   drawn centered inside it via ::before. */
 .tray-panel__status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgb(var(--color-muted));
+  width: 1.1rem;
+  height: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 
-  &--on {
+  &::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgb(var(--color-muted));
+  }
+
+  &--on::before {
     background: rgb(var(--color-success));
     box-shadow: 0 0 6px rgb(var(--color-success));
   }
-  &--off {
+  &--off::before {
     background: rgb(var(--color-border));
   }
 }
@@ -124,16 +138,26 @@ body {
   flex-wrap: wrap;
   column-gap: 0.45rem;
   row-gap: 0.15rem;
-  padding-left: 1.05rem; /* align under the status text, past the 8px dot */
+  /* 1.1rem icon slot + 0.55rem gap: under the status text, i.e. the same
+     edge the menu labels start at. */
+  padding-left: 1.65rem;
   text-align: left;
 }
 
 .tray-panel__status-client {
   color: rgb(var(--color-text));
+  /* Same truncation as the sidebar footer's client label: a long client
+     name must ellipsize, not wrap — the panel's height is sized to never
+     scroll, so a second detail line would clip the menu. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .tray-panel__status-pid {
   color: rgb(var(--color-muted));
+  flex-shrink: 0;
 }
 
 /* Player row — the resolved "who is playing" identity. */
@@ -165,7 +189,10 @@ body {
   font-size: var(--text-xs);
 }
 
-/* Menu actions — the tray menu's Show / Hide / Quit as rows. */
+/* Menu actions — the tray menu's Show / Quit as rows. Pinned to the
+   bottom edge: the window height (PANEL_LOGICAL in commands/tray_panel.rs)
+   is sized to the tallest content state, so the slack this auto margin
+   absorbs is a small offline-state separator, never a dead void. */
 .tray-panel__menu {
   margin-top: auto;
   display: flex;
@@ -200,8 +227,8 @@ body {
 
   &--danger {
     &:hover {
-      color: rgb(var(--color-danger));
-      background: rgb(var(--color-danger) / 10%);
+      color: rgb(var(--color-error));
+      background: rgb(var(--color-error) / 10%);
     }
   }
 }
@@ -209,6 +236,8 @@ body {
 .tray-panel__menu-icon {
   flex-shrink: 0;
   display: flex;
+  align-items: center;
+  justify-content: center;
   width: 1.1rem;
   height: 1.1rem;
 }
