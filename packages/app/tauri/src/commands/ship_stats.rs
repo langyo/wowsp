@@ -804,10 +804,9 @@ impl RawShipStats {
     /// vortex field names and the ship id comes from the enclosing map key
     /// (the CN transport rebuilds this shape by merging the per-mode bulk
     /// endpoints — see `fetch_ship_stats_cn`). Counters absent from a node
-    /// degrade to 0, same tolerance as the WG path; XP keeps `xp` primary
-    /// but falls back to the vortex `exp` spelling (the account-level
-    /// `normalize_pvp` maps it the same way). No last_battle_time is served
-    /// at all.
+    /// degrade to 0, same tolerance as the WG path; XP is the base-XP total
+    /// `original_exp` (see the xp read below for why the vortex `exp` is
+    /// never divided by battles). No last_battle_time is served at all.
     fn from_vortex(ship_id: i64, node: &serde_json::Value) -> Option<Self> {
         let pvp = node.get("pvp").filter(|v| !v.is_null())?;
         let battles = pvp.get("battles_count")?.as_i64()?;
@@ -841,8 +840,19 @@ impl RawShipStats {
             frags: field(pvp, "frags"),
             survived_battles: field(pvp, "survived"),
             last_battle_time: 0,
-            // `max` picks whichever spelling is served (only one ever is).
-            xp: field(pvp, "xp").max(field(pvp, "exp")),
+            // Base XP only. The vortex `exp` is the boost-multiplied total
+            // (premium account + economic bonuses): measured live on the 360
+            // cluster, exp/battles exceeded the node's own `max_exp` on 384
+            // of 397 ships — a per-battle average above the per-battle max,
+            // impossible — and rendered absurd average-XP figures for boost-heavy CN
+            // players. `original_exp` is the base-XP total matching what the
+            // WG realms serve as `xp`; the legacy list-endpoint spelling
+            // `xp` (pre-2026 shape) was base-XP too and stays the fallback.
+            xp: pvp
+                .get("original_exp")
+                .and_then(|v| v.as_i64())
+                .or_else(|| pvp.get("xp").and_then(|v| v.as_i64()))
+                .unwrap_or(0),
             modes: if has_modes.iter().any(|&b| b) {
                 Some(ShipModeBreakdown {
                     solo,
@@ -1125,7 +1135,7 @@ mod tests {
         assert_eq!(raw.frags, 0);
         assert_eq!(raw.survived_battles, 0);
         assert_eq!(raw.last_battle_time, 0);
-        assert_eq!(raw.xp, 400000);
+        assert_eq!(raw.xp, 400000, "the legacy xp spelling still feeds xp");
         let modes = raw.modes.as_ref().expect("modes present");
         assert_eq!(modes.solo.as_ref().unwrap().battles, 50);
         assert!((modes.solo.as_ref().unwrap().winrate - 34.0).abs() < 0.01);
@@ -1138,11 +1148,38 @@ mod tests {
         assert!(RawShipStats::from_vortex(1, &zero).is_none());
     }
 
+    /// Live regression (player 容易摆烂, id 7048255122, ship 白露
+    /// 4077795024 — the report that exposed the bug): every per-mode node
+    /// serves three XP totals — `original_exp` (base), `premium_exp` (the
+    /// bonus part) and `exp` (the boost-multiplied total). Dividing `exp`
+    /// by battles rendered an average XP of 16,088 against the ship's own
+    /// `max_exp` of 2,753 — a per-battle average above the per-battle max,
+    /// impossible. The base total must win whenever it is served.
+    #[test]
+    fn raw_ship_stats_from_vortex_reads_base_xp_not_boosted_total() {
+        let node = serde_json::json!({
+            "pvp": {
+                "battles_count": 117, "wins": 68, "losses": 49,
+                "damage_dealt": 5851737, "frags": 159,
+                "exp": 1882275, "premium_exp": 246377,
+                "original_exp": 153130, "max_exp": 2753
+            }
+        });
+        let raw = RawShipStats::from_vortex(4077795024, &node).unwrap();
+        assert_eq!(raw.xp, 153130, "base original_exp feeds xp");
+        let stats = PlayerShipStats::from(&raw);
+        assert!((stats.avg_xp.unwrap() - 153130.0 / 117.0).abs() < 0.01);
+        assert!(
+            stats.avg_xp.unwrap() < 2753.0,
+            "average XP stays under the node's max_exp"
+        );
+    }
+
     /// Live shape (player Evelyine, id 7048272283, ship 4065212112) of the
     /// per-mode bulk endpoints: the merge rebuilds the battle-type node the
-    /// parser consumes, the vortex `exp` spelling feeds xp, a failed split
-    /// degrades to a missing breakdown entry, and zero-pvp ships are
-    /// skipped.
+    /// parser consumes, the base-XP `original_exp` feeds xp (the
+    /// boost-multiplied `exp` total is ignored), a failed split degrades to
+    /// a missing breakdown entry, and zero-pvp ships are skipped.
     #[test]
     fn merge_cn_mode_maps_rebuilds_per_ship_nodes() {
         let pvp = serde_json::json!({
@@ -1151,7 +1188,8 @@ mod tests {
                 "4065212112": { "pvp": {
                     "battles_count": 536, "wins": 379, "losses": 157,
                     "damage_dealt": 32873159, "frags": 582, "survived": 253,
-                    "exp": 9480131
+                    "exp": 9480131, "premium_exp": 1265910,
+                    "original_exp": 767064, "max_exp": 2857
                 } },
                 "3760142032": { "pvp": {} }
             } } }
@@ -1185,14 +1223,17 @@ mod tests {
         assert_eq!(r.damage_caused, 32873159);
         assert_eq!(r.frags, 582);
         assert_eq!(r.survived_battles, 253);
-        assert_eq!(r.xp, 9480131, "the exp spelling feeds xp");
+        assert_eq!(
+            r.xp, 767064,
+            "base original_exp feeds xp, not the boosted exp total"
+        );
         let modes = r.modes.as_ref().expect("ranked split present");
         assert_eq!(modes.ranked.as_ref().unwrap().battles, 76);
         assert!((modes.ranked.as_ref().unwrap().winrate - 65.78).abs() < 0.01);
         assert!(modes.solo.is_none(), "failed split degraded to missing");
         let stats = PlayerShipStats::from(r);
         assert!((stats.avg_damage - 32873159.0 / 536.0).abs() < 0.01);
-        assert!((stats.avg_xp.unwrap() - 9480131.0 / 536.0).abs() < 0.01);
+        assert!((stats.avg_xp.unwrap() - 767064.0 / 536.0).abs() < 0.01);
     }
 
     /// The pvp core is load-bearing: its failure must surface (so the caller

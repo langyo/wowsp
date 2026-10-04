@@ -97,7 +97,9 @@ fn vortex_status(v: &serde_json::Value) -> Option<&str> {
 ///   name             → nickname
 ///   statistics.basic → leveling_tier / leveling_points (WG keeps them top-level)
 ///   statistics.pvp   → battles_count→battles, survived→survived_battles,
-///                      win_and_survived→survived_wins, exp→xp,
+///                      win_and_survived→survived_wins,
+///                      original_exp→xp (base XP — the vortex `exp` is the
+///                      boost-multiplied total, see `normalize_pvp`),
 ///                      shots_by_main/hits_by_main→main_battery.{shots,hits}
 ///   pvp_solo/div2/div3 battles_count→battles
 ///   statistics.seasons → same per-mode mapping (WG seasons API shape:
@@ -195,7 +197,15 @@ fn normalize_pvp(pvp: Option<&serde_json::Value>) -> serde_json::Value {
         "losses": get_i64(p, "losses"),
         "damage_dealt": get_i64(p, "damage_dealt"),
         "frags": get_i64(p, "frags"),
-        "xp": get_i64(p, "exp"),
+        // Base XP only. The vortex `exp` is the boost-multiplied total
+        // (premium account + economic bonuses): measured live, its
+        // per-battle average exceeds the node's own `max_exp` — impossible
+        // for a per-battle value — so dividing it by battles paints absurd
+        // average-XP figures for boost-heavy CN players. `original_exp` is
+        // the base-XP total the WG API realms serve as `xp` (every live
+        // battle-type node carries it); nodes without it yield no xp, which
+        // renders "--" instead of an inflated fantasy number.
+        "xp": get_i64(p, "original_exp"),
         "survived_battles": get_i64(p, "survived"),
         "survived_wins": get_i64(p, "win_and_survived"),
         "planes_killed": get_i64(p, "planes_killed"),
@@ -851,6 +861,13 @@ fn clan_info_from_cn(
                 .get("damage_per_battle")
                 .and_then(|v| v.as_f64())
                 .map(|v| v as f32);
+            // `exp_per_battle` is pre-aggregated by the clans service and
+            // deliberately kept as served: measured live it equals the
+            // account's premium_exp/battles (i.e. premium-included, NOT the
+            // base-XP total the player card shows and NOT the boost total
+            // either) — the same caliber the official clan page itself
+            // displays. No UI renders this field today; do NOT "fix" it to
+            // another caliber without re-measuring.
             let avg_xp = m
                 .get("exp_per_battle")
                 .and_then(|v| v.as_f64())
@@ -1009,7 +1026,8 @@ mod tests {
                     "damage_dealt": 931503342, "frags": 10673,
                     "survived": 5000, "win_and_survived": 4000,
                     "shots_by_main": 2852109, "hits_by_main": 845434,
-                    "planes_killed": 28902, "exp": 37473902
+                    "planes_killed": 28902, "exp": 37473902,
+                    "premium_exp": 23674087, "original_exp": 16928121
                 },
                 "pvp_solo": { "battles_count": 16193, "wins": 8335, "damage_dealt": 931270926, "frags": 10671 },
                 "pvp_div2": { "battles_count": 3, "wins": 2, "damage_dealt": 232416, "frags": 2 },
@@ -1026,6 +1044,9 @@ mod tests {
         assert_eq!(p.battles, Some(16196));
         assert!((p.winrate.unwrap() - 51.477).abs() < 0.01);
         assert!((p.avg_damage.unwrap() - 57514.4).abs() < 1.0);
+        // avg XP reads the base-XP total (original_exp / 16196 = 1045.20),
+        // never the boost-multiplied `exp` total (37473902 / 16196 = 2314).
+        assert!((p.avg_xp.unwrap() - 16928121.0 / 16196.0).abs() < 0.01);
         // 5000 survived / 16196 battles; 845434 hits / 2852109 main shots;
         // 10673 frags / (16196 - 5000) deaths; 8335 solo wins / 16193.
         assert!((p.survival_rate.unwrap() - 30.872).abs() < 0.01);
@@ -1041,6 +1062,30 @@ mod tests {
 
         // Dog tag parses through the shared helper.
         assert!(node.get("dog_tag").and_then(parse_dog_tag).is_some());
+    }
+
+    /// A node without `original_exp` (every live battle-type node serves it;
+    /// this pins the policy for a hypothetical future shape) yields NO xp —
+    /// the card renders "--" rather than falling back to the boost-
+    /// multiplied `exp`, which would resurrect the inflated average XP.
+    #[test]
+    fn normalize_player_without_original_exp_yields_no_avg_xp() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "edge",
+            "statistics": {
+                "pvp": {
+                    "battles_count": 100, "wins": 50,
+                    "damage_dealt": 2000000, "exp": 900000
+                }
+            }
+        }));
+        let p = PvpStats::extract(node.get("statistics"));
+        assert_eq!(p.battles, Some(100));
+        assert!((p.avg_damage.unwrap() - 20000.0).abs() < 0.01);
+        assert_eq!(
+            p.avg_xp, None,
+            "no original_exp served means no avg XP, never exp/battles"
+        );
     }
 
     /// The vortex ranked trees must survive normalization in the WG seasons
@@ -1061,7 +1106,7 @@ mod tests {
                     "1024": { "0": { "rank_solo": {
                         "battles_count": 6, "wins": 6, "losses": 0,
                         "damage_dealt": 31424, "frags": 1,
-                        "exp": 19922, "max_exp": 8831,
+                        "exp": 19922, "original_exp": 9500, "max_exp": 8831,
                         "max_damage_dealt": 11000, "survived": 1, "planes_killed": 1
                     } } },
                     // an unplayed season's empty mode node collapses to null
@@ -1076,6 +1121,11 @@ mod tests {
         // seasons: vortex field names map onto the WG ones.
         assert_eq!(st.pointer("/seasons/1024/0/rank_solo/battles").unwrap(), 6);
         assert_eq!(st.pointer("/seasons/1024/0/rank_solo/wins").unwrap(), 6);
+        assert_eq!(
+            st.pointer("/seasons/1024/0/rank_solo/xp").unwrap(),
+            9500,
+            "base original_exp maps to xp, not the boosted exp total"
+        );
         assert_eq!(
             st.pointer("/seasons/1024/0/rank_solo/max_xp").unwrap(),
             8831
@@ -1129,8 +1179,8 @@ mod tests {
                 "pvp": {},
                 "pve": {
                     "battles_count": 50, "wins": 25, "damage_dealt": 400000,
-                    "exp": 200000, "survived": 10, "frags": 30,
-                    "shots_by_main": 1000, "hits_by_main": 300,
+                    "exp": 200000, "original_exp": 35000, "survived": 10,
+                    "frags": 30, "shots_by_main": 1000, "hits_by_main": 300,
                 },
             }
         }));
@@ -1151,6 +1201,9 @@ mod tests {
         assert_eq!(stats.battles, Some(50));
         assert_eq!(stats.winrate, Some(50.0));
         assert_eq!(stats.avg_damage, Some(8000.0));
+        // Co-op avg XP reads the base total (700/battle), not the boosted
+        // `exp` (4,000/battle).
+        assert_eq!(stats.avg_xp, Some(700.0));
         assert_eq!(stats.hit_rate, Some(30.0));
         assert_eq!(stats.pr, None);
     }
