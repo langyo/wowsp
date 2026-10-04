@@ -1,6 +1,6 @@
 {
   "title": "Mod Manager",
-  "subtitle": "Mods installed into the game's res_mods directory.",
+  "toolsMenu": "More tools",
   "scan": "Rescan",
   "scanning": "Scanning…",
   "noGame": "No game install detected — set the game path in Settings first.",
@@ -39,7 +39,7 @@
   "catalogSearch": "Search mods…",
   "catalogEmpty": "Catalog is empty — press Refresh to fetch the online list.",
   "catalogError": "Failed to load the online catalog: {error}",
-  "catalogSource": "{count} mods · catalog {source} · updated {time}",
+  "catalogMeta": "catalog {source} · updated {time}",
   "searchMod": "Search mods",
   "searching": "Searching…",
   "listFilter": "Filter mods…",

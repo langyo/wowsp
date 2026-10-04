@@ -1,6 +1,6 @@
 {
   "title": "模组管理",
-  "subtitle": "管理已安装到游戏 res_mods 目录的模组。",
+  "toolsMenu": "工具菜单",
   "scan": "重新扫描",
   "scanning": "扫描中…",
   "noGame": "尚未检测到游戏安装——请先在设置中指定游戏路径。",
@@ -39,7 +39,7 @@
   "catalogSearch": "搜索模组…",
   "catalogEmpty": "目录为空——点击「刷新」拉取在线列表。",
   "catalogError": "在线目录加载失败：{error}",
-  "catalogSource": "{count} 个模组 · 目录 {source} · 更新于 {time}",
+  "catalogMeta": "目录 {source} · 更新于 {time}",
   "searchMod": "搜索模组",
   "searching": "搜索中…",
   "listFilter": "筛选模组…",

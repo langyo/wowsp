@@ -1,6 +1,6 @@
 {
   "title": "Mod管理",
-  "subtitle": "ゲームの res_mods ディレクトリにインストールされた Mod を管理します。",
+  "toolsMenu": "ツールメニュー",
   "scan": "再スキャン",
   "scanning": "スキャン中…",
   "noGame": "ゲームのインストールが検出されていません。先に設定でゲームパスを指定してください。",
@@ -39,7 +39,7 @@
   "catalogSearch": "Mod を検索…",
   "catalogEmpty": "カタログは空です。「更新」を押すとオンラインの一覧を取得します。",
   "catalogError": "オンラインカタログの読み込みに失敗しました：{error}",
-  "catalogSource": "Mod {count} 件 · カタログ {source} · 更新 {time}",
+  "catalogMeta": "カタログ {source} · {time} 更新",
   "searchMod": "Mod を検索",
   "searching": "検索中…",
   "listFilter": "Mod を絞り込み…",

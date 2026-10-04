@@ -1,6 +1,6 @@
 {
   "title": "Gestionnaire de mods",
-  "subtitle": "Mods installés dans le répertoire res_mods du jeu.",
+  "toolsMenu": "Menu d’outils",
   "scan": "Rescanner",
   "scanning": "Analyse…",
   "noGame": "Aucune installation du jeu détectée — définissez d'abord le chemin du jeu dans les Paramètres.",
@@ -39,7 +39,7 @@
   "catalogSearch": "Rechercher des mods…",
   "catalogEmpty": "Le catalogue est vide — appuyez sur Actualiser pour récupérer la liste en ligne.",
   "catalogError": "Échec du chargement du catalogue en ligne : {error}",
-  "catalogSource": "{count} mods · catalogue {source} · mis à jour {time}",
+  "catalogMeta": "catalogue {source} · mis à jour le {time}",
   "searchMod": "Rechercher des mods",
   "searching": "Recherche…",
   "listFilter": "Filtrer les mods…",

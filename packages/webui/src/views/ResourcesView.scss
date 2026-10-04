@@ -1,84 +1,106 @@
-// Mod Hub (Resources page) — master/detail, the replay page's shape: the
-// left column owns the filter stack and the scrolling row list, the right
-// pane shows the selected mod and carries its actions. Category accents
-// follow the mod taxonomy from docs/<lang>/designs/mod-formats.md — hue per
-// kind on the row tiles, neutral chrome otherwise.
+// Mod Hub (Resources page) — master/detail in the replay page's shape: a
+// flush secondary sidebar owns the title row, the condition strips and the
+// filter stack above the scrolling row list; the right pane shows the
+// selected mod and carries its actions. Category accents follow the mod
+// taxonomy from docs/<lang>/designs/mod-formats.md — hue per kind on the
+// row tiles, neutral chrome otherwise.
 
 .resources-view {
-  /* Full-height flex column. The shell's page wrapper hands the root a
-     definite height (app-shell__page), so the two columns size from it and
-     scroll internally instead of dragging the page. */
+  /* Full-height flex row (the replay page's chain): the shell's page
+     wrapper hands the root a definite height, so the two columns size from
+     it and scroll internally instead of dragging the page. The sidebar
+     hugs the shell's edges — no page padding, the tint IS the page. */
   display: flex;
-  flex-direction: column;
   height: 100%;
   min-height: 0;
-  gap: 0.75rem;
-  padding: 1.25rem 1.5rem;
 
-  &__head {
+  &__side {
+    width: 320px;
     flex: none;
     display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid rgb(var(--color-border) / 20%);
+    background: rgb(var(--color-surface) / 50%);
+    background: rgb(var(--color-surface) / min(100%, calc(50% * var(--ui-opacity, 1))));
+    overflow: hidden;
   }
 
-  &__headtext {
-    flex: 1;
-    min-width: 0;
-  }
-
-  &__tools {
+  &__side-head {
     flex: none;
-    position: relative;
+    padding: 1.1rem 1rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    /* In-head extras sit flush: the page-level margins would double-pad. */
+    .resources-chips,
+    .resources-banner {
+      flex: none;
+      margin: 0;
+    }
   }
 
-  &__title {
+  &__side-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  /* The sidebar title speaks the replay list's quiet small-caps voice —
+     the page identity lives in the app shell's nav, not a banner. */
+  &__side-title {
     margin: 0;
-    font-size: var(--text-xl);
-    font-weight: 700;
-    color: rgb(var(--color-text));
-  }
-
-  &__subtitle {
-    margin: 0.15rem 0 0;
     font-size: var(--text-sm);
+    font-weight: 600;
     color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
-}
 
-/* Shared spinner glyph class (refresh icon, list rows). */
-.spin {
-  animation: resources-spin 0.9s linear infinite;
-}
+  &__side-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    flex-shrink: 0;
+  }
 
-@keyframes resources-spin {
-  to { transform: rotate(360deg); }
-}
+  /* The ⋯ tool menu's anchor (the popup mounts against it). */
+  &__tools {
+    position: relative;
+    display: inline-flex;
+  }
 
-// ── The master/detail pair ──────────────────────────────────────────────────
+  /* A missing install speaks the replay list's quiet no-client voice —
+     the safe-mode / stale-bin strips keep the banner chrome instead (both
+     carry an action button). */
+  &__side-note {
+    margin: 0;
+    padding: 0.5rem 0.6rem;
+    background: rgb(var(--color-warning, var(--color-accent)) / 12%);
+    border-radius: var(--radius-xs);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-warning, var(--color-accent)));
+    line-height: 1.4;
+  }
 
-.mod-hub {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: stretch;
-  gap: 0.75rem;
-}
+  /* The count pill — the replay list's count voice, scoped to the active
+     source AND big category (exactly what the "all" chip counts). */
+  &__count {
+    align-self: flex-start;
+    padding: 0.1rem 0.55rem;
+    background: rgb(var(--color-primary) / 12%);
+    border-radius: var(--radius-full);
+    color: rgb(var(--color-primary));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
 
-.mod-side {
-  flex: none;
-  width: 21rem;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.875rem;
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 15%);
-  border-radius: var(--radius-md);
-
-  /* Row shells: the filter row and the source row share one geometry —
-     inputs grow, trailing buttons stay fixed and single-line. */
+  /* Filter-stack rows: the source strip and the filter row share one
+     geometry — inputs grow, trailing buttons stay fixed and single-line. */
   &__row {
     flex: none;
     display: flex;
@@ -110,12 +132,13 @@
     min-width: 0;
   }
 
-  /* The list is the column's scroller: the filter stack above stays put and
-     the rows take whatever height is left. */
-  &__list {
+  /* The list is the sidebar's scroller: the filter stack above stays put
+     and the rows take whatever height is left. */
+  &__side-scroll {
     flex: 1;
     min-height: 4rem;
     overflow-y: auto;
+    padding: 0.25rem 0.75rem 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -128,8 +151,12 @@
     color: rgb(var(--color-muted) / 80%);
   }
 
-  &__foot {
+  /* One quiet metadata line (the online catalog's source + fetch date);
+     the count itself lives in the pill above. */
+  &__side-foot {
     flex: none;
+    padding: 0.5rem 1rem 0.75rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
     font-size: var(--text-xs);
     color: rgb(var(--color-muted) / 75%);
     white-space: nowrap;
@@ -137,12 +164,23 @@
     text-overflow: ellipsis;
   }
 
-  /* In-panel extras sit flush: the page-level margins would double-pad. */
-  .resources-chips,
-  .resources-banner {
-    flex: none;
-    margin: 0;
+  /* The detail half: what the selected row is, and every action for it. */
+  &__main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    padding: 1.25rem 1.25rem 1.25rem 1.5rem;
   }
+}
+
+/* Shared spinner glyph class (refresh icon, list rows). */
+.spin {
+  animation: resources-spin 0.9s linear infinite;
+}
+
+@keyframes resources-spin {
+  to { transform: rotate(360deg); }
 }
 
 // ── Category filter chips ───────────────────────────────────────────────────
@@ -332,7 +370,7 @@
 
 // ── Search-combo candidate innards (row chrome lives in the combo) ──────────
 
-.mod-hub__combo-name {
+.resources-view__combo-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -340,7 +378,7 @@
   white-space: nowrap;
 }
 
-.mod-hub__combo-ver {
+.resources-view__combo-ver {
   flex: none;
   font-size: var(--text-xs);
   color: rgb(var(--color-muted));
@@ -557,14 +595,7 @@
   }
 }
 
-// ── Detail pane (the right half) ────────────────────────────────────────────
-
-.mod-detail-pane {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-}
+// ── Detail pane (the right half, inside __main's padding) ───────────────────
 
 .mod-detail {
   flex: 1;
@@ -1037,44 +1068,31 @@
   }
 }
 
-/* ── Phone layout (≤767px): the pair stacks — list first, pane under it —
-   and the page scrolls as one; the tool rows stay single-line. ── */
+/* ── Phone layout (≤767px): the pair stacks — the sidebar (its own tinted
+   band, list capped) above the pane — and the page scrolls as one; the
+   filter stack keeps its natural height. ── */
 @media (max-width: 767px) {
   .resources-view {
+    flex-direction: column;
+    /* The page scrolls in the shell's viewport; the root grows past the
+       wrapper's definite height instead of squeezing both columns. */
     height: auto;
     min-height: 100%;
-    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
   }
 
-  /* The title/tools row pins while the stacked page scrolls under it in the
-     shell's scroll viewport (settings-page bar recipe): negative margins
-     bleed the glass over the page's phone padding, the padding restores the
-     resting offset. */
-  .resources-view__head {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    margin: -0.9rem -0.9rem 0;
-    padding: 0.9rem 0.9rem 0.5rem;
-    background: rgb(var(--color-surface) / 88%);
-    backdrop-filter: blur(var(--blur-md));
-    -webkit-backdrop-filter: blur(var(--blur-md));
-    border-bottom: 1px solid rgb(var(--color-border) / 15%);
-  }
-
-  .mod-hub {
-    flex-direction: column;
-  }
-
-  .mod-side {
+  .resources-view__side {
     width: 100%;
-    padding: 0.75rem;
-    gap: 0.5rem;
+    border-right: none;
+    border-bottom: 1px solid rgb(var(--color-border) / 20%);
   }
 
   /* Bounded so a long list can't push the pane out of reach. */
-  .mod-side__list {
+  .resources-view__side-scroll {
     max-height: 46vh;
+  }
+
+  .resources-view__main {
+    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
   }
 
   .mod-detail {

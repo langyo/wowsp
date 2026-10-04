@@ -87,12 +87,15 @@ type Selection =
 const REPO = "langyo/wowsp";
 
 /**
- * Mod Hub (Resources page) — master/detail, the replay page's shape.
+ * Mod Hub (Resources page) — master/detail in the replay page's
+ * secondary-sidebar shape.
  *
- * The left column owns the whole filter stack (big category, source, list
- * filter, chips) above the scrolling row list; the right pane shows what the
- * selected row is and carries every action for it — nothing is hidden behind
- * a modal, and the pane keeps a placeholder until something is picked.
+ * The flush left sidebar owns the title row (with the ⋯ tool menu), the
+ * condition strips, the count pill and the whole filter stack (big category,
+ * source, list filter, chips) above the scrolling row list; the right pane
+ * shows what the selected row is and carries every action for it — nothing is
+ * hidden behind a modal, and the pane keeps a placeholder until something is
+ * picked.
  *
  * Online catalog: curated tool-type mods from `mod-index.json` (built from
  * GitHub Discussions by scripts/mod_hub_publish.py); install downloads the
@@ -760,8 +763,8 @@ export default defineComponent({
             <span class={["mod-row__tile", `mod-row__tile--${meta.class}`, "mod-row__tile--sm"]}>
               <Icon size={14} />
             </span>
-            <span class="mod-hub__combo-name">{mod.name}</span>
-            {mod.version && <span class="mod-hub__combo-ver">{mod.version}</span>}
+            <span class="resources-view__combo-name">{mod.name}</span>
+            {mod.version && <span class="resources-view__combo-ver">{mod.version}</span>}
           </>
         );
       }
@@ -773,8 +776,8 @@ export default defineComponent({
           <span class="mod-row__tile mod-row__tile--cat mod-row__tile--sm">
             <Icon size={14} />
           </span>
-          <span class="mod-hub__combo-name">{text.name || entry.title || entry.nameEn}</span>
-          <span class="mod-hub__combo-ver">v{entry.version}</span>
+          <span class="resources-view__combo-name">{text.name || entry.title || entry.nameEn}</span>
+          <span class="resources-view__combo-ver">v{entry.version}</span>
         </>
       );
     }
@@ -787,7 +790,7 @@ export default defineComponent({
     /** Empty-state text node — the list is a flex column of rows, so a bare
      *  string would render flush and full-contrast instead of reading as a
      *  placeholder. */
-    const emptyNote = (text: string) => <div class="mod-side__empty">{text}</div>;
+    const emptyNote = (text: string) => <div class="resources-view__empty">{text}</div>;
 
     /** What an empty online list means depends on WHY it is empty: mid-fetch
      *  is not the same as "nothing matched", and a failed fetch is already
@@ -1589,108 +1592,125 @@ export default defineComponent({
       const selKey = selectedRowKey.value;
       return (
         <div class="resources-view">
-          <header class="resources-view__head">
-            <div class="resources-view__headtext">
-              <h1 class="resources-view__title">{t("resources.title")}</h1>
-              <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
-            </div>
-            {/* Tool menu: safe mode + the migration wizard. */}
-            <div class="resources-view__tools" ref={toolsAnchor}>
-              <HkIconButton
-                size={24}
-                variant="ghost"
-                data-hint={t("resources.toolsMenu")}
-                onClick={() => (toolsOpen.value = !toolsOpen.value)}
-              >
-                <Ellipsis size={15} />
-              </HkIconButton>
-              <HMenu
-                variant="popup"
-                title={t("resources.toolsMenu")}
-                open={toolsOpen.value}
-                anchorRef={toolsAnchor.value}
-                placement="bottom-end"
-                items={[
-                  {
-                    key: "safe-enter",
-                    label: t("resources.safeModeEnter"),
-                    icon: ShieldCheck,
-                    disabled: !gameRoot.value || safeMode.value || safeModeBusy.value,
-                  },
-                  {
-                    key: "safe-exit",
-                    label: t("resources.safeModeExit"),
-                    icon: Undo2,
-                    disabled: !safeMode.value || safeModeBusy.value,
-                  },
-                  {
-                    key: "migrate",
-                    label: t("resources.staleMigrate"),
-                    icon: RefreshCw,
-                    disabled:
-                      !gameRoot.value || staleBins.value.length === 0 || migrating.value,
-                  },
-                ]}
-                onSelect={({ key }: { key: string | number }) => {
-                  toolsOpen.value = false;
-                  if (key === "safe-enter") safeModeAsk.value = "on";
-                  else if (key === "safe-exit") safeModeAsk.value = "off";
-                  else if (key === "migrate") openMigrateWizard();
-                }}
-                onUpdate:open={(v: boolean) => (toolsOpen.value = v)}
-              />
-            </div>
-          </header>
+          {/* ── Master/detail in the replay page's secondary-sidebar shape:
+              the sidebar owns the title row, the condition strips, the count
+              pill and the whole filter stack above the scrolling list; the
+              pane shows what the selected row is. ── */}
+          <aside class="resources-view__side">
+            <div class="resources-view__side-head">
+              <div class="resources-view__side-head-row">
+                <h2 class="resources-view__side-title">{t("resources.title")}</h2>
+                <span class="resources-view__side-actions">
+                  {/* Tool menu: safe mode + the migration wizard — the ⋯
+                      button rides the title row like the replay list's head
+                      actions; refresh / folder-install stay in the filter
+                      stack below. */}
+                  <span class="resources-view__tools" ref={toolsAnchor}>
+                    <HkIconButton
+                      size={24}
+                      variant="ghost"
+                      data-hint={t("resources.toolsMenu")}
+                      onClick={() => (toolsOpen.value = !toolsOpen.value)}
+                    >
+                      <Ellipsis size={15} />
+                    </HkIconButton>
+                    <HMenu
+                      variant="popup"
+                      title={t("resources.toolsMenu")}
+                      open={toolsOpen.value}
+                      anchorRef={toolsAnchor.value}
+                      placement="bottom-end"
+                      items={[
+                        {
+                          key: "safe-enter",
+                          label: t("resources.safeModeEnter"),
+                          icon: ShieldCheck,
+                          disabled: !gameRoot.value || safeMode.value || safeModeBusy.value,
+                        },
+                        {
+                          key: "safe-exit",
+                          label: t("resources.safeModeExit"),
+                          icon: Undo2,
+                          disabled: !safeMode.value || safeModeBusy.value,
+                        },
+                        {
+                          key: "migrate",
+                          label: t("resources.staleMigrate"),
+                          icon: RefreshCw,
+                          disabled:
+                            !gameRoot.value || staleBins.value.length === 0 || migrating.value,
+                        },
+                      ]}
+                      onSelect={({ key }: { key: string | number }) => {
+                        toolsOpen.value = false;
+                        if (key === "safe-enter") safeModeAsk.value = "on";
+                        else if (key === "safe-exit") safeModeAsk.value = "off";
+                        else if (key === "migrate") openMigrateWizard();
+                      }}
+                      onUpdate:open={(v: boolean) => (toolsOpen.value = v)}
+                    />
+                  </span>
+                </span>
+              </div>
 
-          {/* Compact condition strip: only what NEEDS attention stays a
-              banner; tooling (safe mode, migration) lives in the ⋯ menu. */}
-          {!gameRoot.value && (
-            <div class="resources-banner resources-banner--warn">
-              <AlertTriangle size={16} />
-              {t("resources.noGame")}
-            </div>
-          )}
+              {/* Compact condition strip: only what NEEDS attention stays a
+                  banner — a missing install speaks the replay list's quiet
+                  no-client note, while safe mode / stale bins keep the
+                  banner chrome (both carry an action). Tooling lives in the
+                  ⋯ menu. */}
+              {!gameRoot.value && (
+                <p class="resources-view__side-note">{t("resources.noGame")}</p>
+              )}
 
-          {safeMode.value && gameRoot.value && (
-            <div class="resources-banner resources-banner--warn">
-              <AlertTriangle size={16} />
-              <span class="resources-banner__text">{t("resources.safeModeOn")}</span>
-              <HkButton
-                size="sm"
-                disabled={safeModeBusy.value}
-                loading={safeModeBusy.value}
-                onClick={() => (safeModeAsk.value = "off")}
-              >
-                {t("resources.safeModeExit")}
-              </HkButton>
-            </div>
-          )}
+              {safeMode.value && gameRoot.value && (
+                <div class="resources-banner resources-banner--warn">
+                  <AlertTriangle size={16} />
+                  <span class="resources-banner__text">{t("resources.safeModeOn")}</span>
+                  <HkButton
+                    size="sm"
+                    disabled={safeModeBusy.value}
+                    loading={safeModeBusy.value}
+                    onClick={() => (safeModeAsk.value = "off")}
+                  >
+                    {t("resources.safeModeExit")}
+                  </HkButton>
+                </div>
+              )}
 
-          {staleBins.value.length > 0 && gameRoot.value && !safeMode.value && (
-            <div class="resources-banner resources-banner--warn resources-banner--stale">
-              <AlertTriangle size={16} />
-              <span class="resources-banner__text">
-                {t("resources.staleBinBanner", {
-                  version: staleBins.value.map((b) => b.binVersion).join(", "),
-                  count: staleBins.value.reduce((n, b) => n + b.fileCount, 0),
+              {staleBins.value.length > 0 && gameRoot.value && !safeMode.value && (
+                <div class="resources-banner resources-banner--warn">
+                  <AlertTriangle size={16} />
+                  <span class="resources-banner__text">
+                    {t("resources.staleBinBanner", {
+                      version: staleBins.value.map((b) => b.binVersion).join(", "),
+                      count: staleBins.value.reduce((n, b) => n + b.fileCount, 0),
+                    })}
+                  </span>
+                  <HkButton
+                    size="sm"
+                    variant="primary"
+                    disabled={migrating.value}
+                    loading={migrating.value}
+                    onClick={openMigrateWizard}
+                  >
+                    {t("resources.staleMigrate")}
+                  </HkButton>
+                </div>
+              )}
+
+              {/* The count pill mirrors the replay list's count — scoped to
+                  the ACTIVE source AND big category, i.e. exactly what the
+                  "all" chip below counts; narrower chip/filter states show
+                  in the list itself. */}
+              <span class="resources-view__count">
+                {t("resources.countLine", {
+                  count:
+                    source.value === "online"
+                      ? catalogInCat.value.length
+                      : installedInCat.value.length,
                 })}
               </span>
-              <HkButton
-                size="sm"
-                variant="primary"
-                disabled={migrating.value}
-                loading={migrating.value}
-                onClick={openMigrateWizard}
-              >
-                {t("resources.staleMigrate")}
-              </HkButton>
-            </div>
-          )}
 
-          {/* ── Master/detail: the filter stack + list on the left, the
-              selected mod's pane on the right ── */}
-          <div class="mod-hub">
-            <aside class="mod-side">
               {/* Big category — the row-filling segmented strip. */}
               <HkTabs
                 variant="segmented"
@@ -1702,8 +1722,8 @@ export default defineComponent({
               />
 
               {/* Source switch + search-combo button ride one row. */}
-              <div class="mod-side__row mod-side__row--source">
-                <div class="mod-side__rowmain">
+              <div class="resources-view__row resources-view__row--source">
+                <div class="resources-view__rowmain">
                   <HkTabs
                     variant="segmented"
                     modelValue={source.value}
@@ -1732,9 +1752,9 @@ export default defineComponent({
               </div>
 
               {/* List filter + refresh + folder-install entry. */}
-              <div class="mod-side__row">
+              <div class="resources-view__row">
                 <HkSearchInput
-                  class="mod-side__filter"
+                  class="resources-view__filter"
                   modelValue={listQuery.value}
                   onUpdate:modelValue={(v: string) => (listQuery.value = v)}
                   placeholder={t("resources.listFilter")}
@@ -1811,107 +1831,110 @@ export default defineComponent({
                   </>
                 )}
               </div>
+            </div>
 
-              {/* ── The compact list (the master half) ── */}
-              <div class="mod-side__list">
-                {source.value === "online"
-                  ? catalogShown.value.length === 0
-                    ? catalogEmptyNote()
-                    : catalogShown.value.map((entry) => {
-                        const text = localized(entry);
-                        const record = recordOf(entry.id);
-                        const upToDate = !!record && record.version === entry.version;
-                        const busyInstall = busy.value.get(entry.id) === "install";
-                        const RowIcon = catIcon(entry.category);
-                        return (
-                          <button
-                            key={entry.id}
-                            class={["mod-row", selKey === entry.id && "mod-row--active"]}
-                            onClick={() => selectCatalog(entry)}
-                          >
-                            <span class="mod-row__tile mod-row__tile--cat">
-                              <RowIcon size={20} />
+            {/* ── The compact list (the master half): the sidebar's
+                scroller — the filter stack above stays put ── */}
+            <div class="resources-view__side-scroll">
+              {source.value === "online"
+                ? catalogShown.value.length === 0
+                  ? catalogEmptyNote()
+                  : catalogShown.value.map((entry) => {
+                      const text = localized(entry);
+                      const record = recordOf(entry.id);
+                      const upToDate = !!record && record.version === entry.version;
+                      const busyInstall = busy.value.get(entry.id) === "install";
+                      const RowIcon = catIcon(entry.category);
+                      return (
+                        <button
+                          key={entry.id}
+                          class={["mod-row", selKey === entry.id && "mod-row--active"]}
+                          onClick={() => selectCatalog(entry)}
+                        >
+                          <span class="mod-row__tile mod-row__tile--cat">
+                            <RowIcon size={20} />
+                          </span>
+                          <span class="mod-row__body">
+                            <span class="mod-row__name">
+                              {text.name || entry.title || entry.nameEn}
+                              <span class="mod-row__ver">v{entry.version}</span>
                             </span>
-                            <span class="mod-row__body">
-                              <span class="mod-row__name">
-                                {text.name || entry.title || entry.nameEn}
-                                <span class="mod-row__ver">v{entry.version}</span>
+                            <span class="mod-row__sub">{text.desc || entry.nameEn}</span>
+                          </span>
+                          <span class="mod-row__tail">
+                            {busyInstall ? (
+                              <span class="mod-row__spinner" />
+                            ) : upToDate ? (
+                              <span class="mod-row__badge mod-row__badge--ok">
+                                {t("resources.installedBadge")}
                               </span>
-                              <span class="mod-row__sub">{text.desc || entry.nameEn}</span>
-                            </span>
-                            <span class="mod-row__tail">
-                              {busyInstall ? (
-                                <span class="mod-row__spinner" />
-                              ) : upToDate ? (
-                                <span class="mod-row__badge mod-row__badge--ok">
-                                  {t("resources.installedBadge")}
-                                </span>
-                              ) : record ? (
-                                <span class="mod-row__badge mod-row__badge--up">
-                                  {t("resources.update")}
-                                </span>
-                              ) : null}
-                            </span>
-                          </button>
-                        );
-                      })
-                  : shown.value.length === 0
-                    ? installedEmptyNote()
-                    : shown.value.map((m) => {
-                        const meta = KIND_META[m.kind];
-                        const Icon = meta.icon;
-                        const state = unitBusy.value.get(m.relPath);
-                        return (
-                          <button
-                            key={m.relPath}
-                            class={[
-                              "mod-row",
-                              m.disabled && "mod-row--disabled",
-                              selKey === m.relPath && "mod-row--active",
-                            ]}
-                            onClick={() => selectInstalled(m)}
-                          >
-                            <span class={["mod-row__tile", `mod-row__tile--${meta.class}`]}>
-                              <Icon size={20} />
-                            </span>
-                            <span class="mod-row__body">
-                              <span class="mod-row__name">
-                                {m.name}
-                                {m.version && <span class="mod-row__ver">{m.version}</span>}
+                            ) : record ? (
+                              <span class="mod-row__badge mod-row__badge--up">
+                                {t("resources.update")}
                               </span>
-                              <span class="mod-row__sub">
-                                {kindLabel(m.kind)} · {m.relPath}
-                              </span>
-                            </span>
-                            <span class="mod-row__tail">
-                              {state ? (
-                                <span class="mod-row__spinner" />
-                              ) : m.disabled ? (
-                                <span class="mod-row__badge mod-row__badge--off">
-                                  {t("resources.disabled")}
-                                </span>
-                              ) : null}
-                            </span>
-                          </button>
-                        );
-                      })}
-              </div>
-
-              <div class="mod-side__foot">
-                {source.value === "online"
-                  ? t("resources.catalogSource", {
-                      count: catalog.value.length,
-                      source: catalogSource.value,
-                      time: catalogFetched.value.slice(0, 10),
+                            ) : null}
+                          </span>
+                        </button>
+                      );
                     })
-                  : t("resources.countLine", { count: installed.value.length })}
-              </div>
-            </aside>
+                : shown.value.length === 0
+                  ? installedEmptyNote()
+                  : shown.value.map((m) => {
+                      const meta = KIND_META[m.kind];
+                      const Icon = meta.icon;
+                      const state = unitBusy.value.get(m.relPath);
+                      return (
+                        <button
+                          key={m.relPath}
+                          class={[
+                            "mod-row",
+                            m.disabled && "mod-row--disabled",
+                            selKey === m.relPath && "mod-row--active",
+                          ]}
+                          onClick={() => selectInstalled(m)}
+                        >
+                          <span class={["mod-row__tile", `mod-row__tile--${meta.class}`]}>
+                            <Icon size={20} />
+                          </span>
+                          <span class="mod-row__body">
+                            <span class="mod-row__name">
+                              {m.name}
+                              {m.version && <span class="mod-row__ver">{m.version}</span>}
+                            </span>
+                            <span class="mod-row__sub">
+                              {kindLabel(m.kind)} · {m.relPath}
+                            </span>
+                          </span>
+                          <span class="mod-row__tail">
+                            {state ? (
+                              <span class="mod-row__spinner" />
+                            ) : m.disabled ? (
+                              <span class="mod-row__badge mod-row__badge--off">
+                                {t("resources.disabled")}
+                              </span>
+                            ) : null}
+                          </span>
+                        </button>
+                      );
+                    })}
+            </div>
 
-            {/* ── The detail half: what the selected row is, and every
-                action for it, with the actions pinned bottom-right ── */}
-            <section class="mod-detail-pane">{renderPane()}</section>
-          </div>
+            {/* Catalog metadata rides a quiet footer (the count itself moved
+                into the pill above); the installed list has none — its count
+                IS the pill. */}
+            {source.value === "online" && (
+              <div class="resources-view__side-foot">
+                {t("resources.catalogMeta", {
+                  source: catalogSource.value,
+                  time: catalogFetched.value.slice(0, 10),
+                })}
+              </div>
+            )}
+          </aside>
+
+          {/* ── The detail half: what the selected row is, and every
+              action for it, with the actions pinned bottom-right ── */}
+          <section class="resources-view__main">{renderPane()}</section>
 
           <HkConfirmDialog
             open={!!confirmTarget.value}

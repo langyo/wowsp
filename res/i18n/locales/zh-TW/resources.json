@@ -1,6 +1,6 @@
 {
   "title": "模組管理",
-  "subtitle": "管理已安裝到遊戲 res_mods 目錄的模組。",
+  "toolsMenu": "工具選單",
   "scan": "重新掃描",
   "scanning": "掃描中…",
   "noGame": "尚未偵測到遊戲安裝——請先在設定中指定遊戲路徑。",
@@ -39,7 +39,7 @@
   "catalogSearch": "搜尋模組…",
   "catalogEmpty": "目錄為空——點擊「重新整理」以拉取線上列表。",
   "catalogError": "線上目錄載入失敗：{error}",
-  "catalogSource": "{count} 個模組 · 目錄 {source} · 更新於 {time}",
+  "catalogMeta": "目錄 {source} · 更新於 {time}",
   "searchMod": "搜尋模組",
   "searching": "搜尋中…",
   "listFilter": "篩選模組…",

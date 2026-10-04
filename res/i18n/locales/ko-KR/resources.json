@@ -1,6 +1,6 @@
 {
   "title": "모드 관리",
-  "subtitle": "게임의 res_mods 디렉터리에 설치된 모드를 관리합니다.",
+  "toolsMenu": "도구 메뉴",
   "scan": "다시 검사",
   "scanning": "검사 중…",
   "noGame": "게임 설치가 감지되지 않았습니다 — 먼저 설정에서 게임 경로를 지정하세요.",
@@ -39,7 +39,7 @@
   "catalogSearch": "모드 검색…",
   "catalogEmpty": "카탈로그가 비어 있습니다 — 새로고침을 눌러 온라인 목록을 가져오세요.",
   "catalogError": "온라인 카탈로그를 불러오지 못했습니다: {error}",
-  "catalogSource": "모드 {count}개 · 카탈로그 {source} · {time} 업데이트",
+  "catalogMeta": "카탈로그 {source} · {time} 업데이트",
   "searchMod": "모드 검색",
   "searching": "검색 중…",
   "listFilter": "모드 필터…",

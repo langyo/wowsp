@@ -1,6 +1,6 @@
 {
   "title": "Gestor de mods",
-  "subtitle": "Mods instalados en el directorio res_mods del juego.",
+  "toolsMenu": "Menú de herramientas",
   "scan": "Volver a escanear",
   "scanning": "Escaneando…",
   "noGame": "No se detectó ninguna instalación del juego — configura primero la ruta del juego en Ajustes.",
@@ -39,7 +39,7 @@
   "catalogSearch": "Buscar mods…",
   "catalogEmpty": "El catálogo está vacío — pulsa «Actualizar» para obtener la lista en línea.",
   "catalogError": "No se pudo cargar el catálogo en línea: {error}",
-  "catalogSource": "{count} mods · catálogo {source} · actualizado {time}",
+  "catalogMeta": "catálogo {source} · actualizado el {time}",
   "searchMod": "Buscar mods",
   "searching": "Buscando…",
   "listFilter": "Filtrar mods…",
