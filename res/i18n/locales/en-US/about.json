@@ -40,7 +40,6 @@
     "bitmapNote": "Used as rendered bitmaps (graphic use) — the font files are not distributed with the app.",
     "wallpaperRole": "Wallpaper artist",
     "wallpaperNote": "The wallpaper artwork remains the property of its author.",
-    "wallpaperMark": "Wallpaper",
     "aperadarRole": "Primary source of the lookup logic and rating conventions",
     "wowsunpackRole": "Game-data unpacking (vendored)",
     "wowscoreRole": "Game-data model (vendored)",

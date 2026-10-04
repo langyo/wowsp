@@ -1,10 +1,9 @@
 /**
- * WoWSP wallpaper composable. The choice is a built-in (the shipped art
- * pair — one illustration per theme mode — or the solid that follows the
- * mode) or a custom image from the fixed AppData `wallpapers/` folder.
- * Manages the active wallpaper, keeps the custom list in sync with that
- * folder via `commands::wallpaper`, and exposes CSS-var-ready computed
- * values for the renderer.
+ * WoWSP wallpaper composable. The choice is the built-in art pair (one
+ * illustration per theme mode) or a custom image from the fixed AppData
+ * `wallpapers/` folder. Manages the active wallpaper, keeps the custom
+ * list in sync with that folder via `commands::wallpaper`, and exposes
+ * CSS-var-ready computed values for the renderer.
  */
 import { computed, ref } from "vue";
 
@@ -12,7 +11,6 @@ import { useTheme } from "@/theme";
 import {
   ART_WALLPAPER,
   BUILTIN_WALLPAPER_IDS,
-  SOLID_WALLPAPER,
   DEFAULT_WALLPAPER_ID,
   imageSourceUrl,
   loadActiveWallpaperId,
@@ -64,7 +62,6 @@ async function refreshCustom(): Promise<void> {
         id: f.id,
         name: f.name,
         source: { type: "image" as const, url: await toAssetUrl(f.path) },
-        author: null,
       })),
     );
   } catch {
@@ -86,7 +83,6 @@ export function useWallpaper() {
 
   const allWallpapers = computed<WallpaperPreset[]>(() => [
     ART_WALLPAPER,
-    SOLID_WALLPAPER,
     ...customWallpapers.value,
   ]);
 
@@ -122,10 +118,6 @@ export function useWallpaper() {
     return activeWallpaper.value?.source ?? { type: "solid" as const };
   });
 
-  /** Art credit of the active wallpaper — null whenever the preset
-   *  carries none (solid, uncredited custom imports). */
-  const activeAuthor = computed(() => activeWallpaper.value?.author ?? null);
-
   const wallpaperType = computed(() => currentSource.value.type);
   const isImage = computed(() => wallpaperType.value !== "solid");
   const isSolid = computed(() => wallpaperType.value === "solid");
@@ -155,7 +147,6 @@ export function useWallpaper() {
   return {
     activeWallpaperId,
     activeWallpaper,
-    activeAuthor,
     allWallpapers,
     customWallpapers,
     currentSource,

@@ -18,9 +18,9 @@ async function freshModule() {
 }
 
 describe("stored value", () => {
-  it("defaults to 100 (the shipped look) with no stored value", async () => {
+  it("defaults to 80 (20% clearer than fully solid) with no stored value", async () => {
     const { uiOpacityPercent } = await freshModule();
-    expect(uiOpacityPercent.value).toBe(100);
+    expect(uiOpacityPercent.value).toBe(80);
   });
 
   it("reads back a stored percent verbatim", async () => {
@@ -43,11 +43,11 @@ describe("stored value", () => {
     expect(localStorage.getItem(UI_OPACITY_STORAGE_KEY)).toBe("200");
   });
 
-  it("falls back to 100 on garbage — and heals it onto disk", async () => {
+  it("falls back to 80 on garbage — and heals it onto disk", async () => {
     localStorage.setItem(UI_OPACITY_STORAGE_KEY, "glass");
     const { uiOpacityPercent } = await freshModule();
-    expect(uiOpacityPercent.value).toBe(100);
-    expect(localStorage.getItem(UI_OPACITY_STORAGE_KEY)).toBe("100");
+    expect(uiOpacityPercent.value).toBe(80);
+    expect(localStorage.getItem(UI_OPACITY_STORAGE_KEY)).toBe("80");
   });
 });
 
@@ -82,9 +82,9 @@ describe("setUiOpacityPercent", () => {
 
   it("marks data-ui-glass only below the default percent", async () => {
     const { setUiOpacityPercent } = await freshModule();
-    setUiOpacityPercent(99);
+    setUiOpacityPercent(79);
     expect(document.documentElement.hasAttribute("data-ui-glass")).toBe(true);
-    setUiOpacityPercent(100);
+    setUiOpacityPercent(80);
     expect(document.documentElement.hasAttribute("data-ui-glass")).toBe(false);
     setUiOpacityPercent(150);
     expect(document.documentElement.hasAttribute("data-ui-glass")).toBe(false);

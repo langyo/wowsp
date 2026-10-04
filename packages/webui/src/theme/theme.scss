@@ -48,9 +48,11 @@ html.s-theme-transitioning *::after {
   --blur-lg: 24px;
   /* UI surface opacity dial (uiOpacityPreference.ts writes the inline
      override on <html>): one multiplier over every translucent surface in
-     the app. 1 = the shipped look; the glass family rescales together
-     around it. See the bridge section below the scrim rule. */
-  --ui-opacity: 1;
+     the app. 0.8 = the shipped default — 20% clearer than the fully-solid
+     paint, so the wallpaper reads faintly under every UI element; the
+     glass family rescales together around it. See the bridge section
+     below the scrim rule. */
+  --ui-opacity: 0.8;
 
   /* Z-index hierarchy */
   --z-base: 0;
@@ -272,14 +274,15 @@ html[data-wallpaper-art="true"] body::before {
   inset: 0;
   z-index: 0;
   background: rgb(var(--color-background));
-  opacity: var(--wallpaper-overlay-opacity, 0.6);
+  opacity: var(--wallpaper-overlay-opacity, 0.75);
   pointer-events: none;
 }
 
 /* === UI surface opacity dial — hikari bridge ==============================
    The chrome-side twin of the wallpaper overlay scrim above: every
    translucent surface multiplies its shipped alpha by --ui-opacity
-   (min-capped at fully opaque), restated here for the hikari-owned
+   (default 0.8 — the shipped glass sits 20% clearer than fully solid;
+   min-capped at fully opaque), restated here for the hikari-owned
    surfaces wowsp has no SCSS of its own for. Hikari's aggregate loads
    BEFORE theme.scss (main.ts import order), so an equal-specificity
    rule in this file wins the cascade. Fully opaque surfaces (stats
@@ -305,14 +308,15 @@ html[data-wallpaper-art="true"] body::before {
 }
 
 /* Desktop modals: hikari's default is the OPAQUE --hi-color-surface with
-   no backdrop blur. Restated at base 100% so the dial never changes the
-   default look — below 1 the panel turns glass, and the blur token (a
-   no-op behind an opaque fill) keeps that glass readable. The blur is
-   keyed to the [data-ui-glass] marker uiOpacityPreference.ts sets only
-   below the default percent, so the shipped look never allocates a
-   backdrop layer either. Scoped to ≥768px; below that hikari docks
-   modals as opaque phone bottom sheets and deliberately drops mobile
-   backdrop blur (see OnboardingWizard.scss). */
+   no backdrop blur. Restated at base 100% so the dial rescales them like
+   every other glass surface — at the 80% default the panel rests as
+   80%-alpha glass (no blur); dragging below the default turns it clearer,
+   and the blur token (a no-op behind an opaque fill) kicks in there to
+   keep that glass readable. The blur is keyed to the [data-ui-glass]
+   marker uiOpacityPreference.ts sets only below the default percent, so
+   the shipped look never allocates a backdrop layer. Scoped to ≥768px;
+   below that hikari docks modals as opaque phone bottom sheets and
+   deliberately drops mobile backdrop blur (see OnboardingWizard.scss). */
 @media (min-width: 768px) {
   :root {
     --hk-modal-bg: var(--hi-color-surface);

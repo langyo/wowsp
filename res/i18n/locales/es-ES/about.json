@@ -27,7 +27,6 @@
     "bitmapNote": "Se usan como mapas de bits (uso gráfico); los archivos de fuente no se distribuyen con la aplicación.",
     "wallpaperRole": "Artista de los fondos",
     "wallpaperNote": "La obra del fondo de pantalla sigue siendo propiedad de su autor.",
-    "wallpaperMark": "Fondo",
     "aperadarRole": "Fuente principal de la lógica de consulta y los criterios de valoración",
     "wowsunpackRole": "Extracción de datos del juego (vendored)",
     "wowscoreRole": "Modelo de datos del juego (vendored)",

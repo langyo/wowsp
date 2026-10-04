@@ -581,7 +581,7 @@ export default defineComponent({
                     </div>
 
                     <h3 class="onboarding__subtitle">{t("onboarding.wallpaperSection")}</h3>
-                    <div class="onboarding__options onboarding__options--three">
+                    <div class="onboarding__options onboarding__options--auto">
                       {wallpaperCards.value}
                       {isTauri() ? (
                         <button

@@ -6,9 +6,10 @@
  * var(--ui-opacity))))`, so ONE multiplier rescales the whole glass
  * family together while each surface keeps its relative weight:
  *
- *   <100 → clearer glass; the wallpaper shows through the chrome
- *   100  → the shipped look (default)
- *   >100 → solidified panels, readable over busy wallpapers — alpha is
+ *   <80  → clearer glass; the wallpaper shows through the chrome
+ *   80   → the shipped default: 20% clearer than the fully-solid paint,
+ *          so the wallpaper always reads faintly under every UI element
+ *   >80  → solidified panels, readable over busy wallpapers — alpha is
  *          capped at fully opaque, so 200 reads as "as solid as it gets"
  *
  * Stored as an integer percent under `wowsp-ui-opacity`; applied as an
@@ -21,7 +22,7 @@
 import { ref } from "vue";
 
 export const UI_OPACITY_STORAGE_KEY = "wowsp-ui-opacity";
-export const UI_OPACITY_DEFAULT = 100;
+export const UI_OPACITY_DEFAULT = 80;
 export const UI_OPACITY_MIN = 0;
 export const UI_OPACITY_MAX = 200;
 
@@ -55,9 +56,10 @@ export const uiOpacityPercent = ref<number>(loadStoredUiOpacityPercent());
 function applyUiOpacity(percent: number): void {
   const html = document.documentElement;
   html.style.setProperty("--ui-opacity", (percent / 100).toFixed(2));
-  // Marker for style rules that must engage only once the chrome actually
-  // turns glass (today: the desktop modal blur token, theme.scss) — the
-  // default look stays free of the backdrop layer that would cost.
+  // Marker for style rules that must engage only BELOW the default percent
+  // (today: the desktop modal blur token, theme.scss — the at-rest 80%
+  // glass is readable without it) so the shipped look stays free of the
+  // backdrop layer that would cost.
   if (percent < UI_OPACITY_DEFAULT) html.dataset.uiGlass = "";
   else delete html.dataset.uiGlass;
 }
@@ -73,7 +75,7 @@ export function setUiOpacityPercent(percent: number) {
   applyUiOpacity(uiOpacityPercent.value);
 }
 
-/** Boot hook: re-apply the stored value over the stylesheet default (1)
+/** Boot hook: re-apply the stored value over the stylesheet default (0.8)
  *  before first paint (bootstrap.ts). */
 export function initUiOpacityPreference() {
   applyUiOpacity(uiOpacityPercent.value);

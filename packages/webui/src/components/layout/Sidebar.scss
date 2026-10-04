@@ -3,8 +3,9 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  /* Translucent glass instead of an opaque fill: the body wallpaper (custom
-     image or solid) must stay plainly visible behind the nav. 55% is well
+  /* Translucent glass instead of an opaque fill: the body wallpaper
+     (built-in art pair or custom image) must stay plainly visible behind
+     the nav. 55% is well
      below the shared glass-panel mixin's 85% — that tint is meant for
      floating cards, where a heavier fill aids contrast, but at full column
      height it reads as a solid panel (the wallpaper's contribution also

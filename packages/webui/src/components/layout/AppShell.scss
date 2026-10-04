@@ -12,8 +12,7 @@
   /* Transparent backdrop: the wallpaper is painted on <body> (WallpaperRenderer
      seeds the CSS vars, theme.scss layers image + readability overlay there),
      so an opaque background here would hide every custom image behind flat
-     theme paint. With the built-in solid wallpaper the body already paints
-     the theme surface, so nothing changes visually there. */
+     theme paint. */
   background: transparent;
   color: rgb(var(--color-text));
   /* Text selection is suppressed app-wide on <body> (theme.scss, which also
@@ -30,6 +29,16 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    /* Readability stage for the content side ("加白/加黑"): the shell's
+       right column carries a theme-background wash so text-dense pages
+       keep their contrast over the artwork, while the sidebar stays the
+       clearer glass rail (Sidebar.scss). Stacks on the body-level scrim
+       (theme.scss, --wallpaper-overlay-opacity); invisible over the solid
+       fallback, where body already paints this exact color. Dial-scaled
+       like every glass surface — the plain declaration keeps engines
+       without math-in-color at the flat 35%. */
+    background: rgb(var(--color-background) / 35%);
+    background: rgb(var(--color-background) / min(100%, calc(35% * var(--ui-opacity, 1))));
   }
 
   /* Fills the main column; its viewport is the page scroll element. */

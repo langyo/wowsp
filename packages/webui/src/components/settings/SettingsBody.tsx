@@ -1035,9 +1035,9 @@ export default defineComponent({
 
             <HkDivider />
 
-            {/* wallpaper / background — the built-in illustration pair and
-                the solid follow the theme mode; custom entries are files in
-                the AppData wallpapers folder and can be deleted (two-step
+            {/* wallpaper / background — the built-in illustration pair
+                follows the theme mode; custom entries are files in the
+                AppData wallpapers folder and can be deleted (two-step
                 confirm per card). */}
             <HkSettingsSub title={t("settings.wallpaper")}>
               <div class="settings-modal__wallpapers" ref={wallpaperRow}>
@@ -1155,11 +1155,11 @@ export default defineComponent({
 
             {/* UI surface opacity — the chrome-side twin of the wallpaper
                 overlay dial above: one multiplier over every translucent
-                surface in the app (theme/uiOpacityPreference). 100% is the
-                shipped look; below it the glass clears for calm wallpapers,
-                above it panels solidify over busy ones (alpha caps at fully
-                opaque). Applies live — the settings window itself responds
-                while dragging. */}
+                surface in the app (theme/uiOpacityPreference). 80% is the
+                default (20% clearer than fully solid); below it the glass
+                clears further, above it panels solidify over busy ones
+                (alpha caps at fully opaque). Applies live — the settings
+                window itself responds while dragging. */}
             <HkSettingsSub title={t("settings.uiOpacity")}>
               <div class="settings-modal__dpi-row">
                 <HkSlider

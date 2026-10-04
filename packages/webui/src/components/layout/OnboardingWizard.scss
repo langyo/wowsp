@@ -93,13 +93,22 @@
     grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
     gap: 0.6rem;
 
-    /* Theme modes and wallpapers both read as one row of three — the
-       fixed count keeps the merged appearance step scannable. minmax(0, 1fr)
-       (not bare 1fr) caps the tracks at exactly 1/3: a bare fr track grows
-       with the item's min-content, so a long wallpaper file name would blow
-       its card (and the whole row) past the panel edge. */
+    /* Theme modes read as one row of three — the fixed count keeps the
+       merged appearance step scannable. minmax(0, 1fr) (not bare 1fr) caps
+       the tracks at exactly 1/3: a bare fr track grows with the item's
+       min-content, so a long wallpaper file name would blow its card (and
+       the whole row) past the panel edge. */
     &--three {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    /* Wallpapers flow: the count varies (one built-in art pair, plus the
+       Tauri-only import tile), so auto-fit collapses empty tracks and the
+       row always fills — two cards split the width, one spans it. The
+       9.5rem floor keeps a long custom file name from over-shrinking its
+       neighbors; on phone-width modals it narrows to one column alone. */
+    &--auto {
+      grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
     }
 
     /* Color presets: two per row — a 3+1 wrap reads lopsided, and 4-up
@@ -116,7 +125,8 @@
        is icon + one label line, so a 103px track leaves ~19px of text).
        One full-width card per row keeps every label readable; the preset
        2×2 keeps two columns — its labels (Nord, Gruvbox…) fit at half
-       width. Desktop rows are unchanged. */
+       width. Desktop rows are unchanged; the wallpaper row's auto-fit
+       collapses by itself. */
     @media (max-width: 767px) {
       &--three {
         grid-template-columns: minmax(0, 1fr);

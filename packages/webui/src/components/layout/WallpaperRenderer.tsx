@@ -2,9 +2,7 @@ import { defineComponent, onBeforeUnmount, watchEffect } from "vue";
 
 import { getThemeTokens, useTheme } from "@celestia-island/hikari";
 
-import AuthorMark from "@/components/base/AuthorMark";
 import { useWallpaper } from "@/theme/useWallpaper";
-import { t } from "@/i18n";
 
 /**
  * Paints the active wallpaper, shittim-chest's way: a dedicated fixed media
@@ -15,8 +13,9 @@ import { t } from "@/i18n";
  * readability scrim is body::before at z-index 0: above the wallpaper,
  * below #app (z-index 1, see theme.scss) — so the dim only ever applies to
  * the wallpaper itself, and translucent chrome (sidebar, cards, modals)
- * samples the scrim-adjusted image. Solid wallpapers skip the layer
- * entirely and fall back to body's background-color.
+ * samples the scrim-adjusted image. The "solid" fallback (no resolvable
+ * source) skips the layer entirely and falls back to body's
+ * background-color.
  *
  * Writes (consumed by theme.scss):
  *   html[data-wallpaper-art]     scrim gate, only true for image wallpapers
@@ -24,9 +23,8 @@ import { t } from "@/i18n";
  *                                behind the image before it decodes)
  *   --wallpaper-overlay-opacity  scrim strength, 0..1 (user preference)
  *
- * When the active wallpaper carries an art credit, the desktop corner author
- * mark renders (the same shared AuthorMark component the settings
- * attributions list uses).
+ * Renders nothing itself; the art credit lives in the settings/about
+ * attributions lists (attributions.ts), not as a floating corner mark.
  */
 
 const WALLPAPER_LAYER_ID = "wowsp-wallpaper-layer";
@@ -64,8 +62,8 @@ export default defineComponent({
       const url = wp.mediaUrl.value;
 
       if (wp.isSolid.value || !url) {
-        // Solid (or nothing to paint): no layer, no scrim — body's own
-        // background color is the whole show.
+        // Solid fallback (or nothing to paint): no layer, no scrim — body's
+        // own background color is the whole show.
         html.removeAttribute("data-wallpaper-art");
         removeLayer();
         body.style.setProperty("--wallpaper-solid-color", wp.solidColor.value === "white" ? "#f8fafc" : backdrop);
@@ -88,17 +86,6 @@ export default defineComponent({
       removeLayer();
     });
 
-    return () => {
-      const author = wp.activeAuthor.value;
-      if (!author || !wp.mediaUrl.value) return null;
-      return (
-        <AuthorMark
-          compact
-          name={author.name}
-          url={author.url}
-          prefix={t("about.attribution.wallpaperMark")}
-        />
-      );
-    };
+    return () => null;
   },
 });
