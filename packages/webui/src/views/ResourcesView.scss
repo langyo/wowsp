@@ -843,6 +843,38 @@
     white-space: nowrap;
   }
 
+  /* Material component sections: one pack's footprint inside a covered
+     part — name (registered pack when paired) + replace jump, previews
+     underneath. */
+  &__component {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background: rgb(var(--color-border) / 8%);
+    border-radius: var(--radius-sm);
+
+    & + & {
+      margin-top: 0.25rem;
+    }
+  }
+
+  &__component-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  &__component-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* The "another copy exists, installed by someone else" note — leads
      the scroll body so the reinstall decision it suggests reads first. */
   &__foreign-copy {

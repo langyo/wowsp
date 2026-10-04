@@ -2,8 +2,8 @@
  * Installed-unit asset previews: texture/image units render a lazy
  * thumbnail grid (each tile pulls a decoded, downscaled PNG data URL from
  * the backend on first visibility), voice units list their audio files
- * one-per-row with inline playback (native formats only — the game's
- * Wwise `.wem` files are listed but flagged unplayable).
+ * one-per-row with inline playback; the game's Wwise `.wem` files play
+ * through the on-read transcode (the first click converts, then plays).
  */
 import { defineComponent, ref, watch } from "vue";
 import { ImageIcon, Music, PlayCircle } from "@lucide/vue";

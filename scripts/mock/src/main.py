@@ -171,6 +171,16 @@ _MOCK_INSTALLED = [
                           "ships": ["Moskva"], "fileCount": 12,
                           "fileKinds": [{"ext": ".dds", "count": 12}],
                           "truncated": False}},
+    # A second pack covering the SAME ship: the material list's component
+    # row (Moskva) aggregates both.
+    {"kind": "skin", "name": "Alt_Camo_Moskva", "detail": "RSC110_Pr_66_Moskva",
+     "relPath": "PnFMods/Alt_Camo_Moskva", "paths": ["PnFMods/Alt_Camo_Moskva"],
+     "disabled": False, "version": None,
+     "textureAnalysis": {"categories": ["skin"], "nations": ["ussr"],
+                          "species": [], "spaceNames": ["spaces/PJSC001_Moskva"],
+                          "ships": ["Moskva"], "fileCount": 8,
+                          "fileKinds": [{"ext": ".dds", "count": 8}],
+                          "truncated": False}},
     # An Aslain-anchored row: same name as the mock's foreign aslain unit,
     # so the installed list shows the provenance badge.
     {"kind": "gui", "name": "Shot Timer", "detail": None,
@@ -203,13 +213,24 @@ async def cmd_mod_hub_list_assets(request: Request) -> list[dict]:
          "kind": "image", "ext": "dds", "playable": True},
         {"rel": "banks/mods/Hoshino/voice_line_01.ogg", "size": 51200,
          "kind": "audio", "ext": "ogg", "playable": True},
+        # .wem is playable now — the read command transcodes (Wwise Vorbis
+        # → Ogg, PCM wem → WAV) and returns a playable payload.
         {"rel": "banks/mods/Hoshino/voice_line_02.wem", "size": 66560,
-         "kind": "audio", "ext": "wem", "playable": False},
+         "kind": "audio", "ext": "wem", "playable": True},
     ]
+
+
+# Minimal valid 44-byte silent WAV (mono 8kHz 8-bit, one sample frame):
+# enough for the browser <audio> to accept and "play" the mock file.
+_MOCK_WAV = ("UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=")
 
 
 @app.post("/api/mod_hub_read_asset")
 async def cmd_mod_hub_read_asset(request: Request) -> dict:
+    body = await request.json()
+    rel = str(body.get("relPath", ""))
+    if rel.rsplit(".", 1)[-1].lower() in ("wem", "ogg", "mp3", "wav"):
+        return {"dataUrl": "data:audio/wav;base64," + _MOCK_WAV}
     return {"dataUrl": "data:image/png;base64," + _MOCK_PNG}
 
 
@@ -221,6 +242,8 @@ async def cmd_mod_hub_foreign_units(request: Request) -> list[dict]:
     return [
         {"installer": "aslain", "key": "shot-timer", "name": "Shot Timer",
          "version": "15.7.0", "identity": "ui-timers-shot-timer"},
+        {"installer": "aslain", "key": "hina-moskva", "name": "Hina_Moskva",
+         "version": "15.7.0", "identity": "port-mods-sessionstats-ollin"},
         {"installer": "modstation", "key": "sessionstats", "name": "SessionStats",
          "version": None, "identity": "port-mods-sessionstats-ollin"},
         {"installer": "modstation", "key": "custom-crosshair", "name": "CustomCrosshair",

@@ -87,7 +87,19 @@ type Selection =
   | { mode: "catalog"; entry: CatalogEntry }
   | { mode: "installed"; mod: InstalledMod }
   | { mode: "foreign"; unit: ForeignModUnit }
+  | { mode: "component"; comp: TextureComponent }
   | { mode: "local" };
+
+/** One covered game part under the material category — the unit the list
+ *  speaks in there is WHAT is overridden (a ship, a space, a folder),
+ *  not which mod dropped the files (several packs can fight over the
+ *  same part; only one version ever wins). */
+interface TextureComponent {
+  /** `ship:<name> | space:<name> | dir:<name>` — stable row key. */
+  key: string;
+  label: string;
+  units: InstalledMod[];
+}
 
 const REPO = "langyo/wowsp";
 
@@ -695,6 +707,79 @@ export default defineComponent({
       foreignUnits.value.filter((f) => f.installer === "modstation"),
     );
 
+    /** Installed material units grouped by what they cover. Rows speak
+     *  "which part", the detail pane gathers every pack writing there. */
+    const textureComponents = computed<TextureComponent[]>(() => {
+      const out: TextureComponent[] = [];
+      const byKey = new Map<string, TextureComponent>();
+      const push = (key: string, label: string, unit: InstalledMod) => {
+        let comp = byKey.get(key);
+        if (!comp) {
+          comp = { key, label, units: [] };
+          byKey.set(key, comp);
+          out.push(comp);
+        }
+        comp.units.push(unit);
+      };
+      for (const m of installedInCat.value) {
+        const analysis = m.textureAnalysis;
+        // A pack can cover ship camos AND unrelated spaces at once — both
+        // halves stay visible (a part covered only by spaces would vanish
+        // under an else-if). No analysis at all → the directory is the
+        // part.
+        let pushed = false;
+        if (analysis?.ships?.length) {
+          for (const ship of analysis.ships) {
+            push(`ship:${ship}`, ship, m);
+            pushed = true;
+          }
+        }
+        if (analysis?.spaceNames?.length) {
+          for (const space of analysis.spaceNames) {
+            // The ship's own space would double-list under its ship row.
+            const shipHit = analysis.ships?.some((ship) =>
+              space.toLowerCase().includes(ship.toLowerCase()),
+            );
+            if (!shipHit) {
+              push(`space:${space}`, space, m);
+              pushed = true;
+            }
+          }
+        }
+        if (!pushed) push(`dir:${m.relPath}`, m.name, m);
+      }
+      // Most-covered parts first; labels keep it stable within a count.
+      out.sort((a, b) => b.units.length - a.units.length || a.label.localeCompare(b.label));
+      const q = listQuery.value.trim().toLowerCase();
+      if (q) {
+        const hits = out.filter(
+          (comp) =>
+            comp.label.toLowerCase().includes(q) ||
+            comp.units.some((u) => u.name.toLowerCase().includes(q)),
+        );
+        out.length = 0;
+        out.push(...hits);
+      }
+      // The kind chips keep meaning in the component view too: a chip
+      // keeps the parts whose packs include that kind.
+      if (filter.value !== "all") {
+        const kind = filter.value;
+        const hits = out.filter((comp) => comp.units.some((u) => u.kind === kind));
+        out.length = 0;
+        out.push(...hits);
+      }
+      return out;
+    });
+
+    /** The catalog entry a foreign unit paired to an installed unit's
+     *  name — "which registered material pack is this" (wowsp.toml's
+     *  identity), shown only when a pairing exists. */
+    function pairedEntryOf(unit: InstalledMod): CatalogEntry | null {
+      const hit = foreignUnits.value.find((f) => f.name === unit.name && f.identity);
+      if (!hit?.identity) return null;
+      return catalog.value.find((e) => e.id === hit.identity) ?? null;
+    }
+
     /** A preset's label: zh locales take the Chinese name, everything
      *  else the English one (presets carry just the two). */
     function presetLabel(p: CatalogPreset): string {
@@ -810,6 +895,13 @@ export default defineComponent({
       selection.value = { mode: "foreign", unit };
     }
 
+    function selectComponent(comp: TextureComponent) {
+      delistedHit.value = null;
+      selectedPreset.value = "";
+      source.value = "installed";
+      selection.value = { mode: "component", comp };
+    }
+
     function openLocal() {
       delistedHit.value = null;
       selectedPreset.value = "";
@@ -826,7 +918,12 @@ export default defineComponent({
       delistedHit.value = null;
       selectedPreset.value = "";
       const mode = selection.value?.mode;
-      if (mode === "catalog" || mode === "installed" || mode === "foreign") {
+      if (
+        mode === "catalog" ||
+        mode === "installed" ||
+        mode === "foreign" ||
+        mode === "component"
+      ) {
         selection.value = null;
       }
     }
@@ -1304,6 +1401,61 @@ export default defineComponent({
       );
     }
 
+    /** The material component pane: the covered part at the top, then one
+     *  section per pack writing files there — registered pack name (from
+     *  the wowsp.toml pairing) when known, the directory name otherwise —
+     *  each with its texture previews and a jump to the catalog entry for
+     *  replacing. */
+    function renderComponentDetail(comp: TextureComponent) {
+      return (
+        <div class="mod-detail">
+          <div class="mod-detail__head">
+            <span class="mod-row__tile mod-row__tile--textures mod-row__tile--lg">
+              <ImageIcon size={24} />
+            </span>
+            <div class="mod-detail__id">
+              <div class="mod-detail__name">{comp.label}</div>
+              <div class="mod-detail__en">
+                {t("resources.componentSources", { count: comp.units.length })}
+              </div>
+            </div>
+          </div>
+          <div class="mod-detail__scroll">
+            {comp.units.map((unit) => {
+              const paired = pairedEntryOf(unit);
+              return (
+                <div class="mod-detail__component" key={unit.relPath}>
+                  <div class="mod-detail__component-head">
+                    <span class="mod-detail__component-name">
+                      {paired
+                        ? t("resources.componentFrom", {
+                            name: localized(paired).name,
+                          })
+                        : unit.name}
+                    </span>
+                    {paired && (
+                      <HkButton
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => selectCatalog(paired)}
+                      >
+                        {t("resources.componentReplace")}
+                      </HkButton>
+                    )}
+                  </div>
+                  <AssetPreview
+                    gameRoot={gameRoot.value}
+                    relPath={unit.relPath}
+                    mode="image"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
     function renderLocalDetail() {
       return (
         <div class="mod-detail">
@@ -1449,6 +1601,8 @@ export default defineComponent({
           return renderInstalledDetail(sel.mod);
         case "foreign":
           return renderForeignDetail(sel.unit);
+        case "component":
+          return renderComponentDetail(sel.comp);
         case "local":
           return renderLocalDetail();
       }
@@ -2096,9 +2250,36 @@ export default defineComponent({
                         </button>
                       );
                     })
-                : shown.value.length === 0
+                : bigCat.value === "texture" && textureComponents.value.length === 0
                   ? installedEmptyNote()
-                  : shown.value.map((m) => {
+                  : bigCat.value === "texture"
+                    ? textureComponents.value.map((comp) => {
+                        const active =
+                          selection.value?.mode === "component" &&
+                          selection.value.comp.key === comp.key;
+                        return (
+                          <button
+                            key={comp.key}
+                            class={["mod-row", active && "mod-row--active"]}
+                            onClick={() => selectComponent(comp)}
+                          >
+                            <span class="mod-row__tile mod-row__tile--textures">
+                              <ImageIcon size={20} />
+                            </span>
+                            <span class="mod-row__body">
+                              <span class="mod-row__name">{comp.label}</span>
+                              <span class="mod-row__sub">
+                                {t("resources.componentSources", {
+                                  count: comp.units.length,
+                                })}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })
+                    : shown.value.length === 0
+                      ? installedEmptyNote()
+                      : shown.value.map((m) => {
                       const meta = KIND_META[m.kind];
                       const Icon = meta.icon;
                       const state = unitBusy.value.get(m.relPath);

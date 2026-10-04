@@ -2,9 +2,9 @@
 //! files by previewable kind, and serve one file as a browser-ready
 //! payload — images are decoded (png/jpg/bmp/tga/dds) and thumbnailed to
 //! PNG data URLs, native audio formats (ogg/mp3/wav) stream as-is. Wwise
-//! `.wem` (the game's actual voice format) cannot be played by a browser;
-//! those list with `playable: false` so the UI can say so instead of
-//! failing a click.
+//! `.wem` transcodes on demand: PCM-flavoured files are WAVs underneath
+//! and pass through as-is, Wwise Vorbis converts through the embedded-
+//! codebook ww2ogg port (the click waits once, then plays).
 
 use serde::Serialize;
 
@@ -62,7 +62,8 @@ fn classify_ext(ext: &str) -> Option<(&'static str, bool)> {
     } else if AUDIO_NATIVE.contains(&ext.as_str()) {
         Some(("audio", true))
     } else if ext == AUDIO_WEM {
-        Some(("audio", false))
+        // Transcoded on read — playable, just slower than a native file.
+        Some(("audio", true))
     } else {
         None
     }
@@ -140,9 +141,28 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
         return Err(format!("{rel_path}: not a previewable asset"));
     }
     if ext == AUDIO_WEM {
-        return Err(format!(
-            "{rel_path}: .wem is the game's Wwise format — the browser cannot play it"
-        ));
+        // On-demand transcode, routed by what the file actually is:
+        // PCM-flavoured .wem IS a WAV (RIFF/WAVE/fmt/data with a plain or
+        // extensible PCM tag) — served as-is; Wwise Vorbis files go
+        // through the embedded-codebook transcode (aoTuV retries when the
+        // standard set mis-parses). A single voice line converts in well
+        // under a second, so the click that asked for it waits once and
+        // plays.
+        if wem_is_pcm(&bytes) {
+            return Ok(AssetPayload {
+                data_url: format!(
+                    "data:audio/wav;base64,{}",
+                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
+                ),
+            });
+        }
+        let ogg = transcode_wem(&bytes).map_err(|e| format!("{rel_path}: {e}"))?;
+        return Ok(AssetPayload {
+            data_url: format!(
+                "data:audio/ogg;base64,{}",
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, ogg)
+            ),
+        });
     }
     if let Some(mime) = audio_mime(&ext) {
         return Ok(AssetPayload {
@@ -178,6 +198,48 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
     })
 }
 
+/// Whether a .wem is really a PCM WAV in disguise: RIFF/WAVE with an
+/// 0x0001 (PCM) or 0xFFFE (WAVE_FORMAT_EXTENSIBLE) tag — the browser
+/// plays those bytes untouched.
+fn wem_is_pcm(bytes: &[u8]) -> bool {
+    if bytes.len() < 40 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return false;
+    }
+    // First chunk must be "fmt "; its payload starts with the format tag.
+    if &bytes[12..16] != b"fmt " {
+        return false;
+    }
+    let tag = u16::from_le_bytes([bytes[20], bytes[21]]);
+    tag == 0x0001 || tag == 0xFFFE
+}
+
+/// Wwise Vorbis → standard Ogg Vorbis, trying both embedded codebook
+/// libraries (garbled output with one usually parses with the other).
+fn transcode_wem(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut last_err = String::new();
+    for codebooks in [
+        ww2ogg::CodebookLibrary::default_codebooks(),
+        ww2ogg::CodebookLibrary::aotuv_codebooks(),
+    ] {
+        let codebooks = match codebooks {
+            Ok(c) => c,
+            Err(e) => {
+                last_err = format!("codebook load: {e}");
+                continue;
+            },
+        };
+        let mut out = std::io::Cursor::new(Vec::new());
+        let read = std::io::Cursor::new(bytes.to_vec());
+        match ww2ogg::WwiseRiffVorbis::new(read, codebooks)
+            .and_then(|mut conv| conv.generate_ogg(&mut out))
+        {
+            Ok(()) => return Ok(out.into_inner()),
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+    Err(format!("Wwise transcode failed: {last_err}"))
+}
+
 fn audio_mime(ext: &str) -> Option<&'static str> {
     match ext {
         "ogg" => Some("audio/ogg"),
@@ -190,6 +252,51 @@ fn audio_mime(ext: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A synthetic PCM .wem (which IS a WAV: RIFF/WAVE, 0x0001 tag) routes
+    /// to the as-is path; garbage input is not mistaken for one.
+    #[test]
+    fn routes_pcm_wem_as_wav() {
+        assert!(wem_is_pcm(&synthetic_pcm_wem(0x0001)));
+        assert!(!wem_is_pcm(b"not a wem at all"));
+        // The extensible variant (0xFFFE, what modern Wwise PCM uses).
+        assert!(wem_is_pcm(&synthetic_pcm_wem(0xFFFE)));
+        // A Wwise Vorbis header (0xFFFF tag riding a 0x42-size fmt chunk)
+        // never takes the PCM branch.
+        let mut vorbis = synthetic_pcm_wem(0xFFFF);
+        vorbis[16..20].copy_from_slice(&0x42u32.to_le_bytes());
+        assert!(!wem_is_pcm(&vorbis));
+    }
+
+    /// Minimal RIFF/WAVE/PCM bytes with the given format tag: fmt chunk
+    /// first (16-byte payload), then an empty data chunk -- the exact
+    /// shape `wem_is_pcm` reads. Escaped bytes only: source stays text.
+    fn synthetic_pcm_wem(tag: u16) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&24u32.to_le_bytes());
+        out.extend_from_slice(b"WAVEfmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&tag.to_le_bytes());
+        out.extend_from_slice(&[0u8; 18]); // channels..bits + data header
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out
+    }
+
+    /// Real-file verification for the Vorbis transcode path: point
+    /// WOWSP_WEM_VORBIS_FIXTURE at any .wem with a 0x42 fmt chunk
+    /// (verified once against a 9 MB public sample: OggS + vorbis header
+    /// output). CI has no fixture, so the test ignores itself.
+    #[test]
+    #[ignore = "set WOWSP_WEM_VORBIS_FIXTURE to a local Vorbis .wem to run"]
+    fn transcodes_real_vorbis_wem() {
+        let path = std::env::var("WOWSP_WEM_VORBIS_FIXTURE").expect("fixture path");
+        let raw = fs::read(&path).unwrap();
+        let ogg = transcode_wem(&raw).expect("transcode succeeds");
+        assert_eq!(&ogg[..4], b"OggS");
+        assert!(ogg.windows(6).take(4096).any(|w| w == b"vorbis"));
+    }
 
     #[test]
     fn lists_and_serves_images_and_flags_wem() {
@@ -224,7 +331,8 @@ mod tests {
         let bank = mod_hub_list_assets(root.clone(), "banks".into()).unwrap();
         assert_eq!(bank.len(), 2);
         let wem = bank.iter().find(|a| a.ext == "wem").unwrap();
-        assert!(!wem.playable);
+        // .wem is playable through the on-read transcode now.
+        assert!(wem.playable);
         let ogg = bank.iter().find(|a| a.ext == "ogg").unwrap();
         assert!(ogg.playable);
 
@@ -235,8 +343,10 @@ mod tests {
                 .data_url
                 .starts_with("data:audio/ogg;base64,")
         );
+        // Garbage bytes named .wem fail INSIDE the transcode path (no
+        // valid Wwise RIFF); real files convert and play.
         let err = mod_hub_read_asset(root.clone(), "banks/mods/Bank/sfx.wem".into()).unwrap_err();
-        assert!(err.contains("wem"), "{err}");
+        assert!(err.contains("transcode"), "{err}");
         assert!(mod_hub_read_asset(root.clone(), "../escape".into()).is_err());
         fs::remove_dir_all(&tmp).ok();
     }
