@@ -117,7 +117,9 @@ fn fetched_recently(fetched_at: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn load_cached_index() -> Option<CatalogIndex> {
+/// The cached catalog index, shared read-only with sibling modules
+/// (foreign-unit pairing reads it; writes stay in this module).
+pub(crate) fn load_cached_index() -> Option<CatalogIndex> {
     let raw = fs::read_to_string(data_file(INDEX_CACHE_FILE).ok()?).ok()?;
     serde_json::from_str(&raw).ok()
 }
@@ -645,11 +647,11 @@ pub async fn mod_catalog_install(
     });
     // The shared on-disk manifest mirrors the record (id, scheme, …).
     let record = ledger.installs.last().expect("record pushed above");
-    manifest::upsert_managed(
-        &manifest::res_mods_of(&game_root, &record.bin_version),
-        &record.id,
-        WowspManifest::entry_from_record(record),
-    );
+    manifest::hub_apply(manifest::ManifestOp::UpsertManaged {
+        res_mods: manifest::res_mods_of(&game_root, &record.bin_version),
+        id: record.id.clone(),
+        entry: WowspManifest::entry_from_record(record),
+    });
     save_ledger(&ledger)?;
 
     drop(_gate);
@@ -902,10 +904,10 @@ pub(crate) fn uninstall_from_ledger(
     installs.retain(|r| !(r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root)));
     // The shared manifest loses the row too (its `[tools.*]` tables and any
     // other entries survive; an empty manifest file removes itself).
-    manifest::remove_managed(
-        &manifest::res_mods_of(game_root, &record.bin_version),
-        &record.id,
-    );
+    manifest::hub_apply(manifest::ManifestOp::RemoveManaged {
+        res_mods: manifest::res_mods_of(game_root, &record.bin_version),
+        id: record.id.clone(),
+    });
 
     // The 0-byte loader marker is a shared component: when the last record
     // referencing it is gone, drop our placeholder — a non-empty loader
@@ -1041,7 +1043,10 @@ fn reconcile_core_with_grace(
         }
     });
     for (id, bin) in &ghosts {
-        manifest::remove_managed(&manifest::res_mods_of(game_root, bin), id);
+        manifest::hub_apply(manifest::ManifestOp::RemoveManaged {
+            res_mods: manifest::res_mods_of(game_root, bin),
+            id: id.clone(),
+        });
     }
     // Snapshot dirs are shared across installs: only collect orphans no
     // record ANYWHERE still references, and give fresh ones a grace

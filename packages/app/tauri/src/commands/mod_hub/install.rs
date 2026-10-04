@@ -62,11 +62,14 @@ pub async fn mod_hub_install(
                     // Local installs speak the same wowsp.toml contract as
                     // catalog ones — the manifest row is the shared half of
                     // this record.
-                    super::manifest::upsert_managed(
-                        &super::manifest::res_mods_of(&game_root, &applied.report.bin_version),
-                        &id,
-                        super::manifest::WowspManifest::entry_from_record(&record),
-                    );
+                    super::manifest::hub_apply(super::manifest::ManifestOp::UpsertManaged {
+                        res_mods: super::manifest::res_mods_of(
+                            &game_root,
+                            &applied.report.bin_version,
+                        ),
+                        id: id.clone(),
+                        entry: super::manifest::WowspManifest::entry_from_record(&record),
+                    });
                     ledger.installs.push(record);
                     // Say whose files this install clobbered (the journal
                     // already snapshotted them).

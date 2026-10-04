@@ -147,13 +147,13 @@ pub(crate) fn migrate_stale_bin_core(
     }
     // Fold the stale manifest into the current bin: toggle states carry
     // over, fields refresh from the re-pointed ledger, tool configs union.
-    super::manifest::merge_after_migration(
-        stale_manifest_raw.as_deref(),
-        &dst,
-        &ledger.installs,
-        game_root,
-        &latest,
-    );
+    super::manifest::hub_apply(super::manifest::ManifestOp::MergeAfterMigration {
+        stale_raw: stale_manifest_raw,
+        to_res_mods: dst.clone(),
+        records: ledger.installs.clone(),
+        game_root: game_root.to_string(),
+        bin_version: latest.clone(),
+    });
     tracing::info!(from = %from_version, to = %latest, moved, skipped, "stale bin migrated");
     Ok(MigrateReport {
         from_version: from_version.to_string(),
@@ -445,13 +445,13 @@ pub(crate) fn migration_execute_core(
     if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
         super::mod_catalog::save_ledger(&ledger)?;
     }
-    super::manifest::merge_after_migration(
-        stale_manifest_raw.as_deref(),
-        &dst,
-        &ledger.installs,
-        game_root,
-        &latest,
-    );
+    super::manifest::hub_apply(super::manifest::ManifestOp::MergeAfterMigration {
+        stale_raw: stale_manifest_raw,
+        to_res_mods: dst.clone(),
+        records: ledger.installs.clone(),
+        game_root: game_root.to_string(),
+        bin_version: latest.clone(),
+    });
     tracing::info!(
         from = %from_version,
         to = %latest,

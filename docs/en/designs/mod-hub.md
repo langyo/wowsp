@@ -355,6 +355,25 @@ bin's manifest. The first consumer is the bundled in-game stats plugin,
 which reads `panel_fade_ticks` and `journal_limit` from its `[tools]` table
 with the values above as fallbacks.
 
+Inside the process the file has exactly ONE writer context: every mutation
+ships a `ManifestOp` down an mpsc pipe to a dedicated writer thread and
+waits for its receipt, while reads parse an atomic (tmp+rename) snapshot —
+many-read/one-write, no parallel copy of the file can drift. The sections:
+
+- `[managed.*]` — units WoWSP installed and owns (rewritten on every
+  install / uninstall / toggle / reconcile / migration);
+- `[tools.*]` — tool-plugin configs (owned by their tools; WoWSP only
+  seeds missing defaults and never overwrites existing keys);
+- `[foreign.<installer>.<key>]` — recognition of units FOREIGN installers
+  put on disk: `aslain` rows come from the modpack's own
+  `installed_mods.xml` ledger, `modstation` units from WG's official
+  station's `bin/<version>/mods/` tree (wiped by every game update, which
+  is why it is re-scanned rather than remembered). Each row carries a
+  best-effort `identity` — the catalog id its name pairs against — so
+  every surface can read the pairing verdict from this one file instead
+  of re-deriving it. The scan refreshes these rows on every installed-list
+  sweep; WoWSP describes foreign units, it never manages them.
+
 ### 4. Version migration & compatibility confirmation
 
 **Landed (detection + one-click migrate)**: the scan reports every older

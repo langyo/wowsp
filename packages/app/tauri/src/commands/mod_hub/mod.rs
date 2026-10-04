@@ -433,6 +433,7 @@ fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> Result<usi
 }
 
 mod classify;
+pub(crate) mod foreign;
 mod install;
 mod installed_units;
 pub(crate) mod manifest;

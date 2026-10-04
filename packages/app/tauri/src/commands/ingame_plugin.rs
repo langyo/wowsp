@@ -146,14 +146,21 @@ pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> 
         let mut defaults = BTreeMap::new();
         defaults.insert("panel_fade_ticks".to_string(), 3i64);
         defaults.insert("journal_limit".to_string(), 300i64);
-        super::mod_hub::manifest::seed_tool_config(&dir, "battle.ingame.stats", &defaults);
+        super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::SeedTool {
+            res_mods: dir.clone(),
+            tool: "battle.ingame.stats".into(),
+            defaults,
+        });
         // Replace the row outright: this install rewrites live files, so a
         // stale disabled label from a pre-update toggle must not survive.
-        super::mod_hub::manifest::remove_managed(&dir, "battle.ingame.stats");
-        super::mod_hub::manifest::upsert_managed(
-            &dir,
-            "battle.ingame.stats",
-            super::mod_hub::manifest::ManagedEntry {
+        super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::RemoveManaged {
+            res_mods: dir.clone(),
+            id: "battle.ingame.stats".into(),
+        });
+        super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::UpsertManaged {
+            res_mods: dir.clone(),
+            id: "battle.ingame.stats".into(),
+            entry: super::mod_hub::manifest::ManagedEntry {
                 name: "WoWSP In-Game Tab Stats Plugin".into(),
                 version: "0.1.0".into(),
                 category: "battle".into(),
@@ -162,7 +169,7 @@ pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> 
                 enabled: true,
                 installed_at: chrono::Utc::now().to_rfc3339(),
             },
-        );
+        });
     }
     tracing::info!(dir = %mod_dir.display(), "ingame plugin installed");
     Ok(mod_dir.to_string_lossy().into_owned())
@@ -208,7 +215,10 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
     }
     // The managed row goes with the files; the tool's config table stays
     // (a reinstall should find the user's tuning where they left it).
-    super::mod_hub::manifest::remove_managed(&dir, "battle.ingame.stats");
+    super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::RemoveManaged {
+        res_mods: dir.clone(),
+        id: "battle.ingame.stats".into(),
+    });
     tracing::info!(dir = %dir.display(), "ingame plugin uninstalled");
     Ok(())
 }

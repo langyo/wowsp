@@ -6,11 +6,37 @@ use super::*;
 
 #[tauri::command]
 pub fn mod_hub_scan_installed(game_root: String) -> Result<Vec<InstalledMod>, String> {
+    // One bin resolution feeds the classification AND the ModStation mods/
+    // probe below — a game update mid-scan cannot mix versions.
     let res_mods = scan_root(&game_root)?;
     if !res_mods.is_dir() {
         return Ok(Vec::new());
     }
-    Ok(classify_installed_root(&res_mods))
+    let units = classify_installed_root(&res_mods);
+    // The same sweep refreshes wowsp.toml's [foreign.*] sections — the scan
+    // IS the recognition pass (Aslain manifest rows, ModStation's mods/
+    // tree), and pairing verdicts ride along in the rows.
+    let ver_dir = res_mods
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or(res_mods.clone());
+    refresh_foreign(&res_mods, &ver_dir);
+    Ok(units)
+}
+
+/// Detect foreign-installer units for one install and route each
+/// installer's row set through the manifest hub.
+fn refresh_foreign(res_mods: &Path, ver_dir: &Path) {
+    let catalog = super::mod_catalog::load_cached_index();
+    for (installer, units) in
+        foreign::scan_foreign(res_mods, &ver_dir.join("mods"), catalog.as_ref())
+    {
+        super::manifest::hub_apply(super::manifest::ManifestOp::ReplaceForeign {
+            res_mods: res_mods.to_path_buf(),
+            installer,
+            units,
+        });
+    }
 }
 
 /// Resolve `bin/<latest>/res_mods` for a game install.

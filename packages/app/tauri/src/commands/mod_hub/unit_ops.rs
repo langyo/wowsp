@@ -74,7 +74,11 @@ pub async fn mod_hub_set_unit_enabled(
         if unit_covers(&unit.paths, &bundled_plugin_entry()) {
             covered.push(bundled_plugin_record());
         }
-        super::manifest::set_managed_enabled(&res_mods, &covered, enabled);
+        super::manifest::hub_apply(super::manifest::ManifestOp::SetEnabled {
+            res_mods: res_mods.clone(),
+            records: covered,
+            enabled,
+        });
     }
     tracing::info!(rel = %rel_path, enabled, renamed, "mod_hub_set_unit_enabled done");
     Ok(UnitToggleReport {
@@ -291,7 +295,10 @@ pub(crate) fn uninstall_unit_core(
     // The bundled in-game plugin's unit carries no ledger record — drop its
     // wowsp.toml row here too or it would outlive its files.
     if unit_covers(&unit.paths, &bundled_plugin_entry()) {
-        super::manifest::remove_managed(res_mods, BUNDLED_PLUGIN_ID);
+        super::manifest::hub_apply(super::manifest::ManifestOp::RemoveManaged {
+            res_mods: res_mods.to_path_buf(),
+            id: BUNDLED_PLUGIN_ID.to_string(),
+        });
     }
 
     tracing::info!(rel = %unit.rel_path, removed, restored, "uninstall_unit_core done");

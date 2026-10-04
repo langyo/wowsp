@@ -25,6 +25,10 @@
 //!
 //! [tools."battle.ingame.stats"]
 //! panel_fade_ticks = 3          # tool-defined keys, WoWSP never rewrites
+//!
+//! [foreign.aslain.shot-timer]   # units FOREIGN installers put on disk —
+//! name = "Shot Timer"           # recognition rows, refreshed per scan
+//! identity = "battle.timer.shot" # catalog pairing, when one matched
 //! ```
 //!
 //! Forward compatibility: a file whose `version` is NEWER than this build
@@ -63,6 +67,24 @@ pub(crate) struct ManagedEntry {
     pub(crate) installed_at: String,
 }
 
+/// One `[foreign.<installer>.<key>]` row — a unit detected on disk that a
+/// FOREIGN installer (Aslain's modpack, WG's ModStation, …) put there.
+/// WoWSP describes these units, it does not own them: the rows refresh on
+/// every scan and `identity` carries the best-effort catalog pairing so
+/// every surface (installed list, migration wizard, future tooling) can
+/// read the verdict from this one file instead of re-deriving it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ForeignEntry {
+    /// The unit's own display name (manifest row / directory name).
+    pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) version: Option<String>,
+    /// Catalog id this unit was paired against, when a confident match
+    /// existed at scan time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) identity: Option<String>,
+}
+
 fn default_enabled() -> bool {
     true
 }
@@ -78,6 +100,9 @@ pub(crate) struct WowspManifest {
     pub(crate) managed: BTreeMap<String, ManagedEntry>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) tools: BTreeMap<String, toml::Value>,
+    /// Units foreign installers put on disk, grouped by installer id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) foreign: BTreeMap<String, BTreeMap<String, ForeignEntry>>,
 }
 
 impl WowspManifest {
@@ -162,7 +187,7 @@ fn parse(raw: &str, quarantine: Option<&Path>) -> Loaded {
 /// littering res_mods with an empty stub.
 fn store(res_mods: &Path, manifest: &WowspManifest) -> Result<(), String> {
     let path = manifest_path(res_mods);
-    if manifest.managed.is_empty() && manifest.tools.is_empty() {
+    if manifest.managed.is_empty() && manifest.tools.is_empty() && manifest.foreign.is_empty() {
         fs::remove_file(&path).ok();
         return Ok(());
     }
@@ -285,6 +310,34 @@ pub(crate) fn seed_tool_config(res_mods: &Path, tool_id: &str, defaults: &BTreeM
         if let Err(e) = store(res_mods, &manifest) {
             tracing::warn!(error = %e, "wowsp.toml update failed");
         }
+    }
+}
+
+/// Replace every `[foreign.<installer>]` row of one installer with the
+/// freshly scanned set (other installers' rows are untouched — each is
+/// refreshed by its own scan pass).
+pub(crate) fn replace_foreign(
+    res_mods: &Path,
+    installer: &str,
+    units: BTreeMap<String, ForeignEntry>,
+) {
+    let loaded = load(res_mods);
+    if loaded.future_schema {
+        return;
+    }
+    let mut manifest = loaded.manifest;
+    if manifest.foreign.get(installer) == Some(&units) {
+        return; // identical rows on disk — a no-op scan stays write-free
+    }
+    if units.is_empty() {
+        if manifest.foreign.remove(installer).is_none() {
+            return;
+        }
+    } else {
+        manifest.foreign.insert(installer.to_string(), units);
+    }
+    if let Err(e) = store(res_mods, &manifest) {
+        tracing::warn!(error = %e, "wowsp.toml foreign refresh failed");
     }
 }
 
@@ -527,5 +580,223 @@ mod tests {
         fs::remove_dir_all(&from).ok();
         fs::remove_dir_all(&to).ok();
         fs::remove_dir_all(&to2).ok();
+    }
+}
+
+// ── The single-writer hub ───────────────────────────────────────────────────
+//
+// Every wowsp.toml WRITE in the process goes through this actor: commands
+// ship a ManifestOp down an mpsc pipe and block for the writer thread's
+// receipt, so there is exactly one mutating context no matter how many
+// commands race — no parallel copy of the file can drift out of step.
+// Reads are the many half of many-read/one-write: they parse the file
+// (atomically replaced by the writer, so a reader sees the old or the new
+// document, never a torn one) through the same `read_snapshot` entry.
+
+/// One mutating intent for the writer thread.
+pub(crate) enum ManifestOp {
+    UpsertManaged {
+        res_mods: PathBuf,
+        id: String,
+        entry: ManagedEntry,
+    },
+    RemoveManaged {
+        res_mods: PathBuf,
+        id: String,
+    },
+    SetEnabled {
+        res_mods: PathBuf,
+        records: Vec<ModInstallRecord>,
+        enabled: bool,
+    },
+    SeedTool {
+        res_mods: PathBuf,
+        tool: String,
+        defaults: BTreeMap<String, i64>,
+    },
+    ReplaceForeign {
+        res_mods: PathBuf,
+        installer: String,
+        units: BTreeMap<String, ForeignEntry>,
+    },
+    MergeAfterMigration {
+        stale_raw: Option<String>,
+        to_res_mods: PathBuf,
+        records: Vec<ModInstallRecord>,
+        game_root: String,
+        bin_version: String,
+    },
+}
+
+struct ManifestHub {
+    tx: std::sync::mpsc::Sender<(ManifestOp, std::sync::mpsc::Sender<Result<(), String>>)>,
+}
+
+static HUB: std::sync::LazyLock<ManifestHub> = std::sync::LazyLock::new(ManifestHub::new);
+
+impl ManifestHub {
+    fn new() -> Self {
+        let (tx, rx) =
+            std::sync::mpsc::channel::<(ManifestOp, std::sync::mpsc::Sender<Result<(), String>>)>();
+
+        std::thread::Builder::new()
+            .name("wowsp-toml-writer".into())
+            .spawn(move || {
+                for (op, done) in rx {
+                    let out = Self::execute(op);
+                    let _ = done.send(out);
+                }
+            })
+            .expect("spawn wowsp.toml writer");
+        Self { tx }
+    }
+
+    fn execute(op: ManifestOp) -> Result<(), String> {
+        match op {
+            ManifestOp::UpsertManaged {
+                res_mods,
+                id,
+                entry,
+            } => {
+                upsert_managed(&res_mods, &id, entry);
+                Ok(())
+            },
+            ManifestOp::RemoveManaged { res_mods, id } => {
+                remove_managed(&res_mods, &id);
+                Ok(())
+            },
+            ManifestOp::SetEnabled {
+                res_mods,
+                records,
+                enabled,
+            } => {
+                set_managed_enabled(&res_mods, &records, enabled);
+                Ok(())
+            },
+            ManifestOp::SeedTool {
+                res_mods,
+                tool,
+                defaults,
+            } => {
+                seed_tool_config(&res_mods, &tool, &defaults);
+                Ok(())
+            },
+            ManifestOp::ReplaceForeign {
+                res_mods,
+                installer,
+                units,
+            } => {
+                replace_foreign(&res_mods, &installer, units);
+                Ok(())
+            },
+            ManifestOp::MergeAfterMigration {
+                stale_raw,
+                to_res_mods,
+                records,
+                game_root,
+                bin_version,
+            } => {
+                merge_after_migration(
+                    stale_raw.as_deref(),
+                    &to_res_mods,
+                    &records,
+                    &game_root,
+                    &bin_version,
+                );
+                Ok(())
+            },
+        }
+    }
+
+    fn apply(&self, op: ManifestOp) -> Result<(), String> {
+        let (done, rx) = std::sync::mpsc::channel();
+        self.tx
+            .send((op, done))
+            .map_err(|_| "wowsp.toml writer is gone".to_string())?;
+        rx.recv()
+            .map_err(|_| "wowsp.toml writer dropped the job".to_string())?
+    }
+}
+
+/// Route one write through the single writer. Blocks until the writer has
+/// persisted the change (file IO is milliseconds); safe to call from async
+/// command contexts and spawn_blocking closures alike.
+pub(crate) fn hub_apply(op: ManifestOp) {
+    if let Err(e) = HUB.apply(op) {
+        tracing::warn!(error = %e, "wowsp.toml write routed through the hub failed");
+    }
+}
+
+/// The one read entry: a snapshot of the manifest at `res_mods`. Concurrent
+/// with writer activity by design (atomic tmp+rename stores), and the only
+/// parse of the file outside the writer thread. (No production reader yet
+/// beyond the tests — the API is the documented read contract.)
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn read_snapshot(res_mods: &Path) -> WowspManifest {
+    load(res_mods).manifest
+}
+
+#[cfg(test)]
+mod hub_tests {
+    use super::*;
+
+    #[test]
+    fn hub_writes_and_foreign_rides_the_same_file() {
+        let dir = std::env::temp_dir().join("wowsp_hub_roundtrip");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        hub_apply(ManifestOp::UpsertManaged {
+            res_mods: dir.clone(),
+            id: "battle.marker.traffic-v4".into(),
+            entry: ManagedEntry {
+                name: "SMI".into(),
+                version: "1".into(),
+                category: "battle".into(),
+                source: "mod-hub".into(),
+                preset: None,
+                enabled: true,
+                installed_at: "2026-10-05T00:00:00Z".into(),
+            },
+        });
+        // The single-writer serialized both ops; the snapshot sees both.
+        let mut units = BTreeMap::new();
+        units.insert(
+            "shot-timer".into(),
+            ForeignEntry {
+                name: "Shot Timer".into(),
+                version: Some("15.7.0".into()),
+                identity: Some("battle.timer.shot".into()),
+            },
+        );
+        hub_apply(ManifestOp::ReplaceForeign {
+            res_mods: dir.clone(),
+            installer: "aslain".into(),
+            units,
+        });
+        let snap = read_snapshot(&dir);
+        assert!(snap.managed.contains_key("battle.marker.traffic-v4"));
+        assert_eq!(
+            snap.foreign["aslain"]["shot-timer"].identity.as_deref(),
+            Some("battle.timer.shot")
+        );
+        // The written file really carries the [foreign] section.
+        let raw = fs::read_to_string(dir.join(MANIFEST_FILE)).unwrap();
+        // `shot-timer` is a bare TOML key, so the table header carries no quotes.
+        assert!(raw.contains("[foreign.aslain.shot-timer]"), "{raw}");
+        // Removing the managed row keeps the file (foreign still lives).
+        hub_apply(ManifestOp::RemoveManaged {
+            res_mods: dir.clone(),
+            id: "battle.marker.traffic-v4".into(),
+        });
+        assert!(dir.join(MANIFEST_FILE).is_file());
+        // Dropping the foreign set too empties the manifest → self-delete.
+        hub_apply(ManifestOp::ReplaceForeign {
+            res_mods: dir.clone(),
+            installer: "aslain".into(),
+            units: BTreeMap::new(),
+        });
+        assert!(!dir.join(MANIFEST_FILE).exists());
+        fs::remove_dir_all(&dir).ok();
     }
 }
