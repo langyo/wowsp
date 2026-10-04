@@ -1,7 +1,9 @@
 /**
  * HoloShipStatus — below-hull combat status rows. Chrome matches the
  * floating dog tags (same HUD tokens); the block hangs from the hull's
- * lower screen edge (anchor set per frame in labelOverlay.ts).
+ * lower screen edge (anchor set per frame in labelOverlay.ts). Icons are
+ * the game's own HUD art (statusIcons.ts) — the tiles only add the tinted
+ * frame + draining progress bar.
  */
 .holo-ship-status {
   position: absolute;
@@ -43,6 +45,8 @@
     overflow: hidden;
     border-radius: 4px;
     border: 1px solid var(--holo-hud-border);
+    background: rgba(0, 0, 0, 0.35);
+    /* Tints the progress bar (the game art carries its own colors). */
     color: rgb(var(--color-primary));
 
     /* Progress bar hugs the tile's bottom edge (flash = full, cooldown =
@@ -55,6 +59,14 @@
       background: currentcolor;
       opacity: 0.9;
     }
+  }
+
+  /* Game HUD art, shrunk into the tile (sprites are 60px/44px source). */
+  &__img {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+    pointer-events: none;
   }
 
   /* Always-mounted seconds line: blank during a flash still occupies the
@@ -113,28 +125,11 @@
     background: rgba(0, 0, 0, 0.35);
   }
 
-  &__ammo {
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    line-height: 1;
-
-    &.is-HE {
-      color: #ffcc33;
-    }
-    &.is-AP {
-      color: #c8d0e0;
-    }
-    &.is-SAP {
-      color: #9aa0a8;
-    }
-    &.is-CS {
-      color: #ffa07a;
-    }
-    &.is-torpedo-icon {
-      color: #7dd3fc;
-      display: inline-flex;
-    }
+  &__hit-img {
+    width: 12px;
+    height: 12px;
+    object-fit: contain;
+    pointer-events: none;
   }
 
   &__dmg {

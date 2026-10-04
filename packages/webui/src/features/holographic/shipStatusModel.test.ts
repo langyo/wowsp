@@ -9,11 +9,15 @@ import {
 import { fmtSecs } from "./HoloShipStatus";
 import type { EntityTrajectory, ShellLaunchEvent, TorpedoLaunch } from "@/api";
 
-const launch = (time: number, ownerId: number): ShellLaunchEvent =>
+const launch = (
+  time: number,
+  ownerId: number,
+  paramsId = 0,
+): ShellLaunchEvent =>
   ({
     time,
     ownerId,
-    paramsId: 0,
+    paramsId,
     salvoId: 0,
     shotId: 0,
     x: 0,
@@ -132,6 +136,33 @@ describe("gun / torpedo salvo cooldowns", () => {
       }),
     );
     expect(shipStatusAt(idx.get(1), 51)?.actions ?? []).toHaveLength(0);
+  });
+
+  it("carries each salvo's shell family for the gun tile icon", () => {
+    // Real params ids from data/shell_types.json (203 mm HE / AP shells).
+    const HE = 4292854768;
+    const AP = 4293903344;
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [ship(1)],
+        shellLaunches: [
+          launch(100, 1, HE),
+          launch(100.5, 1, HE), // same burst — one salvo
+          launch(130, 1, AP),
+        ],
+      }),
+    );
+    // During the first salvo's flash AND its reload the tile stays HE.
+    expect(shipStatusAt(idx.get(1), 100.3)?.actions).toContainEqual(
+      expect.objectContaining({ key: "gun", ammo: "HE" }),
+    );
+    expect(shipStatusAt(idx.get(1), 115)?.actions).toContainEqual(
+      expect.objectContaining({ key: "gun", ammo: "HE" }),
+    );
+    // The second salvo flips the sprite.
+    expect(shipStatusAt(idx.get(1), 130.5)?.actions).toContainEqual(
+      expect.objectContaining({ key: "gun", ammo: "AP" }),
+    );
   });
 });
 

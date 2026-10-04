@@ -16,6 +16,7 @@
  * DOM, no THREE — so the heuristics are unit-testable.
  */
 import type { EntityTrajectory, ShellLaunchEvent, TorpedoLaunch } from "@/api";
+import { shellAmmoOf } from "./tactical/shellTypes";
 import { sampleAt } from "./trajectoryMath";
 
 // ── Public shape ────────────────────────────────────────────────────────
@@ -34,13 +35,17 @@ export interface ShipActionChip {
   /** Remaining seconds (fractional — the view renders sub-10 s values
    *  with one decimal); null when the end is unknowable. */
   secs: number | null;
+  /** Shell family of the gun chip's salvo (drives the game-art icon);
+   *  null for non-gun chips / unresolvable params ids. */
+  ammo?: string | null;
 }
 
 /** One row-two hit pill: shell ammo family (or torpedo) + damage taken. */
 export interface ShipHitChip {
   key: string;
   kind: "shell" | "torpedo";
-  /** HE / AP / SAP for shells; null when the params id didn't resolve. */
+  /** HE / AP / SAP / CS for shells; null/unknown when the params id
+   *  didn't resolve (the pill then omits the sprite). */
   ammo: string | null;
   dmg: number;
 }
@@ -183,11 +188,20 @@ interface DotWindow {
   base: number;
 }
 
+/** One main-battery salvo: start time + the burst's shell family (first
+ *  resolvable shell of the burst, like the tactical timeline's grouping). */
+export interface GunSalvo {
+  t: number;
+  ammo: string | null;
+}
+
 export interface ShipStatusIndex {
-  /** Main-battery salvo start times, sorted. */
-  gun: number[];
-  /** Torpedo-tube salvo start times, sorted (plane drops excluded). */
-  torp: number[];
+  /** Main-battery salvos, time-sorted. */
+  gun: GunSalvo[];
+  /** Torpedo-tube salvo starts, time-sorted (plane drops excluded). The
+   *  item shape mirrors GunSalvo so the shared weaponChip reads both
+   *  without per-frame adapter allocations. */
+  torp: { t: number }[];
   repairs: TimeWindow[];
   smokes: TimeWindow[];
   hits: StoredHit[];
@@ -225,9 +239,9 @@ export function buildShipStatusIndex(src: ShipStatusSource): Map<number, ShipSta
 export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipStatusSnapshot | null {
   if (!idx) return null;
   const actions: ShipActionChip[] = [];
-  const gun = weaponChip(idx.gun, t, GUN_FLASH_S, "gun");
+  const gun = weaponChip(idx.gun, t, GUN_FLASH_S, "gun", (s) => s.ammo);
   if (gun) actions.push(gun);
-  const torp = weaponChip(idx.torp, t, TORP_FLASH_S, "torp");
+  const torp = weaponChip(idx.torp, t, TORP_FLASH_S, "torp", () => null);
   if (torp) actions.push(torp);
   for (const w of idx.smokes) {
     if (t < w.t0 || t > w.t1) continue;
@@ -274,41 +288,43 @@ export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipS
 
 // ── Row one: launches, reloads, smoke, repair ───────────────────────────
 
-function weaponChip(
-  times: number[],
+function weaponChip<T extends { t: number }>(
+  salvos: T[],
   t: number,
   flashS: number,
   key: "gun" | "torp",
+  ammoOf: (salvo: T) => string | null,
 ): ShipActionChip | null {
   // Last salvo at or before the playhead (arrays are tiny — tail scan wins
   // over a binary search).
-  let t0: number | null = null;
-  for (let i = times.length - 1; i >= 0; i--) {
-    if (times[i] <= t) {
-      t0 = times[i];
+  let last: T | null = null;
+  for (let i = salvos.length - 1; i >= 0; i--) {
+    if (salvos[i].t <= t) {
+      last = salvos[i];
       break;
     }
   }
-  if (t0 == null) return null;
-  const since = t - t0;
-  if (since <= flashS) {
-    return { key, phase: "flash", frac: 1, secs: null };
+  if (last == null) return null;
+  const ammo = ammoOf(last);
+  if (t - last.t <= flashS) {
+    return { key, phase: "flash", frac: 1, secs: null, ammo };
   }
-  let next: number | null = null;
-  for (const tm of times) {
-    if (tm > t0) {
-      next = tm;
+  let next: T | null = null;
+  for (const s of salvos) {
+    if (s.t > last.t) {
+      next = s;
       break;
     }
   }
   if (next == null) return null;
-  const reload = next - t0;
+  const reload = next.t - last.t;
   if (reload > MAX_RELOAD_S) return null;
   return {
     key,
     phase: "cooldown",
-    frac: (next - t) / reload,
-    secs: next - t,
+    frac: (next.t - t) / reload,
+    secs: next.t - t,
+    ammo,
   };
 }
 
@@ -326,8 +342,37 @@ function salvoTimesFor<T extends { time: number }>(events: T[]): number[] {
   return times;
 }
 
-function gunSalvosFor(launches: ShellLaunchEvent[], ownerId: number): number[] {
-  return salvoTimesFor(launches.filter((e) => e.ownerId === ownerId));
+/** Main-battery salvos with each burst's shell family — the first
+ *  resolvable shell of the burst (the same ammo rule the tactical timeline
+ *  uses). Grouping is a per-owner rolling window (each of THIS owner's
+ *  shells extends the burst by SALVO_WINDOW_S — an enemy firing inside the
+ *  burst doesn't split it), and the salvo is timestamped at its FIRST
+ *  shell: the flash highlights the moment the guns go off. */
+function gunSalvosFor(launches: ShellLaunchEvent[], ownerId: number): GunSalvo[] {
+  const salvos: GunSalvo[] = [];
+  let burstT0: number | null = null;
+  let lastT = -1e9;
+  let ammo: string | null = null;
+  const flush = (): void => {
+    if (burstT0 != null) salvos.push({ t: burstT0, ammo });
+  };
+  for (const e of launches) {
+    if (e.ownerId !== ownerId) continue;
+    if (burstT0 != null && e.time - lastT <= SALVO_WINDOW_S) {
+      // A later shell may resolve what the burst's first didn't.
+      if (ammo == null || ammo === "unknown") {
+        ammo = shellAmmoOf(e.paramsId).ammo;
+      }
+      lastT = e.time;
+      continue;
+    }
+    flush();
+    burstT0 = e.time;
+    lastT = e.time;
+    ammo = shellAmmoOf(e.paramsId).ammo;
+  }
+  flush();
+  return salvos;
 }
 
 /** Ship-tube salvos only — air-dropped fish belong to squadrons, not to
@@ -336,9 +381,9 @@ function torpedoSalvosFor(
   launches: TorpedoLaunch[],
   ownerId: number,
   shipIds: Set<number>,
-): number[] {
+): { t: number }[] {
   if (!shipIds.has(ownerId)) return [];
-  return salvoTimesFor(launches.filter((e) => e.ownerId === ownerId));
+  return salvoTimesFor(launches.filter((e) => e.ownerId === ownerId)).map((t) => ({ t }));
 }
 
 function repairWindows(tr: EntityTrajectory, maxHp: number): TimeWindow[] {

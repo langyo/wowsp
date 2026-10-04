@@ -7,40 +7,24 @@
  *   row 2 — what it SUFFERS: shell / torpedo hit pills with the damage
  *           they took, plus persistent fire / flooding chips counting
  *           down from their class base duration.
+ * Icons are the game's own HUD art (see statusIcons.ts): the gun tile
+ * carries the salvo's shell sprite, smoke/repair the consumable slot art,
+ * fire/flood the state-panel glyphs, hits the ammo/torpedo sprites.
  * Every countdown renders BELOW its icon (fixed row height — only the
  * damage pills read horizontally); sub-10-second counts show one decimal.
  * Data comes precomputed per playhead tick via ShipLabel.status; this
  * component is pure rendering + styling.
  */
 import { defineComponent, type PropType } from "vue";
-import {
-  CloudFog,
-  Crosshair,
-  Droplets,
-  Flame,
-  Navigation,
-  Wrench,
-} from "@lucide/vue";
 import type { ShipActionChip, ShipHitChip, ShipDotChip } from "./shipStatusModel";
+import {
+  actionIconUrl,
+  dotIconUrl,
+  torpedoIconUrl,
+  AMMO_ICON,
+} from "./statusIcons";
 import type { ShipLabel } from "./shipLabel";
 import "./HoloShipStatus.scss";
-
-const ACTION_ICON = {
-  gun: Crosshair,
-  torp: Navigation,
-  smoke: CloudFog,
-  repair: Wrench,
-} as const;
-
-/** Shell ammo families render as tinted text badges — same palette as the
- *  shell-flight traces (SHELL_COLORS), so a pill matches the arc that
- *  delivered it. */
-const AMMO_TEXT: Record<string, string> = {
-  HE: "HE",
-  AP: "AP",
-  SAP: "SAP",
-  CS: "CS",
-};
 
 /** Countdown text: whole seconds above ten, one decimal below — the last
  *  ten seconds of a reload or burn deserve the extra resolution. The
@@ -88,7 +72,6 @@ export default defineComponent({
 });
 
 function ActionChip({ chip }: { chip: ShipActionChip }) {
-  const Icon = ACTION_ICON[chip.key];
   return (
     <span
       class={[
@@ -98,7 +81,12 @@ function ActionChip({ chip }: { chip: ShipActionChip }) {
       ]}
     >
       <span class="holo-ship-status__icon">
-        <Icon size={11} strokeWidth={2.4} />
+        <img
+          class="holo-ship-status__img"
+          src={actionIconUrl(chip.key, chip.ammo)}
+          alt=""
+          draggable={false}
+        />
         <span
           class="holo-ship-status__bar"
           style={{ width: `${Math.round(chip.frac * 100)}%` }}
@@ -114,11 +102,15 @@ function ActionChip({ chip }: { chip: ShipActionChip }) {
 }
 
 function DotChip({ chip }: { chip: ShipDotChip }) {
-  const Icon = chip.key === "fire" ? Flame : Droplets;
   return (
     <span class={["holo-ship-status__chip", `is-${chip.key}`]}>
       <span class="holo-ship-status__icon">
-        <Icon size={11} strokeWidth={2.4} />
+        <img
+          class="holo-ship-status__img"
+          src={dotIconUrl(chip.key)}
+          alt=""
+          draggable={false}
+        />
         <span
           class="holo-ship-status__bar"
           style={{ width: `${Math.round(chip.frac * 100)}%` }}
@@ -130,9 +122,14 @@ function DotChip({ chip }: { chip: ShipDotChip }) {
 }
 
 function HitChip({ chip }: { chip: ShipHitChip }) {
-  // Torpedoes get the fish glyph; shells get a tinted ammo badge — except
-  // unresolvable params ids, which fall back to the bare damage number.
-  const ammo = chip.kind === "shell" ? chip.ammo : null;
+  // Torpedo hits show the torpedo sprite; shell hits the ammo family's
+  // sprite; unresolvable params ids fall back to the bare damage number.
+  const src =
+    chip.kind === "torpedo"
+      ? torpedoIconUrl
+      : chip.ammo != null
+        ? AMMO_ICON[chip.ammo]
+        : undefined;
   return (
     <span
       class={[
@@ -140,14 +137,8 @@ function HitChip({ chip }: { chip: ShipHitChip }) {
         chip.kind === "torpedo" ? "is-torpedo" : "",
       ]}
     >
-      {chip.kind === "torpedo" ? (
-        <span class="holo-ship-status__ammo is-torpedo-icon">
-          <Navigation size={9} strokeWidth={2.6} />
-        </span>
-      ) : ammo && AMMO_TEXT[ammo] ? (
-        <span class={`holo-ship-status__ammo is-${ammo}`}>
-          {AMMO_TEXT[ammo]}
-        </span>
+      {src ? (
+        <img class="holo-ship-status__hit-img" src={src} alt="" draggable={false} />
       ) : null}
       <span class="holo-ship-status__dmg">-{chip.dmg.toLocaleString()}</span>
     </span>
