@@ -150,7 +150,7 @@
     "teamWrToggle": "隊伍勝率加權",
     "teamWrToggleDesc": "即時對局隊伍勝率按艦船階級加權（高階級權重更高），關閉則取簡單平均值。",
     "sealsToggle": "評價印章",
-    "sealsToggleDesc": "蓋印「神了/海猴/蛆」評價印章，僅中文介面顯示。",
+    "sealsToggleDesc": "蓋印「神了/猴/蛆」評價印章，僅中文介面顯示。",
     "localizedTiersToggle": "本土化檔位文案",
     "localizedTiersToggleDesc": "使用趣味本土化檔位文案（夯/人上人/戰艦仙人等），關閉時顯示標準英文檔位 Bad/Good/Unicum 等。"
   },
@@ -265,7 +265,7 @@
     "soloAll": "全部",
     "soloOnly": "僅單人",
     "sealToggle": "稱號蓋章",
-    "sealToggleDesc": "在玩家名旁蓋印「神了/海猴/蛆」等稱號章（普通文字樣式），僅中文介面顯示，且依賴 PR 評價開關。",
+    "sealToggleDesc": "在玩家名旁蓋印「神了/猴/蛆」等稱號章（普通文字樣式），僅中文介面顯示，且依賴 PR 評價開關。",
     "sealNeedsPr": "需先在「戰績」設定中開啟「水表 PR 評價」，蓋章才會顯示。",
     "intelToggle": "消耗品情報卡",
     "intelToggleDesc": "隊伍列表下方的雷達 / 水聽 / 發煙器數量估計與最遠雷達距離；一個槽位可在多種消耗品間選擇的工具船按估計計入。",

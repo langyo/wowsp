@@ -30,7 +30,7 @@
   "teamWrToggle": "팀 승률 티어 가중",
   "teamWrToggleDesc": "실시간 전투의 팀 승률을 함선 티어로 가중합니다. 끄면 단순 평균을 사용합니다.",
   "sealsToggle": "평가 인장",
-  "sealsToggleDesc": "«神了/海猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
+  "sealsToggleDesc": "«神了/猴/蛆» 평가 인장을 표시하며, 중국어 인터페이스에서만 나타납니다.",
   "localizedTiersToggle": "현지화 등급 표기",
   "localizedTiersToggleDesc": "재미있는 현지화 등급 표기를 사용합니다. 끄면 표준 영어 등급이 표시됩니다.",
   "gameDesc": "WoWSP가 이 PC의 World of Warships 설치 위치를 자동으로 감지했습니다. 사용할 클라이언트를 클릭해 확인하거나, 다시 검색하거나 폴더를 직접 선택하세요.",

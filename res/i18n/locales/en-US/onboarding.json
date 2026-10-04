@@ -30,7 +30,7 @@
   "teamWrToggle": "Tier-weighted team winrate",
   "teamWrToggleDesc": "Weight the live-battle team winrate by ship tier; off takes the plain average.",
   "sealsToggle": "Rating stamps",
-  "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — Chinese UI only.",
+  "sealsToggleDesc": "Inked 神了/猴/蛆 verdict seals — Chinese UI only.",
   "localizedTiersToggle": "Localized tier labels",
   "localizedTiersToggleDesc": "Fun localized tier wording; off shows the standard English bands.",
   "gameDesc": "WoWSP scanned this machine for World of Warships installs — click one to confirm it as the active client, or re-scan / browse for the folder manually.",

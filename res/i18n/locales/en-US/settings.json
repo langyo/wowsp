@@ -150,7 +150,7 @@
     "teamWrToggle": "Tier-weighted team winrate",
     "teamWrToggleDesc": "Weight the live-battle team winrate by ship tier (higher tiers count more); off takes the plain average.",
     "sealsToggle": "Rating stamps",
-    "sealsToggleDesc": "Inked 神了/海猴/蛆 verdict seals — shown only under a Chinese interface.",
+    "sealsToggleDesc": "Inked 神了/猴/蛆 verdict seals — shown only under a Chinese interface.",
     "localizedTiersToggle": "Localized tier labels",
     "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum."
   },
@@ -265,7 +265,7 @@
     "soloAll": "All",
     "soloOnly": "Solo only",
     "sealToggle": "Career seal stamps",
-    "sealToggleDesc": "Press the 神了/海猴/蛆 verdict stamps beside the names as plain text — Chinese interface only, and it requires the PR rating master switch.",
+    "sealToggleDesc": "Press the 神了/猴/蛆 verdict stamps beside the names as plain text — Chinese interface only, and it requires the PR rating master switch.",
     "sealNeedsPr": "Turn on the PR rating switch in the stats section first — the seals grade that rating.",
     "intelToggle": "Team intel card",
     "intelToggleDesc": "Radar / hydro / smoke count estimates and the longest radar range below each team; utility ships sharing one slot for several consumables count as estimates.",

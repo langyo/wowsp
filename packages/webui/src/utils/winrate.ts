@@ -90,7 +90,7 @@ export type CompositionStamp = "air" | "sub";
 
 export type StampKind = CareerStamp | CompositionStamp;
 
-/** Career verdict stamps: a red-tier career earns the 海猴 mark — or the 蛆
+/** Career verdict stamps: a red-tier career earns the 猴 mark — or the 蛆
  *  mark when the winrate is also sub-40% (a red-tier red-WR career is a
  *  different beast); a sustained purple-tier+ career earns 神了 — gated on
  *  500+ battles, ApeRadar's unicum battle-count threshold ("长期" 紫表, not a
@@ -102,7 +102,7 @@ export type StampKind = CareerStamp | CompositionStamp;
  *  enough that the hidden profile is not read as hiding a bad career and no
  *  stamp is earned. Fail-open: a missing (`undefined`) or failed (`null`)
  *  clan verdict never suppresses the stamp — only a RESOLVED strong-clan
- *  verdict does. An unknown winrate falls back to 海猴. Null when no stamp
+ *  verdict does. An unknown winrate falls back to 猴. Null when no stamp
  *  applies.
  *
  *  Exactly ONE stamp comes back — priority: 神了 outranks everything (a

@@ -82,7 +82,7 @@ export interface StatsPrefs {
   prEnabled: boolean;
   /** Rating algorithm forwarded to the stats RPCs when `prEnabled`. */
   prAlgo: PrAlgo;
-  /** 神了/海猴/蛆 verdict seals (AND-composed with RatingStamp's own
+  /** 神了/猴/蛆 verdict seals (AND-composed with RatingStamp's own
    *  zh-locale gate — the seal wording stays Chinese-only). */
   sealsEnabled: boolean;
   /** Fun localized tier wording (夯/人上人/战舰仙人…) vs the standard

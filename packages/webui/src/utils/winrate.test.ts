@@ -91,7 +91,7 @@ describe("prTierLabel", () => {
 });
 
 describe("careerStamp", () => {
-  it("stamps 海猴 on red-tier careers with a 40%+ winrate", () => {
+  it("stamps 猴 on red-tier careers with a 40%+ winrate", () => {
     expect(careerStamp(400, 30, 45)).toBe("ape");
     expect(careerStamp(749, null, 40)).toBe("ape");
   });
@@ -99,7 +99,7 @@ describe("careerStamp", () => {
   it("stamps 蛆 instead when the red-tier winrate is sub-40%", () => {
     expect(careerStamp(400, 30, 39.9)).toBe("maggot");
     expect(careerStamp(749, 3000, 20)).toBe("maggot");
-    // An unknown winrate falls back to 海猴 rather than assuming the worst.
+    // An unknown winrate falls back to 猴 rather than assuming the worst.
     expect(careerStamp(749, null, null)).toBe("ape");
   });
 

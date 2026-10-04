@@ -25,7 +25,7 @@ let stampSeq = 0;
  *  seals look identical everywhere. Displacement seeds are fixed per kind →
  *  deterministic ink.
  *   - "miracle" (神了): PR ≥ 2100 over 500+ battles
- *   - "ape" (海猴): PR < 750 with winrate ≥ 40%
+ *   - "ape" (猴): PR < 750 with winrate ≥ 40%
  *   - "maggot" (蛆): PR < 750 with winrate < 40%
  *   - "rat" (过街老鼠): hidden profile — no stats to grade, hiding is the tell
  *   - "air" (空中小人) / "sub" (水下小人): composition tags for CV / submarine
@@ -56,7 +56,7 @@ const STAMP_GLYPHS: Record<StampKind, string> = {
 };
 const STAMP_TEXT: Record<StampKind, string> = {
   miracle: "神了",
-  ape: "海猴",
+  ape: "猴",
   maggot: "蛆",
   rat: "过街老鼠",
   air: "空中小人",

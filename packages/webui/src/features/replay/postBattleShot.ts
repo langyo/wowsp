@@ -54,7 +54,7 @@ export interface ShotRow {
   /** Ship-class HUD icon (bundled PNG url) + its variant. */
   shipType?: string | null;
   iconVariant?: ShipIconVariant;
-  /** Career seal (神了/海猴/蛆/过街老鼠) pressed onto the row-end slot the
+  /** Career seal (神了/猴/蛆/过街老鼠) pressed onto the row-end slot the
    *  renderer reserves whenever ANY row carries one — the caller applies
    *  the settings gates, so a disabled seal never arrives here. */
   stamp?: CareerStamp | null;

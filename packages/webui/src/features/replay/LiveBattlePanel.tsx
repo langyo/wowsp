@@ -869,7 +869,7 @@ export default defineComponent({
         // its clan verdict is still out (clanWinrate undefined), and
         // careerStamp excuses a clan beating the 53% gate (a failed verdict
         // arrives as null and stamps fail-open). Everything else grades from
-        // the numbers (unknown winrate → 海猴 fallback).
+        // the numbers (unknown winrate → 猴 fallback).
         const stamp =
           st &&
           !st.loading &&

@@ -240,7 +240,7 @@ const SHIP_SCOPE_ON = dimsNeedShipStats(PREFS.statsDims);
 // that Vue component).
 const STAMP_TEXT: Record<StampKind, string> = {
   miracle: "神了",
-  ape: "海猴",
+  ape: "猴",
   maggot: "蛆",
   rat: "过街老鼠",
   air: "空中小人",

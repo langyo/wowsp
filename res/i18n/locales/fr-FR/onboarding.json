@@ -30,7 +30,7 @@
   "teamWrToggle": "TV d'équipe pondérée par palier",
   "teamWrToggleDesc": "Pondère le taux de victoire de l'équipe en direct par palier du navire ; désactivé, simple moyenne.",
   "sealsToggle": "Sceaux d'évaluation",
-  "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
+  "sealsToggleDesc": "Sceaux de verdict 神了/猴/蛆 — affichés uniquement avec une interface chinoise.",
   "localizedTiersToggle": "Libellés de palier localisés",
   "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard.",
   "gameDesc": "WoWSP a analysé ce PC à la recherche d'installations de World of Warships — cliquez sur le client à confirmer, ou relancez la détection / choisissez le dossier manuellement.",

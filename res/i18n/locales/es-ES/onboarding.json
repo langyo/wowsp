@@ -30,7 +30,7 @@
   "teamWrToggle": "WR de equipo ponderado por nivel",
   "teamWrToggleDesc": "Pondera la tasa de victoria del equipo en vivo por nivel de buque; desactivado, usa la media simple.",
   "sealsToggle": "Sellos de evaluación",
-  "sealsToggleDesc": "Sellos de veredicto 神了/海猴/蛆: solo se muestran con la interfaz en chino.",
+  "sealsToggleDesc": "Sellos de veredicto 神了/猴/蛆: solo se muestran con la interfaz en chino.",
   "localizedTiersToggle": "Etiquetas de nivel localizadas",
   "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar.",
   "gameDesc": "WoWSP buscó automáticamente instalaciones de World of Warships en este equipo: haz clic en el cliente que quieras confirmar, o vuelve a detectar / elige la carpeta manualmente.",

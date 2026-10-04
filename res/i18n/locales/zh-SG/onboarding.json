@@ -30,7 +30,7 @@
   "teamWrToggle": "队伍胜率加权",
   "teamWrToggleDesc": "实时对局队伍胜率按舰船等级加权，关闭则取简单平均值。",
   "sealsToggle": "评价印章",
-  "sealsToggleDesc": "盖印「神了/海猴/蛆」评价印章，仅中文界面显示。",
+  "sealsToggleDesc": "盖印「神了/猴/蛆」评价印章，仅中文界面显示。",
   "localizedTiersToggle": "本土化档位文案",
   "localizedTiersToggleDesc": "使用趣味本土化档位文案，关闭时显示标准英文档位。",
   "gameDesc": "WoWSP 已自动检测本机《战舰世界》安装，点击确认要使用的客户端；也可以重新检测或手动选择安装目录。",

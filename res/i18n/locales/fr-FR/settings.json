@@ -150,7 +150,7 @@
     "teamWrToggle": "TV d'équipe pondérée par palier",
     "teamWrToggleDesc": "Pondère le taux de victoire de l'équipe en direct par palier du navire (les paliers élevés comptent davantage) ; désactivé, simple moyenne.",
     "sealsToggle": "Sceaux d'évaluation",
-    "sealsToggleDesc": "Sceaux de verdict 神了/海猴/蛆 — affichés uniquement avec une interface chinoise.",
+    "sealsToggleDesc": "Sceaux de verdict 神了/猴/蛆 — affichés uniquement avec une interface chinoise.",
     "localizedTiersToggle": "Libellés de palier localisés",
     "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…)."
   },
@@ -265,7 +265,7 @@
     "soloAll": "Tous",
     "soloOnly": "Solo uniquement",
     "sealToggle": "Sceaux de titre",
-    "sealToggleDesc": "Sceaux de verdict 神了/海猴/蛆 en texte simple à côté des pseudos — interface chinoise uniquement, et cela requiert le rating PR.",
+    "sealToggleDesc": "Sceaux de verdict 神了/猴/蛆 en texte simple à côté des pseudos — interface chinoise uniquement, et cela requiert le rating PR.",
     "sealNeedsPr": "Activez d'abord le rating PR dans la section Statistiques — les sceaux notent ce rating.",
     "intelToggle": "Carte des consommables",
     "intelToggleDesc": "Estimations radar / hydro / fumigène et portée radar maximale sous chaque liste d'équipe ; les navires polyvalents partageant un même emplacement comptent comme estimation.",

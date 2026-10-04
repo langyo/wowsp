@@ -150,7 +150,7 @@
     "teamWrToggle": "WR de equipo ponderado por nivel",
     "teamWrToggleDesc": "Pondera la tasa de victoria del equipo en vivo por nivel de buque (los niveles altos pesan más); desactivado, usa la media simple.",
     "sealsToggle": "Sellos de evaluación",
-    "sealsToggleDesc": "Sellos de veredicto 神了/海猴/蛆: solo se muestran con la interfaz en chino.",
+    "sealsToggleDesc": "Sellos de veredicto 神了/猴/蛆: solo se muestran con la interfaz en chino.",
     "localizedTiersToggle": "Etiquetas de nivel localizadas",
     "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar (Bad/Good/Unicum, etc.)."
   },
@@ -265,7 +265,7 @@
     "soloAll": "Todos",
     "soloOnly": "Solo solitario",
     "sealToggle": "Sellos de título",
-    "sealToggleDesc": "Sellos de veredicto 神了/海猴/蛆 en texto normal junto a los nombres — solo con la interfaz en chino y requiere la valoración PR.",
+    "sealToggleDesc": "Sellos de veredicto 神了/猴/蛆 en texto normal junto a los nombres — solo con la interfaz en chino y requiere la valoración PR.",
     "sealNeedsPr": "Activa primero la valoración PR en la sección de estadísticas — los sellos valoran esa puntuación.",
     "intelToggle": "Tarjeta de consumibles",
     "intelToggleDesc": "Estimaciones de radar / hidro / humo y el alcance de radar más largo bajo cada lista de equipo; los barcos de apoyo que comparten un hueco entre varios consumibles cuentan como estimación.",
