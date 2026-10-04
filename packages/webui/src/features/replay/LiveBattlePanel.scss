@@ -117,8 +117,8 @@
   /* The map tag rides with the head's left info group (title, status and
      mode pills, clock): no auto margin, it just follows the row gap. The
      compound selector outguns MapNameTag.scss's base font so the tag speaks
-     the head's compact pill voice here (the replay-review head keeps its
-     larger voice via the same trick in ReplayView.scss). */
+     the head's compact pill voice here (the replay-review head speaks the
+     same voice via the same trick in ReplayView.scss). */
   &__map.map-tag {
     font-size: var(--text-2xs);
   }

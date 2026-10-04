@@ -155,11 +155,12 @@
     gap: 0.75rem;
   }
 
-  /* The map tag leads this header row and stands in for a page title, so
-     it reads one step larger than the tag's default voice (its colors and
-     pill shape live in MapNameTag.scss). */
+  /* The map tag rides with the meta row at the same compact pill voice the
+     live battle head gives it — the compound selector outguns
+     MapNameTag.scss's base font so both heads read identically (the tag's
+     colors and pill shape live in MapNameTag.scss). */
   .replay-view__map.map-tag {
-    font-size: var(--text-sm);
+    font-size: var(--text-2xs);
   }
 
   &__meta-item {

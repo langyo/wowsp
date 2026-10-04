@@ -153,9 +153,9 @@ export default defineComponent({
       if (popupId != null) usePopupManager().unregister(popupId);
     });
 
-    // Callers pass their layout hook as class (live-battle__map keeps the
-    // tag in the head's left info group at the compact pill voice;
-    // replay-view__map bumps its size) — but
+    // Callers pass their layout hook as class (live-battle__map and
+    // replay-view__map both hold the tag at their header rows' compact
+    // pill voice) — but
     // the teleported card makes this a multi-root component, so Vue skips
     // fallthrough entirely and the class must be merged by hand (the
     // AssetImage pattern).
