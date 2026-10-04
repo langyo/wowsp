@@ -154,6 +154,34 @@ Discussions 资源帖模板（节选）：
 
 所有变更操作（目录安装/卸载、单元启停/卸载、overlay 桩的安装/卸载）经同一把异步闸串行化：并发的目录安装可以同时下载，但台账写入与文件改名不会交错。
 
+#### 3.2 共享清单（`res_mods/wowsp.toml`）
+
+在所管理的模组旁边，WoWSP 会维护 `bin/<version>/res_mods/wowsp.toml`
+（schema 1）——它是应用侧账本（`%AppData%` 的 installed.json）的共享对半：工具插件从
+中读取自己的配置，检视游戏目录的人也能看到 WoWSP 装了什么、用的哪个方案。每次安装、
+卸载、单元启停都会重写该文件；`[tools.*]` 表归各工具所有，重写时原样保留（手改安全）。
+
+    version = 1
+
+    [managed."battle.marker.traffic-v4"]
+    name = "Ship Movement Indicator"
+    version = "15.7.0.10"
+    category = "battle"          # 目录分类；本地安装为 "local"
+    source = "mod-hub"           # mod-hub | local | bundled
+    preset = "sasagcy"           # 安装所选方案（见 wowsp:presets）
+    enabled = true               # 与 `.bak` 启停保持同步
+    installed_at = "2026-10-05T00:00:00+00:00"
+
+    [tools."battle.ingame.stats"]
+    panel_fade_ticks = 3         # 工具自定义键——WoWSP 只补默认值，
+    journal_limit = 300          # 已有键永不覆盖
+
+契约：`version` 是 schema 闸门（读到更新版本的构建不会改写该文件）；无法解析的文件被
+隔离为 `wowsp.toml.invalid` 并从零重建；清空的清单会自我删除。旧 bin 迁移从不搬运该
+文件——其中幸存的内容（启停状态、工具配置）合并进当前 bin 的清单。首个消费方是内置
+的游戏内战绩插件：从自己的 `[tools]` 表读取 `panel_fade_ticks` 与 `journal_limit`，
+缺省回退为上述默认值。
+
 ### 4. 版本迁移与兼容性确认
 
 **已落地（检测 + 一键迁移）**：扫描会报告所有仍含文件的旧 `bin/<版本>/res_mods`（`mod_hub_stale_versions`），资源页顶部给出告警横幅；`mod_hub_migrate_stale_bin` 把滞留文件移入当前版本的 `res_mods`（同卷逐文件改名；冲突**保留新装**——当前树已有活动文件或禁用孪生时滞留副本即被丢弃，滞留孪生在其活动副本存在时同样丢弃，绝不覆盖任何现有文件；当前树缺少活动文件时禁用孪生随迁；滞留的 Aslain `installed_mods.xml` 随旧目录消亡、不移植幽灵清单行；迁移完清空旧目录，并把台账记录的 `bin_version` 重定向到当前版本；受 mod-hub 闸与游戏运行守卫保护）。

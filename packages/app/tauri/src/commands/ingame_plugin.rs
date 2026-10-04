@@ -138,6 +138,32 @@ pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> 
     if !loader.exists() {
         std::fs::write(&loader, "").map_err(|e| format!("write {}: {e}", loader.display()))?;
     }
+    // wowsp.toml contract: the plugin is a managed unit (bundled source)
+    // and its `[tools]` table gets the documented defaults — existing keys,
+    // hand-tuned or from a previous install, are never overwritten.
+    {
+        use std::collections::BTreeMap;
+        let mut defaults = BTreeMap::new();
+        defaults.insert("panel_fade_ticks".to_string(), 3i64);
+        defaults.insert("journal_limit".to_string(), 300i64);
+        super::mod_hub::manifest::seed_tool_config(&dir, "battle.ingame.stats", &defaults);
+        // Replace the row outright: this install rewrites live files, so a
+        // stale disabled label from a pre-update toggle must not survive.
+        super::mod_hub::manifest::remove_managed(&dir, "battle.ingame.stats");
+        super::mod_hub::manifest::upsert_managed(
+            &dir,
+            "battle.ingame.stats",
+            super::mod_hub::manifest::ManagedEntry {
+                name: "WoWSP In-Game Tab Stats Plugin".into(),
+                version: "0.1.0".into(),
+                category: "battle".into(),
+                source: "bundled".into(),
+                preset: None,
+                enabled: true,
+                installed_at: chrono::Utc::now().to_rfc3339(),
+            },
+        );
+    }
     tracing::info!(dir = %mod_dir.display(), "ingame plugin installed");
     Ok(mod_dir.to_string_lossy().into_owned())
 }
@@ -180,6 +206,9 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
     if !other_mods && loader.is_file() && std::fs::metadata(&loader).is_ok_and(|m| m.len() == 0) {
         let _ = std::fs::remove_file(&loader);
     }
+    // The managed row goes with the files; the tool's config table stays
+    // (a reinstall should find the user's tuning where they left it).
+    super::mod_hub::manifest::remove_managed(&dir, "battle.ingame.stats");
     tracing::info!(dir = %dir.display(), "ingame plugin uninstalled");
     Ok(())
 }

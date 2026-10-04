@@ -262,6 +262,11 @@ pub struct ModInstallRecord {
     /// `mod-hub` for catalog installs, `local` for folder installs.
     pub source: String,
     pub discussion: Option<u64>,
+    /// Install-time scheme chosen from the entry's presets (see
+    /// `CatalogPreset`); absent for plain installs. Mirrored into
+    /// `wowsp.toml`'s managed row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
     /// `bin/<version>` the files were written into.
     pub bin_version: String,
     /// RFC3339 timestamp.

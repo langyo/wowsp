@@ -322,6 +322,39 @@ overlay stub's install/uninstall) serialize through an async gate so
 parallel catalog installs can download simultaneously without interleaving
 ledger writes or file renames.
 
+#### 3.2 The shared manifest (`res_mods/wowsp.toml`)
+
+Next to the mods it manages, WoWSP maintains `bin/<version>/res_mods/wowsp.toml`
+(schema 1) — the shared half of the app-data ledger: tool plugins read their
+config from it, and anyone inspecting the game folder can see what WoWSP
+installed and with which scheme. WoWSP rewrites the file on every install,
+uninstall and unit toggle; `[tools.*]` tables belong to their tools and are
+carried over untouched by rewrites (hand edits there are safe).
+
+    version = 1
+
+    [managed."battle.marker.traffic-v4"]
+    name = "Ship Movement Indicator"
+    version = "15.7.0.10"
+    category = "battle"          # catalog category, "local" for folder installs
+    source = "mod-hub"           # mod-hub | local | bundled
+    preset = "sasagcy"           # chosen scheme, when installed with one
+    enabled = true               # kept in step with the `.bak` toggles
+    installed_at = "2026-10-05T00:00:00+00:00"
+
+    [tools."battle.ingame.stats"]
+    panel_fade_ticks = 3         # tool-defined keys — WoWSP seeds defaults,
+    journal_limit = 300          # existing keys are never overwritten
+
+Contract: `version` gates the schema (a build that sees a NEWER version
+leaves the file untouched); an unparseable file is quarantined as
+`wowsp.toml.invalid` and maintenance restarts from scratch; an emptied
+manifest deletes itself. Stale-bin migrations never transplant the file —
+its surviving content (toggle states, tool configs) merges into the current
+bin's manifest. The first consumer is the bundled in-game stats plugin,
+which reads `panel_fade_ticks` and `journal_limit` from its `[tools]` table
+with the values above as fallbacks.
+
 ### 4. Version migration & compatibility confirmation
 
 **Landed (detection + one-click migrate)**: the scan reports every older

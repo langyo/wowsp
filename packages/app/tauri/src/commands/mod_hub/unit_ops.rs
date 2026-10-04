@@ -50,12 +50,67 @@ pub async fn mod_hub_set_unit_enabled(
         }
     }
     let renamed = set_paths_state(&res_mods, &unit.paths, enabled)?;
+    // Keep wowsp.toml's enabled flags in step for records this unit covers
+    // COMPLETELY (partial overlap would leave the row's state ambiguous —
+    // the half-disable guard above already refused that direction). The
+    // records also backfill rows for installs that predate the manifest.
+    {
+        let ledger = super::mod_catalog::load_ledger();
+        let mut covered: Vec<ModInstallRecord> = ledger
+            .installs
+            .iter()
+            .filter(|r| r.bin_version == bin_version)
+            .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
+            .filter(|r| {
+                r.files
+                    .iter()
+                    .any(|f| !f.starts_with("@game/") && unit_covers(&unit.paths, f))
+            })
+            .filter(|r| !half_disable_violation(r, &unit.paths))
+            .cloned()
+            .collect();
+        // The bundled in-game plugin has no ledger record by design — its
+        // manifest row is maintained here directly.
+        if unit_covers(&unit.paths, &bundled_plugin_entry()) {
+            covered.push(bundled_plugin_record());
+        }
+        super::manifest::set_managed_enabled(&res_mods, &covered, enabled);
+    }
     tracing::info!(rel = %rel_path, enabled, renamed, "mod_hub_set_unit_enabled done");
     Ok(UnitToggleReport {
         rel_path,
         disabled: !enabled,
         renamed_files: renamed,
     })
+}
+
+/// Catalog id of the bundled in-game stats plugin (no ledger record —
+/// its wowsp.toml row is maintained at the mutation points that touch it).
+pub(crate) const BUNDLED_PLUGIN_ID: &str = "battle.ingame.stats";
+
+/// The plugin's presence probe (mirrors ingame_plugin.rs): the entry file
+/// the unit tree must cover for the bundled row to apply.
+fn bundled_plugin_entry() -> String {
+    format!("PnFMods/{}/Main.py", super::super::ingame_plugin::MOD_DIR)
+}
+
+/// A synthetic record describing the bundled plugin for toggle sync (the
+/// manifest row it backfills/maintains).
+fn bundled_plugin_record() -> ModInstallRecord {
+    ModInstallRecord {
+        id: BUNDLED_PLUGIN_ID.into(),
+        name: "WoWSP In-Game Tab Stats Plugin".into(),
+        version: "0.1.0".into(),
+        category: "battle".into(),
+        source: "bundled".into(),
+        discussion: None,
+        preset: None,
+        bin_version: String::new(),
+        installed_at: String::new(),
+        files: vec![bundled_plugin_entry()],
+        restore_dir: None,
+        game_root: String::new(),
+    }
 }
 
 /// Would toggling `paths` OFF disable only part of this record's mod? True
@@ -232,6 +287,11 @@ pub(crate) fn uninstall_unit_core(
     // Keep Aslain's manifest describing reality when the unit came from it.
     if unit.version.is_some() {
         remove_manifest_entry(res_mods, &unit.name);
+    }
+    // The bundled in-game plugin's unit carries no ledger record — drop its
+    // wowsp.toml row here too or it would outlive its files.
+    if unit_covers(&unit.paths, &bundled_plugin_entry()) {
+        super::manifest::remove_managed(res_mods, BUNDLED_PLUGIN_ID);
     }
 
     tracing::info!(rel = %unit.rel_path, removed, restored, "uninstall_unit_core done");

@@ -1220,6 +1220,8 @@ export interface ModInstallRecord {
   /** `mod-hub` for catalog installs, `local` for folder installs. */
   source: string;
   discussion?: number | null;
+  /** Install-time scheme the user picked (see CatalogPreset). */
+  preset?: string | null;
   binVersion: string;
   installedAt: string;
   files: string[];

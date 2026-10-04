@@ -59,6 +59,14 @@ pub async fn mod_hub_install(
                 Ok(mut applied) => {
                     let record = local_record(&applied, &plan, &game_root);
                     let id = record.id.clone();
+                    // Local installs speak the same wowsp.toml contract as
+                    // catalog ones — the manifest row is the shared half of
+                    // this record.
+                    super::manifest::upsert_managed(
+                        &super::manifest::res_mods_of(&game_root, &applied.report.bin_version),
+                        &id,
+                        super::manifest::WowspManifest::entry_from_record(&record),
+                    );
                     ledger.installs.push(record);
                     // Say whose files this install clobbered (the journal
                     // already snapshotted them).
@@ -121,6 +129,7 @@ pub(crate) fn local_record(
         version: String::new(),
         category: "local".into(),
         source: "local".into(),
+        preset: None,
         discussion: None,
         bin_version: applied.report.bin_version.clone(),
         installed_at: chrono::Utc::now().to_rfc3339(),

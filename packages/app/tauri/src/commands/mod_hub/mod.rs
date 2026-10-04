@@ -435,6 +435,7 @@ fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> Result<usi
 mod classify;
 mod install;
 mod installed_units;
+pub(crate) mod manifest;
 mod safe_mode;
 mod scan_installed;
 mod stale_migration;

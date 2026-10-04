@@ -25,6 +25,7 @@ use wowsp_tauri_shared::{
 };
 
 use super::mod_hub;
+use super::mod_hub::manifest::{self, WowspManifest};
 use crate::paths;
 
 const INDEX_CACHE_FILE: &str = "mod-catalog.json";
@@ -632,6 +633,7 @@ pub async fn mod_catalog_install(
         version: entry.version.clone(),
         category: entry.category.clone(),
         source: "mod-hub".into(),
+        preset: preset.clone().filter(|p| !p.is_empty()),
         discussion: entry.discussion,
         bin_version: report.bin_version.clone(),
         installed_at: Utc::now().to_rfc3339(),
@@ -639,8 +641,15 @@ pub async fn mod_catalog_install(
         restore_dir: restore_dir
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned()),
-        game_root,
+        game_root: game_root.clone(),
     });
+    // The shared on-disk manifest mirrors the record (id, scheme, …).
+    let record = ledger.installs.last().expect("record pushed above");
+    manifest::upsert_managed(
+        &manifest::res_mods_of(&game_root, &record.bin_version),
+        &record.id,
+        WowspManifest::entry_from_record(record),
+    );
     save_ledger(&ledger)?;
 
     drop(_gate);
@@ -891,6 +900,12 @@ pub(crate) fn uninstall_from_ledger(
     }
 
     installs.retain(|r| !(r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root)));
+    // The shared manifest loses the row too (its `[tools.*]` tables and any
+    // other entries survive; an empty manifest file removes itself).
+    manifest::remove_managed(
+        &manifest::res_mods_of(game_root, &record.bin_version),
+        &record.id,
+    );
 
     // The 0-byte loader marker is a shared component: when the last record
     // referencing it is gone, drop our placeholder — a non-empty loader
@@ -1005,6 +1020,7 @@ fn reconcile_core_with_grace(
     grace: std::time::Duration,
 ) -> ReconcileReport {
     let mut dropped = 0usize;
+    let mut ghosts: Vec<(String, String)> = Vec::new();
     installs.retain(|r| {
         // Records stamped with a DIFFERENT game install are not ours to
         // judge — the ledger is global, and checking them against this
@@ -1018,9 +1034,15 @@ fn reconcile_core_with_grace(
             true
         } else {
             dropped += 1;
+            // The ghost's wowsp.toml row goes with it (removed after the
+            // ledger verdict settles).
+            ghosts.push((r.id.clone(), r.bin_version.clone()));
             false
         }
     });
+    for (id, bin) in &ghosts {
+        manifest::remove_managed(&manifest::res_mods_of(game_root, bin), id);
+    }
     // Snapshot dirs are shared across installs: only collect orphans no
     // record ANYWHERE still references, and give fresh ones a grace
     // window — a just-failed install's snapshots may be the only vanilla
@@ -1193,6 +1215,7 @@ mod tests {
             category: "battle".into(),
             source: "mod-hub".into(),
             discussion: None,
+            preset: None,
             bin_version: "1".into(),
             installed_at: String::new(),
             files: written,
@@ -1237,6 +1260,7 @@ mod tests {
             category: "battle".into(),
             source: "mod-hub".into(),
             discussion: None,
+            preset: None,
             bin_version: "1".into(),
             installed_at: String::new(),
             files: vec!["gui/a.png".into()],
@@ -1288,6 +1312,7 @@ mod tests {
             category: "battle".into(),
             source: "mod-hub".into(),
             discussion: None,
+            preset: None,
             bin_version: "1".into(),
             installed_at: String::new(),
             files: written1,
@@ -1312,6 +1337,7 @@ mod tests {
             category: "battle".into(),
             source: "mod-hub".into(),
             discussion: None,
+            preset: None,
             bin_version: "1".into(),
             installed_at: String::new(),
             files: written2,
@@ -1348,6 +1374,7 @@ mod tests {
             category: "battle".into(),
             source: "mod-hub".into(),
             discussion: None,
+            preset: None,
             bin_version: "1".into(),
             installed_at: String::new(),
             files: vec![format!("PnFMods/{main}/Main.py"), "PnFModsLoader.py".into()],
@@ -1394,6 +1421,7 @@ mod tests {
             category: "battle".into(),
             source: "mod-hub".into(),
             discussion: None,
+            preset: None,
             bin_version: bin.into(),
             installed_at: String::new(),
             files: files.iter().map(|f| f.to_string()).collect(),
@@ -1528,6 +1556,57 @@ mod tests {
     }
 
     #[test]
+    fn uninstall_drops_the_wowsp_toml_row() {
+        // uninstall_from_ledger maintains res_mods/wowsp.toml: the row goes
+        // with the record, the file self-deletes when nothing remains.
+        let tmp = std::env::temp_dir().join("wowsp_toml_uninstall");
+        let _ = fs::remove_dir_all(&tmp);
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let res_mods = tmp.join("game/bin/1/res_mods");
+        fs::create_dir_all(res_mods.join("gui")).unwrap();
+        fs::write(res_mods.join("gui/a.png"), b"a").unwrap();
+        manifest::upsert_managed(
+            &res_mods,
+            "m",
+            WowspManifest::entry_from_record(&ModInstallRecord {
+                id: "m".into(),
+                name: "M".into(),
+                version: "1".into(),
+                category: "battle".into(),
+                source: "mod-hub".into(),
+                discussion: None,
+                preset: Some("classic".into()),
+                bin_version: "1".into(),
+                installed_at: String::new(),
+                files: vec!["gui/a.png".into()],
+                restore_dir: None,
+                game_root: game_root.clone(),
+            }),
+        );
+        assert!(res_mods.join("wowsp.toml").is_file());
+        let mut installs = vec![ModInstallRecord {
+            id: "m".into(),
+            name: "M".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["gui/a.png".into()],
+            restore_dir: None,
+            game_root: String::new(),
+        }];
+        uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
+        assert!(
+            !res_mods.join("wowsp.toml").exists(),
+            "empty manifest self-deletes"
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
     fn delisted_entries_survive_with_flag() {
         // A closed discussion thread flags the entry as withdrawn: the entry
         // STAYS in the parsed list (deep links need it to explain the state)
@@ -1624,6 +1703,7 @@ mod tests {
                 category: "battle".into(),
                 source: "mod-hub".into(),
                 discussion: Some(9),
+                preset: None,
                 bin_version: "1".into(),
                 installed_at: "2026-01-01T00:00:00Z".into(),
                 files: vec!["a.xml".into()],

@@ -128,6 +128,9 @@ pub(crate) fn migrate_stale_bin_core(
     from_version: &str,
 ) -> Result<MigrateReport, String> {
     let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
+    // Captured before the sweep: the stale wowsp.toml is bookkeeping (the
+    // merge below decides what survives), not a movable mod file.
+    let stale_manifest_raw = super::manifest::read_raw(&src);
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
 
     let mut moved = 0usize;
@@ -142,6 +145,15 @@ pub(crate) fn migrate_stale_bin_core(
     if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
         super::mod_catalog::save_ledger(&ledger)?;
     }
+    // Fold the stale manifest into the current bin: toggle states carry
+    // over, fields refresh from the re-pointed ledger, tool configs union.
+    super::manifest::merge_after_migration(
+        stale_manifest_raw.as_deref(),
+        &dst,
+        &ledger.installs,
+        game_root,
+        &latest,
+    );
     tracing::info!(from = %from_version, to = %latest, moved, skipped, "stale bin migrated");
     Ok(MigrateReport {
         from_version: from_version.to_string(),
@@ -192,6 +204,7 @@ fn is_migration_bookkeeping(rel: &str) -> bool {
     let name = rel.rsplit('/').next().unwrap_or(rel);
     if name.eq_ignore_ascii_case("installed_mods.xml")
         || name.eq_ignore_ascii_case("PnFModsLoader.py")
+        || name.to_ascii_lowercase().starts_with("wowsp.toml")
     {
         return true;
     }
@@ -307,9 +320,13 @@ fn migrate_tree(
         }
         // Aslain's manifest is per-install bookkeeping — transplanting it
         // would resurrect rows for files the current tree never got. It
-        // dies with the stranded directory instead.
+        // dies with the stranded directory instead. wowsp.toml likewise:
+        // its surviving content is merged by the caller (captured before
+        // this sweep), never transplanted verbatim.
         let name = ent.file_name().to_string_lossy().into_owned();
-        if name.eq_ignore_ascii_case("installed_mods.xml") {
+        if name.eq_ignore_ascii_case("installed_mods.xml")
+            || name.to_ascii_lowercase().starts_with("wowsp.toml")
+        {
             let _ = fs::remove_file(&s);
             *skipped += 1;
             continue;
@@ -366,6 +383,9 @@ pub(crate) fn migration_execute_core(
     ignore: &[String],
 ) -> Result<MigrateReport, String> {
     let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
+    // Captured before the sweep (see migrate_stale_bin_core): wowsp.toml is
+    // bookkeeping here, its surviving content is merged after the move.
+    let stale_manifest_raw = super::manifest::read_raw(&src);
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
     let keep: BTreeSet<String> = keep.iter().map(|k| k.replace('\\', "/")).collect();
     let ignore: BTreeSet<String> = ignore.iter().map(|k| k.replace('\\', "/")).collect();
@@ -425,6 +445,13 @@ pub(crate) fn migration_execute_core(
     if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
         super::mod_catalog::save_ledger(&ledger)?;
     }
+    super::manifest::merge_after_migration(
+        stale_manifest_raw.as_deref(),
+        &dst,
+        &ledger.installs,
+        game_root,
+        &latest,
+    );
     tracing::info!(
         from = %from_version,
         to = %latest,

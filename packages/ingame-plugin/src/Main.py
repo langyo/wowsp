@@ -42,7 +42,58 @@ MANUAL_FLAG = 'manual_refresh.flag'
 ROSTER_RAW_FILE = 'roster_raw.json'
 ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
 TELEMETRY_FILE = 'telemetry.json'
-JOURNAL_LIMIT = 300
+
+# Tool config: WoWSP maintains res_mods/wowsp.toml and seeds our table
+# ([tools."battle.ingame.stats"]) with these values; the keys below are the
+# contract, hand edits to the file survive WoWSP rewrites. JOURNAL_LIMIT
+# stays as the fallback default for a missing/unreadable manifest.
+CONFIG_DEFAULTS = {
+    'panel_fade_ticks': 3,
+    'journal_limit': 300,
+}
+JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
+
+
+def load_tool_config():
+    """Read integer keys from [tools."battle.ingame.stats"] in the
+    res_mods/wowsp.toml WoWSP maintains two levels above this file.
+
+    A conservative 3.6-level scanner — only `key = <int>` lines under our
+    own table header matter, so no full TOML parser is warranted inside
+    the sandbox. Any problem (missing file, changed layout, odd values)
+    falls back to CONFIG_DEFAULTS; never raises.
+    """
+    cfg = dict(CONFIG_DEFAULTS)
+    try:
+        import os
+        here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(here, os.pardir, os.pardir, 'wowsp.toml')
+        with open(path, 'r') as handle:
+            body = handle.read()
+        header = '[tools."battle.ingame.stats"]'
+        lines = body.splitlines()
+        for idx in range(len(lines)):
+            if lines[idx].strip() != header:
+                continue
+            for line in lines[idx + 1:]:
+                stripped = line.strip()
+                if stripped.startswith('['):
+                    break  # next table — ours ended
+                if '=' not in stripped or stripped.startswith('#'):
+                    continue
+                key, _, raw = stripped.partition('=')
+                key = key.strip()
+                raw = raw.split('#', 1)[0].strip()
+                if key in CONFIG_DEFAULTS and raw.lstrip('-').isdigit():
+                    cfg[key] = int(raw)
+            break
+    except Exception:
+        pass
+    return cfg
+
+
+TOOL_CONFIG = load_tool_config()
+JOURNAL_LIMIT = TOOL_CONFIG['journal_limit']
 
 # The in-game panel's single data component: the unbound view watches this
 # key (getPrimWatcher(CC.mods_DataComponent, ...)) and redraws on every
@@ -777,7 +828,7 @@ class Probe(object):
             # battle (clear + rearm churn that killed the scheduler) —
             # require the emptiness to persist before believing it.
             self.empty_ticks += 1
-            if self.empty_ticks >= 3:
+            if self.empty_ticks >= TOOL_CONFIG['panel_fade_ticks']:
                 self.quit()
         else:
             self.empty_ticks = 0
