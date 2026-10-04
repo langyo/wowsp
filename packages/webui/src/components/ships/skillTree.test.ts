@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   SKILL_BUDGET,
+  skillAffordable,
   skillCost,
   skillPointsBelow,
   skillPointsSpent,
@@ -30,6 +31,20 @@ const pick = (...codes: string[]) => Object.fromEntries(codes.map((c) => [c, 1 a
 describe("skillCost", () => {
   it("charges each skill its tier row", () => {
     expect([1, 2, 3, 4].map(skillCost)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("skillAffordable", () => {
+  it("greys exactly the rows the remaining points can no longer buy", () => {
+    // Remaining 3/2/1/0 pts makes tiers 4/3/2/1 the newest unaffordable row,
+    // and everything dearer stays greyed too (cumulative, like the game).
+    const row = (remaining: number) => [1, 2, 3, 4].map((tier) => skillAffordable(tier, remaining));
+    expect(row(21)).toEqual([true, true, true, true]);
+    expect(row(3)).toEqual([true, true, true, false]);
+    expect(row(2)).toEqual([true, true, false, false]);
+    expect(row(1)).toEqual([true, false, false, false]);
+    expect(row(0)).toEqual([false, false, false, false]);
+    expect(row(-1)).toEqual([false, false, false, false]);
   });
 });
 

@@ -66,6 +66,14 @@ export function skillCost(tier: number): number {
   return tier;
 }
 
+/** Whether a skill still fits the points left — the game greys out every
+ *  UNPICKED skill this answers false for (remaining 3/2/1/0 pts locks the
+ *  unpicked side of tiers 4/3/2/1); picked skills stay clickable so their
+ *  points can be refunded. */
+export function skillAffordable(tier: number, remaining: number): boolean {
+  return remaining >= skillCost(tier);
+}
+
 /** Total points a selection consumes. Each picked skill costs its tier row;
  *  codes outside `tree` (a build restored onto a ship of another class —
  *  codes are not unique across classes) fall back to 1 pt, the floor for

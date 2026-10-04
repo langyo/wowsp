@@ -291,6 +291,7 @@
     "tier": "第 {n} 層",
     "locked": "未解鎖 — 需在低層投入 {n} 點",
     "notApplicable": "該艦不適用",
+    "noPoints": "剩餘點數不足 — 該技能需要 {n} 點",
     "maxed": "滿級",
     "noTree": "此艦種尚無技能樹。",
     "rank": "階級 {n}",

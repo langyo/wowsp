@@ -291,6 +291,7 @@
     "tier": "Nivel {n}",
     "locked": "Bloqueado — requiere {n} puntos en niveles inferiores",
     "notApplicable": "No disponible en este buque",
+    "noPoints": "Puntos insuficientes — esta habilidad cuesta {n} puntos",
     "maxed": "Máx.",
     "noTree": "Aún no hay árbol de habilidades para este tipo de buque.",
     "rank": "Rango {n}",

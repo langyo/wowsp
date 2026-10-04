@@ -291,6 +291,7 @@
     "tier": "Palier {n}",
     "locked": "Verrouillé — nécessite {n} points dans les paliers inférieurs",
     "notApplicable": "Indisponible sur ce navire",
+    "noPoints": "Pas assez de points — cette compétence coûte {n} points",
     "maxed": "Max",
     "noTree": "Aucun arbre de compétences pour ce type de navire pour l'instant.",
     "rank": "Rang {n}",

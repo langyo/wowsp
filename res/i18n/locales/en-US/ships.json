@@ -291,6 +291,7 @@
     "tier": "Tier {n}",
     "locked": "Locked — needs {n} points in lower tiers",
     "notApplicable": "Not available on this ship",
+    "noPoints": "Not enough points left — this skill costs {n}",
     "maxed": "Max",
     "noTree": "No skill tree for this ship type yet.",
     "rank": "Rank {n}",

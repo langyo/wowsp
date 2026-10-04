@@ -12,6 +12,7 @@ import {
   classSkills,
   recommendedSkills,
   SKILL_BUDGET,
+  skillAffordable,
   skillClassFor,
   skillCost,
   skillIconUrl,
@@ -319,7 +320,7 @@ export default defineComponent({
         setBuild({ skills });
       } else if (
         !skillBan(skill) &&
-        remaining.value >= skillCost(skill.tier) &&
+        skillAffordable(skill.tier, remaining.value) &&
         tierUnlocked(skill.tier)
       ) {
         setBuild({ skills: { ...props.build.skills, [skill.code]: 1 } });
@@ -681,6 +682,11 @@ export default defineComponent({
           }
           const picked = !!props.build.skills[skill.code];
           const banned = skillBan(skill);
+          // Game-style affordance: with the points left, every unpicked
+          // skill the row costs more than greys out — picked ones stay lit
+          // so their points stay refundable.
+          const affordable = skillAffordable(skill.tier, remaining.value);
+          const pickable = unlocked && !banned && (picked || affordable);
           const enhanced = epicSkills.value.has(skill.code);
           const rec = recommended.value.has(skill.code);
           const name = skillName(skill);
@@ -701,9 +707,15 @@ export default defineComponent({
               <button
                 type="button"
                 class="skill-tile-v__btn"
-                disabled={!unlocked || !!banned}
-                onClick={() => (unlocked && !banned ? toggleSkill(skill) : null)}
-                data-hint={banned ? t("ships.skills.notApplicable") : skillHint(skill)}
+                disabled={!pickable}
+                onClick={() => (pickable ? toggleSkill(skill) : null)}
+                data-hint={
+                  banned
+                    ? t("ships.skills.notApplicable")
+                    : unlocked && !picked && !affordable
+                      ? t("ships.skills.noPoints", { n: skillCost(skill.tier) })
+                      : skillHint(skill)
+                }
                 data-hint-tags={tags.length > 0 ? JSON.stringify(tags) : undefined}
               >
                 <span class="skill-tile-v__icon">
