@@ -33,7 +33,6 @@ import {
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
 import {
   api,
-  type AssetFileInfo,
   type CatalogEntry,
   type CatalogPreset,
   type ForeignModUnit,
