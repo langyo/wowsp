@@ -39,6 +39,7 @@ import HoloRosterOverlay from "./HoloRosterOverlay";
 import HoloSelfCard from "./HoloSelfCard";
 import type {
   AchievementEvent,
+  ArenaPlayer,
   CameraSample,
   ChatEvent,
   DamageStatSample,
@@ -177,6 +178,10 @@ export default defineComponent({
     /** In-battle achievement awards (avatar onAchievementEarned) — same
      *  playhead-crossing feed treatment as chat. */
     achievements: { type: Array as () => AchievementEvent[], default: () => [] },
+    /** The arena's initial player state (onArenaStateReceived) — the
+     *  authoritative ship-entity → team/player join for markers, minimap
+     *  and the scorebar. */
+    arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -362,11 +367,25 @@ export default defineComponent({
     // Ships alive = total - sunk count at current time
     const allyAlive = ref(allyTotal.value);
     const enemyAlive = ref(enemyTotal.value);
-    // Death time per roster ship (by shipId join on the trajectory kinds).
+    // Death time per roster ship. With the arena assignments (entity →
+    // roster entry) the join is per player — mirror picks (both teams on
+    // the same ship) sink at different times and used to overwrite each
+    // other when keyed by the shared shipId. Before the first actor
+    // rebuild (assignments empty) fall back to the shipId-keyed map.
     const deathTimeByShipId = computed(() => {
       const m = new Map<number, number | null>();
       for (const tr of props.trajectories) {
         if (tr.kind?.shipId != null) m.set(tr.kind.shipId, tr.deathTime ?? null);
+      }
+      return m;
+    });
+    const deathTimeByRosterId = computed(() => {
+      const m = new Map<number, number | null>();
+      if (ctx?.rosterAssignments.size === 0) return m;
+      for (const [entityId, entry] of ctx?.rosterAssignments ?? []) {
+        if (!entry) continue;
+        const tr = props.trajectories.find((t) => t.entityId === entityId);
+        if (tr) m.set(entry.id, tr.deathTime ?? null);
       }
       return m;
     });
@@ -378,9 +397,12 @@ export default defineComponent({
       dead: boolean;
     }
     const shipRows = computed(() => {
-      const dt = deathTimeByShipId.value;
+      const byRoster = deathTimeByRosterId.value;
+      const byShip = deathTimeByShipId.value;
+      const deathOf = (v: VehicleEntry): number | null | undefined =>
+        byRoster.has(v.id) ? byRoster.get(v.id) : byShip.get(v.shipId!);
       const mk = (v: VehicleEntry): ShipRowEntry => {
-        const d = v.shipId != null ? dt.get(v.shipId) : undefined;
+        const d = v.shipId != null ? deathOf(v) : undefined;
         const dead = d != null && d <= current.value;
         const info = props.encyclopedia.get(v.shipId) as ShipInfo | undefined;
         const offline = shipOfflineEntry(v.shipId);

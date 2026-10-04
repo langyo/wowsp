@@ -37,11 +37,13 @@ import type {
   WardRemoveEvent,
   WeaponLockEvent,
 } from "@/api";
+import type { ArenaPlayer } from "@/api";
 import type { PostBattleData } from "@/features/replay/postBattle";
 import type { ThreeScene } from "./useThreeScene";
 import { disposeMarker } from "./shipMarker";
 import { disposeAny } from "./sceneUtils";
 import { roleFromRelation } from "./teamColors";
+import type { ArenaIdentity } from "./rosterRoles";
 import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "./modelLoader";
 import { viewWindow } from "./tactical/render";
 import type { CapZoneState } from "./capZones";
@@ -96,6 +98,9 @@ export interface HoloMapDataProps {
   chatMessages: ChatEvent[];
   /** In-battle achievement awards (avatar onAchievementEarned). */
   achievements: AchievementEvent[];
+  /** The arena's initial player state — the authoritative ship-entity →
+   *  team/player join (see rosterRoles.arenaIdentities). */
+  arenaPlayers: ArenaPlayer[];
   /** Roster from the replay header. */
   vehicles: VehicleEntry[];
   /** Ship encyclopedia (shipId → ShipInfo). */
@@ -333,6 +338,12 @@ export interface MapInternals extends MapInternalsDeps {
   /** Sorted ship entity ids — the spawn-order fallback for roleless ships
    *  (the game client spawns team A before team B). */
   shipEntityIds: number[];
+  /** Authoritative per-entity identity from the arena's initial state
+   *  (team slot / roster player id / self flag); `null` when the arena
+   *  state didn't decode and consumers fall back to the spawn heuristics. */
+  arenaIdentities: Map<number, ArenaIdentity> | null;
+  /** The recorder's team slot from the arena state (0 when unknown). */
+  arenaSelfTeam: number;
 
   // ── Plane / squadron lookup tables (keyed by planeId or planeId*16+i) ─
   /** squadron id → slot index in the planeCloud position buffer. */
@@ -413,6 +424,8 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     bounds: null,
     rosterAssignments: new Map(),
     shipEntityIds: [],
+    arenaIdentities: null,
+    arenaSelfTeam: 0,
 
     planeCloudSlots: new Map(),
     minimapTrailEnd: new Map(),
@@ -568,6 +581,8 @@ export function clearActors(ctx: MapInternals) {
   ctx.selectedEntityId.value = null;
   ctx.rosterAssignments = new Map();
   ctx.shipEntityIds = [];
+  ctx.arenaIdentities = null;
+  ctx.arenaSelfTeam = 0;
 }
 
 /** Quick team-role lookup for the minimap trails, shell-arc targets and
@@ -580,6 +595,13 @@ export function clearActors(ctx: MapInternals) {
 export function resolveRoleQuick(ctx: MapInternals, tr: EntityTrajectory): TeamRole {
   const entry = ctx.rosterAssignments.get(tr.entityId);
   if (entry) return roleFromRelation(entry.relation, ctx.props.operation);
+  const identity = ctx.arenaIdentities?.get(tr.entityId);
+  if (identity) {
+    if (identity.isSelf) return "self";
+    return ctx.props.operation || identity.team === ctx.arenaSelfTeam
+      ? "ally"
+      : "enemy";
+  }
   const idx = ctx.shipEntityIds.indexOf(tr.entityId);
   return idx >= 0 && (ctx.props.operation || idx < ctx.shipEntityIds.length / 2)
     ? "ally"

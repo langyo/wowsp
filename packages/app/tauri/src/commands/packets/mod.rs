@@ -128,6 +128,11 @@ struct LayoutProfile {
     /// SHOTKILL entries carry a nullable TERMINAL_BALLISTICS_INFO from 12.7.0
     /// on (flag byte; 29 bytes when present).
     shotkill_has_ballistics: bool,
+    /// The arena's initial state broadcast (onArenaStateReceived) — the
+    /// authoritative ship-entity → team/player mapping. `None` when the
+    /// version's exposed id isn't pinned (>0); the arena player list then
+    /// stays empty and consumers fall back to the shipId-join heuristics.
+    arena_state_method: Option<i32>,
 }
 
 /// A single property change sample — one field of an entity updated at a
@@ -221,6 +226,10 @@ pub struct DecodedReplay {
     /// In-battle achievement awards (avatar onAchievementEarned): a roster
     /// player earned a GameParams achievement at a match time.
     pub achievements: Vec<wowsp_tauri_shared::AchievementEvent>,
+    /// The arena's initial player/bot state (onArenaStateReceived) — the
+    /// authoritative ship-entity → team/player join. Empty when the version's
+    /// exposed method id isn't pinned or the payload fails the shape checks.
+    pub arena_players: Vec<wowsp_tauri_shared::ArenaPlayer>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -290,8 +299,22 @@ pub fn decode_replay(
         },
         ward_has_type: version_key.map(|k| k >= (13, 2, 0)).unwrap_or(true),
         shotkill_has_ballistics: version_key.map(|k| k >= (12, 7, 0)).unwrap_or(true),
+        // The arena-state FixedDict layout is version-gated; without a
+        // parsed version the method id would come from the newest table
+        // while the field indices default to the oldest layout — skip the
+        // decode entirely (consumers fall back to the shipId join).
+        arena_state_method: version_key
+            .filter(|_| in_table_range)
+            .map(|_| method_ids_for_version(client_version).avatar_on_arena_state_received)
+            .filter(|id| *id > 0),
     };
-    Ok(walk_frames(&inflated, ship_id_candidates, legacy, &profile))
+    Ok(walk_frames(
+        &inflated,
+        ship_id_candidates,
+        legacy,
+        &profile,
+        version_key,
+    ))
 }
 
 /// `\"15,0,0,11791718\"` → `(15, 0, 0)`; malformed input yields `None`.
@@ -408,8 +431,8 @@ mod pickle;
 mod tests;
 
 use events::{
-    args_is_plane_id, decode_achievement, decode_artillery_shots, decode_chat_message,
-    decode_damage_stat, decode_explosions, decode_minimap_squadron_add,
+    args_is_plane_id, decode_achievement, decode_arena_state, decode_artillery_shots,
+    decode_chat_message, decode_damage_stat, decode_explosions, decode_minimap_squadron_add,
     decode_minimap_squadron_move, decode_shot_kills, decode_squadron_add, decode_squadron_update,
     decode_torpedo_directions, decode_torpedo_salvos, decode_ward_added,
 };

@@ -33,6 +33,11 @@ pub struct MethodIds {
     /// In-battle achievement award (onAchievementEarned): `i32 playerId,
     /// u32 achievementId` — ids join to GameParams Achievement entries.
     pub avatar_on_achievement_earned: i32,
+    /// The arena's initial state broadcast (onArenaStateReceived): `i64
+    /// arenaId, i8 teamBuildTypeId, BLOB preBattlesInfo, BLOB playersData,
+    /// BLOB botsData` — the authoritative per-player entity/team mapping
+    /// the roster join is built from.
+    pub avatar_on_arena_state_received: i32,
 }
 
 /// (major, minor, patch) → ids, ascending. Produced from every version the
@@ -56,6 +61,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 128,
         },
     ),
     (
@@ -76,6 +82,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 128,
         },
     ),
     (
@@ -96,6 +103,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 124,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 126,
         },
     ),
     (
@@ -116,6 +124,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 127,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 129,
         },
     ),
     (
@@ -136,6 +145,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 127,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 129,
         },
     ),
     (
@@ -156,6 +166,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 127,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 129,
         },
     ),
     (
@@ -176,6 +187,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 125,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 127,
         },
     ),
     (
@@ -196,6 +208,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 125,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 127,
         },
     ),
     (
@@ -216,6 +229,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 128,
         },
     ),
     (
@@ -236,6 +250,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 130,
         },
     ),
     (
@@ -256,6 +271,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 52,
+            avatar_on_arena_state_received: 128,
         },
     ),
     (
@@ -276,6 +292,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 52,
+            avatar_on_arena_state_received: 128,
         },
     ),
     (
@@ -296,6 +313,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
+            avatar_on_arena_state_received: 130,
         },
     ),
     (
@@ -316,6 +334,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
+            avatar_on_arena_state_received: 130,
         },
     ),
     (
@@ -336,6 +355,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
+            avatar_on_arena_state_received: 130,
         },
     ),
     (
@@ -356,6 +376,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
+            avatar_on_arena_state_received: 130,
         },
     ),
     (
@@ -376,6 +397,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 132,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 134,
         },
     ),
     (
@@ -396,6 +418,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 135,
         },
     ),
     (
@@ -416,6 +439,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 135,
         },
     ),
     (
@@ -436,6 +460,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 135,
         },
     ),
     (
@@ -456,6 +481,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 135,
         },
     ),
     (
@@ -476,6 +502,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -496,6 +523,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -516,6 +544,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -536,6 +565,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -556,6 +586,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -576,6 +607,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -596,6 +628,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -616,6 +649,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -636,6 +670,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -656,6 +691,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 136,
         },
     ),
     (
@@ -676,6 +712,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -696,6 +733,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -716,6 +754,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -736,6 +775,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -756,6 +796,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -776,6 +817,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -796,6 +838,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 138,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 140,
         },
     ),
     (
@@ -816,6 +859,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -836,6 +880,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 139,
         },
     ),
     (
@@ -856,6 +901,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 138,
         },
     ),
     (
@@ -876,6 +922,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 138,
         },
     ),
     (
@@ -896,6 +943,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 138,
         },
     ),
     (
@@ -916,6 +964,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
+            avatar_on_arena_state_received: 138,
         },
     ),
     (
@@ -936,6 +985,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 144,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 146,
         },
     ),
     (
@@ -956,6 +1006,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 144,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 146,
         },
     ),
     (
@@ -976,6 +1027,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 144,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 146,
         },
     ),
     (
@@ -996,6 +1048,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 142,
             avatar_on_achievement_earned: 54,
+            avatar_on_arena_state_received: 144,
         },
     ),
     (
@@ -1016,6 +1069,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 57,
+            avatar_on_arena_state_received: 148,
         },
     ),
     (
@@ -1036,6 +1090,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 148,
         },
     ),
     (
@@ -1056,6 +1111,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 148,
         },
     ),
     (
@@ -1076,6 +1132,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 148,
         },
     ),
     (
@@ -1096,6 +1153,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 148,
         },
     ),
     (
@@ -1116,6 +1174,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 148,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 150,
         },
     ),
     // 15.8.0 has no reference entity definitions yet — this row is derived
@@ -1129,7 +1188,9 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
     // "battle_team" namespaces and real CJK/Latin text observed);
     // onAchievementEarned stays at 58 with args `i32 playerId, u32
     // achievementId` whose ids match the playersPublicInfo achievement
-    // list in the same capture.
+    // list in the same capture. onArenaStateReceived sits at 153 (args
+    // `i64 arenaId, i8 teamBuildTypeId, BLOB×3` — the players blob pickles
+    // the full 24-player roster; shape-verified against the descriptor).
     (
         (15, 8, 0),
         MethodIds {
@@ -1148,6 +1209,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_damage_stat: Some(163),
             avatar_on_chat_message: 151,
             avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 153,
         },
     ),
 ];

@@ -371,6 +371,54 @@ pub struct AchievementEvent {
     pub achievement_id: u32,
 }
 
+/// One player/bot entry from the arena's initial state
+/// (`onArenaStateReceived` on the avatar, decoded at match start). This is
+/// the server's authoritative ship-entity → team/player mapping: the
+/// entity-id → team join no longer has to be guessed from spawn order or
+/// shipId collisions (mirror picks share one roster `shipId`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArenaPlayer {
+    /// The player's SHIP vehicle entity id (the arena FixedDict's `shipId`;
+    /// joins `EntityTrajectory.entityId`). NOT the GameParams id.
+    pub entity_id: i32,
+    /// 0/1 team slot. Which side is "ours" is `self_team` on the stream.
+    pub team_id: i8,
+    /// Roster player id — joins the descriptor roster `vehicles[].id` (the
+    /// arena FixedDict's `id`; the accountDBID field is a different number
+    /// and joins nothing the frontend uses).
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub player_id: i64,
+    /// GameParams ship id — joins the descriptor `vehicles[].shipId` and the
+    /// ship encyclopedia (mirror picks share it, so it is not a player key).
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub ship_params_id: u32,
+    /// Starting health of this exact ship build (upgrades included).
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub max_health: u32,
+    /// Player name as the arena knows it (bots included).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// True for bot entries (decoded from the arena's bots blob).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_bot: bool,
+    /// The player's Avatar entity id (human players only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_id: Option<i32>,
+    /// True for the recorder's own entry (avatar id matches the
+    /// CellPlayerCreate entity).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_self: bool,
+}
+
+fn is_zero_i64(v: &i64) -> bool {
+    *v == 0
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -451,6 +499,17 @@ pub struct ReplayStream {
     /// In-battle achievement awards (avatar onAchievementEarned).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub achievements: Vec<AchievementEvent>,
+    /// The arena's initial player/bot state (`onArenaStateReceived`) — the
+    /// authoritative ship-entity → team/player join. Empty on versions whose
+    /// exposed method id isn't pinned or whose payload fails the shape
+    /// checks; consumers then fall back to the EntityCreate shipId join.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arena_players: Vec<ArenaPlayer>,
+    /// Team slot (0/1) of the recorder, from the `is_self` arena entry.
+    /// `None` when the arena state is missing or the recorder's avatar
+    /// didn't match any entry (very old replays).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_team: Option<i8>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

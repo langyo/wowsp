@@ -22,7 +22,11 @@ import {
 import { buildShipMarker, buildMarkerFromSource, shipClassTargetLen } from "./shipMarker";
 import { makeHullOutline } from "./hullOutline";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
-import { resolveMarkerContext, resolveRosterAssignments } from "./rosterRoles";
+import {
+  arenaIdentities,
+  resolveMarkerContext,
+  resolveRosterAssignments,
+} from "./rosterRoles";
 import { sampleAt } from "./trajectoryMath";
 import {
   CAP_RING_PX, SMOKE_RING_PX, WARD_RING_PX,
@@ -70,10 +74,14 @@ export function rebuildActors(ctx: MapInternals) {
     t.kind?.entityType === 2 && t.samples.length > 1;
   const shipTrajs = ctx.props.trajectories.filter(isShip);
   ctx.shipEntityIds = shipTrajs.map((t) => t.entityId).sort((a, b) => a - b);
+  ctx.arenaIdentities = arenaIdentities(ctx.props.arenaPlayers);
+  ctx.arenaSelfTeam =
+    [...(ctx.arenaIdentities?.values() ?? [])].find((i) => i.isSelf)?.team ?? 0;
   ctx.rosterAssignments = resolveRosterAssignments(
     shipTrajs,
     ctx.props.vehicles,
     ctx.props.operation,
+    ctx.arenaIdentities,
   );
   const assignments = ctx.rosterAssignments;
 
@@ -256,6 +264,7 @@ export function rebuildActors(ctx: MapInternals) {
       assignments,
       ctx.props.encyclopedia,
       ctx.props.operation,
+      ctx.arenaIdentities,
     );
     const color = TEAM_COLOR[role];
     const offline = shipOfflineEntry((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined);

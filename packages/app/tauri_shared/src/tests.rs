@@ -772,12 +772,48 @@ fn replay_stream_omits_empty_sections() {
         damage_stats: Vec::new(),
         chat_messages: Vec::new(),
         achievements: Vec::new(),
+        arena_players: Vec::new(),
+        self_team: None,
     };
     let v = round_trips(minimal);
     let obj = v.as_object().unwrap();
     assert_eq!(obj.len(), 1, "only trajectories survives: {v}");
     assert!(obj.contains_key("trajectories"));
     assert_eq!(obj["trajectories"][0]["samples"][0]["entityId"], 7);
+
+    // The arena join serializes with camelCase keys and hides its own
+    // empty optionals (playerId 0 / no avatar / not-self stay absent).
+    let with_arena = ReplayStream {
+        arena_players: vec![ArenaPlayer {
+            entity_id: 7_561_151,
+            team_id: 1,
+            player_id: 601,
+            ship_params_id: 4_076_255_216,
+            max_health: 12_600,
+            name: "langyo".into(),
+            is_bot: false,
+            avatar_id: Some(7_561_114),
+            is_self: true,
+        }],
+        self_team: Some(1),
+        ..serde_json::from_value::<ReplayStream>(serde_json::json!({
+            "trajectories": []
+        }))
+        .unwrap()
+    };
+    let v = round_trips(with_arena);
+    let obj = v.as_object().unwrap();
+    assert_eq!(obj["selfTeam"], 1);
+    let p = &obj["arenaPlayers"][0];
+    assert_eq!(p["entityId"], 7_561_151);
+    assert_eq!(p["teamId"], 1);
+    assert_eq!(p["playerId"], 601);
+    assert_eq!(p["shipParamsId"], 4_076_255_216u64);
+    assert_eq!(p["maxHealth"], 12_600);
+    assert_eq!(p["name"], "langyo");
+    assert_eq!(p["avatarId"], 7_561_114);
+    assert_eq!(p["isSelf"], true);
+    assert!(!p.as_object().unwrap().contains_key("isBot"));
 
     // A populated stream keeps the renamed optional keys.
     let rich = ReplayStream {

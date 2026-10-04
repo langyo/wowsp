@@ -275,7 +275,10 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         damage_stats,
         chat_messages,
         achievements,
+        arena_players,
     } = decoded;
+    // The recorder's team slot comes from its own arena entry.
+    let self_team = arena_players.iter().find(|p| p.is_self).map(|p| p.team_id);
     // Build HP timelines. The property index carrying HP is version-dependent
     // (see detect_hp_property); property 0 on capture zones tracks ownership.
     let (hp_index, hp_kind) = detect_hp_property(&kinds, &properties);
@@ -403,6 +406,8 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         damage_stats,
         chat_messages,
         achievements,
+        arena_players,
+        self_team,
     }
 }
 
@@ -1352,6 +1357,8 @@ mod tests {
             "damageStats": stream.damage_stats,
             "chatMessages": stream.chat_messages,
             "achievements": stream.achievements,
+            "arenaPlayers": stream.arena_players,
+            "selfTeam": stream.self_team,
         });
         let out_path =
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());

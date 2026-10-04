@@ -10,6 +10,7 @@ import { usePairingStore } from "@/stores/pairing";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
   AchievementEvent,
+  ArenaPlayer,
   CameraSample,
   ChatEvent,
   EntityTrajectory,
@@ -157,6 +158,10 @@ const PostBattleFallbackPanel = defineComponent({
      *  scenario team slots, not enemy semantics — the matrix renders a
      *  single allies column. */
     operation: { type: Boolean, default: false },
+    /** The arena's initial player state — the authoritative entity→roster
+     *  join for the per-row HP/death columns (mirror picks share one
+     *  shipId, so shipId-keyed maps overwrite each other). */
+    arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
     /** Resolved stats-source battle scope (the parent resolves the pref
      *  against the replayed battle's identity — the fallback sees no
      *  head). The ship/solo dimensions ride the shared prefs directly. */
@@ -245,7 +250,29 @@ const PostBattleFallbackPanel = defineComponent({
       void loadNameStats();
     });
 
-    /** Death time per shipId (same join the scorebar strip uses). */
+    /** Ship entity → roster player id, from the arena's initial state.
+     *  Lets the per-row joins key on the roster entry — mirror picks share
+     *  one shipId, so shipId-keyed maps overwrite each other. */
+    const entityByPlayerId = computed(() => {
+      const m = new Map<number, number>();
+      for (const p of props.arenaPlayers) {
+        if (p.playerId != null) m.set(p.playerId, p.entityId);
+      }
+      return m;
+    });
+    /** Death time per roster id when the arena join is available, else per
+     *  shipId (the pre-arena fallback, ambiguous on mirror picks). */
+    const deathByRosterId = computed(() => {
+      const m = new Map<number, number | null>();
+      if (entityByPlayerId.value.size === 0) return m;
+      for (const tr of props.trajectories) {
+        const playerId = [...entityByPlayerId.value].find(
+          ([, eid]) => eid === tr.entityId,
+        )?.[0];
+        if (playerId != null) m.set(playerId, tr.deathTime ?? null);
+      }
+      return m;
+    });
     const deathByShipId = computed(() => {
       const m = new Map<number, number | null>();
       for (const tr of props.trajectories) {
@@ -253,7 +280,20 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
-    /** HP timeline per shipId (same join; shared shipIds take the last stream). */
+    /** HP timeline per roster id when the arena join is available, else per
+     *  shipId (the pre-arena fallback, ambiguous on mirror picks). */
+    const hpByRosterId = computed(() => {
+      const m = new Map<number, HpSample[]>();
+      if (entityByPlayerId.value.size === 0) return m;
+      for (const tr of props.trajectories) {
+        if (!tr.hpSamples?.length) continue;
+        const playerId = [...entityByPlayerId.value].find(
+          ([, eid]) => eid === tr.entityId,
+        )?.[0];
+        if (playerId != null) m.set(playerId, tr.hpSamples);
+      }
+      return m;
+    });
     const hpByShipId = computed(() => {
       const m = new Map<number, HpSample[]>();
       for (const tr of props.trajectories) {
@@ -263,19 +303,27 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
-    /** Recorder's own inferred damage dealt / frags / hits. */
+    /** Recorder's own inferred damage dealt / frags / hits. The self
+     *  trajectory is resolved through the arena join (by entity id) — the
+     *  shipId fallback can grab the enemy's mirror ship. */
     const selfStats = computed(() => {
       const self = props.vehicles.find((v) => v.relation === 0);
+      const selfEntityId = self
+        ? entityByPlayerId.value.get(self.id)
+        : undefined;
       return computeSelfStats(
         props.trajectories,
         props.shotKills ?? [],
         self?.shipId,
         props.damageStats,
+        selfEntityId,
       );
     });
     const rows = computed(() =>
       props.vehicles.map((v) => {
-        const hp = v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined;
+        const hp =
+          (v.shipId != null ? hpByRosterId.value.get(v.id) : undefined) ??
+          (v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined);
         const isSelf = v.relation === 0;
         const st = selfStats.value;
         const frags = isSelf ? st.frags : 0;
@@ -285,9 +333,14 @@ const PostBattleFallbackPanel = defineComponent({
           if (hits > 0) ribbons.push({ key: "main_caliber", value: hits });
           if (frags > 0) ribbons.push({ key: "frag", value: frags });
         }
+        const deathAt = deathByRosterId.value.has(v.id)
+          ? deathByRosterId.value.get(v.id)
+          : v.shipId != null
+            ? deathByShipId.value.get(v.shipId)
+            : undefined;
         return {
           vehicle: v,
-          alive: !(v.shipId != null && deathByShipId.value.get(v.shipId) != null),
+          alive: !(deathAt != null),
           shipName:
             (v.shipId != null
               ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
@@ -679,13 +732,18 @@ function computeSelfStats(
   shotKills: ShotKillEvent[],
   selfShipId: number | undefined,
   damageStats?: DamageStatSample[] | null,
+  selfEntityId?: number,
 ): { damage: number; planeDamage: number; frags: number; hits: number } {
   const authoritative = damageStats?.length ? foldDamageStats(damageStats, Infinity) : null;
   const out = { damage: 0, planeDamage: 0, frags: 0, hits: 0 };
   if (selfShipId == null) return authoritative ? { ...out, ...authoritative } : out;
-  const selfTraj = trajectories.find(
-    (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
-  );
+  // The arena join (entity id) wins: mirror picks share the selfShipId, so
+  // the shipId find() can land on the enemy's ship and attribute its hits.
+  const selfTraj = selfEntityId != null
+    ? trajectories.find((tr) => tr.entityId === selfEntityId)
+    : trajectories.find(
+        (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
+      );
   if (!selfTraj || selfTraj.samples.length === 0) {
     return authoritative ? { ...out, ...authoritative } : out;
   }
@@ -754,8 +812,20 @@ function assignTrajectoriesByVehicle(
   vehicles: VehicleEntry[],
   trajectories: EntityTrajectory[],
   operation = false,
+  arenaPlayers?: ArenaPlayer[],
 ): Map<number, EntityTrajectory> {
   const shipTrajs = trajectories.filter((tr) => tr.kind?.entityType === 2);
+  // Authoritative path: the arena's initial state maps each ship entity to
+  // its roster player id directly — mirror picks cannot cross.
+  if (arenaPlayers && arenaPlayers.length > 0) {
+    const out = new Map<number, EntityTrajectory>();
+    const byEntity = new Map(arenaPlayers.map((p) => [p.entityId, p]));
+    for (const traj of shipTrajs) {
+      const playerId = byEntity.get(traj.entityId)?.playerId;
+      if (playerId != null) out.set(playerId, traj);
+    }
+    if (out.size > 0) return out;
+  }
   const byShipId = new Map<number, VehicleEntry[]>();
   for (const v of vehicles) {
     const arr = byShipId.get(v.shipId) ?? [];
@@ -849,6 +919,9 @@ const ChatLogPanel = defineComponent({
     /** Operation scenario (行动): the vehicle→trajectory join skips the
      *  ally/enemy spawn split (relation follows scenario team slots). */
     operation: { type: Boolean, default: false },
+    /** The arena's initial player state — the authoritative entity→roster
+     *  join for the sender tooltips (mirror picks share one shipId). */
+    arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
     /** Match duration (s) from the decoded stream — the timeline scale
      *  before the map's own clock reports in. */
     duration: { type: Number, default: 0 },
@@ -868,6 +941,7 @@ const ChatLogPanel = defineComponent({
         props.vehicles,
         props.trajectories,
         props.operation,
+        props.arenaPlayers,
       );
       return props.events
         .filter((c) => c.playerId > 0)
@@ -1384,6 +1458,7 @@ export default defineComponent({
     const damageStats = ref<DamageStatSample[]>([]);
     const chatMessages = ref<ChatEvent[]>([]);
     const achievements = ref<AchievementEvent[]>([]);
+    const arenaPlayers = ref<ArenaPlayer[]>([]);
     const showResults = ref(false);
     const showChat = ref(false);
     /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
@@ -1446,6 +1521,7 @@ export default defineComponent({
         damageStats.value = [];
         chatMessages.value = [];
         achievements.value = [];
+        arenaPlayers.value = [];
         showChat.value = false;
         trajectoryError.value = null;
         duration.value = 0;
@@ -1477,6 +1553,7 @@ export default defineComponent({
           damageStats.value = stream.damageStats ?? [];
           chatMessages.value = stream.chatMessages ?? [];
           achievements.value = stream.achievements ?? [];
+          arenaPlayers.value = stream.arenaPlayers ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -1862,6 +1939,7 @@ export default defineComponent({
                           damageStats={damageStats.value}
                           realm={realm.value}
                           operation={isOperation.value}
+                          arenaPlayers={arenaPlayers.value}
                           statsMode={fallbackStatsMode.value}
                           onClose={() => (showResults.value = false)}
                         />
@@ -1895,6 +1973,7 @@ export default defineComponent({
                         vehicles={parser.current.value.vehicles}
                         trajectories={trajectories.value}
                         operation={isOperation.value}
+                        arenaPlayers={arenaPlayers.value}
                         duration={duration.value}
                         realm={realm.value}
                         mapApi={mapRef.value}
@@ -1938,6 +2017,7 @@ export default defineComponent({
                       damageStats={damageStats.value}
                       chatMessages={chatMessages.value}
                       achievements={achievements.value}
+                      arenaPlayers={arenaPlayers.value}
                       vehicles={parser.current.value.vehicles}
                       operation={isOperation.value}
                       encyclopedia={encyclopedia.byId}

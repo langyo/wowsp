@@ -75,10 +75,12 @@ export interface SessionSnapshot {
 export interface VehicleEntry {
   id: number;
   name: string;
-  /** PvP rosters: 0/1 = ally (self + division), 2+ = enemy. Operation
-   *  scenarios (行动) break that rule — their values follow scenario team
-   *  slots (escort waves, target ships), so gate ANY relation-based split
-   *  on `isOperationBattle` first. Numeric in the client JSON. */
+  /** 0/1 = ally (self + division), 2+ = enemy — including operation
+   *  scenarios (行动): their rosters carry real side semantics too
+   *  (allied escort waves sit at relation ≤ 1, enemy warships at > 1 —
+   *  verified against the operation replay fixtures). `isOperationBattle`
+   *  only gates VISUAL rules (hidden enemy column, map marker colors).
+   *  Numeric in the client JSON. */
   relation: number;
   /** Client ship id (numeric, JSON number). */
   shipId: number;
@@ -277,6 +279,30 @@ export interface PositionSample {
   y: number;
   z: number;
   yaw: number;
+}
+
+/** One player/bot entry from the arena's initial state
+ *  (`onArenaStateReceived`, mirrors `wowsp_tauri_shared::ArenaPlayer`) — the
+ *  server's authoritative ship-entity → team/player mapping. Empty on
+ *  versions whose decode isn't pinned; consumers then fall back to the
+ *  EntityCreate shipId join + spawn-side heuristics. */
+export interface ArenaPlayer {
+  /** The player's SHIP vehicle entity id (joins EntityTrajectory.entityId). */
+  entityId: number;
+  /** 0/1 team slot; `selfTeam` on the stream marks the recorder's side. */
+  teamId: number;
+  /** Roster player id (joins ReplayMeta.vehicles[].id). */
+  playerId?: number;
+  /** GameParams ship id (joins the ship encyclopedia; mirror picks share it). */
+  shipParamsId?: number;
+  /** Starting health of this exact ship build (upgrades included). */
+  maxHealth?: number;
+  name?: string;
+  isBot?: boolean;
+  /** The player's Avatar entity id (human players only). */
+  avatarId?: number | null;
+  /** True for the recorder's own entry. */
+  isSelf?: boolean;
 }
 
 /** Entity creation metadata (mirrors `wowsp_tauri_shared::EntityKind`). The
@@ -648,6 +674,11 @@ export interface ReplayStream {
   chatMessages?: ChatEvent[];
   /** In-battle achievement awards (avatar onAchievementEarned). */
   achievements?: AchievementEvent[];
+  /** The arena's initial player/bot state — the authoritative ship-entity →
+   *  team/player join (see ArenaPlayer). */
+  arenaPlayers?: ArenaPlayer[];
+  /** Team slot (0/1) of the recorder, from the arena's isSelf entry. */
+  selfTeam?: number | null;
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */

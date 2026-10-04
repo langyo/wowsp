@@ -166,10 +166,10 @@ pub(super) fn decode_shot_kills(
     out
 }
 
-/// Read one BigWorld wire string from `args` at `off`: a `u8` length prefix,
-/// with `0xff` escaping to `u16` length + one dummy byte. Returns the decoded
-/// (lossy UTF-8) string and the offset just past it.
-fn read_wire_string(args: &[u8], off: usize) -> Option<(String, usize)> {
+/// Read one BigWorld wire blob from `args` at `off`: a `u8` length prefix,
+/// with `0xff` escaping to `u16` length + one dummy byte. Returns the bytes
+/// and the offset just past them. STRING/BLOB share this wire shape.
+fn read_wire_blob(args: &[u8], off: usize) -> Option<(&[u8], usize)> {
     let mut cursor = off;
     let len = match *args.get(cursor)? {
         0xff => {
@@ -184,7 +184,173 @@ fn read_wire_string(args: &[u8], off: usize) -> Option<(String, usize)> {
         },
     };
     let raw = args.get(cursor..cursor + len)?;
-    Some((String::from_utf8_lossy(raw).into_owned(), cursor + len))
+    Some((raw, cursor + len))
+}
+
+/// Read one BigWorld wire string from `args` at `off`. Returns the decoded
+/// (lossy UTF-8) string and the offset just past it.
+fn read_wire_string(args: &[u8], off: usize) -> Option<(String, usize)> {
+    let (raw, end) = read_wire_blob(args, off)?;
+    Some((String::from_utf8_lossy(raw).into_owned(), end))
+}
+
+/// Per-version field indices of the arena-state player FixedDict. The dict is
+/// pickled as `(index, value)` pairs whose keys are the player fields'
+/// alphabetical sort positions — the field set grows over game versions, so
+/// every index drifts when a new alphabetically-earlier field is inserted
+/// (mirrors the vendored analyzer's key maps).
+struct ArenaFields {
+    avatar_id: i64,
+    /// The roster player id (joins the descriptor `vehicles[].id`).
+    player_id: i64,
+    max_health: i64,
+    name: i64,
+    /// The player's SHIP VEHICLE entity id — confusingly named `shipId` in
+    /// the FixedDict; NOT the GameParams id (`ship_params_id`).
+    ship_entity_id: i64,
+    ship_params_id: i64,
+    team_id: i64,
+}
+
+impl ArenaFields {
+    /// 0.11.11+ ships a 38-field player layout that has stayed stable since
+    /// (verified upstream across 0.11.11–0.12.8); earlier layouts shift the
+    /// alphabetical tail fields. Bots dropped 10 human-only fields in
+    /// 0.12.8, moving their tail indices down.
+    fn for_version(version: Option<(u32, u32, u32)>, is_bot: bool) -> Self {
+        let bot_layout = is_bot && version.is_some_and(|k| k >= (0, 12, 8));
+        match (version, bot_layout) {
+            _ if bot_layout => Self {
+                avatar_id: -1,
+                player_id: 10,
+                max_health: 18,
+                name: 19,
+                ship_entity_id: 23,
+                ship_params_id: 24,
+                team_id: 26,
+            },
+            (Some(k), _) if k >= (0, 11, 11) => Self {
+                avatar_id: 2,
+                player_id: 11,
+                max_health: 24,
+                name: 25,
+                ship_entity_id: 33,
+                ship_params_id: 34,
+                team_id: 36,
+            },
+            (Some(k), _) if k >= (0, 10, 9) => Self {
+                avatar_id: 2,
+                player_id: 11,
+                max_health: 23,
+                name: 24,
+                ship_entity_id: 32,
+                ship_params_id: 33,
+                team_id: 35,
+            },
+            (Some(k), _) if k >= (0, 10, 7) => Self {
+                avatar_id: 1,
+                player_id: 10,
+                max_health: 22,
+                name: 23,
+                ship_entity_id: 30,
+                ship_params_id: 31,
+                team_id: 33,
+            },
+            // Pre-0.10.7 (34 fields, recovered upstream from a 0.9.10 replay).
+            _ => Self {
+                avatar_id: 1,
+                player_id: 10,
+                max_health: 21,
+                name: 22,
+                ship_entity_id: 29,
+                ship_params_id: 30,
+                team_id: 32,
+            },
+        }
+    }
+}
+
+/// Decode the avatar's `onArenaStateReceived` args: `i64 arenaId,
+/// i8 teamBuildTypeId, BLOB preBattlesInfo, BLOB playersData, BLOB botsData`.
+/// The player/bot blobs are pickle-proto-2 lists — one FixedDict pair list
+/// per player — read against the per-version [`ArenaFields`] indices. Only
+/// the identity fields survive (entity id, team, account/roster id,
+/// GameParams ship id, max health, name); any shape mismatch yields `None`
+/// (the frontend then falls back to its spawn-side heuristics).
+pub(super) fn decode_arena_state(
+    args: &[u8],
+    version: Option<(u32, u32, u32)>,
+) -> Option<Vec<wowsp_tauri_shared::ArenaPlayer>> {
+    if args.len() < 11 {
+        return None;
+    }
+    let (_, off) = read_wire_blob(args, 9)?; // skip i64 arenaId + i8 teamBuildTypeId
+    let (players_blob, off) = read_wire_blob(args, off)?;
+    let (bots_blob, _) = read_wire_blob(args, off)?;
+    let mut out = arena_player_list(players_blob, version, false);
+    out.extend(arena_player_list(bots_blob, version, true));
+    // A real arena carries both full teams; a single-entry "decode" is a
+    // misparse of some other method's args, not a roster.
+    (out.len() >= 2).then_some(out)
+}
+
+/// Parse one arena player/bot blob (see [`decode_arena_state`]).
+fn arena_player_list(
+    blob: &[u8],
+    version: Option<(u32, u32, u32)>,
+    bots: bool,
+) -> Vec<wowsp_tauri_shared::ArenaPlayer> {
+    let Some(PyVal::List(players)) = parse_pickle(blob) else {
+        return Vec::new();
+    };
+    let f = ArenaFields::for_version(version, bots);
+    let mut out = Vec::new();
+    for p in players {
+        // Each player is a list of (index, value) tuples (FixedDict pickled
+        // flat). Reads tolerate missing pairs — older layouts only ever
+        // shrink, never reorder.
+        let PyVal::List(pairs) = &p else {
+            continue;
+        };
+        let field = |idx: i64| -> Option<&PyVal> {
+            pairs.iter().find_map(|kv| match kv {
+                PyVal::Tuple(pair) => match (pair.first(), pair.get(1)) {
+                    (Some(PyVal::Int(k)), v) if *k == idx => v,
+                    _ => None,
+                },
+                _ => None,
+            })
+        };
+        let as_i64 = |v: Option<&PyVal>| -> Option<i64> {
+            match v? {
+                PyVal::Int(i) => Some(*i),
+                PyVal::Float(fl) => Some(*fl as i64),
+                _ => None,
+            }
+        };
+        let Some(entity_id) = as_i64(field(f.ship_entity_id)) else {
+            continue;
+        };
+        if entity_id == 0 {
+            continue;
+        }
+        let name = match field(f.name) {
+            Some(PyVal::Str(s)) => s.clone(),
+            _ => String::new(),
+        };
+        out.push(wowsp_tauri_shared::ArenaPlayer {
+            entity_id: entity_id as i32,
+            team_id: as_i64(field(f.team_id)).unwrap_or(0) as i8,
+            player_id: as_i64(field(f.player_id)).unwrap_or(0),
+            ship_params_id: as_i64(field(f.ship_params_id)).unwrap_or(0) as u32,
+            max_health: as_i64(field(f.max_health)).unwrap_or(0).max(0) as u32,
+            name,
+            is_bot: bots,
+            avatar_id: as_i64(field(f.avatar_id)).map(|v| v as i32),
+            is_self: false,
+        });
+    }
+    out
 }
 
 /// Decode `onChatMessage` args: `i32 playerId, STRING namespace, STRING

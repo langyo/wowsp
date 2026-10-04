@@ -788,3 +788,216 @@ fn inflate_with_cap_round_trips_small_payload() {
     assert_eq!(out, payload);
     assert_eq!(inflate_zlib(&compressed).expect("wrapper"), payload);
 }
+
+// ── Arena state (onArenaStateReceived) ────────────────────────────────────
+
+/// A value the test pickler below can encode.
+trait PickleValue {
+    fn push_pickle(&self, out: &mut Vec<u8>);
+}
+impl PickleValue for i64 {
+    fn push_pickle(&self, out: &mut Vec<u8>) {
+        out.push(0x8a); // LONG1 — 1-byte length + LE two's-complement payload
+        out.push(8);
+        out.extend_from_slice(&self.to_le_bytes());
+    }
+}
+impl PickleValue for str {
+    fn push_pickle(&self, out: &mut Vec<u8>) {
+        let raw = self.as_bytes();
+        out.push(0x55); // SHORT_BINSTRING — u8 length + raw bytes
+        out.push(raw.len() as u8);
+        out.extend_from_slice(raw);
+    }
+}
+impl PickleValue for String {
+    fn push_pickle(&self, out: &mut Vec<u8>) {
+        self.as_str().push_pickle(out);
+    }
+}
+
+/// Hand-assemble one arena player FixedDict the way the client pickles it:
+/// a list of `(index, value)` tuples (proto-2: EMPTY_LIST + APPEND over
+/// TUPLE pairs, nested under the outer roster list's MARK).
+fn pickle_player(fields: &[(&i64, &dyn PickleValue)]) -> Vec<u8> {
+    let mut out = vec![0x80, 0x02, 0x5d, 0x71, 0x01, 0x28, 0x5d]; // PROTO, list, BINPUT, MARK, inner list
+    for field in fields {
+        let (idx, value): (&i64, &dyn PickleValue) = *field;
+        out.push(0x28); // MARK (tuple)
+        out.push(0x4a); // BININT (i32 LE)
+        out.extend_from_slice(&(*idx as i32).to_le_bytes());
+        value.push_pickle(&mut out);
+        out.push(0x74); // TUPLE
+        out.push(0x61); // APPEND (single item into the list below)
+    }
+    out.push(0x2e); // STOP
+    out
+}
+
+/// Wrap pickled players into the arena blob's outer list.
+fn pickle_list(items: &[&[u8]]) -> Vec<u8> {
+    let mut out = vec![0x80, 0x02, 0x5d, 0x71, 0x01, 0x28];
+    for it in items {
+        out.extend_from_slice(&it[6..it.len() - 1]); // strip PROTO+LIST+BINPUT+MARK head and STOP
+    }
+    out.push(0x65); // APPENDS
+    out.push(0x2e); // STOP
+    out
+}
+
+/// Build an `onArenaStateReceived` args blob: `i64 arenaId, i8
+/// teamBuildTypeId, BLOB×3` (BigWorld wire blobs: u8 length, 0xff-escaped
+/// to u16 + one dummy byte).
+fn arena_args(players_pickle: &[u8], bots_pickle: &[u8]) -> Vec<u8> {
+    fn push_blob(out: &mut Vec<u8>, data: &[u8]) {
+        if data.len() < 0xff {
+            out.push(data.len() as u8);
+        } else {
+            out.push(0xff);
+            out.extend_from_slice(&(data.len() as u16).to_le_bytes());
+            out.push(0); // dummy byte that follows the escaped length
+        }
+        out.extend_from_slice(data);
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(&0x1234_5678_9abc_def0i64.to_le_bytes());
+    out.push(1); // teamBuildTypeId
+    push_blob(&mut out, b""); // preBattlesInfo (empty)
+    push_blob(&mut out, players_pickle);
+    push_blob(&mut out, bots_pickle);
+    out
+}
+
+/// `onArenaStateReceived` decode (0.11.11+ player layout): entity id, team,
+/// accountDBID, GameParams ship id, max health and name come out of the
+/// pair-list FixedDict; bots arrive in the separate blob with their own
+/// (0.12.8-shifted) layout.
+#[test]
+fn decodes_arena_state_players() {
+    let (f_avatar, f_id, _f_isbot, f_health, f_name, f_ship, f_params, f_team) =
+        (2i64, 11i64, 15i64, 24i64, 25i64, 33i64, 34i64, 36i64);
+    let human = pickle_player(&[
+        (&f_avatar, &7_710_001i64),
+        (&f_id, &601i64),
+        (&_f_isbot, &0i64),
+        (&f_health, &12_600i64),
+        (&f_name, &"langyo".to_string()),
+        (&f_ship, &7_561_151i64),
+        (&f_params, &4_076_255_216i64),
+        (&f_team, &1i64),
+    ]);
+    // Bot layout (0.12.8+): accountDBID 0, id 10, isBot 13, maxHealth 18,
+    // name 19, shipId 23, shipParamsId 24, teamId 26; no avatarId.
+    let (b_account, b_id, b_isbot, b_health, b_name, b_ship, b_params, b_team) =
+        (0i64, 10i64, 13i64, 18i64, 19i64, 23i64, 24i64, 26i64);
+    let bot = pickle_player(&[
+        (&b_account, &0i64),
+        (&b_id, &5_370_374i64),
+        (&b_isbot, &1i64),
+        (&b_health, &14_080i64),
+        (&b_name, &"perfunctory_fighter".to_string()),
+        (&b_ship, &7_561_099i64),
+        (&b_params, &3_542_005_040i64),
+        (&b_team, &0i64),
+    ]);
+    let args = arena_args(&pickle_list(&[&human]), &pickle_list(&[&bot]));
+    let players = decode_arena_state(&args, Some((15, 8, 0))).expect("arena state must decode");
+    assert_eq!(players.len(), 2);
+    let human = players
+        .iter()
+        .find(|p| p.entity_id == 7_561_151)
+        .expect("human entry");
+    assert_eq!(human.team_id, 1);
+    assert_eq!(human.player_id, 601);
+    assert_eq!(human.ship_params_id, 4_076_255_216);
+    assert_eq!(human.max_health, 12_600);
+    assert_eq!(human.name, "langyo");
+    assert_eq!(human.avatar_id, Some(7_710_001));
+    assert!(!human.is_bot);
+    let bot = players
+        .iter()
+        .find(|p| p.entity_id == 7_561_099)
+        .expect("bot entry");
+    assert!(bot.is_bot);
+    assert_eq!(bot.team_id, 0);
+    assert_eq!(bot.ship_params_id, 3_542_005_040);
+    assert_eq!(bot.name, "perfunctory_fighter");
+    assert_eq!(bot.avatar_id, None);
+    // Truncated / garbage args never panic, just yield None.
+    assert!(decode_arena_state(&args[..9], Some((15, 8, 0))).is_none());
+    assert!(decode_arena_state(&[], Some((15, 8, 0))).is_none());
+}
+
+/// Diagnostic: the arena's initial player state vs the descriptor roster.
+/// Every arena entry that joins the roster by account id must agree on the
+/// team (relation 0/1 → the recorder's side, 2+ → the other), and the
+/// recorder's avatar must mark exactly one entry `isSelf` — the regression
+/// the spawn-side shipId heuristic got wrong (mirror picks sailed onto the
+/// wrong team). Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
+#[test]
+fn dump_arena_state() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        return;
+    };
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let mut cur = 8;
+    let mut client_version: Option<String> = None;
+    let mut roster: std::collections::HashMap<i64, (u32, String)> =
+        std::collections::HashMap::new();
+    for i in 0..block_count {
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+        cur += 4;
+        let block = &bytes[cur..cur + bl];
+        cur += bl;
+        if i == 0 {
+            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(block) {
+                client_version = json
+                    .get("clientVersionFromExe")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+                if let Some(arr) = json.get("vehicles").and_then(|v| v.as_array()) {
+                    for v in arr {
+                        roster.insert(
+                            v.get("id").and_then(|x| x.as_i64()).unwrap_or(0),
+                            (
+                                v.get("relation").and_then(|x| x.as_i64()).unwrap_or(0) as u32,
+                                v.get("name")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let decoded = decode_replay(
+        &bytes[cur..],
+        &std::collections::HashSet::new(),
+        client_version.as_deref(),
+    )
+    .expect("decode must succeed");
+    eprintln!(
+        "arena players: {} (client {client_version:?})",
+        decoded.arena_players.len()
+    );
+    if decoded.arena_players.is_empty() {
+        eprintln!("(arena state not decoded — version unpinned or shape mismatch)");
+        return;
+    }
+    let self_entries: Vec<_> = decoded.arena_players.iter().filter(|p| p.is_self).collect();
+    assert_eq!(self_entries.len(), 1, "exactly one self entry");
+    let self_team = self_entries[0].team_id;
+    for p in &decoded.arena_players {
+        let Some((rel, name)) = roster.get(&p.player_id) else {
+            continue;
+        };
+        let expected_side = if *rel <= 1 { self_team } else { 1 - self_team };
+        assert_eq!(
+            p.team_id, expected_side,
+            "arena team disagrees with roster relation for {name}"
+        );
+    }
+}
