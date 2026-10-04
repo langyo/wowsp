@@ -43,6 +43,7 @@ AVATAR_METHODS = [
     "receiveDamageStat",
     "onChatMessage",
     "onAchievementEarned",
+    "onArenaStateReceived",
 ]
 
 # Fields emitted as `Option<i32>`: the reference entity defs don't expose every
@@ -79,6 +80,7 @@ EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
         "avatar_receive_damage_stat": 163,
         "avatar_on_chat_message": 151,
         "avatar_on_achievement_earned": 58,
+        "avatar_on_arena_state_received": 153,
     },
 }
 
@@ -98,7 +100,9 @@ EMPIRICAL_NOTES = {
     // "battle_team" namespaces and real CJK/Latin text observed);
     // onAchievementEarned stays at 58 with args `i32 playerId, u32
     // achievementId` whose ids match the playersPublicInfo achievement
-    // list in the same capture.""",
+    // list in the same capture. onArenaStateReceived sits at 153 (args
+    // `i64 arenaId, i8 teamBuildTypeId, BLOB×3` — the players blob pickles
+    // the full 24-player roster; shape-verified against the descriptor).""",
 }
 
 
@@ -184,6 +188,12 @@ def main() -> None:
         "avatar_on_achievement_earned": [
             "    /// In-battle achievement award (onAchievementEarned): `i32 playerId,",
             "    /// u32 achievementId` — ids join to GameParams Achievement entries.",
+        ],
+        "avatar_on_arena_state_received": [
+            "    /// The arena's initial state broadcast (onArenaStateReceived): `i64",
+            "    /// arenaId, i8 teamBuildTypeId, BLOB preBattlesInfo, BLOB playersData,",
+            "    /// BLOB botsData` — the authoritative per-player entity/team mapping",
+            "    /// the roster join is built from.",
         ],
     }
 

@@ -146,24 +146,24 @@ export function modeKey(
 }
 
 /**
- * Whether this battle is an operation scenario (行动模式): no enemy team —
- * the roster's `relation` values follow scenario team slots (escort waves,
- * target ships) instead of enemy semantics, and the in-game Tab table shows
- * ONE team. Rosters therefore render as a single allies column, and any
- * relation-based ally/enemy split is meaningless for them.
+ * Whether this battle is an operation scenario (行动模式) — drives the
+ * VISUAL rules only: the single allies column (their scripted enemy block
+ * is a list nobody reads, and its Tab rows grow mid-battle past the roster
+ * tempArenaInfo ever captured) and the one-pool map marker colors. The
+ * roster's `relation` values DO carry real side semantics in operations
+ * (allied escort waves ≤ 1, enemy warships > 1 — verified against the
+ * operation replay fixtures), so ally/enemy SPLITS keep working there.
  *
- * The fingerprints mirror `is_operation_arena` in `wowsp_tauri_shared` and
- * the operation branches of `modeKey`, plus the roster scan every caller
- * needs when the arena file carries no scenario/script (operations with an
- * empty scenario field exist): scenario units keep their `IDS_OP_*` ship
- * name as nickname.
+ * The fingerprints mirror the operation branches of `modeKey`, plus the
+ * roster scan every caller needs when the arena file carries no
+ * scenario/script (operations with an empty scenario field exist): scenario
+ * units keep their `IDS_OP_*` ship name as nickname.
  *
  * EXCEPT the new-account scripted battles (the `FIRST_BATTLE` tutorial and
  * the `LOW_LVL_OPERATION_*` escort op) — those are coop-shaped two-team
- * battles whose relation values ARE enemy semantics, so they must take the
- * ordinary allies/enemies split (same exclusion as the Rust side). Their
- * mode LABEL is still "operation" (see modeKey) — only the roster layout
- * stays two-team here.
+ * battles whose enemy block reads like any co-op's, so they take the
+ * ordinary two-column layout. Their mode LABEL is still "operation" (see
+ * modeKey) — only the roster layout stays two-team here.
  */
 export function isOperationBattle(
   matchGroup?: string | null,

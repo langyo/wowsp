@@ -79,6 +79,7 @@ export type {
   DamageStatSample,
   ChatEvent,
   AchievementEvent,
+  ArenaPlayer,
   ReplayStream,
   PlayerStats,
   PlayerSuggestion,

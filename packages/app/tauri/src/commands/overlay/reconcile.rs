@@ -354,10 +354,16 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
             range.clone().map(|i| new_thumbs[i]).collect();
         let count = |v: &[bool]| v[range.clone()].iter().filter(|&&a| a).count();
         let (was, now) = (count(prev_alive), count(&alive));
+        // sink_victims indexes the SIDE slices above, so its results are
+        // already block-relative — SinkAttribution's contract. Adding
+        // range.start back (the pre-fix code) made enemy rows absolute
+        // full-grid indices, which both consumers resolve against their
+        // enemy-only alive order: every enemy attribution missed the list
+        // and degraded the side to candidate ranges.
         overlay_detect::sink_victims(&old_side, &new_side, was, now)
             .unwrap_or_default()
             .into_iter()
-            .map(|i| (i + range.start) as u32)
+            .map(|i| i as u32)
             .collect()
     };
     let n = strips.len();

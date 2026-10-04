@@ -10,6 +10,7 @@ import { usePairingStore } from "@/stores/pairing";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
   AchievementEvent,
+  ArenaPlayer,
   CameraSample,
   ChatEvent,
   EntityTrajectory,
@@ -96,7 +97,8 @@ function modeLabel(
 
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
  *  relation), single-sided modes (PvE, ops) show the raw count. Operations
- *  skip the split entirely — their relation values follow scenario slots. */
+ *  keep the relation split available but render the raw count (their
+ *  scripted enemy block is nobody's "v" opponent). */
 function formatPlayerCount(
   vehicles: { relation: number }[],
   operation = false,
@@ -153,10 +155,14 @@ const PostBattleFallbackPanel = defineComponent({
     /** Query realm (shared with the parent view) — the replay belongs to
      *  the client install, not to the bound account. */
     realm: { type: String, default: "asia" },
-    /** Operation scenario (行动): the roster's relation values follow
-     *  scenario team slots, not enemy semantics — the matrix renders a
-     *  single allies column. */
+    /** Operation scenario (行动): the matrix renders a single allies
+     *  column — the scripted enemy block is a list nobody reads (the
+     *  ally rows themselves still split by relation). */
     operation: { type: Boolean, default: false },
+    /** The arena's initial player state — the authoritative entity→roster
+     *  join for the per-row HP/death columns (mirror picks share one
+     *  shipId, so shipId-keyed maps overwrite each other). */
+    arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
     /** Resolved stats-source battle scope (the parent resolves the pref
      *  against the replayed battle's identity — the fallback sees no
      *  head). The ship/solo dimensions ride the shared prefs directly. */
@@ -196,7 +202,7 @@ const PostBattleFallbackPanel = defineComponent({
               ? "sunk"
               : r.vehicle.relation === 0
                 ? "white"
-                : props.operation || r.vehicle.relation <= 1
+                : r.vehicle.relation <= 1
                   ? "ally"
                   : "enemy",
             stats,
@@ -206,10 +212,10 @@ const PostBattleFallbackPanel = defineComponent({
       return {
         title: t("replay.results"),
         botLabel: t("replay.bot"),
-        // Mirror the DOM's single-column rule (operations and any
-        // single-sided roster edge).
+        // Mirror the DOM's single-column rule (operations hide the enemy
+        // column, as does any single-sided roster edge).
         columns:
-          props.operation || enemies.value.length === 0
+          enemies.value.length === 0
             ? [mkCol(allies.value, false)]
             : [mkCol(allies.value, false), mkCol(enemies.value, true)],
       };
@@ -245,7 +251,29 @@ const PostBattleFallbackPanel = defineComponent({
       void loadNameStats();
     });
 
-    /** Death time per shipId (same join the scorebar strip uses). */
+    /** Ship entity → roster player id, from the arena's initial state.
+     *  Lets the per-row joins key on the roster entry — mirror picks share
+     *  one shipId, so shipId-keyed maps overwrite each other. */
+    const entityByPlayerId = computed(() => {
+      const m = new Map<number, number>();
+      for (const p of props.arenaPlayers) {
+        if (p.playerId != null) m.set(p.playerId, p.entityId);
+      }
+      return m;
+    });
+    /** Death time per roster id when the arena join is available, else per
+     *  shipId (the pre-arena fallback, ambiguous on mirror picks). */
+    const deathByRosterId = computed(() => {
+      const m = new Map<number, number | null>();
+      if (entityByPlayerId.value.size === 0) return m;
+      for (const tr of props.trajectories) {
+        const playerId = [...entityByPlayerId.value].find(
+          ([, eid]) => eid === tr.entityId,
+        )?.[0];
+        if (playerId != null) m.set(playerId, tr.deathTime ?? null);
+      }
+      return m;
+    });
     const deathByShipId = computed(() => {
       const m = new Map<number, number | null>();
       for (const tr of props.trajectories) {
@@ -253,7 +281,20 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
-    /** HP timeline per shipId (same join; shared shipIds take the last stream). */
+    /** HP timeline per roster id when the arena join is available, else per
+     *  shipId (the pre-arena fallback, ambiguous on mirror picks). */
+    const hpByRosterId = computed(() => {
+      const m = new Map<number, HpSample[]>();
+      if (entityByPlayerId.value.size === 0) return m;
+      for (const tr of props.trajectories) {
+        if (!tr.hpSamples?.length) continue;
+        const playerId = [...entityByPlayerId.value].find(
+          ([, eid]) => eid === tr.entityId,
+        )?.[0];
+        if (playerId != null) m.set(playerId, tr.hpSamples);
+      }
+      return m;
+    });
     const hpByShipId = computed(() => {
       const m = new Map<number, HpSample[]>();
       for (const tr of props.trajectories) {
@@ -263,19 +304,27 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
-    /** Recorder's own inferred damage dealt / frags / hits. */
+    /** Recorder's own inferred damage dealt / frags / hits. The self
+     *  trajectory is resolved through the arena join (by entity id) — the
+     *  shipId fallback can grab the enemy's mirror ship. */
     const selfStats = computed(() => {
       const self = props.vehicles.find((v) => v.relation === 0);
+      const selfEntityId = self
+        ? entityByPlayerId.value.get(self.id)
+        : undefined;
       return computeSelfStats(
         props.trajectories,
         props.shotKills ?? [],
         self?.shipId,
         props.damageStats,
+        selfEntityId,
       );
     });
     const rows = computed(() =>
       props.vehicles.map((v) => {
-        const hp = v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined;
+        const hp =
+          (v.shipId != null ? hpByRosterId.value.get(v.id) : undefined) ??
+          (v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined);
         const isSelf = v.relation === 0;
         const st = selfStats.value;
         const frags = isSelf ? st.frags : 0;
@@ -285,9 +334,14 @@ const PostBattleFallbackPanel = defineComponent({
           if (hits > 0) ribbons.push({ key: "main_caliber", value: hits });
           if (frags > 0) ribbons.push({ key: "frag", value: frags });
         }
+        const deathAt = deathByRosterId.value.has(v.id)
+          ? deathByRosterId.value.get(v.id)
+          : v.shipId != null
+            ? deathByShipId.value.get(v.shipId)
+            : undefined;
         return {
           vehicle: v,
-          alive: !(v.shipId != null && deathByShipId.value.get(v.shipId) != null),
+          alive: !(deathAt != null),
           shipName:
             (v.shipId != null
               ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
@@ -321,10 +375,7 @@ const PostBattleFallbackPanel = defineComponent({
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     };
     const allies = computed(() =>
-      (props.operation
-        ? rows.value
-        : rows.value.filter((r) => r.vehicle.relation <= 1)
-      ).sort(sortRows),
+      rows.value.filter((r) => r.vehicle.relation <= 1).sort(sortRows),
     );
     const enemies = computed(() =>
       (props.operation
@@ -398,7 +449,7 @@ const PostBattleFallbackPanel = defineComponent({
                     ? "sunk"
                     : r.vehicle.relation === 0
                       ? "white"
-                      : props.operation || r.vehicle.relation <= 1
+                      : r.vehicle.relation <= 1
                         ? "ally"
                         : "enemy"
                 }
@@ -505,7 +556,7 @@ const PostBattleFallbackPanel = defineComponent({
                         variant={
                           !sel.alive
                             ? "sunk"
-                            : props.operation || sel.vehicle.relation <= 1
+                            : sel.vehicle.relation <= 1
                               ? "ally"
                               : "enemy"
                         }
@@ -679,13 +730,18 @@ function computeSelfStats(
   shotKills: ShotKillEvent[],
   selfShipId: number | undefined,
   damageStats?: DamageStatSample[] | null,
+  selfEntityId?: number,
 ): { damage: number; planeDamage: number; frags: number; hits: number } {
   const authoritative = damageStats?.length ? foldDamageStats(damageStats, Infinity) : null;
   const out = { damage: 0, planeDamage: 0, frags: 0, hits: 0 };
   if (selfShipId == null) return authoritative ? { ...out, ...authoritative } : out;
-  const selfTraj = trajectories.find(
-    (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
-  );
+  // The arena join (entity id) wins: mirror picks share the selfShipId, so
+  // the shipId find() can land on the enemy's ship and attribute its hits.
+  const selfTraj = selfEntityId != null
+    ? trajectories.find((tr) => tr.entityId === selfEntityId)
+    : trajectories.find(
+        (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
+      );
   if (!selfTraj || selfTraj.samples.length === 0) {
     return authoritative ? { ...out, ...authoritative } : out;
   }
@@ -746,16 +802,26 @@ const CHANNEL_KEYS: ChatChannelKey[] = ["team", "all", "division", "private"];
  *  read another player's HP. Mirrors HolographicMap's
  *  `resolveRosterAssignments`: unique shipIds join directly; each ambiguous
  *  trajectory takes the same-side (nearest ally/enemy spawn centroid)
- *  unclaimed roster entry, never stealing a claimed one. Operation
- *  scenarios (`operation`, 行动) skip the side split — their relation
- *  values follow scenario team slots, so ambiguous picks just take the
- *  first unclaimed entry. */
+ *  unclaimed roster entry, never stealing a claimed one. The relation side
+ *  split holds in operations (行动) too — their rosters carry real enemy
+ *  semantics. */
 function assignTrajectoriesByVehicle(
   vehicles: VehicleEntry[],
   trajectories: EntityTrajectory[],
-  operation = false,
+  arenaPlayers?: ArenaPlayer[],
 ): Map<number, EntityTrajectory> {
   const shipTrajs = trajectories.filter((tr) => tr.kind?.entityType === 2);
+  // Authoritative path: the arena's initial state maps each ship entity to
+  // its roster player id directly — mirror picks cannot cross.
+  if (arenaPlayers && arenaPlayers.length > 0) {
+    const out = new Map<number, EntityTrajectory>();
+    const byEntity = new Map(arenaPlayers.map((p) => [p.entityId, p]));
+    for (const traj of shipTrajs) {
+      const playerId = byEntity.get(traj.entityId)?.playerId;
+      if (playerId != null) out.set(playerId, traj);
+    }
+    if (out.size > 0) return out;
+  }
   const byShipId = new Map<number, VehicleEntry[]>();
   for (const v of vehicles) {
     const arr = byShipId.get(v.shipId) ?? [];
@@ -786,13 +852,13 @@ function assignTrajectoriesByVehicle(
       const v = vehicles.find((x) => x.id === vid);
       if (!v) continue;
       const s = spawnOf(traj);
-      if (operation || v.relation <= 1) { ax += s.x; az += s.z; an++; }
+      if (v.relation <= 1) { ax += s.x; az += s.z; an++; }
       else { ex += s.x; ez += s.z; en++; }
     }
     for (const { traj, entries } of ambiguous) {
       const unclaimed = entries.filter((e) => !claimed.has(e.id));
       let pick: VehicleEntry | undefined;
-      if (!operation && an > 0 && en > 0) {
+      if (an > 0 && en > 0) {
         const s = spawnOf(traj);
         const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
         const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
@@ -846,9 +912,9 @@ const ChatLogPanel = defineComponent({
     events: { type: Array as () => ChatEvent[], required: true },
     vehicles: { type: Array as () => VehicleEntry[], required: true },
     trajectories: { type: Array as () => EntityTrajectory[], required: true },
-    /** Operation scenario (行动): the vehicle→trajectory join skips the
-     *  ally/enemy spawn split (relation follows scenario team slots). */
-    operation: { type: Boolean, default: false },
+    /** The arena's initial player state — the authoritative entity→roster
+     *  join for the sender tooltips (mirror picks share one shipId). */
+    arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
     /** Match duration (s) from the decoded stream — the timeline scale
      *  before the map's own clock reports in. */
     duration: { type: Number, default: 0 },
@@ -867,7 +933,7 @@ const ChatLogPanel = defineComponent({
       const trajByVehicle = assignTrajectoriesByVehicle(
         props.vehicles,
         props.trajectories,
-        props.operation,
+        props.arenaPlayers,
       );
       return props.events
         .filter((c) => c.playerId > 0)
@@ -885,9 +951,7 @@ const ChatLogPanel = defineComponent({
             name: v?.name ?? "",
             message: c.message,
             channel: chatChannelOf(c.namespace),
-            // Operations: relation follows scenario slots — nobody reads
-            // as enemy (same gate as the event feed's tint).
-            enemy: !props.operation && (v?.relation ?? 0) >= 2,
+            enemy: (v?.relation ?? 0) >= 2,
             shipId: v?.shipId ?? 0,
             shipType: v ? shipOfflineEntry(v.shipId)?.type ?? "" : "",
             shipName:
@@ -1384,6 +1448,7 @@ export default defineComponent({
     const damageStats = ref<DamageStatSample[]>([]);
     const chatMessages = ref<ChatEvent[]>([]);
     const achievements = ref<AchievementEvent[]>([]);
+    const arenaPlayers = ref<ArenaPlayer[]>([]);
     const showResults = ref(false);
     const showChat = ref(false);
     /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
@@ -1446,6 +1511,7 @@ export default defineComponent({
         damageStats.value = [];
         chatMessages.value = [];
         achievements.value = [];
+        arenaPlayers.value = [];
         showChat.value = false;
         trajectoryError.value = null;
         duration.value = 0;
@@ -1477,6 +1543,7 @@ export default defineComponent({
           damageStats.value = stream.damageStats ?? [];
           chatMessages.value = stream.chatMessages ?? [];
           achievements.value = stream.achievements ?? [];
+          arenaPlayers.value = stream.arenaPlayers ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -1862,6 +1929,7 @@ export default defineComponent({
                           damageStats={damageStats.value}
                           realm={realm.value}
                           operation={isOperation.value}
+                          arenaPlayers={arenaPlayers.value}
                           statsMode={fallbackStatsMode.value}
                           onClose={() => (showResults.value = false)}
                         />
@@ -1894,7 +1962,7 @@ export default defineComponent({
                         events={chatMessages.value}
                         vehicles={parser.current.value.vehicles}
                         trajectories={trajectories.value}
-                        operation={isOperation.value}
+                        arenaPlayers={arenaPlayers.value}
                         duration={duration.value}
                         realm={realm.value}
                         mapApi={mapRef.value}
@@ -1938,6 +2006,7 @@ export default defineComponent({
                       damageStats={damageStats.value}
                       chatMessages={chatMessages.value}
                       achievements={achievements.value}
+                      arenaPlayers={arenaPlayers.value}
                       vehicles={parser.current.value.vehicles}
                       operation={isOperation.value}
                       encyclopedia={encyclopedia.byId}

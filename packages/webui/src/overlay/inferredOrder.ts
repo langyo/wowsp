@@ -62,10 +62,6 @@ export interface InferredOrderOptions {
    *  absent entries compare as bare nicknames and re-derive when the WG
    *  batch lands the tag (the caller re-renders on stats arrival). */
   clanTagOf?: (name: string) => string | null | undefined;
-  /** Operation scenario (行动): the roster's relation values follow
-   *  scenario team slots, not enemy semantics — the whole roster maps as
-   *  ONE allies block. */
-  operation?: boolean;
   /** TRUSTED sunk sets per side (utils/sunkTracker): when a side's set is
    *  present AND matches the alive vector's sunk count, that side renders
    *  the EXACT layout — [alive by key] ++ [sunk by key], every row named —
@@ -87,9 +83,9 @@ export type RowAttribution = string | string[] | null;
  * row grid (the game re-sorts sunk rows below alive ones, so the vector is
  * blockwise [true…true, false…false]; null/absent = unknown → battle
  * start). Entry `k` of the result is row `k`'s attribution — see
- * {@link RowAttribution}. Operation scenarios (`options.operation`, 行动)
- * have one team — their relation values follow scenario slots, so the whole
- * roster maps as a single allies block.
+ * {@link RowAttribution}. The relation side split holds in operations
+ * (行动) too: their rosters carry real enemy semantics (allied escort
+ * waves ≤ 1, enemy warships > 1 — verified against operation captures).
  */
 export function inferredRowMapping(
   vehicles: InferredVehicle[],
@@ -99,12 +95,10 @@ export function inferredRowMapping(
   const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
   let offset = 0;
-  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = options.operation
-    ? [[vehicles, "ally"]]
-    : [
-        [vehicles.filter((v) => v.relation <= 1), "ally"],
-        [vehicles.filter((v) => v.relation > 1), "enemy"],
-      ];
+  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = [
+    [vehicles.filter((v) => v.relation <= 1), "ally"],
+    [vehicles.filter((v) => v.relation > 1), "enemy"],
+  ];
   for (const [list, sideKey] of sides) {
     const full = list
       .map((v, i) => ({
@@ -162,7 +156,7 @@ function rangeNames(full: string[], lo: number, hi: number): RowAttribution {
  * caller's 1:1 positional zip instead of misattributing a player onto it).
  *
  * Same block structure as {@link inferredRowMapping}: allies first, enemies
- * after (operations map the whole roster as one allies block).
+ * after (the relation split, operations included).
  */
 export function pluginRowMapping(
   vehicles: InferredVehicle[],
@@ -171,12 +165,10 @@ export function pluginRowMapping(
 ): RowAttribution[] {
   const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
-  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = options.operation
-    ? [[vehicles, "ally"]]
-    : [
-        [vehicles.filter((v) => v.relation <= 1), "ally"],
-        [vehicles.filter((v) => v.relation > 1), "enemy"],
-      ];
+  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = [
+    [vehicles.filter((v) => v.relation <= 1), "ally"],
+    [vehicles.filter((v) => v.relation > 1), "enemy"],
+  ];
   for (const [list, sideKey] of sides) {
     const full = list
       .map((v) => ({

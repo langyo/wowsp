@@ -1,12 +1,15 @@
 use super::*;
-/// A value from a narrow pickle-proto-2 subset — exactly the shapes the
+/// A value from a narrow pickle-proto-2 subset — the shapes the
 /// `receiveDamageStat` payload uses (dict of `(i64, i64)` keys to
-/// `[i64, f64]` lists). Anything outside the subset aborts the parse.
+/// `[i64, f64]` lists) and the `onArenaStateReceived` player FixedDict uses
+/// (lists of `(int key, int|str|bool value)` tuples). Anything outside the
+/// subset aborts the parse.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum PyVal {
     None,
     Int(i64),
     Float(f64),
+    Str(String),
     Tuple(Vec<PyVal>),
     List(Vec<PyVal>),
     Dict(Vec<(PyVal, PyVal)>),
@@ -69,6 +72,89 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // BINFLOAT 'G' — f64 BIG-endian (the pickle spec's one big-endian field)
                 stack.push(PyVal::Float(f64::from_be_bytes(read_bytes(bytes, i)?)));
                 i += 8;
+            },
+            0x49 => {
+                // INT 'I' — decimal text + newline ("I3973228240\n").
+                let end = bytes[i..].iter().position(|&b| b == b'\n')? + i;
+                let text = std::str::from_utf8(&bytes[i..end]).ok()?;
+                i = end + 1;
+                stack.push(PyVal::Int(text.trim().parse().ok()?));
+            },
+            0x4c => {
+                // LONG 'L' — decimal text + optional 'L' suffix + newline.
+                let end = bytes[i..].iter().position(|&b| b == b'\n')? + i;
+                let text = std::str::from_utf8(&bytes[i..end]).ok()?;
+                i = end + 1;
+                stack.push(PyVal::Int(text.trim().trim_end_matches('L').parse().ok()?));
+            },
+            0x63 => {
+                // GLOBAL 'c' — "module\nname\n" (a class constructor). Pushed
+                // as an opaque placeholder: arena FixedDicts carry object
+                // fields (CamouflageInfo, dogTag) the identity join never
+                // reads; the decoders only need the stack to stay balanced.
+                let m_end = bytes[i..].iter().position(|&b| b == b'\n')? + i;
+                let n_end = bytes[m_end + 1..].iter().position(|&b| b == b'\n')? + m_end + 1;
+                let module = std::str::from_utf8(&bytes[i..m_end]).ok()?;
+                let name = std::str::from_utf8(&bytes[m_end + 1..n_end]).ok()?;
+                i = n_end + 1;
+                stack.push(PyVal::Str(format!("{module}.{name}")));
+            },
+            0x52 => {
+                // REDUCE 'R' — pop args + callable, push an opaque result.
+                let _args = stack.pop()?;
+                let _callable = stack.pop()?;
+                stack.push(PyVal::Str("<reduced>".into()));
+            },
+            0x81 => {
+                // NEWOBJ — pop args + class, push an opaque object.
+                let _args = stack.pop()?;
+                let _cls = stack.pop()?;
+                stack.push(PyVal::Str("<obj>".into()));
+            },
+            0x62 => {
+                // BUILD 'b' — pop state + object, keep the object.
+                let _state = stack.pop()?;
+                let obj = stack.pop()?;
+                stack.push(obj);
+            },
+            0x29 => stack.push(PyVal::Tuple(Vec::new())), // EMPTY_TUPLE ')'
+            0x55 => {
+                // SHORT_BINSTRING 'U' — u8 length + raw UTF-8 bytes (proto ≤2 str).
+                let n = *bytes.get(i)? as usize;
+                i += 1;
+                let raw = bytes.get(i..i + n)?;
+                i += n;
+                stack.push(PyVal::Str(String::from_utf8_lossy(raw).into_owned()));
+            },
+            0x58 => {
+                // BINUNICODE 'X' — u32 length + UTF-8 bytes.
+                let n = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
+                i += 4;
+                let raw = bytes.get(i..i + n)?;
+                i += n;
+                stack.push(PyVal::Str(String::from_utf8_lossy(raw).into_owned()));
+            },
+            0x8c => {
+                // SHORT_BINUNICODE (proto 4) — u8 length + UTF-8 bytes.
+                let n = *bytes.get(i)? as usize;
+                i += 1;
+                let raw = bytes.get(i..i + n)?;
+                i += n;
+                stack.push(PyVal::Str(String::from_utf8_lossy(raw).into_owned()));
+            },
+            0x88 => stack.push(PyVal::Int(1)), // NEWTRUE
+            0x89 => stack.push(PyVal::Int(0)), // NEWFALSE
+            0x85 => {
+                // TUPLE1
+                let a = stack.pop()?;
+                stack.push(PyVal::Tuple(vec![a]));
+            },
+            0x87 => {
+                // TUPLE3
+                let c = stack.pop()?;
+                let b = stack.pop()?;
+                let a = stack.pop()?;
+                stack.push(PyVal::Tuple(vec![a, b, c]));
             },
             0x86 => {
                 // TUPLE2

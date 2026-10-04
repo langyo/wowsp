@@ -4,12 +4,14 @@ use super::*;
 /// frame header is truncated or declares an absurd size (trailing padding).
 ///
 /// `legacy` selects the pre-12.6.0 packet-id layout (see [`remap_legacy_packet_id`]);
-/// `profile` carries the per-version method ids and entity-type indices.
+/// `profile` carries the per-version method ids and entity-type indices;
+/// `version_key` selects the arena-state FixedDict field layout.
 pub(super) fn walk_frames(
     inflated: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
     legacy: bool,
     profile: &LayoutProfile,
+    version_key: Option<(u32, u32, u32)>,
 ) -> DecodedReplay {
     let mut positions: BTreeMap<i32, Vec<PositionSample>> = BTreeMap::new();
     let mut kinds: BTreeMap<i32, EntityKind> = BTreeMap::new();
@@ -40,6 +42,7 @@ pub(super) fn walk_frames(
     let mut damage_stats: Vec<wowsp_tauri_shared::DamageStatSample> = Vec::new();
     let mut chat_messages: Vec<wowsp_tauri_shared::ChatEvent> = Vec::new();
     let mut achievements: Vec<wowsp_tauri_shared::AchievementEvent> = Vec::new();
+    let mut recorder_avatar: Option<i32> = None;
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -95,6 +98,9 @@ pub(super) fn walk_frames(
                     let mut kind = created.clone_into_kind();
                     kind.entity_type = ENTITY_TYPE_AVATAR;
                     kinds.entry(eid).or_insert(kind);
+                    // The recorder's own avatar — the arena state's
+                    // `avatarId` back-reference keys the is_self marking.
+                    recorder_avatar = Some(eid);
                 }
             },
             PACKET_ENTITY_DESTROY => {
@@ -322,6 +328,35 @@ pub(super) fn walk_frames(
             }
         }
     }
+    // The arena's initial player/bot state: one onArenaStateReceived call on
+    // the recorder's avatar right at match start, carrying the authoritative
+    // ship-entity → team/player mapping. Decoded once the walk is done (the
+    // call may sit before the CellPlayerCreate frame that names the avatar).
+    // The call must sit on an AVATAR entity — the raw method id can collide
+    // with another entity type's exposed method; the payload shape gate
+    // (3 wire blobs, pickle pair lists, ≥2 entries) is the second defense.
+    let mut arena_players: Vec<wowsp_tauri_shared::ArenaPlayer> = Vec::new();
+    if profile.arena_state_method.is_some() {
+        for call in &methods {
+            if Some(call.method_id) != profile.arena_state_method {
+                continue;
+            }
+            if !kinds
+                .get(&call.entity_id)
+                .is_some_and(|k| k.entity_type == ENTITY_TYPE_AVATAR)
+            {
+                continue;
+            }
+            if let Some(mut players) = decode_arena_state(&call.args, version_key) {
+                let avatar = recorder_avatar;
+                for p in &mut players {
+                    p.is_self = avatar.is_some_and(|a| p.avatar_id == Some(a));
+                }
+                arena_players = players;
+                break;
+            }
+        }
+    }
     for samples in positions.values_mut() {
         samples.sort_by(|a, b| {
             a.time
@@ -368,5 +403,6 @@ pub(super) fn walk_frames(
         damage_stats,
         chat_messages,
         achievements,
+        arena_players,
     }
 }

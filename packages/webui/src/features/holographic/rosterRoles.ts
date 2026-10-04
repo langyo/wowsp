@@ -5,25 +5,75 @@
  * trajectory to its marker context. The resolved assignments live in the
  * map component; these helpers only compute them.
  */
-import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
+import type { ArenaPlayer, EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
 import { roleFromRelation, type TeamRole } from "./teamColors";
 
-/** Assign each ship trajectory its roster entry via the EntityCreate
- *  `shipId` (recovered from the state stream by the backend). Most shipIds
- *  are unique per match; when two players sail the same ship (mirror
- *  picks, bots), the collision is broken by spawn-side: centroids are
- *  computed from the unambiguous joins, and each ambiguous entity takes
- *  the same-side roster entry. Entities with no roster hit get `null` and
- *  fall back to the spawn-order team heuristic in `resolveMarkerContext`.
+/** Authoritative per-entity identity, distilled from the arena's initial
+ *  state: the ship entity's team slot, its roster player id and its
+ *  GameParams ship id, plus which entity is the recorder's own. */
+export interface ArenaIdentity {
+  team: number;
+  playerId?: number;
+  shipParamsId?: number;
+  isSelf: boolean;
+}
+
+/** Distil the arena player list into per-entity identities. `null` when the
+ *  arena state is missing (old replays, unpinned versions) — consumers then
+ *  fall back to the shipId join + spawn-side heuristics. */
+export function arenaIdentities(
+  arenaPlayers: ArenaPlayer[] | undefined,
+): Map<number, ArenaIdentity> | null {
+  if (!arenaPlayers || arenaPlayers.length === 0) return null;
+  const m = new Map<number, ArenaIdentity>();
+  for (const p of arenaPlayers) {
+    m.set(p.entityId, {
+      team: p.teamId,
+      playerId: p.playerId || undefined,
+      shipParamsId: p.shipParamsId || undefined,
+      isSelf: !!p.isSelf,
+    });
+  }
+  return m;
+}
+
+/** Assign each ship trajectory its roster entry. When the arena's initial
+ *  state decoded (`arenaIdentities`), the join is authoritative: the ship
+ *  entity's roster player id comes from the server, so mirror picks (two
+ *  players on the same ship share one `shipId`) can never be crossed.
+ *  Without it the join falls back to the EntityCreate `shipId` (recovered
+ *  from the state stream by the backend): most shipIds are unique per
+ *  match; when two players sail the same ship (mirror picks, bots), the
+ *  collision is broken by spawn-side: centroids are computed from the
+ *  unambiguous joins, and each ambiguous entity takes the same-side roster
+ *  entry. Entities with no roster hit get `null` and fall back to the
+ *  spawn-order team heuristic in `resolveMarkerContext`.
  *
- *  Operation scenarios (`operation`, 行动) skip the side split entirely —
- *  their relation values follow scenario team slots, so there is just one
- *  pool and ambiguous entities take the first unclaimed entry. */
+ *  Operation scenarios (`operation`, 行动) still join as one pool — every
+ *  marker reads as an ally there (the map colors ops as one fleet), so a
+ *  side split would only starve the pool; the roster relations themselves
+ *  do carry enemy semantics, but that matters to the LIST surfaces, not
+ *  this marker join. */
 export function resolveRosterAssignments(
   shipTrajs: EntityTrajectory[],
   vehicles: VehicleEntry[],
   operation = false,
+  identities?: Map<number, ArenaIdentity> | null,
 ): Map<number, VehicleEntry | null> {
+  // Authoritative path: roster join by arena player id (one roster entry
+  // per player — mirror shipIds can't collide).
+  if (identities && identities.size > 0) {
+    const byPlayerId = new Map<number, VehicleEntry>();
+    for (const v of vehicles) byPlayerId.set(v.id, v);
+    const assignments = new Map<number, VehicleEntry | null>();
+    for (const traj of shipTrajs) {
+      const identity = identities.get(traj.entityId);
+      const entry =
+        identity?.playerId != null ? byPlayerId.get(identity.playerId) : undefined;
+      assignments.set(traj.entityId, entry ?? null);
+    }
+    return assignments;
+  }
   const byShipId = new Map<number, VehicleEntry[]>();
   for (const v of vehicles) {
     const arr = byShipId.get(v.shipId) ?? [];
@@ -84,26 +134,41 @@ export function resolveRosterAssignments(
 
 /** Map each ship trajectory to its roster entry (for team role + ship
  *  model) via the precomputed roster assignments. When a trajectory has
- *  no matching roster entry (older replay, decode gap), the role falls
- *  back to the entity-id spawn-order heuristic: the client spawns team A
- *  before team B, so the first half of ships (by entity id) are treated
- *  as allies. Unresolved ships never claim the "self" role, so the
- *  recorder's own marker stays uniquely white. Operation scenarios
- *  (`operation`) read every roster entry as ally — their relation values
- *  follow scenario team slots, not enemy semantics. */
+ *  no matching roster entry, the authoritative arena identity (when the
+ *  arena state decoded) supplies the team — self via its own entry, allies
+ *  by team slot — and the encyclopedia lookup falls back to the arena's
+ *  GameParams ship id. Only when even the arena state is missing does the
+ *  role fall back to the entity-id spawn-order heuristic: the client
+ *  spawns team A before team B, so the first half of ships (by entity id)
+ *  are treated as allies. Operation scenarios (`operation`) read every
+ *  entry as ally — a deliberate map-visual choice (ops render as one
+ *  fleet); the roster relations themselves still carry side semantics
+ *  for the LIST surfaces. */
 export function resolveMarkerContext(
   traj: EntityTrajectory,
   shipEntityIds: number[],
   assignments: Map<number, VehicleEntry | null>,
   encyclopedia: Map<number, ShipInfo>,
   operation = false,
+  identities?: Map<number, ArenaIdentity> | null,
 ): { role: TeamRole; shipInfo: ShipInfo | null; entry: VehicleEntry | null } {
   const entry = assignments.get(traj.entityId) ?? null;
+  const identity = identities?.get(traj.entityId);
   let role: TeamRole;
   let shipInfo: ShipInfo | null;
   if (entry) {
     role = roleFromRelation(entry.relation, operation);
     shipInfo = encyclopedia.get(entry.shipId) ?? null;
+  } else if (identity) {
+    role = identity.isSelf
+      ? "self"
+      : !operation && identity.team !== selfTeamOf(identities)
+        ? "enemy"
+        : "ally";
+    shipInfo =
+      identity.shipParamsId != null
+        ? encyclopedia.get(identity.shipParamsId) ?? null
+        : null;
   } else {
     // Fallback: entity-id spawn order (team A spawns before team B).
     // Never "self" — only the exact match earns the recorder tint.
@@ -113,4 +178,12 @@ export function resolveMarkerContext(
     shipInfo = null;
   }
   return { role, shipInfo, entry };
+}
+
+/** The recorder's team slot, from the arena identity marked `isSelf`. */
+function selfTeamOf(identities: Map<number, ArenaIdentity> | null | undefined): number {
+  for (const identity of identities?.values() ?? []) {
+    if (identity.isSelf) return identity.team;
+  }
+  return 0;
 }

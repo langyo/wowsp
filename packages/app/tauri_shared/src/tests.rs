@@ -492,78 +492,6 @@ fn arena_info_renames_match_group_date_time_and_map_name() {
     assert_eq!(vehicle["shipId"], 4_180_755_280_i64);
 }
 
-/// Operation-scenario fingerprints: the PCVO battle script, the `_op_`
-/// scenario infix, or scenario units keeping their `IDS_OP_*` ship name
-/// as nickname — and NONE of them fire for co-op / PvP rosters.
-#[test]
-fn is_operation_arena_fingerprints() {
-    let roster = |names: &[&str]| {
-        names
-            .iter()
-            .enumerate()
-            .map(|(i, n)| VehicleEntry {
-                id: i as i64,
-                name: n.to_string(),
-                relation: 0,
-                ship_id: 1000 + i as i64,
-                ship_name: None,
-            })
-            .collect::<Vec<_>>()
-    };
-    // Battle script / scenario fingerprints.
-    assert!(is_operation_arena(
-        Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL"),
-        None,
-        &roster(&["player"])
-    ));
-    assert!(is_operation_arena(
-        None,
-        Some("PCVO013_Halloween_Scenario"),
-        &roster(&[])
-    ));
-    // Roster fingerprint (the live arena file may carry no scenario).
-    assert!(is_operation_arena(
-        None,
-        None,
-        &roster(&["langyo", "IDS_OP_50_DUMMY_01"])
-    ));
-    // New-account scripted battles stay team-vs-team even though their
-    // rosters carry `IDS_*` units: the low-level escort operation (by
-    // scenario AND by its `IDS_OP_15_*` units when the scenario is
-    // missing) and the `FIRST_BATTLE` tutorial.
-    assert!(!is_operation_arena(
-        Some("LOW_LVL_OPERATION_1_LVL_2"),
-        None,
-        &roster(&[
-            "langyo",
-            ":Buchan:",
-            "IDS_OP_15_ALLY_FLAGSHIP",
-            "IDS_OP_15_DUMMY_01"
-        ])
-    ));
-    assert!(!is_operation_arena(
-        None,
-        None,
-        &roster(&["langyo", "IDS_OP_15_DUMMY_01"])
-    ));
-    assert!(!is_operation_arena(
-        Some("FIRST_BATTLE"),
-        None,
-        &roster(&["langyo", "IDS_AL_01", "IDS_EN_01"])
-    ));
-    // Co-op / random rosters stay team-vs-team.
-    assert!(!is_operation_arena(
-        Some("asymm_3point_coop"),
-        Some("PCVE027"),
-        &roster(&[":Yumashev:", "langyo"])
-    ));
-    assert!(!is_operation_arena(
-        Some("domination_3point"),
-        None,
-        &roster(&["langyo", "WGR_bot"])
-    ));
-}
-
 /// `anchor` is `#[serde(default)]` WITHOUT `skip_serializing_if`: a
 /// capture with no anchor ships `"anchor": null`, not a missing key —
 /// the TS side types it optional-but-present. The nested OverlayAnchor
@@ -772,12 +700,48 @@ fn replay_stream_omits_empty_sections() {
         damage_stats: Vec::new(),
         chat_messages: Vec::new(),
         achievements: Vec::new(),
+        arena_players: Vec::new(),
+        self_team: None,
     };
     let v = round_trips(minimal);
     let obj = v.as_object().unwrap();
     assert_eq!(obj.len(), 1, "only trajectories survives: {v}");
     assert!(obj.contains_key("trajectories"));
     assert_eq!(obj["trajectories"][0]["samples"][0]["entityId"], 7);
+
+    // The arena join serializes with camelCase keys and hides its own
+    // empty optionals (playerId 0 / no avatar / not-self stay absent).
+    let with_arena = ReplayStream {
+        arena_players: vec![ArenaPlayer {
+            entity_id: 7_561_151,
+            team_id: 1,
+            player_id: 601,
+            ship_params_id: 4_076_255_216,
+            max_health: 12_600,
+            name: "langyo".into(),
+            is_bot: false,
+            avatar_id: Some(7_561_114),
+            is_self: true,
+        }],
+        self_team: Some(1),
+        ..serde_json::from_value::<ReplayStream>(serde_json::json!({
+            "trajectories": []
+        }))
+        .unwrap()
+    };
+    let v = round_trips(with_arena);
+    let obj = v.as_object().unwrap();
+    assert_eq!(obj["selfTeam"], 1);
+    let p = &obj["arenaPlayers"][0];
+    assert_eq!(p["entityId"], 7_561_151);
+    assert_eq!(p["teamId"], 1);
+    assert_eq!(p["playerId"], 601);
+    assert_eq!(p["shipParamsId"], 4_076_255_216u64);
+    assert_eq!(p["maxHealth"], 12_600);
+    assert_eq!(p["name"], "langyo");
+    assert_eq!(p["avatarId"], 7_561_114);
+    assert_eq!(p["isSelf"], true);
+    assert!(!p.as_object().unwrap().contains_key("isBot"));
 
     // A populated stream keeps the renamed optional keys.
     let rich = ReplayStream {
