@@ -10,9 +10,14 @@
   position: fixed;
   z-index: 1000;
   box-sizing: border-box;
-  max-height: calc(100vh - 24px);
+  /* Capped card: big CV spec sheets no longer tower over the map (they
+     used to flip ABOVE the anchor and cover the scorebar strip). The
+     clipped rest scrolls inside the card — wheel over it, thin scrollbar. */
+  max-height: min(58vh, 540px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 30%) transparent;
   padding: 0.65rem 0.8rem 0.5rem;
   border-radius: 12px;
   /* Same neutral grey glass as .holo-scorebar — readable over either map
@@ -225,12 +230,9 @@
     white-space: nowrap;
   }
 
-  /* Generous fold height — most ships' full spec list fits without the
-     inner scrollbar, so group titles don't get cut mid-block at the fold. */
+  /* No inner fold: the CARD is the scroll container now (capped height +
+     wheel), so the spec list renders full-length and scrolls with it. */
   &__specs {
-    max-height: min(340px, 42vh);
-    overflow-y: auto;
-    overscroll-behavior: contain;
     padding-right: 2px;
   }
 

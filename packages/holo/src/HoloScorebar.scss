@@ -152,8 +152,13 @@
 .holo-scorebar__slot-hp {
   position: absolute;
   top: 16px;
-  left: 0;
-  width: 15px;
+  /* Explicitly centered on the slot (and slightly narrower than the icon):
+     the HUD arrow art letterboxes asymmetrically inside its 15px box
+     (ally glyphs hug the right edge, enemy the left), so a full-width
+     left-anchored bar read as sliding off the glyph. */
+  left: 50%;
+  translate: -50% 0;
+  width: 12px;
   height: 3px;
   border-radius: 2px;
   /* Dark rail on either glass so the fill reads on light pills too. */

@@ -1660,6 +1660,7 @@ export default defineComponent({
             kills={killsNow}
             showKills={killerRosterIdOf.value != null}
             stats={nameStats.value}
+            encyclopedia={props.encyclopedia}
           />
         ) : null}
         {tipVehicle && tipAnchorEl.value ? (

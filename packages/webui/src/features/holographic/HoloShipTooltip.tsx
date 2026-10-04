@@ -135,7 +135,7 @@ export default defineComponent({
     const shipName = computed(() => {
       const sid = props.vehicle.shipId;
       return (
-        (info.value ? encStore.shipDisplayName(info.value) : null) ??
+        (info.value ? encStore.shipDisplayName(info.value) || null : null) ??
         (sid != null ? shipNameFromOfflineDb(sid, dataLanguage.value) : null) ??
         (sid != null ? shipNameFromModelDb(sid) : null) ??
         props.vehicle.shipName ??
@@ -246,10 +246,15 @@ export default defineComponent({
     let lastH = -1;
     // Hover can slide straight from one slot to the next while the card
     // stays mounted — re-anchor whenever the anchor (or described player)
-    // changes, even at an identical content size.
+    // changes, even at an identical content size. A NEW player also snaps
+    // the card's scroll back to the top (playhead ticks keep the position).
     watch(
       [() => props.anchorEl, () => props.vehicle.id],
-      () => void nextTick(() => place(true)),
+      ([, newId], [, oldId]) =>
+        void nextTick(() => {
+          place(true);
+          if (newId !== oldId && cardEl.value) cardEl.value.scrollTop = 0;
+        }),
     );
     onMounted(() => void nextTick(() => place(true)));
     onUpdated(() => place());
@@ -284,16 +289,19 @@ export default defineComponent({
                   ) : null}
                   {props.vehicle.name}
                 </span>
-                {self.value ? (
-                  <em class="holo-ship-tip__tag">{t("replay.camera.me")}</em>
-                ) : null}
                 {ai.value ? (
                   <em class="holo-ship-tip__tag">{t("replay.bot")}</em>
                 ) : null}
               </div>
               <div class="holo-ship-tip__ship-row">
                 {tier.value ? <b class="holo-ship-tip__tier">{tier.value}</b> : null}
-                <BattleIcon type={shipType.value ?? ""} variant="plain" size={14} />
+                {/* Self is the WHITE marker (the game's own convention —
+                    no 「我」 text anywhere). */}
+                <BattleIcon
+                  type={shipType.value ?? ""}
+                  variant={self.value ? "white" : enemy.value ? "enemy" : "ally"}
+                  size={14}
+                />
                 <span class="holo-ship-tip__ship-name">{shipName.value}</span>
                 {shipTypeShort(shipType.value) ? (
                   <span class="holo-ship-tip__type">{shipTypeShort(shipType.value)}</span>
@@ -449,7 +457,11 @@ export default defineComponent({
             {specGroups.value.length ? (
               <div class="holo-ship-tip__section">
                 <div class="holo-ship-tip__sec-title">{t("replay.tip.specs")}</div>
-                <div class="holo-ship-tip__specs hk-scroll-pin-host">
+                {/* No scroll host of its own — the CARD is the only scroll
+                    container (hikari's pinned scrollbar here would scroll
+                    just the specs with an inset bar; the user wants the
+                    whole card scrolling with the bar at the card edge). */}
+                <div class="holo-ship-tip__specs">
                   {specGroups.value.map(([group, rows]) => (
                     <div class="holo-ship-tip__spec-group" key={group}>
                       <div class="holo-ship-tip__spec-title">{group}</div>

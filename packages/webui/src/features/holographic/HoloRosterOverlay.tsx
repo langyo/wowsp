@@ -18,12 +18,13 @@ import { computed, defineComponent, type PropType } from "vue";
 
 import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { RosterStat } from "@/composables/useRosterStats";
 import { gameTabRowKey } from "@/utils/shipClass";
 import BattleIcon from "@/components/base/BattleIcon";
 import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "./modelLoader";
 import { tierRoman } from "@/features/replay/shipLiveStats";
-import type { VehicleEntry } from "@/api";
+import type { ShipInfo, VehicleEntry } from "@/api";
 import type { HoloTipState } from "./HoloShipTooltip";
 
 /** mm:ss battle clock for sunk times. */
@@ -97,7 +98,8 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean) {
                 />
               </td>
               <td class="holo-roster__td holo-roster__td--name">
-                {r.vehicle.relation === 0 ? <em class="holo-roster__self">{i18nT("replay.camera.me")} </em> : null}
+                {/* No 「我」 label — the self row is marked by its WHITE
+                    ship icon (alive), the game's own convention. */}
                 {r.vehicle.name}
               </td>
               <td class="holo-roster__td">
@@ -146,9 +148,35 @@ export default defineComponent({
     showKills: { type: Boolean, default: false },
     /** Career stats (clan tags feed the game's own sort key). */
     stats: { type: Object as PropType<Map<string, RosterStat>>, required: true },
+    /** Ship encyclopedia (WG API, loaded per realm) — FIRST link of the
+     *  ship-name/tier/type chain, so ships missing from the baked offline
+     *  DBs (supertest hulls like Sovetskaya) still resolve when the
+     *  encyclopedia knows them. */
+    encyclopedia: { type: Object as PropType<Map<number, ShipInfo>>, required: true },
   },
   setup(props) {
     const { dataLanguage } = useLanguage();
+    const encStore = useEncyclopediaStore();
+
+    /** Ship identity (name / tier / type): WG encyclopedia → offline DB →
+     *  model DB → the descriptor's raw index name. */
+    const identityOf = (v: VehicleEntry): { name: string; tier: string | null; type: string | null } => {
+      const sid = v.shipId;
+      const info = sid != null ? (props.encyclopedia.get(sid) as ShipInfo | undefined) : undefined;
+      const offline = sid != null ? shipOfflineEntry(sid) : undefined;
+      return {
+        name:
+          // Empty-string display names (pathological encyclopedia entries)
+          // must fall through like a miss, not stop the chain.
+          (info ? encStore.shipDisplayName(info) || null : null) ??
+          (sid != null ? shipNameFromOfflineDb(sid, dataLanguage.value) : null) ??
+          v.shipName ??
+          (sid != null ? shipNameFromModelDb(sid) : null) ??
+          "",
+        tier: tierRoman(info?.tier ?? offline?.tier ?? null),
+        type: info?.type ?? offline?.type ?? null,
+      };
+    };
 
     /** The game's own Tab row key: alive-first / sunk-last, then class,
      *  tier desc, nation, localized ship name, '[tag]nickname'. */
@@ -159,15 +187,12 @@ export default defineComponent({
           const st = props.rosterState.get(v.id);
           const deathTime = st?.deathTime ?? null;
           const alive = deathTime == null || deathTime > props.time;
+          const id = identityOf(v);
           return {
             vehicle: v,
-            shipName:
-              (v.shipId != null ? shipNameFromOfflineDb(v.shipId, dataLanguage.value) : null) ??
-              v.shipName ??
-              (v.shipId != null ? shipNameFromModelDb(v.shipId) : null) ??
-              "",
-            tier: tierRoman(shipOfflineEntry(v.shipId)?.tier ?? null),
-            type: shipOfflineEntry(v.shipId)?.type ?? null,
+            shipName: id.name,
+            tier: id.tier,
+            type: id.type,
             alive,
             deathTime,
             kills: props.kills.get(v.id) ?? 0,

@@ -874,7 +874,16 @@
   justify-content: center;
   align-items: flex-start;
   padding: 2.2rem 1rem;
-  pointer-events: none;
+  /* The overlay IS the scroll container: a 24-row double table exceeds the
+     map pane's height, so the board scrolls under the pointer (the game's
+     own Tab screen is fixed, but replay scrubbing benefits from keeping
+     long rosters reachable). Pointer events are enabled for exactly this —
+     while Tab is held the overlay owns the pane. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--holo-hud-border) transparent;
+  pointer-events: auto;
   color: var(--holo-hud-text);
 }
 
@@ -963,12 +972,6 @@
 
 .holo-roster__row--dead {
   td { opacity: 0.55; }
-}
-
-.holo-roster__self {
-  font-style: normal;
-  font-weight: 700;
-  color: var(--holo-hud-strong);
 }
 
 .holo-roster__tier {
