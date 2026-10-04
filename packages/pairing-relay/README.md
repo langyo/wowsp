@@ -162,10 +162,13 @@ and `/erp` past the static-asset layer):
 - **`GET /feedback`** — an embedded, dependency-free form localized in the
   same nine locales as the app's `res/i18n` files (language selector with
   `?lang=`/localStorage/browser resolution) and styled with hikari's design
-  tokens: `res/theme/feedback-hikari.css` is generated from the webui's
-  `@celestia-island/hikari` dependency by `scripts/export_feedback_theme.py`
-  (channels + scale tokens plus the default preset's light/dark palettes),
-  embedded at compile time, and flipped between schemes via the same
+  tokens: the token sheet under `crates/relay-core/.generated/` is
+  generated from the webui's `@celestia-island/hikari` dependency by
+  `scripts/export_feedback_theme.py` (channels + scale tokens plus the
+  default preset's light/dark palettes) — a gitignored build-time artifact
+  (the source tree tracks no CSS; run the exporter before any relay-core
+  build, `just check-relay` does it for you), embedded at compile time,
+  and flipped between schemes via the same
   `data-mode` attribute the app's `useTheme` sets. A Cloudflare Turnstile
   widget guards submissions. The WoWSP desktop app's 设置 ▸ 问题反馈 pane
   links here with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill

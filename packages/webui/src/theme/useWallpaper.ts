@@ -1,14 +1,24 @@
 /**
- * WoWSP wallpaper composable. The choice is solid (follows the theme mode)
- * or a custom image from the fixed AppData `wallpapers/` folder. Manages the
- * active wallpaper, keeps the custom list in sync with that folder via
- * `commands::wallpaper`, and exposes CSS-var-ready computed values for the
- * renderer.
+ * WoWSP wallpaper composable. The choice is a built-in (the shipped art
+ * pair — one illustration per theme mode — or the solid that follows the
+ * mode) or a custom image from the fixed AppData `wallpapers/` folder.
+ * Manages the active wallpaper, keeps the custom list in sync with that
+ * folder via `commands::wallpaper`, and exposes CSS-var-ready computed
+ * values for the renderer.
  */
 import { computed, ref } from "vue";
 
 import { useTheme } from "@/theme";
-import { SOLID_WALLPAPER, DEFAULT_WALLPAPER_ID, loadActiveWallpaperId, saveActiveWallpaperId, type WallpaperPreset } from "./wallpaper";
+import {
+  ART_WALLPAPER,
+  BUILTIN_WALLPAPER_IDS,
+  SOLID_WALLPAPER,
+  DEFAULT_WALLPAPER_ID,
+  imageSourceUrl,
+  loadActiveWallpaperId,
+  saveActiveWallpaperId,
+  type WallpaperPreset,
+} from "./wallpaper";
 import {
   setWallpaperOverlayPercent,
   wallpaperOverlayPercent,
@@ -59,11 +69,12 @@ async function refreshCustom(): Promise<void> {
     );
   } catch {
     // Shell without the wallpaper commands — keep whatever we have (the
-    // solid default stays available regardless).
+    // built-ins stay available regardless).
   }
-  // Self-heal: a persisted id whose file is gone falls back to solid.
+  // Self-heal: a persisted id that is neither a built-in nor a file still
+  // on disk falls back to the default.
   if (
-    activeWallpaperId.value !== DEFAULT_WALLPAPER_ID &&
+    !BUILTIN_WALLPAPER_IDS.has(activeWallpaperId.value) &&
     !customWallpapers.value.some((w) => w.id === activeWallpaperId.value)
   ) {
     setActiveWallpaper(DEFAULT_WALLPAPER_ID);
@@ -74,6 +85,7 @@ export function useWallpaper() {
   const { effectiveMode } = useTheme();
 
   const allWallpapers = computed<WallpaperPreset[]>(() => [
+    ART_WALLPAPER,
     SOLID_WALLPAPER,
     ...customWallpapers.value,
   ]);
@@ -110,16 +122,20 @@ export function useWallpaper() {
     return activeWallpaper.value?.source ?? { type: "solid" as const };
   });
 
-  /** Art credit of the active wallpaper (null for solid backgrounds). */
+  /** Art credit of the active wallpaper — null whenever the preset
+   *  carries none (solid, uncredited custom imports). */
   const activeAuthor = computed(() => activeWallpaper.value?.author ?? null);
 
   const wallpaperType = computed(() => currentSource.value.type);
-  const isImage = computed(() => wallpaperType.value === "image");
+  const isImage = computed(() => wallpaperType.value !== "solid");
   const isSolid = computed(() => wallpaperType.value === "solid");
 
   const mediaUrl = computed(() => {
     const src = currentSource.value;
-    return src.type === "image" ? src.url : "";
+    if (src.type === "solid") return "";
+    // The built-in art pair swaps files with the effective mode; custom
+    // images are mode-less and return their single url.
+    return imageSourceUrl(src, effectiveMode.value === "dark" ? "dark" : "light");
   });
 
   /** Solid always mirrors the theme mode — a light theme never sits on a

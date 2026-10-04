@@ -11,6 +11,7 @@ import {
   type ThemeModePreference,
 } from "@/theme/themeModePreference";
 import { useWallpaper } from "@/theme/useWallpaper";
+import { imageSourceUrl } from "@/theme/wallpaper";
 import { isTauri } from "@/transport";
 import { useStatsPrefsStore, STATS_PREFS_STORAGE_KEY } from "@/stores/statsPrefs";
 import { useConfigStore } from "@/stores/config";
@@ -416,7 +417,12 @@ export default defineComponent({
               ) : (
                 <span
                   class="onboarding__option-swatch-fill"
-                  style={{ backgroundImage: `url(${w.source.url})` }}
+                  style={{
+                    backgroundImage: `url(${imageSourceUrl(
+                      w.source,
+                      theme.effectiveMode.value === "dark" ? "dark" : "light",
+                    )})`,
+                  }}
                 />
               )}
             </span>

@@ -19,7 +19,9 @@ exclude = [
     # keeps its own Cargo.lock (gitignored) and its worker/wasm-bindgen
     # dependency tree out of the app crates' builds. Entry points:
     # `just check-relay`, or `cargo check --target wasm32-unknown-unknown`
-    # / `cargo test -p relay-core` inside packages/pairing-relay.
+    # / `cargo test -p relay-core` inside packages/pairing-relay (both
+    # need `just feedback-theme` first — relay-core embeds a gitignored
+    # generated token sheet via include_str!).
     "packages/pairing-relay",
 ]
 

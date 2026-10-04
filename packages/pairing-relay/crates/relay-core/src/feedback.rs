@@ -440,9 +440,12 @@ fn feedback_locales_json() -> &'static str {
 /// `@celestia-island/hikari` dependency by `scripts/export_feedback_theme.py`
 /// (the channels + scale `:root` blocks plus the default preset's light/dark
 /// palettes, i.e. the exact pair the app's `initTheme()` applies at runtime).
-/// Checked in so the worker build needs no Node toolchain; CI re-runs the
-/// exporter with `--check` so a hikari bump cannot drift silently.
-const FEEDBACK_HIKARI_CSS: &str = include_str!("../../../../../res/theme/feedback-hikari.css");
+/// A gitignored build-time artifact under `crates/relay-core/.generated/` —
+/// the source tree tracks no CSS. Generate it BEFORE building/testing this
+/// crate (`just feedback-theme`, run automatically by `just check-relay`;
+/// needs `pnpm install`), or the missing `include_str!` file fails the
+/// compile.
+const FEEDBACK_HIKARI_CSS: &str = include_str!("../.generated/feedback-hikari.css");
 
 /// Minimal HTML escaping for request-derived text (the User-Agent
 /// inference) before it lands in the page template or an attribute.

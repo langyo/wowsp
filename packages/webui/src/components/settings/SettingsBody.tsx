@@ -53,6 +53,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
+import { imageSourceUrl } from "@/theme/wallpaper";
 import {
   UI_OPACITY_MAX,
   UI_OPACITY_MIN,
@@ -1034,9 +1035,10 @@ export default defineComponent({
 
             <HkDivider />
 
-            {/* wallpaper / background — solid follows the theme mode; custom
-                entries are files in the AppData wallpapers folder and can be
-                deleted (two-step confirm per card). */}
+            {/* wallpaper / background — the built-in illustration pair and
+                the solid follow the theme mode; custom entries are files in
+                the AppData wallpapers folder and can be deleted (two-step
+                confirm per card). */}
             <HkSettingsSub title={t("settings.wallpaper")}>
               <div class="settings-modal__wallpapers" ref={wallpaperRow}>
                 {wallpaper.allWallpapers.value.map((w) => {
@@ -1066,7 +1068,12 @@ export default defineComponent({
                           ) : (
                             <span
                               class="settings-modal__wallpaper-swatch settings-modal__wallpaper-swatch--image"
-                              style={{ backgroundImage: `url(${w.source.url})` }}
+                              style={{
+                                backgroundImage: `url(${imageSourceUrl(
+                                  w.source,
+                                  theme.effectiveMode.value === "dark" ? "dark" : "light",
+                                )})`,
+                              }}
                             />
                           )}
                         </span>

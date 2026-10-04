@@ -6,3 +6,7 @@ crates/relay-worker/build/
 # tracked; this nested one stays local)
 Cargo.lock
 /assets/
+
+# Feedback-page hikari token sheet, generated at build time by
+# scripts/export_feedback_theme.py (the source tree tracks no CSS)
+crates/relay-core/.generated/

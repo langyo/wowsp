@@ -4,10 +4,11 @@
 
 The Worker feedback page (relay-core `feedback_page`) is a dependency-free
 HTML string served from Cloudflare — it cannot import the
-`@celestia-island/hikari` npm package at runtime, and the relay CI job has
-no Node toolchain to compile SCSS. Instead this script vendors the design
-language into `res/theme/feedback-hikari.css`, which relay-core embeds via
-`include_str!`:
+`@celestia-island/hikari` npm package at runtime. Instead this script
+compiles the design language into CSS at BUILD time, writing it to the
+gitignored `packages/pairing-relay/crates/relay-core/.generated/`
+directory, which relay-core embeds via `include_str!`. The repo's source
+tree stays CSS-free (SCSS only); nothing derived is tracked:
 
   1. hikari's channel palette + scale tokens, compiled with the very sass
      the webui package ships (`styles/theme/channels.scss` and
@@ -21,17 +22,16 @@ language into `res/theme/feedback-hikari.css`, which relay-core embeds via
      hook).
 
 Usage:
-  python scripts/export_feedback_theme.py           # regenerate the file
-  python scripts/export_feedback_theme.py --check   # CI: fail on drift
+  python scripts/export_feedback_theme.py    # (re)generate the artifact
 
 The webui package must have its dependencies installed (`pnpm install`).
-CI runs `--check` in the frontend job so a hikari bump that changes any
-token forces a conscious re-export here.
+Run this BEFORE any relay-core build (`just check-relay` does it for you;
+CI's relay job runs it right after installing frontend deps) — without the
+artifact, relay-core fails to compile on the missing `include_str!` file.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
@@ -41,7 +41,9 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT_FILE = ROOT / "res" / "theme" / "feedback-hikari.css"
+OUT_FILE = (
+    ROOT / "packages" / "pairing-relay" / "crates" / "relay-core" / ".generated"
+) / "feedback-hikari.css"
 WEBUI = ROOT / "packages" / "webui"
 
 # preset key (camelCase, presets.ts) -> CSS custom property
@@ -183,7 +185,7 @@ def build() -> str:
         " *     desktop app's initTheme() injects at runtime, so this standalone\n"
         " *     page renders in the app's actual palette.\n"
         " * Regenerate: python scripts/export_feedback_theme.py\n"
-        " * Drift guard: CI runs the same script with --check.\n"
+        " * Build-time artifact (gitignored) — the source tree tracks no CSS.\n"
         " * Consumed by relay-core feedback_page() via include_str!.\n"
         " */\n"
     )
@@ -207,26 +209,7 @@ def build() -> str:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--check", action="store_true", help="verify the file is current")
-    args = ap.parse_args()
-
     content = build()
-    if args.check:
-        current = (
-            OUT_FILE.read_text(encoding="utf-8") if OUT_FILE.is_file() else ""
-        )
-        if current != content:
-            print(
-                "export_feedback_theme: res/theme/feedback-hikari.css is out of "
-                "date with the installed hikari package.\n"
-                "Regenerate with: python scripts/export_feedback_theme.py",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        print("feedback theme tokens OK (in sync with installed hikari)")
-        return
-
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     OUT_FILE.write_text(content, encoding="utf-8", newline="\n")
     print(f"wrote {OUT_FILE.relative_to(ROOT)} ({len(content)} bytes)")

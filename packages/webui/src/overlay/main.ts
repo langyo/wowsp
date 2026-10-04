@@ -67,7 +67,7 @@ import { isOperationBattle } from "@/utils/modeColors";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
 import { AI_NAME } from "@/utils/aiNames";
-import "./overlay.css";
+import "./overlay.scss";
 
 // Same locale files the Vue app consumes — one source of truth for the hint
 // copy, bundled eagerly into this tiny page (a few KB across 9 locales).

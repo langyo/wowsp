@@ -144,7 +144,6 @@ _lint-full:
     cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
     {{PM}} -r lint
     @python scripts/check_i18n.py
-    @python scripts/export_feedback_theme.py --check
 
 _lint-rust:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
@@ -152,15 +151,17 @@ _lint-rust:
 
 _lint-webui:
     {{PM}} -r lint
-    @python scripts/export_feedback_theme.py --check
 
 _lint-i18n *FLAGS='':
     @python scripts/check_i18n.py {{FLAGS}}
 
-# Regenerate res/theme/feedback-hikari.css from the installed hikari
-# package (channels + scale tokens + the default preset's light/dark
-# palettes). relay-core embeds the file into the /feedback page; CI
-# verifies it stays in sync.
+# Generate the /feedback page's hikari token sheet (channels + scale
+# tokens + the default preset's light/dark palettes) from the installed
+# hikari package, into the gitignored
+# packages/pairing-relay/crates/relay-core/.generated/ — relay-core embeds
+# it via include_str!, and the source tree tracks no CSS. Prerequisite of
+# every relay-core build (`just check-relay` runs it for you); needs
+# `pnpm install` for the webui's hikari + sass.
 feedback-theme:
     @python scripts/export_feedback_theme.py
 
@@ -181,8 +182,10 @@ check:
 # workspace compiled to wasm32 for Cloudflare Workers (excluded from the
 # root workspace — own gitignored Cargo.lock). One recipe covers both
 # halves of its verification; wasm32 check is quick and holds no shared
-# target-dir lock (the package has its own target/).
-check-relay:
+# target-dir lock (the package has its own target/). feedback-theme runs
+# first: relay-core's include_str! of the token sheet fails without the
+# generated artifact.
+check-relay: feedback-theme
     cd packages/pairing-relay && cargo test -p relay-core
     cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
 

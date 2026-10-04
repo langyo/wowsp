@@ -62,10 +62,6 @@ jobs:
         run: python scripts/check_rpc_parity.py
       - name: i18n parity
         run: python scripts/check_i18n.py
-      - name: Feedback theme tokens in sync
-        # res/theme/feedback-hikari.css (embedded by relay-core via
-        # include_str!) must match the installed hikari package.
-        run: python scripts/export_feedback_theme.py --check
       - name: npm audit
         # Dev-toolchain advisories (e.g. brace-expansion chains) have
         # tripped `high` before; production deps stay gated at `critical`.
@@ -171,6 +167,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Add wasm target
         run: rustup target add wasm32-unknown-unknown
+      # relay-core embeds the /feedback token sheet via include_str! — a
+      # gitignored artifact generated from the webui's hikari + sass (the
+      # source tree tracks no CSS), so this job needs the frontend deps
+      # after all (mirrors `just check-relay`, which runs the exporter
+      # first).
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+      - name: Generate feedback theme tokens
+        run: python scripts/export_feedback_theme.py
       - name: Relay core tests
         run: cargo test --manifest-path packages/pairing-relay/Cargo.toml -p relay-core
       - name: Relay worker wasm check

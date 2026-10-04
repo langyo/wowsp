@@ -2,9 +2,9 @@
  * WoWSP wallpaper types + presets.
  *
  * The wallpaper choice is deliberately two-dimensional and nothing more:
- *   - Solid: a plain background that follows the theme mode (the renderer
- *     paints the mode's own base; see themeModePreference for the mode
- *     preference it follows) — the single built-in preset.
+ *   - Built-ins: the shipped art pair (正弦线's light/dark illustrations,
+ *     the default) and the plain solid that follows the theme mode (see
+ *     themeModePreference for the mode preference they follow).
  *   - Custom: image files the user imported, stored in the fixed
  *     `<data_dir>/wallpapers/` folder (see commands::wallpaper). The
  *     directory IS the list — ids are file names, so there is no metadata
@@ -15,7 +15,7 @@
  * theme.scss for the layer/scrim rules.
  */
 
-export type WallpaperType = "solid" | "image";
+export type WallpaperType = "solid" | "image" | "mode-image";
 
 export type SolidSource = {
   type: "solid";
@@ -26,7 +26,15 @@ export type ImageSource = {
   url: string;
 };
 
-export type WallpaperSource = SolidSource | ImageSource;
+/** A built-in art pair — one illustration per theme side; the active file
+ *  follows the effective mode, exactly like the solid preset's base. */
+export type ModeImageSource = {
+  type: "mode-image";
+  light: string;
+  dark: string;
+};
+
+export type WallpaperSource = SolidSource | ImageSource | ModeImageSource;
 
 export type WallpaperAuthor = {
   name: string;
@@ -44,19 +52,47 @@ export type WallpaperPreset = {
   author?: WallpaperAuthor | null;
 };
 
-export const DEFAULT_WALLPAPER_ID = "solid-auto";
+export const DEFAULT_WALLPAPER_ID = "art-auto";
 
-/** The single built-in background: plain color, follows the theme mode. */
-export const SOLID_WALLPAPER: WallpaperPreset = {
+/** The shipped art pair — the default background. One of 正弦线's light/
+ *  dark illustrations per theme side, swapped live when the mode flips
+ *  (files live in publicDir → served at /wallpapers). */
+export const ART_WALLPAPER: WallpaperPreset = {
   id: DEFAULT_WALLPAPER_ID,
+  nameKey: "settings.wallpaperArt",
+  name: "Illustration",
+  source: {
+    type: "mode-image",
+    light: "/wallpapers/bg_light.webp",
+    dark: "/wallpapers/bg_dark.webp",
+  },
+  author: { name: "正弦线", url: "https://space.bilibili.com/97738727" },
+};
+
+/** The plain built-in background: solid color, follows the theme mode. */
+export const SOLID_WALLPAPER: WallpaperPreset = {
+  id: "solid-auto",
   nameKey: "settings.wallpaperSolid",
   name: "Solid",
   source: { type: "solid" },
   author: null,
 };
 
-// A naval-themed image background can be added here when we ship one.
-// (Give it an `author` credit — see attributions.ts.)
+/** Every id the app can resolve without touching the custom folder. */
+export const BUILTIN_WALLPAPER_IDS: ReadonlySet<string> = new Set([
+  ART_WALLPAPER.id,
+  SOLID_WALLPAPER.id,
+]);
+
+/** Resolve an image-bearing source to the single URL the given mode
+ *  paints — the renderer and the settings/wizard previews share this. */
+export function imageSourceUrl(
+  source: ImageSource | ModeImageSource,
+  mode: "light" | "dark",
+): string {
+  if (source.type === "image") return source.url;
+  return mode === "dark" ? source.dark : source.light;
+}
 
 // ── localStorage helpers ────────────────────────────────────────────────
 // Only the active id persists here; the custom list itself lives on disk
@@ -77,7 +113,9 @@ export function loadActiveWallpaperId(): string {
     // longer exist. The default is FORCED back to disk (heal-write) so the
     // stale id is corrected once instead of re-defaulting every boot;
     // useWallpaper also self-heals when a custom file disappears from disk.
-    if (raw === DEFAULT_WALLPAPER_ID || raw.startsWith("wallpaper-")) return raw;
+    // A stored "solid-auto" is the user's EXPLICIT choice from before the
+    // art pair became the default — it stays valid, no forced migration.
+    if (BUILTIN_WALLPAPER_IDS.has(raw) || raw.startsWith("wallpaper-")) return raw;
     localStorage.setItem(STORAGE_BG_KEY, DEFAULT_WALLPAPER_ID);
     return DEFAULT_WALLPAPER_ID;
   } catch {

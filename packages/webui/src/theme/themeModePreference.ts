@@ -24,7 +24,7 @@
  * mode paints the light solid with the light palette's own text colors, so
  * the override only ever succeeded in pinning the whole app to the dark
  * scheme (hikari default dark = the blue Nord look) for anyone on the
- * shipped solid default. Dropping it lets hikari's own defaults show
+ * then-shipped solid default. Dropping it lets hikari's own defaults show
  * through — solar days resolve to the light scheme, nights to dark.
  */
 import { ref } from "vue";
