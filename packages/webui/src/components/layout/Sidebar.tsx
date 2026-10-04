@@ -20,7 +20,7 @@ import type { PlayerStats, SessionPlayer } from "@/api";
 import "./Sidebar.scss";
 
 /**
- * Left sidebar: brand + nav links + spacer + footer.
+ * Left sidebar: nav links + spacer + footer.
  *
  * Nav links (top): Dashboard / Lookup / Ships / Live / Replay / Tactics /
  * Resources. Live watch the local game install, so they hide on
@@ -36,8 +36,8 @@ import "./Sidebar.scss";
  * install path.
  *
  * `variant="drawer"` re-hosts the same nav inside the phone-layout nav
- * drawer (AppShell's HkDrawer): the brand row drops (the drawer header
- * carries the title) and the footer keeps the safe-area breathing room.
+ * drawer (AppShell's HkDrawer): the footer keeps the safe-area breathing
+ * room there.
  * On the phone APP build the client button is hidden (its settings section
  * is unavailable there).
  */
@@ -124,13 +124,9 @@ export default defineComponent({
 
     return () => (
       <aside class={["sidebar", props.variant === "drawer" ? "sidebar--drawer" : ""]}>
-        {props.variant === "drawer" ? null : (
-          <div class="sidebar__brand">
-            <img src="/logo.webp" alt="WoWSP" class="sidebar__brand-logo" />
-            <span>{t("common.app.name")}</span>
-          </div>
-        )}
-
+        {/* No brand row: the title bar above already carries the WoWSP
+            identity — the nav's generous top padding keeps the first link
+            off the rail's top edge instead. */}
         <nav class="sidebar__nav">
           <RouterLink to="/" class="sidebar__link" activeClass="is-active" exactActiveClass="is-active">
             <BarChart3 size={16} class="sidebar__link-icon" />

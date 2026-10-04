@@ -19,29 +19,12 @@
   border-right: 1px solid rgb(var(--color-border) / 20%);
   user-select: none;
 
-  &__brand {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 1.25rem 1.25rem 1rem;
-    /* Literal rem, NOT var(--text-lg): the app title is intentionally
-       excluded from the font-scale setting (brand identity must not
-       scale — see theme/fontScalePreference). */
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: rgb(var(--color-primary));
-    letter-spacing: 0.02em;
-  }
-
-  &__brand-logo {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-  }
-
+  /* 1.25rem top (wider than the other sides): there is no brand row above
+     the nav — the title bar already carries the WoWSP identity — and
+     without the extra top padding the first link would hug the rail's
+     top edge. The drawer resets it (see .sidebar--drawer below). */
   &__nav {
-    padding: 0.5rem 0.75rem;
+    padding: 1.25rem 0.75rem 0.5rem;
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
@@ -282,6 +265,13 @@
      overflow into the body's scroll on short screens. */
   min-height: 100%;
   box-sizing: border-box;
+
+  /* The desktop rail's extra nav top padding is a stand-in for the removed
+     brand row — here the drawer header already separates the nav from the
+     chrome above, so keep the original tight gap. */
+  .sidebar__nav {
+    padding-top: 0.5rem;
+  }
 
   .sidebar__footer {
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
