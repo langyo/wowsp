@@ -313,7 +313,7 @@
     "commanderInfoNote": "Les talents du commandant sont des effets déclenchés, affichés à titre indicatif ; ils ne sont pas inclus dans les statistiques.",
     "talentTrigger": "Déclencheur",
     "talentMax": "Jusqu'à {n} activations",
-    "slotNone": "Vide",
+    "slotClear": "Retirer",
     "legendaryCmd": "Légendaire",
     "eliteCmd": "Élite",
     "uniqueMod": "Unique",

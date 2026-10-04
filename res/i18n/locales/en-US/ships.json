@@ -313,7 +313,7 @@
     "commanderInfoNote": "Commander talents are triggered effects shown for reference only; they are not included in the stats panel.",
     "talentTrigger": "Trigger",
     "talentMax": "Up to {n} activations",
-    "slotNone": "Empty",
+    "slotClear": "Remove",
     "legendaryCmd": "Legendary",
     "eliteCmd": "Elite",
     "uniqueMod": "Unique",

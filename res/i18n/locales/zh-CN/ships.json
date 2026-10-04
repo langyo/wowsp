@@ -313,7 +313,7 @@
     "commanderInfoNote": "舰长天赋为触发式效果，仅供参考，未计入右侧属性。",
     "talentTrigger": "触发",
     "talentMax": "最多触发 {n} 次",
-    "slotNone": "空",
+    "slotClear": "卸下",
     "legendaryCmd": "传奇",
     "eliteCmd": "精英",
     "uniqueMod": "研发局",

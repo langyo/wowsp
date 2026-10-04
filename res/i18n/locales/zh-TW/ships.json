@@ -313,7 +313,7 @@
     "commanderInfoNote": "艦長天賦為觸發式效果，僅供參考，未計入右側屬性。",
     "talentTrigger": "觸發",
     "talentMax": "最多觸發 {n} 次",
-    "slotNone": "空",
+    "slotClear": "卸下",
     "legendaryCmd": "傳奇",
     "eliteCmd": "精英",
     "uniqueMod": "研發局",

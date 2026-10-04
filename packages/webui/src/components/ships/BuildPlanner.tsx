@@ -1,5 +1,5 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
-import { Ban, Coins, Lock, RotateCcw } from "@lucide/vue";
+import { Ban, Coins, Lock, RotateCcw, X } from "@lucide/vue";
 
 import { HkButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -598,6 +598,12 @@ export default defineComponent({
       else upgrades[slot] = name;
       setBuild({ upgrades });
     }
+    /** Localized display name of a modernization by its catalog name —
+     *  shared by the slot-title "mounted" readout and the cost rows. */
+    function modLabel(name: string): string {
+      const mod = MODERNIZATIONS.find((m) => m.name === name);
+      return (mod?.names && dataText(mod.names, name)) || name;
+    }
 
     // ── Cost panel data: GameParams price walk (loaded per game root,
     //    the first time the 成本计算 section opens; on the phone app the
@@ -920,13 +926,20 @@ export default defineComponent({
                 <div class="planner-v__slot-title">
                   {t("ships.skills.slot", { n: slot + 1 })}
                   {props.build.upgrades[slot] ? (
-                    <button
-                      type="button"
-                      class="planner-v__slot-clear"
-                      onClick={() => toggleUpgrade(slot, props.build.upgrades[slot])}
-                    >
-                      {t("ships.skills.slotNone")}
-                    </button>
+                    <>
+                      {/* Read back what is mounted, so the header never reads
+                          as a bare state; the trailing control UNMOUNTS it. */}
+                      <span class="planner-v__slot-mounted">
+                        {modLabel(props.build.upgrades[slot])}
+                      </span>
+                      <button
+                        type="button"
+                        class="planner-v__slot-clear"
+                        onClick={() => toggleUpgrade(slot, props.build.upgrades[slot])}
+                      >
+                        <X size={10} /> {t("ships.skills.slotClear")}
+                      </button>
+                    </>
                   ) : null}
                 </div>
                 <div class="planner-v__slot-grid">
@@ -977,11 +990,10 @@ export default defineComponent({
     /** The selected build's shopping list with per-item credit prices. */
     const costRows = computed(() =>
       Object.entries(props.build.upgrades).map(([slot, name]) => {
-        const mod = MODERNIZATIONS.find((m) => m.name === name);
         return {
           slot,
           name,
-          label: (mod?.names && dataText(mod.names, name)) || name,
+          label: modLabel(name),
           price: priceOf(prices.value, name),
         };
       }),

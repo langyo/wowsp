@@ -813,7 +813,24 @@
   margin-bottom: 0.4rem;
 }
 
+/* The mounted modernization's name, echoed next to the slot number —
+   reads as a fact ("what is installed"), never as a bare state word.
+   Ellipsizes instead of wrapping so the header stays a single line;
+   the full name remains on the highlighted tile below. */
+.planner-v__slot-mounted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: rgb(var(--color-primary));
+}
+
 .planner-v__slot-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
   border: none;
   background: transparent;
   color: rgb(var(--color-muted) / 70%);

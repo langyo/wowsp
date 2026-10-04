@@ -313,7 +313,7 @@
     "commanderInfoNote": "함장 특성은 발동형 효과로 참고용이며 우측 능력치에 포함되지 않습니다.",
     "talentTrigger": "발동",
     "talentMax": "최대 {n}회 발동",
-    "slotNone": "없음",
+    "slotClear": "해제",
     "legendaryCmd": "전설",
     "eliteCmd": "정예",
     "uniqueMod": "연구국",

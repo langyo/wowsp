@@ -313,7 +313,7 @@
     "commanderInfoNote": "Таланты командира — активируемые эффекты; показаны для справки и не учтены в характеристиках.",
     "talentTrigger": "Триггер",
     "talentMax": "До {n} срабатываний",
-    "slotNone": "Пусто",
+    "slotClear": "Снять",
     "legendaryCmd": "Легенда",
     "eliteCmd": "Элита",
     "uniqueMod": "Уник.",

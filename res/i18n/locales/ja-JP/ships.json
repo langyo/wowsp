@@ -313,7 +313,7 @@
     "commanderInfoNote": "艦長の才能は発動型効果のため参考表示であり、右側の性能には含まれません。",
     "talentTrigger": "発動",
     "talentMax": "最大 {n} 回発動",
-    "slotNone": "空",
+    "slotClear": "解除",
     "legendaryCmd": "伝説",
     "eliteCmd": "精鋭",
     "uniqueMod": "研究局",
