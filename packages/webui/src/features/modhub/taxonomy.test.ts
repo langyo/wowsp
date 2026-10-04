@@ -40,6 +40,16 @@ describe("mod-hub taxonomy", () => {
     }
   });
 
+  it("buckets visual kinds with the material category", () => {
+    // gui = icon sets / unbound views / space overlays — visual payloads,
+    // not behavior: they sort with the material category, leaving
+    // "function" to scripts and patches that change how the game plays.
+    expect(KIND_BIG.gui).toBe("texture");
+    expect(KIND_BIG.script).toBe("function");
+    expect(KIND_BIG.patch).toBe("function");
+    expect(KIND_BIG.voice).toBe("voice");
+  });
+
   it("gives every big category a row source", () => {
     // A big tab that no kind and no catalog category maps into is a
     // permanently empty strip.

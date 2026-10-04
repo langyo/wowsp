@@ -60,7 +60,10 @@ export const BIG_CATS: BigCat[] = ["function", "texture", "voice"];
 /** Installed kinds → big category. Total by type: every kind must bucket. */
 export const KIND_BIG: Record<ModKind, BigCat> = {
   script: "function",
-  gui: "function",
+  // gui = icon sets, unbound views, space overlays — visual payloads, not
+  // behavior: they sort with the material category, leaving "function" to
+  // scripts and patches that change how the game plays.
+  gui: "texture",
   patch: "function",
   skin: "texture",
   textures: "texture",

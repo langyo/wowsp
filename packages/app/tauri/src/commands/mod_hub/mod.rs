@@ -432,6 +432,7 @@ fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> Result<usi
     Ok(count)
 }
 
+pub(crate) mod assets;
 mod classify;
 pub(crate) mod foreign;
 mod install;
@@ -460,6 +461,11 @@ pub(crate) use super::mod_catalog;
 // command fn and its doc(hidden) sibling macros (`__cmd__*` /
 // `__tauri_command_name_*`) through `commands::mod_hub::*`, exactly like
 // `commands/overlay/mod.rs` — so those paths are re-exported verbatim.
+pub use assets::{
+    __cmd__mod_hub_list_assets, __cmd__mod_hub_read_asset,
+    __tauri_command_name_mod_hub_list_assets, __tauri_command_name_mod_hub_read_asset,
+    mod_hub_list_assets, mod_hub_read_asset,
+};
 pub use classify::{
     __cmd__mod_hub_classify_path, __tauri_command_name_mod_hub_classify_path, mod_hub_classify_path,
 };

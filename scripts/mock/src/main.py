@@ -165,7 +165,12 @@ _MOCK_INSTALLED = [
      "disabled": False, "version": None},
     {"kind": "skin", "name": "Hina_Moskva", "detail": "RSC110_Pr_66_Moskva",
      "relPath": "PnFMods/Hina_Moskva", "paths": ["PnFMods/Hina_Moskva"],
-     "disabled": False, "version": None},
+     "disabled": False, "version": None,
+     "textureAnalysis": {"categories": ["skin"], "nations": ["ussr"],
+                          "species": [], "spaceNames": ["spaces/PJSC001_Moskva"],
+                          "ships": ["Moskva"], "fileCount": 12,
+                          "fileKinds": [{"ext": ".dds", "count": 12}],
+                          "truncated": False}},
     # An Aslain-anchored row: same name as the mock's foreign aslain unit,
     # so the installed list shows the provenance badge.
     {"kind": "gui", "name": "Shot Timer", "detail": None,
@@ -182,6 +187,30 @@ _MOCK_INSTALLED = [
      "relPath": "ime_config.xml", "paths": ["ime_config.xml"],
      "disabled": False, "version": None},
 ]
+
+
+# 1x1 red PNG for the asset-preview mock.
+_MOCK_PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4"
+             "z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==")
+
+
+@app.post("/api/mod_hub_list_assets")
+async def cmd_mod_hub_list_assets(request: Request) -> list[dict]:
+    return [
+        {"rel": "spaces/PJSC001_Moskva/textures_a.png", "size": 2048,
+         "kind": "image", "ext": "png", "playable": True},
+        {"rel": "spaces/PJSC001_Moskva/textures_b.dds", "size": 13981016,
+         "kind": "image", "ext": "dds", "playable": True},
+        {"rel": "banks/mods/Hoshino/voice_line_01.ogg", "size": 51200,
+         "kind": "audio", "ext": "ogg", "playable": True},
+        {"rel": "banks/mods/Hoshino/voice_line_02.wem", "size": 66560,
+         "kind": "audio", "ext": "wem", "playable": False},
+    ]
+
+
+@app.post("/api/mod_hub_read_asset")
+async def cmd_mod_hub_read_asset(request: Request) -> dict:
+    return {"dataUrl": "data:image/png;base64," + _MOCK_PNG}
 
 
 @app.post("/api/mod_hub_foreign_units")

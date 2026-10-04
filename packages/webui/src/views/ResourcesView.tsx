@@ -33,6 +33,7 @@ import {
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
 import {
   api,
+  type AssetFileInfo,
   type CatalogEntry,
   type CatalogPreset,
   type ForeignModUnit,
@@ -59,6 +60,7 @@ import {
   type CatalogCat,
 } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
+import AssetPreview from "@/features/modhub/AssetPreview";
 import { resolveIdentity } from "@/features/modhub/migrateIdentity";
 import {
   ignoreAll,
@@ -659,6 +661,11 @@ export default defineComponent({
       filter.value = "all";
     });
 
+    /** Big category of an installed unit's kind (preview routing). */
+    function bigOfKind(kind: string): string {
+        return (KIND_BIG as Record<string, string>)[kind] ?? "function";
+    }
+
     /** Installer display name for badges/notes. */
     function installerLabel(installer: string): string {
       if (installer === "aslain") return t("resources.foreignSource.aslain");
@@ -1144,7 +1151,9 @@ export default defineComponent({
                       ? t("resources.installingMod")
                       : record
                         ? t("resources.update")
-                        : t("resources.install")}
+                        : foreignCopy
+                          ? t("resources.reinstall")
+                          : t("resources.install")}
                   </HkButton>
                 )}
                 {entry.bundled && (
@@ -1193,6 +1202,12 @@ export default defineComponent({
               </ul>
             )}
             {mod.textureAnalysis && renderTexAnalysis(mod.textureAnalysis)}
+            {bigOfKind(mod.kind) === "texture" && (
+              <AssetPreview gameRoot={gameRoot.value} relPath={mod.relPath} mode="image" />
+            )}
+            {mod.kind === "voice" && (
+              <AssetPreview gameRoot={gameRoot.value} relPath={mod.relPath} mode="audio" />
+            )}
             {mod.detail && <div class="mod-detail__desc">{mod.detail}</div>}
             {mod.paths.length > 0 ? (
               <ul class="mod-detail__paths">
@@ -2107,7 +2122,12 @@ export default defineComponent({
                               {m.version && <span class="mod-row__ver">{m.version}</span>}
                             </span>
                             <span class="mod-row__sub">
-                              {kindLabel(m.kind)} · {m.relPath}
+                              {m.textureAnalysis?.ships?.length
+                                ? t("resources.texCover", {
+                                    count: m.textureAnalysis.ships.length,
+                                    ships: m.textureAnalysis.ships.slice(0, 2).join(" · "),
+                                  })
+                                : `${kindLabel(m.kind)} · ${m.relPath}`}
                             </span>
                           </span>
                           <span class="mod-row__tail">

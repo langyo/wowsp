@@ -67,7 +67,7 @@ wowsunpack.workspace = true
 pickled.workspace = true
 
 # Image handling for capture analysis
-image.workspace = true
+image = { workspace = true, features = ["tga", "jpeg", "dds", "bmp"] }
 
 # Encoding
 base64.workspace = true

@@ -592,6 +592,128 @@
   }
 }
 
+// ── Installed-unit asset previews ────────────────────────────────────────────
+
+.asset-preview__note {
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-xs);
+  background: rgb(var(--color-border) / 10%);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+}
+
+.asset-preview__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.5rem;
+}
+
+.asset-preview__tile {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.asset-preview__tile img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: var(--radius-xs);
+  background:
+    linear-gradient(45deg, rgb(var(--color-border) / 18%) 25%, transparent 25%, transparent 75%, rgb(var(--color-border) / 18%) 75%),
+    linear-gradient(45deg, rgb(var(--color-border) / 18%) 25%, transparent 25%, transparent 75%, rgb(var(--color-border) / 18%) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
+.asset-preview__tile-fallback {
+  width: 100%;
+  aspect-ratio: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-xs);
+  background: rgb(var(--color-border) / 10%);
+  color: rgb(var(--color-muted));
+
+  em {
+    font-size: var(--text-2xs);
+    font-style: normal;
+  }
+
+  &--loading {
+    animation: asset-preview-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+.asset-preview__tile figcaption {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-preview__audio {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+  padding: 0.375rem;
+}
+
+.asset-preview__audio-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text));
+  text-align: left;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: rgb(var(--color-primary) / 8%);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+}
+
+.asset-preview__audio-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+.asset-preview__audio-size {
+  flex: none;
+  color: rgb(var(--color-muted));
+}
+
+@keyframes asset-preview-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
 // ── Status banners ──────────────────────────────────────────────────────────
 
 .resources-banner {

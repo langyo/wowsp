@@ -1247,6 +1247,23 @@ export interface ForeignModUnit {
   identity?: string | null;
 }
 
+/** One previewable file under an installed unit (mirrors
+ *  `wowsp_tauri_shared`-adjacent AssetFileInfo in commands/mod_hub/assets.rs). */
+export interface AssetFileInfo {
+  rel: string;
+  size: number;
+  /** `image | audio`. */
+  kind: string;
+  ext: string;
+  /** False for `.wem` — listed, but the browser cannot play it. */
+  playable: boolean;
+}
+
+/** Browser-ready payload of one asset (a data URL). */
+export interface AssetPayload {
+  dataUrl: string;
+}
+
 /** An older `bin/<version>/` whose `res_mods` still carries files —
  *  stranded by a game update, invisible to the hub's installed list. */
 export interface StaleBinInfo {
@@ -1857,6 +1874,10 @@ export const api = {
     transport.invoke<InstalledMod[]>(RPC.mod_hub_scan_installed, { gameRoot }),
   modHubForeignUnits: (gameRoot: string) =>
     transport.invoke<ForeignModUnit[]>(RPC.mod_hub_foreign_units, { gameRoot }),
+  modHubListAssets: (gameRoot: string, relPath: string) =>
+    transport.invoke<AssetFileInfo[]>(RPC.mod_hub_list_assets, { gameRoot, relPath }),
+  modHubReadAsset: (gameRoot: string, relPath: string) =>
+    transport.invoke<AssetPayload>(RPC.mod_hub_read_asset, { gameRoot, relPath }),
   modHubClassifyPath: (sourcePath: string) =>
     transport.invoke<PackagePlan>(RPC.mod_hub_classify_path, { sourcePath }),
   modHubInstall: (sourceRoot: string, gameRoot: string, plan: PackagePlan) =>
