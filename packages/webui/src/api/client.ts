@@ -730,6 +730,10 @@ export interface PlayerStats {
   globalWinrate?: number | null;
   globalAvgDamage?: number | null;
   globalPr?: number | null;
+  /** Unix time of the account's last finished battle — the backend's
+   *  same-name cross-realm arbiter (see `crossRealm` on
+   *  `lookupPlayersStatsBatch`). Absent on older cache files. */
+  lastBattleTime?: number | null;
 }
 
 /** Player-name autocomplete item (WG account/list). Mirrors `wowsp_tauri_shared::PlayerSuggestion`. */
@@ -1619,12 +1623,21 @@ export const api = {
   /** Batch roster lookup: one entry per input name, in order; null = not
    *  found / lookup failed (the panel renders that as "no data"). Skips the
    *  per-player Vortex dog-tag call — roster cards show WR/PR only.
-   *  `prAlgo` as in lookupPlayerStats. */
-  lookupPlayersStatsBatch: (names: string[], realm: string, prAlgo?: PrAlgo) =>
+   *  `prAlgo` as in lookupPlayerStats. `crossRealm` enables the backend's
+   *  cross-server Clan-Battles pass (names the home realm cannot explain
+   *  are probed on the other WG clusters; adopted entries carry their true
+   *  realm in `PlayerStats.realm`). */
+  lookupPlayersStatsBatch: (
+    names: string[],
+    realm: string,
+    prAlgo?: PrAlgo,
+    crossRealm?: boolean,
+  ) =>
     transport.invoke<(PlayerStats | null)[]>(RPC.lookup_players_stats_batch, {
       names,
       realm,
       prAlgo: prAlgo ?? null,
+      crossRealm: crossRealm ?? null,
     }),
   /** Wipe the process-lifetime roster stats cache (the live panel's
    *  manual "refresh stats" button): the next batch is a true

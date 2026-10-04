@@ -466,6 +466,18 @@ fn walk_for_arena(dir: &PathBuf, best: &mut Option<(PathBuf, SystemTime)>) {
     }
 }
 
+/// The current battle's `matchGroup` off the live arena file of the given
+/// game root — the in-game bridge's cheap cross-server Clan-Battles
+/// detector (the plugin's request carries no battle type). `None` when no
+/// arena file is present (out of battle) or it fails to parse.
+pub(crate) fn current_match_group(root: &std::path::Path) -> Option<String> {
+    let dir = super::game_context::replays_dir(root);
+    let path = find_latest_arena_info(&dir)?;
+    read_arena_file(&path)
+        .ok()
+        .and_then(|meta| meta.match_group)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

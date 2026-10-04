@@ -55,6 +55,11 @@ export interface RawStat extends RosterStatViewSource {
   hidden: boolean;
   /** WG account id off the batch answer — the ship-scoped fetch key. */
   accountId: number | null;
+  /** The cluster the stats actually resolved on. Cross-server Clan
+   *  Battles can adopt a foreign-realm account for a roster name; its
+   *  per-ship fetches must ride THIS realm, not the window's. null = not
+   *  resolved (a landed answer always carries its realm string). */
+  realm?: string | null;
   /** undefined = not requested; null = requested but unavailable. The
    *  overlay has no spinner face, so no separate loading flag: pending
    *  rows render the muted "querying" ellipsis until the list lands. */

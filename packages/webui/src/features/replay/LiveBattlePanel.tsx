@@ -158,10 +158,32 @@ export default defineComponent({
       () => props.realm || accounts.activeRealm || "asia",
     );
 
+    /** Clan Battles can be cross-server (军团战跨服): the live arena file
+     *  carries no realm per player, so the batch probes the other WG
+     *  clusters for names the home one cannot explain. Same semantics as
+     *  modeKey's clan bucket (utils/modeColors: matchGroup containing
+     *  "clan"). */
+    const crossRealm = () =>
+      (props.arena?.matchGroup ?? "").toLowerCase().includes("clan");
+
     const { stats, forceRefresh } = useRosterStats({
       realm: () => realm.value,
       arena: () => props.arena,
+      crossRealm,
     });
+
+    /** Realm chip for a row whose stats resolved on ANOTHER cluster
+     *  (cross-server CW) — same vocabulary as the post-battle panels
+     *  (replay.realm.*). Null on same-realm / unresolved rows. */
+    const crossRealmTagOf = (
+      st: { realm: string | null } | null | undefined,
+    ): string | null => {
+      const r = st?.realm;
+      if (!r || r.toLowerCase() === realm.value.toLowerCase()) return null;
+      return t(`replay.realm.${r.toLowerCase()}`) === `replay.realm.${r.toLowerCase()}`
+        ? r.toUpperCase()
+        : t(`replay.realm.${r.toLowerCase()}`);
+    };
 
     // ── Share-time privacy + copy-shot (head actions) ───────────────────
     // The hide-nicknames toggle masks every roster nick on screen AND in
@@ -803,6 +825,9 @@ export default defineComponent({
             <span class="live-battle__crow-main">
               <span class="live-battle__crow-name">
                 <span class="live-battle__crow-nick">{masking.maskOf(v.name)}</span>
+                {crossRealmTagOf(st) ? (
+                  <span class="live-battle__cross-realm">{crossRealmTagOf(st)}</span>
+                ) : null}
                 {st?.clanTag ? (
                   <span class="live-battle__crow-clan">[{st.clanTag}]</span>
                 ) : null}
@@ -896,6 +921,11 @@ export default defineComponent({
           <span class="live-battle__player-main">
             <span class="live-battle__player-name">
               <span class="live-battle__player-nick">{masking.maskOf(v.name)}</span>
+              {/* Cross-server Clan-Battles badge (欧服 etc.) — only on rows
+                  whose stats resolved on another cluster. */}
+              {crossRealmTagOf(st) ? (
+                <span class="live-battle__cross-realm">{crossRealmTagOf(st)}</span>
+              ) : null}
               {/* Clan tag from the batch answer ([HOOD] etc.) — the same tag
                   the in-game Tab panel prefixes nicknames with. It sits
                   AFTER the nick so every card's nick starts at the same

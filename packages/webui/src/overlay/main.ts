@@ -182,6 +182,10 @@ interface BatchStat {
   /** Clan tag from the same answer — feeds the Tab sort key's display-name
    *  segment ('[TAG]name', exactly what the game's table sorts by). */
   clanTag?: string | null;
+  /** The cluster the stats resolved on — a cross-server Clan-Battles pass
+   *  can adopt a foreign-realm account; its per-ship fetch and clan gate
+   *  must ride THIS realm, not the window's. */
+  realm?: string | null;
   hidden: boolean;
 }
 
@@ -320,10 +324,13 @@ function scheduleClanGates() {
     if (AI_NAME.test(v.name)) continue;
     const st = stats.get(cacheKey(v.name));
     if (!st?.hidden || st.clanId == null) continue;
-    const key = clanWinrateKey(realm, st.clanId);
+    // Cross-server CW rows resolved on a foreign cluster gate on THAT
+    // realm's clans/info.
+    const gateRealm = st.realm ?? realm;
+    const key = clanWinrateKey(gateRealm, st.clanId);
     if (clanWinrates.has(key) || clanGateOut.has(key)) continue;
     clanGateOut.add(key);
-    void lookupClanWinrate(realm, st.clanId).then((wr) => {
+    void lookupClanWinrate(gateRealm, st.clanId).then((wr) => {
       clanGateOut.delete(key);
       // Only the first verdict for a clan wins the slot — later duplicates
       // (there shouldn't be any) must not resurrect a failed verdict.
@@ -334,6 +341,12 @@ function scheduleClanGates() {
 }
 
 const cacheKey = (name: string) => `${realm}:${name}`;
+
+/** Whether the current battle is a Clan Battle (军团战) — those can be
+ *  cross-server, so the batch rides the backend's cross-realm pass for
+ *  names the window realm cannot explain. Same semantics as the webui's
+ *  modeKey clan bucket (matchGroup containing "clan"). */
+const crossRealmBattle = () => (arena?.matchGroup ?? "").toLowerCase().includes("clan");
 
 /** The row's ship id by nickname (the chips are name-keyed; the arena's
  *  vehicles carry the id — per-row scoping keys off the ship that player
@@ -461,7 +474,10 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
     // (undefined) holds the seal; a landed one (number, or null = failed
     // lookup) goes into the gate.
     const clanId = st.hidden ? st.clanId : null;
-    const verdict = clanId != null ? clanWinrates.get(clanWinrateKey(realm, clanId)) : undefined;
+    const verdict =
+      clanId != null
+        ? clanWinrates.get(clanWinrateKey(st.realm ?? realm, clanId))
+        : undefined;
     if (!(clanId != null && verdict === undefined)) {
       career = careerStamp(st.pr, st.battles, st.winrate, st.hidden, verdict);
     }
@@ -1054,8 +1070,10 @@ function scheduleNotFoundRetry() {
 // whichever asks first; the manual "refresh stats" button wipes that
 // shared cache Rust-side, keeping a forced refresh forced. Failures budget
 // at one attempt per account per battle (reset on battle switch), the
-// same discipline the main pipeline keeps.
-const shipFetched = new Set<number>();
+// same discipline the main pipeline keeps. Keyed `${realm}:${accountId}`:
+// ids are unique per realm, not globally, and a cross-server roster can
+// field two same-numbered accounts.
+const shipFetched = new Set<string>();
 let shipTimer: ReturnType<typeof setTimeout> | null = null;
 let shipsInFlight = false;
 
@@ -1066,7 +1084,8 @@ function shipListsPending(): boolean {
     if (AI_NAME.test(v.name)) continue;
     const st = stats.get(cacheKey(v.name));
     if (!st || st.hidden || st.accountId == null) continue;
-    if (st.ships !== undefined || shipFetched.has(st.accountId)) continue;
+    if (st.ships !== undefined || shipFetched.has(`${st.realm ?? realm}:${st.accountId}`))
+      continue;
     return true;
   }
   return false;
@@ -1080,49 +1099,65 @@ function scheduleShipLists() {
 
 /** Write one account's list into every same-account stat. The name-keyed
  *  cache persists across battles and so does the attached list — per-ship
- *  careers are session-stable. */
-function applyShips(accountId: number, ships: NonNullable<RawStat["ships"]> | null) {
+ *  careers are session-stable. The realm guard keeps a same-numbered
+ *  account on another cluster (ids are unique per realm, not globally)
+ *  from receiving this list. */
+function applyShips(
+  accountId: number,
+  entryRealm: string,
+  ships: NonNullable<RawStat["ships"]> | null,
+) {
   for (const st of stats.values()) {
-    if (st.accountId === accountId && st.ships === undefined) st.ships = ships;
+    if (
+      st.accountId === accountId &&
+      (st.realm ?? realm) === entryRealm &&
+      st.ships === undefined
+    ) {
+      st.ships = ships;
+    }
   }
 }
 
 async function runShipBatch() {
   shipTimer = null;
   if (!tauri || !realm || shipsInFlight) return;
-  const ids = new Set<number>();
+  // `${realm}:${accountId}` → fetch target: the cluster that player's
+  // stats resolved on (cross-server CW rows fetch through THEIR realm).
+  const ids = new Map<string, { id: number; entryRealm: string }>();
   for (const v of arena?.vehicles ?? []) {
     if (AI_NAME.test(v.name)) continue;
     const st = stats.get(cacheKey(v.name));
     if (!st || st.hidden || st.accountId == null) continue;
-    if (st.ships !== undefined || shipFetched.has(st.accountId)) continue;
-    ids.add(st.accountId);
+    const entryRealm = st.realm ?? realm;
+    const key = `${entryRealm}:${st.accountId}`;
+    if (st.ships !== undefined || shipFetched.has(key)) continue;
+    ids.set(key, { id: st.accountId, entryRealm });
   }
   if (ids.size === 0) return;
   shipsInFlight = true;
   try {
-    const list = [...ids];
+    const list = [...ids.values()];
     // Chunk-serial: the same WG-friendly width the main window's fetcher
     // and the backend's own fan-out keep.
     for (let i = 0; i < list.length; i += 4) {
       await Promise.all(
-        list.slice(i, i + 4).map(async (id) => {
+        list.slice(i, i + 4).map(async ({ id, entryRealm }) => {
           try {
             const ships = (await tauri.core.invoke("lookup_player_ship_stats", {
               accountId: id,
-              realm,
+              realm: entryRealm,
               // Tauri v2 matches command args camelCase (ArgumentCase::Camel):
               // a snake_case key here is silently dropped and the command
               // would run the winrate algorithm under an expected-PR pref.
               ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
               sessionCache: true,
             })) as NonNullable<RawStat["ships"]>;
-            applyShips(id, ships ?? null);
+            applyShips(id, entryRealm, ships ?? null);
           } catch {
             // One attempt per battle — a hard-down API must not be probed
             // on every anchor event (the battle switch re-arms below).
-            shipFetched.add(id);
-            applyShips(id, null);
+            shipFetched.add(`${entryRealm}:${id}`);
+            applyShips(id, entryRealm, null);
           }
         }),
       );
@@ -1174,6 +1209,9 @@ async function runBatch() {
       // spelling that used to live here was silently dropped, so chip PRs
       // kept the winrate proxy while the expected algorithm was selected.
       ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
+      // Cross-server Clan Battles probe the other WG clusters for names
+      // this realm cannot explain; adopted rows carry their true realm.
+      ...(crossRealmBattle() ? { crossRealm: true } : {}),
     })) as Array<BatchStat | null>;
     names.forEach((name, i) => {
       const r = results[i];
@@ -1204,6 +1242,9 @@ async function runBatch() {
               : null,
           clanId: r.clanId ?? null,
           clanTag: r.clanTag ?? null,
+          // The cluster the answer resolved on — the window realm for
+          // same-realm rows, a foreign cluster for cross-server CW rows.
+          realm: r.realm ?? null,
           hidden: r.hidden,
         });
         notFoundLeft.delete(name);

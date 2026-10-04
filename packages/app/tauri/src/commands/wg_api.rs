@@ -272,11 +272,18 @@ pub async fn lookup_player_stats(
 /// PR=None (see [`apply_batch_pr_algo`]): the roster line then renders its
 /// "—" fallback instead of a winrate proxy the player card wouldn't agree
 /// with.
+///
+/// `cross_realm` enables the cross-server Clan-Battles pass — CW rosters
+/// can field players from the other WG clusters, whose names the home
+/// cluster cannot explain (see [`lookup_roster`]). Omitted/None keeps the
+/// historical single-realm behavior; adopted entries carry their true
+/// realm in [`PlayerStats::realm`].
 #[tauri::command]
 pub async fn lookup_players_stats_batch(
     names: Vec<String>,
     realm: String,
     pr_algo: Option<String>,
+    cross_realm: Option<bool>,
 ) -> Result<Vec<Option<PlayerStats>>, String> {
     let algo = PrAlgo::from_param(pr_algo.as_deref());
     if names.is_empty() {
@@ -285,8 +292,66 @@ pub async fn lookup_players_stats_batch(
     if realm == "cn" {
         return super::wg_api_cn::lookup_players_stats_batch(names, algo).await;
     }
-    let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm)?;
+    lookup_roster(names, Vec::new(), realm, cross_realm.unwrap_or(false), algo).await
+}
+
+/// The WG clusters that can interleave rosters in cross-server Clan
+/// Battles (the live arena file carries no realm per player — only
+/// nicknames — so a foreign opponent is indistinguishable from a
+/// not-found name until the other clusters are asked). Lesta (ru) and CN
+/// (cn) run isolated account pools that never meet the WG clusters, so a
+/// home realm outside the pool disables the cross pass outright.
+const CROSS_REALM_POOL: [&str; 3] = ["eu", "na", "asia"];
+
+/// How recent a candidate's `last_battle_time` must be (unix seconds
+/// before "now") to count as "this account is playing right now" evidence
+/// in [`pick_cross_realm_hit`]. Clan Battles queue back-to-back within a
+/// session; a foreign same-name account that last played days ago is a
+/// namesake, not the roster player.
+const CROSS_RECENT_WINDOW_SECS: i64 = 6 * 3600;
+
+/// The cross-realm probe set for a home realm: the other WG clusters, or
+/// empty when the home realm's matchmaking never meets foreign players.
+/// Pure — unit-tested.
+pub(crate) fn cross_probe_realms(home: &str) -> Vec<String> {
+    if CROSS_REALM_POOL.contains(&home) {
+        CROSS_REALM_POOL
+            .iter()
+            .filter(|probe| **probe != home)
+            .map(|probe| probe.to_string())
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// The roster resolution core shared by the batch command above and the
+/// in-game bridge (`ingame_bridge`). `ids` optionally carries each name's
+/// WG account id (the plugin's roster rows have them; index-aligned, None
+/// where absent). An id that verifies against the LIVE nickname is exact —
+/// and for a slot WITH an id that exactness rules everything: a cached or
+/// name-searched answer belonging to a DIFFERENT account is a namesake and
+/// must never preempt the id evidence (cache hits are checked against the
+/// id, and the name path runs for such slots only as a last-resort
+/// fallback for ids the API cannot verify anywhere). `cross_realm` enables
+/// the cross-server Clan-Battles pass: slots the home realm cannot explain
+/// are probed on the other WG clusters. Slots the home realm DID resolve
+/// (id-less slots only) never join the pass, so a same-realm battle
+/// answers exactly as before.
+pub(crate) async fn lookup_roster(
+    names: Vec<String>,
+    ids: Vec<Option<i64>>,
+    realm: String,
+    cross_realm: bool,
+    algo: PrAlgo,
+) -> Result<Vec<Option<PlayerStats>>, String> {
+    // CN runs its own API surface (`wg_api_cn`, vortex + clanbase) with no
+    // id-based path — ids and the cross-server pass are WG-cluster
+    // concepts. The command above routes here after its own CN check, so
+    // this guard exists for the in-game bridge, which calls in directly.
+    if realm == "cn" {
+        return super::wg_api_cn::lookup_players_stats_batch(names, algo).await;
+    }
     // Per-request timeout so one hung connection can't stall the roster all
     // battle long.
     let client = crate::commands::network::http_client_builder()?
@@ -294,26 +359,348 @@ pub async fn lookup_players_stats_batch(
         .build()
         .map_err(|e| format!("http client: {e}"))?;
 
+    // The slot's exact account id, when the caller has one (> 0).
+    let slot_id =
+        |slot: usize| -> Option<i64> { ids.get(slot).copied().flatten().filter(|id| *id > 0) };
+
     // 0. Session cache: answer the hits on the spot, resolve only the
     //    misses. Slots track the original positions so the response order
-    //    keeps matching the input order.
+    //    keeps matching the input order. Values are PRE-algo; the algorithm
+    //    pass at the very end shapes the response copies.
+    //    An id-carrying slot trusts a cached hit only when it IS that
+    //    account — anything else under the same nickname is a namesake.
     let mut answers: Vec<Option<PlayerStats>> = vec![None; names.len()];
     let mut misses: Vec<(usize, String)> = Vec::new();
     for (slot, name) in names.iter().enumerate() {
-        match roster_cache_get(&realm, name) {
-            Some(cached) => {
-                let mut stats = cached;
-                if let Some(stats) = stats.as_mut() {
-                    apply_batch_pr_algo(stats, algo);
-                }
-                answers[slot] = stats;
+        let id_trusted = match slot_id(slot) {
+            Some(id) => {
+                answers[slot] = roster_cache_get(&realm, name)
+                    .flatten()
+                    .filter(|st| st.account_id == id);
+                answers[slot].is_some()
             },
-            None => misses.push((slot, name.clone())),
+            None => match roster_cache_get(&realm, name) {
+                Some(cached) => {
+                    answers[slot] = cached;
+                    true
+                },
+                None => false,
+            },
+        };
+        if !id_trusted {
+            misses.push((slot, name.clone()));
         }
     }
-    if misses.is_empty() {
-        return Ok(answers);
+
+    // 1+2. Id-carrying slots resolve by id ONLY (home cluster first): a
+    //      home name-search answer for them could only be a different,
+    //      same-named account. Id-less slots take the classic name path.
+    //      Both paths share the merged info/clan sweep below.
+    let mut id_misses: Vec<(usize, String, i64)> = Vec::new();
+    let mut name_misses: Vec<(usize, String)> = Vec::new();
+    for (slot, name) in &misses {
+        match slot_id(*slot) {
+            Some(id) => id_misses.push((*slot, name.clone(), id)),
+            None => name_misses.push((*slot, name.clone())),
+        }
     }
+    if !id_misses.is_empty() {
+        // A home-realm transport/API failure rejects the batch like the
+        // name path below — the bridge's FAILURE_BACKOFF then retries
+        // instead of the request settling as permanent "no data".
+        let hits = match resolve_ids_on_realm(&client, &realm, &id_misses).await {
+            Ok(hits) => hits,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    realm = %realm,
+                    names = id_misses.len(),
+                    "roster id resolution failed"
+                );
+                return Err(e);
+            },
+        };
+        id_misses.retain(|(slot, name, _)| match hits.get(slot) {
+            Some(stats) => {
+                roster_cache_insert(&realm, name, Some(stats.clone()));
+                answers[*slot] = Some(stats.clone());
+                false
+            },
+            None => true,
+        });
+    }
+    if !name_misses.is_empty() {
+        let miss_names: Vec<String> = name_misses.iter().map(|(_, n)| n.clone()).collect();
+        let resolved = match resolve_names_on_realm(&client, &realm, &miss_names).await {
+            Ok(resolved) => resolved,
+            Err(e) => {
+                // The frontend retries with backoff and then re-probes slowly, but
+                // a field report needs the failure HERE: until this line existed a
+                // dead-battle report had zero server-side evidence.
+                tracing::warn!(
+                    error = %e,
+                    realm = %realm,
+                    names = miss_names.len(),
+                    "roster stats batch failed"
+                );
+                return Err(e);
+            },
+        };
+        for ((slot, name), stats) in name_misses.iter().zip(resolved) {
+            roster_cache_insert(&realm, name, stats.clone());
+            if stats.is_some() {
+                answers[*slot] = stats;
+            }
+        }
+    }
+
+    // 3. Cross-server Clan-Battles pass. Only slots the home cluster FAILED
+    //    to explain participate, so the common same-realm battle costs
+    //    nothing extra and a home-realm answer is never second-guessed.
+    if cross_realm {
+        let probes = cross_probe_realms(&realm);
+        let unresolved: Vec<usize> = (0..names.len())
+            .filter(|&slot| answers[slot].is_none())
+            .collect();
+        if !probes.is_empty() && !unresolved.is_empty() {
+            // 3a. Foreign id probe for id-carrying slots (exact): a
+            //     verified id + LIVE-nickname pair on any cluster IS the
+            //     player — WG account ids are only unique per realm, but
+            //     the nickname check rejects every wrong cluster's
+            //     same-numbered stranger. First verifying cluster wins; two
+            //     clusters agreeing on BOTH the id and the nickname would
+            //     be an unresolvable same-numbered namesake pair, too rare
+            //     to trade the near-certain hit for a None.
+            let mut id_entries: Vec<(usize, String, i64)> = unresolved
+                .iter()
+                .filter_map(|&slot| {
+                    let id = slot_id(slot)?;
+                    Some((slot, names[slot].clone(), id))
+                })
+                .collect();
+            if !id_entries.is_empty() {
+                for probe in &probes {
+                    // Session-cache consult first (keyed (probe, name)): a
+                    // CW rematch against the same clan answers the foreign
+                    // ids with zero WG calls, mirroring the name probe.
+                    let cached_hits: HashMap<usize, PlayerStats> = id_entries
+                        .iter()
+                        .filter_map(|(slot, name, id)| {
+                            roster_cache_get(probe, name)
+                                .flatten()
+                                .filter(|st| st.account_id == *id)
+                                .map(|st| (*slot, st))
+                        })
+                        .collect();
+                    id_entries.retain(|(slot, _, _)| match cached_hits.get(slot) {
+                        Some(stats) => {
+                            answers[*slot] = Some(stats.clone());
+                            false
+                        },
+                        None => true,
+                    });
+                    if id_entries.is_empty() {
+                        break;
+                    }
+                    // Probe failures degrade (the cache consult above plus
+                    // the name probe below still get their chance).
+                    let hits = resolve_ids_on_realm(&client, probe, &id_entries)
+                        .await
+                        .unwrap_or_default();
+                    id_entries.retain(|(slot, name, _)| match hits.get(slot) {
+                        Some(stats) => {
+                            roster_cache_insert(probe, name, Some(stats.clone()));
+                            answers[*slot] = Some(stats.clone());
+                            false
+                        },
+                        None => true,
+                    });
+                    if id_entries.is_empty() {
+                        break;
+                    }
+                }
+            }
+
+            // 3b. Foreign name probe for whatever is still unexplained —
+            //     id-less slots, plus id-carrying ones no cluster could
+            //     verify (their ids may be synthetic, so they fall back to
+            //     name semantics; a candidate that DOES bear their exact id
+            //     still wins outright in the decision below). Each probe
+            //     realm shares the session cache keyed by its own realm, so
+            //     a re-met cross-server enemy answers from cache; a probe
+            //     failure degrades to "not on this realm" instead of
+            //     failing the batch.
+            let still: Vec<usize> = unresolved
+                .into_iter()
+                .filter(|&slot| answers[slot].is_none())
+                .collect();
+            if !still.is_empty() {
+                let mut per_slot: Vec<Vec<RealmHit>> =
+                    (0..names.len()).map(|_| Vec::new()).collect();
+                for probe in &probes {
+                    let mut live: Vec<(usize, String)> = Vec::new();
+                    for &slot in &still {
+                        if answers[slot].is_some() {
+                            continue;
+                        }
+                        match roster_cache_get(probe, &names[slot]) {
+                            Some(Some(cached)) => per_slot[slot].push(RealmHit { stats: cached }),
+                            Some(None) => {},
+                            None => live.push((slot, names[slot].clone())),
+                        }
+                    }
+                    if live.is_empty() {
+                        continue;
+                    }
+                    let live_names: Vec<String> = live.iter().map(|(_, n)| n.clone()).collect();
+                    match resolve_names_on_realm(&client, probe, &live_names).await {
+                        Ok(resolved) => {
+                            for ((slot, name), stats) in live.iter().zip(resolved) {
+                                roster_cache_insert(probe, name, stats.clone());
+                                if let Some(stats) = stats {
+                                    per_slot[*slot].push(RealmHit { stats });
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                realm = %probe,
+                                names = live.len(),
+                                "cross-realm roster probe failed"
+                            );
+                        },
+                    }
+                }
+                let now: i64 = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                for slot in still {
+                    if answers[slot].is_some() {
+                        continue;
+                    }
+                    let hits = std::mem::take(&mut per_slot[slot]);
+                    // An exact-id candidate beats every heuristic.
+                    let decided = slot_id(slot)
+                        .and_then(|id| {
+                            hits.iter()
+                                .find(|h| h.stats.account_id == id)
+                                .map(|h| RealmHit {
+                                    stats: h.stats.clone(),
+                                })
+                        })
+                        .or_else(|| pick_cross_realm_hit(now, hits));
+                    if let Some(hit) = decided {
+                        // Already cached under its own realm by the probe
+                        // pass above — only the answer slot moves.
+                        answers[slot] = Some(hit.stats);
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Last-resort HOME name fallback for id-carrying slots no cluster
+    //    could verify by id — a transient account/info failure above, or a
+    //    plugin id the API does not know. A candidate bearing the exact id
+    //    is adopted outright; a plain verified hit only when this battle
+    //    cannot be cross-server (in a roster that CAN field foreign
+    //    players, an unexplained home namesake must not stand in for the
+    //    foreign player — no data beats wrong data; a home realm with an
+    //    empty probe set, like Lesta, can never be cross-server).
+    //    Errors degrade: every other path already had its chance.
+    let id_fallback: Vec<(usize, String)> = (0..names.len())
+        .filter(|&slot| answers[slot].is_none() && slot_id(slot).is_some())
+        .map(|slot| (slot, names[slot].clone()))
+        .collect();
+    let can_be_cross = cross_realm && !cross_probe_realms(&realm).is_empty();
+    if !id_fallback.is_empty() {
+        let fb_names: Vec<String> = id_fallback.iter().map(|(_, n)| n.clone()).collect();
+        if let Ok(resolved) = resolve_names_on_realm(&client, &realm, &fb_names).await {
+            for ((slot, name), stats) in id_fallback.iter().zip(resolved) {
+                roster_cache_insert(&realm, name, stats.clone());
+                let Some(stats) = stats else {
+                    continue;
+                };
+                let exact_id = slot_id(*slot).is_some_and(|id| stats.account_id == id);
+                if exact_id || !can_be_cross {
+                    answers[*slot] = Some(stats);
+                }
+            }
+        }
+    }
+
+    for stats in answers.iter_mut().flatten() {
+        apply_batch_pr_algo(stats, algo);
+    }
+    Ok(answers)
+}
+
+/// One name's verified hit on one probe realm — the cross-server decision's
+/// input. `stats.realm` names the cluster that produced the entry.
+struct RealmHit {
+    stats: PlayerStats,
+}
+
+/// Decide which probe realm's verified hit is the player actually on the
+/// roster when more than one cluster bears the exact nickname (every probe
+/// already live-verified the nickname, so each candidate IS a real holder
+/// of that name somewhere — several can exist because nicknames are unique
+/// only per realm).
+///
+/// 1. A lone hit needs no arbitration.
+/// 2. Clan Battles are clan teams: when any hit is clanned, clanless ones
+///    are namesakes (a hit that never joined a clan cannot be fielded in
+///    CW; a real player who LEFT the clan after the season is accepted as
+///    a miss here rather than risk the reverse).
+/// 3. The roster player is in a battle right now, so their previous battle
+///    ended within the session — a strictly-newer `last_battle_time`
+///    inside [`CROSS_RECENT_WINDOW_SECS`] of `now` wins.
+/// 4. Anything still tied is genuinely ambiguous: None — no data beats a
+///    coin flip between strangers.
+///
+/// Pure — unit-tested.
+fn pick_cross_realm_hit(now: i64, mut hits: Vec<RealmHit>) -> Option<RealmHit> {
+    if hits.len() <= 1 {
+        return hits.into_iter().next();
+    }
+    if hits.iter().any(|h| h.stats.clan_id.is_some()) {
+        hits.retain(|h| h.stats.clan_id.is_some());
+    }
+    if hits.len() == 1 {
+        return hits.into_iter().next();
+    }
+    let window_start = now - CROSS_RECENT_WINDOW_SECS;
+    let newest_in_window = hits
+        .iter()
+        .filter_map(|h| h.stats.last_battle_time)
+        .filter(|t| *t >= window_start)
+        .max();
+    if let Some(newest) = newest_in_window {
+        let fresh: Vec<RealmHit> = hits
+            .into_iter()
+            .filter(|h| h.stats.last_battle_time == Some(newest))
+            .collect();
+        if fresh.len() == 1 {
+            return fresh.into_iter().next();
+        }
+    }
+    None
+}
+
+/// Name → stats resolution on ONE realm: the account/list fan-out, the
+/// merged account/info + clan sweep, and the live-nickname verify. Shared
+/// by the home pass and every cross-realm probe — callers own caching and
+/// failure policy (the home pass fails the batch on error; probes
+/// degrade). Answer order matches `names`.
+async fn resolve_names_on_realm(
+    client: &reqwest::Client,
+    realm: &str,
+    names: &[String],
+) -> Result<Vec<Option<PlayerStats>>, String> {
+    let app_id = super::wg_realm::application_id(realm);
+    let host = super::wg_realm::api_host(realm)?;
 
     // 1. name → account, bounded-parallel. Every exact-prefix hit is kept
     //    (capped — see [`EXACT_HIT_CANDIDATES`]): the first hit is not
@@ -321,10 +708,9 @@ pub async fn lookup_players_stats_batch(
     //    alternatives to pick from. A rate-limited / failed list response
     //    fails the whole batch — it must not degrade into "not found" (the
     //    frontend would cache that).
-    let miss_names: Vec<String> = misses.iter().map(|(_, n)| n.clone()).collect();
     let results: Vec<Result<Vec<AccountListEntry>, String>> = {
-        let client_ref = &client;
-        stream::iter(miss_names)
+        let client_ref = client;
+        stream::iter(names.iter().cloned())
             .map(|name| {
                 let url = format!(
                     "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
@@ -365,16 +751,12 @@ pub async fn lookup_players_stats_batch(
             .await
     };
     if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
-        // The frontend retries with backoff and then re-probes slowly, but
-        // a field report needs the failure HERE: until this line existed a
-        // dead-battle report had zero server-side evidence.
-        tracing::warn!(error = %e, realm = %realm, names = names.len(), "roster stats batch failed");
         return Err(e.clone());
     }
     let candidates: Vec<Vec<AccountListEntry>> =
         results.into_iter().map(|r| r.unwrap_or_default()).collect();
 
-    // 2+3. ONE account/info + ONE clan-tag lookup for the whole roster (the
+    // 2+3. ONE account/info + ONE clan-tag lookup for the whole set (the
     //       endpoints accept comma-joined id lists); independent, so run
     //       them concurrently. The info sweep carries EVERY candidate id —
     //       ghosts included — so the live-nickname pick has its data; the
@@ -391,68 +773,123 @@ pub async fn lookup_players_stats_batch(
     let (info, clan_map) = if ids.is_empty() {
         (Ok(None), HashMap::new())
     } else {
-        let id_slot = &ids;
-        let info_fut = async {
-            // Same extra-gated division splits as the single lookup; the
-            // per-chunk results merge into one id-keyed map.
-            let mut roster = serde_json::Map::new();
-            for chunk in id_slot.chunks(WG_INFO_IDS_PER_REQUEST) {
-                let id_list = chunk
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let resp = client
-                    .get(format!(
-                        "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
-                         &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3,\
-                         statistics.rank_solo,statistics.rank_div2,statistics.rank_div3"
-                    ))
-                    .send()
-                    .await
-                    .map_err(|e| format!("account/info request: {e}"))?;
-                let parsed = resp
-                    .json::<WgResponse<serde_json::Value>>()
-                    .await
-                    .map_err(|e| format!("account/info parse: {e}"))?;
-                // A WG app-level failure (e.g. rate limit) surfaces as
-                // status:"error" — failing the batch lets the frontend's
-                // backoff retry handle it instead of silently caching
-                // hidden=true for everyone.
-                if parsed.status != "ok" {
-                    return Err(format!(
-                        "account/info: {}",
-                        parsed.error.message.unwrap_or_default()
-                    ));
-                }
-                if let Some(data) = parsed.data.and_then(|d| d.as_object().cloned()) {
-                    roster.extend(data);
-                }
-            }
-            Ok(Some(serde_json::Value::Object(roster)))
-        };
-        let clan_fut = async { fetch_clan_info_for_accounts(&client, &app_id, host, &ids).await };
+        let info_fut = async { fetch_account_info_chunked(client, &app_id, host, &ids).await };
+        let clan_fut = async { fetch_clan_info_for_accounts(client, &app_id, host, &ids).await };
         let (info, clan_map) = tokio::join!(info_fut, clan_fut);
         (info, clan_map)
     };
     let info_data: Option<serde_json::Value> = info?;
 
     // 4. Verify each name's candidates against the LIVE nicknames and
-    //    build its stats; insert into the session cache (pre-algo).
-    for (slot, cands) in candidates.into_iter().enumerate() {
-        let name = &misses[slot].1;
-        let picked = pick_verified_entry(&cands, name, info_data.as_ref());
-        let stats = picked.map(|entry| {
-            player_stats_from_info(entry, realm.clone(), info_data.as_ref(), &clan_map)
-        });
-        roster_cache_insert(&realm, name, stats.clone());
-        if let Some(mut stats) = stats {
-            apply_batch_pr_algo(&mut stats, algo);
-            answers[misses[slot].0] = Some(stats);
+    //    build its stats.
+    Ok(names
+        .iter()
+        .zip(candidates)
+        .map(|(name, cands)| {
+            pick_verified_entry(&cands, name, info_data.as_ref()).map(|entry| {
+                player_stats_from_info(entry, realm.to_string(), info_data.as_ref(), &clan_map)
+            })
+        })
+        .collect())
+}
+
+/// Id → stats resolution on ONE realm (the in-game bridge path — the
+/// plugin's roster rows carry the exact WG account ids). ONE merged
+/// account/info + ONE clans sweep for the whole set; an id answers only
+/// when its LIVE nickname still equals the roster name, so a
+/// same-numbered account on the wrong cluster can never leak through.
+/// Errors propagate: the HOME pass rejects the batch on them (the bridge's
+/// backoff then retries), while the cross-realm probe call sites degrade
+/// on the same signal — each caller owns its failure policy.
+async fn resolve_ids_on_realm(
+    client: &reqwest::Client,
+    realm: &str,
+    entries: &[(usize, String, i64)],
+) -> Result<HashMap<usize, PlayerStats>, String> {
+    let mut out: HashMap<usize, PlayerStats> = HashMap::new();
+    if entries.is_empty() {
+        return Ok(out);
+    }
+    let app_id = super::wg_realm::application_id(realm);
+    let host = super::wg_realm::api_host(realm)?;
+    let ids: Vec<i64> = entries.iter().map(|(_, _, id)| *id).collect();
+    let info_fut = async { fetch_account_info_chunked(client, &app_id, host, &ids).await };
+    let clan_fut = async { fetch_clan_info_for_accounts(client, &app_id, host, &ids).await };
+    let (info, clan_map) = tokio::join!(info_fut, clan_fut);
+    let info_data = info?;
+    for (slot, name, id) in entries {
+        let live = info_data
+            .as_ref()
+            .and_then(|d| d.get(id.to_string()))
+            .and_then(|v| v.get("nickname"))
+            .and_then(|n| n.as_str());
+        let Some(live) = live else {
+            continue;
+        };
+        if !nickname_matches(name, live) {
+            continue;
+        }
+        out.insert(
+            *slot,
+            player_stats_from_info(
+                AccountListEntry {
+                    account_id: *id,
+                    nickname: live.to_owned(),
+                },
+                realm.to_string(),
+                info_data.as_ref(),
+                &clan_map,
+            ),
+        );
+    }
+    Ok(out)
+}
+
+/// The merged, extra-gated account/info sweep over a candidate id list
+/// (chunks of [`WG_INFO_IDS_PER_REQUEST`]), combined into one id-keyed
+/// map. Shared by the name-resolution and id-resolution paths. A WG
+/// app-level failure (e.g. rate limit) rejects — the home batch lets the
+/// frontend's backoff own the retry instead of silently caching
+/// hidden=true for everyone.
+async fn fetch_account_info_chunked(
+    client: &reqwest::Client,
+    app_id: &str,
+    host: &str,
+    ids: &[i64],
+) -> Result<Option<serde_json::Value>, String> {
+    // Same extra-gated division splits as the single lookup; the
+    // per-chunk results merge into one id-keyed map.
+    let mut roster = serde_json::Map::new();
+    for chunk in ids.chunks(WG_INFO_IDS_PER_REQUEST) {
+        let id_list = chunk
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let resp = client
+            .get(format!(
+                "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
+                 &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3,\
+                 statistics.rank_solo,statistics.rank_div2,statistics.rank_div3"
+            ))
+            .send()
+            .await
+            .map_err(|e| format!("account/info request: {e}"))?;
+        let parsed = resp
+            .json::<WgResponse<serde_json::Value>>()
+            .await
+            .map_err(|e| format!("account/info parse: {e}"))?;
+        if parsed.status != "ok" {
+            return Err(format!(
+                "account/info: {}",
+                parsed.error.message.unwrap_or_default()
+            ));
+        }
+        if let Some(data) = parsed.data.and_then(|d| d.as_object().cloned()) {
+            roster.extend(data);
         }
     }
-
-    Ok(answers)
+    Ok(Some(serde_json::Value::Object(roster)))
 }
 
 /// Batch-roster PR policy. The expected algorithm needs each player's
@@ -497,6 +934,9 @@ fn player_stats_from_info(
         account_id: entry.account_id,
         name: entry.nickname,
         realm,
+        last_battle_time: player_node
+            .and_then(|v| v.get("last_battle_time"))
+            .and_then(|v| v.as_i64()),
         battles: p.battles,
         winrate: p.winrate,
         hidden,
@@ -2059,6 +2499,152 @@ mod tests {
     #[test]
     fn pick_verified_entry_is_none_without_candidates() {
         assert!(pick_verified_entry(&[], "Anyone", None).is_none());
+    }
+
+    /// Minimal [`RealmHit`] for the cross-realm decision tests — every
+    /// Option field stays None except the two the decision reads.
+    fn realm_hit(realm: &str, clan_id: Option<i64>, last_battle_time: Option<i64>) -> RealmHit {
+        RealmHit {
+            stats: PlayerStats {
+                account_id: 42,
+                name: "player".to_string(),
+                realm: realm.to_string(),
+                battles: None,
+                winrate: None,
+                hidden: false,
+                clan_tag: None,
+                clan_id,
+                avg_damage: None,
+                avg_xp: None,
+                kd_ratio: None,
+                survival_rate: None,
+                hit_rate: None,
+                pr: None,
+                ships_played: None,
+                leveling_tier: None,
+                leveling_points: None,
+                dog_tag: None,
+                solo_wr: None,
+                div2_wr: None,
+                div3_wr: None,
+                solo_battles: None,
+                div2_battles: None,
+                div3_battles: None,
+                ranked_battles: None,
+                ranked_winrate: None,
+                ranked_avg_damage: None,
+                ranked_pr: None,
+                global_battles: None,
+                global_winrate: None,
+                global_avg_damage: None,
+                global_pr: None,
+                last_battle_time,
+            },
+        }
+    }
+
+    #[test]
+    fn cross_probe_realms_covers_the_wg_clusters_only() {
+        // Only the WG clusters meet each other cross-server; Lesta and CN
+        // run isolated account pools, and an unknown home realm probes
+        // nothing rather than guessing.
+        assert_eq!(
+            cross_probe_realms("eu"),
+            vec!["na".to_string(), "asia".to_string()]
+        );
+        assert_eq!(
+            cross_probe_realms("na"),
+            vec!["eu".to_string(), "asia".to_string()]
+        );
+        assert_eq!(
+            cross_probe_realms("asia"),
+            vec!["eu".to_string(), "na".to_string()]
+        );
+        assert!(cross_probe_realms("ru").is_empty());
+        assert!(cross_probe_realms("cn").is_empty());
+        assert!(cross_probe_realms("unknown").is_empty());
+    }
+
+    #[test]
+    fn pick_cross_realm_hit_adopts_a_lone_hit_without_evidence() {
+        // The common case: the exact nickname exists on exactly one of the
+        // probed clusters — nothing to arbitrate, clan/lbt need not apply.
+        let hit = pick_cross_realm_hit(1_000_000, vec![realm_hit("eu", None, None)])
+            .expect("a lone verified hit is adopted");
+        assert_eq!(hit.stats.realm, "eu");
+    }
+
+    #[test]
+    fn pick_cross_realm_hit_drops_clanless_namesakes() {
+        // CW rosters are clan teams: when any hit is clanned, a clanless
+        // exact-name holder on another cluster is a namesake.
+        let hit = pick_cross_realm_hit(
+            1_000_000,
+            vec![
+                realm_hit("eu", None, None),
+                realm_hit("na", Some(500_001), None),
+            ],
+        )
+        .expect("the clanned hit wins without further evidence");
+        assert_eq!(hit.stats.realm, "na");
+    }
+
+    #[test]
+    fn pick_cross_realm_hit_prefers_the_account_playing_right_now() {
+        // The roster player is mid-battle; their previous battle ended
+        // within the session, a foreign namesake's ended days ago.
+        let now = 1_000_000;
+        let hit = pick_cross_realm_hit(
+            now,
+            vec![
+                realm_hit("eu", Some(1), Some(now - 40 * 60)),
+                realm_hit("na", Some(2), Some(now - 90 * 24 * 3600)),
+            ],
+        )
+        .expect("the strictly-newer in-window stamp wins");
+        assert_eq!(hit.stats.realm, "eu");
+    }
+
+    #[test]
+    fn pick_cross_realm_hit_rejects_true_ties() {
+        let now = 1_000_000;
+        // Two clanned hits, neither with a recent stamp: no evidence
+        // separates them — None beats a coin flip between strangers.
+        assert!(
+            pick_cross_realm_hit(
+                now,
+                vec![
+                    realm_hit("eu", Some(1), None),
+                    realm_hit("na", Some(2), None),
+                ],
+            )
+            .is_none()
+        );
+        // Identical fresh stamps are just as tied.
+        assert!(
+            pick_cross_realm_hit(
+                now,
+                vec![
+                    realm_hit("eu", Some(1), Some(now - 60)),
+                    realm_hit("na", Some(2), Some(now - 60)),
+                ],
+            )
+            .is_none()
+        );
+        // A STALE stamp is no evidence at all — it must not beat a
+        // stamp-less candidate into a fake win.
+        assert!(
+            pick_cross_realm_hit(
+                now,
+                vec![
+                    realm_hit("eu", Some(1), Some(now - 90 * 24 * 3600)),
+                    realm_hit("na", Some(2), None),
+                ],
+            )
+            .is_none()
+        );
+        // Nothing to decide over.
+        assert!(pick_cross_realm_hit(now, Vec::new()).is_none());
     }
 
     #[test]

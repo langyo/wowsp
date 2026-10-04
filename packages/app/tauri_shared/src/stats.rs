@@ -118,6 +118,15 @@ pub struct PlayerStats {
     /// expected PR algorithm.
     #[serde(default)]
     pub global_pr: Option<i64>,
+
+    /// Unix time of the account's last finished battle (WG account/info's
+    /// `last_battle_time`). The roster batch uses it to arbitrate
+    /// same-nickname accounts across realms in cross-server Clan Battles
+    /// (the roster player is in a battle RIGHT NOW, so their previous one
+    /// ended within the session); `#[serde(default)]` keeps older cache
+    /// files deserializable, and the CN arm leaves it None.
+    #[serde(default)]
+    pub last_battle_time: Option<i64>,
 }
 
 /// One player name suggestion from the WG account/list autocomplete

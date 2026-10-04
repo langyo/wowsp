@@ -282,13 +282,30 @@ async fn bridge_cycle(
     // unknown realm is skipped rather than guessed (a wrong-realm lookup
     // answers every player "not found" and would pin that junk into the
     // session cache).
-    let realm = {
+    let (realm, cross_realm) = {
         let resolved =
             super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning);
-        match resolved.and_then(|r| detect_bridge_realm(&r.root)) {
-            Some(realm) => realm,
-            None => return unchanged(),
-        }
+        let Some((realm, match_group)) = resolved.and_then(|r| {
+            let realm = detect_bridge_realm(&r.root)?;
+            // Cross-server Clan Battles: the roster may carry foreign-realm
+            // opponents the home cluster cannot resolve by name. The plugin
+            // request carries no battle type, so the live arena file
+            // answers it (the battle is running while the bridge serves).
+            let match_group = super::arena_info::current_match_group(&r.root);
+            Some((realm, match_group))
+        }) else {
+            return unchanged();
+        };
+        (
+            realm,
+            // Same predicate as the webui surfaces (modeKey's clan bucket):
+            // matchGroup CONTAINING "clan", not just the exact value, so
+            // the in-game panel and the app windows never disagree on a
+            // variant value.
+            match_group
+                .map(|mg| mg.to_ascii_lowercase().contains("clan"))
+                .unwrap_or(false),
+        )
     };
     // One filter, two consumers: the lookup's input order and the row zip
     // below MUST be the same list — zipping against the unfiltered players
@@ -303,7 +320,20 @@ async fn bridge_cycle(
         return unchanged();
     }
     let names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();
-    let stats = match super::wg_api::lookup_players_stats_batch(names, realm, None).await {
+    // The plugin rows carry the exact WG account ids — an id that verifies
+    // against the live nickname resolves exactly (no search index, no
+    // namesake), and on a cross-server CW it also pins the right cluster
+    // (see lookup_roster's cross pass).
+    let ids: Vec<Option<i64>> = players.iter().map(|p| p.account_id).collect();
+    let stats = match super::wg_api::lookup_roster(
+        names,
+        ids,
+        realm,
+        cross_realm,
+        super::wg_api::PrAlgo::from_param(None),
+    )
+    .await
+    {
         Ok(stats) => stats,
         Err(e) => {
             tracing::warn!(error = %e, session = %request.session, "ingame bridge lookup failed");

@@ -53,6 +53,14 @@ export interface RosterStat {
   /** Clan tag from the same batch answer (`HOOD` — rendered as [HOOD]
    *  beside the nickname; null = clanless / not found / still loading). */
   clanTag: string | null;
+  /** The cluster the stats actually resolved on. Cross-server Clan
+   *  Battles can adopt a foreign-realm account for a roster name (the
+   *  backend probes the other WG clusters when the home one cannot
+   *  explain a name); every follow-up lookup for that player — per-ship
+   *  lists, the hidden-profile clan gate — must ride THIS realm, not the
+   *  panel's. Null = not resolved (a landed answer always carries its
+   *  realm string, same-realm ones included). */
+  realm: string | null;
   /** Resolved clan winrate for the rat gate: undefined = not judged yet
    *  (a hidden + clanful entry holds its stamp until this lands) or no
    *  judgment needed; a number passes to careerStamp's gate; null = the
@@ -87,6 +95,7 @@ const emptyStat = (loading: boolean): RosterStat => ({
   shipsLoading: false,
   clanId: null,
   clanTag: null,
+  realm: null,
   hidden: false,
   loading,
 });
@@ -119,6 +128,7 @@ function rosterStatOf(r: {
   accountId?: number | null;
   clanId?: number | null;
   clanTag?: string | null;
+  realm?: string | null;
   hidden: boolean;
 }): RosterStat {
   return {
@@ -147,6 +157,7 @@ function rosterStatOf(r: {
     accountId: r.accountId ?? null,
     clanId: r.clanId ?? null,
     clanTag: r.clanTag ?? null,
+    realm: r.realm ?? null,
     hidden: r.hidden,
     loading: false,
   };
@@ -179,6 +190,10 @@ export interface UseRosterStatsOptions {
   realm: () => string;
   /** Reactive arena getter — a new `dateTime` means a new battle. */
   arena: () => ArenaInfo | null;
+  /** Whether the battle is a cross-server candidate (Clan Battles): the
+   *  batch rides the backend's cross-realm pass for names the home realm
+   *  cannot explain. Omitted = same-realm only (today's behavior). */
+  crossRealm?: () => boolean;
 }
 
 // ── Ship-scoped pipeline (per-player full ship lists) ─────────────────
@@ -259,12 +274,13 @@ async function fetchShipLists(
 }
 
 /** Drop the session ship-list cache entries for the given accounts (the
- *  manual full-refresh path — the next view re-fetches them for real). The
- *  epoch bump keeps a fetch that was already in flight from re-inserting
- *  its stale answer afterwards. */
-function forgetShipLists(realm: string, accountIds: number[]): void {
+ * manual full-refresh path — the next view re-fetches them for real). Each
+ * entry carries its own realm: a cross-server CW row's list lives under
+ * ITS cluster's key. The epoch bump keeps a fetch that was already in
+ * flight from re-inserting its stale answer afterwards. */
+function forgetShipLists(entries: ReadonlyArray<{ accountId: number; realm: string }>): void {
   shipListEpoch += 1;
-  for (const id of accountIds) shipListCache.delete(shipListCacheKey(realm, id));
+  for (const e of entries) shipListCache.delete(shipListCacheKey(e.realm, e.accountId));
 }
 
 export function useRosterStats(options: UseRosterStatsOptions) {
@@ -288,16 +304,21 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   let reprobeTimer: ReturnType<typeof setTimeout> | null = null;
   let reprobesLeft = 0;
   // Ship-scoped attachment queue (see the module-level pipeline above).
-  const shipPending = new Set<number>();
+  // Keyed `${realm}:${accountId}` → the realm that player's stats resolved
+  // on: account ids are unique per realm, not globally, so a cross-server
+  // roster can field two same-numbered accounts — keying by the id alone
+  // would drop one of them.
+  const shipPending = new Map<string, { accountId: number; realm: string }>();
   let shipTimer: ReturnType<typeof setTimeout> | null = null;
-  // Accounts whose ship-list lookup FAILED this battle (value = the gen it
-  // failed under). The arena poll re-runs ensureShipLists every few
-  // seconds, and a failed fetch answers nothing cacheable — without this
-  // budget every failure would become a once-per-poll WG probe for the
-  // rest of the battle, the exact storm the roster batch's own retry
-  // budget exists to prevent. Cleared on battle switch / manual refresh;
-  // the next battle retries clean.
-  const shipFailedGen = new Map<number, number>();
+  // Accounts whose ship-list lookup FAILED this battle, keyed
+  // `${realm}:${accountId}` (ids are unique per realm, not globally; value
+  // = the gen it failed under). The arena poll re-runs ensureShipLists
+  // every few seconds, and a failed fetch answers nothing cacheable —
+  // without this budget every failure would become a once-per-poll WG
+  // probe for the rest of the battle, the exact storm the roster batch's
+  // own retry budget exists to prevent. Cleared on battle switch / manual
+  // refresh; the next battle retries clean.
+  const shipFailedGen = new Map<string, number>();
 
   function cacheKey(name: string): string {
     return rosterCacheKey(options.realm(), name);
@@ -352,7 +373,9 @@ export function useRosterStats(options: UseRosterStatsOptions) {
    *  own lookups. */
   function gateClanWinrate(name: string, st: RosterStat, gen: number) {
     const key = cacheKey(name);
-    resolveClanGate(st, key, options.realm(), (wr) => {
+    // A cross-server CW row's clan lives on ITS cluster — the gate must
+    // query there, not the panel realm.
+    resolveClanGate(st, key, st.realm ?? options.realm(), (wr) => {
       if (gen !== battleGen) return;
       const clanId = st.clanId;
       if (clanId == null) return;
@@ -386,13 +409,17 @@ export function useRosterStats(options: UseRosterStatsOptions) {
       const st = stats.get(v.id);
       if (!st || st.loading || st.hidden) continue;
       if (st.accountId == null || st.ships !== undefined) continue;
-      if (shipFailedGen.get(st.accountId) === battleGen) continue;
-      const cached = shipListCache.get(shipListCacheKey(realm, st.accountId));
+      // Cross-server CW rows resolved on a foreign cluster key (and fetch)
+      // under THAT realm.
+      const entryRealm = st.realm ?? realm;
+      const failedKey = `${entryRealm}:${st.accountId}`;
+      if (shipFailedGen.get(failedKey) === battleGen) continue;
+      const cached = shipListCache.get(shipListCacheKey(entryRealm, st.accountId));
       if (cached !== undefined) {
         st.ships = cached;
       } else if (!st.shipsLoading) {
         st.shipsLoading = true;
-        shipPending.add(st.accountId);
+        shipPending.set(failedKey, { accountId: st.accountId, realm: entryRealm });
       }
     }
     if (shipPending.size > 0 && !shipTimer) {
@@ -428,7 +455,7 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   async function runShipBatch() {
     shipTimer = null;
     if (shipPending.size === 0) return;
-    const ids = [...shipPending];
+    const entries = [...shipPending.values()];
     shipPending.clear();
     const gen = battleGen;
     const epoch = shipListEpoch;
@@ -438,16 +465,34 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     // caliber — this batch must then simply not write (releasing here as
     // well would race the newer batch and could wipe its fresh lists).
     const algo = prAlgoForRequest();
-    const results = await fetchShipLists(options.realm(), ids);
-    if (gen !== battleGen || epoch !== shipListEpoch) return;
-    if (prAlgoForRequest() !== algo) return;
-    for (const [accountId, ships] of results) {
-      if (ships == null) shipFailedGen.set(accountId, gen);
-      for (const v of options.arena()?.vehicles ?? []) {
-        const st = stats.get(v.id);
-        if (st && st.accountId === accountId) {
-          st.ships = ships;
-          st.shipsLoading = false;
+    // Group by each entry's resolved realm (cross-server CW rows ride
+    // their own cluster) and fetch per group.
+    const byRealm = new Map<string, number[]>();
+    for (const { accountId, realm: entryRealm } of entries) {
+      const ids = byRealm.get(entryRealm) ?? [];
+      ids.push(accountId);
+      byRealm.set(entryRealm, ids);
+    }
+    const panelRealm = options.realm();
+    for (const [entryRealm, ids] of byRealm) {
+      const results = await fetchShipLists(entryRealm, ids);
+      if (gen !== battleGen || epoch !== shipListEpoch) return;
+      if (prAlgoForRequest() !== algo) return;
+      for (const [accountId, ships] of results) {
+        if (ships == null) shipFailedGen.set(`${entryRealm}:${accountId}`, gen);
+        for (const v of options.arena()?.vehicles ?? []) {
+          const st = stats.get(v.id);
+          // The realm check keeps a same-numbered account on another
+          // cluster (ids are unique per realm, not globally) from
+          // receiving this list.
+          if (
+            st &&
+            st.accountId === accountId &&
+            (st.realm ?? panelRealm) === entryRealm
+          ) {
+            st.ships = ships;
+            st.shipsLoading = false;
+          }
         }
       }
     }
@@ -470,6 +515,7 @@ export function useRosterStats(options: UseRosterStatsOptions) {
         names,
         options.realm(),
         prAlgoForRequest(),
+        options.crossRealm?.() ?? false,
       );
       if (gen !== battleGen) return;
       // Success: failures from earlier rounds are answered now — stop the
@@ -608,13 +654,15 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     // The ship-scoped lists re-fetch too: drop their session cache entries
     // and the per-battle failure budget, and reset the attachments, so the
     // refreshed rows aggregate fresh numbers instead of the pre-refresh
-    // lists.
+    // lists. Each entry carries its own resolved realm (cross-server CW
+    // rows live under their cluster's key).
     shipFailedGen.clear();
     forgetShipLists(
-      options.realm(),
       vehicles.flatMap((v) => {
-        const id = stats.get(v.id)?.accountId;
-        return id != null ? [id] : [];
+        const st = stats.get(v.id);
+        const accountId = st?.accountId;
+        if (accountId == null) return [];
+        return [{ accountId, realm: st?.realm ?? options.realm() }];
       }),
     );
     for (const v of vehicles) {
@@ -723,13 +771,21 @@ export async function fetchRosterStatsByNames(
     // list before returning, so the caller's rows aggregate complete data
     // (the same bounded fetch + session cache the live pipeline uses).
     if (dimsNeedShipStats(rosterDimsOf(statsPrefsState.value))) {
-      const ids = [...out.values()].flatMap((st) =>
-        !st.hidden && st.accountId != null ? [st.accountId] : [],
-      );
-      if (ids.length > 0) {
-        const ships = await fetchShipLists(realm, ids);
+      // Group by each entry's resolved realm — a cross-server CW entry
+      // cached from the live panel fetches (and attaches) under ITS
+      // cluster, where that account id actually lives.
+      const byRealm = new Map<string, number[]>();
+      for (const st of out.values()) {
+        if (st.hidden || st.accountId == null) continue;
+        const entryRealm = st.realm ?? realm;
+        const ids = byRealm.get(entryRealm) ?? [];
+        ids.push(st.accountId);
+        byRealm.set(entryRealm, ids);
+      }
+      for (const [entryRealm, ids] of byRealm) {
+        const ships = await fetchShipLists(entryRealm, ids);
         for (const st of out.values()) {
-          if (st.accountId == null) continue;
+          if (st.accountId == null || (st.realm ?? realm) !== entryRealm) continue;
           // Only SUCCESSFUL lists attach to the shared cache objects: a
           // null verdict here would pin the player to "no data" for the
           // rest of the session (the live pipeline skips ships !==

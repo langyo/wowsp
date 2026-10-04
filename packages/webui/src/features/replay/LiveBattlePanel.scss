@@ -366,6 +366,25 @@
     white-space: nowrap;
   }
 
+  /* Cross-server Clan-Battles chip (欧服 etc.) — unlike the clan tag this
+     IS a badge: it flags that the row's numbers came from another
+     cluster's API, which only cross-server CW rows ever show. */
+  &__cross-realm {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 1.25em;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgb(var(--color-accent) / 0.16);
+    color: rgb(var(--color-accent));
+    font-size: 0.68em;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
   &__player-ship {
     color: rgb(var(--color-text) / 0.45);
     font-size: var(--text-xs);

@@ -491,6 +491,9 @@ fn player_stats_of(
         // Same co-op guard as `pr` above: the global blend would distill
         // the same fantasy rating out of the co-op counters.
         global_pr: if coop_fallback { None } else { p.global.pr },
+        // CN runs an isolated account pool — no cross-realm arbitration
+        // ever reads it (see wg_api's cross-server pass).
+        last_battle_time: None,
     }
 }
 

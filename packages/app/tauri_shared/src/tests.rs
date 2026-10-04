@@ -1592,7 +1592,7 @@ fn dog_tag_renames_texture_symbol_and_color_ids() {
 }
 
 /// Wire-critical payload: exact key set of the player card's data —
-/// 32 keys, every multi-word one renamed (client.ts: PlayerStats).
+/// 33 keys, every multi-word one renamed (client.ts: PlayerStats).
 #[test]
 fn player_stats_renames_every_deep_stat_field() {
     let stats = PlayerStats {
@@ -1634,6 +1634,7 @@ fn player_stats_renames_every_deep_stat_field() {
         global_winrate: Some(51.5),
         global_avg_damage: Some(80_922.0),
         global_pr: Some(2_390),
+        last_battle_time: Some(1_760_100_000),
     };
     let v = round_trips(stats);
     assert_exact_keys(
@@ -1671,12 +1672,14 @@ fn player_stats_renames_every_deep_stat_field() {
             "globalWinrate",
             "globalAvgDamage",
             "globalPr",
+            "lastBattleTime",
         ],
     );
     assert_eq!(v["clanTag"], "[SENT]");
     assert_eq!(v["div2Wr"], 52.25);
     assert_eq!(v["rankedPr"], 1_890);
     assert_eq!(v["globalBattles"], 13_579);
+    assert_eq!(v["lastBattleTime"], 1_760_100_000);
 }
 
 /// Lookup sidebar autocomplete + the Tab-overlay seal verdicts
