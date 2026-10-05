@@ -98,7 +98,9 @@ async def cmd_list_replays_meta(request: Request) -> list[dict]:
             "matchGroup": meta.get("matchGroup"),
             "mapName": meta.get("mapName"),
             "mapId": meta.get("mapId"),
-            "ownShipId": 4183305088,
+            # Real Yamato index from webui's ship_names.json, so ship-id-driven
+            # UI (roster panels, the list card's own-ship tag) resolves.
+            "ownShipId": 4276041424,
             "ownShipName": "Yamato",
             "playerCount": len(meta.get("vehicles", [])),
         }]
@@ -109,7 +111,7 @@ async def cmd_list_replays_meta(request: Request) -> list[dict]:
             "matchGroup": "pvp",
             "mapName": "17_NA_fault_line",
             "mapId": 17,
-            "ownShipId": 4183305088,
+            "ownShipId": 4276041424,
             "ownShipName": "Yamato",
             "playerCount": 6,
         }

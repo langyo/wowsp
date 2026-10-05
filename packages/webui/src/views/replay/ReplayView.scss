@@ -746,7 +746,27 @@
     margin-top: 0.1rem;
   }
 
+  /* Own-ship tag on the foot's left edge (class icon + localized name);
+     margin-right: auto pins it left while __players stays right, and the
+     foot keeps its old look when no ship resolves. */
+  &__vessel {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    margin-right: auto;
+    font-size: var(--text-xs);
+  }
+
+  &__vessel-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   &__players {
+    flex-shrink: 0;
+    white-space: nowrap;
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
     font-variant-numeric: tabular-nums;

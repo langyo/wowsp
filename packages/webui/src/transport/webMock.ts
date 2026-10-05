@@ -30,7 +30,10 @@
  *   (enabled by default — the endpoint is built into the apps).
  */
 
-/** ReplayMetaLite-shaped remote listing served by pairing_list_remote. */
+/** ReplayMetaLite-shaped remote listing served by pairing_list_remote.
+ *  `ownShipId`s are REAL ship indexes from `src/data/ship_names.json`
+ *  (Yamato / Stalingrad / Gearing / Montana) so every ship-id-driven UI —
+ *  roster panels and the list card's own-ship tag — resolves in mock mode. */
 const REMOTE_FIXTURE: Record<string, unknown>[] = [
   {
     path: "20260918_213010.wowsreplay",
@@ -38,7 +41,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     matchGroup: "pvp",
     mapName: "17_NA_fault_line",
     mapId: 17,
-    ownShipId: 4183305088,
+    ownShipId: 4276041424,
     ownShipName: "Yamato",
     playerCount: 12,
   },
@@ -48,7 +51,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     matchGroup: "ranked",
     mapName: "18_NE_ice_islands",
     mapId: 18,
-    ownShipId: 4275189552,
+    ownShipId: 3760109008,
     ownShipName: "Stalingrad",
     playerCount: 14,
   },
@@ -58,7 +61,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     matchGroup: "pvp",
     mapName: "20_NE_two_brothers",
     mapId: 20,
-    ownShipId: 4285609360,
+    ownShipId: 4281219056,
     ownShipName: "Gearing",
     playerCount: 12,
   },
@@ -68,7 +71,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     matchGroup: "pve",
     mapName: "14_Okinawa",
     mapId: 14,
-    ownShipId: 4183305088,
+    ownShipId: 4276041424,
     ownShipName: "Yamato",
     playerCount: 8,
   },
@@ -78,7 +81,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     matchGroup: "pvp",
     mapName: "15_NE_north",
     mapId: 15,
-    ownShipId: 4174884272,
+    ownShipId: 4277090288,
     ownShipName: "Montana",
     playerCount: 12,
   },

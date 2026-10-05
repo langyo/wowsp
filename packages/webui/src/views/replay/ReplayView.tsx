@@ -1598,6 +1598,12 @@ export default defineComponent({
      *  key is namespaced so a pick that also exists in the scanned folder
      *  can't collide with the regular card's key. */
     function renderReplayCard(r: ReplayMetaLite, external: boolean) {
+      // The lite scanner only carries the own ship's id — resolve the
+      // localized name + class off the offline DB (same pattern as the
+      // roster panels); cards without a resolvable ship keep the old foot.
+      const ownShipName =
+        r.ownShipId != null ? shipNameFromOfflineDb(r.ownShipId, dataLanguage.value) : null;
+      const ownShipType = r.ownShipId != null ? shipOfflineEntry(r.ownShipId)?.type ?? null : null;
       return (
         <li key={external ? `ext_${r.path}` : r.path} class="replay-view__item">
           <button
@@ -1657,6 +1663,19 @@ export default defineComponent({
               <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
             </div>
             <div class="replay-card__foot">
+              {ownShipName ? (
+                <span
+                  class="replay-card__vessel"
+                  title={
+                    ownShipType ? t(`replay.classes.${shipTypeClass(ownShipType)}`) : undefined
+                  }
+                >
+                  {ownShipType ? (
+                    <BattleIcon type={ownShipType} variant="plain" size={14} />
+                  ) : null}
+                  <span class="replay-card__vessel-name">{ownShipName}</span>
+                </span>
+              ) : null}
               <span class="replay-card__players">
                 {t("replay.players", { n: r.playerCount })}
               </span>
