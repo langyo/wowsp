@@ -36,6 +36,19 @@
     align-items: center;
     gap: 0.15rem;
     flex-shrink: 0;
+
+    /* The row's ghost HkButtons carry lucide slot glyphs, so hikari's
+       square icon-only contract never engages (it keys on the icon prop's
+       registry string) and they kept the text button's 6/12 padding,
+       reading 40×28 wide beside the funnel's 28px square. Mirror the
+       library's own hk-btn-sm icon-only box (zero padding, 1.75rem square)
+       so the row reads as one square icon-button family. min-width over
+       width: the picker's transient loading ring rides beside the glyph
+       and may widen the box instead of bleeding out of it. */
+    .hk-btn {
+      min-width: 1.75rem;
+      padding: 0;
+    }
   }
 
   &__list-title {
