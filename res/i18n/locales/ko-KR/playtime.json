@@ -2,6 +2,8 @@
   "cards": {
     "total": "총 플레이 시간",
     "launched": "{n}회 실행",
+    "battles": "전투 수",
+    "battlesShips": "사용 함선 {n}척",
     "dailyAvg": "일 평균",
     "daysPlayed": "{n}일 플레이",
     "streak": "최장 연속 일수",
@@ -23,11 +25,19 @@
   "weekdayLast": "일",
   "importNote": "{date}에 Steam에서 과거 총 플레이 시간(약 {hours}시간)을 가져왔습니다. 그래프는 로컬 기록 구간만 표시합니다.",
   "emptyTitle": "플레이 기록이 없습니다",
-  "emptyHint": "게임이 실행되는 동안 WoWSP가 자동으로 플레이 시간을 기록합니다(클라이언트 실행부터 종료까지, Steam 기준과 동일). 첫 실행 시 Steam에서 과거 총 플레이 시간을 가져옵니다.",
-  "scanHint": "기록된 플레이 시간이 적습니다. 기록이 아직 가져와지지 않았을 수 있습니다.",
-  "scanAction": "Steam 기록 스캔 후 가져오기",
-  "scanBusy": "스캔 중…",
-  "scanDone": "Steam에서 {v}의 기록을 가져왔습니다.",
-  "scanNone": "가져올 수 있는 Steam 기록을 찾지 못했습니다.",
-  "scanClose": "닫기"
+  "emptyHint": "게임이 실행되는 동안 WoWSP가 자동으로 플레이 시간을 기록합니다(클라이언트 실행부터 종료까지). 전투 수는 각 클라이언트의 replays 폴더에 저장된 리플레이에서 집계합니다.",
+  "battlesTitle": "전투 분포",
+  "battlesEmpty": "아직 전투 기록이 없습니다. 전투 수는 각 클라이언트의 replays 폴더에 저장된 리플레이에서 집계합니다(리플레이 복기와 같은 파일).",
+  "battlesNoneSelected": "선택한 클라이언트에는 아직 리플레이가 없습니다.",
+  "scopeAll": "모든 클라이언트",
+  "scopeSelected": "선택한 서버만",
+  "scopeSelectedWith": "선택한 서버만 · {label}",
+  "scopeUnavailable": "먼저 설정의 게임 경로에서 클라이언트를 선택하세요.",
+  "breakdown": {
+    "byType": "함종별",
+    "byNation": "국가별",
+    "byTier": "티어별",
+    "byMode": "모드별",
+    "unknown": "알 수 없음"
+  }
 }

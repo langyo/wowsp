@@ -2,6 +2,8 @@
   "cards": {
     "total": "总游戏时长",
     "launched": "已启动 {n} 次",
+    "battles": "战斗场次",
+    "battlesShips": "使用 {n} 艘舰艇",
     "dailyAvg": "平均每天时长",
     "daysPlayed": "已游玩 {n} 天",
     "streak": "最长连续天数",
@@ -23,11 +25,19 @@
   "weekdayLast": "周日",
   "importNote": "已从 Steam 导入历史总时长约 {hours} 小时（{date} 导入），图表仅统计本地记录的时段。",
   "emptyTitle": "暂无游戏记录",
-  "emptyHint": "游戏运行期间 WoWSP 会自动记录时长（从客户端启动到退出，与 Steam 口径一致）；首次启动时也会尝试从 Steam 导入历史总时长。",
-  "scanHint": "当前记录的游戏时长偏低，历史记录可能尚未导入。",
-  "scanAction": "扫描 Steam 记录并导入",
-  "scanBusy": "扫描中…",
-  "scanDone": "已从 Steam 导入 {v} 的历史记录。",
-  "scanNone": "没有在 Steam 中找到更多可导入的记录。",
-  "scanClose": "不再提示"
+  "emptyHint": "游戏运行期间 WoWSP 会自动记录时长（从客户端启动到退出）；对局数则统计自各客户端 replays 文件夹里的录像文件。",
+  "battlesTitle": "战斗分布",
+  "battlesEmpty": "还没有战斗记录——战斗场次统计自各客户端 replays 文件夹里的录像文件（与「录像复盘」读取的相同）。",
+  "battlesNoneSelected": "选中的客户端还没有录像。",
+  "scopeAll": "全部客户端",
+  "scopeSelected": "仅选中服务器",
+  "scopeSelectedWith": "仅选中服务器 · {label}",
+  "scopeUnavailable": "请先在 设置 → 游戏路径 中选择一个客户端。",
+  "breakdown": {
+    "byType": "按舰种",
+    "byNation": "按阵营",
+    "byTier": "按等级",
+    "byMode": "按模式",
+    "unknown": "未知"
+  }
 }

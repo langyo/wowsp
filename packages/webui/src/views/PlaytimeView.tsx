@@ -1,6 +1,14 @@
-import { computed, defineComponent, onMounted, onUnmounted, ref, watch } from "vue";
-import { HkButton, HkTabs } from "@celestia-island/hikari";
-import { X } from "@lucide/vue";
+import {
+  computed,
+  defineComponent,
+  onBeforeUnmount,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+} from "vue";
+import { HkPopover, HkTabs, useBreakpoint } from "@celestia-island/hikari";
+import { Check, ChevronDown } from "@lucide/vue";
 
 import PlaytimeTrendChart from "@/components/playtime/PlaytimeTrendChart";
 import PlaytimeHeatmap from "@/components/playtime/PlaytimeHeatmap";
@@ -10,36 +18,74 @@ import {
   parseDayKey,
   type TrendRange,
 } from "@/components/playtime/playtimeAgg";
+import {
+  breakdownByMode,
+  breakdownByNation,
+  breakdownByTier,
+  breakdownByType,
+  distinctShipCount,
+  filterBattlesByScope,
+  type BattleScope,
+  type BreakdownEntry,
+} from "@/components/playtime/battleBreakdown";
+import type { PlaytimeOverview } from "@/api";
 import { usePlaytimeStore } from "@/stores/playtime";
+import { useConfigStore } from "@/stores/config";
+import { installLabel } from "@/utils/installLabel";
+import { modeColorOfKey } from "@/utils/modeColors";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./PlaytimeView.scss";
 
-/** Below this career total the view offers the Steam rescan at its bottom
- *  edge — a veteran's ledger should never read this small, so it almost
- *  always means the once-only seed found nothing (non-MostRecent account,
- *  Steam installed later, non-Steam launcher). */
-const LOW_TOTAL_HINT_SECS = 2 * 3600;
+/** The cards strip's zero-valued stand-in for a battles-only veteran — a
+ *  player whose replays exist but whose ledger overview holds nothing (game
+ *  never tracked locally). The time cards then read 0 / — while the battles
+ *  card counts real replay rows. */
+const ZERO_OVERVIEW: PlaytimeOverview = {
+  source: "local",
+  importedTotalSeconds: 0,
+  importedAt: null,
+  localTotalSeconds: 0,
+  totalSeconds: 0,
+  launchCount: 0,
+  daysPlayed: 0,
+  firstTrackedDay: null,
+  longestStreakDays: 0,
+  longestStreakStart: null,
+  longestStreakEnd: null,
+  longestSessionSeconds: 0,
+  longestSessionDate: null,
+  longestDaySeconds: 0,
+  longestDayDate: null,
+  lastLaunch: null,
+  daily: [],
+};
 
 /**
  * 游玩时间 — WoWSP's own playtime statistics (the water-meter page's
  * sibling view, switched from the title-bar center group). Layout mirrors
- * the reference sheet: a six-card record strip (career total, daily
- * average, longest streak / session / day, last launch), then the trend
- * bars over 15 days / 12 weeks / 12 months, then the GitHub-style
- * activity heatmap for the last year.
+ * the reference sheet: a seven-card record strip (career total, battle
+ * count, daily average, longest streak / session / day, last launch), the
+ * battle breakdown bars (ship type / nation / tier / mode over the
+ * replay-derived rows), then the trend bars over 15 days / 12 weeks /
+ * 12 months, then the GitHub-style activity heatmap for the last year.
  *
  * Data comes from the Rust-side ledger (commands/playtime.rs) via the
  * playtime store: the tracker observes the game client in the background,
  * so this view only reads — on mount, then on a slow poll while mounted.
  * A Steam-imported career total is footnoted, never charted (it is
- * undated).
+ * undated). The battle rows are scanned from the installs' replays
+ * folders; a top-right scope menu narrows the battle-derived content (the
+ * battles card + the breakdown) to the selected install — the time ledger
+ * itself is client-agnostic and always global.
  */
 export default defineComponent({
   name: "PlaytimeView",
   setup() {
     const store = usePlaytimeStore();
+    const config = useConfigStore();
     const { uiLocale } = useLanguage();
+    const { isMobile } = useBreakpoint();
     const range = ref<TrendRange>("15d");
     // The clock the charts bucket against — refreshed alongside each
     // overview fetch so "today" moves with the data.
@@ -68,9 +114,22 @@ export default defineComponent({
     const rangeTotal = computed(() =>
       buckets.value.reduce((acc, b) => acc + b.seconds, 0),
     );
+
+    // ── Replay-derived battles (scope-aware) ───────────────────────────
+    // Not persisted — every mount starts global.
+    const scope = ref<BattleScope>("all");
+    const allBattles = computed(() => store.battles?.battles ?? []);
+    const totalBattles = computed(() => allBattles.value.length);
+    const scopedBattles = computed(() =>
+      filterBattlesByScope(allBattles.value, scope.value, config.activeInstall?.path),
+    );
+
     const hasAnyData = computed(() => {
       const o = overview.value;
-      return !!o && (o.localTotalSeconds > 0 || o.importedTotalSeconds > 0);
+      return (
+        (!!o && (o.localTotalSeconds > 0 || o.importedTotalSeconds > 0)) ||
+        totalBattles.value > 0
+      );
     });
     const importNote = computed(() => {
       const o = overview.value;
@@ -104,32 +163,141 @@ export default defineComponent({
       return dateOnly ? day : `${day} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
 
-    // ── Low-total hint: offer a Steam rescan at the panel's bottom ─────
-    // The scan command answers a refreshed overview; the store computes the
-    // imported delta so the strip can report what the scan found.
-    const scanDismissed = ref(false);
-    const scanResult = ref<string | null>(null);
+    // ── Scope menu (battle-derived content only — see module docs) ─────
+    const scopeOpen = ref(false);
+    const scopeRoot = ref<HTMLElement | null>(null);
+    const scopeBtn = ref<HTMLButtonElement | null>(null);
+    const scopePanel = ref<HTMLElement | null>(null);
 
-    async function runScan() {
-      scanResult.value = null;
-      const delta = await store.importSteam();
-      scanResult.value =
-        delta > 0
-          ? t("playtime.scanDone", { v: fmtDuration(delta) })
-          : t("playtime.scanNone");
+    function closeScope() {
+      scopeOpen.value = false;
     }
 
-    const showScan = computed(() => {
-      const o = overview.value;
-      if (!o || scanDismissed.value) return false;
-      // Stay visible (with its result message) once a scan has run, even
-      // when the fresh total cleared the threshold — the user should get
-      // to read what the scan found.
-      return o.totalSeconds < LOW_TOTAL_HINT_SECS || scanResult.value != null;
+    function onDocPointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (scopeRoot.value?.contains(target)) return;
+      if (scopePanel.value?.contains(target)) return;
+      closeScope();
+    }
+
+    // The outside-close listener lives exactly while the menu is open
+    // (FilterCategoryChip's pattern); Escape close is HkPopover's own.
+    watch(
+      scopeOpen,
+      (open) => {
+        if (open) {
+          document.addEventListener("pointerdown", onDocPointerDown, true);
+        } else {
+          document.removeEventListener("pointerdown", onDocPointerDown, true);
+        }
+      },
+    );
+    onBeforeUnmount(() => {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
     });
 
+    // Losing the selected install (row removed in settings) must not leave
+    // the menu wearing the "selected" label over what filterBattlesByScope
+    // already widened back to all rows.
+    watch(
+      () => config.activeInstall,
+      (inst) => {
+        if (!inst && scope.value === "selected") scope.value = "all";
+      },
+    );
+
+    const scopeOptions = computed(() => {
+      const inst = config.activeInstall;
+      return [
+        { key: "all" as const, label: t("playtime.scopeAll"), disabled: false },
+        {
+          key: "selected" as const,
+          label: inst
+            ? t("playtime.scopeSelectedWith", {
+                label: installLabel(inst.kind, inst.realm),
+              })
+            : t("playtime.scopeSelected"),
+          disabled: !inst,
+        },
+      ];
+    });
+    const scopeLabel = computed(
+      () => scopeOptions.value.find((o) => o.key === scope.value)?.label ?? "",
+    );
+
+    function pickScope(key: BattleScope) {
+      scope.value = key;
+      closeScope();
+    }
+
+    // ── Breakdown groups ────────────────────────────────────────────────
+    /** t() returns the key when a message is missing — keep the raw key (or
+     *  the caller's fallback) instead of leaking it into the UI. */
+    function i18nOr(key: string, fallback: string): string {
+      const lbl = t(key);
+      return lbl === key ? fallback : lbl;
+    }
+
+    function unknownLabel(): string {
+      return t("playtime.breakdown.unknown");
+    }
+
+    /** Ship type — the dashboard's existing localized type map. */
+    function typeLabel(key: string): string {
+      return key === "unknown" ? unknownLabel() : i18nOr(`dashboard.shipType.${key}`, key);
+    }
+
+    /** Nation — the ships feature's existing localized nation map. */
+    function nationLabel(key: string): string {
+      return key === "unknown" ? unknownLabel() : i18nOr(`ships.nation.${key}`, key);
+    }
+
+    /** Tier — "T1".."T11", locale-agnostic. */
+    function tierLabel(key: string): string {
+      return key === "unknown" ? unknownLabel() : `T${key}`;
+    }
+
+    /** Battle mode — the replay list's existing mode labels (generic battle
+     *  label when the key has no entry, mirroring modeLabelOfKey). */
+    function modeLabel(key: string): string {
+      return key === "unknown"
+        ? unknownLabel()
+        : i18nOr(`replay.mode.${key}`, t("replay.mode._fallback"));
+    }
+
+    const breakdownGroups = computed(() =>
+      scopedBattles.value.length === 0
+        ? []
+        : [
+            {
+              title: t("playtime.breakdown.byType"),
+              entries: breakdownByType(scopedBattles.value),
+              labelOf: typeLabel,
+              mode: false,
+            },
+            {
+              title: t("playtime.breakdown.byNation"),
+              entries: breakdownByNation(scopedBattles.value),
+              labelOf: nationLabel,
+              mode: false,
+            },
+            {
+              title: t("playtime.breakdown.byTier"),
+              entries: breakdownByTier(scopedBattles.value),
+              labelOf: tierLabel,
+              mode: false,
+            },
+            {
+              title: t("playtime.breakdown.byMode"),
+              entries: breakdownByMode(scopedBattles.value),
+              labelOf: modeLabel,
+              mode: true,
+            },
+          ],
+    );
+
     const cards = computed(() => {
-      const o = overview.value;
+      const o = overview.value ?? (totalBattles.value > 0 ? ZERO_OVERVIEW : null);
       if (!o) return [];
       const avgDaily =
         o.daysPlayed > 0 ? Math.round(o.localTotalSeconds / o.daysPlayed) : 0;
@@ -138,6 +306,14 @@ export default defineComponent({
           label: t("playtime.cards.total"),
           value: fmtDuration(o.totalSeconds),
           sub: t("playtime.cards.launched", { n: o.launchCount }),
+          running: false,
+        },
+        {
+          label: t("playtime.cards.battles"),
+          value: String(scopedBattles.value.length),
+          sub: t("playtime.cards.battlesShips", {
+            n: distinctShipCount(scopedBattles.value),
+          }),
           running: false,
         },
         {
@@ -186,6 +362,69 @@ export default defineComponent({
             </div>
           ) : (
             <>
+              {/* ── Scope toolbar: narrows ONLY the battle-derived content
+                  (battles card + breakdown) — the ledger itself is global. */}
+              <div ref={scopeRoot} class="playtime-view__toolbar">
+                <button
+                  type="button"
+                  ref={scopeBtn}
+                  class="playtime-view__scope"
+                  aria-haspopup="menu"
+                  aria-expanded={scopeOpen.value}
+                  onClick={() => (scopeOpen.value = !scopeOpen.value)}
+                >
+                  <span class="playtime-view__scope-label">{scopeLabel.value}</span>
+                  <ChevronDown
+                    size={13}
+                    class="playtime-view__scope-chevron"
+                    data-open={scopeOpen.value || undefined}
+                  />
+                </button>
+                {/* Desktop keeps closeOnBackdrop off: HkPopover's own
+                    document listener would close on the re-click of the
+                    open button before that click re-toggles it; the
+                    pointerdown listener above is the outside-close and
+                    Escape rides closeOnEscape. Phones dock the menu as a
+                    bottom sheet (sheetOnMobile, same convention as the
+                    filter chips). */}
+                <HkPopover
+                  modelValue={scopeOpen.value}
+                  onUpdate:modelValue={(v: boolean) => {
+                    if (!v) closeScope();
+                  }}
+                  anchorRef={scopeBtn.value}
+                  placement="bottom-end"
+                  closeOnBackdrop={isMobile.value}
+                  sheetOnMobile
+                  title={t("playtime.battlesTitle")}
+                >
+                  <div ref={scopePanel} class="playtime-view__scope-menu" role="menu">
+                    {scopeOptions.value.map((o) => (
+                      <button
+                        key={o.key}
+                        type="button"
+                        role="menuitem"
+                        class="playtime-view__scope-opt"
+                        data-active={scope.value === o.key || undefined}
+                        disabled={o.disabled}
+                        title={o.disabled ? t("playtime.scopeUnavailable") : undefined}
+                        onClick={() => pickScope(o.key)}
+                      >
+                        <span class="playtime-view__scope-opt-label">{o.label}</span>
+                        {scope.value === o.key ? (
+                          <Check size={13} class="playtime-view__scope-opt-check" />
+                        ) : null}
+                      </button>
+                    ))}
+                    {!config.activeInstall ? (
+                      <div class="playtime-view__scope-hint">
+                        {t("playtime.scopeUnavailable")}
+                      </div>
+                    ) : null}
+                  </div>
+                </HkPopover>
+              </div>
+
               {/* ── Record cards ─────────────────────────────────────── */}
               <div class="playtime-cards">
                 {cards.value.map((card) => (
@@ -207,6 +446,61 @@ export default defineComponent({
 
               {importNote.value ? (
                 <p class="playtime-view__note">{importNote.value}</p>
+              ) : null}
+
+              {/* ── Battle breakdown (replay-derived, scope-aware) ────── */}
+              {store.battles ? (
+                <section class="play-section">
+                  <div class="play-section__head">
+                    <h3>{t("playtime.battlesTitle")}</h3>
+                  </div>
+                  {scopedBattles.value.length === 0 ? (
+                    <p class="playtime-breakdown__empty">
+                      {totalBattles.value === 0
+                        ? t("playtime.battlesEmpty")
+                        : t("playtime.battlesNoneSelected")}
+                    </p>
+                  ) : (
+                    <div class="playtime-breakdown">
+                      {breakdownGroups.value.map((g) => {
+                        // Bars share the group's max so the top row always
+                        // fills its track (reads better than total-share
+                        // slivers); counts + percentages carry the exact
+                        // math.
+                        const max = g.entries.reduce((m, e) => Math.max(m, e.count), 0);
+                        return (
+                          <div class="playtime-breakdown__group" key={g.title}>
+                            <h4 class="playtime-breakdown__group-title">{g.title}</h4>
+                            {g.entries.map((e: BreakdownEntry) => (
+                              <div class="playtime-breakdown__row" key={e.key}>
+                                <span class="playtime-breakdown__label">
+                                  {g.labelOf(e.key)}
+                                </span>
+                                <span class="playtime-breakdown__bar">
+                                  <span
+                                    class="playtime-breakdown__fill"
+                                    style={
+                                      g.mode
+                                        ? {
+                                            width: `${max > 0 ? (e.count / max) * 100 : 0}%`,
+                                            background: modeColorOfKey(e.key).color,
+                                          }
+                                        : { width: `${max > 0 ? (e.count / max) * 100 : 0}%` }
+                                    }
+                                  />
+                                </span>
+                                <span class="playtime-breakdown__count">{e.count}</span>
+                                <span class="playtime-breakdown__pct">
+                                  {Math.round(e.share * 100)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
               ) : null}
 
               {/* ── Trend bars ───────────────────────────────────────── */}
@@ -244,32 +538,6 @@ export default defineComponent({
               </section>
             </>
           )}
-
-          {/* ── Low-total hint: offer a Steam rescan / import. Sits at the
-              panel's bottom edge in BOTH branches — the zero state is the
-              exact "the seed found nothing" population the strip targets,
-              so it must not wait for the first tracked session. ── */}
-          {showScan.value ? (
-            <div class="playtime-view__scan">
-              <p class="playtime-view__scan-text">
-                {scanResult.value ?? t("playtime.scanHint")}
-              </p>
-              {!scanResult.value ? (
-                <HkButton disabled={store.importing} onClick={() => void runScan()}>
-                  {store.importing ? t("playtime.scanBusy") : t("playtime.scanAction")}
-                </HkButton>
-              ) : null}
-              <button
-                type="button"
-                class="playtime-view__scan-close"
-                title={t("playtime.scanClose")}
-                aria-label={t("playtime.scanClose")}
-                onClick={() => (scanDismissed.value = true)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          ) : null}
         </div>
       </div>
     );

@@ -2,6 +2,8 @@
   "cards": {
     "total": "総プレイ時間",
     "launched": "起動 {n} 回",
+    "battles": "戦闘数",
+    "battlesShips": "使用艦艇 {n} 隻",
     "dailyAvg": "1日平均",
     "daysPlayed": "プレイ {n} 日",
     "streak": "最長連続日数",
@@ -23,11 +25,19 @@
   "weekdayLast": "日",
   "importNote": "{date} に Steam から過去の総プレイ時間（約 {hours} 時間）を取り込みました。グラフはローカル記録分のみです。",
   "emptyTitle": "プレイ記録はまだありません",
-  "emptyHint": "ゲーム起動中は WoWSP が自動でプレイ時間を記録します（クライアント起動から終了まで、Steam と同じ基準）。初回起動時には Steam から過去の総プレイ時間の取り込みを試みます。",
-  "scanHint": "記録されたプレイ時間が少ないようです。履歴がまだ取り込まれていない可能性があります。",
-  "scanAction": "Steam 記録を走査して取り込む",
-  "scanBusy": "走査中…",
-  "scanDone": "Steam から {v} の履歴を取り込みました。",
-  "scanNone": "取り込める Steam の記録は見つかりませんでした。",
-  "scanClose": "閉じる"
+  "emptyHint": "ゲーム起動中は WoWSP が自動でプレイ時間を記録します（クライアント起動から終了まで）。対戦数は各クライアントの replays フォルダーに保存されたリプレイから数えます。",
+  "battlesTitle": "戦闘の内訳",
+  "battlesEmpty": "戦闘記録はまだありません。戦闘数は各クライアントの replays フォルダーに保存されたリプレイから数えます（リプレイ分析と同じファイルです）。",
+  "battlesNoneSelected": "選択中のクライアントにはリプレイがまだありません。",
+  "scopeAll": "すべてのクライアント",
+  "scopeSelected": "選択中のサーバーのみ",
+  "scopeSelectedWith": "選択中のサーバーのみ · {label}",
+  "scopeUnavailable": "先に設定の「ゲームパス」でクライアントを選択してください。",
+  "breakdown": {
+    "byType": "艦種別",
+    "byNation": "国別",
+    "byTier": "ティア別",
+    "byMode": "モード別",
+    "unknown": "不明"
+  }
 }

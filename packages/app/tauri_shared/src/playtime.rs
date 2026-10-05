@@ -1,14 +1,18 @@
 //! Playtime DTOs (commands/playtime.rs → client.ts `PlaytimeOverview`).
 //!
 //! The tracker watches the running WoWS client (via the session poller's
-//! 3 s heartbeat), records per-session/per-day playtime locally, and — on
-//! the very first run, when no ledger exists yet — seeds the career TOTAL
-//! from the Steam client's own recorded hours when the game came from
-//! Steam. The per-day series always stays local: Steam only exposes a
-//! career total, never its distribution, so the imported backlog rides a
-//! separate field the UI footnotes instead of inventing daily buckets.
+//! 3 s heartbeat) and records per-session/per-day playtime locally. The
+//! historical career total used to be seeded by scanning the Steam
+//! client's own recorded hours; that scan has been REMOVED (battle counts
+//! now come from replay files, see [`PlaytimeBattle`]) — ledgers that
+//! already imported a backlog keep counting it, so `imported_*` rides
+//! along below. The per-day series always stays local: the imported
+//! backlog is undated, so it lives in a separate field the UI footnotes
+//! instead of inventing daily buckets.
 
 use serde::{Deserialize, Serialize};
+
+use crate::game::GameInstallKind;
 
 /// Where the historical total came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,4 +88,44 @@ pub struct PlaytimeOverview {
     pub last_launch: Option<PlaytimeLaunch>,
     /// Local per-day series, ascending by date, days with playtime only.
     pub daily: Vec<PlaytimeDay>,
+}
+
+/// One completed battle derived from a replay file's header (filename
+/// timestamp + descriptor JSON). Collected across every detected game
+/// install so the playtime view can scope "all servers" vs "selected
+/// server" client-side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaytimeBattle {
+    /// Owning install's root path — the exact `GameInstall.path` string the
+    /// frontend compares against its active install, or the replay dir's
+    /// own root when no detected install owns the file.
+    pub install_path: String,
+    /// Owning install's kind, absent when no install owns the file.
+    pub kind: Option<GameInstallKind>,
+    /// Owning install's realm ("ru"/"eu"/"na"/"asia"/"cn"), absent when unknown.
+    pub realm: Option<String>,
+    /// Filename timestamp `YYYYMMDD[_HHMMSS]` (local time) — the only
+    /// timestamp source, same format as `ReplayMetaLite::date_time`.
+    pub date_time: Option<String>,
+    /// Descriptor fields — `None`/0 when the header is unparseable (Lesta
+    /// `.korablireplay` containers) or lacks the field. Such rows still
+    /// count as battles; they just carry no dimensions.
+    pub match_group: Option<String>,
+    pub scenario: Option<String>,
+    pub event_type: Option<String>,
+    pub bot_count: u32,
+    pub scripted_unit_count: u32,
+    pub own_ship_id: Option<i64>,
+    pub own_ship_name: Option<String>,
+    pub player_count: usize,
+}
+
+/// Reply of the `playtime_battles` command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaytimeBattles {
+    /// Battles sorted by `date_time` ascending (entries without a parsable
+    /// filename date sink to the end, keeping a stable order).
+    pub battles: Vec<PlaytimeBattle>,
 }

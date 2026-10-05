@@ -75,6 +75,35 @@ export interface PlaytimeOverview {
   daily: PlaytimeDay[];
 }
 
+/** Mirrors `wowsp_tauri_shared::PlaytimeBattle` — one replay-derived battle
+ *  row (the 游玩时间 view's battles card + breakdown). `installPath` is the
+ *  owning install's root (GameInstall.path) or the replay dir root when the
+ *  folder belongs to no known install; descriptor fields are null when the
+ *  replay could not be parsed (Lesta files keep only the filename). */
+export interface PlaytimeBattle {
+  installPath: string;
+  kind: GameInstallKind | null;
+  realm: string | null;
+  /** Local time from the replay filename, "YYYYMMDD[_HHMMSS]"; null when
+   *  unparseable. */
+  dateTime: string | null;
+  matchGroup: string | null;
+  scenario: string | null;
+  eventType: string | null;
+  botCount: number;
+  scriptedUnitCount: number;
+  ownShipId: number | null;
+  ownShipName: string | null;
+  playerCount: number;
+}
+
+/** Mirrors `wowsp_tauri_shared::PlaytimeBattles` — every replay found under
+ *  the known installs' replays folders, sorted by dateTime asc (nulls last).
+ *  Rust caches the scan, so the 30 s poll can refetch cheaply. */
+export interface PlaytimeBattles {
+  battles: PlaytimeBattle[];
+}
+
 /** Mirrors `wowsp_tauri_shared::AccountProfile` — one remembered account as
  *  the webui's own accounts.json writes it (and the Rust session hub reads
  *  it back for playing-account matching). */
@@ -1596,13 +1625,11 @@ export const api = {
    *  series the 游玩时间 view renders. */
   getPlaytimeOverview: () =>
     transport.invoke<PlaytimeOverview>(RPC.playtime_overview),
-  /** Scan the Steam client's userdata for recorded WoWS playtime and import
-   *  it when it exceeds the career total the ledger would report (the
-   *  游玩时间 view's low-total hint); Steam's figure is the career truth, so
-   *  the local window is backed out of the import. Answers the refreshed
-   *  overview either way — compare totals for the feedback. */
-  playtimeImportSteam: () =>
-    transport.invoke<PlaytimeOverview>(RPC.playtime_import_steam),
+  /** Replay-derived battle rows for the 游玩时间 view's battles card and
+   *  breakdown (commands/playtime.rs). The Rust side scans every known
+   *  install's replays folder behind a cache, so this is cheap to poll. */
+  playtimeBattles: () =>
+    transport.invoke<PlaytimeBattles>(RPC.playtime_battles),
   /** Rust session hub snapshot (commands/session.rs) — the running process
    *  plus the resolved "who is playing" identity. Live updates arrive via
    *  listenSessionChanged; this is the boot/fetch side. */

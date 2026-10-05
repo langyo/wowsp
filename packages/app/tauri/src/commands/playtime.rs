@@ -10,14 +10,15 @@
 //!   not the battles" convention Steam's own playtime uses), heartbeats it
 //!   while it lives, and closes it on exit. Heartbeats persist at most once
 //!   a minute — the crash-loss window is one flush, never a whole evening.
-//! * First run, when no ledger file exists yet, the career TOTAL is seeded
-//!   from the Steam client where possible (`userdata/<account>/config/
-//!   localconfig.vdf` → `UserLocalConfigStore/…/apps/<appid>/Playtime`, in
-//!   MINUTES — Steam's own accounting for appid 552990). The WG Game
-//!   Center / 360 launchers keep no readable playtime record, so non-Steam
-//!   installs simply start from zero; the ledger records which path it took
-//!   in `source`.
-//! * The webui reads everything through [`playtime_overview`]. The imported
+//! * The historical career total used to be seeded by scanning the Steam
+//!   client's `userdata/<account>/config/localconfig.vdf`; that scan (and
+//!   its retryable import command) has been REMOVED — battle counts now
+//!   come from replay files ([`playtime_battles`]). Ledgers that already
+//!   imported a Steam backlog keep honoring it: it rides
+//!   `imported_total_seconds` and the overview keeps reporting the `steam`
+//!   `source`, so no user's recorded history is lost.
+//! * The webui reads the time ledger through [`playtime_overview`] and the
+//!   replay-derived battle ledger through [`playtime_battles`]. The imported
 //!   backlog is undated, so it rides `imported_total_seconds` and never
 //!   leaks into the per-day series — the charts only ever show locally
 //!   observed days.
@@ -25,13 +26,17 @@
 //! The ledger (`playtime.json`, AppData root) stays Rust-owned: the webui
 //! never reads or writes it directly, unlike `accounts.json`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{Datelike, Local, TimeZone};
 use serde::{Deserialize, Serialize};
-use wowsp_tauri_shared::{PlaytimeDay, PlaytimeLaunch, PlaytimeOverview, PlaytimeSource};
+use wowsp_tauri_shared::{
+    GameInstall, PlaytimeBattle, PlaytimeBattles, PlaytimeDay, PlaytimeLaunch, PlaytimeOverview,
+    PlaytimeSource, ReplayMetaLite,
+};
 
 /// The ledger file under the AppData root (atomic writes via the shared
 /// tmp+rename helper, like every other JSON store).
@@ -150,19 +155,12 @@ fn load_store() -> PlaytimeStore {
     }
 }
 
-/// A brand-new ledger: attempt the once-only Steam seed, then persist.
+/// A brand-new ledger: plain defaults, persisted immediately. (The first-run
+/// Steam seed is gone with the historical-scan removal — see the module
+/// docs; only the persist-once shape survives so a crash cannot re-run any
+/// first-run logic.)
 fn fresh_store() -> PlaytimeStore {
-    let mut store = PlaytimeStore::default();
-    #[cfg(desktop)]
-    if let Some(seconds) = try_import_steam_total() {
-        tracing::info!(
-            seconds,
-            "seeded career playtime total from the Steam client"
-        );
-        store.source = PlaytimeSource::Steam;
-        store.imported_total_seconds = seconds;
-        store.imported_at = Some(now_unix());
-    }
+    let store = PlaytimeStore::default();
     if let Err(e) = persist_store(&store) {
         tracing::warn!(error = %e, "could not write the fresh playtime ledger");
     }
@@ -537,263 +535,235 @@ pub fn playtime_overview() -> PlaytimeOverview {
     current_overview()
 }
 
-/// Scan the Steam client's userdata for recorded WoWS playtime and import it
-/// when it EXCEEDS what the ledger already carries. This is the muscle behind
-/// the 游玩时间 view's low-total hint: the first-run seed runs once (and can
-/// find nothing on a non-Steam machine), so the user gets an explicit,
-/// retryable path instead of a permanent small number. Answers the refreshed overview either way — the webui compares
-/// totals for its feedback. Cross-platform command: mobile finds no Steam
-/// userdata and answers the unchanged overview.
+// ── battle ledger (replay-derived battle counts) ────────────────────────────
+
+/// The battle-ledger disk cache under the AppData root: parsed replay
+/// headers keyed by absolute path, so a scan over an unchanged replays tree
+/// reads no headers at all (a few hundred replays × the descriptor block is
+/// real I/O, and the playtime view re-scans on every open).
+const BATTLES_CACHE_FILE: &str = "playtime-battles-cache.json";
+
+/// One cached header parse. Identity = the file's `len` + `mtime_ms` — a
+/// hit requires BOTH to match the file's current stat, so any ordinary
+/// edit, rewrite or copy (a new size or a moved mtime) re-parses. The one
+/// accepted stale corner is a same-length replacement landing within the
+/// same millisecond; the game writes each replay exactly once, so that
+/// never happens in practice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BattleCacheEntry {
+    len: u64,
+    mtime_ms: u64,
+    lite: ReplayMetaLite,
+}
+
+/// The cache file's shape. `#[serde(default)]` keeps forward compatibility:
+/// a field added later heals to its default instead of discarding the cache.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct BattleCache {
+    version: u32,
+    /// Absolute replay path → its cached parse.
+    entries: BTreeMap<String, BattleCacheEntry>,
+}
+
+impl Default for BattleCache {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            entries: BTreeMap::new(),
+        }
+    }
+}
+
+/// Load the cache; an unreadable or corrupt file answers empty (a broken
+/// cache only costs a re-parse, never a failed command).
+fn load_battle_cache() -> BattleCache {
+    match super::appdata::read_appdata_json(BATTLES_CACHE_FILE) {
+        Ok(Some(raw)) => serde_json::from_str(&raw).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "playtime battle cache unreadable — rescanning");
+            BattleCache::default()
+        }),
+        _ => BattleCache::default(),
+    }
+}
+
+/// Persist the cache atomically (tmp + rename via the shared appdata
+/// helper). Two concurrent `playtime_battles` invokes racing this write are
+/// BENIGN by design: both scans see the same disk state, so the last
+/// writer's file is at worst missing the other's just-upserted entries
+/// (re-parsed next run) — never a torn or interleaved file. No mutex
+/// needed.
+fn save_battle_cache(cache: &BattleCache) -> Result<(), String> {
+    let json = serde_json::to_string(cache).map_err(|e| format!("serialize battle cache: {e}"))?;
+    super::appdata::write_appdata_json(BATTLES_CACHE_FILE, &json)
+}
+
+/// Dedupe identity for scan roots — the same normalization the install scan
+/// uses (`game_detect::install_path_key`): case-, separator- and
+/// trailing-slash-insensitive, so the registry's, the Steam vdf's and the
+/// env pin's spellings of one folder collapse. Purely string-based (no
+/// canonicalize I/O), so it never fails. A root reachable only through a
+/// differently-spelled symlink or junction stays distinct here — the
+/// pathological outcome is the same physical folder being walked (and its
+/// battles counted) twice, an accepted edge for the zero-I/O identity.
+fn battle_root_key(path: &Path) -> String {
+    super::game_detect::install_path_key(&path.to_string_lossy())
+}
+
+/// True when two replay roots are the same folder or nested inside one
+/// another (the resolved default dir can BE an install's `replays/` or live
+/// under its root in a different spelling).
+fn battle_roots_overlap(a: &Path, b: &Path) -> bool {
+    let (a, b) = (battle_root_key(a), battle_root_key(b));
+    a == b || a.starts_with(&format!("{b}\\")) || b.starts_with(&format!("{a}\\"))
+}
+
+/// Every root the battle ledger scans: each detected install's `replays/`
+/// folder (owner = that install), plus the resolved default replay dir
+/// (owner = none — the mobile managed dir or an env pin) when it is not
+/// already covered by an install root. On mobile the install scan finds
+/// nothing (no registry / Steam libraries to walk; at most an env-pinned
+/// path), so the managed dir is the ledger's only root.
+fn battle_roots() -> Vec<(PathBuf, Option<GameInstall>)> {
+    let mut roots: Vec<(PathBuf, Option<GameInstall>)> = Vec::new();
+    for install in super::game_context::cached_scan() {
+        let dir = super::game_context::replays_dir(Path::new(&install.path));
+        // Two installs resolving to overlapping folders (nested roots from
+        // overlapping detection sources) must not double-count replays.
+        if roots.iter().any(|(r, _)| battle_roots_overlap(r, &dir)) {
+            continue;
+        }
+        roots.push((dir, Some(install)));
+    }
+    if let Ok(extra) = super::replay::resolve_replay_dir(None) {
+        if !roots.iter().any(|(r, _)| battle_roots_overlap(r, &extra)) {
+            roots.push((extra, None));
+        }
+    }
+    roots
+}
+
+/// Project one parsed replay header (plus its scan root's owning install)
+/// onto the wire row. Unowned files (the resolved default dir outside every
+/// install) still count as battles — they just carry the root path itself
+/// and no kind/realm.
+fn battle_of(root: &Path, owner: &Option<GameInstall>, lite: &ReplayMetaLite) -> PlaytimeBattle {
+    PlaytimeBattle {
+        install_path: owner
+            .as_ref()
+            .map(|i| i.path.clone())
+            .unwrap_or_else(|| root.to_string_lossy().into_owned()),
+        kind: owner.as_ref().map(|i| i.kind),
+        realm: owner.as_ref().and_then(|i| i.realm.clone()),
+        date_time: lite.date_time.clone(),
+        match_group: lite.match_group.clone(),
+        scenario: lite.scenario.clone(),
+        event_type: lite.event_type.clone(),
+        bot_count: lite.bot_count,
+        scripted_unit_count: lite.scripted_unit_count,
+        own_ship_id: lite.own_ship_id,
+        own_ship_name: lite.own_ship_name.clone(),
+        player_count: lite.player_count,
+    }
+}
+
+/// The command's pure core: walk every root, parse (or reuse the cached
+/// parse of) each replay header, and answer one battle row per file. Also
+/// maintains `cache` in place — upserting fresh parses and pruning entries
+/// whose file was not seen this run — so the caller can diff the cache and
+/// decide the write-back.
+///
+/// Per-file failures never fail the scan: `replay::lite_from_path` already
+/// degrades to a path + filename-datetime row when the header is
+/// unparseable (Lesta `.korablireplay` containers), and a file vanishing
+/// mid-walk only loses its row.
+fn battles_from_roots(
+    roots: &[(PathBuf, Option<GameInstall>)],
+    cache: &mut BattleCache,
+) -> Vec<PlaytimeBattle> {
+    let mut battles = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (root, owner) in roots {
+        let mut walked = Vec::new();
+        super::replay::walk_replays(root, &mut walked);
+        for file in walked {
+            let key = file.path.to_string_lossy().into_owned();
+            seen.insert(key.clone());
+            let mtime_ms = file
+                .mtime
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            // Hit only when the file's identity is unchanged: same length
+            // AND same mtime. Anything else re-parses (and re-upserts).
+            let lite = match cache.entries.get(&key) {
+                Some(hit) if hit.len == file.len && hit.mtime_ms == mtime_ms => hit.lite.clone(),
+                _ => {
+                    let lite = super::replay::lite_from_path(&file.path);
+                    cache.entries.insert(
+                        key.clone(),
+                        BattleCacheEntry {
+                            len: file.len,
+                            mtime_ms,
+                            lite: lite.clone(),
+                        },
+                    );
+                    lite
+                },
+            };
+            battles.push(battle_of(root, owner, &lite));
+        }
+    }
+    // Prune entries whose file disappeared (a replay deleted or a root
+    // uninstalled) so the cache cannot grow unboundedly across years.
+    cache.entries.retain(|path, _| seen.contains(path));
+    // `date_time` ascending, undatable files sinking last (stable, so the
+    // walk order keeps ties deterministic within one timestamp).
+    battles.sort_by(|a, b| match (&a.date_time, &b.date_time) {
+        (Some(x), Some(y)) => x.cmp(y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    battles
+}
+
+/// The 游玩时间 view's battle ledger: one row per completed replay across
+/// every detected install's `replays/` folder (plus the resolved default
+/// dir when no install owns it). Header parses are cached on disk
+/// (`playtime-battles-cache.json`, len + mtime keyed) so an unchanged tree
+/// costs a stat walk only.
+///
+/// Async command + [`tokio::task::spawn_blocking`]: the recursive walk +
+/// per-file header reads are blocking I/O that must never run on the UI
+/// thread — same rule as `replay::list_replays_meta`. Cross-platform:
+/// mobile has no installs to scan, so the managed replays dir is the
+/// ledger's only root.
 #[tauri::command]
-pub fn playtime_import_steam() -> PlaytimeOverview {
-    // Scan OUTSIDE the state lock — the walk reads a handful of files per
-    // Steam account and must not stall the 3 s poller's observe path.
-    #[cfg(desktop)]
-    let scanned = scan_steam_playtime();
-    #[cfg(not(desktop))]
-    let scanned = None;
-    let now = now_unix();
-    with_state(|state| {
-        if let Some(seconds) = scanned {
-            // Steam's number IS the career total: import only when it
-            // exceeds the total the ledger would currently report (the
-            // local sessions may already exceed a stale Steam record —
-            // importing those would double-count), and back the local
-            // window OUT of it so the combined total lands exactly on the
-            // Steam figure and keeps growing with new local sessions.
-            let snapshot = overview_of(&state.store, now, &Local);
-            if seconds > snapshot.total_seconds {
-                tracing::info!(
-                    seconds,
-                    total = snapshot.total_seconds,
-                    "playtime rescan imported a larger Steam career total"
-                );
-                state.store.source = PlaytimeSource::Steam;
-                state.store.imported_total_seconds = seconds - snapshot.local_total_seconds;
-                state.store.imported_at = Some(now);
-                if let Err(e) = persist_store(&state.store) {
-                    tracing::warn!(error = %e, "playtime rescan persist failed");
-                }
+pub async fn playtime_battles() -> Result<PlaytimeBattles, String> {
+    tokio::task::spawn_blocking(|| {
+        let mut cache = load_battle_cache();
+        let roots = battle_roots();
+        // "Changed" = the cache serialization differs after the run — an
+        // upsert (new/edited replay) or a prune (a deleted one). An
+        // unchanged tree writes nothing back.
+        let before =
+            serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
+        let battles = battles_from_roots(&roots, &mut cache);
+        let after =
+            serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
+        if before != after {
+            // A failed cache write must not fail the ledger — the rows are
+            // already correct; only the next scan re-parses.
+            if let Err(e) = save_battle_cache(&cache) {
+                tracing::warn!(error = %e, "playtime battle cache persist failed");
             }
         }
-        overview_of(&state.store, now, &Local)
+        Ok(PlaytimeBattles { battles })
     })
-}
-
-// ── Steam seed + rescan (desktop only — userdata files live on desktops) ───
-
-/// Descend the real on-disk shape —
-/// `UserLocalConfigStore → Software → Valve → Steam → apps → <appid> →
-/// Playtime` — and parse the MINUTES value (verified against a live
-/// client: `Playtime` counts minutes, `Playtime2wks` likewise; the first
-/// cut read it as hours and every sane number tripped the garbage clamp).
-/// A file without the `UserLocalConfigStore` wrapper (hand-written or
-/// older layouts) falls back to a bare `Software` root. Pure so the
-/// descent is unit-tested: the app node is itself a MAP, so the value
-/// only ever resolves through its `Playtime` leaf.
-#[cfg(desktop)]
-fn steam_app_playtime_minutes(map: &Vdf, appid: &str) -> Option<u64> {
-    let root = map.get("UserLocalConfigStore").unwrap_or(map);
-    root.get("Software")?
-        .get("Valve")?
-        .get("Steam")?
-        .get("apps")?
-        .get(appid)?
-        .get("Playtime")?
-        .as_str()?
-        .parse::<u64>()
-        .ok()
-}
-
-/// Steam's recorded playtime for WoWS (appid 552990), in seconds — the
-/// largest figure across EVERY account's `localconfig.vdf`, because the
-/// account carrying the hours is not always the one that logged in last
-/// (and modern Steam clients no longer write `MostRecent` into
-/// `loginusers.vdf` at all, so there is no cheap "current account" to
-/// read). Best effort: ANY failure (no Steam, no userdata, unparsable
-/// vdf, missing field) returns `None` and the ledger starts local.
-#[cfg(desktop)]
-fn try_import_steam_total() -> Option<u64> {
-    scan_steam_playtime()
-}
-
-/// The largest recorded WoWS playtime across every Steam account in a
-/// `userdata/` root (seconds; `None` when nothing usable was found).
-#[cfg(desktop)]
-fn best_steam_playtime_at(userdata: &std::path::Path) -> Option<u64> {
-    let entries = std::fs::read_dir(userdata).ok()?;
-    let mut best: Option<u64> = None;
-    for entry in entries.flatten() {
-        let path = entry.path().join("config").join("localconfig.vdf");
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Some(map) = parse_vdf(&text) else {
-            continue;
-        };
-        let Some(seconds) = steam_app_playtime_minutes(&map, super::game_detect::STEAM_APPID)
-            .and_then(playtime_seconds_from_minutes)
-        else {
-            continue;
-        };
-        if best.is_none_or(|b| seconds > b) {
-            best = Some(seconds);
-        }
-    }
-    best
-}
-
-/// [`best_steam_playtime_at`] against the real Steam install's userdata root.
-#[cfg(desktop)]
-fn scan_steam_playtime() -> Option<u64> {
-    let steam = super::game_detect::resolve_steam_install()?;
-    best_steam_playtime_at(&steam.join("userdata"))
-}
-
-/// Steam counts the per-app playtime in MINUTES. Zero (never launched
-/// here) and anything beyond ~114 years of continuous play read as
-/// garbage and are rejected — a misparse must never poison the career
-/// total.
-#[cfg(desktop)]
-fn playtime_seconds_from_minutes(minutes: u64) -> Option<u64> {
-    if minutes == 0 || minutes > 60_000_000 {
-        return None;
-    }
-    Some(minutes * 60)
-}
-
-// ── minimal VDF reader ─────────────────────────────────────────────────────
-// Steam's "KeyValues" text format. appmanifest.acf only needs flat line
-// lookups (game_detect keeps its toy reader), but localconfig.vdf nests the
-// per-app data several levels deep, so this module carries a small real
-// parser: quoted tokens, `{ ... }` maps, `\"` `\\` `\n` `\r` `\t` escapes.
-// Unquoted tokens are accepted (the format allows them) but Steam's own
-// files never write them.
-
-/// A parsed VDF node: a string value or a nested map (insertion-ordered,
-/// looked up linearly — these files have tens of keys per level at most).
-#[cfg(desktop)]
-#[derive(Debug, Clone, PartialEq)]
-enum Vdf {
-    Str(String),
-    Map(Vec<(String, Vdf)>),
-}
-
-#[cfg(desktop)]
-impl Vdf {
-    fn get(&self, key: &str) -> Option<&Vdf> {
-        match self {
-            Vdf::Str(_) => None,
-            Vdf::Map(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
-        }
-    }
-
-    fn as_str(&self) -> Option<&str> {
-        match self {
-            Vdf::Str(s) => Some(s),
-            Vdf::Map(_) => None,
-        }
-    }
-}
-
-#[cfg(desktop)]
-fn parse_vdf(text: &str) -> Option<Vdf> {
-    // A UTF-8 BOM would weld itself onto the first key (the Lesta config
-    // reader strips one for the same reason); Steam's own files ship
-    // BOM-less, but a hand-exported one must not break the root lookup.
-    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let chars: Vec<char> = text.chars().collect();
-    let mut pos = 0usize;
-    let node = parse_vdf_map(&chars, &mut pos, true)?;
-    // Trailing garbage after the root map's close is tolerated (Steam files
-    // sometimes end with stray whitespace/comments) — only unterminated
-    // input fails.
-    Some(node)
-}
-
-/// Skip whitespace (VDF writes keys/values tab-indented, CRLF-separated).
-#[cfg(desktop)]
-fn skip_vdf_ws(chars: &[char], pos: &mut usize) {
-    while *pos < chars.len() && chars[*pos].is_whitespace() {
-        *pos += 1;
-    }
-}
-
-/// One `"quoted"` token with VDF escapes (or a bare token up to whitespace /
-/// a brace / a quote, for hand-edited files).
-#[cfg(desktop)]
-fn parse_vdf_token(chars: &[char], pos: &mut usize) -> Option<String> {
-    skip_vdf_ws(chars, pos);
-    match chars.get(*pos)? {
-        '"' => {
-            *pos += 1;
-            let mut out = String::new();
-            loop {
-                let c = *chars.get(*pos)?;
-                *pos += 1;
-                match c {
-                    '"' => return Some(out),
-                    '\\' => {
-                        let esc = *chars.get(*pos)?;
-                        *pos += 1;
-                        out.push(match esc {
-                            'n' => '\n',
-                            'r' => '\r',
-                            't' => '\t',
-                            other => other, // \\ and \" — anything else passes through
-                        });
-                    },
-                    other => out.push(other),
-                }
-            }
-        },
-        c if !c.is_whitespace() && *c != '{' && *c != '}' => {
-            let start = *pos;
-            while *pos < chars.len()
-                && !chars[*pos].is_whitespace()
-                && chars[*pos] != '{'
-                && chars[*pos] != '}'
-                && chars[*pos] != '"'
-            {
-                *pos += 1;
-            }
-            Some(chars[start..*pos].iter().collect())
-        },
-        _ => None,
-    }
-}
-
-/// Parse a `{ key value ... }` map. At the top level, EOF closes the map;
-/// nested maps require their closing `}`.
-#[cfg(desktop)]
-fn parse_vdf_map(chars: &[char], pos: &mut usize, top: bool) -> Option<Vdf> {
-    let mut entries: Vec<(String, Vdf)> = Vec::new();
-    loop {
-        skip_vdf_ws(chars, pos);
-        match chars.get(*pos) {
-            None => return top.then_some(Vdf::Map(entries)),
-            Some('}') => {
-                *pos += 1;
-                return Some(Vdf::Map(entries));
-            },
-            Some(_) => {
-                let key = parse_vdf_token(chars, pos)?;
-                skip_vdf_ws(chars, pos);
-                match chars.get(*pos) {
-                    Some('{') => {
-                        *pos += 1;
-                        let child = parse_vdf_map(chars, pos, false)?;
-                        entries.push((key, child));
-                    },
-                    Some('}') | None => return None, // key without a value
-                    Some(_) => {
-                        let value = parse_vdf_token(chars, pos)?;
-                        entries.push((key, Vdf::Str(value)));
-                    },
-                }
-            },
-        }
-    }
+    .await
+    .map_err(|e| format!("playtime battles task failed: {e}"))?
 }
 
 // ── tests ──────────────────────────────────────────────────────────────────
@@ -802,6 +772,7 @@ fn parse_vdf_map(chars: &[char], pos: &mut usize, top: bool) -> Option<Vdf> {
 mod tests {
     use super::*;
     use chrono::FixedOffset;
+    use wowsp_tauri_shared::GameInstallKind;
 
     /// +08:00 — a fixed offset so the day-split geometry is pinned no
     /// matter which timezone the test machine runs in.
@@ -959,94 +930,6 @@ mod tests {
         assert_eq!(overview_of(&store, now, &TZ).local_total_seconds, 900);
     }
 
-    #[test]
-    fn playtime_minutes_convert_with_a_sanity_clamp() {
-        assert_eq!(playtime_seconds_from_minutes(6_150), Some(369_000));
-        assert_eq!(playtime_seconds_from_minutes(60), Some(3600));
-        assert_eq!(
-            playtime_seconds_from_minutes(0),
-            None,
-            "never launched here"
-        );
-        assert_eq!(
-            playtime_seconds_from_minutes(60_000_001),
-            None,
-            "beyond ~114 years of continuous play is a misparse"
-        );
-    }
-
-    /// The REAL `localconfig.vdf` shape, captured from a live client: the
-    /// per-app data sits under a `UserLocalConfigStore` root and
-    /// `Playtime` counts MINUTES (as does `Playtime2wks`).
-    const LOCAL_CONFIG: &str = r#"
-"UserLocalConfigStore"
-{
-    "Software"
-    {
-        "Valve"
-        {
-            "Steam"
-            {
-                "apps"
-                {
-                    "552990"
-                    {
-                        "LastPlayed"     "1791202787"
-                        "Playtime2wks"   "866"
-                        "Playtime"       "134479"
-                        "BadgeData"      "02000000080d"
-                    }
-                    "753532"
-                    {
-                        "Playtime"       "0"
-                    }
-                }
-            }
-        }
-    }
-}
-"#;
-
-    #[test]
-    fn vdf_parser_reads_nested_maps_and_escapes() {
-        let map = parse_vdf(LOCAL_CONFIG).expect("parses");
-        let apps = map
-            .get("UserLocalConfigStore")
-            .and_then(|v| v.get("Software"))
-            .and_then(|v| v.get("Valve"))
-            .and_then(|v| v.get("Steam"))
-            .and_then(|v| v.get("apps"))
-            .expect("the apps level resolves");
-        // The 552990 node is itself a map — as_str() must refuse it, and
-        // its leaves must resolve through get().
-        let node = apps.get("552990").expect("the app node exists");
-        assert_eq!(node.as_str(), None, "a map node is not a string leaf");
-        assert_eq!(
-            node.get("Playtime").and_then(|v| v.as_str()),
-            Some("134479")
-        );
-        assert_eq!(
-            node.get("LastPlayed").and_then(|v| v.as_str()),
-            Some("1791202787")
-        );
-        assert!(apps.get("999999").is_none());
-
-        let escaped = parse_vdf(r#""k" "a\"b\\c\nd""#).expect("parses");
-        assert_eq!(escaped.get("k").unwrap().as_str(), Some("a\"b\\c\nd"));
-        assert!(
-            parse_vdf("\"key\"").is_none(),
-            "a key without a value fails"
-        );
-        assert!(
-            parse_vdf("\"a\" \"b\" }").is_some(),
-            "trailing junk tolerated"
-        );
-        assert!(parse_vdf("").is_some(), "an empty file is an empty root");
-        // A BOM must not weld itself onto the first key.
-        let bom = parse_vdf("\u{feff}\"UserLocalConfigStore\" { }").expect("parses");
-        assert!(bom.get("UserLocalConfigStore").is_some());
-    }
-
     // ── the observe() state machine (pure: injected clock + proc start) ────
 
     /// Drive [`observe_transition`] through a scripted tick sequence of
@@ -1160,83 +1043,237 @@ mod tests {
         );
     }
 
-    #[cfg(desktop)]
-    #[test]
-    fn steam_playtime_minutes_descend_the_real_shape() {
-        let map = parse_vdf(LOCAL_CONFIG).expect("parses");
-        // The REAL shape: minutes under a UserLocalConfigStore root (the
-        // seed's first cut grabbed the app's MAP node for a string; the
-        // second cut missed the wrapper and read hours — both silent
-        // no-ops this pins out).
-        assert_eq!(
-            steam_app_playtime_minutes(&map, super::super::game_detect::STEAM_APPID),
-            Some(134_479)
-        );
-        // Another app carries Playtime "0" (never launched — the clamp
-        // rejects it later); a missing app has nothing to resolve.
-        assert_eq!(steam_app_playtime_minutes(&map, "753532"), Some(0));
-        assert_eq!(steam_app_playtime_minutes(&map, "999999"), None);
-        // A wrapper-less (hand-written) file falls back to the bare root.
-        let bare = parse_vdf(
-            r#""Software" { "Valve" { "Steam" { "apps" { "1" { "Playtime" "42" } } } } }"#,
-        )
-        .expect("parses");
-        assert_eq!(steam_app_playtime_minutes(&bare, "1"), Some(42));
+    // ── the battle ledger (pure core: injected roots + cache) ─────────────
+
+    /// The replay container magic — mirror of replay.rs's private
+    /// `REPLAY_MAGIC`, kept in lock-step (a mismatched prefix is exactly how
+    /// the Lesta stand-in below degrades to a path-only row).
+    const TEST_REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
+
+    /// Write a synthetic WG-format replay (the exact framing replay.rs's
+    /// `read_first_block` parses): magic + 1-block count LE + block length
+    /// LE + descriptor JSON, with a stand-in packet stream trailing (which
+    /// the bounded header read never touches). Same byte pattern as
+    /// replay.rs's `lite_from_path_reads_bounded_first_block` fixture.
+    fn write_synthetic_replay(path: &std::path::Path, descriptor: &str) {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&TEST_REPLAY_MAGIC);
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // 1 block
+        bytes.extend_from_slice(&(descriptor.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(descriptor.as_bytes());
+        bytes.extend_from_slice(&[0u8; 64]); // stand-in packet stream
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, &bytes).expect("write synthetic replay");
     }
 
-    #[cfg(desktop)]
-    #[test]
-    fn best_steam_playtime_takes_the_largest_account() {
-        let tmp = std::env::temp_dir().join(format!(
-            "wowsp-test-steam-scan-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+    /// Unique temp replay root per test (this crate has no tempfile
+    /// dev-dependency), the same pattern replay.rs's walk tests use.
+    fn temp_battle_dir(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "wowsp-test-battles-{tag}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
-        let write_account = |id: &str, body: &str| {
-            let dir = tmp.join(id).join("config");
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("localconfig.vdf"), body).unwrap();
-        };
-        // One account with a wrapper-less stale record, one with the real
-        // shape carrying the main hours, both in MINUTES.
-        write_account(
-            "111",
-            r#""Software" { "Valve" { "Steam" { "apps" { "552990" { "Playtime" "150" } } } } }"#,
-        );
-        write_account(
-            "222",
-            r#""UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "552990" { "Playtime" "134479" } } } } } }"#,
-        );
-        // An account with no localconfig at all, and one with a garbage one.
-        std::fs::create_dir_all(tmp.join("333").join("config")).unwrap();
-        write_account("444", "not a vdf at all {");
-
-        let best = best_steam_playtime_at(&tmp);
-        assert_eq!(best, Some(134_479 * 60));
-
-        // An empty userdata root finds nothing.
-        let empty = tmp.join("empty");
-        std::fs::create_dir_all(&empty).unwrap();
-        assert_eq!(best_steam_playtime_at(&empty), None);
-        assert_eq!(best_steam_playtime_at(&tmp.join("missing")), None);
-
-        let _ = std::fs::remove_dir_all(&tmp);
+        ))
     }
 
-    /// Live-machine smoke (soft-pass without Steam, the same stance as
-    /// game_detect's detects_steam_install_on_this_machine): when a real
-    /// localconfig.vdf records WoWS, the scan MUST resolve it — this is
-    /// the exact path that silently no-oped twice.
-    #[cfg(all(desktop, target_os = "windows"))]
     #[test]
-    fn resolves_the_real_steam_record_on_this_machine() {
-        let Some(best) = scan_steam_playtime() else {
-            eprintln!("[steam-scan] no Steam WoWS record on this machine — ok");
-            return;
+    fn battles_count_rows_tag_their_install_and_sort_by_datetime() {
+        let dir = temp_battle_dir("owned");
+        write_synthetic_replay(
+            &dir.join("20261002_111111_PJSB719-Hotaka_15_NE_north.wowsreplay"),
+            r#"{"matchGroup":"ranked","vehicles":[]}"#,
+        );
+        write_synthetic_replay(
+            &dir.join("20261001_024940_PRSB910-Kremlin_15_NE_north.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"langyo","relation":0,"shipId":4182828960},
+                {"id":2,"name":":Sturdee:","relation":2,"shipId":2}
+            ]}"#,
+        );
+        // A datetime-less filename still counts, sinking to the end; a
+        // non-replay file never does.
+        write_synthetic_replay(&dir.join("renamed.wowsreplay"), r#"{"matchGroup":"pvp"}"#);
+        std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+
+        let steam = GameInstall {
+            kind: GameInstallKind::Steam,
+            path: r"C:\Games\WoWS".into(),
+            realm: Some("eu".into()),
         };
-        eprintln!("[steam-scan] resolved {best} seconds from real userdata");
-        assert!(best >= 3600, "a real record is at least an hour");
+        let mut cache = BattleCache::default();
+        let battles = battles_from_roots(&[(dir.clone(), Some(steam))], &mut cache);
+        assert_eq!(battles.len(), 3, "every replay container is one battle");
+        // Ascending by filename datetime; the undatable row sinks last.
+        assert_eq!(battles[0].date_time.as_deref(), Some("20261001_024940"));
+        assert_eq!(battles[1].date_time.as_deref(), Some("20261002_111111"));
+        assert_eq!(battles[2].date_time, None);
+        for b in &battles {
+            // Owner tagging: the exact GameInstall.path string + kind/realm.
+            assert_eq!(b.install_path, r"C:\Games\WoWS");
+            assert_eq!(b.kind, Some(GameInstallKind::Steam));
+            assert_eq!(b.realm.as_deref(), Some("eu"));
+        }
+        assert_eq!(battles[0].match_group.as_deref(), Some("pvp"));
+        assert_eq!(battles[0].bot_count, 1);
+        assert_eq!(battles[0].player_count, 2);
+        assert_eq!(battles[0].own_ship_id, Some(4182828960));
+        assert_eq!(battles[0].own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(battles[1].match_group.as_deref(), Some("ranked"));
+        // The scan upserted every seen file into the cache.
+        assert_eq!(cache.entries.len(), 3);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unowned_roots_answer_rows_without_kind_or_realm() {
+        let dir = temp_battle_dir("unowned");
+        write_synthetic_replay(
+            &dir.join("20261005_210000_solo.wowsreplay"),
+            r#"{"matchGroup":"pvp"}"#,
+        );
+        let mut cache = BattleCache::default();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1);
+        let b = &battles[0];
+        // No owning install: the root's own path stands in, kind/realm stay
+        // absent — the frontend scopes these rows only by date.
+        assert_eq!(b.install_path, dir.to_string_lossy());
+        assert_eq!(b.kind, None);
+        assert_eq!(b.realm, None);
+        assert_eq!(b.date_time.as_deref(), Some("20261005_210000"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A datetime-named container whose bytes are NOT the WG framing (the
+    /// Lesta `.korablireplay` stand-in): the header read fails and the row
+    /// degrades to date + empty descriptor fields — still a battle.
+    #[test]
+    fn an_unparseable_container_still_counts_with_its_filename_datetime() {
+        let dir = temp_battle_dir("lesta");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("20260930_080000_PRSB910-Kremlin_XX.korablireplay"),
+            b"lesta binary framing",
+        )
+        .unwrap();
+        let mut cache = BattleCache::default();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1);
+        let b = &battles[0];
+        assert_eq!(b.date_time.as_deref(), Some("20260930_080000"));
+        assert_eq!(b.match_group, None);
+        assert_eq!(b.scenario, None);
+        assert_eq!(b.event_type, None);
+        assert_eq!(b.bot_count, 0);
+        assert_eq!(b.scripted_unit_count, 0);
+        assert_eq!(b.own_ship_id, None);
+        assert_eq!(b.own_ship_name, None);
+        assert_eq!(b.player_count, 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Cache semantics: a hit (len + mtime BOTH matching) answers the STORED
+    /// parse verbatim — proven by a deliberately mismatching field no
+    /// on-disk re-read could produce — and any identity drift re-parses.
+    #[test]
+    fn a_cache_hit_answers_the_stored_parse_without_rereading() {
+        let dir = temp_battle_dir("hit");
+        let path = dir.join("20261003_120000_cache_hit.wowsreplay");
+        write_synthetic_replay(&path, r#"{"matchGroup":"pvp","vehicles":[]}"#);
+        let key = path.to_string_lossy().into_owned();
+        let meta = std::fs::metadata(&path).unwrap();
+        let mtime_ms = meta
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let mut cache = BattleCache::default();
+        cache.entries.insert(
+            key.clone(),
+            BattleCacheEntry {
+                len: meta.len(),
+                mtime_ms,
+                lite: ReplayMetaLite {
+                    path: key.clone(),
+                    date_time: Some("20261003_120000".into()),
+                    match_group: Some("cached".into()),
+                    map_name: None,
+                    map_id: None,
+                    scenario: None,
+                    event_type: None,
+                    bot_count: 0,
+                    scripted_unit_count: 0,
+                    own_ship_id: None,
+                    own_ship_name: None,
+                    player_count: 0,
+                },
+            },
+        );
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(
+            battles[0].match_group.as_deref(),
+            Some("cached"),
+            "the cached parse wins over the on-disk descriptor — no re-read"
+        );
+        // An mtime drift (stale identity) forces the re-parse.
+        cache.entries.get_mut(&key).unwrap().mtime_ms = 1;
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles[0].match_group.as_deref(), Some("pvp"));
+        assert_eq!(
+            cache.entries.get(&key).unwrap().mtime_ms,
+            mtime_ms,
+            "the miss upserted the fresh identity"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Prune semantics: a previously cached path that no longer exists on
+    /// disk disappears from the cache after a scan (the file's row goes too).
+    #[test]
+    fn entries_for_vanished_files_are_pruned_after_a_scan() {
+        let dir = temp_battle_dir("prune");
+        write_synthetic_replay(
+            &dir.join("20261004_100000_gone.wowsreplay"),
+            r#"{"matchGroup":"pvp"}"#,
+        );
+        let mut cache = BattleCache::default();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1);
+        assert_eq!(cache.entries.len(), 1);
+        std::fs::remove_file(dir.join("20261004_100000_gone.wowsreplay")).unwrap();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert!(battles.is_empty());
+        assert!(cache.entries.is_empty(), "the vanished file was pruned");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn battle_roots_overlap_is_symmetric_across_spellings_and_nesting() {
+        let replays = Path::new(r"C:\Games\World of Warships\replays");
+        // Same folder, different casing / separators / trailing slash.
+        assert!(battle_roots_overlap(
+            replays,
+            Path::new(r"c:/games/world of warships\replays\")
+        ));
+        // Nesting counts in both directions (an install root vs its own
+        // `replays/`, whichever order the roots arrive in).
+        assert!(battle_roots_overlap(
+            Path::new(r"C:\Games\World of Warships"),
+            replays
+        ));
+        assert!(battle_roots_overlap(
+            replays,
+            Path::new(r"C:\Games\World of Warships")
+        ));
+        // Sibling folders that merely share a prefix stay distinct.
+        assert!(!battle_roots_overlap(
+            replays,
+            Path::new(r"C:\Games\World of Warships 2\replays")
+        ));
     }
 }

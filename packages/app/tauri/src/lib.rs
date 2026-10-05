@@ -430,10 +430,10 @@ pub fn run() {
             commands::session::get_session_state,
             commands::session::sync_active_account,
             // Playtime ledger (游玩时间 view, commands/playtime.rs) —
-            // cross-platform: mobile answers the fresh local ledger.
+            // cross-platform: mobile answers the fresh local ledger, and
+            // the battle ledger scans the managed replays dir only.
             commands::playtime::playtime_overview,
-            // The 游玩时间 view's low-total rescan (Steam userdata).
-            commands::playtime::playtime_import_steam,
+            commands::playtime::playtime_battles,
             // The tray panel's action buttons (desktop only — the panel
             // window itself is tray-bound).
             #[cfg(desktop)]

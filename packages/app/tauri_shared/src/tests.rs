@@ -2412,3 +2412,87 @@ fn playtime_overview_pins_the_exact_wire_key_set() {
     assert!(fresh["lastLaunch"].is_null());
     assert!(fresh["importedAt"].is_null());
 }
+
+/// The replay-derived battle ledger's row: one entry per .wowsreplay. Pin
+/// the exact key set so an additive field fails until the TS mirror learns
+/// it (client.ts: PlaytimeBattle).
+#[test]
+fn playtime_battle_pins_the_exact_wire_key_set() {
+    let v = round_trips(PlaytimeBattle {
+        install_path: r"C:\Games\WoWS".into(),
+        kind: Some(GameInstallKind::Steam),
+        realm: Some("eu".into()),
+        date_time: Some("20261001_024940".into()),
+        match_group: Some("pvp".into()),
+        scenario: Some("domination_3point".into()),
+        event_type: Some("PCVE027".into()),
+        bot_count: 6,
+        scripted_unit_count: 4,
+        own_ship_id: Some(4_182_828_960),
+        own_ship_name: Some("langyo".into()),
+        player_count: 7,
+    });
+    assert_exact_keys(
+        &v,
+        &[
+            "installPath",
+            "kind",
+            "realm",
+            "dateTime",
+            "matchGroup",
+            "scenario",
+            "eventType",
+            "botCount",
+            "scriptedUnitCount",
+            "ownShipId",
+            "ownShipName",
+            "playerCount",
+        ],
+    );
+    assert_eq!(v["kind"], "steam");
+    assert_eq!(v["ownShipId"], 4_182_828_960_i64);
+
+    // An unowned, header-less row (Lesta container): nulls and zeros, not
+    // missing keys — such rows still count as battles.
+    let bare = round_trips(PlaytimeBattle {
+        install_path: r"D:\Replays".into(),
+        kind: None,
+        realm: None,
+        date_time: None,
+        match_group: None,
+        scenario: None,
+        event_type: None,
+        bot_count: 0,
+        scripted_unit_count: 0,
+        own_ship_id: None,
+        own_ship_name: None,
+        player_count: 0,
+    });
+    assert!(bare["kind"].is_null());
+    assert!(bare["dateTime"].is_null());
+    assert_eq!(bare["playerCount"], 0);
+}
+
+/// The `playtime_battles` reply envelope: the battle list under one key.
+#[test]
+fn playtime_battles_pins_the_exact_wire_key_set() {
+    let v = round_trips(PlaytimeBattles {
+        battles: vec![PlaytimeBattle {
+            install_path: r"C:\Games\WoWS".into(),
+            kind: Some(GameInstallKind::Lesta),
+            realm: None,
+            date_time: Some("20260930_080000".into()),
+            match_group: None,
+            scenario: None,
+            event_type: None,
+            bot_count: 0,
+            scripted_unit_count: 0,
+            own_ship_id: None,
+            own_ship_name: None,
+            player_count: 0,
+        }],
+    });
+    assert_exact_keys(&v, &["battles"]);
+    assert_eq!(v["battles"][0]["kind"], "lesta");
+    assert_eq!(v["battles"][0]["dateTime"], "20260930_080000");
+}

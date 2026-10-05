@@ -2,6 +2,8 @@
   "cards": {
     "total": "Temps de jeu total",
     "launched": "{n} lancements",
+    "battles": "Batailles",
+    "battlesShips": "{n} navires utilisés",
     "dailyAvg": "Moyenne par jour",
     "daysPlayed": "{n} jours joués",
     "streak": "Plus longue série",
@@ -23,11 +25,19 @@
   "weekdayLast": "Dim",
   "importNote": "≈{hours} h d'historique importées depuis Steam le {date} ; les graphiques couvrent uniquement les jours suivis localement.",
   "emptyTitle": "Aucun temps de jeu",
-  "emptyHint": "WoWSP enregistre automatiquement le temps de jeu (du lancement à la fermeture du client, comme Steam) ; au premier lancement, il tente aussi d'importer votre total historique depuis Steam.",
-  "scanHint": "Le temps de jeu enregistré semble faible — l'historique n'est peut-être pas encore importé.",
-  "scanAction": "Analyser Steam et importer",
-  "scanBusy": "Analyse…",
-  "scanDone": "{v} d'historique importées depuis Steam.",
-  "scanNone": "Aucun enregistrement Steam importable trouvé.",
-  "scanClose": "Fermer"
+  "emptyHint": "WoWSP enregistre automatiquement le temps de jeu (du lancement à la fermeture du client) ; les batailles sont comptées à partir des replays enregistrés dans le dossier replays de chaque client.",
+  "battlesTitle": "Répartition des batailles",
+  "battlesEmpty": "Aucune bataille pour l'instant — les batailles sont comptées à partir des replays du dossier replays de chaque client (les mêmes fichiers que la revue des replays).",
+  "battlesNoneSelected": "Le client sélectionné n'a pas encore de replays.",
+  "scopeAll": "Tous les clients",
+  "scopeSelected": "Serveur sélectionné uniquement",
+  "scopeSelectedWith": "Serveur sélectionné uniquement · {label}",
+  "scopeUnavailable": "Sélectionnez d'abord un client (la liste des chemins de jeu dans les paramètres).",
+  "breakdown": {
+    "byType": "Par type de navire",
+    "byNation": "Par nation",
+    "byTier": "Par niveau",
+    "byMode": "Par mode",
+    "unknown": "Inconnu"
+  }
 }

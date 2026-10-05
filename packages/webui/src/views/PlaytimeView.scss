@@ -182,45 +182,193 @@
   }
 }
 
-/* ── Low-total Steam-rescan hint (bottom of the panel) ─────────────────── */
-.playtime-view__scan {
+/* ── Scope toolbar (battle-derived content only — see the view's docs):
+   a slim right-aligned row above the cards; the button opens a two-option
+   menu (all installs / selected install) through hikari HkPopover. ─────── */
+.playtime-view__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 28px;
+}
+
+.playtime-view__scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-surface) / 60%);
+  color: rgb(var(--color-text) / 80%);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background var(--duration-short) var(--ease-standard),
+    color var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-text) / 6%);
+  }
+
+  &-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 18rem;
+  }
+
+  &-chevron {
+    flex: none;
+    color: rgb(var(--color-muted));
+    transition: transform var(--duration-short) var(--ease-standard);
+
+    &[data-open] {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+/* HkPopover paints the panel chrome (glass surface, border, shadow) but no
+   inner spacing — the menu content owns it (same contract as the filter
+   chips' popups). */
+.playtime-view__scope-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  min-width: 13rem;
+}
+
+.playtime-view__scope-opt {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 8px 10px 16px;
-  border: 1px solid rgb(var(--color-primary) / 30%);
-  background: rgb(var(--color-primary) / 6%);
-  border-radius: var(--radius-md);
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgb(var(--color-text) / 85%);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-short) var(--ease-standard);
 
-  &-text {
-    flex: 1;
-    margin: 0;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-text) / 0.75);
+  &:hover:not(:disabled) {
+    background: rgb(var(--color-text) / 6%);
+  }
+
+  &[data-active] {
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-primary) / 12%);
+    font-weight: 600;
+  }
+
+  &:disabled {
+    color: rgb(var(--color-muted) / 70%);
+    cursor: not-allowed;
+  }
+
+  &-label {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &-check {
+    flex: none;
+    color: rgb(var(--color-primary));
+  }
+}
+
+.playtime-view__scope-hint {
+  margin-top: 4px;
+  padding: 0 10px;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted) / 90%);
+}
+
+/* ── Battle breakdown (replay-derived rows: type / nation / tier / mode) ── */
+.playtime-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 24px;
+
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     min-width: 0;
   }
 
-  /* The panel's own button is visually quieter than hikari's inside a
-     tinted strip — plain text-button chrome, hover-lifted. */
-  &-close {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
+  &__group-title {
+    margin: 0 0 2px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
     color: rgb(var(--color-muted));
-    cursor: pointer;
-    transition:
-      background var(--duration-short) var(--ease-standard),
-      color var(--duration-short) var(--ease-standard);
+  }
 
-    &:hover {
-      color: rgb(var(--color-text));
-      background: rgb(var(--color-text) / 6%);
-    }
+  /* Label | bar | count | pct on one line; the bar flexes, numbers stay
+     tabular and never wrap. */
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(4.5rem, auto) 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-xs);
+  }
+
+  &__label {
+    color: rgb(var(--color-text) / 85%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__bar {
+    height: 8px;
+    border-radius: 999px;
+    background: rgb(var(--color-text) / 8%);
+    overflow: hidden;
+  }
+
+  /* Type/nation/tier bars share the theme accent; mode bars carry the
+     canonical mode colour inline (modeColors). */
+  &__fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: rgb(var(--color-primary) / 70%);
+  }
+
+  &__count {
+    color: rgb(var(--color-text));
+    font-variant-numeric: tabular-nums;
+    min-width: 2rem;
+    text-align: right;
+  }
+
+  &__pct {
+    color: rgb(var(--color-muted));
+    font-variant-numeric: tabular-nums;
+    min-width: 2.5rem;
+    text-align: right;
+  }
+
+  &__empty {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+  }
+}
+
+@media (max-width: 767px) {
+  .playtime-breakdown {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -7,6 +7,8 @@ export type {
   PlaytimeDay,
   PlaytimeLaunch,
   PlaytimeOverview,
+  PlaytimeBattle,
+  PlaytimeBattles,
   AccountProfileRef,
   PlayingAccount,
   SessionPlayer,

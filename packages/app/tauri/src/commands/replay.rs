@@ -461,15 +461,15 @@ pub async fn list_replays(
 ) -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(move || {
         let dir = resolve_replay_dir(dir)?;
-        let mut entries: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+        let mut entries: Vec<WalkedReplay> = Vec::new();
         walk_replays(&dir, &mut entries);
         use std::cmp::Reverse;
-        entries.sort_by_key(|(_, t)| Reverse(*t));
+        entries.sort_by_key(|e| Reverse(e.mtime));
         let limit = limit.unwrap_or(200);
         Ok(entries
             .into_iter()
             .take(limit)
-            .map(|(p, _)| p.to_string_lossy().into_owned())
+            .map(|e| e.path.to_string_lossy().into_owned())
             .collect())
     })
     .await
@@ -505,17 +505,17 @@ pub(crate) fn scan_replays_meta(
     limit: Option<usize>,
 ) -> Result<(PathBuf, Vec<ReplayMetaLite>), String> {
     let dir = resolve_replay_dir(dir)?;
-    let mut entries: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+    let mut entries: Vec<WalkedReplay> = Vec::new();
     walk_replays(&dir, &mut entries);
     use std::cmp::Reverse;
-    entries.sort_by_key(|(_, t)| Reverse(*t));
+    entries.sort_by_key(|e| Reverse(e.mtime));
     let limit = limit.unwrap_or(200);
     Ok((
         dir,
         entries
             .into_iter()
             .take(limit)
-            .map(|(p, _)| lite_from_path(&p))
+            .map(|e| lite_from_path(&e.path))
             .collect(),
     ))
 }
@@ -568,7 +568,11 @@ fn read_first_block(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
 /// descriptor-JSON block. On any read/parse failure, returns a lite entry with
 /// only the path + filename-derived datetime populated, so the file is still
 /// listed.
-fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
+///
+/// `pub(crate)`: the playtime battle ledger (commands/playtime.rs) shares
+/// this exact projection for its replay-derived rows — never duplicate the
+/// header parse.
+pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
     let path_str = path.to_string_lossy().into_owned();
     let date_time = parse_datetime_from_filename(&path_str);
     // The walk only surfaces replay containers (`*.wowsreplay`, and the
@@ -875,7 +879,20 @@ pub(crate) fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf, String>
     default_replay_dir()
 }
 
-fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) {
+/// One replay file surfaced by [`walk_replays`]: its path, modification
+/// time (the listings' newest-first sort key) and length in bytes (the
+/// playtime battle ledger's cache-identity half, alongside the mtime).
+pub(crate) struct WalkedReplay {
+    pub path: PathBuf,
+    pub mtime: std::time::SystemTime,
+    pub len: u64,
+}
+
+/// Recursively collect every replay container under `dir` (both clients'
+/// extensions; the live `temp.*` files are skipped — see below). Shared by
+/// the listing commands, the pairing server's replay route and the playtime
+/// battle ledger (single source of truth — never duplicate the walk).
+pub(crate) fn walk_replays(dir: &PathBuf, out: &mut Vec<WalkedReplay>) {
     let Ok(rd) = fs::read_dir(dir) else {
         return;
     };
@@ -901,7 +918,11 @@ fn walk_replays(dir: &PathBuf, out: &mut Vec<(PathBuf, std::time::SystemTime)>) 
                 continue;
             }
             if let Ok(mtime) = meta.modified() {
-                out.push((path, mtime));
+                out.push(WalkedReplay {
+                    path,
+                    mtime,
+                    len: meta.len(),
+                });
             }
         }
     }
@@ -1077,7 +1098,7 @@ mod tests {
         walk_replays(&dir, &mut out);
         let mut names: Vec<_> = out
             .iter()
-            .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .map(|e| e.path.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
         names.sort();
         assert_eq!(

@@ -2,6 +2,8 @@
   "cards": {
     "total": "Total playtime",
     "launched": "Launched {n} times",
+    "battles": "Battles",
+    "battlesShips": "{n} ships used",
     "dailyAvg": "Daily average",
     "daysPlayed": "Played on {n} days",
     "streak": "Longest streak",
@@ -23,11 +25,19 @@
   "weekdayLast": "Sun",
   "importNote": "Imported ~{hours} h of historical playtime from Steam on {date}; the charts only cover locally tracked days.",
   "emptyTitle": "No playtime yet",
-  "emptyHint": "WoWSP records playtime automatically while the game runs (from client launch to exit, matching Steam's own accounting); on first run it also tries to import your historical total from Steam.",
-  "scanHint": "The recorded playtime looks low — historical data may not be imported yet.",
-  "scanAction": "Scan Steam and import",
-  "scanBusy": "Scanning…",
-  "scanDone": "Imported {v} of historical playtime from Steam.",
-  "scanNone": "No importable Steam records found.",
-  "scanClose": "Dismiss"
+  "emptyHint": "WoWSP records playtime automatically while the game runs (from client launch to exit); battles are counted from the replay files in each client's replays folder.",
+  "battlesTitle": "Battle breakdown",
+  "battlesEmpty": "No battles yet — battles are counted from the replays saved in each client's replays folder (the same files the replay review view reads).",
+  "battlesNoneSelected": "The selected client has no replays yet.",
+  "scopeAll": "All clients",
+  "scopeSelected": "Selected client only",
+  "scopeSelectedWith": "Selected client only · {label}",
+  "scopeUnavailable": "Select a client first (the game-path list in Settings).",
+  "breakdown": {
+    "byType": "By ship type",
+    "byNation": "By nation",
+    "byTier": "By tier",
+    "byMode": "By battle mode",
+    "unknown": "Unknown"
+  }
 }

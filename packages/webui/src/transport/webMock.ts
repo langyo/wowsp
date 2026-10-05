@@ -127,7 +127,7 @@ function rpcError(cmd: string, message: string): Error {
 }
 
 /** In-process event bus the WebTransport's `listen` subscribes to (the
- *  browser has no Tauri push source; the mock emits pairing progress here). */
+ * browser has no Tauri push source; the mock emits pairing progress here). */
 type MockListener = (payload: unknown) => void;
 const listeners = new Map<number, { event: string; fn: MockListener }>();
 let listenerSeq = 0;
@@ -141,6 +141,100 @@ export function mockListen(event: string, fn: MockListener): () => void {
 function emitMockEvent(event: string, payload: unknown): void {
   for (const l of listeners.values()) if (l.event === event) l.fn(payload);
 }
+
+/** playtime_battles fixture — a few rows across two obviously-fake installs
+ *  (shipIds are real offline-DB ids so the view's breakdown labels resolve;
+ *  the last row is an unparsed Lesta replay: descriptor fields null, only
+ *  the filename's dateTime recovered). Sorted dateTime asc per contract. */
+const MOCK_BATTLES = {
+  battles: [
+    {
+      installPath: "C:\\MockGames\\WoWS (Steam)",
+      kind: "steam",
+      realm: "asia",
+      dateTime: "20260910_201803",
+      matchGroup: "pvp",
+      scenario: "domination_3point",
+      eventType: null,
+      botCount: 0,
+      scriptedUnitCount: 0,
+      ownShipId: 4276041424, // Yamato
+      ownShipName: "Yamato",
+      playerCount: 12,
+    },
+    {
+      installPath: "C:\\MockGames\\WoWS (Lesta)",
+      kind: "lesta",
+      realm: "ru",
+      dateTime: "20260911_190000",
+      matchGroup: "pve",
+      scenario: "pcvo009_op_02_02",
+      eventType: "PCVO009_OP_02_02",
+      botCount: 8,
+      scriptedUnitCount: 8,
+      ownShipId: 4179605488, // Midway
+      ownShipName: "Midway",
+      playerCount: 7,
+    },
+    {
+      installPath: "C:\\MockGames\\WoWS (Steam)",
+      kind: "steam",
+      realm: "asia",
+      dateTime: "20260912_184417",
+      matchGroup: "pve",
+      scenario: "domination_2point",
+      eventType: null,
+      botCount: 11,
+      scriptedUnitCount: 0,
+      ownShipId: 4281219056, // Gearing
+      ownShipName: "Gearing",
+      playerCount: 9,
+    },
+    {
+      installPath: "C:\\MockGames\\WoWS (Steam)",
+      kind: "steam",
+      realm: "asia",
+      dateTime: "20260915_221301",
+      matchGroup: "pvp",
+      scenario: "domination_3point",
+      eventType: null,
+      botCount: 0,
+      scriptedUnitCount: 0,
+      ownShipId: 3760109008, // Stalingrad
+      ownShipName: "Stalingrad",
+      playerCount: 12,
+    },
+    {
+      installPath: "C:\\MockGames\\WoWS (Steam)",
+      kind: "steam",
+      realm: "asia",
+      dateTime: "20260918_213010",
+      matchGroup: "ranked",
+      scenario: null,
+      eventType: null,
+      botCount: 0,
+      scriptedUnitCount: 0,
+      ownShipId: 4282267344, // Shimakaze
+      ownShipName: "Shimakaze",
+      playerCount: 8,
+    },
+    {
+      // Unparsed Lesta replay: the parser recovered nothing but the name.
+      installPath: "C:\\MockGames\\WoWS (Lesta)",
+      kind: "lesta",
+      realm: "ru",
+      dateTime: "20260919_175512",
+      matchGroup: null,
+      scenario: null,
+      eventType: null,
+      botCount: 0,
+      scriptedUnitCount: 0,
+      ownShipId: null,
+      ownShipName: null,
+      playerCount: 0,
+    },
+  ],
+};
 
 /** Derive a ReplayMetaLite entry for an imported/pulled mock file (the mock
  *  has no parser — recover what the filename carries, leave the rest null). */
@@ -319,5 +413,11 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
     const config = args.config as { enabled?: boolean } | undefined;
     mockRelayConfig = { enabled: Boolean(config?.enabled) };
     return null;
+  },
+
+  // ── 游玩时间 view's replay-derived battles (static fixture; the ledger
+  //    overview itself stays unserved so the empty state is still testable).
+  async playtime_battles() {
+    return MOCK_BATTLES;
   },
 };
