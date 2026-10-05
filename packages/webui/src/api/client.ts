@@ -1596,6 +1596,13 @@ export const api = {
    *  series the 游玩时间 view renders. */
   getPlaytimeOverview: () =>
     transport.invoke<PlaytimeOverview>(RPC.playtime_overview),
+  /** Scan the Steam client's userdata for recorded WoWS playtime and import
+   *  it when it exceeds the career total the ledger would report (the
+   *  游玩时间 view's low-total hint); Steam's figure is the career truth, so
+   *  the local window is backed out of the import. Answers the refreshed
+   *  overview either way — compare totals for the feedback. */
+  playtimeImportSteam: () =>
+    transport.invoke<PlaytimeOverview>(RPC.playtime_import_steam),
   /** Rust session hub snapshot (commands/session.rs) — the running process
    *  plus the resolved "who is playing" identity. Live updates arrive via
    *  listenSessionChanged; this is the boot/fetch side. */

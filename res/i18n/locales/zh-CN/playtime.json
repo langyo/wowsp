@@ -23,5 +23,11 @@
   "weekdayLast": "周日",
   "importNote": "已从 Steam 导入历史总时长约 {hours} 小时（{date} 导入），图表仅统计本地记录的时段。",
   "emptyTitle": "暂无游戏记录",
-  "emptyHint": "游戏运行期间 WoWSP 会自动记录时长（从客户端启动到退出，与 Steam 口径一致）；首次启动时也会尝试从 Steam 导入历史总时长。"
+  "emptyHint": "游戏运行期间 WoWSP 会自动记录时长（从客户端启动到退出，与 Steam 口径一致）；首次启动时也会尝试从 Steam 导入历史总时长。",
+  "scanHint": "当前记录的游戏时长偏低，历史记录可能尚未导入。",
+  "scanAction": "扫描 Steam 记录并导入",
+  "scanBusy": "扫描中…",
+  "scanDone": "已从 Steam 导入 {v} 的历史记录。",
+  "scanNone": "没有在 Steam 中找到更多可导入的记录。",
+  "scanClose": "不再提示"
 }

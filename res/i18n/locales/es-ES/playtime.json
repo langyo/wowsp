@@ -23,5 +23,11 @@
   "weekdayLast": "Dom",
   "importNote": "Se importaron ~{hours} h de historial desde Steam el {date}; los gráficos cubren solo los días registrados localmente.",
   "emptyTitle": "Aún no hay registros",
-  "emptyHint": "WoWSP registra automáticamente el tiempo de juego (desde el inicio del cliente hasta su cierre, como hace Steam); en el primer inicio también intenta importar el total histórico desde Steam."
+  "emptyHint": "WoWSP registra automáticamente el tiempo de juego (desde el inicio del cliente hasta su cierre, como hace Steam); en el primer inicio también intenta importar el total histórico desde Steam.",
+  "scanHint": "El tiempo de juego registrado parece bajo: puede que el historial aún no se haya importado.",
+  "scanAction": "Escanear Steam e importar",
+  "scanBusy": "Escaneando…",
+  "scanDone": "Se importaron {v} de historial desde Steam.",
+  "scanNone": "No se encontraron registros de Steam importables.",
+  "scanClose": "Cerrar"
 }

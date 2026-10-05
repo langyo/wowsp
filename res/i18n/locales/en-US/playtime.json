@@ -23,5 +23,11 @@
   "weekdayLast": "Sun",
   "importNote": "Imported ~{hours} h of historical playtime from Steam on {date}; the charts only cover locally tracked days.",
   "emptyTitle": "No playtime yet",
-  "emptyHint": "WoWSP records playtime automatically while the game runs (from client launch to exit, matching Steam's own accounting); on first run it also tries to import your historical total from Steam."
+  "emptyHint": "WoWSP records playtime automatically while the game runs (from client launch to exit, matching Steam's own accounting); on first run it also tries to import your historical total from Steam.",
+  "scanHint": "The recorded playtime looks low — historical data may not be imported yet.",
+  "scanAction": "Scan Steam and import",
+  "scanBusy": "Scanning…",
+  "scanDone": "Imported {v} of historical playtime from Steam.",
+  "scanNone": "No importable Steam records found.",
+  "scanClose": "Dismiss"
 }

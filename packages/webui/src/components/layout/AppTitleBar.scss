@@ -38,62 +38,48 @@
 }
 
 /* Dashboard section's view switch (我的水表 ↔ 游玩时间), dead-center on the
-   bar. `.hk-titlebar` is position:fixed, so the absolute box centers on the
-   WINDOW, not on the title block it rides behind in the left slot. The
-   track itself is pointer-events:none — its empty parts stay draggable bar
-   surface — while each button re-enables hits (and satisfies the wrapper's
-   closest("button") drag guard). Compact 22px triggers inside a 32px bar;
-   hidden on the phone layout where the bar hosts the hamburger drawer
-   controls instead. */
+   bar — hikari's own segmented HkTabs (the dashboard date-range control),
+   so the sliding indicator, tactile press feedback and keyboard handling
+   are the stock motion. `.hk-titlebar` is position:fixed, so the absolute
+   wrapper centers on the WINDOW, not on the title block it rides behind in
+   the left slot. The overrides below only COMPACT the shared chrome for
+   the 32px caption (hikari has no size prop); hidden on the phone layout
+   where the bar hosts the hamburger drawer controls instead. */
 .app-titlebar__views {
   position: absolute;
   left: 50%;
-  top: 0;
-  transform: translateX(-50%);
-  height: var(--app-titlebar-h, 32px);
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgb(var(--color-text) / 5%);
-  pointer-events: none;
-}
-
-.app-titlebar__view {
-  pointer-events: auto;
+  top: 50%;
+  transform: translate(-50%, -50%);
   /* The hamburger carries this for engines that HONOR CSS app-region
      (WKWebView/WebKitGTK drag the bar natively) — without it a switch
-     click would drag the window instead of navigating there. */
+     click would drag the window instead of navigating there. The JS drag
+     path (WebView2 ignores app-region) is cut off by the wrapper's
+     pointerdown stopPropagation in the TSX. */
   -webkit-app-region: no-drag;
   app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 10px;
-  border: none;
+  /* Shrink-wrap so the no-drag box hugs the pill. */
+  width: max-content;
+}
+
+.app-titlebar__views .hk-tabs-list {
+  padding: 3px;
   border-radius: 999px;
-  background: transparent;
-  color: rgb(var(--color-text) / 0.65);
+}
+
+.app-titlebar__views .hk-tabs-trigger {
+  height: 20px;
+  padding: 0 10px;
   font-size: var(--text-2xs);
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease;
+  border-radius: 999px;
+}
 
-  &:hover {
-    color: rgb(var(--color-text));
-    background: rgb(var(--color-text) / 6%);
-  }
-
-  &.is-active {
-    background: rgb(var(--color-primary) / 14%);
-    color: rgb(var(--color-primary));
-    font-weight: 600;
-  }
+/* The sliding indicator rides the same compact metrics: its stock offsets
+   are the track's --space-2/-4 paddings, restated here against the 3px
+   list padding so the pill and the sliding pill stay concentric. */
+.app-titlebar__views .hk-tabs-indicator {
+  top: 3px;
+  height: calc(100% - 6px);
+  border-radius: 999px;
 }
 
 @media (max-width: 767px) {

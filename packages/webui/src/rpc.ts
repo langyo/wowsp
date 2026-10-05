@@ -19,6 +19,7 @@ export const RPC = {
   get_game_process: "get_game_process",
   // Playtime ledger (commands/playtime.rs) — the 游玩时间 view's data.
   playtime_overview: "playtime_overview",
+  playtime_import_steam: "playtime_import_steam",
   // Rust session hub (commands/session.rs) + the tray panel actions.
   get_session_state: "get_session_state",
   sync_active_account: "sync_active_account",

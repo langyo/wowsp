@@ -536,7 +536,69 @@ pub fn playtime_overview() -> PlaytimeOverview {
     current_overview()
 }
 
-// ── Steam seed (desktop only — userdata files live on desktop machines) ────
+/// Scan the Steam client's userdata for recorded WoWS playtime and import it
+/// when it EXCEEDS what the ledger already carries. This is the muscle behind
+/// the 游玩时间 view's low-total hint: the once-only first-run seed only reads
+/// the MostRecent account (and can find nothing on a non-Steam machine), so
+/// the user gets an explicit, retryable path instead of a permanent small
+/// number. Answers the refreshed overview either way — the webui compares
+/// totals for its feedback. Cross-platform command: mobile finds no Steam
+/// userdata and answers the unchanged overview.
+#[tauri::command]
+pub fn playtime_import_steam() -> PlaytimeOverview {
+    // Scan OUTSIDE the state lock — the walk reads a handful of files per
+    // Steam account and must not stall the 3 s poller's observe path.
+    #[cfg(desktop)]
+    let scanned = scan_steam_playtime();
+    #[cfg(not(desktop))]
+    let scanned = None;
+    let now = now_unix();
+    with_state(|state| {
+        if let Some(seconds) = scanned {
+            // Steam's number IS the career total: import only when it
+            // exceeds the total the ledger would currently report (the
+            // local sessions may already exceed a stale Steam record —
+            // importing those would double-count), and back the local
+            // window OUT of it so the combined total lands exactly on the
+            // Steam figure and keeps growing with new local sessions.
+            let snapshot = overview_of(&state.store, now, &Local);
+            if seconds > snapshot.total_seconds {
+                tracing::info!(
+                    seconds,
+                    total = snapshot.total_seconds,
+                    "playtime rescan imported a larger Steam career total"
+                );
+                state.store.source = PlaytimeSource::Steam;
+                state.store.imported_total_seconds = seconds - snapshot.local_total_seconds;
+                state.store.imported_at = Some(now);
+                if let Err(e) = persist_store(&state.store) {
+                    tracing::warn!(error = %e, "playtime rescan persist failed");
+                }
+            }
+        }
+        overview_of(&state.store, now, &Local)
+    })
+}
+
+// ── Steam seed + rescan (desktop only — userdata files live on desktops) ───
+
+/// Descend `Software → Valve → Steam → apps → <appid> → Playtime` and parse
+/// the hours value. Pure so the descent composition is unit-tested: the app
+/// node is itself a MAP, so the value only ever resolves through its
+/// `Playtime` leaf (grabbing the app node with `as_str` was the silent no-op
+/// the first cut of the seed shipped).
+#[cfg(desktop)]
+fn playtime_hours_of(map: &Vdf, appid: &str) -> Option<f64> {
+    map.get("Software")?
+        .get("Valve")?
+        .get("Steam")?
+        .get("apps")?
+        .get(appid)?
+        .get("Playtime")?
+        .as_str()?
+        .parse::<f64>()
+        .ok()
+}
 
 /// Steam's recorded playtime for WoWS (appid 552990), in seconds, from the
 /// most-recently-used Steam account's `localconfig.vdf`. Best effort: ANY
@@ -552,15 +614,44 @@ fn try_import_steam_total() -> Option<u64> {
         .join("config")
         .join("localconfig.vdf");
     let text = std::fs::read_to_string(path).ok()?;
-    let map = parse_vdf(&text)?;
-    let raw = map
-        .get("Software")?
-        .get("Valve")?
-        .get("Steam")?
-        .get("apps")?
-        .get(super::game_detect::STEAM_APPID)?
-        .as_str()?;
-    playtime_seconds_from_hours(raw.parse::<f64>().ok()?)
+    let hours = playtime_hours_of(&parse_vdf(&text)?, super::game_detect::STEAM_APPID)?;
+    playtime_seconds_from_hours(hours)
+}
+
+/// The largest recorded WoWS playtime across EVERY Steam account in a
+/// `userdata/` root (seconds; `None` when nothing usable was found). The
+/// first-run seed only reads the MostRecent account — the rescan widens the
+/// net because the account that logged in last is not always the one that
+/// carries the hours.
+#[cfg(desktop)]
+fn best_steam_playtime_at(userdata: &std::path::Path) -> Option<u64> {
+    let entries = std::fs::read_dir(userdata).ok()?;
+    let mut best: Option<u64> = None;
+    for entry in entries.flatten() {
+        let path = entry.path().join("config").join("localconfig.vdf");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(map) = parse_vdf(&text) else {
+            continue;
+        };
+        let Some(seconds) = playtime_hours_of(&map, super::game_detect::STEAM_APPID)
+            .and_then(playtime_seconds_from_hours)
+        else {
+            continue;
+        };
+        if best.is_none_or(|b| seconds > b) {
+            best = Some(seconds);
+        }
+    }
+    best
+}
+
+/// [`best_steam_playtime_at`] against the real Steam install's userdata root.
+#[cfg(desktop)]
+fn scan_steam_playtime() -> Option<u64> {
+    let steam = super::game_detect::resolve_steam_install()?;
+    best_steam_playtime_at(&steam.join("userdata"))
 }
 
 /// Steam stores the per-app playtime in `localconfig.vdf` as HOURS (a
@@ -1130,5 +1221,61 @@ mod tests {
             Some(t_old + 100),
             "the stale session closed on its own heartbeat"
         );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn playtime_hours_of_descends_to_the_playtime_leaf() {
+        let map = parse_vdf(LOCAL_CONFIG).expect("parses");
+        // Regression for the seed's silent no-op: the app node is a MAP, so
+        // the value only resolves through its Playtime leaf.
+        assert_eq!(
+            playtime_hours_of(&map, super::super::game_detect::STEAM_APPID),
+            Some(102.5)
+        );
+        // Another app carries Playtime "0" (the seconds clamp rejects it
+        // later); a missing app has nothing to resolve.
+        assert_eq!(playtime_hours_of(&map, "753532"), Some(0.0));
+        assert_eq!(playtime_hours_of(&map, "999999"), None);
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn best_steam_playtime_takes_the_largest_account() {
+        let tmp = std::env::temp_dir().join(format!(
+            "wowsp-test-steam-scan-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let write_account = |id: &str, body: &str| {
+            let dir = tmp.join(id).join("config");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("localconfig.vdf"), body).unwrap();
+        };
+        // The MostRecent-style small account vs. the real main account.
+        write_account(
+            "111",
+            r#""Software" { "Valve" { "Steam" { "apps" { "552990" { "Playtime" "2.5" } } } } }"#,
+        );
+        write_account(
+            "222",
+            r#""Software" { "Valve" { "Steam" { "apps" { "552990" { "Playtime" "401.25" } } } } }"#,
+        );
+        // An account with no localconfig at all, and one with a garbage one.
+        std::fs::create_dir_all(tmp.join("333").join("config")).unwrap();
+        write_account("444", "not a vdf at all {");
+
+        let best = best_steam_playtime_at(&tmp);
+        assert_eq!(best, Some((401.25_f64 * 3600.0).round() as u64));
+
+        // An empty userdata root finds nothing.
+        let empty = tmp.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(best_steam_playtime_at(&empty), None);
+        assert_eq!(best_steam_playtime_at(&tmp.join("missing")), None);
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

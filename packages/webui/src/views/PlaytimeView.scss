@@ -181,3 +181,46 @@
     }
   }
 }
+
+/* ── Low-total Steam-rescan hint (bottom of the panel) ─────────────────── */
+.playtime-view__scan {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px 10px 16px;
+  border: 1px solid rgb(var(--color-primary) / 30%);
+  background: rgb(var(--color-primary) / 6%);
+  border-radius: var(--radius-md);
+
+  &-text {
+    flex: 1;
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text) / 0.75);
+    min-width: 0;
+  }
+
+  /* The panel's own button is visually quieter than hikari's inside a
+     tinted strip — plain text-button chrome, hover-lifted. */
+  &-close {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition:
+      background var(--duration-short) var(--ease-standard),
+      color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-text));
+      background: rgb(var(--color-text) / 6%);
+    }
+  }
+}

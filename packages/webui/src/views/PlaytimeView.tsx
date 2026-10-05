@@ -1,5 +1,6 @@
 import { computed, defineComponent, onMounted, onUnmounted, ref, watch } from "vue";
-import { HkTabs } from "@celestia-island/hikari";
+import { HkButton, HkTabs } from "@celestia-island/hikari";
+import { X } from "@lucide/vue";
 
 import PlaytimeTrendChart from "@/components/playtime/PlaytimeTrendChart";
 import PlaytimeHeatmap from "@/components/playtime/PlaytimeHeatmap";
@@ -13,6 +14,12 @@ import { usePlaytimeStore } from "@/stores/playtime";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./PlaytimeView.scss";
+
+/** Below this career total the view offers the Steam rescan at its bottom
+ *  edge — a veteran's ledger should never read this small, so it almost
+ *  always means the once-only seed found nothing (non-MostRecent account,
+ *  Steam installed later, non-Steam launcher). */
+const LOW_TOTAL_HINT_SECS = 2 * 3600;
 
 /**
  * 游玩时间 — WoWSP's own playtime statistics (the water-meter page's
@@ -96,6 +103,30 @@ export default defineComponent({
       const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
       return dateOnly ? day : `${day} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
+
+    // ── Low-total hint: offer a Steam rescan at the panel's bottom ─────
+    // The scan command answers a refreshed overview; the store computes the
+    // imported delta so the strip can report what the scan found.
+    const scanDismissed = ref(false);
+    const scanResult = ref<string | null>(null);
+
+    async function runScan() {
+      scanResult.value = null;
+      const delta = await store.importSteam();
+      scanResult.value =
+        delta > 0
+          ? t("playtime.scanDone", { v: fmtDuration(delta) })
+          : t("playtime.scanNone");
+    }
+
+    const showScan = computed(() => {
+      const o = overview.value;
+      if (!o || scanDismissed.value) return false;
+      // Stay visible (with its result message) once a scan has run, even
+      // when the fresh total cleared the threshold — the user should get
+      // to read what the scan found.
+      return o.totalSeconds < LOW_TOTAL_HINT_SECS || scanResult.value != null;
+    });
 
     const cards = computed(() => {
       const o = overview.value;
@@ -213,6 +244,32 @@ export default defineComponent({
               </section>
             </>
           )}
+
+          {/* ── Low-total hint: offer a Steam rescan / import. Sits at the
+              panel's bottom edge in BOTH branches — the zero state is the
+              exact "the seed found nothing" population the strip targets,
+              so it must not wait for the first tracked session. ── */}
+          {showScan.value ? (
+            <div class="playtime-view__scan">
+              <p class="playtime-view__scan-text">
+                {scanResult.value ?? t("playtime.scanHint")}
+              </p>
+              {!scanResult.value ? (
+                <HkButton disabled={store.importing} onClick={() => void runScan()}>
+                  {store.importing ? t("playtime.scanBusy") : t("playtime.scanAction")}
+                </HkButton>
+              ) : null}
+              <button
+                type="button"
+                class="playtime-view__scan-close"
+                title={t("playtime.scanClose")}
+                aria-label={t("playtime.scanClose")}
+                onClick={() => (scanDismissed.value = true)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     );

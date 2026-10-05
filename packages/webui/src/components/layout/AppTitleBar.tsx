@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { HkTitleBar } from "@celestia-island/hikari";
+import { HkTabs, HkTitleBar } from "@celestia-island/hikari";
 import { BarChart3, Clock, Menu } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -152,36 +152,40 @@ export default defineComponent({
                   )}
                 </span>
                 {/* Dashboard section's view switch, absolutely centered on
-                    the bar (see AppTitleBar.scss). The wrapper is
-                    pointer-events:none so the empty track stays draggable;
-                    the buttons re-enable hits and satisfy the drag guard
-                    (interactive() skips any click on a real <button>). */}
+                    the bar (see AppTitleBar.scss) — hikari's own segmented
+                    HkTabs (the dashboard date-range control), compacted for
+                    the caption so the sliding-indicator motion and the
+                    tactile press feedback come for free. The wrapper keeps
+                    the switch off the bar's JS drag path via stopPropagation
+                    (the CSS no-drag pair covers engines honoring
+                    app-region). */}
                 {showViewSwitch.value ? (
-                  <nav class="app-titlebar__views" aria-label={t("nav.viewSwitch")}>
-                    <button
-                      type="button"
-                      class={{
-                        "app-titlebar__view": true,
-                        "is-active": route.path !== "/playtime",
-                      }}
-                      aria-current={route.path !== "/playtime" ? "page" : undefined}
-                      onClick={() => void router.push("/")}
-                    >
-                      <BarChart3 size={13} />
-                      <span>{t("nav.meterShort")}</span>
-                    </button>
-                    <button
-                      type="button"
-                      class={{
-                        "app-titlebar__view": true,
-                        "is-active": route.path === "/playtime",
-                      }}
-                      aria-current={route.path === "/playtime" ? "page" : undefined}
-                      onClick={() => void router.push("/playtime")}
-                    >
-                      <Clock size={13} />
-                      <span>{t("nav.playtime")}</span>
-                    </button>
+                  <nav
+                    class="app-titlebar__views"
+                    aria-label={t("nav.viewSwitch")}
+                    onPointerdown={(e: PointerEvent) => e.stopPropagation()}
+                    onDblclick={(e: MouseEvent) => e.stopPropagation()}
+                  >
+                    <HkTabs
+                      variant="segmented"
+                      scrollable={false}
+                      modelValue={route.path === "/playtime" ? "playtime" : "meter"}
+                      onUpdate:modelValue={(v: string) =>
+                        void router.push(v === "playtime" ? "/playtime" : "/")
+                      }
+                      tabs={[
+                        {
+                          key: "meter",
+                          label: t("nav.meterShort"),
+                          icon: <BarChart3 size={13} />,
+                        },
+                        {
+                          key: "playtime",
+                          label: t("nav.playtime"),
+                          icon: <Clock size={13} />,
+                        },
+                      ]}
+                    />
                   </nav>
                 ) : null}
               </>
