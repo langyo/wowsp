@@ -147,6 +147,9 @@ windows = { version = "^0.61", features = [
 # Image handling for capture analysis
 image = { version = "^0.25", default-features = false, features = ["png"] }
 ww2ogg = "0.1"
+# Full-stream decode gate for the wem transcode fallback (already in the
+# tree via ww2ogg, so this adds no new crate).
+lewton = "0.10"
 
 # System clipboard image copy for the post-battle share shot (desktop only;
 # already in the lockfile via egui-winit, so this adds no new crate). Only the

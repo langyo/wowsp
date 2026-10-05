@@ -4,7 +4,8 @@
 //! PNG data URLs, native audio formats (ogg/mp3/wav) stream as-is. Wwise
 //! `.wem` transcodes on demand: PCM-flavoured files are WAVs underneath
 //! and pass through as-is, Wwise Vorbis converts through the embedded-
-//! codebook ww2ogg port (the click waits once, then plays).
+//! codebook ww2ogg port, decode-validated per codebook set (the click
+//! waits once, then plays clean audio or reports why it cannot).
 
 use serde::Serialize;
 
@@ -144,10 +145,10 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
         // On-demand transcode, routed by what the file actually is:
         // PCM-flavoured .wem IS a WAV (RIFF/WAVE/fmt/data with a plain or
         // extensible PCM tag) — served as-is; Wwise Vorbis files go
-        // through the embedded-codebook transcode (aoTuV retries when the
-        // standard set mis-parses). A single voice line converts in well
-        // under a second, so the click that asked for it waits once and
-        // plays.
+        // through the embedded-codebook transcode, where each attempt is
+        // decode-validated and the aoTuV set retries when the standard
+        // one garbles. A single voice line converts in well under a
+        // second, so the click that asked for it waits once and plays.
         if wem_is_pcm(&bytes) {
             return Ok(AssetPayload {
                 data_url: format!(
@@ -213,10 +214,24 @@ fn wem_is_pcm(bytes: &[u8]) -> bool {
     tag == 0x0001 || tag == 0xFFFE
 }
 
-/// Wwise Vorbis → standard Ogg Vorbis, trying both embedded codebook
-/// libraries (garbled output with one usually parses with the other).
+/// Wwise Vorbis → standard Ogg Vorbis. A wrong codebook library still
+/// converts "successfully" into structurally valid Ogg that a player can
+/// only render as garbled noise, so every conversion is checked before it
+/// is served and the aoTuV set retries when the standard one garbles:
+///
+/// * strong pass — `ww2ogg::validate`: decodes the leading packets and
+///   rejects clipped-to-death output (wrong-codebook garbage);
+/// * fallback — [`ogg_decodes_cleanly`]: the validator's clipping
+///   heuristic also flags legitimately loud voice lines (real packs hit
+///   both cases), so a candidate that fails validation but decodes
+///   end-to-end is kept and served only when no candidate strongly
+///   passes.
+///
+/// When nothing converts and decodes the caller gets the last error,
+/// never noise.
 fn transcode_wem(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut last_err = String::new();
+    let mut fallback: Option<Vec<u8>> = None;
     for codebooks in [
         ww2ogg::CodebookLibrary::default_codebooks(),
         ww2ogg::CodebookLibrary::aotuv_codebooks(),
@@ -233,11 +248,49 @@ fn transcode_wem(bytes: &[u8]) -> Result<Vec<u8>, String> {
         match ww2ogg::WwiseRiffVorbis::new(read, codebooks)
             .and_then(|mut conv| conv.generate_ogg(&mut out))
         {
-            Ok(()) => return Ok(out.into_inner()),
+            Ok(()) => {
+                let ogg = out.into_inner();
+                match ww2ogg::validate(&ogg) {
+                    Ok(()) => return Ok(ogg),
+                    Err(e) => {
+                        last_err = format!("validation: {e}");
+                        if fallback.is_none() && ogg_decodes_cleanly(&ogg) {
+                            fallback = Some(ogg);
+                        }
+                    },
+                }
+            },
             Err(e) => last_err = e.to_string(),
         }
     }
+    if let Some(ogg) = fallback {
+        return Ok(ogg);
+    }
     Err(format!("Wwise transcode failed: {last_err}"))
+}
+
+/// Hard decode gate: the whole Ogg Vorbis stream must open and decode
+/// packet by packet with lewton. Wrong-codebook output typically dies
+/// here (its rebuilt codebooks do not decode), while the validator's
+/// clipping heuristic — the strong pass — additionally flags
+/// loud-but-valid audio, which is exactly the case this gate exists to
+/// rescue.
+fn ogg_decodes_cleanly(ogg: &[u8]) -> bool {
+    let Ok(mut reader) = lewton::inside_ogg::OggStreamReader::new(std::io::Cursor::new(ogg)) else {
+        return false;
+    };
+    let mut packets = 0usize;
+    loop {
+        match reader.read_dec_packet_itl() {
+            Ok(Some(packet)) => {
+                if !packet.is_empty() {
+                    packets += 1;
+                }
+            },
+            Ok(None) => return packets > 0,
+            Err(_) => return false,
+        }
+    }
 }
 
 fn audio_mime(ext: &str) -> Option<&'static str> {
@@ -268,6 +321,16 @@ mod tests {
         assert!(!wem_is_pcm(&vorbis));
     }
 
+    /// The decode gate rejects anything a Vorbis decoder cannot open —
+    /// empty and arbitrary bytes (even with an OggS magic) never reach
+    /// the fallback path.
+    #[test]
+    fn ogg_decode_gate_rejects_non_vorbis() {
+        assert!(!ogg_decodes_cleanly(&[]));
+        assert!(!ogg_decodes_cleanly(b"OggS and nothing else"));
+        assert!(!ogg_decodes_cleanly(&[0u8; 1024]));
+    }
+
     /// Minimal RIFF/WAVE/PCM bytes with the given format tag: fmt chunk
     /// first (16-byte payload), then an empty data chunk -- the exact
     /// shape `wem_is_pcm` reads. Escaped bytes only: source stays text.
@@ -287,7 +350,9 @@ mod tests {
     /// Real-file verification for the Vorbis transcode path: point
     /// WOWSP_WEM_VORBIS_FIXTURE at any .wem with a 0x42 fmt chunk
     /// (verified once against a 9 MB public sample: OggS + vorbis header
-    /// output). CI has no fixture, so the test ignores itself.
+    /// output). Success here also means the output decode-validated —
+    /// transcode_wem rejects garbled conversions internally. CI has no
+    /// fixture, so the test ignores itself.
     #[test]
     #[ignore = "set WOWSP_WEM_VORBIS_FIXTURE to a local Vorbis .wem to run"]
     fn transcodes_real_vorbis_wem() {

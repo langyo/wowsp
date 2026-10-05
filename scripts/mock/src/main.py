@@ -237,9 +237,23 @@ async def cmd_mod_hub_list_assets(request: Request) -> list[dict]:
     ]
 
 
-# Minimal valid 44-byte silent WAV (mono 8kHz 8-bit, one sample frame):
-# enough for the browser <audio> to accept and "play" the mock file.
-_MOCK_WAV = ("UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=")
+def _silent_wav(seconds: float = 2.0) -> str:
+    """Mono 8kHz 8-bit silent WAV, long enough that the AudioPlayerToast
+    controller (play/pause, seek, stop) is exercisable against the mock —
+    a one-frame clip ends before the card can be touched."""
+    data = b"\x80" * int(8000 * seconds)  # 8-bit silence is the midpoint
+    header = (
+        b"RIFF" + (36 + len(data)).to_bytes(4, "little") + b"WAVE"
+        b"fmt " + (16).to_bytes(4, "little")
+        + (1).to_bytes(2, "little") + (1).to_bytes(2, "little")
+        + (8000).to_bytes(4, "little") + (8000).to_bytes(4, "little")
+        + (1).to_bytes(2, "little") + (8).to_bytes(2, "little")
+        + b"data" + len(data).to_bytes(4, "little")
+    )
+    return base64.b64encode(header + data).decode("ascii")
+
+
+_MOCK_WAV = _silent_wav()
 
 
 @app.post("/api/mod_hub_read_asset")

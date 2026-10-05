@@ -2,14 +2,17 @@
  * Installed-unit asset previews: texture/image units render a lazy
  * thumbnail grid (each tile pulls a decoded, downscaled PNG data URL from
  * the backend on first visibility), voice units list their audio files
- * one-per-row with inline playback; the game's Wwise `.wem` files play
- * through the on-read transcode (the first click converts, then plays).
+ * one-per-row; a click hands the track to the global audioPlayer store,
+ * whose AudioPlayerToast card (play/pause, seek, stop) controls playback.
+ * The game's Wwise `.wem` files play through the on-read transcode (the
+ * first click converts — decode-validated on the Rust side — then plays).
  */
 import { defineComponent, ref, watch } from "vue";
 import { ImageIcon, Music, PlayCircle } from "@lucide/vue";
 
 import { api, type AssetFileInfo } from "@/api";
 import { t } from "@/i18n";
+import { useAudioPlayerStore } from "@/stores/audioPlayer";
 
 export default defineComponent({
   name: "AssetPreview",
@@ -27,8 +30,7 @@ export default defineComponent({
     // fetched thumbnail re-renders its tile.
     const thumbs = ref<Record<string, string>>({});
     const failed = ref<Record<string, boolean>>({});
-    const playing = ref("");
-    const audioEl = ref<HTMLAudioElement | null>(null);
+    const player = useAudioPlayerStore();
 
     async function load() {
       loading.value = true;
@@ -70,24 +72,17 @@ export default defineComponent({
       return n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
     }
 
+    // A row click hands the track to the global player: same track
+    // toggles pause/resume, a new one loads (for .wem that is the
+    // transcode round-trip) and starts. Playback itself is controlled
+    // from the AudioPlayerToast card.
     async function toggle(file: AssetFileInfo) {
       if (!file.playable) return;
-      if (playing.value === file.rel) {
-        audioEl.value?.pause();
-        playing.value = "";
-        return;
-      }
-      try {
+      const name = file.rel.split("/").pop() || file.rel;
+      await player.play(file.rel, name, async () => {
         const payload = await api.modHubReadAsset(props.gameRoot, file.rel);
-        const el = audioEl.value ?? new Audio();
-        el.src = payload.dataUrl;
-        el.onended = () => (playing.value = "");
-        void el.play();
-        audioEl.value = el;
-        playing.value = file.rel;
-      } catch {
-        playing.value = "";
-      }
+        return payload.dataUrl;
+      });
     }
 
     return () => {
@@ -127,14 +122,10 @@ export default defineComponent({
                 type="button"
                 class="asset-preview__audio-btn"
                 disabled={!f.playable}
-                data-hint={
-                  f.playable
-                    ? t("resources.audioPlay")
-                    : t("resources.audioWem")
-                }
+                data-hint={t("resources.audioPlay")}
                 onClick={() => void toggle(f)}
               >
-                {playing.value === f.rel ? (
+                {player.active && player.rel === f.rel ? (
                   <PlayCircle size={14} />
                 ) : (
                   <Music size={14} />

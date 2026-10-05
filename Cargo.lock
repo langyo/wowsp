@@ -7840,6 +7840,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "image",
+ "lewton",
  "malkuth",
  "notify",
  "pickled",
