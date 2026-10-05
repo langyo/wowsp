@@ -89,7 +89,9 @@
     "battle": "战斗",
     "minimap": "小地图",
     "port": "港口",
-    "text": "文本与聊天"
+    "text": "文本与聊天",
+    "skin": "舰船皮肤",
+    "voice": "语音包"
   },
   "big": {
     "function": "功能",

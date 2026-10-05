@@ -363,6 +363,38 @@ _MOCK_CATALOG = {
                           "size": 87040, "name": "b.zip"}],
         },
         {
+            # Real pilot entries (published as discussions #795/#796): the
+            # first texture/voice big-category rows.
+            "id": "skin.arp.atago-blue", "category": "skin",
+            "discussion": 795, "version": "1",
+            "game": ">=13.0",
+            "title": "ARP Takao (Atago) Blue / ARP 高雄（爱宕）蓝色涂装",
+            "nameZh": "ARP 高雄（爱宕）蓝色涂装", "nameEn": "ARP Takao (Atago) Blue",
+            "description": "Blue hull livery for the ARP Takao heavy cruiser.",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "ARP Takao (Atago) Blue", "description": "Blue hull livery for the ARP Takao heavy cruiser."},
+                "zh-CN": {"name": "ARP 高雄（爱宕）蓝色涂装", "description": "ARP 高雄号重巡的蓝色舰体涂装。"},
+            },
+            "packages": [{"url": "https://example.com/skin.zip", "sha256": "",
+                          "size": 19078656, "name": "skin.arp.atago-blue.zip"}],
+        },
+        {
+            "id": "voice.crew.abathur", "category": "voice",
+            "discussion": 796, "version": "1",
+            "game": ">=12.1",
+            "title": "Abathur Crew Voice / Abathur 舰员语音",
+            "nameZh": "Abathur 舰员语音", "nameEn": "Abathur Crew Voice",
+            "description": "Replaces crew voice lines with StarCraft's Abathur.",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Abathur Crew Voice", "description": "Replaces crew voice lines with StarCraft's Abathur."},
+                "zh-CN": {"name": "Abathur 舰员语音", "description": "用星际争霸的阿巴瑟替换舰员语音。"},
+            },
+            "packages": [{"url": "https://example.com/voice.zip", "sha256": "",
+                          "size": 10600448, "name": "voice.crew.abathur.zip"}],
+        },
+        {
             # Withdrawn sample (closed discussion thread): exercises the
             # delisting path — hidden from list/search, deep-link notice.
             "id": "battle-marker-traffic", "category": "battle",

@@ -89,7 +89,9 @@
     "battle": "전투",
     "minimap": "미니맵",
     "port": "항구",
-    "text": "텍스트 및 채팅"
+    "text": "텍스트 및 채팅",
+    "skin": "함선 스킨",
+    "voice": "보이스 팩"
   },
   "big": {
     "function": "기능",

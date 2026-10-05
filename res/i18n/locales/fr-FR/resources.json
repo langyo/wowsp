@@ -89,7 +89,9 @@
     "battle": "Combat",
     "minimap": "Minimap",
     "port": "Port",
-    "text": "Textes et chat"
+    "text": "Textes et chat",
+    "skin": "Skins de navires",
+    "voice": "Packs vocaux"
   },
   "big": {
     "function": "Fonctions",

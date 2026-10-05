@@ -43,8 +43,21 @@ export const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> 
  * The one-off `patch` bucket is gone — its only resident (patch.ime.compat)
  * lives under `text` now; on-disk `kind: "patch"` is a DIFFERENT vocabulary
  * and is unaffected. */
-export type CatalogCat = "battle" | "minimap" | "port" | "text";
-export const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "text"];
+export type CatalogCat =
+  | "battle"
+  | "minimap"
+  | "port"
+  | "text"
+  | "skin"
+  | "voice";
+export const CATALOG_CATS: CatalogCat[] = [
+  "battle",
+  "minimap",
+  "port",
+  "text",
+  "skin",
+  "voice",
+];
 
 /** Catalog categories and on-disk kinds are DIFFERENT vocabularies that share
  *  one strip — "patch" survives as an on-disk kind only, which is why the
@@ -78,6 +91,11 @@ const CAT_BIG: Record<CatalogCat, BigCat> = {
   minimap: "function",
   port: "function",
   text: "function",
+  // Material and voice packs — the visual/audio half of the catalog. They
+  // land in their own big categories so the covered-parts view and the
+  // voice preview can own them.
+  skin: "texture",
+  voice: "voice",
 };
 
 /** Big category of a catalog entry. Unknown categories bucket with
@@ -92,6 +110,8 @@ const CAT_ICON: Record<CatalogCat, typeof Puzzle> = {
   minimap: MapIcon,
   port: Anchor,
   text: MessagesSquare,
+  skin: ImageIcon,
+  voice: AudioLines,
 };
 
 /** Tile glyph for a catalog entry; unknown categories fall back to Puzzle. */

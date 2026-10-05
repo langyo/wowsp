@@ -89,7 +89,9 @@
     "battle": "Battle",
     "minimap": "Minimap",
     "port": "Port",
-    "text": "Texts & chat"
+    "text": "Texts & chat",
+    "skin": "Ship skins",
+    "voice": "Voice packs"
   },
   "big": {
     "function": "Function",

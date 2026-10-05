@@ -68,12 +68,15 @@ describe("mod-hub taxonomy", () => {
 
   it("separates the catalog vocabulary from the on-disk kind names", () => {
     for (const cat of CATALOG_CATS) expect(isCatalogCat(cat), cat).toBe(true);
-    // Kinds are not catalog categories — "patch" used to collide across
-    // both, but the catalog bucket is gone (folded into "text"); the
-    // on-disk kind survives and must not read as a catalog category.
-    expect(isCatalogCat("voice")).toBe(false);
-    expect(isCatalogCat("skin")).toBe(false);
+    // "skin" and "voice" are now DELIBERATE dual citizens: on-disk kinds
+    // AND catalog categories (the material/voice packs joined the catalog,
+    // sharing the strip with the kind vocabulary). The collision guard
+    // below covers the kinds that still have no catalog bucket.
+    expect(catBig("skin")).toBe("texture" satisfies BigCat);
+    expect(catBig("voice")).toBe("voice" satisfies BigCat);
     expect(isCatalogCat("textures")).toBe(false);
+    expect(isCatalogCat("gui")).toBe(false);
+    expect(isCatalogCat("script")).toBe(false);
     expect(isCatalogCat("patch")).toBe(false);
     expect(KIND_BIG.patch).toBe("function");
   });
