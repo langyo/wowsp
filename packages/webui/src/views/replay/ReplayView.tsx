@@ -1733,7 +1733,7 @@ export default defineComponent({
                   }
                 >
                   {ownShipType ? (
-                    <BattleIcon type={ownShipType} variant="plain" size={14} />
+                    <BattleIcon type={ownShipType} variant="plain" size={17} />
                   ) : null}
                   <span class="replay-card__vessel-name">{ownShipName}</span>
                 </span>
