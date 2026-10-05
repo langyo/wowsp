@@ -4,7 +4,7 @@
  *  agree with `modeKey` about which battles render as a single team. */
 import { describe, expect, it } from "vitest";
 
-import { isOperationBattle, modeColor, modeKey } from "./modeColors";
+import { isCoopBattle, isOperationBattle, modeColor, modeKey } from "./modeColors";
 
 describe("modeKey", () => {
   it("classifies a PCVO battle script as operation", () => {
@@ -102,5 +102,55 @@ describe("isOperationBattle", () => {
     expect(isOperationBattle("pve", "coop_1point", null, [":Yumashev:", "langyo"])).toBe(false);
     expect(isOperationBattle("pvp", "domination_3point", null, ["langyo", "WGR_bot"])).toBe(false);
     expect(isOperationBattle("pve", null, null, ["langyo", ":Yumashev:"])).toBe(false);
+  });
+});
+
+describe("isCoopBattle", () => {
+  it("accepts plain co-op descriptors with a :Name:-only roster", () => {
+    expect(isCoopBattle("pve", "coop_1point", null, ["langyo", ":Yumashev:"])).toBe(true);
+    // Bare pve with no fingerprints at all — the regular co-op bucket.
+    expect(isCoopBattle("pve", null, null, ["langyo", ":Yumashev:", ":Tachibana:"])).toBe(true);
+    expect(isCoopBattle("cooperative", "domination_3point", null, ["langyo"])).toBe(true);
+  });
+
+  it("accepts asymmetric co-op by its scenario / PCVE script", () => {
+    // Live asym co-op shape (verified against recorded replays): the
+    // scenario's `asymm` makes modeKey say "asymmetric", but the roster is
+    // still co-op-style — `:Name:` fills only.
+    expect(
+      isCoopBattle("event", "asymm_3point_coop", "PCVE027", [
+        "langyo",
+        ":Buchan:",
+        ":Kongo:",
+      ]),
+    ).toBe(true);
+    expect(isCoopBattle("pve", "asymm_2point_coop", null, ["langyo", ":Yumashev:"])).toBe(true);
+  });
+
+  it("rejects script-driven rosters inside the pve family", () => {
+    // One IDS_* or #Name unit = an operation-style battle, whatever the
+    // descriptor says (the same discriminator modeKey applies to the
+    // scripted-unit count).
+    expect(isCoopBattle("pve", null, null, ["langyo", "IDS_OP_50_DUMMY_01"])).toBe(false);
+    expect(isCoopBattle("pve", "asymm_3point_coop", "PCVE027", ["langyo", "#Yamato"])).toBe(
+      false,
+    );
+    // The escort op / tutorial fleets are scripted, not co-op.
+    expect(
+      isCoopBattle("pve", "LOW_LVL_OPERATION_1_LVL_2", null, [
+        "langyo",
+        ":Buchan:",
+        "IDS_OP_15_DUMMY_01",
+      ]),
+    ).toBe(false);
+    expect(isCoopBattle("intro", "FIRST_BATTLE", null, ["langyo", "IDS_AL_01"])).toBe(false);
+  });
+
+  it("rejects everything outside the co-op family", () => {
+    expect(isCoopBattle("pvp", "domination_3point", null, ["langyo", "WGR_bot"])).toBe(false);
+    // PCVO operations are excluded even though the script prefix shares the
+    // PCV* shape with the co-op PCVE one.
+    expect(isCoopBattle("pve", null, "PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL")).toBe(false);
+    expect(isCoopBattle(null, null, null)).toBe(false);
   });
 });

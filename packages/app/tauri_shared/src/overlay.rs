@@ -101,9 +101,12 @@ pub struct OverlayAnchor {
     /// (0.0–1.0) of the roster rect width. Allies occupy [0, split), enemies
     /// [split, 1]. EXACTLY 1.0 marks the single-team PVE table (the green-only
     /// header — scenario / co-op / operations layouts): there IS no enemy
-    /// column, the grid carries the ally rows only, and the overlay page uses
-    /// that 1.0 as its "story layout" aux gate (no "bot" chips, no
-    /// radar/hydro/smoke intel lines). Two-bar tables clamp to [0.30, 0.70].
+    /// column and the grid carries the ally rows only. The overlay page uses
+    /// that 1.0 as the layout half of its "story" aux gate (no "bot" chips,
+    /// no radar/hydro/smoke intel lines), with plain co-op battles excluded
+    /// descriptor-side (`isCoopBattle`) — a co-op team's bot-fill labels and
+    /// consumable spread stay meaningful. Two-bar tables clamp to
+    /// [0.30, 0.70].
     pub team_split: f32,
     /// False when the anchor comes from the fallback geometry (battle HUD is
     /// up but the team table itself was not located): the page then renders

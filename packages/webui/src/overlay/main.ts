@@ -66,7 +66,7 @@ import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { isKnownRealm } from "@/utils/realms";
 import { pluginRowMapping } from "./inferredOrder";
 import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
-import { isOperationBattle } from "@/utils/modeColors";
+import { isCoopBattle, isOperationBattle } from "@/utils/modeColors";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
 import { AI_NAME } from "@/utils/aiNames";
@@ -508,9 +508,9 @@ function chipNumbers(v: RosterModeNumbers): string {
   return parts.join(`<span class="sep">·</span>`);
 }
 
-/** `storyLayout` = the single-team PvE table (see render()): bot rows are
- *  aux noise there — the game's own table marks them, and on a roster of
- *  scripted teammates the per-row "bot" label says nothing worth a chip. */
+/** `storyLayout` = the single-team story/operation table — the layout gate
+ *  EXCLUDING plain co-op (see render()): bot rows are aux noise on a
+ *  script-driven roster, and the game's own table marks them anyway. */
 function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean): string {
   if (AI_NAME.test(name)) {
     return !storyLayout && ANY_CHIP_ON ? `<span class="muted">bot</span>` : "";
@@ -577,7 +577,7 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
  *  those rows, so a verbatim "bot / bot / bot" only stretched the chip
  *  over the left HUD — "43.2% + 2 bot" keeps the range's cardinality at a
  *  fraction of the width, and a pure-bot range collapses to the single
- *  muted face. On the single-team PvE layout (storyLayout) a pure-bot range
+ *  muted face. On the story layout (storyLayout) a pure-bot range
  *  collapses to NOTHING instead — same aux rule as chipContent — while a
  *  mixed range keeps its "+N bot" suffix: the suffix is the range's
  *  cardinality, and dropping it would read one human's face as the WHOLE
@@ -627,11 +627,11 @@ function candidatesChip(members: string[], storyLayout: boolean): string {
  *  and mean avg damage). Item toggles can switch any line's contents off;
  *  when neither the intel items nor the averages survive, the card itself
  *  is gone (null) — the side label rides whichever line renders first.
- *  On the single-team PvE layout (storyLayout) the consumable-intel half
- *  is skipped wholesale: radar/hydro/smoke counting is a versus-human
- *  aid, and a PvE roster's numbers (scripted teammates + bot fill) are
- *  aux noise. The averages half stays — it grades the human roster and
- *  rides its own prefs switches.
+ *  On the story layout (storyLayout — single-team, co-op excluded) the
+ *  consumable-intel half is skipped wholesale: radar/hydro/smoke counting
+ *  is a versus-human aid, and a script-driven roster's numbers are aux
+ *  noise. The averages half stays — it grades the human roster and rides
+ *  its own prefs switches.
  *  Styled and anchored as a chip of the same side, so chipFit's clamp pass
  *  covers this card exactly like the row chips; `topCss` is the desired
  *  CSS-px TOP edge — `.overlay-chip--intel` opts out of the base chip's
@@ -811,11 +811,12 @@ function render() {
   // semantics — the fixtures put enemy warships at relation > 1); only
   // their ENEMY block is dropped (all scripted spawns, and mid-battle
   // waves grow past the roster tempArenaInfo ever sees).
+  const rosterNames = arena.vehicles.map((v) => v.name);
   const operation = isOperationBattle(
     arena.matchGroup,
     arena.scenario,
     arena.eventType,
-    arena.vehicles.map((v) => v.name),
+    rosterNames,
   );
   const allies = arena.vehicles.filter((v) => v.relation <= 1);
   const enemies = operation
@@ -823,15 +824,26 @@ function render() {
     : arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
-  // The single-team PvE table (剧情/行动): team_split is EXACTLY 1.0 only on
-  // the green-only header (overlay_detect::finish_roster) — the game itself
-  // renders ONE team column there. The layout, not the mode-label
-  // classifiers, is the ground truth for the aux gates below: story battles
-  // exist whose descriptor carries no operation fingerprint
-  // (isOperationBattle false), yet their Tab screen is still the one-column
-  // team table — and on it the enemy block never exists and the "bot" /
-  // radar-hydro-smoke aux is noise.
-  const storyLayout = anchor.teamSplit >= 0.999;
+  // The single-team table (team_split EXACTLY 1.0 = the green-only header,
+  // overlay_detect::finish_roster): the game itself renders ONE team column
+  // there, so the anchor has NO enemy rows — the layout truth every
+  // enemy-block half below must respect. The layout, not the mode-label
+  // classifiers, is the ground truth here: story battles exist whose
+  // descriptor carries no operation fingerprint (isOperationBattle false),
+  // yet their Tab screen is still the one-column team table.
+  const singleTable = anchor.teamSplit >= 0.999;
+  // The AUX gate on top of the layout: the "bot" fill labels and the
+  // radar/hydro/smoke intel lines are versus-human aids — noise on a
+  // script-driven story/operation roster, but meaningful on plain co-op
+  // (your own team's bot fill, your team's consumable spread), so co-op
+  // battles keep them even though their Tab screen is the same single
+  // column (isCoopBattle: coop-family descriptor + zero scripted units).
+  const storyLayout = singleTable && !isCoopBattle(
+    arena.matchGroup,
+    arena.scenario,
+    arena.eventType,
+    rosterNames,
+  );
   // Row → name attribution. Both modes name rows: this page derives the
   // mapping itself from the arena roster + the anchor's alive vector via
   // the client's own Tab sort key (inferredRowMapping). A missing/older
@@ -863,11 +875,12 @@ function render() {
     // The ally block always reconciles (its roster is complete). The ops
     // enemy block does not: its Tab rows grow mid-battle as waves spawn
     // past the roster tempArenaInfo captured, so a fixed-count reconcile
-    // would misattribute. Same for the story layout — its grid carries
-    // NO enemy rows at all (a green-only anchor), so an empty slice would
-    // read "everyone alive" and wrongly degrade the side.
+    // would misattribute. Same for ANY single-table anchor — its grid
+    // carries NO enemy rows at all (green-only header, co-op included),
+    // so an empty slice would read "everyone alive" and wrongly degrade
+    // the side.
     reconcileSide("ally", allyN, 0);
-    if (!operation && !storyLayout) reconcileSide("enemy", enemyN, allyN);
+    if (!operation && !singleTable) reconcileSide("enemy", enemyN, allyN);
     if (telemetryAuthoritative && pluginSunkNames) {
       // Plugin-authoritative layout: split by set membership
       // unconditionally — no alive-vector agreement check, no candidate
@@ -1002,8 +1015,9 @@ function render() {
   // switchable in settings; a side whose card renders nothing is simply
   // absent. Operations (行动) render no enemy list — the ally card alone.
   // On the story layout (storyLayout) the ally card carries the averages
-  // only — the consumable-intel half is aux noise on a PvE roster — and
-  // the enemy card has no column to hang under anyway (no enemy rows).
+  // only — the consumable-intel half is aux noise on a script-driven
+  // story/operation roster — and the enemy card has no column to hang
+  // under anyway (no enemy rows).
   {
     const intelFontSize = Math.min(13, Math.max(9, pitch * 0.4));
     // The window's top/bottom edges can crowd the table in odd aspect
@@ -1037,7 +1051,7 @@ function render() {
         clampVertically(el);
       }
     }
-    if (!operation && !storyLayout && enemies.length > 0 && enemyBlock.length > 0) {
+    if (!operation && !singleTable && enemies.length > 0 && enemyBlock.length > 0) {
       const el = teamSummaryCard(
         "enemy",
         enemies,

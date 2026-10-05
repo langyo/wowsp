@@ -184,6 +184,50 @@ export function isOperationBattle(
   return false;
 }
 
+/**
+ * Whether this battle is PLAIN co-op (合作人机): a coop-family descriptor
+ * (coop/pve matchGroup, coop scenario, or a PCVE co-op script) with NO
+ * operation fingerprint and NO scripted scenario units. The scripted-unit
+ * half is the load-bearing discriminator within the pve family — co-op
+ * fills (regular and asymmetric alike) carry `:Name:` bots ONLY, while a
+ * single `IDS_*` / `#Name` nickname means an operation-style, script-driven
+ * battle (the same rule `modeKey` applies to the scripted-unit count). The
+ * new-account battles (tutorial / escort op) fail the roster scan on their
+ * `IDS_*` fleets, and their layout is two-team regardless.
+ *
+ * Accepted corner: a story battle whose descriptor is coop-family AND whose
+ * roster carries only `:Name:` bots is descriptor-side indistinguishable
+ * from co-op and keeps the aux. The anchoring fix never depended on this
+ * gate, so such a battle still re-anchors correctly — only the bot/intel
+ * suppression is left on the table.
+ *
+ * Consumers: the in-game overlay keeps its versus-human aux (per-row "bot"
+ * fill labels, the radar/hydro/smoke intel card) on co-op battles and
+ * suppresses it on the story/operation single-team layouts — see the
+ * overlay page's `storyLayout` gate.
+ */
+export function isCoopBattle(
+  matchGroup?: string | null,
+  scenario?: string | null,
+  eventType?: string | null,
+  names: string[] = [],
+): boolean {
+  const mg = (matchGroup ?? "").toLowerCase();
+  const sc = (scenario ?? "").toLowerCase();
+  const et = (eventType ?? "").toLowerCase();
+  const coopFamily =
+    mg.includes("coop") ||
+    mg.startsWith("pve") ||
+    sc.includes("coop") ||
+    et.startsWith("pcve");
+  if (!coopFamily) return false;
+  if (isOperationBattle(matchGroup, scenario, eventType, names)) return false;
+  return !names.some((n) => {
+    const u = n.toUpperCase();
+    return u.startsWith("IDS_") || u.startsWith("#");
+  });
+}
+
 /** Resolve the colour triple for a battle mode. Unknown modes fall back to
  *  accent gold so the pill always has a colour. */
 export function modeColor(
