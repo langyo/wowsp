@@ -123,8 +123,8 @@ importers:
         specifier: ^0.55.75
         version: 0.55.75(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
-        specifier: ^1.46.0
-        version: 1.47.0(vue@3.5.43(typescript@7.0.2))
+        specifier: ^1.48.0
+        version: 1.52.0(vue@3.5.43(typescript@7.0.2))
       '@tauri-apps/api':
         specifier: ^2.11.1
         version: 2.11.1
@@ -903,6 +903,11 @@ packages:
 
   '@lucide/vue@1.47.0':
     resolution: {integrity: sha512-S0/UX9zra4Z8xmqrA1MH5GiSKA8daAPFwkmORt/u+gUHAkYZoeOcr+DH3scZeyE9bdLWScGK+MJoDYi8rIU5Jg==}
+    peerDependencies:
+      vue: '>=3.0.1'
+
+  '@lucide/vue@1.52.0':
+    resolution: {integrity: sha512-Gwr6c14jhY6BscoFU+B9OKsr7lg8RTAKOLgW0e61kkFwkt9Q7CZmB9AyJcvhoqapEJgRg2bFoeAcO+cqpgKzEQ==}
     peerDependencies:
       vue: '>=3.0.1'
 
@@ -3206,7 +3211,7 @@ snapshots:
     dependencies:
       vue: 3.5.42(typescript@7.0.2)
 
-  '@lucide/vue@1.47.0(vue@3.5.43(typescript@7.0.2))':
+  '@lucide/vue@1.52.0(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       vue: 3.5.43(typescript@7.0.2)
 
