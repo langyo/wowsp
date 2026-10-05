@@ -3,16 +3,24 @@
  * stored as `<data_dir>/stamps/<kind>.<ext>` (see commands::stamps; the
  * kind-keyed file name IS the state, so there is no metadata blob).
  *
- * Module-level ref like statsPrefsState: RatingStamp (any surface), the
- * settings seal customizer and the overlay mirror all read the same map,
- * and import/reset refresh it in place. Absent kind = the bundled default
- * glyph shows.
+ * Module-level ref like statsPrefsState: RatingStamp (any surface) and the
+ * settings seal customizer read the same reactive map, refreshed in place
+ * on every import/reset. The bare-DOM Tab overlay keeps its own copy (no
+ * Pinia there) and re-reads the folder when the write is broadcast — see
+ * the `wowsp://stamps-changed` emits below and overlay/main.ts's listener.
+ * Absent kind = the bundled default glyph shows.
  */
 import { ref } from "vue";
 
 import type { StampKind } from "@/utils/winrate";
+import { emitTauriEvent } from "@/utils/appEvents";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
+
+/** Announced after every successful stamps-folder write so the overlay
+ *  window re-runs its own `stamp_list` read (it cannot see this module's
+ *  reactive map). */
+const STAMPS_CHANGED_EVENT = "wowsp://stamps-changed";
 
 /** kind → asset-protocol URL of the user's custom image. */
 const overrides = ref<Partial<Record<StampKind, string>>>({});
@@ -63,6 +71,9 @@ export function stampOverrideUrl(kind: StampKind): string | null {
 export async function importStampImage(kind: StampKind): Promise<boolean> {
   const imported = await api.stampImport(kind);
   await refreshStampOverrides();
+  // Only a landed import announces itself — a cancelled dialog must not
+  // send the overlay re-reading an unchanged folder.
+  if (imported != null) emitTauriEvent(STAMPS_CHANGED_EVENT);
   return imported != null;
 }
 
@@ -70,6 +81,7 @@ export async function importStampImage(kind: StampKind): Promise<boolean> {
 export async function resetStampImage(kind: StampKind): Promise<void> {
   try {
     await api.stampReset(kind);
+    emitTauriEvent(STAMPS_CHANGED_EVENT);
   } finally {
     await refreshStampOverrides();
   }

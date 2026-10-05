@@ -310,19 +310,30 @@ const STAMP_TEXT: Record<StampKind, string> = {
 };
 
 // Custom seal pictures (settings' seal customizer → commands::stamps):
-// kind → asset-protocol URL, loaded once at startup. A kind absent from
-// this map shows the plain text seal; the kind-keyed file name in the
-// stamps folder IS the state, so a plain list call is the whole sync.
+// kind → asset-protocol URL. Read at startup and RE-read whenever the main
+// window broadcasts a stamps-folder write (`wowsp://stamps-changed`, see
+// stores/stampOverrides.ts). A kind absent from this map shows the plain
+// text seal; the kind-keyed file name in the stamps folder IS the state,
+// so a plain list call is the whole sync.
 const CUSTOM_STAMPS: Partial<Record<StampKind, string>> = {};
 async function loadCustomStamps(invoke: OverlayTauriApi["core"]["invoke"]) {
   try {
     const files = (await invoke("stamp_list")) as Array<{ kind: string; path: string }>;
     const { convertFileSrc } = await import("@tauri-apps/api/core");
+    // Rebuild wholesale, like the main window's refreshStampOverrides: the
+    // listing IS the state, and a reset deletes the kind's file — a
+    // merge-only update would keep the reset kind's stale URL rendering a
+    // dead image instead of falling back to the text seal.
+    const next: Partial<Record<StampKind, string>> = {};
     for (const f of files) {
       if ((Object.keys(STAMP_TEXT) as string[]).includes(f.kind)) {
-        CUSTOM_STAMPS[f.kind as StampKind] = convertFileSrc(f.path);
+        next[f.kind as StampKind] = convertFileSrc(f.path);
       }
     }
+    for (const key of Object.keys(CUSTOM_STAMPS) as StampKind[]) {
+      if (next[key] === undefined) delete CUSTOM_STAMPS[key];
+    }
+    Object.assign(CUSTOM_STAMPS, next);
   } catch {
     // shell without the stamp commands / no customizations — defaults show
   }
@@ -1536,6 +1547,13 @@ async function start() {
     scheduleBatch();
     render();
   });
+  await listen("wowsp://stamps-changed", () => {
+    // The settings seal customizer imported or reset a custom picture
+    // (stores/stampOverrides.ts). Re-read the stamps folder — chips read
+    // CUSTOM_STAMPS at render time, so a re-render as the read lands swaps
+    // the pictures in (and a reset falls back to the plain text seal).
+    void loadCustomStamps(invoke).then(() => render());
+  });
   await listen("wowsp://sink-attrib", (e: { payload: unknown }) => {
     // One sink transition, solved Rust-side: row indices into each side's
     // PRE-sink alive order. Resolve them against this page's believed
@@ -1659,9 +1677,11 @@ async function start() {
     // already running
   }
 
-  // Custom seal pictures: one fire-and-forget read (see the listener note
-  // above); a later import in the settings window only matters next battle,
-  // and a failure here costs nothing (the bundled glyphs show).
+  // Custom seal pictures: one fire-and-forget read so the first render
+  // already carries them (chips read CUSTOM_STAMPS at render time); later
+  // imports/resets in the settings window arrive as `wowsp://stamps-changed`
+  // events and re-run this read (see the listener above). A failure here
+  // costs nothing (the bundled glyphs show).
   void loadCustomStamps(invoke).then(() => render());
 
   // Consumable-kit hot update: the main window's boot refresh warms the

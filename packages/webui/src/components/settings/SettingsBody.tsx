@@ -2164,9 +2164,10 @@ export default defineComponent({
                 roster panels' columns (any mix of winrate / PR / battles /
                 avg damage), which battle-mode career feeds them, the
                 career seal stamps, the team-intel items and the overlay's
-                team averages. All of it lives in the statsPrefs blob (the
-                overlay window re-reads it at creation, so its flips apply
-                next battle; the panels apply immediately). */}
+                team averages. All of it lives in the statsPrefs blob, and
+                every surface applies a flip immediately — the panels
+                through the store's reactivity, the overlay through the
+                store's broadcast (see overlay/main.ts's refreshPrefs). */}
             <HkSettingsSub title={t("settings.overlayContent.title")}>
               <HkSettingsHint>{t("settings.overlayContent.hint")}</HkSettingsHint>
               <OverlayContentControls />
