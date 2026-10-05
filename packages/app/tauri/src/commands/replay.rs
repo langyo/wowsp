@@ -1,23 +1,43 @@
-//! Replay (`.wowsreplay`) header parsing.
+//! Replay header parsing — WG `.wowsreplay` and the Lesta (Мир кораблей)
+//! `.korablireplay` container.
 //!
-//! File layout:
+//! File layout (both clients — the Lesta container keeps the WG framing
+//! byte-for-byte, only its block payload set differs):
 //!   4 bytes  magic       = `{0x12, 0x32, 0x34, 0x11}`
-//!   4 bytes  json_len    = little-endian u32
-//!   N bytes  json_block  = match descriptor JSON (roster, map, match type)
-//!   4 bytes  meta_count  = u32, number of trailing metadata blocks
-//!   ...      metadata    = extra metadata blocks (usually empty for live)
-//!   ...      packets     = encrypted/zlib packet stream (Phase 2 — milestone M3)
+//!   4 bytes  block_count = little-endian u32
+//!   ...      blocks      = `block_count` × (4-byte LE length + payload)
+//!   ...      packets     = encrypted/zlib packet stream (`packets`)
 //!
-//! Phase 1 (this file) implements the magic check + JSON block extraction. The
-//! dual-format reader also accepts the bare-JSON variant the client writes as
-//! `tempArenaInfo.json` (same logic ApeRadar's `FileUtils.ReadTempArenaInfoFile`
-//! uses). The packet-stream decode lands in M3.
+//! WG writes 3 blocks, the first carrying the match-descriptor JSON with the
+//! roster inline (`vehicles`). Lesta writes 4:
+//!   - block[0] — the match descriptor JSON. Same core keys as WG
+//!     (`matchGroup`, `mapId`, `mapDisplayName`, `scenario`,
+//!     `clientVersionFromExe`, ...), but NO `vehicles` roster;
+//!   - block[1] — the roster JSON: `playersPublicInfo` maps account id →
+//!     positional array ([0] id — negative = bot, [1] name (same
+//!     `:Name:` / `IDS_*` / `#Name` bot markers as WG), [6] team 0/1,
+//!     [7] shipId in the WG numeric format);
+//!   - block[2] — ASCII `"<accountDBID>.<arenaUniqueID>"`, pinning the
+//!     recorder's account id;
+//!   - block[3] — 32 ASCII hex chars, an integrity checksum (not a key;
+//!     ignored).
 //!
-//! The Lesta (Мир кораблей) client renamed the container to
-//! `.korablireplay` and replaced this whole block layout with a new binary
-//! framing — those files are listed (a replays/ tree can hold both clients'
-//! output) but header/packet parsing rejects them with an explicit
-//! "unsupported" error until the new format is reverse-engineered.
+//! A descriptor without `vehicles` gets its roster synthesized from [1] +
+//! [2] ([`lesta_roster`]); relations, bot/scripted counts and the recorder's
+//! ship then follow the WG rules unchanged.
+//!
+//! The packet stream behind the blocks is also the exact WG scheme (same
+//! Blowfish key + XOR chain + zlib, [`packets::decode_replay`]), so
+//! trajectories decode unchanged. Fixed-layout packets (positions, entity
+//! create/destroy, player position) are version-independent;
+//! EntityMethod-id-gated features (chat, achievements, arena state) are
+//! best-effort under the newest WG method table — Lesta's
+//! `clientVersionFromExe` ("26,10,0,...") parses to a version key no WG
+//! table shipped for, so the existing `*v <= k` logic picks the newest one.
+//!
+//! The dual-format reader also accepts the bare-JSON variant the client
+//! writes as `tempArenaInfo.json` (same logic ApeRadar's
+//! `FileUtils.ReadTempArenaInfoFile` uses).
 
 use std::fs;
 use std::path::PathBuf;
@@ -36,17 +56,6 @@ fn is_replay_extension(ext: &str) -> bool {
     )
 }
 
-/// The explicit error for a Lesta `.korablireplay` container — its layout is
-/// a new binary framing without the WG magic/JSON blocks, so the generic
-/// "magic mismatch" message would only mislead. `None` for every other path.
-fn lesta_container_error(path: &str) -> Option<String> {
-    PathBuf::from(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .filter(|e| e.eq_ignore_ascii_case("korablireplay"))
-        .map(|_| format!("{path}: the Lesta .korablireplay container is not supported yet"))
-}
-
 /// Read + parse the header of one `.wowsreplay` file into a [`ReplayMeta`].
 ///
 /// `path` must point at an existing file. On any structural problem (missing
@@ -60,9 +69,6 @@ fn lesta_container_error(path: &str) -> Option<String> {
 #[tauri::command]
 pub async fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
     tokio::task::spawn_blocking(move || {
-        if let Some(err) = lesta_container_error(&path) {
-            return Err(err);
-        }
         let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
         let json = extract_descriptor_json(&bytes).ok_or_else(|| {
             format!("{path}: not a valid wowsreplay (magic mismatch or truncated)")
@@ -89,15 +95,14 @@ pub async fn read_replay_positions(
     path: String,
 ) -> Result<wowsp_tauri_shared::ReplayStream, String> {
     tokio::task::spawn_blocking(move || {
-        if let Some(err) = lesta_container_error(&path) {
-            return Err(err);
-        }
         let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
         let stream = packet_stream_after_blocks(&bytes)
             .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
-        // Roster shipIds from the descriptor JSON — the candidate set used to
-        // recover each entity's shipId from its EntityCreate state stream (the
-        // only reliable entity -> player join key).
+        // Roster shipIds — the candidate set used to recover each entity's
+        // shipId from its EntityCreate state stream (the only reliable
+        // entity -> player join key). Goes through the shared roster source
+        // so a Lesta container (whose descriptor carries no vehicles array)
+        // contributes its synthesized roster just the same.
         let mut candidates = std::collections::HashSet::new();
         let mut client_version: Option<String> = None;
         if let Some(json) = extract_descriptor_json(&bytes) {
@@ -106,11 +111,12 @@ pub async fn read_replay_positions(
                     .get("clientVersionFromExe")
                     .and_then(|x| x.as_str())
                     .map(str::to_string);
-                if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
-                    for v in arr {
-                        if let Some(id) = v.get("shipId").and_then(|x| x.as_u64()) {
-                            candidates.insert(id as u32);
-                        }
+                for v in roster_from_raw(std::path::Path::new(&path), &raw) {
+                    // 0 is the degenerate "no shipId in the entry" default —
+                    // offering it would let a 4-zero-byte window in any
+                    // EntityCreate state label an entity with a bogus id.
+                    if v.ship_id > 0 {
+                        candidates.insert(v.ship_id as u32);
                     }
                 }
             }
@@ -524,19 +530,22 @@ pub(crate) fn scan_replays_meta(
     ))
 }
 
-/// Generous upper bound on the first descriptor block: real descriptors run
-/// a few hundred KB (roster-heavy), so a length prefix beyond this is a
-/// corrupt or malicious header, not a block worth buffering.
+/// Generous upper bound on any one metadata block: real descriptors run a
+/// few hundred KB (roster-heavy), so a length prefix beyond this is a corrupt
+/// or malicious header, not a block worth buffering.
 const MAX_FIRST_BLOCK_BYTES: usize = 16 * 1024 * 1024;
 
-/// Read just the first descriptor block of a replay file: the 8-byte prologue
-/// (magic + block count), a 4-byte little-endian block length, then exactly
-/// that many payload bytes — the same framing [`extract_descriptor_json`]
-/// parses on an in-memory slice, minus the multi-MB packet stream that
-/// follows. Lengths above [`MAX_FIRST_BLOCK_BYTES`] are rejected so a corrupt
-/// prefix can never drive a huge allocation or read.
-fn read_first_block(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
-    use std::io::Read as _;
+/// Read one metadata block of a replay file by index (0 = the descriptor
+/// JSON, 1 = the Lesta roster JSON, ...): the 8-byte prologue (magic + block
+/// count), then the 4-byte little-endian length prefixes of every block
+/// before `index` — their payloads are SEEKED past, never buffered — and
+/// finally `index`'s length + payload. Same framing
+/// [`extract_descriptor_json`] parses on an in-memory slice, minus the
+/// multi-MB packet stream that follows. Lengths above
+/// [`MAX_FIRST_BLOCK_BYTES`] are rejected so a corrupt prefix can never
+/// drive a huge allocation or read.
+fn read_block(path: &std::path::Path, index: usize) -> std::io::Result<Vec<u8>> {
+    use std::io::{Read as _, Seek as _, SeekFrom};
     let mut f = fs::File::open(path)?;
     let mut magic = [0u8; 4];
     f.read_exact(&mut magic)?;
@@ -548,19 +557,31 @@ fn read_first_block(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
     }
     let mut count = [0u8; 4];
     f.read_exact(&mut count)?;
-    if u32::from_le_bytes(count) == 0 {
+    let block_count = u32::from_le_bytes(count) as usize;
+    if block_count == 0 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "wowsreplay container has no blocks",
         ));
     }
+    if index >= block_count {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            format!("wowsreplay container has {block_count} blocks, block {index} missing"),
+        ));
+    }
     let mut len = [0u8; 4];
+    for _ in 0..index {
+        f.read_exact(&mut len)?;
+        let skip = u32::from_le_bytes(len);
+        f.seek(SeekFrom::Current(i64::from(skip)))?;
+    }
     f.read_exact(&mut len)?;
     let block_len = u32::from_le_bytes(len) as usize;
     if block_len > MAX_FIRST_BLOCK_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("first block length {block_len} exceeds {MAX_FIRST_BLOCK_BYTES}"),
+            format!("block {index} length {block_len} exceeds {MAX_FIRST_BLOCK_BYTES}"),
         ));
     }
     let mut payload = vec![0u8; block_len];
@@ -579,14 +600,14 @@ fn read_first_block(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
 pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
     let path_str = path.to_string_lossy().into_owned();
     let date_time = parse_datetime_from_filename(&path_str);
-    // The walk only surfaces replay containers (`*.wowsreplay`, and the
-    // Lesta `*.korablireplay` — whose header read fails and falls back to
-    // the path-only entry below), never the bare-JSON tempArenaInfo
-    // variant, so the bounded first-block read is the only input path
-    // needed — the multi-MB packet stream behind the header is never
-    // touched. Any read/parse failure falls back to the path +
-    // filename-datetime entry below.
-    let raw: Option<serde_json::Value> = read_first_block(path)
+    // The walk only surfaces replay containers (`*.wowsreplay` and the Lesta
+    // `*.korablireplay`, same framing), never the bare-JSON tempArenaInfo
+    // variant, so the bounded block read is the only input path needed — the
+    // multi-MB packet stream behind the header is never touched. A Lesta
+    // descriptor (no `vehicles`) additionally pulls its roster from blocks 1
+    // and 2 through the same bounded reads. Any read/parse failure falls back
+    // to the path + filename-datetime entry below.
+    let raw: Option<serde_json::Value> = read_block(path, 0)
         .ok()
         .and_then(|payload| serde_json::from_str(&String::from_utf8_lossy(&payload)).ok());
     let Some(raw) = raw else {
@@ -609,8 +630,9 @@ pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
 }
 
 /// Project the parsed descriptor JSON onto a [`ReplayMetaLite`]. Shares the
-/// defensive field-pulling style of [`meta_from_raw`], but drops the roster
-/// and raw JSON and resolves the recording player's ship (relation == 0).
+/// defensive field-pulling style of [`meta_from_raw`] and the same roster
+/// source ([`roster_from_raw`] — WG `vehicles`, or the synthesized Lesta
+/// roster), resolving the recording player's ship (relation == 0).
 fn lite_from_raw(
     path: String,
     date_time: Option<String>,
@@ -635,35 +657,23 @@ fn lite_from_raw(
         .and_then(|v| v.as_str())
         .map(str::to_owned);
 
-    // Pull the roster just enough to count players + find the recorder (relation 0).
-    let vehicles = obj
-        .and_then(|o| o.get("vehicles"))
-        .and_then(|v| v.as_array());
-    let player_count = vehicles.map(|a| a.len()).unwrap_or(0);
-    let (bot_count, scripted_unit_count) = vehicles
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_object())
-                .filter_map(|o| o.get("name").and_then(|x| x.as_str()))
-                .fold((0u32, 0u32), |(bots, scripted), n| {
-                    (
-                        bots + u32::from(is_bot_nickname(n)),
-                        scripted + u32::from(is_scripted_unit_nickname(n)),
-                    )
-                })
-        })
-        .unwrap_or((0, 0));
-    let own = vehicles.and_then(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_object())
-            .find(|o| o.get("relation").and_then(|x| x.as_i64()).unwrap_or(-1) == 0)
-    });
-    let own_ship_id = own.and_then(|o| o.get("shipId")).and_then(|x| x.as_i64());
+    // Pull the roster just enough to count players + find the recorder
+    // (relation 0). For a Lesta descriptor this synthesizes the roster from
+    // block[1]/block[2] — the path is only re-opened when the descriptor
+    // carries no `vehicles` array.
+    let vehicles = roster_from_raw(std::path::Path::new(&path), &raw);
+    let player_count = vehicles.len();
+    let (bot_count, scripted_unit_count) =
+        vehicles.iter().fold((0u32, 0u32), |(bots, scripted), v| {
+            (
+                bots + u32::from(is_bot_nickname(&v.name)),
+                scripted + u32::from(is_scripted_unit_nickname(&v.name)),
+            )
+        });
+    let own = vehicles.iter().find(|v| v.relation == 0);
+    let own_ship_id = own.map(|v| v.ship_id);
     // ship_name is left None here — the frontend resolves it via the encyclopedia.
-    let own_ship_name = own
-        .and_then(|o| o.get("name"))
-        .and_then(|x| x.as_str())
-        .map(str::to_owned);
+    let own_ship_name = own.map(|v| v.name.clone());
 
     ReplayMetaLite {
         path,
@@ -754,15 +764,7 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         .and_then(|v| v.as_str())
         .map(str::to_owned);
 
-    let vehicles = obj
-        .and_then(|o| o.get("vehicles"))
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(parse_vehicle_entry)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let vehicles = roster_from_raw(std::path::Path::new(&path), &raw);
     let bot_count = vehicles.iter().filter(|v| is_bot_nickname(&v.name)).count() as u32;
     let scripted_unit_count = vehicles
         .iter()
@@ -843,6 +845,107 @@ fn parse_vehicle_entry(v: &serde_json::Value) -> Option<VehicleEntry> {
         ship_id: obj.get("shipId").and_then(|x| x.as_i64()).unwrap_or(0),
         ship_name: None,
     })
+}
+
+/// The roster behind a parsed descriptor — the single source shared by the
+/// full ([`meta_from_raw`]) and lite ([`lite_from_raw`]) projections, never
+/// duplicated. WG descriptors carry the roster inline (`vehicles`); a
+/// descriptor without one is the Lesta container, whose roster is
+/// synthesized from block[1]/block[2] ([`lesta_roster`]).
+fn roster_from_raw(path: &std::path::Path, raw: &serde_json::Value) -> Vec<VehicleEntry> {
+    if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
+        return arr.iter().filter_map(parse_vehicle_entry).collect();
+    }
+    lesta_roster(path, raw)
+}
+
+/// One positional `playersPublicInfo` entry (see the module docs for the
+/// layout). Every slot is pulled defensively: an entry without its identity
+/// slots is dropped, missing optional slots heal to WG-neutral defaults.
+struct LestaPlayer {
+    id: i64,
+    name: String,
+    team: i64,
+    ship_id: i64,
+}
+
+/// Parse one `playersPublicInfo` positional array: `[0]` account id, `[1]`
+/// name, `[6]` team (0/1), `[7]` shipId.
+fn parse_lesta_player(entry: &serde_json::Value) -> Option<LestaPlayer> {
+    let arr = entry.as_array()?;
+    let get_i64 = |i: usize| arr.get(i).and_then(|v| v.as_i64());
+    let get_str = |i: usize| arr.get(i).and_then(|v| v.as_str());
+    Some(LestaPlayer {
+        id: get_i64(0)?,
+        name: get_str(1)?.to_owned(),
+        team: get_i64(6).unwrap_or(0),
+        ship_id: get_i64(7).unwrap_or(0),
+    })
+}
+
+/// Synthesize a WG-shaped roster for a Lesta descriptor (no `vehicles`):
+/// block[1] carries the roster as `playersPublicInfo` positional arrays,
+/// block[2] pins the recorder. Relations follow the WG rule once the
+/// recorder is known — 0 for the recorder, 1 for its team, 2 for the other.
+///
+/// Defensive throughout: a block[1]/block[2] that is missing, unparseable
+/// or roster-less degrades to an empty list (the descriptor's own fields
+/// still parse) — a Lesta header read must never fail the whole parse.
+fn lesta_roster(path: &std::path::Path, descriptor: &serde_json::Value) -> Vec<VehicleEntry> {
+    let players: Vec<LestaPlayer> = read_block(path, 1)
+        .ok()
+        .and_then(|payload| {
+            serde_json::from_str::<serde_json::Value>(&String::from_utf8_lossy(&payload)).ok()
+        })
+        .and_then(|raw| {
+            raw.get("playersPublicInfo")
+                .and_then(|v| v.as_object())
+                .map(|entries| entries.values().filter_map(parse_lesta_player).collect())
+        })
+        .unwrap_or_default();
+    if players.is_empty() {
+        return Vec::new();
+    }
+    // The recorder: block[2]'s leading integer (`"<accountDBID>.<arenaID>"`)
+    // when it lands on a roster entry, else the descriptor's `playerName`
+    // matched against the names, else the first positive-id (human) entry.
+    let recorder_from_marker = read_block(path, 2).ok().and_then(|payload| {
+        let text = String::from_utf8_lossy(&payload);
+        text.trim()
+            .split('.')
+            .next()
+            .and_then(|head| head.trim().parse::<i64>().ok())
+    });
+    let self_idx = recorder_from_marker
+        .and_then(|id| players.iter().position(|p| p.id == id))
+        .or_else(|| {
+            descriptor
+                .get("playerName")
+                .and_then(|v| v.as_str())
+                .and_then(|name| players.iter().position(|p| p.name == name))
+        })
+        .or_else(|| players.iter().position(|p| p.id > 0));
+    let Some(self_idx) = self_idx else {
+        return Vec::new();
+    };
+    let self_team = players[self_idx].team;
+    players
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| VehicleEntry {
+            relation: if i == self_idx {
+                0
+            } else if p.team == self_team {
+                1
+            } else {
+                2
+            },
+            id: p.id,
+            name: p.name,
+            ship_id: p.ship_id,
+            ship_name: None,
+        })
+        .collect()
 }
 
 /// Default replay dir when neither an explicit `dir` nor the env pins name
@@ -1115,18 +1218,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Lesta containers are rejected with the explicit unsupported-format
-    /// message (not the generic magic error); everything else passes through
-    /// to the normal parse.
-    #[test]
-    fn lesta_container_error_names_only_korablireplay() {
-        assert!(lesta_container_error(r"D:\WoWS_Korabli\replays\b.korablireplay").is_some());
-        // Case-insensitive on the extension.
-        assert!(lesta_container_error(r"D:\replays\b.KorabliReplay").is_some());
-        assert_eq!(lesta_container_error(r"D:\replays\b.wowsreplay"), None);
-        assert_eq!(lesta_container_error(r"D:\replays\b"), None);
-    }
-
     /// Extension test is case-insensitive and covers both spellings.
     #[test]
     fn is_replay_extension_matches_both_clients() {
@@ -1183,6 +1274,240 @@ mod tests {
         assert_eq!(lite.bot_count, 0);
         assert_eq!(lite.player_count, 0);
         assert_eq!(lite.own_ship_id, None);
+    }
+
+    /// Unique temp path with the Lesta `.korablireplay` extension (the same
+    /// per-process counter scheme as [`temp_replay_path`]; the filename
+    /// datetime parser reads the base name either way).
+    fn temp_korabli_path(base: &str) -> PathBuf {
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{base}_{n}.korablireplay"))
+    }
+
+    /// A synthetic Lesta `.korablireplay` modeled on the real container: the
+    /// WG framing with the Lesta 4-block payload set — [0] descriptor
+    /// (modeled on the real schema, NO `vehicles`), [1] roster JSON whose
+    /// `playersPublicInfo` positional arrays mirror the verified positions
+    /// ([0] id, [1] name, [2] clanDBID, [3] clan tag, [6] team, [7] shipId,
+    /// [9] realm, [15] max HP), [2] recorder marker (parameterized so the
+    /// fallback test can corrupt it), [3] checksum hex. The roster mixes all
+    /// four relation cases: the recorder, a same-team human, an enemy
+    /// `:Bot:` and an enemy `IDS_OP_X` scripted unit.
+    fn write_synthetic_lesta_replay(path: &std::path::Path, recorder_marker: &str) {
+        let descriptor = r#"{"matchGroup":"cooperative","mapDisplayName":"28_naval_mission",
+            "mapId":17,"mapName":"spaces/28_naval_mission","scenario":"domination_sandbox_3point_alt_5-6_coop",
+            "eventType":"","gameType":"CooperativeBattle","clientVersionFromExe":"26,10,0,8867689",
+            "playerName":"langyo","playerVehicle":"PRSB505-Oktyabrskaya-Revolutsiya"}"#;
+        let roster = r#"{"accountDBID":1000000001,"arenaUniqueID":1234567890123456,
+            "keepUntilTime":0,"playersPublicInfo":{
+            "1000000001":[1000000001,"langyo",0,"",0,-1,1,3340711376,0,"RU",[],0,0,-1,0,42500],
+            "88240732":[88240732,"karasik60",0,"",0,-1,1,3765352400,0,"RU",[],0,0,-1,0,29400],
+            "-268475967":[-268475967,":Bot:",0,"",0,-1,0,4184815568,0,"RU",[],0,0,-1,0,41200],
+            "-624526534":[-624526534,"IDS_OP_X",0,"",0,-1,0,4179539408,0,"RU",[],0,0,-1,0,65400]}}"#;
+        let checksum = "53BB63FBD4C37D37CF945F0BD78B1EAC";
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&REPLAY_MAGIC);
+        bytes.extend_from_slice(&4u32.to_le_bytes()); // Lesta writes 4 blocks
+        for block in [descriptor, roster, recorder_marker, checksum] {
+            bytes.extend_from_slice(&(block.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(block.as_bytes());
+        }
+        // Stand-in for the encrypted packet stream (identical WG scheme).
+        bytes.extend_from_slice(&[0u8; 64]);
+        std::fs::write(path, &bytes).expect("write synthetic korablireplay");
+    }
+
+    /// A Lesta descriptor (no `vehicles`) synthesizes the roster from
+    /// block[1]'s `playersPublicInfo` with block[2] pinning the recorder:
+    /// relations come out exactly 0/1/2, and the existing bot/scripted
+    /// classifiers apply unchanged (Lesta kept WG's bot markers).
+    #[test]
+    fn lesta_header_synthesizes_roster_from_blocks() {
+        let path = temp_korabli_path("20261001_025958_lesta");
+        write_synthetic_lesta_replay(&path, "1000000001.1234567890123456");
+        // The same internals read_replay_header runs.
+        let bytes = std::fs::read(&path).unwrap();
+        let json = extract_descriptor_json(&bytes).expect("descriptor block");
+        let raw: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let meta = meta_from_raw(path.to_string_lossy().into_owned(), raw);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(meta.match_group.as_deref(), Some("cooperative"));
+        assert_eq!(meta.map_name.as_deref(), Some("28_naval_mission"));
+        assert_eq!(meta.vehicles.len(), 4);
+        let by_name = |n: &str| meta.vehicles.iter().find(|v| v.name == n).unwrap();
+        // block[2] pins the recorder (team 1 here); its team are allies.
+        assert_eq!(by_name("langyo").relation, 0);
+        assert_eq!(by_name("karasik60").relation, 1);
+        assert_eq!(by_name(":Bot:").relation, 2);
+        assert_eq!(by_name("IDS_OP_X").relation, 2);
+        assert_eq!(by_name("langyo").ship_id, 3340711376);
+        assert_eq!(by_name("IDS_OP_X").id, -624526534);
+        // `:Bot:` and `IDS_OP_X` are both bot nicknames; only the latter is
+        // a scripted unit.
+        assert_eq!(meta.bot_count, 2);
+        assert_eq!(meta.scripted_unit_count, 1);
+    }
+
+    /// The lite projection over a Lesta container carries the full summary:
+    /// descriptor fields plus the synthesized roster's counts and recorder.
+    #[test]
+    fn lite_from_path_parses_synthetic_lesta_replay() {
+        let path = temp_korabli_path("20261001_025958_lesta_lite");
+        write_synthetic_lesta_replay(&path, "1000000001.1234567890123456");
+        let lite = lite_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(lite.date_time.as_deref(), Some("20261001_025958"));
+        assert_eq!(lite.match_group.as_deref(), Some("cooperative"));
+        assert_eq!(lite.map_name.as_deref(), Some("28_naval_mission"));
+        assert_eq!(
+            lite.scenario.as_deref(),
+            Some("domination_sandbox_3point_alt_5-6_coop")
+        );
+        assert_eq!(lite.own_ship_id, Some(3340711376));
+        assert_eq!(lite.own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(lite.player_count, 4);
+        assert_eq!(lite.bot_count, 2);
+        assert_eq!(lite.scripted_unit_count, 1);
+    }
+
+    /// An unparseable block[2] marker falls back to matching the
+    /// descriptor's `playerName` against the roster names — the recorder
+    /// still resolves (and with no name match either, the first positive-id
+    /// entry would).
+    #[test]
+    fn lesta_roster_falls_back_to_player_name_when_marker_unparseable() {
+        let path = temp_korabli_path("20261001_025958_lesta_fb");
+        write_synthetic_lesta_replay(&path, "not-an-id");
+        let lite = lite_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            lite.own_ship_id,
+            Some(3340711376),
+            "playerName langyo pins the recorder when the marker fails"
+        );
+        assert_eq!(lite.own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(lite.player_count, 4);
+    }
+
+    /// A Lesta container missing its roster block entirely (fewer blocks
+    /// than the marker read needs) degrades to the descriptor-only entry —
+    /// never a failed parse.
+    #[test]
+    fn lesta_roster_degrades_to_empty_when_blocks_missing() {
+        let path = temp_korabli_path("20261001_025958_lesta_thin");
+        let descriptor =
+            r#"{"matchGroup":"cooperative","mapDisplayName":"28_naval_mission","mapId":17}"#;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&REPLAY_MAGIC);
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // descriptor only
+        bytes.extend_from_slice(&(descriptor.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(descriptor.as_bytes());
+        std::fs::write(&path, &bytes).expect("write thin korablireplay");
+        let lite = lite_from_path(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(lite.match_group.as_deref(), Some("cooperative"));
+        assert_eq!(lite.map_name.as_deref(), Some("28_naval_mission"));
+        assert_eq!(lite.player_count, 0, "no roster block — empty roster");
+        assert_eq!(lite.own_ship_id, None);
+    }
+
+    /// Ground-truth validation of the Lesta container crack against the
+    /// real replays on this machine: takes the newest
+    /// `D:\WoWS_Korabli\replays\*.korablireplay` and runs BOTH the
+    /// header-parse internals (roster synthesis from `playersPublicInfo`)
+    /// and the full packet-stream decode (Blowfish + zlib + frames — the
+    /// unmodified WG scheme). Skips when the Lesta client is not installed.
+    /// Run locally with `cargo test -p wowsp_tauri --lib -- --ignored lesta`.
+    #[test]
+    #[ignore = "needs the real Lesta replays on this machine"]
+    fn decodes_the_real_lesta_replays_on_this_machine() {
+        let dir = std::path::Path::new(r"D:\WoWS_Korabli\replays");
+        let Ok(rd) = fs::read_dir(dir) else {
+            return; // no Lesta client on this machine — skip
+        };
+        let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+        for ent in rd.flatten() {
+            let path = ent.path();
+            let is_container = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(is_replay_extension)
+                && path.file_name().and_then(|n| n.to_str()) != Some("temp.korablireplay");
+            if !is_container {
+                continue;
+            }
+            if let Ok(mtime) = ent.metadata().and_then(|m| m.modified()) {
+                if newest.as_ref().is_none_or(|(best, _)| mtime > *best) {
+                    newest = Some((mtime, path));
+                }
+            }
+        }
+        let Some((_, path)) = newest else {
+            return; // empty replays dir — skip
+        };
+        // Header internals (what read_replay_header runs).
+        let bytes = fs::read(&path).unwrap();
+        let json = extract_descriptor_json(&bytes).expect("descriptor JSON");
+        let raw: serde_json::Value = serde_json::from_str(&json).expect("descriptor parses");
+        let meta = meta_from_raw(path.to_string_lossy().into_owned(), raw);
+        assert!(
+            meta.match_group.as_deref().is_some_and(|m| !m.is_empty()),
+            "matchGroup must parse"
+        );
+        assert!(
+            meta.map_name.as_deref().is_some_and(|m| !m.is_empty()),
+            "map name must parse"
+        );
+        assert!(
+            !meta.vehicles.is_empty(),
+            "roster must synthesize from playersPublicInfo"
+        );
+        let own = meta
+            .vehicles
+            .iter()
+            .find(|v| v.relation == 0)
+            .expect("recorder entry (relation 0)");
+        assert!(own.ship_id > 0, "recorder's shipId must resolve");
+        assert!(meta.vehicles.len() >= 2, "player_count >= 2");
+        eprintln!(
+            "[lesta] {}  map={}  {} players  own={} ({}), bots={} scripted={}",
+            path.display(),
+            meta.map_name.clone().unwrap_or_default(),
+            meta.vehicles.len(),
+            own.name,
+            own.ship_id,
+            meta.bot_count,
+            meta.scripted_unit_count
+        );
+        // Full packet path (what read_replay_positions runs): decrypt +
+        // inflate + frames → non-empty trajectories. The roster's shipIds
+        // ride along as the entity→player join candidates.
+        let stream = packet_stream_after_blocks(&bytes).expect("packet stream after 4 blocks");
+        let candidates: std::collections::HashSet<u32> =
+            meta.vehicles.iter().map(|v| v.ship_id as u32).collect();
+        let version = meta
+            .raw
+            .get("clientVersionFromExe")
+            .and_then(|x| x.as_str());
+        let decoded =
+            super::super::packets::decode_replay(stream, &candidates, version).expect("decode");
+        let grouped = group_by_entity(decoded);
+        assert!(
+            !grouped.trajectories.is_empty(),
+            "trajectories must decode from the packet stream"
+        );
+        let positioned = grouped
+            .trajectories
+            .iter()
+            .filter(|t| !t.samples.is_empty())
+            .count();
+        assert!(positioned > 0, "at least one entity must have positions");
+        eprintln!(
+            "[lesta] {} trajectories ({} with position samples)",
+            grouped.trajectories.len(),
+            positioned
+        );
     }
 
     /// Custom-room bot rosters (`:Name:` nicknames) are counted; plain PvP

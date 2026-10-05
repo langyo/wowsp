@@ -92,7 +92,8 @@ pub(crate) fn managed_replays_dir() -> Result<PathBuf, String> {
 /// wins), replaces Windows-forbidden / control characters with `_`, and
 /// appends the `.wowsreplay` suffix when missing (the Lesta client's
 /// `.korablireplay` containers keep their own extension — the replay
-/// pipeline keys its explicit unsupported-format error off it). Rejects
+/// pipeline parses both containers natively, and the extension is what the
+/// listing and mode classifiers key off). Rejects
 /// empty names, dotfiles and pure dot-junk.
 pub fn sanitize_replay_name(raw: &str) -> Result<String, String> {
     let base = raw
@@ -2064,7 +2065,7 @@ pub(crate) mod tests {
             "20250622_w.WowsReplay"
         );
         // The Lesta container keeps its own extension — the replay pipeline
-        // keys its explicit unsupported-format error off it.
+        // parses it natively; the extension itself is meaningful metadata.
         assert_eq!(
             sanitize_replay_name("20261001_024940_Kremlin.korablireplay").unwrap(),
             "20261001_024940_Kremlin.korablireplay"

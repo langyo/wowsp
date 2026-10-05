@@ -136,7 +136,13 @@ export function modeKey(
   if (mg.includes("clan")) return "clan";
   if (mg.includes("brawl")) return "brawl";
   const coopFamily =
-    mg.includes("coop") || mg.includes("cooperative") || mg.startsWith("pve");
+    mg.includes("coop") ||
+    mg.includes("cooperative") ||
+    mg.startsWith("pve") ||
+    // Lesta's new-account tutorial arrives as matchGroup "intro"
+    // (gameType "CooperativeBattle"); WG's equivalent arrives as
+    // low_lvl_operation.
+    mg === "intro";
   if (coopFamily && scriptedUnitCount > 0) return "operation";
   if (coopFamily) return "cooperative";
   if (mg.includes("event")) return "event";

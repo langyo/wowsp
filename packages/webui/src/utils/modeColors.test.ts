@@ -32,6 +32,16 @@ describe("modeKey", () => {
     expect(modeKey("pve", null, "LOW_LVL_OPERATION_1_LVL_2")).toBe("operation");
   });
 
+  it("classifies the Lesta intro tutorial into the co-op family", () => {
+    // Lesta new-account tutorial: matchGroup "intro" + FIRST_BATTLE
+    // scenario (WG's equivalent arrives as low_lvl_operation). Its
+    // all-scripted roster keeps the operation label per the
+    // scriptedUnitCount rule; without scripted units it reads as co-op.
+    expect(modeKey("intro", "FIRST_BATTLE", null, 14, 14)).toBe("operation");
+    expect(modeKey("intro", null, null)).toBe("cooperative");
+    expect(modeKey("INTRO", undefined, undefined, 0, 0)).toBe("cooperative");
+  });
+
   it("classifies a scripted-unit roster inside the pve family as operation", () => {
     // Descriptor with NO operation fingerprint at all — the scripted units
     // (`IDS_*` text keys / `#Name` scenario style) never field in plain

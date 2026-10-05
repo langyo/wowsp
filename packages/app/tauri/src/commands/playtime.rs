@@ -676,7 +676,7 @@ fn battle_of(root: &Path, owner: &Option<GameInstall>, lite: &ReplayMetaLite) ->
 ///
 /// Per-file failures never fail the scan: `replay::lite_from_path` already
 /// degrades to a path + filename-datetime row when the header is
-/// unparseable (Lesta `.korablireplay` containers), and a file vanishing
+/// unparseable (a corrupt or foreign container), and a file vanishing
 /// mid-walk only loses its row.
 fn battles_from_roots(
     roots: &[(PathBuf, Option<GameInstall>)],
@@ -1047,11 +1047,11 @@ mod tests {
 
     /// The replay container magic — mirror of replay.rs's private
     /// `REPLAY_MAGIC`, kept in lock-step (a mismatched prefix is exactly how
-    /// the Lesta stand-in below degrades to a path-only row).
+    /// the corrupt-container stand-in below degrades to a path-only row).
     const TEST_REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
 
     /// Write a synthetic WG-format replay (the exact framing replay.rs's
-    /// `read_first_block` parses): magic + 1-block count LE + block length
+    /// `read_block` parses): magic + 1-block count LE + block length
     /// LE + descriptor JSON, with a stand-in packet stream trailing (which
     /// the bounded header read never touches). Same byte pattern as
     /// replay.rs's `lite_from_path_reads_bounded_first_block` fixture.
@@ -1148,9 +1148,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// A datetime-named container whose bytes are NOT the WG framing (the
-    /// Lesta `.korablireplay` stand-in): the header read fails and the row
-    /// degrades to date + empty descriptor fields — still a battle.
+    /// A datetime-named container whose bytes are NOT the replay framing
+    /// (any corrupt or foreign file — real Lesta `.korablireplay` containers
+    /// parse fine now): the header read fails and the row degrades to date +
+    /// empty descriptor fields — still a battle.
     #[test]
     fn an_unparseable_container_still_counts_with_its_filename_datetime() {
         let dir = temp_battle_dir("lesta");
@@ -1173,6 +1174,56 @@ mod tests {
         assert_eq!(b.own_ship_id, None);
         assert_eq!(b.own_ship_name, None);
         assert_eq!(b.player_count, 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A synthetic Lesta `.korablireplay` — WG framing with the Lesta
+    /// 4-block payload set (descriptor WITHOUT vehicles / roster
+    /// `playersPublicInfo` positional arrays / recorder marker / checksum).
+    /// Minimalist mirror of replay.rs's private synthetic-lesta fixture
+    /// (kept in lock-step with it): the recorder plus one enemy `:Bot:`.
+    fn write_synthetic_lesta_replay(path: &std::path::Path) {
+        let descriptor = r#"{"matchGroup":"cooperative","mapDisplayName":"28_naval_mission","mapId":17,
+            "playerName":"langyo","clientVersionFromExe":"26,10,0,8867689"}"#;
+        let roster = r#"{"playersPublicInfo":{
+            "1000000001":[1000000001,"langyo",0,"",0,-1,1,3340711376,0,"RU",[],0,0,-1,0,42500],
+            "-268475967":[-268475967,":Bot:",0,"",0,-1,0,4184815568,0,"RU",[],0,0,-1,0,41200]}}"#;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&TEST_REPLAY_MAGIC);
+        bytes.extend_from_slice(&4u32.to_le_bytes()); // Lesta writes 4 blocks
+        for block in [
+            descriptor,
+            roster,
+            "1000000001.1234567890123456",
+            "53BB63FBD4C37D37CF945F0BD78B1EAC",
+        ] {
+            bytes.extend_from_slice(&(block.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(block.as_bytes());
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, &bytes).expect("write synthetic korablireplay");
+    }
+
+    /// Integration: the battle ledger reads Lesta containers through the
+    /// same `lite_from_path` projection as WG replays — the row carries a
+    /// non-null match_group and own_ship_id (roster synthesized from
+    /// block[1]/block[2] inside replay.rs).
+    #[test]
+    fn battles_scan_parses_lesta_containers() {
+        let dir = temp_battle_dir("lesta-real");
+        write_synthetic_lesta_replay(&dir.join("20261001_025958_PRSB505_x.korablireplay"));
+        let mut cache = BattleCache::default();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1);
+        let b = &battles[0];
+        assert_eq!(b.date_time.as_deref(), Some("20261001_025958"));
+        assert_eq!(b.match_group.as_deref(), Some("cooperative"));
+        assert_eq!(b.own_ship_id, Some(3340711376));
+        assert_eq!(b.own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(b.player_count, 2);
+        assert_eq!(b.bot_count, 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
