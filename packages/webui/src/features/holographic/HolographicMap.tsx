@@ -40,6 +40,17 @@ import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
 import HoloSelfCard from "./HoloSelfCard";
 import HoloShipStatus from "./HoloShipStatus";
+import HoloWeatherBadge from "./HoloWeatherBadge";
+import HoloRangeMenu from "./HoloRangeMenu";
+import { weatherStateAt, type WeatherView } from "./weather";
+import {
+  armRangeRingPrefsPersist,
+  buildRangeRings,
+  rangeRingPrefs,
+  resolveSelfRings,
+  updateRangeRings,
+  type RangeRingDef,
+} from "./rangeRings";
 import type {
   AchievementEvent,
   ArenaPlayer,
@@ -56,6 +67,8 @@ import type {
   ShotKillEvent,
   WardEvent,
   WardRemoveEvent,
+  WeatherNotification,
+  WeatherTransition,
   ShellLaunchEvent,
   ShipInfo,
   SquadronCreate,
@@ -184,6 +197,11 @@ export default defineComponent({
     /** In-battle achievement awards (avatar onAchievementEarned) — same
      *  playhead-crossing feed treatment as chat. */
     achievements: { type: Array as () => AchievementEvent[], default: () => [] },
+    /** Global-weather timeline (BattleLogic state.weather.globalWeather) —
+     *  cyclone/storm approach warnings + interpolation windows. */
+    weatherTransitions: { type: Array as () => WeatherTransition[], default: () => [] },
+    /** Announced upcoming weather changes (the in-game warning banners). */
+    weatherNotifications: { type: Array as () => WeatherNotification[], default: () => [] },
     /** The arena's initial player state (onArenaStateReceived) — the
      *  authoritative ship-entity → team/player join for markers, minimap
      *  and the scorebar. */
@@ -1106,6 +1124,29 @@ export default defineComponent({
       shipLabels,
     });
 
+    // Combat-range indicators: the recorder's stock ranges resolve once the
+    // roster lands (self shipId) and rebuild with the actors; the 3D ring
+    // pool follows the playhead via updateMarkersAt. The prefs singleton is
+    // persisted on change and re-applied live (visibility only — geometry
+    // never depends on the toggles).
+    const rangeMenuOpen = ref(false);
+    const selfRingsView = ref<RangeRingDef[]>([]);
+    armRangeRingPrefsPersist();
+    watch(shipLabels, () => {
+      const self = shipLabels.value.find((l) => l.role === "self");
+      ctx.selfRings = resolveSelfRings(self?.shipId);
+      selfRingsView.value = ctx.selfRings;
+      buildRangeRings(ctx, ctx.selfRings);
+      updateRangeRings(ctx, current.value);
+    });
+    watch(rangeRingPrefs, () => updateRangeRings(ctx, current.value), { deep: true });
+
+    /** Weather restriction at the playhead — the top-right badge snapshot
+     *  (null while the sky is clear with nothing announced). */
+    const weatherView = computed<WeatherView | null>(() =>
+      weatherStateAt(props.weatherTransitions, props.weatherNotifications, current.value),
+    );
+
     /** First-person camera: keep the selected ship centered, camera trailing
      *  behind it along its heading. Called every render frame.
      *
@@ -1514,6 +1555,19 @@ export default defineComponent({
             />
           </div>
           </>
+        ) : null}
+        {/* Top-right weather-restriction badge: cyclone/storm approach
+            countdown + the live spotting cap while it ramps. */}
+        {props.replayPath && weatherView.value ? (
+          <HoloWeatherBadge view={weatherView.value} />
+        ) : null}
+        {/* Top-left combat-range indicator settings (button → modal). */}
+        {props.replayPath ? (
+          <HoloRangeMenu
+            open={rangeMenuOpen.value}
+            rings={selfRingsView.value}
+            onToggle={() => { rangeMenuOpen.value = !rangeMenuOpen.value; }}
+          />
         ) : null}
         {/* Bottom-left event feed — sink notifications + player chat +
             achievement awards, newest first. Kill cards keep the 3-column

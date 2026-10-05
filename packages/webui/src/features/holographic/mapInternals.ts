@@ -36,6 +36,8 @@ import type {
   WardEvent,
   WardRemoveEvent,
   WeaponLockEvent,
+  WeatherNotification,
+  WeatherTransition,
 } from "@/api";
 import type { ArenaPlayer } from "@/api";
 import type { PostBattleData } from "@/features/replay/postBattle";
@@ -48,6 +50,8 @@ import type { ArenaIdentity } from "./rosterRoles";
 import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "./modelLoader";
 import { viewWindow } from "./tactical/render";
 import type { CapZoneState } from "./capZones";
+import { disposeRangeRings } from "./rangeRings";
+import type { RangeRingDef, RangeRingSlot } from "./rangeRings";
 import type { TeamRole } from "./teamColors";
 import type { ShipLabel } from "./shipLabel";
 import type { FeedEntry } from "./HoloEventFeed";
@@ -106,6 +110,11 @@ export interface HoloMapDataProps {
   vehicles: VehicleEntry[];
   /** Ship encyclopedia (shipId → ShipInfo). */
   encyclopedia: Map<number, ShipInfo>;
+  /** Global-weather timeline (BattleLogic state.weather.globalWeather
+   *  transitions) — cyclone/storm approach + interpolation windows. */
+  weatherTransitions: WeatherTransition[];
+  /** Announced upcoming weather changes (the in-game warning banners). */
+  weatherNotifications: WeatherNotification[];
 }
 
 /** Rectangular XZ rect in scene coordinates (z = -worldZ). */
@@ -327,6 +336,13 @@ export interface MapInternals extends MapInternalsDeps {
   capRings: THREE.Mesh[];
   /** Cap-letter sprites (redrawn with the point ETA while Alt is held). */
   capLetterSprites: THREE.Sprite[];
+  /** 3D dashed range rings around the recorder's ship (see rangeRings.ts);
+   *  rebuilt with the actors, repositioned per playhead tick. */
+  rangeRingSlots: RangeRingSlot[];
+  /** The recorder's resolved stock ranges (main/torpedo/AA/radar/hydro/…)
+   *  feeding BOTH the 2D circles and the 3D rings; [] until the self ship
+   *  resolves. */
+  selfRings: RangeRingDef[];
   /** Line materials of every screen-space overlay ring (cap / smoke /
    *  ward). Their viewport resolution uniform is refreshed each frame. */
   overlayLineMats: LineMaterial[];
@@ -425,6 +441,8 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeFormations: new Map(),
     capRings: [],
     capLetterSprites: [],
+    rangeRingSlots: [],
+    selfRings: [],
     overlayLineMats: [],
     mapModel: null,
     waterFloor: null,
@@ -510,6 +528,10 @@ export function clearActors(ctx: MapInternals) {
   }
   ctx.capLetterSprites = [];
   ctx.overlayLineMats = [];
+  // 3D range rings (rangeRings.ts owns the dispose helper — the mat pool
+  // above was just reset, so its own splice inside is a no-op here).
+  disposeRangeRings(ctx);
+  ctx.selfRings = [];
   ctx.capSim.clear();
   for (const cl of ctx.smokeClusters) {
     for (const ring of cl.rings) {

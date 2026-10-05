@@ -85,6 +85,8 @@ export type {
   MinimapSquadronRemove,
   WardEvent,
   WardRemoveEvent,
+  WeatherNotification,
+  WeatherTransition,
   ShotKillEvent,
   DamageStatSample,
   ChatEvent,

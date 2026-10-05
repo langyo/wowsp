@@ -444,5 +444,43 @@
     "private": "Privado",
     "copy": "Copiar mensaje"
   },
-  "achieved": "logró el logro"
+  "achieved": "logró el logro",
+  "weather": {
+    "kind": {
+      "cyclone": "Ciclón",
+      "storm": "Tormenta",
+      "snowstorm": "Ventisca",
+      "cvc": "Clima de batalla de clanes",
+      "calm": "Cielo despejado",
+      "other": "Cambio de clima"
+    },
+    "phase": {
+      "incoming": "en camino",
+      "shifting": "intensificándose",
+      "active": "activo",
+      "clearing": "disipándose"
+    },
+    "incomingIn": "llega en {s}",
+    "visibility": "Visibilidad"
+  },
+  "ranges": {
+    "title": "Indicadores de alcance",
+    "hint": "Dibuja alrededor del barco grabado los alcances estándar de sus armas y consumibles (sin bonus de equipo).",
+    "master": "Activar indicadores de alcance",
+    "kindsTitle": "Anillos",
+    "surfaces": "Superficies",
+    "minimap": "Minimapa 2D",
+    "scene": "Escena 3D",
+    "kind": {
+      "main": "Batería principal",
+      "secondary": "Batería secundaria",
+      "torpedo": "Torpedos",
+      "aa": "Antiaéreos",
+      "radar": "Radar",
+      "hydro": "Hidroacústica",
+      "detect": "Detección",
+      "vis": "Visibilidad climática"
+    },
+    "visValue": "varía con el clima"
+  }
 }

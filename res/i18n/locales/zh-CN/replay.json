@@ -444,5 +444,43 @@
     "private": "私聊",
     "copy": "复制消息"
   },
-  "achieved": "达成了成就"
+  "achieved": "达成了成就",
+  "weather": {
+    "kind": {
+      "cyclone": "气旋",
+      "storm": "风暴",
+      "snowstorm": "暴雪",
+      "cvc": "军团战天气",
+      "calm": "晴朗",
+      "other": "天气变化"
+    },
+    "phase": {
+      "incoming": "即将来临",
+      "shifting": "正在增强",
+      "active": "生效中",
+      "clearing": "正在消散"
+    },
+    "incomingIn": "{s} 后来临",
+    "visibility": "能见度"
+  },
+  "ranges": {
+    "title": "范围指示器",
+    "hint": "围绕本舰绘制各武器与消耗品的作用范围（库存数值，不含配件加成）。",
+    "master": "启用范围指示器",
+    "kindsTitle": "指示环",
+    "surfaces": "显示位置",
+    "minimap": "2D 小地图",
+    "scene": "3D 场景",
+    "kind": {
+      "main": "主炮射程",
+      "secondary": "副炮射程",
+      "torpedo": "鱼雷射程",
+      "aa": "防空圈",
+      "radar": "雷达范围",
+      "hydro": "水听范围",
+      "detect": "隐蔽圈",
+      "vis": "天气能见度"
+    },
+    "visValue": "随天气实时变化"
+  }
 }

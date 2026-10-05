@@ -1024,3 +1024,176 @@
   color: #f87171;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Weather-restriction badge (top-right, cyclone timeline) ─────────── */
+.holo-map__weather {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 6px 10px;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-sm);
+  background: var(--holo-hud-bg);
+  box-shadow: var(--holo-hud-shadow);
+  pointer-events: none;
+}
+
+.holo-map__weather-ico {
+  display: inline-flex;
+  color: #7dd3fc;
+}
+
+.holo-map__weather-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.holo-map__weather-title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--holo-hud-strong);
+  white-space: nowrap;
+}
+
+.holo-map__weather-phase {
+  margin-left: 0.4rem;
+  font-weight: 500;
+  color: var(--holo-hud-dim);
+}
+
+.holo-map__weather-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--holo-hud-text);
+  white-space: nowrap;
+}
+
+.holo-map__weather--incoming {
+  border-color: rgb(251 191 36 / 55%);
+  .holo-map__weather-ico { color: #fbbf24; }
+  .holo-map__weather-phase { color: #fbbf24; }
+}
+
+.holo-map__weather--shifting {
+  border-color: rgb(251 146 60 / 60%);
+  .holo-map__weather-ico { color: #fb923c; }
+  .holo-map__weather-phase { color: #fb923c; }
+}
+
+.holo-map__weather--active {
+  border-color: rgb(248 113 113 / 65%);
+  .holo-map__weather-ico { color: #f87171; }
+  .holo-map__weather-phase { color: #f87171; }
+}
+
+.holo-map__weather--clearing {
+  .holo-map__weather-ico { color: #7dd3fc; }
+  .holo-map__weather-phase { color: #7dd3fc; }
+}
+
+/* ── Range-indicator settings (top-left button + modal) ─────────────── */
+.holo-map__rangebtn-wrap {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 3;
+}
+
+/* The modal's own body — plain rows over the HUD palette, independent of
+   the hikari dialog chrome. */
+.holo-range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.holo-range__hint {
+  margin: 0 0 0.4rem;
+  font-size: var(--text-xs);
+  color: var(--holo-hud-dim);
+}
+
+.holo-range__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 2px 0;
+}
+
+.holo-range__row--master {
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--holo-hud-border);
+  .holo-range__name { font-weight: 700; }
+}
+
+.holo-range__section {
+  margin-top: 0.35rem;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--holo-hud-dim);
+}
+
+.holo-range__dot {
+  flex: 0 0 auto;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 6px currentColor;
+}
+
+.holo-range__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--holo-hud-text);
+}
+
+.holo-range__value {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--holo-hud-dim);
+}
+
+/* Hand-rolled mini switch (28×16 track + knob) matching the HUD palette. */
+.holo-range__switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-full);
+  background: var(--holo-hud-chip);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+
+  &--on {
+    border-color: rgb(var(--color-primary) / 60%);
+    background: rgb(var(--color-primary) / 30%);
+  }
+}
+
+.holo-range__knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--holo-hud-strong);
+  transition: left 0.15s ease;
+}
+
+.holo-range__switch--on .holo-range__knob {
+  left: 15px;
+  background: rgb(var(--color-primary));
+}

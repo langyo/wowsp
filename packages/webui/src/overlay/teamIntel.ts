@@ -33,6 +33,8 @@ interface KitEntry {
   s?: KitLevel;
   /** Longest stock radar detection radius, meters (only when r > 0). */
   radarM?: number;
+  /** Longest stock hydroacoustic detection radius, meters (only when h > 0). */
+  hydroM?: number;
 }
 
 const KIT = kitRaw as Record<string, KitEntry>;
@@ -76,6 +78,9 @@ export function setRuntimeKit(raw: string | null | undefined): boolean {
     if (s) entry.s = s;
     if (typeof src.radarM === "number" && Number.isFinite(src.radarM) && src.radarM > 0) {
       entry.radarM = src.radarM;
+    }
+    if (typeof src.hydroM === "number" && Number.isFinite(src.hydroM) && src.hydroM > 0) {
+      entry.hydroM = src.hydroM;
     }
     out[key] = entry;
   }

@@ -701,6 +701,8 @@ fn replay_stream_omits_empty_sections() {
         chat_messages: Vec::new(),
         achievements: Vec::new(),
         arena_players: Vec::new(),
+        weather_transitions: Vec::new(),
+        weather_notifications: Vec::new(),
         self_team: None,
     };
     let v = round_trips(minimal);

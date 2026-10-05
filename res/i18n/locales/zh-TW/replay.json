@@ -444,5 +444,43 @@
     "private": "私聊",
     "copy": "複製訊息"
   },
-  "achieved": "達成了成就"
+  "achieved": "達成了成就",
+  "weather": {
+    "kind": {
+      "cyclone": "氣旋",
+      "storm": "風暴",
+      "snowstorm": "暴雪",
+      "cvc": "軍團戰天氣",
+      "calm": "晴朗",
+      "other": "天氣變化"
+    },
+    "phase": {
+      "incoming": "即將來臨",
+      "shifting": "正在增強",
+      "active": "生效中",
+      "clearing": "正在消散"
+    },
+    "incomingIn": "{s} 後來臨",
+    "visibility": "能見度"
+  },
+  "ranges": {
+    "title": "範圍指示器",
+    "hint": "圍繞本艦繪製各武器與消耗品的作用範圍（庫存數值，不含配件加成）。",
+    "master": "啟用範圍指示器",
+    "kindsTitle": "指示環",
+    "surfaces": "顯示位置",
+    "minimap": "2D 小地圖",
+    "scene": "3D 場景",
+    "kind": {
+      "main": "主砲射程",
+      "secondary": "副砲射程",
+      "torpedo": "魚雷射程",
+      "aa": "防空圈",
+      "radar": "雷達範圍",
+      "hydro": "聲納範圍",
+      "detect": "隱蔽圈",
+      "vis": "天氣能見度"
+    },
+    "visValue": "隨天氣即時變化"
+  }
 }

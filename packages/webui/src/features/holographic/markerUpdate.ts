@@ -21,6 +21,7 @@ import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
 import { updateLabelPositions } from "./labelOverlay";
 import { formationOffsets } from "./planeFormation";
+import { updateRangeRings } from "./rangeRings";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
 import { shipStatusAt } from "./shipStatusModel";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -676,4 +677,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   }
   // Update screen-space positions of floating labels from marker world positions.
   updateLabelPositions(ctx);
+  // 3D dashed range rings follow the recorder's marker (2D circles are
+  // painted by drawMinimap; these are their sea-surface twins).
+  updateRangeRings(ctx, t);
 }

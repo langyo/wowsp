@@ -15,7 +15,9 @@ Per ship the bake therefore records, per family:
 ``radarM`` is the ship's longest radar detection radius in METERS (stock
 values, best variant) — only present when the ship can mount radar. The
 Tab overlay marks each side's max ``radarM`` so the player knows how far out
-they can be lit.
+they can be lit. ``hydroM`` is the same bake for hydroacoustic search
+(``SonarSearch``): the longest ship/torpedo detection radius in meters,
+only present when the ship can mount hydro.
 
 Sources:
 
@@ -26,7 +28,7 @@ Sources:
   full GameParams (``radarM`` is then simply omitted).
 * the full `GameParams.json` (`%LOCALAPPDATA%/WoWSP-extract`, produced by
   `just extract`) — the ability ENTITY definitions, whose per-variant
-  `logic.distShip` is the radar detection radius in BigWorld units
+  `logic.distShip` is the radar / hydro detection radius in BigWorld units
   (1 BW unit = 30 m — same conversion the vendored wowsunpack
   `AbilityCategory::detection_radius()` applies).
 
@@ -114,16 +116,21 @@ def kit_values(fams: list[set[str]]) -> dict[str, int]:
     return out
 
 
-def radar_meters(
+def family_meters(
     gp: dict[str, Any],
     full: dict[str, Any] | None,
+    family: str,
 ) -> int | None:
-    """Longest stock radar detection radius (m) across the ship's slots.
+    """Longest stock detection radius (m) across the ship's slots for one
+    consumable family.
 
     Each slot entry names its ability entity + variant; the variant dict's
     `logic.distShip` (BW units) wins, with the entity's `Default` variant as
-    the fallback for plain-string entries. Returns None when no radar entry
-    resolves to a distShip (also whenever the full GameParams is absent).
+    the fallback for plain-string entries. Per-ship variants (hydro's
+    `PCY008_SonarSearch` keys them by ship / tier-group name at the entity's
+    top level) ride the same lookup — the slot entry carries the variant
+    name. Returns None when no entry resolves to a distShip (also whenever
+    the full GameParams is absent).
     """
     abilities = gp.get("ShipAbilities")
     if not isinstance(abilities, dict) or full is None:
@@ -138,7 +145,7 @@ def radar_meters(
                 (entry[0], entry[1]) if isinstance(entry, (list, tuple)) and len(entry) > 1
                 else (entry, None)
             )
-            if ability_family(name) != FAMILY_RADAR:
+            if ability_family(name) != family:
                 continue
             entity = full.get(name if isinstance(name, str) else "")
             if not isinstance(entity, dict):
@@ -156,15 +163,25 @@ def radar_meters(
     return round(best) if best > 0 else None
 
 
+def radar_meters(gp: dict[str, Any], full: dict[str, Any] | None) -> int | None:
+    """Longest stock radar detection radius (m) across the ship's slots."""
+    return family_meters(gp, full, FAMILY_RADAR)
+
+
+def hydro_meters(gp: dict[str, Any], full: dict[str, Any] | None) -> int | None:
+    """Longest stock hydroacoustic detection radius (m) across slots."""
+    return family_meters(gp, full, FAMILY_HYDRO)
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pack", type=Path, default=DEFAULT_PACK,
                     help="offline gameparams slice dir (gitignored; "
                          "point at a checkout that has it)")
     ap.add_argument("--full", type=Path, default=DEFAULT_FULL,
-                    help="full GameParams.json (radar ranges)")
+                    help="full GameParams.json (radar/hydro ranges)")
     ap.add_argument("--no-full", action="store_true",
-                    help="bake without the full GameParams (omit radarM)")
+                    help="bake without the full GameParams (omit radarM/hydroM)")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = ap.parse_args(argv)
 
@@ -184,6 +201,7 @@ def main(argv: list[str]) -> int:
     out: dict[str, dict[str, Any]] = {}
     stats: Counter[str] = Counter()
     radar_seen: list[tuple[int, str]] = []
+    hydro_seen: list[tuple[int, str]] = []
     for path in sorted(args.pack.glob("*.json")):
         ship_id = path.stem
         if not ship_id.isdigit():
@@ -209,6 +227,12 @@ def main(argv: list[str]) -> int:
                 record["radarM"] = m
                 stats["radarM"] += 1
                 radar_seen.append((m, str(gp.get("name") or ship_id)))
+        if record.get("h"):
+            m = hydro_meters(gp, full)
+            if m:
+                record["hydroM"] = m
+                stats["hydroM"] += 1
+                hydro_seen.append((m, str(gp.get("name") or ship_id)))
         # Ships that cannot mount any of the three get no entry at all —
         # a lookup miss in the consumer means "all zeros".
         if record:
@@ -230,6 +254,10 @@ def main(argv: list[str]) -> int:
     if radar_seen:
         print("  longest stock radars (m):")
         for m, name in sorted(radar_seen, reverse=True)[:12]:
+            print(f"    {m:>6}  {name}")
+    if hydro_seen:
+        print("  longest stock hydros (m):")
+        for m, name in sorted(hydro_seen, reverse=True)[:12]:
             print(f"    {m:>6}  {name}")
     return 0
 

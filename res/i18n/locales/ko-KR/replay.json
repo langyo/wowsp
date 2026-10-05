@@ -444,5 +444,43 @@
     "private": "개인",
     "copy": "메시지 복사"
   },
-  "achieved": "업적 달성"
+  "achieved": "업적 달성",
+  "weather": {
+    "kind": {
+      "cyclone": "사이클론",
+      "storm": "폭풍",
+      "snowstorm": "눈보라",
+      "cvc": "클랜전 날씨",
+      "calm": "맑음",
+      "other": "날씨 변화"
+    },
+    "phase": {
+      "incoming": "접근 중",
+      "shifting": "강해지는 중",
+      "active": "진행 중",
+      "clearing": "걷히는 중"
+    },
+    "incomingIn": "{s} 후 도래",
+    "visibility": "가시거리"
+  },
+  "ranges": {
+    "title": "사거리 표시기",
+    "hint": "녹화 함선을 중심으로 무기·소모품의 유효 범위를 그립니다(기본 수치, 장비 보정 제외).",
+    "master": "사거리 표시기 켜기",
+    "kindsTitle": "링",
+    "surfaces": "표시 위치",
+    "minimap": "2D 미니맵",
+    "scene": "3D 장면",
+    "kind": {
+      "main": "주포 사거리",
+      "secondary": "부포 사거리",
+      "torpedo": "어뢰 사거리",
+      "aa": "대공 범위",
+      "radar": "레이더 범위",
+      "hydro": "소나 범위",
+      "detect": "은폐권",
+      "vis": "날씨 가시거리"
+    },
+    "visValue": "날씨에 따라 실시간 변동"
+  }
 }

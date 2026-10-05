@@ -444,5 +444,43 @@
     "private": "Privé",
     "copy": "Copier le message"
   },
-  "achieved": "a obtenu le succès"
+  "achieved": "a obtenu le succès",
+  "weather": {
+    "kind": {
+      "cyclone": "Cyclone",
+      "storm": "Tempête",
+      "snowstorm": "Blizzard",
+      "cvc": "Météo de bataille de clan",
+      "calm": "Ciel dégagé",
+      "other": "Changement de météo"
+    },
+    "phase": {
+      "incoming": "en approche",
+      "shifting": "s'intensifie",
+      "active": "en cours",
+      "clearing": "se dissipe"
+    },
+    "incomingIn": "arrive dans {s}",
+    "visibility": "Visibilité"
+  },
+  "ranges": {
+    "title": "Indicateurs de portée",
+    "hint": "Trace autour du navire enregistré les portées standard de ses armes et consommables (sans bonus d'équipement).",
+    "master": "Activer les indicateurs de portée",
+    "kindsTitle": "Anneaux",
+    "surfaces": "Surfaces",
+    "minimap": "Mini-carte 2D",
+    "scene": "Scène 3D",
+    "kind": {
+      "main": "Artillerie principale",
+      "secondary": "Artillerie secondaire",
+      "torpedo": "Torpilles",
+      "aa": "DCA",
+      "radar": "Radar",
+      "hydro": "Hydroacoustique",
+      "detect": "Discrétion",
+      "vis": "Visibilité météo"
+    },
+    "visValue": "évolue avec la météo"
+  }
 }

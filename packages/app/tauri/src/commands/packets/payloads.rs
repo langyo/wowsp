@@ -93,6 +93,82 @@ pub(super) fn parse_nested_property(payload: &[u8], time: f32) -> Option<RawNest
     })
 }
 
+/// Shape gate for GlobalWeather GameParams ids: every entry in a 15.8
+/// GameParams dump (all 35) has low 16 bits `0xC7B0`, nibble 4 at bits 16..20,
+/// and a top byte of 0xFD/0xFE/0xFF (e.g. 4293183408 PCOW001_Sunny,
+/// 4283746224 PCOW010_Rain_Logic). Ship and consumable ids never share the
+/// shape, so the gate alone separates weather values from squadron positions
+/// and other nested-property traffic.
+pub(super) fn is_global_weather_param(id: u32) -> bool {
+    (id & 0xFFFF) == 0xC7B0 && ((id >> 16) & 0x0F) == 4 && matches!(id >> 24, 0xFD..=0xFF)
+}
+
+/// Parse the global-weather state out of a NestedPropertyUpdate (0x23) blob
+/// from the BattleLogic entity (`state.weather.globalWeather`). Two SetKey
+/// shapes exist, each a version-drifting bit-path prefix followed by the
+/// value:
+///   "item" (16 bytes): `[prefix u32?][fromParam u32][toParam u32]
+///    [startTime u16][endTime u16]` — the linear interpolation window
+///    (battle seconds) between two weather logics;
+///   "notification" (10 bytes): `[prefix u32?][param u32][time u16]` — the
+///    cyclone/storm approach warning.
+/// The prefix LENGTH drifts across versions, but the value block always
+/// ENDS the payload — both shapes are therefore read straight off the tail,
+/// and a mis-anchored blob simply fails the weather-id shape gate. The
+/// horizon is 7200 s, not the 1200 s battle cap, because the server's
+/// trailing window overruns the battle — the 15.8 capture's final blend is
+/// Evening→Evening over 972..6972. Nested payloads on other entities
+/// (squadron positions, capture progress) never satisfy the gate. Verified
+/// on that 15.8 cyclone replay.
+pub(super) fn parse_weather_nested(payload: &[u8]) -> Option<WeatherSignal> {
+    // Two hours: a generous schedule horizon covering the observed 6972 s
+    // tail window while still rejecting arbitrary u16 garbage.
+    const MAX_SCHEDULE_S: u16 = 7200;
+    if payload.len() >= 12 {
+        let o = payload.len() - 12;
+        let (Some(from_param), Some(to_param)) = (
+            read_bytes(payload, o).map(u32::from_le_bytes),
+            read_bytes(payload, o + 4).map(u32::from_le_bytes),
+        ) else {
+            return None;
+        };
+        let (Some(start_time), Some(end_time)) = (
+            read_bytes(payload, o + 8).map(u16::from_le_bytes),
+            read_bytes(payload, o + 10).map(u16::from_le_bytes),
+        ) else {
+            return None;
+        };
+        if is_global_weather_param(from_param)
+            && is_global_weather_param(to_param)
+            && start_time < end_time
+            && end_time <= MAX_SCHEDULE_S
+        {
+            return Some(WeatherSignal::Transition {
+                from_param,
+                to_param,
+                start_time: start_time as f32,
+                end_time: end_time as f32,
+            });
+        }
+    }
+    if payload.len() >= 6 {
+        let o = payload.len() - 6;
+        let (Some(param), Some(at_time)) = (
+            read_bytes(payload, o).map(u32::from_le_bytes),
+            read_bytes(payload, o + 4).map(u16::from_le_bytes),
+        ) else {
+            return None;
+        };
+        if is_global_weather_param(param) && at_time <= MAX_SCHEDULE_S {
+            return Some(WeatherSignal::Notification {
+                param,
+                at_time: at_time as f32,
+            });
+        }
+    }
+    None
+}
+
 /// Parse a SetWeaponLock (0x30) payload: three u32s (weapon_type, lock_type,
 /// target_id).
 pub(super) fn parse_weapon_lock(

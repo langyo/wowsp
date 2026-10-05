@@ -230,6 +230,13 @@ pub struct DecodedReplay {
     /// authoritative ship-entity → team/player join. Empty when the version's
     /// exposed method id isn't pinned or the payload fails the shape checks.
     pub arena_players: Vec<wowsp_tauri_shared::ArenaPlayer>,
+    /// Global-weather transitions (NestedPropertyUpdate 0x23 on the
+    /// BattleLogic entity): the cyclone/storm timeline as interpolation
+    /// windows between weather logics.
+    pub weather_transitions: Vec<wowsp_tauri_shared::WeatherTransition>,
+    /// Global-weather approach warnings (the same nested-property stream):
+    /// one weather id + the battle second it fires at.
+    pub weather_notifications: Vec<wowsp_tauri_shared::WeatherNotification>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -239,6 +246,26 @@ struct RawNestedProperty {
     time: f32,
     entity_id: i32,
     payload: Vec<u8>,
+}
+
+/// A global-weather signal recovered from a nested-property blob on the
+/// BattleLogic entity (`state.weather.globalWeather`): either an "item"
+/// transition blending between two weather logics over an interpolation
+/// window, or a "notification" warning that a weather state (cyclone,
+/// storm) arrives at a battle second.
+#[derive(Debug)]
+enum WeatherSignal {
+    /// SetKey "item": from/to GlobalWeather GameParams ids plus the linear
+    /// interpolation window in battle seconds.
+    Transition {
+        from_param: u32,
+        to_param: u32,
+        start_time: f32,
+        end_time: f32,
+    },
+    /// SetKey "notification": one GlobalWeather GameParams id and the battle
+    /// second it fires at.
+    Notification { param: u32, at_time: f32 },
 }
 
 /// A raw entity-method call captured from the stream, resolved into an event
@@ -438,11 +465,13 @@ use events::{
 };
 use frames::walk_frames;
 #[cfg(test)]
+use payloads::is_global_weather_param;
+#[cfg(test)]
 use payloads::scan_state_for_radius;
 use payloads::{
     parse_battle_results, parse_camera, parse_camera_mode, parse_cell_player_create,
     parse_entity_create, parse_entity_destroy, parse_entity_method, parse_map_name,
     parse_nested_property, parse_net_stats, parse_player_position, parse_position, parse_property,
-    parse_version, parse_weapon_lock, scan_state_for_ship_id,
+    parse_version, parse_weapon_lock, parse_weather_nested, scan_state_for_ship_id,
 };
 use pickle::{PyVal, parse_pickle};

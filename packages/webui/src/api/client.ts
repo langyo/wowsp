@@ -723,6 +723,35 @@ export interface ReplayStream {
   arenaPlayers?: ArenaPlayer[];
   /** Team slot (0/1) of the recorder, from the arena's isSelf entry. */
   selfTeam?: number | null;
+  /** Global-weather timeline (BattleLogic state.weather.globalWeather
+   *  "item" updates) — cyclone/storm interpolation windows. */
+  weatherTransitions?: WeatherTransition[];
+  /** Announced upcoming weather changes (the in-game warning banners). */
+  weatherNotifications?: WeatherNotification[];
+}
+
+/** One global-weather change window — mirrors
+ *  `wowsp_tauri_shared::WeatherTransition`. The server lerps every
+ *  weather-logic field (spotting caps, badness) linearly from `fromParam`
+ *  to `toParam` across [startTime, endTime]. */
+export interface WeatherTransition {
+  /** Packet clock when the update arrived. */
+  time: number;
+  startTime: number;
+  endTime: number;
+  /** GlobalWeather GameParams ids (see features/holographic/weather.ts). */
+  fromParam: number;
+  toParam: number;
+}
+
+/** Announced upcoming weather change — mirrors
+ *  `wowsp_tauri_shared::WeatherNotification`. */
+export interface WeatherNotification {
+  /** Packet clock when the update arrived. */
+  time: number;
+  /** Battle second the announced weather lands. */
+  atTime: number;
+  param: number;
 }
 
 /** Player stats from the WG public API (mirrors `wowsp_tauri_shared::PlayerStats`). */

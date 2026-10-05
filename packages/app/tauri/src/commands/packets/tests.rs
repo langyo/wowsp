@@ -148,6 +148,20 @@ fn decodes_real_replay_positions_and_entities() {
         decoded.shot_kills.len(),
     );
     assert!(ships >= 2, "a real match has at least 2 ships");
+    // Global-weather timeline (cyclone/storm) — printed for the empirical
+    // replay check; counts vary per match so nothing is asserted.
+    for w in &decoded.weather_transitions {
+        eprintln!(
+            "[weather] transition t={}: {} -> {} over {}..{}",
+            w.time, w.from_param, w.to_param, w.start_time, w.end_time
+        );
+    }
+    for n in &decoded.weather_notifications {
+        eprintln!(
+            "[weather] notification t={}: {} at {}",
+            n.time, n.param, n.at_time
+        );
+    }
     // Artillery fire is universal in a real match — a zero count means the
     // method table misresolved (the bug this layout fixes). Pre-0.11.6
     // replays predate the shipped tables, where decoding is disabled.
@@ -750,6 +764,156 @@ fn scans_state_for_zone_radius() {
     assert!(scan_state_for_radius(&state).is_none());
 }
 
+// ── Global weather (NestedPropertyUpdate 0x23) ─────────────────────────────
+
+/// The weather-id shape gate accepts every known GlobalWeather id (all 35
+/// entries of a 15.8 dump share it; nine samples here span the 0xFD/0xFE/
+/// 0xFF top bytes) and rejects ship ids / off-by-one neighbours.
+#[test]
+fn global_weather_param_shape_gate() {
+    for id in [
+        4293183408u32, // PCOW001_Sunny
+        4288989104,    // PCOW005_Evening
+        4283746224,    // PCOW010_Rain_Logic (cyclone)
+        4282697648,    // PCOW011_Night
+        4286891952,    // PCOW007_Dull
+        4287940528,    // PCOW006_Storm_Logic
+        4284794800,    // PCOW009_Snowstorm_Logic
+        4269066160,    // PCOW024_Rain_Logic_12km
+        4268017584,    // PCOW025_Storm_Logic_12km
+    ] {
+        assert!(is_global_weather_param(id), "id {id} must pass the gate");
+    }
+    // A ship GameParams id and a weather id minus one never share the shape.
+    assert!(!is_global_weather_param(3660461904));
+    assert!(!is_global_weather_param(4283746223));
+}
+
+/// "item" SetKey blobs (16 bytes) decode as transitions. Every sample is a
+/// byte-for-byte capture from a 15.8 cyclone replay: the battle-start
+/// same-weather window, the Evening → Rain_Logic (cyclone) blend, the
+/// mid-cyclone re-assertion, the lift blend and the post-battle tail.
+#[test]
+fn decodes_weather_transition_blobs() {
+    let item = hex_literal("bcb48001b0c7a4ffb0c7a4ff0000a401");
+    match parse_weather_nested(&item) {
+        Some(WeatherSignal::Transition {
+            from_param,
+            to_param,
+            start_time,
+            end_time,
+        }) => {
+            assert_eq!(from_param, 4288989104); // PCOW005_Evening
+            assert_eq!(to_param, 4288989104);
+            assert!((start_time - 0.0).abs() < 1e-3);
+            assert!((end_time - 420.0).abs() < 1e-3);
+        },
+        other => panic!("expected a transition, got {other:?}"),
+    }
+    let blend = hex_literal("bcb48001b0c7a4ffb0c754ffa5011d02");
+    match parse_weather_nested(&blend) {
+        Some(WeatherSignal::Transition {
+            from_param,
+            to_param,
+            start_time,
+            end_time,
+        }) => {
+            assert_eq!(from_param, 4288989104); // PCOW005_Evening
+            assert_eq!(to_param, 4283746224); // PCOW010_Rain_Logic
+            assert!((start_time - 421.0).abs() < 1e-3);
+            assert!((end_time - 541.0).abs() < 1e-3);
+        },
+        other => panic!("expected a transition, got {other:?}"),
+    }
+    // The trailing window: Evening→Evening over 972..6972 — the server
+    // schedules the post-battle weather past the 1200 s match cap, so the
+    // scan horizon is 7200 s, not 3600.
+    let tail = hex_literal("bcb48001b0c7a4ffb0c7a4ffcc033c1b");
+    match parse_weather_nested(&tail) {
+        Some(WeatherSignal::Transition {
+            from_param,
+            to_param,
+            start_time,
+            end_time,
+        }) => {
+            assert_eq!(from_param, 4288989104);
+            assert_eq!(to_param, 4288989104);
+            assert!((start_time - 972.0).abs() < 1e-3);
+            assert!((end_time - 6972.0).abs() < 1e-3);
+        },
+        other => panic!("expected a transition, got {other:?}"),
+    }
+    // Mid-cyclone re-assertion (Rain→Rain 542..849) and the lift blend
+    // (Rain→Evening 851..971) from the same capture — the re-assertion is
+    // what the frontend must treat as "no change" while the cyclone holds.
+    let reassert = hex_literal("bcb48001b0c754ffb0c754ff1e025103");
+    match parse_weather_nested(&reassert) {
+        Some(WeatherSignal::Transition {
+            from_param,
+            to_param,
+            start_time,
+            end_time,
+        }) => {
+            assert_eq!((from_param, to_param), (4283746224, 4283746224));
+            assert!((start_time - 542.0).abs() < 1e-3);
+            assert!((end_time - 849.0).abs() < 1e-3);
+        },
+        other => panic!("expected a transition, got {other:?}"),
+    }
+    let lift = hex_literal("bcb48001b0c754ffb0c7a4ff5303cb03");
+    match parse_weather_nested(&lift) {
+        Some(WeatherSignal::Transition {
+            from_param,
+            to_param,
+            start_time,
+            end_time,
+        }) => {
+            assert_eq!(from_param, 4283746224); // PCOW010_Rain_Logic
+            assert_eq!(to_param, 4288989104); // PCOW005_Evening
+            assert!((start_time - 851.0).abs() < 1e-3);
+            assert!((end_time - 971.0).abs() < 1e-3);
+        },
+        other => panic!("expected a transition, got {other:?}"),
+    }
+}
+
+/// "notification" SetKey blobs (10 bytes) decode as warnings — the two
+/// announcements from the same 15.8 replay: the cyclone arrives at 420 s,
+/// the lift back to Evening at 849 s.
+#[test]
+fn decodes_weather_notification_blobs() {
+    let rain = hex_literal("bcb50001b0c754ffa401");
+    match parse_weather_nested(&rain) {
+        Some(WeatherSignal::Notification { param, at_time }) => {
+            assert_eq!(param, 4283746224); // PCOW010_Rain_Logic
+            assert!((at_time - 420.0).abs() < 1e-3);
+        },
+        other => panic!("expected a notification, got {other:?}"),
+    }
+    let evening = hex_literal("bcb50001b0c7a4ff5103");
+    match parse_weather_nested(&evening) {
+        Some(WeatherSignal::Notification { param, at_time }) => {
+            assert_eq!(param, 4288989104); // PCOW005_Evening
+            assert!((at_time - 849.0).abs() < 1e-3);
+        },
+        other => panic!("expected a notification, got {other:?}"),
+    }
+}
+
+/// Non-weather nested-property blobs never match: short bit-path prefixes
+/// from other properties and a 13-byte squadron-position payload all fail
+/// the shape gate.
+#[test]
+fn rejects_non_weather_nested_blobs() {
+    assert!(parse_weather_nested(&hex_literal("bcf6902e01")).is_none());
+    assert!(parse_weather_nested(&hex_literal("d64001")).is_none());
+    // Squadron position: entity/u32-heavy, no weather-shaped id anywhere.
+    let squad = hex_literal("c68e6809c40000000049247543");
+    assert_eq!(squad.len(), 13);
+    assert!(parse_weather_nested(&squad).is_none());
+    assert!(parse_weather_nested(&[]).is_none());
+}
+
 /// Compress `data` with zlib — the mirror of what the decoder inflates.
 fn zlib_compress(data: &[u8]) -> Vec<u8> {
     use std::io::Write as _;
@@ -999,5 +1163,195 @@ fn dump_arena_state() {
             p.team_id, expected_side,
             "arena team disagrees with roster relation for {name}"
         );
+    }
+}
+
+fn hex(data: &[u8]) -> String {
+    data.iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Diagnostic: dump weather-related signals from a real replay — non-ship
+/// EntityCreates (BattleLogic / InteractiveZone), nested-property packets on
+/// them, 0x2a movement streams for non-ship entities, and float/string
+/// patterns inside the largest non-ship create state.
+/// Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
+#[test]
+fn dump_weather_signals() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        return;
+    };
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let mut cur = 8;
+    for _ in 0..block_count {
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+        cur += 4 + bl;
+    }
+    let decrypted = decrypt_stream(&bytes[cur..]).expect("decrypt");
+    let inflated = inflate_zlib(&decrypted).expect("inflate");
+    let mut c = 0usize;
+    let mut creates: std::collections::BTreeMap<i32, (i16, usize, f32)> =
+        std::collections::BTreeMap::new();
+    let mut nested_counts: std::collections::BTreeMap<i32, usize> =
+        std::collections::BTreeMap::new();
+    let mut nested_samples: std::collections::BTreeMap<i32, Vec<(f32, Vec<u8>)>> =
+        std::collections::BTreeMap::new();
+    let mut prop_counts: std::collections::BTreeMap<i32, usize> = std::collections::BTreeMap::new();
+    let mut prop_samples: std::collections::BTreeMap<i32, Vec<(f32, Vec<u8>)>> =
+        std::collections::BTreeMap::new();
+    let mut aux_moves: std::collections::BTreeMap<i32, Vec<(f32, f32, f32, f32)>> =
+        std::collections::BTreeMap::new();
+    while c + 12 <= inflated.len() {
+        let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
+        let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
+        let time = f32::from_le_bytes(inflated[c + 8..c + 12].try_into().unwrap());
+        let payload_end = c + 12 + size;
+        if size > 200_000 || payload_end > inflated.len() {
+            break;
+        }
+        let payload = &inflated[c + 12..payload_end];
+        match ptype {
+            PACKET_ENTITY_CREATE | PACKET_CELL_PLAYER_CREATE => {
+                if payload.len() >= 38 {
+                    let eid = i32::from_le_bytes(payload[0..4].try_into().unwrap());
+                    let etype = if ptype == PACKET_CELL_PLAYER_CREATE {
+                        1
+                    } else {
+                        i16::from_le_bytes(payload[4..6].try_into().unwrap())
+                    };
+                    creates.insert(eid, (etype, payload.len(), time));
+                }
+            },
+            PACKET_NESTED_PROPERTY => {
+                if payload.len() >= 9 {
+                    let eid = i32::from_le_bytes(payload[0..4].try_into().unwrap());
+                    let size2 = u32::from_le_bytes(payload[5..9].try_into().unwrap()) as usize;
+                    let data = &payload[9..(9 + size2).min(payload.len())];
+                    *nested_counts.entry(eid).or_default() += 1;
+                    let entry = nested_samples.entry(eid).or_default();
+                    if entry.len() < 4000 {
+                        entry.push((time, data.to_vec()));
+                    }
+                }
+            },
+            PACKET_ENTITY_PROPERTY => {
+                if payload.len() >= 4 {
+                    let eid = i32::from_le_bytes(payload[0..4].try_into().unwrap());
+                    *prop_counts.entry(eid).or_default() += 1;
+                    let entry = prop_samples.entry(eid).or_default();
+                    if entry.len() < 1300 {
+                        entry.push((time, payload[..payload.len().min(40)].to_vec()));
+                    }
+                }
+            },
+            PACKET_POSITION_AUX if payload.len() >= 32 => {
+                let eid = i32::from_le_bytes(payload[0..4].try_into().unwrap());
+                let x = f32::from_le_bytes(payload[8..12].try_into().unwrap());
+                let y = f32::from_le_bytes(payload[12..16].try_into().unwrap());
+                let z = f32::from_le_bytes(payload[16..20].try_into().unwrap());
+                let entry = aux_moves.entry(eid).or_default();
+                if entry.len() < 3 || (entry.len() % 200 == 0 && entry.len() < 2000) {
+                    entry.push((time, x, y, z));
+                }
+            },
+            _ => {},
+        }
+        c = payload_end;
+    }
+    eprintln!("== non-ship entity creates ==");
+    for (eid, (etype, len, t)) in &creates {
+        if *etype != 2 && *etype != 1 {
+            eprintln!("  eid {eid}: type {etype}, payload {len}B @t={t}");
+        }
+    }
+    eprintln!("== nested-property packets per entity (non-avatar/ship) ==");
+    for (eid, n) in &nested_counts {
+        let etype = creates.get(eid).map(|x| x.0);
+        if etype != Some(2) && etype != Some(1) {
+            eprintln!("NESTEDIT eid {eid} (type {etype:?}): {n} nested");
+            if *n > 300 {
+                for (t, data) in nested_samples.get(eid).into_iter().flatten() {
+                    eprintln!("NESTED t={t} len={}: {}", data.len(), hex(data));
+                }
+            } else {
+                for (t, data) in nested_samples.get(eid).into_iter().flatten().take(8) {
+                    eprintln!("    t={t}: {}", hex(&data[..data.len().min(48)]));
+                }
+            }
+        }
+    }
+    eprintln!("== 0x07 property packets per entity (non-avatar/ship) ==");
+    for (eid, n) in &prop_counts {
+        let etype = creates.get(eid).map(|x| x.0);
+        if etype != Some(2) && etype != Some(1) {
+            eprintln!("  eid {eid} (type {etype:?}): {n} props");
+            if *n > 300 {
+                for (t, data) in prop_samples.get(eid).into_iter().flatten() {
+                    eprintln!("PROP t={t}: {}", hex(data));
+                }
+            }
+        }
+    }
+    eprintln!("== 0x2a movement per entity (non-avatar/ship) ==");
+    for (eid, moves) in &aux_moves {
+        let etype = creates.get(eid).map(|x| x.0);
+        if etype != Some(2) && etype != Some(1) {
+            eprintln!(
+                "  eid {eid} (type {etype:?}): {} sampled moves",
+                moves.len()
+            );
+            for (t, x, y, z) in moves.iter().take(6) {
+                eprintln!("    t={t}: ({x:.1}, {y:.1}, {z:.1})");
+            }
+        }
+    }
+    let mut biggest: Option<(i32, &[u8])> = None;
+    c = 0;
+    while c + 12 <= inflated.len() {
+        let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
+        let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
+        let payload_end = c + 12 + size;
+        if size > 200_000 || payload_end > inflated.len() {
+            break;
+        }
+        let payload = &inflated[c + 12..payload_end];
+        if ptype == PACKET_ENTITY_CREATE
+            && payload.len() >= 38
+            && i16::from_le_bytes(payload[4..6].try_into().unwrap()) != 2
+            && biggest.is_none_or(|(_, b)| payload.len() > b.len())
+        {
+            biggest = Some((
+                i32::from_le_bytes(payload[0..4].try_into().unwrap()),
+                payload,
+            ));
+        }
+        c = payload_end;
+    }
+    if let Some((eid, payload)) = biggest {
+        let state = &payload[38..];
+        eprintln!(
+            "== biggest non-ship create eid {eid}: state {}B ==",
+            state.len()
+        );
+        eprintln!("STATE {}", hex(state));
+        for off in 0..state.len().saturating_sub(4) {
+            let f = f32::from_le_bytes(state[off..off + 4].try_into().unwrap());
+            if f.is_finite() && (20.0..=700.0).contains(&f) && (f - f.round()).abs() < 0.01 {
+                eprintln!("  integral float @ {off}: {f}");
+            }
+        }
+        for needle in ["weather", "localWeather", "Rain", "rain", "Cyclone"] {
+            if let Some(i) = state
+                .windows(needle.len())
+                .position(|w| w == needle.as_bytes())
+            {
+                let lo = i.saturating_sub(16);
+                let hi = (i + 96).min(state.len());
+                eprintln!("  str {needle:?} @ {i}: {}", hex(&state[lo..hi]));
+            }
+        }
     }
 }

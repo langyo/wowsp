@@ -444,5 +444,43 @@
     "private": "個人",
     "copy": "メッセージをコピー"
   },
-  "achieved": "が実績を達成"
+  "achieved": "が実績を達成",
+  "weather": {
+    "kind": {
+      "cyclone": "サイクロン",
+      "storm": "ストーム",
+      "snowstorm": "吹雪",
+      "cvc": "クラン戦の天候",
+      "calm": "晴れ",
+      "other": "天候変化"
+    },
+    "phase": {
+      "incoming": "接近中",
+      "shifting": "強まりつつ",
+      "active": "発生中",
+      "clearing": "消散中"
+    },
+    "incomingIn": "{s} 後に到来",
+    "visibility": "視界"
+  },
+  "ranges": {
+    "title": "射程インジケーター",
+    "hint": "自艦を中心に各兵装・消耗品の有効範囲を描画します（標準値、装備補正を含まない）。",
+    "master": "射程インジケーターを有効化",
+    "kindsTitle": "リング",
+    "surfaces": "表示面",
+    "minimap": "2D ミニマップ",
+    "scene": "3D シーン",
+    "kind": {
+      "main": "主砲射程",
+      "secondary": "副砲射程",
+      "torpedo": "魚雷射程",
+      "aa": "対空圏",
+      "radar": "レーダー範囲",
+      "hydro": "ソナー範囲",
+      "detect": "隠蔽圏",
+      "vis": "天候による視界"
+    },
+    "visValue": "天候に追随して変動"
+  }
 }

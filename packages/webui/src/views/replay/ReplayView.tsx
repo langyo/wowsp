@@ -31,6 +31,8 @@ import type {
   TorpedoSteer,
   VehicleEntry,
   WeaponLockEvent,
+  WeatherNotification,
+  WeatherTransition,
 } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -1449,6 +1451,9 @@ export default defineComponent({
     const chatMessages = ref<ChatEvent[]>([]);
     const achievements = ref<AchievementEvent[]>([]);
     const arenaPlayers = ref<ArenaPlayer[]>([]);
+    /** Global-weather timeline (cyclone) — badge + minimap darkening. */
+    const weatherTransitions = ref<WeatherTransition[]>([]);
+    const weatherNotifications = ref<WeatherNotification[]>([]);
     const showResults = ref(false);
     const showChat = ref(false);
     /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
@@ -1544,6 +1549,8 @@ export default defineComponent({
           chatMessages.value = stream.chatMessages ?? [];
           achievements.value = stream.achievements ?? [];
           arenaPlayers.value = stream.arenaPlayers ?? [];
+          weatherTransitions.value = stream.weatherTransitions ?? [];
+          weatherNotifications.value = stream.weatherNotifications ?? [];
           let maxT = 0;
           for (const tr of stream.trajectories) {
             for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -2007,6 +2014,8 @@ export default defineComponent({
                       chatMessages={chatMessages.value}
                       achievements={achievements.value}
                       arenaPlayers={arenaPlayers.value}
+                      weatherTransitions={weatherTransitions.value}
+                      weatherNotifications={weatherNotifications.value}
                       vehicles={parser.current.value.vehicles}
                       operation={isOperation.value}
                       encyclopedia={encyclopedia.byId}

@@ -250,6 +250,47 @@ pub(super) fn walk_frames(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
+    // Global weather: the same nested-property stream also carries the
+    // BattleLogic entity's `state.weather.globalWeather` — cyclone/storm
+    // transitions and approach warnings. The weather-id shape gate inside
+    // parse_weather_nested rejects every other nested payload (squadron
+    // positions, capture progress), so no entity-type filter is needed.
+    let mut weather_transitions: Vec<wowsp_tauri_shared::WeatherTransition> = Vec::new();
+    let mut weather_notifications: Vec<wowsp_tauri_shared::WeatherNotification> = Vec::new();
+    for n in &nested {
+        match parse_weather_nested(&n.payload) {
+            Some(WeatherSignal::Transition {
+                from_param,
+                to_param,
+                start_time,
+                end_time,
+            }) => weather_transitions.push(wowsp_tauri_shared::WeatherTransition {
+                time: n.time,
+                start_time,
+                end_time,
+                from_param,
+                to_param,
+            }),
+            Some(WeatherSignal::Notification { param, at_time }) => {
+                weather_notifications.push(wowsp_tauri_shared::WeatherNotification {
+                    time: n.time,
+                    at_time,
+                    param,
+                });
+            },
+            None => {},
+        }
+    }
+    weather_transitions.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    weather_notifications.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     // Resolve method calls into events once the entity types are known: the
     // method ids live in per-entity-type exposed-index tables (version-drifting,
     // see `method_tables`), and only the avatar entity (type 1) carries the
@@ -404,5 +445,7 @@ pub(super) fn walk_frames(
         chat_messages,
         achievements,
         arena_players,
+        weather_transitions,
+        weather_notifications,
     }
 }

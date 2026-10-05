@@ -419,6 +419,44 @@ fn is_zero_u32(v: &u32) -> bool {
     *v == 0
 }
 
+/// One global-weather transition (`state.weather.globalWeather`'s "item"
+/// SetKey on the BattleLogic entity, NestedPropertyUpdate 0x23): the match's
+/// ambient weather blends from one weather logic to another over a linear
+/// interpolation window — the cyclone/storm timeline. `from_param` /
+/// `to_param` are GlobalWeather GameParams ids (e.g. 4288989104
+/// PCOW005_Evening → 4283746224 PCOW010_Rain_Logic); the gameplay effect
+/// (cyclone spotting-range collapse) ramps across `start_time`..`end_time`
+/// in battle seconds.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherTransition {
+    /// Packet clock when the update was broadcast.
+    pub time: f32,
+    /// Battle second the interpolation window opens at.
+    pub start_time: f32,
+    /// Battle second the window closes at (weather fully switched).
+    pub end_time: f32,
+    /// GlobalWeather GameParams id the weather blends from.
+    pub from_param: u32,
+    /// GlobalWeather GameParams id the weather blends to.
+    pub to_param: u32,
+}
+
+/// One global-weather notification (the same property's "notification"
+/// SetKey): the server's warning that a weather state arrives at a battle
+/// second — the cyclone/storm approach warning the client announces.
+/// `param` is the incoming weather's GlobalWeather GameParams id.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherNotification {
+    /// Packet clock when the update was broadcast.
+    pub time: f32,
+    /// Battle second the warned-about weather takes effect.
+    pub at_time: f32,
+    /// GlobalWeather GameParams id of the incoming weather.
+    pub param: u32,
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -505,6 +543,15 @@ pub struct ReplayStream {
     /// checks; consumers then fall back to the EntityCreate shipId join.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arena_players: Vec<ArenaPlayer>,
+    /// Global-weather transitions (cyclone/storm timeline) from the
+    /// BattleLogic entity's nested-property stream — interpolation windows
+    /// between weather logics, in battle seconds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weather_transitions: Vec<WeatherTransition>,
+    /// Global-weather approach warnings (the same stream): one incoming
+    /// weather id + the battle second it fires at.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weather_notifications: Vec<WeatherNotification>,
     /// Team slot (0/1) of the recorder, from the `is_self` arena entry.
     /// `None` when the arena state is missing or the recorder's avatar
     /// didn't match any entry (very old replays).

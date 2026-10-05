@@ -444,5 +444,43 @@
     "private": "Private",
     "copy": "Copy message"
   },
-  "achieved": "earned"
+  "achieved": "earned",
+  "weather": {
+    "kind": {
+      "cyclone": "Cyclone",
+      "storm": "Storm",
+      "snowstorm": "Snowstorm",
+      "cvc": "Clan-battle weather",
+      "calm": "Clear skies",
+      "other": "Weather change"
+    },
+    "phase": {
+      "incoming": "incoming",
+      "shifting": "rolling in",
+      "active": "active",
+      "clearing": "lifting"
+    },
+    "incomingIn": "arrives in {s}",
+    "visibility": "Visibility"
+  },
+  "ranges": {
+    "title": "Range indicators",
+    "hint": "Draws the recorder ship's stock weapon and consumable ranges around her hull (no equipment bonuses).",
+    "master": "Enable range indicators",
+    "kindsTitle": "Rings",
+    "surfaces": "Surfaces",
+    "minimap": "2D minimap",
+    "scene": "3D scene",
+    "kind": {
+      "main": "Main battery",
+      "secondary": "Secondaries",
+      "torpedo": "Torpedoes",
+      "aa": "Anti-air",
+      "radar": "Radar",
+      "hydro": "Hydroacoustics",
+      "detect": "Concealment",
+      "vis": "Weather visibility"
+    },
+    "visValue": "live, follows the weather"
+  }
 }

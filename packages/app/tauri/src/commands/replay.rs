@@ -276,6 +276,8 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         chat_messages,
         achievements,
         arena_players,
+        weather_transitions,
+        weather_notifications,
     } = decoded;
     // The recorder's team slot comes from its own arena entry.
     let self_team = arena_players.iter().find(|p| p.is_self).map(|p| p.team_id);
@@ -407,6 +409,8 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
         chat_messages,
         achievements,
         arena_players,
+        weather_transitions,
+        weather_notifications,
         self_team,
     }
 }
@@ -1358,6 +1362,8 @@ mod tests {
             "chatMessages": stream.chat_messages,
             "achievements": stream.achievements,
             "arenaPlayers": stream.arena_players,
+            "weatherTransitions": stream.weather_transitions,
+            "weatherNotifications": stream.weather_notifications,
             "selfTeam": stream.self_team,
         });
         let out_path =

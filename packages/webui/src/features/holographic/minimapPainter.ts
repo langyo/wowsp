@@ -11,6 +11,20 @@ import { TEAM_COLOR, type TeamRole } from "./teamColors";
 import { frustumCorners } from "./sceneUtils";
 import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 import { TACTICAL_SIZE } from "./tactical/render";
+import {
+  cycloneZoneAt,
+  weatherCoreStyle,
+  weatherParamRestrictive,
+  weatherStateAt,
+  weatherTintStyle,
+  M_PER_WORLD_UNIT,
+} from "./weather";
+import {
+  metersToUnits,
+  rangeRingPrefs,
+  ringLabelKm,
+  RING_COLOR,
+} from "./rangeRings";
 import type { MapBounds } from "./modelLoader";
 import type { SquadronPlane } from "@/api";
 import {
@@ -23,6 +37,145 @@ import {
 /** Logical (CSS-px) edge length of the small minimap canvas. All thumb
  *  drawing happens in these units; the backing store is scaled by dpr. */
 export const MINIMAP_SIZE = 160;
+
+/** The recorder's live anchor for the range rings — scene coords straight
+ *  off the self marker (only while observed and afloat). */
+function selfRingAnchor(
+  ctx: MapInternals,
+  t: number,
+): { x: number; zScene: number } | null {
+  const self = ctx.shipMarkers.find((m) => m.userData.role === "self");
+  if (!self) return null;
+  const firstT = self.userData.firstT as number | undefined;
+  if (t < (firstT ?? 0)) return null;
+  const deathTime = self.userData.deathTime as number | null;
+  if (deathTime != null && t >= deathTime) return null;
+  return { x: self.position.x, zScene: self.position.z };
+}
+
+/** Global-weather darkening for one canvas: a map-wide tint plus the slow
+ *  storm-core disc (see weather.ts — deterministic, scrub-safe). `bounds`
+ *  are the FULL map's world rect (the zone drifts across the whole map);
+ *  `span` is the projected x-span behind `projX` so zooming scales the
+ *  disc correctly. `projZ` takes a SCENE z (= -worldZ). */
+function drawWeatherOverlay(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  bounds: MapBounds,
+  t: number,
+  size: number,
+  span: number,
+  projX: (x: number) => number,
+  projZ: (zScene: number) => number,
+): void {
+  const view = weatherStateAt(
+    ctx.props.weatherTransitions,
+    ctx.props.weatherNotifications,
+    t,
+  );
+  if (!view || view.badness <= 0.02) return;
+  g.fillStyle = weatherTintStyle(view.badness);
+  g.fillRect(0, 0, size, size);
+  // Drift seed: the first transition that actually turns restrictive —
+  // stable per match, so scrubbing replays the same front path.
+  const seed =
+    ctx.props.weatherTransitions.find(
+      (tr) => tr.fromParam !== tr.toParam && weatherParamRestrictive(tr.toParam),
+    )?.startTime ??
+    ctx.props.weatherTransitions[0]?.startTime ??
+    0;
+  const geo = cycloneZoneAt(
+    bounds.minX,
+    bounds.maxX,
+    bounds.minZ,
+    bounds.maxZ,
+    view.badness,
+    t,
+    seed,
+  );
+  const rPx = (geo.radius / (span || 1)) * size;
+  g.beginPath();
+  g.arc(projX(geo.cx), projZ(-geo.cz), rPx, 0, Math.PI * 2);
+  g.fillStyle = weatherCoreStyle(view.badness);
+  g.fill();
+  g.lineWidth = 1.2;
+  g.strokeStyle = `rgba(120, 140, 180, ${(0.5 * view.badness).toFixed(3)})`;
+  g.stroke();
+}
+
+/** Dashed combat-range circles around the recorder's ship + the km tag at
+ *  each circle's 12-o'clock mark (the in-game ranges-mod presentation).
+ *  Shared by the thumb and the enlarged map through their projections. */
+function drawRangeRings(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  t: number,
+  mapSpan: number,
+  size: number,
+  projX: (x: number) => number,
+  projZ: (zScene: number) => number,
+  opts: { fontPx: number; linePx: number; dash: [number, number]; minR: number; labelGap: number; rotRad: number },
+): void {
+  if (!rangeRingPrefs.enabled || !rangeRingPrefs.show2d) return;
+  const anchor = selfRingAnchor(ctx, t);
+  if (!anchor) return;
+  const cx = projX(anchor.x);
+  const cy = projZ(anchor.zScene);
+  // Static stock ranges (main/torp/AA/radar/hydro/…) + the LIVE weather
+  // spotting cap while restrictive weather is in force.
+  const rings: { color: string; rPx: number; label: string }[] = [];
+  const push = (color: string, radiusUnits: number, meters: number) => {
+    const rPx = (radiusUnits / (mapSpan || 1)) * size;
+    if (rPx < opts.minR || rPx > size * 1.6) return;
+    rings.push({ color, rPx, label: ringLabelKm(meters) });
+  };
+  for (const def of ctx.selfRings) {
+    if (!rangeRingPrefs.kinds[def.kind]) continue;
+    push(RING_COLOR[def.kind], metersToUnits(def.meters), def.meters);
+  }
+  if (rangeRingPrefs.kinds.vis) {
+    const view = weatherStateAt(
+      ctx.props.weatherTransitions,
+      ctx.props.weatherNotifications,
+      t,
+    );
+    if (view?.restrictive && view.visUnits != null && view.visUnits < 1500) {
+      const meters = view.visUnits * M_PER_WORLD_UNIT;
+      push(RING_COLOR.vis, view.visUnits, meters);
+    }
+  }
+  rings.sort((a, b) => a.rPx - b.rPx);
+  g.save();
+  g.setLineDash(opts.dash);
+  for (const r of rings) {
+    g.beginPath();
+    g.arc(cx, cy, r.rPx, 0, Math.PI * 2);
+    g.lineWidth = opts.linePx;
+    g.strokeStyle = r.color;
+    g.stroke();
+  }
+  g.setLineDash([]);
+  // 12-o'clock tags: each sits at its circle's north point, nudged apart
+  // when two radii land too close, text kept upright under map rotation.
+  let lastTop = Infinity;
+  for (const r of rings) {
+    let ty = cy - r.rPx - 3;
+    if (ty > lastTop - opts.labelGap) ty = lastTop - opts.labelGap;
+    lastTop = ty;
+    g.save();
+    g.translate(cx, ty);
+    if (opts.rotRad !== 0) g.rotate(-opts.rotRad);
+    g.font = `bold ${opts.fontPx}px sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "bottom";
+    g.shadowColor = "rgba(0, 0, 0, 0.85)";
+    g.shadowBlur = 3;
+    g.fillStyle = r.color;
+    g.fillText(r.label, 0, 0);
+    g.restore();
+  }
+  g.restore();
+}
 
 export function drawMinimap(ctx: MapInternals) {
   const full: MapBounds | null = computeFullMapBounds(ctx);
@@ -74,6 +227,9 @@ export function drawMinimap(ctx: MapInternals) {
 
   const dbW = db.maxX - db.minX;
   const dbH = db.maxZ - db.minZ;
+  // Battle clock — read once, shared by the weather/range overlays and the
+  // ship markers below (scrub-safe: everything derives from t).
+  const t = ctx.current.value;
 
   // Markers/camera live in three.js space (z = -worldZ); convert back to
   // world coordinates for the map projection. North (+worldZ) is up on
@@ -106,6 +262,19 @@ export function drawMinimap(ctx: MapInternals) {
   c2d.strokeStyle = "rgba(0, 170, 255, 0.3)";
   c2d.lineWidth = 1;
   c2d.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+  // Global-weather darkening (cyclone): the sea turns dark and the storm
+  // core slowly drifts, exactly like the in-game minimap zone marker.
+  drawWeatherOverlay(c2d, ctx, db, t, w, dbW, wx, wz);
+  // Recorder combat-range circles (ranges-mod style) under the ship glyphs.
+  drawRangeRings(c2d, ctx, t, dbW, w, wx, wz, {
+    fontPx: 8,
+    linePx: 1.2,
+    dash: [5, 4],
+    minR: 5,
+    labelGap: 9,
+    rotRad: 0,
+  });
 
   // Capture zones: rings at the zone's TRUE world radius, projected
   // through the same rect as the dots (a 100 m ring on a 1400 m map
@@ -141,7 +310,6 @@ export function drawMinimap(ctx: MapInternals) {
   // Ship markers: the game's own HUD class icons, tinted by team via the
   // variant (ally/enemy/sunk). Falls back to a plain dot until the icon
   // image decodes.
-  const t = ctx.current.value;
   for (const m of ctx.shipMarkers) {
     const role = m.userData.role as TeamRole | undefined;
     const firstT = m.userData.firstT as number | undefined;
@@ -337,6 +505,18 @@ export function drawMinimap(ctx: MapInternals) {
       }
       const zwx = (x: number) => ((x - vfull.minX) / (vfull.maxX - vfull.minX || 1)) * zw;
       const zwz = (zScene: number) => ((vfull.maxZ + zScene) / (vfull.maxZ - vfull.minZ || 1)) * zw;
+      // Global-weather darkening (zone drifts across the FULL map; the
+      // disc scales with the zoom window) + the recorder's range circles
+      // with upright 12-o'clock tags under map rotation.
+      drawWeatherOverlay(zctx, ctx, full, t, zw, vfull.maxX - vfull.minX, zwx, zwz);
+      drawRangeRings(zctx, ctx, t, vfull.maxX - vfull.minX, zw, zwx, zwz, {
+        fontPx: 12,
+        linePx: 2,
+        dash: [9, 7],
+        minR: 12,
+        labelGap: 15,
+        rotRad,
+      });
       // The game's A–J / 1–10 grid, world-anchored (full map rect, so it
       // stays put under pan/zoom).
       if (ctx.minimapShowGrid.value) {
