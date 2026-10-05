@@ -42,9 +42,12 @@
    so the sliding indicator, tactile press feedback and keyboard handling
    are the stock motion. `.hk-titlebar` is position:fixed, so the absolute
    wrapper centers on the WINDOW, not on the title block it rides behind in
-   the left slot. The overrides below only COMPACT the shared chrome for
-   the 32px caption (hikari has no size prop); hidden on the phone layout
-   where the bar hosts the hamburger drawer controls instead. */
+   the left slot. The overrides below ONLY shrink the shared chrome for the
+   32px caption (hikari has no size prop): track padding, trigger height
+   and font step — every radius, border, color and transition stays
+   hikari's own, so the switch reads as the exact same control family as
+   the dashboard's date-range tabs. Hidden on the phone layout where the
+   bar hosts the hamburger drawer controls instead. */
 .app-titlebar__views {
   position: absolute;
   left: 50%;
@@ -57,29 +60,27 @@
      pointerdown stopPropagation in the TSX. */
   -webkit-app-region: no-drag;
   app-region: no-drag;
-  /* Shrink-wrap so the no-drag box hugs the pill. */
+  /* Shrink-wrap so the no-drag box hugs the track. */
   width: max-content;
 }
 
 .app-titlebar__views .hk-tabs-list {
-  padding: 3px;
-  border-radius: 999px;
+  padding: 2px;
 }
 
 .app-titlebar__views .hk-tabs-trigger {
-  height: 20px;
-  padding: 0 10px;
-  font-size: var(--text-2xs);
-  border-radius: 999px;
+  height: 22px;
+  padding: 0 9px;
+  font-size: var(--text-xs);
+  gap: var(--space-4);
 }
 
 /* The sliding indicator rides the same compact metrics: its stock offsets
-   are the track's --space-2/-4 paddings, restated here against the 3px
-   list padding so the pill and the sliding pill stay concentric. */
+   are the track's --space-2 paddings, restated here against the 2px list
+   padding so the thumb and the track stay concentric. */
 .app-titlebar__views .hk-tabs-indicator {
-  top: 3px;
-  height: calc(100% - 6px);
-  border-radius: 999px;
+  top: 2px;
+  height: calc(100% - 4px);
 }
 
 @media (max-width: 767px) {
