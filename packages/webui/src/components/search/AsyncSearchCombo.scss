@@ -37,32 +37,6 @@
     color: rgb(var(--color-text));
   }
 
-  /* Ghost trigger: hikari's ghost HkIconButton voice — a bare 24px glyph
-     with no border or fill, for rows where the combo reads as one tool
-     icon among siblings (the mod hub's source row). */
-  &--ghost {
-    align-self: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    background: none;
-
-    svg {
-      width: 15px;
-      height: 15px;
-    }
-
-    &:hover {
-      background: rgb(var(--color-primary) / 10%);
-    }
-
-    /* Open state keeps the ghost voice: the same alpha tint as hover
-       (this compound out-ranks the solid `--on` fill below). */
-    &.async-search-combo__btn--on {
-      background: rgb(var(--color-primary) / 12%);
-    }
-  }
-
   &--on {
     color: rgb(var(--color-primary));
     border-color: rgb(var(--color-primary) / 25%);
