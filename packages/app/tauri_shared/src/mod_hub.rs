@@ -226,6 +226,12 @@ pub struct CatalogEntry {
     /// entries. The first preset is the default scheme.
     #[serde(default)]
     pub presets: Vec<CatalogPreset>,
+    /// Registry tag ids this entry carries (licensed, AI-generated, IP
+    /// origins…). Definitions come from the mod-tags registry, not the
+    /// index, so unknown ids render as raw text until the registry
+    /// catches up.
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub title: String,
     pub name_zh: String,
     pub name_en: String,
@@ -291,6 +297,30 @@ pub struct StaleBinInfo {
     /// Unit names the scanner recognizes in the stranded tree.
     pub mods: Vec<String>,
     pub file_count: u64,
+}
+
+/// One catalog tag definition (from the mod-tags registry). Tags decorate
+/// catalog entries beyond their category: feature markers (licensed,
+/// AI-generated), IP origins (Blue Archive, …), whatever the registry
+/// grows. The registry ships bundled and refreshes from the `mod-tags`
+/// release, so new tags land without an app update.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogTag {
+    pub id: String,
+    /// `feature | ip | …` — drives the badge styling.
+    pub kind: String,
+    /// Localized display names keyed by BCP-47 locale (a tag IS just a
+    /// name — plain strings, not the entry i18n shape).
+    pub i18n: std::collections::HashMap<String, String>,
+}
+
+/// The parsed mod-tags registry (`mod-tags.json`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogTagIndex {
+    pub schema: i64,
+    pub tags: Vec<CatalogTag>,
 }
 
 /// One foreign-installer unit surfaced to the webui: a unit another

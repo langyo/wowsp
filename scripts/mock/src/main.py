@@ -204,6 +204,23 @@ _MOCK_PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4"
              "z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==")
 
 
+@app.post("/api/mod_tags")
+async def cmd_mod_tags(request: Request) -> dict:
+    return {
+        "schema": 1,
+        "tags": [
+            {"id": "licensed", "kind": "feature",
+             "i18n": {"en-US": "Licensed", "zh-CN": "已授权"}},
+            {"id": "ai-generated", "kind": "feature",
+             "i18n": {"en-US": "AI-generated", "zh-CN": "AI 合成"}},
+            {"id": "ip-blue-archive", "kind": "ip",
+             "i18n": {"en-US": "Blue Archive", "zh-CN": "蔚蓝档案"}},
+            {"id": "ip-azur-lane", "kind": "ip",
+             "i18n": {"en-US": "Azur Lane", "zh-CN": "碧蓝航线"}},
+        ],
+    }
+
+
 @app.post("/api/mod_hub_list_assets")
 async def cmd_mod_hub_list_assets(request: Request) -> list[dict]:
     return [
@@ -363,36 +380,38 @@ _MOCK_CATALOG = {
                           "size": 87040, "name": "b.zip"}],
         },
         {
-            # Real pilot entries (published as discussions #795/#796): the
-            # first texture/voice big-category rows.
-            "id": "skin.arp.atago-blue", "category": "skin",
-            "discussion": 795, "version": "1",
+            # Real community packs (discussions #799-#802): the ribbon skin
+            # and the Blue Archive AI voices, tags and all.
+            "id": "skin.ribbon.azur-lane", "category": "skin",
+            "tags": ["licensed", "ip-azur-lane"],
+            "discussion": 799, "version": "3.0",
             "game": ">=13.0",
-            "title": "ARP Takao (Atago) Blue / ARP 高雄（爱宕）蓝色涂装",
-            "nameZh": "ARP 高雄（爱宕）蓝色涂装", "nameEn": "ARP Takao (Atago) Blue",
-            "description": "Blue hull livery for the ARP Takao heavy cruiser.",
+            "title": "Azur Lane Ribbons",
+            "nameZh": "碧蓝航线主题勋带", "nameEn": "Azur Lane Ribbons",
+            "description": "Azur Lane-themed combat ribbon icons (SineLine, licensed).",
             "authorUrl": "",
             "i18n": {
-                "en-US": {"name": "ARP Takao (Atago) Blue", "description": "Blue hull livery for the ARP Takao heavy cruiser."},
-                "zh-CN": {"name": "ARP 高雄（爱宕）蓝色涂装", "description": "ARP 高雄号重巡的蓝色舰体涂装。"},
+                "en-US": {"name": "Azur Lane Ribbons", "description": "Azur Lane-themed combat ribbon icons."},
+                "zh-CN": {"name": "碧蓝航线主题勋带", "description": "碧蓝航线风格战斗勋带图标。"},
             },
-            "packages": [{"url": "https://example.com/skin.zip", "sha256": "",
-                          "size": 19078656, "name": "skin.arp.atago-blue.zip"}],
+            "packages": [{"url": "https://example.com/ribbon.zip", "sha256": "",
+                          "size": 362496, "name": "skin.ribbon.azur-lane.zip"}],
         },
         {
-            "id": "voice.crew.abathur", "category": "voice",
-            "discussion": 796, "version": "1",
+            "id": "voice.ba.hoshino", "category": "voice",
+            "tags": ["ai-generated", "ip-blue-archive"],
+            "discussion": 800, "version": "1",
             "game": ">=12.1",
-            "title": "Abathur Crew Voice / Abathur 舰员语音",
-            "nameZh": "Abathur 舰员语音", "nameEn": "Abathur Crew Voice",
-            "description": "Replaces crew voice lines with StarCraft's Abathur.",
+            "title": "Hoshino Crew Voice (AI)",
+            "nameZh": "星野舰员语音（AI 合成）", "nameEn": "Hoshino Crew Voice (AI)",
+            "description": "Blue Archive Hoshino crew voice, AI-synthesized.",
             "authorUrl": "",
             "i18n": {
-                "en-US": {"name": "Abathur Crew Voice", "description": "Replaces crew voice lines with StarCraft's Abathur."},
-                "zh-CN": {"name": "Abathur 舰员语音", "description": "用星际争霸的阿巴瑟替换舰员语音。"},
+                "en-US": {"name": "Hoshino Crew Voice (AI)", "description": "Blue Archive Hoshino voice, AI-synthesized."},
+                "zh-CN": {"name": "星野舰员语音（AI 合成）", "description": "蔚蓝档案星野语音，AI 合成。"},
             },
-            "packages": [{"url": "https://example.com/voice.zip", "sha256": "",
-                          "size": 10600448, "name": "voice.crew.abathur.zip"}],
+            "packages": [{"url": "https://example.com/hoshino.zip", "sha256": "",
+                          "size": 3450880, "name": "voice.ba.hoshino.zip"}],
         },
         {
             # Withdrawn sample (closed discussion thread): exercises the

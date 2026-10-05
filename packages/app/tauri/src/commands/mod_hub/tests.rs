@@ -1450,6 +1450,7 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
         bundled: false,
         delisted: false,
         presets: Vec::new(),
+        tags: Vec::new(),
         title: format!("[Mod] {en} {id} 1"),
         name_zh: String::new(),
         name_en: en.into(),

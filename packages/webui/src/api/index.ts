@@ -25,6 +25,8 @@ export type {
   CatalogPreset,
   CatalogEntry,
   ForeignModUnit,
+  CatalogTag,
+  CatalogTagIndex,
   AssetFileInfo,
   AssetPayload,
   CatalogEntryI18n,

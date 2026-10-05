@@ -1188,6 +1188,8 @@ export interface CatalogEntry {
   /** Named install-time schemes (palette, position, display mode…); the
    *  first one is the default and mirrors the plain package list. */
   presets?: CatalogPreset[];
+  /** Registry tag ids (licensed, AI-generated, IP origins…). */
+  tags?: string[];
   title: string;
   nameZh: string;
   nameEn: string;
@@ -1232,6 +1234,23 @@ export interface ModInstallRecord {
   restoreDir?: string | null;
   /** Game install this record belongs to (empty on legacy records). */
   gameRoot?: string;
+}
+
+/** One localized tag definition from the mod-tags registry (mirrors
+ *  `wowsp_tauri_shared::CatalogTag`). Tags decorate entries beyond their
+ *  category: licensed / AI-generated feature markers, IP origins… */
+export interface CatalogTag {
+  id: string;
+  /** `feature | ip | …` — drives badge styling. */
+  kind: string;
+  /** Display names keyed by BCP-47 locale. */
+  i18n: Record<string, string>;
+}
+
+/** The registry (bundled + remotely refreshable). */
+export interface CatalogTagIndex {
+  schema: number;
+  tags: CatalogTag[];
 }
 
 /** One foreign-installer unit (mirrors `wowsp_tauri_shared::ForeignModUnit`):
@@ -1937,6 +1956,7 @@ export const api = {
     transport.invoke<ReconcileReport>(RPC.mod_hub_reconcile, { gameRoot }),
   // ── Mod Hub online catalog ──
   /** Fetch (or serve cached) `mod-index.json` from the mod-hub release. */
+  modTags: () => transport.invoke<CatalogTagIndex>(RPC.mod_tags),
   modCatalogRefresh: (force: boolean) =>
     transport.invoke<CatalogIndex>(RPC.mod_catalog_refresh, { force }),
   modCatalogInstall: (modId: string, gameRoot: string, preset?: string) =>

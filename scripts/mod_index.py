@@ -176,6 +176,13 @@ def index_discussions(nodes: list[dict]) -> dict:
         if not mod_id:
             continue
         signals = parse_signals(d.get("comments", {}).get("nodes", []))
+        # Registry tag ids (comma-separated front-matter `tags:`) —
+        # definitions live in the mod-tags registry, not the index.
+        tag_ids = list(dict.fromkeys(
+            t.strip()
+            for t in (meta.get("tags") or "").split(",")
+            if t.strip() and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", t.strip())
+        ))
         entry = mods.setdefault(
             mod_id,
             {
@@ -185,6 +192,7 @@ def index_discussions(nodes: list[dict]) -> dict:
                 "versions": {},
                 "signals": {},
                 "discussion": d.get("number"),
+                **({"tags": tag_ids} if tag_ids else {}),
             },
         )
         version = meta.get("version", "0")
@@ -307,6 +315,14 @@ def main(argv: list[str] | None = None) -> int:
         v9_gone = index_discussions([node(1, "15.7.0.10", False), node(2, "15.7.0.9", True)])
         assert v9_gone["mods"]["m"]["latest"] == "15.7.0.10"
         assert "delisted" not in v9_gone["mods"]["m"]
+        # Front-matter tags ride the entry as id list; malformed ids drop.
+        tagged = index_discussions([
+            {"number": 1, "title": "t", "author": {"login": "a"}, "closed": False,
+             "body": "---\nwowsp-mod: m\nversion: 1\ncategory: voice\ntags: ai-generated, ip-blue-archive, BAD_TAG, ok-id\n---\nx",
+             "comments": {"nodes": []}},
+        ])
+        assert tagged["mods"]["m"]["tags"] == ["ai-generated", "ip-blue-archive", "ok-id"]
+
         # Presets: tagged download lines ride entry.presets in label order,
         # never leak into the plain package list, and a fully preset-driven
         # thread backfills its plain list from the first (default) scheme.

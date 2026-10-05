@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "tags": [
+    {
+      "id": "licensed",
+      "kind": "feature",
+      "i18n": {
+        "en-US": "Licensed",
+        "zh-CN": "已授权",
+        "zh-TW": "已授權",
+        "ja-JP": "許諾済み",
+        "ko-KR": "승인됨",
+        "ru-RU": "С разрешения автора",
+        "fr-FR": "Autorisé",
+        "es-ES": "Con licencia"
+      }
+    },
+    {
+      "id": "ai-generated",
+      "kind": "feature",
+      "i18n": {
+        "en-US": "AI-generated",
+        "zh-CN": "AI 合成",
+        "zh-TW": "AI 合成",
+        "ja-JP": "AI生成",
+        "ko-KR": "AI 생성",
+        "ru-RU": "Синтезировано ИИ",
+        "fr-FR": "Généré par IA",
+        "es-ES": "Generado por IA"
+      }
+    },
+    {
+      "id": "ip-blue-archive",
+      "kind": "ip",
+      "i18n": {
+        "en-US": "Blue Archive",
+        "zh-CN": "蔚蓝档案",
+        "zh-TW": "蔚藍檔案",
+        "ja-JP": "ブルーアーカイブ",
+        "ko-KR": "블루 아카이브",
+        "ru-RU": "Blue Archive",
+        "fr-FR": "Blue Archive",
+        "es-ES": "Blue Archive"
+      }
+    },
+    {
+      "id": "ip-azur-lane",
+      "kind": "ip",
+      "i18n": {
+        "en-US": "Azur Lane",
+        "zh-CN": "碧蓝航线",
+        "zh-TW": "碧藍航線",
+        "ja-JP": "アズールレーン",
+        "ko-KR": "벽람항로",
+        "ru-RU": "Azur Lane",
+        "fr-FR": "Azur Lane",
+        "es-ES": "Azur Lane"
+      }
+    }
+  ]
+}

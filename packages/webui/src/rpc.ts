@@ -118,6 +118,7 @@ export const RPC = {
   mod_hub_safe_mode: "mod_hub_safe_mode",
   mod_hub_set_safe_mode: "mod_hub_set_safe_mode",
   mod_hub_reconcile: "mod_hub_reconcile",
+  mod_tags: "mod_tags",
   mod_catalog_refresh: "mod_catalog_refresh",
   mod_catalog_install: "mod_catalog_install",
   mod_catalog_uninstall: "mod_catalog_uninstall",

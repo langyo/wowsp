@@ -910,6 +910,30 @@
     gap: 0.375rem;
   }
 
+  /* Registry tags (licensed / AI 合成 / IP origins…) — kind-tinted. */
+  &__tag {
+    padding: 0.0625rem 0.5rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-border) / 12%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: 999px;
+    white-space: nowrap;
+
+    &--ip {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+      border-color: rgb(var(--color-primary) / 35%);
+    }
+
+    /* AI 合成 deserves a louder voice — the provenance matters. */
+    &--ai {
+      color: rgb(168 85 247);
+      background: rgb(168 85 247 / 10%);
+      border-color: rgb(168 85 247 / 40%);
+    }
+  }
+
   &__badge {
     padding: 0.0625rem 0.5rem;
     font-size: var(--text-xs);

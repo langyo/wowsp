@@ -177,6 +177,7 @@ mod tests {
             bundled: false,
             delisted: false,
             presets: Vec::new(),
+            tags: Vec::new(),
             title: format!("[Mod] {en} {id} 1"),
             name_zh: zh.into(),
             name_en: en.into(),

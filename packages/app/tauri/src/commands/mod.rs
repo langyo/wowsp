@@ -16,6 +16,7 @@ pub mod game_detect;
 pub mod game_maps;
 pub mod gameparams;
 pub mod github_mirror;
+pub mod mod_tags;
 // The 游戏内展示 bridge: answers the in-game plugin's request.json with
 // stats rows (desktop only — no game client runs on the phone build).
 #[cfg(desktop)]

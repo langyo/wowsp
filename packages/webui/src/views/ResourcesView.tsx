@@ -36,6 +36,7 @@ import {
   type CatalogEntry,
   type CatalogPreset,
   type ForeignModUnit,
+  type CatalogTag,
   type CatalogProgress,
   type InstalledMod,
   type MigrationPlan,
@@ -155,6 +156,9 @@ export default defineComponent({
 
     // ── Online catalog state ──
     const catalog = ref<CatalogEntry[]>([]);
+    // Tag registry: ids on entries mean nothing without it — loaded once
+    // per mount (the backend caches/refreshes its own copy).
+    const tagTable = ref(new Map<string, CatalogTag>());
     const catalogSource = ref("");
     const catalogFetched = ref("");
     const catalogLoading = ref(false);
@@ -780,6 +784,19 @@ export default defineComponent({
       return catalog.value.find((e) => e.id === hit.identity) ?? null;
     }
 
+    /** A tag's localized label: exact locale, then the zh / en pair the
+     *  registry guarantees, then the raw id (registry lag). */
+    function tagLabel(tag: CatalogTag): string {
+      const i18n = tag.i18n ?? {};
+      return (
+        i18n[uiLocale.value] ??
+        (uiLocale.value.toLowerCase().startsWith("zh")
+          ? (i18n["zh-CN"] ?? i18n["en-US"])
+          : (i18n["en-US"] ?? i18n["zh-CN"])) ??
+        tag.id
+      );
+    }
+
     /** A preset's label: zh locales take the Chinese name, everything
      *  else the English one (presets carry just the two). */
     function presetLabel(p: CatalogPreset): string {
@@ -1101,6 +1118,13 @@ export default defineComponent({
       scan();
       loadCatalog(false);
       loadRecords();
+      void api.modTags()
+        .then((idx) => {
+          const m = new Map<string, CatalogTag>();
+          for (const t of idx.tags) m.set(t.id, t);
+          tagTable.value = m;
+        })
+        .catch(() => {});
     });
 
     // ── Detail pane (one branch per mode; the switch narrows the union) ──
@@ -1153,6 +1177,21 @@ export default defineComponent({
                   {t("resources.installedBadge")}
                 </span>
               )}
+              {(entry.tags ?? []).map((id) => {
+                const tag = tagTable.value.get(id);
+                return (
+                  <span
+                    key={id}
+                    class={[
+                      "mod-detail__tag",
+                      tag?.kind === "ip" ? "mod-detail__tag--ip" : "",
+                      id === "ai-generated" ? "mod-detail__tag--ai" : "",
+                    ]}
+                  >
+                    {tag ? tagLabel(tag) : id}
+                  </span>
+                );
+              })}
             </div>
             {entry.presets && entry.presets.length > 0 && (
               <div class="mod-detail__presets">

@@ -187,6 +187,10 @@ struct RawMod {
     /// the entry is kept so deep links can explain the delisting.
     #[serde(default)]
     delisted: Option<bool>,
+    /// Registry tag ids (front-matter `tags:` — licensed, AI-generated,
+    /// IP origins…). Definitions live in the mod-tags registry.
+    #[serde(default)]
+    tags: Vec<String>,
     #[serde(default)]
     versions: std::collections::HashMap<String, RawVersion>,
 }
@@ -311,6 +315,7 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
             game: ver.game.clone().unwrap_or_else(|| "*".into()),
             bundled: ver.bundled.unwrap_or(false),
             delisted,
+            tags: m.tags.clone(),
             presets: ver
                 .presets
                 .clone()

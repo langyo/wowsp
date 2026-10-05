@@ -542,6 +542,7 @@ pub fn run() {
             commands::exports::write_export_bytes,
             commands::exports::copy_image_to_clipboard,
             commands::mod_hub::mod_hub_foreign_units,
+            commands::mod_tags::mod_tags,
             commands::mod_hub::mod_hub_list_assets,
             commands::mod_hub::mod_hub_read_asset,
             commands::mod_hub::mod_hub_scan_installed,
