@@ -1247,6 +1247,51 @@ fn revalidate_replaces_pin_on_row_scale_shift() {
 }
 
 #[test]
+fn revalidate_replaces_pin_on_horizontal_layout_change() {
+    // Story-mode (剧情/行动) layout switch: the combat Tab screen collapses
+    // the two-team table into ONE centered team table at the same height —
+    // every row stays put, the horizontal span halves. The re-based rows
+    // cannot see it; the capture-space edges must. team_split stays in the
+    // two-bar range so THIS test pins the span branch alone (the kind flip
+    // has its own test below).
+    let pinned = anchor_with(&[50, 92, 134], true);
+    let mut fresh = anchor_with(&[50, 92, 134], true);
+    fresh.roster_rect = Rect {
+        x: 450,
+        y: 40,
+        width: 500,
+        height: 620,
+    };
+    assert!(anchor_meaningfully_moved(&pinned, &fresh));
+}
+
+#[test]
+fn revalidate_keeps_pin_on_sub_pitch_edge_jitter() {
+    // The native edge refinement jitters a few px frame to frame — well
+    // under the half-pitch threshold (42 / 2 = 21): the pin holds.
+    let pinned = anchor_with(&[50, 92, 134], true);
+    let mut fresh = anchor_with(&[50, 92, 134], true);
+    fresh.roster_rect = Rect {
+        x: 158,
+        y: 40,
+        width: 1192,
+        height: 620,
+    };
+    assert!(!anchor_meaningfully_moved(&pinned, &fresh));
+}
+
+#[test]
+fn revalidate_replaces_pin_on_team_split_flip() {
+    // Green-only single-team table (split exactly 1.0) replacing a two-bar
+    // detection (0.30–0.70) is a header-kind change by definition, even
+    // with identical rows and span.
+    let pinned = anchor_with(&[50, 92, 134], true);
+    let mut fresh = anchor_with(&[50, 92, 134], true);
+    fresh.team_split = 1.0;
+    assert!(anchor_meaningfully_moved(&pinned, &fresh));
+}
+
+#[test]
 fn revalidate_fresh_fallback_never_replaces_confirmed_pin() {
     let pinned = anchor_with(&[50, 92, 134], true);
     // Detection failed this pass: even a far-away fallback geometry must

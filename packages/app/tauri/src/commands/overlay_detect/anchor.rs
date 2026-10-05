@@ -145,11 +145,39 @@ fn anchor_row_pitch(
     if pitch > 0.0 { pitch } else { 0.0 }
 }
 
+/// The anchor's roster rect LEFT/RIGHT edges in capture coordinates
+/// (game-window-relative). `roster_rect` is re-based to the overlay window's
+/// origin at build time, and that origin is laid down a fixed pad to the left
+/// of the table — overlay-relative coordinates are pad-relative and cancel a
+/// whole-panel move, so the move test recovers the absolute geometry with
+/// `overlay_rect − game_rect` (the overlay origin inside the capture).
+fn capture_roster_span(a: &wowsp_tauri_shared::OverlayAnchor) -> (i32, i32) {
+    let left = a.roster_rect.x + a.overlay_rect.x - a.game_rect.x;
+    (left, left + a.roster_rect.width)
+}
+
 /// Whether a fresh detection of the SAME battle relocated the table enough to
-/// justify replacing the pinned anchor: the first row moved by more than half
-/// a row pitch (see [`ANCHOR_MOVE_HALF_PITCH`]). A fallback anchor
+/// justify replacing the pinned anchor. A fallback anchor
 /// (`table_detected == false`) never replaces a confirmed pin, and
-/// degenerate grids never count as movement.
+/// degenerate grids never count as movement. Three move shapes count:
+///
+/// - VERTICAL: the first row moved by more than half a row pitch (see
+///   [`ANCHOR_MOVE_HALF_PITCH`]) — the panel moving as a WHOLE when HUD
+///   phases change (the countdown "waiting players" layout sits ~190 px ≈
+///   3.7 row pitches above the combat layout at 3072x1920), sunk re-sorts.
+/// - HORIZONTAL: the table's left or right edge (capture coordinates, see
+///   [`capture_roster_span`]) moved beyond the same half-pitch threshold —
+///   the layout switch the row test is blind to, because the re-based rows
+///   move WITH the panel. Seen live on the story/operation (剧情/行动)
+///   battles: the early Tab screen pins the two-team table, then the combat
+///   screen collapses to the single centered team table at the same height —
+///   every row stays put while the table halves in width, so without this
+///   test the chips kept hanging in the empty space of the phantom second
+///   column for the whole battle.
+/// - KIND: a team-split flip. `team_split` is exactly 1.0 only on the
+///   green-only single-team PVE table and 0.30–0.70 on the two-bar one
+///   ([`super::roster::finish_roster`]), so a flip is a header-kind change
+///   by definition.
 pub(crate) fn anchor_meaningfully_moved(
     pinned: &wowsp_tauri_shared::OverlayAnchor,
     fresh: &wowsp_tauri_shared::OverlayAnchor,
@@ -163,8 +191,18 @@ pub(crate) fn anchor_meaningfully_moved(
     if pitch <= 0.0 {
         return false;
     }
+    let threshold = pitch * ANCHOR_MOVE_HALF_PITCH;
     let dy = (fresh.row_centers[0] - pinned.row_centers[0]).abs() as f32;
-    dy > pitch * ANCHOR_MOVE_HALF_PITCH
+    if dy > threshold {
+        return true;
+    }
+    let (pinned_l, pinned_r) = capture_roster_span(pinned);
+    let (fresh_l, fresh_r) = capture_roster_span(fresh);
+    let dx = (fresh_l - pinned_l).abs().max((fresh_r - pinned_r).abs()) as f32;
+    if dx > threshold {
+        return true;
+    }
+    (pinned.team_split >= 0.999) != (fresh.team_split >= 0.999)
 }
 
 // ─────────────────────────────────────────────────────────────────────────

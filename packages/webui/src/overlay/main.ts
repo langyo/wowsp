@@ -508,8 +508,13 @@ function chipNumbers(v: RosterModeNumbers): string {
   return parts.join(`<span class="sep">·</span>`);
 }
 
-function chipContent(name: string, side: "ally" | "enemy"): string {
-  if (AI_NAME.test(name)) return ANY_CHIP_ON ? `<span class="muted">bot</span>` : "";
+/** `storyLayout` = the single-team PvE table (see render()): bot rows are
+ *  aux noise there — the game's own table marks them, and on a roster of
+ *  scripted teammates the per-row "bot" label says nothing worth a chip. */
+function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean): string {
+  if (AI_NAME.test(name)) {
+    return !storyLayout && ANY_CHIP_ON ? `<span class="muted">bot</span>` : "";
+  }
   const st = stats.get(cacheKey(name));
   // All chip toggles off → no numbers and none of their placeholder faces
   // either; the seals below still render (they are their own switch).
@@ -572,11 +577,15 @@ function chipContent(name: string, side: "ally" | "enemy"): string {
  *  those rows, so a verbatim "bot / bot / bot" only stretched the chip
  *  over the left HUD — "43.2% + 2 bot" keeps the range's cardinality at a
  *  fraction of the width, and a pure-bot range collapses to the single
- *  muted face. */
-function candidatesChip(members: string[]): string {
+ *  muted face. On the single-team PvE layout (storyLayout) a pure-bot range
+ *  collapses to NOTHING instead — same aux rule as chipContent — while a
+ *  mixed range keeps its "+N bot" suffix: the suffix is the range's
+ *  cardinality, and dropping it would read one human's face as the WHOLE
+ *  row. */
+function candidatesChip(members: string[], storyLayout: boolean): string {
   if (!ANY_CHIP_ON) return "";
   const { humans, botCount } = collapseCandidateBots(members);
-  if (humans.length === 0) return `<span class="muted">bot</span>`;
+  if (humans.length === 0) return storyLayout ? "" : `<span class="muted">bot</span>`;
   const face = (m: string): string => {
     const st = stats.get(cacheKey(m));
     if (!st) return `<span class="muted">…</span>`;
@@ -618,6 +627,11 @@ function candidatesChip(members: string[]): string {
  *  and mean avg damage). Item toggles can switch any line's contents off;
  *  when neither the intel items nor the averages survive, the card itself
  *  is gone (null) — the side label rides whichever line renders first.
+ *  On the single-team PvE layout (storyLayout) the consumable-intel half
+ *  is skipped wholesale: radar/hydro/smoke counting is a versus-human
+ *  aid, and a PvE roster's numbers (scripted teammates + bot fill) are
+ *  aux noise. The averages half stays — it grades the human roster and
+ *  rides its own prefs switches.
  *  Styled and anchored as a chip of the same side, so chipFit's clamp pass
  *  covers this card exactly like the row chips; `topCss` is the desired
  *  CSS-px TOP edge — `.overlay-chip--intel` opts out of the base chip's
@@ -628,6 +642,7 @@ function teamSummaryCard(
   vehicles: Vehicle[],
   topCss: number,
   fontSize: number,
+  storyLayout: boolean,
 ): HTMLDivElement | null {
   const sideLabel = `<span class="overlay-intel-team">${localized(
     side === "ally" ? "intelAlly" : "intelEnemy",
@@ -636,7 +651,7 @@ function teamSummaryCard(
   const intel = teamIntelFor(vehicles.map((v) => v.shipId));
   const intelItem = (label: string, c: TeamIntelCount) =>
     `<span class="overlay-intel-k">${label}</span><b>${formatIntelCount(c)}</b>`;
-  if (PREFS.teamIntel && (PREFS.intel.radar || PREFS.intel.hydro || PREFS.intel.smoke)) {
+  if (!storyLayout && PREFS.teamIntel && (PREFS.intel.radar || PREFS.intel.hydro || PREFS.intel.smoke)) {
     const range =
       PREFS.intel.radar && intel.radarMaxM != null && intel.radarMaxM > 0
         ? `<span class="overlay-intel-range">${localized("intelRange")} ${formatIntelKm(intel.radarMaxM)}km</span>`
@@ -808,6 +823,15 @@ function render() {
     : arena.vehicles.filter((v) => v.relation > 1);
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
+  // The single-team PvE table (剧情/行动): team_split is EXACTLY 1.0 only on
+  // the green-only header (overlay_detect::finish_roster) — the game itself
+  // renders ONE team column there. The layout, not the mode-label
+  // classifiers, is the ground truth for the aux gates below: story battles
+  // exist whose descriptor carries no operation fingerprint
+  // (isOperationBattle false), yet their Tab screen is still the one-column
+  // team table — and on it the enemy block never exists and the "bot" /
+  // radar-hydro-smoke aux is noise.
+  const storyLayout = anchor.teamSplit >= 0.999;
   // Row → name attribution. Both modes name rows: this page derives the
   // mapping itself from the arena roster + the anchor's alive vector via
   // the client's own Tab sort key (inferredRowMapping). A missing/older
@@ -839,9 +863,11 @@ function render() {
     // The ally block always reconciles (its roster is complete). The ops
     // enemy block does not: its Tab rows grow mid-battle as waves spawn
     // past the roster tempArenaInfo captured, so a fixed-count reconcile
-    // would misattribute.
+    // would misattribute. Same for the story layout — its grid carries
+    // NO enemy rows at all (a green-only anchor), so an empty slice would
+    // read "everyone alive" and wrongly degrade the side.
     reconcileSide("ally", allyN, 0);
-    if (!operation) reconcileSide("enemy", enemyN, allyN);
+    if (!operation && !storyLayout) reconcileSide("enemy", enemyN, allyN);
     if (telemetryAuthoritative && pluginSunkNames) {
       // Plugin-authoritative layout: split by set membership
       // unconditionally — no alive-vector agreement check, no candidate
@@ -897,7 +923,7 @@ function render() {
           // Recognized name — exactly a roster nickname, so the stats
           // cache lookup works unchanged.
           mappedName = mapped;
-          html = chipContent(mapped, side);
+          html = chipContent(mapped, side, storyLayout);
           // Authoritative plugin sets stamp by MEMBERSHIP: the capture
           // alive vector lags/misreads during sinking animations, and
           // reading it here is what made rows flip sunk↔alive.
@@ -910,7 +936,7 @@ function render() {
           // every candidate's winrate instead of picking one. No seals
           // here: a career stamp is a per-player verdict, and stamping an
           // ambiguous row would misattribute it.
-          html = candidatesChip(mapped);
+          html = candidatesChip(mapped, storyLayout);
           multi = true;
           sunk = aliveArr?.[blockOffset + i] === false;
           if (ANY_CHIP_ON && mapped.some((m) => !AI_NAME.test(m) && !stats.has(cacheKey(m)))) {
@@ -924,7 +950,7 @@ function render() {
       } else {
         // No recognition payload — legacy index mapping.
         mappedName = v.name;
-        html = chipContent(v.name, side);
+        html = chipContent(v.name, side, storyLayout);
       }
       // The badge speaks about RENDERED content: with both the numbers and
       // the seals switched off nothing on this row can ever appear, so a
@@ -975,6 +1001,9 @@ function render() {
   // brought" summary. Every item (and both halves wholesale) is
   // switchable in settings; a side whose card renders nothing is simply
   // absent. Operations (行动) render no enemy list — the ally card alone.
+  // On the story layout (storyLayout) the ally card carries the averages
+  // only — the consumable-intel half is aux noise on a PvE roster — and
+  // the enemy card has no column to hang under anyway (no enemy rows).
   {
     const intelFontSize = Math.min(13, Math.max(9, pitch * 0.4));
     // The window's top/bottom edges can crowd the table in odd aspect
@@ -1000,6 +1029,7 @@ function render() {
         // clears the table's bottom frame at any line count.
         allyBlock[allyBlock.length - 1] / dpr + pitch,
         intelFontSize,
+        storyLayout,
       );
       if (el) {
         el.style.left = `${tableLeft + gap}px`;
@@ -1007,13 +1037,14 @@ function render() {
         clampVertically(el);
       }
     }
-    if (!operation && enemies.length > 0 && enemyBlock.length > 0) {
+    if (!operation && !storyLayout && enemies.length > 0 && enemyBlock.length > 0) {
       const el = teamSummaryCard(
         "enemy",
         enemies,
         // Same top-edge anchor as the ally card.
         enemyBlock[enemyBlock.length - 1] / dpr + pitch,
         intelFontSize,
+        storyLayout,
       );
       if (el) {
         el.style.right = `${Math.max(0, overlayW - tableRight + gap)}px`;
