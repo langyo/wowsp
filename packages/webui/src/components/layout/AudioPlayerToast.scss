@@ -80,8 +80,9 @@
   font-family: var(--font-mono, monospace);
 }
 
-// Quiet outlined icon buttons (the UpdateToast 取消 treatment): the hikari
-// secondary variant renders as a heavy dark block on the blue surface.
+// Borderless quiet icon buttons: no frame at rest, just a hover tint on
+// the blue surface (hikari's button variants render as heavy dark blocks
+// there, so these stay hand-rolled — just without the outline).
 .audio-player-toast__actions {
   display: flex;
   align-items: center;
@@ -96,7 +97,7 @@
   width: 1.55rem;
   height: 1.55rem;
   padding: 0;
-  border: 1px solid rgb(255 255 255 / 45%);
+  border: none;
   border-radius: var(--hi-radius-sm, 4px);
   background: transparent;
   color: #fff;
