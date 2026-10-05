@@ -1,5 +1,8 @@
 {
   "dashboard": "내 전적",
+  "playtime": "플레이 시간",
+  "meterShort": "전적",
+  "viewSwitch": "보기 전환",
   "lookup": "전적 검색",
   "ships": "함선 검색",
   "live": "실시간 전투",

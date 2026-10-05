@@ -1,6 +1,7 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { HkTitleBar } from "@celestia-island/hikari";
-import { Menu } from "@lucide/vue";
+import { BarChart3, Clock, Menu } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useNavUiStore } from "@/stores/navUi";
@@ -51,11 +52,20 @@ export default defineComponent({
     const maximized = ref(false);
     const navUi = useNavUiStore();
     const mobileApp = isMobileApp();
+    const route = useRoute();
+    const router = useRouter();
     let win: ReturnType<typeof getCurrentWindow> | null = null;
     let unlistenResize: (() => void) | null = null;
 
     const isTauri =
       typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+    // The dashboard section's view switch (我的水表 ↔ 游玩时间) lives dead-
+    // center in the bar and only while that section is open — the two views
+    // are routes, so the switch is a plain router.push pair.
+    const showViewSwitch = computed(
+      () => route.path === "/" || route.path === "/playtime",
+    );
 
     onMounted(async () => {
       if (!isTauri) return;
@@ -141,6 +151,39 @@ export default defineComponent({
                     <span class="hk-titlebar-subtitle">{props.subtitle}</span>
                   )}
                 </span>
+                {/* Dashboard section's view switch, absolutely centered on
+                    the bar (see AppTitleBar.scss). The wrapper is
+                    pointer-events:none so the empty track stays draggable;
+                    the buttons re-enable hits and satisfy the drag guard
+                    (interactive() skips any click on a real <button>). */}
+                {showViewSwitch.value ? (
+                  <nav class="app-titlebar__views" aria-label={t("nav.viewSwitch")}>
+                    <button
+                      type="button"
+                      class={{
+                        "app-titlebar__view": true,
+                        "is-active": route.path !== "/playtime",
+                      }}
+                      aria-current={route.path !== "/playtime" ? "page" : undefined}
+                      onClick={() => void router.push("/")}
+                    >
+                      <BarChart3 size={13} />
+                      <span>{t("nav.meterShort")}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class={{
+                        "app-titlebar__view": true,
+                        "is-active": route.path === "/playtime",
+                      }}
+                      aria-current={route.path === "/playtime" ? "page" : undefined}
+                      onClick={() => void router.push("/playtime")}
+                    >
+                      <Clock size={13} />
+                      <span>{t("nav.playtime")}</span>
+                    </button>
+                  </nav>
+                ) : null}
               </>
             ),
             // The loading chip rides HkTitleBar's `actions` slot, which

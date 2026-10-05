@@ -494,6 +494,10 @@ pub fn spawn_session_poller(app: AppHandle) -> Result<(), String> {
             loop {
                 let installs = super::game_context::cached_scan();
                 let info = super::appdata::compute_process_info(&installs);
+                // The playtime tracker rides the same 3 s heartbeat: opens,
+                // heartbeats and closes the client's playtime session in the
+                // AppData ledger (commands/playtime.rs).
+                super::playtime::observe(&info);
                 if info.pid != prev_pid {
                     arena_parsed_mtime = 0;
                     prev_pid = info.pid;

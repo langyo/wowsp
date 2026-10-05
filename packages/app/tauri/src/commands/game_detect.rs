@@ -44,8 +44,9 @@ const PUBLISHER_PATTERNS: &[(&str, GameInstallKind)] = &[
     ("360", GameInstallKind::Cn360),
 ];
 
-/// Steam appid for World of Warships.
-const STEAM_APPID: &str = "552990";
+/// Steam appid for World of Warships. `pub(crate)`: the playtime tracker's
+/// once-only seed reads the same app's recorded hours from Steam's userdata.
+pub(crate) const STEAM_APPID: &str = "552990";
 
 /// Root stub executables that identify a WoWS install folder. The Lesta
 /// (Мир кораблей) client kept the WG on-disk layout but renamed the stub to
@@ -667,7 +668,9 @@ fn steam_library_roots_from_vdf(steam: PathBuf, vdf: Option<&str>) -> Vec<PathBu
 
 /// Locate the Steam install. Well-known Windows paths first; falls back to the
 /// `SteamPath` registry value under `HKCU\Software\Valve\Steam`.
-fn resolve_steam_install() -> Option<PathBuf> {
+/// `pub(crate)`: the playtime tracker's once-only seed resolves Steam's
+/// userdata root through the same lookup.
+pub(crate) fn resolve_steam_install() -> Option<PathBuf> {
     for candidate in [r"C:\Program Files (x86)\Steam", r"C:\Program Files\Steam"] {
         let p = PathBuf::from(candidate);
         if p.join("steamapps").is_dir() {

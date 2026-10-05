@@ -1,5 +1,8 @@
 {
   "dashboard": "Mis estadísticas",
+  "playtime": "Tiempo de juego",
+  "meterShort": "Stats",
+  "viewSwitch": "Cambiar vista",
   "lookup": "Consulta de estadísticas",
   "ships": "Buques",
   "live": "Batalla en directo",

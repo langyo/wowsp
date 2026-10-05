@@ -1,0 +1,27 @@
+{
+  "cards": {
+    "total": "総プレイ時間",
+    "launched": "起動 {n} 回",
+    "dailyAvg": "1日平均",
+    "daysPlayed": "プレイ {n} 日",
+    "streak": "最長連続日数",
+    "days": "{n} 日",
+    "longestSession": "最長連続プレイ",
+    "longestDay": "最多プレイ日",
+    "lastLaunch": "最終起動",
+    "running": "ゲーム実行中"
+  },
+  "range15d": "直近 15 日",
+  "range12w": "直近 12 週",
+  "range12m": "直近 12 か月",
+  "rangeTotal": "合計 {v}",
+  "trendTitle": "プレイ時間の推移",
+  "heatTitle": "アクティビティヒートマップ",
+  "heatLess": "少",
+  "heatMore": "多",
+  "weekdayFirst": "月",
+  "weekdayLast": "日",
+  "importNote": "{date} に Steam から過去の総プレイ時間（約 {hours} 時間）を取り込みました。グラフはローカル記録分のみです。",
+  "emptyTitle": "プレイ記録はまだありません",
+  "emptyHint": "ゲーム起動中は WoWSP が自動でプレイ時間を記録します（クライアント起動から終了まで、Steam と同じ基準）。初回起動時には Steam から過去の総プレイ時間の取り込みを試みます。"
+}

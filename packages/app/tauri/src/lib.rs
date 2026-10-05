@@ -429,6 +429,9 @@ pub fn run() {
             // active-account mirror push.
             commands::session::get_session_state,
             commands::session::sync_active_account,
+            // Playtime ledger (游玩时间 view, commands/playtime.rs) —
+            // cross-platform: mobile answers the fresh local ledger.
+            commands::playtime::playtime_overview,
             // The tray panel's action buttons (desktop only — the panel
             // window itself is tray-bound).
             #[cfg(desktop)]

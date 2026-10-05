@@ -1,0 +1,27 @@
+{
+  "cards": {
+    "total": "总游戏时长",
+    "launched": "已启动 {n} 次",
+    "dailyAvg": "平均每天时长",
+    "daysPlayed": "已游玩 {n} 天",
+    "streak": "最长连续天数",
+    "days": "{n} 天",
+    "longestSession": "最长单次时长",
+    "longestDay": "最长单日时长",
+    "lastLaunch": "上次启动",
+    "running": "游戏运行中"
+  },
+  "range15d": "最近 15 天",
+  "range12w": "最近 12 周",
+  "range12m": "最近 12 月",
+  "rangeTotal": "总计 {v}",
+  "trendTitle": "时长趋势",
+  "heatTitle": "活跃热力图",
+  "heatLess": "少",
+  "heatMore": "多",
+  "weekdayFirst": "周一",
+  "weekdayLast": "周日",
+  "importNote": "已从 Steam 导入历史总时长约 {hours} 小时（{date} 导入），图表仅统计本地记录的时段。",
+  "emptyTitle": "暂无游戏记录",
+  "emptyHint": "游戏运行期间 WoWSP 会自动记录时长（从客户端启动到退出，与 Steam 口径一致）；首次启动时也会尝试从 Steam 导入历史总时长。"
+}

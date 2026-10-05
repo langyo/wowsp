@@ -37,6 +37,71 @@
   flex: none;
 }
 
+/* Dashboard section's view switch (我的水表 ↔ 游玩时间), dead-center on the
+   bar. `.hk-titlebar` is position:fixed, so the absolute box centers on the
+   WINDOW, not on the title block it rides behind in the left slot. The
+   track itself is pointer-events:none — its empty parts stay draggable bar
+   surface — while each button re-enables hits (and satisfies the wrapper's
+   closest("button") drag guard). Compact 22px triggers inside a 32px bar;
+   hidden on the phone layout where the bar hosts the hamburger drawer
+   controls instead. */
+.app-titlebar__views {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  height: var(--app-titlebar-h, 32px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-text) / 5%);
+  pointer-events: none;
+}
+
+.app-titlebar__view {
+  pointer-events: auto;
+  /* The hamburger carries this for engines that HONOR CSS app-region
+     (WKWebView/WebKitGTK drag the bar natively) — without it a switch
+     click would drag the window instead of navigating there. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(var(--color-text) / 0.65);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+
+  &:hover {
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-text) / 6%);
+  }
+
+  &.is-active {
+    background: rgb(var(--color-primary) / 14%);
+    color: rgb(var(--color-primary));
+    font-weight: 600;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-titlebar__views {
+    display: none;
+  }
+}
+
 /* Desktop bar glass joins the UI-opacity dial (uiOpacityPreference.ts).
    hikari ships the bar as an 80% surface color-mix — equal to plain
    `rgb(surface / 80%)` — restated here at (0,2,0) with the multiplier so

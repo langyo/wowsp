@@ -1,5 +1,8 @@
 {
   "dashboard": "My stats",
+  "playtime": "Playtime",
+  "meterShort": "Meter",
+  "viewSwitch": "Switch view",
   "lookup": "Stats lookup",
   "ships": "Ships",
   "live": "Live battle",

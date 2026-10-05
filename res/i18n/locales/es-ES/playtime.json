@@ -1,0 +1,27 @@
+{
+  "cards": {
+    "total": "Tiempo total de juego",
+    "launched": "{n} inicios",
+    "dailyAvg": "Media diaria",
+    "daysPlayed": "{n} días jugados",
+    "streak": "Racha más larga",
+    "days": "{n} días",
+    "longestSession": "Sesión más larga",
+    "longestDay": "Día más largo",
+    "lastLaunch": "Último inicio",
+    "running": "Juego en ejecución"
+  },
+  "range15d": "Últimos 15 días",
+  "range12w": "Últimas 12 semanas",
+  "range12m": "Últimos 12 meses",
+  "rangeTotal": "Total {v}",
+  "trendTitle": "Tendencia de juego",
+  "heatTitle": "Mapa de actividad",
+  "heatLess": "Menos",
+  "heatMore": "Más",
+  "weekdayFirst": "Lun",
+  "weekdayLast": "Dom",
+  "importNote": "Se importaron ~{hours} h de historial desde Steam el {date}; los gráficos cubren solo los días registrados localmente.",
+  "emptyTitle": "Aún no hay registros",
+  "emptyHint": "WoWSP registra automáticamente el tiempo de juego (desde el inicio del cliente hasta su cierre, como hace Steam); en el primer inicio también intenta importar el total histórico desde Steam."
+}

@@ -1,5 +1,5 @@
 import { computed, defineComponent, watch } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package } from "@lucide/vue";
 
 import { HkTag, HkTooltip } from "@celestia-island/hikari";
@@ -57,6 +57,10 @@ export default defineComponent({
     const stats = useStatsStore();
     const ui = useSettingsUiStore();
     const { copy } = useClipboard();
+    // The dashboard link must also read active while the section's sibling
+    // view (游玩时间, /playtime) is open — the pill in the title bar
+    // presents the two as one section, the sidebar agrees.
+    const route = useRoute();
 
     // The account row's player: the session hub's RESOLVED identity when
     // the hub is reachable — it carries the actually-playing account (the
@@ -128,7 +132,12 @@ export default defineComponent({
             identity — the nav's generous top padding keeps the first link
             off the rail's top edge instead. */}
         <nav class="sidebar__nav">
-          <RouterLink to="/" class="sidebar__link" activeClass="is-active" exactActiveClass="is-active">
+          <RouterLink
+            to="/"
+            class={["sidebar__link", { "is-active": route.path === "/playtime" }]}
+            activeClass="is-active"
+            exactActiveClass="is-active"
+          >
             <BarChart3 size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.dashboard")}</span>
           </RouterLink>

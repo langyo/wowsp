@@ -1,5 +1,8 @@
 {
   "dashboard": "Mes statistiques",
+  "playtime": "Temps de jeu",
+  "meterShort": "Stats",
+  "viewSwitch": "Changer de vue",
   "lookup": "Recherche de stats",
   "ships": "Navires",
   "live": "Combat en direct",

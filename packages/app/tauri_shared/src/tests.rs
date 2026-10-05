@@ -2300,3 +2300,113 @@ fn aux_cache_status_renames_size_bytes() {
     });
     assert_exact_keys(&v, &["scope", "sizeBytes"]);
 }
+
+// ── playtime (client.ts: PlaytimeSource / PlaytimeDay / PlaytimeLaunch /
+//    PlaytimeOverview) ─────────────────────────────────────────────────────
+
+/// `PlaytimeSource` mirrors the TS union "local" | "steam" — lowercase, not
+/// camelCase (a multi-word variant would drift).
+#[test]
+fn playtime_source_serializes_to_the_ts_union_members() {
+    assert_eq!(round_trips(PlaytimeSource::Local), "local");
+    assert_eq!(round_trips(PlaytimeSource::Steam), "steam");
+}
+
+#[test]
+fn playtime_day_and_launch_rename_their_fields() {
+    let v = round_trips(PlaytimeDay {
+        date: "2026-10-05".into(),
+        seconds: 594,
+    });
+    assert_exact_keys(&v, &["date", "seconds"]);
+
+    let v = round_trips(PlaytimeLaunch {
+        start: 1_791_234_000,
+        duration_seconds: 594,
+        running: true,
+    });
+    assert_exact_keys(&v, &["start", "durationSeconds", "running"]);
+    assert_eq!(v["durationSeconds"], 594);
+}
+
+/// Wire-critical payload: the overview is THE playtime command's response —
+/// pin the exact key set so an additive field fails until the TS mirror
+/// learns it (client.ts: PlaytimeOverview).
+#[test]
+fn playtime_overview_pins_the_exact_wire_key_set() {
+    let v = round_trips(PlaytimeOverview {
+        source: PlaytimeSource::Steam,
+        imported_total_seconds: 1_023_840,
+        imported_at: Some(1_791_000_000),
+        local_total_seconds: 594,
+        total_seconds: 1_024_434,
+        launch_count: 7,
+        days_played: 5,
+        first_tracked_day: Some("2026-10-01".into()),
+        longest_streak_days: 3,
+        longest_streak_start: Some("2026-10-01".into()),
+        longest_streak_end: Some("2026-10-03".into()),
+        longest_session_seconds: 300,
+        longest_session_date: Some("2026-10-02".into()),
+        longest_day_seconds: 420,
+        longest_day_date: Some("2026-10-03".into()),
+        last_launch: Some(PlaytimeLaunch {
+            start: 1_791_234_000,
+            duration_seconds: 594,
+            running: false,
+        }),
+        daily: vec![PlaytimeDay {
+            date: "2026-10-01".into(),
+            seconds: 180,
+        }],
+    });
+    assert_exact_keys(
+        &v,
+        &[
+            "source",
+            "importedTotalSeconds",
+            "importedAt",
+            "localTotalSeconds",
+            "totalSeconds",
+            "launchCount",
+            "daysPlayed",
+            "firstTrackedDay",
+            "longestStreakDays",
+            "longestStreakStart",
+            "longestStreakEnd",
+            "longestSessionSeconds",
+            "longestSessionDate",
+            "longestDaySeconds",
+            "longestDayDate",
+            "lastLaunch",
+            "daily",
+        ],
+    );
+    assert_eq!(v["source"], "steam");
+    assert_eq!(v["lastLaunch"]["durationSeconds"], 594);
+    assert_eq!(v["daily"][0]["date"], "2026-10-01");
+
+    // A fresh local install answers all-zero fields with nulls, not
+    // missing keys — the TS side types them optional-but-present.
+    let fresh = round_trips(PlaytimeOverview {
+        source: PlaytimeSource::Local,
+        imported_total_seconds: 0,
+        imported_at: None,
+        local_total_seconds: 0,
+        total_seconds: 0,
+        launch_count: 0,
+        days_played: 0,
+        first_tracked_day: None,
+        longest_streak_days: 0,
+        longest_streak_start: None,
+        longest_streak_end: None,
+        longest_session_seconds: 0,
+        longest_session_date: None,
+        longest_day_seconds: 0,
+        longest_day_date: None,
+        last_launch: None,
+        daily: Vec::new(),
+    });
+    assert!(fresh["lastLaunch"].is_null());
+    assert!(fresh["importedAt"].is_null());
+}

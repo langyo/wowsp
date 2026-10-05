@@ -11,6 +11,14 @@ export const router = createRouter({
       component: () => import("@/views/DashboardView"),
     },
     {
+      // 游玩时间 — the water-meter page's sibling view. No sidebar entry by
+      // design: it is switched from the title-bar's center button group,
+      // which only renders while the dashboard section is open.
+      path: "/playtime",
+      name: "playtime",
+      component: () => import("@/views/PlaytimeView"),
+    },
+    {
       path: "/lookup",
       name: "lookup",
       component: () => import("@/views/LookupView"),

@@ -31,6 +31,50 @@ export interface GameProcessInfo {
   matchedInstall?: GameInstall | null;
 }
 
+/** Mirrors `wowsp_tauri_shared::PlaytimeSource` — where the playtime
+ *  ledger's career total came from. */
+export type PlaytimeSource = "local" | "steam";
+
+/** Mirrors `wowsp_tauri_shared::PlaytimeDay` — one local calendar day's
+ *  playtime (`YYYY-MM-DD`); days without playtime are simply absent. */
+export interface PlaytimeDay {
+  date: string;
+  seconds: number;
+}
+
+/** Mirrors `wowsp_tauri_shared::PlaytimeLaunch` — the most recent (or
+ *  currently running) game launch. */
+export interface PlaytimeLaunch {
+  start: number;
+  durationSeconds: number;
+  running: boolean;
+}
+
+/** Mirrors `wowsp_tauri_shared::PlaytimeOverview` — the 游玩时间 view's
+ *  full payload: career totals (Steam-seeded when available), record
+ *  statistics computed from the local sessions, and the local per-day
+ *  series for the trend chart and the heatmap. The imported backlog is
+ *  undated, so it never appears in `daily`. */
+export interface PlaytimeOverview {
+  source: PlaytimeSource;
+  importedTotalSeconds: number;
+  importedAt: number | null;
+  localTotalSeconds: number;
+  totalSeconds: number;
+  launchCount: number;
+  daysPlayed: number;
+  firstTrackedDay: string | null;
+  longestStreakDays: number;
+  longestStreakStart: string | null;
+  longestStreakEnd: string | null;
+  longestSessionSeconds: number;
+  longestSessionDate: string | null;
+  longestDaySeconds: number;
+  longestDayDate: string | null;
+  lastLaunch: PlaytimeLaunch | null;
+  daily: PlaytimeDay[];
+}
+
 /** Mirrors `wowsp_tauri_shared::AccountProfile` — one remembered account as
  *  the webui's own accounts.json writes it (and the Rust session hub reads
  *  it back for playing-account matching). */
@@ -1528,6 +1572,11 @@ export const api = {
   isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
   getGameProcess: (installs: GameInstall[]) =>
     transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
+  /** Playtime ledger overview (commands/playtime.rs) — career totals
+   *  (Steam-seeded on first run when possible) plus the local per-day
+   *  series the 游玩时间 view renders. */
+  getPlaytimeOverview: () =>
+    transport.invoke<PlaytimeOverview>(RPC.playtime_overview),
   /** Rust session hub snapshot (commands/session.rs) — the running process
    *  plus the resolved "who is playing" identity. Live updates arrive via
    *  listenSessionChanged; this is the boot/fetch side. */

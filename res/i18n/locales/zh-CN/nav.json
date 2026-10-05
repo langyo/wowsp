@@ -1,5 +1,8 @@
 {
   "dashboard": "我的水表",
+  "playtime": "游玩时间",
+  "meterShort": "水表",
+  "viewSwitch": "切换视图",
   "lookup": "水表查询",
   "ships": "舰艇查询",
   "live": "实时对局",
