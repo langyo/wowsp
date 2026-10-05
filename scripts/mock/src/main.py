@@ -238,9 +238,9 @@ async def cmd_mod_hub_list_assets(request: Request) -> list[dict]:
 
 
 def _silent_wav(seconds: float = 2.0) -> str:
-    """Mono 8kHz 8-bit silent WAV, long enough that the AudioPlayerToast
-    controller (play/pause, seek, stop) is exercisable against the mock —
-    a one-frame clip ends before the card can be touched."""
+    """Mono 8kHz 8-bit silent WAV, long enough that the sticky playing
+    toast is actually observable against the mock — a one-frame clip
+    ends before it can be seen."""
     data = b"\x80" * int(8000 * seconds)  # 8-bit silence is the midpoint
     header = (
         b"RIFF" + (36 + len(data)).to_bytes(4, "little") + b"WAVE"

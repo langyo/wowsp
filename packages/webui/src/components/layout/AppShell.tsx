@@ -35,7 +35,6 @@ import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
-import AudioPlayerToast from "./AudioPlayerToast";
 import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
 import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
@@ -471,11 +470,6 @@ export default defineComponent({
             the settings' changelog section. Renders nothing outside the
             desktop Tauri shell, so it mounts unconditionally here. */}
         <UpdateAppliedToast />
-        {/* Preview-audio controller card (voice-line playback: play/pause,
-            seek, stop): renders nothing while the audioPlayer store is
-            idle, so it mounts unconditionally; docks bottom-right in the
-            toast z-band (its own lane, clear of the toast column). */}
-        <AudioPlayerToast />
 
         {/* In-game manual-locate picker (cached-frame drag box for the
             live-battle panel's 手动定位 flow): renders nothing until the

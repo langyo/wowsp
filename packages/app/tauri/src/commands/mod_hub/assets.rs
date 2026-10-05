@@ -3,9 +3,9 @@
 //! payload — images are decoded (png/jpg/bmp/tga/dds) and thumbnailed to
 //! PNG data URLs, native audio formats (ogg/mp3/wav) stream as-is. Wwise
 //! `.wem` transcodes on demand: PCM-flavoured files are WAVs underneath
-//! and pass through as-is, Wwise Vorbis converts through the embedded-
-//! codebook ww2ogg port, decode-validated per codebook set (the click
-//! waits once, then plays clean audio or reports why it cannot).
+//! and pass through as-is, Wwise Vorbis files are fully decoded to PCM
+//! in-process (codebook set chosen by decode quality) and re-emitted as
+//! WAV — the browser never has to decode rebuilt Vorbis.
 
 use serde::Serialize;
 
@@ -144,11 +144,11 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
     if ext == AUDIO_WEM {
         // On-demand transcode, routed by what the file actually is:
         // PCM-flavoured .wem IS a WAV (RIFF/WAVE/fmt/data with a plain or
-        // extensible PCM tag) — served as-is; Wwise Vorbis files go
-        // through the embedded-codebook transcode, where each attempt is
-        // decode-validated and the aoTuV set retries when the standard
-        // one garbles. A single voice line converts in well under a
-        // second, so the click that asked for it waits once and plays.
+        // extensible PCM tag) — served as-is; Wwise Vorbis files are
+        // fully decoded to PCM in Rust and re-emitted as WAV (the aoTuV
+        // codebook set retries when the standard one garbles). A single
+        // voice line converts in well under a second, so the click that
+        // asked for it waits once and plays.
         if wem_is_pcm(&bytes) {
             return Ok(AssetPayload {
                 data_url: format!(
@@ -157,11 +157,11 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
                 ),
             });
         }
-        let ogg = transcode_wem(&bytes).map_err(|e| format!("{rel_path}: {e}"))?;
+        let wav = transcode_wem(&bytes).map_err(|e| format!("{rel_path}: {e}"))?;
         return Ok(AssetPayload {
             data_url: format!(
-                "data:audio/ogg;base64,{}",
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, ogg)
+                "data:audio/wav;base64,{}",
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, wav)
             ),
         });
     }
@@ -214,21 +214,19 @@ fn wem_is_pcm(bytes: &[u8]) -> bool {
     tag == 0x0001 || tag == 0xFFFE
 }
 
-/// Wwise Vorbis → standard Ogg Vorbis. A wrong codebook library still
-/// converts "successfully" into structurally valid Ogg that a player can
-/// only render as garbled noise, so every conversion is checked before it
-/// is served and the aoTuV set retries when the standard one garbles:
+/// Wwise Vorbis → PCM WAV. A wrong codebook library still converts
+/// "successfully" into structurally valid Ogg that a player can only
+/// render as garbled noise — and even a "valid" rebuilt stream leaves
+/// the audio at the mercy of a second (browser) Vorbis decoder. So the
+/// rebuilt Ogg never leaves this process: every candidate is fully
+/// decoded right here and re-emitted as plain 16-bit WAV, leaving the
+/// browser nothing but raw samples to play.
 ///
-/// * strong pass — `ww2ogg::validate`: decodes the leading packets and
-///   rejects clipped-to-death output (wrong-codebook garbage);
-/// * fallback — [`ogg_decodes_cleanly`]: the validator's clipping
-///   heuristic also flags legitimately loud voice lines (real packs hit
-///   both cases), so a candidate that fails validation but decodes
-///   end-to-end is kept and served only when no candidate strongly
-///   passes.
-///
-/// When nothing converts and decodes the caller gets the last error,
-/// never noise.
+/// Candidate choice, per codebook set (default first, aoTuV retry):
+/// convert → full decode → sane clipping (< [`HOT_CLIP_RATIO`], wrong-
+/// codebook garbage decodes to clipped-to-death static) → WAV. A decoded
+/// but hot candidate is kept as a best effort; when nothing decodes the
+/// caller gets the last error, never noise.
 fn transcode_wem(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut last_err = String::new();
     let mut fallback: Option<Vec<u8>> = None;
@@ -248,49 +246,92 @@ fn transcode_wem(bytes: &[u8]) -> Result<Vec<u8>, String> {
         match ww2ogg::WwiseRiffVorbis::new(read, codebooks)
             .and_then(|mut conv| conv.generate_ogg(&mut out))
         {
-            Ok(()) => {
-                let ogg = out.into_inner();
-                match ww2ogg::validate(&ogg) {
-                    Ok(()) => return Ok(ogg),
-                    Err(e) => {
-                        last_err = format!("validation: {e}");
-                        if fallback.is_none() && ogg_decodes_cleanly(&ogg) {
-                            fallback = Some(ogg);
-                        }
-                    },
-                }
+            Ok(()) => match decode_ogg_pcm(out.get_ref()) {
+                Ok((samples, channels, rate)) => {
+                    let hot = clipped_ratio(&samples) >= HOT_CLIP_RATIO;
+                    last_err = "decoded but clipped-to-death output".into();
+                    if !hot {
+                        return Ok(wav_bytes(&samples, channels, rate));
+                    }
+                    if fallback.is_none() {
+                        fallback = Some(wav_bytes(&samples, channels, rate));
+                    }
+                },
+                Err(e) => last_err = format!("decode: {e}"),
             },
             Err(e) => last_err = e.to_string(),
         }
     }
-    if let Some(ogg) = fallback {
-        return Ok(ogg);
+    if let Some(wav) = fallback {
+        return Ok(wav);
     }
     Err(format!("Wwise transcode failed: {last_err}"))
 }
 
-/// Hard decode gate: the whole Ogg Vorbis stream must open and decode
-/// packet by packet with lewton. Wrong-codebook output typically dies
-/// here (its rebuilt codebooks do not decode), while the validator's
-/// clipping heuristic — the strong pass — additionally flags
-/// loud-but-valid audio, which is exactly the case this gate exists to
-/// rescue.
-fn ogg_decodes_cleanly(ogg: &[u8]) -> bool {
-    let Ok(mut reader) = lewton::inside_ogg::OggStreamReader::new(std::io::Cursor::new(ogg)) else {
-        return false;
-    };
-    let mut packets = 0usize;
+/// Above this fraction of samples pinned at i16::MIN/MAX a decode is
+/// treated as wrong-codebook static rather than loud-but-real audio
+/// (clean voice lines from real packs measure under ~12%, garbage is
+/// multiples of that).
+const HOT_CLIP_RATIO: f64 = 0.25;
+
+/// Fully decode an Ogg Vorbis stream to interleaved 16-bit PCM plus its
+/// channel count and sample rate — the one decoder whose verdict the
+/// served audio depends on.
+fn decode_ogg_pcm(ogg: &[u8]) -> Result<(Vec<i16>, u16, u32), String> {
+    let mut reader = lewton::inside_ogg::OggStreamReader::new(std::io::Cursor::new(ogg))
+        .map_err(|e| format!("vorbis stream: {e}"))?;
+    // Vorbis identification header carries channels as u8; WAV wants u16.
+    let channels = u16::from(reader.ident_hdr.audio_channels);
+    let rate = reader.ident_hdr.audio_sample_rate;
+    let mut samples = Vec::new();
     loop {
         match reader.read_dec_packet_itl() {
-            Ok(Some(packet)) => {
-                if !packet.is_empty() {
-                    packets += 1;
-                }
-            },
-            Ok(None) => return packets > 0,
-            Err(_) => return false,
+            Ok(Some(packet)) => samples.extend_from_slice(&packet),
+            Ok(None) => break,
+            Err(e) => return Err(format!("vorbis decode: {e}")),
         }
     }
+    if samples.is_empty() {
+        return Err("no audio samples decoded".into());
+    }
+    Ok((samples, channels, rate))
+}
+
+/// Fraction of samples pinned at the i16 extremes — wrong-codebook
+/// garbage decodes to clipped-to-death static, real (even loud) voice
+/// lines stay well below it.
+fn clipped_ratio(samples: &[i16]) -> f64 {
+    if samples.is_empty() {
+        return 1.0;
+    }
+    let clipped = samples
+        .iter()
+        .filter(|&&s| s == i16::MIN || s == i16::MAX)
+        .count();
+    clipped as f64 / samples.len() as f64
+}
+
+/// Wrap interleaved 16-bit PCM in a canonical 44-byte-header WAV.
+fn wav_bytes(samples: &[i16], channels: u16, rate: u32) -> Vec<u8> {
+    let data_len = samples.len() * 2;
+    let block_align = channels * 2;
+    let mut out = Vec::with_capacity(44 + data_len);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * block_align as u32).to_le_bytes());
+    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data_len as u32).to_le_bytes());
+    for s in samples {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    out
 }
 
 fn audio_mime(ext: &str) -> Option<&'static str> {
@@ -321,14 +362,43 @@ mod tests {
         assert!(!wem_is_pcm(&vorbis));
     }
 
-    /// The decode gate rejects anything a Vorbis decoder cannot open —
-    /// empty and arbitrary bytes (even with an OggS magic) never reach
-    /// the fallback path.
+    /// The PCM decoder rejects anything a Vorbis decoder cannot open,
+    /// and the clipping meter separates loud-but-real audio from
+    /// pinned-to-the-rails static.
     #[test]
-    fn ogg_decode_gate_rejects_non_vorbis() {
-        assert!(!ogg_decodes_cleanly(&[]));
-        assert!(!ogg_decodes_cleanly(b"OggS and nothing else"));
-        assert!(!ogg_decodes_cleanly(&[0u8; 1024]));
+    fn decode_gate_and_clip_meter() {
+        assert!(decode_ogg_pcm(&[]).is_err());
+        assert!(decode_ogg_pcm(b"OggS and nothing else").is_err());
+        assert!(decode_ogg_pcm(&[0u8; 1024]).is_err());
+        // A calm signal is nowhere near hot; rails-pinned static is.
+        let calm: Vec<i16> = (-1000..1000).cycle().take(8000).collect();
+        assert!(clipped_ratio(&calm) < 0.01);
+        let rails = vec![i16::MIN; 100];
+        assert!(clipped_ratio(&rails) > 0.99);
+    }
+
+    /// The WAV wrapper emits a canonical 44-byte PCM header around the
+    /// samples — the exact bytes the browser's <audio> consumes.
+    #[test]
+    fn wav_wrapper_shapes_header() {
+        let samples = [0i16, 1, -1, 0x7FFF];
+        let wav = wav_bytes(&samples, 2, 44_100);
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(&wav[12..16], b"fmt ");
+        assert_eq!(u16::from_le_bytes([wav[20], wav[21]]), 1); // PCM
+        assert_eq!(u16::from_le_bytes([wav[22], wav[23]]), 2); // stereo
+        assert_eq!(
+            u32::from_le_bytes([wav[24], wav[25], wav[26], wav[27]]),
+            44_100
+        );
+        assert_eq!(u16::from_le_bytes([wav[32], wav[33]]), 4); // block align
+        assert_eq!(u16::from_le_bytes([wav[34], wav[35]]), 16); // bits
+        assert_eq!(&wav[36..40], b"data");
+        assert_eq!(u32::from_le_bytes([wav[40], wav[41], wav[42], wav[43]]), 8);
+        assert_eq!(wav.len(), 44 + 8);
+        // First sample lands little-endian right after the header.
+        assert_eq!(wav[46], 1);
     }
 
     /// Minimal RIFF/WAVE/PCM bytes with the given format tag: fmt chunk
@@ -349,18 +419,19 @@ mod tests {
 
     /// Real-file verification for the Vorbis transcode path: point
     /// WOWSP_WEM_VORBIS_FIXTURE at any .wem with a 0x42 fmt chunk
-    /// (verified once against a 9 MB public sample: OggS + vorbis header
-    /// output). Success here also means the output decode-validated —
-    /// transcode_wem rejects garbled conversions internally. CI has no
-    /// fixture, so the test ignores itself.
+    /// (verified against local voice packs: PCM WAV output). The served
+    /// payload is fully-decoded PCM, so passing means the exact bytes the
+    /// browser will render. CI has no fixture, so the test ignores
+    /// itself.
     #[test]
     #[ignore = "set WOWSP_WEM_VORBIS_FIXTURE to a local Vorbis .wem to run"]
     fn transcodes_real_vorbis_wem() {
         let path = std::env::var("WOWSP_WEM_VORBIS_FIXTURE").expect("fixture path");
         let raw = fs::read(&path).unwrap();
-        let ogg = transcode_wem(&raw).expect("transcode succeeds");
-        assert_eq!(&ogg[..4], b"OggS");
-        assert!(ogg.windows(6).take(4096).any(|w| w == b"vorbis"));
+        let wav = transcode_wem(&raw).expect("transcode succeeds");
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(u16::from_le_bytes([wav[20], wav[21]]), 1);
     }
 
     #[test]
