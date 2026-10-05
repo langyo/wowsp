@@ -43,3 +43,121 @@
     }
   }
 }
+
+/* Structured hover card (see globalTooltip.ts `data-hint-card`): an
+   entity's basic parameters in a head/subtitle/rows layout inside the
+   shared popup. Ink follows the HkTooltip popup palette — black on
+   white, dark-mode re-inked — with muted/secondary tones mixed to the
+   popup's own background. */
+.global-tooltip--card {
+  max-width: 300px;
+  padding: 10px 12px;
+}
+
+.global-tooltip__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.global-tooltip__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.global-tooltip__card-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.global-tooltip__card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.global-tooltip__card-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1.7;
+  color: #8a5f0b;
+  background: rgb(224 167 46 / 16%);
+  box-shadow: inset 0 0 0 1px rgb(224 167 46 / 50%);
+}
+
+.global-tooltip__card-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #5c5c5c;
+  font-size: var(--text-2xs);
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.global-tooltip__card-flag {
+  flex-shrink: 0;
+  width: 16px;
+  height: 11px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.global-tooltip__card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 1px;
+  padding-top: 6px;
+  border-top: 1px solid rgb(0 0 0 / 12%);
+}
+
+.global-tooltip__card-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-2xs);
+}
+
+.global-tooltip__card-row-label {
+  color: #5c5c5c;
+}
+
+.global-tooltip__card-row-value {
+  font-variant-numeric: tabular-nums;
+}
+
+[data-mode="dark"] {
+  .global-tooltip__card-badge {
+    color: #ffdd8a;
+    background: rgb(255 224 138 / 14%);
+    box-shadow: inset 0 0 0 1px rgb(255 224 138 / 40%);
+  }
+
+  .global-tooltip__card-sub {
+    color: #cfcfcf;
+  }
+
+  .global-tooltip__card-row-label {
+    color: #cfcfcf;
+  }
+
+  .global-tooltip__card-rows {
+    border-top-color: rgb(255 255 255 / 18%);
+  }
+}

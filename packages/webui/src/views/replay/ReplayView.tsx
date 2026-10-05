@@ -63,9 +63,14 @@ const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, stri
 import { HkButton, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
-import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
+import {
+  nationNameFromDb,
+  shipNameFromOfflineDb,
+  shipOfflineEntry,
+} from "@/features/holographic/modelLoader";
 import { gameTabRowKey } from "@/utils/shipClass";
-import { shipTypeClass } from "@/features/holographic/shipIcons";
+import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
+import { shipIconUrl, shipTypeClass } from "@/features/holographic/shipIcons";
 import { tierToRoman } from "@wowsp/holo";
 import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
@@ -675,6 +680,36 @@ const PostBattleFallbackPanel = defineComponent({
  *  see `utils/shipClass.ts`. */
 function shipTypeOf(shipId: number): string {
   return shipOfflineEntry(shipId)?.type ?? "";
+}
+
+/** The `data-hint-card` JSON for a replay card's own-ship tag — identity +
+ *  basic parameters off the offline ship DB, pre-localized per the global
+ *  tooltip's string-only contract (the popup renders via DOM APIs). */
+function ownShipHintCard(
+  entry: NonNullable<ReturnType<typeof shipOfflineEntry>>,
+  name: string,
+  lang: string,
+): string {
+  // The offline DB spells nations GameParams-style (united_kingdom/russia/
+  // events); canonicalize first or the label/flag lookups miss entirely.
+  const nation = entry.nation ? canonicalNation(entry.nation) : "";
+  const nationLabel = nation
+    ? (nationNameFromDb(nation, lang) ?? (t(`ships.nation.${nation}`, {}) || nation))
+    : null;
+  const subtitle: string[] = [];
+  if (nationLabel) subtitle.push(nationLabel);
+  if (entry.type) subtitle.push(t(`ships.type.${entry.type}`, {}) || entry.type);
+  return JSON.stringify({
+    title: name,
+    badge: entry.tier != null ? tierToRoman(entry.tier) : undefined,
+    iconUrl: entry.type ? (shipIconUrl(entry.type, "plain") ?? undefined) : undefined,
+    subtitleFlagUrl: nation ? (resolveNationFlag(nation, "flag") ?? undefined) : undefined,
+    subtitle: subtitle.length > 0 ? subtitle.join(" · ") : undefined,
+    rows:
+      entry.hp != null
+        ? [{ label: t("ships.spec.hp", {}), value: entry.hp.toLocaleString() }]
+        : [],
+  });
 }
 
 /** Total HP lost across a ship's HP timeline (damage taken). */
@@ -1663,9 +1698,10 @@ export default defineComponent({
       // The lite scanner only carries the own ship's id — resolve the
       // localized name + class off the offline DB (same pattern as the
       // roster panels); cards without a resolvable ship keep the old foot.
+      const ownEntry = r.ownShipId != null ? shipOfflineEntry(r.ownShipId) : null;
       const ownShipName =
         r.ownShipId != null ? shipNameFromOfflineDb(r.ownShipId, dataLanguage.value) : null;
-      const ownShipType = r.ownShipId != null ? shipOfflineEntry(r.ownShipId)?.type ?? null : null;
+      const ownShipType = ownEntry?.type ?? null;
       return (
         <li key={external ? `ext_${r.path}` : r.path} class="replay-view__item">
           <button
@@ -1725,12 +1761,10 @@ export default defineComponent({
               <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
             </div>
             <div class="replay-card__foot">
-              {ownShipName ? (
+              {ownShipName && ownEntry ? (
                 <span
                   class="replay-card__vessel"
-                  title={
-                    ownShipType ? t(`replay.classes.${shipTypeClass(ownShipType)}`) : undefined
-                  }
+                  data-hint-card={ownShipHintCard(ownEntry, ownShipName, dataLanguage.value)}
                 >
                   {ownShipType ? (
                     <BattleIcon type={ownShipType} variant="plain" size={17} />
