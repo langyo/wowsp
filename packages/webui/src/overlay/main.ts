@@ -49,13 +49,15 @@ import {
   teamIntelFor,
   type TeamIntelCount,
 } from "./teamIntel";
-// Display prefs (content toggles + the ranked/random stats source), read
-// once at window creation with the same tolerant contract as the store.
+// Display prefs (content toggles + the three-dimension stats source), read
+// with the same tolerant contract as the store and re-read live when the
+// main window broadcasts a prefs write (see refreshPrefs below).
 import {
   dimsNeedShipStats,
   readOverlayDisplayPrefs,
   resolveRosterBattleScope,
   scopedRosterView,
+  type PrAlgo,
   type RawStat,
   type RosterModeNumbers,
   type ResolvedStatsMode,
@@ -227,20 +229,21 @@ const locale = new URLSearchParams(window.location.search).get("locale") || "en-
 // One tolerant read of the statsPrefs blob the main window's store owns
 // (see overlayPrefs.ts for the contract): the seal gates, the per-row chip
 // content toggles, the three-dimension stats source, the team-intel items
-// and the team-average line. Display-only — read once at window creation,
-// so a settings flip applies the next time the overlay window is
-// (re)created. The chips follow the same AND-composition as the webui
-// surfaces: no PR rating, no seals, and a seal switched off individually
-// never renders either.
-const PREFS = readOverlayDisplayPrefs();
+// and the team-average line. The snapshot is RE-read whenever the main
+// window's store broadcasts a write (`wowsp://stats-prefs-changed`, see
+// refreshPrefs below) — a settings flip applies to the live window, not
+// just the next one. The chips follow the same AND-composition as the
+// webui surfaces: no PR rating, no seals, and a seal switched off
+// individually never renders either.
+let PREFS = readOverlayDisplayPrefs();
 // The seal wording is Chinese-community vocabulary — RatingStamp.tsx
 // renders nothing under a non-zh UI locale, and the overlay chips follow
 // suit.
-const SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
+let SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
 // Whether ANY per-row number (winrate / PR / battles / avg damage) can
 // render — gates the placeholder faces and the "querying" badge the same
 // way the old single avg-stats switch did.
-const ANY_CHIP_ON =
+let ANY_CHIP_ON =
   PREFS.chips.winrate || PREFS.chips.pr || PREFS.chips.battles || PREFS.chips.damage;
 // Which battle-mode career the chips + team averages render, resolved per
 // battle in render() ("follow" tracks the arena's mode key; the fixed
@@ -249,9 +252,51 @@ let statsMode: ResolvedStatsMode = "random";
 // A ship-scoped dimension is on (ship scope beyond the account careers, or
 // the solo filter): every landed human stat then also carries the player's
 // full per-ship list, and the chip/team-average views aggregate it through
-// the SAME utils/shipStatsScope the main-window panels use. Fixed for this
-// window's life (the prefs snapshot is read once above).
-const SHIP_SCOPE_ON = dimsNeedShipStats(PREFS.statsDims);
+// the SAME utils/shipStatsScope the main-window panels use. Re-derived on
+// every prefs refresh (refreshPrefs below).
+let SHIP_SCOPE_ON = dimsNeedShipStats(PREFS.statsDims);
+// Bumped whenever the stats cache is invalidated wholesale (a PR-algo
+// param flip): in-flight batches snapshot it and discard answers computed
+// under the previous algo instead of re-caching stale numbers.
+let statsGeneration = 0;
+// The effective PR-algo param the stats pipeline last ran under (the batch
+// RPC takes prAlgo; omitted while PR is off = the backend's winrate
+// default). Tracked as its own variable — NOT re-derived from PREFS — so a
+// flip chain like expected → PR off → winrate still sees the off step's
+// invalidation and never shows expected-computed PRs under the winrate
+// label (the main window's roster cache keys carry the algo and re-fetch
+// through the same chain).
+let statsAlgo: PrAlgo = PREFS.prAlgo ?? "winrate";
+
+/** Re-read the statsPrefs blob after the main window's store wrote it (the
+ *  `wowsp://stats-prefs-changed` broadcast — see stores/statsPrefs.ts) and
+ *  re-derive the module gates, so a settings flip applies to the live
+ *  window instead of only the next one. The career batch needs no re-query
+ *  for the stats-source dims (one answer carries all three battle modes)
+ *  and neither do the display toggles — a re-render through the refreshed
+ *  snapshot is the whole update. The PR-algo param is the one pref the
+ *  cached numbers BAKED IN at fetch time: an effective flip invalidates
+ *  the cached careers and per-ship lists so the chips re-query under the
+ *  new algo, matching the main window's roster pipeline. The wholesale
+ *  clear also drops the cached clan tags, so the believed Tab order
+ *  degrades to tag-less for the re-query's span — the same face a battle
+ *  start has, and re-heals the moment the batch lands; cheaper to accept
+ *  than showing old-algo numbers. */
+function refreshPrefs(): void {
+  const prevAlgo = statsAlgo;
+  PREFS = readOverlayDisplayPrefs();
+  SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
+  ANY_CHIP_ON =
+    PREFS.chips.winrate || PREFS.chips.pr || PREFS.chips.battles || PREFS.chips.damage;
+  SHIP_SCOPE_ON = dimsNeedShipStats(PREFS.statsDims);
+  const nextAlgo = PREFS.prAlgo ?? "winrate";
+  if (nextAlgo !== prevAlgo) {
+    statsGeneration += 1;
+    stats.clear();
+    shipFetched.clear();
+    statsAlgo = nextAlgo;
+  }
+}
 
 // kind → Chinese label, copied from RatingStamp.tsx (bare DOM cannot reuse
 // that Vue component).
@@ -1137,11 +1182,17 @@ async function runShipBatch() {
   }
   if (ids.size === 0) return;
   shipsInFlight = true;
+  const gen = statsGeneration;
   try {
     const list = [...ids.values()];
     // Chunk-serial: the same WG-friendly width the main window's fetcher
     // and the backend's own fan-out keep.
     for (let i = 0; i < list.length; i += 4) {
+      // A prefs flip mid-batch (statsGeneration moved) threw the cache this
+      // batch was filling away — abandon the remaining chunks; the career
+      // refetch re-arms this pipeline (runBatch's scheduleBatch, then
+      // scheduleShipLists once the new entries have landed).
+      if (gen !== statsGeneration) return;
       await Promise.all(
         list.slice(i, i + 4).map(async ({ id, entryRealm }) => {
           try {
@@ -1154,12 +1205,21 @@ async function runShipBatch() {
               ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
               sessionCache: true,
             })) as NonNullable<RawStat["ships"]>;
-            applyShips(id, entryRealm, ships ?? null);
+            // Currency guard (the same one useRosterStats keeps): a
+            // stale-algo answer must not adopt the refetched entries —
+            // ships !== undefined reads as "answered" and would block
+            // their refetch for the rest of the session.
+            if (gen === statsGeneration) applyShips(id, entryRealm, ships ?? null);
           } catch {
             // One attempt per battle — a hard-down API must not be probed
-            // on every anchor event (the battle switch re-arms below).
-            shipFetched.add(`${entryRealm}:${id}`);
-            applyShips(id, entryRealm, null);
+            // on every anchor event (the battle switch re-arms below). The
+            // mark and the null verdict only stick while this batch is
+            // still current: after a prefs flip neither may survive into
+            // the refetch (a stale null would block it the same way).
+            if (gen === statsGeneration) {
+              shipFetched.add(`${entryRealm}:${id}`);
+              applyShips(id, entryRealm, null);
+            }
           }
         }),
       );
@@ -1200,6 +1260,7 @@ async function runBatch() {
   const names = [...pending];
   pending.clear();
   inFlight = true;
+  const gen = statsGeneration;
   try {
     // Ground-truth per-name realms (the realm-reporting probe reports each
     // player's cluster straight off the game's roster records): routed
@@ -1241,6 +1302,11 @@ async function runBatch() {
       })) as Array<BatchStat | null>;
       group.names.forEach((name, i) => byName.set(name, results[i] ?? null));
     }
+    // A prefs flip mid-flight bumped statsGeneration (the cache was cleared
+    // for the new PR-algo param) — these answers were computed under the
+    // previous one; drop them instead of re-caching stale numbers (the
+    // finally below re-runs the pipeline under the fresh prefs right away).
+    if (gen !== statsGeneration) return;
     names.forEach((name) => {
       const r = byName.get(name) ?? null;
       if (r) {
@@ -1307,6 +1373,10 @@ async function runBatch() {
     scheduleShipLists();
     render();
   } catch {
+    // A batch the prefs flip already discarded (statsGeneration moved under
+    // it) pays no retry / not-found budget — its names re-queue through the
+    // finally's scheduleBatch anyway, under the fresh prefs.
+    if (gen !== statsGeneration) return;
     // Transient WG hiccup: retry the same (still-uncached) names after a
     // capped, doubling pause — but only while the per-battle retry budget
     // lasts (see RETRIES_PER_BATTLE). The chips honestly stay "…" until a
@@ -1329,6 +1399,10 @@ async function runBatch() {
     scheduleNotFoundRetry();
   } finally {
     inFlight = false;
+    // A discarded batch (statsGeneration moved under it) left the roster
+    // uncached — re-run the pipeline under the fresh prefs immediately
+    // instead of waiting for the next anchor event.
+    if (gen !== statsGeneration) scheduleBatch();
   }
 }
 
@@ -1447,6 +1521,19 @@ async function start() {
     // badges). Only steers the hint copy; a re-render keeps a hint box
     // already on screen current without waiting for the next anchor event.
     statusState = (e.payload as { state?: string } | null)?.state ?? null;
+    render();
+  });
+  await listen("wowsp://stats-prefs-changed", () => {
+    // The main window's statsPrefs store re-wrote the shared localStorage
+    // blob and broadcast (stores/statsPrefs.ts). Re-read it and re-render:
+    // the stats-source dims, chip toggles, intel/average items and the PR
+    // + seal gates all apply to the live window now, not the next one.
+    // refreshPrefs also invalidates the cached careers when the PR-algo
+    // param flipped; scheduleBatch re-arms every pipeline the flip
+    // switched on (per-ship lists, composition seals, clan gates) and is a
+    // cheap no-op otherwise (cached answers, existing backoffs respected).
+    refreshPrefs();
+    scheduleBatch();
     render();
   });
   await listen("wowsp://sink-attrib", (e: { payload: unknown }) => {

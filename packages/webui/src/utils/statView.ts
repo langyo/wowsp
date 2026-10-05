@@ -15,8 +15,9 @@
  * battle's identity) and the account-career picker the all-ships scope
  * reads; the ship-scoped dimensions aggregate per-ship payloads instead
  * (see utils/shipStatsScope.ts). Every surface consumes all three — the
- * in-game Tab overlay included (its bare-DOM page reads the dims once per
- * window and fetches per-ship lists through the shared backend source).
+ * in-game Tab overlay included (its bare-DOM page re-reads the dims live
+ * off the store's broadcast and fetches per-ship lists through the shared
+ * backend source).
  */
 import { modeKey } from "@/utils/modeColors";
 import type {

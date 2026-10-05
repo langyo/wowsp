@@ -24,9 +24,10 @@ import "../stats/StatsPrefsControls.scss";
  * current battle / fixed randoms / fixed ranked / the global merge), the
  * career seal stamps, the team-intel card's items (radar / hydro / smoke)
  * and the overlay's per-team average line. Everything reads/writes the
- * shared statsPrefs store — the overlay window re-reads the blob the next
- * time it is created, so a flip applies there from the next battle (or
- * window recreate); the main-window panels apply it immediately.
+ * shared statsPrefs store, and every surface applies a flip immediately —
+ * the panels through the store's reactivity, the overlay window through
+ * the store's broadcast (it re-reads the blob live; see overlay/main.ts's
+ * refreshPrefs).
  */
 export default defineComponent({
   name: "OverlayContentControls",

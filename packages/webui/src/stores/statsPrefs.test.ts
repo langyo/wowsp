@@ -1,10 +1,11 @@
-/** Stats-prefs store: defaults, persistence round-trip and corrupt-storage
- *  tolerance. The module-level `statsPrefsState` ref initializes from
+/** Stats-prefs store: defaults, persistence round-trip, corrupt-storage
+ *  tolerance and the live-change broadcast the Tab overlay refreshes
+ *  through. The module-level `statsPrefsState` ref initializes from
  *  localStorage at import time, so every case re-imports the module against
  *  a freshly seeded storage (vi.resetModules) instead of trying to re-seed
  *  state that already exists. */
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_STATS_PREFS,
@@ -13,6 +14,12 @@ import {
   useStatsPrefsStore,
 } from "./statsPrefs";
 
+// The Tauri event bus, mocked: persist() dynamically imports the event
+// module only inside a Tauri webview, and this factory answers that
+// import. hoisted so the factory and the assertions share one fn.
+const { emitMock } = vi.hoisted(() => ({ emitMock: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ emit: emitMock }));
+
 beforeEach(() => {
   localStorage.clear();
   vi.resetModules();
@@ -20,6 +27,11 @@ beforeEach(() => {
   // (resetModules only affects later dynamic imports); a fresh pinia per
   // test is all the store needs.
   setActivePinia(createPinia());
+});
+
+afterEach(() => {
+  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  emitMock.mockClear();
 });
 
 async function freshModule() {
@@ -313,5 +325,25 @@ describe("statsPrefs store", () => {
     expect(prAlgoFresh()).toBe("winrate");
     store.setPrEnabled(false);
     expect(prAlgoFresh()).toBeUndefined();
+  });
+
+  it("broadcasts the prefs-changed event after a write inside the Tauri shell", async () => {
+    // The Tab overlay listens for exactly this event to re-read the blob
+    // live (overlay/main.ts's refreshPrefs) — the one channel between the
+    // windows, which share localStorage but not Pinia state.
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    const { useStatsPrefsStore: useFresh } = await freshModule();
+    useFresh().setOverlayBattleScope("ranked");
+    // The broadcast dynamically imports the event module — let that
+    // microtask land before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(emitMock).toHaveBeenCalledWith("wowsp://stats-prefs-changed");
+  });
+
+  it("does not broadcast outside the Tauri shell", async () => {
+    const { useStatsPrefsStore: useFresh } = await freshModule();
+    useFresh().setOverlayBattleScope("ranked");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(emitMock).not.toHaveBeenCalled();
   });
 });

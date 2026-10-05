@@ -239,7 +239,7 @@
   "dataSourceModCatalogNone": "暫無目錄 · 點擊重新整理取得",
   "overlayContent": {
     "title": "顯示內容",
-    "hint": "調整水表各處（Tab 懸浮窗與即時/戰後對局面板）顯示的數字內容；懸浮窗的改動在下一次建立懸浮窗時生效，面板改動即時生效。",
+    "hint": "調整水表各處（Tab 懸浮窗與即時/戰後對局面板）顯示的數字內容；改動即時生效。",
     "chipsWinrate": "勝率",
     "chipsWinrateDesc": "懸浮窗與對局面板每行的勝率數字。",
     "chipsPr": "PR 評價分",

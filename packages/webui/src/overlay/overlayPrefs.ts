@@ -9,8 +9,10 @@
  *  (the module-level ref utils/winrate already depends on) so the two
  *  readers can never drift apart.
  *
- *  Read ONCE at window creation (display-only knobs): a settings flip
- *  applies the next time the overlay window is (re)created. */
+ *  Read at window creation and RE-read whenever the main window's store
+ *  broadcasts a write (the `wowsp://stats-prefs-changed` event — see
+ *  stores/statsPrefs.ts and overlay/main.ts's refreshPrefs): a settings
+ *  flip applies to the live window, not only the next one. */
 import type { PlayerShipStats } from "@/api";
 import {
   DEFAULT_STATS_PREFS,
@@ -42,7 +44,7 @@ import type { StampKind } from "@/utils/winrate";
 // dependency chains so this bare-DOM page can import it); re-exported so
 // the overlay page keeps its one import site.
 export { dimsNeedShipStats, resolveRosterBattleScope, rosterStatView, scopedRosterView };
-export type { ResolvedStatsMode, RosterModeNumbers, RosterStatViewSource, RosterStatsDims };
+export type { PrAlgo, ResolvedStatsMode, RosterModeNumbers, RosterStatViewSource, RosterStatsDims };
 
 /** The raw per-player stats the overlay caches: the randoms career plus
  *  the ranked / global per-mode payloads nested the way `rosterStatView`
@@ -69,8 +71,8 @@ export interface RawStat extends RosterStatViewSource {
 /** The stats source's three dimensions as the overlay consumes them: the
  *  battle dimension is resolved per battle in main.ts; the ship/solo
  *  dimensions drive the page's per-ship pipeline (same aggregation module
- *  the main-window panels use). Fixed for the window's life — the prefs
- *  snapshot is read once at creation. */
+ *  the main-window panels use). Re-read live on the store's broadcast —
+ *  see the module doc. */
 export type OverlayStatsDims = RosterStatsDims;
 
 /** Everything the overlay renders consumes this snapshot. */

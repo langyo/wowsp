@@ -239,7 +239,7 @@
   "dataSourceModCatalogNone": "暂无目录 · 点击刷新获取",
   "overlayContent": {
     "title": "显示内容",
-    "hint": "调整水表各处（Tab 悬浮窗与实时/战后对局面板）显示的数字内容；悬浮窗的改动在下一次创建悬浮窗时生效，面板改动即时生效。",
+    "hint": "调整水表各处（Tab 悬浮窗与实时/战后对局面板）显示的数字内容；改动即时生效。",
     "chipsWinrate": "胜率",
     "chipsWinrateDesc": "悬浮窗与对局面板每行的胜率数字。",
     "chipsPr": "PR 评价分",

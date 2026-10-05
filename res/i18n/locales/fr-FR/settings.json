@@ -239,7 +239,7 @@
   "dataSourceModCatalogNone": "Pas de catalogue — actualisez pour le récupérer",
   "overlayContent": {
     "title": "Contenu affiché",
-    "hint": "Choisissez les chiffres affichés par la fiche stats — sur l'overlay Tab et les panneaux de bataille ; l'overlay applique au prochain affichage, les panneaux immédiatement.",
+    "hint": "Choisissez les chiffres affichés par la fiche stats — sur l'overlay Tab et les panneaux de bataille ; les changements s'appliquent immédiatement partout.",
     "chipsWinrate": "Taux de victoire",
     "chipsWinrateDesc": "Le taux de victoire de chaque ligne (overlay et panneaux).",
     "chipsPr": "Score PR",

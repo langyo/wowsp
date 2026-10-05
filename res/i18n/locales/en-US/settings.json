@@ -239,7 +239,7 @@
   "dataSourceModCatalogNone": "No catalog yet — refresh to fetch",
   "overlayContent": {
     "title": "Display content",
-    "hint": "Choose which numbers the water table shows — on the Tab overlay and the live / post-battle roster panels alike; overlay changes apply the next time the overlay is created, panel changes apply immediately.",
+    "hint": "Choose which numbers the water table shows — on the Tab overlay and the live / post-battle roster panels alike; changes apply immediately everywhere.",
     "chipsWinrate": "Winrate",
     "chipsWinrateDesc": "The per-row winrate number on the overlay chips and roster panels.",
     "chipsPr": "PR rating",

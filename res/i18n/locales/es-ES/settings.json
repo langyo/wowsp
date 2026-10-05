@@ -239,7 +239,7 @@
   "dataSourceModCatalogNone": "Sin catálogo — actualiza para obtenerlo",
   "overlayContent": {
     "title": "Contenido mostrado",
-    "hint": "Elige qué números muestra la tabla de estadísticas — en el overlay de Tab y en los paneles de batalla; el overlay aplica al recrearse, los paneles al instante.",
+    "hint": "Elige qué números muestra la tabla de estadísticas — en el overlay de Tab y en los paneles de batalla; los cambios se aplican al instante en todas partes.",
     "chipsWinrate": "Porcentaje de victorias",
     "chipsWinrateDesc": "El porcentaje de victorias de cada fila (overlay y paneles).",
     "chipsPr": "Puntuación PR",

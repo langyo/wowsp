@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
+import { isTauri } from "@/utils/platform";
 import type { StampKind } from "@/utils/winrate";
 
 /** Which backend formula produces the `pr` field: ApeRadar's weighted
@@ -277,9 +278,31 @@ function readStored(): string | null {
   }
 }
 
+/** The Tab overlay re-reads the prefs blob when the main window's store
+ *  writes it: the windows share this localStorage but not the Pinia state,
+ *  so the broadcast is the only live channel between them (overlay/main.ts
+ *  listens for exactly this event and re-reads via readOverlayDisplayPrefs).
+ *  Fire-and-forget and Tauri-gated — a plain browser tab (vite dev, tests)
+ *  has no event bus, and a failed emit degrades to the old contract (the
+ *  overlay applies the flip at its next (re)creation). */
+const STATS_PREFS_CHANGED_EVENT = "wowsp://stats-prefs-changed";
+
+function broadcastStatsPrefsChanged(): void {
+  if (!isTauri()) return;
+  void import("@tauri-apps/api/event")
+    .then(({ emit }) => emit(STATS_PREFS_CHANGED_EVENT))
+    .catch(() => {
+      // no event bus in this shell — the overlay refreshes on recreation
+    });
+}
+
 function persist(p: StatsPrefs): void {
   try {
     localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify(p));
+    // Broadcast only after a successful write: the overlay re-reads the
+    // blob off localStorage, so announcing a write that threw would show
+    // it a stale blob as if it were current.
+    broadcastStatsPrefsChanged();
   } catch {
     // see readStored
   }

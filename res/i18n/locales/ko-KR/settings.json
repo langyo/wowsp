@@ -239,7 +239,7 @@
   "dataSourceModCatalogNone": "카탈로그 없음 · 새로 고침으로 가져오기",
   "overlayContent": {
     "title": "표시 내용",
-    "hint": "물표의 각 위치(Tab 오버레이와 실시간/전투 후 패널)에 표시할 숫자를 조정합니다. 오버레이는 다음 생성 시, 패널은 즉시 적용됩니다.",
+    "hint": "물표의 각 위치(Tab 오버레이와 실시간/전투 후 패널)에 표시할 숫자를 조정합니다. 변경 사항은 모두 즉시 적용됩니다.",
     "chipsWinrate": "승률",
     "chipsWinrateDesc": "오버레이와 패널의 각 행에 표시되는 승률.",
     "chipsPr": "PR 평가점",
