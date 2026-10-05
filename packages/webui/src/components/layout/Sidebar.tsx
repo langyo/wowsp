@@ -5,12 +5,14 @@ import { BarChart3, Search, Ship, Film, Video, Crosshair, Package } from "@lucid
 import { HkTag, HkTooltip } from "@celestia-island/hikari";
 
 import PlayerBadge from "@/components/base/PlayerBadge";
+import PluginUpdateHint from "@/components/layout/PluginUpdateHint";
 import PlatformIcon from "@/components/base/PlatformIcon";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsUiStore } from "@/stores/settingsUi";
+import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useStatsStore } from "@/stores/stats";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
@@ -56,6 +58,7 @@ export default defineComponent({
     const session = useSessionStore();
     const stats = useStatsStore();
     const ui = useSettingsUiStore();
+    const pluginUpdates = usePluginUpdatesStore();
     const { copy } = useClipboard();
     // The dashboard link must also read active while the section's sibling
     // view (游玩时间, /playtime) is open — the pill in the title bar
@@ -222,6 +225,35 @@ export default defineComponent({
               Phone app build: no local installs to switch — the whole row
               (and its settings section) is desktop-app territory. */}
           {!isMobileApp() ? (
+          // While plugins await updates the selector wears a count badge
+          // and the hover surface becomes PluginUpdateHint (stale-plugin
+          // list + one-click update); otherwise the plain path tooltip.
+          pluginUpdates.activeCount > 0 ? (
+          <PluginUpdateHint class="sidebar__footer-slot">
+            <button
+              type="button"
+              class="sidebar__footer-btn"
+              onClick={() => ui.show("gamePath")}
+            >
+              <span class="sidebar__footer-btn-key">{t("common.game.versionLabel")}</span>
+              <span class="sidebar__footer-btn-value">
+                {/* 22px matches the PlayerBadge on the account row below so
+                    the two text columns share one left edge. */}
+                <PlatformIcon kind={activeInstall.value?.kind} size={22} />
+                <span class="sidebar__footer-btn-text">
+                  {activeInstall.value
+                    ? kindLabel(activeInstall.value.kind)
+                    : t("common.gamePath.unset")}
+                </span>
+                {activeInstall.value?.realm ? (
+                  <HkTag variant="default" size="sm">
+                    {activeInstall.value.realm.toUpperCase()}
+                  </HkTag>
+                ) : null}
+              </span>
+            </button>
+          </PluginUpdateHint>
+          ) : (
           <HkTooltip
             class="sidebar__footer-slot"
             text={activeInstallPath.value || t("common.gamePath.noneFound")}
@@ -250,7 +282,7 @@ export default defineComponent({
               </span>
             </button>
           </HkTooltip>
-          ) : null}
+          )) : null}
 
           {/* active account — opens settings on the 账户 section. Shows the
               session-resolved identity: when a battle identified the

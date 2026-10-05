@@ -76,6 +76,7 @@ import { openExternal } from "@/utils/openExternal";
 import { sameGamePath } from "@/utils/gamePath";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import "./ResourcesView.scss";
@@ -211,6 +212,7 @@ export default defineComponent({
     const toolsAnchor = ref<HTMLElement | null>(null);
 
     const gameStatus = useGameStatusStore();
+    const pluginUpdates = usePluginUpdatesStore();
     // The install every mod operation targets: the user's selection, with
     // the RUNNING client's folder as the fallback (same order the ship
     // detail uses) so the page keeps working when no selection is present.
@@ -344,7 +346,7 @@ export default defineComponent({
         const r = await api.modCatalogInstall(entry.id, gameRoot.value, preset);
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
         for (const c of r.conflicts ?? []) toast.info(c);
-        await Promise.all([scan(), loadRecords()]);
+        await Promise.all([scan(), loadRecords(), pluginUpdates.refresh()]);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
@@ -371,7 +373,7 @@ export default defineComponent({
             restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
           }),
         );
-        await Promise.all([scan(), loadRecords()]);
+        await Promise.all([scan(), loadRecords(), pluginUpdates.refresh()]);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
@@ -970,7 +972,6 @@ export default defineComponent({
             <Icon size={14} />
           </span>
           <span class="resources-view__combo-name">{text.name || entry.title || entry.nameEn}</span>
-          <span class="resources-view__combo-ver">v{entry.version}</span>
         </>
       );
     }
@@ -1145,7 +1146,6 @@ export default defineComponent({
               {isCatalogCat(entry.category) && (
                 <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
               )}
-              <span class="mod-detail__badge">v{entry.version}</span>
               {record && !upToDate && (
                 <span class="mod-detail__badge mod-detail__badge--warn">
                   {t("resources.installedAt", { version: record.version })}
@@ -2243,7 +2243,6 @@ export default defineComponent({
                           <span class="mod-row__body">
                             <span class="mod-row__name">
                               {text.name || entry.title || entry.nameEn}
-                              <span class="mod-row__ver">v{entry.version}</span>
                             </span>
                             <span class="mod-row__sub">{text.desc || entry.nameEn}</span>
                           </span>

@@ -21,6 +21,7 @@ import { useUpdaterStore } from "@/stores/updater";
 import { useCacheStore } from "@/stores/cache";
 import { useNavUiStore } from "@/stores/navUi";
 import { useSettingsUiStore } from "@/stores/settingsUi";
+import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { usePluginPromptStore } from "@/stores/pluginPrompt";
@@ -36,6 +37,7 @@ import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import AudioPlayerToast from "./AudioPlayerToast";
+import ModUpdateToast from "./ModUpdateToast";
 import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
 import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
@@ -71,6 +73,7 @@ export default defineComponent({
   name: "AppShell",
   setup() {
     const config = useConfigStore();
+    const pluginUpdates = usePluginUpdatesStore();
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
     const session = useSessionStore();
@@ -213,6 +216,15 @@ export default defineComponent({
       }
       closing.value = null;
     }
+
+    // Plugin freshness (client-version selector badge + one-click batch
+    // update): assessed at boot and whenever the active client switches;
+    // the mod hub and the batch pass itself poke refreshes after installs.
+    watch(
+      () => config.activeInstall?.path,
+      () => void pluginUpdates.refresh(),
+      { immediate: true },
+    );
 
     onMounted(async () => {
       // Production builds feel like a desktop app: no WebView2 context menu
@@ -476,6 +488,10 @@ export default defineComponent({
             nothing while the audioPlayer store is idle, so it mounts
             unconditionally in the same top-right toast column. */}
         <AudioPlayerToast />
+        {/* Plugin batch-update pass card (一键更新 from the client-version
+            selector): renders nothing while the pluginUpdates store is
+            idle, so it mounts unconditionally in the same column. */}
+        <ModUpdateToast />
 
         {/* In-game manual-locate picker (cached-frame drag box for the
             live-battle panel's 手动定位 flow): renders nothing until the

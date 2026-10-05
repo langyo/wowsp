@@ -1,0 +1,96 @@
+// PluginUpdateHint — the client-version selector's hover card. Fixed,
+// teleported to body, in hikari's popup z-band (the tooltip band), with
+// an app-surface look (dark surface tokens like the settings cards).
+
+.plugin-update-hint {
+  position: relative;
+  display: inline-flex;
+
+  // Count badge riding the wrapped selector button's top-right corner.
+  &__badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--hi-color-warning, #d29922);
+    color: #fff;
+    font-size: var(--text-3xs, 0.625rem);
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  &__pop {
+    position: fixed;
+    z-index: var(--hk-z-tooltip, 4100);
+    width: 20rem;
+    max-width: calc(100vw - 2rem);
+    padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+    border: 1px solid rgb(var(--color-border) / 25%);
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--color-surface));
+    box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: var(--text-xs, 0.75rem);
+    font-weight: 600;
+    color: var(--hi-color-warning, #d29922);
+  }
+
+  &__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 9rem;
+    overflow-y: auto;
+
+    li {
+      font-size: var(--text-xs, 0.75rem);
+      color: rgb(var(--color-text));
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  &__more {
+    color: rgb(var(--color-muted));
+  }
+
+  // The one-click action — primary tint, quiet at rest.
+  &__go {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0.35rem 0.8rem;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--color-primary));
+    color: rgb(var(--color-on-solid, #fff));
+    font-size: var(--text-xs, 0.75rem);
+    cursor: pointer;
+    transition: opacity var(--duration-short, 0.15s) ease;
+
+    &:hover:not(:disabled) {
+      opacity: 0.88;
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+  }
+}

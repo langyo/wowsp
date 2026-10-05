@@ -446,7 +446,17 @@ _MOCK_CATALOG = {
         },
     ],
 }
-_MOCK_RECORDS: list[dict] = []
+_MOCK_RECORDS: list[dict] = [
+    # Stale on purpose: catalog says version "1", the record says "0.9" —
+    # the client-version selector's update marker + 一键更新 ride on this.
+    {
+        "id": "voice.ba.hoshino", "name": "Hoshino Crew Voice (AI)",
+        "version": "0.9", "category": "voice", "source": "mod-hub",
+        "discussion": 800, "preset": None, "binVersion": "13187581",
+        "installedAt": "2026-01-01T00:00:00Z", "files": [],
+        "restoreDir": None, "gameRoot": "",
+    },
+]
 
 
 @app.post("/api/mod_catalog_refresh")
@@ -482,6 +492,19 @@ async def cmd_mod_catalog_uninstall(request: Request) -> dict:
 @app.post("/api/mod_hub_records")
 async def cmd_mod_hub_records() -> list[dict]:
     return _MOCK_RECORDS
+
+
+# Probe plugin always "installed but outdated" against the mock: the
+# sidebar marker's second freshness source.
+@app.post("/api/ingame_plugin_status")
+async def cmd_ingame_plugin_status(request: Request) -> dict:
+    return {"installed": True, "outdated": True, "resMods": "bin/13187581/res_mods",
+            "discussion": 640}
+
+
+@app.post("/api/ingame_plugin_install")
+async def cmd_ingame_plugin_install(request: Request) -> str:
+    return "bin/13187581/res_mods/PnFMods/WoWSPProbe/Main.py"
 
 
 @app.get("/api/is_game_running")

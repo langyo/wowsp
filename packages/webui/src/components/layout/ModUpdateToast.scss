@@ -1,0 +1,113 @@
+// ModUpdateToast — the plugin batch-update's live pass card. Sits in hikari's toast
+// column (same fixed top-right slot and z-band as HkToast /
+// HkBlockingToast) so all three surfaces read as one stack; the surface
+// copies the blocking card's info variant (blue, white text, blur).
+// Third fixed card in this slot (UpdateToast, AudioPlayerToast): two
+// simultaneous passes would overlap exactly — accepted, same trade-off
+// the first two already make.
+
+.mod-update-toast {
+  position: fixed;
+  top: 4rem;
+  right: 1rem;
+  z-index: var(--hk-z-toast, 4000);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hi-space-8, 8px);
+  width: 22rem;
+  max-width: calc(100vw - 2rem);
+  padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+  border-radius: var(--hi-radius-sm, 4px);
+  background: var(--hi-color-info, #58a6ff);
+  color: #fff;
+  font-size: var(--hi-text-base, 0.875rem);
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+  animation: mod-update-toast-in var(--hi-duration-normal, 0.3s)
+    cubic-bezier(0.22, 0.61, 0.36, 1);
+  // Leave counterpart of the enter keyframe: the card fades and slides
+  // out instead of snapping away when the pass ends (the component holds
+  // itself mounted for this duration — a delayed unmount).
+  transition: opacity 260ms ease, transform 260ms ease;
+
+  &--leave {
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mod-update-toast {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes mod-update-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mod-update-toast__row {
+  display: flex;
+  align-items: center;
+  gap: var(--hi-space-8, 8px);
+}
+
+.mod-update-toast__icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.mod-update-toast__message {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Bottom progress bar: translucent track + white fill. During the mirror
+// race and the install hand-off the percent is unknown — the fill runs
+// the classic indeterminate slide instead.
+.mod-update-toast__track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 28%);
+  overflow: hidden;
+}
+
+.mod-update-toast__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: rgb(255 255 255 / 95%);
+  transition: width 0.25s ease;
+
+  &--indeterminate {
+    width: 34%;
+    transition: none;
+    animation: mod-update-toast-slide 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes mod-update-toast-slide {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(300%);
+  }
+}

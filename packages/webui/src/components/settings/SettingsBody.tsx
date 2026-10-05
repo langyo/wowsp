@@ -85,6 +85,7 @@ import { formatEta, formatSpeed } from "@/utils/format";
 import { isMobileApp, isTauri } from "@/utils/platform";
 import { useRouter } from "vue-router";
 import { useConfigStore } from "@/stores/config";
+import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import {
@@ -207,6 +208,7 @@ export default defineComponent({
     // isMobile/isPhoneLayout, a different axis; see utils/platform).
     const mobileApp = isMobileApp();
     const configStore = useConfigStore();
+    const pluginUpdates = usePluginUpdatesStore();
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
     const toast = useToast();
@@ -432,6 +434,7 @@ export default defineComponent({
       );
     });
 
+    onMounted(() => void pluginUpdates.refresh());
     onMounted(async () => {
       void overlayCfg.load();
       void refreshIngamePlugin();
@@ -1389,6 +1392,12 @@ export default defineComponent({
                             <span class="install-card__name">{kindLabel(i.kind)}</span>
                             {i.realm ? (
                               <HkTag variant="default" size="sm">{i.realm.toUpperCase()}</HkTag>
+                            ) : null}
+                            {(pluginUpdates.infoFor(i.path)?.mods.length ?? 0) +
+                              (pluginUpdates.infoFor(i.path)?.probeOutdated ? 1 : 0) > 0 ? (
+                              <HkTag variant="warning" size="sm">
+                                {t("resources.pluginUpdateBadge")}
+                              </HkTag>
                             ) : null}
                             {active ? <Check size={12} class="install-card__check" /> : null}
                           </span>
