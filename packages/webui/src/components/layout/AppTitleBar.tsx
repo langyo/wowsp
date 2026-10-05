@@ -5,6 +5,7 @@ import { BarChart3, Clock, Menu } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useNavUiStore } from "@/stores/navUi";
+import { useShipsUiStore, type ShipsViewMode } from "@/stores/shipsUi";
 import TitlebarLoading from "@/components/layout/TitlebarLoading";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
@@ -51,6 +52,7 @@ export default defineComponent({
   setup(props, { emit }) {
     const maximized = ref(false);
     const navUi = useNavUiStore();
+    const shipsUi = useShipsUiStore();
     const mobileApp = isMobileApp();
     const route = useRoute();
     const router = useRouter();
@@ -60,12 +62,16 @@ export default defineComponent({
     const isTauri =
       typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-    // The dashboard section's view switch (我的水表 ↔ 游玩时间) lives dead-
-    // center in the bar and only while that section is open — the two views
-    // are routes, so the switch is a plain router.push pair.
-    const showViewSwitch = computed(
-      () => route.path === "/" || route.path === "/playtime",
-    );
+    // Section view switches live dead-center in the bar, each only while
+    // its own section is open: the dashboard's 我的水表 ↔ 游玩时间 pair
+    // (two routes, so a plain router.push pair) and the ship encyclopedia's
+    // 科技树 / 列表 / 对比 view modes (page state — shared through shipsUi
+    // so the bar switch and the page body render from one source).
+    const centerSwitch = computed(() => {
+      if (route.path === "/" || route.path === "/playtime") return "dashboard";
+      if (route.path === "/ships") return "ships";
+      return null;
+    });
 
     onMounted(async () => {
       if (!isTauri) return;
@@ -151,15 +157,15 @@ export default defineComponent({
                     <span class="hk-titlebar-subtitle">{props.subtitle}</span>
                   )}
                 </span>
-                {/* Dashboard section's view switch, absolutely centered on
-                    the bar (see AppTitleBar.scss) — hikari's own segmented
-                    HkTabs (the dashboard date-range control), compacted for
-                    the caption so the sliding-indicator motion and the
-                    tactile press feedback come for free. The wrapper keeps
-                    the switch off the bar's JS drag path via stopPropagation
+                {/* Section view switches, absolutely centered on the bar
+                    (see AppTitleBar.scss) — hikari's own segmented HkTabs
+                    (the dashboard date-range control), compacted for the
+                    caption so the sliding-indicator motion and the tactile
+                    press feedback come for free. The wrapper keeps the
+                    switch off the bar's JS drag path via stopPropagation
                     (the CSS no-drag pair covers engines honoring
                     app-region). */}
-                {showViewSwitch.value ? (
+                {centerSwitch.value === "dashboard" ? (
                   <nav
                     class="app-titlebar__views"
                     aria-label={t("nav.viewSwitch")}
@@ -184,6 +190,27 @@ export default defineComponent({
                           label: t("nav.playtime"),
                           icon: <Clock size={13} />,
                         },
+                      ]}
+                    />
+                  </nav>
+                ) : centerSwitch.value === "ships" ? (
+                  <nav
+                    class="app-titlebar__views"
+                    aria-label={t("nav.viewSwitch")}
+                    onPointerdown={(e: PointerEvent) => e.stopPropagation()}
+                    onDblclick={(e: MouseEvent) => e.stopPropagation()}
+                  >
+                    <HkTabs
+                      variant="segmented"
+                      scrollable={false}
+                      modelValue={shipsUi.viewMode}
+                      onUpdate:modelValue={(v: string) =>
+                        (shipsUi.viewMode = v as ShipsViewMode)
+                      }
+                      tabs={[
+                        { key: "tree", label: t("ships.viewMode.tree") },
+                        { key: "grid", label: t("ships.viewMode.grid") },
+                        { key: "compare", label: t("ships.viewMode.compare") },
                       ]}
                     />
                   </nav>

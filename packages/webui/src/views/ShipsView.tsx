@@ -16,6 +16,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
+import { useShipsUiStore, type ShipsViewMode } from "@/stores/shipsUi";
 import { useTrendsStore } from "@/stores/trends";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -46,10 +47,13 @@ export default defineComponent({
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
     const loadingTasks = useLoadingTasksStore();
+    const shipsUi = useShipsUiStore();
     const toast = useToast();
 
     // ── view mode (tech-tree vs list vs compare) ──────────────────────
-    const viewMode = ref<"tree" | "grid" | "compare">("tree");
+    // The mode itself lives in shipsUi: its switch sits in the app title
+    // bar on desktop (AppTitleBar) and in the page header on phones —
+    // both write the one shared state.
     const treeNation = ref<string>("japan");
     /** True once the first load attempt completes (success or fail). */
     const firstLoadDone = ref(false);
@@ -243,16 +247,22 @@ export default defineComponent({
         <header class="ships-view__header">
           <h1 class="ships-view__title">{t("ships.title")}</h1>
           <div class="ships-view__header-right">
-            <HkTabs
-              variant="segmented"
-              modelValue={viewMode.value}
-              onUpdate:modelValue={(v: string) => (viewMode.value = v as "tree" | "grid" | "compare")}
-              tabs={[
-                { key: "tree", label: t("ships.viewMode.tree") },
-                { key: "grid", label: t("ships.viewMode.grid") },
-                { key: "compare", label: t("ships.viewMode.compare") },
-              ]}
-            />
+            {/* The view-mode switch rides the app title bar on desktop
+                (≥768px — AppTitleBar's centered pill); this header copy is
+                the phone-layout fallback, where the bar hosts the nav
+                drawer controls instead. Writes the shared shipsUi state. */}
+            <div class="ships-view__tabs">
+              <HkTabs
+                variant="segmented"
+                modelValue={shipsUi.viewMode}
+                onUpdate:modelValue={(v: string) => (shipsUi.viewMode = v as ShipsViewMode)}
+                tabs={[
+                  { key: "tree", label: t("ships.viewMode.tree") },
+                  { key: "grid", label: t("ships.viewMode.grid") },
+                  { key: "compare", label: t("ships.viewMode.compare") },
+                ]}
+              />
+            </div>
             {/* Passive badge: the realm is followed from the sidebar's app-wide
                 server selector, so it's shown here read-only. */}
             <div class="ships-view__realm">
@@ -309,7 +319,7 @@ export default defineComponent({
             Tree mode strips the body's padding and scroll: the tree region
             below becomes the single edge-to-edge scroller so its horizontal
             scrollbar hugs the window's bottom/left/right edges. */}
-        <div class={["ships-view__body", viewMode.value === "tree" ? "ships-view__body--tree" : ""]}>
+        <div class={["ships-view__body", shipsUi.viewMode === "tree" ? "ships-view__body--tree" : ""]}>
 
         {/* ── loading state ── */}
         {encyclopedia.loading && encyclopedia.ships.length === 0 ? (
@@ -317,7 +327,7 @@ export default defineComponent({
         ) : null}
 
         {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
-        {viewMode.value === "grid" ? (
+        {shipsUi.viewMode === "grid" ? (
           <div class="ships-view__filters">
             <div class="ships-view__filter-top">
               <HkInput
@@ -414,7 +424,7 @@ export default defineComponent({
                 <RotateCcw size={12} /> {t("ships.reload")}
               </HkButton>
             </div>
-          ) : viewMode.value === "tree" ? (
+          ) : shipsUi.viewMode === "tree" ? (
             <div class="ships-view__tree-body" key="tree">
               {/* nation rail — vertical list of faction crests */}
               <aside class="ships-view__nation-rail">
@@ -445,7 +455,7 @@ export default defineComponent({
                 )}
               </div>
             </div>
-          ) : viewMode.value === "compare" ? (
+          ) : shipsUi.viewMode === "compare" ? (
             <ShipCompareView key="compare" />
           ) : filteredShips.value.length === 0 ? (
             <div class="ships-view__status" key="empty">{t("ships.empty")}</div>

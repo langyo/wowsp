@@ -22,6 +22,15 @@
     flex-wrap: wrap;
   }
 
+  // The view-mode switch rides the app title bar on desktop (AppTitleBar's
+  // centered pill); this header copy only exists for the phone layout
+  // (≤767px), where the bar hosts the nav drawer controls instead.
+  &__header-right .ships-view__tabs {
+    @media (min-width: 768px) {
+      display: none;
+    }
+  }
+
   &__title {
     font-size: var(--text-xl);
     font-weight: 700;
