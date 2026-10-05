@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { PlaytimeBattle } from "@/api";
+import { modeColorOfKey } from "@/utils/modeColors";
 import {
   battlesActivityKey,
+  battlesDaily,
   breakdownByMode,
   breakdownByNation,
   breakdownByTier,
   breakdownByType,
+  BREAKDOWN_UNKNOWN_COLOR,
+  breakdownColor,
   distinctShipCount,
   filterBattlesByScope,
 } from "./battleBreakdown";
@@ -193,6 +197,102 @@ describe("breakdownByMode", () => {
       { key: "pvp", count: 1, share: 0.5 },
       { key: "unknown", count: 1, share: 0.5 },
     ]);
+  });
+});
+
+describe("breakdownColor", () => {
+  it("resolves nothing for ship types — the view wires the user-tintable store", () => {
+    // "type" left BreakdownGroup on purpose: the canonical WG class palette
+    // lives in theme/shipTypeColors (covered by its own tests). The gray
+    // the type resolver lands "unknown" on stays exported from here.
+    expect(BREAKDOWN_UNKNOWN_COLOR).toBe("#C4BDC9");
+  });
+
+  it("colors every canonical nation distinctly and falls back to gray", () => {
+    const nations = [
+      "usa",
+      "japan",
+      "germany",
+      "uk",
+      "ussr",
+      "france",
+      "italy",
+      "pan_asia",
+      "pan_america",
+      "netherlands",
+      "commonwealth",
+      "spain",
+      "europe",
+    ];
+    const hues = nations.map((n) => breakdownColor("nation", n));
+    expect(new Set(hues).size).toBe(nations.length); // pairwise distinct
+    expect(breakdownColor("nation", "usa")).toBe("#4E79A7");
+    expect(breakdownColor("nation", "japan")).toBe("#E15759");
+    expect(breakdownColor("nation", "unknown")).toBe("#C4BDC9");
+    expect(breakdownColor("nation", "atlantis")).toBe("#C4BDC9");
+  });
+
+  it("indexes the tier ramp strictly by tier number, gray elsewhere", () => {
+    expect(breakdownColor("tier", "1")).toBe("#F6CADA");
+    expect(breakdownColor("tier", "11")).toBe("#D6336C");
+    // Every tier owns its own ramp step (and "1" is lighter than "11" —
+    // the light→deep direction the ramp is built for).
+    const ramp = Array.from({ length: 11 }, (_, i) => breakdownColor("tier", String(i + 1)));
+    expect(new Set(ramp).size).toBe(11);
+    expect(breakdownColor("tier", "12")).toBe("#C4BDC9");
+    expect(breakdownColor("tier", "0")).toBe("#C4BDC9");
+    expect(breakdownColor("tier", "unknown")).toBe("#C4BDC9");
+  });
+
+  it("delegates mode colors to the canonical mode palette", () => {
+    expect(breakdownColor("mode", "pvp")).toBe(modeColorOfKey("pvp").color);
+    expect(breakdownColor("mode", "operation")).toBe(modeColorOfKey("operation").color);
+    // Unknown modes ride modeColors' own fallback, not the breakdown gray.
+    expect(breakdownColor("mode", "no_such_mode")).toBe(modeColorOfKey("no_such_mode").color);
+  });
+});
+
+describe("battlesDaily", () => {
+  it("groups by day across both filename stamp forms and sums same-day rows", () => {
+    const rows = [
+      row({}), // default 20260910_201803
+      row({ dateTime: "20260910" }), // bare-date form
+      row({ dateTime: "20260910_235959" }), // same day, later stamp
+      row({ dateTime: "20260911_014502" }),
+    ];
+    expect(battlesDaily(rows)).toEqual([
+      { date: "2026-09-10", value: 3 },
+      { date: "2026-09-11", value: 1 },
+    ]);
+  });
+
+  it("sorts by date ascending whatever order the rows carry", () => {
+    const rows = [
+      row({ dateTime: "20260105_100000" }),
+      row({ dateTime: "20251231_235959" }),
+      row({ dateTime: "20260105_080000" }),
+    ];
+    expect(battlesDaily(rows)).toEqual([
+      { date: "2025-12-31", value: 1 },
+      { date: "2026-01-05", value: 2 },
+    ]);
+  });
+
+  it("excludes rows whose dateTime holds no parsable calendar day", () => {
+    const rows = [
+      row({ dateTime: null }), // unparsed replay
+      row({ dateTime: "20261301_000000" }), // month 13
+      row({ dateTime: "abcdefgh" }), // not digits
+      row({ dateTime: "20260230_120000" }), // Feb 30 — Date rolls it over
+      row({ dateTime: "19991231_235959" }), // below the 2000..2100 window
+      row({ dateTime: "2026" }), // too short to carry a day
+      row({ dateTime: "20260910_201803" }), // the one survivor
+    ];
+    expect(battlesDaily(rows)).toEqual([{ date: "2026-09-10", value: 1 }]);
+  });
+
+  it("yields [] for empty input", () => {
+    expect(battlesDaily([])).toEqual([]);
   });
 });
 

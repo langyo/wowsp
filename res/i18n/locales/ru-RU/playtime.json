@@ -18,9 +18,10 @@
   "range12m": "12 месяцев",
   "rangeTotal": "Всего {v}",
   "trendTitle": "Динамика игры",
-  "heatTitle": "Карта активности",
+  "heatTitle": "Тепловая карта боёв",
   "heatLess": "Меньше",
   "heatMore": "Больше",
+  "heatDay": "Боёв: {n}",
   "weekdayFirst": "Пн",
   "weekdayLast": "Вс",
   "importNote": "Из Steam импортировано около {hours} ч истории ({date}); графики охватывают только локальные записи.",
@@ -38,6 +39,7 @@
     "byNation": "По нации",
     "byTier": "По уровню",
     "byMode": "По режиму",
+    "battles": "боёв",
     "unknown": "Неизвестно"
   }
 }

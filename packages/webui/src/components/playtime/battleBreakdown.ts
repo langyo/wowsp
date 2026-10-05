@@ -2,7 +2,9 @@
  * Pure grouping helpers for the 游玩时间 view's battle breakdown: scope
  * filtering (all installs vs. the selected one) and four count/share
  * groupings (ship type / nation / tier / battle mode) over the
- * replay-derived PlaytimeBattle rows. Everything here is deterministic and
+ * replay-derived PlaytimeBattle rows, plus the donut slice palettes
+ * (breakdownColor) and the per-day battle counts the heatmap plots
+ * (battlesDaily). Everything here is deterministic and
  * side-effect-free — the view owns localization and rendering, the tests
  * pin the buckets (same contract as playtimeAgg).
  *
@@ -17,10 +19,16 @@ import type { PlaytimeBattle, PlaytimeOverview } from "@/api";
 import shipNamesDbRaw from "../../data/ship_names.json";
 import { sameGamePath } from "@/utils/gamePath";
 import { canonicalNation } from "@/utils/nationFlags";
-import { modeKey } from "@/utils/modeColors";
+import { modeColorOfKey, modeKey } from "@/utils/modeColors";
 
 /** Which installs the battle-derived content counts. */
 export type BattleScope = "all" | "selected";
+
+/** Which grouping a breakdown donut draws. Ship TYPE is deliberately
+ *  absent from this union — its slices resolve through the app's
+ *  canonical (user-tintable) ship-type-color store, so the view wires
+ *  that group's colorOf itself. */
+export type BreakdownGroup = "nation" | "tier" | "mode";
 
 /** One labelled count row of a breakdown group. */
 export interface BreakdownEntry {
@@ -151,12 +159,119 @@ export function breakdownByMode(rows: PlaytimeBattle[]): BreakdownEntry[] {
   return finalize(counts);
 }
 
+/** Neutral gray every unmapped breakdown key draws (the "unknown" bucket
+ *  across all four groups — also the odd type/nation the DB may grow). */
+export const BREAKDOWN_UNKNOWN_COLOR = "#C4BDC9";
+const UNKNOWN_COLOR = BREAKDOWN_UNKNOWN_COLOR;
+
+/** Sequential ramp of the theme's rose accent, light → deep across
+ *  T1..T11 (higher tier reads deeper). Interpolated #F6CADA → #D6336C in
+ *  ten even steps and written out literally so the donut and its tests
+ *  stay deterministic. */
+const TIER_COLORS: readonly string[] = [
+  "#F6CADA",
+  "#F3BBCF",
+  "#F0ACC4",
+  "#EC9DB9",
+  "#E98EAE",
+  "#E67FA3",
+  "#E36F98",
+  "#E0608D",
+  "#DC5182",
+  "#D94277",
+  "#D6336C",
+];
+
+/** One distinct readable hue per canonical nation code (the exact set
+ *  canonicalNation folds onto — see utils/nationFlags). Close families are
+ *  stepped by lightness (uk/commonwealth, france/spain, usa/europe) so a
+ *  single donut never shows two near-identical slices. */
+const NATION_COLORS: Record<string, string> = {
+  usa: "#4E79A7",
+  japan: "#E15759",
+  germany: "#9C755F",
+  uk: "#59A14F",
+  ussr: "#D37295",
+  france: "#E6A817",
+  italy: "#76B7B2",
+  pan_asia: "#E8823D",
+  pan_america: "#3FB6C9",
+  netherlands: "#8A63D2",
+  commonwealth: "#8CD17D",
+  spain: "#F1CE63",
+  europe: "#97BBF5",
+};
+
+/** Slice color for a breakdown entry, one palette per group: "mode"
+ *  delegates to the canonical mode palette (utils/modeColors, the same
+ *  colors the replay list's pills wear); "tier" indexes the rose ramp by "1".."11"; "nation" looks
+ *  up the canonical code. Anything unmapped — the "unknown" bucket, a
+ *  future nation the table hasn't met — draws the neutral gray. */
+export function breakdownColor(group: BreakdownGroup, key: string): string {
+  switch (group) {
+    case "mode":
+      return modeColorOfKey(key).color;
+    case "tier": {
+      const tier = Number(key);
+      return Number.isInteger(tier) && tier >= 1 && tier <= TIER_COLORS.length
+        ? TIER_COLORS[tier - 1]
+        : UNKNOWN_COLOR;
+    }
+    case "nation":
+      return NATION_COLORS[key] ?? UNKNOWN_COLOR;
+  }
+}
+
 /** Distinct ownShipId count — the battles card's sub-line. Unparsed rows
  *  (null shipId) contribute nothing. */
 export function distinctShipCount(rows: PlaytimeBattle[]): number {
   const ids = new Set<number>();
   for (const r of rows) if (r.ownShipId != null) ids.add(r.ownShipId);
   return ids.size;
+}
+
+/** Battles per local calendar day (from the replay filename timestamp) —
+ *  the heatmap's points. Rows without a parsable dateTime (Lesta containers
+ *  before the container support, corrupt names) cannot sit on a calendar
+ *  and are excluded — the heatmap may undercount vs the battles card by
+ *  exactly those rows. */
+export function battlesDaily(rows: PlaytimeBattle[]): { date: string; value: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const date = battleDayKey(r.dateTime);
+    if (!date) continue;
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/** `YYYY-MM-DD` for a row's "YYYYMMDD[_HHMMSS]" filename stamp — null for
+ *  rows without a parsable calendar day. The 8-char head must be digits in
+ *  2000..2100 with a REAL calendar date: Date.UTC round-trips the parts so
+ *  20260230 (Feb 30 rolls over) is rejected, not misdated. The key itself
+ *  is rebuilt from the parsed parts — the filename stamp IS local time, and
+ *  playtimeAgg's dayKey formats a Date's LOCAL fields, which would shift a
+ *  UTC-constructed probe a day off behind UTC. Same zero-padded shape as
+ *  dayKey, so buildHeatGrid accepts both sources' keys untouched. */
+function battleDayKey(dateTime: string | null): string | null {
+  if (!dateTime || dateTime.length < 8) return null;
+  const head = dateTime.slice(0, 8);
+  if (!/^\d{8}$/.test(head)) return null;
+  const y = Number(head.slice(0, 4));
+  const m = Number(head.slice(4, 6));
+  const d = Number(head.slice(6, 8));
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  if (
+    probe.getUTCFullYear() !== y ||
+    probe.getUTCMonth() !== m - 1 ||
+    probe.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
 /** When the battle rows could have changed on disk: fresh replay files only

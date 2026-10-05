@@ -141,17 +141,18 @@ export function bucketDaily(
   return out;
 }
 
-/** A heat level 0..4 from a day's seconds against the window's max —
- *  quartiles of the max, clamped so any playtime reads ≥ 1. */
-export function heatLevel(seconds: number, max: number): 0 | 1 | 2 | 3 | 4 {
-  if (seconds <= 0 || max <= 0) return 0;
-  return Math.min(4, Math.max(1, Math.ceil((seconds / max) * 4))) as 1 | 2 | 3 | 4;
+/** A heat level 0..4 from a day's value against the window's max —
+ *  quartiles of the max, clamped so any positive value reads ≥ 1. Value
+ *  semantics (tracked seconds, battle count) are the caller's business. */
+export function heatLevel(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
+  if (value <= 0 || max <= 0) return 0;
+  return Math.min(4, Math.max(1, Math.ceil((value / max) * 4))) as 1 | 2 | 3 | 4;
 }
 
 export interface HeatCell {
   /** `YYYY-MM-DD`, or "" for a padded cell outside the calendar. */
   key: string;
-  seconds: number;
+  value: number;
   level: 0 | 1 | 2 | 3 | 4;
   /** True for cells after today (rendered blank, never hovered). */
   future: boolean;
@@ -163,37 +164,46 @@ export interface HeatGrid {
   /** One label per month: the column that contains its day 1. */
   months: { col: number; label: string }[];
   /** The window's busiest day (the level scale's 4). */
-  maxSeconds: number;
+  maxValue: number;
+}
+
+/** One heatmap point: a local day key ("YYYY-MM-DD", the shape dayKey and
+ *  battleDayKey emit) and the value to plot on it. */
+export interface HeatPoint {
+  date: string;
+  value: number;
 }
 
 /** GitHub-style heatmap grid: the last 53 Monday-start weeks ending with
- *  the CURRENT (partial) week, weekday rows Monday..Sunday. `locale`
- *  formats the month labels (and the future days are blank, not zero). */
+ *  the CURRENT (partial) week, weekday rows Monday..Sunday. `points` may
+ *  be the time ledger's days or battle counts per day — only `date` /
+ *  `value` are read. `locale` formats the month labels (and the future
+ *  days are blank, not zero). */
 export function buildHeatGrid(
-  daily: PlaytimeDay[],
+  points: HeatPoint[],
   now: Date,
   locale: string,
 ): HeatGrid {
-  const map = new Map(daily.map((d) => [d.date, d.seconds]));
+  const map = new Map(points.map((p) => [p.date, p.value]));
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) - 52 * 7);
 
-  // Pass 1: each cell's date + seconds, the window's max, and the month
+  // Pass 1: each cell's date + value, the window's max, and the month
   // anchors — a month's day 1 falls in exactly one column, which pins its
   // label.
-  const cells: { date: Date; seconds: number; future: boolean }[][] = [];
+  const cells: { date: Date; value: number; future: boolean }[][] = [];
   const months: { col: number; label: string }[] = [];
-  let maxSeconds = 0;
+  let maxValue = 0;
   let labeledMonth = -1;
   for (let w = 0; w < 53; w++) {
-    const column: { date: Date; seconds: number; future: boolean }[] = [];
+    const column: { date: Date; value: number; future: boolean }[] = [];
     for (let r = 0; r < 7; r++) {
       const date = new Date(monday);
       date.setDate(monday.getDate() + w * 7 + r);
       const future = date > today;
-      const seconds = future ? 0 : (map.get(dayKey(date)) ?? 0);
-      if (seconds > maxSeconds) maxSeconds = seconds;
+      const value = future ? 0 : (map.get(dayKey(date)) ?? 0);
+      if (value > maxValue) maxValue = value;
       if (date.getDate() === 1 && date.getMonth() !== labeledMonth) {
         labeledMonth = date.getMonth();
         months.push({
@@ -201,7 +211,7 @@ export function buildHeatGrid(
           label: new Intl.DateTimeFormat(locale, { month: "short" }).format(date),
         });
       }
-      column.push({ date, seconds, future });
+      column.push({ date, value, future });
     }
     cells.push(column);
   }
@@ -209,12 +219,12 @@ export function buildHeatGrid(
   const columns: HeatCell[][] = cells.map((column) =>
     column.map((cell) => ({
       key: cell.future ? "" : dayKey(cell.date),
-      seconds: cell.seconds,
-      level: heatLevel(cell.seconds, maxSeconds),
+      value: cell.value,
+      level: heatLevel(cell.value, maxValue),
       future: cell.future,
     })),
   );
-  return { columns, months, maxSeconds };
+  return { columns, months, maxValue };
 }
 
 // ── trend bar chart geometry (same pure-geometry pattern as

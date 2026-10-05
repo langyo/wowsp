@@ -293,77 +293,104 @@
   color: rgb(var(--color-muted) / 90%);
 }
 
-/* ── Battle breakdown (replay-derived rows: type / nation / tier / mode) ── */
+/* ── Battle breakdown (replay-derived rows: type / nation / tier / mode,
+   one donut card per group) ───────────────────────────────────────────── */
 .playtime-breakdown {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 24px;
 
-  &__group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
+  &__empty {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
   }
+}
 
-  &__group-title {
-    margin: 0 0 2px;
+/* One donut card: title, ring (slice colors come inline from
+   battleBreakdown's per-group palettes), total + unit word in the hole,
+   and the count/share legend. */
+.playtime-pie {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+
+  &__title {
+    margin: 0;
     font-size: var(--text-2xs);
     font-weight: 600;
     color: rgb(var(--color-muted));
   }
 
-  /* Label | bar | count | pct on one line; the bar flexes, numbers stay
-     tabular and never wrap. */
+  &__svg {
+    display: block;
+    width: 100%;
+    max-width: 200px;
+    margin: 0 auto;
+  }
+
+  &__total {
+    font-size: 22px;
+    font-weight: 700;
+    fill: rgb(var(--color-text));
+    text-anchor: middle;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__unit {
+    font-size: 9px;
+    fill: rgb(var(--color-muted));
+    text-anchor: middle;
+  }
+
+  /* dot | label | count | pct on one line — the label flexes (ellipsis),
+     the numbers sit right and never wrap. */
+  &__legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
   &__row {
-    display: grid;
-    grid-template-columns: minmax(4.5rem, auto) 1fr auto auto;
+    display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     font-size: var(--text-xs);
+    min-width: 0;
+  }
+
+  &__dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
   }
 
   &__label {
+    min-width: 0;
     color: rgb(var(--color-text) / 85%);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  &__bar {
-    height: 8px;
-    border-radius: 999px;
-    background: rgb(var(--color-text) / 8%);
-    overflow: hidden;
-  }
-
-  /* Type/nation/tier bars share the theme accent; mode bars carry the
-     canonical mode colour inline (modeColors). */
-  &__fill {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: rgb(var(--color-primary) / 70%);
-  }
-
   &__count {
+    margin-left: auto;
     color: rgb(var(--color-text));
     font-variant-numeric: tabular-nums;
-    min-width: 2rem;
-    text-align: right;
+    white-space: nowrap;
   }
 
   &__pct {
-    color: rgb(var(--color-muted));
-    font-variant-numeric: tabular-nums;
     min-width: 2.5rem;
     text-align: right;
-  }
-
-  &__empty {
-    margin: 0;
-    font-size: var(--text-sm);
     color: rgb(var(--color-muted));
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 }
 

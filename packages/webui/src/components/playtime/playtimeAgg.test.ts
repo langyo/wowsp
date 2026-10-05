@@ -89,7 +89,7 @@ describe("bucketDaily", () => {
 });
 
 describe("heatLevel", () => {
-  it("maps seconds to quartile levels against the max", () => {
+  it("maps values to quartile levels against the max", () => {
     expect(heatLevel(0, 100)).toBe(0);
     expect(heatLevel(1, 100)).toBe(1);
     expect(heatLevel(50, 100)).toBe(2);
@@ -102,8 +102,8 @@ describe("heatLevel", () => {
 
 describe("buildHeatGrid", () => {
   const daily = [
-    { date: "2026-10-05", seconds: 7200 },
-    { date: "2025-10-06", seconds: 3600 },
+    { date: "2026-10-05", value: 7200 },
+    { date: "2025-10-06", value: 3600 },
   ];
 
   it("builds 53 Monday-first columns ending with the current week", () => {
@@ -115,10 +115,10 @@ describe("buildHeatGrid", () => {
     // Today (Monday) is the last column's FIRST row; the rest of that
     // column is the future and stays blank.
     expect(grid.columns[52][0].key).toBe("2026-10-05");
-    expect(grid.columns[52][0].seconds).toBe(7200);
+    expect(grid.columns[52][0].value).toBe(7200);
     expect(grid.columns[52][1].future).toBe(true);
     expect(grid.columns[52][1].key).toBe("");
-    expect(grid.maxSeconds).toBe(7200);
+    expect(grid.maxValue).toBe(7200);
     expect(grid.columns[52][0].level).toBe(4);
     expect(grid.columns[0][0].level).toBe(2); // 3600 of a 7200 max
   });

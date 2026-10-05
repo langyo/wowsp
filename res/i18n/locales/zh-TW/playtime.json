@@ -18,9 +18,10 @@
   "range12m": "最近 12 月",
   "rangeTotal": "總計 {v}",
   "trendTitle": "時長趨勢",
-  "heatTitle": "活躍熱力圖",
+  "heatTitle": "戰鬥熱力圖",
   "heatLess": "少",
   "heatMore": "多",
+  "heatDay": "{n} 場戰鬥",
   "weekdayFirst": "週一",
   "weekdayLast": "週日",
   "importNote": "已從 Steam 匯入歷史總時長約 {hours} 小時（{date} 匯入），圖表僅統計本地記錄的時段。",
@@ -38,6 +39,7 @@
     "byNation": "按陣營",
     "byTier": "按等級",
     "byMode": "按模式",
+    "battles": "場",
     "unknown": "未知"
   }
 }

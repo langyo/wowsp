@@ -1,8 +1,7 @@
-import { computed, defineComponent } from "vue";
+import { computed, defineComponent, type PropType } from "vue";
 
 import { t } from "@/i18n";
-import type { PlaytimeDay } from "@/api";
-import { buildHeatGrid, fmtDuration } from "./playtimeAgg";
+import { buildHeatGrid, type HeatPoint } from "./playtimeAgg";
 import "./PlaytimeHeatmap.scss";
 
 /** Heatmap cell metrics — the SVG's whole geometry derives from these. */
@@ -17,17 +16,21 @@ const WEEKS = 53;
  * last 53 weeks ending with the current partial one), Starward-style
  * month labels UNDER the grid and weekday markers (周一 / 周日) on the
  * left edge. Hand-drawn SVG; cell fills ride the theme's primary color at
- * four opacity levels (SCSS), hover hints carry the exact day + duration.
+ * four opacity levels (SCSS). Value-agnostic: the view feeds it `points`
+ * plus a `hintOf` formatter (today: battles per local day — see
+ * battlesDaily), so hover hints carry the exact day + the caller's
+ * phrasing. Empty days render a blank cell with no hint at all.
  */
 export default defineComponent({
   name: "PlaytimeHeatmap",
   props: {
-    daily: { type: Array as () => PlaytimeDay[], required: true },
+    points: { type: Array as PropType<HeatPoint[]>, required: true },
+    hintOf: { type: Function as PropType<(value: number) => string>, required: true },
     now: { type: Object as () => Date, required: true },
     locale: { type: String, required: true },
   },
   setup(props) {
-    const grid = computed(() => buildHeatGrid(props.daily, props.now, props.locale));
+    const grid = computed(() => buildHeatGrid(props.points, props.now, props.locale));
 
     return () => {
       const g = grid.value;
@@ -53,7 +56,9 @@ export default defineComponent({
                       width={CELL}
                       height={CELL}
                       rx={2.5}
-                      data-hint={`${cell.key} · ${fmtDuration(cell.seconds)}`}
+                      data-hint={
+                        cell.value > 0 ? `${cell.key} · ${props.hintOf(cell.value)}` : undefined
+                      }
                     />
                   );
                 })}

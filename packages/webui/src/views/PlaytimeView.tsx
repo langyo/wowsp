@@ -10,6 +10,7 @@ import {
 import { HkPopover, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 import { Check, ChevronDown } from "@lucide/vue";
 
+import PlaytimeBreakdownPie from "@/components/playtime/PlaytimeBreakdownPie";
 import PlaytimeTrendChart from "@/components/playtime/PlaytimeTrendChart";
 import PlaytimeHeatmap from "@/components/playtime/PlaytimeHeatmap";
 import {
@@ -19,20 +20,22 @@ import {
   type TrendRange,
 } from "@/components/playtime/playtimeAgg";
 import {
+  battlesDaily,
   breakdownByMode,
   breakdownByNation,
   breakdownByTier,
   breakdownByType,
+  BREAKDOWN_UNKNOWN_COLOR,
+  breakdownColor,
   distinctShipCount,
   filterBattlesByScope,
   type BattleScope,
-  type BreakdownEntry,
 } from "@/components/playtime/battleBreakdown";
 import type { PlaytimeOverview } from "@/api";
 import { usePlaytimeStore } from "@/stores/playtime";
+import { shipTypeChartColor, shipTypeCssColor } from "@/theme/shipTypeColors";
 import { useConfigStore } from "@/stores/config";
 import { installLabel } from "@/utils/installLabel";
-import { modeColorOfKey } from "@/utils/modeColors";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./PlaytimeView.scss";
@@ -66,9 +69,12 @@ const ZERO_OVERVIEW: PlaytimeOverview = {
  * sibling view, switched from the title-bar center group). Layout mirrors
  * the reference sheet: a seven-card record strip (career total, battle
  * count, daily average, longest streak / session / day, last launch), the
- * battle breakdown bars (ship type / nation / tier / mode over the
+ * battle breakdown donuts (ship type / nation / tier / mode over the
  * replay-derived rows), then the trend bars over 15 days / 12 weeks /
- * 12 months, then the GitHub-style activity heatmap for the last year.
+ * 12 months, then the GitHub-style battle heatmap for the last year —
+ * battles per local day from the same replay rows, NOT the time ledger's
+ * `daily` (the tracker only records client-run seconds, so a battle
+ * history spanning many untracked days would collapse to one cell).
  *
  * Data comes from the Rust-side ledger (commands/playtime.rs) via the
  * playtime store: the tracker observes the game client in the background,
@@ -76,8 +82,8 @@ const ZERO_OVERVIEW: PlaytimeOverview = {
  * A Steam-imported career total is footnoted, never charted (it is
  * undated). The battle rows are scanned from the installs' replays
  * folders; a top-right scope menu narrows the battle-derived content (the
- * battles card + the breakdown) to the selected install — the time ledger
- * itself is client-agnostic and always global.
+ * battles card + the breakdown + the battle heatmap) to the selected
+ * install — the time ledger itself is client-agnostic and always global.
  */
 export default defineComponent({
   name: "PlaytimeView",
@@ -123,6 +129,10 @@ export default defineComponent({
     const scopedBattles = computed(() =>
       filterBattlesByScope(allBattles.value, scope.value, config.activeInstall?.path),
     );
+    /** The heatmap's points: battles per local day over the scoped rows.
+     *  The time ledger's `daily` would under-draw battle history (it only
+     *  covers days the tracker saw a client running). */
+    const battleHeat = computed(() => battlesDaily(scopedBattles.value));
 
     const hasAnyData = computed(() => {
       const o = overview.value;
@@ -242,6 +252,17 @@ export default defineComponent({
       return t("playtime.breakdown.unknown");
     }
 
+    /** Ship-type slice color — the app's canonical WG class palette
+     *  (theme/shipTypeColors, the one the lookup donuts and the scheme
+     *  editor share), so a user retint reaches this view too. Resolved at
+     *  render time: shipTypeChartColor reads the store ref, keeping the
+     *  donuts live under dark/light switches and palette edits. */
+    function typeColorOf(key: string): string {
+      return key === "unknown"
+        ? BREAKDOWN_UNKNOWN_COLOR
+        : shipTypeCssColor(shipTypeChartColor(key));
+    }
+
     /** Ship type — the dashboard's existing localized type map. */
     function typeLabel(key: string): string {
       return key === "unknown" ? unknownLabel() : i18nOr(`dashboard.shipType.${key}`, key);
@@ -265,36 +286,42 @@ export default defineComponent({
         : i18nOr(`replay.mode.${key}`, t("replay.mode._fallback"));
     }
 
-    const breakdownGroups = computed(() =>
-      scopedBattles.value.length === 0
-        ? []
-        : [
-            {
-              title: t("playtime.breakdown.byType"),
-              entries: breakdownByType(scopedBattles.value),
-              labelOf: typeLabel,
-              mode: false,
-            },
-            {
-              title: t("playtime.breakdown.byNation"),
-              entries: breakdownByNation(scopedBattles.value),
-              labelOf: nationLabel,
-              mode: false,
-            },
-            {
-              title: t("playtime.breakdown.byTier"),
-              entries: breakdownByTier(scopedBattles.value),
-              labelOf: tierLabel,
-              mode: false,
-            },
-            {
-              title: t("playtime.breakdown.byMode"),
-              entries: breakdownByMode(scopedBattles.value),
-              labelOf: modeLabel,
-              mode: true,
-            },
-          ],
+    const breakdownGroups = computed(
+      () =>
+        scopedBattles.value.length === 0
+          ? []
+          : [
+              {
+                title: t("playtime.breakdown.byType"),
+                entries: breakdownByType(scopedBattles.value),
+                labelOf: typeLabel,
+                colorOf: typeColorOf,
+              },
+              {
+                title: t("playtime.breakdown.byNation"),
+                entries: breakdownByNation(scopedBattles.value),
+                labelOf: nationLabel,
+                colorOf: (key: string) => breakdownColor("nation", key),
+              },
+              {
+                title: t("playtime.breakdown.byTier"),
+                entries: breakdownByTier(scopedBattles.value),
+                labelOf: tierLabel,
+                colorOf: (key: string) => breakdownColor("tier", key),
+              },
+              {
+                title: t("playtime.breakdown.byMode"),
+                entries: breakdownByMode(scopedBattles.value),
+                labelOf: modeLabel,
+                colorOf: (key: string) => breakdownColor("mode", key),
+              },
+            ],
     );
+
+    /** Heatmap hover hint — the day's battle count. */
+    function heatHint(n: number): string {
+      return t("playtime.heatDay", { n });
+    }
 
     const cards = computed(() => {
       const o = overview.value ?? (totalBattles.value > 0 ? ZERO_OVERVIEW : null);
@@ -363,7 +390,8 @@ export default defineComponent({
           ) : (
             <>
               {/* ── Scope toolbar: narrows ONLY the battle-derived content
-                  (battles card + breakdown) — the ledger itself is global. */}
+                  (battles card + breakdown + battle heatmap) — the ledger
+                  itself is global. */}
               <div ref={scopeRoot} class="playtime-view__toolbar">
                 <button
                   type="button"
@@ -462,42 +490,16 @@ export default defineComponent({
                     </p>
                   ) : (
                     <div class="playtime-breakdown">
-                      {breakdownGroups.value.map((g) => {
-                        // Bars share the group's max so the top row always
-                        // fills its track (reads better than total-share
-                        // slivers); counts + percentages carry the exact
-                        // math.
-                        const max = g.entries.reduce((m, e) => Math.max(m, e.count), 0);
-                        return (
-                          <div class="playtime-breakdown__group" key={g.title}>
-                            <h4 class="playtime-breakdown__group-title">{g.title}</h4>
-                            {g.entries.map((e: BreakdownEntry) => (
-                              <div class="playtime-breakdown__row" key={e.key}>
-                                <span class="playtime-breakdown__label">
-                                  {g.labelOf(e.key)}
-                                </span>
-                                <span class="playtime-breakdown__bar">
-                                  <span
-                                    class="playtime-breakdown__fill"
-                                    style={
-                                      g.mode
-                                        ? {
-                                            width: `${max > 0 ? (e.count / max) * 100 : 0}%`,
-                                            background: modeColorOfKey(e.key).color,
-                                          }
-                                        : { width: `${max > 0 ? (e.count / max) * 100 : 0}%` }
-                                    }
-                                  />
-                                </span>
-                                <span class="playtime-breakdown__count">{e.count}</span>
-                                <span class="playtime-breakdown__pct">
-                                  {Math.round(e.share * 100)}%
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })}
+                      {breakdownGroups.value.map((g) => (
+                        <PlaytimeBreakdownPie
+                          key={g.title}
+                          title={g.title}
+                          entries={g.entries}
+                          labelOf={g.labelOf}
+                          colorOf={g.colorOf}
+                          centerLabel={t("playtime.breakdown.battles")}
+                        />
+                      ))}
                     </div>
                   )}
                 </section>
@@ -522,20 +524,28 @@ export default defineComponent({
                 <PlaytimeTrendChart buckets={buckets.value} />
               </section>
 
-              {/* ── Activity heatmap ─────────────────────────────────── */}
-              <section class="play-section">
-                <div class="play-section__head">
-                  <h3>{t("playtime.heatTitle")}</h3>
-                  <div class="play-heat-legend">
-                    <span>{t("playtime.heatLess")}</span>
-                    {[1, 2, 3, 4].map((level) => (
-                      <span key={level} class={`play-heat-legend__swatch is-${level}`} />
-                    ))}
-                    <span>{t("playtime.heatMore")}</span>
+              {/* ── Battle heatmap (battles per local day, scope-aware;
+                  hidden entirely when no replay was ever scanned) ──────── */}
+              {store.battles && totalBattles.value > 0 ? (
+                <section class="play-section">
+                  <div class="play-section__head">
+                    <h3>{t("playtime.heatTitle")}</h3>
+                    <div class="play-heat-legend">
+                      <span>{t("playtime.heatLess")}</span>
+                      {[1, 2, 3, 4].map((level) => (
+                        <span key={level} class={`play-heat-legend__swatch is-${level}`} />
+                      ))}
+                      <span>{t("playtime.heatMore")}</span>
+                    </div>
                   </div>
-                </div>
-                <PlaytimeHeatmap daily={daily.value} now={now.value} locale={uiLocale.value} />
-              </section>
+                  <PlaytimeHeatmap
+                    points={battleHeat.value}
+                    hintOf={heatHint}
+                    now={now.value}
+                    locale={uiLocale.value}
+                  />
+                </section>
+              ) : null}
             </>
           )}
         </div>

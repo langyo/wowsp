@@ -18,9 +18,10 @@
   "range12m": "最近 12 月",
   "rangeTotal": "总计 {v}",
   "trendTitle": "时长趋势",
-  "heatTitle": "活跃热力图",
+  "heatTitle": "战斗热力图",
   "heatLess": "少",
   "heatMore": "多",
+  "heatDay": "{n} 场战斗",
   "weekdayFirst": "周一",
   "weekdayLast": "周日",
   "importNote": "已从 Steam 导入历史总时长约 {hours} 小时（{date} 导入），图表仅统计本地记录的时段。",
@@ -38,6 +39,7 @@
     "byNation": "按阵营",
     "byTier": "按等级",
     "byMode": "按模式",
+    "battles": "场",
     "unknown": "未知"
   }
 }

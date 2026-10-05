@@ -18,9 +18,10 @@
   "range12m": "直近 12 か月",
   "rangeTotal": "合計 {v}",
   "trendTitle": "プレイ時間の推移",
-  "heatTitle": "アクティビティヒートマップ",
+  "heatTitle": "戦闘ヒートマップ",
   "heatLess": "少",
   "heatMore": "多",
+  "heatDay": "{n} 戦闘",
   "weekdayFirst": "月",
   "weekdayLast": "日",
   "importNote": "{date} に Steam から過去の総プレイ時間（約 {hours} 時間）を取り込みました。グラフはローカル記録分のみです。",
@@ -38,6 +39,7 @@
     "byNation": "国別",
     "byTier": "ティア別",
     "byMode": "モード別",
+    "battles": "戦闘",
     "unknown": "不明"
   }
 }

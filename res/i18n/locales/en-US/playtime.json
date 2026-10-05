@@ -18,9 +18,10 @@
   "range12m": "Last 12 months",
   "rangeTotal": "Total {v}",
   "trendTitle": "Playtime trend",
-  "heatTitle": "Activity heatmap",
+  "heatTitle": "Battle heatmap",
   "heatLess": "Less",
   "heatMore": "More",
+  "heatDay": "{n} battles",
   "weekdayFirst": "Mon",
   "weekdayLast": "Sun",
   "importNote": "Imported ~{hours} h of historical playtime from Steam on {date}; the charts only cover locally tracked days.",
@@ -38,6 +39,7 @@
     "byNation": "By nation",
     "byTier": "By tier",
     "byMode": "By battle mode",
+    "battles": "battles",
     "unknown": "Unknown"
   }
 }

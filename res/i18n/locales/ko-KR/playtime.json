@@ -18,9 +18,10 @@
   "range12m": "최근 12개월",
   "rangeTotal": "합계 {v}",
   "trendTitle": "플레이 시간 추이",
-  "heatTitle": "활동 히트맵",
+  "heatTitle": "전투 히트맵",
   "heatLess": "적음",
   "heatMore": "많음",
+  "heatDay": "전투 {n}회",
   "weekdayFirst": "월",
   "weekdayLast": "일",
   "importNote": "{date}에 Steam에서 과거 총 플레이 시간(약 {hours}시간)을 가져왔습니다. 그래프는 로컬 기록 구간만 표시합니다.",
@@ -38,6 +39,7 @@
     "byNation": "국가별",
     "byTier": "티어별",
     "byMode": "모드별",
+    "battles": "전투",
     "unknown": "알 수 없음"
   }
 }

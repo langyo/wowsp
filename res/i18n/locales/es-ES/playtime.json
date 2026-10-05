@@ -18,9 +18,10 @@
   "range12m": "Últimos 12 meses",
   "rangeTotal": "Total {v}",
   "trendTitle": "Tendencia de juego",
-  "heatTitle": "Mapa de actividad",
+  "heatTitle": "Mapa de calor de batallas",
   "heatLess": "Menos",
   "heatMore": "Más",
+  "heatDay": "{n} batallas",
   "weekdayFirst": "Lun",
   "weekdayLast": "Dom",
   "importNote": "Se importaron ~{hours} h de historial desde Steam el {date}; los gráficos cubren solo los días registrados localmente.",
@@ -38,6 +39,7 @@
     "byNation": "Por nación",
     "byTier": "Por nivel",
     "byMode": "Por modo",
+    "battles": "batallas",
     "unknown": "Desconocido"
   }
 }
