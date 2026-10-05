@@ -241,6 +241,9 @@ export default defineComponent({
       advanceMmViewTween();
       updateLabelPositions(ctx);
       drawMinimap(ctx);
+      // Range-ring radius ease steps on the RAF clock (not the playhead)
+      // so spotter/smoke transitions keep breathing while paused.
+      updateRangeRings(ctx, current.value);
       if (originalView.value) applyOriginalCamera(current.value);
       else followSelected();
       // After the camera updates so the overlay scale reflects THIS frame's

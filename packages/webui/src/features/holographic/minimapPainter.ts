@@ -8,7 +8,7 @@ import { drawShipGlyph } from "./shipGlyph";
 import { planeIcon } from "./planeIcons";
 import { sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
-import { frustumCorners } from "./sceneUtils";
+import { clampXZ, frustumCorners } from "./sceneUtils";
 import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 import { TACTICAL_SIZE } from "./tactical/render";
 import {
@@ -20,6 +20,8 @@ import {
   M_PER_WORLD_UNIT,
 } from "./weather";
 import {
+  animatedRingMeters,
+  dynamicRingMeters,
   metersToUnits,
   rangeRingPrefs,
   ringLabelKm,
@@ -31,6 +33,7 @@ import {
   computeFullMapBounds,
   computeViewBounds,
   resolveRoleQuick,
+  sceneMapRect,
   type MapInternals,
 } from "./mapInternals";
 
@@ -103,9 +106,13 @@ function drawWeatherOverlay(
   g.stroke();
 }
 
-/** Dashed combat-range circles around the recorder's ship + the km tag at
- *  each circle's 12-o'clock mark (the in-game ranges-mod presentation).
- *  Shared by the thumb and the enlarged map through their projections. */
+/** Dashed combat-range circles around the recorder's ship + the km tag
+ *  riding ON each circle's 12-o'clock point (the dash opens a small gap
+ *  under the number — the in-game ranges-mod presentation). Radii are LIVE
+ *  and every one of them — stock kinds (main × spotter, detect → smoke)
+ *  and the weather spotting cap alike — eases toward its target through
+ *  animatedRingMeters. Shared by the thumb and the enlarged map through
+ *  their projections. */
 function drawRangeRings(
   g: CanvasRenderingContext2D,
   ctx: MapInternals,
@@ -114,15 +121,15 @@ function drawRangeRings(
   size: number,
   projX: (x: number) => number,
   projZ: (zScene: number) => number,
-  opts: { fontPx: number; linePx: number; dash: [number, number]; minR: number; labelGap: number; rotRad: number },
+  opts: { fontPx: number; linePx: number; dash: [number, number]; minR: number; rotRad: number },
 ): void {
   if (!rangeRingPrefs.enabled || !rangeRingPrefs.show2d) return;
   const anchor = selfRingAnchor(ctx, t);
   if (!anchor) return;
   const cx = projX(anchor.x);
   const cy = projZ(anchor.zScene);
-  // Static stock ranges (main/torp/AA/radar/hydro/…) + the LIVE weather
-  // spotting cap while restrictive weather is in force.
+  // Stock ranges with live modifiers (main × spotter, detect → smoke)
+  // + the LIVE weather spotting cap while restrictive weather holds.
   const rings: { color: string; rPx: number; label: string }[] = [];
   const push = (color: string, radiusUnits: number, meters: number) => {
     const rPx = (radiusUnits / (mapSpan || 1)) * size;
@@ -131,7 +138,11 @@ function drawRangeRings(
   };
   for (const def of ctx.selfRings) {
     if (!rangeRingPrefs.kinds[def.kind]) continue;
-    push(RING_COLOR[def.kind], metersToUnits(def.meters), def.meters);
+    const meters = animatedRingMeters(
+      def.kind,
+      dynamicRingMeters(ctx, t, def.kind, def.meters),
+    );
+    push(RING_COLOR[def.kind], metersToUnits(meters), meters);
   }
   if (rangeRingPrefs.kinds.vis) {
     const view = weatherStateAt(
@@ -140,41 +151,92 @@ function drawRangeRings(
       t,
     );
     if (view?.restrictive && view.visUnits != null && view.visUnits < 1500) {
-      const meters = view.visUnits * M_PER_WORLD_UNIT;
-      push(RING_COLOR.vis, view.visUnits, meters);
+      const meters = animatedRingMeters("vis", view.visUnits * M_PER_WORLD_UNIT);
+      push(RING_COLOR.vis, metersToUnits(meters), meters);
     }
   }
   rings.sort((a, b) => a.rPx - b.rPx);
   g.save();
-  g.setLineDash(opts.dash);
+  g.font = `bold ${opts.fontPx}px sans-serif`;
   for (const r of rings) {
+    // Open a gap in the dash at 12 o'clock sized to the km tag, then lay
+    // the number ON the line (dark pill behind it for contrast over any
+    // map art). Gap angle from the label's arc length, with a floor so
+    // tiny circles don't dissolve entirely.
+    const lw = g.measureText(r.label).width;
+    const gapRad = Math.min(Math.PI * 0.8, Math.max(0.16, (lw / 2 + 5) / r.rPx));
     g.beginPath();
-    g.arc(cx, cy, r.rPx, 0, Math.PI * 2);
+    g.arc(cx, cy, r.rPx, -Math.PI / 2 + gapRad / 2, -Math.PI / 2 - gapRad / 2 + Math.PI * 2);
+    g.setLineDash(opts.dash);
     g.lineWidth = opts.linePx;
     g.strokeStyle = r.color;
     g.stroke();
-  }
-  g.setLineDash([]);
-  // 12-o'clock tags: each sits at its circle's north point, nudged apart
-  // when two radii land too close, text kept upright under map rotation.
-  let lastTop = Infinity;
-  for (const r of rings) {
-    let ty = cy - r.rPx - 3;
-    if (ty > lastTop - opts.labelGap) ty = lastTop - opts.labelGap;
-    lastTop = ty;
+    g.setLineDash([]);
     g.save();
-    g.translate(cx, ty);
+    g.translate(cx, cy - r.rPx);
     if (opts.rotRad !== 0) g.rotate(-opts.rotRad);
-    g.font = `bold ${opts.fontPx}px sans-serif`;
+    const pillH = opts.fontPx * 1.35;
+    g.fillStyle = "rgba(5, 8, 15, 0.78)";
+    g.beginPath();
+    g.roundRect(-lw / 2 - 3, -pillH / 2, lw + 6, pillH, 3);
+    g.fill();
     g.textAlign = "center";
-    g.textBaseline = "bottom";
-    g.shadowColor = "rgba(0, 0, 0, 0.85)";
-    g.shadowBlur = 3;
+    g.textBaseline = "middle";
     g.fillStyle = r.color;
-    g.fillText(r.label, 0, 0);
+    g.fillText(r.label, 0, 0.5);
     g.restore();
   }
   g.restore();
+}
+
+/** In-flight torpedoes on the 2D map (the in-game minimap's triangle
+ *  markers): apex along the run direction, tinted by the firing side. The
+ *  3D torpedo states already carry the playhead-advanced base/dir/t0, so
+ *  the painter only projects their live positions. */
+function drawTorpedoes(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  t: number,
+  projX: (x: number) => number,
+  projZ: (zScene: number) => number,
+  triPx: number,
+): void {
+  if (ctx.torpedoMeshes.length === 0) return;
+  // Clamped to the map rect exactly like the 3D fish, so long-lived
+  // un-joined torpedoes park at the edge instead of sailing off-map.
+  const mapRect = sceneMapRect(ctx);
+  // entityId → role for the owning side's tint (self white, ally green,
+  // enemy red — the ship glyph palette).
+  const roleOf = new Map<number, TeamRole>();
+  for (const m of ctx.shipMarkers) {
+    roleOf.set(m.userData.entityId as number, m.userData.role as TeamRole);
+  }
+  for (const tm of ctx.torpedoMeshes) {
+    if (!tm.mesh.visible) continue;
+    const age = t - tm.t0;
+    if (age < 0) continue;
+    const raw = { x: tm.base.x + tm.dir.x * 7 * age, z: tm.base.z + tm.dir.z * 7 * age };
+    const p = mapRect ? clampXZ(raw.x, raw.z, mapRect) : raw;
+    const px = projX(p.x);
+    const py = projZ(p.z);
+    const color = roleOf.get(tm.ownerId);
+    g.save();
+    g.translate(px, py);
+    // Screen angle of the run direction (scene x → px, scene z → py).
+    g.rotate(Math.atan2(tm.dir.z, tm.dir.x));
+    g.beginPath();
+    g.moveTo(triPx, 0);
+    g.lineTo(-triPx * 0.65, -triPx * 0.6);
+    g.lineTo(-triPx * 0.65, triPx * 0.6);
+    g.closePath();
+    const tint = color ? TEAM_COLOR[color] : 0x9aa7b5;
+    g.fillStyle = `#${tint.toString(16).padStart(6, "0")}`;
+    g.strokeStyle = "rgba(0, 0, 0, 0.65)";
+    g.lineWidth = 0.8;
+    g.fill();
+    g.stroke();
+    g.restore();
+  }
 }
 
 export function drawMinimap(ctx: MapInternals) {
@@ -272,7 +334,6 @@ export function drawMinimap(ctx: MapInternals) {
     linePx: 1.2,
     dash: [5, 4],
     minR: 5,
-    labelGap: 9,
     rotRad: 0,
   });
 
@@ -416,6 +477,10 @@ export function drawMinimap(ctx: MapInternals) {
     }
   }
 
+  // In-flight torpedoes: side-tinted triangles pointing along the run
+  // (the in-game minimap marker).
+  drawTorpedoes(c2d, ctx, t, wx, wz, 4);
+
   // Camera frustum — hidden while the enlarged 2D view covers the
   // scene: the 3D camera is not what the user is looking at (and the
   // thumb gets burned into exports, where a stale frustum is noise).
@@ -514,7 +579,6 @@ export function drawMinimap(ctx: MapInternals) {
         linePx: 2,
         dash: [9, 7],
         minR: 12,
-        labelGap: 15,
         rotRad,
       });
       // The game's A–J / 1–10 grid, world-anchored (full map rect, so it
@@ -717,6 +781,9 @@ export function drawMinimap(ctx: MapInternals) {
           }
         }
       }
+      // In-flight torpedoes at the enlarged scale (inside the rotated
+      // world frame so the run direction follows the map's orientation).
+      drawTorpedoes(zctx, ctx, t, zwx, zwz, 8);
       zctx.restore(); // world frame (rotation)
       // Grid coordinate labels live in the SCREEN frame: pinned to the
       // top / left edges, upright at any rotation — which strip a family

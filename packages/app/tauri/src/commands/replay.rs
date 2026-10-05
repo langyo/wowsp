@@ -1372,3 +1372,39 @@ mod tests {
         eprintln!("dumped to {out_path}");
     }
 }
+
+/// Diagnostic: serialize the REAL IPC payload (serde_json over the whole
+/// ReplayStream, exactly what Tauri's IPC codec emits) for a real replay,
+/// asserting the weather timelines survive the wire. Run with
+/// `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
+#[tokio::test]
+async fn dump_replay_stream_ipc_json() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        return;
+    };
+    let stream = read_replay_positions(path.clone()).await.expect("stream");
+    let json = serde_json::to_string(&stream).expect("serialize");
+    let v: serde_json::Value = serde_json::from_str(&json).expect("reparse");
+    let tr = v.get("weatherTransitions").and_then(|x| x.as_array());
+    let no = v.get("weatherNotifications").and_then(|x| x.as_array());
+    eprintln!(
+        "IPC json: weatherTransitions={} weatherNotifications={} (snake_case leak: {})",
+        tr.map_or(0, |a| a.len()),
+        no.map_or(0, |a| a.len()),
+        v.get("weather_transitions").is_some()
+    );
+    if let Some(a) = tr {
+        for t in a {
+            eprintln!("  tr: {}", serde_json::to_string(t).unwrap_or_default());
+        }
+    }
+    // The keys must exist on the wire (camelCase, no snake_case twin) for
+    // ANY replay; the non-empty check only holds for weather matches —
+    // point WOWSP_TEST_REPLAY at a cyclone/storm replay to see data.
+    assert!(tr.is_some(), "weatherTransitions key missing on the wire");
+    assert!(no.is_some(), "weatherNotifications key missing on the wire");
+    assert!(
+        !v.get("weather_transitions").is_some(),
+        "snake_case field leaked onto the wire"
+    );
+}

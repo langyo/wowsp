@@ -17,7 +17,9 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import kitRaw from "@/data/ship_consumable_kit.json";
 import { shipLiveStats } from "@/features/replay/shipLiveStats";
+import { PLANE_TYPES } from "./tactical/shellTypes";
 import { circlePositions } from "./screenOverlays";
+import { sampleAt } from "./trajectoryMath";
 import { M_PER_WORLD_UNIT } from "./weather";
 import type { MapInternals } from "./mapInternals";
 
@@ -182,12 +184,181 @@ export function armRangeRingPrefsPersist(): void {
   }, { deep: true });
 }
 
+// ── Live modifiers (spotter / smoke) + radius animation ─────────────────
+//
+// The stock circles are a capability snapshot; two battle states move them
+// for real and the rings must follow: an own SPOTTER AIRCRAFT aloft lifts
+// MAIN-battery firing range (the consumable's +20 % — the standard bonus;
+// per-ship modifiers live in full GameParams the viewer never sees, and
+// secondaries are unaffected in game), and sitting inside a smoke cloud
+// collapses surface detectability to the 2 km assured-acquisition ring.
+// Both surfaces animate radius changes so the transition reads as the
+// circle breathing, not teleporting.
+
+/** Gun-range multiplier while the recorder's spotter plane is airborne
+ *  (stock consumable bonus; see the block comment above). */
+const SPOTTER_RANGE_MULT = 1.2;
+/** Concealment (m) shown while inside smoke — assured acquisition. */
+const SMOKE_DETECT_M = 2000;
+/** Seconds a squadron stays "airborne" after its last seen event when no
+ *  explicit removal arrives (spotter work times run 90–120 s). */
+const SQUADRON_GRACE_S = 120;
+
+/** Whether the recorder's own spotter plane is airborne at battle second
+ *  `t` — the minimap squadron stream's `scout` type owned by the self
+ *  entity, from its first add until the matching removal (or the grace
+ *  window). Teammates' spotters never count. */
+export function selfSpotterActive(
+  minimapAdds: { time: number; planeId: number; ownerId: number; paramsId: number }[],
+  minimapRemoves: { time: number; planeId: number }[],
+  selfEntityId: number | null,
+  t: number,
+): boolean {
+  if (selfEntityId == null) return false;
+  for (const a of minimapAdds) {
+    if (a.ownerId !== selfEntityId) continue;
+    if (PLANE_TYPES[String(a.paramsId)]?.type !== "scout") continue;
+    if (t < a.time) continue;
+    let end = a.time + SQUADRON_GRACE_S;
+    for (const r of minimapRemoves) {
+      if (r.planeId === a.planeId && r.time > a.time && r.time < end) {
+        end = r.time;
+      }
+    }
+    if (t <= end) return true;
+  }
+  return false;
+}
+
+/** Whether the recorder sits inside a smoke cloud at battle second `t` —
+ *  within ~1.3 km of a puff cluster's DRIFTING centre (the cluster's own
+ *  trajectory sampled at the playhead, falling back to its anchor) while
+ *  the screen holds. */
+export function selfInSmoke(
+  clusters: SmokeClusterLike[],
+  selfWorldX: number,
+  selfWorldZ: number,
+  t: number,
+): boolean {
+  // Puff spread: a WoWS cloud reads ~0.9 km across; 1.3 km of slack covers
+  // the drifting puffs and neighbouring clouds of one screen.
+  const R = 42;
+  for (const cl of clusters) {
+    if (t < cl.t0 || t > cl.endT) continue;
+    const drift = cl.traj ? sampleAt(cl.traj, Math.min(t, cl.lastT)) : null;
+    const cx = drift?.x ?? cl.sx;
+    const cz = drift?.z ?? cl.sz;
+    const d = Math.hypot(cx - selfWorldX, cz - selfWorldZ);
+    if (d <= R) return true;
+  }
+  return false;
+}
+
+/** The smoke-cluster slice selfInSmoke needs (the real SmokeClusterState
+ *  satisfies this structurally). */
+export interface SmokeClusterLike {
+  sx: number;
+  sz: number;
+  t0: number;
+  lastT: number;
+  endT: number;
+  traj: { samples: { time: number; x: number; z: number; yaw: number }[] } | null;
+}
+
+/** The ring's live target in metres at battle second `t` (base = stock). */
+export function dynamicRingMeters(
+  ctx: MapInternals,
+  t: number,
+  kind: RingKind,
+  baseMeters: number,
+): number {
+  if (kind === "main") {
+    const self = ctx.shipMarkers.find((m) => m.userData.role === "self");
+    const selfId = self ? (self.userData.entityId as number) : null;
+    if (
+      selfSpotterActive(
+        ctx.props.minimapSquadronAdds,
+        ctx.props.minimapSquadronRemoves,
+        selfId,
+        t,
+      )
+    ) {
+      return baseMeters * SPOTTER_RANGE_MULT;
+    }
+  }
+  if (kind === "detect") {
+    const self = ctx.shipMarkers.find((m) => m.userData.role === "self");
+    if (self && selfInSmoke(ctx.smokeClusters, self.position.x, -self.position.z, t)) {
+      return SMOKE_DETECT_M;
+    }
+  }
+  return baseMeters;
+}
+
+// Radius animation: one eased value per kind, stepped by wall clock so the
+// circles keep breathing while paused. Scrub-safe: the target is always
+// recomputed from battle state; only the presentation eases.
+const ringAnim = new Map<
+  RingKind,
+  { cur: number; tgt: number; at: number; base: number }
+>();
+/** Exponential-smoothing time constant (ms) — ~0.4 s to settle visually. */
+const RING_ANIM_TAU = 110;
+
+/** Step the animation for one kind toward its target and return the eased
+ *  metres for this frame. */
+export function animatedRingMeters(
+  kind: RingKind,
+  targetMeters: number,
+  nowMs: number = performance.now(),
+): number {
+  const st = ringAnim.get(kind);
+  if (!st) {
+    ringAnim.set(kind, { cur: targetMeters, tgt: targetMeters, at: nowMs, base: 0 });
+    return targetMeters;
+  }
+  st.tgt = targetMeters;
+  const dt = Math.max(0, nowMs - st.at);
+  st.at = nowMs;
+  if (dt > 0) {
+    st.cur = st.cur + (st.tgt - st.cur) * (1 - Math.exp(-dt / RING_ANIM_TAU));
+  }
+  if (Math.abs(st.tgt - st.cur) < 1) st.cur = st.tgt;
+  return st.cur;
+}
+
+/** Drop the animation state (tests / hard resets). */
+export function resetRingAnim(): void {
+  ringAnim.clear();
+}
+
+/** Keep the eased radii across an actor rebuild when the underlying ring
+ *  set is unchanged: the labels array re-assigns several times per load
+ *  (trajectories/roster/encyclopedia watchers), and a rebuild landing
+ *  mid-spotter must not snap the circle back to stock and re-ease. An
+ *  entry whose base is a CONFIRMED different value (replay switch) is
+ *  dropped; base 0 marks entries seeded lazily by the painter against the
+ *  live set (their eased value is worth keeping), and kinds absent from
+ *  `defs` (the live weather ring, which has no stock base) keep theirs. */
+function preserveRingAnimAcrossRebuild(defs: { kind: RingKind; meters: number }[]): void {
+  const bases = new Map(defs.map((d) => [d.kind, d.meters]));
+  for (const [kind, st] of ringAnim) {
+    const base = bases.get(kind);
+    if (base != null && st.base !== 0 && st.base !== base) {
+      ringAnim.delete(kind);
+    }
+  }
+}
+
 // ── 3D rings ─────────────────────────────────────────────────────────────
 
 /** One dashed sea-surface ring in the 3D scene. */
 export interface RangeRingSlot {
   kind: RingKind;
   line: Line2;
+  /** The baked radius's stock metres — the scale denominator for the
+   *  animated (spotter/smoke) radius. */
+  baseMeters: number;
 }
 
 /** Pixel linewidth of the 3D range rings (screen-constant, like the cap
@@ -202,6 +373,19 @@ const RANGE_RING_PX = 2;
  *  density. */
 export function buildRangeRings(ctx: MapInternals, defs: RangeRingDef[]): void {
   disposeRangeRings(ctx);
+  preserveRingAnimAcrossRebuild(defs);
+  // Confirm the bases (and adopt painter-seeded entries) so the NEXT
+  // rebuild can tell same-set rebuilds (keep the ease) from replay
+  // switches (snap fresh).
+  const nowMs = performance.now();
+  for (const d of defs) {
+    const st = ringAnim.get(d.kind);
+    if (st) {
+      st.base = d.meters;
+    } else {
+      ringAnim.set(d.kind, { cur: d.meters, tgt: d.meters, at: nowMs, base: d.meters });
+    }
+  }
   const scene = ctx.api.value?.scene;
   if (!scene) return;
   for (const def of defs) {
@@ -226,7 +410,7 @@ export function buildRangeRings(ctx: MapInternals, defs: RangeRingDef[]): void {
     line.visible = false;
     scene.add(line);
     ctx.overlayLineMats.push(mat);
-    ctx.rangeRingSlots.push({ kind: def.kind, line });
+    ctx.rangeRingSlots.push({ kind: def.kind, line, baseMeters: def.meters });
   }
 }
 
@@ -245,7 +429,9 @@ export function disposeRangeRings(ctx: MapInternals): void {
 }
 
 /** Reposition/hide the 3D rings for battle second `t`: they follow the
- *  recorder's marker and obey the prefs + the ship's liveness. */
+ *  recorder's marker and obey the prefs + the ship's liveness. Called from
+ *  the playhead tick AND the RAF loop so the spotter/smoke radius ease
+ *  keeps stepping while paused. */
 export function updateRangeRings(ctx: MapInternals, t: number): void {
   const on = rangeRingPrefs.enabled && rangeRingPrefs.show3d;
   const self = ctx.shipMarkers.find((m) => m.userData.role === "self");
@@ -258,7 +444,15 @@ export function updateRangeRings(ctx: MapInternals, t: number): void {
       slot.line.visible = false;
       continue;
     }
+    const meters = animatedRingMeters(
+      slot.kind,
+      dynamicRingMeters(ctx, t, slot.kind, slot.baseMeters),
+    );
     slot.line.visible = true;
+    // The geometry bakes the stock radius; the animated (spotter/smoke)
+    // radius rides a uniform scale so no buffers rebuild per frame.
+    const bakedUnits = metersToUnits(slot.baseMeters);
+    slot.line.scale.setScalar(metersToUnits(meters) / bakedUnits);
     slot.line.position.set(self!.position.x, 1.2, self!.position.z);
   }
 }
