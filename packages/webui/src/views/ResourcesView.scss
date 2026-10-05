@@ -99,24 +99,16 @@
     white-space: nowrap;
   }
 
-  /* Filter-stack rows: the source strip and the filter row share one
-     geometry — inputs grow, trailing buttons stay fixed and single-line. */
+  /* Filter-stack row: the source strip with its trailing ghost tools —
+     the segmented group defines the height, the icon buttons stay fixed
+     and single-line. */
   &__row {
     flex: none;
     display: flex;
-    /* Centred by default: the icon buttons carry a definite height of their
-       own, so `stretch` would top-align them against a taller input. */
     align-items: center;
     gap: 0.5rem;
     flex-wrap: nowrap;
     min-width: 0;
-
-    /* The source row is the exception — its trailing search trigger must
-       stretch to the segmented strip's height (that "same height as the tab
-       group" rule is the water-meter row's whole point). */
-    &--source {
-      align-items: stretch;
-    }
   }
 
   /* The source strip's grow slot (HTabs shrink-wraps itself). */
@@ -125,11 +117,6 @@
     min-width: 0;
     display: flex;
     align-items: center;
-  }
-
-  &__filter {
-    flex: 1;
-    min-width: 0;
   }
 
   /* The list is the sidebar's scroller: the filter stack above stays put

@@ -22,7 +22,6 @@ import {
   HkConfirmDialog,
   HkIconButton,
   HkModal,
-  HkSearchInput,
   HkSpinner,
   HkSwitch,
   HkTabs,
@@ -110,7 +109,7 @@ const REPO = "langyo/wowsp";
  *
  * The flush left sidebar owns the title row (with the ⋯ tool menu), the
  * condition strips, the count pill and the whole filter stack (big category,
- * source, list filter, chips) above the scrolling row list; the right pane
+ * source + tool row, chips) above the scrolling row list; the right pane
  * shows what the selected row is and carries every action for it — nothing is
  * hidden behind a modal, and the pane keeps a placeholder until something is
  * picked.
@@ -134,9 +133,6 @@ export default defineComponent({
     // delisted notice) so a stale choice never leaks across entries.
     const selectedPreset = ref("");
     const bigCat = ref<BigCat>("function");
-    // Shared filter box — one query across both sources keeps the row (and
-    // the muscle memory) stable while swapping lists.
-    const listQuery = ref("");
     const catalogFilter = ref<"all" | CatalogCat>("all");
     const filter = ref<"all" | ModKind>("all");
     const selection = ref<Selection | null>(null);
@@ -326,7 +322,6 @@ export default defineComponent({
       source.value = "online";
       bigCat.value = catBig(hit.category);
       catalogFilter.value = "all";
-      listQuery.value = "";
       selection.value = { mode: "catalog", entry: hit };
     });
 
@@ -754,16 +749,6 @@ export default defineComponent({
       }
       // Most-covered parts first; labels keep it stable within a count.
       out.sort((a, b) => b.units.length - a.units.length || a.label.localeCompare(b.label));
-      const q = listQuery.value.trim().toLowerCase();
-      if (q) {
-        const hits = out.filter(
-          (comp) =>
-            comp.label.toLowerCase().includes(q) ||
-            comp.units.some((u) => u.name.toLowerCase().includes(q)),
-        );
-        out.length = 0;
-        out.push(...hits);
-      }
       // The kind chips keep meaning in the component view too: a chip
       // keeps the parts whose packs include that kind.
       if (filter.value !== "all") {
@@ -871,21 +856,15 @@ export default defineComponent({
       return map;
     });
 
-    const catalogShown = computed(() => {
-      const q = listQuery.value.trim().toLowerCase();
-      return catalogInCat.value.filter((m) => {
-        if (catalogFilter.value !== "all" && m.category !== catalogFilter.value) return false;
-        return !q || entryMatches(m, q);
-      });
-    });
+    const catalogShown = computed(() =>
+      catalogInCat.value.filter(
+        (m) => catalogFilter.value === "all" || m.category === catalogFilter.value,
+      ),
+    );
 
-    const shown = computed(() => {
-      const q = listQuery.value.trim().toLowerCase();
-      return installedInCat.value.filter((m) => {
-        if (filter.value !== "all" && m.kind !== filter.value) return false;
-        return !q || modMatches(m, q);
-      });
-    });
+    const shown = computed(() =>
+      installedInCat.value.filter((m) => filter.value === "all" || m.kind === filter.value),
+    );
 
     // ── Row → pane selection (the master/detail pair) ──
     // Every real selection replaces the delisted notice (it only exists to
@@ -2015,8 +1994,8 @@ export default defineComponent({
                 <span class="resources-view__side-actions">
                   {/* Tool menu: safe mode + the migration wizard — the ⋯
                       button rides the title row like the replay list's head
-                      actions; refresh / folder-install stay in the filter
-                      stack below. */}
+                      actions; refresh / folder-install ride the source row
+                      below as its trailing ghost pair. */}
                   <span class="resources-view__tools" ref={toolsAnchor}>
                     <HkIconButton
                       size={24}
@@ -2133,8 +2112,10 @@ export default defineComponent({
                 renderPanels={false}
               />
 
-              {/* Source switch + search-combo button ride one row. */}
-              <div class="resources-view__row resources-view__row--source">
+              {/* Source switch + the three tool triggers (search popup,
+                  refresh/rescan, folder install) ride one row — all ghost
+                  icon-button sized, the segmented group carries the height. */}
+              <div class="resources-view__row">
                 <div class="resources-view__rowmain">
                   <HkTabs
                     variant="segmented"
@@ -2146,6 +2127,7 @@ export default defineComponent({
                 </div>
                 <AsyncSearchCombo
                   key={source.value}
+                  ghost
                   search={comboSearch}
                   itemKey={(raw: unknown) =>
                     source.value === "installed"
@@ -2161,18 +2143,9 @@ export default defineComponent({
                   align="right"
                   noResultsText={t("resources.empty")}
                 />
-              </div>
-
-              {/* List filter + refresh + folder-install entry. */}
-              <div class="resources-view__row">
-                <HkSearchInput
-                  class="resources-view__filter"
-                  modelValue={listQuery.value}
-                  onUpdate:modelValue={(v: string) => (listQuery.value = v)}
-                  placeholder={t("resources.listFilter")}
-                />
                 <HkIconButton
-                  size={36}
+                  size={24}
+                  variant="ghost"
                   disabled={refreshDisabled.value}
                   data-hint={source.value === "online" ? t("resources.refresh") : t("resources.scan")}
                   aria-label={
@@ -2180,15 +2153,16 @@ export default defineComponent({
                   }
                   onClick={refresh}
                 >
-                  <RefreshCw size={16} class={refreshSpinning.value ? "spin" : undefined} />
+                  <RefreshCw size={15} class={refreshSpinning.value ? "spin" : undefined} />
                 </HkIconButton>
                 <HkIconButton
-                  size={36}
+                  size={24}
+                  variant="ghost"
                   data-hint={t("resources.installSection")}
                   aria-label={t("resources.installSection")}
                   onClick={openLocal}
                 >
-                  <FolderSearch size={16} />
+                  <FolderSearch size={15} />
                 </HkIconButton>
               </div>
 

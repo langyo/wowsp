@@ -55,6 +55,10 @@ export default defineComponent({
     debounceMs: { type: Number, default: 300 },
     /** Popup horizontal anchor relative to the button. */
     align: { type: String as PropType<"left" | "right">, default: "left" },
+    /** Borderless fixed-size trigger (hikari ghost icon-button voice) —
+     *  for rows where the trigger must read as a tool icon, not an input
+     *  chrome (the mod hub's source row). */
+    ghost: { type: Boolean, default: false },
   },
   setup(props) {
     const open = ref(false);
@@ -139,6 +143,7 @@ export default defineComponent({
           ref={btnEl}
           class={[
             "async-search-combo__btn",
+            props.ghost ? "async-search-combo__btn--ghost" : "",
             open.value || query.value.trim() ? "async-search-combo__btn--on" : "",
           ]}
           data-hint={props.title || props.placeholder}
@@ -149,7 +154,7 @@ export default defineComponent({
         >
           {/* Lucide icon: intrinsic width/height attrs keep flex from
               crushing a CSS-sized-only svg down to zero width. */}
-          <Search size={14} />
+          <Search size={props.ghost ? 15 : 14} />
         </button>
         {/* Desktop keeps closeOnBackdrop off: HkPopover's own document
             listener would close on the re-click of the open trigger before
