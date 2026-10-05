@@ -230,9 +230,17 @@ async def cmd_mod_hub_list_assets(request: Request) -> list[dict]:
          "kind": "image", "ext": "dds", "playable": True},
         {"rel": "banks/mods/Hoshino/voice_line_01.ogg", "size": 51200,
          "kind": "audio", "ext": "ogg", "playable": True},
-        # .wem is playable now — the read command transcodes (Wwise Vorbis
-        # → Ogg, PCM wem → WAV) and returns a playable payload.
+        # .wem is playable now — the read command decodes (Wwise Vorbis
+        # → WAV) and returns a playable payload; scene fields demo the
+        # mod.xml-derived titles (event / state / variation index).
         {"rel": "banks/mods/Hoshino/voice_line_02.wem", "size": 66560,
+         "kind": "audio", "ext": "wem", "playable": True,
+         "sceneEvent": "Play_VO_Autopilot", "sceneState": "VO_Autopilot_Checkpoint",
+         "sceneIndex": 1},
+        {"rel": "banks/mods/Hoshino/voice_line_03.wem", "size": 51200,
+         "kind": "audio", "ext": "wem", "playable": True,
+         "sceneEvent": "Play_VO_Fire_Alarm", "sceneIndex": 2},
+        {"rel": "banks/mods/Hoshino/voice_line_04.wem", "size": 40960,
          "kind": "audio", "ext": "wem", "playable": True},
     ]
 

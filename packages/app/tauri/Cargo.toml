@@ -73,6 +73,8 @@ image = { workspace = true, features = ["tga", "jpeg", "dds", "bmp"] }
 base64.workspace = true
 ww2ogg.workspace = true
 lewton.workspace = true
+# Voice-scene titles: parses each sound-mod's mod.xml (event → file map)
+roxmltree.workspace = true
 
 # Tauri shell. protocol-asset backs the asset-protocol scope the model pack
 # loads through (tauri.conf.json assetProtocol — required once that section

@@ -1378,6 +1378,13 @@ export interface AssetFileInfo {
   ext: string;
   /** False for `.wem` — listed, but the browser cannot play it. */
   playable: boolean;
+  /** Wwise event this voice line answers to (from the pack's mod.xml) —
+   *  the localized scenario-title key for audio rows. */
+  sceneEvent?: string;
+  /** State qualifier when the event assigns files per state. */
+  sceneState?: string;
+  /** 1-based variation index when an event slot lists several files. */
+  sceneIndex?: number;
 }
 
 /** Browser-ready payload of one asset (a data URL). */

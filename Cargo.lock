@@ -7846,6 +7846,7 @@ dependencies = [
  "pickled",
  "reqwest",
  "rfd 0.17.2",
+ "roxmltree",
  "rustls",
  "serde",
  "serde_json",

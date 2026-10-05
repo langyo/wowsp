@@ -1,0 +1,776 @@
+{
+  "schema": 1,
+  "comment": "Voice-line scene registry: maps the Wwise event names a sound-mod's mod.xml references to localized scenario titles (the primary label in voice previews). Same shape/fallback chain as mod-tags.json; extend per game update.",
+  "scenes": [
+    {
+      "event": "Play_UI_Tutorial_Task_1",
+      "i18n": {
+        "en-US": "Tutorial task 1",
+        "zh-CN": "教程任务 1",
+        "zh-SG": "教程任务 1",
+        "zh-TW": "教學任務 1",
+        "ja-JP": "チュートリアル任務 1",
+        "ko-KR": "튜토리얼 임무 1",
+        "ru-RU": "Обучение: задача 1",
+        "fr-FR": "Tutoriel : tâche 1",
+        "es-ES": "Tutorial: tarea 1"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_2",
+      "i18n": {
+        "en-US": "Tutorial task 2",
+        "zh-CN": "教程任务 2",
+        "zh-SG": "教程任务 2",
+        "zh-TW": "教學任務 2",
+        "ja-JP": "チュートリアル任務 2",
+        "ko-KR": "튜토리얼 임무 2",
+        "ru-RU": "Обучение: задача 2",
+        "fr-FR": "Tutoriel : tâche 2",
+        "es-ES": "Tutorial: tarea 2"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_3",
+      "i18n": {
+        "en-US": "Tutorial task 3",
+        "zh-CN": "教程任务 3",
+        "zh-SG": "教程任务 3",
+        "zh-TW": "教學任務 3",
+        "ja-JP": "チュートリアル任務 3",
+        "ko-KR": "튜토리얼 임무 3",
+        "ru-RU": "Обучение: задача 3",
+        "fr-FR": "Tutoriel : tâche 3",
+        "es-ES": "Tutorial: tarea 3"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_4",
+      "i18n": {
+        "en-US": "Tutorial task 4",
+        "zh-CN": "教程任务 4",
+        "zh-SG": "教程任务 4",
+        "zh-TW": "教學任務 4",
+        "ja-JP": "チュートリアル任務 4",
+        "ko-KR": "튜토리얼 임무 4",
+        "ru-RU": "Обучение: задача 4",
+        "fr-FR": "Tutoriel : tâche 4",
+        "es-ES": "Tutorial: tarea 4"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_5",
+      "i18n": {
+        "en-US": "Tutorial task 5",
+        "zh-CN": "教程任务 5",
+        "zh-SG": "教程任务 5",
+        "zh-TW": "教學任務 5",
+        "ja-JP": "チュートリアル任務 5",
+        "ko-KR": "튜토리얼 임무 5",
+        "ru-RU": "Обучение: задача 5",
+        "fr-FR": "Tutoriel : tâche 5",
+        "es-ES": "Tutorial: tarea 5"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_6",
+      "i18n": {
+        "en-US": "Tutorial task 6",
+        "zh-CN": "教程任务 6",
+        "zh-SG": "教程任务 6",
+        "zh-TW": "教學任務 6",
+        "ja-JP": "チュートリアル任務 6",
+        "ko-KR": "튜토리얼 임무 6",
+        "ru-RU": "Обучение: задача 6",
+        "fr-FR": "Tutoriel : tâche 6",
+        "es-ES": "Tutorial: tarea 6"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_7",
+      "i18n": {
+        "en-US": "Tutorial task 7",
+        "zh-CN": "教程任务 7",
+        "zh-SG": "教程任务 7",
+        "zh-TW": "教學任務 7",
+        "ja-JP": "チュートリアル任務 7",
+        "ko-KR": "튜토리얼 임무 7",
+        "ru-RU": "Обучение: задача 7",
+        "fr-FR": "Tutoriel : tâche 7",
+        "es-ES": "Tutorial: tarea 7"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_8",
+      "i18n": {
+        "en-US": "Tutorial task 8",
+        "zh-CN": "教程任务 8",
+        "zh-SG": "教程任务 8",
+        "zh-TW": "教學任務 8",
+        "ja-JP": "チュートリアル任務 8",
+        "ko-KR": "튜토리얼 임무 8",
+        "ru-RU": "Обучение: задача 8",
+        "fr-FR": "Tutoriel : tâche 8",
+        "es-ES": "Tutorial: tarea 8"
+      }
+    },
+    {
+      "event": "Play_UI_Tutorial_Task_9",
+      "i18n": {
+        "en-US": "Tutorial task 9",
+        "zh-CN": "教程任务 9",
+        "zh-SG": "教程任务 9",
+        "zh-TW": "教學任務 9",
+        "ja-JP": "チュートリアル任務 9",
+        "ko-KR": "튜토리얼 임무 9",
+        "ru-RU": "Обучение: задача 9",
+        "fr-FR": "Tutoriel : tâche 9",
+        "es-ES": "Tutorial: tarea 9"
+      }
+    },
+    {
+      "event": "Play_VO_Alarm_Defective_Modules",
+      "i18n": {
+        "en-US": "Damaged modules alarm",
+        "zh-CN": "模块损坏警报",
+        "zh-SG": "模块损坏警报",
+        "zh-TW": "模組損壞警報",
+        "ja-JP": "モジュール破損警報",
+        "ko-KR": "모듈 손상 경보",
+        "ru-RU": "Тревога: повреждены модули",
+        "fr-FR": "Alerte modules endommagés",
+        "es-ES": "Alarma de módulos dañados"
+      }
+    },
+    {
+      "event": "Play_VO_Alarm_Map_Border",
+      "i18n": {
+        "en-US": "Map border warning",
+        "zh-CN": "接近地图边界(蓝线)",
+        "zh-SG": "接近地图边界(蓝线)",
+        "zh-TW": "接近地圖邊界(藍線)",
+        "ja-JP": "マップ境界線警告(ブルーライン)",
+        "ko-KR": "맵 경계선 경고(블루 라인)",
+        "ru-RU": "Синяя линия — граница карты",
+        "fr-FR": "Limite de la carte (ligne bleue)",
+        "es-ES": "Límite del mapa (línea azul)"
+      }
+    },
+    {
+      "event": "Play_VO_Alarm_Weather_Changed",
+      "i18n": {
+        "en-US": "Weather change report",
+        "zh-CN": "天气变化播报",
+        "zh-SG": "天气变化播报",
+        "zh-TW": "天氣變化播報",
+        "ja-JP": "天候変化の報告",
+        "ko-KR": "날씨 변화 안내",
+        "ru-RU": "Смена погоды",
+        "fr-FR": "Changement de météo",
+        "es-ES": "Cambio de clima"
+      }
+    },
+    {
+      "event": "Play_VO_Autopilot",
+      "i18n": {
+        "en-US": "Autopilot message",
+        "zh-CN": "自动驾驶播报",
+        "zh-SG": "自动驾驶播报",
+        "zh-TW": "自動駕駛播報",
+        "ja-JP": "自動操舵のアナウンス",
+        "ko-KR": "자동 조종 안내",
+        "ru-RU": "Сообщение автопилота",
+        "fr-FR": "Message d'autopilote",
+        "es-ES": "Mensaje del piloto automático"
+      }
+    },
+    {
+      "event": "Play_VO_Consumable",
+      "i18n": {
+        "en-US": "Consumable activated",
+        "zh-CN": "消耗品开始生效",
+        "zh-SG": "消耗品开始生效",
+        "zh-TW": "消耗品開始生效",
+        "ja-JP": "消耗品の効果開始",
+        "ko-KR": "소모품 효과 시작",
+        "ru-RU": "Расходник начал действие",
+        "fr-FR": "Consommable activé",
+        "es-ES": "Consumible activado"
+      }
+    },
+    {
+      "event": "Play_VO_Consumable_End",
+      "i18n": {
+        "en-US": "Consumable expired",
+        "zh-CN": "消耗品效果结束",
+        "zh-SG": "消耗品效果结束",
+        "zh-TW": "消耗品效果結束",
+        "ja-JP": "消耗品の効果終了",
+        "ko-KR": "소모품 효과 종료",
+        "ru-RU": "Действие расходника закончилось",
+        "fr-FR": "Consommable expiré",
+        "es-ES": "Consumible finalizado"
+      }
+    },
+    {
+      "event": "Play_VO_Consumable_Interrupted",
+      "i18n": {
+        "en-US": "Consumable interrupted",
+        "zh-CN": "消耗品被打断",
+        "zh-SG": "消耗品被打断",
+        "zh-TW": "消耗品被打斷",
+        "ja-JP": "消耗品の効果中断",
+        "ko-KR": "소모품 중단",
+        "ru-RU": "Работа расходника прервана",
+        "fr-FR": "Consommable interrompu",
+        "es-ES": "Consumible interrumpido"
+      }
+    },
+    {
+      "event": "Play_VO_Damage_Death",
+      "i18n": {
+        "en-US": "Our ship destroyed",
+        "zh-CN": "我方舰船被击沉(自己)",
+        "zh-SG": "我方舰船被击沉(自己)",
+        "zh-TW": "我方艦船被擊沉(自己)",
+        "ja-JP": "自艦が撃沈された",
+        "ko-KR": "아군 함선 격침(자함)",
+        "ru-RU": "Наш корабль уничтожен",
+        "fr-FR": "Notre navire détruit",
+        "es-ES": "Nuestro barco hundido"
+      }
+    },
+    {
+      "event": "Play_VO_Detection_Enemy",
+      "i18n": {
+        "en-US": "Enemy detected",
+        "zh-CN": "发现敌舰",
+        "zh-SG": "发现敌舰",
+        "zh-TW": "發現敵艦",
+        "ja-JP": "敵艦発見",
+        "ko-KR": "적함 발견",
+        "ru-RU": "Обнаружен противник",
+        "fr-FR": "Ennemi détecté",
+        "es-ES": "Enemigo detectado"
+      }
+    },
+    {
+      "event": "Play_VO_Domination_Status",
+      "i18n": {
+        "en-US": "Battle advantage status",
+        "zh-CN": "优势局势播报",
+        "zh-SG": "优势局势播报",
+        "zh-TW": "優勢局勢播報",
+        "ja-JP": "戦況アドバンテージ報告",
+        "ko-KR": "전황 우세 안내",
+        "ru-RU": "Преимущество и близость к победе",
+        "fr-FR": "Avantage de la bataille",
+        "es-ES": "Ventaja de la batalla"
+      }
+    },
+    {
+      "event": "Play_VO_DoubleKill",
+      "i18n": {
+        "en-US": "Double kill",
+        "zh-CN": "双杀!",
+        "zh-SG": "双杀!",
+        "zh-TW": "雙殺!",
+        "ja-JP": "ダブルキル!",
+        "ko-KR": "더블 킬!",
+        "ru-RU": "Двойной удар!",
+        "fr-FR": "Double frappe",
+        "es-ES": "Doble impacto"
+      }
+    },
+    {
+      "event": "Play_VO_Fire_Alarm",
+      "i18n": {
+        "en-US": "Fire alarm",
+        "zh-CN": "火灾警报!",
+        "zh-SG": "火灾警报!",
+        "zh-TW": "火災警報!",
+        "ja-JP": "火災警報!",
+        "ko-KR": "화재 경보!",
+        "ru-RU": "Пожарная тревога!",
+        "fr-FR": "Alarme incendie",
+        "es-ES": "Alarma de incendio"
+      }
+    },
+    {
+      "event": "Play_VO_FirstKill",
+      "i18n": {
+        "en-US": "First blood",
+        "zh-CN": "第一滴血!",
+        "zh-SG": "第一滴血!",
+        "zh-TW": "第一滴血!",
+        "ja-JP": "ファーストブラッド!",
+        "ko-KR": "퍼스트 블러드!",
+        "ru-RU": "Первая кровь!",
+        "fr-FR": "Premier sang",
+        "es-ES": "Primera sangre"
+      }
+    },
+    {
+      "event": "Play_VO_Frags",
+      "i18n": {
+        "en-US": "Enemy destroyed",
+        "zh-CN": "击杀播报",
+        "zh-SG": "击杀播报",
+        "zh-TW": "擊殺播報",
+        "ja-JP": "撃破報告",
+        "ko-KR": "격파 보고",
+        "ru-RU": "Сообщение о фраге",
+        "fr-FR": "Ennemi détruit",
+        "es-ES": "Enemigo destruido"
+      }
+    },
+    {
+      "event": "Play_VO_Friendly_Hit",
+      "i18n": {
+        "en-US": "Friendly fire warning",
+        "zh-CN": "误击友军警告",
+        "zh-SG": "误击友军警告",
+        "zh-TW": "誤擊友軍警告",
+        "ja-JP": "味方誤射警告",
+        "ko-KR": "아군 오사 경고",
+        "ru-RU": "Огонь по своим!",
+        "fr-FR": "Tir allié",
+        "es-ES": "Fuego amigo"
+      }
+    },
+    {
+      "event": "Play_VO_Highschool_Fleet_Capture_Fort",
+      "i18n": {
+        "en-US": "Fort capture",
+        "zh-CN": "夺取要塞",
+        "zh-SG": "夺取要塞",
+        "zh-TW": "奪取要塞",
+        "ja-JP": "要塞占領",
+        "ko-KR": "요새 점령",
+        "ru-RU": "Захват форта",
+        "fr-FR": "Capture de fort",
+        "es-ES": "Captura de fuerte"
+      }
+    },
+    {
+      "event": "Play_VO_Highschool_Fleet_MG_Shot",
+      "i18n": {
+        "en-US": "Firing the guns",
+        "zh-CN": "主炮开火",
+        "zh-SG": "主炮开火",
+        "zh-TW": "主炮開火",
+        "ja-JP": "主砲発砲",
+        "ko-KR": "주포 발사",
+        "ru-RU": "Огонь!",
+        "fr-FR": "Tir de l'artillerie",
+        "es-ES": "Fuego de cañones"
+      }
+    },
+    {
+      "event": "Play_VO_Highschool_Fleet_TA_shot",
+      "i18n": {
+        "en-US": "Torpedo launch",
+        "zh-CN": "鱼雷发射",
+        "zh-SG": "鱼雷发射",
+        "zh-TW": "魚雷發射",
+        "ja-JP": "魚雷発射",
+        "ko-KR": "어뢰 발사",
+        "ru-RU": "Пускаю торпеды!",
+        "fr-FR": "Lancement de torpilles",
+        "es-ES": "Lanzamiento de torpedos"
+      }
+    },
+    {
+      "event": "Play_VO_Highschool_Fleet_Torpedo_Hit",
+      "i18n": {
+        "en-US": "Torpedo hit on us",
+        "zh-CN": "被鱼雷命中",
+        "zh-SG": "被鱼雷命中",
+        "zh-TW": "被魚雷命中",
+        "ja-JP": "魚雷被弾",
+        "ko-KR": "어뢰 피격",
+        "ru-RU": "В нас попала торпеда!",
+        "fr-FR": "Impact de torpille",
+        "es-ES": "Impacto de torpilla"
+      }
+    },
+    {
+      "event": "Play_VO_Hit_Feedback_Good_Hit",
+      "i18n": {
+        "en-US": "Well-aimed hit",
+        "zh-CN": "精准命中!",
+        "zh-SG": "精准命中!",
+        "zh-TW": "精準命中!",
+        "ja-JP": "精度の高い命中!",
+        "ko-KR": "정확한 명중!",
+        "ru-RU": "В яблочко!",
+        "fr-FR": "Tir précis",
+        "es-ES": "Impacto preciso"
+      }
+    },
+    {
+      "event": "Play_VO_Last_Hope",
+      "i18n": {
+        "en-US": "Last hope of the team",
+        "zh-CN": "队伍最后的希望",
+        "zh-SG": "队伍最后的希望",
+        "zh-TW": "隊伍最後的希望",
+        "ja-JP": "チーム最後の希望",
+        "ko-KR": "팀의 마지막 희망",
+        "ru-RU": "Последняя надежда команды",
+        "fr-FR": "Dernier espoir de l'équipe",
+        "es-ES": "Última esperanza del equipo"
+      }
+    },
+    {
+      "event": "Play_VO_Lock_Weapon",
+      "i18n": {
+        "en-US": "Target locked",
+        "zh-CN": "目标锁定",
+        "zh-SG": "目标锁定",
+        "zh-TW": "目標鎖定",
+        "ja-JP": "目標ロック",
+        "ko-KR": "목표 잠금",
+        "ru-RU": "Цель захвачена",
+        "fr-FR": "Cible verrouillée",
+        "es-ES": "Objetivo fijado"
+      }
+    },
+    {
+      "event": "Play_VO_PVE_Message",
+      "i18n": {
+        "en-US": "Scenario battle message",
+        "zh-CN": "剧情战(PVE)播报",
+        "zh-SG": "剧情战(PVE)播报",
+        "zh-TW": "劇情戰(PVE)播報",
+        "ja-JP": "シナリオ戦(PVE)アナウンス",
+        "ko-KR": "시나리오 전투(PVE) 안내",
+        "ru-RU": "PvE-сообщения",
+        "fr-FR": "Message de scénario (PVE)",
+        "es-ES": "Mensaje de escenario (PVE)"
+      }
+    },
+    {
+      "event": "Play_VO_Pilots_ID",
+      "i18n": {
+        "en-US": "Squadron pilot",
+        "zh-CN": "飞行中队飞行员报号",
+        "zh-SG": "飞行中队飞行员报号",
+        "zh-TW": "飛行中隊飛行員報號",
+        "ja-JP": "飛行隊パイロット報告",
+        "ko-KR": "비행대 파일럿 보고",
+        "ru-RU": "Пилоты авиагруппы",
+        "fr-FR": "Pilote de l'escadrille",
+        "es-ES": "Piloto del escuadrón"
+      }
+    },
+    {
+      "event": "Play_VO_Pilots_Status",
+      "i18n": {
+        "en-US": "Squadron status",
+        "zh-CN": "飞行中队状态",
+        "zh-SG": "飞行中队状态",
+        "zh-TW": "飛行中隊狀態",
+        "ja-JP": "飛行隊ステータス",
+        "ko-KR": "비행대 상태",
+        "ru-RU": "Статус эскадрильи",
+        "fr-FR": "Statut de l'escadrille",
+        "es-ES": "Estado del escuadrón"
+      }
+    },
+    {
+      "event": "Play_VO_Priority_Target",
+      "i18n": {
+        "en-US": "Priority target call",
+        "zh-CN": "优先目标攻击呼叫",
+        "zh-SG": "优先目标攻击呼叫",
+        "zh-TW": "優先目標攻擊呼叫",
+        "ja-JP": "優先目標への指示",
+        "ko-KR": "우선 목표 지시",
+        "ru-RU": "Атаковать указанную цель",
+        "fr-FR": "Cible prioritaire",
+        "es-ES": "Objetivo prioritario"
+      }
+    },
+    {
+      "event": "Play_VO_Prompt",
+      "i18n": {
+        "en-US": "Port hint",
+        "zh-CN": "港口提示",
+        "zh-SG": "港口提示",
+        "zh-TW": "港口提示",
+        "ja-JP": "母港のヒント",
+        "ko-KR": "항구 힌트",
+        "ru-RU": "Подсказки в порту",
+        "fr-FR": "Astuce du port",
+        "es-ES": "Consejo del puerto"
+      }
+    },
+    {
+      "event": "Play_VO_Quick_Commands",
+      "i18n": {
+        "en-US": "Quick command (sent)",
+        "zh-CN": "快捷指令(发送)",
+        "zh-SG": "快捷指令(发送)",
+        "zh-TW": "快捷指令(發送)",
+        "ja-JP": "クイックコマンド(送信)",
+        "ko-KR": "퀵 커맨드(송신)",
+        "ru-RU": "Быстрая команда (отправка)",
+        "fr-FR": "Commande rapide (envoi)",
+        "es-ES": "Comando rápido (envío)"
+      }
+    },
+    {
+      "event": "Play_VO_Quick_Commands_Receive",
+      "i18n": {
+        "en-US": "Quick command (received)",
+        "zh-CN": "快捷指令(接收)",
+        "zh-SG": "快捷指令(接收)",
+        "zh-TW": "快捷指令(接收)",
+        "ja-JP": "クイックコマンド(受信)",
+        "ko-KR": "퀵 커맨드(수신)",
+        "ru-RU": "Быстрая команда (получение)",
+        "fr-FR": "Commande rapide (reçu)",
+        "es-ES": "Comando rápido (recibido)"
+      }
+    },
+    {
+      "event": "Play_VO_Reload_Air_Support",
+      "i18n": {
+        "en-US": "Air support ready",
+        "zh-CN": "航空支援就绪",
+        "zh-SG": "航空支援就绪",
+        "zh-TW": "航空支援就緒",
+        "ja-JP": "航空支援の準備完了",
+        "ko-KR": "항공 지원 준비",
+        "ru-RU": "Жду приказов (авиация)",
+        "fr-FR": "Support aérien prêt",
+        "es-ES": "Apoyo aéreo listo"
+      }
+    },
+    {
+      "event": "Play_VO_Result_Stinger",
+      "i18n": {
+        "en-US": "Battle result sting",
+        "zh-CN": "战斗结算(败北)",
+        "zh-SG": "战斗结算(败北)",
+        "zh-TW": "戰鬥結算(敗北)",
+        "ja-JP": "戦闘結果(敗北)",
+        "ko-KR": "전투 결과(패배)",
+        "ru-RU": "Итог боя (поражение)",
+        "fr-FR": "Résultat de la bataille (défaite)",
+        "es-ES": "Resultado de la batalla (derrota)"
+      }
+    },
+    {
+      "event": "Play_VO_Ship_Alarms_Torpedo_Danger",
+      "i18n": {
+        "en-US": "Torpedo danger alarm",
+        "zh-CN": "鱼雷来袭警报",
+        "zh-SG": "鱼雷来袭警报",
+        "zh-TW": "魚雷來襲警報",
+        "ja-JP": "魚雷警報",
+        "ko-KR": "어뢰 경보",
+        "ru-RU": "Торпедная угроза",
+        "fr-FR": "Alerte torpilles",
+        "es-ES": "Alarma de torpedos"
+      }
+    },
+    {
+      "event": "Play_VO_Ship_Avatar_Flooding",
+      "i18n": {
+        "en-US": "Flooding alarm",
+        "zh-CN": "舰体进水警报",
+        "zh-SG": "舰体进水警报",
+        "zh-TW": "艦體進水警報",
+        "ja-JP": "浸水警報",
+        "ko-KR": "침수 경보",
+        "ru-RU": "Критические затопления",
+        "fr-FR": "Alerte voie d'eau",
+        "es-ES": "Alarma de inundación"
+      }
+    },
+    {
+      "event": "Play_VO_Ship_Weapon_AirSupport_Shot",
+      "i18n": {
+        "en-US": "Squadron takeoff",
+        "zh-CN": "舰载机起飞",
+        "zh-SG": "舰载机起飞",
+        "zh-TW": "艦載機起飛",
+        "ja-JP": "艦載機の発艦",
+        "ko-KR": "함재기 발진",
+        "ru-RU": "Взлёт авиации",
+        "fr-FR": "Décollage de l'escadrille",
+        "es-ES": "Despegue de los escuadrones"
+      }
+    },
+    {
+      "event": "Play_VO_Ship_Weapon_DC_Roll_Shot",
+      "i18n": {
+        "en-US": "Depth charges rolled",
+        "zh-CN": "深水炸弹滚落投放",
+        "zh-SG": "深水炸弹滚落投放",
+        "zh-TW": "深水炸彈滾落投放",
+        "ja-JP": "爆雷投入(ロール)",
+        "ko-KR": "폭뢰 투하(롤)",
+        "ru-RU": "Сброс глубинных бомб",
+        "fr-FR": "Charges de profondeur larguées",
+        "es-ES": "Cargas de profundidad rodadas"
+      }
+    },
+    {
+      "event": "Play_VO_Ship_Weapon_DC_Shoot_Shot",
+      "i18n": {
+        "en-US": "Depth charges fired",
+        "zh-CN": "深水炸弹发射投放",
+        "zh-SG": "深水炸弹发射投放",
+        "zh-TW": "深水炸彈發射投放",
+        "ja-JP": "爆雷投入(発射)",
+        "ko-KR": "폭뢰 투하(발사)",
+        "ru-RU": "Пуск глубинных бомб",
+        "fr-FR": "Charges de profondeur tirées",
+        "es-ES": "Cargas de profundidad disparadas"
+      }
+    },
+    {
+      "event": "Play_VO_Ship_Weapon_DC_Slide_Shot",
+      "i18n": {
+        "en-US": "Depth charges slid",
+        "zh-CN": "深水炸弹滑轨投放",
+        "zh-SG": "深水炸弹滑轨投放",
+        "zh-TW": "深水炸彈滑軌投放",
+        "ja-JP": "爆雷投入(スライド)",
+        "ko-KR": "폭뢰 투하(슬라이드)",
+        "ru-RU": "Сход глубинных бомб",
+        "fr-FR": "Charges de profondeur glissées",
+        "es-ES": "Cargas de profundidad deslizadas"
+      }
+    },
+    {
+      "event": "Play_VO_Start_Battle",
+      "i18n": {
+        "en-US": "Battle starts",
+        "zh-CN": "战斗开始!",
+        "zh-SG": "战斗开始!",
+        "zh-TW": "戰鬥開始!",
+        "ja-JP": "戦闘開始!",
+        "ko-KR": "전투 시작!",
+        "ru-RU": "Бой начинается!",
+        "fr-FR": "Début de la bataille",
+        "es-ES": "Comienza la batalla"
+      }
+    },
+    {
+      "event": "Play_VO_Submarine_Alarm_Energy_Danger",
+      "i18n": {
+        "en-US": "Battery low (sub)",
+        "zh-CN": "电量不足警报(潜艇)",
+        "zh-SG": "电量不足警报(潜艇)",
+        "zh-TW": "電量不足警報(潛艇)",
+        "ja-JP": "バッテリー不足警報(潜水艦)",
+        "ko-KR": "배터리 부족 경보(잠수함)",
+        "ru-RU": "Разряд батареи (подлодка)",
+        "fr-FR": "Batterie faible (sous-marin)",
+        "es-ES": "Batería baja (submarino)"
+      }
+    },
+    {
+      "event": "Play_VO_Submarine_Detected",
+      "i18n": {
+        "en-US": "Submarine detected",
+        "zh-CN": "潜艇被发现",
+        "zh-SG": "潜艇被发现",
+        "zh-TW": "潛艇被發現",
+        "ja-JP": "潜水艦発見",
+        "ko-KR": "잠수함 발견",
+        "ru-RU": "Обнаружена подлодка",
+        "fr-FR": "Sous-marin détecté",
+        "es-ES": "Submarino detectado"
+      }
+    },
+    {
+      "event": "Play_VO_Submarine_Dive_Limit",
+      "i18n": {
+        "en-US": "Dive limit reached (sub)",
+        "zh-CN": "下潜达到极限(潜艇)",
+        "zh-SG": "下潜达到极限(潜艇)",
+        "zh-TW": "下潛達到極限(潛艇)",
+        "ja-JP": "潜航限界到達(潜水艦)",
+        "ko-KR": "잠항 한계 도달(잠수함)",
+        "ru-RU": "Предел погружения (подлодка)",
+        "fr-FR": "Limite de plongée (sous-marin)",
+        "es-ES": "Límite de inmersión (submarino)"
+      }
+    },
+    {
+      "event": "Play_VO_Submarine_Energy_Full",
+      "i18n": {
+        "en-US": "Battery full (sub)",
+        "zh-CN": "电量已充满(潜艇)",
+        "zh-SG": "电量已充满(潜艇)",
+        "zh-TW": "電量已充滿(潛艇)",
+        "ja-JP": "バッテリー満充電(潜水艦)",
+        "ko-KR": "배터리 완충(잠수함)",
+        "ru-RU": "Батарея заряжена (подлодка)",
+        "fr-FR": "Batterie pleine (sous-marin)",
+        "es-ES": "Batería llena (submarino)"
+      }
+    },
+    {
+      "event": "Play_VO_Submarine_Energy_Over",
+      "i18n": {
+        "en-US": "Battery depleted (sub)",
+        "zh-CN": "电量耗尽(潜艇)",
+        "zh-SG": "电量耗尽(潜艇)",
+        "zh-TW": "電量耗盡(潛艇)",
+        "ja-JP": "バッテリー切れ(潜水艦)",
+        "ko-KR": "배터리 방전(잠수함)",
+        "ru-RU": "Батарея разряжена (подлодка)",
+        "fr-FR": "Batterie vide (sous-marin)",
+        "es-ES": "Batería agotada (submarino)"
+      }
+    },
+    {
+      "event": "Play_VO_Teamkill_Punishment",
+      "i18n": {
+        "en-US": "Teamkill punishment",
+        "zh-CN": "击杀队友惩罚",
+        "zh-SG": "击杀队友惩罚",
+        "zh-TW": "擊殺隊友懲罰",
+        "ja-JP": "味方撃ちの処罰",
+        "ko-KR": "아군 사격 처벌",
+        "ru-RU": "Наказание за огонь по своим",
+        "fr-FR": "Punition pour tir allié",
+        "es-ES": "Castigo por fuego amigo"
+      }
+    },
+    {
+      "event": "Play_VO_Telegraph",
+      "i18n": {
+        "en-US": "Engine telegraph",
+        "zh-CN": "航速指令(车钟)",
+        "zh-SG": "航速指令(车钟)",
+        "zh-TW": "航速指令(車鐘)",
+        "ja-JP": "機関速力指示(Telegraph)",
+        "ko-KR": "기관 속력 지시",
+        "ru-RU": "Телеграф (ход)",
+        "fr-FR": "Télégraphe (vitesse)",
+        "es-ES": "Telégrafo (marcha)"
+      }
+    },
+    {
+      "event": "Play_VO_Timer_5",
+      "i18n": {
+        "en-US": "5 minutes remaining",
+        "zh-CN": "剩余 5 分钟提示",
+        "zh-SG": "剩余 5 分钟提示",
+        "zh-TW": "剩餘 5 分鐘提示",
+        "ja-JP": "残り 5 分の報告",
+        "ko-KR": "남은 시간 5분 안내",
+        "ru-RU": "Осталось 5 минут до конца боя",
+        "fr-FR": "5 minutes restantes",
+        "es-ES": "Quedan 5 minutos"
+      }
+    }
+  ]
+}

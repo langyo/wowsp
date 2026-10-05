@@ -2,18 +2,21 @@
  * Installed-unit asset previews: texture/image units render a lazy
  * thumbnail grid (each tile pulls a decoded, downscaled PNG data URL from
  * the backend on first visibility), voice units list their audio files
- * one-per-row; a click hands the track to the global audioPlayer store,
- * whose AudioPlayerToast card (play/pause, seek, stop) controls playback
- * even after the pane is left. The game's Wwise `.wem` files play
- * through the on-read decode (the first click converts to WAV in Rust,
- * then plays).
+ * one-per-row with a localized scenario title above the raw file name
+ * (from the pack's mod.xml event map + the voice-scenes registry); a
+ * click hands the track to the global audioPlayer store, whose
+ * AudioPlayerToast card (play/pause, seek, stop) controls playback even
+ * after the pane is left. The game's Wwise `.wem` files play through the
+ * on-read decode (the first click converts to WAV in Rust, then plays).
  */
 import { defineComponent, ref, watch } from "vue";
 import { ImageIcon, Music, PlayCircle } from "@lucide/vue";
 
 import { api, type AssetFileInfo } from "@/api";
 import { t } from "@/i18n";
+import { useLanguage } from "@/i18n/useLanguage";
 import { useAudioPlayerStore } from "@/stores/audioPlayer";
+import { compareByScene, humanizeEvent, humanizeState, sceneLabel } from "./voiceScenes";
 
 export default defineComponent({
   name: "AssetPreview",
@@ -32,6 +35,7 @@ export default defineComponent({
     const thumbs = ref<Record<string, string>>({});
     const failed = ref<Record<string, boolean>>({});
     const player = useAudioPlayerStore();
+    const { uiLocale } = useLanguage();
 
     async function load() {
       loading.value = true;
@@ -114,29 +118,53 @@ export default defineComponent({
           </div>
         );
       }
+      // Scene-titled rows: mod.xml-mapped lines carry a localized
+      // scenario title above the raw file name (the hash name alone
+      // tells nobody what the line is FOR); unmapped files keep the old
+      // single-line shape. Scene rows group by event, orphans trail.
+      const audioRows = [...usable].sort(compareByScene);
       return (
         <ul class="asset-preview__audio">
-          {usable.map((f) => (
-            <li key={f.rel} class="asset-preview__audio-row">
-              <button
-                type="button"
-                class="asset-preview__audio-btn"
-                disabled={!f.playable}
-                data-hint={t("resources.audioPlay")}
-                onClick={() => void toggle(f)}
-              >
-                {player.active && player.rel === f.rel ? (
-                  <PlayCircle size={14} />
-                ) : (
-                  <Music size={14} />
-                )}
-                <span class="asset-preview__audio-name">
-                  {f.rel.split("/").pop()}
-                </span>
-                <span class="asset-preview__audio-size">{kbFormat(f.size)}</span>
-              </button>
-            </li>
-          ))}
+          {audioRows.map((f) => {
+            const fileName = f.rel.split("/").pop();
+            const title = f.sceneEvent
+              ? (sceneLabel(f.sceneEvent, uiLocale.value) ?? humanizeEvent(f.sceneEvent))
+              : fileName;
+            return (
+              <li key={f.rel} class="asset-preview__audio-row">
+                <button
+                  type="button"
+                  class="asset-preview__audio-btn"
+                  disabled={!f.playable}
+                  data-hint={t("resources.audioPlay")}
+                  onClick={() => void toggle(f)}
+                >
+                  {player.active && player.rel === f.rel ? (
+                    <PlayCircle size={14} />
+                  ) : (
+                    <Music size={14} />
+                  )}
+                  <span class="asset-preview__audio-body">
+                    <span class="asset-preview__audio-title">
+                      {title}
+                      {f.sceneState ? (
+                        <em class="asset-preview__audio-state">
+                          {humanizeState(f.sceneEvent!, f.sceneState)}
+                        </em>
+                      ) : null}
+                      {f.sceneIndex && f.sceneIndex > 1 ? (
+                        <em class="asset-preview__audio-idx">#{f.sceneIndex}</em>
+                      ) : null}
+                    </span>
+                    {f.sceneEvent ? (
+                      <span class="asset-preview__audio-name">{fileName}</span>
+                    ) : null}
+                  </span>
+                  <span class="asset-preview__audio-size">{kbFormat(f.size)}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       );
     };
