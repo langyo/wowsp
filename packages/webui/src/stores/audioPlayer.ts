@@ -2,11 +2,8 @@
  * Global preview-audio engine — plays mod-hub voice lines and native
  * clips through one HTMLAudioElement whose lifetime is independent of
  * the pane that started playback (navigating away keeps it rolling).
- *
- * The user-facing surface is the stock hikari toast: while a track is
- * actually rolling, a sticky "正在播放" toast (loading type — duration 0)
- * rides the normal top-right toast column; pausing or stopping drops it
- * again. Errors surface as copyable error toasts. Track payloads arrive
+ * The AudioPlayerToast card is the control surface (play/pause, seek,
+ * stop); errors surface as copyable error toasts. Track payloads arrive
  * as data URLs from the caller's loader callback — AssetPreview passes
  * the mod-hub asset read (which is also where the .wem → WAV decode
  * happens), keeping this store transport-agnostic.
@@ -29,10 +26,11 @@ export function setAudioElementFactoryForTests(factory: () => HTMLAudioElement):
 export const useAudioPlayerStore = defineStore("audioPlayer", () => {
   const toast = useToast();
 
-  /** A track is loaded (playing or paused) — raised by the first play
-   *  request, dropped by stop and by natural end. */
+  /** Card visibility — raised by the first play request, dropped by stop
+   *  and by natural end. */
   const active = ref(false);
-  /** Payload fetch (the .wem decode round-trip) in flight. */
+  /** Payload fetch (the .wem decode round-trip) in flight — the card
+   *  shows an indeterminate bar while this is true. */
   const loading = ref(false);
   /** res_mods-relative path of the current track ("" = nothing loaded). */
   const rel = ref("");
@@ -40,43 +38,31 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
   const title = ref("");
   /** The element is rolling (not paused). */
   const playing = ref(false);
+  /** Playback position and total length, seconds. */
+  const position = ref(0);
+  const duration = ref(0);
 
   // Deliberately non-reactive: nothing renders the element itself, and
   // keeping it out of the reactive graph avoids proxying a DOM node.
   let el: HTMLAudioElement | null = null;
-  /** Message id of the sticky 正在播放 toast (null = not shown). */
-  let playingToastId: number | null = null;
   /** Bumped by every play() request — stale loaders (superseded, or a
    *  same-rel retry after a stop swapped the element) die on it. */
   let session = 0;
 
-  function showPlayingToast(): void {
-    if (playingToastId === null) {
-      playingToastId = toast.loading(t("resources.audioPlaying", { name: title.value }));
-    }
-  }
-
-  function hidePlayingToast(): void {
-    playingToastId = null;
-    // hikari's remove() matches SLOT ids before message ids and the two
-    // counters are independent — resolving the slot by type (this store
-    // is the app's only toast.loading caller) can never unbind some
-    // unrelated slot that happens to share the message id.
-    const slot = toast.toasts.find((s) => s.type === "loading");
-    if (slot) toast.remove(slot.id);
-  }
-
   function ensureElement(): HTMLAudioElement {
     if (el) return el;
     const element = createElement();
-    element.onplay = () => {
-      playing.value = true;
-      showPlayingToast();
+    element.ontimeupdate = () => {
+      // The outgoing track's final timeupdate can land while the next
+      // one is still loading (position already reset to 0) — don't let
+      // it flash the old position on the loading card.
+      if (!loading.value) position.value = element.currentTime || 0;
     };
-    element.onpause = () => {
-      playing.value = false;
-      hidePlayingToast();
+    element.ondurationchange = () => {
+      duration.value = Number.isFinite(element.duration) ? element.duration : 0;
     };
+    element.onplay = () => (playing.value = true);
+    element.onpause = () => (playing.value = false);
     element.onended = () => stop();
     element.onerror = () => {
       // stop() nulls the handlers before its empty-src load(), so this
@@ -90,11 +76,10 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
   }
 
   /** Tear the element down and clear every ref — stop(), natural end and
-   *  failed loads all land here, which is also what drops the toast. */
+   *  failed loads all land here, which is also what closes the card. */
   function stop(): void {
-    hidePlayingToast();
     if (el) {
-      el.onended = el.onerror = el.onplay = el.onpause = null;
+      el.onended = el.onerror = el.ontimeupdate = el.ondurationchange = el.onplay = el.onpause = null;
       el.pause();
       el.removeAttribute("src");
       el.load();
@@ -105,6 +90,8 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
     playing.value = false;
     rel.value = "";
     title.value = "";
+    position.value = 0;
+    duration.value = 0;
   }
 
   /**
@@ -132,6 +119,8 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
     title.value = nextTitle;
     active.value = true;
     playing.value = false;
+    position.value = 0;
+    duration.value = 0;
     loading.value = true;
     try {
       const dataUrl = await load();
@@ -158,5 +147,31 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
     }
   }
 
-  return { active, loading, rel, title, playing, play, stop };
+  /** Jump to an absolute time, clamped to the track. */
+  function seek(seconds: number): void {
+    if (!el || !active.value || loading.value || !duration.value) return;
+    const clamped = Math.min(Math.max(seconds, 0), duration.value);
+    el.currentTime = clamped;
+    position.value = clamped;
+  }
+
+  /** Jump to a 0..1 ratio of the track — what the card's seek bar sends. */
+  function seekRatio(ratio: number): void {
+    seek(Math.min(Math.max(ratio, 0), 1) * duration.value);
+  }
+
+  return {
+    active,
+    loading,
+    rel,
+    title,
+    playing,
+    position,
+    duration,
+    play,
+    togglePlayPause,
+    seek,
+    seekRatio,
+    stop,
+  };
 });

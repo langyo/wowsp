@@ -3,9 +3,10 @@
  * thumbnail grid (each tile pulls a decoded, downscaled PNG data URL from
  * the backend on first visibility), voice units list their audio files
  * one-per-row; a click hands the track to the global audioPlayer store,
- * which keeps it rolling (and shows the sticky playing toast) even after
- * the pane is left. The game's Wwise `.wem` files play through the
- * on-read decode (the first click converts to WAV in Rust, then plays).
+ * whose AudioPlayerToast card (play/pause, seek, stop) controls playback
+ * even after the pane is left. The game's Wwise `.wem` files play
+ * through the on-read decode (the first click converts to WAV in Rust,
+ * then plays).
  */
 import { defineComponent, ref, watch } from "vue";
 import { ImageIcon, Music, PlayCircle } from "@lucide/vue";
@@ -73,8 +74,8 @@ export default defineComponent({
     }
 
     // A row click hands the track to the global player: same track
-    // toggles pause/resume (the sticky playing toast follows), a new one
-    // loads (for .wem that is the decode round-trip) and starts.
+    // toggles pause/resume, a new one loads (for .wem that is the
+    // decode round-trip) and starts. The card controls the rest.
     async function toggle(file: AssetFileInfo) {
       if (!file.playable) return;
       const name = file.rel.split("/").pop() || file.rel;
