@@ -762,6 +762,8 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "damageStats": dump.get("damageStats", []),
             "chatMessages": dump.get("chatMessages", []),
             "achievements": dump.get("achievements", []),
+            "weatherTransitions": dump.get("weatherTransitions", []),
+            "weatherNotifications": dump.get("weatherNotifications", []),
         }
     return {
         "trajectories": [],

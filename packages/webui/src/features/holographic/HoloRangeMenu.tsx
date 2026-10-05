@@ -5,11 +5,12 @@
  * recorder's stock range), and which surface (2D minimap / 3D scene) to
  * draw them on. The preferences live in rangeRings.ts (persisted), so this
  * component only renders; the rings themselves are painted by the minimap
- * painter and the 3D ring pool.
+ * painter and the 3D ring pool. Switches are the standard hikari control —
+ * the HUD palette stops at the modal chrome.
  */
 import { defineComponent, type PropType } from "vue";
 import { LocateFixed } from "@lucide/vue";
-import { HkModal } from "@celestia-island/hikari";
+import { HkModal, HkSwitch } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import {
   RING_COLOR,
@@ -17,23 +18,6 @@ import {
   rangeRingPrefs,
   type RangeRingDef,
 } from "./rangeRings";
-
-/** Hand-rolled mini switch — the HUD's own chrome, sized to the menu rows. */
-const Switch = (props: { on: boolean; onChange: () => void; label: string }) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={props.on}
-    aria-label={props.label}
-    class={["holo-range__switch", props.on ? "holo-range__switch--on" : ""]}
-    onClick={(e: Event) => {
-      e.stopPropagation();
-      props.onChange();
-    }}
-  >
-    <span class="holo-range__knob" />
-  </button>
-);
 
 export default defineComponent({
   name: "HoloRangeMenu",
@@ -73,11 +57,11 @@ export default defineComponent({
               <p class="holo-range__hint">{i18nT("replay.ranges.hint")}</p>
               <div class="holo-range__row holo-range__row--master">
                 <span class="holo-range__name">{i18nT("replay.ranges.master")}</span>
-                <Switch
-                  on={rangeRingPrefs.enabled}
-                  label={i18nT("replay.ranges.master")}
-                  onChange={() => {
-                    rangeRingPrefs.enabled = !rangeRingPrefs.enabled;
+                <HkSwitch
+                  size="sm"
+                  modelValue={rangeRingPrefs.enabled}
+                  onUpdate:modelValue={(v: boolean) => {
+                    rangeRingPrefs.enabled = v;
                   }}
                 />
               </div>
@@ -95,11 +79,11 @@ export default defineComponent({
                           ? `${(meters / 1000).toFixed(1).replace(/\.0$/, "")} km`
                           : "—"}
                     </span>
-                    <Switch
-                      on={rangeRingPrefs.kinds[kind]}
-                      label={i18nT(`replay.ranges.kind.${kind}`)}
-                      onChange={() => {
-                        rangeRingPrefs.kinds[kind] = !rangeRingPrefs.kinds[kind];
+                    <HkSwitch
+                      size="sm"
+                      modelValue={rangeRingPrefs.kinds[kind]}
+                      onUpdate:modelValue={(v: boolean) => {
+                        rangeRingPrefs.kinds[kind] = v;
                       }}
                     />
                   </div>
@@ -108,21 +92,21 @@ export default defineComponent({
               <div class="holo-range__section">{i18nT("replay.ranges.surfaces")}</div>
               <div class="holo-range__row">
                 <span class="holo-range__name">{i18nT("replay.ranges.minimap")}</span>
-                <Switch
-                  on={rangeRingPrefs.show2d}
-                  label={i18nT("replay.ranges.minimap")}
-                  onChange={() => {
-                    rangeRingPrefs.show2d = !rangeRingPrefs.show2d;
+                <HkSwitch
+                  size="sm"
+                  modelValue={rangeRingPrefs.show2d}
+                  onUpdate:modelValue={(v: boolean) => {
+                    rangeRingPrefs.show2d = v;
                   }}
                 />
               </div>
               <div class="holo-range__row">
                 <span class="holo-range__name">{i18nT("replay.ranges.scene")}</span>
-                <Switch
-                  on={rangeRingPrefs.show3d}
-                  label={i18nT("replay.ranges.scene")}
-                  onChange={() => {
-                    rangeRingPrefs.show3d = !rangeRingPrefs.show3d;
+                <HkSwitch
+                  size="sm"
+                  modelValue={rangeRingPrefs.show3d}
+                  onUpdate:modelValue={(v: boolean) => {
+                    rangeRingPrefs.show3d = v;
                   }}
                 />
               </div>

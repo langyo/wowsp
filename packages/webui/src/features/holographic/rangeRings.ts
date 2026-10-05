@@ -122,11 +122,15 @@ export interface RangeRingPrefs {
   kinds: Record<RingKind, boolean>;
 }
 
-const PREFS_KEY = "wowsp.holo.rangeRings.v1";
+// v2: v1 shipped `enabled: false` behind an off-state switch that was all
+// but invisible on the dark HUD modal — the family looked configured while
+// the master switch was off and nothing drew. v2 defaults ON (the feature
+// is opt-out now) and everyone starts fresh.
+const PREFS_KEY = "wowsp.holo.rangeRings.v2";
 
 function defaultPrefs(): RangeRingPrefs {
   return {
-    enabled: false,
+    enabled: true,
     show2d: true,
     show3d: true,
     kinds: {
