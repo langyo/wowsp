@@ -348,10 +348,9 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  /* Track-height arithmetic: trigger padding + the segmented track's
-     var(--space-2) chrome step — the button sits on the date tabs' line
-     and matches the tabs control's outer height. */
-  padding: calc(var(--space-4) + var(--space-2)) var(--space-12);
+  /* The exact segmented trigger box, same as the chips: every button in
+     the bar family reads as one size beside the date tabs. */
+  padding: var(--space-4) var(--space-12);
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
   /* Same solid fill as the chips — no wallpaper bleed-through. */
