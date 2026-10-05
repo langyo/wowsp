@@ -420,7 +420,7 @@ fn longest_streak(dates: &[String]) -> (u64, Option<(String, String)>) {
 }
 
 /// The command's pure core: ledger → wire DTO. `now` bounds open sessions.
-fn overview_of(store: &PlaytimeStore, now: i64) -> PlaytimeOverview {
+fn overview_of<Tz: TimeZone>(store: &PlaytimeStore, now: i64, tz: &Tz) -> PlaytimeOverview {
     let mut days: BTreeMap<String, u64> = BTreeMap::new();
     let mut local_total: u64 = 0;
     let mut longest_session: Option<(PlaytimeSession, u64)> = None;
@@ -438,7 +438,7 @@ fn overview_of(store: &PlaytimeStore, now: i64) -> PlaytimeOverview {
         if longest_session.is_none_or(|(_, best)| duration > best) {
             longest_session = Some((*session, duration));
         }
-        for (day, secs) in split_session_days(session.start, end, &Local) {
+        for (day, secs) in split_session_days(session.start, end, tz) {
             *days.entry(day).or_insert(0) += secs;
         }
     };
@@ -502,7 +502,7 @@ fn overview_of(store: &PlaytimeStore, now: i64) -> PlaytimeOverview {
         longest_streak_start: streak_range.as_ref().map(|(s, _)| s.clone()),
         longest_streak_end: streak_range.as_ref().map(|(_, e)| e.clone()),
         longest_session_seconds: longest_session.map(|(_, d)| d).unwrap_or(0),
-        longest_session_date: longest_session.map(|(s, _)| day_key_of(s.start, &Local)),
+        longest_session_date: longest_session.map(|(s, _)| day_key_of(s.start, tz)),
         longest_day_seconds: longest_day.seconds,
         longest_day_date: if longest_day.seconds > 0 {
             Some(longest_day.date)
@@ -526,7 +526,7 @@ fn day_key_of<Tz: TimeZone>(ts: i64, tz: &Tz) -> String {
 /// Current ledger → wire DTO (the command body).
 fn current_overview() -> PlaytimeOverview {
     let now = now_unix();
-    with_state(|state| overview_of(&state.store, now))
+    with_state(|state| overview_of(&state.store, now, &Local))
 }
 
 /// The playtime page's full payload. Cross-platform: on mobile (no session
@@ -845,7 +845,7 @@ mod tests {
             ..PlaytimeStore::default()
         };
         let now = ts(2026, 10, 6, 10, 0);
-        let o = overview_of(&store, now);
+        let o = overview_of(&store, now, &TZ);
         assert_eq!(o.local_total_seconds, 2 * 3600 + 40 * 60);
         assert_eq!(o.total_seconds, o.local_total_seconds + 100);
         assert_eq!(o.launch_count, 2);
@@ -896,7 +896,7 @@ mod tests {
             open: Some(PlaytimeSession { start, end: now }),
             ..PlaytimeStore::default()
         };
-        let o = overview_of(&store, now);
+        let o = overview_of(&store, now, &TZ);
         assert_eq!(o.local_total_seconds, 900);
         let last = o.last_launch.expect("open session is the last launch");
         assert!(last.running);
@@ -910,7 +910,7 @@ mod tests {
             }),
             ..PlaytimeStore::default()
         };
-        assert_eq!(overview_of(&store, now).local_total_seconds, 900);
+        assert_eq!(overview_of(&store, now, &TZ).local_total_seconds, 900);
     }
 
     #[test]
