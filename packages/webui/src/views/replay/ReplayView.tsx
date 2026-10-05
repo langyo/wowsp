@@ -37,7 +37,8 @@ import type {
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { isMobileApp } from "@/utils/platform";
-import { type PostBattleRibbon } from "@/features/replay/postBattle";
+import { parsePostBattle, type PostBattleRibbon } from "@/features/replay/postBattle";
+import { applyDarkDeathInference, resolveMaxHp } from "@/features/holographic/shipHp";
 import PostBattlePanel from "@/features/replay/PostBattlePanel";
 import {
   dimsNeedShipStats,
@@ -165,6 +166,9 @@ const PostBattleFallbackPanel = defineComponent({
      *  join for the per-row HP/death columns (mirror picks share one
      *  shipId, so shipId-keyed maps overwrite each other). */
     arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
+    /** Entity ids whose deathTime was inferred from the post-battle payload
+     *  (dark kills) — the self-frag heuristic must not credit them. */
+    inferredDeaths: { type: Object as () => Set<number>, default: () => new Set() },
     /** Resolved stats-source battle scope (the parent resolves the pref
      *  against the replayed battle's identity — the fallback sees no
      *  head). The ship/solo dimensions ride the shared prefs directly. */
@@ -306,6 +310,19 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
+    /** Total HP per roster id from the arena's build health — the base-info
+     *  source the HP-percent column divides by (a stream-peak total
+     *  under-reports late-spotted ships and reads non-round in scaled
+     *  modes). */
+    const maxHpByRosterId = computed(() => {
+      const m = new Map<number, number>();
+      for (const p of props.arenaPlayers) {
+        if (p.playerId != null && p.maxHealth && p.maxHealth > 0) {
+          m.set(p.playerId, p.maxHealth);
+        }
+      }
+      return m;
+    });
     /** Recorder's own inferred damage dealt / frags / hits. The self
      *  trajectory is resolved through the arena join (by entity id) — the
      *  shipId fallback can grab the enemy's mirror ship. */
@@ -320,6 +337,7 @@ const PostBattleFallbackPanel = defineComponent({
         self?.shipId,
         props.damageStats,
         selfEntityId,
+        props.inferredDeaths,
       );
     });
     const rows = computed(() =>
@@ -350,7 +368,9 @@ const PostBattleFallbackPanel = defineComponent({
               : null) ?? v.shipName ?? "",
           damage: isSelf ? st.damage : 0,
           frags,
-          hpRatio: hpRatioOf(hp),
+          // A sunk ship reads 0 HP whatever its last observed sample said
+          // (dark kills freeze the stream at a stale value).
+          hpRatio: deathAt != null ? 0 : hpRatioOf(hp, maxHpByRosterId.value.get(v.id)),
           damageTaken: damageTaken(hp),
           ribbons,
           killerName: null as string | null,
@@ -668,11 +688,18 @@ function damageTaken(hp: HpSample[] | undefined | null): number {
   return dmg;
 }
 
-/** Remaining-HP percent (0..100) from the last HP sample. */
-function hpRatioOf(hp: HpSample[] | undefined | null): number | null {
+/** Remaining-HP percent (0..100) from the last HP sample. `maxHp` is the
+ *  ship's base-info total (arena build health) when known — the stream's
+ *  own peak is only the fallback (it under-reports late-spotted ships). */
+function hpRatioOf(
+  hp: HpSample[] | undefined | null,
+  maxHp?: number,
+): number | null {
   if (!hp || hp.length === 0) return null;
-  let max = 0;
-  for (const s of hp) if (s.value > max) max = s.value;
+  let max = maxHp && maxHp > 0 ? maxHp : 0;
+  if (max <= 0) {
+    for (const s of hp) if (s.value > max) max = s.value;
+  }
   if (max <= 0) return null;
   return (hp[hp.length - 1].value / max) * 100;
 }
@@ -726,13 +753,18 @@ function hpAtTime(hp: HpSample[] | undefined, t: number): number | null {
  *  aircraft weapons — the HP-delta heuristic below over-counts multi-hit
  *  salvos and misses out-of-view DoT); the heuristic from the projectile-kill
  *  stream (receiveShotKills — server-confirmed hits carrying the firing
- *  vehicle id) remains the fallback for versions without damage stats. */
+ *  vehicle id) remains the fallback for versions without damage stats.
+ *  `inferredDeaths` lists sinks whose deathTime was inferred from the
+ *  post-battle payload (never observed sinking) — the ±1.2 s death-proximity
+ *  frag credit must not fire for them, or the recorder gains frags for kills
+ *  someone else landed while the ship sailed dark. */
 function computeSelfStats(
   trajectories: EntityTrajectory[],
   shotKills: ShotKillEvent[],
   selfShipId: number | undefined,
   damageStats?: DamageStatSample[] | null,
   selfEntityId?: number,
+  inferredDeaths?: Set<number>,
 ): { damage: number; planeDamage: number; frags: number; hits: number } {
   const authoritative = damageStats?.length ? foldDamageStats(damageStats, Infinity) : null;
   const out = { damage: 0, planeDamage: 0, frags: 0, hits: 0 };
@@ -760,7 +792,7 @@ function computeSelfStats(
       if (hpBefore != null && hpAfter != null && hpBefore - hpAfter > 50) {
         out.damage += hpBefore - hpAfter;
       }
-      if (tr.deathTime != null && Math.abs(tr.deathTime - e.time) < 1.2) {
+      if (tr.deathTime != null && !inferredDeaths?.has(tr.entityId) && Math.abs(tr.deathTime - e.time) < 1.2) {
         out.frags++;
       }
     }
@@ -943,10 +975,18 @@ const ChatLogPanel = defineComponent({
           const v = props.vehicles.find((x) => x.id === c.playerId);
           const traj = v ? trajByVehicle.get(v.id) : undefined;
           const sunk = traj?.deathTime != null && c.time >= traj.deathTime;
-          let maxHp: number | null = null;
-          if (traj?.hpSamples?.length) {
-            for (const s of traj.hpSamples) if (s.value > (maxHp ?? 0)) maxHp = s.value;
-          }
+          // Total HP from the ship's base info: the arena's build health
+          // first, stream peak / offline hull only as fallbacks (a
+          // stream-peak "total" showed damaged-in non-round values).
+          const arenaMax = traj
+            ? props.arenaPlayers.find((p) => p.entityId === traj.entityId)?.maxHealth
+            : undefined;
+          const maxHp = resolveMaxHp(
+            arenaMax,
+            traj?.hpSamples,
+            null,
+            v?.shipId != null ? shipOfflineEntry(v.shipId)?.hp ?? null : null,
+          );
           return {
             time: c.time,
             sender: v?.name ?? `#${c.playerId}`,
@@ -1451,6 +1491,10 @@ export default defineComponent({
     const chatMessages = ref<ChatEvent[]>([]);
     const achievements = ref<AchievementEvent[]>([]);
     const arenaPlayers = ref<ArenaPlayer[]>([]);
+    /** Entity ids whose deathTime was inferred from the post-battle payload
+     *  (ships that sank while un-spotted) — heuristics crediting kills from
+     *  death-time proximity must stand down for them (shipHp.ts). */
+    const inferredDeaths = ref<Set<number>>(new Set());
     /** Global-weather timeline (cyclone) — badge + minimap darkening. */
     const weatherTransitions = ref<WeatherTransition[]>([]);
     const weatherNotifications = ref<WeatherNotification[]>([]);
@@ -1517,6 +1561,7 @@ export default defineComponent({
         chatMessages.value = [];
         achievements.value = [];
         arenaPlayers.value = [];
+        inferredDeaths.value = new Set();
         showChat.value = false;
         trajectoryError.value = null;
         duration.value = 0;
@@ -1524,6 +1569,23 @@ export default defineComponent({
         resultsLoading.value = true;
         try {
           const stream = await api.readReplayPositions(path);
+          // The decode is async — the user may have switched replays (or
+          // closed this one) while it ran; this continuation is then stale
+          // and must not overwrite the newer replay's state.
+          if (parser.current.value?.path !== path) return;
+          // Ships the stream never caught sinking — killed while un-spotted;
+          // modern clients emit no EntityDestroy and the HP stream only
+          // updates while observed, so they would keep sailing at their
+          // last (often full) HP reading. Patch the post-battle payload's
+          // authoritative sink list (killerId) into the trajectories once
+          // here, so the map, roster strip, tooltip and chat panel all
+          // read one uniform deathTime (see shipHp.ts for the caveats).
+          inferredDeaths.value = applyDarkDeathInference(
+            stream.trajectories,
+            parsePostBattle(stream.battleResults ?? null),
+            parser.current.value?.vehicles ?? [],
+            stream.arenaPlayers,
+          );
           trajectories.value = stream.trajectories;
           shellLaunches.value = stream.shellLaunches ?? [];
           explosions.value = stream.explosions ?? [];
@@ -1937,6 +1999,7 @@ export default defineComponent({
                           realm={realm.value}
                           operation={isOperation.value}
                           arenaPlayers={arenaPlayers.value}
+                          inferredDeaths={inferredDeaths.value}
                           statsMode={fallbackStatsMode.value}
                           onClose={() => (showResults.value = false)}
                         />
@@ -2014,6 +2077,7 @@ export default defineComponent({
                       chatMessages={chatMessages.value}
                       achievements={achievements.value}
                       arenaPlayers={arenaPlayers.value}
+                      inferredDeaths={inferredDeaths.value}
                       weatherTransitions={weatherTransitions.value}
                       weatherNotifications={weatherNotifications.value}
                       vehicles={parser.current.value.vehicles}

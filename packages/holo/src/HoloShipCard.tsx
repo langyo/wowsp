@@ -91,7 +91,9 @@ export default defineComponent({
               {d.name ? <span class="holo-ship-card__name">{d.name}</span> : null}
               {showText ? (
                 <span class="holo-ship-card__text">
-                  {d.dead ? "—" : `${d.hp!.toLocaleString()} / ${d.maxHp!.toLocaleString()}`}
+                  {d.dead
+                    ? "—"
+                    : `${Math.round(d.hp!).toLocaleString()} / ${Math.round(d.maxHp!).toLocaleString()}`}
                 </span>
               ) : null}
             </div>

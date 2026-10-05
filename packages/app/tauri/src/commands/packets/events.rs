@@ -334,6 +334,14 @@ fn arena_player_list(
         if entity_id == 0 {
             continue;
         }
+        // Event/asymmetric modes deliver scaled FRACTIONAL health here;
+        // round to the whole number (a plain float→int cast truncates and
+        // would read the ship 1 HP short of its true total).
+        let max_health = match field(f.max_health) {
+            Some(PyVal::Float(fl)) => fl.round() as i64,
+            Some(PyVal::Int(i)) => *i,
+            _ => 0,
+        };
         let name = match field(f.name) {
             Some(PyVal::Str(s)) => s.clone(),
             _ => String::new(),
@@ -343,7 +351,7 @@ fn arena_player_list(
             team_id: as_i64(field(f.team_id)).unwrap_or(0) as i8,
             player_id: as_i64(field(f.player_id)).unwrap_or(0),
             ship_params_id: as_i64(field(f.ship_params_id)).unwrap_or(0) as u32,
-            max_health: as_i64(field(f.max_health)).unwrap_or(0).max(0) as u32,
+            max_health: max_health.max(0) as u32,
             name,
             is_bot: bots,
             avatar_id: as_i64(field(f.avatar_id)).map(|v| v as i32),

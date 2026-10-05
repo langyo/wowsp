@@ -273,7 +273,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       label.ghostText = null;
       const currentHp = hpAtTime(traj.hpSamples, tEff);
       if (currentHp != null) label.hp = currentHp;
-      label.maxHp ??= currentHp ?? label.maxHp;
+      // maxHp never changes mid-playback — it is resolved once at actor
+      // build from the arena's build health (see actorBuild / shipHp.ts),
+      // so there is no per-frame fallback to seed here.
       // Below-hull combat status rows (actions / hits / dots) track the
       // same effective clock — a dying ship freezes at its death instant.
       label.status = shipStatusAt(ctx.shipStatus.get(entityId), tEff);

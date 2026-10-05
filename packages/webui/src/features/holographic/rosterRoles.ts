@@ -15,6 +15,9 @@ export interface ArenaIdentity {
   team: number;
   playerId?: number;
   shipParamsId?: number;
+  /** Starting health of this exact build, straight from the arena state —
+   *  the authoritative max-HP source for every HP display (see shipHp.ts). */
+  maxHealth?: number;
   isSelf: boolean;
 }
 
@@ -31,6 +34,7 @@ export function arenaIdentities(
       team: p.teamId,
       playerId: p.playerId || undefined,
       shipParamsId: p.shipParamsId || undefined,
+      maxHealth: p.maxHealth || undefined,
       isSelf: !!p.isSelf,
     });
   }

@@ -253,6 +253,27 @@ describe("damage-over-time chips", () => {
     expect(snap?.dots).toContainEqual({ key: "fire", secs: 25, frac: 25 / 30 });
   });
 
+  it("classifies ticks against the arena build health, not the late-spotted stream peak", () => {
+    // First observed at 6000/40000 after taking damage elsewhere: against
+    // the stream peak every 500-HP burn tick reads as a shell hit and the
+    // fire never lights; the authoritative total keeps it a DoT tick.
+    const hp = [{ time: 0, value: 6000 }];
+    for (let i = 0; i < 5; i++) {
+      hp.push({ time: 40 + i, value: 6000 - (i + 1) * 500 });
+    }
+    const byPeak = buildShipStatusIndex(src({ trajectories: [ship(1, { hp })] }));
+    expect(shipStatusAt(byPeak.get(1), 44)?.dots ?? []).toHaveLength(0);
+    const byArena = buildShipStatusIndex(
+      src({
+        trajectories: [ship(1, { hp })],
+        maxHpByEntity: new Map([[1, 40000]]),
+      }),
+    );
+    expect(shipStatusAt(byArena.get(1), 44)?.dots).toContainEqual(
+      expect.objectContaining({ key: "fire" }),
+    );
+  });
+
   it("uses the 60 s fire base for battleships, carriers and hybrids", () => {
     const hp = [{ time: 0, value: 60000 }];
     for (let i = 0; i < 13; i++) {

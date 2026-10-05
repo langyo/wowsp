@@ -979,6 +979,12 @@ impl PickleValue for String {
         self.as_str().push_pickle(out);
     }
 }
+impl PickleValue for f64 {
+    fn push_pickle(&self, out: &mut Vec<u8>) {
+        out.push(0x47); // BINFLOAT — 8-byte BIG-endian double
+        out.extend_from_slice(&self.to_be_bytes());
+    }
+}
 
 /// Hand-assemble one arena player FixedDict the way the client pickles it:
 /// a list of `(index, value)` tuples (proto-2: EMPTY_LIST + APPEND over
@@ -1090,6 +1096,43 @@ fn decodes_arena_state_players() {
     // Truncated / garbage args never panic, just yield None.
     assert!(decode_arena_state(&args[..9], Some((15, 8, 0))).is_none());
     assert!(decode_arena_state(&[], Some((15, 8, 0))).is_none());
+}
+
+/// Event/asymmetric modes pickle maxHealth as a scaled FLOAT — it must
+/// round to the whole number the ship actually sails with (a plain
+/// float→int cast truncates and reads 1 HP short of the true total).
+#[test]
+fn rounds_fractional_arena_max_health() {
+    let (f_avatar, f_id, f_health, f_name, f_ship, f_params, f_team) =
+        (2i64, 11i64, 24i64, 25i64, 33i64, 34i64, 36i64);
+    let scaled = pickle_player(&[
+        (&f_avatar, &7_710_009i64),
+        (&f_id, &602i64),
+        (&f_health, &46_436.8f64),
+        (&f_name, &"scaled_bot".to_string()),
+        (&f_ship, &7_561_152i64),
+        (&f_params, &4_076_255_217i64),
+        (&f_team, &0i64),
+    ]);
+    // A second entry exists only to clear decode_arena_state's "both teams
+    // present" guard (a single-entry blob is treated as a misparse).
+    let filler = pickle_player(&[
+        (&f_avatar, &7_710_010i64),
+        (&f_id, &603i64),
+        (&f_health, &40_100i64),
+        (&f_name, &"other".to_string()),
+        (&f_ship, &7_561_153i64),
+        (&f_params, &4_076_255_218i64),
+        (&f_team, &1i64),
+    ]);
+    let args = arena_args(&pickle_list(&[&scaled, &filler]), &pickle_list(&[]));
+    let players = decode_arena_state(&args, Some((15, 8, 0))).expect("arena state must decode");
+    assert_eq!(players.len(), 2);
+    let scaled = players
+        .iter()
+        .find(|p| p.entity_id == 7_561_152)
+        .expect("scaled entry");
+    assert_eq!(scaled.max_health, 46_437);
 }
 
 /// Diagnostic: the arena's initial player state vs the descriptor roster.

@@ -91,8 +91,8 @@ export default defineComponent({
                     style={{ width: `${pct}%`, background: ROLE_BAR[l.role] }}
                   />
                   <span class="holo-label__hp-text">
-                    {l.hp.toLocaleString()}
-                    {l.maxHp != null ? ` / ${l.maxHp.toLocaleString()}` : ""}
+                    {Math.round(l.hp).toLocaleString()}
+                    {l.maxHp != null ? ` / ${Math.round(l.maxHp).toLocaleString()}` : ""}
                   </span>
                 </span>
               ) : null}

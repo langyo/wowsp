@@ -38,6 +38,7 @@ import { updateLabelPositions } from "./labelOverlay";
 import { buildShellStates, buildShellTracePool, buildTorpedoTraces, swapTracePropModels } from "./shellWarfare";
 import { buildPlaneTrails, buildPlaneCloud, buildPlaneFormations, resolvePlaneCarriers } from "./planeWarfare";
 import { buildShipStatusIndex } from "./shipStatusModel";
+import { peakHpOf, resolveMaxHp, encyclopediaHullHealth } from "./shipHp";
 import { ammoOfColor } from "./tactical/shellTypes";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -199,6 +200,22 @@ export function rebuildActors(ctx: MapInternals) {
     trajectories: ctx.props.trajectories,
     shellLaunches: ctx.props.shellLaunches,
     torpedoes: ctx.props.torpedoes,
+    // DoT-tick classification thresholds key on the ship's true total HP:
+    // the arena build health first, the stream peak only when the arena
+    // state is missing (a late-spotted ship's peak makes every tick read
+    // "big" and hides its fires/floods).
+    maxHpByEntity: (() => {
+      const m = new Map<number, number>();
+      for (const tr of ctx.props.trajectories) {
+        if (tr.kind?.entityType !== 2) continue;
+        const v =
+          ctx.arenaIdentities?.get(tr.entityId)?.maxHealth ??
+          peakHpOf(tr.hpSamples) ??
+          undefined;
+        if (v != null && v > 0) m.set(tr.entityId, v);
+      }
+      return m;
+    })(),
     shellImpacts: ctx.shellStates
       .filter((st) => st.joined)
       .map((st) => ({
@@ -480,25 +497,20 @@ export function rebuildActors(ctx: MapInternals) {
       shipInfo?.name ??
       shipNameFromModelDb((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined) ??
       "?";
-    // Max HP: the peak of the entity's own HP stream — authoritative for
-    // the battle's actual scaling (event/asymmetric modes cut bot HP to a
-    // fraction of the encyclopedia hull value; upgraded hulls raise it).
-    // Ships without any HP stream fall back to the encyclopedia hull value
-    // so their label still shows a (static) health line.
-    const streamMax =
-      traj.hpSamples && traj.hpSamples.length > 0
-        ? Math.max(...traj.hpSamples.map((s) => s.value))
-        : null;
-    const dp = shipInfo?.defaultProfile as
-      | Record<string, Record<string, unknown>>
-      | undefined;
-    const encHealth =
-      dp?.hull?.health != null && typeof dp.hull.health === "number"
-        ? dp.hull.health
-        : null;
-    // Fallback chain: battle stream (authoritative) → encyclopedia hull →
-    // offline DB hull HP (GameParams) → none (label hides the HP row).
-    const maxHp = streamMax ?? encHealth ?? offline?.hp ?? null;
+    // Max HP: the arena's starting health of this exact build — the
+    // authoritative source (upgrades and event/asymmetric mode scaling are
+    // already baked in, and it is always a clean integer). The HP stream's
+    // peak is only the fallback for replays whose arena state did not
+    // decode (it under-reports enemies first spotted after taking damage);
+    // encyclopedia / offline hull values stand in when neither knows the
+    // ship so the label still shows a (static) health line.
+    const arenaMax = ctx.arenaIdentities?.get(traj.entityId)?.maxHealth ?? null;
+    const maxHp = resolveMaxHp(
+      arenaMax,
+      traj.hpSamples,
+      encyclopediaHullHealth(shipInfo),
+      offline?.hp ?? null,
+    );
     newLabels.push({
       entityId: traj.entityId,
       role,

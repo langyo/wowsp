@@ -110,7 +110,7 @@ export default defineComponent({
                       <span class="holo-map__cam-meta">
                         {item.tier ? tierToRoman(item.tier) : ""}
                         {item.type ? ` ${i18nT(`replay.classes.${shipTypeClass(item.type)}`)}` : ""}
-                        {item.maxHp != null ? ` · ${item.maxHp.toLocaleString()} HP` : ""}
+                        {item.maxHp != null ? ` · ${Math.round(item.maxHp).toLocaleString()} HP` : ""}
                       </span>
                     </span>
                     <span class="holo-map__cam-name">{item.name}</span>

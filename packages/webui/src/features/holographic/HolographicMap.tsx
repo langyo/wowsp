@@ -18,6 +18,7 @@ import { clearPropMarkerCache } from "./propMarker";
 import { sampleAt, hpAtTime } from "./trajectoryMath";
 import { shouldReserveTabKey } from "./tabKeyGate";
 import { arenaIdentities, resolveRosterAssignments } from "./rosterRoles";
+import { encyclopediaHullHealth, resolveMaxHp } from "./shipHp";
 import HoloShipTooltip from "./HoloShipTooltip";
 import {
   clearActors,
@@ -206,6 +207,10 @@ export default defineComponent({
      *  authoritative ship-entity → team/player join for markers, minimap
      *  and the scorebar. */
     arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
+    /** Entity ids whose deathTime was inferred from the post-battle payload
+     *  (ships that sank while un-spotted) — the self-stats frag heuristic
+     *  must not credit those sinks from death-time proximity alone. */
+    inferredDeaths: { type: Object as () => Set<number>, default: () => new Set() },
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
@@ -442,6 +447,7 @@ export default defineComponent({
       // carry the arena identities); before the first rebuild compute the
       // same map locally — replacing the old shipId-keyed join whose
       // mirror-pick overwrite this computed exists to fix.
+      const identities = arenaIdentities(props.arenaPlayers);
       const assignments =
         ctx?.rosterAssignments.size
           ? ctx.rosterAssignments
@@ -449,17 +455,24 @@ export default defineComponent({
               shipTrajs,
               props.vehicles,
               props.operation,
-              arenaIdentities(props.arenaPlayers),
+              identities,
             );
       const trajById = new Map(shipTrajs.map((tr) => [tr.entityId, tr]));
       const byPlayer = new Map<number, RosterShipState>();
       for (const [entityId, v] of assignments) {
         if (!v || byPlayer.has(v.id)) continue;
         const traj = trajById.get(entityId) ?? null;
-        let maxHp: number | null = null;
-        for (const s of traj?.hpSamples ?? []) {
-          if (maxHp == null || s.value > maxHp) maxHp = s.value;
-        }
+        // Total HP resolves from the ship's base information — the arena's
+        // build health first, the HP stream's peak only as the fallback
+        // (shipHp.ts); a stale stream peak made dark-killed ships read at
+        // full HP and late-spotted ones under-report their total.
+        const info = props.encyclopedia.get(v.shipId) as ShipInfo | undefined;
+        const maxHp = resolveMaxHp(
+          identities?.get(entityId)?.maxHealth,
+          traj?.hpSamples,
+          encyclopediaHullHealth(info),
+          shipOfflineEntry(v.shipId)?.hp ?? null,
+        );
         byPlayer.set(v.id, { traj, deathTime: traj?.deathTime ?? null, maxHp });
       }
       // Roster entries with no trajectory stream still get a stub so every
@@ -578,7 +591,14 @@ export default defineComponent({
             damage += hpBefore - hpAfter;
           }
           const death = tr.deathTime;
-          if (death != null && Math.abs(death - e.time) < 1.2) {
+          // Inferred (dark) sinks carry no observed sink instant — the
+          // ±1.2 s proximity would mis-credit the recorder a frag the
+          // post-battle payload attributes to someone else.
+          if (
+            death != null &&
+            !props.inferredDeaths.has(tr.entityId) &&
+            Math.abs(death - e.time) < 1.2
+          ) {
             frags++;
           }
         }

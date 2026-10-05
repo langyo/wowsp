@@ -162,6 +162,11 @@ export interface ShipStatusSource {
   /** entityId → WG class string ("Battleship"/"Cruiser"/…), driving the
    *  per-class DoT countdown bases. Missing entries read as "other". */
   shipTypes?: Map<number, string | null>;
+  /** entityId → authoritative total HP (the arena's build health; see
+   *  shipHp.ts). Preferred over the HP stream's peak for the DoT-tick
+   *  threshold — a late-spotted ship's peak is a fraction of its true
+   *  total and misclassifies every tick as a shell hit. */
+  maxHpByEntity?: Map<number, number>;
 }
 
 // ── Per-ship index ──────────────────────────────────────────────────────
@@ -217,7 +222,7 @@ export function buildShipStatusIndex(src: ShipStatusSource): Map<number, ShipSta
   const shipIds = new Set(shipTrajs.map((tr) => tr.entityId));
   const out = new Map<number, ShipStatusIndex>();
   for (const tr of shipTrajs) {
-    const maxHp = peakHp(tr);
+    const maxHp = src.maxHpByEntity?.get(tr.entityId) || peakHp(tr);
     const type = src.shipTypes?.get(tr.entityId) ?? null;
     const idx: ShipStatusIndex = {
       gun: gunSalvosFor(src.shellLaunches, tr.entityId),

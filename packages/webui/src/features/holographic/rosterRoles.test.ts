@@ -146,6 +146,16 @@ describe("arena identities", () => {
     expect(a.get(12)?.name).toBe("Player02");
   });
 
+  it("carries the arena build health through as the max-HP source", () => {
+    const identities = arenaIdentities(players)!;
+    expect(identities.get(11)?.maxHealth).toBe(12600);
+    expect(identities.get(12)?.maxHealth).toBe(14080);
+    // A missing/zero field reads undefined so HP displays fall through to
+    // their fallback chain instead of trusting a bogus 0.
+    const bare = arenaIdentities([{ entityId: 13, teamId: 1 }])!;
+    expect(bare.get(13)?.maxHealth).toBeUndefined();
+  });
+
   it("splits mirror picks by spawn side when the arena state is missing", () => {
     // Same data, no identities: the legacy heuristic decides (and may get
     // either side right) — the point is it stays the fallback path.
