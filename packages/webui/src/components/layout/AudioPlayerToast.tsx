@@ -1,6 +1,6 @@
 import { defineComponent, onBeforeUnmount, ref, Teleport, watch } from "vue";
 import { Pause, Play, Volume2, X } from "@lucide/vue";
-import { HkSpinner } from "@celestia-island/hikari";
+import { HkIconButton, HkSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useAudioPlayerStore } from "@/stores/audioPlayer";
@@ -14,11 +14,14 @@ const LEAVE_MS = 260;
  * audioPlayer store whenever a voice-line / audio preview starts playing.
  * hikari toasts support neither a progress bar nor custom actions, but a
  * player needs both — hence this shell-level card in hikari's top-right
- * toast column, the update pass card's exact slot and surface (the
- * "download progress" visual language: bottom progress track, quiet
- * outlined action buttons). Controls: play/pause, stop (closes the
- * card), and a seek bar (pointer drag while a track is loaded;
- * indeterminate slide while the .wem decode round-trip is in flight).
+ * toast column, built as the update pass card's twin: same surface and
+ * slot, message row carrying the name (flexes, ellipsized) and a
+ * pinned `0:12/2:34` next to the controls,
+ * and the exact 4px progress rail below (indeterminate slide while the
+ * .wem decode round-trip is in flight, rAF-smooth position while
+ * rolling). Controls: stock hikari ghost HkIconButtons (play/pause,
+ * stop — stop closes the card); the rail doubles as the seek surface
+ * (pointer drag scrubs).
  *
  * The store tearing down plays a leave transition instead of snapping
  * away (delayed unmount + frozen snapshot, the UpdateToast pattern), so
@@ -134,37 +137,45 @@ export default defineComponent({
               <span class="audio-player-toast__icon">
                 {loading ? <HkSpinner size="xs" tone="current" /> : <Volume2 size={14} />}
               </span>
-              <p class="audio-player-toast__title">{title}</p>
+              <p class="audio-player-toast__message">
+                <span class="audio-player-toast__name">{title}</span>
+                {duration > 0 ? (
+                  <span class="audio-player-toast__time">
+                    {fmtTime(position)}/{fmtTime(duration)}
+                  </span>
+                ) : null}
+              </p>
               <div class="audio-player-toast__actions">
-                <button
-                  type="button"
-                  class="audio-player-toast__btn"
+                <HkIconButton
+                  size={24}
+                  variant="ghost"
                   disabled={loading}
-                  title={playing ? t("resources.audioPause") : t("resources.audioResume")}
+                  data-hint={playing ? t("resources.audioPause") : t("resources.audioResume")}
+                  aria-label={playing ? t("resources.audioPause") : t("resources.audioResume")}
                   onClick={() => player.togglePlayPause()}
                 >
-                  {playing ? <Pause size={13} /> : <Play size={13} />}
-                </button>
-                <button
-                  type="button"
-                  class="audio-player-toast__btn"
-                  title={t("resources.audioStop")}
+                  {playing ? <Pause size={16} /> : <Play size={16} />}
+                </HkIconButton>
+                <HkIconButton
+                  size={24}
+                  variant="ghost"
+                  data-hint={t("resources.audioStop")}
+                  aria-label={t("resources.audioStop")}
                   onClick={() => player.stop()}
                 >
-                  <X size={13} />
-                </button>
+                  <X size={16} />
+                </HkIconButton>
               </div>
             </div>
-            <div class="audio-player-toast__seek">
-              <span class="audio-player-toast__time">{fmtTime(position)}</span>
-              <div
-                ref={trackEl}
-                class="audio-player-toast__track"
-                onPointerdown={onPointerDown}
-                onPointermove={onPointerMove}
-                onPointerup={onPointerUp}
-                onPointercancel={onPointerUp}
-              >
+            <div
+              ref={trackEl}
+              class="audio-player-toast__seekbar"
+              onPointerdown={onPointerDown}
+              onPointermove={onPointerMove}
+              onPointerup={onPointerUp}
+              onPointercancel={onPointerUp}
+            >
+              <div class="audio-player-toast__track">
                 <div
                   class={[
                     "audio-player-toast__fill",
@@ -173,7 +184,6 @@ export default defineComponent({
                   style={!loading ? { width: `${pct}%` } : undefined}
                 />
               </div>
-              <span class="audio-player-toast__time">{fmtTime(duration)}</span>
             </div>
           </div>
         </Teleport>

@@ -52,6 +52,12 @@ class StubAudioElement {
     this.#currentTime = v;
     this.ontimeupdate?.(new Event("timeupdate"));
   }
+
+  /** Advance the clock the way rolling playback would — WITHOUT firing
+   *  timeupdate, so the frame ticker is the only position source. */
+  advance(t: number) {
+    this.#currentTime = t;
+  }
 }
 
 let el: StubAudioElement;
@@ -60,9 +66,15 @@ beforeEach(() => {
   setActivePinia(createPinia());
   el = new StubAudioElement();
   setAudioElementFactoryForTests(() => el as unknown as HTMLAudioElement);
+  // The store's frame ticker would otherwise spin real happy-dom rAF
+  // loops for the rest of the file (tests end with tracks still
+  // playing); frames are never needed here — the ticker test installs
+  // its own manual capture on top of this stub.
+  vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   setAudioElementFactoryForTests(() => new Audio());
   // hikari's toast slots are module-global while every test gets a
   // fresh pinia — clear through hikari's own remove() (it also drops
@@ -108,6 +120,42 @@ describe("useAudioPlayerStore", () => {
     await player.play("banks/a.wem", "a.wem", async () => "data:audio/wav;base64,QQ");
     el.duration = 12.5;
     expect(player.duration).toBeCloseTo(12.5);
+  });
+
+  it("drives position per animation frame while rolling", async () => {
+    // Manual frames: capture the pending callback, flush on demand.
+    let frame: FrameRequestCallback | undefined;
+    const raf = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb: FrameRequestCallback) => {
+        frame = cb;
+        return 1;
+      });
+    const cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    try {
+      const player = useAudioPlayerStore();
+      await player.play("banks/a.wem", "a.wem", async () => "data:audio/wav;base64,QQ");
+      expect(raf).toHaveBeenCalled(); // ticker started on play
+      expect(frame).toBeDefined();
+
+      // The element clock moves without a timeupdate (rolling playback,
+      // not a seek): only the ticker can surface the new position.
+      el.advance(3.25);
+      expect(player.position).toBe(0);
+      frame!(0);
+      expect(player.position).toBeCloseTo(3.25);
+
+      // Pausing cancels the loop; a stale frame must no-op.
+      el.pause();
+      expect(cancel).toHaveBeenCalled();
+      const settled = player.position;
+      el.advance(9);
+      frame?.(0);
+      expect(player.position).toBeCloseTo(settled);
+    } finally {
+      raf.mockRestore();
+      cancel.mockRestore();
+    }
   });
 
   it("re-asking the same track toggles pause and resume", async () => {

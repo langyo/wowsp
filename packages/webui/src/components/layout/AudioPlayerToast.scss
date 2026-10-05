@@ -70,59 +70,24 @@
   flex-shrink: 0;
 }
 
-.audio-player-toast__title {
+// Message row: name (flexes, ellipsized) then the running time, the
+// updater toast's "下载中 45%" slot pattern.
+.audio-player-toast__message {
   margin: 0;
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--hi-space-8, 8px);
   white-space: nowrap;
+}
+
+.audio-player-toast__name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono, monospace);
-}
-
-// Borderless quiet icon buttons: no frame at rest, just a hover tint on
-// the blue surface (hikari's button variants render as heavy dark blocks
-// there, so these stay hand-rolled — just without the outline).
-.audio-player-toast__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--hi-space-4, 4px);
-  flex-shrink: 0;
-}
-
-.audio-player-toast__btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.55rem;
-  height: 1.55rem;
-  padding: 0;
-  border: none;
-  border-radius: var(--hi-radius-sm, 4px);
-  background: transparent;
-  color: #fff;
-  cursor: pointer;
-  transition: background-color var(--hi-duration-fast, 0.15s) ease;
-
-  &:hover:not(:disabled) {
-    background: rgb(255 255 255 / 18%);
-  }
-
-  &:active:not(:disabled) {
-    background: rgb(255 255 255 / 28%);
-  }
-
-  &:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-}
-
-// Seek row: current time, drag track, total time.
-.audio-player-toast__seek {
-  display: flex;
-  align-items: center;
-  gap: var(--hi-space-8, 8px);
 }
 
 .audio-player-toast__time {
@@ -132,33 +97,55 @@
   opacity: 0.9;
 }
 
-.audio-player-toast__track {
-  flex: 1;
-  height: 8px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 28%);
-  overflow: hidden;
-  cursor: pointer;
-  // A generous invisible hit area around the slim visual track.
-  position: relative;
+// The controls are stock hikari ghost icon buttons (HkIconButton). Only
+// their palette is re-tinted for the card's info-blue surface — the
+// sanctioned host out-rank of hikari's zero-specificity defaults, the
+// same pattern its window-close and lightbox hosts use.
+.audio-player-toast__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--hi-space-4, 4px);
+  flex-shrink: 0;
 
-  &::before {
-    content: "";
-    position: absolute;
-    inset: -6px;
+  .hk-icon-button {
+    --hi-icon-button-icon-color: #fff;
+    --hi-icon-button-icon-color-active: #fff;
+    --hi-icon-button-icon-color-disabled: rgb(255 255 255 / 55%);
+    --hi-icon-button-bg-hover: rgb(255 255 255 / 18%);
+    --hi-icon-button-bg-active: rgb(255 255 255 / 28%);
+    --hi-icon-button-bg-disabled: transparent;
   }
 }
 
+// Seek surface: the progress rail is the updater toast's exact indicator
+// (4px rail, white fill); the padding around it is the drag hit area and
+// the negative margin cancels it again, so the visual rhythm stays the
+// updater card's (8px flex gap above, 12px card padding below).
+.audio-player-toast__seekbar {
+  margin: -7px 0;
+  padding: 7px 0;
+  cursor: pointer;
+}
+
+.audio-player-toast__track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 28%);
+  overflow: hidden;
+}
+
+// No width transition: while a track rolls the store drives the position
+// per animation frame (the element's own timeupdate only steps at ~4 Hz),
+// so the bar is already smooth — the updater's download bar transitions
+// because ITS progress arrives in coarse chunks, this one does not.
 .audio-player-toast__fill {
   height: 100%;
   border-radius: inherit;
   background: rgb(255 255 255 / 95%);
-  transition: width 0.2s ease;
   pointer-events: none;
 
   &--indeterminate {
     width: 34%;
-    transition: none;
     animation: audio-player-toast-slide 1.4s ease-in-out infinite;
   }
 }

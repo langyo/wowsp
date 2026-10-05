@@ -42,12 +42,36 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
   const position = ref(0);
   const duration = ref(0);
 
-  // Deliberately non-reactive: nothing renders the element itself, and
-  // keeping it out of the reactive graph avoids proxying a DOM node.
+  // Element and its frame ticker are deliberately non-reactive: nothing
+  // renders either directly, and keeping them out of the reactive graph
+  // avoids proxying DOM state.
   let el: HTMLAudioElement | null = null;
   /** Bumped by every play() request — stale loaders (superseded, or a
    *  same-rel retry after a stop swapped the element) die on it. */
   let session = 0;
+  /** rAF id of the smooth-position ticker while the track rolls. */
+  let rafId: number | undefined;
+
+  /** The element's own `timeupdate` steps at ~4 Hz, which reads as a
+   *  stuttering progress bar; while the track rolls, drive the position
+   *  per frame instead (`timeupdate` still covers paused syncs). */
+  function tick(): void {
+    rafId = undefined;
+    if (!el || el.paused) return;
+    if (!loading.value) position.value = el.currentTime || 0;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function startTicker(): void {
+    if (rafId === undefined) rafId = requestAnimationFrame(tick);
+  }
+
+  function stopTicker(): void {
+    if (rafId !== undefined) {
+      cancelAnimationFrame(rafId);
+      rafId = undefined;
+    }
+  }
 
   function ensureElement(): HTMLAudioElement {
     if (el) return el;
@@ -61,8 +85,17 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
     element.ondurationchange = () => {
       duration.value = Number.isFinite(element.duration) ? element.duration : 0;
     };
-    element.onplay = () => (playing.value = true);
-    element.onpause = () => (playing.value = false);
+    element.onplay = () => {
+      playing.value = true;
+      startTicker();
+    };
+    element.onpause = () => {
+      playing.value = false;
+      stopTicker();
+      // Settle on the element's exact resting spot (the last frame may
+      // be up to one tick stale).
+      if (!loading.value) position.value = element.currentTime || 0;
+    };
     element.onended = () => stop();
     element.onerror = () => {
       // stop() nulls the handlers before its empty-src load(), so this
@@ -78,6 +111,7 @@ export const useAudioPlayerStore = defineStore("audioPlayer", () => {
   /** Tear the element down and clear every ref — stop(), natural end and
    *  failed loads all land here, which is also what closes the card. */
   function stop(): void {
+    stopTicker();
     if (el) {
       el.onended = el.onerror = el.ontimeupdate = el.ondurationchange = el.onplay = el.onpause = null;
       el.pause();
