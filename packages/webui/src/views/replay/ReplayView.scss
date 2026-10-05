@@ -161,9 +161,15 @@
     overflow: hidden;
   }
 
+  /* One row, one alignment: every meta item — map tag, date, mode/count
+     pills, duration, results/chat pills — centers on the same flex line,
+     mirroring the live battle head. Text-baseline alignment sat crooked
+     for the icon-led boxes here: the map tag is an inline-flex whose
+     baseline is its leading icon's box edge (not the text's), which
+     lifted it against its text-baseline neighbors. */
   &__meta {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     flex-wrap: wrap;
     gap: 0.75rem;
   }
