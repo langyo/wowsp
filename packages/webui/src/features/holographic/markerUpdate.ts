@@ -22,6 +22,7 @@ import { updateCapsAndScore } from "./capSimulator";
 import { updateLabelPositions } from "./labelOverlay";
 import { formationOffsets } from "./planeFormation";
 import { updateRangeRings } from "./rangeRings";
+import { updateStormZone } from "./weatherScene";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
 import { shipStatusAt } from "./shipStatusModel";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -682,4 +683,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   // 3D dashed range rings follow the recorder's marker (2D circles are
   // painted by drawMinimap; these are their sea-surface twins).
   updateRangeRings(ctx, t);
+  // The cyclone's dark core drifts across the sea (3D twin of the minimap
+  // weather overlay — same geometry, same per-match drift seed).
+  updateStormZone(ctx, t);
 }

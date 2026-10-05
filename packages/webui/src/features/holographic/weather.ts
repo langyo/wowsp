@@ -256,6 +256,25 @@ export function cycloneZoneAt(
   return { cx, cz, radius: radius * (0.55 + 0.45 * badness) };
 }
 
+/** Drift seed for a match's storm front: the first transition that turns
+ *  RESTRICTIVE (the weather event proper), else the battle's opening
+ *  window. Shared by the 2D painter and the 3D storm mask so both surfaces
+ *  drift the same core along the same path — and stay scrub-safe (the seed
+ *  is stable per match, never "now"). */
+export function cycloneDriftSeed(transitions: WeatherTransition[]): number {
+  return (
+    transitions.find(
+      (tr) => tr.fromParam !== tr.toParam && weatherParamRestrictive(tr.toParam),
+    )?.startTime ??
+    transitions[0]?.startTime ??
+    0
+  );
+}
+
+/** Storm-core colour (dark blue-black) — the 3D mask twin of the 2D fill
+ *  helpers' rgb(4, 7, 16) core, so the two surfaces darken identically. */
+export const STORM_CORE_HEX = 0x040710;
+
 /** Paint-helper: rgba fill for the map-wide weather tint. */
 export function weatherTintStyle(badness: number): string {
   return `rgba(7, 11, 22, ${(0.34 * badness).toFixed(3)})`;

@@ -50,8 +50,17 @@ export function makeOverlayRing(radius: number, pxWidth: number, opacity: number
     // worldUnits defaults to false → linewidth is screen pixels.
     linewidth: pxWidth,
   });
-  return new Line2(geom, mat);
+  const line = new Line2(geom, mat);
+  // Gameplay overlays draw above the weather mask (order 6, see
+  // weatherScene.STORM_ORDER) — the 2D painter's layer order, where the
+  // rings sit on top of the storm darkening.
+  line.renderOrder = OVERLAY_RING_ORDER;
+  return line;
 }
+
+/** Transparent-pass slot for gameplay rings/letters — above the storm
+ *  mask (6), below nothing else the scene layers. */
+export const OVERLAY_RING_ORDER = 7;
 
 /** Paint the cap-point sprite: big zone letter on top, optional capture
  *  countdown below. Shared by the initial draw and the per-frame redraw so

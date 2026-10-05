@@ -34,6 +34,7 @@ import { updateMarkersAt } from "./markerUpdate";
 import { updateLabelPositions, updateOverlayScale } from "./labelOverlay";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
+import { disposeStormZone } from "./weatherScene";
 import { isCaptureZone, type CapZoneState } from "./capZones";
 import type { ShipLabel } from "./shipLabel";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
@@ -1473,6 +1474,7 @@ export default defineComponent({
         (ctx.seaSurface.material as THREE.Material).dispose();
         ctx.seaSurface = null;
       }
+      disposeStormZone(ctx);
       clearShipMarkerCache();
       clearPropMarkerCache();
     });

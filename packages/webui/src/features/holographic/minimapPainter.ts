@@ -12,9 +12,9 @@ import { clampXZ, frustumCorners } from "./sceneUtils";
 import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 import { TACTICAL_SIZE } from "./tactical/render";
 import {
+  cycloneDriftSeed,
   cycloneZoneAt,
   weatherCoreStyle,
-  weatherParamRestrictive,
   weatherStateAt,
   weatherTintStyle,
   M_PER_WORLD_UNIT,
@@ -79,14 +79,6 @@ function drawWeatherOverlay(
   if (!view || view.badness <= 0.02) return;
   g.fillStyle = weatherTintStyle(view.badness);
   g.fillRect(0, 0, size, size);
-  // Drift seed: the first transition that actually turns restrictive —
-  // stable per match, so scrubbing replays the same front path.
-  const seed =
-    ctx.props.weatherTransitions.find(
-      (tr) => tr.fromParam !== tr.toParam && weatherParamRestrictive(tr.toParam),
-    )?.startTime ??
-    ctx.props.weatherTransitions[0]?.startTime ??
-    0;
   const geo = cycloneZoneAt(
     bounds.minX,
     bounds.maxX,
@@ -94,7 +86,7 @@ function drawWeatherOverlay(
     bounds.maxZ,
     view.badness,
     t,
-    seed,
+    cycloneDriftSeed(ctx.props.weatherTransitions),
   );
   const rPx = (geo.radius / (span || 1)) * size;
   g.beginPath();
@@ -326,8 +318,11 @@ export function drawMinimap(ctx: MapInternals) {
   c2d.strokeRect(0.5, 0.5, w - 1, h - 1);
 
   // Global-weather darkening (cyclone): the sea turns dark and the storm
-  // core slowly drifts, exactly like the in-game minimap zone marker.
-  drawWeatherOverlay(c2d, ctx, db, t, w, dbW, wx, wz);
+  // core slowly drifts, exactly like the in-game minimap zone marker. The
+  // disc geometry is anchored to the FULL map rect (the weather is
+  // map-wide and the 3D mask derives from the same rect), while the
+  // projection span stays the thumb's own rect.
+  drawWeatherOverlay(c2d, ctx, full, t, w, dbW, wx, wz);
   // Recorder combat-range circles (ranges-mod style) under the ship glyphs.
   drawRangeRings(c2d, ctx, t, dbW, w, wx, wz, {
     fontPx: 8,

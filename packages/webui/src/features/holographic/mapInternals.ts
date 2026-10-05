@@ -351,6 +351,9 @@ export interface MapInternals extends MapInternalsDeps {
   /** Deep-sea floor + translucent sea surface planes (see mapTerrain.ts). */
   waterFloor: THREE.Mesh | null;
   seaSurface: THREE.Mesh | null;
+  /** 3D storm mask — the cyclone's drifting dark core on the sea surface
+   *  (see weatherScene.ts). Created lazily, repositioned per playhead tick. */
+  stormZone: THREE.Mesh | null;
 
   // ── World geometry & roster join state ───────────────────────────────
   /** Fitted battle bounds in scene coordinates (z mirrored). */
@@ -447,6 +450,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     mapModel: null,
     waterFloor: null,
     seaSurface: null,
+    stormZone: null,
 
     bounds: null,
     rosterAssignments: new Map(),

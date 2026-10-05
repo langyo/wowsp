@@ -18,7 +18,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import kitRaw from "@/data/ship_consumable_kit.json";
 import { shipLiveStats } from "@/features/replay/shipLiveStats";
 import { PLANE_TYPES } from "./tactical/shellTypes";
-import { circlePositions } from "./screenOverlays";
+import { circlePositions, OVERLAY_RING_ORDER } from "./screenOverlays";
 import { sampleAt } from "./trajectoryMath";
 import { M_PER_WORLD_UNIT } from "./weather";
 import type { MapInternals } from "./mapInternals";
@@ -408,6 +408,9 @@ export function buildRangeRings(ctx: MapInternals, defs: RangeRingDef[]): void {
     const line = new Line2(geom, mat);
     line.computeLineDistances();
     line.visible = false;
+    // Above the weather mask (see weatherScene.STORM_ORDER) so the km
+    // tags stay crisp when the storm darkens the sea under them.
+    line.renderOrder = OVERLAY_RING_ORDER;
     scene.add(line);
     ctx.overlayLineMats.push(mat);
     ctx.rangeRingSlots.push({ kind: def.kind, line, baseMeters: def.meters });

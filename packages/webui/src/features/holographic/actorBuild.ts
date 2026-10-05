@@ -30,7 +30,7 @@ import {
 import { sampleAt } from "./trajectoryMath";
 import {
   CAP_RING_PX, SMOKE_RING_PX, WARD_RING_PX,
-  circlePositions, makeOverlayRing, paintCapSprite,
+  circlePositions, makeOverlayRing, OVERLAY_RING_ORDER, paintCapSprite,
 } from "./screenOverlays";
 import { clearActors, fitCamera, resolveRoleQuick, type MapInternals } from "./mapInternals";
 import { updateMarkersAt } from "./markerUpdate";
@@ -147,6 +147,9 @@ export function rebuildActors(ctx: MapInternals) {
       for (let i = 0; i < 2; i++) {
         const ring = new Line2(smokeRingGeom, smokeRingMat);
         ring.visible = false;
+        // Smoke rings ride above the weather mask like the other
+        // gameplay rings (see weatherScene.STORM_ORDER).
+        ring.renderOrder = OVERLAY_RING_ORDER;
         scene.add(ring);
         cl.rings.push(ring);
       }
@@ -166,6 +169,8 @@ export function rebuildActors(ctx: MapInternals) {
       sprite.visible = false;
       sprite.userData.canvas = cvs;
       sprite.userData.text = "";
+      // Countdown letters ride above the weather mask (see weatherScene).
+      sprite.renderOrder = OVERLAY_RING_ORDER;
       scene.add(sprite);
       cl.timeSprite = sprite;
     }
@@ -275,6 +280,9 @@ export function rebuildActors(ctx: MapInternals) {
       // The Line2 circle is already built in the XZ plane (no rotation);
       // the fill disc lies in XY and needs the flat spin.
       fill.rotation.x = -Math.PI / 2;
+      // Both the outline and its fill ride above the weather mask, so a
+      // ward reads as one unit inside the storm (see weatherScene).
+      fill.renderOrder = OVERLAY_RING_ORDER;
       for (const m of [ring, fill]) {
         m.position.set(w.x, h, -w.z);
         m.visible = false;
@@ -638,6 +646,8 @@ export function rebuildActors(ctx: MapInternals) {
       // (updateOverlayScale) so the letter occupies a constant number of
       // screen pixels at any zoom.
       sprite.scale.set(1, 1, 1);
+      // Zone letters ride above the weather mask (see weatherScene).
+      sprite.renderOrder = OVERLAY_RING_ORDER;
       scene.add(sprite);
       ctx.trajectoryLines.push(sprite as unknown as THREE.Line);
       ctx.capLetterSprites.push(sprite);

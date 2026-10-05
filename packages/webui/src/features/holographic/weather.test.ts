@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cycloneDriftSeed,
   cycloneZoneAt,
   weatherParamInfo,
   weatherParamRestrictive,
@@ -131,5 +132,21 @@ describe("cycloneZoneAt", () => {
     const heavy = cycloneZoneAt(-700, 700, -700, 700, 1, 500, 421);
     const light = cycloneZoneAt(-700, 700, -700, 700, 0.3, 500, 421);
     expect(light.radius).toBeLessThan(heavy.radius);
+  });
+});
+
+describe("cycloneDriftSeed", () => {
+  it("picks the first restrictive transition's window start", () => {
+    // The real timeline: the Eve→Rain ramp opens at 421 — the storm front
+    // must anchor there, not at the battle's baseline window (t=0).
+    expect(cycloneDriftSeed(transitions)).toBe(421);
+  });
+
+  it("falls back to the baseline window, then 0", () => {
+    const calmOnly: WeatherTransition[] = [
+      { time: 29.5, startTime: 0, endTime: 420, fromParam: SUNNY, toParam: SUNNY },
+    ];
+    expect(cycloneDriftSeed(calmOnly)).toBe(0);
+    expect(cycloneDriftSeed([])).toBe(0);
   });
 });
