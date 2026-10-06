@@ -121,6 +121,8 @@ export const RPC = {
   mod_hub_uninstall_unit: "mod_hub_uninstall_unit",
   mod_hub_uninstall_modstation_unit: "mod_hub_uninstall_modstation_unit",
   mod_hub_stale_versions: "mod_hub_stale_versions",
+  mod_hub_pnf_loader_status: "mod_hub_pnf_loader_status",
+  mod_hub_restore_pnf_loader_marker: "mod_hub_restore_pnf_loader_marker",
   mod_hub_migrate_stale_bin: "mod_hub_migrate_stale_bin",
   mod_hub_migration_plan: "mod_hub_migration_plan",
   mod_hub_migration_execute: "mod_hub_migration_execute",

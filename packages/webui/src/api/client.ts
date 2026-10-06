@@ -1406,6 +1406,13 @@ export interface ModelPreviewPart {
   size: number;
 }
 
+/** ModAPI loader-marker health of the live res_mods (client.ts counterpart
+ *  of wowsp_tauri_shared::PnfLoaderStatus). */
+export interface PnfLoaderStatus {
+  pnfModsPresent: boolean;
+  markerPresent: boolean;
+}
+
 /** An older `bin/<version>/` whose `res_mods` still carries files —
  *  stranded by a game update, invisible to the hub's installed list. */
 export interface StaleBinInfo {
@@ -2073,6 +2080,13 @@ export const api = {
   /** Older `bin/<version>` dirs whose res_mods still carries stranded mods. */
   modHubStaleVersions: (gameRoot: string) =>
     transport.invoke<StaleBinInfo[]>(RPC.mod_hub_stale_versions, { gameRoot }),
+  /** ModAPI loader-marker health: PnF content with a missing
+   *  PnFModsLoader.py marker loads nothing in game. */
+  modHubPnfLoaderStatus: (gameRoot: string) =>
+    transport.invoke<PnfLoaderStatus>(RPC.mod_hub_pnf_loader_status, { gameRoot }),
+  /** Write the missing PnFModsLoader.py marker back (gated). */
+  modHubRestorePnfLoaderMarker: (gameRoot: string) =>
+    transport.invoke<boolean>(RPC.mod_hub_restore_pnf_loader_marker, { gameRoot }),
   /** Move a stranded old-version res_mods into the current one (keep-new). */
   modHubMigrateStaleBin: (gameRoot: string, fromVersion: string) =>
     transport.invoke<MigrateReport>(RPC.mod_hub_migrate_stale_bin, {

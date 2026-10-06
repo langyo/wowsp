@@ -2023,6 +2023,18 @@ fn migration_plan_renames_versions_and_buckets() {
     assert_exact_keys(&v["decide"][0], &["path", "size", "identity"]);
 }
 
+/// ModAPI loader-marker health (client.ts: PnfLoaderStatus).
+#[test]
+fn pnf_loader_status_renames_its_flags() {
+    let v = round_trips(PnfLoaderStatus {
+        pnf_mods_present: true,
+        marker_present: false,
+    });
+    assert_exact_keys(&v, &["pnfModsPresent", "markerPresent"]);
+    assert_eq!(v["pnfModsPresent"], true);
+    assert_eq!(v["markerPresent"], false);
+}
+
 /// Migration wizard report (client.ts: MigrateReport) — camelCase wire
 /// keys with the additive `ignoredFiles` and `probeReinstalled` (absent
 /// payloads default to 0 / false).

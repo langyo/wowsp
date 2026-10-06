@@ -238,6 +238,10 @@ pub(crate) fn migrate_stale_bin_core(
     // stray extra (the view alone, a legacy-layout leftover) never rides
     // the move either — mirroring the wizard's per-file filter.
     let probe = stranded_probe(&src);
+    // Captured before the sweep kills it as bookkeeping (see
+    // ensure_loader_marker): a non-empty foreign loader transplants, it is
+    // never downgraded to a bare marker.
+    let stale_loader = fs::read(src.join("PnFModsLoader.py")).ok();
     let mut skipped = remove_probe_paths(&src);
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
 
@@ -247,7 +251,7 @@ pub(crate) fn migrate_stale_bin_core(
     // A fully migrated res_mods disappears entirely (empty-only remove, so
     // leftovers survive when files were kept).
     let _ = fs::remove_dir(&src);
-    ensure_loader_marker(&dst);
+    ensure_loader_marker(&dst, stale_loader.as_deref());
     // Reclaimed files reach the pre-release twins too (see preload_mirror).
     for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels).warnings {
         tracing::warn!("{warning}");
@@ -338,14 +342,18 @@ fn is_migration_bookkeeping(rel: &str) -> bool {
 /// while that (0-byte) file exists, the same rule the install journal
 /// applies (`install.rs`). The sweep itself cannot guarantee it: the wizard
 /// deletes a source marker as bookkeeping, and keep-new may drop a marker
-/// whose destination counterpart already existed.
-fn ensure_loader_marker(res_mods: &Path) {
+/// whose destination counterpart already existed. A freshly created marker
+/// transplants the SWEEPED tree's marker bytes when it carried any — the
+/// modern client treats the file as a presence marker, but a pack shipping
+/// real loader content is never ours to downgrade; empty bytes (the
+/// standard) are the fallback.
+fn ensure_loader_marker(res_mods: &Path, preferred: Option<&[u8]>) {
     if !res_mods.join("PnFMods").is_dir() {
         return;
     }
     let marker = res_mods.join("PnFModsLoader.py");
     if !marker.is_file() {
-        let _ = fs::write(&marker, b"");
+        let _ = fs::write(&marker, preferred.unwrap_or(b""));
     }
 }
 
@@ -532,6 +540,8 @@ pub(crate) fn migration_execute_core(
     // bookkeeping here, its surviving content is merged after the move.
     let stale_manifest_raw = super::manifest::read_raw(&src);
     let probe = stranded_probe(&src);
+    // Same transplant capture as the blind migration's.
+    let stale_loader = fs::read(src.join("PnFModsLoader.py")).ok();
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
     let keep: BTreeSet<String> = keep.iter().map(|k| k.replace('\\', "/")).collect();
     let ignore: BTreeSet<String> = ignore.iter().map(|k| k.replace('\\', "/")).collect();
@@ -591,7 +601,7 @@ pub(crate) fn migration_execute_core(
     // A fully migrated res_mods disappears entirely (empty-only remove, so
     // leftovers survive when files were kept).
     let _ = fs::remove_dir(&src);
-    ensure_loader_marker(&dst);
+    ensure_loader_marker(&dst, stale_loader.as_deref());
     // Kept files reach the pre-release twins too (see preload_mirror).
     for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels).warnings {
         tracing::warn!("{warning}");

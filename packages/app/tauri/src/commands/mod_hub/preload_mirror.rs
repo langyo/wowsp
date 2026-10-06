@@ -127,12 +127,21 @@ pub(crate) fn mirror_set_state(game_root: &str, rel_paths: &[String], enabled: b
 }
 
 /// The loader-marker invariant applied to every twin: PnF content ⇒ the
-/// 0-byte `PnFModsLoader.py` marker, the same rule the live tree enforces
-/// (the client scans res_mods only while it exists). Idempotent.
+/// `PnFModsLoader.py` marker, the same rule the live tree enforces (the
+/// client loads PnF mods only while it exists). A twin's fresh marker
+/// transplants the LIVE tree's marker bytes — a foreign pack shipping real
+/// loader content keeps it byte-identical across the switch; the standard
+/// 0-byte marker is the fallback. Idempotent.
 pub(crate) fn ensure_loader_markers(game_root: &str) {
+    let live_bytes = crate::commands::game_context::res_mods_dir(Path::new(game_root))
+        .ok()
+        .and_then(|live| fs::read(live.join("PnFModsLoader.py")).ok());
     for mirror in preload_res_mods(game_root) {
         if mirror.join("PnFMods").is_dir() && !mirror.join("PnFModsLoader.py").is_file() {
-            let _ = fs::write(mirror.join("PnFModsLoader.py"), b"");
+            let _ = fs::write(
+                mirror.join("PnFModsLoader.py"),
+                live_bytes.as_deref().unwrap_or(b""),
+            );
         }
     }
 }

@@ -563,6 +563,8 @@ pub fn run() {
             commands::mod_hub::mod_hub_uninstall_modstation_unit,
             commands::mod_hub::mod_hub_stale_versions,
             commands::mod_hub::mod_hub_migrate_stale_bin,
+            commands::mod_hub::mod_hub_pnf_loader_status,
+            commands::mod_hub::mod_hub_restore_pnf_loader_marker,
             commands::mod_hub::mod_hub_migration_plan,
             commands::mod_hub::mod_hub_migration_execute,
             commands::mod_hub::mod_hub_safe_mode,

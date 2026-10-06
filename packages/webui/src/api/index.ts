@@ -39,6 +39,7 @@ export type {
   CatalogEntryI18n,
   CatalogIndex,
   ModInstallRecord,
+  PnfLoaderStatus,
   StaleBinInfo,
   MigrateReport,
   PlanFile,

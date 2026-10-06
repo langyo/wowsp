@@ -78,6 +78,49 @@ pub(crate) fn scan_root(game_root: &str) -> Result<PathBuf, String> {
     Ok(ver_dir.join("res_mods"))
 }
 
+/// ModAPI loader-marker health of the live tree — the "everything silently
+/// dead" diagnostic: the client only loads `PnFMods/` python mods while the
+/// `PnFModsLoader.py` marker exists, so PnF content without it produces a
+/// tree that looks installed but loads nothing (a broken migration or a
+/// foreign installer can leave exactly that behind).
+#[tauri::command]
+pub fn mod_hub_pnf_loader_status(game_root: String) -> Result<PnfLoaderStatus, String> {
+    let res_mods = scan_root(&game_root)?;
+    Ok(PnfLoaderStatus {
+        pnf_mods_present: super::super::ingame_plugin::has_pnf_mods(&res_mods),
+        marker_present: res_mods.join("PnFModsLoader.py").is_file(),
+    })
+}
+
+/// One-click heal for [`mod_hub_pnf_loader_status`]'s failure shape: write
+/// the 0-byte marker back (gated like every res_mods mutation). A no-op
+/// when there is nothing to heal — returns whether the marker was created.
+#[tauri::command]
+pub async fn mod_hub_restore_pnf_loader_marker(game_root: String) -> Result<bool, String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
+    restore_pnf_loader_marker_core(&game_root)
+}
+
+/// The heal core, split from the command so tests drive it without the
+/// async gate.
+pub(crate) fn restore_pnf_loader_marker_core(game_root: &str) -> Result<bool, String> {
+    let res_mods = scan_root(game_root)?;
+    if !super::super::ingame_plugin::has_pnf_mods(&res_mods) {
+        return Ok(false);
+    }
+    let marker = res_mods.join("PnFModsLoader.py");
+    if marker.is_file() {
+        return Ok(false);
+    }
+    fs::write(&marker, b"").map_err(|e| format!("write {}: {e}", marker.display()))?;
+    // Twins carrying PnF content get their marker back too.
+    super::preload_mirror::ensure_loader_markers(game_root);
+    tracing::info!("restored the missing PnFModsLoader.py marker");
+    Ok(true)
+}
+
 /// One `<mod name="…" version="…" installer="…"/>` row of Aslain's
 /// `installed_mods.xml` (the modpack installer writes it at the res_mods
 /// root). `span` covers the raw `<mod …` text up to (excluding) the `/>` so

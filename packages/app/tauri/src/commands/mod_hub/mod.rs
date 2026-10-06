@@ -30,7 +30,8 @@ use sha2::{Digest, Sha256};
 
 use wowsp_tauri_shared::{
     InstallReport, InstalledMod, MigrateReport, MigrationPlan, ModInstallRecord, ModKind,
-    PackagePlan, PackagePlanEntry, PlanFile, StaleBinInfo, TextureAnalysis, UnitToggleReport,
+    PackagePlan, PackagePlanEntry, PlanFile, PnfLoaderStatus, StaleBinInfo, TextureAnalysis,
+    UnitToggleReport,
 };
 
 /// What [`install_plan`] did, beyond the user-facing report: the exact files
@@ -80,7 +81,7 @@ fn registered_ship_id_bytes(body: &[u8]) -> Option<String> {
 
 /// The PnF entry script, under any real-world spelling: `Main.py`,
 /// compiled `Main.pyc`, either with a `.bak` twin when disabled.
-fn find_pnf_main(dir: &Path) -> Option<PathBuf> {
+pub(crate) fn find_pnf_main(dir: &Path) -> Option<PathBuf> {
     for name in ["Main.py", "Main.pyc"] {
         if let (Some(path), _) = existing_with_bak(dir, name) {
             return Some(path);
@@ -484,6 +485,14 @@ pub use safe_mode::{
 };
 pub use scan_installed::{
     __cmd__mod_hub_foreign_units, __tauri_command_name_mod_hub_foreign_units, mod_hub_foreign_units,
+};
+pub use scan_installed::{
+    __cmd__mod_hub_pnf_loader_status, __tauri_command_name_mod_hub_pnf_loader_status,
+    mod_hub_pnf_loader_status,
+};
+pub use scan_installed::{
+    __cmd__mod_hub_restore_pnf_loader_marker,
+    __tauri_command_name_mod_hub_restore_pnf_loader_marker, mod_hub_restore_pnf_loader_marker,
 };
 pub use scan_installed::{
     __cmd__mod_hub_scan_installed, __tauri_command_name_mod_hub_scan_installed,

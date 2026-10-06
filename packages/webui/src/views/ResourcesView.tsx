@@ -45,6 +45,7 @@ import {
   type ModKind,
   type PackagePlan,
   type PlanFile,
+  type PnfLoaderStatus,
   type StaleBinInfo,
   type TextureAnalysis,
 } from "@/api";
@@ -188,6 +189,10 @@ export default defineComponent({
     // game stopped loading after an update — surfaced so they can be moved
     // into the current version instead of lingering as dead weight.
     const staleBins = ref<StaleBinInfo[]>([]);
+    // ModAPI marker health — PnF content with a missing marker is the
+    // "everything silently dead" shape (banner + one-click heal).
+    const loaderStatus = ref<PnfLoaderStatus | null>(null);
+    const restoringLoader = ref(false);
     // `migrating` means "the wizard's execute step is in flight"; the ⋯ menu
     // entry and the stale banner button both disable on it.
     const migrating = ref(false);
@@ -523,6 +528,10 @@ export default defineComponent({
           console.warn("stale-bin detection failed", e);
           return [];
         });
+        loaderStatus.value = await api.modHubPnfLoaderStatus(root).catch((e) => {
+          console.warn("loader-marker detection failed", e);
+          return null;
+        });
         // Same data the sidebar prompt polls — adopt it so the footer row
         // clears the moment a migration finishes, not on the next poll.
         staleStore.adopt(root, staleBins.value);
@@ -737,6 +746,20 @@ export default defineComponent({
         planError.value = e instanceof Error ? e.message : String(e);
       } finally {
         analyzing.value = false;
+      }
+    }
+
+    async function restoreLoaderMarker() {
+      if (!gameRoot.value || restoringLoader.value || gameRunning() || safeModeBlocked()) return;
+      restoringLoader.value = true;
+      try {
+        const wrote = await api.modHubRestorePnfLoaderMarker(gameRoot.value);
+        if (wrote) toast.success(t("resources.pnfLoaderRestored"));
+        await scan();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        restoringLoader.value = false;
       }
     }
 
@@ -2265,6 +2288,27 @@ export default defineComponent({
                   </HkButton>
                 </div>
               )}
+
+              {loaderStatus.value?.pnfModsPresent &&
+                !loaderStatus.value.markerPresent &&
+                gameRoot.value &&
+                !safeMode.value && (
+                  <div class="resources-banner resources-banner--warn">
+                    <AlertTriangle size={16} />
+                    <span class="resources-banner__text">
+                      {t("resources.pnfLoaderMissing")}
+                    </span>
+                    <HkButton
+                      size="sm"
+                      variant="primary"
+                      disabled={restoringLoader.value}
+                      loading={restoringLoader.value}
+                      onClick={restoreLoaderMarker}
+                    >
+                      {t("resources.pnfLoaderRestore")}
+                    </HkButton>
+                  </div>
+                )}
 
               {staleBins.value.length > 0 && gameRoot.value && !safeMode.value && (
                 <div class="resources-banner resources-banner--warn">

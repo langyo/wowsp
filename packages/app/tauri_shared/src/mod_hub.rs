@@ -292,6 +292,20 @@ pub struct ModInstallRecord {
     pub game_root: String,
 }
 
+/// ModAPI loader-marker health of the live `res_mods`: the client only
+/// loads `PnFMods/` python mods while the `PnFModsLoader.py` marker
+/// exists, so `pnf_mods_present && !marker_present` is the "everything
+/// silently dead" failure shape (client.ts: PnfLoaderStatus).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PnfLoaderStatus {
+    /// Any `PnFMods/<dir>/Main.py|Main.pyc` (or `.bak` twin) lives in the
+    /// tree — entry spellings per the classifier's `find_pnf_main`.
+    pub pnf_mods_present: bool,
+    /// The `PnFModsLoader.py` marker exists.
+    pub marker_present: bool,
+}
+
 /// A `bin/<version>/` older than the client's current one whose `res_mods`
 /// still carries files — stranded by a game update: invisible to the hub's
 /// installed list and not loaded by the client, but still on disk.

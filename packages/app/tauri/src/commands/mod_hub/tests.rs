@@ -2258,3 +2258,129 @@ fn register_over_foreign_cuts_only_paired_manifest_rows() {
 
     std::fs::remove_dir_all(&tmp).ok();
 }
+
+// ── ModAPI loader-marker guard ──────────────────────────────────────────────
+
+/// Loader-status detection + the one-click heal: compiled `Main.pyc`
+/// content counts, the heal is idempotent and a no-op without PnF content.
+#[test]
+fn pnf_loader_status_and_heal_cover_the_silent_death_shape() {
+    let game = std::env::temp_dir().join("wowsp_loader_status");
+    let _ = fs::remove_dir_all(&game);
+    touch(&game.join("bin/1/res_mods/PnFMods/Mod/Main.pyc"));
+
+    let s = mod_hub_pnf_loader_status(game.to_string_lossy().into_owned()).unwrap();
+    assert!(
+        s.pnf_mods_present,
+        "a compiled Main.pyc counts as PnF content"
+    );
+    assert!(!s.marker_present, "the failure shape: content, no marker");
+
+    touch(&game.join("bin/1/res_mods/PnFModsLoader.py"));
+    let s = mod_hub_pnf_loader_status(game.to_string_lossy().into_owned()).unwrap();
+    assert!(s.pnf_mods_present && s.marker_present);
+
+    // The heal writes the marker back, exactly once.
+    fs::remove_file(game.join("bin/1/res_mods/PnFModsLoader.py")).unwrap();
+    let root = game.to_string_lossy().into_owned();
+    assert!(super::scan_installed::restore_pnf_loader_marker_core(&root).unwrap());
+    assert!(game.join("bin/1/res_mods/PnFModsLoader.py").is_file());
+    assert_eq!(
+        fs::read(game.join("bin/1/res_mods/PnFModsLoader.py")).unwrap(),
+        b"",
+        "heal writes the standard 0-byte marker"
+    );
+    assert!(
+        !super::scan_installed::restore_pnf_loader_marker_core(&root).unwrap(),
+        "idempotent once the marker exists"
+    );
+
+    // Without PnF content the heal stays a no-op.
+    fs::remove_file(game.join("bin/1/res_mods/PnFMods/Mod/Main.pyc")).unwrap();
+    fs::remove_file(game.join("bin/1/res_mods/PnFModsLoader.py")).unwrap();
+    assert!(!super::scan_installed::restore_pnf_loader_marker_core(&root).unwrap());
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// The wizard migration deletes the source marker as bookkeeping — a REAL
+/// (non-empty) foreign loader must transplant its bytes to the destination
+/// instead of being downgraded to the bare 0-byte marker.
+#[test]
+fn wizard_migration_transplants_a_real_loader_marker() {
+    let game = std::env::temp_dir().join("wowsp_loader_transplant");
+    let _ = fs::remove_dir_all(&game);
+    touch(&game.join("bin/1/res_mods/PnFMods/Skin/Main.py"));
+    fs::write(
+        game.join("bin/1/res_mods/PnFModsLoader.py"),
+        b"# real foreign loader",
+    )
+    .unwrap();
+    fs::create_dir_all(game.join("bin/2/idx")).unwrap();
+    fs::create_dir_all(game.join("bin/2/res_mods")).unwrap();
+    fs::write(
+        game.join("preferences.xml"),
+        "<root><last_server_version> 15,8,0,2 </last_server_version></root>",
+    )
+    .unwrap();
+
+    let plan = migration_plan_core(&game.to_string_lossy(), "1").unwrap();
+    let keep: Vec<String> = plan.decide.iter().map(|f| f.path.clone()).collect();
+    migration_execute_core(&game.to_string_lossy(), "1", &keep, &[]).unwrap();
+    assert_eq!(
+        fs::read(game.join("bin/2/res_mods/PnFModsLoader.py")).unwrap(),
+        b"# real foreign loader",
+        "foreign loader bytes must survive the migration"
+    );
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// Twin markers transplant the LIVE tree's loader bytes — a foreign loader
+/// stays byte-identical across the version switch.
+#[test]
+fn twin_markers_transplant_live_loader_bytes() {
+    let game = preload_game_fixture("wowsp_loader_twin");
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    fs::write(live.join("PnFModsLoader.py"), b"# foreign loader").unwrap();
+    touch(&twin.join("PnFMods/Mod/Main.py"));
+
+    super::preload_mirror::ensure_loader_markers(&game.to_string_lossy());
+    assert_eq!(
+        fs::read(twin.join("PnFModsLoader.py")).unwrap(),
+        b"# foreign loader"
+    );
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// The BLIND migration moves a real marker as a regular file (its filter
+/// only eats installed_mods.xml / wowsp.toml) — pin that the bytes arrive
+/// undowngraded, independent of the transplant backstop.
+#[test]
+fn blind_migration_moves_a_real_loader_marker_verbatim() {
+    let game = std::env::temp_dir().join("wowsp_loader_blindmove");
+    let _ = fs::remove_dir_all(&game);
+    touch(&game.join("bin/1/res_mods/PnFMods/Skin/Main.py"));
+    fs::write(
+        game.join("bin/1/res_mods/PnFModsLoader.py"),
+        b"# real foreign loader",
+    )
+    .unwrap();
+    fs::create_dir_all(game.join("bin/2/idx")).unwrap();
+    fs::create_dir_all(game.join("bin/2/res_mods")).unwrap();
+    fs::write(
+        game.join("preferences.xml"),
+        "<root><last_server_version> 15,8,0,2 </last_server_version></root>",
+    )
+    .unwrap();
+
+    migrate_stale_bin_core(&game.to_string_lossy(), "1").unwrap();
+    assert_eq!(
+        fs::read(game.join("bin/2/res_mods/PnFModsLoader.py")).unwrap(),
+        b"# real foreign loader"
+    );
+
+    fs::remove_dir_all(&game).ok();
+}

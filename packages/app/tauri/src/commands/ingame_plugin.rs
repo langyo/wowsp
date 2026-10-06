@@ -297,9 +297,13 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
 }
 
 /// Does the tree still carry any PnF mod — a directory under `PnFMods`
-/// with the standard mod entry file (foreign modpacks and the bundled
-/// probe alike)? The shared 0-byte loader marker must survive while any
-/// does: without it the client stops scanning `res_mods` entirely, so
+/// with a standard mod entry (foreign modpacks and the bundled probe
+/// alike)? Entry spellings follow the classifier's `find_pnf_main`:
+/// `Main.py`, compiled `Main.pyc`, or either's `.bak` twin when disabled —
+/// real-world packs ship all four (Aslain's script mods are Main.pyc), and
+/// a disabled mod must still keep the shared marker alive or re-enabling
+/// it would resurrect a corpse. The marker itself must survive while any
+/// does: without it the client stops loading PnF mods entirely, so
 /// removing it would silence every OTHER PnF mod too.
 pub(crate) fn has_pnf_mods(res_mods: &std::path::Path) -> bool {
     res_mods
@@ -308,7 +312,7 @@ pub(crate) fn has_pnf_mods(res_mods: &std::path::Path) -> bool {
         .map(|entries| {
             entries
                 .flatten()
-                .any(|e| e.path().is_dir() && e.path().join(MOD_ENTRY).is_file())
+                .any(|e| e.path().is_dir() && super::mod_hub::find_pnf_main(&e.path()).is_some())
         })
         .unwrap_or(false)
 }
@@ -386,4 +390,40 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// PnF presence accepts every real-world entry spelling: plain Main.py,
+    /// Aslain's compiled Main.pyc, and either's disabled `.bak` twin — a
+    /// disabled mod must still keep the shared loader marker alive.
+    #[test]
+    fn has_pnf_mods_covers_pyc_and_disabled_spellings() {
+        let tmp = std::env::temp_dir().join("wowsp_haspnf");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let rm = tmp.join("res_mods");
+        let mk = |entry: &str| {
+            let _ = std::fs::remove_dir_all(&rm);
+            std::fs::create_dir_all(rm.join("PnFMods/Mod")).unwrap();
+            std::fs::write(rm.join("PnFMods/Mod").join(entry), b"x").unwrap();
+            let got = has_pnf_mods(&rm);
+            std::fs::remove_dir_all(&rm).unwrap();
+            got
+        };
+        assert!(mk("Main.py"), "plain entry counts");
+        assert!(mk("Main.pyc"), "compiled entry counts (Aslain ships these)");
+        assert!(mk("Main.py.bak"), "disabled twin counts");
+        assert!(mk("Main.pyc.bak"), "disabled compiled twin counts");
+
+        // An empty PnFMods skeleton carries no loadable mod.
+        std::fs::create_dir_all(rm.join("PnFMods/Empty")).unwrap();
+        assert!(!has_pnf_mods(&rm));
+        // No PnFMods at all.
+        std::fs::remove_dir_all(rm.join("PnFMods")).unwrap();
+        assert!(!has_pnf_mods(&rm));
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
 }
