@@ -23,8 +23,10 @@ const INDEX_FILE = "stats-cache/index.json";
  *  queried from either place is cached once and reused everywhere.
  *
  *  Refresh policy:
- *  - Your OWN account (activeAccount): callers pass `force: true` — every
- *    dashboard open re-pulls from the API.
+ *  - Your OWN account (activeAccount): the dashboard opens with a short
+ *    TTL — revisits inside the window reuse the cache; the refresh pill
+ *    (and best-effort account binding) pass `force: true` and re-pull
+ *    from the API.
  *  - Everyone else: passive lookups (replay menu) reuse the disk cache as
  *    long as it exists; only an explicit user query (`force: true`) hits
  *    the API again.

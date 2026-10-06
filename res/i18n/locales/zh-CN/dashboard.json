@@ -3,6 +3,7 @@
   "noAccount": "尚未绑定账号",
   "noAccountHint": "绑定你的战舰世界账号以查看战绩数据。",
   "loading": "加载战绩中...",
+  "refresh": "刷新",
   "overview": "概览",
   "byType": "按舰种",
   "byNation": "按阵营",

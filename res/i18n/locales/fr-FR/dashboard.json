@@ -3,6 +3,7 @@
   "noAccount": "Aucun compte lié pour l'instant",
   "noAccountHint": "Liez votre compte Wargaming pour voir vos statistiques de combat ici.",
   "loading": "Chargement des statistiques...",
+  "refresh": "Actualiser",
   "overview": "Vue d'ensemble",
   "byType": "Par type de navire",
   "byNation": "Par nation",

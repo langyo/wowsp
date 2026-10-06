@@ -3,6 +3,7 @@ import { useRouter } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
 import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
+import RefreshStatsButton from "@/components/stats/RefreshStatsButton";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
 import { HkTag, HkTabs, HkButton } from "@celestia-island/hikari";
 
@@ -37,6 +38,14 @@ import {
 import { shipNameFromModelDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import "./DashboardView.scss";
+
+/** Revisit window for the dashboard's WG API queries. Opening or switching
+ *  back to the dashboard within this span serves the cached snapshot —
+ *  account stats, per-ship stats and ranked alike — instead of re-querying
+ *  every leg; past the window the next open pulls fresh, and the stats
+ *  card's refresh pill always forces a pull. Battles outlast the window,
+ *  so stats that could actually have changed still reload. */
+const DASHBOARD_STATS_TTL_MS = 5 * 60_000;
 
 /**
  * "My stats" dashboard — a rich personal stats page.
@@ -78,6 +87,10 @@ export default defineComponent({
     const root = ref<HTMLElement | null>(null);
 
     const showModal = ref(false);
+    // Which account's refresh is currently running (null = idle) — drives
+    // the refresh pill's spinner and drops same-account double-fires.
+    const refreshingFor = ref<string | null>(null);
+    const refreshing = computed(() => refreshingFor.value != null);
     // Ranked season-timeline modal — opened from the StatsCard's ranked
     // split (the inline season cards are gone from this page).
     const rankedModal = ref(false);
@@ -134,38 +147,62 @@ export default defineComponent({
       aggregateByType(filteredShips.value, encyclopedia.byId),
     );
 
-    async function refresh() {
+    async function refresh(force = false) {
       const acc = activeAccount.value;
       if (!acc) return;
+      // The mount watcher, the refresh pill and account binding all funnel
+      // here — drop only same-account double-fires (a route flip during a
+      // running load); an account switch must refresh immediately.
+      const runKey = `${acc.realm}_${acc.accountId}`;
+      if (refreshingFor.value === runKey) return;
+      refreshingFor.value = runKey;
       // Persistent progress now rides the title-bar chip (left of the
       // settings gear) instead of a top-right toast slot.
       const taskId = loadingTasks.begin(t("dashboard.loading"));
-      // Phase 1: warm the account-level cache (instant render on cold start).
       try {
-        await stats.loadCached(acc.realm, acc.accountId);
-      } catch {
-        // cache miss — fine
+        // Phase 1: warm the account-level cache (instant render on cold
+        // start).
+        try {
+          await stats.loadCached(acc.realm, acc.accountId);
+        } catch {
+          // cache miss — fine
+        }
+        // Phase 2: account-level stats. Forced on the refresh pill; account
+        // binding asks for force too, though that run is usually dropped by
+        // the same-account guard above (the account-change watcher's
+        // non-force refresh is already in flight — harmless, since the
+        // bind flow itself just force-queried the account). Otherwise a
+        // snapshot younger than the revisit TTL serves from cache, so
+        // hopping between views doesn't re-query the WG API on every
+        // dashboard open.
+        try {
+          await stats.lookup(
+            acc.nickname,
+            acc.realm,
+            force ? { force: true } : { ttlMs: DASHBOARD_STATS_TTL_MS },
+          );
+        } catch {
+          // surfaced via stats.error
+        }
+        // Phase 3: per-ship stats + encyclopedia + trends — parallel; the
+        // same TTL gates per-ship and ranked, so a revisit inside the
+        // window is fully network-free.
+        const ttlOpts = force ? undefined : { ttlMs: DASHBOARD_STATS_TTL_MS };
+        await Promise.allSettled([
+          shipStats.load(acc.accountId, acc.realm, ttlOpts),
+          encyclopedia.load(acc.realm),
+          trends.loadPlayer(acc.accountId, acc.realm),
+          ranked.load(acc.accountId, acc.realm, undefined, ttlOpts),
+        ]);
+      } finally {
+        loadingTasks.end(taskId);
+        if (refreshingFor.value === runKey) refreshingFor.value = null;
       }
-      // Phase 2: fetch fresh account stats. The own account refreshes
-      // aggressively — every dashboard open re-pulls from the API.
-      try {
-        await stats.lookup(acc.nickname, acc.realm, { force: true });
-      } catch {
-        // surfaced via stats.error
-      }
-      // Phase 3: per-ship stats + encyclopedia + trends — parallel.
-      await Promise.allSettled([
-        shipStats.load(acc.accountId, acc.realm),
-        encyclopedia.load(acc.realm),
-        trends.loadPlayer(acc.accountId, acc.realm),
-        ranked.load(acc.accountId, acc.realm),
-      ]);
-      loadingTasks.end(taskId);
     }
 
-    // Refresh on mount + whenever the active account changes. We always
-    // refresh (not just on cache miss) so per-ship stats + trends load even
-    // when account-level stats are already cached from a previous session.
+    // Refresh on mount + whenever the active account changes. The revisit
+    // TTL above keeps route flips network-free; per-ship stats + trends
+    // still load whenever the caches are cold (a session's first open).
     watch(activeAccount, (acc) => {
       if (acc) void refresh();
     }, { immediate: true });
@@ -351,10 +388,16 @@ export default defineComponent({
                 }
                 v-slots={{
                   actions: () => (
-                    <ShareShotButton
-                      busy={shot.busy.value}
-                      onShot={() => void shot.copyShot()}
-                    />
+                    <>
+                      <RefreshStatsButton
+                        busy={refreshing.value}
+                        onRefresh={() => void refresh(true)}
+                      />
+                      <ShareShotButton
+                        busy={shot.busy.value}
+                        onShot={() => void shot.copyShot()}
+                      />
+                    </>
                   ),
                 }}
               />
@@ -500,7 +543,7 @@ export default defineComponent({
         <AccountSwitcherModal
           modelValue={showModal.value}
           onUpdate:modelValue={(v: boolean) => (showModal.value = v)}
-          onBound={() => void refresh()}
+          onBound={() => void refresh(true)}
         />
 
         {/* Ranked season timeline — the store already holds this account's

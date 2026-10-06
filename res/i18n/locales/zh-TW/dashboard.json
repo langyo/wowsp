@@ -3,6 +3,7 @@
   "noAccount": "尚未綁定帳號",
   "noAccountHint": "綁定你的戰艦世界帳號以查看戰績資料。",
   "loading": "載入戰績中...",
+  "refresh": "重新整理",
   "overview": "總覽",
   "byType": "依艦種",
   "byNation": "依陣營",

@@ -3,6 +3,7 @@
   "noAccount": "No account bound yet",
   "noAccountHint": "Bind your Wargaming account to see your battle stats here.",
   "loading": "Loading stats...",
+  "refresh": "Refresh",
   "overview": "Overview",
   "byType": "By ship type",
   "byNation": "By nation",

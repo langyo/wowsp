@@ -12,6 +12,9 @@ export const useShipStatsStore = defineStore("shipStats", () => {
   /** Per-ship history points per player — the baselines that let the UI
    *  compute real "recent N days" deltas from career totals. */
   const history = ref<Map<string, ShipStatsHistoryPoint[]>>(new Map());
+  /** accountId-keyed fetch timestamps (`realm_accountId` → epoch ms) — the
+   *  feed for load()'s `ttlMs` guard. */
+  const fetchedAt = ref<Map<string, number>>(new Map());
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -31,14 +34,28 @@ export const useShipStatsStore = defineStore("shipStats", () => {
     }
   }
 
-  /** Look up a player's per-ship stats. Always re-fetches (the player may
-   *  have played new battles) but falls back to cache on network failure. */
-  async function load(accountId: number, realm: string): Promise<PlayerShipStats[]> {
+  /** Look up a player's per-ship stats. By default always re-fetches (the
+   *  player may have played new battles) but falls back to cache on network
+   *  failure. `ttlMs` opts into serving a cached result younger than the
+   *  TTL instead — the dashboard passes one so revisits inside the window
+   *  don't re-query the WG API. */
+  async function load(
+    accountId: number,
+    realm: string,
+    opts: { ttlMs?: number } = {},
+  ): Promise<PlayerShipStats[]> {
+    const k = key(realm, accountId);
+    const { ttlMs = 0 } = opts;
+    const cached = cache.value.get(k);
+    if (cached && ttlMs > 0 && Date.now() - (fetchedAt.value.get(k) ?? 0) < ttlMs) {
+      return cached;
+    }
     loading.value = true;
     error.value = null;
     try {
       const stats = await api.lookupPlayerShipStats(accountId, realm, prAlgoForRequest());
-      cache.value.set(key(realm, accountId), stats);
+      cache.value.set(k, stats);
+      fetchedAt.value.set(k, Date.now());
       return stats;
     } catch (e) {
       error.value = (e as Error).message;
