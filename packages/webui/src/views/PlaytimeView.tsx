@@ -67,14 +67,17 @@ const ZERO_OVERVIEW: PlaytimeOverview = {
 /**
  * 游玩时间 — WoWSP's own playtime statistics (the water-meter page's
  * sibling view, switched from the title-bar center group). Layout mirrors
- * the reference sheet: a seven-card record strip (career total, battle
- * count, daily average, longest streak / session / day, last launch), the
- * battle breakdown donuts (ship type / nation / tier / mode over the
- * replay-derived rows), then the trend bars over 15 days / 12 weeks /
- * 12 months, then the GitHub-style battle heatmap for the last year —
- * battles per local day from the same replay rows, NOT the time ledger's
- * `daily` (the tracker only records client-run seconds, so a battle
- * history spanning many untracked days would collapse to one cell).
+ * the reference sheet: a six-card record strip (career total, battle
+ * count, longest streak / session / day, last launch — always one row),
+ * the battle breakdown donuts (ship type / nation / tier / mode over the
+ * replay-derived rows, four blocks on one row in the water-meter charts'
+ * style), then the trend bars over 15 days / 12 weeks / 12 months, then
+ * the GitHub-style battle heatmap — battles per local day from the same
+ * replay rows, NOT the time ledger's `daily` (the tracker only records
+ * client-run seconds, so a battle history spanning many untracked days
+ * would collapse to one cell). The grid spans every week back to the
+ * earliest replay (capped at three years), so a veteran's history predating
+ * the last 52 weeks still lights up instead of falling off the window.
  *
  * Data comes from the Rust-side ledger (commands/playtime.rs) via the
  * playtime store: the tracker observes the game client in the background,
@@ -326,8 +329,6 @@ export default defineComponent({
     const cards = computed(() => {
       const o = overview.value ?? (totalBattles.value > 0 ? ZERO_OVERVIEW : null);
       if (!o) return [];
-      const avgDaily =
-        o.daysPlayed > 0 ? Math.round(o.localTotalSeconds / o.daysPlayed) : 0;
       return [
         {
           label: t("playtime.cards.total"),
@@ -341,12 +342,6 @@ export default defineComponent({
           sub: t("playtime.cards.battlesShips", {
             n: distinctShipCount(scopedBattles.value),
           }),
-          running: false,
-        },
-        {
-          label: t("playtime.cards.dailyAvg"),
-          value: fmtDuration(avgDaily),
-          sub: t("playtime.cards.daysPlayed", { n: o.daysPlayed }),
           running: false,
         },
         {
@@ -497,7 +492,7 @@ export default defineComponent({
                           entries={g.entries}
                           labelOf={g.labelOf}
                           colorOf={g.colorOf}
-                          centerLabel={t("playtime.breakdown.battles")}
+                          unitLabel={t("playtime.breakdown.battles")}
                         />
                       ))}
                     </div>

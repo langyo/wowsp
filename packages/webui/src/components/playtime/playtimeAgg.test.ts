@@ -6,6 +6,9 @@ import {
   fmtAxis,
   fmtDuration,
   heatLevel,
+  heatWeeks,
+  HEAT_MAX_WEEKS,
+  HEAT_MIN_WEEKS,
   niceMaxSeconds,
   trendBars,
 } from "./playtimeAgg";
@@ -133,6 +136,52 @@ describe("buildHeatGrid", () => {
     // The last label sits on the column containing 2026-10-01.
     const octCol = grid.months[11].col;
     expect(grid.columns[octCol].some((c) => c.key === "2026-10-01")).toBe(true);
+  });
+
+  it("extends the window back to a point older than 52 weeks", () => {
+    // 2025-06-22 is a Sunday; its Monday anchor is 2025-06-16, 68 weeks
+    // before 2026-10-05 → 69 columns, and the point's own cell lands on
+    // the first column's Sunday row. A fixed 53-week window would have
+    // dropped this day off its left edge entirely.
+    const grid = buildHeatGrid(
+      [
+        { date: "2025-06-22", value: 2 },
+        { date: "2026-10-05", value: 4 },
+      ],
+      NOW,
+      "en-US",
+    );
+    expect(grid.columns).toHaveLength(69);
+    expect(grid.columns[0][0].key).toBe("2025-06-16");
+    expect(grid.columns[0][6].key).toBe("2025-06-22");
+    expect(grid.columns[0][6].value).toBe(2);
+    expect(grid.columns[68][0].value).toBe(4);
+  });
+
+  it("caps the window at three years and drops what falls outside", () => {
+    const grid = buildHeatGrid([{ date: "2010-01-04", value: 1 }], NOW, "en-US");
+    expect(grid.columns).toHaveLength(HEAT_MAX_WEEKS);
+    // The 2010 point predates even the capped window: no cell carries it.
+    expect(grid.columns.every((c) => c.every((cell) => cell.value === 0))).toBe(true);
+  });
+});
+
+describe("heatWeeks", () => {
+  it("floors at one year and ignores junk keys", () => {
+    expect(heatWeeks([], NOW)).toBe(HEAT_MIN_WEEKS);
+    expect(heatWeeks([{ date: "junk", value: 1 }], NOW)).toBe(HEAT_MIN_WEEKS);
+    expect(heatWeeks([{ date: "2026-10-01", value: 1 }], NOW)).toBe(HEAT_MIN_WEEKS);
+  });
+
+  it("spans to the earliest point's Monday anchor", () => {
+    // Sunday 2025-06-22 anchors to Monday 2025-06-16 = 68 weeks back.
+    expect(heatWeeks([{ date: "2025-06-22", value: 1 }], NOW)).toBe(69);
+    // A Monday point anchors to itself.
+    expect(heatWeeks([{ date: "2025-10-06", value: 1 }], NOW)).toBe(53);
+  });
+
+  it("caps at three years", () => {
+    expect(heatWeeks([{ date: "2010-01-04", value: 1 }], NOW)).toBe(HEAT_MAX_WEEKS);
   });
 });
 

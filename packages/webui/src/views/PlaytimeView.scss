@@ -45,9 +45,13 @@
 }
 
 /* ── Record cards ──────────────────────────────────────────────────────── */
+/* Six fixed columns — every card ALWAYS shares one row (the water-meter
+   StatsCard KPI-strip pattern; repeat(auto-fit) let a seventh card wrap
+   onto a second row). Narrow windows step down 6 → 3 → 2 columns; the
+   desktop record strip is one row by construction. */
 .playtime-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -297,8 +301,8 @@
    one donut card per group) ───────────────────────────────────────────── */
 .playtime-breakdown {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 24px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 16px;
 
   &__empty {
     margin: 0;
@@ -307,9 +311,13 @@
   }
 }
 
-/* One donut card: title, ring (slice colors come inline from
-   battleBreakdown's per-group palettes), total + unit word in the hole,
-   and the count/share legend. */
+/* One donut block — deliberately the water-meter charts' (ShipDistCharts)
+   presentation: title centered over the group, the ring a FIXED 150px
+   square, and the legend rows below chunked into 5-row columns. Four
+   blocks share one row, so the legend sits UNDER the ring (the stats page
+   has three blocks per row and room to put it beside); the rows
+   themselves are the same dot + label shape, with percents only in the
+   hover hint. */
 .playtime-pie {
   display: flex;
   flex-direction: column;
@@ -317,84 +325,129 @@
   min-width: 0;
 
   &__title {
-    margin: 0;
-    font-size: var(--text-2xs);
-    font-weight: 600;
     color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    text-align: center;
   }
 
-  &__svg {
+  /* Fixed square canvas (ShipDistCharts' __pie contract): the ring keeps
+     its 150px diameter no matter how wide the legend columns run. */
+  &__ring {
     display: block;
-    width: 100%;
-    max-width: 200px;
+    width: 150px;
+    height: 150px;
     margin: 0 auto;
+    flex: none;
   }
 
-  &__total {
-    font-size: 22px;
-    font-weight: 700;
-    fill: rgb(var(--color-text));
-    text-anchor: middle;
-    font-variant-numeric: tabular-nums;
+  &__slice {
+    stroke: none;
   }
 
-  &__unit {
-    font-size: 9px;
-    fill: rgb(var(--color-muted));
-    text-anchor: middle;
-  }
-
-  /* dot | label | count | pct on one line — the label flexes (ellipsis),
-     the numbers sit right and never wrap. */
+  /* Legend columns under the ring, centered as a group; `safe` falls back
+     to start when three nation columns outgrow a narrow block. */
   &__legend {
-    list-style: none;
-    margin: 0;
-    padding: 0;
     display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  &__row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: var(--text-xs);
+    justify-content: center;
+    justify-content: safe center;
+    gap: 10px;
+    flex-wrap: wrap;
     min-width: 0;
   }
 
-  &__dot {
-    flex: none;
-    width: 8px;
-    height: 8px;
+  &__legend-col {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.45rem;
+    min-width: 0;
+  }
+
+  &__legend-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  &__legend-dot {
+    flex: 0 0 6px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
   }
 
-  &__label {
-    min-width: 0;
-    color: rgb(var(--color-text) / 85%);
-    white-space: nowrap;
+  &__legend-text {
+    color: rgb(var(--color-text) / 0.75);
+    font-size: var(--text-2xs);
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  &__count {
-    margin-left: auto;
-    color: rgb(var(--color-text));
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  /* --- Hover focus (ShipDistCharts' paint-only contract): a slice and its
+     legend row share the block's hover key — hovering either side lifts
+     the pair and dims the block's siblings. Geometry never scales. --- */
+  &__slice,
+  &__legend-item {
+    transition:
+      opacity 0.16s ease,
+      filter 0.16s ease;
   }
 
-  &__pct {
-    min-width: 2.5rem;
-    text-align: right;
-    color: rgb(var(--color-muted));
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  &__slice.is-dim,
+  &__legend-item.is-dim {
+    opacity: 0.3;
+  }
+
+  &__slice.is-hot {
+    filter: brightness(1.07) saturate(1.2);
+  }
+
+  &__legend-item.is-hot .playtime-pie__legend-text {
+    color: rgb(var(--color-text));
+  }
+
+  &__legend-item.is-hot .playtime-pie__legend-dot {
+    box-shadow: 0 0 0 3px rgb(var(--color-text) / 0.14);
+  }
+
+  &__legend-text {
+    transition: color 0.16s ease;
+  }
+
+  &__legend-dot {
+    transition: box-shadow 0.16s ease;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playtime-pie__slice,
+  .playtime-pie__legend-item,
+  .playtime-pie__legend-text,
+  .playtime-pie__legend-dot {
+    transition: none;
+  }
+}
+
+/* Narrow windows: the four donut blocks step 4 → 2 → 1 (a block keeps its
+   150px ring plus legend columns down to ~160px, below which 2-up would
+   squeeze the legends into all-ellipsis rows). */
+@media (max-width: 1023px) {
+  .playtime-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .playtime-breakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 767px) {
+  .playtime-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .playtime-breakdown {
     grid-template-columns: minmax(0, 1fr);
   }

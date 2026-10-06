@@ -7794,7 +7794,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_installer_shell"
-version = "0.5.0"
+version = "0.5.2"
 dependencies = [
  "eframe",
  "mslnk",
@@ -7811,7 +7811,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri"
-version = "0.5.0"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7857,7 +7857,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri_shared"
-version = "0.5.0"
+version = "0.5.2"
 dependencies = [
  "chrono",
  "serde",
@@ -8344,3 +8344,19 @@ dependencies = [
  "syn 3.0.6",
  "winnow 1.0.4",
 ]
+
+[[patch.unused]]
+name = "plana"
+version = "0.2.1"
+
+[[patch.unused]]
+name = "plana-celestia-config"
+version = "0.1.29"
+
+[[patch.unused]]
+name = "plana-rpc-client"
+version = "0.2.2"
+
+[[patch.unused]]
+name = "plana-rpc-server"
+version = "0.1.0"

@@ -4,8 +4,6 @@
     "launched": "{n}회 실행",
     "battles": "전투 수",
     "battlesShips": "사용 함선 {n}척",
-    "dailyAvg": "일 평균",
-    "daysPlayed": "{n}일 플레이",
     "streak": "최장 연속 일수",
     "days": "{n}일",
     "longestSession": "최장 단일 세션",

@@ -1,50 +1,99 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { CIRCUMFERENCE, DONUT, pieSliceGeom } from "./PlaytimeBreakdownPie";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 
-/** C for reference: 2π·48 ≈ 301.59 stroke units (fmtN-trimmed everywhere). */
-const C = CIRCUMFERENCE;
-const PAD = DONUT.pad;
+import PlaytimeBreakdownPie from "./PlaytimeBreakdownPie";
+import type { BreakdownEntry } from "./battleBreakdown";
 
-describe("pieSliceGeom", () => {
-  it("draws a lone full slice as a closed ring without a self-seam", () => {
-    const g = pieSliceGeom(C, 0, C, PAD);
-    expect(g.dasharray).toBe(`${Math.round(C * 100) / 100} 0`);
-    expect(g.dashoffset).toBe(0);
+/**
+ * The mounted presentational contract of one 游玩时间 breakdown donut —
+ * the water-meter charts' (ShipDistCharts) presentation adapted to four
+ * blocks per row: path-drawn ring, DOM legend rows UNDER it chunked into
+ * 5-row columns, every row leading with the slice-color dot, percents
+ * ONLY in the hover hint (never row text), and the slice↔legend hover
+ * pairing (entering one side lifts the pair, dims the block's siblings).
+ * The ring geometry itself is donutGeometry's, already exact-string
+ * covered in ShipDistCharts.test.ts — these tests pin what that file
+ * cannot see: how the component wires it into DOM.
+ */
+
+const COLORS: Record<string, string> = {
+  a: "#4e8fd9",
+  b: "#e05263",
+  c: "#6dc178",
+};
+const entriesOf = (counts: [string, number][]): BreakdownEntry[] => {
+  const total = counts.reduce((acc, [, n]) => acc + n, 0);
+  return counts.map(([key, count]) => ({ key, count, share: count / total }));
+};
+
+function mountPie(entries: BreakdownEntry[]) {
+  return mount(PlaytimeBreakdownPie, {
+    props: {
+      title: "按舰种",
+      entries,
+      labelOf: (key: string) => `label-${key}`,
+      colorOf: (key: string) => COLORS[key] ?? "#C4BDC9",
+      unitLabel: "场",
+    },
+  });
+}
+
+enableAutoUnmount(afterEach);
+
+describe("PlaytimeBreakdownPie", () => {
+  it("draws one ring path per entry and legend rows with dot + label only", () => {
+    const w = mountPie(entriesOf([["a", 60], ["b", 30], ["c", 10]]));
+    const slices = w.findAll(".playtime-pie__slice");
+    expect(slices).toHaveLength(3);
+    expect(slices[0].attributes("d")).toContain("A"); // ring arcs, not strokes
+    const rows = w.findAll(".playtime-pie__legend-item");
+    expect(rows).toHaveLength(3);
+    for (let i = 0; i < rows.length; i++) {
+      const dot = rows[i].find(".playtime-pie__legend-dot");
+      expect(dot.exists()).toBe(true);
+      expect(dot.attributes("style")).toContain(`background: ${COLORS[["a", "b", "c"][i]]}`);
+      expect(rows[i].text()).toBe(`label-${["a", "b", "c"][i]}`);
+      // Percent lives in the hint only, never in the row's text.
+      expect(rows[i].text()).not.toContain("%");
+    }
   });
 
-  it("pads a 1% slice into a centered seam and keeps the dash positive", () => {
-    // 1% of the turn ≈ 3.02 units — above the pad, so the padded shape
-    // applies: dash = arc - pad, offset shifted pad/2 forward.
-    const g = pieSliceGeom(C * 0.01, 0, C, PAD);
-    expect(g.dasharray).toBe("1.52 300.08");
-    expect(g.dashoffset).toBe(-0.75);
+  it("hints the same string from a slice and its legend row", () => {
+    const w = mountPie(entriesOf([["a", 60], ["b", 30], ["c", 10]]));
+    expect(w.findAll(".playtime-pie__slice")[0].attributes("data-hint")).toBe(
+      "label-a · 60 场 · 60%",
+    );
+    expect(w.findAll(".playtime-pie__legend-item")[0].attributes("data-hint")).toBe(
+      "label-a · 60 场 · 60%",
+    );
+    // No native <title> tooltips — the app-wide data-hint convention.
+    expect(w.find("title").exists()).toBe(false);
   });
 
-  it("clamps the pad away from a sliver thinner than the seam", () => {
-    // 0.4% of the turn ≈ 1.21 units — below the pad, which would collapse
-    // the dash to zero length: draw unpadded, starting exactly at start.
-    const start = C * 0.996;
-    const g = pieSliceGeom(C * 0.004, start, C, PAD);
-    expect(g.dasharray).toBe("1.21 300.39");
-    expect(g.dashoffset).toBe(-300.39);
+  it("chunks legend rows into 5-row columns", () => {
+    const w = mountPie(
+      entriesOf([["a", 5], ["b", 5], ["c", 5], ["d", 5], ["e", 5], ["f", 5], ["g", 5]]),
+    );
+    const cols = w.findAll(".playtime-pie__legend-col");
+    expect(cols).toHaveLength(2);
+    expect(cols[0].findAll(".playtime-pie__legend-item")).toHaveLength(5);
+    expect(cols[1].findAll(".playtime-pie__legend-item")).toHaveLength(2);
   });
 
-  it("places a half-turn slice's seam centered on its start boundary", () => {
-    const g = pieSliceGeom(C * 0.5, C * 0.5, C, PAD);
-    expect(g.dasharray).toBe("149.3 152.3");
-    expect(g.dashoffset).toBe(-151.55);
-  });
-
-  it("a dominant non-first slice keeps the padded path instead of overpainting earlier slivers", () => {
-    // Tier order puts a 99.7% bucket LAST (T1..T11 asc); the closed-ring
-    // case must not fire there — it would cover the T1/T2 slivers.
-    const s1 = pieSliceGeom(0.00664 * C, 0, C, PAD); // T1 sliver
-    const s2 = pieSliceGeom(0.00332 * C, 0.00664 * C, C, PAD); // T2 sliver
-    const s5 = pieSliceGeom(0.99668 * C, 0.01328 * C, C, PAD); // T5 dominant
-    expect(s5.dashoffset).toBeLessThan(0); // not the closed ring's offset 0
-    expect(parseFloat(s5.dasharray)).toBeGreaterThan(C * 0.99); // its full arc, seam-padded
-    expect(s1.dasharray).not.toBe(`${Math.round(C * 100) / 100} 0`);
-    expect(s2.dashoffset).toBeLessThan(0);
+  it("pairs a legend row's hover with its slice and dims the siblings", async () => {
+    const w = mountPie(entriesOf([["a", 60], ["b", 30], ["c", 10]]));
+    await w.findAll(".playtime-pie__legend-item")[1].trigger("mouseenter");
+    const rows = w.findAll(".playtime-pie__legend-item");
+    expect(rows[1].classes()).toContain("is-hot");
+    expect(rows[0].classes()).toContain("is-dim");
+    expect(rows[2].classes()).toContain("is-dim");
+    const slices = w.findAll(".playtime-pie__slice");
+    expect(slices[1].classes()).toContain("is-hot");
+    expect(slices[0].classes()).toContain("is-dim");
+    // Leaving clears the block's focus entirely.
+    await rows[1].trigger("mouseleave");
+    expect(w.findAll(".playtime-pie__legend-item")[1].classes()).not.toContain("is-hot");
+    expect(slices[1].classes()).not.toContain("is-hot");
   });
 });

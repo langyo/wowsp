@@ -174,11 +174,44 @@ export interface HeatPoint {
   value: number;
 }
 
-/** GitHub-style heatmap grid: the last 53 Monday-start weeks ending with
- *  the CURRENT (partial) week, weekday rows Monday..Sunday. `points` may
- *  be the time ledger's days or battle counts per day — only `date` /
- *  `value` are read. `locale` formats the month labels (and the future
- *  days are blank, not zero). */
+/** The heatmap window's week count: enough Monday-start weeks to reach
+ *  back to the earliest point, floored at HEAT_MIN_WEEKS (a fresh history
+ *  keeps the GitHub-year shape instead of a stubby grid) and capped at
+ *  HEAT_MAX_WEEKS (three years — past that the 12px cells render too
+ *  small to read at the view's column width, and replay archives that old
+ *  are rare). Junk day keys are ignored; no parsable point (or a
+ *  future-only set) falls back to the floor. Pure — `now` pins the
+ *  current week the same way buildHeatGrid does. */
+export const HEAT_MIN_WEEKS = 53;
+export const HEAT_MAX_WEEKS = 156;
+
+export function heatWeeks(points: HeatPoint[], now: Date): number {
+  let earliest: Date | null = null;
+  for (const p of points) {
+    const d = parseDayKey(p.date);
+    if (d && (!earliest || d < earliest)) earliest = d;
+  }
+  if (!earliest) return HEAT_MIN_WEEKS;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const thisMonday = new Date(today);
+  thisMonday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const firstMonday = new Date(earliest);
+  firstMonday.setDate(earliest.getDate() - ((earliest.getDay() + 6) % 7));
+  // Local-noon to local-noon across a DST edge is off a whole-week ms
+  // count by an hour — round, don't floor.
+  const span =
+    Math.round((thisMonday.getTime() - firstMonday.getTime()) / (7 * 86_400_000)) + 1;
+  return Math.min(HEAT_MAX_WEEKS, Math.max(HEAT_MIN_WEEKS, span));
+}
+
+/** GitHub-style heatmap grid: Monday-start weeks ending with the CURRENT
+ *  (partial) week, weekday rows Monday..Sunday. The window spans every
+ *  week back to the earliest point (heatWeeks — at least a year, at most
+ *  three), so battle history predating the last 52 weeks still lights up
+ *  instead of falling off a fixed 53-week window. `points` may be the
+ *  time ledger's days or battle counts per day — only `date` / `value`
+ *  are read. `locale` formats the month labels (and the future days are
+ *  blank, not zero). */
 export function buildHeatGrid(
   points: HeatPoint[],
   now: Date,
@@ -186,8 +219,9 @@ export function buildHeatGrid(
 ): HeatGrid {
   const map = new Map(points.map((p) => [p.date, p.value]));
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const weeks = heatWeeks(points, now);
   const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) - 52 * 7);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) - (weeks - 1) * 7);
 
   // Pass 1: each cell's date + value, the window's max, and the month
   // anchors — a month's day 1 falls in exactly one column, which pins its
@@ -196,7 +230,7 @@ export function buildHeatGrid(
   const months: { col: number; label: string }[] = [];
   let maxValue = 0;
   let labeledMonth = -1;
-  for (let w = 0; w < 53; w++) {
+  for (let w = 0; w < weeks; w++) {
     const column: { date: Date; value: number; future: boolean }[] = [];
     for (let r = 0; r < 7; r++) {
       const date = new Date(monday);

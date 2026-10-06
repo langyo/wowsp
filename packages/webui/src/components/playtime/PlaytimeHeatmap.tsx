@@ -4,22 +4,25 @@ import { t } from "@/i18n";
 import { buildHeatGrid, type HeatPoint } from "./playtimeAgg";
 import "./PlaytimeHeatmap.scss";
 
-/** Heatmap cell metrics — the SVG's whole geometry derives from these. */
+/** Heatmap cell metrics — the SVG's whole geometry derives from these.
+ *  The week count is NOT a constant: the grid's columns carry it (the
+ *  window is adaptive — see playtimeAgg.heatWeeks). */
 const CELL = 12;
 const GAP = 3;
 const LEFT = 34;
 const TOP = 2;
-const WEEKS = 53;
 
 /**
- * The playtime heatmap — GitHub-style calendar (Monday-first rows, the
- * last 53 weeks ending with the current partial one), Starward-style
- * month labels UNDER the grid and weekday markers (周一 / 周日) on the
- * left edge. Hand-drawn SVG; cell fills ride the theme's primary color at
- * four opacity levels (SCSS). Value-agnostic: the view feeds it `points`
- * plus a `hintOf` formatter (today: battles per local day — see
- * battlesDaily), so hover hints carry the exact day + the caller's
- * phrasing. Empty days render a blank cell with no hint at all.
+ * The playtime heatmap — GitHub-style calendar (Monday-first rows, ending
+ * with the current partial week), Starward-style month labels UNDER the
+ * grid and weekday markers (周一 / 周日) on the left edge. The window
+ * spans every week back to the earliest point (heatWeeks: ≥ one year, ≤
+ * three), so the canvas width follows the grid's column count. Hand-drawn
+ * SVG; cell fills ride the theme's primary color at four opacity levels
+ * (SCSS). Value-agnostic: the view feeds it `points` plus a `hintOf`
+ * formatter (today: battles per local day — see battlesDaily), so hover
+ * hints carry the exact day + the caller's phrasing. Empty days render a
+ * blank cell with no hint at all.
  */
 export default defineComponent({
   name: "PlaytimeHeatmap",
@@ -34,7 +37,7 @@ export default defineComponent({
 
     return () => {
       const g = grid.value;
-      const width = LEFT + WEEKS * (CELL + GAP);
+      const width = LEFT + g.columns.length * (CELL + GAP);
       const height = TOP + 7 * (CELL + GAP) + 18;
       return (
         <div class="playtime-heat">

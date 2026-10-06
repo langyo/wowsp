@@ -4,8 +4,6 @@
     "launched": "已启动 {n} 次",
     "battles": "战斗场次",
     "battlesShips": "使用 {n} 艘舰艇",
-    "dailyAvg": "平均每天时长",
-    "daysPlayed": "已游玩 {n} 天",
     "streak": "最长连续天数",
     "days": "{n} 天",
     "longestSession": "最长单次时长",
