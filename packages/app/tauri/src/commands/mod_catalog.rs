@@ -405,6 +405,29 @@ pub fn mod_hub_records() -> Result<Vec<ModInstallRecord>, String> {
     Ok(load_ledger().installs)
 }
 
+/// Whether a downloaded package's byte length is consistent with the
+/// catalog's listed size. Publisher indexes list byte-exact sizes, but the
+/// community crawl can only carry whole-KiB values: the discussion template
+/// renders `max(1, size_bytes // 1024)` KB and the indexer reconstructs
+/// `int(kb) * 1024`. A ≥1 KiB asset is therefore listed up to 1023 bytes
+/// below its true size (real payload in `[listed, listed + 1 KiB)`), while
+/// every sub-KiB asset is published as "1 KB" (1024) despite actually being
+/// smaller — `listed == 1024` covers both shapes. Beyond that, shorter than
+/// listed means a truncated transfer and a full KiB or more over means a
+/// different payload. The SHA-256 check (when present) stays the
+/// authoritative integrity gate; a zero listed size means "unknown".
+fn size_within_catalog(actual: usize, listed: u64) -> bool {
+    if listed == 0 {
+        return true;
+    }
+    let actual = actual as u64;
+    if listed == 1024 {
+        actual > 0 && actual < 2048
+    } else {
+        actual >= listed && actual < listed + 1024
+    }
+}
+
 // ── Install ─────────────────────────────────────────────────────────────────
 
 /// Drop-guard for the per-install temp work dir: every early `?` return
@@ -537,9 +560,9 @@ pub async fn mod_catalog_install(
                 ));
             }
         }
-        if pkg.size > 0 && bytes.len() != pkg.size as usize {
+        if !size_within_catalog(bytes.len(), pkg.size) {
             return Err(format!(
-                "{} downloaded {} bytes but the catalog lists {}",
+                "{} downloaded {} bytes, outside the catalog's listed {} (KiB-rounded) — refresh the catalog and retry; the cached index may be stale",
                 pkg.name,
                 bytes.len(),
                 pkg.size
@@ -1477,6 +1500,31 @@ mod tests {
         );
 
         fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn catalog_size_check_tolerates_kib_rounding() {
+        // Publisher index: byte-exact sizes keep passing.
+        assert!(size_within_catalog(20480, 20480));
+        assert!(size_within_catalog(282, 282));
+        // Community crawl: the discussion template floors bytes to whole KB
+        // (21095 real bytes are listed as 20480), so the real payload lands
+        // anywhere in [listed, listed + 1 KiB).
+        assert!(size_within_catalog(21095, 20480));
+        assert!(size_within_catalog(5472, 5120));
+        // Sub-KiB assets are all published as "1 KB" (1024) while actually
+        // being smaller — battle.meter.mx-part2.zip is 282 bytes on the
+        // release, listed as 1024.
+        assert!(size_within_catalog(282, 1024));
+        assert!(size_within_catalog(1024, 1024));
+        // Shorter than listed is a truncated transfer…
+        assert!(!size_within_catalog(20479, 20480));
+        assert!(!size_within_catalog(0, 1024));
+        // …and a full KiB (or more) over is a different payload.
+        assert!(!size_within_catalog(21504, 20480));
+        // A zero listed size means "unknown" — never fails.
+        assert!(size_within_catalog(0, 0));
+        assert!(size_within_catalog(12345, 0));
     }
 
     #[test]
