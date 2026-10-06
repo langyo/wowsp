@@ -675,12 +675,39 @@ pub async fn mod_catalog_install(
     });
     // The shared on-disk manifest mirrors the record (id, scheme, …).
     let record = ledger.installs.last().expect("record pushed above");
+    let record_res_mods = manifest::res_mods_of(&game_root, &record.bin_version);
     manifest::hub_apply(manifest::ManifestOp::UpsertManaged {
-        res_mods: manifest::res_mods_of(&game_root, &record.bin_version),
+        res_mods: record_res_mods.clone(),
         id: record.id.clone(),
         entry: WowspManifest::entry_from_record(record),
     });
     save_ledger(&ledger)?;
+
+    // Registration half of "register & reinstall": an install over a
+    // foreign copy takes ownership. The foreign installer's Aslain
+    // manifest rows pairing with this entry (the same verdict the scan
+    // badged the UI with) are cut so its ledger stops claiming the unit,
+    // and a paired ModStation tree is removed — the client loads BOTH
+    // mods/ and res_mods, so leaving it would run two active copies of
+    // the same mod. Best-effort by design: the WoWSP record above is
+    // already durable, and a leftover foreign row/tree resurfaces in the
+    // foreign pane for a retry.
+    let took_rows = mod_hub::remove_manifest_entries_for_entry(&record_res_mods, &index, &entry.id);
+    if took_rows > 0 {
+        tracing::info!(rows = took_rows, id = %entry.id, "foreign manifest rows taken over");
+    }
+    let mods_dir = std::path::Path::new(&game_root)
+        .join("bin")
+        .join(&record.bin_version)
+        .join("mods");
+    for dir in mod_hub::foreign::modstation_dirs_for_entry(&mods_dir, &index, &entry.id) {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => tracing::info!(dir = %dir.display(), "modstation twin copy removed"),
+            Err(e) => {
+                tracing::warn!(dir = %dir.display(), error = %e, "modstation twin copy removal failed")
+            },
+        }
+    }
 
     drop(_gate);
 

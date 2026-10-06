@@ -117,6 +117,7 @@ export const RPC = {
   mod_hub_install: "mod_hub_install",
   mod_hub_set_unit_enabled: "mod_hub_set_unit_enabled",
   mod_hub_uninstall_unit: "mod_hub_uninstall_unit",
+  mod_hub_uninstall_modstation_unit: "mod_hub_uninstall_modstation_unit",
   mod_hub_stale_versions: "mod_hub_stale_versions",
   mod_hub_migrate_stale_bin: "mod_hub_migrate_stale_bin",
   mod_hub_migration_plan: "mod_hub_migration_plan",

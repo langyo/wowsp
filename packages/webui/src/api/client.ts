@@ -2054,6 +2054,10 @@ export const api = {
    *  snapshotted originals, syncs the Aslain manifest when relevant). */
   modHubUninstallUnit: (relPath: string, gameRoot: string) =>
     transport.invoke<UninstallReport>(RPC.mod_hub_uninstall_unit, { relPath, gameRoot }),
+  /** Uninstall a ModStation unit by manifest key — removes its whole tree
+   *  under bin/<version>/mods/ (outside res_mods, invisible to unit ops). */
+  modHubUninstallModstationUnit: (gameRoot: string, key: string) =>
+    transport.invoke<null>(RPC.mod_hub_uninstall_modstation_unit, { gameRoot, key }),
   /** Older `bin/<version>` dirs whose res_mods still carries stranded mods. */
   modHubStaleVersions: (gameRoot: string) =>
     transport.invoke<StaleBinInfo[]>(RPC.mod_hub_stale_versions, { gameRoot }),

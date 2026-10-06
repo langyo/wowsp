@@ -175,6 +175,9 @@ export default defineComponent({
     // Installed-unit actions: relPath → "toggle" | "uninstall".
     const unitBusy = ref(new Map<string, "toggle" | "uninstall">());
     const unitTarget = ref<InstalledMod | null>(null);
+    // ModStation uninstall target — its trees live outside res_mods, so
+    // they uninstall through their own command instead of unit_ops.
+    const foreignTarget = ref<ForeignModUnit | null>(null);
 
     // Stale-bin migration: older `bin/<version>/res_mods` leftovers the
     // game stopped loading after an update — surfaced so they can be moved
@@ -375,9 +378,16 @@ export default defineComponent({
         return;
       }
       busy.value.set(entry.id, "install");
+      // Captured before the RPC: installing over a foreign (Aslain) copy
+      // is a REGISTRATION — the backend cuts the foreign installer's
+      // manifest rows, the follow-up toast says ownership moved.
+      const tookOverForeign = !!foreignCopyOf(entry);
       try {
         const r = await api.modCatalogInstall(entry.id, gameRoot.value, preset);
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
+        if (tookOverForeign) {
+          toast.info(t("resources.registeredOverForeign", { name: r.name }));
+        }
         for (const c of r.conflicts ?? []) toast.info(c);
         await Promise.all([scan(), loadRecords(), pluginUpdates.refresh()]);
       } catch (e) {
@@ -464,6 +474,28 @@ export default defineComponent({
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
         unitBusy.value.delete(unitKey(mod));
+      }
+    }
+
+    // ── Foreign-unit actions ──────────────────────────────────────────────
+    // Aslain units are anchored in the installed list by their manifest
+    // name, so their toggle / uninstall ride the SAME unit_ops handlers
+    // above (the backend also syncs Aslain's manifest row). Only
+    // ModStation trees — outside res_mods entirely — need their own path.
+    async function uninstallModstation() {
+      const unit = foreignTarget.value;
+      if (!unit || !gameRoot.value) return;
+      if (gameRunning() || safeModeBlocked()) {
+        foreignTarget.value = null;
+        return;
+      }
+      foreignTarget.value = null;
+      try {
+        await api.modHubUninstallModstationUnit(gameRoot.value, unit.key);
+        toast.success(t("resources.modstationUninstalled", { name: unit.name }));
+        await scan();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
       }
     }
 
@@ -1362,11 +1394,18 @@ export default defineComponent({
             </div>
           </div>
           <div class="mod-detail__scroll">
-            {mod.disabled && (
+            {(mod.disabled || aslainNames.value.has(mod.name)) && (
               <div class="mod-detail__badges">
-                <span class="mod-detail__badge mod-detail__badge--warn">
-                  {t("resources.disabled")}
-                </span>
+                {mod.disabled && (
+                  <span class="mod-detail__badge mod-detail__badge--warn">
+                    {t("resources.disabled")}
+                  </span>
+                )}
+                {aslainNames.value.has(mod.name) && (
+                  <span class="mod-detail__badge">
+                    {t("resources.foreignSource.aslain")}
+                  </span>
+                )}
               </div>
             )}
             {(mod.warnings ?? []).length > 0 && (
@@ -1441,6 +1480,16 @@ export default defineComponent({
       const paired = unit.identity
         ? listedEntries(catalog.value).find((e) => e.id === unit.identity)
         : undefined;
+      // Aslain rows are anchored in the installed list under their
+      // manifest name — resolving that row hands this pane the same
+      // toggle / uninstall the installed list has (the backend deletes
+      // files AND cuts the manifest row). ModStation trees live outside
+      // res_mods and uninstall through their own command.
+      const aslainRow =
+        unit.installer === "aslain"
+          ? installed.value.find((m) => m.name === unit.name) ?? null
+          : null;
+      const aslainBusy = aslainRow ? unitBusy.value.get(unitKey(aslainRow)) : undefined;
       return (
         <div class="mod-detail">
           <div class="mod-detail__head">
@@ -1478,15 +1527,47 @@ export default defineComponent({
           </div>
           <div class="mod-detail__foot">
             <div class="mod-detail__foot-row">
-              {paired && (
-                <HkButton
+              {aslainRow && aslainRow.paths.length > 0 ? (
+                <HkSwitch
                   size="sm"
-                  variant="secondary"
-                  onClick={() => selectCatalog(paired)}
+                  modelValue={!aslainRow.disabled}
+                  disabled={!!aslainBusy}
+                  onUpdate:modelValue={(v: boolean) => toggleUnit(aslainRow, v)}
                 >
-                  {t("resources.foreignOpenPaired")}
-                </HkButton>
-              )}
+                  {aslainRow.disabled ? t("resources.disabled") : t("resources.enabled")}
+                </HkSwitch>
+              ) : null}
+              <div class="mod-detail__actions">
+                {aslainRow ? (
+                  <button
+                    class="mod-detail__danger"
+                    disabled={!!aslainBusy}
+                    onClick={() => (unitTarget.value = aslainRow)}
+                  >
+                    <Trash2 size={13} />
+                    {aslainBusy === "uninstall"
+                      ? t("resources.uninstalling")
+                      : t("resources.uninstall")}
+                  </button>
+                ) : (
+                  <button
+                    class="mod-detail__danger"
+                    onClick={() => (foreignTarget.value = unit)}
+                  >
+                    <Trash2 size={13} />
+                    {t("resources.uninstall")}
+                  </button>
+                )}
+                {paired && (
+                  <HkButton
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => selectCatalog(paired)}
+                  >
+                    {t("resources.foreignOpenPaired")}
+                  </HkButton>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2530,6 +2611,22 @@ export default defineComponent({
             onConfirm={uninstallUnit}
             onUpdate:open={(v: boolean) => {
               if (!v) unitTarget.value = null;
+            }}
+          />
+
+          {/* ModStation trees sit outside res_mods — their uninstall is a
+              whole-directory removal under bin/<version>/mods/, so the
+              confirm spells that out. */}
+          <HkConfirmDialog
+            open={!!foreignTarget.value}
+            title={t("resources.uninstall")}
+            message={t("resources.modstationUninstallConfirm", {
+              name: foreignTarget.value?.name || "",
+            })}
+            confirmLabel={t("resources.uninstall")}
+            onConfirm={() => void uninstallModstation()}
+            onUpdate:open={(v: boolean) => {
+              if (!v) foreignTarget.value = null;
             }}
           />
         </div>

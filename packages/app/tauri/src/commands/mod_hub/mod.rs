@@ -510,6 +510,10 @@ pub use unit_ops::{
     mod_hub_set_unit_enabled,
 };
 pub use unit_ops::{
+    __cmd__mod_hub_uninstall_modstation_unit,
+    __tauri_command_name_mod_hub_uninstall_modstation_unit, mod_hub_uninstall_modstation_unit,
+};
+pub use unit_ops::{
     __cmd__mod_hub_uninstall_unit, __tauri_command_name_mod_hub_uninstall_unit,
     mod_hub_uninstall_unit,
 };
@@ -519,6 +523,7 @@ pub use unit_ops::{
 pub(crate) use classify::classify_package;
 pub(crate) use install::{install_plan_with_loose, restore_root};
 pub(crate) use stale_migration::conflict_warnings;
+pub(crate) use unit_ops::remove_manifest_entries_for_entry;
 
 // Helpers used only by this module's own test suite (so they stay invisible to
 // the non-test build, keeping `cargo clippy --lib -D warnings` quiet).

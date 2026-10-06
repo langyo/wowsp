@@ -556,6 +556,7 @@ pub fn run() {
             commands::mod_hub::mod_hub_install,
             commands::mod_hub::mod_hub_set_unit_enabled,
             commands::mod_hub::mod_hub_uninstall_unit,
+            commands::mod_hub::mod_hub_uninstall_modstation_unit,
             commands::mod_hub::mod_hub_stale_versions,
             commands::mod_hub::mod_hub_migrate_stale_bin,
             commands::mod_hub::mod_hub_migration_plan,

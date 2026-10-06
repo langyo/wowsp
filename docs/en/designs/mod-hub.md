@@ -372,7 +372,15 @@ many-read/one-write, no parallel copy of the file can drift. The sections:
   best-effort `identity` — the catalog id its name pairs against — so
   every surface can read the pairing verdict from this one file instead
   of re-deriving it. The scan refreshes these rows on every installed-list
-  sweep; WoWSP describes foreign units, it never manages them.
+  sweep. Pairing is tiered (exact name > containment > character-bigram
+  similarity, stopwords stripped on both sides) so CamelCase modpack names
+  reach the catalog's prose names. WoWSP describes foreign units by
+  default, and manages them on explicit demand: the foreign pane offers
+  disable/uninstall (Aslain rows through the same unit ops — the pack's
+  manifest row is cut in sync; ModStation trees through a dedicated
+  whole-directory uninstall), and installing a catalog entry over a
+  paired foreign copy is a REGISTRATION — the entry's manifest rows are
+  cut, the files snapshotted, and the unit lands under WoWSP's ledger.
 
 ### 4. Version migration & compatibility confirmation
 
@@ -439,7 +447,7 @@ A scheduled GitHub Actions workflow (also manually triggerable):
 | M10.3 Indexer | Actions workflow emitting `mod-index.json`; website catalog page | M10.1 |
 | M10.4 Migration engine | version-drift detection, classified migration, rollback, compat UI | M10.2 |
 | M10.5 Content browser | categorized browsing, previews & audition, batch install, resumable downloads | M10.3 |
-| M10.6 Aslain migration assistant | recognize Aslain-installed entries into the install record | M10.2 |
+| M10.6 Aslain migration assistant | recognize Aslain-installed entries into the install record — DONE via tiered pairing + register-and-reinstall takeover (install cuts the pack's manifest rows) | M10.2 |
 
 ## Security & compliance
 

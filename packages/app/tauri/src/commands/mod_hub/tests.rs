@@ -1767,9 +1767,13 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
         aslain["shottimer"].identity.as_deref(),
         Some("battle.timer.shot")
     );
-    // "TeamPanelTTaro" vs "Team Panels by TTaro" normalize differently —
-    // no false-positive pairing for a name the catalog words differently.
-    assert_eq!(aslain["teampanelttaro"].identity, None);
+    // "TeamPanelTTaro" vs "Team Panels by TTaro": exact and containment
+    // both miss, but the similarity tier (stopword-stripped, 12/15 shared
+    // bigrams) pairs them — the whole point of pairing v2.
+    assert_eq!(
+        aslain["teampanelttaro"].identity.as_deref(),
+        Some("battle.panel.ttaro")
+    );
     assert_eq!(aslain["hoshinovoice"].identity, None);
     assert!(foreign["modstation"].is_empty());
     assert_eq!(aslain["shottimer"].version.as_deref(), Some("15.7.0"));
@@ -2177,4 +2181,77 @@ fn manifest_self_delete_propagates_to_preload_twins() {
     );
 
     fs::remove_dir_all(&game).ok();
+}
+
+/// The takeover half of "register & reinstall": installing a catalog
+/// entry over an Aslain-installed copy cuts the pack's manifest rows the
+/// SCAN pairing assigns to that entry — the reverse stopword direction
+/// included — and ONLY those. A sibling row that best-matches a DIFFERENT
+/// catalog entry survives, however loosely it clears this entry's tiers.
+#[test]
+fn register_over_foreign_cuts_only_paired_manifest_rows() {
+    use wowsp_tauri_shared::{CatalogEntry, CatalogIndex, CatalogPackage};
+
+    let tmp = std::env::temp_dir().join("wowsp_register_takeover");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let res_mods = tmp.join("bin/1/res_mods");
+    std::fs::create_dir_all(&res_mods).unwrap();
+    std::fs::write(
+        res_mods.join("installed_mods.xml"),
+        "<data>\
+         <mod name=\"Team Panels by TTaro\" version=\"1\" installer=\"aslain\"/>\
+         <mod name=\"ShotTimer Pro\" version=\"15.7.0\" installer=\"aslain\"/>\
+         </data>",
+    )
+    .unwrap();
+    let entry = |id: &str, en: &str| CatalogEntry {
+        id: id.into(),
+        category: "battle".into(),
+        discussion: Some(1),
+        version: "1".into(),
+        game: "*".into(),
+        bundled: false,
+        delisted: false,
+        presets: Vec::new(),
+        tags: Vec::new(),
+        title: format!("[Mod] {en} {id} 1"),
+        name_zh: String::new(),
+        name_en: en.into(),
+        description: String::new(),
+        author_url: String::new(),
+        i18n: std::collections::HashMap::new(),
+        packages: vec![CatalogPackage {
+            url: "https://x/a.zip".into(),
+            sha256: String::new(),
+            size: 1,
+            name: "a.zip".into(),
+        }],
+    };
+    let catalog = CatalogIndex {
+        source_version: String::new(),
+        game_version: String::new(),
+        fetched_at: String::new(),
+        mods: vec![
+            entry("battle.panel.ttaro", "TeamPanelTTaro"),
+            entry("battle.timer.pro", "ShotTimer Pro"),
+        ],
+    };
+    assert_eq!(
+        remove_manifest_entries_for_entry(&res_mods, &catalog, "battle.panel.ttaro"),
+        1
+    );
+    let left: Vec<String> = super::scan_installed::parse_installed_manifest(&res_mods)
+        .into_iter()
+        .map(|row| row.name)
+        .collect();
+    // The TTaro row (paired to the target by similarity) is gone; the
+    // ShotTimer Pro row best-matches a DIFFERENT entry and stays.
+    assert_eq!(left, vec!["ShotTimer Pro".to_string()], "{left:?}");
+    // Idempotent: a second pass (nothing pairs anymore) cuts nothing.
+    assert_eq!(
+        remove_manifest_entries_for_entry(&res_mods, &catalog, "battle.panel.ttaro"),
+        0
+    );
+
+    std::fs::remove_dir_all(&tmp).ok();
 }

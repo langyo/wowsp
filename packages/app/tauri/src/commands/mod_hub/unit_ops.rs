@@ -305,10 +305,12 @@ pub(crate) fn uninstall_unit_core(
         }
     }
 
-    // Keep Aslain's manifest describing reality when the unit came from it.
-    if unit.version.is_some() {
-        remove_manifest_entry(res_mods, &unit.name);
-    }
+    // Keep the foreign installer's manifest describing reality: when the
+    // unit's name matches one of its rows the row goes with the files —
+    // anchored Aslain units (versionless rows included, or a foreign-pane
+    // uninstall would zombie-loop them) and units whose install replaced
+    // a row's files alike. No matching row → the call is a no-op.
+    remove_manifest_entry(res_mods, &unit.name);
     // The bundled in-game plugin's unit carries no ledger record — drop its
     // wowsp.toml row here too or it would outlive its files.
     if unit_covers(&unit.paths, &bundled_plugin_entry()) {
@@ -455,4 +457,48 @@ fn remove_manifest_entry(res_mods: &Path, name: &str) {
     fs::write(&tmp, &out)
         .and_then(|_| fs::rename(&tmp, &path))
         .ok();
+}
+
+/// Cut every Aslain-manifest row the scan-time pairing assigns to
+/// `entry_id` — the registration half of "register & reinstall": once
+/// WoWSP installs over a foreign copy, the foreign installer's own ledger
+/// must stop claiming the unit (the next scan re-anchors the files under
+/// the WoWSP record and sweeps the `[foreign.*]` row). The row set comes
+/// from the SAME best-match verdict the scan badges the UI with, so only
+/// rows the user saw as this entry's copies are touched. Returns how many
+/// rows were cut — attempted, that is: the rewrite is best-effort, a
+/// failed one leaves the row for the next retry to cut.
+pub(crate) fn remove_manifest_entries_for_entry(
+    res_mods: &Path,
+    catalog: &wowsp_tauri_shared::CatalogIndex,
+    entry_id: &str,
+) -> usize {
+    let names = super::foreign::aslain_rows_for_entry(res_mods, catalog, entry_id);
+    for name in &names {
+        remove_manifest_entry(res_mods, name);
+    }
+    names.len()
+}
+
+/// Uninstall a ModStation unit: its whole tree under
+/// `bin/<version>/mods/` — the only place the station installs, and a
+/// tree the res_mods unit-ops never see (which is why foreign-pane
+/// actions route here instead of through `mod_hub_uninstall_unit`).
+/// Gated on the game being closed like every mutation, but NOT on
+/// `ensure_res_mods_active`: safe mode's quarantine renames res_mods
+/// only, and this tree is outside it.
+#[tauri::command]
+pub async fn mod_hub_uninstall_modstation_unit(
+    game_root: String,
+    key: String,
+) -> Result<(), String> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed(&game_root)?;
+    let (_, ver_dir) = latest_bin_version(&game_root)
+        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+    let dir = super::foreign::modstation_dir_for_key(&ver_dir.join("mods"), &key)
+        .ok_or_else(|| format!("no ModStation unit keyed {key:?}"))?;
+    fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
+    tracing::info!(dir = %dir.display(), "modstation unit uninstalled");
+    Ok(())
 }
