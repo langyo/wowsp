@@ -88,6 +88,12 @@ interface OverlayMessages {
   /** Badge while the batched stats lookup is still working and at least
    *  one mapped chip has no numbers yet. */
   queryingBadge: string;
+  /** The muted badge on AI-name rows (`:Name:` co-op fills): chipContent's
+   *  per-row face and a pure-bot candidate range's whole chip. */
+  botLabel: string;
+  /** The folded-bot suffix on a mixed candidate range (candidatesChip):
+   *  `{n}` is the bot count — the range's cardinality. */
+  botCount: string;
   /** Team-intel card copy (the two-sided consumable summary): side
    *  labels, the three family names, and the longest-range prefix. */
   intelAlly: string;
@@ -519,7 +525,9 @@ function chipNumbers(v: RosterModeNumbers): string {
  *  script-driven roster, and the game's own table marks them anyway. */
 function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean): string {
   if (AI_NAME.test(name)) {
-    return !storyLayout && ANY_CHIP_ON ? `<span class="muted">bot</span>` : "";
+    return !storyLayout && ANY_CHIP_ON
+      ? `<span class="muted">${localized("botLabel")}</span>`
+      : "";
   }
   const st = stats.get(cacheKey(name));
   // All chip toggles off → no numbers and none of their placeholder faces
@@ -581,17 +589,19 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
  *  per-member faces chipContent renders. The AI members fold into a
  *  counted suffix (candidates.ts): the game's own table already marks
  *  those rows, so a verbatim "bot / bot / bot" only stretched the chip
- *  over the left HUD — "43.2% + 2 bot" keeps the range's cardinality at a
- *  fraction of the width, and a pure-bot range collapses to the single
- *  muted face. On the story layout (storyLayout) a pure-bot range
- *  collapses to NOTHING instead — same aux rule as chipContent — while a
- *  mixed range keeps its "+N bot" suffix: the suffix is the range's
- *  cardinality, and dropping it would read one human's face as the WHOLE
- *  row. */
+ *  over the left HUD — the counted suffix (localized "botCount", e.g.
+ *  "43.2% + 2 bot") keeps the range's cardinality at a fraction of the
+ *  width, and a pure-bot range collapses to the single muted face. On
+ *  the story layout (storyLayout) a pure-bot range collapses to NOTHING
+ *  instead — same aux rule as chipContent — while a mixed range keeps
+ *  its counted bot suffix: the suffix is the range's cardinality, and
+ *  dropping it would read one human's face as the WHOLE row. */
 function candidatesChip(members: string[], storyLayout: boolean): string {
   if (!ANY_CHIP_ON) return "";
   const { humans, botCount } = collapseCandidateBots(members);
-  if (humans.length === 0) return storyLayout ? "" : `<span class="muted">bot</span>`;
+  if (humans.length === 0) {
+    return storyLayout ? "" : `<span class="muted">${localized("botLabel")}</span>`;
+  }
   const face = (m: string): string => {
     const st = stats.get(cacheKey(m));
     if (!st) return `<span class="muted">…</span>`;
@@ -619,7 +629,8 @@ function candidatesChip(members: string[], storyLayout: boolean): string {
   };
   const faces = humans.map(face).join(`<span class="sep">/</span>`);
   if (botCount > 0) {
-    return `${faces}<span class="sep">+</span><span class="muted">${botCount} bot</span>`;
+    const suffix = localized("botCount").replace("{n}", String(botCount));
+    return `${faces}<span class="sep">+</span><span class="muted">${suffix}</span>`;
   }
   return faces;
 }

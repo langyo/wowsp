@@ -3,6 +3,8 @@
   "locateHint": "La detección está activa, pero aún no se ha localizado la tabla de equipos: entra en una batalla e inténtalo de nuevo.",
   "locatingHint": "Mantén pulsado Tab: localizando la lista de jugadores",
   "queryingBadge": "Consultando estadísticas",
+  "botLabel": "bot",
+  "botCount": "{n} bot",
   "intelAlly": "Aliados",
   "intelEnemy": "Enemigos",
   "intelRadar": "Radar",

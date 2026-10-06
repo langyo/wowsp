@@ -3,6 +3,8 @@
   "locateHint": "Detection is active, but the team list hasn't been located yet — enter a battle and try again.",
   "locatingHint": "Hold Tab — locating the roster",
   "queryingBadge": "Fetching stats",
+  "botLabel": "bot",
+  "botCount": "{n} bot",
   "intelAlly": "Allies",
   "intelEnemy": "Enemies",
   "intelRadar": "Radar",

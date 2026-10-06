@@ -3,6 +3,8 @@
   "locateHint": "当前检测已开启，但暂未定位到表格，请进入游戏后再试",
   "locatingHint": "请按住 Tab，正在定位名单",
   "queryingBadge": "战绩查询中",
+  "botLabel": "机器人",
+  "botCount": "机器人 ×{n}",
   "intelAlly": "我方",
   "intelEnemy": "敌方",
   "intelRadar": "雷达",
