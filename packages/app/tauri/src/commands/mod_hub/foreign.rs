@@ -148,7 +148,7 @@ const NAME_STOPWORDS: [&str; 9] = ["by", "of", "the", "for", "from", "and", "a",
 
 /// One candidate in the pairing index: a catalog id plus every normalized
 /// name form its display names produce.
-struct PairCandidate {
+pub(crate) struct PairCandidate {
     id: String,
     names: Vec<String>,
 }
@@ -168,7 +168,7 @@ struct PairCandidate {
 /// The thresholds are deliberately conservative: a wrong pairing puts a
 /// "register & reinstall" button on the wrong entry, so noise costs more
 /// than silence.
-fn match_identity(name: &str, pairs: Option<&[PairCandidate]>) -> Option<String> {
+pub(crate) fn match_identity(name: &str, pairs: Option<&[PairCandidate]>) -> Option<String> {
     let pairs = pairs?;
     let needle_forms = name_forms(name);
     if needle_forms.is_empty() {
@@ -240,7 +240,7 @@ fn bigram_jaccard(a: &str, b: &str) -> f64 {
 
 /// The pairing index over a catalog: one candidate per listed entry, its
 /// display names pre-normalized into comparison forms.
-fn pairing_candidates(catalog: &CatalogIndex) -> Vec<PairCandidate> {
+pub(crate) fn pairing_candidates(catalog: &CatalogIndex) -> Vec<PairCandidate> {
     catalog
         .mods
         .iter()
@@ -345,12 +345,20 @@ fn name_forms(name: &str) -> Vec<String> {
     forms
 }
 
-/// The comparison forms of an entry's names (see [`name_forms`]).
+/// The comparison forms of an entry's names (see [`name_forms`]): every
+/// display name plus every declared alias — an Aslain manifest row id or
+/// on-disk directory name that shares no words with the display name
+/// (`TeamHP` vs "Team HP by TTaro", `ThreeDimentionalHydro` vs "3D
+/// Hydro") still pairs exactly through its alias forms.
 fn entry_name_forms(entry: &CatalogEntry) -> Vec<String> {
-    entry_names(entry)
+    let mut forms: Vec<String> = entry_names(entry)
         .iter()
         .flat_map(|n| name_forms(n))
-        .collect()
+        .collect();
+    for alias in &entry.aliases {
+        forms.extend(name_forms(alias));
+    }
+    forms
 }
 
 #[cfg(test)]
@@ -366,6 +374,10 @@ mod tests {
     }
 
     fn catalog_entry(id: &str, en: &str, zh: &str) -> CatalogEntry {
+        catalog_entry_aliased(id, en, zh, Vec::new())
+    }
+
+    fn catalog_entry_aliased(id: &str, en: &str, zh: &str, aliases: Vec<String>) -> CatalogEntry {
         CatalogEntry {
             id: id.into(),
             category: "battle".into(),
@@ -390,6 +402,8 @@ mod tests {
             )]
             .into_iter()
             .collect(),
+            aliases,
+            preview: None,
             packages: vec![CatalogPackage {
                 url: "https://x/a.zip".into(),
                 sha256: String::new(),
@@ -606,6 +620,41 @@ mod tests {
         );
         // …and the takeover resolver stays in step.
         assert!(modstation_dirs_for_entry(&mods, &catalog, "battle.any").is_empty());
+        fs::remove_dir_all(&dir).ok();
+    }
+    #[test]
+    fn declared_aliases_pair_names_similarity_cannot_reach() {
+        // "TeamHP" vs "Team HP by TTaro" (stripped "teamhpttaro", 11
+        // chars — containment needs 60 ≥ 66 and the bigram tier needs an
+        // 8-char needle) never meets a tier; the declared alias matches
+        // exactly. The manifest row pairing and the takeover scoping share
+        // the verdict.
+        let dir = res_mods("alias");
+        fs::write(
+            dir.join("installed_mods.xml"),
+            "<data><mod name=\"TeamHP\" version=\"1.1.0\" installer=\"aslain\"/></data>",
+        )
+        .unwrap();
+        let catalog = CatalogIndex {
+            source_version: String::new(),
+            game_version: String::new(),
+            fetched_at: String::new(),
+            mods: vec![catalog_entry_aliased(
+                "battle.minipanel.team-hp",
+                "Team HP by TTaro",
+                "团队总血量可调版",
+                vec!["TeamHP".to_string()],
+            )],
+        };
+        let out = scan_foreign(&dir, &dir.join("mods-nope"), Some(&catalog));
+        assert_eq!(
+            out[INSTALLER_ASLAIN]["teamhp"].identity.as_deref(),
+            Some("battle.minipanel.team-hp")
+        );
+        assert_eq!(
+            aslain_rows_for_entry(&dir, &catalog, "battle.minipanel.team-hp"),
+            vec!["TeamHP".to_string()]
+        );
         fs::remove_dir_all(&dir).ok();
     }
 }

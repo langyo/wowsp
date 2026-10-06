@@ -192,6 +192,10 @@ struct RawMod {
     /// IP origins…). Definitions live in the mod-tags registry.
     #[serde(default)]
     tags: Vec<String>,
+    /// Foreign-installer names (front-matter `aliases:`) — Aslain manifest
+    /// row ids and on-disk directory names this entry answers to exactly.
+    #[serde(default)]
+    aliases: Vec<String>,
     #[serde(default)]
     versions: std::collections::HashMap<String, RawVersion>,
 }
@@ -224,10 +228,9 @@ struct RawVersion {
     bundled: Option<bool>,
     #[serde(default)]
     i18n: std::collections::HashMap<String, RawI18n>,
-    /// Present in the publisher index; not rendered in-app (CSP blocks the
-    /// remote image host), kept deserializable so the shape stays documented.
+    /// First preview screenshot, a GitHub user-attachment URL. Rendered in
+    /// the catalog detail pane (the CSP allows the githubusercontent host).
     #[serde(default)]
-    #[allow(dead_code)]
     preview: Option<String>,
     #[serde(default)]
     author_url: Option<String>,
@@ -342,6 +345,8 @@ fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
                 .unwrap_or_else(|| ver.title.clone().unwrap_or_else(|| id.clone())),
             description: ver.description.clone().unwrap_or_default(),
             author_url: ver.author_url.clone().unwrap_or_default(),
+            aliases: m.aliases.clone(),
+            preview: ver.preview.clone(),
             i18n: ver
                 .i18n
                 .iter()
@@ -1629,9 +1634,11 @@ mod tests {
                     "discussion": 111,
                     "latest": "15.7.0.10",
                     "game": ">=15.7 <15.8",
+                    "aliases": ["ShotTimer", "ShotTimerPy"],
                     "versions": {
                         "15.7.0.10": {
                             "game": ">=15.7 <15.8",
+                            "preview": "https://user-images.githubusercontent.com/x/shot-timer.jpg",
                             "title": "Shot Timer",
                             "name_en": "Shot Timer",
                             "name_zh": "开火后倒计时20s",
@@ -1659,6 +1666,11 @@ mod tests {
         assert_eq!(m.packages[0].size, 10);
         assert_eq!(m.i18n.len(), 2, "both locales survive the round-trip");
         assert_eq!(m.i18n["ja-JP"].name, "射撃後タイマー");
+        assert_eq!(m.aliases, vec!["ShotTimer", "ShotTimerPy"]);
+        assert_eq!(
+            m.preview.as_deref(),
+            Some("https://user-images.githubusercontent.com/x/shot-timer.jpg")
+        );
     }
 
     #[test]

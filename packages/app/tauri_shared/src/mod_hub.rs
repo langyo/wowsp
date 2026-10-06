@@ -98,6 +98,13 @@ pub struct InstalledMod {
     /// backed by a manifest entry. `None` for pure filesystem heuristics.
     #[serde(default)]
     pub version: Option<String>,
+    /// Catalog entry id this unit paired against at scan time (name or
+    /// alias match against the online index) — the hook the UI uses to show
+    /// the entry's localized name instead of the raw directory name.
+    /// `None` when nothing paired. Absent on the wire when unset so older
+    /// payloads stay byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
 }
 
 /// Result of toggling one installed plugin's `.bak` state.
@@ -246,6 +253,19 @@ pub struct CatalogEntry {
     /// Localized name/description variants; may be empty for older posts.
     #[serde(default)]
     pub i18n: std::collections::HashMap<String, CatalogEntryI18n>,
+    /// Foreign-installer names this entry answers to — the Aslain modpack's
+    /// manifest row ids and on-disk directory names (`TeamHP`,
+    /// `ThreeDimentionalHydro`…), declared by the discussion's
+    /// `aliases:` front-matter. Pairing treats them as exact identity, so a
+    /// raw directory name that shares no words with the display name still
+    /// pairs. Empty for entries without declared aliases.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    /// First preview screenshot of the entry (a GitHub user-attachment
+    /// URL harvested from the discussion body); `None` when the thread
+    /// carries no image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
 }
 
 /// Parsed `mod-index.json` — the online plugin list the hub page renders.

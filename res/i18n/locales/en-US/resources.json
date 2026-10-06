@@ -60,6 +60,14 @@
   "foreignUnpaired": "No catalog match",
   "foreignPairedHint": "Pairs with \"{name}\" in the online catalog.",
   "foreignOpenPaired": "Open the catalog entry",
+  "pairedHead": "Online catalog match",
+  "pairedOpen": "Open entry",
+  "pairedRelation": {
+    "managed": "This copy is installed and managed by WoWSP; the paired entry provides updates and uninstall.",
+    "aslain": "These files were installed by {source} (its manifest row pairs with this entry). \"Register & reinstall\" on the entry brings the copy under WoWSP management.",
+    "extra": "Written by the {source} install but not listed in its manifest (a bundled dependency); paired by directory name. \"Register & reinstall\" takes it over cleanly.",
+    "plain": "Not under WoWSP management. The paired entry can install the registered release over this copy."
+  },
   "registeredOverForeign": "\"{name}\" is now registered with WoWSP — updates and uninstalls are managed here from now on.",
   "modstationUninstalled": "Removed the ModStation mod \"{name}\".",
   "modstationUninstallConfirm": "Remove the ModStation mod \"{name}\"? Its entire directory under bin/<version>/mods/ will be deleted.",
@@ -110,6 +118,7 @@
     "port": "Port",
     "text": "Texts & chat",
     "skin": "Ship skins",
+    "ui": "UI skins",
     "voice": "Voice packs"
   },
   "big": {

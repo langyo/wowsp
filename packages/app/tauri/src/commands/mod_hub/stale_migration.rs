@@ -37,7 +37,7 @@ pub fn mod_hub_stale_versions(game_root: String) -> Result<Vec<StaleBinInfo>, St
         if file_count == 0 {
             continue;
         }
-        let mods = classify_installed_root(&res_mods)
+        let mods = classify_installed_root(&res_mods, None)
             .into_iter()
             .filter(|m| !m.paths.is_empty())
             .map(|m| m.name)

@@ -115,10 +115,18 @@ Discussions resource post template (excerpt):
     version: 1.4.0
     game: ">=14.3 <14.6"
     category: skins
+    aliases: SMO_HazeSkins, SeaHazeSkinsPy
     license: CC0-1.0
     ---
     Body (Markdown, with preview images)…
     Attachment: sea-haze-skins-1.4.0.zip (SHA-256: …)
+
+`aliases` (optional, comma-separated) lists the foreign-installer names the
+entry answers to — the Aslain modpack's manifest row ids and on-disk
+directory names. The indexer harvests them into `mod-index.json`, and the
+app's pairing treats them as exact identity, so a raw directory name that
+shares no words with the display name (`TeamHP` vs "Team HP by TTaro")
+still resolves to the right entry.
 
 #### Slug taxonomy (`category.genus.species`)
 

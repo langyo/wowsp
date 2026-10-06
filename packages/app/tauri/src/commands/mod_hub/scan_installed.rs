@@ -12,7 +12,11 @@ pub fn mod_hub_scan_installed(game_root: String) -> Result<Vec<InstalledMod>, St
     if !res_mods.is_dir() {
         return Ok(Vec::new());
     }
-    let units = classify_installed_root(&res_mods);
+    // One catalog snapshot feeds both the unit pairing (identity ids on the
+    // classified list) and the foreign-row pairing below — a refresh racing
+    // the scan cannot hand the two passes different name forms.
+    let catalog = super::mod_catalog::load_cached_index();
+    let units = classify_installed_root(&res_mods, catalog.as_ref());
     // The same sweep refreshes wowsp.toml's [foreign.*] sections — the scan
     // IS the recognition pass (Aslain manifest rows, ModStation's mods/
     // tree), and pairing verdicts ride along in the rows.
@@ -20,14 +24,17 @@ pub fn mod_hub_scan_installed(game_root: String) -> Result<Vec<InstalledMod>, St
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or(res_mods.clone());
-    refresh_foreign(&res_mods, &ver_dir);
+    refresh_foreign_with(&res_mods, &ver_dir, catalog);
     Ok(units)
 }
 
 /// Detect foreign-installer units for one install and route each
 /// installer's row set through the manifest hub.
-fn refresh_foreign(res_mods: &Path, ver_dir: &Path) {
-    let catalog = super::mod_catalog::load_cached_index();
+fn refresh_foreign_with(
+    res_mods: &Path,
+    ver_dir: &Path,
+    catalog: Option<wowsp_tauri_shared::CatalogIndex>,
+) {
     for (installer, units) in
         foreign::scan_foreign(res_mods, &ver_dir.join("mods"), catalog.as_ref())
     {

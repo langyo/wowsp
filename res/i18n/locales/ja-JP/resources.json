@@ -60,6 +60,14 @@
   "foreignUnpaired": "カタログ照合なし",
   "foreignPairedHint": "オンラインカタログの「{name}」と照合されます。",
   "foreignOpenPaired": "カタログ項目を開く",
+  "pairedHead": "オンライン カタログの対応",
+  "pairedOpen": "エントリを開く",
+  "pairedRelation": {
+    "managed": "このコピーは WoWSP がインストールして管理しています。対応するオンライン項目から更新とアンインストールを行えます。",
+    "aslain": "これらのファイルは {source} によってインストールされました(そのマニフェスト行がこの項目と対応)。「登録して再インストール」で WoWSP 管理に移行できます。",
+    "extra": "{source} のインストールによって書き込まれたものの、マニフェストには記載されていない(同梱の依存コンポーネント)。ディレクトリ名で項目と対応付けました。「登録して再インストール」で整理して引き継げます。",
+    "plain": "WoWSP 管理下にありません。対応する項目から登録版をこのコピーへ上書きインストールできます。"
+  },
   "registeredOverForeign": "「{name}」を WoWSP に登録しました。今後の更新とアンインストールは WoWSP が管理します。",
   "modstationUninstalled": "ModStation のモッド「{name}」を削除しました。",
   "modstationUninstallConfirm": "ModStation のモッド「{name}」を削除しますか？bin/<バージョン>/mods/ 配下のディレクトリ全体が削除されます。",
@@ -110,6 +118,7 @@
     "port": "母港",
     "text": "テキストとチャット",
     "skin": "艦スキン",
+    "ui": "UI スキン",
     "voice": "ボイスパック"
   },
   "big": {

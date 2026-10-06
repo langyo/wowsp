@@ -32,7 +32,7 @@ fn scan_anchors_units_on_installed_mods_manifest() {
     // Leftover voice bank stays standalone.
     touch(&rm.join("banks/mods/Hoshino/mod.xml"));
 
-    let mods = classify_installed_root(&rm);
+    let mods = classify_installed_root(&rm, None);
     let smoke = mods.iter().find(|m| m.name == "SmokeMarker").unwrap();
     assert_eq!(smoke.version.as_deref(), Some("1.4.0"));
     assert_eq!(smoke.kind, ModKind::Script);
@@ -77,7 +77,7 @@ fn toggle_disables_and_reenables_unit_files() {
     touch(&rm.join("PnFMods/SmokeMarkerPy/data.xml"));
     touch(&rm.join("ime_config.xml"));
 
-    let unit = classify_installed_root(&rm)
+    let unit = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.rel_path == "PnFMods/SmokeMarkerPy")
         .unwrap();
@@ -88,20 +88,20 @@ fn toggle_disables_and_reenables_unit_files() {
     assert_eq!(renamed, 2);
     assert!(rm.join("PnFMods/SmokeMarkerPy/Main.py.bak").is_file());
     assert!(!rm.join("PnFMods/SmokeMarkerPy/Main.py").exists());
-    let unit = classify_installed_root(&rm)
+    let unit = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.rel_path == "PnFMods/SmokeMarkerPy")
         .unwrap();
     assert!(unit.disabled, "rescan must recognize the disabled unit");
 
     // Disabling a single-file patch keeps its name; the path is the twin.
-    let ime_before = classify_installed_root(&rm)
+    let ime_before = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.name == "ime_config.xml")
         .unwrap();
     assert!(!ime_before.disabled);
     set_paths_state(&rm, &ime_before.paths, false).unwrap();
-    let ime = classify_installed_root(&rm)
+    let ime = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.name == "ime_config.xml")
         .unwrap();
@@ -136,7 +136,7 @@ fn uninstall_unit_removes_files_and_syncs_manifest() {
     )
     .unwrap();
 
-    let smoke = classify_installed_root(&rm)
+    let smoke = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.name == "SmokeMarker")
         .unwrap();
@@ -151,7 +151,7 @@ fn uninstall_unit_removes_files_and_syncs_manifest() {
     assert!(manifest.contains("BattleFrame_TorpedoDetection"));
 
     // A manifest-backed unit with disabled files clears both variants.
-    let bf = classify_installed_root(&rm)
+    let bf = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.name == "BattleFrame_TorpedoDetection")
         .unwrap();
@@ -186,7 +186,7 @@ fn uninstall_unit_removes_files_and_syncs_manifest() {
         restore_dir: Some(restore.to_string_lossy().into_owned()),
         game_root: String::new(),
     });
-    let cam = classify_installed_root(&rm)
+    let cam = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.name == "camerasConsumer.xml")
         .unwrap();
@@ -227,7 +227,7 @@ fn scans_mixed_res_mods_layout() {
     touch(&rm.join("gui/ribbons/ribbon_citadel.png"));
     touch(&rm.join("ime_config.xml"));
 
-    let mods = classify_installed_root(&rm);
+    let mods = classify_installed_root(&rm, None);
     let voices: Vec<_> = mods.iter().filter(|m| m.kind == ModKind::Voice).collect();
     assert_eq!(voices.len(), 2);
     assert!(
@@ -289,7 +289,7 @@ fn scan_reports_texture_analysis_for_override_trees() {
     // Disabled twin: the `.bak` suffix must not leak into the extension.
     touch(&rm.join("texts/HUD_font_01.dds.bak"));
 
-    let mods = classify_installed_root(&rm);
+    let mods = classify_installed_root(&rm, None);
     let find = |name: &str| {
         mods.iter()
             .find(|m| m.kind == ModKind::Textures && m.name == name)
@@ -320,7 +320,7 @@ fn scan_reports_texture_analysis_for_override_trees() {
 
     // Every other kind carries no analysis.
     touch(&rm.join("gui/ribbons/ribbon_citadel.png"));
-    let mods = classify_installed_root(&rm);
+    let mods = classify_installed_root(&rm, None);
     assert!(
         mods.iter()
             .filter(|m| m.kind != ModKind::Textures)
@@ -570,7 +570,7 @@ fn unit_uninstall_trims_partially_overlapping_record() {
     fs::create_dir_all(restore.join("content/gameplay")).unwrap();
     fs::write(restore.join("content/gameplay/x.dds"), b"vanilla").unwrap();
 
-    let unit = classify_installed_root(&rm)
+    let unit = classify_installed_root(&rm, None)
         .into_iter()
         .find(|m| m.rel_path == "content")
         .expect("content unit");
@@ -730,7 +730,7 @@ fn scan_warns_about_same_ship_skin_conflicts() {
     )
     .unwrap();
 
-    let mods = classify_installed_root(&rm);
+    let mods = classify_installed_root(&rm, None);
     let conflicting: Vec<_> = mods
         .iter()
         .filter(|m| m.kind == ModKind::Skin && m.detail.as_deref() == Some("RSC110_Pr_66_Moskva"))
@@ -754,7 +754,7 @@ fn scan_warns_about_same_ship_skin_conflicts() {
         rm.join("PnFMods/Alt_Moskva/Main.py.bak"),
     )
     .unwrap();
-    let mods = classify_installed_root(&rm);
+    let mods = classify_installed_root(&rm, None);
     assert!(
         mods.iter()
             .all(|m| m.kind != ModKind::Skin || m.warnings.is_empty()),
@@ -1508,7 +1508,7 @@ fn local_record_describes_local_install() {
 fn mod_hub_real_game_scan() {
     let root = std::env::var("WOWSP_GAME_ROOT").expect("set WOWSP_GAME_ROOT");
     let res_mods = scan_root(&root).expect("scan root");
-    for m in classify_installed_root(&res_mods) {
+    for m in classify_installed_root(&res_mods, None) {
         println!(
             "{:?} {:?} v={:?} disabled={} paths={:?}",
             m.kind, m.name, m.version, m.disabled, m.paths
@@ -1736,6 +1736,8 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
         description: String::new(),
         author_url: String::new(),
         i18n: std::collections::HashMap::new(),
+        aliases: Vec::new(),
+        preview: None,
         packages: vec![CatalogPackage {
             url: "https://x/a.zip".into(),
             sha256: String::new(),
@@ -1782,7 +1784,7 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
     // ── Classification: the installed list anchors on the manifest rows
     //    (row names, file order), trees hang under them; the orphan gui
     //    fragment stays its own (unanchored) group instead of vanishing.
-    let units = classify_installed_root(&res_mods);
+    let units = classify_installed_root(&res_mods, None);
     let names: Vec<&str> = units.iter().map(|u| u.name.as_str()).collect();
     // Final ordering groups by kind then name (the list's stable display
     // order) — the ANCHORING contract is that every manifest row appears
@@ -1935,7 +1937,7 @@ fn unit_uninstall_removes_preload_copies() {
     let twin = game.join("bin/2/res_mods");
     touch(&live.join("PnFMods/Skin/Main.py"));
     touch(&twin.join("PnFMods/Skin/Main.py"));
-    let unit = classify_installed_root(&live)
+    let unit = classify_installed_root(&live, None)
         .into_iter()
         .find(|u| u.rel_path == "PnFMods/Skin")
         .expect("unit classified");
@@ -2223,6 +2225,8 @@ fn register_over_foreign_cuts_only_paired_manifest_rows() {
         description: String::new(),
         author_url: String::new(),
         i18n: std::collections::HashMap::new(),
+        aliases: Vec::new(),
+        preview: None,
         packages: vec![CatalogPackage {
             url: "https://x/a.zip".into(),
             sha256: String::new(),
@@ -2383,4 +2387,84 @@ fn blind_migration_moves_a_real_loader_marker_verbatim() {
     );
 
     fs::remove_dir_all(&game).ok();
+}
+
+/// The installed list pairs units against the online catalog at scan
+/// time: manifest rows pair through their row name, and un-manifested
+/// Aslain leftovers (directories the modpack writes but never lists in
+/// `installed_mods.xml`) pair through the entry's declared aliases — the
+/// only bridge for names that share no words with the display name
+/// (`ThreeDimentionalHydro` vs "3D Hydro", `TeamHP` vs "Team HP by
+/// TTaro", whose containment ratio falls one char short).
+#[test]
+fn scan_pairs_units_with_catalog_identities() {
+    use wowsp_tauri_shared::{CatalogEntry, CatalogIndex, CatalogPackage};
+    let tmp = std::env::temp_dir().join("wowsp_identity_scan");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("res_mods");
+    fs::create_dir_all(&rm).unwrap();
+    fs::write(
+        rm.join("installed_mods.xml"),
+        "<data><mod name=\"TeamHP\" version=\"1.1.0\" installer=\"4.3.1\"/></data>",
+    )
+    .unwrap();
+    // Un-manifested Aslain leftover: no manifest row mentions it.
+    touch(&rm.join("PnFMods/ThreeDimentionalHydro/Main.py"));
+    touch(&rm.join("PnFModsLoader.py"));
+
+    let entry = |id: &str, en: &str, aliases: Vec<&str>| CatalogEntry {
+        id: id.into(),
+        category: "battle".into(),
+        discussion: Some(1),
+        version: "1".into(),
+        game: "*".into(),
+        bundled: false,
+        delisted: false,
+        presets: Vec::new(),
+        tags: Vec::new(),
+        title: format!("[Mod] {en} {id} 1"),
+        name_zh: String::new(),
+        name_en: en.into(),
+        description: String::new(),
+        author_url: String::new(),
+        aliases: aliases.into_iter().map(Into::into).collect(),
+        preview: None,
+        i18n: std::collections::HashMap::new(),
+        packages: vec![CatalogPackage {
+            url: "https://x/a.zip".into(),
+            sha256: String::new(),
+            size: 1,
+            name: "a.zip".into(),
+        }],
+    };
+    let catalog = CatalogIndex {
+        source_version: String::new(),
+        game_version: String::new(),
+        fetched_at: String::new(),
+        mods: vec![
+            entry("battle.hydro.3d", "3D Hydro", vec!["ThreeDimentionalHydro"]),
+            entry(
+                "battle.minipanel.team-hp",
+                "Team HP by TTaro",
+                vec!["TeamHP"],
+            ),
+        ],
+    };
+    let mods = classify_installed_root(&rm, Some(&catalog));
+    let hydro = mods
+        .iter()
+        .find(|m| {
+            m.paths
+                .contains(&"PnFMods/ThreeDimentionalHydro".to_string())
+        })
+        .expect("leftover dir stays a unit");
+    assert_eq!(hydro.identity.as_deref(), Some("battle.hydro.3d"));
+    let teamhp = mods.iter().find(|m| m.name == "TeamHP").unwrap();
+    assert_eq!(teamhp.identity.as_deref(), Some("battle.minipanel.team-hp"));
+
+    // Without a catalog nothing pairs — the scan stays usable offline.
+    let bare = classify_installed_root(&rm, None);
+    assert!(bare.iter().all(|m| m.identity.is_none()));
+
+    fs::remove_dir_all(&tmp).ok();
 }

@@ -1,14 +1,22 @@
 use super::scan_installed::{UnitCandidate, gather_candidates, parse_installed_manifest};
 use super::*;
+use wowsp_tauri_shared::CatalogIndex;
 
 /// Classify one installed res_mods root into typed plugin units. When
 /// Aslain's `installed_mods.xml` manifest exists, its rows are the
 /// authoritative plugin list: filesystem groups attach to rows by name
 /// similarity, leftover groups stay standalone, and rows with no matched
 /// files become manifest-only rows so the list still mirrors the installer.
-pub(crate) fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
+/// With a catalog at hand every unit also carries its paired catalog entry
+/// id (see [`unit_identity`]) so the UI can show the entry's localized
+/// name over the raw directory/row name.
+pub(crate) fn classify_installed_root(
+    res_mods: &Path,
+    catalog: Option<&CatalogIndex>,
+) -> Vec<InstalledMod> {
     let cands = gather_candidates(res_mods);
     let manifest = parse_installed_manifest(res_mods);
+    let pairs = catalog.map(super::foreign::pairing_candidates);
 
     // Best manifest row per candidate. Exact name beats containment beats a
     // long shared prefix; ties go to the lexicographically smaller row name.
@@ -49,6 +57,8 @@ pub(crate) fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             .unwrap_or(ModKind::Patch);
         let detail = owned.iter().find_map(|c| c.detail.clone());
         let texture_analysis = owned.iter().find_map(|c| c.analysis.clone());
+        let mut names: Vec<&str> = vec![m.name.as_str()];
+        names.extend(owned.iter().map(|c| c.name.as_str()));
         mods.push(InstalledMod {
             kind,
             name: m.name.clone(),
@@ -60,6 +70,7 @@ pub(crate) fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             disabled: unit_disabled_state(res_mods, &paths),
             paths,
             version: m.version.clone(),
+            identity: unit_identity(&names, pairs.as_deref()),
             warnings: Vec::new(),
         });
     }
@@ -79,6 +90,7 @@ pub(crate) fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             paths: cand.paths.clone(),
             disabled,
             version: None,
+            identity: unit_identity(&[cand.name.as_str()], pairs.as_deref()),
             warnings: Vec::new(),
         });
     }
@@ -113,6 +125,25 @@ pub(crate) fn classify_installed_root(res_mods: &Path) -> Vec<InstalledMod> {
             .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     mods
+}
+
+/// The catalog entry id one unit pairs against: names are tried in order
+/// (the Aslain manifest row name first, then the filesystem group's base
+/// names — a row like `PenetrationCalculatorContainer` may carry no
+/// recognizable form while its directory `PenetrationCalculatorPy` does)
+/// and the first name that best-matches an entry wins. Same verdict
+/// function as the foreign scan, so the installed list, the foreign rows
+/// and the register-takeover always agree on who is who.
+fn unit_identity(
+    names: &[&str],
+    pairs: Option<&[super::foreign::PairCandidate]>,
+) -> Option<String> {
+    for name in names {
+        if let Some(id) = super::foreign::match_identity(name, pairs) {
+            return Some(id);
+        }
+    }
+    None
 }
 
 /// Similarity between an `installed_mods.xml` row name and a filesystem

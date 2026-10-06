@@ -829,6 +829,69 @@ export default defineComponent({
       return names;
     });
 
+    /** The catalog entry an installed unit paired against at scan time —
+     *  the backend's identity verdict first (name or Aslain-alias match
+     *  against the online index), then the legacy foreign-row name match
+     *  so pre-identity payloads keep pairing. */
+    function pairedEntryOf(unit: InstalledMod): CatalogEntry | null {
+      if (unit.identity) {
+        const byId = catalog.value.find((e) => e.id === unit.identity);
+        if (byId) return byId;
+      }
+      const hit = foreignUnits.value.find((f) => f.name === unit.name && f.identity);
+      if (!hit?.identity) return null;
+      return catalog.value.find((e) => e.id === hit.identity) ?? null;
+    }
+
+    /** Display name of an installed unit: the paired entry's localized
+     *  catalog name once we know which registered mod this copy is (the
+     *  raw directory names — `AdvancedTorpedoMarkerPy` and friends — stay
+     *  in the sub line), else the raw name. */
+    function unitDisplayName(unit: InstalledMod): string {
+      const paired = pairedEntryOf(unit);
+      return paired ? localized(paired).name || unit.name : unit.name;
+    }
+
+    /** The Aslain row backing this unit — manifest-row name match, or the
+     *  row that paired to the same catalog identity. */
+    function aslainRowOf(unit: InstalledMod): ForeignModUnit | null {
+      return (
+        foreignUnits.value.find(
+          (f) => f.installer === "aslain" && f.name === unit.name,
+        ) ??
+        (unit.identity
+          ? foreignUnits.value.find(
+              (f) => f.installer === "aslain" && f.identity === unit.identity,
+            ) ?? null
+          : null)
+      );
+    }
+
+    /** Is this unit part of an Aslain install? Rows name-match; leftover
+     *  directories (files the modpack wrote but never listed) count once
+     *  the install carries any Aslain manifest at all. */
+    function isAslainUnit(unit: InstalledMod): boolean {
+      return aslainNames.value.has(unit.name) || aslainRowOf(unit) !== null;
+    }
+
+    /** The relationship sentence under a paired installed unit: who
+     *  installed the files, what the catalog entry is, and what WoWSP
+     *  knows about it — the three-way identity story in one line. */
+    function pairedRelationOf(unit: InstalledMod, paired: CatalogEntry): string {
+      if (recordOf(paired.id)) return t("resources.pairedRelation.managed");
+      if (aslainRowOf(unit)) {
+        return t("resources.pairedRelation.aslain", {
+          source: installerLabel("aslain"),
+        });
+      }
+      if (aslainNames.value.size > 0) {
+        return t("resources.pairedRelation.extra", {
+          source: installerLabel("aslain"),
+        });
+      }
+      return t("resources.pairedRelation.plain");
+    }
+
     /** ModStation units live in bin/<ver>/mods/ — the res_mods scan never
      *  sees them, so the installed source lists them in their own strip. */
     const modstationUnits = computed(() =>
@@ -888,15 +951,6 @@ export default defineComponent({
       }
       return out;
     });
-
-    /** The catalog entry a foreign unit paired to an installed unit's
-     *  name — "which registered material pack is this" (wowsp.toml's
-     *  identity), shown only when a pairing exists. */
-    function pairedEntryOf(unit: InstalledMod): CatalogEntry | null {
-      const hit = foreignUnits.value.find((f) => f.name === unit.name && f.identity);
-      if (!hit?.identity) return null;
-      return catalog.value.find((e) => e.id === hit.identity) ?? null;
-    }
 
     /** A tag's localized label: exact locale, then the zh / en pair the
      *  registry guarantees, then the raw id (registry lag). */
@@ -971,7 +1025,9 @@ export default defineComponent({
     }
 
     const modMatches = (m: InstalledMod, q: string) =>
-      m.name.toLowerCase().includes(q) || m.relPath.toLowerCase().includes(q);
+      m.name.toLowerCase().includes(q) ||
+      m.relPath.toLowerCase().includes(q) ||
+      unitDisplayName(m).toLowerCase().includes(q);
 
     const kindCounts = computed(() => {
       const map = new Map<ModKind, number>();
@@ -1085,7 +1141,7 @@ export default defineComponent({
             <span class={["mod-row__tile", `mod-row__tile--${meta.class}`, "mod-row__tile--sm"]}>
               <Icon size={14} />
             </span>
-            <span class="resources-view__combo-name">{mod.name}</span>
+            <span class="resources-view__combo-name">{unitDisplayName(mod)}</span>
             {mod.version && <span class="resources-view__combo-ver">{mod.version}</span>}
           </>
         );
@@ -1318,6 +1374,14 @@ export default defineComponent({
             {(text.desc || entry.description) && (
               <p class="mod-detail__desc">{text.desc || entry.description}</p>
             )}
+            {entry.preview && (
+              <img
+                class="mod-detail__preview"
+                src={entry.preview}
+                alt={text.name || entry.title}
+                loading="lazy"
+              />
+            )}
             <div class="mod-detail__meta">
               <span>{t("resources.gameRange", { game: entry.game })}</span>
               {kb > 0 && (
@@ -1419,27 +1483,48 @@ export default defineComponent({
             </span>
             <div class="mod-detail__id">
               <div class="mod-detail__name">
-                {mod.name}
+                {unitDisplayName(mod)}
                 {mod.version && <span class="mod-row__ver">{mod.version}</span>}
               </div>
               <div class="mod-detail__en">{kindLabel(mod.kind)}</div>
             </div>
           </div>
           <div class="mod-detail__scroll">
-            {(mod.disabled || aslainNames.value.has(mod.name)) && (
+            {(mod.disabled || isAslainUnit(mod)) && (
               <div class="mod-detail__badges">
                 {mod.disabled && (
                   <span class="mod-detail__badge mod-detail__badge--warn">
                     {t("resources.disabled")}
                   </span>
                 )}
-                {aslainNames.value.has(mod.name) && (
+                {isAslainUnit(mod) && (
                   <span class="mod-detail__badge">
                     {t("resources.foreignSource.aslain")}
                   </span>
                 )}
               </div>
             )}
+            {(() => {
+              const paired = pairedEntryOf(mod);
+              if (!paired) return null;
+              return (
+                <div class="mod-detail__paired">
+                  <div class="mod-detail__paired-head">
+                    <span>{t("resources.pairedHead")}</span>
+                    <button class="mod-detail__link" onClick={() => selectCatalog(paired)}>
+                      {t("resources.pairedOpen")}
+                    </button>
+                  </div>
+                  <div class="mod-detail__paired-name">
+                    {localized(paired).name || paired.title || paired.nameEn}
+                    {unitDisplayName(mod) !== mod.name && (
+                      <span class="mod-detail__paired-raw">{mod.name}</span>
+                    )}
+                  </div>
+                  <p class="mod-detail__paired-note">{pairedRelationOf(mod, paired)}</p>
+                </div>
+              );
+            })()}
             {(mod.warnings ?? []).length > 0 && (
               <ul class="plan-card__warnings">
                 {(mod.warnings ?? []).map((w, i) => (
@@ -2552,7 +2637,7 @@ export default defineComponent({
                           </span>
                           <span class="mod-row__body">
                             <span class="mod-row__name">
-                              {m.name}
+                              {unitDisplayName(m)}
                               {m.version && <span class="mod-row__ver">{m.version}</span>}
                             </span>
                             <span class="mod-row__sub">
@@ -2561,7 +2646,9 @@ export default defineComponent({
                                     count: m.textureAnalysis.ships.length,
                                     ships: m.textureAnalysis.ships.slice(0, 2).join(" · "),
                                   })
-                                : `${kindLabel(m.kind)} · ${m.relPath}`}
+                                : unitDisplayName(m) !== m.name
+                                  ? `${kindLabel(m.kind)} · ${m.name}`
+                                  : `${kindLabel(m.kind)} · ${m.relPath}`}
                             </span>
                           </span>
                           <span class="mod-row__tail">
@@ -2572,7 +2659,7 @@ export default defineComponent({
                                 {t("resources.disabled")}
                               </span>
                             ) : null}
-                            {aslainNames.value.has(m.name) && (
+                            {isAslainUnit(m) && (
                               <span class="mod-row__badge mod-row__badge--src">
                                 {t("resources.foreignSource.aslain")}
                               </span>

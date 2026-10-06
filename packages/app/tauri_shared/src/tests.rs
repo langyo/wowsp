@@ -1779,6 +1779,7 @@ fn installed_mod_skips_texture_analysis_when_absent() {
         paths: vec!["PnFMods/PJSB001".into()],
         disabled: false,
         version: None,
+        identity: None,
         warnings: Vec::new(),
     };
     let v = round_trips(plain.clone());
@@ -2137,6 +2138,8 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
         )]
         .into_iter()
         .collect(),
+        aliases: vec!["TeamHP".into()],
+        preview: Some("https://user-images.githubusercontent.com/x/1.jpg".into()),
     };
     let v = round_trips(entry);
     assert_exact_keys(
@@ -2156,11 +2159,14 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
             "nameEn",
             "description",
             "authorUrl",
+            "aliases",
+            "preview",
             "packages",
             "i18n",
         ],
     );
     assert_eq!(v["i18n"]["zh-CN"]["name"], "zh-name");
+    assert_eq!(v["aliases"][0], "TeamHP");
 }
 
 #[test]

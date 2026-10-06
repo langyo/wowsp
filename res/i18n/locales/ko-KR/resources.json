@@ -60,6 +60,14 @@
   "foreignUnpaired": "카탈로그 매칭 없음",
   "foreignPairedHint": "온라인 카탈로그의 \"{name}\" 와(과) 매칭됩니다.",
   "foreignOpenPaired": "카탈로그 항목 열기",
+  "pairedHead": "온라인 카탈로그 일치",
+  "pairedOpen": "항목 열기",
+  "pairedRelation": {
+    "managed": "이 사본은 WoWSP가 설치·관리하며, 대응하는 온라인 항목이 업데이트와 제거를 제공합니다.",
+    "aslain": "이 파일들은 {source}이(가) 설치했습니다(매니페스트 행이 이 항목과 연결). 항목에서 '등록 후 재설치'하면 WoWSP 관리로 전환됩니다.",
+    "extra": "{source} 설치가 기록했지만 매니페스트에는 등록되지 않은 구성 요소입니다(디렉터리 이름으로 항목과 연결). '등록 후 재설치'로 깔끔하게 인계할 수 있습니다.",
+    "plain": "아직 WoWSP 관리 대상이 아닙니다. 대응 항목을 통해 등록 버전을 이 사본 위에 설치할 수 있습니다."
+  },
   "registeredOverForeign": "\"{name}\"이(가) WoWSP에 등록되었습니다. 이후 업데이트와 제거는 WoWSP가 관리합니다.",
   "modstationUninstalled": "ModStation 모드 \"{name}\"을(를) 삭제했습니다.",
   "modstationUninstallConfirm": "ModStation 모드 \"{name}\"을(를) 삭제할까요? bin/<버전>/mods/ 아래의 전체 디렉터리가 삭제됩니다.",
@@ -110,6 +118,7 @@
     "port": "항구",
     "text": "텍스트 및 채팅",
     "skin": "함선 스킨",
+    "ui": "UI 스킨",
     "voice": "보이스 팩"
   },
   "big": {

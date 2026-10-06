@@ -1027,6 +1027,62 @@
     color: rgb(var(--color-text) / 88%);
   }
 
+  /* The installed unit ↔ online-entry pairing card: which registered mod
+     this directory copy is, its raw name, and who installed what. */
+  &__paired {
+    padding: 0.55rem 0.75rem;
+    border-left: 3px solid rgb(var(--color-primary) / 45%);
+    background: rgb(var(--color-primary) / 5%);
+    border-radius: var(--radius-xs);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  &__paired-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__paired-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  &__paired-raw {
+    font-size: var(--text-xs);
+    font-weight: 400;
+    color: rgb(var(--color-muted));
+    font-family: var(--font-mono, monospace);
+  }
+
+  &__paired-note {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-text) / 75%);
+  }
+
+  /* First screenshot of the online entry — full-width, quiet radius. */
+  &__preview {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgb(var(--color-border) / 25%);
+    display: block;
+  }
+
   /* Install-time scheme selector (palette / position / display mode):
      a quiet label above the segmented strip, mirroring the sidebar's
      filter-stack voice. */

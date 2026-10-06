@@ -96,10 +96,16 @@ Discussions 资源帖模板（节选）：
     version: 1.4.0
     game: ">=14.3 <14.6"
     category: skins
+    aliases: SMO_HazeSkins, SeaHazeSkinsPy
     license: CC0-1.0
     ---
     正文（Markdown，含预览图）……
     附件：sea-haze-skins-1.4.0.zip（SHA-256: …）
+
+`aliases`（可选，逗号分隔）登记该条目在外部安装器名下的一切名字——
+Aslain 整合包的清单行 ID 与落盘目录名。索引器将其采集进
+`mod-index.json`，应用侧配对按精确身份处理：`TeamHP` 这类与展示名
+（"Team HP by TTaro"）毫不相干的原始目录名，也能解析到正确条目。
 
 用 Discussions 而不是 Releases 的原因：评论区就是用户反馈与兼容性回报（"14.6 实测可用"会被索引器吸收为兼容性信号），Watch/通知即订阅，零后端成本。
 

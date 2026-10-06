@@ -91,6 +91,21 @@ def parse_i18n(body: str) -> dict:
     return out
 
 
+# Markdown image whose target is GitHub-hosted media: the user-attachments
+# CDN (`github.com/user-attachments/assets/<uuid>`, extension-less) and
+# the legacy githubusercontent.com image hosts. The release's own
+# /releases/download/ links are zips and never match either host shape.
+PREVIEW_RE = re.compile(
+    r"!\[[^\]]*\]\((https://(?:github\.com/user-attachments/|[\w.-]*githubusercontent\.com/)[^)\s]+)\)"
+)
+
+
+def parse_preview(body: str) -> str:
+    """First screenshot URL of a thread body ('' when it carries none)."""
+    m = PREVIEW_RE.search(body or "")
+    return m.group(1) if m else ""
+
+
 def parse_presets(body: str) -> list[dict]:
     r"""Ordered preset list from a thread body: package lines tagged
     `· preset `id`` joined with the wowsp:presets label block. A preset
@@ -183,6 +198,14 @@ def index_discussions(nodes: list[dict]) -> dict:
             for t in (meta.get("tags") or "").split(",")
             if t.strip() and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", t.strip())
         ))
+        # Foreign-installer names (comma-separated `aliases:`) — the Aslain
+        # modpack's manifest row ids and directory names. Free-form tokens:
+        # CamelCase and underscore ids are the norm, so no slug grammar here.
+        alias_ids = list(dict.fromkeys(
+            a.strip()
+            for a in (meta.get("aliases") or "").split(",")
+            if a.strip()
+        ))
         entry = mods.setdefault(
             mod_id,
             {
@@ -193,6 +216,7 @@ def index_discussions(nodes: list[dict]) -> dict:
                 "signals": {},
                 "discussion": d.get("number"),
                 **({"tags": tag_ids} if tag_ids else {}),
+                **({"aliases": alias_ids} if alias_ids else {}),
             },
         )
         version = meta.get("version", "0")
@@ -229,6 +253,9 @@ def index_discussions(nodes: list[dict]) -> dict:
         i18n = parse_i18n(d.get("body") or "")
         if i18n:
             entry["versions"][version]["i18n"] = i18n
+        preview = parse_preview(d.get("body") or "")
+        if preview:
+            entry["versions"][version]["preview"] = preview
         for ver, reporters in signals.items():
             entry["signals"].setdefault(ver, []).extend(reporters)
     # Only the newest version is catalog-facing; keep compatibility verdicts.

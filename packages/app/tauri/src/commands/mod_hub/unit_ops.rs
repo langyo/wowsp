@@ -19,7 +19,7 @@ pub async fn mod_hub_set_unit_enabled(
     if !res_mods.is_dir() {
         return Err("res_mods directory not found".into());
     }
-    let unit = classify_installed_root(&res_mods)
+    let unit = classify_installed_root(&res_mods, None)
         .into_iter()
         .find(|u| u.rel_path == rel_path)
         .ok_or_else(|| format!("no installed plugin at {rel_path}"))?;
@@ -198,7 +198,7 @@ pub async fn mod_hub_uninstall_unit(
     if !res_mods.is_dir() {
         return Err("res_mods directory not found".into());
     }
-    let unit = classify_installed_root(&res_mods)
+    let unit = classify_installed_root(&res_mods, None)
         .into_iter()
         .find(|u| u.rel_path == rel_path)
         .ok_or_else(|| format!("no installed plugin at {rel_path}"))?;

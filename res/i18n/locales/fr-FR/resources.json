@@ -60,6 +60,14 @@
   "foreignUnpaired": "Pas de correspondance",
   "foreignPairedHint": "Apparié avec « {name} » du catalogue en ligne.",
   "foreignOpenPaired": "Ouvrir la fiche",
+  "pairedHead": "Correspondance du catalogue",
+  "pairedOpen": "Ouvrir la fiche",
+  "pairedRelation": {
+    "managed": "Cette copie est installée et gérée par WoWSP ; la fiche associée fournit mises à jour et désinstallation.",
+    "aslain": "Ces fichiers ont été installés par {source} (sa ligne de manifeste correspond à cette fiche). « Enregistrer et réinstaller » place la copie sous gestion WoWSP.",
+    "extra": "Écrits par l'installation {source} mais absents de son manifeste (composant intégré) ; appariés par nom de dossier. « Enregistrer et réinstaller » les reprend proprement.",
+    "plain": "Pas encore gérée par WoWSP. La fiche associée peut installer la version enregistrée par-dessus cette copie."
+  },
   "registeredOverForeign": "« {name} » est désormais enregistré dans WoWSP — les mises à jour et désinstallations sont gérées ici.",
   "modstationUninstalled": "Le mod ModStation « {name} » a été supprimé.",
   "modstationUninstallConfirm": "Supprimer le mod ModStation « {name} » ? Son dossier entier sous bin/<version>/mods/ sera effacé.",
@@ -110,6 +118,7 @@
     "port": "Port",
     "text": "Textes et chat",
     "skin": "Skins de navires",
+    "ui": "Habillages d'interface",
     "voice": "Packs vocaux"
   },
   "big": {

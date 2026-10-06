@@ -21,6 +21,7 @@ import {
   Palette,
   Puzzle,
   ScrollText,
+  Sparkles,
 } from "@lucide/vue";
 
 import type { ModKind } from "@/api";
@@ -49,6 +50,7 @@ export type CatalogCat =
   | "port"
   | "text"
   | "skin"
+  | "ui"
   | "voice";
 export const CATALOG_CATS: CatalogCat[] = [
   "battle",
@@ -56,6 +58,7 @@ export const CATALOG_CATS: CatalogCat[] = [
   "port",
   "text",
   "skin",
+  "ui",
   "voice",
 ];
 
@@ -93,8 +96,11 @@ const CAT_BIG: Record<CatalogCat, BigCat> = {
   text: "function",
   // Material and voice packs — the visual/audio half of the catalog. They
   // land in their own big categories so the covered-parts view and the
-  // voice preview can own them.
+  // voice preview can own them. `ui` is the interface-skin half of the
+  // material world (ribbon/icon themes, HUD reskins): visual payloads
+  // over game UI, not ship paint.
   skin: "texture",
+  ui: "texture",
   voice: "voice",
 };
 
@@ -111,6 +117,7 @@ const CAT_ICON: Record<CatalogCat, typeof Puzzle> = {
   port: Anchor,
   text: MessagesSquare,
   skin: ImageIcon,
+  ui: Sparkles,
   voice: AudioLines,
 };
 

@@ -1210,6 +1210,10 @@ export interface InstalledMod {
   disabled: boolean;
   /** Version from Aslain's installed_mods.xml, when manifest-backed. */
   version?: string | null;
+  /** Catalog entry id the unit paired against at scan time (name or
+   *  Aslain-alias match against the online index) — drives the localized
+   *  display name. Absent when nothing paired. */
+  identity?: string | null;
 }
 
 /** Result of toggling one installed plugin's `.bak` state. */
@@ -1278,7 +1282,7 @@ export interface CatalogPreset {
 /** The latest version payload of one mod in `mod-index.json`. */
 export interface CatalogEntry {
   id: string;
-  /** `battle | minimap | port | texts`. */
+  /** `battle | minimap | port | texts | skin | voice | ui`. */
   category: string;
   /** Discussions thread carrying the full post (source, hashes, feedback). */
   discussion?: number | null;
@@ -1303,6 +1307,13 @@ export interface CatalogEntry {
   packages: CatalogPackage[];
   /** Localized variants keyed by BCP-47 locale; empty for older posts. */
   i18n: Record<string, CatalogEntryI18n>;
+  /** Foreign-installer names this entry answers to exactly (Aslain
+   *  manifest row ids and on-disk directory names) — the pairing alias
+   *  channel. Absent on older indexes. */
+  aliases?: string[];
+  /** First preview screenshot (GitHub user-attachment URL); absent when
+   *  the discussion carries no image. */
+  preview?: string | null;
 }
 
 /** Parsed `mod-index.json` — the online plugin list the hub page renders. */

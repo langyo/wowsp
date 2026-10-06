@@ -60,6 +60,14 @@
   "foreignUnpaired": "未配對目錄條目",
   "foreignPairedHint": "與線上目錄中的「{name}」配對。",
   "foreignOpenPaired": "開啟目錄條目",
+  "pairedHead": "對應線上目錄條目",
+  "pairedOpen": "開啟條目",
+  "pairedRelation": {
+    "managed": "此副本由 WoWSP 安裝並管理；配對的線上條目負責提供更新與解除安裝。",
+    "aslain": "這些檔案由{source}安裝（其清單行與該條目配對）。在條目頁「註冊並重新安裝」可將此副本納入 WoWSP 管理。",
+    "extra": "由{source}的安裝寫入、但未登記在其清單中（整合包的附加元件）；按目錄名與條目配對。「註冊並重新安裝」可乾淨接管。",
+    "plain": "尚未納入 WoWSP 管理。可透過配對條目在此副本上安裝登記版本。"
+  },
   "registeredOverForeign": "「{name}」已註冊到 WoWSP，後續更新與解除安裝均由 WoWSP 管理。",
   "modstationUninstalled": "已刪除 ModStation 模組「{name}」。",
   "modstationUninstallConfirm": "刪除 ModStation 模組「{name}」？其在 bin/<版本>/mods/ 下的整個資料夾將被移除。",
@@ -110,6 +118,7 @@
     "port": "港口",
     "text": "文字與聊天",
     "skin": "艦船皮膚",
+    "ui": "介面皮膚",
     "voice": "語音包"
   },
   "big": {

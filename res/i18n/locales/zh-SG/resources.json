@@ -60,6 +60,14 @@
   "foreignUnpaired": "未配对目录条目",
   "foreignPairedHint": "与在线目录中的「{name}」配对。",
   "foreignOpenPaired": "打开目录条目",
+  "pairedHead": "对应在线目录条目",
+  "pairedOpen": "打开条目",
+  "pairedRelation": {
+    "managed": "此副本由 WoWSP 安装并管理；配对的在线条目负责提供更新与卸载。",
+    "aslain": "这些文件由{source}安装（其清单行与该条目配对）。在条目页「注册并重新安装」可将此副本纳入 WoWSP 管理。",
+    "extra": "由{source}的安装写入、但未登记在其清单中（整合包的附加组件）；按目录名与条目配对。「注册并重新安装」可干净接管。",
+    "plain": "尚未纳入 WoWSP 管理。可通过配对条目在此副本上安装登记版本。"
+  },
   "registeredOverForeign": "「{name}」已注册到 WoWSP，后续更新与卸载均由 WoWSP 管理。",
   "modstationUninstalled": "已删除 ModStation 模组「{name}」。",
   "modstationUninstallConfirm": "删除 ModStation 模组「{name}」？其在 bin/<版本>/mods/ 下的整个目录将被移除。",
@@ -110,6 +118,7 @@
     "port": "港口",
     "text": "文本与聊天",
     "skin": "舰船皮肤",
+    "ui": "界面皮肤",
     "voice": "语音包"
   },
   "big": {

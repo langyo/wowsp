@@ -16,6 +16,8 @@ Stages (all idempotent, run them in order):
     python scripts/mod_hub_publish.py previews    # preview jpgs -> user-attachment urls
     python scripts/mod_hub_publish.py release     # ensure mod-hub release + upload zips
     python scripts/mod_hub_publish.py discussions # one thread per mod (skips existing)
+    python scripts/mod_hub_publish.py enrich      # rewrite live threads: aliases, rich
+                                                  # descriptions, screenshot galleries
     python scripts/mod_hub_publish.py index       # emit + upload mod-index.json
 
     python scripts/mod_hub_publish.py curate --dry-run   # just print the selection
@@ -88,7 +90,7 @@ EXCLUDE_MODS = {
 # name + one-line description in every supported locale. The indexer and the
 # app both parse the raw body, so the block doubles as the machine-readable
 # translation source. Missing locales fall back to en-US on the consumer side.
-I18N_LOCALES = ["en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "de-DE", "fr-FR"]
+I18N_LOCALES = ["en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "de-DE", "fr-FR", "es-ES"]
 
 
 def build_i18n_block(i18n: dict) -> str:
@@ -112,7 +114,7 @@ def thread_title(mod: dict) -> str:
 
 def build_i18n_details(i18n: dict) -> str:
     """Visible collapsed section listing the description in every locale."""
-    lines = ["<details>", "<summary>📖 Description in 8 languages</summary>", ""]
+    lines = ["<details>", f"<summary>📖 Description in {len(I18N_LOCALES)} languages</summary>", ""]
     for lang in I18N_LOCALES:
         entry = (i18n or {}).get(lang) or {}
         name = entry.get("name", "")
@@ -127,19 +129,22 @@ def build_i18n_details(i18n: dict) -> str:
     return "\n".join(lines)
 
 
+I18N_LOCALE_RE = re.compile(r"^([a-z]{2,3}-[A-Za-z]{2,4}):\s*(.+)$")
+
+
 def parse_i18n_block(body: str) -> dict:
-    """Read the wowsp:i18n block back out of a raw discussion body."""
+    """Read the wowsp:i18n block back out of a raw discussion body (same
+    locale grammar as the indexer's parse_i18n — BCP-47-ish tags, not URLs)."""
     m = re.search(r"wowsp:i18n\n(.*?)\nwowsp:i18n", body or "", re.DOTALL)
     if not m:
         return {}
     out: dict = {}
     for line in m.group(1).splitlines():
-        lang, sep, rest = line.partition(":")
-        lang = lang.strip()
-        if not sep or "/" not in lang:
+        loc = I18N_LOCALE_RE.match(line.strip())
+        if not loc:
             continue
-        name, _, desc = rest.partition("|")
-        out[lang] = {"name": name.strip(), "desc": desc.strip()}
+        name, _, desc = loc.group(2).partition("|")
+        out[loc.group(1)] = {"name": name.strip(), "desc": desc.strip()}
     return out
 
 
@@ -158,6 +163,54 @@ CATEGORY_MAP = {
     "Chat": "texts",
     "texts": "texts",
 }
+
+
+# Aslain-side names that no display-name similarity tier can bridge — the
+# modpack's manifest row ids and the on-disk directory names its packages
+# write. Each list is emitted as the discussion's `aliases:` front-matter,
+# harvested into mod-index.json, and treated by the app as EXACT pairing
+# identity (see foreign.rs `entry_name_forms`). Verified against a live
+# Aslain 4.3.1 install; the ingest's `aslain_id` is appended automatically
+# so plain row ids need no entry here.
+ASLAIN_ALIASES: dict[str, list[str]] = {
+    "battle.timer.clock": ["BADoBEST_BattleClock"],
+    "battle.marker.torpedo-spotted": ["BattleFrame_TorpedoDetection", "BattleFrame_Torpedoes"],
+    "port.crew.counter": ["CrewCounter"],
+    "port.population.server": ["Port_Interface_ServerPopulation"],
+    "battle.minipanel.team-hp": ["TeamHP"],
+    "minimap.rpf.2d": ["TwoDimentionalRadio"],
+    "minimap.ping.submarine": ["MinimapSubPingerPy"],
+    "battle.hydro.3d": ["ThreeDimentionalHydro"],
+    "battle.radar.3d": ["ThreeDimentionalRadar"],
+    "battle.rpf.3d": ["ThreeDimentionalRadio"],
+    "battle.impact-angle.all": ["VisibleAngleOfImpact_Enemy"],
+    "battle.marker.consumables": ["ConsumablesMonitor2Py"],
+    "battle.marker.torpedo-advanced": ["AdvancedTorpedoMarkerPy"],
+    "battle.marker.regen": ["RegenMonitorPy"],
+    "battle.marker.smoke": ["SmokeMarkerPy"],
+    "battle.build.viewer": ["BuildViewerPy"],
+    "battle.module.viewer": ["ModuleStateViewerPy"],
+    "battle.calculator.penetration": ["PenetrationCalculatorPy"],
+}
+
+# Entry-level category corrections applied by `enrich` regardless of what
+# curate knows (hand-published threads are outside the Aslain ingest).
+# The Azur Lane ribbons pack is an interface skin, not a ship model — the
+# only live `skin` miscategorization today.
+CATEGORY_OVERRIDE: dict[str, str] = {
+    "skin.ribbon.azur-lane": "ui",
+}
+
+
+def aliases_of(mod: dict) -> list[str]:
+    """Every Aslain-side name an entry answers to: the curated table plus
+    the raw Aslain Mod Id (manifest rows carry it verbatim), deduped,
+    order-stable."""
+    out = list(ASLAIN_ALIASES.get(mod["id"], []))
+    aslain_id = mod.get("aslain_id") or ""
+    if aslain_id and aslain_id not in out:
+        out.append(aslain_id)
+    return out
 
 
 def gh(*args: str, input_text: str | None = None) -> str:
@@ -290,7 +343,12 @@ def curate(cache: Path, dry_run: bool = False) -> list[dict]:
             meta = locs.get(mid, {})
             en = meta.get("en-US", {})
             zh = meta.get("zh-CN", {})
-            preview = mod.attrib.get("Preview", "")
+            # Preview carries one OR MORE `|`-separated screenshots.
+            previews = [resolve_url(base_url, part) for part in (mod.attrib.get("Preview") or "").split("|") if part.strip()]
+            loc_meta = {
+                lang: {"name": (a.get("Name") or "").strip(), "desc": re.sub(r"\s+", " ", a.get("Description") or "").strip()}
+                for lang, a in meta.items()
+            }
             mods.append(
                 {
                     "id": SLUG_MAP.get(slugify(mid), slugify(mid)),
@@ -304,7 +362,9 @@ def curate(cache: Path, dry_run: bool = False) -> list[dict]:
                     "name_zh": zh.get("Name") or "",
                     "description": re.sub(r"\s+", " ", en.get("Description") or "").strip(),
                     "author_url": mod.attrib.get("AuthorUrl", ""),
-                    "preview_url": resolve_url(base_url, preview) if preview else "",
+                    "preview_url": previews[0] if previews else "",
+                    "preview_urls": previews,
+                    "loc_meta": loc_meta,
                     "packages": packages,
                     "total_kb": sum(p["size_kb"] for p in packages),
                 }
@@ -481,24 +541,45 @@ SIGNAL_NOTE = (
 )
 
 
+def aliases_line(mod: dict) -> str:
+    """The `aliases: a, b` front-matter line ('' when the entry declares
+    none). Values may not contain commas or colons — front-matter values
+    here are plain words by construction."""
+    names = aliases_of(mod)
+    return f"aliases: {', '.join(names)}" if names else ""
+
+
+def preview_gallery(mod: dict) -> list[str]:
+    """Markdown image lines for every uploaded screenshot (gallery first,
+    the legacy single attachment respected)."""
+    urls = list(mod.get("preview_attachments") or [])
+    single = mod.get("preview_attachment") or ""
+    if single and single not in urls:
+        urls.insert(0, single)
+    return [f"![{mod['name_en']}]({u})" for u in urls if u]
+
+
 def discussion_body(mod: dict) -> str:
-    lines = [
+    front = [
         "---",
         f"wowsp-mod: {mod['id']}",
         f"version: {mod['version']}",
         f'game: "{mod["game"]}"',
         f"category: {mod['category']}",
-        "license: Unspecified (upstream)",
-        "---",
-        "",
     ]
+    alias = aliases_line(mod)
+    if alias:
+        front.append(alias)
+    front += ["license: Unspecified (upstream)", "---", ""]
+    lines = front
     if mod.get("i18n"):
         lines.append(build_i18n_block(mod["i18n"]))
         lines.append("")
         lines.append(build_i18n_details(mod["i18n"]))
         lines.append("")
-    if mod.get("preview_attachment"):
-        lines.append(f"![{mod['name_en']}]({mod['preview_attachment']})")
+    gallery = preview_gallery(mod)
+    if gallery:
+        lines.extend(gallery)
         lines.append("")
     title = f"**{mod['name_zh']}** / {mod['name_en']}" if mod["name_zh"] else f"**{mod['name_en']}**"
     lines.append(title)
@@ -645,6 +726,208 @@ def update_bodies(cache: Path) -> None:
     print(f"{updated} discussion bodies updated")
 
 
+# ---------------------------------------------------------------- enrich
+
+
+# Download/preset lines are the only irreplaceable payload in a thread
+# body (URLs + SHA-256 of the release assets) — `enrich` copies them
+# verbatim instead of regenerating from state it may not have.
+DOWNLOAD_LINE_RE = re.compile(r"^- \[`[^`]+`\]\(https?://[^)]+\).*$", re.MULTILINE)
+PRESETS_BLOCK_SRC_RE = re.compile(r"<!--\nwowsp:presets\n.*?\nwowsp:presets\n-->", re.DOTALL)
+
+
+def crawl_threads() -> list[dict]:
+    """Every discussion node carrying wowsp-mod front-matter, with body."""
+    data = gh_graphql(CRAWL_QUERY, owner=REPO.split("/")[0], name=REPO.split("/")[1])
+    repo_node = data["repository"]
+    nodes = repo_node["discussions"]["nodes"]
+    page = repo_node["discussions"]["pageInfo"]
+    while page["hasNextPage"]:
+        data = gh_graphql(CRAWL_QUERY, owner=REPO.split("/")[0], name=REPO.split("/")[1], cursor=page["endCursor"])
+        nodes.extend(data["repository"]["discussions"]["nodes"])
+        page = data["repository"]["discussions"]["pageInfo"]
+    fm = re.compile(r"\A---\s*\n(.*?)\n---", re.DOTALL)
+    out = []
+    for node in nodes:
+        m = fm.match(node["body"] or "")
+        if not m:
+            continue
+        kv = re.search(r"wowsp-mod:\s*(\S+)", m.group(1))
+        if kv:
+            out.append({"slug": kv.group(1), "number": node["number"], "id": node["id"],
+                        "title": node["title"], "body": node["body"] or ""})
+    return out
+
+
+def parse_front_matter_map(body: str) -> dict[str, str]:
+    m = re.match(r"\A---\s*\n(.*?)\n---", body or "", re.DOTALL)
+    out: dict[str, str] = {}
+    if not m:
+        return out
+    for line in m.group(1).splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            out[key.strip()] = value.strip().strip('"')
+    return out
+
+
+def merged_i18n(curated: dict | None, body: str) -> dict:
+    """Existing block first (hand-polished zh-TW / ko-KR survive), then
+    Aslain's own localized names/descriptions overlay their languages."""
+    i18n = {lang: dict(v) for lang, v in parse_i18n_block(body).items()}
+    for lang, meta in ((curated or {}).get("loc_meta") or {}).items():
+        entry = i18n.setdefault(lang, {"name": "", "desc": ""})
+        if meta.get("name") and not entry.get("name"):
+            entry["name"] = meta["name"]
+        if meta.get("desc"):
+            entry["desc"] = meta["desc"]
+    return {lang: v for lang, v in i18n.items() if v.get("name") or v.get("desc")}
+
+
+def enrich_body(curated: dict | None, thread: dict, gallery_urls: list[str]) -> str:
+    """The next-generation thread body: refreshed front-matter (aliases,
+    category override), the merged i18n block, a screenshot gallery and
+    Aslain's full description — with the download/preset payload carried
+    over byte-for-byte from the live body."""
+    fm = parse_front_matter_map(thread["body"])
+    slug = thread["slug"]
+    category = CATEGORY_OVERRIDE.get(slug) or (curated or {}).get("category") or fm.get("category") or "aux"
+    version = fm.get("version") or (curated or {}).get("version") or "1"
+    game = fm.get("game") or (curated or {}).get("game") or "*"
+    pseudo = {
+        "id": slug,
+        "version": version,
+        "game": game,
+        "category": category,
+        "aslain_id": (curated or {}).get("aslain_id", ""),
+    }
+    i18n = merged_i18n(curated, thread["body"])
+    name_en = (curated or {}).get("name_en") or slug
+    name_zh = (curated or {}).get("name_zh") or ""
+    lines = ["---", f"wowsp-mod: {slug}", f"version: {version}", f'game: "{game}"', f"category: {category}"]
+    alias = aliases_line(pseudo)
+    if alias:
+        lines.append(alias)
+    lines += ["license: Unspecified (upstream)", "---", ""]
+    if i18n:
+        lines.append(build_i18n_block(i18n))
+        lines.append("")
+        lines.append(build_i18n_details(i18n))
+        lines.append("")
+    for url in gallery_urls:
+        lines.append(f"![{name_en}]({url})")
+    if gallery_urls:
+        lines.append("")
+    title = f"**{name_zh}** / {name_en}" if name_zh else f"**{name_en}**"
+    lines.append(title)
+    lines.append("")
+    desc = (curated or {}).get("description") or ""
+    if desc:
+        lines.append(desc)
+        lines.append("")
+    presets_block = PRESETS_BLOCK_SRC_RE.search(thread["body"])
+    if presets_block:
+        lines.append(presets_block.group(0))
+        lines.append("")
+    downloads = DOWNLOAD_LINE_RE.findall(thread["body"])
+    if downloads:
+        lines.append("### 下载 / Download")
+        lines.append("")
+        lines.extend(downloads)
+        lines.append("")
+    lines.append("| | |")
+    lines.append("| --- | --- |")
+    lines.append(f"| 版本 / version | `{version}` |")
+    lines.append(f"| 兼容 / game | `{game}` |")
+    author_url = (curated or {}).get("author_url", "")
+    source = "[Aslain's WoWs Modpack](https://aslain.com/)"
+    if author_url:
+        source += f" · [author]({author_url})"
+    lines.append(f"| 来源 / source | {source} |")
+    lines.append("")
+    lines.append(SIGNAL_NOTE)
+    return "\n".join(lines)
+
+
+def upload_galleries(cache: Path, state_path: Path) -> dict[str, list[str]]:
+    """Upload every mod's preview screenshots once; results cached by
+    slug so re-runs never re-upload."""
+    state = load_state(cache)
+    cached: dict[str, list[str]] = {}
+    if state_path.exists():
+        cached = json.loads(state_path.read_text(encoding="utf-8"))
+    repo_id = None
+    for mod in state["mods"]:
+        urls = mod.get("preview_urls") or ([mod["preview_url"]] if mod.get("preview_url") else [])
+        if not urls:
+            continue
+        key = mod["id"]
+        if key in cached and len(cached[key]) == len(urls):
+            continue
+        if repo_id is None:
+            repo_id = json.loads(gh(f"repos/{REPO}"))["id"]
+        uploaded: list[str] = []
+        for idx, url in enumerate(urls, start=1):
+            dest = cache / "previews" / f"{mod['id']}-{idx}.jpg"
+            try:
+                data = dest.read_bytes() if dest.exists() else fetch_binary(url, dest).read_bytes()
+                uploaded.append(upload_user_attachment(data, f"{mod['id']}-{idx}.jpg", "image/jpeg", str(repo_id)))
+                time.sleep(0.2)
+            except Exception as exc:  # noqa: BLE001 - previews are best-effort
+                print(f"  gallery {mod['id']} #{idx} FAILED: {exc}", flush=True)
+        if uploaded:
+            cached[key] = uploaded
+            state_path.write_text(json.dumps(cached, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"  gallery {mod['id']}: {len(uploaded)} image(s)", flush=True)
+    return cached
+
+
+def enrich(cache: Path, only: str | None = None, dry_run: bool = False) -> None:
+    """Rewrite every published thread to the enriched template WITHOUT the
+    original publish state: download lines, presets and signals survive
+    byte-for-byte from the live body, while front-matter (aliases,
+    category), the i18n block, descriptions and the screenshot gallery are
+    rebuilt from a fresh Aslain curate pass. `--only <slug>` restricts the
+    run; `--dry-run` prints the would-be body instead of mutating."""
+    if not (cache / "curated.json").exists():
+        print("curated.json missing - running curate first", flush=True)
+        curate(cache)
+    state = load_state(cache)
+    curated_by_id = {m["id"]: m for m in state["mods"]}
+    galleries = {} if dry_run else upload_galleries(cache, cache / "galleries.json")
+    threads = crawl_threads()
+    updated = 0
+    for thread in threads:
+        slug = thread["slug"]
+        if only and slug != only:
+            continue
+        curated = curated_by_id.get(slug)
+        if not curated and slug not in CATEGORY_OVERRIDE and slug not in ASLAIN_ALIASES:
+            continue  # hand-published threads outside the ingest stay untouched
+        body = thread["body"]
+        existing_gallery = [m.group(1) for m in re.finditer(r"!\[[^\]]*\]\((https://[^)]+)\)", body)]
+        gallery = galleries.get(slug) or existing_gallery
+        new_body = enrich_body(curated, thread, gallery)
+        if new_body.strip() == body.strip():
+            print(f"  = {slug} -> #{thread['number']} (unchanged)", flush=True)
+            continue
+        if dry_run:
+            print(f"--- would update {slug} #{thread['number']} ---")
+            print(new_body[:1200])
+            continue
+        result = gh_graphql(
+            UPDATE_MUTATION,
+            input={"discussionId": thread["id"], "body": new_body},
+        )
+        check = result["updateDiscussion"]["discussion"]["number"]
+        assert check == thread["number"], f"{slug}: updated #{check} instead of #{thread['number']}"
+        updated += 1
+        if updated % 20 == 0:
+            print(f"  updated {updated}", flush=True)
+        time.sleep(0.4)
+    print(f"{updated} discussion bodies enriched" + (" (dry run)" if dry_run else ""))
+
+
 def migrate_assets(cache: Path) -> None:
     """One-shot asset rename: delete every release asset whose name does not
     match the current `<slug>[-partN].zip` scheme, then upload the packages
@@ -693,6 +976,7 @@ def build_index(state: dict) -> dict:
                 "versions": {},
                 "signals": {},
                 "discussion": mod.get("discussion_number"),
+                **({"aliases": aliases_of(mod)} if aliases_of(mod) else {}),
             },
         )
         entry["versions"][mod["version"]] = {
@@ -702,7 +986,7 @@ def build_index(state: dict) -> dict:
             "name_zh": mod["name_zh"],
             "description": mod["description"],
             "i18n": mod.get("i18n") or {},
-            "preview": mod.get("preview_attachment") or "",
+            "preview": (mod.get("preview_attachments") or [mod.get("preview_attachment") or ""])[0],
             "author_url": mod["author_url"],
             "packages": [
                 {
@@ -741,7 +1025,8 @@ def index(cache: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stage", choices=["curate", "download", "previews", "release", "discussions", "update-bodies", "migrate-assets", "index"])
+    ap.add_argument("stage", choices=["curate", "download", "previews", "release", "discussions", "update-bodies", "enrich", "migrate-assets", "index"])
+    ap.add_argument("--only", help="enrich only: restrict to one slug")
     ap.add_argument("--cache-dir", default=str(Path(tempfile.gettempdir()) / "wowsp-modhub"))
     ap.add_argument("--dry-run", action="store_true", help="curate only: print the selection and exit")
     args = ap.parse_args(argv)
@@ -759,6 +1044,8 @@ def main(argv: list[str] | None = None) -> int:
         discussions(cache)
     elif args.stage == "update-bodies":
         update_bodies(cache)
+    elif args.stage == "enrich":
+        enrich(cache, only=args.only, dry_run=args.dry_run)
     elif args.stage == "migrate-assets":
         migrate_assets(cache)
     elif args.stage == "index":
