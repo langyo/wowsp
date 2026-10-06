@@ -652,6 +652,29 @@ impl ManifestHub {
     }
 
     fn execute(op: ManifestOp) -> Result<(), String> {
+        // Captured before the op is consumed: the tree this mutation
+        // targets, for the pre-release twin sync below.
+        let target = match &op {
+            ManifestOp::UpsertManaged { res_mods, .. }
+            | ManifestOp::RemoveManaged { res_mods, .. }
+            | ManifestOp::SetEnabled { res_mods, .. }
+            | ManifestOp::SeedTool { res_mods, .. }
+            | ManifestOp::ReplaceForeign { res_mods, .. } => res_mods.clone(),
+            ManifestOp::MergeAfterMigration { to_res_mods, .. } => to_res_mods.clone(),
+        };
+        let out = Self::apply_op(op);
+        // Pre-release twins carry the same files as the live tree, so a
+        // LIVE-tree manifest change syncs to them wholesale (a stale-bin
+        // op — an old record's RemoveManaged — must not overwrite them).
+        // Inside the writer thread: strictly serialized behind the
+        // mutation it follows.
+        if out.is_ok() {
+            sync_preload_twins(&target);
+        }
+        out
+    }
+
+    fn apply_op(op: ManifestOp) -> Result<(), String> {
         match op {
             ManifestOp::UpsertManaged {
                 res_mods,
@@ -724,6 +747,51 @@ impl ManifestHub {
 pub(crate) fn hub_apply(op: ManifestOp) {
     if let Err(e) = HUB.apply(op) {
         tracing::warn!(error = %e, "wowsp.toml write routed through the hub failed");
+    }
+}
+
+/// Wholesale-copy the live tree's manifest into every pre-release twin:
+/// the twins carry the same files, so they carry the same rows (see
+/// `preload_mirror`). Fires only when `live_res_mods` really is the
+/// install's live res_mods — res_mods_dir re-derives it from the game root
+/// three levels up, path-identity compared spelling-insensitively like the
+/// install scan. Best effort: a twin that cannot be written is skipped,
+/// never propagated.
+fn sync_preload_twins(live_res_mods: &Path) {
+    let Some(root) = live_res_mods.ancestors().nth(3) else {
+        return;
+    };
+    let is_live = crate::commands::game_context::res_mods_dir(root).is_ok_and(|current| {
+        crate::commands::game_detect::install_path_key(&current.to_string_lossy())
+            == crate::commands::game_detect::install_path_key(&live_res_mods.to_string_lossy())
+    });
+    if !is_live {
+        return;
+    }
+    let twins = super::preload_mirror::preload_res_mods(&root.to_string_lossy());
+    let live_manifest = live_res_mods.join(MANIFEST_FILE);
+    let Ok(body) = fs::read_to_string(&live_manifest) else {
+        // The live manifest removed itself (its last row went away) — the
+        // twins' copies must not outlive it as phantom rows describing
+        // files that are no longer there.
+        if !live_manifest.exists() {
+            for mirror in twins {
+                let _ = fs::remove_file(mirror.join(MANIFEST_FILE));
+            }
+        }
+        return;
+    };
+    for mirror in twins {
+        if fs::create_dir_all(&mirror).is_err() {
+            continue;
+        }
+        let tmp = mirror.join(format!("{MANIFEST_FILE}.tmp"));
+        if fs::write(&tmp, &body).is_err() {
+            continue;
+        }
+        if fs::rename(&tmp, mirror.join(MANIFEST_FILE)).is_err() {
+            let _ = fs::remove_file(&tmp);
+        }
     }
 }
 

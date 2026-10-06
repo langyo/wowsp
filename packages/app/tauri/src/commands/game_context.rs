@@ -399,6 +399,25 @@ pub(crate) fn latest_bin_dir(root: &Path) -> Option<(u64, PathBuf)> {
         .or_else(|| dirs.last().cloned())
 }
 
+/// The NEXT version's complete `bin/<build>/` dirs Steam pre-released
+/// above the pinned live build: numerically above the pin and carrying
+/// `idx/` (a staged dir without index files is a partial download, not a
+/// switch candidate). Consumers: the pre-release mirror fan-out
+/// (`mod_hub/preload_mirror.rs`), which copies every mod mutation into
+/// these twins so the version switch finds the mods already in place.
+/// Empty without a pin — "future" is undefined when the client has never
+/// run and there is no live build to be above.
+pub(crate) fn preload_bin_dirs(root: &Path) -> Vec<(u64, PathBuf)> {
+    let Some(pinned) = preferences_active_build(root) else {
+        return Vec::new();
+    };
+    numeric_bin_dirs(root)
+        .into_iter()
+        .filter(|(build, _)| *build > pinned)
+        .filter(|(_, dir)| dir.join("idx").is_dir())
+        .collect()
+}
+
 /// The res_mods target under the newest usable build of an install.
 pub(crate) fn res_mods_dir(root: &Path) -> Result<PathBuf, String> {
     let (_, ver_dir) = latest_bin_dir(root)
@@ -563,6 +582,37 @@ mod tests {
         let (build, _) = latest_bin_dir(&tmp).expect("resolved");
         assert_eq!(build, 300);
         assert!(latest_bin_dir_with_idx(&tmp).is_none());
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Preload detection: complete (idx-carrying) bins strictly above the
+    /// pin; nothing below it, nothing partial, nothing without a pin.
+    #[test]
+    fn preload_bins_are_complete_dirs_above_the_pin() {
+        let tmp = std::env::temp_dir().join(format!(
+            "wowsp-ctx-preload-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(tmp.join("bin/100/idx")).unwrap();
+        std::fs::create_dir_all(tmp.join("bin/200/idx")).unwrap();
+        std::fs::create_dir_all(tmp.join("bin/250")).unwrap();
+        std::fs::create_dir_all(tmp.join("bin/300/idx")).unwrap();
+        std::fs::write(
+            tmp.join("preferences.xml"),
+            "<root><last_server_version> 15,8,0,200 </last_server_version></root>",
+        )
+        .unwrap();
+
+        let preload = preload_bin_dirs(&tmp);
+        assert_eq!(preload.len(), 1, "{preload:?}");
+        assert_eq!(preload[0].0, 300);
+
+        std::fs::remove_file(tmp.join("preferences.xml")).unwrap();
+        assert!(preload_bin_dirs(&tmp).is_empty());
 
         std::fs::remove_dir_all(&tmp).ok();
     }

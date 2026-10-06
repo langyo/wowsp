@@ -58,6 +58,14 @@ pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
         let path = dir.join(name);
         fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))?;
     }
+    // Pre-release twins receive the same stubs (see preload_mirror).
+    let rels: Vec<String> = MOD_FILES
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .collect();
+    for warning in super::mod_hub::preload_mirror::mirror_written(&game_root, &dir, &rels) {
+        tracing::warn!("{warning}");
+    }
     Ok(dir.to_string_lossy().into_owned())
 }
 
@@ -76,6 +84,12 @@ pub async fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
             Err(e) => return Err(format!("remove {}: {e}", path.display())),
         }
     }
+    // Twin copies go with the live ones (see preload_mirror).
+    let rels: Vec<String> = MOD_FILES
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .collect();
+    super::mod_hub::preload_mirror::mirror_removed(&game_root, &rels);
     Ok(())
 }
 

@@ -50,6 +50,9 @@ pub async fn mod_hub_set_unit_enabled(
         }
     }
     let renamed = set_paths_state(&res_mods, &unit.paths, enabled)?;
+    // The pre-release twins take the same live/.bak state — a mod disabled
+    // before the version switch must not come back alive after it.
+    super::preload_mirror::mirror_set_state(&game_root, &unit.paths, enabled);
     // Keep wowsp.toml's enabled flags in step for records this unit covers
     // COMPLETELY (partial overlap would leave the row's state ambiguous —
     // the half-disable guard above already refused that direction). The
@@ -248,6 +251,8 @@ pub(crate) fn uninstall_unit_core(
             }
         }
         prune_empty_parents(res_mods, &unit.paths);
+        // The mirrored copies go with the live ones (see preload_mirror).
+        super::preload_mirror::mirror_removed(game_root, &unit.paths);
     }
 
     // Ledger records overlapping the unit: a record whose files the unit
@@ -325,7 +330,7 @@ pub(crate) fn uninstall_unit_core(
 /// Remove directories a unit emptied, walking each root's parents up to (and
 /// excluding) the res_mods root itself. `remove_dir` only succeeds on empty
 /// directories, so shared parents with other units survive.
-fn prune_empty_parents(res_mods: &Path, paths: &[String]) {
+pub(crate) fn prune_empty_parents(res_mods: &Path, paths: &[String]) {
     for rel in paths {
         let mut dir = res_mods.join(rel).parent().map(|p| p.to_path_buf());
         while let Some(d) = dir {

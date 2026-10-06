@@ -1812,3 +1812,369 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
 
     std::fs::remove_dir_all(&tmp).ok();
 }
+
+// ── pre-release mirror fan-out ─────────────────────────────────────────────
+
+/// A pinned game fixture: `bin/1` live (idx + res_mods), `bin/2` a complete
+/// pre-release twin (idx), the preferences.xml pin naming 1.
+fn preload_game_fixture(tag: &str) -> PathBuf {
+    let game = std::env::temp_dir().join(tag);
+    let _ = fs::remove_dir_all(&game);
+    fs::create_dir_all(game.join("bin/1/idx")).unwrap();
+    fs::create_dir_all(game.join("bin/1/res_mods")).unwrap();
+    fs::create_dir_all(game.join("bin/2/idx")).unwrap();
+    fs::write(
+        game.join("preferences.xml"),
+        "<root><last_server_version> 15,8,0,1 </last_server_version></root>",
+    )
+    .unwrap();
+    game
+}
+
+/// An install lands in the live bin AND the pre-release twin — same bytes,
+/// and PnF content brings the twin its loader marker.
+#[test]
+fn install_copies_written_files_into_preload_bins() {
+    let pkg = std::env::temp_dir().join("wowsp_mirror_pkg");
+    let _ = fs::remove_dir_all(&pkg);
+    fs::create_dir_all(pkg.join("PnFMods/Skin")).unwrap();
+    fs::write(pkg.join("PnFMods/Skin/Main.py"), b"skin").unwrap();
+    let game = preload_game_fixture("wowsp_mirror_install");
+    let _rr = test_restore_root_in(&game.join("rr"));
+
+    let plan = PackagePlan {
+        kind: ModKind::Skin,
+        name: "Skin".into(),
+        detail: None,
+        entries: vec![PackagePlanEntry {
+            from_rel: "PnFMods/Skin".into(),
+            to_rel: "PnFMods/Skin".into(),
+        }],
+        warnings: Vec::new(),
+        texture_analysis: None,
+    };
+    let applied = install_plan(&pkg, &game.to_string_lossy(), &plan).unwrap();
+    assert!(
+        applied
+            .written
+            .contains(&"PnFMods/Skin/Main.py".to_string())
+    );
+
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    assert_eq!(
+        fs::read(live.join("PnFMods/Skin/Main.py")).unwrap(),
+        b"skin"
+    );
+    assert_eq!(
+        fs::read(twin.join("PnFMods/Skin/Main.py")).unwrap(),
+        b"skin",
+        "twin must hold the same copy the live bin runs"
+    );
+    assert_eq!(fs::read(twin.join("PnFModsLoader.py")).unwrap(), b"");
+
+    // Without a pin "future" is undefined — the mirror set empties and the
+    // next install only writes whichever bin the fallback picks.
+    fs::remove_file(game.join("preferences.xml")).unwrap();
+    assert!(
+        super::preload_mirror::preload_res_mods(&game.to_string_lossy()).is_empty(),
+        "no pin ⇒ no twins to mirror into"
+    );
+
+    fs::remove_dir_all(&pkg).ok();
+    fs::remove_dir_all(&game).ok();
+}
+
+/// Toggles ride along: a mod disabled before the switch stays disabled in
+/// the twin, and the loader marker survives removals (tree-shared).
+#[test]
+fn toggle_state_mirrors_to_preload_bins() {
+    let game = preload_game_fixture("wowsp_mirror_toggle");
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    touch(&live.join("PnFMods/Skin/Main.py"));
+    touch(&twin.join("PnFMods/Skin/Main.py"));
+    touch(&live.join("PnFModsLoader.py"));
+    touch(&twin.join("PnFModsLoader.py"));
+    let paths = vec!["PnFMods/Skin".to_string()];
+
+    // The real toggle flow: live rename first, then the twin fan-out.
+    super::unit_ops::set_paths_state(&live, &paths, false).unwrap();
+    super::preload_mirror::mirror_set_state(&game.to_string_lossy(), &paths, false);
+    assert!(live.join("PnFMods/Skin/Main.py.bak").is_file());
+    assert!(twin.join("PnFMods/Skin/Main.py.bak").is_file());
+
+    super::unit_ops::set_paths_state(&live, &paths, true).unwrap();
+    super::preload_mirror::mirror_set_state(&game.to_string_lossy(), &paths, true);
+    assert!(live.join("PnFMods/Skin/Main.py").is_file());
+    assert!(twin.join("PnFMods/Skin/Main.py").is_file());
+
+    // Removal takes files and twins but never the shared marker.
+    super::preload_mirror::mirror_removed(
+        &game.to_string_lossy(),
+        &["PnFMods/Skin/Main.py".to_string()],
+    );
+    assert!(!twin.join("PnFMods/Skin/Main.py").exists());
+    assert!(twin.join("PnFModsLoader.py").is_file());
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// Unit uninstall cleans the twin copies (and prunes the emptied parents).
+#[test]
+fn unit_uninstall_removes_preload_copies() {
+    let game = preload_game_fixture("wowsp_mirror_unitrm");
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    touch(&live.join("PnFMods/Skin/Main.py"));
+    touch(&twin.join("PnFMods/Skin/Main.py"));
+    let unit = classify_installed_root(&live)
+        .into_iter()
+        .find(|u| u.rel_path == "PnFMods/Skin")
+        .expect("unit classified");
+
+    let mut installs = Vec::new();
+    uninstall_unit_core(&game.to_string_lossy(), &live, &unit, &mut installs).unwrap();
+    assert!(!live.join("PnFMods/Skin").exists());
+    assert!(!twin.join("PnFMods/Skin").exists(), "twin copy must go too");
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// Ledger uninstall (mod list / reinstall rewind) mirrors the removal.
+#[test]
+fn ledger_uninstall_removes_preload_copies() {
+    let game = preload_game_fixture("wowsp_mirror_ledgerrm");
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    touch(&live.join("gui/mod.png"));
+    touch(&twin.join("gui/mod.png"));
+    let mut installs = vec![ModInstallRecord {
+        id: "m".into(),
+        name: "M".into(),
+        version: "1".into(),
+        category: "battle".into(),
+        source: "mod-hub".into(),
+        discussion: None,
+        preset: None,
+        bin_version: "1".into(),
+        installed_at: String::new(),
+        files: vec!["gui/mod.png".into()],
+        restore_dir: None,
+        game_root: String::new(),
+    }];
+
+    crate::commands::mod_catalog::uninstall_from_ledger(
+        &mut installs,
+        "m",
+        &game.to_string_lossy(),
+    )
+    .unwrap();
+    assert!(installs.is_empty());
+    assert!(!live.join("gui/mod.png").exists());
+    assert!(!twin.join("gui/mod.png").exists());
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// The one-click migration fans its moved files out to the twin as well,
+/// loader marker included.
+#[test]
+fn migration_moves_files_into_live_and_preload_bins() {
+    let game = std::env::temp_dir().join("wowsp_mirror_migrate");
+    let _ = fs::remove_dir_all(&game);
+    fs::create_dir_all(game.join("bin/1/res_mods/PnFMods/Skin")).unwrap();
+    touch(&game.join("bin/1/res_mods/PnFMods/Skin/Main.py"));
+    fs::create_dir_all(game.join("bin/2/idx")).unwrap();
+    fs::create_dir_all(game.join("bin/2/res_mods")).unwrap();
+    fs::create_dir_all(game.join("bin/3/idx")).unwrap();
+    fs::write(
+        game.join("preferences.xml"),
+        "<root><last_server_version> 15,8,0,2 </last_server_version></root>",
+    )
+    .unwrap();
+
+    migrate_stale_bin_core(&game.to_string_lossy(), "1").unwrap();
+    assert!(game.join("bin/2/res_mods/PnFMods/Skin/Main.py").is_file());
+    let twin = game.join("bin/3/res_mods");
+    assert!(twin.join("PnFMods/Skin/Main.py").is_file());
+    assert_eq!(fs::read(twin.join("PnFModsLoader.py")).unwrap(), b"");
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// Live-tree manifest ops sync the twin's wowsp.toml wholesale; a stale
+/// bin's op never overwrites what the twins carry.
+#[test]
+fn live_manifest_ops_sync_to_preload_twins() {
+    let game = preload_game_fixture("wowsp_mirror_manifest");
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    super::manifest::hub_apply(super::manifest::ManifestOp::UpsertManaged {
+        res_mods: live.clone(),
+        id: "battle.marker.m".into(),
+        entry: super::manifest::ManagedEntry {
+            name: "M".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            preset: None,
+            enabled: true,
+            installed_at: "2026-10-06T00:00:00Z".into(),
+        },
+    });
+    assert_eq!(
+        fs::read_to_string(twin.join("wowsp.toml")).unwrap(),
+        fs::read_to_string(live.join("wowsp.toml")).unwrap(),
+        "twin manifest must be a wholesale copy of the live one"
+    );
+
+    // A stale bin's op must not leak into the twins.
+    fs::create_dir_all(game.join("bin/0/res_mods")).unwrap();
+    super::manifest::hub_apply(super::manifest::ManifestOp::UpsertManaged {
+        res_mods: game.join("bin/0/res_mods"),
+        id: "battle.marker.OLD".into(),
+        entry: super::manifest::ManagedEntry {
+            name: "Old".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            preset: None,
+            enabled: true,
+            installed_at: "2026-10-06T00:00:00Z".into(),
+        },
+    });
+    let twin_body = fs::read_to_string(twin.join("wowsp.toml")).unwrap();
+    assert!(!twin_body.contains("battle.marker.OLD"), "{twin_body}");
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// The wizard path mirrors its kept files into the twin like the blind
+/// migration does.
+#[test]
+fn wizard_migration_mirrors_kept_files_into_preload_bins() {
+    let game = std::env::temp_dir().join("wowsp_mirror_wizard");
+    let _ = fs::remove_dir_all(&game);
+    touch(&game.join("bin/1/res_mods/gui/a.png"));
+    fs::create_dir_all(game.join("bin/2/idx")).unwrap();
+    fs::create_dir_all(game.join("bin/2/res_mods")).unwrap();
+    fs::create_dir_all(game.join("bin/3/idx")).unwrap();
+    fs::write(
+        game.join("preferences.xml"),
+        "<root><last_server_version> 15,8,0,2 </last_server_version></root>",
+    )
+    .unwrap();
+
+    let plan = migration_plan_core(&game.to_string_lossy(), "1").unwrap();
+    assert!(plan.decide.iter().any(|f| f.path == "gui/a.png"));
+    let keep = vec!["gui/a.png".to_string()];
+    let report = migration_execute_core(&game.to_string_lossy(), "1", &keep, &[]).unwrap();
+    assert_eq!(report.moved_files, 1, "{report:?}");
+    assert!(game.join("bin/2/res_mods/gui/a.png").is_file());
+    assert!(
+        game.join("bin/3/res_mods/gui/a.png").is_file(),
+        "wizard keeps must reach the twin"
+    );
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// After the pin flipped, uninstalling through a STILL-OLD record must also
+/// clear the mirrored copies in the bin the client now loads — sparing
+/// paths another live-bin record claims.
+#[test]
+fn stale_record_uninstall_clears_live_bin_copies() {
+    let game = std::env::temp_dir().join("wowsp_mirror_stale_recm");
+    let _ = fs::remove_dir_all(&game);
+    // Old bin (record's home) + the post-flip live bin carrying the
+    // mirrored copies.
+    touch(&game.join("bin/1/idx/.keep"));
+    touch(&game.join("bin/1/res_mods/gui/mod.png"));
+    touch(&game.join("bin/2/idx/.keep"));
+    touch(&game.join("bin/2/res_mods/gui/mod.png"));
+    touch(&game.join("bin/2/res_mods/gui/shared.png"));
+    fs::write(
+        game.join("preferences.xml"),
+        "<root><last_server_version> 15,8,0,2 </last_server_version></root>",
+    )
+    .unwrap();
+    let mk = |id: &str, bin: &str, files: Vec<&str>| ModInstallRecord {
+        id: id.into(),
+        name: id.into(),
+        version: "1".into(),
+        category: "battle".into(),
+        source: "mod-hub".into(),
+        discussion: None,
+        preset: None,
+        bin_version: bin.into(),
+        installed_at: String::new(),
+        files: files.into_iter().map(Into::into).collect(),
+        restore_dir: None,
+        game_root: String::new(),
+    };
+    let mut installs = vec![
+        mk("m", "1", vec!["gui/mod.png", "gui/shared.png"]),
+        mk("n", "2", vec!["gui/shared.png"]),
+    ];
+
+    crate::commands::mod_catalog::uninstall_from_ledger(
+        &mut installs,
+        "m",
+        &game.to_string_lossy(),
+    )
+    .unwrap();
+    assert!(!game.join("bin/1/res_mods/gui/mod.png").exists());
+    assert!(
+        !game.join("bin/2/res_mods/gui/mod.png").exists(),
+        "the mirrored copy in the bin the client now loads must go too"
+    );
+    assert!(
+        game.join("bin/2/res_mods/gui/shared.png").is_file(),
+        "a path the live-bin record claims is not ours to remove"
+    );
+    // Record n survives untouched.
+    assert_eq!(installs.len(), 1);
+    assert_eq!(installs[0].id, "n");
+
+    fs::remove_dir_all(&game).ok();
+}
+
+/// The live manifest removing itself (last row gone) takes the twin copies
+/// with it — no phantom rows describing files that are no longer there.
+#[test]
+fn manifest_self_delete_propagates_to_preload_twins() {
+    let game = preload_game_fixture("wowsp_mirror_mdel");
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    let entry = super::manifest::ManagedEntry {
+        name: "M".into(),
+        version: "1".into(),
+        category: "battle".into(),
+        source: "mod-hub".into(),
+        preset: None,
+        enabled: true,
+        installed_at: "2026-10-06T00:00:00Z".into(),
+    };
+    super::manifest::hub_apply(super::manifest::ManifestOp::UpsertManaged {
+        res_mods: live.clone(),
+        id: "battle.marker.solo".into(),
+        entry,
+    });
+    assert!(twin.join("wowsp.toml").is_file());
+
+    super::manifest::hub_apply(super::manifest::ManifestOp::RemoveManaged {
+        res_mods: live.clone(),
+        id: "battle.marker.solo".into(),
+    });
+    assert!(
+        !live.join("wowsp.toml").exists(),
+        "fixture premise: the manifest self-deleted on the live tree"
+    );
+    assert!(
+        !twin.join("wowsp.toml").exists(),
+        "the twin copy must not outlive the live manifest"
+    );
+
+    fs::remove_dir_all(&game).ok();
+}

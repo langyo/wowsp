@@ -164,8 +164,11 @@ fn reinstall_stranded_probe(game_root: &str, dst: &Path, state: StrandedProbe) -
         // .bak the files (exactly what the hub's unit toggle does to the
         // same tree) and sync the managed row the same way the toggle does.
         let mod_rel = format!("PnFMods/{}", ingame_plugin::MOD_DIR);
-        let _ = super::unit_ops::set_paths_state(dst, &[mod_rel], false);
+        let _ = super::unit_ops::set_paths_state(dst, std::slice::from_ref(&mod_rel), false);
         super::unit_ops::set_bundled_plugin_enabled(dst, false);
+        // The freshly mirrored twin copies got the ENABLED bytes — they take
+        // the same verdict (see preload_mirror).
+        super::preload_mirror::mirror_set_state(game_root, &[mod_rel], false);
     }
     true
 }
@@ -239,11 +242,17 @@ pub(crate) fn migrate_stale_bin_core(
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
 
     let mut moved = 0usize;
-    migrate_tree(&src, &dst, &mut moved, &mut skipped)?;
+    let mut moved_rels: Vec<String> = Vec::new();
+    migrate_tree(&src, &dst, "", &mut moved, &mut skipped, &mut moved_rels)?;
     // A fully migrated res_mods disappears entirely (empty-only remove, so
     // leftovers survive when files were kept).
     let _ = fs::remove_dir(&src);
     ensure_loader_marker(&dst);
+    // Reclaimed files reach the pre-release twins too (see preload_mirror).
+    for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels) {
+        tracing::warn!("{warning}");
+    }
+    super::preload_mirror::ensure_loader_markers(game_root);
 
     // Stranded ledger records now describe files in the current bin.
     let mut ledger = super::mod_catalog::load_ledger();
@@ -430,12 +439,16 @@ pub(crate) fn migration_plan_core(
 
 /// Recursive keep-new move. Same-volume renames per file; directories the
 /// move emptied are removed on the way out (post-order), so a fully
-/// migrated `res_mods` disappears entirely.
+/// migrated `res_mods` disappears entirely. Successfully moved files are
+/// collected as forward-slash `dst`-relative paths (`moved_rels`) so the
+/// caller can fan them out to the pre-release twins.
 fn migrate_tree(
     src: &Path,
     dst: &Path,
+    prefix: &str,
     moved: &mut usize,
     skipped: &mut usize,
+    moved_rels: &mut Vec<String>,
 ) -> Result<(), String> {
     let Ok(entries) = fs::read_dir(src) else {
         return Ok(());
@@ -443,8 +456,10 @@ fn migrate_tree(
     for ent in entries.flatten() {
         let s = ent.path();
         let d = dst.join(ent.file_name());
+        let name = ent.file_name().to_string_lossy().into_owned();
         if s.is_dir() {
-            migrate_tree(&s, &d, moved, skipped)?;
+            let child_prefix = format!("{prefix}{name}/");
+            migrate_tree(&s, &d, &child_prefix, moved, skipped, moved_rels)?;
             let _ = fs::remove_dir(&s); // succeeds only when empty
             continue;
         }
@@ -453,7 +468,6 @@ fn migrate_tree(
         // dies with the stranded directory instead. wowsp.toml likewise:
         // its surviving content is merged by the caller (captured before
         // this sweep), never transplanted verbatim.
-        let name = ent.file_name().to_string_lossy().into_owned();
         if name.eq_ignore_ascii_case("installed_mods.xml")
             || name.to_ascii_lowercase().starts_with("wowsp.toml")
         {
@@ -476,6 +490,7 @@ fn migrate_tree(
             fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
         fs::rename(&s, &d).map_err(|e| format!("move {}: {e}", s.display()))?;
+        moved_rels.push(format!("{prefix}{name}"));
         *moved += 1;
     }
     Ok(())
@@ -524,6 +539,7 @@ pub(crate) fn migration_execute_core(
     let mut moved = 0usize;
     let mut skipped = 0usize;
     let mut ignored = 0usize;
+    let mut moved_rels: Vec<String> = Vec::new();
     for rel in collect_tree_files(&src)? {
         let s = src.join(&rel);
         // Bookkeeping dies even when the plan listed it as keepable or
@@ -568,6 +584,7 @@ pub(crate) fn migration_execute_core(
             fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
         fs::rename(&s, &d).map_err(|e| format!("move {}: {e}", s.display()))?;
+        moved_rels.push(rel.clone());
         moved += 1;
     }
     prune_empty_dirs(&src);
@@ -575,6 +592,11 @@ pub(crate) fn migration_execute_core(
     // leftovers survive when files were kept).
     let _ = fs::remove_dir(&src);
     ensure_loader_marker(&dst);
+    // Kept files reach the pre-release twins too (see preload_mirror).
+    for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels) {
+        tracing::warn!("{warning}");
+    }
+    super::preload_mirror::ensure_loader_markers(game_root);
 
     let mut ledger = super::mod_catalog::load_ledger();
     if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {

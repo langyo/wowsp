@@ -918,6 +918,48 @@ pub(crate) fn uninstall_from_ledger(
             let _ = fs::remove_dir(dir); // succeeds only when empty
         }
     }
+    // Pre-release twins lose the same files (see preload_mirror) — one
+    // hook covers every caller: the mod-list uninstall, unit uninstalls
+    // and the same-name reinstall rewind.
+    mod_hub::preload_mirror::mirror_removed(game_root, &record.files);
+    // A record still keyed at an older bin after the pin flipped: the
+    // pre-release fan-out put its copies into the bin the client NOW
+    // loads — remove them there too, or the mod survives its own
+    // uninstall. Paths another record keyed at the live bin claims belong
+    // to that record and stay.
+    if let Some((live_bin, live_rm)) =
+        crate::commands::game_context::latest_bin_dir(Path::new(game_root))
+            .map(|(v, dir)| (v.to_string(), dir.join("res_mods")))
+    {
+        if live_bin != record.bin_version {
+            let claimed: std::collections::HashSet<&String> = installs
+                .iter()
+                .filter(|r| r.bin_version == live_bin)
+                .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
+                .flat_map(|r| r.files.iter())
+                .collect();
+            for rel in &record.files {
+                if rel.starts_with("@game/") || rel == "PnFModsLoader.py" || claimed.contains(rel) {
+                    continue;
+                }
+                let live_copy = live_rm.join(rel);
+                for path in [
+                    live_copy.clone(),
+                    mod_hub::sibling_with_suffix(&live_copy, ".bak"),
+                ] {
+                    if path.is_file() && fs::remove_file(&path).is_ok() {
+                        removed += 1;
+                    }
+                }
+            }
+            // The live manifest keeps its own row for the mirrored copies —
+            // drop it (idempotent when the row is already gone).
+            manifest::hub_apply(manifest::ManifestOp::RemoveManaged {
+                res_mods: live_rm,
+                id: record.id.clone(),
+            });
+        }
+    }
 
     // Bring back whatever this install had snapshotted over.
     let mut restored = 0usize;

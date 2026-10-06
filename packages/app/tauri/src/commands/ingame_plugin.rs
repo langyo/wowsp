@@ -211,6 +211,19 @@ pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
     if !loader.exists() {
         std::fs::write(&loader, "").map_err(|e| format!("write {}: {e}", loader.display()))?;
     }
+    // The pre-release twins get the plugin too (see preload_mirror) — the
+    // marker ride-along is what keeps twins scannable after the switch.
+    for warning in super::mod_hub::preload_mirror::mirror_written(
+        game_root,
+        &dir,
+        &[
+            format!("PnFMods/{MOD_DIR}/{MOD_ENTRY}"),
+            VIEW_DEST.to_string(),
+            LOADER_MARKER.to_string(),
+        ],
+    ) {
+        tracing::warn!("{warning}");
+    }
     // wowsp.toml contract: the plugin is a managed unit (bundled source)
     // and its `[tools]` table gets the documented defaults — existing keys,
     // hand-tuned or from a previous install, are never overwritten.
@@ -272,6 +285,11 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
     if !other_mods && loader.is_file() && std::fs::metadata(&loader).is_ok_and(|m| m.len() == 0) {
         let _ = std::fs::remove_file(&loader);
     }
+    // Twin copies go with the live ones (the twin's own loader marker is
+    // shared-tree bookkeeping and stays — see preload_mirror).
+    let mut probe_paths: Vec<String> = PROBE_EXTRA_PATHS.iter().map(|p| p.to_string()).collect();
+    probe_paths.push(format!("PnFMods/{MOD_DIR}"));
+    super::mod_hub::preload_mirror::mirror_removed(&game_root, &probe_paths);
     // The managed row goes with the files; the tool's config table stays
     // (a reinstall should find the user's tuning where they left it).
     super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::RemoveManaged {

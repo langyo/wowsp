@@ -119,7 +119,7 @@ const PART_SUFFIX: &str = ".wowsp-part";
 pub(crate) const SAFE_MODE_SUFFIX: &str = ".wowsp-disabled";
 
 /// The quarantined twin of a version dir's `res_mods`.
-fn disabled_res_mods(ver_dir: &Path) -> PathBuf {
+pub(crate) fn disabled_res_mods(ver_dir: &Path) -> PathBuf {
     ver_dir.join(format!("res_mods{SAFE_MODE_SUFFIX}"))
 }
 
@@ -440,6 +440,7 @@ mod install;
 mod installed_units;
 pub(crate) mod manifest;
 mod model_preview;
+pub(crate) mod preload_mirror;
 mod safe_mode;
 mod scan_installed;
 mod stale_migration;

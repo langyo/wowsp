@@ -270,6 +270,12 @@ fn install_plan_inner(
         None
     };
     written.sort();
+    // Unified install: the pre-release twins receive the same files (see
+    // preload_mirror) — best effort, surfacing as install warnings only.
+    warnings.extend(super::preload_mirror::mirror_written(
+        game_root, &res_mods, &written,
+    ));
+    super::preload_mirror::ensure_loader_markers(game_root);
     tracing::info!(name = %plan.name, wrote, "install_plan done");
     Ok(PlanApply {
         report: InstallReport {
