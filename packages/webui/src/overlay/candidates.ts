@@ -7,9 +7,9 @@
  *  repeated "bot" faces carried no information while stretching the chip
  *  wide enough to pin itself over the screen's left HUD (chipFit's
  *  terminal clamp). Bots never carry stats, so the honest compression
- *  keeps the range's CARDINALITY: the human faces stay, the bots fold
- *  into a counted suffix — "43.2% + 2 bot" says exactly as much about
- *  which rows hold which winrates, at a fraction of the width. */
+ *  keeps the human faces and folds every AI member into ONE count-less
+ *  muted badge — "43.2% + bot" says all a Tab-glance acts on, at a
+ *  fraction of the width. */
 
 import { AI_NAME } from "@/utils/aiNames";
 

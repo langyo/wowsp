@@ -88,12 +88,11 @@ interface OverlayMessages {
   /** Badge while the batched stats lookup is still working and at least
    *  one mapped chip has no numbers yet. */
   queryingBadge: string;
-  /** The muted badge on AI-name rows (`:Name:` co-op fills): chipContent's
-   *  per-row face and a pure-bot candidate range's whole chip. */
+  /** The muted badge for folded AI rows (`:Name:` co-op fills): per-row
+   *  faces in chipContent and the bot suffix of a mixed candidate range
+   *  (candidatesChip). Count-less by design — every folded face IS a bot,
+   *  and the game's own table marks its bot rows anyway. */
   botLabel: string;
-  /** The folded-bot suffix on a mixed candidate range (candidatesChip):
-   *  `{n}` is the bot count — the range's cardinality. */
-  botCount: string;
   /** Team-intel card copy (the two-sided consumable summary): side
    *  labels, the three family names, and the longest-range prefix. */
   intelAlly: string;
@@ -586,16 +585,16 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
  *  per-member seals would misattribute, and the chip must stay compact
  *  enough for a wide range to fit the reserved side pad. A member whose
  *  stats have not landed reads "…", a hidden one the red dot — the same
- *  per-member faces chipContent renders. The AI members fold into a
- *  counted suffix (candidates.ts): the game's own table already marks
- *  those rows, so a verbatim "bot / bot / bot" only stretched the chip
- *  over the left HUD — the counted suffix (localized "botCount", e.g.
- *  "43.2% + 2 bot") keeps the range's cardinality at a fraction of the
- *  width, and a pure-bot range collapses to the single muted face. On
- *  the story layout (storyLayout) a pure-bot range collapses to NOTHING
- *  instead — same aux rule as chipContent — while a mixed range keeps
- *  its counted bot suffix: the suffix is the range's cardinality, and
- *  dropping it would read one human's face as the WHOLE row. */
+ *  per-member faces chipContent renders. The AI members fold into ONE
+ *  muted badge (localized "botLabel") after the human faces: the game's
+ *  own table already marks those rows, so a verbatim "bot / bot / bot"
+ *  only stretched the chip over the left HUD, and the exact headcount of
+ *  an ambiguous row's bots says nothing a Tab-glance acts on — "43.2% +
+ *  bot" is the whole truth it needs. A pure-bot range collapses to the
+ *  same single face. On the story layout (storyLayout) a pure-bot range
+ *  collapses to NOTHING instead — same aux rule as chipContent — while a
+ *  mixed range keeps its bot badge so one human's face is not read as
+ *  the WHOLE row. */
 function candidatesChip(members: string[], storyLayout: boolean): string {
   if (!ANY_CHIP_ON) return "";
   const { humans, botCount } = collapseCandidateBots(members);
@@ -629,8 +628,7 @@ function candidatesChip(members: string[], storyLayout: boolean): string {
   };
   const faces = humans.map(face).join(`<span class="sep">/</span>`);
   if (botCount > 0) {
-    const suffix = localized("botCount").replace("{n}", String(botCount));
-    return `${faces}<span class="sep">+</span><span class="muted">${suffix}</span>`;
+    return `${faces}<span class="sep">+</span><span class="muted">${localized("botLabel")}</span>`;
   }
   return faces;
 }
