@@ -37,6 +37,14 @@ use std::time::{Duration, Instant};
 
 use wowsp_tauri_shared::GameInstall;
 
+// The process-image test moved into the per-client compat registry
+// (commands/game_client.rs) — keep the plain-name call sites below (and this
+// module's process-name tests) working unchanged. Windows-only outside the
+// tests (the snapshot is Windows-only); the tests match names on every
+// target.
+#[cfg(any(target_os = "windows", test))]
+use super::game_client::is_game_process_name;
+
 /// Which root wins when several installs exist on the machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RootPreference {
@@ -309,7 +317,7 @@ pub(crate) fn replays_dir(root: &Path) -> PathBuf {
 
 /// PIDs of every running game client — the Wargaming/Steam builds run
 /// `WorldOfWarships(.64).exe`, the Lesta (Мир кораблей) build runs
-/// `Korabli(.64).exe` (see [`is_game_process_name`]).
+/// `Korabli(.64).exe` (see [`super::game_client`]).
 #[cfg(target_os = "windows")]
 fn snapshot_game_pids() -> Vec<u32> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -343,19 +351,6 @@ fn snapshot_game_pids() -> Vec<u32> {
         let _ = windows::Win32::Foundation::CloseHandle(snapshot);
     }
     pids
-}
-
-/// Exact-match test against the known client process-image names (input is
-/// the snapshot's already-lowercased image name — the ToolHelp snapshot
-/// carries no directory part, so exact equality replaces fragile substring
-/// matching). The Lesta client renamed the binaries when it split from
-/// Wargaming: root stub `Korabli.exe`, game process
-/// `bin/<build>/bin64/Korabli64.exe`.
-fn is_game_process_name(lower_name: &str) -> bool {
-    matches!(
-        lower_name,
-        "worldofwarships.exe" | "worldofwarships64.exe" | "korabli.exe" | "korabli64.exe"
-    )
 }
 
 #[cfg(not(target_os = "windows"))]

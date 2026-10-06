@@ -198,10 +198,17 @@ pub(crate) fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::Ga
     let norm = exe.replace('/', "\\");
     let lower = norm.to_lowercase();
     let file = lower.rsplit('\\').next().unwrap_or_default();
-    let kind = if file == "korabli.exe" || file == "korabli64.exe" {
-        // The Lesta rename; checked before `steamapps` because RU/CIS Steam
-        // installs run the same Korabli binaries but need the Lesta realm.
-        GameInstallKind::Lesta
+    // The per-family process-name hints first (only Lesta's rename is
+    // decisive — korabli(.64).exe → Lesta); checked before `steamapps`
+    // because RU/CIS Steam installs run the same Korabli binaries but need
+    // the Lesta realm. The WG family answers None (its exe names are shared
+    // by Steam and the CN clients), so those fall through to the path
+    // markers below exactly as before.
+    let hinted = super::game_client::CLIENTS
+        .iter()
+        .find_map(|client| client.process_kind_hint(file));
+    let kind = if let Some(kind) = hinted {
+        kind
     } else if lower.contains("steamapps") {
         GameInstallKind::Steam
     } else if lower.contains("kongzhong") || norm.contains("空中网") {

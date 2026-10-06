@@ -59,14 +59,11 @@ impl DetectProfile {
         enemy_strip_x1_frac: 0.78,
     };
 
-    /// The profile for the client behind a capture. Only the Lesta build is
-    /// known to differ; every other kind (and an unknown client) uses the
-    /// WG layout.
+    /// The profile for the client behind a capture — resolved through the
+    /// per-client compat registry (commands/game_client.rs): Lesta carries
+    /// its own layout, every other kind (and an unknown client) uses the WG
+    /// one.
     pub(crate) fn for_kind(kind: &GameInstallKind) -> DetectProfile {
-        if *kind == GameInstallKind::Lesta {
-            Self::LESTA
-        } else {
-            Self::WG
-        }
+        crate::commands::game_client::client_for_kind(kind).overlay_profile()
     }
 }

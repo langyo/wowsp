@@ -44,17 +44,13 @@ use std::path::PathBuf;
 
 use wowsp_tauri_shared::{ReplayMeta, ReplayMetaLite, VehicleEntry};
 
+// The replay-container extension test lives in the per-client compat
+// registry (commands/game_client.rs); the walk below and this module's tests
+// keep calling it by its plain name.
+use super::game_client::is_replay_extension;
+
 /// Replay magic — first 4 bytes of every `.wowsreplay`.
 const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
-
-/// Case-insensitive replay-container extension test: WG writes
-/// `.wowsreplay`, the Lesta build writes `.korablireplay`.
-fn is_replay_extension(ext: &str) -> bool {
-    matches!(
-        ext.to_ascii_lowercase().as_str(),
-        "wowsreplay" | "korablireplay"
-    )
-}
 
 /// Read + parse the header of one `.wowsreplay` file into a [`ReplayMeta`].
 ///
@@ -1000,6 +996,16 @@ pub(crate) struct WalkedReplay {
 /// the listing commands, the pairing server's replay route and the playtime
 /// battle ledger (single source of truth — never duplicate the walk).
 pub(crate) fn walk_replays(dir: &PathBuf, out: &mut Vec<WalkedReplay>) {
+    // The game writes a live temp container during a match (`temp.<ext>` for
+    // each client family's container extension — WG: temp.wowsreplay, Lesta:
+    // temp.korablireplay); it is not a completed replay. The frontend renders
+    // it as a live-battle entry instead of listing it here. Generated from
+    // the compat registry so a future family needs no edit here; the match
+    // stays exact (case-sensitive) on the file name, as before.
+    let temp_names: Vec<String> = super::game_client::replay_extensions()
+        .into_iter()
+        .map(|ext| format!("temp.{ext}"))
+        .collect();
     let Ok(rd) = fs::read_dir(dir) else {
         return;
     };
@@ -1013,14 +1019,10 @@ pub(crate) fn walk_replays(dir: &PathBuf, out: &mut Vec<WalkedReplay>) {
             .and_then(|e| e.to_str())
             .is_some_and(is_replay_extension)
         {
-            // The game writes a live temp container during a match (WG:
-            // temp.wowsreplay, Lesta: temp.korablireplay); it is not a
-            // completed replay. The frontend renders it as a live-battle
-            // entry instead of listing it here.
             let is_temp = path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n == "temp.wowsreplay" || n == "temp.korablireplay");
+                .is_some_and(|n| temp_names.iter().any(|temp| n == temp.as_str()));
             if is_temp {
                 continue;
             }

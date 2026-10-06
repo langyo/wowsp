@@ -5,7 +5,7 @@
 //! (see [`PUBLISHER_PATTERNS`] — substring matching so the legacy KongZhong
 //! CN client and publisher-string variants are covered too), read each
 //! entry's `InstallLocation`, and accept it when a root stub exe from
-//! [`GAME_ROOT_STUBS`] exists there. WoWSP additionally walks Steam library
+//! [`super::game_client::game_root_stubs`] exists there. WoWSP additionally walks Steam library
 //! folders for `appmanifest_552990.acf` (Steam appid 552990 = World of
 //! Warships) and reads Lesta Game Center's own bookkeeping under
 //! `%ProgramData%\Lesta\GameCenter` ([`scan_lesta_game_center`]) — the two
@@ -13,10 +13,10 @@
 //!
 //! All distribution channels share the same on-disk layout (a root stub exe,
 //! `bin/<build>/bin64/` game binaries, `profile/`, `replays/`); only the
-//! launcher, the stub's name (the Lesta client renamed theirs to
-//! `Korabli.exe` when Lesta Games split from Wargaming) and the registry
-//! publisher differ, so kind/realm resolution below leans on those two
-//! signals plus the log-derived realm.
+//! launcher, the stub's name and the registry publisher differ — the
+//! per-family stub / process-name / container facts live in
+//! [`crate::commands::game_client`], and kind/realm resolution below leans on
+//! those signals plus the log-derived realm.
 //!
 //! The sources overlap — a WGC uninstall entry can carry the Steam library's
 //! path (WGC adopts Steam installs), the Steam vdf repeats its own root, and
@@ -47,14 +47,6 @@ const PUBLISHER_PATTERNS: &[(&str, GameInstallKind)] = &[
 /// Steam appid for World of Warships (the `appmanifest_<appid>.acf` the
 /// Steam library scan looks for).
 const STEAM_APPID: &str = "552990";
-
-/// Root stub executables that identify a WoWS install folder. The Lesta
-/// (Мир кораблей) client kept the WG on-disk layout but renamed the stub to
-/// `Korabli.exe` when Lesta Games split from Wargaming — its 64-bit game
-/// binary is `bin/<build>/bin64/Korabli64.exe` where the WG builds keep
-/// `WorldOfWarships.exe` / `WorldOfWarships64.exe`. Any one hit makes the
-/// folder a game root.
-const GAME_ROOT_STUBS: &[&str] = &["WorldOfWarships.exe", "Korabli.exe"];
 
 /// Auto-detect every World of Warships install on this machine: the
 /// `WOWSP_GAME_PATH` env pin, then the Uninstall-registry walk
@@ -226,8 +218,8 @@ pub async fn set_game_path(path: String) -> Result<GameInstall, String> {
 }
 
 /// Shared validation for the picker + manual-path command: the folder must
-/// contain a root stub exe ([`GAME_ROOT_STUBS`]); realm is read from
-/// clientrunner.log when available.
+/// contain a root stub exe ([`super::game_client::game_root_stubs`]); realm is read
+/// from clientrunner.log when available.
 fn validate_manual_path(path: &str) -> Result<GameInstall, String> {
     if !is_game_dir(path) {
         return Err(format!(
@@ -242,11 +234,13 @@ fn validate_manual_path(path: &str) -> Result<GameInstall, String> {
 }
 
 /// Does the folder look like a WoWS install root (a stub exe from
-/// [`GAME_ROOT_STUBS`] present)? Shared with the unified game context,
-/// which validates every candidate root.
+/// [`super::game_client::game_root_stubs`] present)? Shared with the unified game
+/// context, which validates every candidate root.
 pub(crate) fn is_game_dir(path: &str) -> bool {
     let dir = PathBuf::from(path);
-    GAME_ROOT_STUBS.iter().any(|exe| dir.join(exe).is_file())
+    super::game_client::game_root_stubs()
+        .iter()
+        .any(|exe| dir.join(exe).is_file())
 }
 
 /// Walk HKCU + HKLM `...\Uninstall\*`, filter by `PUBLISHER_PATTERNS`, and
@@ -1260,5 +1254,31 @@ mod tests {
         std::fs::remove_dir_all(&center).unwrap();
         std::fs::remove_dir_all(&wows).unwrap();
         std::fs::remove_dir_all(&tanks).unwrap();
+    }
+
+    /// Full-pipeline check on the real machine: the Lesta (Мир кораблей)
+    /// install — `%ProgramData%\Lesta\GameCenter` bookkeeping pointing at
+    /// the Korabli-stub folder — must surface as a detected row with the RU
+    /// realm. Run locally with
+    /// `cargo test -p wowsp_tauri --lib -- --ignored lesta_install`.
+    #[test]
+    #[ignore = "needs the real Lesta (Korabli) install on this machine"]
+    fn detects_the_real_lesta_install_on_this_machine() {
+        let installs = scan_game_installs();
+        let row = installs
+            .iter()
+            .find(|i| i.path.eq_ignore_ascii_case(r"D:\WoWS_Korabli"))
+            .expect("the Korabli root must be detected");
+        assert!(is_game_dir(&row.path), "the row must be a game root");
+        assert_eq!(
+            row.realm.as_deref(),
+            Some("ru"),
+            "the Lesta realm fallback must hold"
+        );
+        // The env pin (kind Manual) deliberately shadows the folder's own
+        // identity in dedupe, so the Lesta assert only holds unpinned.
+        if std::env::var_os("WOWSP_GAME_PATH").is_none() {
+            assert_eq!(row.kind, GameInstallKind::Lesta);
+        }
     }
 }
