@@ -260,7 +260,10 @@
   /* Strict three-track card: a fixed name column, an elastic-but-clipping
      middle for the ship-meta strip, and a fixed seal column. Every card in
      both rosters shares the same tracks, so the left/middle/right grounds
-     line up across the whole panel and no content can push them around. */
+     line up across the whole panel and no content can push them around.
+     The PR-tier wash rides custom properties (set inline by the panel):
+     tinted rows set --row-tint (an "R G B" triplet) plus --row-tint-a;
+     untinted rows fall back to the neutral 4% text wash. */
   &__player {
     display: grid;
     grid-template-columns: 10rem minmax(0, 1fr) 1.75rem;
@@ -268,14 +271,14 @@
     align-items: center;
     padding: 7px 9px;
     border-radius: 6px;
-    background: rgb(var(--color-text) / 0.04);
+    background: rgb(var(--row-tint, var(--color-text)) / var(--row-tint-a, 0.04));
   }
 
-  /* Text stack (name / ship / stat line), first grid track. `min-width: 0`
-     keeps long names ellipsizing inside the fixed track. Explicit placement
-     keeps every card's geometry identical even when a middle piece renders
-     nothing (ship missing from the offline DBs) — auto-placement would then
-     slide the seal into the middle track. */
+  /* Text stack (name / ship), first grid track. `min-width: 0` keeps long
+     names ellipsizing inside the fixed track. Explicit placement keeps every
+     card's geometry identical even when a middle piece renders nothing (ship
+     missing from the offline DBs) — auto-placement would then slide the seal
+     into the middle track. */
   &__player-main {
     grid-column: 1;
     min-width: 0;
@@ -302,8 +305,12 @@
     cursor: pointer;
     transition: background 0.15s;
 
+    /* The hover brightens whichever wash the row carries (tinted or
+       neutral) by the same step — calc() keeps one rule for both. */
     &:hover {
-      background: rgb(var(--color-text) / 0.1);
+      background: rgb(
+        var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.06)
+      );
     }
 
     &:focus-visible {
@@ -385,17 +392,43 @@
     white-space: nowrap;
   }
 
+  /* Ship line: class marker (BattleIcon, team/sunk variant) + the name.
+     The icon pins left; only the name ellipsizes when the fixed track runs
+     out. */
   &__player-ship {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
     color: rgb(var(--color-text) / 0.45);
     font-size: var(--text-xs);
+  }
+
+  &__player-ship-ico {
+    flex: 0 0 auto;
+    display: inline-flex;
+  }
+
+  &__player-ship-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* The stat strip (LiveStatLine): the card's second row, spanning ALL
+     three tracks — the one line long enough to outgrow the 10rem name
+     track, so it reaches across the middle ground and the seal's air to
+     read in full instead of ellipsizing. A hairline top border separates
+     it from the identity row above. */
   &__player-stat {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
+    min-width: 0;
+    margin-top: 4px;
+    padding-top: 5px;
+    border-top: 1px solid rgb(var(--color-text) / 0.08);
     font-size: var(--text-xs);
     color: rgb(var(--color-text) / 0.7);
 
@@ -436,7 +469,8 @@
     padding: 4px 8px;
     border: none;
     border-radius: 6px;
-    background: rgb(var(--color-text) / 0.04);
+    /* PR-tier wash, same variables as the full cards (see &__player). */
+    background: rgb(var(--row-tint, var(--color-text)) / var(--row-tint-a, 0.04));
     color: rgb(var(--color-text));
     /* Kill the UA button font, then re-apply the compact size — one rule
        covers the button and the plain-div (bot) variants alike. */
@@ -525,7 +559,9 @@
     transition: background 0.15s;
 
     &:hover {
-      background: rgb(var(--color-text) / 0.1);
+      background: rgb(
+        var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.06)
+      );
     }
 
     &:focus-visible {

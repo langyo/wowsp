@@ -152,7 +152,9 @@
     "sealsToggle": "評価の印章",
     "sealsToggleDesc": "「神了/猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
     "localizedTiersToggle": "ローカライズ段階表記",
-    "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階（Bad/Good/Unicum など）になります。"
+    "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階（Bad/Good/Unicum など）になります。",
+    "prTintToggle": "PRティアの行背景色",
+    "prTintToggleDesc": "リアルタイム対戦の名簿で、各プレイヤーの PR ティアの色を行全体に半透明の背景として敷きます（赤ティアは赤、紫ティアは紫）。既定でオン。"
   },
   "sealCustomizer": {
     "desc": "印章を個別に表示/非表示したり、印章ごとにカスタム画像を設定できます（画像はアプリデータディレクトリの stamps フォルダに保存されます）。プレビューは即時反映され、既定に戻すとカスタム画像は削除されます。",

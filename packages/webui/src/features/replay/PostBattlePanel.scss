@@ -334,11 +334,14 @@
 }
 
 /* ── Full-card rows (the live panel's card look) ───────────────────────
-   Mirrors .live-battle__player in LiveBattlePanel.scss: a fixed
+   A sibling of .live-battle__player in LiveBattlePanel.scss: a fixed
    name/ship/stat text stack, an elastic-but-clipping middle for the
    LiveShipMeta strip, then this panel's own avg-damage / XP numbers and a
-   fixed seal track. The whole card is the drill-down button (hover and
-   clicks cover the seal); the mask eye rides outside it. */
+   fixed seal track. The live card itself has since moved its stat line to
+   a full-width bottom strip (LiveStatLine) and gained the class icon +
+   PR-tier wash — the two share the idea, not the exact geometry. The whole
+   card is the drill-down button (hover and clicks cover the seal); the
+   mask eye rides outside it. */
 .replay-view__postbattle-fcell {
   display: flex;
   align-items: stretch;

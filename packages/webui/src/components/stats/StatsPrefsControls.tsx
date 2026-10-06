@@ -97,6 +97,16 @@ export default defineComponent({
                 onUpdate:modelValue={(v: boolean) => prefs.setLocalizedTiers(v)}
               />
             </div>
+            <div class="stats-prefs__row">
+              <span class="stats-prefs__row-text">
+                <span class="stats-prefs__row-label">{tr("prTintToggle")}</span>
+                <span class="stats-prefs__row-desc">{tr("prTintToggleDesc")}</span>
+              </span>
+              <HkSwitch
+                modelValue={prefs.prefs.liveRosterPrTint}
+                onUpdate:modelValue={(v: boolean) => prefs.setLiveRosterPrTint(v)}
+              />
+            </div>
           </div>
         ) : null}
       </div>

@@ -152,7 +152,9 @@
     "sealsToggle": "評價印章",
     "sealsToggleDesc": "蓋印「神了/猴/蛆」評價印章，僅中文介面顯示。",
     "localizedTiersToggle": "本土化檔位文案",
-    "localizedTiersToggleDesc": "使用趣味本土化檔位文案（夯/人上人/戰艦仙人等），關閉時顯示標準英文檔位 Bad/Good/Unicum 等。"
+    "localizedTiersToggleDesc": "使用趣味本土化檔位文案（夯/人上人/戰艦仙人等），關閉時顯示標準英文檔位 Bad/Good/Unicum 等。",
+    "prTintToggle": "PR 檔位行底色",
+    "prTintToggleDesc": "即時對局名冊按每名玩家的 PR 檔位顏色鋪一層半透明底色（紅表鋪紅、紫表鋪紫），預設開啟。"
   },
   "sealCustomizer": {
     "desc": "逐個開關每枚印章，或為印章選用自訂圖片（圖片儲存在應用程式資料目錄的 stamps 資料夾）。預覽即時生效，還原預設即刪除自訂圖。",

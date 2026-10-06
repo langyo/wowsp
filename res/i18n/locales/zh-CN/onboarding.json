@@ -33,6 +33,8 @@
   "sealsToggleDesc": "盖印「神了/猴/蛆」评价印章，仅中文界面显示。",
   "localizedTiersToggle": "本土化档位文案",
   "localizedTiersToggleDesc": "使用趣味本土化档位文案，关闭时显示标准英文档位。",
+  "prTintToggle": "PR 档位行底色",
+  "prTintToggleDesc": "实时对局名册按每名玩家的 PR 档位颜色铺一层半透明底色（红表铺红、紫表铺紫），默认开启。",
   "gameDesc": "WoWSP 已自动检测本机《战舰世界》安装，点击确认要使用的客户端；也可以重新检测或手动选择安装目录。",
   "gameDetecting": "正在检测已安装的游戏…",
   "pluginSection": "游戏内插件",

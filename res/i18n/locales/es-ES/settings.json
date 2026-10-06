@@ -152,7 +152,9 @@
     "sealsToggle": "Sellos de evaluación",
     "sealsToggleDesc": "Sellos de veredicto 神了/猴/蛆: solo se muestran con la interfaz en chino.",
     "localizedTiersToggle": "Etiquetas de nivel localizadas",
-    "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar (Bad/Good/Unicum, etc.)."
+    "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar (Bad/Good/Unicum, etc.).",
+    "prTintToggle": "Tinte de fila por nivel de PR",
+    "prTintToggleDesc": "Tiñe cada fila del roster en directo con el color del nivel de PR del jugador (nivel rojo → rojo, morado → morado); activado por defecto."
   },
   "sealCustomizer": {
     "desc": "Activa o desactiva cada sello por separado o asigna una imagen personalizada a cada uno (se guarda en la carpeta stamps del directorio de datos de la aplicación). La vista previa se actualiza al instante; restablecer elimina la imagen personalizada.",

@@ -5,7 +5,12 @@
  * clock. Every row's middle ground carries the ship's combat card
  * (`LiveShipMeta` — tier, class, nation, parameter ranges, and on ally rows
  * the consumable/module/flag summary); hovering it floats the condensed ship
- * card. The panel's head title is the /live page title (the view itself has
+ * card. The ship name leads with the game's class battle icon, and — per a
+ * stats pref, default on — every row washes with its player's PR-tier color
+ * (red band red, purple band purple; see prTintVars). The full card's stat
+ * strip (`LiveStatLine`) spans the whole card bottom so the WR/PR/battles
+ * line reads in full instead of ellipsizing inside the name track. The
+ * panel's head title is the /live page title (the view itself has
  * no header — it used to duplicate this one).
  *
  * The head's density toggle compresses the roster to the post-battle
@@ -63,6 +68,7 @@ import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/
 import { displayMapName } from "@/utils/mapNames";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
+import LiveStatLine from "./LiveStatLine";
 import LiveStatsModeChip from "./LiveStatsModeChip";
 import MapNameTag from "./MapNameTag";
 import PluginStatusCard from "./PluginStatusCard";
@@ -72,7 +78,6 @@ import {
   rosterShotColIndex,
   rosterShotDashes,
   rosterStatCols,
-  rosterStatLine,
   useNickMasking,
   useShareShot,
 } from "./postBattleShare";
@@ -741,28 +746,29 @@ export default defineComponent({
         </span>
       ) : null;
 
-      const statLine = (v: VehicleEntry) => {
-        if (isAiName(v.name)) return "—";
-        const st = stats.get(v.id);
-        if (!st || st.loading || (shipScopeOn.value && st.shipsLoading)) {
-          return <HkSpinner size="xs" tone="current" />;
+      /** PR-tier row wash (a persisted stats pref, default on): rows whose
+       *  resolved stats-source PR landed paint the whole entry with a
+       *  translucent wash of the tier's color — red band red, purple band
+       *  purple — in the SAME view the row's numbers read. The color rides
+       *  CSS custom properties (not an inline background) so the row's own
+       *  hover rule still brightens it; bots / loading / hidden / no-PR
+       *  rows stay neutral. */
+      const prTintVars = (
+        st: RosterStat | null | undefined,
+        shipId: number | null,
+      ): CSSProperties | undefined => {
+        if (!prefs.prefs.prEnabled || !prefs.prefs.liveRosterPrTint) return undefined;
+        if (!st || st.loading || st.hidden || (shipScopeOn.value && st.shipsLoading)) {
+          return undefined;
         }
-        if (st.hidden) {
-          return (
-            <span class="live-battle__player-hidden">
-              {t("replay.live.hiddenProfile")}
-            </span>
-          );
-        }
-        // The chips-enabled numbers of the roster's stats-source view —
-        // one shared text line with the post-battle full cards
-        // (rosterStatLine in postBattleShare).
-        const line = rosterStatLine(rowViewOf(st, v.shipId));
-        return line != null ? (
-          <span class="live-battle__player-statline">{line}</span>
-        ) : (
-          "—"
-        );
+        const pr = rowViewOf(st, shipId).pr;
+        if (pr == null) return undefined;
+        // prTier colors are "rgb(R G B)" strings — hand the row SCSS the raw
+        // triplet plus the wash alpha it composes into rgb(… / a).
+        return {
+          "--row-tint": prTier(pr).color.slice(4, -1),
+          "--row-tint-a": "0.14",
+        } as CSSProperties;
       };
 
       // Compact mode reuses the post-battle matrix's row look verbatim —
@@ -863,9 +869,11 @@ export default defineComponent({
           { "live-battle__crow--link": !ai },
           { "live-battle__crow--sunk": entry.sunk },
         ];
+        const tint = prTintVars(st, v.shipId);
         return !ai ? (
           <button
             class={classes}
+            style={tint}
             key={v.id}
             type="button"
             data-hint={t("replay.live.viewProfile")}
@@ -874,7 +882,7 @@ export default defineComponent({
             {content}
           </button>
         ) : (
-          <div class={classes} key={v.id}>
+          <div class={classes} style={tint} key={v.id}>
             {content}
           </div>
         );
@@ -922,6 +930,12 @@ export default defineComponent({
               class="live-battle__player-stamp"
             />
           ) : null;
+        // The row's resolved numbers for the bottom stat strip — null while
+        // any gate holds (loading / hidden); LiveStatLine owns those faces.
+        const statView =
+          st && !st.loading && !st.hidden && !(shipScopeOn.value && st.shipsLoading)
+            ? rowViewOf(st, v.shipId)
+            : null;
         const main = (
           <span class="live-battle__player-main">
             <span class="live-battle__player-name">
@@ -942,8 +956,29 @@ export default defineComponent({
                 <em class="live-battle__player-bot">{t("replay.bot")}</em>
               ) : null}
             </span>
-            <span class="live-battle__player-ship">{shipName}</span>
-            <span class="live-battle__player-stat">{statLine(v)}</span>
+            <span class="live-battle__player-ship">
+              {/* Ship-type marker riding the ship name — the compact rows'
+                  lead icon in the same team/sunk variant vocabulary, so the
+                  class reads at a glance without the meta strip. */}
+              <span class="live-battle__player-ship-ico">
+                {v.shipId != null ? (
+                  <BattleIcon
+                    type={shipOfflineEntry(v.shipId)?.type ?? ""}
+                    variant={
+                      entry.sunk
+                        ? "sunk"
+                        : v.relation === 0
+                          ? "white"
+                          : v.relation <= 1
+                            ? "ally"
+                            : "enemy"
+                    }
+                    size={14}
+                  />
+                ) : null}
+              </span>
+              <span class="live-battle__player-ship-name">{shipName}</span>
+            </span>
           </span>
         );
         const content = (
@@ -955,11 +990,25 @@ export default defineComponent({
                 no enemies at all. */}
             <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
             {seal}
+            {/* The stat strip is the card's SECOND row, spanning all three
+                tracks (see LiveStatLine): the one line long enough to matter
+                at full width, it borrows the middle ground's and the seal's
+                air instead of ellipsizing inside the fixed name track. */}
+            <LiveStatLine
+              ai={!clickable}
+              loading={Boolean(
+                !st || st.loading || (shipScopeOn.value && st.shipsLoading),
+              )}
+              hidden={Boolean(st?.hidden)}
+              view={statView}
+            />
           </>
         );
+        const tint = prTintVars(st, v.shipId);
         return clickable ? (
           <button
             class={classes}
+            style={tint}
             key={v.id}
             type="button"
             data-hint={t("replay.live.viewProfile")}
@@ -968,7 +1017,7 @@ export default defineComponent({
             {content}
           </button>
         ) : (
-          <div class={classes} key={v.id}>
+          <div class={classes} style={tint} key={v.id}>
             {content}
           </div>
         );

@@ -33,6 +33,8 @@
   "sealsToggleDesc": "Sceaux de verdict 神了/猴/蛆 — affichés uniquement avec une interface chinoise.",
   "localizedTiersToggle": "Libellés de palier localisés",
   "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard.",
+  "prTintToggle": "Teinte de ligne par palier PR",
+  "prTintToggleDesc": "Teinte chaque ligne du roster en direct avec la couleur du palier PR du joueur (palier rouge → rouge, violet → violet) ; activé par défaut.",
   "gameDesc": "WoWSP a analysé ce PC à la recherche d'installations de World of Warships — cliquez sur le client à confirmer, ou relancez la détection / choisissez le dossier manuellement.",
   "gameDetecting": "Recherche des jeux installés…",
   "pluginSection": "Plugin en jeu",

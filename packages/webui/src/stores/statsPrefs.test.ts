@@ -48,7 +48,7 @@ describe("loadStatsPrefs", () => {
     // wording, seals and the tier-weighted team winrate ship on. Team
     // averages ship off (dense already). Both roster-density overrides ship
     // off: full cards on the live panel and compact rows post-battle are
-    // the defaults.
+    // the defaults. The PR-tier row wash ships on.
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: true,
       prAlgo: "winrate",
@@ -56,6 +56,7 @@ describe("loadStatsPrefs", () => {
       localizedTiers: true,
       weightedTeamWr: true,
       liveRosterCompact: false,
+      liveRosterPrTint: true,
       postbattleRosterFull: false,
       teamIntelEnabled: true,
       sealDisabled: {},
@@ -255,6 +256,7 @@ describe("statsPrefs store", () => {
     store.setLocalizedTiers(false);
     store.setWeightedTeamWr(false);
     store.setLiveRosterCompact(true);
+    store.setLiveRosterPrTint(false);
     store.setPostbattleRosterFull(true);
     store.setTeamIntelEnabled(false);
     store.setOverlayChip("winrate", false);
@@ -274,6 +276,7 @@ describe("statsPrefs store", () => {
       localizedTiers: false,
       weightedTeamWr: false,
       liveRosterCompact: true,
+      liveRosterPrTint: false,
       postbattleRosterFull: true,
       teamIntelEnabled: false,
       sealDisabled: {},

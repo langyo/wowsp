@@ -96,9 +96,15 @@ export interface StatsPrefs {
    *  one-line look (battle icon + WR/PR/avg-damage columns + the career
    *  seal, no ship-meta strip). Full cards stay the default. */
   liveRosterCompact: boolean;
-  /** Post-battle roster rows expanded to the live panel's full-card look
-   *  (name/ship/stat stack + ship-meta strip + career seal + XP column).
-   * Compact rows stay the default. */
+  /** Live-roster rows washed with the player's PR-tier color (a translucent
+   *  background tint — red band red, purple band purple). Applies to both
+   *  the full cards and the compact rows, over the row's resolved
+   *  stats-source PR; AND-composed with `prEnabled`. */
+  liveRosterPrTint: boolean;
+  /** Post-battle roster rows expanded to a full-card look in the live
+   *  panel's spirit (name/ship/stat stack + ship-meta strip + career seal +
+   *  XP column; the live panel's own cards carry their stat line as a
+   *  full-width bottom strip instead). Compact rows stay the default. */
   postbattleRosterFull: boolean;
   /** Tab overlay team-intel cards flanking the roster (radar/hydro/smoke
    *  estimate counts + the side's longest radar range). */
@@ -135,6 +141,7 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   localizedTiers: true,
   weightedTeamWr: true,
   liveRosterCompact: false,
+  liveRosterPrTint: true,
   postbattleRosterFull: false,
   teamIntelEnabled: true,
   sealDisabled: {},
@@ -235,6 +242,10 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.liveRosterCompact === "boolean"
           ? j.liveRosterCompact
           : DEFAULT_STATS_PREFS.liveRosterCompact,
+      liveRosterPrTint:
+        typeof j.liveRosterPrTint === "boolean"
+          ? j.liveRosterPrTint
+          : DEFAULT_STATS_PREFS.liveRosterPrTint,
       postbattleRosterFull:
         typeof j.postbattleRosterFull === "boolean"
           ? j.postbattleRosterFull
@@ -362,6 +373,11 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
+  function setLiveRosterPrTint(v: boolean) {
+    prefs.value.liveRosterPrTint = v;
+    persist({ ...prefs.value });
+  }
+
   function setPostbattleRosterFull(v: boolean) {
     prefs.value.postbattleRosterFull = v;
     persist({ ...prefs.value });
@@ -424,6 +440,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setLocalizedTiers,
     setWeightedTeamWr,
     setLiveRosterCompact,
+    setLiveRosterPrTint,
     setPostbattleRosterFull,
     setTeamIntelEnabled,
     setSealDisabled,

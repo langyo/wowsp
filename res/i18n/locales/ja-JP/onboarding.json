@@ -33,6 +33,8 @@
   "sealsToggleDesc": "「神了/猴/蛆」の印章を表示します。中国語インターフェースでのみ表示されます。",
   "localizedTiersToggle": "ローカライズ段階表記",
   "localizedTiersToggleDesc": "ローカライズされた段階表記を使用します。オフにすると標準の英語段階になります。",
+  "prTintToggle": "PRティアの行背景色",
+  "prTintToggleDesc": "リアルタイム対戦の名簿で、各プレイヤーの PR ティアの色を行全体に半透明の背景として敷きます（赤ティアは赤、紫ティアは紫）。既定でオン。",
   "gameDesc": "WoWSP がこの PC 内の World of Warships インストールを自動検出しました。使用するクライアントをクリックして確定するか、再検出または手動でフォルダーを選択してください。",
   "gameDetecting": "インストール済みゲームを検出中…",
   "pluginSection": "ゲーム内プラグイン",

@@ -152,7 +152,9 @@
     "sealsToggle": "Sceaux d'évaluation",
     "sealsToggleDesc": "Sceaux de verdict 神了/猴/蛆 — affichés uniquement avec une interface chinoise.",
     "localizedTiersToggle": "Libellés de palier localisés",
-    "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…)."
+    "localizedTiersToggleDesc": "Libellés de palier personnalisés ; désactivé, ce sont les bandes anglaises standard (Bad/Good/Unicum…).",
+    "prTintToggle": "Teinte de ligne par palier PR",
+    "prTintToggleDesc": "Teinte chaque ligne du roster en direct avec la couleur du palier PR du joueur (palier rouge → rouge, violet → violet) ; activé par défaut."
   },
   "sealCustomizer": {
     "desc": "Activez ou désactivez chaque sceau individuellement, ou définissez une image personnalisée par sceau (stockée dans le dossier stamps du répertoire de données de l'application). L'aperçu est immédiat ; la réinitialisation supprime l'image personnalisée.",

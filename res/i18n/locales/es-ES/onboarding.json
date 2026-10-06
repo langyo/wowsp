@@ -33,6 +33,8 @@
   "sealsToggleDesc": "Sellos de veredicto 神了/猴/蛆: solo se muestran con la interfaz en chino.",
   "localizedTiersToggle": "Etiquetas de nivel localizadas",
   "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar.",
+  "prTintToggle": "Tinte de fila por nivel de PR",
+  "prTintToggleDesc": "Tiñe cada fila del roster en directo con el color del nivel de PR del jugador (nivel rojo → rojo, morado → morado); activado por defecto.",
   "gameDesc": "WoWSP buscó automáticamente instalaciones de World of Warships en este equipo: haz clic en el cliente que quieras confirmar, o vuelve a detectar / elige la carpeta manualmente.",
   "gameDetecting": "Buscando juegos instalados…",
   "pluginSection": "Complemento dentro del juego",

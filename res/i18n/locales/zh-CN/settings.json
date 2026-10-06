@@ -152,7 +152,9 @@
     "sealsToggle": "评价印章",
     "sealsToggleDesc": "盖印「神了/猴/蛆」评价印章，仅中文界面显示。",
     "localizedTiersToggle": "本土化档位文案",
-    "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。"
+    "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。",
+    "prTintToggle": "PR 档位行底色",
+    "prTintToggleDesc": "实时对局名册按每名玩家的 PR 档位颜色铺一层半透明底色（红表铺红、紫表铺紫），默认开启。"
   },
   "sealCustomizer": {
     "desc": "逐个开关每枚印章，或为印章选用自定义图片（图片存储在应用数据目录的 stamps 文件夹）。预览即时生效，还原默认即删除自定义图。",

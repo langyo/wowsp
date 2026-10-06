@@ -152,7 +152,9 @@
     "sealsToggle": "Rating stamps",
     "sealsToggleDesc": "Inked 神了/猴/蛆 verdict seals — shown only under a Chinese interface.",
     "localizedTiersToggle": "Localized tier labels",
-    "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum."
+    "localizedTiersToggleDesc": "Fun localized tier wording (夯/人上人/战舰仙人…); off shows the standard English bands Bad/Good/Unicum.",
+    "prTintToggle": "PR-tier row tint",
+    "prTintToggleDesc": "Wash each live-roster row with the player's PR-tier color (red band red, purple band purple); on by default."
   },
   "sealCustomizer": {
     "desc": "Toggle each seal individually, or set a custom picture per seal (stored in the stamps folder of the app data directory). Previews update live; resetting deletes the custom picture.",

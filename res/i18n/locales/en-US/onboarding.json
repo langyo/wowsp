@@ -33,6 +33,8 @@
   "sealsToggleDesc": "Inked 神了/猴/蛆 verdict seals — Chinese UI only.",
   "localizedTiersToggle": "Localized tier labels",
   "localizedTiersToggleDesc": "Fun localized tier wording; off shows the standard English bands.",
+  "prTintToggle": "PR-tier row tint",
+  "prTintToggleDesc": "Wash each live-roster row with the player's PR-tier color (red band red, purple band purple); on by default.",
   "gameDesc": "WoWSP scanned this machine for World of Warships installs — click one to confirm it as the active client, or re-scan / browse for the folder manually.",
   "gameDetecting": "Scanning for installed games…",
   "pluginSection": "In-game plugin",

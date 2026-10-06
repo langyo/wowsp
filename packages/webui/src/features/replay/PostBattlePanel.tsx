@@ -7,9 +7,11 @@
  * to an estimate) and carry the same roster dressing as the live-battle
  * panel: clan tags, PR column, career seals, team aggregates in the column
  * titles and the battle mode/map head. Rows default to the compact one-line
- * look; the share bar's mode toggle expands them to the live panel's full
- * cards (name/ship/stat stack + the LiveShipMeta ship strip), a persisted
- * stats pref. The share bar also leads with the stats-source chip — the
+ * look; the share bar's mode toggle expands them to full cards in the live
+ * panel's spirit (name/ship/stat stack + the LiveShipMeta ship strip — the
+ * live panel's own cards carry their stat line as a full-width bottom strip
+ * instead), a persisted stats pref. The share bar also leads with the
+ * stats-source chip — the
  * identical selector the live panel's head mounts (one shared statsPrefs
  * store; a flip re-resolves these rows immediately).
  *
