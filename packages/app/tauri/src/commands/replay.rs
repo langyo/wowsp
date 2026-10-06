@@ -241,6 +241,48 @@ fn detect_hp_property(
         .unwrap_or((20, HpValueKind::Int))
 }
 
+/// Prepend each ship's arena starting health at t=0.
+///
+/// HP property updates only fire when health CHANGES — no ship's stream
+/// opens with a full-health sync (verified across a 15.8 replay: every
+/// first sample is already a damaged reading, the recorder's own ship
+/// included, because the opening full-HP state never needs an update).
+/// Step-lookup consumers (`hpAtTime` on the frontend) extrapolate the
+/// first sample back to t=0, so without an anchor the whole roster reads
+/// as wounded from the opening second — worst for ships first observed
+/// after taking hits. The arena's starting health is the authoritative
+/// pre-change value: anchor every stream that opens damaged and late.
+fn anchor_hp_streams(
+    hp_map: &mut std::collections::BTreeMap<i32, Vec<wowsp_tauri_shared::HpSample>>,
+    arena_players: &[wowsp_tauri_shared::ArenaPlayer],
+) {
+    let starting: std::collections::BTreeMap<i32, u32> = arena_players
+        .iter()
+        .filter(|p| p.max_health > 0)
+        .map(|p| (p.entity_id, p.max_health))
+        .collect();
+    for (eid, samples) in hp_map.iter_mut() {
+        // An empty stream stays empty (no-damage ships keep the frontend's
+        // full-health initial label); a stream already opening at the
+        // starting health needs no duplicate anchor.
+        let Some(&max) = starting.get(eid) else {
+            continue;
+        };
+        if samples
+            .first()
+            .is_some_and(|s| s.time > 0.0 && s.value < max)
+        {
+            samples.insert(
+                0,
+                wowsp_tauri_shared::HpSample {
+                    time: 0.0,
+                    value: max,
+                },
+            );
+        }
+    }
+}
+
 /// Group the decoded per-entity positions into trajectories, attaching each
 /// entity's creation metadata (type / vehicleId / spawn position) from the
 /// EntityCreate packets. Ships (type 2 with many samples) sort first.
@@ -317,6 +359,7 @@ fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared
             }
         }
     }
+    anchor_hp_streams(&mut hp_map, &arena_players);
     // Infer death from the HP stream when no EntityDestroy packet exists:
     // a float HP series that ends at exactly 0 means the ship sank (the last
     // sample is the sink instant; the client stops updating HP afterwards).
@@ -1170,6 +1213,64 @@ mod tests {
             detect_hp_property(&kinds, &props_none),
             (20, HpValueKind::Int)
         );
+    }
+
+    /// Streams that first report a damaged reading get the arena starting
+    /// health prepended at t=0; streams already opening full, entities the
+    /// arena does not know, and empty streams stay untouched.
+    #[test]
+    fn anchor_hp_streams_prepends_starting_health() {
+        let sample = |time: f32, value: u32| wowsp_tauri_shared::HpSample { time, value };
+        let arena = |entity_id: i32, max_health: u32| wowsp_tauri_shared::ArenaPlayer {
+            entity_id,
+            team_id: 0,
+            player_id: 0,
+            ship_params_id: 0,
+            max_health,
+            name: String::new(),
+            is_bot: false,
+            avatar_id: None,
+            is_self: false,
+        };
+        // Damaged first reading at t=151.6 (the L-20 replay's own sub).
+        let mut hp_map = std::collections::BTreeMap::from([
+            (1, vec![sample(151.6, 9_168), sample(330.7, 8_541)]),
+            // Already opens at the starting health: no duplicate anchor.
+            (2, vec![sample(30.2, 69_650), sample(90.0, 66_000)]),
+            // Not in the arena: nothing to anchor from.
+            (3, vec![sample(120.0, 500)]),
+            // Zero max_health entry is not a usable anchor.
+            (4, vec![sample(80.0, 300)]),
+        ]);
+        let players = vec![arena(1, 14_000), arena(2, 69_650), arena(4, 0)];
+        anchor_hp_streams(&mut hp_map, &players);
+        let head = |eid: i32| hp_map.get(&eid).map(|s| (s[0].time, s[0].value));
+        assert_eq!(
+            head(1),
+            Some((0.0, 14_000)),
+            "damaged stream gains a full-health t=0 anchor"
+        );
+        assert_eq!(hp_map.get(&1).map(Vec::len), Some(3));
+        assert_eq!(
+            head(2),
+            Some((30.2, 69_650)),
+            "already-full stream is not duplicated"
+        );
+        assert_eq!(
+            head(3),
+            Some((120.0, 500)),
+            "arena-unknown entity stays untouched"
+        );
+        assert_eq!(
+            head(4),
+            Some((80.0, 300)),
+            "zero max-health entry anchors nothing"
+        );
+        // An empty stream stays empty (no-damage ships keep the frontend's
+        // full-health initial label).
+        let mut empty_map = std::collections::BTreeMap::from([(5, Vec::new())]);
+        anchor_hp_streams(&mut empty_map, &[arena(5, 23_200)]);
+        assert!(empty_map.get(&5).is_some_and(Vec::is_empty));
     }
 
     /// Synthetic replay: magic + 1 block + a tiny JSON descriptor. Verifies the
