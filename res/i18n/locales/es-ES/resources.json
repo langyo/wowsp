@@ -19,6 +19,7 @@
   "planFiles": "Mapeo de archivos",
   "warnings": "Notas",
   "installedOk": "«{name}» instalado — {count} archivos escritos en bin/{version}.",
+  "mirroredBins": "También sincronizado con la compilación preliminar bin/{version}.",
   "kind.voice": "Paquete de voz",
   "kind.skin": "Skin de buque (PnF)",
   "kind.textures": "Sobrescritura de texturas",

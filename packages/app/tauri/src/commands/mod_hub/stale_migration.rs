@@ -249,7 +249,7 @@ pub(crate) fn migrate_stale_bin_core(
     let _ = fs::remove_dir(&src);
     ensure_loader_marker(&dst);
     // Reclaimed files reach the pre-release twins too (see preload_mirror).
-    for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels) {
+    for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels).warnings {
         tracing::warn!("{warning}");
     }
     super::preload_mirror::ensure_loader_markers(game_root);
@@ -593,7 +593,7 @@ pub(crate) fn migration_execute_core(
     let _ = fs::remove_dir(&src);
     ensure_loader_marker(&dst);
     // Kept files reach the pre-release twins too (see preload_mirror).
-    for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels) {
+    for warning in super::preload_mirror::mirror_written(game_root, &dst, &moved_rels).warnings {
         tracing::warn!("{warning}");
     }
     super::preload_mirror::ensure_loader_markers(game_root);

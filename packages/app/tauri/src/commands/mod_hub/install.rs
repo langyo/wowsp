@@ -271,10 +271,20 @@ fn install_plan_inner(
     };
     written.sort();
     // Unified install: the pre-release twins receive the same files (see
-    // preload_mirror) — best effort, surfacing as install warnings only.
-    warnings.extend(super::preload_mirror::mirror_written(
-        game_root, &res_mods, &written,
-    ));
+    // preload_mirror) — best effort, surfacing as install warnings and the
+    // report's positive mirrored-bins note. The loader marker rides along
+    // when PnF content was written and the live tree has one, so a twin's
+    // marker is a real copy (a failed copy demotes the twin to a warning)
+    // rather than the silent 0-byte backstop below.
+    let mut mirror_rels = written.clone();
+    if written.iter().any(|w| w.starts_with("PnFMods/"))
+        && res_mods.join("PnFModsLoader.py").is_file()
+    {
+        mirror_rels.push("PnFModsLoader.py".to_string());
+    }
+    let mirror = super::preload_mirror::mirror_written(game_root, &res_mods, &mirror_rels);
+    warnings.extend(mirror.warnings);
+    let mirrored_bins = mirror.synced_bins;
     super::preload_mirror::ensure_loader_markers(game_root);
     tracing::info!(name = %plan.name, wrote, "install_plan done");
     Ok(PlanApply {
@@ -284,6 +294,7 @@ fn install_plan_inner(
             wrote_files: wrote,
             warnings,
             conflicts: Vec::new(),
+            mirrored_bins,
         },
         written,
         restore_dir,

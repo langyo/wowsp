@@ -4,6 +4,7 @@ import {
   AudioLines,
   Ban,
   ChevronDown,
+  CircleCheck,
   Ellipsis,
   ExternalLink,
   FolderSearch,
@@ -150,9 +151,13 @@ export default defineComponent({
     const plan = ref<PackagePlan | null>(null);
     const planError = ref("");
     const installing = ref(false);
-    const report = ref<
-      { name: string; count: number; version: string; warnings: string[] } | null
-    >(null);
+    const report = ref<{
+      name: string;
+      count: number;
+      version: string;
+      warnings: string[];
+      mirrored: string[];
+    } | null>(null);
 
     // ── Online catalog state ──
     const catalog = ref<CatalogEntry[]>([]);
@@ -387,6 +392,9 @@ export default defineComponent({
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
         if (tookOverForeign) {
           toast.info(t("resources.registeredOverForeign", { name: r.name }));
+        }
+        for (const v of r.mirroredBins ?? []) {
+          toast.info(t("resources.mirroredBins", { version: v }));
         }
         for (const c of r.conflicts ?? []) toast.info(c);
         await Promise.all([scan(), loadRecords(), pluginUpdates.refresh()]);
@@ -742,6 +750,7 @@ export default defineComponent({
           count: r.wroteFiles,
           version: r.binVersion,
           warnings: r.warnings,
+          mirrored: r.mirroredBins ?? [],
         };
         plan.value = null;
         await Promise.all([scan(), loadRecords()]);
@@ -1666,6 +1675,16 @@ export default defineComponent({
                   count: report.value.count,
                   version: report.value.version,
                 })}
+                {report.value.mirrored.length > 0 && (
+                  <ul class="plan-card__warnings resources-report-mirrored">
+                    {report.value.mirrored.map((v) => (
+                      <li key={v}>
+                        <CircleCheck size={12} />{" "}
+                        {t("resources.mirroredBins", { version: v })}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {report.value.warnings.length > 0 && (
                   <ul class="plan-card__warnings resources-report-warnings">
                     {report.value.warnings.map((w, i) => (

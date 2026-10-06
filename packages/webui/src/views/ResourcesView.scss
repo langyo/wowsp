@@ -579,6 +579,13 @@
   }
 }
 
+// Positive pre-release mirror notes inside the install OK banner: the same
+// list layout as the warnings above, but in the banner's success tone —
+// a check icon in warning amber would read as mixed intent.
+.resources-report-mirrored {
+  color: rgb(var(--color-success));
+}
+
 // ── Installed-unit asset previews ────────────────────────────────────────────
 
 .asset-preview__note {

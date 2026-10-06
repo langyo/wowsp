@@ -221,7 +221,9 @@ pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
             VIEW_DEST.to_string(),
             LOADER_MARKER.to_string(),
         ],
-    ) {
+    )
+    .warnings
+    {
         tracing::warn!("{warning}");
     }
     // wowsp.toml contract: the plugin is a managed unit (bundled source)
@@ -273,16 +275,10 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
         }
     }
     let loader = dir.join(LOADER_MARKER);
-    let pnf = dir.join("PnFMods");
-    let other_mods = pnf
-        .read_dir()
-        .map(|entries| {
-            entries
-                .flatten()
-                .any(|e| e.path().is_dir() && e.path().join(MOD_ENTRY).is_file())
-        })
-        .unwrap_or(false);
-    if !other_mods && loader.is_file() && std::fs::metadata(&loader).is_ok_and(|m| m.len() == 0) {
+    if !has_pnf_mods(&dir)
+        && loader.is_file()
+        && std::fs::metadata(&loader).is_ok_and(|m| m.len() == 0)
+    {
         let _ = std::fs::remove_file(&loader);
     }
     // Twin copies go with the live ones (the twin's own loader marker is
@@ -298,6 +294,23 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
     });
     tracing::info!(dir = %dir.display(), "ingame plugin uninstalled");
     Ok(())
+}
+
+/// Does the tree still carry any PnF mod — a directory under `PnFMods`
+/// with the standard mod entry file (foreign modpacks and the bundled
+/// probe alike)? The shared 0-byte loader marker must survive while any
+/// does: without it the client stops scanning `res_mods` entirely, so
+/// removing it would silence every OTHER PnF mod too.
+pub(crate) fn has_pnf_mods(res_mods: &std::path::Path) -> bool {
+    res_mods
+        .join("PnFMods")
+        .read_dir()
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.path().is_dir() && e.path().join(MOD_ENTRY).is_file())
+        })
+        .unwrap_or(false)
 }
 
 /// The plugin's live telemetry file for a game root — `None` when the root

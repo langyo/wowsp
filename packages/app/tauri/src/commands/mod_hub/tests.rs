@@ -1469,6 +1469,7 @@ fn local_record_describes_local_install() {
             wrote_files: 2,
             warnings: Vec::new(),
             conflicts: Vec::new(),
+            mirrored_bins: Vec::new(),
         },
         written: vec!["gui/a.png".into(), "ime_config.xml".into()],
         restore_dir: Some(PathBuf::from("R")),
@@ -1876,6 +1877,8 @@ fn install_copies_written_files_into_preload_bins() {
         "twin must hold the same copy the live bin runs"
     );
     assert_eq!(fs::read(twin.join("PnFModsLoader.py")).unwrap(), b"");
+    // The report tells the UI which pre-release builds got the files.
+    assert_eq!(applied.report.mirrored_bins, vec!["2".to_string()]);
 
     // Without a pin "future" is undefined — the mirror set empties and the
     // next install only writes whichever bin the fallback picks.

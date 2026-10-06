@@ -155,6 +155,11 @@ pub struct InstallReport {
     /// conflict-free reports stays byte-identical to older builds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conflicts: Vec<String>,
+    /// Pre-release `bin/<version>` builds the files were mirrored into
+    /// (Steam stages the next version before the client switches). Absent
+    /// when empty, same wire-shape rule as `conflicts`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mirrored_bins: Vec<String>,
 }
 
 // ── Mod Hub online catalog (mirrors scripts/mod_hub_publish.py output) ──────

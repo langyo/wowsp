@@ -1245,6 +1245,8 @@ export interface InstallReport {
   warnings: string[];
   /** Which other installed mods this install overwrote files of. */
   conflicts?: string[];
+  /** Pre-release bin versions the files were mirrored into. */
+  mirroredBins?: string[];
 }
 
 // ── Mod Hub online catalog (mirrors wowsp_tauri_shared, commands/mod_catalog.rs) ──

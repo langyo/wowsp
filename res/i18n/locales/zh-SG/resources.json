@@ -19,6 +19,7 @@
   "planFiles": "文件映射",
   "warnings": "提示",
   "installedOk": "「{name}」安装完成 —— 已写入 {count} 个文件到 bin/{version}。",
+  "mirroredBins": "已同步到预载版本 bin/{version}。",
   "kind.voice": "语音包",
   "kind.skin": "舰船涂装（PnF）",
   "kind.textures": "贴图覆盖",

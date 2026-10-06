@@ -24,6 +24,7 @@ use wowsp_tauri_shared::{
     InstallReport, ModInstallRecord,
 };
 
+use super::ingame_plugin;
 use super::mod_hub;
 use super::mod_hub::manifest::{self, WowspManifest};
 use crate::paths;
@@ -1008,11 +1009,15 @@ pub(crate) fn uninstall_from_ledger(
 
     // The 0-byte loader marker is a shared component: when the last record
     // referencing it is gone, drop our placeholder — a non-empty loader
-    // shipped with a real modpack (Aslain & co.) is never ours to touch.
+    // shipped with a real modpack (Aslain & co.) is never ours to touch,
+    // and neither is one whose tree still carries foreign PnF mods: the
+    // client only scans res_mods while the marker exists, so removing it
+    // would silence every OTHER PnF mod with this uninstall.
     if record.files.iter().any(|f| f == "PnFModsLoader.py")
         && !installs
             .iter()
             .any(|r| r.files.iter().any(|f| f == "PnFModsLoader.py"))
+        && !ingame_plugin::has_pnf_mods(&res_mods)
     {
         let loader = res_mods.join("PnFModsLoader.py");
         let is_placeholder = loader.metadata().map(|m| m.len() == 0).unwrap_or(false);
@@ -1489,7 +1494,23 @@ mod tests {
         uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
         assert!(!rm.join("PnFModsLoader.py").exists(), "last user gone");
 
+        // A foreign PnF mod still living in the tree keeps the placeholder
+        // alive — the client only scans res_mods while the marker exists,
+        // so removing it would silence every OTHER PnF mod too.
+        fs::create_dir_all(rm.join("PnFMods/A")).unwrap();
+        fs::write(rm.join("PnFMods/A/Main.py"), b"a").unwrap();
+        fs::create_dir_all(rm.join("PnFMods/Foreign")).unwrap();
+        fs::write(rm.join("PnFMods/Foreign/Main.py"), b"f").unwrap();
+        fs::write(rm.join("PnFModsLoader.py"), b"").unwrap();
+        let mut installs = vec![mk("d", "A")];
+        uninstall_from_ledger(&mut installs, "d", &game_root).unwrap();
+        assert!(
+            rm.join("PnFModsLoader.py").is_file(),
+            "foreign PnF content keeps the placeholder marker"
+        );
+
         // A foreign (non-empty) loader survives even the last uninstall.
+        fs::remove_dir_all(rm.join("PnFMods/Foreign")).unwrap();
         fs::create_dir_all(rm.join("PnFMods/A")).unwrap();
         fs::write(rm.join("PnFModsLoader.py"), b"# Aslain").unwrap();
         let mut installs = vec![mk("c", "A")];

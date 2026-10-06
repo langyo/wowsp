@@ -23,14 +23,9 @@ use super::*;
 
 // ── twin discovery ──────────────────────────────────────────────────────────
 
-/// `res_mods` dirs of the pre-release twins under `game_root`, skipping
-/// bins whose res_mods is safe-mode quarantined (that bin opted out of mod
-/// management wholesale). Empty when no pin exists or nothing complete sits
-/// above it. The live bin itself never qualifies: with a stale pin (the
-/// recorded build no longer on disk) the fallback selection can BE the
-/// highest bin above the pin, and mirroring a tree onto itself must not
-/// even be attempted.
-pub(crate) fn preload_res_mods(game_root: &str) -> Vec<PathBuf> {
+/// The pre-release twins as `(bin version, res_mods)` pairs — see
+/// [`preload_res_mods`] for the filtering rules.
+pub(crate) fn preload_bins(game_root: &str) -> Vec<(String, PathBuf)> {
     let root = Path::new(game_root);
     let key_of = |p: &Path| crate::commands::game_detect::install_path_key(&p.to_string_lossy());
     let live_key = crate::commands::game_context::res_mods_dir(root)
@@ -39,23 +34,59 @@ pub(crate) fn preload_res_mods(game_root: &str) -> Vec<PathBuf> {
     crate::commands::game_context::preload_bin_dirs(root)
         .into_iter()
         .filter(|(_, dir)| !disabled_res_mods(dir).exists())
-        .map(|(_, dir)| dir.join("res_mods"))
-        .filter(|rm| live_key.as_ref().is_none_or(|k| *k != key_of(rm)))
+        .map(|(_, dir)| {
+            let version = dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            (version, dir.join("res_mods"))
+        })
+        .filter(|(_, rm)| live_key.as_ref().is_none_or(|k| *k != key_of(rm)))
+        .collect()
+}
+
+/// `res_mods` dirs of the pre-release twins under `game_root`, skipping
+/// bins whose res_mods is safe-mode quarantined (that bin opted out of mod
+/// management wholesale). Empty when no pin exists or nothing complete sits
+/// above it. The live bin itself never qualifies: with a stale pin (the
+/// recorded build no longer on disk) the fallback selection can BE the
+/// highest bin above the pin, and mirroring a tree onto itself must not
+/// even be attempted.
+pub(crate) fn preload_res_mods(game_root: &str) -> Vec<PathBuf> {
+    preload_bins(game_root)
+        .into_iter()
+        .map(|(_, rm)| rm)
         .collect()
 }
 
 // ── fan-out operations ──────────────────────────────────────────────────────
+
+/// What one [`mirror_written`] fan-out did: the twins that received the
+/// files (bin version strings, for the install report's positive note) and
+/// the warnings for twins that could not be fully synced.
+pub(crate) struct MirrorOutcome {
+    pub synced_bins: Vec<String>,
+    pub warnings: Vec<String>,
+}
 
 /// Copy the just-written live files into every pre-release twin. A twin
 /// must end up holding the SAME copy the live bin runs, so existing twin
 /// files at those paths are overwritten (the unified "one mod, both bins"
 /// install); files a twin carries beyond the written set are left alone.
 /// `@game/` payloads live in the version-independent game root and are
-/// skipped. Returns one warning line per incompletely synced twin.
-pub(crate) fn mirror_written(game_root: &str, primary: &Path, rel_paths: &[String]) -> Vec<String> {
-    let mut warnings = Vec::new();
-    for mirror in preload_res_mods(game_root) {
+/// skipped. See [`MirrorOutcome`] for what comes back.
+pub(crate) fn mirror_written(
+    game_root: &str,
+    primary: &Path,
+    rel_paths: &[String],
+) -> MirrorOutcome {
+    let mut outcome = MirrorOutcome {
+        synced_bins: Vec::new(),
+        warnings: Vec::new(),
+    };
+    for (version, mirror) in preload_bins(game_root) {
         let mut failed = 0usize;
+        let mut copied = 0usize;
         for rel in rel_paths {
             if rel.starts_with("@game/") {
                 continue;
@@ -68,17 +99,21 @@ pub(crate) fn mirror_written(game_root: &str, primary: &Path, rel_paths: &[Strin
             let Some(parent) = dst.parent() else { continue };
             if fs::create_dir_all(parent).is_err() || fs::copy(&src, &dst).is_err() {
                 failed += 1;
+            } else {
+                copied += 1;
             }
         }
         if failed > 0 {
-            warnings.push(format!(
+            outcome.warnings.push(format!(
                 "pre-release copy incomplete under {} ({} file(s) skipped)",
                 mirror.display(),
                 failed
             ));
+        } else if copied > 0 {
+            outcome.synced_bins.push(version);
         }
     }
-    warnings
+    outcome
 }
 
 /// Apply a live↔`.bak` toggle to the mirrored copies, so a mod disabled

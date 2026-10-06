@@ -63,7 +63,8 @@ pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
         .iter()
         .map(|(name, _)| (*name).to_string())
         .collect();
-    for warning in super::mod_hub::preload_mirror::mirror_written(&game_root, &dir, &rels) {
+    for warning in super::mod_hub::preload_mirror::mirror_written(&game_root, &dir, &rels).warnings
+    {
         tracing::warn!("{warning}");
     }
     Ok(dir.to_string_lossy().into_owned())
