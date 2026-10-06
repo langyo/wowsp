@@ -12,9 +12,19 @@ pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
 /// four-char seals recut onto one line (3:1 faces) roughly tripled each
 /// wide seal's footprint versus the old 2x2 face, so the floor rides up
 /// with them: at 150 px a hidden-profile 过街老鼠 chip (or any chip with a
-/// career + air + sub set) lost its outer seal flank.
+/// career + air + sub set) lost its outer seal flank. A worst-case chip
+/// (four-char seal + four dot-joined numbers) measures ~20 font heights —
+/// up to ~300 CSS px — and font sizes are CSS px while this pad is
+/// physical, so the reserve needed on the SAME physical layout grows with
+/// the monitor's DPR: the floor covers that chip at DPR 1 and the cap
+/// through ~DPR 2. Past the covered reserve chipFit trims seals first and
+/// only then slides the chip back over the table's outer column, so an
+/// under-padded window degrades visibly (lost seals) before it degrades
+/// badly. The ratio stays a quarter of the table width so the pad still
+/// grows with the layout, and the window's own game-window clamp keeps the
+/// wider request from overreaching the screen.
 pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
-    (roster.width / 4).clamp(240, 440)
+    (roster.width / 4).clamp(320, 560)
 }
 
 /// Build the overlay-window anchor from a detection relative to the game
