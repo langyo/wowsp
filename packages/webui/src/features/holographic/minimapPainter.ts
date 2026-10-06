@@ -11,6 +11,7 @@ import { TEAM_COLOR, type TeamRole } from "./teamColors";
 import { clampXZ, frustumCorners } from "./sceneUtils";
 import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 import { TACTICAL_SIZE } from "./tactical/render";
+import { capLetter } from "./capZones";
 import {
   cycloneDriftSeed,
   cycloneZoneAt,
@@ -353,7 +354,7 @@ export function drawMinimap(ctx: MapInternals) {
     c2d.font = "bold 8px sans-serif";
     c2d.textAlign = "center";
     c2d.textBaseline = "middle";
-    c2d.fillText(String.fromCharCode(65 + i), cx, cz + 0.5);
+    c2d.fillText(capLetter(z, i), cx, cz + 0.5);
     // Capturing countdown under the letter: "xx s" to complete.
     const eta = ctx.capDisplay.value[i]?.etaSeconds;
     if (eta != null && eta > 0) {
@@ -617,7 +618,7 @@ export function drawMinimap(ctx: MapInternals) {
         zctx.font = "bold 16px sans-serif";
         zctx.textAlign = "center";
         zctx.textBaseline = "middle";
-        zctx.fillText(String.fromCharCode(65 + i), 0, 0.5);
+        zctx.fillText(capLetter(z, i), 0, 0.5);
         // Capturing countdown under the letter: "xx s" to complete.
         const eta = ctx.capDisplay.value[i]?.etaSeconds;
         if (eta != null && eta > 0) {

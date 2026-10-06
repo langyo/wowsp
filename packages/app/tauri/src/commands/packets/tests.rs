@@ -764,6 +764,69 @@ fn scans_state_for_zone_radius() {
     assert!(scan_state_for_radius(&state).is_none());
 }
 
+/// The control-point scan reads the 0-based point index off the
+/// `controlPoint` component tail (`<type> 00 <index>`) WITHOUT hard-coding
+/// the ControlPointType byte. The first two full states are pasted straight
+/// from a 15.8 58_RidgeNew domination_2point capture — the mode packs type
+/// 5 where the classic layouts pack 1, so the old type-anchored signature
+/// matched NOTHING and every 2-cap point vanished from the map (each side's
+/// pre-owned home point is the one that goes fully stream-silent). The
+/// third state swaps in the verbatim 47_Sleeping_Giant domination_4point
+/// tail (type 1, index 2) to pin the classic shape.
+#[test]
+fn scans_state_for_control_point() {
+    // 58_RidgeNew eid 20040 — enemy home point, index 0 (A).
+    let state = hex_literal(
+        "690000000c0000010902000301040000000500003443060000000007000000\
+         0000000000082346363546303242342e34413136444541442e373831463741\
+         39322e364535343136373809000a01b0c7e5ffffffffff050000010000000\
+         0ff00000101000034430000803f0b0100",
+    );
+    assert_eq!(scan_state_for_control_point(&state), Some(0));
+
+    // 58_RidgeNew eid 20039 — our pre-owned home point, index 1 (B).
+    let state = hex_literal(
+        "690000000c0001010902000301040000000500003443060000000007000000\
+         0000000000082342363742424532432e34333845324231462e363743353932\
+         38322e413731464543433309000a01b0c7e5ffffffffff050001010000000\
+         0ff00000101000034430000803f0b0100",
+    );
+    assert_eq!(scan_state_for_control_point(&state), Some(1));
+
+    // 47_Sleeping_Giant domination_4point — ControlPointType 1, index 2
+    // (leading bytes mirror the RidgeNew capture; the tail from the buoy
+    // constant on is verbatim).
+    let state = hex_literal(
+        "690000000c0000010902000301040000000500003443060000000007000000\
+         0000000000082346363546303242342e34413136444541442e373831463741\
+         39322e364535343136373809000a01b0c7e5ffffffffff010002010000000\
+         0ff00000101000070420000803f0b0100",
+    );
+    assert_eq!(scan_state_for_control_point(&state), Some(2));
+
+    // A strike/event zone: componentsState stays empty (`0a 00`) and its
+    // separate constant (b0 c7 8d ff) must not match — pasted from the
+    // same capture's eid 270980 tail.
+    let strike = hex_literal("323032332e353909014544594145445941b0c78dff0a00000b0100");
+    assert_eq!(scan_state_for_control_point(&strike), None);
+
+    // A buoy-constant lookalike without the `00` separator yields nothing.
+    let mut bogus = vec![0u8; 24];
+    bogus[..10].copy_from_slice(&[0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff]);
+    bogus[10] = 0x01; // ControlPointType slot
+    bogus[11] = 0x07; // non-zero separator byte
+    bogus[12] = 0x01;
+    assert_eq!(scan_state_for_control_point(&bogus), None);
+    // An oversized index byte is rejected the same way.
+    bogus[11] = 0x00;
+    bogus[12] = 0x40;
+    assert_eq!(scan_state_for_control_point(&bogus), None);
+    // Truncated tail (no room for `<type> 00 <index>`) yields nothing.
+    let mut short = bogus;
+    short.truncate(12);
+    assert_eq!(scan_state_for_control_point(&short), None);
+}
+
 // ── Global weather (NestedPropertyUpdate 0x23) ─────────────────────────────
 
 /// The weather-id shape gate accepts every known GlobalWeather id (all 35

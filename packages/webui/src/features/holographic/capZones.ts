@@ -13,14 +13,15 @@ import type { EntityTrajectory } from "@/api";
 // `controlPoint` component (`controlPointIndex`): only real domination
 // points carry it, and it ships with the EntityCreate itself, so the rule
 // holds even for replays that record no ownership/progress updates after
-// the zone spawns. The ownership/progress-stream checks below are kept
-// only as a fallback for very old replays predating the component.
+// the zone spawns — which is exactly where "each side pre-owns its home
+// point and the enemy never contests it" ends (zero streams of any kind).
+// The ownership/progress-stream checks below are kept only as a fallback
+// for replays whose create state predates the component.
 /**
  * True capture point vs event/strike zone, from the replay streams
  * themselves (the authoritative per-match source — a map can ship in
  * multiple versions, so game resources alone can't be trusted):
  *  - controlPoint component (create state) — always a real point
- *    (older clients; 15.7+ no longer ships it)
  *  - capSamples (ownership stream) — real point when present
  *  - capProgress DYNAMICS (15.7+ discriminator, measured on real
  *    dumps): a capture point's progress is a tug-of-war — dozens of
@@ -45,6 +46,14 @@ export function isCaptureZone(t: EntityTrajectory): boolean {
   // Few samples ending at zero: only a point NOBODY ever touched stays
   // zero the whole match. Strike targets decay from non-zero.
   return !cp.some((s) => s.value > 0);
+}
+
+/** The zone's scorebar/minimap letter: the game's own point index (A=0)
+ *  when the create state carried it, else the zone's position in the
+ *  (index-sorted) cap list. Preferring the index keeps letters stable even
+ *  when the stream order differs from the game's numbering. */
+export function capLetter(t: EntityTrajectory, position: number): string {
+  return String.fromCharCode(65 + (t.kind?.controlPointIndex ?? position));
 }
 
 // ── Scoring rules (official: wiki.worldofwarships.com/Ship:Game_Modes) ──

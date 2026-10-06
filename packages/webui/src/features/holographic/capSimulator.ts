@@ -5,7 +5,7 @@
  * same result; the per-zone simulator state (`capSim`) lives on the shared
  * map context.
  */
-import { KILL_PTS, SPECIAL_CAP_MAPS, type CapZoneState } from "./capZones";
+import { KILL_PTS, SPECIAL_CAP_MAPS, capLetter, type CapZoneState } from "./capZones";
 import { sampleAt, hpAtTime, progressAtTime } from "./trajectoryMath";
 import type { EntityTrajectory } from "@/api";
 import type { TeamRole } from "./teamColors";
@@ -298,7 +298,7 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
       // Strike/event zone: rendered, never scored, no capture sim.
       const { ally, enemy } = shipsInZone(ctx, zone, t);
       display.push({
-        letter: String.fromCharCode(65 + i),
+        letter: capLetter(zone, i),
         owner: 0,
         progress: 0,
         alliesIn: ally,
@@ -335,7 +335,7 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
     const capturing =
       st.progress > 0.001 && st.progress < 1 && ally + enemy > 0;
     display.push({
-      letter: String.fromCharCode(65 + i),
+      letter: capLetter(zone, i),
       owner: st.owner,
       progress: st.progress,
       alliesIn: ally,

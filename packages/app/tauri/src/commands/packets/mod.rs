@@ -467,6 +467,8 @@ use frames::walk_frames;
 #[cfg(test)]
 use payloads::is_global_weather_param;
 #[cfg(test)]
+use payloads::scan_state_for_control_point;
+#[cfg(test)]
 use payloads::scan_state_for_radius;
 use payloads::{
     parse_battle_results, parse_camera, parse_camera_mode, parse_cell_player_create,

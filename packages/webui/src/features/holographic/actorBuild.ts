@@ -28,6 +28,7 @@ import {
   resolveRosterAssignments,
 } from "./rosterRoles";
 import { sampleAt } from "./trajectoryMath";
+import { capLetter } from "./capZones";
 import {
   CAP_RING_PX, SMOKE_RING_PX, WARD_RING_PX,
   circlePositions, makeOverlayRing, OVERLAY_RING_ORDER, paintCapSprite,
@@ -612,12 +613,17 @@ export function rebuildActors(ctx: MapInternals) {
     // a same-order default when the create state yields no candidate.
     radius: t.kind!.radius ?? 150,
     order: idx,
+    traj: t,
   }));
   if (capEntries.length === 0) {
     console.warn("[HolographicMap] no capture zone data found in trajectory kinds");
   }
   // Group by shared center (within 30 m).
-  const groups: { x: number; z: number; members: { x: number; z: number; radius: number; order: number }[] }[] = [];
+  const groups: {
+    x: number;
+    z: number;
+    members: { x: number; z: number; radius: number; order: number; traj: EntityTrajectory }[];
+  }[] = [];
   for (const e of capEntries) {
     const g = groups.find(
       (gr) => Math.abs(gr.x - e.x) < 30 && Math.abs(gr.z - e.z) < 30,
@@ -647,7 +653,7 @@ export function rebuildActors(ctx: MapInternals) {
       const canvas = document.createElement("canvas");
       canvas.width = 256;
       canvas.height = 256;
-      paintCapSprite(canvas, String.fromCharCode(65 + letterIdx++), "");
+      paintCapSprite(canvas, capLetter(g.members[k].traj, letterIdx++), "");
       const tex = new THREE.CanvasTexture(canvas);
       const spriteMat = new THREE.SpriteMaterial({
         map: tex,

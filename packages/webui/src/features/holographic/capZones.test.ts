@@ -1,6 +1,6 @@
 /** Unit tests for the capture-zone classification heuristics. */
 import { describe, expect, it } from "vitest";
-import { isCaptureZone } from "./capZones";
+import { capLetter, isCaptureZone } from "./capZones";
 import type { EntityTrajectory } from "@/api";
 
 /** Minimal zone trajectory: entityType 14 with only the fields the
@@ -72,5 +72,25 @@ describe("isCaptureZone", () => {
       { time: 4, value: 0 },
     ];
     expect(isCaptureZone(zone({ capProgress: cp }))).toBe(false);
+  });
+
+  it("accepts a pre-owned point nobody ever contested (zero streams)", () => {
+    // 15.8 2-cap layout: each side pre-owns its home point, and a point
+    // the enemy never enters emits NO ownership and NO progress samples
+    // for the whole match — the create state's controlPoint component is
+    // the only signal left (regression for the vanishing home point).
+    const t = zone({ kind: { ...zone({}).kind!, controlPointIndex: 1 } });
+    expect(isCaptureZone(t)).toBe(true);
+  });
+});
+
+describe("capLetter", () => {
+  it("prefers the game's own point index over the list position", () => {
+    const t = zone({ kind: { ...zone({}).kind!, controlPointIndex: 1 } });
+    expect(capLetter(t, 0)).toBe("B");
+  });
+
+  it("falls back to the list position without a point index", () => {
+    expect(capLetter(zone({}), 2)).toBe("C");
   });
 });

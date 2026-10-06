@@ -306,20 +306,28 @@ fn scan_state_for_team(state: &[u8]) -> Option<i8> {
 /// state. Real points carry the `componentsState` property (index 10) with a
 /// non-empty `controlPoint` component, packed as:
 ///
-///   `0a 01 b0 c7 e5 ff ff ff ff ff 01 00 <index>`
+///   `0a 01 b0 c7 e5 ff ff ff ff ff <type> 00 <index>`
 ///
 /// (property 10 present, buoyVisualId constant 0xffe5c7b0, nextControlPoint
-/// -1, ControlPointType 1 = Control, empty timer name, 0-based point index).
+/// -1, ControlPointType byte, empty timer name, 0-based point index).
 /// Strike/event zones keep componentsState empty (`0a 00`) and never match.
-/// Verified byte-identical across domination, PvE, and brawl modes.
-fn scan_state_for_control_point(state: &[u8]) -> Option<i32> {
-    const SIG: [u8; 11] = [
-        0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
-    ];
+///
+/// The ControlPointType byte is mode- and version-drifting (1 = Control on
+/// domination_3/4-point layouts, 5 on the 15.8 domination_2point one) and
+/// stays OUT of the match — hard-coding it silently dropped every real
+/// point on 2-cap layouts (the create state still carries everything; only
+/// the trailing index was unreadable). The `00` separator and a small index
+/// keep accidental buoy-constant lookalikes (e.g. a GUID embedding the
+/// bytes) from producing a phantom point.
+/// Verified byte-identical across domination, PvE, brawl, and asymmetric
+/// modes on 15.8.
+pub(super) fn scan_state_for_control_point(state: &[u8]) -> Option<i32> {
+    const SIG: [u8; 10] = [0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff];
     state
-        .windows(SIG.len() + 2)
+        .windows(SIG.len() + 3)
         .position(|w| w[..SIG.len()] == SIG)
-        .map(|i| state[i + SIG.len() + 1] as i32)
+        .filter(|&i| state[i + SIG.len() + 1] == 0 && state[i + SIG.len() + 2] < 16)
+        .map(|i| state[i + SIG.len() + 2] as i32)
 }
 
 /// Scan an EntityCreate state stream for any roster shipId (u32 LE, sliding
