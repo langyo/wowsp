@@ -645,3 +645,32 @@ fn sync_window_corner_rounding(win: &tauri::Window, rounded: &std::sync::atomic:
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// The preview-audio player loads every track as a `data:` URL (mod-hub
+    /// voice lines and .wem transcodes come back from the backend that way),
+    /// and Tauri injects this CSP only in production builds — dev mode runs
+    /// without one, so a missing `media-src` directive (whose fallback,
+    /// `default-src`, carries no `data:`) ships unnoticed until release
+    /// WebView2 rejects every track with `MEDIA_ELEMENT_ERROR: Media load
+    /// rejected by URL safety check`. Keep the directive the player depends
+    /// on in place.
+    #[test]
+    fn csp_permits_data_media_sources() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"]
+            .as_str()
+            .expect("app.security.csp stays a string");
+        let media_src = csp
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("media-src "))
+            .unwrap_or_else(|| panic!("csp lost its media-src directive: {csp}"));
+        assert!(
+            media_src.split_whitespace().any(|t| t == "data:"),
+            "media-src must allow data: URLs (preview audio): {media_src}"
+        );
+    }
+}
