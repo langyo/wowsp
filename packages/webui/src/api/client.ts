@@ -1411,6 +1411,9 @@ export interface StaleBinInfo {
   /** Unit names the scanner recognizes in the stranded tree. */
   mods: string[];
   fileCount: number;
+  /** The in-game stats plugin sits in this stranded tree (live or
+   *  disabled): migrating the bin reinstalls it into the current one. */
+  probeInstalled?: boolean;
 }
 
 /** Result of migrating a stranded old-version `res_mods` into the current
@@ -1423,6 +1426,9 @@ export interface MigrateReport {
   /** Wizard runs only: files marked "leave alone" that stayed in the old
    *  bin. Absent (0) from one-click migrations and older payloads. */
   ignoredFiles?: number;
+  /** The in-game stats plugin was found stranded and freshly reinstalled
+   *  into the current bin (embedded bytes). Absent from older payloads. */
+  probeReinstalled?: boolean;
 }
 
 /** One stale-tree file in a migration plan — res_mods-relative, forward

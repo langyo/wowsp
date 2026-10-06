@@ -117,6 +117,18 @@ fn bundled_plugin_record() -> ModInstallRecord {
     }
 }
 
+/// Sync the bundled in-game plugin's wowsp.toml row to a new enabled
+/// state — the manifest tail of the unit toggle, split out for the
+/// stale-bin migration's probe carry-over (which re-applies a stranded
+/// DISABLED verdict after reinstalling the files fresh).
+pub(crate) fn set_bundled_plugin_enabled(res_mods: &Path, enabled: bool) {
+    super::manifest::hub_apply(super::manifest::ManifestOp::SetEnabled {
+        res_mods: res_mods.to_path_buf(),
+        records: vec![bundled_plugin_record()],
+        enabled,
+    });
+}
+
 /// Would toggling `paths` OFF disable only part of this record's mod? True
 /// when some of its files live under the paths and others do not (files
 /// outside the group — or in the game root — would stay live).

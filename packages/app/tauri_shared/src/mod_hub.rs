@@ -297,6 +297,11 @@ pub struct StaleBinInfo {
     /// Unit names the scanner recognizes in the stranded tree.
     pub mods: Vec<String>,
     pub file_count: u64,
+    /// The bundled in-game stats plugin sits in this stranded tree (live or
+    /// `.bak`-disabled): a migration then reinstalls it into the current
+    /// bin instead of leaving it behind with the mods.
+    #[serde(default)]
+    pub probe_installed: bool,
 }
 
 /// One catalog tag definition (from the mod-tags registry). Tags decorate
@@ -356,6 +361,13 @@ pub struct MigrateReport {
     /// parsing.
     #[serde(default)]
     pub ignored_files: usize,
+    /// The bundled in-game stats plugin is in place in the current bin
+    /// after this migration — freshly reinstalled from the embedded bytes,
+    /// or already present there (the user beat the migration to it) and
+    /// deliberately left untouched. Additive + default like
+    /// `ignored_files`.
+    #[serde(default)]
+    pub probe_reinstalled: bool,
 }
 
 /// One stale-tree file in a [`MigrationPlan`], `res_mods`-relative with
@@ -379,7 +391,9 @@ pub struct PlanFile {
 /// newer destination copy wins) are deleted, never carried over; `decide`
 /// files exist only in the stale tree and follow the user's per-file keep
 /// choice. Per-install bookkeeping (`installed_mods.xml`, `PnFModsLoader.py`,
-/// `mods/installed.json`) is absent on purpose — it is deleted outright.
+/// `mods/installed.json`) is absent on purpose — it is deleted outright —
+/// and so are the bundled in-game plugin's own files: a migration that
+/// finds them reinstalls fresh embedded bytes instead of carrying them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MigrationPlan {

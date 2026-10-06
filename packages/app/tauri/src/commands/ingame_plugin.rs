@@ -80,6 +80,71 @@ const VIEW_DEST: &str = "gui/unbound2/mods/WoWSPProbe.unbound";
 const LEGACY_VIEW_DEST: &str = "gui/unbound2/PnFMods/WoWSPProbe.unbound";
 const LEGACY_MOUNT_DEST: &str = "ForgeBlueprints/WoWSPProbe.xml";
 
+/// The probe's entry file inside a SPECIFIC res_mods tree — the presence
+/// probe for callers that inspect something other than the active install
+/// (the mod hub's stale-bin migration looks at stranded old-version trees).
+pub(crate) fn probe_entry(res_mods: &std::path::Path) -> std::path::PathBuf {
+    res_mods.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY)
+}
+
+/// Whether `rel` (res_mods-relative, forward slashes) belongs to the
+/// probe's own file set — the current layout's subtree and view, the
+/// retired #694 layout's leftovers, `.bak` twins included. The stale-bin
+/// migration excludes these from its generic file move and reinstalls the
+/// embedded bytes instead: an upgrade is exactly the moment the shipped
+/// copy should win over whatever stranded build the old bin carried.
+pub(crate) fn is_probe_path(rel: &str) -> bool {
+    let lower = rel.to_ascii_lowercase();
+    if lower.starts_with(&format!("pnfmods/{}/", MOD_DIR.to_ascii_lowercase())) {
+        return true;
+    }
+    // A `.bak` twin of an extra path (the view, disabled by whatever unit
+    // claimed it) is a probe file too — it must neither ride the migration
+    // move nor outlive the uninstall.
+    let bare = lower.strip_suffix(".bak").unwrap_or(lower.as_str());
+    PROBE_EXTRA_PATHS
+        .iter()
+        .any(|p| bare == p.to_ascii_lowercase())
+}
+
+/// The probe's files OUTSIDE its PnFMods subtree, res_mods-relative: the
+/// view file of the current layout plus the retired #694 leftovers.
+/// Companions to the `PnFMods/<MOD_DIR>/` subtree for callers (the
+/// stale-bin migration) that remove or carry the probe's whole file set.
+pub(crate) const PROBE_EXTRA_PATHS: [&str; 3] = [VIEW_DEST, LEGACY_VIEW_DEST, LEGACY_MOUNT_DEST];
+
+/// The probe's `wowsp.toml` managed row — the single source of truth for
+/// the install core and the migration's disabled-state restore.
+pub(crate) fn probe_managed_entry(enabled: bool) -> super::mod_hub::manifest::ManagedEntry {
+    super::mod_hub::manifest::ManagedEntry {
+        name: "WoWSP In-Game Tab Stats Plugin".into(),
+        version: "0.1.0".into(),
+        category: "battle".into(),
+        source: "bundled".into(),
+        preset: None,
+        enabled,
+        installed_at: chrono::Utc::now().to_rfc3339(),
+    }
+}
+
+/// Rewrite the probe's managed row as ENABLED — a plain install rewrites
+/// live files, so a stale disabled label from a pre-update toggle must
+/// not survive. Upsert alone preserves the previous toggle bit, so the
+/// row is removed first. (Writing DISABLED goes through the unit toggle's
+/// `SetEnabled` path instead — see `unit_ops::set_bundled_plugin_enabled`.)
+pub(crate) fn replace_probe_row_enabled(res_mods: &std::path::Path) {
+    use super::mod_hub::manifest::{self, ManifestOp};
+    manifest::hub_apply(ManifestOp::RemoveManaged {
+        res_mods: res_mods.to_path_buf(),
+        id: "battle.ingame.stats".into(),
+    });
+    manifest::hub_apply(ManifestOp::UpsertManaged {
+        res_mods: res_mods.to_path_buf(),
+        id: "battle.ingame.stats".into(),
+        entry: probe_managed_entry(true),
+    });
+}
+
 /// Whether `res_mods/<rel>` carries exactly `expected`'s bytes. Missing,
 /// unreadable and divergent files are all "not fresh" — the freshness
 /// signal behind the settings UI's one-click update.
@@ -112,7 +177,15 @@ pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> 
     let _gate = super::mod_catalog::mod_hub_gate().await;
     super::mod_hub::ensure_game_closed(&game_root)?;
     super::mod_hub::ensure_res_mods_active(&game_root)?;
-    let dir = super::game_context::res_mods_dir(std::path::Path::new(&game_root))?;
+    install_probe_files(&game_root)
+}
+
+/// Install core, split from the command so the mod hub's stale-bin
+/// migration can reuse it mid-migration: the migrator already holds the
+/// mod-hub gate, verified the game is closed and res_mods is active — so
+/// this core takes none of those locks (re-taking the gate would deadlock).
+pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
+    let dir = super::game_context::res_mods_dir(std::path::Path::new(game_root))?;
     let mod_dir = dir.join("PnFMods").join(MOD_DIR);
     std::fs::create_dir_all(&mod_dir).map_err(|e| format!("create {}: {e}", mod_dir.display()))?;
     let entry = mod_dir.join(MOD_ENTRY);
@@ -153,23 +226,7 @@ pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> 
         });
         // Replace the row outright: this install rewrites live files, so a
         // stale disabled label from a pre-update toggle must not survive.
-        super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::RemoveManaged {
-            res_mods: dir.clone(),
-            id: "battle.ingame.stats".into(),
-        });
-        super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::UpsertManaged {
-            res_mods: dir.clone(),
-            id: "battle.ingame.stats".into(),
-            entry: super::mod_hub::manifest::ManagedEntry {
-                name: "WoWSP In-Game Tab Stats Plugin".into(),
-                version: "0.1.0".into(),
-                category: "battle".into(),
-                source: "bundled".into(),
-                preset: None,
-                enabled: true,
-                installed_at: chrono::Utc::now().to_rfc3339(),
-            },
-        });
+        replace_probe_row_enabled(&dir);
     }
     tracing::info!(dir = %mod_dir.display(), "ingame plugin installed");
     Ok(mod_dir.to_string_lossy().into_owned())
@@ -191,13 +248,15 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
             .map_err(|e| format!("remove {}: {e}", mod_dir.display()))?;
     }
     // The view is this layout's own file (plus the #694 leftovers) —
-    // always removed with the mod (a foreign file at the same path is not
-    // ours to touch, but the first-party names make that collision
-    // theoretical).
-    for rel in [VIEW_DEST, LEGACY_VIEW_DEST, LEGACY_MOUNT_DEST] {
-        let dest = dir.join(rel);
-        if dest.is_file() {
-            let _ = std::fs::remove_file(&dest);
+    // always removed with the mod, their `.bak` twins included (a foreign
+    // file at the same path is not ours to touch, but the first-party
+    // names make that collision theoretical).
+    for rel in PROBE_EXTRA_PATHS {
+        for suffix in ["", ".bak"] {
+            let dest = dir.join(format!("{rel}{suffix}"));
+            if dest.is_file() {
+                let _ = std::fs::remove_file(&dest);
+            }
         }
     }
     let loader = dir.join(LOADER_MARKER);

@@ -964,6 +964,228 @@ fn migrate_drops_stranded_aslain_manifest() {
     fs::remove_dir_all(&tmp).ok();
 }
 
+/// The embedded probe payload — the exact bytes `ingame_plugin.rs`
+/// includes, so the tests can prove a migration reinstalled the SHIPPED
+/// build rather than carrying the stranded copy over.
+const EMBEDDED_PROBE_SOURCE: &str = include_str!("../../../../../ingame-plugin/src/Main.py");
+
+#[test]
+fn stale_versions_flag_stranded_probe() {
+    // A live probe and a .bak-disabled one both count as "the plugin is in
+    // this stranded tree" — the prompt then says migration carries it.
+    let tmp = std::env::temp_dir().join("wowsp_stale_scan_probe");
+    let _ = fs::remove_dir_all(&tmp);
+    touch(&tmp.join("bin/1/res_mods/PnFMods/WoWSPProbe/Main.py"));
+    touch(&tmp.join("bin/3/res_mods/PnFMods/WoWSPProbe/Main.py.bak"));
+    touch(&tmp.join("bin/4/res_mods/gui/a.png"));
+    touch(&tmp.join("bin/5/res_mods/gui/b.png"));
+
+    let stale = mod_hub_stale_versions(tmp.to_string_lossy().into_owned()).unwrap();
+    assert_eq!(stale.len(), 3, "{stale:?}");
+    let by_ver = |v: &str| stale.iter().find(|s| s.bin_version == v).unwrap();
+    assert!(by_ver("1").probe_installed);
+    assert!(by_ver("3").probe_installed);
+    assert!(!by_ver("4").probe_installed);
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn migration_reinstalls_stranded_probe_fresh() {
+    // A game update strands the in-game probe with the mods. The wizard
+    // must carry it as a fresh reinstall of the embedded bytes — never as
+    // another row on the review list — and seed the loader marker and
+    // wowsp.toml row the plain installer writes.
+    let tmp = std::env::temp_dir().join("wowsp_stale_probe_wizard");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let old = game.join("bin/1/res_mods");
+    let cur = game.join("bin/2/res_mods");
+    fs::create_dir_all(&cur).unwrap();
+    fs::create_dir_all(old.join("PnFMods/WoWSPProbe")).unwrap();
+    fs::write(
+        old.join("PnFMods/WoWSPProbe/Main.py"),
+        b"ancient probe build",
+    )
+    .unwrap();
+    fs::write(old.join("PnFMods/WoWSPProbe/telemetry.json"), b"{}").unwrap();
+    fs::create_dir_all(old.join("gui/unbound2/mods")).unwrap();
+    fs::write(
+        old.join("gui/unbound2/mods/WoWSPProbe.unbound"),
+        b"junk view",
+    )
+    .unwrap();
+    // A disabled twin of the view (toggled off by whatever unit claimed
+    // it) is a probe file like the rest — never offered, never moved.
+    fs::write(
+        old.join("gui/unbound2/mods/WoWSPProbe.unbound.bak"),
+        b"junk view off",
+    )
+    .unwrap();
+    touch(&old.join("gui/skin.png"));
+
+    // The plan offers the ordinary mod file only — the probe's files never
+    // reach a bucket.
+    let plan = migration_plan_core(&game.to_string_lossy(), "1").unwrap();
+    let offered: Vec<String> = plan
+        .duplicate
+        .iter()
+        .chain(&plan.superseded)
+        .chain(&plan.decide)
+        .map(|f| f.path.clone())
+        .collect();
+    assert_eq!(offered, vec!["gui/skin.png".to_string()], "{offered:?}");
+
+    let report =
+        migration_execute_core(&game.to_string_lossy(), "1", &["gui/skin.png".into()], &[])
+            .unwrap();
+    assert!(report.probe_reinstalled, "{report:?}");
+    assert_eq!(report.moved_files, 1);
+    assert!(report.skipped_files >= 3, "{report:?}");
+    // Embedded bytes (not the stranded build) landed in the current bin…
+    assert_eq!(
+        fs::read_to_string(cur.join("PnFMods/WoWSPProbe/Main.py")).unwrap(),
+        EMBEDDED_PROBE_SOURCE
+    );
+    assert!(cur.join("gui/unbound2/mods/WoWSPProbe.unbound").is_file());
+    assert!(
+        !cur.join("gui/unbound2/mods/WoWSPProbe.unbound.bak")
+            .exists()
+    );
+    // …plus the loader marker and the managed row a plain install seeds.
+    assert!(cur.join("PnFModsLoader.py").is_file());
+    let toml = fs::read_to_string(cur.join("wowsp.toml")).unwrap();
+    assert!(toml.contains("battle.ingame.stats"), "{toml}");
+    // The stranded tree — probe files included — is gone.
+    assert!(!old.exists());
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn migration_keeps_a_disabled_probe_disabled() {
+    // The stranded probe had been toggled off (only a .bak twin): the
+    // reinstall re-applies the user's verdict instead of silently
+    // re-enabling the mod — same file state the hub's toggle leaves.
+    let tmp = std::env::temp_dir().join("wowsp_stale_probe_disabled");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let old = game.join("bin/1/res_mods");
+    let cur = game.join("bin/2/res_mods");
+    fs::create_dir_all(&cur).unwrap();
+    fs::create_dir_all(old.join("PnFMods/WoWSPProbe")).unwrap();
+    fs::write(
+        old.join("PnFMods/WoWSPProbe/Main.py.bak"),
+        b"ancient probe build",
+    )
+    .unwrap();
+
+    let report = migration_execute_core(&game.to_string_lossy(), "1", &[], &[]).unwrap();
+    assert!(report.probe_reinstalled, "{report:?}");
+    assert_eq!(report.moved_files, 0);
+    assert!(!cur.join("PnFMods/WoWSPProbe/Main.py").exists());
+    assert_eq!(
+        fs::read_to_string(cur.join("PnFMods/WoWSPProbe/Main.py.bak")).unwrap(),
+        EMBEDDED_PROBE_SOURCE
+    );
+    // The view file is outside the toggled subtree — it stays live, the
+    // same way the hub's unit toggle leaves it.
+    assert!(cur.join("gui/unbound2/mods/WoWSPProbe.unbound").is_file());
+    let toml = fs::read_to_string(cur.join("wowsp.toml")).unwrap();
+    assert!(toml.contains("enabled = false"), "{toml}");
+    assert!(!old.exists());
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn blind_migration_reinstalls_probe() {
+    // The one-button path shares the carry-over: probe files are swept out
+    // of the stranded tree and the embedded build lands in the current bin.
+    let tmp = std::env::temp_dir().join("wowsp_stale_probe_blind");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let old = game.join("bin/1/res_mods");
+    let cur = game.join("bin/2/res_mods");
+    fs::create_dir_all(&cur).unwrap();
+    fs::create_dir_all(old.join("PnFMods/WoWSPProbe")).unwrap();
+    fs::write(
+        old.join("PnFMods/WoWSPProbe/Main.py"),
+        b"ancient probe build",
+    )
+    .unwrap();
+    touch(&old.join("gui/a.png"));
+
+    let report = migrate_stale_bin_core(&game.to_string_lossy(), "1").unwrap();
+    assert!(report.probe_reinstalled, "{report:?}");
+    assert_eq!(
+        fs::read_to_string(cur.join("PnFMods/WoWSPProbe/Main.py")).unwrap(),
+        EMBEDDED_PROBE_SOURCE
+    );
+    assert!(cur.join("gui/a.png").is_file());
+    assert!(!old.exists());
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn migration_leaves_a_probe_the_current_bin_already_carries_untouched() {
+    // The user beat the migration to it: after the update they reinstalled
+    // (or re-toggled) the probe in the CURRENT bin while the old bin still
+    // lingered. That live verdict outranks the stranded copy's — nothing
+    // is written over it, and the report still says the probe is in place.
+    let tmp = std::env::temp_dir().join("wowsp_stale_probe_kept");
+    let _ = fs::remove_dir_all(&tmp);
+
+    // Live in the current bin, LIVE stranded copy: the user's own build
+    // (hand-edited, say) survives byte-for-byte.
+    let game = tmp.join("live");
+    let old = game.join("bin/1/res_mods");
+    let cur = game.join("bin/2/res_mods");
+    fs::create_dir_all(cur.join("PnFMods/WoWSPProbe")).unwrap();
+    fs::write(cur.join("PnFMods/WoWSPProbe/Main.py"), b"user's own build").unwrap();
+    fs::create_dir_all(old.join("PnFMods/WoWSPProbe")).unwrap();
+    fs::write(
+        old.join("PnFMods/WoWSPProbe/Main.py"),
+        b"ancient probe build",
+    )
+    .unwrap();
+    let report = migration_execute_core(&game.to_string_lossy(), "1", &[], &[]).unwrap();
+    assert!(report.probe_reinstalled, "{report:?}");
+    assert_eq!(
+        fs::read_to_string(cur.join("PnFMods/WoWSPProbe/Main.py")).unwrap(),
+        "user's own build"
+    );
+    assert!(!old.exists());
+
+    // Disabled in the current bin, LIVE stranded copy: it stays disabled —
+    // the migration must not resurrect a live Main.py next to the twin.
+    let game = tmp.join("disabled");
+    let old = game.join("bin/1/res_mods");
+    let cur = game.join("bin/2/res_mods");
+    fs::create_dir_all(cur.join("PnFMods/WoWSPProbe")).unwrap();
+    fs::write(
+        cur.join("PnFMods/WoWSPProbe/Main.py.bak"),
+        b"user's disabled build",
+    )
+    .unwrap();
+    fs::create_dir_all(old.join("PnFMods/WoWSPProbe")).unwrap();
+    fs::write(
+        old.join("PnFMods/WoWSPProbe/Main.py"),
+        b"ancient probe build",
+    )
+    .unwrap();
+    let report = migration_execute_core(&game.to_string_lossy(), "1", &[], &[]).unwrap();
+    assert!(report.probe_reinstalled, "{report:?}");
+    assert!(!cur.join("PnFMods/WoWSPProbe/Main.py").exists());
+    assert_eq!(
+        fs::read_to_string(cur.join("PnFMods/WoWSPProbe/Main.py.bak")).unwrap(),
+        "user's disabled build"
+    );
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
 #[test]
 fn migration_plan_buckets_by_content_and_drops_bookkeeping() {
     // The wizard's plan: identical content on both sides → duplicate,

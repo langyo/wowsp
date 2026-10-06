@@ -71,12 +71,13 @@ import {
   selectAll,
   type DecideSelection,
 } from "@/features/modhub/migrationDecide";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { openExternal } from "@/utils/openExternal";
 import { sameGamePath } from "@/utils/gamePath";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
+import { useStaleBinsStore } from "@/stores/staleBins";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import "./ResourcesView.scss";
@@ -126,6 +127,8 @@ export default defineComponent({
     const config = useConfigStore();
     const toast = useToast();
     const route = useRoute();
+    const router = useRouter();
+    const staleStore = useStaleBinsStore();
     const { uiLocale, dataLanguage } = useLanguage();
 
     const source = ref<"online" | "installed">("online");
@@ -180,6 +183,9 @@ export default defineComponent({
     // `migrating` means "the wizard's execute step is in flight"; the ⋯ menu
     // entry and the stale banner button both disable on it.
     const migrating = ref(false);
+    // Set by the sidebar prompt's deep link (?migrate=1) on mount; the
+    // first completed scan consumes it by opening the wizard.
+    let autoMigrateArmed = false;
 
     // ── Migration wizard state (plan → review → executing → done) ──
     const migrateWizardOpen = ref(false);
@@ -189,11 +195,17 @@ export default defineComponent({
     );
     const migPlan = ref<MigrationPlan | null>(null);
     const migError = ref("");
-    // Decide-bucket verdicts: `keep` moves the file into the current bin,
-    // `ignore` leaves it untouched in the stale one, neither deletes it.
-    // The sets are disjoint (ignore wins); default is keep-all.
+    /** Decide-bucket verdicts: `keep` moves the file into the current bin,
+     *  `ignore` leaves it untouched in the stale one, neither deletes it.
+     *  The sets are disjoint (ignore wins); default is keep-all. */
     const migDecide = ref<DecideSelection>({ keep: new Set(), ignore: new Set() });
     const migReport = ref<MigrateReport | null>(null);
+    // Whether the selected source bin carries the in-game probe plugin —
+    // the migration then reinstalls it (embedded bytes) into the current
+    // bin instead of leaving it stranded with the leftover files.
+    const migProbe = computed(
+      () => staleBins.value.find((b) => b.binVersion === migFrom.value)?.probeInstalled ?? false,
+    );
     // Which auto-cleaned / reviewed group is expanded (duplicates /
     // superseded / ignored).
     const migGroupOpen = ref<"duplicate" | "superseded" | "ignored" | null>(null);
@@ -288,6 +300,27 @@ export default defineComponent({
       () => route.query.mod,
       (v) => {
         if (typeof v === "string" && v) pendingDeepLink.value = v;
+      },
+      { immediate: true },
+    );
+
+    // ── Deep link (?migrate=1): the sidebar's game-upgrade prompt ────────
+    // Reactive for the same reason as ?mod= above — the sidebar outlives
+    // this view, so a prompt click while /resources is already active must
+    // re-fire here. The wizard needs scan results: a cold visit leaves the
+    // flag armed for the first completed scan to consume, a warm click
+    // (stale bins already on screen) opens right away. Either way the
+    // query is stripped at once so a refresh never re-triggers it.
+    watch(
+      () => route.query.migrate,
+      (v) => {
+        if (v !== "1") return;
+        autoMigrateArmed = true;
+        void router.replace({ query: { ...route.query, migrate: undefined } });
+        if (!scanning.value && staleBins.value.length > 0) {
+          autoMigrateArmed = false;
+          openMigrateWizard();
+        }
       },
       { immediate: true },
     );
@@ -437,23 +470,36 @@ export default defineComponent({
     async function scan() {
       if (!gameRoot.value || scanning.value) return;
       scanning.value = true;
+      // Captured once: the active install may switch mid-scan, and every
+      // call below (plus the store adopt) must describe ONE tree.
+      const root = gameRoot.value;
       try {
-        installed.value = await api.modHubScanInstalled(gameRoot.value);
-        foreignUnits.value = await api.modHubForeignUnits(gameRoot.value).catch((e) => {
+        installed.value = await api.modHubScanInstalled(root);
+        foreignUnits.value = await api.modHubForeignUnits(root).catch((e) => {
           console.warn("foreign-unit detection failed", e);
           return [];
         });
-        staleBins.value = await api.modHubStaleVersions(gameRoot.value).catch((e) => {
+        staleBins.value = await api.modHubStaleVersions(root).catch((e) => {
           console.warn("stale-bin detection failed", e);
           return [];
         });
-        safeMode.value = await api.modHubSafeMode(gameRoot.value).catch(() => false);
+        // Same data the sidebar prompt polls — adopt it so the footer row
+        // clears the moment a migration finishes, not on the next poll.
+        staleStore.adopt(root, staleBins.value);
+        safeMode.value = await api.modHubSafeMode(root).catch(() => false);
         // Reconcile ghost ledger records (files gone from disk) and orphaned
         // snapshot dirs; refresh the records list when something dropped.
-        const rec = await api.modHubReconcile(gameRoot.value).catch(() => null);
+        const rec = await api.modHubReconcile(root).catch(() => null);
         if (rec && rec.droppedRecords > 0) {
           records.value = await api.modHubRecords().catch(() => []);
           toast.info(t("resources.reconciled", { n: rec.droppedRecords }));
+        }
+        // Sidebar deep-link (?migrate=1): once the first scan says there is
+        // something to migrate, open the wizard on its confirm step. Fired
+        // once — later scans never resurrect a wizard the user closed.
+        if (autoMigrateArmed) {
+          autoMigrateArmed = false;
+          openMigrateWizard();
         }
       } finally {
         scanning.value = false;
@@ -508,7 +554,14 @@ export default defineComponent({
      *  deliberate: planning hashes every stranded file, a heavy disk sweep
      *  the owner asked to gate behind an explicit start click. */
     function openMigrateWizard() {
-      if (!gameRoot.value || staleBins.value.length === 0 || migrating.value) return;
+      if (
+        !gameRoot.value ||
+        staleBins.value.length === 0 ||
+        migrating.value ||
+        migrateWizardOpen.value
+      ) {
+        return;
+      }
       if (gameRunning() || safeModeBlocked()) return;
       if (!migFrom.value || !staleBins.value.some((b) => b.binVersion === migFrom.value)) {
         migFrom.value = staleBins.value[0]?.binVersion ?? "";
@@ -583,6 +636,16 @@ export default defineComponent({
         );
         migReport.value = r;
         migStep.value = "done";
+        // Probe carry-over verdict — the bin info is captured before the
+        // re-scan wipes the stale list.
+        const binHadProbe = staleBins.value.some(
+          (b) => b.binVersion === r.fromVersion && b.probeInstalled,
+        );
+        if (r.probeReinstalled) {
+          toast.success(t("resources.migrateProbeDone", { version: r.toVersion }));
+        } else if (binHadProbe) {
+          toast.warning(t("resources.migrateProbeFailed"));
+        }
         await Promise.all([scan(), loadRecords()]);
       } catch (e) {
         migError.value = e instanceof Error ? e.message : String(e);
@@ -1753,8 +1816,12 @@ export default defineComponent({
             {
               label: t("resources.migrateStart"),
               variant: "primary" as const,
+              // A bin holding ONLY the probe still has work to do — the
+              // probe reinstall is not a plan row (the backend carries it
+              // outside the buckets).
               disabled:
-                plan.duplicate.length + plan.superseded.length + plan.decide.length === 0,
+                plan.duplicate.length + plan.superseded.length + plan.decide.length === 0 &&
+                !migProbe.value,
               onClick: () => void startMigrate(),
             },
           ];
@@ -1812,6 +1879,11 @@ export default defineComponent({
                   />
                 )}
                 <p class="mig-wizard__status">{t("resources.migrateScanIntro", { from: migFrom.value, count: staleBins.value.find((b) => b.binVersion === migFrom.value)?.fileCount ?? 0 })}</p>
+                {migProbe.value ? (
+                  <p class="mig-wizard__status mig-wizard__status--muted">
+                    {t("resources.migrateProbeNote")}
+                  </p>
+                ) : null}
                 <p class="mig-wizard__status mig-wizard__status--muted">
                   {t("resources.migrateScanNote")}
                 </p>
@@ -1849,7 +1921,15 @@ export default defineComponent({
                   plan.superseded.length +
                   plan.decide.length ===
                 0 ? (
-                  <p class="mig-wizard__empty">{t("resources.migrateEmpty")}</p>
+                  migProbe.value ? (
+                    // Nothing but the probe in this bin: the run still
+                    // cleans the stranded copy and reinstalls it fresh.
+                    <p class="mig-wizard__status mig-wizard__status--muted">
+                      {t("resources.migrateProbeNote")}
+                    </p>
+                  ) : (
+                    <p class="mig-wizard__empty">{t("resources.migrateEmpty")}</p>
+                  )
                 ) : (
                   <>
                     {renderMigGroup("duplicate", plan.duplicate)}
@@ -1971,6 +2051,13 @@ export default defineComponent({
                     {t("resources.migrateDoneIgnored", {
                       ignored: migReport.value.ignoredFiles,
                       from: migReport.value.fromVersion,
+                    })}
+                  </p>
+                )}
+                {migReport.value.probeReinstalled && (
+                  <p class="mig-wizard__status mig-wizard__status--muted">
+                    {t("resources.migrateProbeDone", {
+                      version: migReport.value.toVersion,
                     })}
                   </p>
                 )}

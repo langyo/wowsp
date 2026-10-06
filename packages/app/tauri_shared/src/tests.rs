@@ -2011,7 +2011,8 @@ fn migration_plan_renames_versions_and_buckets() {
 }
 
 /// Migration wizard report (client.ts: MigrateReport) — camelCase wire
-/// keys with the additive `ignoredFiles` (absent payloads default to 0).
+/// keys with the additive `ignoredFiles` and `probeReinstalled` (absent
+/// payloads default to 0 / false).
 #[test]
 fn migrate_report_renames_and_defaults_ignored_files() {
     let report = MigrateReport {
@@ -2020,6 +2021,7 @@ fn migrate_report_renames_and_defaults_ignored_files() {
         moved_files: 3,
         skipped_files: 4,
         ignored_files: 5,
+        probe_reinstalled: true,
     };
     let v = round_trips(report);
     assert_exact_keys(
@@ -2030,15 +2032,18 @@ fn migrate_report_renames_and_defaults_ignored_files() {
             "movedFiles",
             "skippedFiles",
             "ignoredFiles",
+            "probeReinstalled",
         ],
     );
     assert_eq!(v["ignoredFiles"], 5);
+    assert_eq!(v["probeReinstalled"], true);
 
     let old = serde_json::from_str::<MigrateReport>(
         r#"{"fromVersion":"1","toVersion":"2","movedFiles":3,"skippedFiles":4}"#,
     )
     .unwrap();
     assert_eq!(old.ignored_files, 0);
+    assert!(!old.probe_reinstalled);
 }
 
 /// The catalog's hash field must stay `sha256` — camelCase must not

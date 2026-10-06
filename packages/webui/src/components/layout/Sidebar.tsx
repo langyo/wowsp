@@ -1,6 +1,6 @@
 import { computed, defineComponent, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
-import { BarChart3, Search, Ship, Film, Video, Crosshair, Package } from "@lucide/vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle } from "@lucide/vue";
 
 import { HkTag, HkTooltip } from "@celestia-island/hikari";
 
@@ -13,6 +13,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
+import { useStaleBinsStore } from "@/stores/staleBins";
 import { useStatsStore } from "@/stores/stats";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
@@ -27,11 +28,12 @@ import "./Sidebar.scss";
  * Nav links (top): Dashboard / Lookup / Ships / Live / Replay / Tactics /
  * Resources. Live watch the local game install, so they hide on
  * the phone app build (no local game / install there).
- * Footer (bottom): game-status indicator, then two full-width key/value
- * buttons in the same style — the active game client (opens settings on
- * 游戏路径) and the active account (opens settings on 账户). Management
- * itself lives in the settings surface; the footer only mirrors the current
- * state.
+ * Footer (bottom): game-status indicator, a conditional game-upgrade
+ * prompt (stranded-mod migration, deep-links into the mod hub's wizard),
+ * then two full-width key/value buttons in the same style — the active
+ * game client (opens settings on 游戏路径) and the active account (opens
+ * settings on 账户). Management itself lives in the settings surface; the
+ * footer only mirrors the current state.
  *
  * The active client is the app-wide context — the replay list, mod hub and
  * account auto-switching all follow it — so its tooltip shows the full
@@ -59,6 +61,8 @@ export default defineComponent({
     const stats = useStatsStore();
     const ui = useSettingsUiStore();
     const pluginUpdates = usePluginUpdatesStore();
+    const staleBins = useStaleBinsStore();
+    const router = useRouter();
     const { copy } = useClipboard();
     // The dashboard link must also read active while the section's sibling
     // view (游玩时间, /playtime) is open — the pill in the title bar
@@ -219,6 +223,42 @@ export default defineComponent({
               </div>
             ) : null}
           </div>
+
+          {/* game upgrade — the ACTIVE install still holds mods (and
+              possibly the in-game probe) stranded in an old bin/. The
+              client-version row below is where the user looks for "what's
+              my game", so the migration prompt rides right above it and
+              deep-links into the mod hub's wizard (?migrate=1 auto-opens
+              it on the confirm step). Desktop-app territory, like the row
+              below: the phone build has no local installs to migrate. */}
+          {!isMobileApp() && staleBins.hasStale && activeInstallPath.value ? (
+            <HkTooltip
+              class="sidebar__footer-slot"
+              text={t("resources.staleSidebarTip")}
+              placement="right"
+            >
+              <button
+                type="button"
+                class="sidebar__footer-btn sidebar__footer-btn--migrate"
+                onClick={() => router.push("/resources?migrate=1")}
+              >
+                <span class="sidebar__footer-btn-key">
+                  {t("resources.staleSidebarKey")}
+                </span>
+                <span class="sidebar__footer-btn-value">
+                  <AlertTriangle size={16} class="sidebar__migrate-icon" />
+                  <span class="sidebar__footer-btn-text">
+                    {t(
+                      staleBins.probeStranded
+                        ? "resources.staleSidebarTextProbe"
+                        : "resources.staleSidebarText",
+                      { count: staleBins.totalFiles },
+                    )}
+                  </span>
+                </span>
+              </button>
+            </HkTooltip>
+          ) : null}
 
           {/* active client — same button style as the account below; opens
               settings on the 游戏路径 table where clients are switched.

@@ -124,6 +124,27 @@
       outline: 2px solid rgb(var(--color-primary));
       outline-offset: 1px;
     }
+
+    /* The game-upgrade prompt wears the shared button chrome in a warning
+       tint: it is the one footer row that asks for a decision, not just
+       mirroring state. */
+    &--migrate {
+      background: rgb(var(--color-warning) / 10%);
+
+      &:hover {
+        background: rgb(var(--color-warning) / 18%);
+      }
+
+      &:focus-visible {
+        outline-color: rgb(var(--color-warning));
+      }
+    }
+  }
+
+  &__migrate-icon {
+    flex-shrink: 0;
+    display: flex;
+    color: rgb(var(--color-warning));
   }
 
   &__footer-btn-key {

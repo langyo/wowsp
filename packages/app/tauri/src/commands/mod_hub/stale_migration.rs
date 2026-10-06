@@ -1,3 +1,4 @@
+use super::super::ingame_plugin;
 use super::installed_units::classify_installed_root;
 use super::*;
 
@@ -41,10 +42,12 @@ pub fn mod_hub_stale_versions(game_root: String) -> Result<Vec<StaleBinInfo>, St
             .filter(|m| !m.paths.is_empty())
             .map(|m| m.name)
             .collect();
+        let probe_installed = stranded_probe(&res_mods) != StrandedProbe::Absent;
         out.push(StaleBinInfo {
             bin_version: name,
             mods,
             file_count,
+            probe_installed,
         });
     }
     // Newest stale bin first — numeric, so bin/10 sorts after bin/2 and the
@@ -71,6 +74,100 @@ fn count_tree_files(root: &Path) -> u64 {
         }
     }
     count
+}
+
+// ── In-game probe carry-over ───────────────────────────────────────────────
+// The bundled in-game stats plugin (PnFMods/WoWSPProbe) lives in res_mods,
+// so a game update strands it with every other mod. Unlike them it never
+// rides the generic move: a migration reinstalls the EMBEDDED bytes into
+// the current bin (an upgrade is exactly when the shipped copy should win
+// over whatever build the old bin carried) and re-seeds the loader marker
+// and wowsp.toml managed row like a plain install. A stranded copy the
+// user had DISABLED (.bak twins only) comes back disabled — a migration
+// must never silently re-enable a mod the user turned off. A probe the
+// CURRENT bin already carries (reinstalled or re-toggled after the
+// update) outranks the stranded copy and is left untouched.
+
+/// What the stale tree carries of the in-game probe plugin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StrandedProbe {
+    /// No probe files at all — nothing to carry over.
+    Absent,
+    /// Live entry file: the probe was enabled when the update stranded it.
+    Live,
+    /// Only a `.bak` twin: the probe had been toggled off in the mod hub.
+    Disabled,
+}
+
+fn stranded_probe(res_mods: &Path) -> StrandedProbe {
+    let entry = ingame_plugin::probe_entry(res_mods);
+    if entry.is_file() {
+        return StrandedProbe::Live;
+    }
+    if sibling_with_suffix(&entry, ".bak").is_file() {
+        return StrandedProbe::Disabled;
+    }
+    StrandedProbe::Absent
+}
+
+/// Delete the probe's own files from the stale tree — the pre-sweep for
+/// the blind migration (the wizard's execute deletes them per-file through
+/// the same [`ingame_plugin::is_probe_path`] filter). Returns how many
+/// files actually went so the report can count them as cleaned up.
+fn remove_probe_paths(res_mods: &Path) -> usize {
+    let mut removed = 0usize;
+    let mod_dir = res_mods.join("PnFMods").join(ingame_plugin::MOD_DIR);
+    if mod_dir.is_dir() {
+        let counted = count_tree_files(&mod_dir) as usize;
+        if fs::remove_dir_all(&mod_dir).is_ok() {
+            removed += counted;
+        }
+    }
+    for rel in ingame_plugin::PROBE_EXTRA_PATHS {
+        for suffix in ["", ".bak"] {
+            let p = res_mods.join(format!("{rel}{suffix}"));
+            if p.is_file() && fs::remove_file(&p).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    removed
+}
+
+/// Reinstall the probe into the CURRENT bin after a migration carried the
+/// rest of the stale tree over — unless the current bin already carries
+/// one: the user may have reinstalled (or re-toggled) the plugin after the
+/// update while the old bin still lingered, and that live verdict outranks
+/// the stranded copy's. Returns whether the plugin sits in the current bin
+/// once the migration is done (reinstalled, or already present and left
+/// untouched); an install failure is logged but not fatal — the mods are
+/// already moved (the sweep is not transactional) and the plugin's own
+/// surfaces (live view, settings) re-offer a plain install.
+fn reinstall_stranded_probe(game_root: &str, dst: &Path, state: StrandedProbe) -> bool {
+    match stranded_probe(dst) {
+        StrandedProbe::Live => {
+            tracing::info!("current bin already carries a live probe — left untouched");
+            return true;
+        },
+        StrandedProbe::Disabled => {
+            tracing::info!("current bin already carries a disabled probe — left untouched");
+            return true;
+        },
+        StrandedProbe::Absent => {},
+    }
+    if let Err(e) = ingame_plugin::install_probe_files(game_root) {
+        tracing::warn!(error = %e, "in-game probe reinstall after migration failed");
+        return false;
+    }
+    if state == StrandedProbe::Disabled {
+        // The STRANDED copy had been toggled off: re-apply that verdict —
+        // .bak the files (exactly what the hub's unit toggle does to the
+        // same tree) and sync the managed row the same way the toggle does.
+        let mod_rel = format!("PnFMods/{}", ingame_plugin::MOD_DIR);
+        let _ = super::unit_ops::set_paths_state(dst, &[mod_rel], false);
+        super::unit_ops::set_bundled_plugin_enabled(dst, false);
+    }
+    true
 }
 
 /// Move a stranded old-version `res_mods` into the current one. Conflict
@@ -131,10 +228,17 @@ pub(crate) fn migrate_stale_bin_core(
     // Captured before the sweep: the stale wowsp.toml is bookkeeping (the
     // merge below decides what survives), not a movable mod file.
     let stale_manifest_raw = super::manifest::read_raw(&src);
+    // Probe carry-over: its state is captured and its files removed BEFORE
+    // the sweep (the generic move must not strand an outdated copy in the
+    // destination); the reinstall happens once the manifest merge settled.
+    // The sweep runs even when no entry file marks the probe present, so a
+    // stray extra (the view alone, a legacy-layout leftover) never rides
+    // the move either — mirroring the wizard's per-file filter.
+    let probe = stranded_probe(&src);
+    let mut skipped = remove_probe_paths(&src);
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
 
     let mut moved = 0usize;
-    let mut skipped = 0usize;
     migrate_tree(&src, &dst, &mut moved, &mut skipped)?;
     // A fully migrated res_mods disappears entirely (empty-only remove, so
     // leftovers survive when files were kept).
@@ -155,13 +259,16 @@ pub(crate) fn migrate_stale_bin_core(
         game_root: game_root.to_string(),
         bin_version: latest.clone(),
     });
-    tracing::info!(from = %from_version, to = %latest, moved, skipped, "stale bin migrated");
+    let probe_reinstalled =
+        probe != StrandedProbe::Absent && reinstall_stranded_probe(game_root, &dst, probe);
+    tracing::info!(from = %from_version, to = %latest, moved, skipped, probe_reinstalled, "stale bin migrated");
     Ok(MigrateReport {
         from_version: from_version.to_string(),
         to_version: latest,
         moved_files: moved,
         skipped_files: skipped,
         ignored_files: 0,
+        probe_reinstalled,
     })
 }
 
@@ -284,7 +391,11 @@ pub(crate) fn migration_plan_core(
         decide: Vec::new(),
     };
     for rel in collect_tree_files(&src)? {
-        if is_migration_bookkeeping(&rel) {
+        if is_migration_bookkeeping(&rel) || ingame_plugin::is_probe_path(&rel) {
+            // Bookkeeping never reaches a bucket (deleted outright at
+            // execute time) — and neither do the probe's own files: the
+            // execute step reinstalls fresh embedded bytes instead, so
+            // offering them as keep/ignore decisions would be a lie.
             continue;
         }
         let size = match fs::metadata(src.join(&rel)) {
@@ -405,6 +516,7 @@ pub(crate) fn migration_execute_core(
     // Captured before the sweep (see migrate_stale_bin_core): wowsp.toml is
     // bookkeeping here, its surviving content is merged after the move.
     let stale_manifest_raw = super::manifest::read_raw(&src);
+    let probe = stranded_probe(&src);
     fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
     let keep: BTreeSet<String> = keep.iter().map(|k| k.replace('\\', "/")).collect();
     let ignore: BTreeSet<String> = ignore.iter().map(|k| k.replace('\\', "/")).collect();
@@ -415,8 +527,11 @@ pub(crate) fn migration_execute_core(
     for rel in collect_tree_files(&src)? {
         let s = src.join(&rel);
         // Bookkeeping dies even when the plan listed it as keepable or
-        // ignored — resurrecting it would corrupt the install ledger.
-        if is_migration_bookkeeping(&rel) {
+        // ignored — resurrecting it would corrupt the install ledger. The
+        // probe's own files die with it: the reinstall below writes fresh
+        // embedded bytes, and a stranded (possibly outdated or disabled)
+        // copy must never ride the move or be left as an "ignore" resident.
+        if is_migration_bookkeeping(&rel) || ingame_plugin::is_probe_path(&rel) {
             let _ = fs::remove_file(&s);
             skipped += 1;
             continue;
@@ -472,12 +587,15 @@ pub(crate) fn migration_execute_core(
         game_root: game_root.to_string(),
         bin_version: latest.clone(),
     });
+    let probe_reinstalled =
+        probe != StrandedProbe::Absent && reinstall_stranded_probe(game_root, &dst, probe);
     tracing::info!(
         from = %from_version,
         to = %latest,
         moved,
         skipped,
         ignored,
+        probe_reinstalled,
         "stale bin migrated (wizard)"
     );
     Ok(MigrateReport {
@@ -486,6 +604,7 @@ pub(crate) fn migration_execute_core(
         moved_files: moved,
         skipped_files: skipped,
         ignored_files: ignored,
+        probe_reinstalled,
     })
 }
 
