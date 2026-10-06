@@ -43,6 +43,10 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* Inset to the icon column the status pips and menu icons share below
+     (panel padding + the cards' 0.65rem inset), so the logo doesn't glue
+     to the window edge. */
+  padding-left: 0.65rem;
   /* Literal rem, NOT var(--text-*): brand identity must not scale with the
      font-size preference (same policy as the sidebar brand). */
   font-size: 1rem;
@@ -56,22 +60,6 @@ body {
   height: 22px;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
-}
-
-/* Compact running-state pip on the brand row's trailing edge. */
-.tray-panel__brand-dot {
-  margin-left: auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-
-  &--on {
-    background: rgb(var(--color-success));
-    box-shadow: 0 0 6px rgb(var(--color-success));
-  }
-  &--off {
-    background: rgb(var(--color-border));
-  }
 }
 
 /* Session status block — same grammar as the sidebar footer's indicator.

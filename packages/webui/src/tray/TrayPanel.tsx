@@ -80,11 +80,6 @@ export default defineComponent({
           <div class="tray-panel__brand">
             <img src="/logo.webp" alt="WoWSP" class="tray-panel__brand-logo" />
             <span class="tray-panel__brand-name">{t("common.app.name")}</span>
-            {running.value ? (
-              <span class="tray-panel__brand-dot tray-panel__brand-dot--on" />
-            ) : (
-              <span class="tray-panel__brand-dot tray-panel__brand-dot--off" />
-            )}
           </div>
 
           {/* session status — the running client */}
