@@ -453,8 +453,12 @@ pub async fn pick_replay_files() -> Result<Vec<String>, String> {
 }
 
 /// List `.wowsreplay` files under a directory (defaults to the resolved
-/// default replay dir — the unified game context's user-scoped order). Returns
-/// at most `limit` paths sorted newest-first.
+/// default replay dir — the unified game context's user-scoped order).
+/// Returns at most `limit` paths sorted newest-first — every replay when
+/// `limit` is omitted. The walk recurses into the per-version archive
+/// subfolders the game keeps under `replays/` (e.g. `replays/14.5.0.0/`),
+/// which can hold many hundreds of files past what the root folder keeps,
+/// so an implicit cap would silently drop a player's archived history.
 ///
 /// Async command + [`tokio::task::spawn_blocking`]: the recursive directory
 /// walk + per-file metadata reads are blocking I/O that must never run on the
@@ -471,7 +475,10 @@ pub async fn list_replays(
         walk_replays(&dir, &mut entries);
         use std::cmp::Reverse;
         entries.sort_by_key(|e| Reverse(e.mtime));
-        let limit = limit.unwrap_or(200);
+        // No implicit cap (see the command doc): only an explicit `limit`
+        // truncates, so version-archive subfolders are never silently
+        // dropped once a tree grows past any fixed default.
+        let limit = limit.unwrap_or(usize::MAX);
         Ok(entries
             .into_iter()
             .take(limit)
@@ -515,7 +522,11 @@ pub(crate) fn scan_replays_meta(
     walk_replays(&dir, &mut entries);
     use std::cmp::Reverse;
     entries.sort_by_key(|e| Reverse(e.mtime));
-    let limit = limit.unwrap_or(200);
+    // No implicit cap — same rationale as list_replays: the versioned
+    // archive subfolders routinely push a tree past any fixed default, and
+    // mtime-desc truncation would drop exactly the OLDEST (archived)
+    // replays, which is the history the caller wants to surface.
+    let limit = limit.unwrap_or(usize::MAX);
     Ok((
         dir,
         entries
@@ -1217,6 +1228,37 @@ mod tests {
                 "20261001_031102_PRSB910-Kremlin_15_NE_north.korablireplay".to_string(),
             ]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An omitted `limit` caps nothing: the scan lists EVERY replay in the
+    /// tree — root files and version-archive subfolder files alike. 205
+    /// root files + 1 archived = 206; the retired implicit 200-cap would
+    /// have dropped six of these entries after its mtime-desc truncation,
+    /// which is exactly how archived history used to vanish.
+    #[test]
+    fn scan_replays_meta_without_limit_keeps_version_archives() {
+        let dir = std::env::temp_dir().join(format!(
+            "wowsp-test-scan-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("14.5.0.0")).unwrap();
+        for i in 0..205 {
+            std::fs::write(dir.join(format!("20250101_{:06}_a.wowsreplay", i)), b"x").unwrap();
+        }
+        std::fs::write(
+            dir.join("14.5.0.0")
+                .join("20250622_152405_archived.wowsreplay"),
+            b"x",
+        )
+        .unwrap();
+        let (root, entries) = scan_replays_meta(Some(dir.to_string_lossy().into_owned()), None)
+            .unwrap_or_else(|e| panic!("scan failed: {e}"));
+        assert_eq!(root, dir);
+        assert_eq!(entries.len(), 206);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

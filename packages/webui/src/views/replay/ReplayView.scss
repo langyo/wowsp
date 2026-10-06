@@ -29,12 +29,17 @@
     gap: 0.5rem;
   }
 
-  /* Head action row: the funnel filter trigger leading, then the
-     open-external picker (or the phone acquisition pair) + list refresh. */
+  /* Head action row: the funnel filter trigger + the date-range pair
+     leading, then the open-external picker (or the phone acquisition
+     pair) + list refresh. Wraps (not overflows) — the two date inputs
+     add ~230px beside the icon buttons and must not clip on a tight
+     sidebar. */
   &__list-head-actions {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.15rem;
+    row-gap: 0.3rem;
     flex-shrink: 0;
 
     /* The row's ghost HkButtons carry lucide slot glyphs, so hikari's
@@ -49,6 +54,18 @@
       min-width: 1.75rem;
       padding: 0;
     }
+  }
+
+  /* The filter's date-range pair (from / to HkDatePickers) — inline in the
+     action row right after the funnel, so both filters read as one
+     narrowing group. No wrapper popover: each picker opens its own
+     calendar, and nested popovers would fight the outside-close
+     contracts. */
+  &__date-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 0.25rem;
   }
 
   &__list-title {

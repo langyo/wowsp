@@ -11,7 +11,9 @@
     "mode": "Mode de combat",
     "allModes": "Tous les modes",
     "noMatch": "Aucun replay ne correspond aux filtres actuels.",
-    "modeHint": "Sélection multiple · « Tous les modes » réinitialise, ou inverse du plus récent au plus ancien si rien n'est choisi"
+    "modeHint": "Sélection multiple · « Tous les modes » réinitialise, ou inverse du plus récent au plus ancien si rien n'est choisi",
+    "dateFrom": "Date de début",
+    "dateTo": "Date de fin"
   },
   "external": {
     "tag": "Externe",

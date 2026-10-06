@@ -188,8 +188,9 @@ export interface ReplayMeta {
 
 /** Mirrors `wowsp_tauri_shared::ReplayMetaLite`. Lightweight replay summary
  *  returned by `list_replays_meta` — only the descriptor-JSON block is parsed
- *  (no packet stream), so a few hundred replays list fast. The full
- *  `ReplayMeta` (with roster + raw JSON) comes later from `readReplayHeader`. */
+ *  (no packet stream), and the scan is uncapped (the game's versioned replay
+ *  archives can hold well past a few hundred files). The full `ReplayMeta`
+ *  (with roster + raw JSON) comes later from `readReplayHeader`. */
 export interface ReplayMetaLite {
   path: string;
   /** `YYYYMMDD_HHMMSS` when recoverable, else `YYYYMMDD`, else null. */

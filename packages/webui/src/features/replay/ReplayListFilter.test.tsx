@@ -2,15 +2,20 @@
  * Tests for the replay rail filter (ReplayListFilter):
  *  - pure helpers: mode option derivation (canonical order first, unknown
  *    keys appended, only modes actually present), mode filtering (an empty
- *    selection is the 全部模式 identity), and the match-time sort (asc /
- *    desc, dateless entries always sink, ties keep their input order);
+ *    selection is the 全部模式 identity), the match-time sort (asc /
+ *    desc, dateless entries always sink, ties keep their input order),
+ *    and the date-range window (inclusive ISO bounds, dateless entries
+ *    drop out once any bound is set);
  *  - the composable: persisted state round-trips through localStorage,
- *    corrupt / foreign blobs degrade to the default, and the visible
- *    lists are the filtered + sorted derivatives of both blocks;
- *  - the trigger: one icon-button FilterCategoryChip; the mode popup's
- *    options toggle the emitted Set (and carry the mode color dot), the
- *    全部模式 pill resets a selection and — with nothing picked — flips
- *    the match-time direction its ↑/↓ arrow displays.
+ *    corrupt / foreign blobs degrade to the default, the date range is
+ *    session-only (never persisted), and the visible lists are the
+ *    range-filtered + mode-filtered + sorted derivatives of both blocks;
+ *  - the trigger: one icon-button FilterCategoryChip plus the date-range
+ *    pair; the mode popup's options toggle the emitted Set (and carry the
+ *    mode color dot), the 全部模式 pill resets a selection and — with
+ *    nothing picked — flips the match-time direction its ↑/↓ arrow
+ *    displays; the two HkDatePickers cross-link (min/max) and emit the
+ *    from/to updates.
  *
  * The option popups render through hikari HkPopover: their DOM teleports
  * to document.body, so popup queries scope to body and each mount is
@@ -20,10 +25,13 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import { DOMWrapper, enableAutoUnmount, mount } from "@vue/test-utils";
+import { HkDatePicker } from "@celestia-island/hikari";
 
 import ReplayListFilter, {
   collectModeOptions,
+  filterByDateRange,
   filterReplays,
+  replayDayKeyOf,
   replayModeKeyOf,
   sortReplays,
   useReplayListFilter,
@@ -146,6 +154,48 @@ describe("sortReplays", () => {
   });
 });
 
+describe("replayDayKeyOf / filterByDateRange", () => {
+  it("derives the local day from the filename stamp, rejecting junk", () => {
+    expect(replayDayKeyOf(meta({ path: "a", dateTime: "20250622_152405" }))).toBe("2025-06-22");
+    expect(replayDayKeyOf(meta({ path: "b", dateTime: "20250622" }))).toBe("2025-06-22");
+    expect(replayDayKeyOf(meta({ path: "n", dateTime: null }))).toBeNull();
+    expect(replayDayKeyOf(meta({ path: "j", dateTime: "replay_final" }))).toBeNull();
+    // Feb 30 rolls over to March 2 — not a real calendar day.
+    expect(replayDayKeyOf(meta({ path: "r", dateTime: "20250230_120000" }))).toBeNull();
+  });
+
+  it("both bounds null is the identity (same reference, dateless kept)", () => {
+    const arr = [meta({ path: "a", dateTime: "20250622_152405" }), meta({ path: "n" })];
+    expect(filterByDateRange(arr, null, null)).toBe(arr);
+  });
+
+  it("windows inclusively on the local day; dateless drop out once a bound is set", () => {
+    const arr = [
+      meta({ path: "before", dateTime: "20250601_000000" }),
+      meta({ path: "from", dateTime: "20250622_152405" }),
+      meta({ path: "inside", dateTime: "20250815_080000" }),
+      meta({ path: "to", dateTime: "20250930_235959" }),
+      meta({ path: "after", dateTime: "20251001_000000" }),
+      meta({ path: "dateless", dateTime: null }),
+    ];
+    expect(filterByDateRange(arr, "2025-06-22", "2025-09-30").map((r) => r.path)).toEqual([
+      "from",
+      "inside",
+      "to",
+    ]);
+    // Open bounds: from-only and to-only windows.
+    expect(filterByDateRange(arr, "2025-08-01", null).map((r) => r.path)).toEqual([
+      "inside",
+      "to",
+      "after",
+    ]);
+    expect(filterByDateRange(arr, null, "2025-07-01").map((r) => r.path)).toEqual([
+      "before",
+      "from",
+    ]);
+  });
+});
+
 describe("useReplayListFilter", () => {
   it("defaults to all modes + newest-first with nothing persisted", () => {
     const f = useReplayListFilter(ref([]), ref([]));
@@ -202,6 +252,36 @@ describe("useReplayListFilter", () => {
     expect([...useReplayListFilter(ref([]), ref([])).selectedModes.value]).toEqual(["pvp"]);
   });
 
+  it("the date range narrows the same blocks, stacks with the modes, and stays session-only", async () => {
+    const list = ref([
+      meta({ path: "jun-pvp", matchGroup: "pvp", dateTime: "20250622_152405" }),
+      meta({ path: "aug-pvp", matchGroup: "pvp", dateTime: "20250815_080000" }),
+      meta({ path: "aug-ranked", scenario: "ranked_kids", dateTime: "20250820_080000" }),
+    ]);
+    const f = useReplayListFilter(list, ref([]));
+
+    f.dateFrom.value = "2025-07-01";
+    f.dateTo.value = "2025-08-31";
+    expect(f.filterActive.value).toBe(true);
+    expect(f.visibleList.value.map((r) => r.path)).toEqual(["aug-ranked", "aug-pvp"]);
+
+    // Session-only: the range alone never touches the persisted blob (the
+    // mode pick below does — modes are evergreen preferences).
+    await nextTick();
+    expect(localStorage.getItem(PERSIST_KEY)).toBeNull();
+
+    // Stacks with the mode picks (AND semantics).
+    f.selectedModes.value = new Set(["pvp"]);
+    expect(f.visibleList.value.map((r) => r.path)).toEqual(["aug-pvp"]);
+
+    // Clearing both bounds reopens the window (modes still apply, so both
+    // pvp replays — August first, newest-first — come back).
+    f.dateFrom.value = null;
+    f.dateTo.value = null;
+    expect(f.visibleList.value.map((r) => r.path)).toEqual(["aug-pvp", "jun-pvp"]);
+    expect(f.filterActive.value).toBe(true); // the mode pick still engages it
+  });
+
   it("derives the visible blocks: filter + sort, external stays its own block", () => {
     const list = ref([
       meta({ path: "new-pvp", matchGroup: "pvp", dateTime: "20260301_000000" }),
@@ -241,6 +321,22 @@ describe("ReplayListFilter trigger", () => {
     expect(chips[0]!.classes()).toContain("ship-filter-bar__chip--icon");
     expect(chips[0]!.find("svg").exists()).toBe(true);
     expect(chips[0]!.text()).toBe("");
+  });
+
+  it("renders the date-range pair cross-linked and wired to the from/to updates", async () => {
+    const wrapper = mountBar();
+    const pickers = wrapper.findAllComponents(HkDatePicker);
+    expect(pickers).toHaveLength(2);
+    expect(pickers[0]!.props("placeholder")).toBe(t("replay.filter.dateFrom"));
+    expect(pickers[1]!.props("placeholder")).toBe(t("replay.filter.dateTo"));
+    // The cross-link engages only while the opposite bound is set.
+    expect(pickers[0]!.props("max")).toBeUndefined();
+    await wrapper.setProps({ dateFrom: "2025-06-01", dateTo: "2025-09-30" });
+    expect(wrapper.findAllComponents(HkDatePicker)[0]!.props("max")).toBe("2025-09-30");
+    expect(wrapper.findAllComponents(HkDatePicker)[1]!.props("min")).toBe("2025-06-01");
+    // A picker's emission rides out as the host-level from/to update.
+    wrapper.findAllComponents(HkDatePicker)[0]!.vm.$emit("update:modelValue", "2025-07-01");
+    expect(wrapper.emitted("update:dateFrom")!.at(-1)![0]).toBe("2025-07-01");
   });
 
   it("mode popup options toggle the emitted Set and carry the mode color dot", async () => {

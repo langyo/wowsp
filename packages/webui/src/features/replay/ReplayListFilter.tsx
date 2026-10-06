@@ -16,7 +16,15 @@
  *     newest-first (the default, matching the historical mtime-desc scan
  *     order), ↑ oldest-first. With a selection the pill just resets; with
  *     none it flips the direction — one button, the arrow states the
- *     order, no separate sort chip.
+ *     order, no separate sort chip;
+ *   - a date-range pair (时间段) rides beside the funnel: two hikari
+ *     HkDatePicker inputs (from / to, inclusive on the local match day,
+ *     cross-linked by min/max so an invalid range can never form). They
+ *     narrow the SAME two blocks as the mode picks, which is what makes
+ *     the versioned replay archives navigable — the scan lists every
+ *     archived subfolder replay now, so a year-plus of history needs a
+ *     time window to browse. Session-only by design (see
+ *     useReplayListFilter).
  *
  * External picks (session-temporary files from outside the replays folder)
  * stay PINNED above the scanned list; the filter and the sort apply to both
@@ -28,6 +36,7 @@
 import { computed, defineComponent, ref, watch, type PropType, type Ref } from "vue";
 
 import { Filter } from "@lucide/vue";
+import { HkDatePicker } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import type { ReplayMetaLite } from "@/api";
@@ -106,6 +115,54 @@ export function sortReplays<T extends ReplayMetaLite>(metas: T[], dir: ReplaySor
   });
 }
 
+/** The replay's local calendar day as `YYYY-MM-DD` (null when the
+ *  filename stamp is missing or not a real calendar date) — the bucket the
+ *  date-range filter windows on. Same shape battleDayKey (battleBreakdown)
+ *  emits for the playtime heatmap, reimplemented here so the replay chunk
+ *  never pulls the playtime module (and its bundled ship DB) into its
+ *  import graph. The Date round-trip rejects rolled-over junk such as a
+ *  hypothetical 20260230. */
+export function replayDayKeyOf(r: ReplayMetaLite): string | null {
+  const dt = r.dateTime;
+  if (!dt || !/^\d{8}/.test(dt)) return null;
+  const y = Number(dt.slice(0, 4));
+  const m = Number(dt.slice(4, 6));
+  const d = Number(dt.slice(6, 8));
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  if (
+    probe.getUTCFullYear() !== y ||
+    probe.getUTCMonth() !== m - 1 ||
+    probe.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** Keep only replays whose local match day falls in [from, to] — both
+ *  bounds inclusive ISO `YYYY-MM-DD` (lexicographic IS chronological for
+ *  that shape, but ONLY for zero-padded keys: callers must pass padded
+ *  dates, which every in-app bound is — HkDatePicker's model speaks ISO
+ *  natively). Both bounds null is the identity and passes the input
+ *  through untouched; with any bound set, entries without a parsable day
+ *  cannot sit inside a calendar window and drop out (the same exclusion
+ *  rule the playtime heatmap's battlesDaily applies). */
+export function filterByDateRange<T extends ReplayMetaLite>(
+  metas: T[],
+  from: string | null,
+  to: string | null,
+): T[] {
+  if (from === null && to === null) return metas;
+  return metas.filter((r) => {
+    const day = replayDayKeyOf(r);
+    if (!day) return false;
+    if (from !== null && day < from) return false;
+    if (to !== null && day > to) return false;
+    return true;
+  });
+}
+
 interface PersistedFilter {
   modes: string[];
   sort: ReplaySortDir;
@@ -150,6 +207,13 @@ export function useReplayListFilter(
   const initial = loadPersisted();
   const selectedModes = ref(new Set<string>(initial.modes));
   const sortDir = ref<ReplaySortDir>(initial.sort);
+  // The date-range bounds — session-only by design: unlike the mode picks
+  // and the sort direction (evergreen preferences worth restoring), an
+  // absolute from/to window goes STALE by the next visit (last month's
+  // "recent" slice would greet the user as an unexplained short list), so
+  // the range never touches the persisted blob.
+  const dateFrom = ref<string | null>(null);
+  const dateTo = ref<string | null>(null);
 
   // Persist on every change; selections are always replaced as a whole Set
   // (never mutated in place), so the watch stays shallow.
@@ -171,16 +235,34 @@ export function useReplayListFilter(
     collectModeOptions([...external.value, ...list.value], selectedModes.value),
   );
   const visibleExternal = computed(() =>
-    sortReplays(filterReplays([...external.value], selectedModes.value), sortDir.value),
+    sortReplays(
+      filterByDateRange(
+        filterReplays([...external.value], selectedModes.value),
+        dateFrom.value,
+        dateTo.value,
+      ),
+      sortDir.value,
+    ),
   );
   const visibleList = computed(() =>
-    sortReplays(filterReplays([...list.value], selectedModes.value), sortDir.value),
+    sortReplays(
+      filterByDateRange(
+        filterReplays([...list.value], selectedModes.value),
+        dateFrom.value,
+        dateTo.value,
+      ),
+      sortDir.value,
+    ),
   );
-  const filterActive = computed(() => selectedModes.value.size > 0);
+  const filterActive = computed(
+    () => selectedModes.value.size > 0 || dateFrom.value !== null || dateTo.value !== null,
+  );
 
   return {
     selectedModes,
     sortDir,
+    dateFrom,
+    dateTo,
     modeOptions,
     visibleExternal,
     visibleList,
@@ -204,10 +286,15 @@ export default defineComponent({
     },
     selectedModes: { type: Object as PropType<Set<string>>, required: true },
     sortDir: { type: String as PropType<ReplaySortDir>, default: "desc" },
+    /** Inclusive ISO `YYYY-MM-DD` bounds of the date window (null = open). */
+    dateFrom: { type: String as PropType<string | null>, default: null },
+    dateTo: { type: String as PropType<string | null>, default: null },
   },
   emits: {
     "update:selectedModes": (_modes: Set<string>) => true,
     "update:sortDir": (_dir: ReplaySortDir) => true,
+    "update:dateFrom": (_v: string | null) => true,
+    "update:dateTo": (_v: string | null) => true,
   },
   setup(props, { emit }) {
     // Popover open flag is pure UI state — the trigger manages its own.
@@ -231,26 +318,49 @@ export default defineComponent({
     }
 
     return () => (
-      <FilterCategoryChip
-        title={t("replay.filter.mode")}
-        allLabel={t("replay.filter.allModes")}
-        options={props.modeOptions}
-        selected={props.selectedModes}
-        open={modeOpen.value}
-        onUpdate:open={(v: boolean) => (modeOpen.value = v)}
-        onToggle={toggleMode}
-        onAll={modeAllClick}
-        dir={props.sortDir}
-        pure
-        icon={<Filter size={14} />}
-        hint={t("replay.filter.modeHint")}
-        renderOptionIcon={(value: string) => (
-          <span
-            class="replay-view__mode-dot"
-            style={{ background: modeColorOfKey(value).color }}
+      <>
+        <FilterCategoryChip
+          title={t("replay.filter.mode")}
+          allLabel={t("replay.filter.allModes")}
+          options={props.modeOptions}
+          selected={props.selectedModes}
+          open={modeOpen.value}
+          onUpdate:open={(v: boolean) => (modeOpen.value = v)}
+          onToggle={toggleMode}
+          onAll={modeAllClick}
+          dir={props.sortDir}
+          pure
+          icon={<Filter size={14} />}
+          hint={t("replay.filter.modeHint")}
+          renderOptionIcon={(value: string) => (
+            <span
+              class="replay-view__mode-dot"
+              style={{ background: modeColorOfKey(value).color }}
+            />
+          )}
+        />
+        {/* The date-range pair — two hikari date inputs living directly in
+            the action row (each opens its OWN calendar popup; wrapping them
+            in a popover of our own would nest popovers and fight both
+            outside-close contracts). min/max cross-link so an invalid
+            from > to window can never form; each input clears itself. */}
+        <span class="replay-view__date-range">
+          <HkDatePicker
+            size="sm"
+            modelValue={props.dateFrom}
+            onUpdate:modelValue={(v: string | null) => emit("update:dateFrom", v)}
+            placeholder={t("replay.filter.dateFrom")}
+            max={props.dateTo ?? undefined}
           />
-        )}
-      />
+          <HkDatePicker
+            size="sm"
+            modelValue={props.dateTo}
+            onUpdate:modelValue={(v: string | null) => emit("update:dateTo", v)}
+            placeholder={t("replay.filter.dateTo")}
+            min={props.dateFrom ?? undefined}
+          />
+        </span>
+      </>
     );
   },
 });

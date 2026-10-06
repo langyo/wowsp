@@ -1608,8 +1608,9 @@ pub(crate) mod server {
     }
 
     /// `scan_replays_meta` on the blocking pool — even with `lite_from_path`
-    /// reading only the bounded first block, a 200-entry listing is real
-    /// disk work that must never stall async runtime workers (the async
+    /// reading only the bounded first block, an unbounded full-tree listing
+    /// (every archived version subfolder included) is real disk work that
+    /// must never stall async runtime workers (the async
     /// `list_replays_meta` command wraps the same scan in its own
     /// `spawn_blocking`; the hand-rolled server has to do it itself).
     async fn scan_remote(

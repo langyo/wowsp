@@ -1811,6 +1811,10 @@ export default defineComponent({
                     sortDir={listFilter.sortDir.value}
                     onUpdate:selectedModes={(s: Set<string>) => (listFilter.selectedModes.value = s)}
                     onUpdate:sortDir={(d: ReplaySortDir) => (listFilter.sortDir.value = d)}
+                    dateFrom={listFilter.dateFrom.value}
+                    dateTo={listFilter.dateTo.value}
+                    onUpdate:dateFrom={(v: string | null) => (listFilter.dateFrom.value = v)}
+                    onUpdate:dateTo={(v: string | null) => (listFilter.dateTo.value = v)}
                   />
                 ) : null}
                 {isMobileApp() ? (
