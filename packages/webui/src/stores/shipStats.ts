@@ -3,11 +3,18 @@ import { ref } from "vue";
 
 import { api, type PlayerShipStats, type ShipStatsHistoryPoint } from "@/api";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
+import { useStatsQueryStore, type StatsQueryMessage } from "@/stores/statsQuery";
 
 /** Per-player per-ship stats store. Wraps `lookup_player_ship_stats` with an
  *  in-memory cache keyed by `${realm}_${accountId}`. The Rust layer also
- *  persists to `ship-stats/<realm>_<accountId>.json` for offline fallback. */
+ *  persists to `ship-stats/<realm>_<accountId>.json` for offline fallback.
+ *
+ *  Queries are multi-read / single-write: the TTL fast path reads the cache
+ *  directly; every actual fetch is ONE "ship-stats" message on the shared
+ *  FIFO pipeline (stores/statsQuery.ts), executed serially with every
+ *  other water-table query in the app. */
 export const useShipStatsStore = defineStore("shipStats", () => {
+  const query = useStatsQueryStore();
   const cache = ref<Map<string, PlayerShipStats[]>>(new Map());
   /** Per-ship history points per player — the baselines that let the UI
    *  compute real "recent N days" deltas from career totals. */
@@ -16,6 +23,10 @@ export const useShipStatsStore = defineStore("shipStats", () => {
    *  feed for load()'s `ttlMs` guard. */
   const fetchedAt = ref<Map<string, number>>(new Map());
   const loading = ref(false);
+  /** How many queued fetches are in flight (the TTL fast path returns
+   *  before this counts) — keeps `loading` true through queue wait and
+   *  fetch alike. */
+  let activeCalls = 0;
   const error = ref<string | null>(null);
 
   function key(realm: string, accountId: number) {
@@ -38,7 +49,9 @@ export const useShipStatsStore = defineStore("shipStats", () => {
    *  player may have played new battles) but falls back to cache on network
    *  failure. `ttlMs` opts into serving a cached result younger than the
    *  TTL instead — the dashboard passes one so revisits inside the window
-   *  don't re-query the WG API. */
+   *  don't re-query the WG API. Actual fetches run as "ship-stats"
+   *  messages on the shared FIFO pipeline, serially with every other
+   *  water-table query. */
   async function load(
     accountId: number,
     realm: string,
@@ -46,25 +59,41 @@ export const useShipStatsStore = defineStore("shipStats", () => {
   ): Promise<PlayerShipStats[]> {
     const k = key(realm, accountId);
     const { ttlMs = 0 } = opts;
+    // Fast path (read-only, never queues).
     const cached = cache.value.get(k);
     if (cached && ttlMs > 0 && Date.now() - (fetchedAt.value.get(k) ?? 0) < ttlMs) {
       return cached;
     }
+    const message: Extract<StatsQueryMessage, { kind: "ship-stats" }> = {
+      kind: "ship-stats",
+      accountId,
+      realm,
+      ttlMs,
+    };
+    // Captured at enqueue time — a PR-pref flip while the message waits in
+    // the FIFO must not change the fetch's caliber.
+    const algo = prAlgoForRequest();
+    activeCalls++;
     loading.value = true;
     error.value = null;
     try {
-      const stats = await api.lookupPlayerShipStats(accountId, realm, prAlgoForRequest());
-      cache.value.set(k, stats);
-      fetchedAt.value.set(k, Date.now());
+      // Executed only by the pipeline's worker (single writer), strictly
+      // after every earlier queued query.
+      const stats = await query.enqueue(message, async () => {
+        const fresh = await api.lookupPlayerShipStats(accountId, realm, algo);
+        cache.value.set(k, fresh);
+        fetchedAt.value.set(k, Date.now());
+        return fresh;
+      });
       return stats;
     } catch (e) {
       error.value = (e as Error).message;
       // Return stale cache if available.
-      const stale = cache.value.get(key(realm, accountId));
+      const stale = cache.value.get(k);
       if (stale) return stale;
       throw e;
     } finally {
-      loading.value = false;
+      if (--activeCalls === 0) loading.value = false;
       // The Rust side appended a history point on the successful fetch (or
       // the fetch failed and history is unchanged either way) — refresh the
       // history cache so delta views see the latest baselines.

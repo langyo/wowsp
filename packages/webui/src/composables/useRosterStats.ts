@@ -18,6 +18,7 @@ import { onBeforeUnmount, reactive, watch } from "vue";
 import { api, type ArenaInfo, type PlayerShipStats, type PlayerStats, type VehicleEntry } from "@/api";
 import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
+import { useStatsQueryStore } from "@/stores/statsQuery";
 import { dimsNeedShipStats, rosterDimsOf, type RosterModeNumbers } from "@/utils/statView";
 import { AI_NAME, isAiName } from "@/utils/aiNames";
 
@@ -72,6 +73,23 @@ export interface RosterStat {
 
 const statCache = new Map<string, RosterStat>();
 const STAT_CACHE_MAX = 2000;
+
+/** Send one roster batch RPC through the shared water-table FIFO pipeline
+ *  (stores/statsQuery.ts), so the live/replay bulk loads queue strictly
+ *  behind — and never race — the dashboard and lookup-page queries. One
+ *  batch = ONE pipeline message; the backend's bounded fan-out stays
+ *  Rust-side. */
+function enqueueRosterBatch(
+  names: string[],
+  realm: string,
+  crossRealm: boolean,
+): Promise<(PlayerStats | null)[]> {
+  const prAlgo = prAlgoForRequest();
+  return useStatsQueryStore().enqueue(
+    { kind: "roster-batch", names, realm, crossRealm, prAlgo },
+    () => api.lookupPlayersStatsBatch(names, realm, prAlgo, crossRealm),
+  );
+}
 
 /** Cache key embeds the request algorithm: the batch answers PR=null under
  *  "expected" (see the backend's `apply_batch_pr_algo`), so an entry cached
@@ -557,12 +575,7 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     try {
       for (const group of groups) {
         try {
-          const rows = await api.lookupPlayersStatsBatch(
-            group.names,
-            group.realm,
-            prAlgoForRequest(),
-            group.cross,
-          );
+          const rows = await enqueueRosterBatch(group.names, group.realm, group.cross);
           group.names.forEach((name, i) => landed.push({ name, row: rows[i] ?? null }));
         } catch {
           failed.push(...group.names);
@@ -844,7 +857,7 @@ export async function fetchRosterStatsByNames(
   }
   if (misses.length === 0) return out;
   try {
-    const results = await api.lookupPlayersStatsBatch(misses, realm, prAlgoForRequest());
+    const results = await enqueueRosterBatch(misses, realm, false);
     misses.forEach((name, i) => {
       const r = results[i];
       const st = r ? rosterStatOf(r) : emptyStat(false);

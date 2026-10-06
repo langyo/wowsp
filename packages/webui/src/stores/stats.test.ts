@@ -114,9 +114,44 @@ describe("stats store lookup", () => {
     const store = useStatsStore();
     vi.mocked(api.lookupPlayerStats).mockRejectedValueOnce(new Error("boom"));
     await expect(store.lookup("langyo", "asia", { force: true })).rejects.toThrow("boom");
+    // The rejection must flow through lookup's catch even though the fetch
+    // ran on the queued pipeline message — the lookup page's error notice
+    // and the dashboard's error strip both read this state.
+    expect(store.error).toBe("boom");
+    expect(store.loading).toBe(false);
 
     vi.mocked(api.lookupPlayerStats).mockResolvedValueOnce(mockStats());
     await expect(store.lookup("langyo", "asia", { force: true })).resolves.toBeTruthy();
+    expect(store.error).toBe(null);
+    expect(api.lookupPlayerStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs different players' lookups serially, in FIFO submission order", async () => {
+    const store = useStatsStore();
+    const calls: string[] = [];
+    const resolvers = new Map<string, (value: PlayerStats) => void>();
+    vi.mocked(api.lookupPlayerStats).mockImplementation(
+      (name: string) =>
+        new Promise<PlayerStats>((r) => {
+          calls.push(name);
+          resolvers.set(name, r);
+        }),
+    );
+
+    // Two surfaces querying two different players "at once" — the WG API
+    // must still see them strictly one after the other.
+    const p1 = store.lookup("alice", "asia", { force: true });
+    const p2 = store.lookup("bob", "asia", { force: true });
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(calls).toEqual(["alice"]);
+
+    resolvers.get("alice")!(mockStats({ accountId: 1, name: "alice" }));
+    await p1;
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(calls).toEqual(["alice", "bob"]);
+
+    resolvers.get("bob")!(mockStats({ accountId: 2, name: "bob" }));
+    await p2;
     expect(api.lookupPlayerStats).toHaveBeenCalledTimes(2);
   });
 });

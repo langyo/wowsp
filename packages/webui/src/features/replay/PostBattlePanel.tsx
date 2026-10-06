@@ -40,7 +40,7 @@ import { useRouter } from "vue-router";
 import { Eye, EyeOff, X } from "@lucide/vue";
 import { HkSpinner } from "@celestia-island/hikari";
 
-import { api, type PlayerStats } from "@/api";
+import { type PlayerStats } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import BattleIcon from "@/components/base/BattleIcon";
@@ -52,6 +52,8 @@ import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
+import { useStatsStore } from "@/stores/stats";
+import { useShipStatsStore } from "@/stores/shipStats";
 import { prAlgoForRequest, statsPrefsState, useStatsPrefsStore } from "@/stores/statsPrefs";
 import { careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from "@/utils/winrate";
 import { formatEta } from "@/utils/format";
@@ -166,6 +168,8 @@ export default defineComponent({
     const parsed = computed(() => parsePostBattle(props.raw));
     const { dataLanguage, uiLocale } = useLanguage();
     const loadingTasks = useLoadingTasksStore();
+    const stats = useStatsStore();
+    const shipStats = useShipStatsStore();
     const router = useRouter();
     const root = ref<HTMLElement | null>(null);
     const rows = computed(() => {
@@ -220,7 +224,7 @@ export default defineComponent({
       shipDistList.value = [];
       if (!p.realm) return;
       try {
-        const list = await api.lookupPlayerShipStats(p.accountId, p.realm, prAlgoForRequest());
+        const list = await shipStats.load(p.accountId, p.realm);
         shipDistList.value = list.map((s) => ({ shipId: s.shipId, battles: s.battles }));
       } catch {
         /* distribution unavailable — hide */
@@ -379,7 +383,7 @@ export default defineComponent({
       globalLoading.value = true;
       const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name: p.name }));
       try {
-        globalStats.value = await api.lookupPlayerStats(p.name, p.realm, prAlgoForRequest());
+        globalStats.value = await stats.lookup(p.name, p.realm);
         loadingTasks.end(tid);
       } catch {
         loadingTasks.end(tid);

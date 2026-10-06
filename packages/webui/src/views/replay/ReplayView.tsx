@@ -77,6 +77,7 @@ import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
+import { useStatsStore } from "@/stores/stats";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import MapNameTag from "@/features/replay/MapNameTag";
@@ -185,6 +186,7 @@ const PostBattleFallbackPanel = defineComponent({
     const { dataLanguage } = useLanguage();
     const router = useRouter();
     const loadingTasks = useLoadingTasksStore();
+    const stats = useStatsStore();
     const realm = computed(() => props.realm || "asia");
     const root = ref<HTMLElement | null>(null);
 
@@ -428,7 +430,7 @@ const PostBattleFallbackPanel = defineComponent({
       globalLoading.value = true;
       const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name }));
       try {
-        globalStats.value = await api.lookupPlayerStats(name, realm.value, prAlgoForRequest());
+        globalStats.value = await stats.lookup(name, realm.value);
         loadingTasks.end(tid);
       } catch {
         loadingTasks.end(tid);
@@ -997,6 +999,7 @@ const ChatLogPanel = defineComponent({
   setup(props) {
     const { dataLanguage } = useLanguage();
     const loadingTasks = useLoadingTasksStore();
+    const stats = useStatsStore();
     const router = useRouter();
     const { copy } = useClipboard();
     const rows = computed<ChatRow[]>(() => {
@@ -1081,11 +1084,11 @@ const ChatLogPanel = defineComponent({
       globalLoading.value = true;
       const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name }));
       try {
-        const stats = await api.lookupPlayerStats(name, props.realm || "asia", prAlgoForRequest());
+        const row = await stats.lookup(name, props.realm || "asia");
         loadingTasks.end(tid);
         // Drop late responses for a player that is no longer selected.
         if (selected.value?.name !== name) return;
-        globalStats.value = stats;
+        globalStats.value = row;
       } catch {
         loadingTasks.end(tid);
         if (selected.value?.name !== name) return;
