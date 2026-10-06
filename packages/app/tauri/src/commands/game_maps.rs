@@ -154,13 +154,20 @@ fn list_game_maps_from_install(game_root: &str) -> Result<Vec<GameMapEntry>, Str
     }))
 }
 
-/// Byte-wise equivalent of the anchored regex `^spaces/([^/]+)/minimap\.png$`
+/// Byte-wise equivalent of the anchored regex `^/?spaces/([^/]+)/minimap\.png$`
 /// — the playable-space marker. Rejects the water background
 /// (`minimap_water.png`), nested ids (`spaces/a/b/minimap.png`), and any
-/// non-root-anchored spelling.
+/// non-root-anchored spelling. The optional leading slash is required by the
+/// real VFS: the vendored idx file-tree keys every path FROM the root
+/// (`/spaces/…`, see `build_file_tree` in the vendored wowsunpack), so a
+/// `strip_prefix("spaces/")`-only matcher inventoryed zero maps on every
+/// client (found by the real-install smoke on a Lesta machine).
 #[cfg(desktop)]
 fn space_id_from_minimap_path(path: &str) -> Option<&str> {
-    let rest = path.strip_prefix("spaces/")?;
+    let rest = path
+        .strip_prefix('/')
+        .unwrap_or(path)
+        .strip_prefix("spaces/")?;
     let id = rest.strip_suffix("/minimap.png")?;
     if id.is_empty() || id.contains('/') {
         return None;
@@ -274,6 +281,26 @@ mod tests {
         // No trailing content, and no empty id.
         assert_eq!(space_id_from_minimap_path("spaces/x/minimap.png.bak"), None);
         assert_eq!(space_id_from_minimap_path("spaces//minimap.png"), None);
+    }
+
+    #[test]
+    fn leading_slash_vfs_keys_match() {
+        // The vendored idx file-tree keys every path from the root — the
+        // real-install inventory walks "/spaces/<id>/minimap.png".
+        assert_eq!(
+            space_id_from_minimap_path("/spaces/20_NE_two_brothers/minimap.png"),
+            Some("20_NE_two_brothers")
+        );
+        // The slash is optional (pure-test spellings keep working).
+        assert_eq!(
+            space_id_from_minimap_path("spaces/20_NE_two_brothers/minimap.png"),
+            Some("20_NE_two_brothers")
+        );
+        // Root-anchoring still applies past the optional slash.
+        assert_eq!(
+            space_id_from_minimap_path("/content/spaces/x/minimap.png"),
+            None
+        );
     }
 
     // ── dedupe / sort / stat-fallback ─────────────────────────────────────

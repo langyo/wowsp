@@ -181,18 +181,16 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
 /// `content/GameParams.data` bytes out of the mounted install VFS. WG ships
 /// one file; the Lesta (Мир кораблей) client splits it into py2/py3 pickle
 /// variants — both decode through the same reverse+zlib+py2 pipeline, so the
-/// py2 variant is preferred and py3 is the last resort. A candidate that is
-/// merely absent (each client ships only its own variants) is skipped
-/// silently; candidates that exist but fail to read are all reported.
+/// py2 variant is preferred and py3 is the last resort. The candidate list
+/// comes from the per-client compat registry ([`super::game_client`]). A
+/// candidate that is merely absent (each client ships only its own variants)
+/// is skipped silently; candidates that exist but fail to read are all
+/// reported.
 #[cfg(desktop)]
 fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>, String> {
-    const CANDIDATES: [&str; 3] = [
-        "content/GameParams.data",
-        "content/GameParams_py2.data",
-        "content/GameParams_py3.data",
-    ];
+    let candidates = super::game_client::game_params_candidates();
     let mut read_errors: Vec<String> = Vec::new();
-    for path in CANDIDATES {
+    for path in &candidates {
         let Ok(node) = vfs.join(path) else {
             continue;
         };
@@ -213,12 +211,13 @@ fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>, Str
         }
     }
     let detail = if read_errors.is_empty() {
-        "三个候选文件均不存在".to_string()
+        "候选文件均不存在".to_string()
     } else {
         read_errors.join("；")
     };
     Err(format!(
-        "GameParams 读取失败（WG 为 content/GameParams.data，莱服为 GameParams_py2/py3.data）：{detail}"
+        "GameParams 读取失败（按优先级尝试：{}）：{detail}",
+        candidates.join("、")
     ))
 }
 
@@ -723,12 +722,15 @@ mod tests {
     use super::*;
 
     /// End-to-end smoke against a real install (dev machine only): mount the
-    /// pkg VFS, read + decode the real GameParams.data, pick a ship, and
+    /// pkg VFS, read + decode the real GameParams (through the per-client
+    /// candidate chain — WG's `content/GameParams.data` or Lesta's
+    /// py2/py3 split, whichever the install ships), pick a ship, and
     /// round-trip the public unpack path. Guarded by WOWSP_GAME_PATH so CI
     /// skips it. The ship is located by its PASB510 index-key prefix because
     /// WG regenerates ids and reassigns index keys between builds (PASB510 is
     /// Ohio on current installs) — neither can be hardcoded.
     #[test]
+    #[cfg(desktop)]
     #[ignore = "manual: requires a local game install; set WOWSP_GAME_PATH to run"]
     fn smoke_unpack_from_real_install() {
         let root = std::env::var("WOWSP_GAME_PATH").expect("WOWSP_GAME_PATH");
@@ -737,36 +739,39 @@ mod tests {
         let install = Path::new(&root);
         let build = latest_build_with_idx(install).expect("build");
         let vfs = wowsunpack::game_data::build_game_vfs_for_build(install, build).expect("vfs");
-        let mut bytes = Vec::new();
-        vfs.join("content/GameParams.data")
-            .expect("join")
-            .open_file()
-            .expect("open GameParams.data")
-            .read_to_end(&mut bytes)
-            .expect("read GameParams.data");
-        eprintln!("[smoke] GameParams.data = {} bytes", bytes.len());
+        let bytes = read_game_params_bytes(&vfs).expect("read GameParams via candidates");
+        eprintln!("[smoke] GameParams = {} bytes", bytes.len());
         let pickle =
             wowsunpack::game_params::convert::game_params_to_pickle(bytes).expect("decode");
 
+        // Normalize through the production root (WG's `{"": …}` wrapper, the
+        // flat dict, or the tuple-wrapped form the Lesta py2 pickle ships).
         let found: Option<(String, i64)> = (|| {
-            let wrapper = dict_entries(&pickle)?.into_iter().find(
-                |(k, _)| matches!(k, pickled::HashableValue::String(s) if s.inner().is_empty()),
-            )?;
-            for (k, v) in dict_entries(&wrapper.1)?.into_iter() {
-                if matches!(&k, pickled::HashableValue::String(s) if s.inner().starts_with("PASB510"))
-                {
-                    let id = pickled_get(&v, "id").and_then(|x| pickled_as_i64(&x))?;
-                    let name = match pickled_get(&v, "name")? {
-                        pickled::Value::String(s) => s.inner().to_string(),
-                        _ => return None,
-                    };
+            let params = params_root(&pickle)?;
+            // Prefer the PASB510 probe ship, but fall back to ANY ship entry:
+            // the probe must not hardcode a ship a regional client may lack.
+            let mut any: Option<(String, i64)> = None;
+            for (k, v) in dict_entries(&params)?.into_iter() {
+                let key = match &k {
+                    pickled::HashableValue::String(s) => s.inner(),
+                    _ => continue,
+                };
+                let id = pickled_get(&v, "id").and_then(|x| pickled_as_i64(&x))?;
+                let name = match pickled_get(&v, "name")? {
+                    pickled::Value::String(s) => s.inner().to_string(),
+                    _ => continue,
+                };
+                if key.starts_with("PASB510") {
                     return Some((name, id));
                 }
+                if any.is_none() {
+                    any = Some((name, id));
+                }
             }
-            None
+            any
         })();
-        eprintln!("[smoke] PASB510 ship = {found:?}");
-        let (want_name, want_id) = found.expect("PASB510 ship");
+        eprintln!("[smoke] probe ship = {found:?}");
+        let (want_name, want_id) = found.expect("a ship entry in GameParams");
 
         let v = unpack_ship_from_install(&root, want_id).expect("unpack ship");
         let name = v.get("name").and_then(|n| n.as_str()).unwrap_or_default();
