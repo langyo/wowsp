@@ -784,6 +784,59 @@ fn stale_versions_report_stranded_older_bins() {
     fs::remove_dir_all(&tmp).ok();
 }
 
+/// A pre-release bin (Steam stages the NEXT version's complete dir before
+/// the client switches to it) must never become the migration target: with
+/// preferences.xml pinning the build the client actually runs, that
+/// build's mods are not stale and nothing above the pin is reported.
+#[test]
+fn stale_versions_ignore_bins_above_the_preferences_pin() {
+    let tmp = std::env::temp_dir().join("wowsp_stale_prerelease");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    // The RUNNING build carries mods; the pre-release sits numerically
+    // above it with a full idx payload of its own.
+    touch(&game.join("bin/200/idx/.keep"));
+    touch(&game.join("bin/200/res_mods/PnFMods/Skin/Main.py"));
+    touch(&game.join("bin/300/idx/.keep"));
+    fs::write(
+        game.join("preferences.xml"),
+        "<root><last_server_version> 15,8,0,200 </last_server_version></root>",
+    )
+    .unwrap();
+
+    let stale = mod_hub_stale_versions(game.to_string_lossy().into_owned()).unwrap();
+    assert!(stale.is_empty(), "{stale:?}");
+
+    // Without the pin the pre-release shape returns — the fix must come
+    // from the pin, not from bins being ignored wholesale.
+    fs::remove_file(game.join("preferences.xml")).unwrap();
+    let stale = mod_hub_stale_versions(game.to_string_lossy().into_owned()).unwrap();
+    assert_eq!(stale.len(), 1, "{stale:?}");
+    assert_eq!(stale[0].bin_version, "200");
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+/// One-click migration whose source never had the loader marker: PnF
+/// content arriving in the destination must still end up scannable — the
+/// 0-byte marker is recreated there.
+#[test]
+fn migrate_recreates_missing_loader_marker() {
+    let tmp = std::env::temp_dir().join("wowsp_stale_marker");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    touch(&game.join("bin/1/idx/.keep"));
+    touch(&game.join("bin/1/res_mods/PnFMods/Mod/Main.py"));
+    touch(&game.join("bin/2/idx/.keep"));
+
+    migrate_stale_bin_core(&game.to_string_lossy(), "1").unwrap();
+    let cur = game.join("bin/2/res_mods");
+    assert!(cur.join("PnFMods/Mod/Main.py").is_file());
+    assert_eq!(fs::read(cur.join("PnFModsLoader.py")).unwrap(), b"");
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
 #[test]
 fn migrate_moves_stranded_files_and_repoints_ledger() {
     let tmp = std::env::temp_dir().join("wowsp_stale_migrate");
@@ -1003,7 +1056,10 @@ fn migration_execute_moves_keeps_and_cleans_the_rest() {
     assert_eq!(fs::read(cur.join("gui/diff.png")).unwrap(), b"new");
     assert!(!cur.join("gui/disabled.png.bak").exists());
     assert!(!cur.join("PnFMods/Strayed").exists());
-    assert!(!cur.join("PnFModsLoader.py").exists());
+    // The sweep ate the source marker as bookkeeping, but PnF content now
+    // lives in the destination — it gets a fresh 0-byte marker back, or
+    // the client would scan nothing after the migration.
+    assert_eq!(fs::read(cur.join("PnFModsLoader.py")).unwrap(), b"");
     assert!(!cur.join("installed_mods.xml").exists());
     // The stale tree emptied out entirely — skeleton dirs included.
     assert!(!old.exists());

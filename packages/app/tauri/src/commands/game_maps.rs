@@ -8,8 +8,9 @@
 //! without being selectable maps).
 //!
 //! [`list_game_maps`] mounts the install's full VFS (all idx files of the
-//! latest build that carries an `idx/` dir, over the `res_packages` pkg
-//! volumes), walks every path, keeps the minimap markers, and resolves each
+//! build the client runs — the preferences.xml pin, else the newest idx
+//! carrier — over the `res_packages` pkg volumes), walks every path, keeps
+//! the minimap markers, and resolves each
 //! hit to the REAL on-disk `.pkg` volume file backing it — with that file's
 //! modification time so the frontend can tell which install copy is freshest
 //! when a space ships in several volumes. Pure extraction/dedupe/sort lives

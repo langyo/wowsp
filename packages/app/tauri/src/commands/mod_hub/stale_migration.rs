@@ -139,6 +139,7 @@ pub(crate) fn migrate_stale_bin_core(
     // A fully migrated res_mods disappears entirely (empty-only remove, so
     // leftovers survive when files were kept).
     let _ = fs::remove_dir(&src);
+    ensure_loader_marker(&dst);
 
     // Stranded ledger records now describe files in the current bin.
     let mut ledger = super::mod_catalog::load_ledger();
@@ -199,7 +200,9 @@ fn stale_migration_pair(
 /// Per-install bookkeeping that must never migrate: Aslain's manifest and
 /// loader markers describe the OLD install, and this app's own ledger lives
 /// in the data dir, not the game tree. They are deleted outright, in both
-/// the plan (absent from every bucket) and the execute sweep.
+/// the plan (absent from every bucket) and the execute sweep — the loader
+/// MARKER is then re-created empty at the destination when the migrated
+/// tree carries PnF content ([`ensure_loader_marker`]).
 fn is_migration_bookkeeping(rel: &str) -> bool {
     let name = rel.rsplit('/').next().unwrap_or(rel);
     if name.eq_ignore_ascii_case("installed_mods.xml")
@@ -212,6 +215,22 @@ fn is_migration_bookkeeping(rel: &str) -> bool {
     let _file = parts.next();
     matches!(parts.next(), Some(parent) if parent.eq_ignore_ascii_case("mods"))
         && name.eq_ignore_ascii_case("installed.json")
+}
+
+/// A migrated destination carrying PnF content must also carry the
+/// `PnFModsLoader.py` marker — the client only scans `res_mods` for mods
+/// while that (0-byte) file exists, the same rule the install journal
+/// applies (`install.rs`). The sweep itself cannot guarantee it: the wizard
+/// deletes a source marker as bookkeeping, and keep-new may drop a marker
+/// whose destination counterpart already existed.
+fn ensure_loader_marker(res_mods: &Path) {
+    if !res_mods.join("PnFMods").is_dir() {
+        return;
+    }
+    let marker = res_mods.join("PnFModsLoader.py");
+    if !marker.is_file() {
+        let _ = fs::write(&marker, b"");
+    }
 }
 
 /// SHA-256 of a file's bytes — the content equality half of the duplicate
@@ -440,6 +459,7 @@ pub(crate) fn migration_execute_core(
     // A fully migrated res_mods disappears entirely (empty-only remove, so
     // leftovers survive when files were kept).
     let _ = fs::remove_dir(&src);
+    ensure_loader_marker(&dst);
 
     let mut ledger = super::mod_catalog::load_ledger();
     if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {

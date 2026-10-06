@@ -221,11 +221,13 @@ fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>, Str
     ))
 }
 
-/// The newest `bin/<build>/` that actually ships an `idx/` directory — Steam
-/// installs keep several builds around and only some carry the index files
-/// the VFS needs (same rule as `scripts/extract/_common.py`). Shared with the
-/// game-maps inventory (commands/game_maps.rs); the selection itself now
-/// lives in the unified game context (commands/game_context.rs).
+/// The `bin/<build>/` the client actually runs from (the preferences.xml
+/// pin when it names an idx-carrying build, else the newest one — Steam
+/// installs keep several builds around and only some carry the index
+/// files the VFS needs, same rule as `scripts/extract/_common.py`).
+/// Shared with the game-maps inventory (commands/game_maps.rs); the
+/// selection itself lives in the unified game context
+/// (commands/game_context.rs).
 pub(crate) fn latest_build_with_idx(root: &Path) -> Option<u32> {
     super::game_context::latest_bin_dir_with_idx(root).map(|(build, _)| build)
 }

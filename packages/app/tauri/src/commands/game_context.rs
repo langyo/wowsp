@@ -268,14 +268,108 @@ fn numeric_bin_dirs(root: &Path) -> Vec<(u64, PathBuf)> {
     dirs
 }
 
+/// Cached pin read — see [`preferences_active_build`].
+static PIN_CACHE: Mutex<Option<PinCacheEntry>> = Mutex::new(None);
+
+#[derive(Clone)]
+struct PinCacheEntry {
+    root_key: String,
+    len: u64,
+    mtime: std::time::SystemTime,
+    build: Option<u64>,
+}
+
+/// The build the client itself records as live: `preferences.xml`'s
+/// `<last_server_version>` carries the running build as its trailing
+/// component (`15,8,0,13187581` → `13187581`). Wargaming pre-releases the
+/// NEXT version's complete `bin/<build>/` on Steam days before the client
+/// switches to it, so the newest dir on disk is regularly NOT the build
+/// the game loads — while this marker only moves when the client actually
+/// connects from that build. Known limitation: right after the live
+/// switch but before the client's first launch the pin still names the
+/// previous build, so installs land there once and the stale-bin banner
+/// recovers them after the first launch flips the pin.
+///
+/// The file is re-read only when its stat changes — the bridge loop and
+/// telemetry poller hit this every 1–2 s, and the client rewrites the
+/// file exactly when the pin can move. `None` when the file is missing,
+/// unreadable mid-rewrite (never cached — retried on the next call) or
+/// carries no parseable tag.
+fn preferences_active_build(root: &Path) -> Option<u64> {
+    let path = root.join("preferences.xml");
+    let meta = std::fs::metadata(&path).ok()?;
+    let mtime = meta.modified().ok()?;
+    let root_key = super::game_detect::install_path_key(&root.to_string_lossy());
+    {
+        let guard = PIN_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = guard.as_ref() {
+            if entry.root_key == root_key && entry.len == meta.len() && entry.mtime == mtime {
+                return entry.build;
+            }
+        }
+    }
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return None;
+    };
+    let build = parse_last_server_build(&content);
+    let mut guard = PIN_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = Some(PinCacheEntry {
+        root_key,
+        len: meta.len(),
+        mtime,
+        build,
+    });
+    build
+}
+
+/// The pin out of preferences.xml content. Tag matching is
+/// ASCII-case-insensitive and attribute-tolerant, matching the other
+/// hand-rolled XML probes in this crate (`game_detect`); anything
+/// unexpected misses so the caller falls back to disk shape.
+fn parse_last_server_build(content: &str) -> Option<u64> {
+    // ASCII lowercasing preserves byte offsets, so indices found in the
+    // lowered copy address the original safely.
+    let lower = content.to_ascii_lowercase();
+    let open = lower.find("<last_server_version")?;
+    let value_at = open + lower[open..].find('>')? + 1;
+    let close = lower[value_at..].find("</last_server_version")? + value_at;
+    content[value_at..close]
+        .trim()
+        .rsplit(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .parse::<u64>()
+        .ok()
+}
+
+/// The preferences-pinned build among `dirs`, when the client records one
+/// that actually exists on disk (a stale pin from an un-launched update
+/// changes nothing).
+fn pinned_build_dir(dirs: &[(u64, PathBuf)], root: &Path) -> Option<(u64, PathBuf)> {
+    let pinned = preferences_active_build(root)?;
+    dirs.iter().find(|(build, _)| *build == pinned).cloned()
+}
+
 /// The newest `bin/<build>/` that ships an `idx/` directory — the build the
-/// client actually runs from. Steam installs keep several partially
-/// downloaded builds around and only some carry the index files the VFS
-/// needs (same rule as `scripts/extract/_common.py`). Consumers: GameParams
-/// unpack, map inventory.
+/// client actually runs from, with the `preferences.xml` pin taking
+/// precedence (Steam pre-release bins sit numerically above the live
+/// build; see [`preferences_active_build`]). A pin without `idx/` is
+/// skipped rather than trusted — the VFS readers cannot use it. Steam
+/// installs keep several partially downloaded builds around and only some
+/// carry the index files the VFS needs (same rule as
+/// `scripts/extract/_common.py`). Consumers: GameParams unpack, map
+/// inventory.
 pub(crate) fn latest_bin_dir_with_idx(root: &Path) -> Option<(u32, PathBuf)> {
-    numeric_bin_dirs(root)
-        .iter()
+    let dirs = numeric_bin_dirs(root);
+    if let Some((build, dir)) = pinned_build_dir(&dirs, root) {
+        if let Ok(build) = u32::try_from(build) {
+            if dir.join("idx").is_dir() {
+                return Some((build, dir));
+            }
+        }
+    }
+    dirs.iter()
         .rev()
         // Skip u32-unrepresentable (contrived) build names instead of
         // swallowing the whole result — the next-highest idx build is still
@@ -286,13 +380,18 @@ pub(crate) fn latest_bin_dir_with_idx(root: &Path) -> Option<(u32, PathBuf)> {
         })
 }
 
-/// The `bin/<build>` dir mods must target: the newest idx-carrying build
-/// (a mod dropped into a build dir the client never loads is invisible),
-/// falling back to the plain newest numeric dir — res_mods writes must still
-/// land somewhere on trees whose builds all lack `idx/` (dev fixtures,
-/// partial unpacks). Consumers: overlay mod installer, mod hub, catalog.
+/// The `bin/<build>` dir mods must target: the build the client itself
+/// records as live (`preferences.xml` pin — a mod dropped into a pre-
+/// released build the client never loads is invisible), else the newest
+/// idx-carrying build, falling back to the plain newest numeric dir —
+/// res_mods writes must still land somewhere on trees whose builds all
+/// lack `idx/` (dev fixtures, partial unpacks). Consumers: overlay mod
+/// installer, mod hub, catalog.
 pub(crate) fn latest_bin_dir(root: &Path) -> Option<(u64, PathBuf)> {
     let dirs = numeric_bin_dirs(root);
+    if let Some(pinned) = pinned_build_dir(&dirs, root) {
+        return Some(pinned);
+    }
     dirs.iter()
         .rev()
         .find(|(_, dir)| dir.join("idx").is_dir())
@@ -466,6 +565,94 @@ mod tests {
         assert!(latest_bin_dir_with_idx(&tmp).is_none());
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The preferences.xml pin decides which build everything targets: with
+    /// the next version's complete bin dirs pre-released on Steam ABOVE the
+    /// pinned build, both selectors keep targeting the pinned one; a pin
+    /// naming a build the tree does not carry falls back to disk shape.
+    #[test]
+    fn preferences_pin_beats_prerelease_bin_dirs() {
+        let tmp = std::env::temp_dir().join(format!(
+            "wowsp-ctx-prefpin-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(tmp.join("bin/100/idx")).unwrap();
+        std::fs::create_dir_all(tmp.join("bin/200/idx")).unwrap();
+        std::fs::create_dir_all(tmp.join("bin/300/idx")).unwrap();
+        std::fs::write(
+            tmp.join("preferences.xml"),
+            "<root>\n\t<last_server_version>\t15,8,0,200\t</last_server_version>\n</root>\n",
+        )
+        .unwrap();
+
+        let (build, dir) = latest_bin_dir(&tmp).expect("resolved");
+        assert_eq!(build, 200);
+        assert!(dir.ends_with("200"));
+        let strict = latest_bin_dir_with_idx(&tmp).expect("resolved");
+        assert_eq!(strict.0, 200);
+
+        // A pin the tree cannot satisfy changes nothing.
+        std::fs::write(
+            tmp.join("preferences.xml"),
+            "<root><last_server_version> 16,0,0,999 </last_server_version></root>",
+        )
+        .unwrap();
+        assert_eq!(latest_bin_dir(&tmp).expect("resolved").0, 300);
+        assert_eq!(latest_bin_dir_with_idx(&tmp).expect("resolved").0, 300);
+
+        // A pinned build without idx/ still takes mod writes (the client
+        // runs it), but the strict VFS variant skips it for an idx carrier.
+        std::fs::remove_dir_all(tmp.join("bin/300/idx")).unwrap();
+        std::fs::write(
+            tmp.join("preferences.xml"),
+            "<root><last_server_version>16,0,0,300</last_server_version></root>",
+        )
+        .unwrap();
+        assert_eq!(latest_bin_dir(&tmp).expect("resolved").0, 300);
+        assert_eq!(latest_bin_dir_with_idx(&tmp).expect("resolved").0, 200);
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The pin parser reads what real clients write (tab-indented comma
+    /// quad) plus tolerant variants (attributes, casing), and stays
+    /// silent on anything else.
+    #[test]
+    fn preferences_pin_parser_shapes() {
+        use super::parse_last_server_build as parse;
+
+        // The real client's shape: tab-indented, CRLF file, comma quad.
+        assert_eq!(
+            parse(
+                "<p>\r\n\t\t<last_server_version>\t15,8,0,13187581\t</last_server_version>\r\n</p>"
+            ),
+            Some(13187581)
+        );
+        assert_eq!(
+            parse("<last_server_version>200</last_server_version>"),
+            Some(200)
+        );
+        // Tolerant variants: attributes on the tag, uppercased spelling.
+        assert_eq!(
+            parse(r#"<last_server_version active="1">15,9,1,13357625</last_server_version>"#),
+            Some(13357625)
+        );
+        assert_eq!(
+            parse("<LAST_SERVER_VERSION>15,8,0,13187581</LAST_SERVER_VERSION>"),
+            Some(13187581)
+        );
+        // Misses fall back to disk shape.
+        assert_eq!(
+            parse("<last_server_version>15,8,0,not-a-build</last_server_version>"),
+            None
+        );
+        assert_eq!(parse("<last_server_version/>"), None);
+        assert_eq!(parse("<preferences></preferences>"), None);
+        assert_eq!(parse(""), None);
     }
 
     /// res_mods_dir joins onto the selected build dir and reports the root
