@@ -57,6 +57,9 @@ zip.workspace = true
 # Service supervision — graceful shutdown / signal handling
 malkuth.workspace = true
 
+# App-version one-time action scaffold (see commands/app_migrations.rs)
+hifumi.workspace = true
+
 # AppData directory resolution
 dirs-next.workspace = true
 

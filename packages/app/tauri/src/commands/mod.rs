@@ -4,6 +4,7 @@
 //! signatures thin and DTOs in `wowsp_tauri_shared` so the frontend can mirror
 //! them via `@wowsp/shared_ui`.
 
+pub mod app_migrations;
 pub mod appdata;
 pub mod arena_info;
 pub mod changelog;

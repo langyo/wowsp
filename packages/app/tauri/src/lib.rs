@@ -420,6 +420,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_os_preferences,
             paths::is_portable,
+            // App-version one-time migrations (commands/app_migrations.rs):
+            // the hifumi-ledger gate + the webui's delegated action reports.
+            commands::app_migrations::app_migrations_pending,
+            commands::app_migrations::app_migration_completed,
             commands::appdata::appdata_read,
             commands::appdata::appdata_write,
             commands::appdata::appdata_delete,

@@ -127,6 +127,10 @@ zip = { version = "^8", default-features = false, features = ["deflate"] }
 # window-close lifecycle). Published to crates.io.
 malkuth = { version = "^0.3", default-features = false, features = ["signals"] }
 
+# App-version one-time action scaffold (#[app_migrations] + the hifumi::app
+# ledger/engine) — see commands/app_migrations.rs. Published to crates.io.
+hifumi = "^0.2"
+
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg = "^0.56"
 

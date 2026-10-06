@@ -6,7 +6,7 @@ import router from "@/router";
 import { i18n, initLocaleMessages } from "@/i18n";
 import { uiLocaleReady } from "@/i18n/useLanguage";
 import { bootstrap } from "./bootstrap";
-import { runStartupMigrations } from "./migrations/definitions";
+import { runStartupMigrations } from "./migrations";
 import { initAnalytics, trackPageView } from "@/utils/analytics";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
@@ -22,10 +22,13 @@ import "virtual:uno.css";
  * bootstrap() runs the shared global hooks (viewport policy, brand themes +
  * hikari theme/font init, deep-link theme forcing, hikari i18n seeding).
  */
-// One-time migrations (src/migrations): BEFORE bootstrap() — actions may
-// rewrite stored slots the preference modules hydrate at import — and
-// while `wowsp-last-run-version` still holds the previous run's version.
-runStartupMigrations();
+// One-time app-version migrations (src/migrations): the gate + ledger live
+// in the Rust shell (hifumi scaffold); the delegated WebView bodies run
+// here. Fired BEFORE bootstrap() — bodies rewrite stored slots the
+// preference modules hydrate at import — while `wowsp-last-run-version`
+// still holds the previous run's version (the ledger seed hint), and
+// awaited in the mount gate below so a body's visual change never flashes.
+const migrationsReady = runStartupMigrations();
 bootstrap();
 // Google Analytics (Tauri shell + release only, see utils/analytics).
 initAnalytics();
@@ -46,6 +49,7 @@ void Promise.all([
   router.isReady(),
   initLocaleMessages().catch(() => undefined),
   uiLocaleReady.catch(() => undefined),
+  migrationsReady,
 ]).then(() => {
   app.mount("#app");
   if (typeof window.__loaderDismiss === "function") {

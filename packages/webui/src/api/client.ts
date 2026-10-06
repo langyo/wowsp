@@ -1666,6 +1666,16 @@ export const api = {
     transport.invoke<string>(RPC.ingame_plugin_install, { gameRoot }),
   ingamePluginUninstall: (gameRoot: string) =>
     transport.invoke<null>(RPC.ingame_plugin_uninstall, { gameRoot }),
+  /** App-version one-time migrations (commands/app_migrations.rs — the
+   *  hifumi ledger gate). Pending ids are the DELEGATED actions whose
+   *  WebView bodies live in migrations/definitions.ts; previousHint is the
+   *  webui's `wowsp-last-run-version` slot, consumed once to seed a fresh
+   *  shell-side ledger. */
+  appMigrationsPending: (previousHint: string | null) =>
+    transport.invoke<string[]>(RPC.app_migrations_pending, { previousHint }),
+  /** Report a delegated migration action as completed (records the ledger). */
+  appMigrationCompleted: (id: string) =>
+    transport.invoke<boolean>(RPC.app_migration_completed, { id }),
   /** Remembered game-install path — sanitized + persisted as TOML by the
    *  shell (see commands/game_config.rs). */
   getGameConfig: () => transport.invoke<{ activePath: string | null }>(RPC.get_game_config),

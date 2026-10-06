@@ -10,6 +10,8 @@
 export const RPC = {
   get_os_preferences: "get_os_preferences",
   is_portable: "is_portable",
+  app_migrations_pending: "app_migrations_pending",
+  app_migration_completed: "app_migration_completed",
   quit_app: "quit_app",
   open_external: "open_external",
   appdata_read: "appdata_read",
