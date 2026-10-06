@@ -53,7 +53,7 @@ Windows 10/11 — 前往 [GitHub Releases](https://github.com/langyo/wowsp/relea
 
 ## 回饋與致謝
 
-Bug 回報與測試回饋：QQ 群 **1125770228**，或使用[網站](https://wowsp.langyo.xyz)上的回饋表單。重播解析與遊戲偵測原理改編自 [ApeRadar（海猴雷达）](https://github.com/zylalx1/ApeRadar)；前端外殼與建置基礎設施改編自 [shittim-chest](https://github.com/celestia-island/shittim-chest)。
+Bug 回報與測試回饋：QQ 群 **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)**，或使用[網站](https://wowsp.langyo.xyz)上的回饋表單。重播解析與遊戲偵測原理改編自 [ApeRadar（海猴雷达）](https://github.com/zylalx1/ApeRadar)；前端外殼與建置基礎設施改編自 [shittim-chest](https://github.com/celestia-island/shittim-chest)。
 
 ## 授權條款
 

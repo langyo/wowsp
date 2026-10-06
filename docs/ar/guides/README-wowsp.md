@@ -55,7 +55,7 @@ WoWSP هو لوحة سطح مكتب للعبة **World of Warships** على نظ
 
 ## الملاحظات والشكر
 
-للإبلاغ عن الأخطاء وملاحظات الاختبار: مجموعة QQ رقم **1125770228**، أو نموذج الملاحظات على [الموقع](https://wowsp.langyo.xyz). مبادئ تحليل ملفات الريبلاي واكتشاف اللعبة مقتبسة من [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar)؛ أما غلاف الواجهة الأمامية وبنية البناء فمقتبسان من [shittim-chest](https://github.com/celestia-island/shittim-chest).
+للإبلاغ عن الأخطاء وملاحظات الاختبار: مجموعة QQ رقم **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)**، أو نموذج الملاحظات على [الموقع](https://wowsp.langyo.xyz). مبادئ تحليل ملفات الريبلاي واكتشاف اللعبة مقتبسة من [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar)؛ أما غلاف الواجهة الأمامية وبنية البناء فمقتبسان من [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
 ## الترخيص
 

@@ -55,7 +55,7 @@ Architecture, design notes, and guides live in [`docs/`](./docs) in nine languag
 
 ## Feedback & credits
 
-Bugs and testing feedback: QQ group **1125770228**, or the feedback form on the [website](https://wowsp.langyo.xyz). Replay parsing and game-detection principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell and build infrastructure are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
+Bugs and testing feedback: QQ group **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)**, or the feedback form on the [website](https://wowsp.langyo.xyz). Replay parsing and game-detection principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell and build infrastructure are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
 ## License
 

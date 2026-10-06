@@ -53,7 +53,7 @@ Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/lat
 
 ## 피드백 및 크레딧
 
-버그 및 테스트 피드백: QQ 그룹 **1125770228**, 또는 [웹사이트](https://wowsp.langyo.xyz)의 피드백 폼. 리플레이 파싱과 게임 감지 원리는 [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar)에서, 프론트엔드 셸과 빌드 인프라는 [shittim-chest](https://github.com/celestia-island/shittim-chest)에서 가져와 적용했다.
+버그 및 테스트 피드백: QQ 그룹 **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)**, 또는 [웹사이트](https://wowsp.langyo.xyz)의 피드백 폼. 리플레이 파싱과 게임 감지 원리는 [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar)에서, 프론트엔드 셸과 빌드 인프라는 [shittim-chest](https://github.com/celestia-island/shittim-chest)에서 가져와 적용했다.
 
 ## 라이선스
 

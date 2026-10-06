@@ -53,7 +53,7 @@ Windows 10/11 —— 从 [GitHub Releases](https://github.com/langyo/wowsp/relea
 
 ## 反馈与致谢
 
-Bug 与测试反馈：QQ 群 **1125770228**，或[官网](https://wowsp.langyo.xyz)的反馈表单。录像解析与游戏检测原理改编自 [ApeRadar（海猴雷达）](https://github.com/zylalx1/ApeRadar)；前端外壳与构建基建改编自 [shittim-chest](https://github.com/celestia-island/shittim-chest)。
+Bug 与测试反馈：QQ 群 **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)**，或[官网](https://wowsp.langyo.xyz)的反馈表单。录像解析与游戏检测原理改编自 [ApeRadar（海猴雷达）](https://github.com/zylalx1/ApeRadar)；前端外壳与构建基建改编自 [shittim-chest](https://github.com/celestia-island/shittim-chest)。
 
 ## 许可证
 

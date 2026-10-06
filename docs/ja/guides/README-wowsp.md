@@ -53,7 +53,7 @@ Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/lat
 
 ## フィードバックとクレジット
 
-バグ報告とテストフィードバックは QQ グループ **1125770228**、または[ウェブサイト](https://wowsp.langyo.xyz)のフィードバックフォームへ。リプレイ解析とゲーム検出の原理は [ApeRadar（海猴雷达）](https://github.com/zylalx1/ApeRadar) から、フロントエンドシェルとビルド基盤は [shittim-chest](https://github.com/celestia-island/shittim-chest) から採用している。
+バグ報告とテストフィードバックは QQ グループ **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)**、または[ウェブサイト](https://wowsp.langyo.xyz)のフィードバックフォームへ。リプレイ解析とゲーム検出の原理は [ApeRadar（海猴雷达）](https://github.com/zylalx1/ApeRadar) から、フロントエンドシェルとビルド基盤は [shittim-chest](https://github.com/celestia-island/shittim-chest) から採用している。
 
 ## ライセンス
 

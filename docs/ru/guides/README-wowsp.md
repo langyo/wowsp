@@ -53,7 +53,7 @@ WoWSP — настольная панель для **«Мира кораблей
 
 ## Обратная связь и благодарности
 
-Сообщения об ошибках и отзывы по тестированию: QQ-группа **1125770228** либо форма обратной связи на [сайте](https://wowsp.langyo.xyz). Принципы разбора реплеев и определения игровой установки адаптированы из проекта [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); оболочка фронтенда и инфраструктура сборки адаптированы из проекта [shittim-chest](https://github.com/celestia-island/shittim-chest).
+Сообщения об ошибках и отзывы по тестированию: QQ-группа **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)** либо форма обратной связи на [сайте](https://wowsp.langyo.xyz). Принципы разбора реплеев и определения игровой установки адаптированы из проекта [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); оболочка фронтенда и инфраструктура сборки адаптированы из проекта [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
 ## Лицензия
 

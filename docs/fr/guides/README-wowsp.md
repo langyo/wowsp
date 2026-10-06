@@ -53,7 +53,7 @@ L'architecture, les notes de conception et les guides se trouvent dans [`docs/`]
 
 ## Retours et crédits
 
-Retours de bogues et de tests : groupe QQ **1125770228**, ou le formulaire de retours sur le [site](https://wowsp.langyo.xyz). L'analyse des replays et les principes de détection du jeu sont adaptés d'[ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar) ; le shell frontend et l'infrastructure de compilation sont adaptés de [shittim-chest](https://github.com/celestia-island/shittim-chest).
+Retours de bogues et de tests : groupe QQ **[1125770228](https://qm.qq.com/cgi-bin/qm/qr?k=b6kMIecv3d390ecZVWNQNWMFfLRVgcQ9&jump_from=webapi&authKey=NhNLVnIcIlmfnnDUCjpsra4C/zfciS1sYNjm5SV7x2RPhdP1CzOM91ObP9y9MMQV)**, ou le formulaire de retours sur le [site](https://wowsp.langyo.xyz). L'analyse des replays et les principes de détection du jeu sont adaptés d'[ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar) ; le shell frontend et l'infrastructure de compilation sont adaptés de [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
 ## Licence
 
