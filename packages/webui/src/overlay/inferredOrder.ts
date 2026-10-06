@@ -38,12 +38,16 @@
  * the game client's — only two different same-nation same-tier ships on
  * one side depend on that segment at all; the common tie (a division in
  * the same ship) is decided by the locale-free '[tag]name'. Scripted
- * scenario units (`IDS_*` nicknames — tutorial / escort-op fleets) render
- * under LOCALIZED names in-game (e.g. `IDS_AL_01` → zh `：舍尔：`), so their
- * key order may differ from the client's; their chips all read "bot"
- * (utils/aiNames), leaving at most a human's chip one row off among them
- * in those battles.
+ * scenario units (`IDS_*` nicknames) render under LOCALIZED names in-game
+ * (e.g. the tutorial fill `IDS_AL_01` → zh `：舍尔：`), so their key order
+ * may differ from the client's — but only the tutorial-family battles
+ * (low_lvl_operation / first_battle / IDS_OP_15_*, where the game fields
+ * them as real team rows) feed them here at all: real operations (行动)
+ * render the human team only, and the caller drops their scripted units
+ * up front (utils/rosterSides's splitLiveRosterSides — the sides this
+ * module receives are exactly the rows the game draws).
  */
+import type { RosterSides } from "@/utils/rosterSides";
 import { gameTabRowKey } from "@/utils/shipClass";
 
 /** The roster entry shape the mapping needs (the wire's `VehicleEntry`). */
@@ -83,23 +87,27 @@ export type RowAttribution = string | string[] | null;
  * row grid (the game re-sorts sunk rows below alive ones, so the vector is
  * blockwise [true…true, false…false]; null/absent = unknown → battle
  * start). Entry `k` of the result is row `k`'s attribution — see
- * {@link RowAttribution}. The relation side split holds in operations
- * (行动) too: their rosters carry real enemy semantics (allied escort
- * waves ≤ 1, enemy warships > 1 — verified against operation captures).
+ * {@link RowAttribution}.
+ *
+ * The sides arrive PRE-SPLIT from the caller (utils/rosterSides's
+ * `splitLiveRosterSides` — exactly the rows the game's own table draws),
+ * so the block layout below is the caller's layout verbatim: allies
+ * entries first, enemies after, no second relation split to drift out of
+ * sync with the chip blocks.
  */
 export function inferredRowMapping(
-  vehicles: InferredVehicle[],
+  sides: RosterSides<InferredVehicle>,
   alive: boolean[] | null,
   options: InferredOrderOptions = {},
 ): RowAttribution[] {
   const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
   let offset = 0;
-  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = [
-    [vehicles.filter((v) => v.relation <= 1), "ally"],
-    [vehicles.filter((v) => v.relation > 1), "enemy"],
+  const sidePairs: Array<[InferredVehicle[], "ally" | "enemy"]> = [
+    [sides.allies, "ally"],
+    [sides.enemies, "enemy"],
   ];
-  for (const [list, sideKey] of sides) {
+  for (const [list, sideKey] of sidePairs) {
     const full = list
       .map((v, i) => ({
         v,
@@ -155,21 +163,22 @@ function rangeNames(full: string[], lo: number, hi: number): RowAttribution {
  * one name (a sink the detector missed leaves that row chipless in the
  * caller's 1:1 positional zip instead of misattributing a player onto it).
  *
- * Same block structure as {@link inferredRowMapping}: allies first, enemies
- * after (the relation split, operations included).
+ * Same block structure as {@link inferredRowMapping}: the caller's PRE-SPLIT
+ * sides (utils/rosterSides's `splitLiveRosterSides`), allies first, enemies
+ * after.
  */
 export function pluginRowMapping(
-  vehicles: InferredVehicle[],
+  sides: RosterSides<InferredVehicle>,
   sunk: { ally?: Set<string> | null; enemy?: Set<string> | null },
   options: InferredOrderOptions = {},
 ): RowAttribution[] {
   const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
-  const sides: Array<[InferredVehicle[], "ally" | "enemy"]> = [
-    [vehicles.filter((v) => v.relation <= 1), "ally"],
-    [vehicles.filter((v) => v.relation > 1), "enemy"],
+  const sidePairs: Array<[InferredVehicle[], "ally" | "enemy"]> = [
+    [sides.allies, "ally"],
+    [sides.enemies, "enemy"],
   ];
-  for (const [list, sideKey] of sides) {
+  for (const [list, sideKey] of sidePairs) {
     const full = list
       .map((v) => ({
         v,

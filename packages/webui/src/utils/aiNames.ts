@@ -36,9 +36,11 @@ export function isAiName(name: string): boolean {
  * flagship escorts (`IDS_OP_09_FLAGMAN_NAME`, `IDS_OP_17_ALLY_FLAGSHIP`),
  * operation dummy waves, tutorial fleets. The replay viewer treats them as
  * non-players: every player list filters them out (utils/rosterSides) and
- * their map labels read the ship name. The LIVE overlay keeps them in its
- * row inference — the game's Tab table does render them (under localized
- * names; see overlay/inferredOrder's module docs).
+ * their map labels read the ship name. The LIVE surfaces filter them
+ * conditionally (utils/rosterSides's `splitLiveRosterSides`): real
+ * operations (行动) render their human team only, so the scripted units
+ * drop out there too, while the tutorial-family scripted battles field
+ * them as real (localized-name) team rows and keep them listed.
  */
 export const SCRIPTED_UNIT_NAME = /^(?:IDS_.*|#.+)$/;
 

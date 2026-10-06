@@ -10,6 +10,10 @@
  *  verified the rule end to end: ally rows Germany→Italy→PanAsia, enemy
  *  rows Japan→USA→Germany — exactly NATION.SORT_ORDER.
  *
+ *  The mapping receives its sides PRE-SPLIT from the caller
+ *  (splitLiveRosterSides — exactly the rows the game draws); the fixtures
+ *  mirror the non-operation caller by splitting on `relation` here.
+ *
  *  Mid-battle, sinks make the alive subset unknowable from the luma
  *  vector; each row then carries its provable CONTIGUOUS candidate range
  *  (alive row k: full-order positions k..k+sunk; sunk row j: j..j+alive).
@@ -40,6 +44,16 @@ function veh(name: string, shipId: number, relation = 2): InferredVehicle {
   return { name, shipId, relation };
 }
 
+/** The non-operation caller's split (relation ≤ 1 allies / > 1 enemies),
+ *  arena-file order — what splitLiveRosterSides(vehicles, false) hands the
+ *  mapping in every battle the game renders verbatim. */
+function sidesOf(vehicles: InferredVehicle[]) {
+  return {
+    allies: vehicles.filter((v) => v.relation <= 1),
+    enemies: vehicles.filter((v) => v.relation > 1),
+  };
+}
+
 describe("inferredRowMapping", () => {
   it("reproduces the replay-verified 3v3 battle exactly (nation order)", () => {
     // Ground truth: the in-game Tab rows of the actual battle matched the
@@ -53,7 +67,7 @@ describe("inferredRowMapping", () => {
       veh("kamigt0", SHIPS.iowa, 2),
       veh("Eastern_sun", SHIPS.izumo, 2),
     ];
-    expect(inferredRowMapping(battle, null, { locale: "zh-CN" })).toEqual([
+    expect(inferredRowMapping(sidesOf(battle), null, { locale: "zh-CN" })).toEqual([
       "LaoBao_2026",
       "EdwinSzeto",
       "langyo",
@@ -75,7 +89,7 @@ describe("inferredRowMapping", () => {
       veh("Saipan", SHIPS.saipan),
       veh("Ryujo", SHIPS.ryujo),
     ];
-    expect(inferredRowMapping(vehicles, null, { locale: "zh-CN" })).toEqual([
+    expect(inferredRowMapping(sidesOf(vehicles), null, { locale: "zh-CN" })).toEqual([
       "Saipan",
       "Ryujo",
       "NewMexico",
@@ -98,7 +112,7 @@ describe("inferredRowMapping", () => {
       veh("Alice", SHIPS.renown),
     ];
     // Tagless: bob < zed < Alice (nation first, then display name).
-    expect(inferredRowMapping(vehicles, null, { locale: "zh-CN" })).toEqual([
+    expect(inferredRowMapping(sidesOf(vehicles), null, { locale: "zh-CN" })).toEqual([
       "bob",
       "zed",
       "Alice",
@@ -106,7 +120,7 @@ describe("inferredRowMapping", () => {
     // With [CLAN] on zed, '[CLAN]zed' starts with '[' and jumps AHEAD of
     // every lowercase-start nickname — the order flips.
     expect(
-      inferredRowMapping(vehicles, null, {
+      inferredRowMapping(sidesOf(vehicles), null, {
         locale: "zh-CN",
         clanTagOf: (n) => (n === "zed" ? "CLAN" : null),
       }),
@@ -123,7 +137,7 @@ describe("inferredRowMapping", () => {
       veh("P3", SHIPS.pommern),
       veh("P4", SHIPS.bajie),
     ];
-    expect(inferredRowMapping(vehicles, [true, true, true, false], { locale: "zh-CN" })).toEqual([
+    expect(inferredRowMapping(sidesOf(vehicles), [true, true, true, false], { locale: "zh-CN" })).toEqual([
       ["P1", "P2"],
       ["P2", "P3"],
       ["P3", "P4"],
@@ -139,7 +153,7 @@ describe("inferredRowMapping", () => {
       veh("P3", SHIPS.pommern),
     ];
     expect(
-      inferredRowMapping(vehicles, [false, false, false, false], { locale: "zh-CN" }),
+      inferredRowMapping(sidesOf(vehicles), [false, false, false, false], { locale: "zh-CN" }),
     ).toEqual(["P1", "P2", "P3", "P4"]);
   });
 
@@ -156,7 +170,7 @@ describe("inferredRowMapping", () => {
     ];
     const sunk = new Set(["P2"]);
     expect(
-      inferredRowMapping(vehicles, [true, true, true, false], {
+      inferredRowMapping(sidesOf(vehicles), [true, true, true, false], {
         locale: "zh-CN",
         sunk: { ally: sunk },
       }),
@@ -164,7 +178,7 @@ describe("inferredRowMapping", () => {
     // A set that DISAGREES with the alive count keeps the provable ranges
     // (the caller degrades the side; the function must not trust it).
     expect(
-      inferredRowMapping(vehicles, [true, true, true, false], {
+      inferredRowMapping(sidesOf(vehicles), [true, true, true, false], {
         locale: "zh-CN",
         sunk: { ally: new Set(["P1", "P2"]) },
       }),
@@ -179,28 +193,57 @@ describe("inferredRowMapping", () => {
     ];
     // Allies (relation ≤ 1) take the first block, enemies the second —
     // regardless of their interleaving in the arena file.
-    expect(inferredRowMapping(vehicles, null, { locale: "zh-CN" })).toEqual([
+    expect(inferredRowMapping(sidesOf(vehicles), null, { locale: "zh-CN" })).toEqual([
       "AllyCV",
       "AllyDD",
       "FoeBB",
     ]);
   });
 
-  it("splits operation rosters by relation, not into one block", () => {
-    // An operation roster (行动) carries real side semantics: scripted
-    // escort allies sit at relation ≤ 1 and enemy warships at relation
-    // > 1 (verified against the operation replay fixtures) — so the
-    // enemy scripted block lands in the enemy block, never in the allies
-    // one. Class order (CA < DD < SS) decides the order inside a block.
+  it("maps the caller's operation-filtered sides with no scripted rows", () => {
+    // PCVO011_OP_10_s10_USS_CL (Chumphon), excerpt: the game's story table
+    // renders its humans only, so splitLiveRosterSides(vehicles, true)
+    // drops the scripted allies and the scripted enemy waves BEFORE the
+    // mapping — the row grid below is exactly the human rows the game
+    // draws (BB < CA < DD), and no untranslated `IDS_*` key can ever
+    // surface as a row attribution.
+    const opRoster = [
+      veh("ShigureKira", SHIPS.leone, 0),
+      veh("Lesi", SHIPS.konigsberg, 1),
+      veh("89757_hero", SHIPS.newMexico, 1),
+      veh("IDS_OP_10_09_GAMBLE", SHIPS.undine, 1),
+      veh("IDS_OP_10_10_BREEZE", SHIPS.undine, 1),
+      veh("IDS_OP_10_EN_0101", SHIPS.izumo, 2),
+      veh("IDS_OP_10_EN_0102", SHIPS.iowa, 2),
+    ];
+    const sides = {
+      allies: opRoster.filter(
+        (v) => v.relation <= 1 && !v.name.startsWith("IDS_"),
+      ),
+      enemies: [],
+    };
+    expect(inferredRowMapping(sides, null, { locale: "zh-CN" })).toEqual([
+      "89757_hero",
+      "Lesi",
+      "ShigureKira",
+    ]);
+  });
+
+  it("keeps the tutorial family's scripted fills as ordinary rows", () => {
+    // LOW_LVL_OPERATION_3 (isOperationBattle false): the game fields its
+    // scripted flagship pair as REAL team rows under localized names, so
+    // splitLiveRosterSides(vehicles, false) keeps them in the ally block —
+    // the mapping still owes them rows. Class order (CV < DD < SS) decides
+    // the order inside the block.
     const vehicles = [
       veh("langyo", SHIPS.leone, 0),
-      veh("IDS_OP_02_03_AT_TRANSPORT_A_1", SHIPS.undine, 1),
-      veh("IDS_OP_02_03_AT_ATTAKA_US_A1", SHIPS.konigsberg, 2),
+      veh("IDS_OP_17_ALLY_FLAGSHIP", SHIPS.undine, 1),
+      veh("IDS_OP_17_ALLY_FLAGSHIP_CV", SHIPS.ryujo, 1),
     ];
-    expect(inferredRowMapping(vehicles, null, { locale: "zh-CN" })).toEqual([
+    expect(inferredRowMapping(sidesOf(vehicles), null, { locale: "zh-CN" })).toEqual([
+      "IDS_OP_17_ALLY_FLAGSHIP_CV",
       "langyo",
-      "IDS_OP_02_03_AT_TRANSPORT_A_1",
-      "IDS_OP_02_03_AT_ATTAKA_US_A1",
+      "IDS_OP_17_ALLY_FLAGSHIP",
     ]);
   });
 });

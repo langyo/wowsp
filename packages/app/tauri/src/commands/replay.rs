@@ -825,8 +825,50 @@ fn is_bot_nickname(name: &str) -> bool {
 /// in scripted scenarios (operations and the intro/tutorial battles), so
 /// their count doubles as an operation fingerprint for the frontend mode
 /// classifier (see `ReplayMeta::scripted_unit_count`).
-fn is_scripted_unit_nickname(name: &str) -> bool {
+pub(crate) fn is_scripted_unit_nickname(name: &str) -> bool {
     name.starts_with("IDS_") || (name.len() >= 2 && name.starts_with('#'))
+}
+
+/// Whether this battle is a REAL operation (行动) — the PCVO*/`_op_`/`_hl_`
+/// descriptor fingerprints plus the roster scan for arena files whose
+/// descriptor carries no scenario (a `pve` matchGroup with `IDS_OP_*`
+/// nicknames), EXCLUDING the tutorial family (`low_lvl_operation`,
+/// `first_battle`, the `IDS_OP_15_*` escort op) whose scripted units field
+/// as real team rows. Exact mirror of the frontend's `isOperationBattle`
+/// (utils/modeColors.ts): the live surfaces' scripted-unit filtering
+/// (arena_info's `note_arena_seen` here, the webui's `splitLiveRosterSides`)
+/// keys on the same rule on both sides of the IPC boundary, so the sink
+/// solver's ally block and the frontend's ally order stay index-aligned.
+pub(crate) fn is_operation_battle(
+    match_group: Option<&str>,
+    scenario: Option<&str>,
+    event_type: Option<&str>,
+    vehicles: &[wowsp_tauri_shared::VehicleEntry],
+) -> bool {
+    let sc = scenario.unwrap_or("").to_lowercase();
+    let et = event_type.unwrap_or("").to_lowercase();
+    if sc.starts_with("low_lvl_operation") || sc == "first_battle" {
+        return false;
+    }
+    if et.starts_with("low_lvl_operation") || et == "first_battle" {
+        return false;
+    }
+    if vehicles
+        .iter()
+        .any(|v| v.name.to_uppercase().starts_with("IDS_OP_15_"))
+    {
+        return false;
+    }
+    if et.starts_with("pcvo") || sc.starts_with("pcvo") {
+        return true;
+    }
+    if et.contains("_op_") || sc.contains("_op_") || sc.contains("_hl_") {
+        return true;
+    }
+    match_group.unwrap_or("").eq_ignore_ascii_case("pve")
+        && vehicles
+            .iter()
+            .any(|v| v.name.to_uppercase().starts_with("IDS_OP_"))
 }
 
 /// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;
@@ -1631,6 +1673,88 @@ mod tests {
         let meta = meta_from_raw("x.wowsreplay".into(), raw);
         assert_eq!(meta.bot_count, 2);
         assert_eq!(meta.scripted_unit_count, 0);
+    }
+
+    /// is_operation_battle — the Rust mirror of the frontend's classifier
+    /// (utils/modeColors.ts `isOperationBattle`): the descriptor
+    /// fingerprints decide, the tutorial family stays excluded, and the
+    /// roster scan is the last resort for arena files whose descriptor
+    /// carries no scenario. The live scripted-unit filtering (arena_info's
+    /// `note_arena_seen`) keys on it, so the shapes here mirror the
+    /// frontend's rosterSides tests.
+    #[test]
+    fn operation_classifier_mirrors_the_frontend() {
+        let roster = |json: &str| {
+            let raw: serde_json::Value = serde_json::from_str(json).unwrap();
+            meta_from_raw("x.wowsreplay".into(), raw).vehicles
+        };
+        // The story op (PCVO011_OP_10 Chumphon) — the scenario fingerprint
+        // alone decides.
+        let story = roster(
+            r#"{"matchGroup":"pve","scenario":"PCVO011_OP_10_s10_USS_CL","vehicles":[
+            {"id":1,"name":"ShigureKira","relation":0,"shipId":1},
+            {"id":2,"name":"IDS_OP_10_09_GAMBLE","relation":1,"shipId":2},
+            {"id":3,"name":"IDS_OP_10_EN_0101","relation":2,"shipId":3}
+        ]}"#,
+        );
+        assert!(is_operation_battle(Some("pve"), None, None, &story));
+        assert!(is_operation_battle(
+            None,
+            None,
+            Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL"),
+            &story
+        ));
+        // The tutorial family stays excluded — its scripted units field as
+        // real team rows, so the live surfaces keep them listed.
+        let tutorial = roster(
+            r#"{"matchGroup":"pve","scenario":"LOW_LVL_OPERATION_3_LVL_5A","vehicles":[
+            {"id":1,"name":"ShigureKira","relation":0,"shipId":1},
+            {"id":2,"name":"IDS_OP_17_ALLY_FLAGSHIP","relation":1,"shipId":2},
+            {"id":3,"name":"IDS_EN_01","relation":2,"shipId":3}
+        ]}"#,
+        );
+        assert!(!is_operation_battle(
+            Some("pve"),
+            Some("LOW_LVL_OPERATION_3_LVL_5A"),
+            None,
+            &tutorial
+        ));
+        assert!(!is_operation_battle(
+            Some("pve"),
+            Some("first_battle"),
+            None,
+            &tutorial
+        ));
+        let escort = roster(
+            r#"{"matchGroup":"pve","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"IDS_OP_15_DUMMY_01","relation":1,"shipId":2}
+        ]}"#,
+        );
+        assert!(!is_operation_battle(Some("pve"), None, None, &escort));
+        // The roster scan is the last resort: pve + IDS_OP_* names with no
+        // scenario fingerprint anywhere.
+        let bare = roster(
+            r#"{"matchGroup":"pve","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"IDS_OP_09_FLAGMAN_NAME","relation":1,"shipId":2}
+        ]}"#,
+        );
+        assert!(is_operation_battle(Some("pve"), None, None, &bare));
+        // PvP / plain co-op never classify as operations.
+        let coop = roster(
+            r#"{"matchGroup":"pve","scenario":"domination_3point","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":":Yumashev:","relation":2,"shipId":3}
+        ]}"#,
+        );
+        assert!(!is_operation_battle(Some("pvp"), None, None, &coop));
+        assert!(!is_operation_battle(
+            Some("pve"),
+            Some("domination_3point"),
+            None,
+            &coop
+        ));
     }
 
     /// If a real replay is available on this machine, parse it end-to-end.

@@ -67,6 +67,12 @@ import { isKnownRealm } from "@/utils/realms";
 import { pluginRowMapping } from "./inferredOrder";
 import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
 import { isCoopBattle, isOperationBattle } from "@/utils/modeColors";
+// The live side split — scripted scenario NPCs filtered iff this is a real
+// operation (行动), exactly the rows the game's own Tab table renders. The
+// Rust sink solver keys its ally block on the same rule (arena_info's
+// note_arena_seen), so the chip blocks, the row mapping and the solver's
+// indices stay aligned.
+import { splitLiveRosterSides, type RosterSides } from "@/utils/rosterSides";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
 import { AI_NAME } from "@/utils/aiNames";
@@ -750,15 +756,35 @@ function statusCard(text: string): HTMLDivElement {
   return card;
 }
 
+/** The battle's LIVE side split — scripted scenario NPCs filtered out iff
+ *  this is a real operation (行动), where the game's own Tab table renders
+ *  the human team only (the story-table capture of PCVO011_OP_10 shows 7
+ *  human rows while the roster carries 2 scripted allies); every other
+ *  battle — the tutorial-family scripted layouts included — keeps the raw
+ *  relation split, because there the game DOES field the scripted units as
+ *  team rows. Every consumer on this page (the chip blocks, the row
+ *  mapping, the sink-attribution orders) resolves against THIS split, and
+ *  the Rust sink solver's ally-row count mirrors it (arena_info's
+ *  note_arena_seen). */
+function liveRosterSides(): RosterSides<Vehicle> {
+  if (!arena) return { allies: [], enemies: [] };
+  return splitLiveRosterSides(
+    arena.vehicles,
+    isOperationBattle(
+      arena.matchGroup,
+      arena.scenario,
+      arena.eventType,
+      arena.vehicles.map((v) => v.name),
+    ),
+  );
+}
+
 /** The roster's believed full-key order for one side — the same ordering
  *  inferredRowMapping applies (see utils/shipClass for the decompiled
- *  rule). Operations keep the relation split: their rosters carry real
- *  side semantics (allied escort waves ≤ 1, enemy warships > 1). */
+ *  rule) over the live side split above. */
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
-  const list = arena.vehicles.filter((v) =>
-    side === "enemy" ? v.relation > 1 : v.relation <= 1,
-  );
+  const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
   return list
     .map((v, i) => ({
       v,
@@ -806,11 +832,12 @@ function render() {
   // The anchor carries TWO grid blocks concatenated: allies first, then
   // enemies (asymmetrical battles 12v6 render sub-tables of different
   // heights). Each side maps onto its OWN block — the enemy block starts
-  // where the ally block ends. Operation scenarios (行动) keep the same
-  // relation split on the ally side (their rosters carry real enemy
-  // semantics — the fixtures put enemy warships at relation > 1); only
-  // their ENEMY block is dropped (all scripted spawns, and mid-battle
-  // waves grow past the roster tempArenaInfo ever sees).
+  // where the ally block ends. The sides come from the live split
+  // (liveRosterSides above): a real operation (行动) fields its human team
+  // only — the game's story table never draws the scripted allies, so they
+  // hold no row here — and its enemy block is dropped entirely (all
+  // scripted spawns, and mid-battle waves grow past the roster
+  // tempArenaInfo ever sees).
   const rosterNames = arena.vehicles.map((v) => v.name);
   const operation = isOperationBattle(
     arena.matchGroup,
@@ -818,10 +845,7 @@ function render() {
     arena.eventType,
     rosterNames,
   );
-  const allies = arena.vehicles.filter((v) => v.relation <= 1);
-  const enemies = operation
-    ? []
-    : arena.vehicles.filter((v) => v.relation > 1);
+  const { allies, enemies } = liveRosterSides();
   const allyBlock = rows.slice(0, allies.length);
   const enemyBlock = rows.slice(allies.length);
   // The single-team table (team_split EXACTLY 1.0 = the green-only header,
@@ -862,7 +886,7 @@ function render() {
     // display-name segment, and the mapping re-derives on every render —
     // when the WG batch lands a tag, the next render re-sorts with it.
     const allyN = allies.length;
-    const enemyN = operation ? 0 : arena.vehicles.length - allyN;
+    const enemyN = enemies.length;
     const reconcileSide = (rel: "ally" | "enemy", n: number, off: number) => {
       // Plugin telemetry outranks the capture alive vector: its sets are
       // updated off-Tab, so reconciling them against a STALE vector would
@@ -887,7 +911,7 @@ function render() {
       // ranges, stamps by membership. A sink the row detector missed
       // leaves that row chipless in the positional zip below instead of
       // misattributing a player onto it.
-      players = pluginRowMapping(arena.vehicles, {
+      players = pluginRowMapping({ allies, enemies }, {
         ally: sunk.sunkNames("ally"),
         enemy: sunk.sunkNames("enemy"),
       }, {
@@ -895,7 +919,7 @@ function render() {
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
       });
     } else {
-      players = inferredRowMapping(arena.vehicles, aliveArr, {
+      players = inferredRowMapping({ allies, enemies }, aliveArr, {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
         sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
@@ -1669,14 +1693,20 @@ async function start() {
       enemy: new Set(),
     };
     const rosterNames = new Set<string>();
-    for (const v of arena.vehicles) {
-      rosterNames.add(v.name);
-      if (payload.players[v.name] !== false) continue;
-      // The plain relation split — operations included (their enemy
-      // scripted units sit at relation > 1, same convention as
-      // sideFullOrder and the Rust sink solver).
-      if (v.relation <= 1) bySide.ally!.add(v.name);
-      else bySide.enemy!.add(v.name);
+    const sides = liveRosterSides();
+    // The live split's membership — the same convention as sideFullOrder
+    // and the Rust sink solver. A scripted unit a real operation dropped
+    // never enters a side set here, so the sets stay size-consistent with
+    // the drawn rows even after telemetry authority is lost (a stale-stream
+    // reconcile must not degrade the side to candidate ranges).
+    for (const [list, side] of [
+      [sides.allies, "ally"],
+      [sides.enemies, "enemy"],
+    ] as const) {
+      for (const v of list) {
+        rosterNames.add(v.name);
+        if (payload.players[v.name] === false) bySide[side]!.add(v.name);
+      }
     }
     telemetryAuthoritative = true;
     sunk.applyNamedSunk(bySide, rosterNames);

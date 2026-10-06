@@ -21,7 +21,9 @@ pub(crate) struct StripTable<'a> {
 /// One row's name-strip crop rectangle, PHYSICAL px relative to the CAPTURE
 /// (game window) origin — the same space `detect_roster` emits. `row` indexes
 /// `row_centers` (allies block first, then enemies — the anchor's order);
-/// `ally_rows` is the ally-block size (the roster's relation ≤ 1 count) and
+/// `ally_rows` is the ally-block size (arena_info's `last_known_team_sizes`
+/// ally count: the raw relation ≤ 1 count, minus the scripted units a real
+/// operation dropped — exactly the rows the game's own table draws) and
 /// decides which half the row's strip sits in: allied names render in the
 /// left half, enemy names in the right half of the team split. Returns `None`
 /// for out-of-range rows and degenerate geometry.

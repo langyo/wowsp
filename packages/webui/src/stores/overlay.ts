@@ -10,6 +10,8 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
+import { isOperationBattle } from "@/utils/modeColors";
+import { splitLiveRosterSides } from "@/utils/rosterSides";
 
 export const useOverlayStore = defineStore("arenaOverlay", () => {
   const arenaInfo = ref<ArenaInfo | null>(null);
@@ -28,12 +30,25 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
 
   let arenaUnlisten: (() => void) | null = null;
 
-  const allies = computed<VehicleEntry[]>(
-    () => arenaInfo.value?.vehicles.filter((v) => v.relation <= 1) ?? [],
+  /** The live side split — scripted scenario NPCs (`IDS_*` / `#Name`)
+   *  filtered out of the ally block iff this is a real operation (行动),
+   *  where the game's own Tab table renders the human team only; every
+   *  other battle keeps the raw relation split (the tutorial-family
+   *  scripted fills render as real team rows in-game). See
+   *  utils/rosterSides's splitLiveRosterSides. */
+  const sides = computed(() =>
+    splitLiveRosterSides(
+      arenaInfo.value?.vehicles ?? [],
+      isOperationBattle(
+        arenaInfo.value?.matchGroup,
+        arenaInfo.value?.scenario,
+        arenaInfo.value?.eventType,
+        (arenaInfo.value?.vehicles ?? []).map((v) => v.name),
+      ),
+    ),
   );
-  const enemies = computed<VehicleEntry[]>(
-    () => arenaInfo.value?.vehicles.filter((v) => v.relation > 1) ?? [],
-  );
+  const allies = computed<VehicleEntry[]>(() => sides.value.allies);
+  const enemies = computed<VehicleEntry[]>(() => sides.value.enemies);
 
   /** Resolve the realm once on mount: URL query first (`?realm=eu` appended
    *  by `create_overlay_window`), else the first detected install. */

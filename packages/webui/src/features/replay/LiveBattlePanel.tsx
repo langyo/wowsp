@@ -83,6 +83,7 @@ import {
 } from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
+import { splitLiveRosterSides } from "@/utils/rosterSides";
 import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import {
@@ -248,16 +249,39 @@ export default defineComponent({
     /** Manual stats-refresh button state (approximate: the composable
      *  settles row spinners itself, the button just needs a cooldown). */
     const rosterRefreshing = ref(false);
+    // Whether THIS battle is a real operation (行动) — PCVO*/_op_/_hl_
+    // fingerprints, minus the tutorial family (low_lvl_operation /
+    // first_battle / IDS_OP_15_*) that fields its scripted units as real
+    // team rows. Decides the live side split below.
+    const operation = computed(() =>
+      isOperationBattle(
+        props.arena?.matchGroup,
+        props.arena?.scenario,
+        props.arena?.eventType,
+        props.arena?.vehicles.map((v) => v.name),
+      ),
+    );
+    /** The battle's LIVE side split — scripted scenario NPCs (`IDS_*` /
+     *  `#Name`) drop out of the ally block iff this is a real operation:
+     *  the game's own Tab table renders the human team only there (the
+     *  PCVO011_OP_10 story capture shows 7 human rows while the roster
+     *  carries the 2 scripted allies `IDS_OP_10_09_GAMBLE` /
+     *  `IDS_OP_10_10_BREEZE` — they used to leak as untranslated-key rows
+     *  at the end of this panel's teammates column and mis-sliced the
+     *  overlay's Tab row blocks). Every other battle keeps the raw
+     *  relation split — the tutorial-family scripted fills really do render
+     *  as team rows in-game. The Rust sink solver keys its ally-row count
+     *  on the same rule (arena_info's note_arena_seen), so sink
+     *  attributions stay index-aligned with the orders below.
+     *  operations (行动) also empty the enemy side — all scripted spawns,
+     *  a list nobody reads. */
+    const liveSides = computed(() =>
+      splitLiveRosterSides(props.arena?.vehicles ?? [], operation.value),
+    );
     /** The side's believed alive order for resolving sink-attrib rows:
      *  the predicted key order minus the trusted sunk set. */
     const sideAliveOrder = (side: SunkSide): string[] => {
-      // The plain relation split — operations (行动) included: their
-      // rosters carry real side semantics too (allied escort waves at
-      // relation ≤ 1, enemy warships at relation > 1), and the Rust sink
-      // solver indexes the ally block the same way.
-      const list = (props.arena?.vehicles ?? []).filter((v) =>
-        side === "enemy" ? v.relation > 1 : v.relation <= 1,
-      );
+      const list = side === "enemy" ? liveSides.value.enemies : liveSides.value.allies;
       const order = orderForTab(list, predictedOptionsFor(side)).map(
         (e) => e.vehicle.name,
       );
@@ -303,15 +327,18 @@ export default defineComponent({
         const ally = new Set<string>();
         const enemy = new Set<string>();
         const rosterNames = new Set<string>();
-        for (const v of props.arena.vehicles) {
-          rosterNames.add(v.name);
-          const dead = payload.players[v.name] === false;
-          if (!dead) continue;
-          // The plain relation split — operations (行动) included: their
-          // enemy scripted units sit at relation > 1 (see
-          // sideAliveOrder), so they never land in the ally sunk set.
-          if (v.relation <= 1) ally.add(v.name);
-          else enemy.add(v.name);
+        // The live split's membership — the same convention as
+        // sideAliveOrder and the Rust sink solver: a scripted unit a real
+        // operation dropped never enters a side set here.
+        const sides = liveSides.value;
+        for (const [list, set] of [
+          [sides.allies, ally],
+          [sides.enemies, enemy],
+        ] as const) {
+          for (const v of list) {
+            rosterNames.add(v.name);
+            if (payload.players[v.name] === false) set.add(v.name);
+          }
         }
         telemetryAuthoritative = true;
         sunk.applyNamedSunk({ ally, enemy }, rosterNames);
@@ -418,19 +445,6 @@ export default defineComponent({
     // verbatim — sunk-ship regrouping included, with sunk players dimmed —
     // and without one a predicted class-grouped order approximates the
     // game's layout far better than tempArenaInfo.json's join order.
-    // Operation scenarios (行动) keep the relation side split here too —
-    // their rosters carry real enemy semantics (the fixture captures put
-    // enemy warships at relation > 1), so the enemy scripted block is not
-    // rolled into the allies column; the Rust sink solver indexes the ally
-    // block off the same split, keeping sink attributions name-matched.
-    const operation = computed(() =>
-      isOperationBattle(
-        props.arena?.matchGroup,
-        props.arena?.scenario,
-        props.arena?.eventType,
-        props.arena?.vehicles.map((v) => v.name),
-      ),
-    );
     // The panel RENDERS one allies column for every operation-labeled
     // battle (the mode pill says 行动) — wider than `operation` above: the
     // new-account escort op keeps two-team relation semantics for the sink
@@ -449,30 +463,22 @@ export default defineComponent({
           props.arena?.scriptedUnitCount ?? 0,
         ) === "operation",
     );
-    // The ally side: the plain relation split, operations (行动) included —
-    // their rosters carry real side semantics (allied escort waves sit at
-    // relation ≤ 1, enemy warships at relation > 1), so the enemy scripted
-    // block drops out of the panel here instead of being listed under 我方
-    // (operation captures in the fixtures verify the split).
-    // Inputs for the predicted order's full Tab key come from
+    // The ally side: the live split's allies (scripted NPCs filtered iff
+    // a real operation — see liveSides), ordered by the game's own Tab
+    // key. Inputs for the predicted order's full Tab key come from
     // `predictedOptionsFor` above (locale + clan tag + that side's trusted
     // sunk set) — the orders re-derive reactively when the WG batch lands a
     // tag or a sink event bumps `sinkEpoch`.
     const allies = computed(() =>
-      orderForTab(
-        props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
-        predictedOptionsFor("ally"),
-      ),
+      orderForTab(liveSides.value.allies, predictedOptionsFor("ally")),
     );
     // The enemy list: every operation-LABELED battle hides it (wider than
     // `operation` — the pill says 行动 there too, and the enemy block is
     // all scripted spawns nobody reads), while real two-team modes keep
-    // the relation>1 split.
+    // the live split's enemy side.
     const enemies = computed(() =>
       orderForTab(
-        operationLabeled.value
-          ? []
-          : props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
+        operationLabeled.value ? [] : liveSides.value.enemies,
         predictedOptionsFor("enemy"),
       ),
     );

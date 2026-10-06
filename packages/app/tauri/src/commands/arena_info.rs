@@ -38,15 +38,39 @@ fn unix_secs(t: SystemTime) -> i64 {
 }
 
 /// Record both team sizes and the battle's start stamp (the arena file's
-/// mtime). Allies = relation ≤ 1 — in operation scenarios (行动) too: their
-/// rosters carry real side semantics (allied escort waves sit at
-/// relation ≤ 1, enemy warships at relation > 1 — verified against the
-/// operation replay fixtures), and the game's Tab table leads with our
-/// team's block, so the sink solver must key the ally block on the same
-/// split instead of rolling the whole roster into it.
+/// mtime). In REAL operations (行动, [`replay::is_operation_battle`]) the
+/// game's own Tab table renders the human team only — the scripted allies
+/// (`IDS_*` / `#Name`) never draw table rows (verified against the
+/// PCVO011_OP_10 story-table capture: 7 human rows, single column, while
+/// the roster carries the 2 scripted allies) — so the ally block the sink
+/// solver and the strip split key on counts LISTED players only, and the
+/// enemy side reads zero (all scripted spawns; rows grow mid-battle past
+/// the roster anyway). Every other battle keeps the plain relation split:
+/// their rosters carry real side semantics (allied escort waves ≤ 1, enemy
+/// warships at > 1 — verified against the operation replay fixtures), and
+/// the tutorial-family scripted battles field their units as real team
+/// rows. The frontend mirrors this exact rule
+/// (utils/rosterSides.ts `splitLiveRosterSides`).
 fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime) {
-    let allies = info.vehicles.iter().filter(|v| v.relation <= 1).count();
-    let enemies = info.vehicles.len() - allies;
+    let operation = replay::is_operation_battle(
+        info.match_group.as_deref(),
+        info.scenario.as_deref(),
+        info.event_type.as_deref(),
+        &info.vehicles,
+    );
+    let allies = if operation {
+        info.vehicles
+            .iter()
+            .filter(|v| v.relation <= 1 && !replay::is_scripted_unit_nickname(&v.name))
+            .count()
+    } else {
+        info.vehicles.iter().filter(|v| v.relation <= 1).count()
+    };
+    let enemies = if operation {
+        0
+    } else {
+        info.vehicles.len() - allies
+    };
     LAST_TEAM_SIZES.store(
         (allies << 16) | enemies,
         std::sync::atomic::Ordering::Relaxed,
@@ -490,40 +514,125 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// note_arena_seen keys the ally block on the relation split — in
-    /// operation scenarios (行动) too: their scripted escort allies sit at
-    /// relation ≤ 1 and their enemy warships at relation > 1 (verified
-    /// against the operation replay fixtures in wowsunpack-vendor), so the
-    /// sink solver's ally-row count must not swallow the enemy scripted
-    /// block into the ally grid.
+    /// note_arena_seen's team sizes follow the game's own Tab rendering,
+    /// verified against real captures (all three scenarios share the
+    /// process-global LAST_TEAM_SIZES, so they run serialized inside ONE
+    /// test):
+    ///
+    /// - real operations (行动) render the human team only — the scripted
+    ///   allies never draw table rows (the PCVO011_OP_10 story-table
+    ///   capture shows 7 human rows, single column, while the roster
+    ///   carries the 2 scripted allies) — so the ally block counts LISTED
+    ///   players only and the enemy side reads zero (all scripted spawns;
+    ///   the sink solver's strip split and the frontend's
+    ///   splitLiveRosterSides mirror the same rule);
+    /// - the tutorial family (low_lvl_operation / first_battle /
+    ///   IDS_OP_15_*) fields its scripted units as real localized-name
+    ///   team rows — the plain relation split stays, keeping the solver's
+    ///   blocks aligned with the rows the game actually draws.
     #[test]
-    fn team_sizes_split_by_relation_even_in_operations() {
+    fn team_sizes_follow_the_games_tab_rendering() {
         let vehicle = |id: i64, name: &str, relation: i64| wowsp_tauri_shared::VehicleEntry {
             id,
             name: name.to_string(),
             relation,
-            ship_id: 4_180_000_000 + id,
+            ship_id: 4_180_000_000 + id.abs(),
             ship_name: None,
         };
-        let info = wowsp_tauri_shared::ArenaInfo {
-            match_group: Some("pve".into()),
-            date_time: None,
-            map_name: None,
-            scenario: Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL".into()),
-            event_type: None,
-            bot_count: 0,
-            scripted_unit_count: 3,
-            vehicles: vec![
+        let info_of = |match_group: &str,
+                       scenario: Option<&str>,
+                       vehicles: Vec<wowsp_tauri_shared::VehicleEntry>| {
+            wowsp_tauri_shared::ArenaInfo {
+                match_group: Some(match_group.into()),
+                date_time: None,
+                map_name: None,
+                scenario: scenario.map(Into::into),
+                event_type: None,
+                bot_count: 0,
+                scripted_unit_count: vehicles
+                    .iter()
+                    .filter(|v| replay::is_scripted_unit_nickname(&v.name))
+                    .count() as u32,
+                vehicles,
+                raw: serde_json::Value::Null,
+            }
+        };
+
+        // The classic op shape (PCVO009_OP_02 Atoll): 2 humans + the
+        // scripted escort ally + 2 scripted enemy warships.
+        let classic = info_of(
+            "pve",
+            Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL"),
+            vec![
                 vehicle(1, "langyo", 0),
                 vehicle(2, "teammate", 1),
                 vehicle(-1, "IDS_OP_02_03_AT_TRANSPORT_A_1", 1),
                 vehicle(-2, "IDS_OP_02_03_AT_ATTAKA_US_A1", 2),
                 vehicle(-3, "IDS_OP_02_03_AT_TRANSPORT_E_5", 2),
             ],
-            raw: serde_json::Value::Null,
-        };
-        note_arena_seen(&info, SystemTime::UNIX_EPOCH);
-        assert_eq!(last_known_team_sizes(), (3, 2));
+        );
+        note_arena_seen(&classic, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (2, 0));
+
+        // The 20261006_225650_PZSC107-Chumphon_s10_USS_CL.wowsreplay shape
+        // (PCVO011_OP_10_s10_USS_CL): 7 humans, the `IDS_OP_10_09_GAMBLE`
+        // / `IDS_OP_10_10_BREEZE` scripted pair at relation 1 and the
+        // `IDS_OP_10_EN_*` wave at relation 2. The game's story table
+        // draws exactly the 7 human rows — the ally block must read 7,
+        // not 9 (the 9-count used to leak the two scripted units into the
+        // live teammates list and mis-slice the overlay's Tab row blocks).
+        let humans = [
+            "89757_hero",
+            "ftgfgfbifgu1223",
+            "SoulV_Silverlory",
+            "ShigureKira",
+            "Forever_418",
+            "waitanchenhu",
+            "Lesi",
+        ];
+        let mut story: Vec<_> = humans
+            .iter()
+            .enumerate()
+            .map(|(i, name)| vehicle(500_000_000 + i as i64, name, if i == 3 { 0 } else { 1 }))
+            .collect();
+        for (id, name) in [(1, "IDS_OP_10_09_GAMBLE"), (2, "IDS_OP_10_10_BREEZE")] {
+            story.push(vehicle(id, name, 1));
+        }
+        for id in 3..=6 {
+            story.push(vehicle(id, &format!("IDS_OP_10_EN_01{:02}", id - 2), 2));
+        }
+        let story = info_of("pve", Some("PCVO011_OP_10_s10_USS_CL"), story);
+        note_arena_seen(&story, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (7, 0));
+
+        // The tutorial family: scripted units ARE team rows — the plain
+        // relation split (allies 3 including the flagship pair, enemy 1).
+        let tutorial = info_of(
+            "pve",
+            Some("LOW_LVL_OPERATION_3_LVL_5A"),
+            vec![
+                vehicle(1, "ShigureKira", 0),
+                vehicle(-1, "IDS_OP_17_ALLY_FLAGSHIP", 1),
+                vehicle(-2, "IDS_OP_17_ALLY_FLAGSHIP_CV", 1),
+                vehicle(-3, "IDS_EN_01", 2),
+            ],
+        );
+        note_arena_seen(&tutorial, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (3, 1));
+
+        // Plain PvP keeps the raw relation split (no scripted units).
+        let pvp = info_of(
+            "pvp",
+            None,
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "teammate", 1),
+                vehicle(3, "foe", 2),
+            ],
+        );
+        note_arena_seen(&pvp, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (2, 1));
+
         // Restore the process-global the sink solver keys on (other tests
         // in this binary may run after this one).
         LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
