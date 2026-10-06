@@ -1316,13 +1316,16 @@ export default defineComponent({
               </ul>
             )}
             {mod.textureAnalysis && renderTexAnalysis(mod.textureAnalysis)}
+            {/* The material section: one preview area per unit — texture
+                thumbnails above, custom-model meshes (incl. the 3D stage)
+                below, from a single asset listing. */}
             {bigOfKind(mod.kind) === "texture" && (
-              <AssetPreview gameRoot={gameRoot.value} relPath={mod.relPath} mode="image" />
+              <AssetPreview gameRoot={gameRoot.value} relPath={mod.relPath} mode="texture" />
             )}
             {mod.kind === "voice" && (
               <AssetPreview gameRoot={gameRoot.value} relPath={mod.relPath} mode="audio" />
             )}
-            {(bigOfKind(mod.kind) === "texture" || mod.kind === "script") && (
+            {mod.kind === "script" && (
               <AssetPreview
                 gameRoot={gameRoot.value}
                 relPath={mod.relPath}

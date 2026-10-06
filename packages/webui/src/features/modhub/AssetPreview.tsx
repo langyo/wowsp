@@ -1,16 +1,20 @@
 /**
- * Installed-unit asset previews: texture/image units render a lazy
- * thumbnail grid (each tile pulls a decoded, downscaled PNG data URL from
- * the backend on first visibility), voice units list their audio files
- * one-per-row with a localized scenario title above the raw file name
- * (from the pack's mod.xml event map + the voice-scenes registry); a
- * click hands the track to the global audioPlayer store, whose
- * AudioPlayerToast card (play/pause, seek, stop) controls playback even
- * after the pane is left. The game's Wwise `.wem` files play through the
- * on-read decode (the first click converts to WAV in Rust, then plays).
- * `.geometry` files (custom ship/gun/aircraft meshes) render as model
- * rows: a click asks the backend to expand the click into its hull-family
- * GLB parts and hands them to the holo ModelStage above the rows.
+ * Installed-unit asset previews. The material section (mode "texture") is
+ * ONE preview area for a pack's whole visual payload, from a single asset
+ * listing: texture thumbnails render as a lazy grid (each tile pulls a
+ * decoded, downscaled PNG data URL from the backend on first visibility)
+ * and `.geometry` files (custom ship/gun/aircraft meshes) render as model
+ * rows beneath — a click asks the backend to expand the click into its
+ * hull-family GLB parts and hands them to the holo ModelStage above the
+ * rows. Voice units (mode "audio") list their audio files one-per-row
+ * with a localized scenario title above the raw file name (from the
+ * pack's mod.xml event map + the voice-scenes registry); a click hands
+ * the track to the global audioPlayer store, whose AudioPlayerToast card
+ * (play/pause, seek, stop) controls playback even after the pane is left.
+ * The game's Wwise `.wem` files play through the on-read decode (the
+ * first click converts to WAV in Rust, then plays). Modes "image" and
+ * "model" are the single-kind fallbacks for panes that only ever show
+ * one of the two material kinds.
  */
 import { defineComponent, ref, watch } from "vue";
 import { Box, ImageIcon, Music, PlayCircle } from "@lucide/vue";
@@ -29,10 +33,14 @@ export default defineComponent({
     gameRoot: { type: String, required: true },
     /** Installed unit primary path (res_mods-relative). */
     relPath: { type: String, required: true },
-    /** `image` grid, `audio` list, or `model` rows + 3D stage. */
-    mode: { type: String as () => "image" | "audio" | "model", required: true },
+    /** `texture` grid + model stage (one listing), `image` grid, `audio`
+     *  list, or `model` rows + 3D stage. */
+    mode: {
+      type: String as () => "texture" | "image" | "audio" | "model",
+      required: true,
+    },
     /** Render nothing when the unit has no files of this mode — sections
-     *  that are merely possible (models under a texture unit) stay
+     *  that are merely possible (models under a script unit) stay
      *  invisible instead of showing an empty note. */
     silentEmpty: { type: Boolean, default: false },
   },
@@ -138,68 +146,88 @@ export default defineComponent({
       }
     }
 
+    // Lazy thumbnail grid — shared by the texture section and the plain
+    // image mode.
+    function renderGrid(list: AssetFileInfo[]) {
+      return (
+        <div class="asset-preview__grid">
+          {list.map((f) => (
+            <figure class="asset-preview__tile" key={f.rel} title={f.rel}>
+              {thumbs.value[f.rel] ? (
+                <img src={thumbs.value[f.rel]} alt={f.rel} />
+              ) : failed.value[f.rel] ? (
+                <span class="asset-preview__tile-fallback">
+                  <ImageIcon size={16} />
+                  <em>{f.ext}</em>
+                </span>
+              ) : (
+                <span class="asset-preview__tile-fallback asset-preview__tile-fallback--loading" />
+              )}
+              <figcaption>{f.rel.split("/").pop()}</figcaption>
+            </figure>
+          ))}
+        </div>
+      );
+    }
+
+    // Compact mesh rows under the stage: hull sections expand to the whole
+    // ship (whichever row was clicked), other meshes (guns, aircraft,
+    // directors) preview standalone — shared by the texture section and the
+    // plain model mode.
+    function renderModelBlock(list: AssetFileInfo[]) {
+      const rows = [...list].sort((a, b) => a.rel.localeCompare(b.rel));
+      return (
+        <div class="asset-preview__model">
+          {modelParts.value ? <ModelStage parts={modelParts.value} /> : null}
+          <ul class="asset-preview__model-rows">
+            {rows.map((f) => (
+              <li key={f.rel} class="asset-preview__model-row">
+                <button
+                  type="button"
+                  class={{
+                    "asset-preview__model-btn": true,
+                    "asset-preview__model-btn--active": modelRel.value === f.rel,
+                  }}
+                  disabled={modelLoading.value}
+                  data-hint={t("resources.modelPlay")}
+                  onClick={() => void toggleModel(f)}
+                >
+                  <Box size={14} />
+                  <span class="asset-preview__model-name">{f.rel.split("/").pop()}</span>
+                  <span class="asset-preview__model-size">{kbFormat(f.size)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
     return () => {
       if (loading.value) {
         if (props.silentEmpty) return null;
         return <div class="asset-preview__note">{t("resources.loadingAssets")}</div>;
       }
-      const usable = files.value.filter((f) => f.kind === props.mode);
+      const kinds = props.mode === "texture" ? ["image", "model"] : [props.mode];
+      const usable = files.value.filter((f) => kinds.includes(f.kind));
       if (usable.length === 0) {
         if (props.silentEmpty) return null;
         return <div class="asset-preview__note">{t("resources.noAssets")}</div>;
       }
-      if (props.mode === "image") {
+      // The material section: thumbnails and meshes are one preview area
+      // for one pack — a recolor's paints and shapes belong together.
+      if (props.mode === "texture") {
+        const imgs = usable.filter((f) => f.kind === "image");
+        const models = usable.filter((f) => f.kind === "model");
         return (
-          <div class="asset-preview__grid">
-            {usable.map((f) => (
-              <figure class="asset-preview__tile" key={f.rel} title={f.rel}>
-                {thumbs.value[f.rel] ? (
-                  <img src={thumbs.value[f.rel]} alt={f.rel} />
-                ) : failed.value[f.rel] ? (
-                  <span class="asset-preview__tile-fallback">
-                    <ImageIcon size={16} />
-                    <em>{f.ext}</em>
-                  </span>
-                ) : (
-                  <span class="asset-preview__tile-fallback asset-preview__tile-fallback--loading" />
-                )}
-                <figcaption>{f.rel.split("/").pop()}</figcaption>
-              </figure>
-            ))}
+          <div class="asset-preview__texture">
+            {imgs.length > 0 && renderGrid(imgs)}
+            {models.length > 0 && renderModelBlock(models)}
           </div>
         );
       }
-      if (props.mode === "model") {
-        // Compact mesh rows under the stage: hull sections expand to the
-        // whole ship (whichever row was clicked), other meshes (guns,
-        // aircraft, directors) preview standalone.
-        const rows = [...usable].sort((a, b) => a.rel.localeCompare(b.rel));
-        return (
-          <div class="asset-preview__model">
-            {modelParts.value ? <ModelStage parts={modelParts.value} /> : null}
-            <ul class="asset-preview__model-rows">
-              {rows.map((f) => (
-                <li key={f.rel} class="asset-preview__model-row">
-                  <button
-                    type="button"
-                    class={{
-                      "asset-preview__model-btn": true,
-                      "asset-preview__model-btn--active": modelRel.value === f.rel,
-                    }}
-                    disabled={modelLoading.value}
-                    data-hint={t("resources.modelPlay")}
-                    onClick={() => void toggleModel(f)}
-                  >
-                    <Box size={14} />
-                    <span class="asset-preview__model-name">{f.rel.split("/").pop()}</span>
-                    <span class="asset-preview__model-size">{kbFormat(f.size)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      }
+      if (props.mode === "image") return renderGrid(usable);
+      if (props.mode === "model") return renderModelBlock(usable);
       // Scene-titled rows: mod.xml-mapped lines carry a localized
       // scenario title above the raw file name (the hash name alone
       // tells nobody what the line is FOR); unmapped files keep the old
