@@ -697,6 +697,7 @@ function teamSummaryCard(
               return {
                 winrate: v2?.winrate ?? null,
                 pr: v2?.pr ?? null,
+                battles: v2?.battles ?? null,
                 damage: v2?.avgDamage ?? null,
                 tier: shipTierOf(v.shipId),
               };

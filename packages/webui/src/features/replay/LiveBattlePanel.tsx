@@ -21,10 +21,13 @@
  * Every human card is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles show a red notice instead of a fake "no data".
  * Each column title additionally carries the team's aggregate per the
- * chip toggles — a tier-weighted (or plain, per the stats prefs) mean
- * winrate with its chip on, a mean PR while the rating AND its chip are
- * on — over the players whose stats landed, all in the roster's resolved
- * stats-source view.
+ * chip toggles — all over the players whose stats landed, in the roster's
+ * resolved stats-source view. Compact mode aligns it onto the stat columns:
+ * the title becomes a two-line mini table header (a per-column label over a
+ * per-column mean — winrate / PR / battles / avg damage, exactly the shared
+ * rosterColumns() grid) so every average sits on its own column; the full
+ * cards have no aligned columns, so their aggregate rides the title's right
+ * end as inline text.
  *
  * The head also carries the share actions: a copy-share-shot button (the
  * roster painted onto a watermarked PNG, same pipeline as the post-battle
@@ -39,6 +42,7 @@ import {
   ref,
   watch,
   type CSSProperties,
+  type VNode,
 } from "vue";
 import { useRouter } from "vue-router";
 import {
@@ -74,17 +78,25 @@ import MapNameTag from "./MapNameTag";
 import PluginStatusCard from "./PluginStatusCard";
 import { WaitingRadarArt } from "./liveGuideArt";
 import {
+  rosterColumns,
   rosterShotCells,
   rosterShotColIndex,
   rosterShotDashes,
   rosterStatCols,
   useNickMasking,
   useShareShot,
+  type RosterColumnSpec,
 } from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
-import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
+import {
+  battlesColor,
+  careerStamp,
+  damageColor,
+  prTier,
+  winrateColor,
+} from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import {
   dimsNeedShipStats,
@@ -517,9 +529,10 @@ export default defineComponent({
       );
 
     /** One team's header aggregate — tier-weighted (per the stats prefs)
-     *  mean winrate plus a plain mean PR over the players whose stats
-     *  landed, all in the roster's resolved stats-source view. AI names,
-     *  hidden profiles and still-loading rows sit out. */
+     *  mean winrate plus plain mean PR / battles / avg damage over the
+     *  players whose stats landed, all in the roster's resolved
+     *  stats-source view. AI names, hidden profiles and still-loading rows
+     *  sit out. */
     const teamAgg = (entries: TabOrderedVehicle[]) =>
       aggregateTeamStats(
         entries.map((entry) => {
@@ -532,12 +545,19 @@ export default defineComponent({
             st.hidden ||
             isAiName(v.name)
           ) {
-            return { winrate: null, pr: null, damage: null, tier: shipTierOf(v.shipId) };
+            return {
+              winrate: null,
+              pr: null,
+              battles: null,
+              damage: null,
+              tier: shipTierOf(v.shipId),
+            };
           }
           const view = rowViewOf(st, v.shipId);
           return {
             winrate: view.winrate,
             pr: view.pr,
+            battles: view.battles,
             damage: view.avgDamage,
             tier: shipTierOf(v.shipId),
           };
@@ -661,15 +681,112 @@ export default defineComponent({
       };
     }
 
-    /** A column title (我方/敌方) with the team aggregate riding its right
-     *  end — the winrate part while its chip is on, the PR part while the
-     *  rating AND its chip are on; the caption stays bare when neither
-     *  shows. Values carry their tier colors (winrateColor / prTier). */
+    /** A column title (我方/敌方) with the team aggregate. Full cards have
+     *  no aligned stat columns, so the aggregate rides the title's right
+     *  end as inline text — winrate while its chip is on, PR while the
+     *  rating AND its chip are on, avg damage while its chip is on; the
+     *  caption stays bare when none shows. Compact rows ARE aligned
+     *  columns, so the title becomes the two-line mini table header: a
+     *  per-column label over a per-column team mean on a grid mirroring
+     *  the row's stat columns (rosterColumns()), every average landing
+     *  exactly on its own column. Values carry their tier colors
+     *  (winrateColor / prTier / battlesColor / damageColor). */
     const colTitle = (label: string, entries: TabOrderedVehicle[]) => {
       const title = <span class="live-battle__col-name">{label}</span>;
-      const showWr = prefs.prefs.overlayChips.winrate;
-      const showPr = prefs.prefs.prEnabled && prefs.prefs.overlayChips.pr;
-      if (!showWr && !showPr) {
+      const chips = prefs.prefs.overlayChips;
+      const showWr = chips.winrate;
+      const showPr = prefs.prefs.prEnabled && chips.pr;
+      const showDmg = chips.damage;
+      if (compact.value) {
+        // The aligned header needs stat columns to sit on — with every
+        // chip off the caption falls back to the bare title below.
+        const cols = rosterColumns();
+        if (cols.length > 0) {
+          const agg = teamAgg(entries);
+          const prBand = prTier(agg.avgPr);
+          const labelOf: Record<RosterColumnSpec["key"], string> = {
+            winrate: t(
+              prefs.prefs.weightedTeamWr
+                ? "replay.roster.teamWrWeighted"
+                : "replay.roster.teamWrPlain",
+            ),
+            pr: t("replay.roster.teamAvgPr"),
+            battles: t("replay.roster.battles"),
+            damage: t("replay.postbattle.avgDamage"),
+          };
+          const valueOf: Record<RosterColumnSpec["key"], VNode> = {
+            winrate: (
+              <b
+                class="live-battle__col-hval"
+                style={
+                  agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined
+                }
+              >
+                {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+              </b>
+            ),
+            pr: (
+              <b class="live-battle__col-hval" style={{ color: prBand.color }}>
+                {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+              </b>
+            ),
+            battles: (
+              <b
+                class="live-battle__col-hval"
+                style={
+                  agg.avgBattles != null
+                    ? { color: battlesColor(agg.avgBattles) }
+                    : undefined
+                }
+              >
+                {agg.avgBattles != null
+                  ? Math.round(agg.avgBattles).toLocaleString()
+                  : "—"}
+              </b>
+            ),
+            damage: (
+              <b
+                class="live-battle__col-hval"
+                style={
+                  agg.avgDamage != null ? { color: damageColor(agg.avgDamage) } : undefined
+                }
+              >
+                {agg.avgDamage != null
+                  ? Math.round(agg.avgDamage).toLocaleString()
+                  : "—"}
+              </b>
+            ),
+          };
+          return (
+            <div
+              class={[
+                "live-battle__col-title",
+                "live-battle__col-title--agg",
+                // Right-edge compensation: compact rows spend width on the
+                // career-seal slot (36px + one flex gap) beyond the stat
+                // columns whenever seals show — the header reserves the
+                // same run so its columns land on the cells below.
+                {
+                  "live-battle__col-title--pad-seal":
+                    prefs.prefs.prEnabled && prefs.prefs.sealsEnabled,
+                },
+              ]}
+              style={{
+                gridTemplateColumns: `minmax(0, 1fr) ${cols
+                  .map((c) => c.width)
+                  .join(" ")}`,
+              }}
+            >
+              {title}
+              {cols.map((c) => (
+                <span class="live-battle__col-hlbl">{labelOf[c.key]}</span>
+              ))}
+              {cols.map((c) => valueOf[c.key])}
+            </div>
+          );
+        }
+      }
+      if (!showWr && !showPr && !showDmg) {
         return <div class="live-battle__col-title">{title}</div>;
       }
       const agg = teamAgg(entries);
@@ -694,7 +811,7 @@ export default defineComponent({
                 </b>
               </>
             ) : null}
-            {showWr && showPr ? " · " : null}
+            {showWr && (showPr || showDmg) ? " · " : null}
             {showPr ? (
               <>
                 {t("replay.roster.teamAvgPr")}{" "}
@@ -703,6 +820,21 @@ export default defineComponent({
                   style={prBand.rainbow ? undefined : { color: prBand.color }}
                 >
                   {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+                </b>
+              </>
+            ) : null}
+            {showPr && showDmg ? " · " : null}
+            {showDmg ? (
+              <>
+                {t("replay.postbattle.avgDamage")}{" "}
+                <b
+                  style={
+                    agg.avgDamage != null ? { color: damageColor(agg.avgDamage) } : undefined
+                  }
+                >
+                  {agg.avgDamage != null
+                    ? Math.round(agg.avgDamage).toLocaleString()
+                    : "—"}
                 </b>
               </>
             ) : null}

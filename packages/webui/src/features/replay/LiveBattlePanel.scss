@@ -241,6 +241,10 @@
     border-bottom: 1px solid rgb(var(--color-text) / 0.1);
   }
 
+  &__col-name {
+    white-space: nowrap;
+  }
+
   /* Team aggregate (weighted WR + mean PR) riding the column title's right
      end — the caption voice without the caption letter-spacing (numbers
      read poorly tracked); values carry their tier colors inline. Clipping
@@ -255,6 +259,63 @@
     b {
       font-weight: 600;
     }
+  }
+
+  /* Compact mode's team aggregate: the title becomes a two-line mini table
+     header (tiny label over a mono value) on a grid mirroring the compact
+     rows' stat columns — [name][enabled rosterColumns() widths], the exact
+     template set INLINE per render (the chip toggles decide which columns
+     exist) so every team average lands exactly on its own column. The grid
+     element carries the cells' mono face at the cells' xs size so its ch
+     matches theirs; the caption name keeps the plain title's voice and
+     spans both rows. Right-edge compensation: compact rows spend width on
+     the career-seal slot (36px + one flex gap) beyond the stat columns
+     whenever seals show, plus the row's own 8px padding either way — the
+     modifiers reserve that same run in place of the base 2px. */
+  &__col-title--agg {
+    display: grid;
+    /* Fallback only — the real template rides inline per render. */
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 1px;
+    align-items: end;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: normal;
+    padding-right: 8px;
+  }
+
+  /* Seal-slot compensation — AFTER --agg so it wins the padding-right. */
+  &__col-title--pad-seal {
+    padding-right: 52px;
+  }
+
+  &__col-title--agg &__col-name {
+    grid-row: 1 / 3;
+    font-family: var(--font-sans, inherit);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.08em;
+  }
+
+  /* The agg header's two rows: per-column label over the per-column team
+     mean. Labels may outgrow their narrow ch track — justify-self: end
+     anchors them to the column's right edge so the overflow spills into
+     the wide name track, never into the neighbor column. */
+  &__col-hlbl {
+    min-width: 0;
+    justify-self: end;
+    overflow: visible;
+    white-space: nowrap;
+    font-size: var(--text-2xs);
+    line-height: 1.2;
+    color: rgb(var(--color-text) / 0.5);
+  }
+
+  &__col-hval {
+    justify-self: end;
+    text-align: right;
+    font-weight: 600;
+    line-height: 1.2;
   }
 
   /* Strict three-track card: a fixed name column, an elastic-but-clipping

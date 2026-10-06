@@ -55,7 +55,7 @@ import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useStatsStore } from "@/stores/stats";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { prAlgoForRequest, statsPrefsState, useStatsPrefsStore } from "@/stores/statsPrefs";
-import { careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from "@/utils/winrate";
+import { battlesColor, careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from "@/utils/winrate";
 import { formatEta } from "@/utils/format";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { shipTierOf } from "@/utils/shipClass";
@@ -350,20 +350,28 @@ export default defineComponent({
     );
 
     /** One team's header aggregate — tier-weighted (per the stats prefs)
-     *  mean winrate plus a plain mean PR over the players whose stats
-     *  landed, all in the roster's resolved stats-source view. AI names,
-     *  hidden profiles and stat misses sit out. */
+     *  mean winrate plus plain mean PR / battles / avg damage over the
+     *  players whose stats landed, all in the roster's resolved
+     *  stats-source view. AI names, hidden profiles and stat misses sit
+     *  out. */
     const teamAgg = (list: typeof rows.value) =>
       aggregateTeamStats(
         list.map((p) => {
           const st = !isAiName(p.name) ? nameStats.value.get(p.name) : undefined;
           if (!st || st.hidden || (shipScopeOn.value && st.shipsLoading)) {
-            return { winrate: null, pr: null, damage: null, tier: p.shipId != null ? shipTierOf(p.shipId) : null };
+            return {
+              winrate: null,
+              pr: null,
+              battles: null,
+              damage: null,
+              tier: p.shipId != null ? shipTierOf(p.shipId) : null,
+            };
           }
           const view = rowViewOf(st, p.shipId ?? null);
           return {
             winrate: view.winrate,
             pr: view.pr,
+            battles: view.battles,
             damage: view.avgDamage,
             tier: p.shipId != null ? shipTierOf(p.shipId) : null,
           };
@@ -629,8 +637,9 @@ export default defineComponent({
         }
         // Compact rows: a two-line mini table header on a grid mirroring
         // the row columns (rosterColumns + the XP cell), so each aggregate
-        // number lands exactly on its column. Battles and XP carry no
-        // team aggregate — their header cells stay empty fills.
+        // number lands exactly on its column. Every stat column carries a
+        // label and a team mean (battles included); only the XP cell stays
+        // an empty fill — a per-battle result has no team aggregate.
         const cols = rosterColumns();
         const template = `minmax(0, 1fr) ${cols.map((c) => c.width).join(" ")} 6ch`;
         const fill = <span class="replay-view__postbattle-col-hfill" />;
@@ -649,7 +658,11 @@ export default defineComponent({
               {t("replay.roster.teamAvgPr")}
             </span>
           ) : null,
-          battles: null,
+          battles: (
+            <span class="replay-view__postbattle-col-hlbl">
+              {t("replay.roster.battles")}
+            </span>
+          ),
           damage: showDmg ? (
             <span class="replay-view__postbattle-col-hlbl">
               {t("replay.postbattle.avgDamage")}
@@ -673,7 +686,14 @@ export default defineComponent({
               {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
             </b>
           ) : null,
-          battles: null,
+          battles: (
+            <b
+              class="replay-view__postbattle-col-hval"
+              style={agg.avgBattles != null ? { color: battlesColor(agg.avgBattles) } : undefined}
+            >
+              {agg.avgBattles != null ? Math.round(agg.avgBattles).toLocaleString() : "—"}
+            </b>
+          ),
           damage: showDmg ? (
             <b
               class="replay-view__postbattle-col-hval"

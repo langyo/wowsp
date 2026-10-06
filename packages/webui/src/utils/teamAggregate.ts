@@ -10,13 +10,16 @@
  * Ships the offline DB does not know take the mean known weight, which
  * lands exactly on the weighted center — present in the aggregate, silent
  * on its lean. The plain mode is the ordinary arithmetic mean. The mean PR
- * is always plain: the rating is already a career-long synthesis.
+ * is always plain: the rating is already a career-long synthesis. The mean
+ * battles / mean damage are plain too — raw career figures, nothing to weigh.
  */
 export interface TeamStatEntry {
   /** Career winrate in percent; null = no data (AI, hidden, still loading). */
   winrate: number | null;
   /** Career PR (per the active rating algorithm); null = no data. */
   pr: number | null;
+  /** Career battles count; null = no data. */
+  battles: number | null;
   /** Career average damage; null = no data. Plain arithmetic mean only —
    *  unlike winrate there is no tier weighting to argue about. */
   damage: number | null;
@@ -29,6 +32,8 @@ export interface TeamAggregate {
   winrate: number | null;
   /** Arithmetic mean PR over the players that have one. */
   avgPr: number | null;
+  /** Arithmetic mean battles count over the players that have one. */
+  avgBattles: number | null;
   /** Arithmetic mean average damage over the players that have one. */
   avgDamage: number | null;
   /** How many players' winrates entered the aggregate. */
@@ -48,8 +53,15 @@ export function aggregateTeamStats(
   const dmgRated = entries.filter(
     (e): e is TeamStatEntry & { damage: number } => e.damage != null,
   );
+  const battlesRated = entries.filter(
+    (e): e is TeamStatEntry & { battles: number } => e.battles != null,
+  );
   const avgPr =
     prRated.length > 0 ? prRated.reduce((a, e) => a + e.pr, 0) / prRated.length : null;
+  const avgBattles =
+    battlesRated.length > 0
+      ? battlesRated.reduce((a, e) => a + e.battles, 0) / battlesRated.length
+      : null;
   const avgDamage =
     dmgRated.length > 0
       ? dmgRated.reduce((a, e) => a + e.damage, 0) / dmgRated.length
@@ -58,6 +70,7 @@ export function aggregateTeamStats(
     return {
       winrate: null,
       avgPr,
+      avgBattles,
       avgDamage,
       counted: 0,
     };
@@ -79,6 +92,7 @@ export function aggregateTeamStats(
   return {
     winrate: sum / weight,
     avgPr,
+    avgBattles,
     avgDamage,
     counted: rated.length,
   };
