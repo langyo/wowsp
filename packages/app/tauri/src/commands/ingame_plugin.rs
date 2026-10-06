@@ -22,6 +22,20 @@ const DISCUSSION_NUMBER: u64 = 640;
 pub(crate) const MOD_DIR: &str = "WoWSPProbe";
 const MOD_ENTRY: &str = "Main.py";
 
+/// The plugin's runtime bridge files (the Main.py side of the file bridge):
+/// per-session battle state the plugin rewrites from scratch every run. An
+/// install wipes any leftovers, so a dead session's roster and ordering can
+/// never survive a reinstall into a tree that carried them in.
+const RUNTIME_BRIDGE_FILES: [&str; 7] = [
+    "telemetry.json",
+    "heartbeat.json",
+    "request.json",
+    "response.json",
+    "roster_raw.json",
+    "roster_journal.jsonl",
+    "manual_refresh.flag",
+];
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IngamePluginStatus {
@@ -188,6 +202,11 @@ pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
     let dir = super::game_context::res_mods_dir(std::path::Path::new(game_root))?;
     let mod_dir = dir.join("PnFMods").join(MOD_DIR);
     std::fs::create_dir_all(&mod_dir).map_err(|e| format!("create {}: {e}", mod_dir.display()))?;
+    // Dead session state must not survive the reinstall — these are the
+    // plugin's own per-run rewrites (see [`RUNTIME_BRIDGE_FILES`]).
+    for file in RUNTIME_BRIDGE_FILES {
+        let _ = std::fs::remove_file(mod_dir.join(file));
+    }
     let entry = mod_dir.join(MOD_ENTRY);
     std::fs::write(&entry, PLUGIN_SOURCE).map_err(|e| format!("write {}: {e}", entry.display()))?;
     // The view lands under its own res_mods subtree — this install's own
@@ -226,6 +245,13 @@ pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
     {
         tracing::warn!("{warning}");
     }
+    // The twins shed their runtime files too: a staged build must not open
+    // its first session with a dead one's battle state.
+    let runtime_rels: Vec<String> = RUNTIME_BRIDGE_FILES
+        .iter()
+        .map(|file| format!("PnFMods/{MOD_DIR}/{file}"))
+        .collect();
+    super::mod_hub::preload_mirror::mirror_removed(game_root, &runtime_rels);
     // wowsp.toml contract: the plugin is a managed unit (bundled source)
     // and its `[tools]` table gets the documented defaults — existing keys,
     // hand-tuned or from a previous install, are never overwritten.
@@ -324,13 +350,39 @@ pub(crate) fn telemetry_file(game_root: &std::path::Path) -> Option<std::path::P
     Some(dir.join("PnFMods").join(MOD_DIR).join("telemetry.json"))
 }
 
+/// Age cap for emitting a telemetry payload — the same freshness the
+/// overlay consumer enforces on `wowsp://ingame-telemetry` (older payloads
+/// are dropped there). The poller skips them at the source: the file's
+/// existence alone says nothing about the plugin still running, and a dead
+/// session's leftover must not reach any consumer as an emit.
+const TELEMETRY_STALE_MS: i64 = 30_000;
+
+/// A telemetry payload's `t` stamp (epoch milliseconds). The plugin writes
+/// an integer today; the float parse is defensive against older or
+/// hand-edited files.
+fn payload_epoch_ms(value: &serde_json::Value) -> Option<i64> {
+    let t = value.get("t")?;
+    t.as_i64().or_else(|| t.as_f64().map(|f| f as i64))
+}
+
+/// The emit decision for one parsed payload: fresh only when it carries a
+/// `t` no older than [`TELEMETRY_STALE_MS`]. A payload without `t` is
+/// stale by definition (the overlay's own gate drops it the same way).
+fn payload_fresh(value: &serde_json::Value, now_ms: i64) -> bool {
+    match payload_epoch_ms(value) {
+        Some(t) => now_ms - t <= TELEMETRY_STALE_MS,
+        None => false,
+    }
+}
+
 /// Spawn the detached telemetry poller: every 2 s it resolves the active
 /// game install, reads the plugin's `telemetry.json` (written by the
 /// in-game bridge on every alive-set change) and emits
-/// `wowsp://ingame-telemetry` to every window when its content changed.
-/// Both the live panel and the overlay window listen for the same event —
-/// this is the M2 consumer that turns the plugin's observations into
-/// authoritative sink marking and TAB ordering.
+/// `wowsp://ingame-telemetry` to every window when its content changed and
+/// is fresh ([`TELEMETRY_STALE_MS`]). Both the live panel and the overlay
+/// window listen for the same event — this is the M2 consumer that turns
+/// the plugin's observations into authoritative sink marking and TAB
+/// ordering.
 ///
 /// The poller is otherwise a best-effort publisher, but the CHAIN has been
 /// hard to diagnose from the field (a silent gap anywhere looks identical
@@ -379,6 +431,17 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     continue;
                 };
                 last = Some(raw);
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                if !payload_fresh(&value, now_ms) {
+                    // Parseable but old (a dead session's leftover): it
+                    // entered `last` above, so this logs once per content
+                    // and the live rewrite still emits.
+                    tracing::debug!("ingame telemetry payload stale — emit skipped");
+                    continue;
+                }
                 let alive = value
                     .get("players")
                     .and_then(|p| p.as_object())
@@ -425,5 +488,103 @@ mod tests {
         assert!(!has_pnf_mods(&rm));
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// A minimal versioned install: one `bin/<build>` carrying `idx/`,
+    /// pinned by `preferences.xml` so `res_mods_dir` resolves without a
+    /// real client. The temp tree is recreated fresh on every call.
+    fn fixture_game_root(tag: &str) -> std::path::PathBuf {
+        let tmp = std::env::temp_dir().join(format!("wowsp_probe_install_{tag}"));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let build = game.join("bin").join("100");
+        std::fs::create_dir_all(build.join("idx")).unwrap();
+        std::fs::write(
+            game.join("preferences.xml"),
+            "<root><last_server_version> 15,8,0,100 </last_server_version></root>",
+        )
+        .unwrap();
+        game
+    }
+
+    #[test]
+    fn install_wipes_stale_runtime_bridge_files() {
+        let game = fixture_game_root("wipe_live");
+        let res_mods = super::super::game_context::res_mods_dir(&game).unwrap();
+        let probe_dir = res_mods.join("PnFMods").join(MOD_DIR);
+        std::fs::create_dir_all(&probe_dir).unwrap();
+        std::fs::write(probe_dir.join(MOD_ENTRY), "stale entry").unwrap();
+        // Literal names, not [`RUNTIME_BRIDGE_FILES`] itself: the wipe list
+        // is the plugin's bridge contract, and dropping a name from the
+        // const must fail here.
+        let runtime_files = [
+            "telemetry.json",
+            "heartbeat.json",
+            "request.json",
+            "response.json",
+            "roster_raw.json",
+            "roster_journal.jsonl",
+            "manual_refresh.flag",
+        ];
+        assert_eq!(runtime_files, RUNTIME_BRIDGE_FILES);
+        for file in runtime_files {
+            std::fs::write(probe_dir.join(file), "stale session state").unwrap();
+        }
+
+        let mod_dir =
+            std::path::PathBuf::from(install_probe_files(&game.to_string_lossy()).unwrap());
+
+        for file in runtime_files {
+            assert!(!mod_dir.join(file).exists(), "{file} survived the install");
+        }
+        // The shipped entry replaced the stranded one.
+        assert_eq!(
+            std::fs::read(mod_dir.join(MOD_ENTRY)).unwrap(),
+            PLUGIN_SOURCE.as_bytes()
+        );
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn install_wipes_runtime_files_in_preload_twins() {
+        let game = fixture_game_root("wipe_twin");
+        // A complete staged build numerically above the pin — the twin the
+        // mirror fan-out targets.
+        let twin_res_mods = game.join("bin").join("200").join("res_mods");
+        let twin_probe = twin_res_mods.join("PnFMods").join(MOD_DIR);
+        std::fs::create_dir_all(game.join("bin").join("200").join("idx")).unwrap();
+        std::fs::create_dir_all(&twin_probe).unwrap();
+        std::fs::write(twin_probe.join(MOD_ENTRY), "twin entry").unwrap();
+        std::fs::write(twin_probe.join("telemetry.json"), "stale").unwrap();
+
+        install_probe_files(&game.to_string_lossy()).unwrap();
+
+        assert!(
+            !twin_probe.join("telemetry.json").exists(),
+            "twin kept the dead session's telemetry"
+        );
+        // The mirrored copy of the shipped entry is in place.
+        assert_eq!(
+            std::fs::read(twin_probe.join(MOD_ENTRY)).unwrap(),
+            PLUGIN_SOURCE.as_bytes()
+        );
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn telemetry_freshness_rules() {
+        let now = 1_800_000_000_000i64;
+        let fresh = serde_json::json!({ "t": now - 1_000, "players": {} });
+        let boundary = serde_json::json!({ "t": now - 30_000, "players": {} });
+        let stale = serde_json::json!({ "t": now - 31_000, "players": {} });
+        let float_t = serde_json::json!({ "t": (now - 500) as f64, "players": {} });
+        let no_stamp = serde_json::json!({ "players": {} });
+
+        assert!(payload_fresh(&fresh, now));
+        assert!(payload_fresh(&boundary, now), "exactly the cap is fresh");
+        assert!(!payload_fresh(&stale, now));
+        assert!(payload_fresh(&float_t, now), "float stamps parse");
+        assert_eq!(payload_epoch_ms(&float_t), Some(now - 500));
+        assert!(!payload_fresh(&no_stamp, now), "no t — stale by definition");
     }
 }
