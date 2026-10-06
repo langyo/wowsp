@@ -13,7 +13,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@celestia-island/hikari": "^0.55.75",
+    "@celestia-island/hikari": "^0.55.128",
     "@lucide/vue": "^1.46.0",
     "@wowsp/holo": "workspace:*",
     "three": "^0.185.1",

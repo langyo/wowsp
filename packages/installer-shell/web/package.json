@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@celestia-island/hikari": "^0.55.75",
+    "@celestia-island/hikari": "^0.55.128",
     "lucide-vue-next": "^*",
     "vue": "^3.5.42"
   },

@@ -46,8 +46,8 @@ importers:
   packages/installer-shell/web:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.75
-        version: 0.55.75(vue@3.5.42(typescript@7.0.2))
+        specifier: ^0.55.128
+        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))
       lucide-vue-next:
         specifier: ^*
         version: 1.0.0(vue@3.5.42(typescript@7.0.2))
@@ -80,8 +80,8 @@ importers:
   packages/website:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.75
-        version: 0.55.75(vue@3.5.42(typescript@7.0.2))
+        specifier: ^0.55.128
+        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.46.0
         version: 1.47.0(vue@3.5.42(typescript@7.0.2))
@@ -120,8 +120,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.75
-        version: 0.55.75(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.128
+        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.48.0
         version: 1.52.0(vue@3.5.43(typescript@7.0.2))
@@ -303,9 +303,11 @@ packages:
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
 
-  '@celestia-island/hikari@0.55.75':
-    resolution: {integrity: sha512-TpcJO9dyQ9T+zQbwDWYKs0gQ0Cpir7wjnfDJoMMk0uIB75NyilphhxPpsLDgD/ttpNgdcCScxJck1vtU8+PjEQ==}
+  '@celestia-island/hikari@0.55.128':
+    resolution: {integrity: sha512-cu2Upr83coo/rSQvkNyrga3NPdE2mSUWkASBcHyBYHlGvjcdmSkLZCBIlXcuPMLAQrgx+iXt73O4djiqYIjHGg==}
     peerDependencies:
+      '@types/three': ^*
+      three: ^0.185
       vue: ^*
 
   '@cloudflare/kv-asset-handler@0.5.0':
@@ -1838,6 +1840,17 @@ packages:
       '@vue/server-renderer':
         optional: true
 
+  '@xterm/addon-fit@0.11.0':
+    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
+
+  '@xterm/addon-image@0.10.0-beta.301':
+    resolution: {integrity: sha512-PJZL4GlQ1ReIgbffFMaOAFxc3wOit21/G2UEM82RpH3hNHjn6MH8ilz3ToDeBjYuOqU7ienBaeIuMbNktX4/HA==}
+    peerDependencies:
+      '@xterm/xterm': ^6.1.0-beta.304
+
+  '@xterm/xterm@6.1.0-beta.304':
+    resolution: {integrity: sha512-Wq9d4qFYslYQBIan+riXotdyurtREc6v+HWdAwV6Y2JSDI9eJ1dkWm/fzYb2rCGgGnM3baiYuSK4Z6OLNKLzDw==}
+
   abbrev@5.0.0:
     resolution: {integrity: sha512-/XrFJgzQQQHpti1raDJC6m4ws6aNktmjBlhk8Fdlk7LwCEuDoieEJJY9OFHjfiFJFFRM2tK+Ky/IsfbbmlMu1w==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
@@ -2956,22 +2969,32 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@celestia-island/hikari@0.55.75(vue@3.5.42(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))':
     dependencies:
+      '@types/three': 0.185.4
+      '@xterm/addon-fit': 0.11.0
+      '@xterm/addon-image': 0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304)
+      '@xterm/xterm': 6.1.0-beta.304
       dompurify: 3.4.15
       echarts: 6.1.0
       highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.42(typescript@7.0.2))
       marked: 18.0.13
+      three: 0.185.1
       vue: 3.5.42(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.75(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
+      '@types/three': 0.185.4
+      '@xterm/addon-fit': 0.11.0
+      '@xterm/addon-image': 0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304)
+      '@xterm/xterm': 6.1.0-beta.304
       dompurify: 3.4.15
       echarts: 6.1.0
       highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
       marked: 18.0.13
+      three: 0.185.1
       vue: 3.5.43(typescript@7.0.2)
 
   '@cloudflare/kv-asset-handler@0.5.0': {}
@@ -4135,6 +4158,14 @@ snapshots:
       vue-component-type-helpers: 3.3.11
     optionalDependencies:
       '@vue/server-renderer': 3.5.43
+
+  '@xterm/addon-fit@0.11.0': {}
+
+  '@xterm/addon-image@0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304)':
+    dependencies:
+      '@xterm/xterm': 6.1.0-beta.304
+
+  '@xterm/xterm@6.1.0-beta.304': {}
 
   abbrev@5.0.0: {}
 
