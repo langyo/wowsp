@@ -29,11 +29,10 @@
     gap: 0.5rem;
   }
 
-  /* Head action row: the funnel filter trigger + the date-range pair
-     leading, then the open-external picker (or the phone acquisition
-     pair) + list refresh. Wraps (not overflows) — the two date inputs
-     add ~230px beside the icon buttons and must not clip on a tight
-     sidebar. */
+  /* Head action row: the funnel filter trigger leading, then the
+     open-external picker (or the phone acquisition pair) + list refresh.
+     The date-range pair lives inside the funnel's popup, so the row stays
+     one square icon-button family even on a tight sidebar. */
   &__list-head-actions {
     display: inline-flex;
     align-items: center;
@@ -56,16 +55,29 @@
     }
   }
 
-  /* The filter's date-range pair (from / to HkDatePickers) — inline in the
-     action row right after the funnel, so both filters read as one
-     narrowing group. No wrapper popover: each picker opens its own
-     calendar, and nested popovers would fight the outside-close
-     contracts. */
-  &__date-range {
-    display: inline-flex;
+  /* The filter's date-range pair (from / to HkDatePickers) — inside the
+     mode popup, under the option strip: a labeled row of two pickers.
+     The panel teleports to body level, but this stylesheet rides the lazy
+     replay route chunk that renders the popup, so plain global classes
+     are enough. */
+  &__pop-dates {
+    display: flex;
     align-items: center;
     gap: 4px;
-    margin-left: 0.25rem;
+    margin-top: 8px;
+
+    .hk-dp {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  &__pop-dates-label {
+    flex-shrink: 0;
+    margin-right: 4px;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted) / 90%);
+    white-space: nowrap;
   }
 
   &__list-title {

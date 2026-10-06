@@ -13,7 +13,8 @@
     "noMatch": "没有符合筛选条件的录像。",
     "modeHint": "可多选 · 点击「全部模式」重置；未选中时切换最新/最早优先",
     "dateFrom": "开始日期",
-    "dateTo": "结束日期"
+    "dateTo": "结束日期",
+    "dateRange": "时间段"
   },
   "external": {
     "tag": "外部",

@@ -13,7 +13,8 @@
     "noMatch": "No replays match the current filters.",
     "modeHint": "Multi-select · “All modes” resets, or flips newest/oldest first when nothing is picked",
     "dateFrom": "Start date",
-    "dateTo": "End date"
+    "dateTo": "End date",
+    "dateRange": "Date range"
   },
   "external": {
     "tag": "External",

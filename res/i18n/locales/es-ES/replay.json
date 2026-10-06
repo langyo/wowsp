@@ -13,7 +13,8 @@
     "noMatch": "Ninguna repetición coincide con los filtros actuales.",
     "modeHint": "Multiselección · «Todos los modos» restablece, o cambia de más reciente a más antiguo si no hay nada seleccionado",
     "dateFrom": "Fecha inicial",
-    "dateTo": "Fecha final"
+    "dateTo": "Fecha final",
+    "dateRange": "Período"
   },
   "external": {
     "tag": "Externa",

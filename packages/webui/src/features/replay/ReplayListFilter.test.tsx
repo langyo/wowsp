@@ -10,12 +10,14 @@
  *    corrupt / foreign blobs degrade to the default, the date range is
  *    session-only (never persisted), and the visible lists are the
  *    range-filtered + mode-filtered + sorted derivatives of both blocks;
- *  - the trigger: one icon-button FilterCategoryChip plus the date-range
- *    pair; the mode popup's options toggle the emitted Set (and carry the
- *    mode color dot), the 全部模式 pill resets a selection and — with
- *    nothing picked — flips the match-time direction its ↑/↓ arrow
- *    displays; the two HkDatePickers cross-link (min/max) and emit the
- *    from/to updates.
+ *  - the trigger: one icon-button FilterCategoryChip whose popup carries
+ *    the mode multi-select, the direction-bearing 全部模式 pill AND the
+ *    date-range pair (its default slot); the mode popup's options toggle
+ *    the emitted Set (and carry the mode color dot), the 全部模式 pill
+ *    resets a selection and — with nothing picked — flips the match-time
+ *    direction its ↑/↓ arrow displays; the two HkDatePickers cross-link
+ *    (min/max) and emit the from/to updates; a nested popup panel (the
+ *    pickers' own calendars) never trips the outside-close.
  *
  * The option popups render through hikari HkPopover: their DOM teleports
  * to document.body, so popup queries scope to body and each mount is
@@ -323,10 +325,17 @@ describe("ReplayListFilter trigger", () => {
     expect(chips[0]!.text()).toBe("");
   });
 
-  it("renders the date-range pair cross-linked and wired to the from/to updates", async () => {
+  it("renders the date-range pair inside the popup, cross-linked and wired to the from/to updates", async () => {
     const wrapper = mountBar();
+    // The pair lives in the chip popup's slot — HkPopover mounts nothing
+    // while closed, so open the popup before querying the pickers.
+    await wrapper.findAll(".ship-filter-bar__chip")[0]!.trigger("click");
+    await vi.waitFor(() => {
+      expect(document.body.querySelectorAll(".ship-filter-bar__opt")).toHaveLength(3);
+    });
     const pickers = wrapper.findAllComponents(HkDatePicker);
     expect(pickers).toHaveLength(2);
+    expect(document.body.querySelectorAll(".replay-view__pop-dates .hk-dp")).toHaveLength(2);
     expect(pickers[0]!.props("placeholder")).toBe(t("replay.filter.dateFrom"));
     expect(pickers[1]!.props("placeholder")).toBe(t("replay.filter.dateTo"));
     // The cross-link engages only while the opposite bound is set.
@@ -337,6 +346,41 @@ describe("ReplayListFilter trigger", () => {
     // A picker's emission rides out as the host-level from/to update.
     wrapper.findAllComponents(HkDatePicker)[0]!.vm.$emit("update:modelValue", "2025-07-01");
     expect(wrapper.emitted("update:dateFrom")!.at(-1)![0]).toBe("2025-07-01");
+  });
+
+  it("the funnel wears the engaged look while a window is set with no mode picked", async () => {
+    const wrapper = mountBar();
+    const chip = wrapper.findAll(".ship-filter-bar__chip")[0]!;
+    expect(chip.classes()).not.toContain("ship-filter-bar__chip--on");
+    await wrapper.setProps({ dateFrom: "2025-06-01" });
+    expect(chip.classes()).toContain("ship-filter-bar__chip--on");
+    await wrapper.setProps({ dateFrom: null });
+    expect(chip.classes()).not.toContain("ship-filter-bar__chip--on");
+  });
+
+  it("keeps the popup open across presses inside a nested popup panel (the calendars)", async () => {
+    const wrapper = mountBar();
+    await wrapper.findAll(".ship-filter-bar__chip")[0]!.trigger("click");
+    await vi.waitFor(() => {
+      expect(document.body.querySelectorAll(".ship-filter-bar__pop")).toHaveLength(1);
+    });
+    // The date pickers' calendars teleport to body as sibling
+    // .hk-popover-panel elements — shape them by hand: a press inside one
+    // must NOT close the mode popup (the outside-close contract would
+    // otherwise kill the panel mid date-pick).
+    const calendar = document.createElement("div");
+    calendar.className = "hk-popover-panel";
+    const day = document.createElement("span");
+    calendar.appendChild(day);
+    document.body.appendChild(calendar);
+    day.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(document.body.querySelectorAll(".ship-filter-bar__pop")).toHaveLength(1);
+    calendar.remove();
+    // A press outside both the anchor and the panel still closes.
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(document.body.querySelectorAll(".ship-filter-bar__pop")).toHaveLength(0);
+    });
   });
 
   it("mode popup options toggle the emitted Set and carry the mode color dot", async () => {

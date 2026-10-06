@@ -17,14 +17,17 @@
  *     order), ↑ oldest-first. With a selection the pill just resets; with
  *     none it flips the direction — one button, the arrow states the
  *     order, no separate sort chip;
- *   - a date-range pair (时间段) rides beside the funnel: two hikari
- *     HkDatePicker inputs (from / to, inclusive on the local match day,
- *     cross-linked by min/max so an invalid range can never form). They
- *     narrow the SAME two blocks as the mode picks, which is what makes
- *     the versioned replay archives navigable — the scan lists every
- *     archived subfolder replay now, so a year-plus of history needs a
- *     time window to browse. Session-only by design (see
- *     useReplayListFilter).
+ *   - a date-range pair (时间段) lives INSIDE the popup, under the option
+ *     strip (FilterCategoryChip's default slot): two hikari HkDatePicker
+ *     inputs (from / to, inclusive on the local match day, cross-linked by
+ *     min/max so an invalid range can never form). They narrow the SAME two
+ *     blocks as the mode picks, which is what makes the versioned replay
+ *     archives navigable — the scan lists every archived subfolder replay
+ *     now, so a year-plus of history needs a time window to browse. With a
+ *     window set and no mode picked, the funnel wears the engaged look
+ *     (FilterCategoryChip's `engaged`); the inputs sit behind the popup, so
+ *     an active window must not leave the trigger reading idle.
+ *     Session-only by design (see useReplayListFilter).
  *
  * External picks (session-temporary files from outside the replays folder)
  * stay PINNED above the scanned list; the filter and the sort apply to both
@@ -274,8 +277,8 @@ export function useReplayListFilter(
  * The filter trigger itself: a view over the composable's state (the
  * hosting view owns the state so it can also consume the visible lists).
  * Renders the funnel icon button for the rail head's action row — the
- * popup (mode multi-select + the direction-bearing 全部模式 pill) opens
- * anchored to it.
+ * popup (mode multi-select + the direction-bearing 全部模式 pill + the
+ * date-range pair in the chip's default slot) opens anchored to it.
  */
 export default defineComponent({
   name: "ReplayListFilter",
@@ -318,33 +321,40 @@ export default defineComponent({
     }
 
     return () => (
-      <>
-        <FilterCategoryChip
-          title={t("replay.filter.mode")}
-          allLabel={t("replay.filter.allModes")}
-          options={props.modeOptions}
-          selected={props.selectedModes}
-          open={modeOpen.value}
-          onUpdate:open={(v: boolean) => (modeOpen.value = v)}
-          onToggle={toggleMode}
-          onAll={modeAllClick}
-          dir={props.sortDir}
-          pure
-          icon={<Filter size={14} />}
-          hint={t("replay.filter.modeHint")}
-          renderOptionIcon={(value: string) => (
-            <span
-              class="replay-view__mode-dot"
-              style={{ background: modeColorOfKey(value).color }}
-            />
-          )}
-        />
-        {/* The date-range pair — two hikari date inputs living directly in
-            the action row (each opens its OWN calendar popup; wrapping them
-            in a popover of our own would nest popovers and fight both
-            outside-close contracts). min/max cross-link so an invalid
-            from > to window can never form; each input clears itself. */}
-        <span class="replay-view__date-range">
+      <FilterCategoryChip
+        title={t("replay.filter.mode")}
+        allLabel={t("replay.filter.allModes")}
+        options={props.modeOptions}
+        selected={props.selectedModes}
+        open={modeOpen.value}
+        onUpdate:open={(v: boolean) => (modeOpen.value = v)}
+        onToggle={toggleMode}
+        onAll={modeAllClick}
+        dir={props.sortDir}
+        pure
+        icon={<Filter size={14} />}
+        hint={t("replay.filter.modeHint")}
+        engaged={props.dateFrom !== null || props.dateTo !== null}
+        renderOptionIcon={(value: string) => (
+          <span
+            class="replay-view__mode-dot"
+            style={{ background: modeColorOfKey(value).color }}
+          />
+        )}
+      >
+        {/* The date-range pair — living INSIDE the mode popup (labeled row
+            under the option strip) so the action row stays one square
+            icon-button family. Each picker still opens its OWN calendar
+            popup: it teleports to body level like the panel itself, and
+            the chip's outside-close lets presses inside any open
+            .hk-popover-panel through (FilterCategoryChip's slot
+            contract), so the two never fight. min/max cross-link so an
+            invalid from > to window can never form; each input clears
+            itself. */}
+        <div class="replay-view__pop-dates">
+          <span class="replay-view__pop-dates-label">
+            {t("replay.filter.dateRange")}
+          </span>
           <HkDatePicker
             size="sm"
             modelValue={props.dateFrom}
@@ -359,8 +369,8 @@ export default defineComponent({
             placeholder={t("replay.filter.dateTo")}
             min={props.dateFrom ?? undefined}
           />
-        </span>
-      </>
+        </div>
+      </FilterCategoryChip>
     );
   },
 });

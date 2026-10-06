@@ -13,7 +13,8 @@
     "noMatch": "필터에 일치하는 리플레이가 없습니다.",
     "modeHint": "다중 선택 · '전체 모드'로 초기화, 미선택 시 최신/오래된 순 전환",
     "dateFrom": "시작 날짜",
-    "dateTo": "종료 날짜"
+    "dateTo": "종료 날짜",
+    "dateRange": "기간"
   },
   "external": {
     "tag": "외부",

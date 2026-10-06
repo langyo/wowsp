@@ -1324,8 +1324,9 @@ export default defineComponent({
     const { dataLanguage } = useLanguage();
     const mapLang = computed(() => dataLanguage.value);
     const gameStatus = useGameStatusStore();
-    // Rail filter — mode multi-select + match-time order (persisted); see
-    // ReplayListFilter for the interaction model.
+    // Rail filter — mode multi-select + match-time order (persisted) + a
+    // session-only date window; see ReplayListFilter for the interaction
+    // model.
     const listFilter = useReplayListFilter(parser.list, parser.external);
     /**
      * What the main pane currently shows — a proper little state machine

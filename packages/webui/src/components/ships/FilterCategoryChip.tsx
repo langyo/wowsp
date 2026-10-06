@@ -26,6 +26,15 @@
  * The popup renders through hikari HkPopover: it teleports to body level and
  * positions against the chip button, so an overflow ancestor (the ship
  * picker's HkModal body is a scroll container) can never clip it.
+ *
+ * Hosts that need more controls inside the popup render them through the
+ * DEFAULT SLOT (between the option strip and the hint line — the replay
+ * rail's date-range pair lives there). A nested popup opened from slot
+ * content (an embedded HkDatePicker's calendar also teleports to body)
+ * survives the outside-close: presses inside any open `.hk-popover-panel`
+ * other than this panel's own count as inside, which is safe — an unrelated
+ * popup can never be open alongside, its opening press would have closed
+ * this panel first.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type VNode } from "vue";
 
@@ -83,6 +92,10 @@ export default defineComponent({
     /** 全部…-sort engaged while nothing is picked — the chip wears the
      *  intermediate `--sort` style (sorting without filtering). */
     allSort: { type: Boolean, default: false },
+    /** Engaged look with an empty selection: hosts whose slot content adds
+     *  filter state of its own (the replay date-range pair) report it here
+     *  — the icon anchor must not read idle while a window is set. */
+    engaged: { type: Boolean, default: false },
   },
   emits: {
     "update:open": (_v: boolean) => true,
@@ -91,7 +104,7 @@ export default defineComponent({
      *  or engage/flip the 全部…-sort; the ships-bar contract). */
     all: () => true,
   },
-  setup(props, { emit }) {
+  setup(props, { emit, slots }) {
     // Phone layout signal for the HkPopover sheet dock (sheetOnMobile +
     // scrim-rendering closeOnBackdrop — hikari convention: on phones
     // nothing floats anchored, not even popups over a modal sheet).
@@ -117,6 +130,16 @@ export default defineComponent({
       const target = e.target as Node;
       if (root.value?.contains(target)) return;
       if (panelEl.value?.contains(target)) return;
+      // A popup nested in the default slot (the replay rail's embedded
+      // date pickers open their own HkPopover calendars) teleports to body
+      // level — visible to neither `root` nor `panelEl`. A press inside
+      // any OTHER open .hk-popover-panel therefore belongs to this panel's
+      // own nested content: the only way a second panel can be open at all
+      // is opened from inside this one (an unrelated popup's opening press
+      // would have landed outside and closed this panel first).
+      for (const panel of document.querySelectorAll<HTMLElement>(".hk-popover-panel")) {
+        if (panel !== panelEl.value && panel.contains(target)) return;
+      }
       close();
     }
 
@@ -165,7 +188,7 @@ export default defineComponent({
           class={[
             "ship-filter-bar__chip",
             props.icon ? "ship-filter-bar__chip--icon" : "",
-            props.selected.size
+            props.selected.size || props.engaged
               ? "ship-filter-bar__chip--on"
               : props.allSort
                 ? "ship-filter-bar__chip--sort"
@@ -238,6 +261,9 @@ export default defineComponent({
                 </button>
               ))}
             </div>
+            {/* Slot content rides between the strip and the hint — the
+                replay rail's date-range pair lives here. */}
+            {slots.default?.()}
             <div class="ship-filter-bar__pop-hint">{props.hint ?? t("ships.filter.hintMulti")}</div>
           </div>
         </HkPopover>
