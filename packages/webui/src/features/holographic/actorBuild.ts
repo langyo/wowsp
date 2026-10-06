@@ -42,6 +42,7 @@ import { peakHpOf, resolveMaxHp, encyclopediaHullHealth } from "./shipHp";
 import { ammoOfColor } from "./tactical/shellTypes";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
+import { isScriptedUnitName } from "@/utils/aiNames";
 import type { EntityTrajectory } from "@/api";
 import type { ShipLabel } from "./shipLabel";
 import { parsePostBattle } from "@/features/replay/postBattle";
@@ -496,7 +497,6 @@ export function rebuildActors(ctx: MapInternals) {
         });
     }
 
-    const name = rosterEntry?.name ?? `#${traj.entityId}`;
     const encStore = useEncyclopediaStore();
     const dataLang = useLanguage().dataLanguage.value;
     // Name/tier/type: the WG encyclopedia when it knows the ship, else the
@@ -509,6 +509,15 @@ export function rebuildActors(ctx: MapInternals) {
       shipInfo?.name ??
       shipNameFromModelDb((rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined) ??
       "?";
+    // The map still RENDERS scripted scenario NPCs (their ships really sail
+    // — story-mode flagships, escort waves), but their roster "nickname" is
+    // the raw `IDS_*` text key the client would localize: the floating
+    // label and the follow menu read the ship name instead.
+    const scriptedRoster = rosterEntry != null && isScriptedUnitName(rosterEntry.name);
+    const name =
+      (!scriptedRoster ? rosterEntry?.name : null) ??
+      (shipName !== "?" ? shipName : null) ??
+      `#${traj.entityId}`;
     // Max HP: the arena's starting health of this exact build — the
     // authoritative source (upgrades and event/asymmetric mode scaling are
     // already baked in, and it is always a clean integer). The HP stream's
@@ -527,6 +536,7 @@ export function rebuildActors(ctx: MapInternals) {
       entityId: traj.entityId,
       role,
       name,
+      scripted: scriptedRoster || undefined,
       shipName,
       shipId: (rosterEntry?.shipId ?? traj.kind?.shipId) ?? undefined,
       tier: shipInfo?.tier ?? offline?.tier ?? null,

@@ -23,6 +23,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { RosterStat } from "@/composables/useRosterStats";
 import { gameTabRowKey } from "@/utils/shipClass";
+import { isListedPlayer } from "@/utils/rosterSides";
 import BattleIcon from "@/components/base/BattleIcon";
 import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "./modelLoader";
 import { tierRoman } from "@/features/replay/shipLiveStats";
@@ -184,29 +185,35 @@ export default defineComponent({
      *  tier desc, nation, localized ship name, '[tag]nickname'. */
     const rows = computed<RosterRow[]>(() => {
       const clanTagOf = (n: string) => props.stats.get(n)?.clanTag ?? null;
-      return props.vehicles
-        .map((v): RosterRow => {
-          const st = props.rosterState.get(v.id);
-          const deathTime = st?.deathTime ?? null;
-          const alive = deathTime == null || deathTime > props.time;
-          const id = identityOf(v);
-          return {
-            vehicle: v,
-            shipName: id.name,
-            tier: id.tier,
-            type: id.type,
-            alive,
-            deathTime,
-            kills: props.kills.get(v.id) ?? 0,
-            sortKey: gameTabRowKey(
-              { shipId: v.shipId, name: v.name },
+      return (
+        props.vehicles
+          // Scripted scenario NPCs (story-mode ally flagships and their
+          // `IDS_*` kin) are not players — the scoreboard lists players
+          // only; `:Name:` co-op fills stay.
+          .filter(isListedPlayer)
+          .map((v): RosterRow => {
+            const st = props.rosterState.get(v.id);
+            const deathTime = st?.deathTime ?? null;
+            const alive = deathTime == null || deathTime > props.time;
+            const id = identityOf(v);
+            return {
+              vehicle: v,
+              shipName: id.name,
+              tier: id.tier,
+              type: id.type,
               alive,
-              dataLanguage.value,
-              clanTagOf,
-            ),
-          };
-        })
-        .sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
+              deathTime,
+              kills: props.kills.get(v.id) ?? 0,
+              sortKey: gameTabRowKey(
+                { shipId: v.shipId, name: v.name },
+                alive,
+                dataLanguage.value,
+                clanTagOf,
+              ),
+            };
+          })
+          .sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
+      );
     });
 
     // The relation split holds in operations (行动) too — their rosters

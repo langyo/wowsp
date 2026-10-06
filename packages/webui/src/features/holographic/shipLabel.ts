@@ -16,6 +16,10 @@ export interface ShipLabel {
   shipName: string;
   /** WG shipId (roster/trajectory join) — drives the hull silhouette. */
   shipId?: number;
+  /** Scripted scenario NPC (`IDS_*`/`#Name` roster entry): the label shows
+   *  the ship name, stats lookups sit out, and the kill feed never credits
+   *  it under a raw text key. */
+  scripted?: boolean;
   tier: number | null;
   type: string | null;
   hp: number | null;

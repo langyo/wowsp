@@ -84,6 +84,8 @@ import { foldDamageStats } from "@/api";
 import { parsePostBattle } from "@/features/replay/postBattle";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import type { ResolvedStatsMode } from "@/utils/statView";
+import { splitRosterSides } from "@/utils/rosterSides";
+import { isScriptedUnitName } from "@/utils/aiNames";
 import planeIcon from "./planeIcons";
 import { shipIconUrl } from "./shipIcons";
 import {
@@ -327,6 +329,10 @@ export default defineComponent({
         const results = await Promise.all(
           batch.map(async (it) => {
             if (followStats.value.has(it.entityId)) return null;
+            // Scripted NPCs carry no WG account — their label's "name" is
+            // the ship display name, which could resolve to an unrelated
+            // real player's stats.
+            if (it.scripted) return null;
             try {
               const st = await store.lookup(it.name, realm);
               if (st.hidden || st.winrate == null || st.battles == null) return null;
@@ -402,6 +408,9 @@ export default defineComponent({
     /** Entity id → display label (ship name / player name) for tooltips. */
     const vehicleLabelOf = (entityId: number): string => {
       const v = props.vehicles.find((q) => q.id === entityId);
+      // A scripted NPC without a resolved ship name has only its raw
+      // `IDS_*` text key left — the entity id reads better than that.
+      if (v && isScriptedUnitName(v.name)) return v.shipName ?? String(entityId);
       return v?.shipName ?? v?.name ?? String(entityId);
     };
     /** Enlarged-2D-map viewport: world-space center + zoom (1 = full map,
@@ -426,12 +435,12 @@ export default defineComponent({
     // operations (行动) too — their rosters carry real side semantics
     // (allied escort waves ≤ 1, enemy warships > 1); only the enemy total
     // reads 0 there (the scripted enemy fleet is nobody's scoreboard).
-    const allyTotal = computed(() =>
-      props.vehicles.filter(v => v.relation <= 1).length,
-    );
-    const enemyTotal = computed(() =>
-      props.operation ? 0 : props.vehicles.filter(v => v.relation > 1).length,
-    );
+    // Scripted scenario NPCs count on neither side — the totals read like
+    // the game's own team sizes (story rosters carry e.g. a 7-player team
+    // plus an `IDS_OP_09` flagship NPC).
+    const rosterSides = computed(() => splitRosterSides(props.vehicles, props.operation));
+    const allyTotal = computed(() => rosterSides.value.allies.length);
+    const enemyTotal = computed(() => rosterSides.value.enemies.length);
     // Ships alive = total - sunk count at current time
     const allyAlive = ref(allyTotal.value);
     const enemyAlive = ref(enemyTotal.value);
@@ -516,10 +525,8 @@ export default defineComponent({
           maxHp: st?.maxHp ?? null,
         };
       };
-      const allies = props.vehicles.filter((v) => v.relation <= 1).map(mk);
-      const enemies = (
-        props.operation ? [] : props.vehicles.filter((v) => v.relation > 1)
-      ).map(mk);
+      const allies = rosterSides.value.allies.map(mk);
+      const enemies = rosterSides.value.enemies.map(mk);
       // Ship-size weight: carriers/battleships biggest, subs smallest. Sunk
       // ships form their own group at the outer edge of each side (allies:
       // leftmost, enemies: rightmost); within each group the biggest ships
@@ -896,7 +903,12 @@ export default defineComponent({
           const vehicle = props.vehicles.find((v) => v.id === entityId);
           best = {
             entityId,
-            label: vehicle?.shipName ?? vehicle?.name ?? String(entityId),
+            // Same scripted-NPC rule as vehicleLabelOf: never surface the
+            // raw `IDS_*` text key as a pin label.
+            label:
+              vehicle && isScriptedUnitName(vehicle.name)
+                ? vehicle.shipName ?? String(entityId)
+                : vehicle?.shipName ?? vehicle?.name ?? String(entityId),
             d,
           };
         }
@@ -1541,7 +1553,9 @@ export default defineComponent({
                 x: lbl.x,
                 y: lbl.y,
                 role: lbl.role,
-                name: lbl.name,
+                // Scripted NPCs have no player name — the label's ship slot
+                // already carries their identity.
+                name: lbl.scripted ? "" : lbl.name,
                 shipName: lbl.shipName,
                 tier: lbl.tier,
                 iconUrl:

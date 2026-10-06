@@ -69,6 +69,7 @@ import {
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
 import { gameTabRowKey } from "@/utils/shipClass";
+import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
 import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
 import { shipIconUrl, shipTypeClass } from "@/features/holographic/shipIcons";
 import { tierToRoman } from "@wowsp/holo";
@@ -106,17 +107,17 @@ function modeLabel(
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
  *  relation), single-sided modes (PvE, ops) show the raw count. Operations
  *  keep the relation split available but render the raw count (their
- *  scripted enemy block is nobody's "v" opponent). */
+ *  scripted enemy block is nobody's "v" opponent). Scripted scenario NPCs
+ *  sit out the count — the label reads like the game's own team size. */
 function formatPlayerCount(
-  vehicles: { relation: number }[],
+  vehicles: { relation: number; name: string }[],
   operation = false,
 ): string {
-  if (!operation) {
-    const ally = vehicles.filter((v) => v.relation <= 1).length;
-    const enemy = vehicles.filter((v) => v.relation > 1).length;
-    if (ally > 0 && enemy > 0) return `${ally}v${enemy}`;
+  const { allies, enemies } = splitRosterSides(vehicles, operation);
+  if (!operation && allies.length > 0 && enemies.length > 0) {
+    return `${allies.length}v${enemies.length}`;
   }
-  return t("replay.players", { n: vehicles.length });
+  return t("replay.players", { n: allies.length + enemies.length });
 }
 
 /** Format a `YYYYMMDD[_HHMMSS]` timestamp from the replay filename into a
@@ -346,7 +347,10 @@ const PostBattleFallbackPanel = defineComponent({
       );
     });
     const rows = computed(() =>
-      props.vehicles.map((v) => {
+      // Scripted scenario NPCs (story-mode ally flagships, `IDS_*`/`#Name`)
+      // are not players — the fallback matrix lists players only, matching
+      // the Tab scoreboard.
+      props.vehicles.filter(isListedPlayer).map((v) => {
         const hp =
           (v.shipId != null ? hpByRosterId.value.get(v.id) : undefined) ??
           (v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined);

@@ -99,6 +99,9 @@ pub struct ReplayMetaLite {
     pub own_ship_id: Option<i64>,
     /// The recording player's ship display name, when resolvable.
     pub own_ship_name: Option<String>,
-    /// Number of players in the roster.
+    /// Number of LISTED players in the roster — everyone except the scripted
+    /// scenario NPCs (`IDS_*` / `#Name`); the `:Name:` co-op bot fills count.
+    /// Matches the frontend's player lists (utils/rosterSides): story-mode
+    /// ally flagships are scenario NPCs, not roster players.
     pub player_count: usize,
 }

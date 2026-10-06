@@ -57,6 +57,8 @@ import { careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from
 import { formatEta } from "@/utils/format";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { shipTierOf } from "@/utils/shipClass";
+import { isScriptedUnitName } from "@/utils/aiNames";
+import { isListedPlayer } from "@/utils/rosterSides";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName } from "@/utils/mapNames";
 import {
@@ -169,8 +171,22 @@ export default defineComponent({
     const rows = computed(() => {
       const pb = parsed.value;
       if (!pb) return [];
-      const names = new Map(pb.players.map((p) => [p.accountId, p.name]));
-      return pb.players.map((p) => ({
+      // Killer attribution reads the FULL player map (the scripted NPCs sit
+      // out the rows, but they still sink ships): a scripted killer shows
+      // its ship name — the raw `IDS_*` text key is not a readable name.
+      const names = new Map(
+        pb.players.map((p) => [
+          p.accountId,
+          isScriptedUnitName(p.name)
+            ? (p.shipId != null
+                ? shipNameFromOfflineDb(p.shipId, dataLanguage.value)
+                : null) ?? p.name
+            : p.name,
+        ]),
+      );
+      // The results packet carries the story/operation scripted NPCs as
+      // team members — they are not players and get no matrix row.
+      return pb.players.filter(isListedPlayer).map((p) => ({
         ...p,
         shipName:
           (p.shipId != null ? shipNameFromOfflineDb(p.shipId, dataLanguage.value) : null) ??

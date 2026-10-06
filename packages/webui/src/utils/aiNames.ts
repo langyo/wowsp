@@ -24,3 +24,24 @@ export const AI_NAME = /^(?::.*:|IDS_.*|#.+)$/;
 export function isAiName(name: string): boolean {
   return AI_NAME.test(name);
 }
+
+/**
+ * The scripted-scenario half of `AI_NAME` (text key / `#Name`, WITHOUT the
+ * `:Name:` colon-wrapped co-op bot fills).
+ *
+ * The two halves live different lives in the UI: a `:Name:` bot IS a listed
+ * roster player (co-op fills the missing team slots with them — the game's
+ * own Tab table renders them, so every roster here lists them too, with the
+ * "bot" chip), while a scripted unit is a scenario NPC — the story-mode
+ * flagship escorts (`IDS_OP_09_FLAGMAN_NAME`, `IDS_OP_17_ALLY_FLAGSHIP`),
+ * operation dummy waves, tutorial fleets. The replay viewer treats them as
+ * non-players: every player list filters them out (utils/rosterSides) and
+ * their map labels read the ship name. The LIVE overlay keeps them in its
+ * row inference — the game's Tab table does render them (under localized
+ * names; see overlay/inferredOrder's module docs).
+ */
+export const SCRIPTED_UNIT_NAME = /^(?:IDS_.*|#.+)$/;
+
+export function isScriptedUnitName(name: string): boolean {
+  return SCRIPTED_UNIT_NAME.test(name);
+}

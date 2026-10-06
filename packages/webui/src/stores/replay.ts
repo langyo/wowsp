@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api, type ReplayMeta, type ReplayMetaLite } from "@/api";
+import { isListedPlayer } from "@/utils/rosterSides";
 
 /** Project a parsed replay header into the list-card shape (same fields the
  *  Rust lite reader produces), so externally picked files render with the
@@ -20,7 +21,8 @@ function liteFromMeta(m: ReplayMeta): ReplayMetaLite {
     scriptedUnitCount: m.scriptedUnitCount,
     ownShipId: own?.shipId ?? null,
     ownShipName: own?.shipName ?? null,
-    playerCount: m.vehicles.length,
+    // Listed players only — mirrors the Rust lite reader's count.
+    playerCount: m.vehicles.filter(isListedPlayer).length,
   };
 }
 

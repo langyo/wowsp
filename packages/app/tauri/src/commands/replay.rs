@@ -669,7 +669,15 @@ fn lite_from_raw(
     // block[1]/block[2] — the path is only re-opened when the descriptor
     // carries no `vehicles` array.
     let vehicles = roster_from_raw(std::path::Path::new(&path), &raw);
-    let player_count = vehicles.len();
+    // Listed players only: scripted scenario NPCs (`IDS_*` text keys, `#Name`
+    // — story-mode ally flagships riding relation-1 slots) are not players
+    // and sit out the count, matching the frontend's roster filtering
+    // (utils/rosterSides). The `:Name:` co-op bot fills stay counted — they
+    // really are team slots.
+    let player_count = vehicles
+        .iter()
+        .filter(|v| !is_scripted_unit_nickname(&v.name))
+        .count();
     let (bot_count, scripted_unit_count) =
         vehicles.iter().fold((0u32, 0u32), |(bots, scripted), v| {
             (
@@ -1410,7 +1418,8 @@ mod tests {
         );
         assert_eq!(lite.own_ship_id, Some(3340711376));
         assert_eq!(lite.own_ship_name.as_deref(), Some("langyo"));
-        assert_eq!(lite.player_count, 4);
+        // The `IDS_OP_X` scripted unit sits out; the `:Bot:` fill counts.
+        assert_eq!(lite.player_count, 3);
         assert_eq!(lite.bot_count, 2);
         assert_eq!(lite.scripted_unit_count, 1);
     }
@@ -1431,7 +1440,7 @@ mod tests {
             "playerName langyo pins the recorder when the marker fails"
         );
         assert_eq!(lite.own_ship_name.as_deref(), Some("langyo"));
-        assert_eq!(lite.player_count, 4);
+        assert_eq!(lite.player_count, 3);
     }
 
     /// A Lesta container missing its roster block entirely (fewer blocks
@@ -1608,6 +1617,9 @@ mod tests {
         assert_eq!(meta.scripted_unit_count, 4);
         assert_eq!(lite.bot_count, 5);
         assert_eq!(lite.scripted_unit_count, 4);
+        // Listed players only: the human recorder plus the `:Revel:` co-op
+        // fill; the four scripted units sit out.
+        assert_eq!(lite.player_count, 2);
 
         // Plain co-op: `:Name:` bots only — scripted count stays zero.
         let coop = r#"{"matchGroup":"pve","scenario":"domination_3point","vehicles":[

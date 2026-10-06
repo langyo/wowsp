@@ -17,6 +17,7 @@ import { clampXZ } from "./sceneUtils";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite } from "./screenOverlays";
 import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./modelLoader";
+import { isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
 import { updateLabelPositions } from "./labelOverlay";
@@ -47,6 +48,21 @@ const achievementNames = achievementNamesRaw as Record<
 function rosterById(ctx: MapInternals, pid: number): VehicleEntry | undefined {
   return ctx.props.vehicles.find((v) => v.id === pid);
 }
+/** Feed sender display name: the roster nickname — except scripted scenario
+ *  NPCs, whose raw `IDS_*` text key reads as the ship's display name. */
+function senderNameOf(ctx: MapInternals, roster: VehicleEntry | undefined, pid: number): string {
+  if (!roster) return `#${pid}`;
+  if (!isScriptedUnitName(roster.name)) return roster.name;
+  const encStore = useEncyclopediaStore();
+  const dataLang = useLanguage().dataLanguage.value;
+  const info = ctx.props.encyclopedia.get(roster.shipId) as ShipInfo | undefined;
+  return (
+    (info ? encStore.shipDisplayName(info) : null) ??
+    shipNameFromOfflineDb(roster.shipId, dataLang) ??
+    shipNameFromModelDb(roster.shipId) ??
+    `#${pid}`
+  );
+}
 /** Push one ctx.feed entry (newest first) and schedule its expiry. */
 function pushFeed(ctx: MapInternals, entry: FeedEntry) {
   ctx.feed.value.unshift(entry);
@@ -69,7 +85,7 @@ function advanceEventFeed(ctx: MapInternals, t: number) {
     pushFeed(ctx, {
       kind: "chat",
       id: ++ctx.feedSeq,
-      sender: roster?.name ?? `#${c.playerId}`,
+      sender: senderNameOf(ctx, roster, c.playerId),
       enemy: enemyOf(roster),
       message: c.message,
     });
@@ -84,7 +100,7 @@ function advanceEventFeed(ctx: MapInternals, t: number) {
     pushFeed(ctx, {
       kind: "achievement",
       id: ++ctx.feedSeq,
-      sender: roster?.name ?? `#${a.playerId}`,
+      sender: senderNameOf(ctx, roster, a.playerId),
       enemy: enemyOf(roster),
       name:
         bundle?.names[dataLang] ??
@@ -221,15 +237,41 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           }
           if (ctx.pbCache?.players && who) {
             const vn = who.trim().toLowerCase();
-            const victim = ctx.pbCache.players.find(
-              (p) => (p.name ?? "").trim().toLowerCase() === vn,
-            );
+            // A scripted NPC victim sails under its SHIP name on the map
+            // (its roster nickname is the raw `IDS_*` text key), so the
+            // display-name match could grab a HUMAN who happens to share
+            // the ship's name — scripted victims join through their roster
+            // entry's RAW nickname instead, with the shipId only as the
+            // last resort (escort waves share a shipId, so that join is
+            // ambiguous whenever two of them sank).
+            const veh = ctx.rosterAssignments.get(entityId);
+            let victim = label?.scripted
+              ? undefined
+              : ctx.pbCache.players.find(
+                  (p) => (p.name ?? "").trim().toLowerCase() === vn,
+                );
+            if (!victim && veh && isScriptedUnitName(veh.name)) {
+              const rn = veh.name.trim().toLowerCase();
+              victim = ctx.pbCache.players.find(
+                (p) => (p.name ?? "").trim().toLowerCase() === rn,
+              );
+            }
+            if (!victim && label?.scripted && label.shipId != null) {
+              victim = ctx.pbCache.players.find(
+                (p) => p.shipId === label.shipId && isScriptedUnitName(p.name ?? ""),
+              );
+            }
             if (victim?.killerId != null) {
               const killer = ctx.pbCache.players.find(
                 (p) => p.accountId === victim.killerId,
               );
-              killerName = killer?.name ?? null;
               killerShipId = killer?.shipId ?? null;
+              // A scripted NPC killer has no readable nickname — the card's
+              // ship slot carries it; a raw `IDS_*` key never shows.
+              killerName =
+                killer && !isScriptedUnitName(killer.name ?? "")
+                  ? killer.name
+                  : null;
             }
           }
           if (killerShipId != null) {
@@ -248,7 +290,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           ctx.feed.value.unshift({
             kind: "kill",
             id: feedId,
-            text: who,
+            // A scripted NPC victim already shows its ship name in the
+            // card's ship slot — an extra name slot would repeat it.
+            text: label?.scripted ? "" : who,
             shipName: label?.shipName ?? "",
             shipType: label?.type ?? null,
             killerShipName,

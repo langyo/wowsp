@@ -62,7 +62,11 @@ export default defineComponent({
           ].join(" ")}
           style={{ left: `${l.x}px`, top: `${l.y}px` }}
         >
-          <span class="holo-label__name" title={l.name}>{l.name}</span>
+          {/* Empty name (scripted scenario NPCs sail under their ship name
+              only) renders nothing — not a blank flex row. */}
+          {l.name ? (
+            <span class="holo-label__name" title={l.name}>{l.name}</span>
+          ) : null}
           {l.shipName ? (
             <span class="holo-label__ship">
               {icon.src.value ? (

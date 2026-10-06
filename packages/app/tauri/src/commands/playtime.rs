@@ -567,23 +567,37 @@ struct BattleCache {
     entries: BTreeMap<String, BattleCacheEntry>,
 }
 
+/// Bump when a cached parse's SEMANTICS change (not on every field added —
+/// `#[serde(default)]` heals those). v2: `player_count` counts listed
+/// players only (scripted scenario NPCs sit out), so v1 caches that carry
+/// NPC-inclusive counts must re-parse.
+const BATTLES_CACHE_VERSION: u32 = 2;
+
 impl Default for BattleCache {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: BATTLES_CACHE_VERSION,
             entries: BTreeMap::new(),
         }
     }
 }
 
 /// Load the cache; an unreadable or corrupt file answers empty (a broken
-/// cache only costs a re-parse, never a failed command).
+/// cache only costs a re-parse, never a failed command). A version mismatch
+/// discards just as cheaply — the entries re-parse on the next scan.
 fn load_battle_cache() -> BattleCache {
     match super::appdata::read_appdata_json(BATTLES_CACHE_FILE) {
-        Ok(Some(raw)) => serde_json::from_str(&raw).unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "playtime battle cache unreadable — rescanning");
-            BattleCache::default()
-        }),
+        Ok(Some(raw)) => match serde_json::from_str::<BattleCache>(&raw) {
+            Ok(cache) if cache.version == BATTLES_CACHE_VERSION => cache,
+            Ok(_) => {
+                tracing::info!("playtime battle cache version stale — rescanning");
+                BattleCache::default()
+            },
+            Err(e) => {
+                tracing::warn!(error = %e, "playtime battle cache unreadable — rescanning");
+                BattleCache::default()
+            },
+        },
         _ => BattleCache::default(),
     }
 }

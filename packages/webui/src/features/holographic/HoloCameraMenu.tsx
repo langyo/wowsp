@@ -113,9 +113,14 @@ export default defineComponent({
                         {item.maxHp != null ? ` · ${Math.round(item.maxHp).toLocaleString()} HP` : ""}
                       </span>
                     </span>
-                    <span class="holo-map__cam-name">{item.name}</span>
+                    {/* Scripted NPCs have no player name (their label name
+                        IS the ship name) and no stats — keep the row to a
+                        single identity and an empty stats slot. */}
+                    {item.scripted ? null : (
+                      <span class="holo-map__cam-name">{item.name}</span>
+                    )}
                     <span class="holo-map__cam-stats">
-                      {props.followStats.get(item.entityId) ?? "…"}
+                      {item.scripted ? "" : (props.followStats.get(item.entityId) ?? "…")}
                     </span>
                   </button>
                 ))}
