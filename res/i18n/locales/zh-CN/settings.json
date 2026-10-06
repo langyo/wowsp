@@ -219,7 +219,7 @@
   "resUpdateLater": "稍后",
   "wallpaperOverlay": "遮罩不透明度",
   "uiOpacity": "界面不透明度",
-  "uiOpacityHint": "统一调节所有玻璃面板：80% 为默认观感（微微透出背景），调低更透，调高让面板在花哨背景下更实。",
+  "uiOpacityHint": "统一调节所有玻璃面板：95% 为默认观感（微微透出背景），调低更透，调高让面板在花哨背景下更实。",
   "pairingPinCopy": "复制配对码",
   "pairingPinCopied": "配对码已复制到剪贴板",
   "dataSourcesTitle": "动态数据源",

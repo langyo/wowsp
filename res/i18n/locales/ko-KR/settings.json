@@ -219,7 +219,7 @@
   "resUpdateLater": "나중에",
   "wallpaperOverlay": "오버레이 불투명도",
   "uiOpacity": "UI 불투명도",
-  "uiOpacityHint": "모든 글래스 표면을 한 번에 조절합니다. 80%가 기본 모습(배경이 은은히 비침)이며, 낮추면 더 보이고 높이면 패널이 진해집니다.",
+  "uiOpacityHint": "모든 글래스 표면을 한 번에 조절합니다. 95%가 기본 모습(배경이 은은히 비침)이며, 낮추면 더 보이고 높이면 패널이 진해집니다.",
   "pairingPinCopy": "코드 복사",
   "pairingPinCopied": "코드가 클립보드에 복사되었습니다",
   "dataSourcesTitle": "동적 데이터 소스",

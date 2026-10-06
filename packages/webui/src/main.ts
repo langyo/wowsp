@@ -6,6 +6,7 @@ import router from "@/router";
 import { i18n, initLocaleMessages } from "@/i18n";
 import { uiLocaleReady } from "@/i18n/useLanguage";
 import { bootstrap } from "./bootstrap";
+import { runStartupMigrations } from "./migrations/definitions";
 import { initAnalytics, trackPageView } from "@/utils/analytics";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
@@ -21,6 +22,10 @@ import "virtual:uno.css";
  * bootstrap() runs the shared global hooks (viewport policy, brand themes +
  * hikari theme/font init, deep-link theme forcing, hikari i18n seeding).
  */
+// One-time migrations (src/migrations): BEFORE bootstrap() — actions may
+// rewrite stored slots the preference modules hydrate at import — and
+// while `wowsp-last-run-version` still holds the previous run's version.
+runStartupMigrations();
 bootstrap();
 // Google Analytics (Tauri shell + release only, see utils/analytics).
 initAnalytics();

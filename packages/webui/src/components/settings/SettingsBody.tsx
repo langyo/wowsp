@@ -1158,11 +1158,11 @@ export default defineComponent({
 
             {/* UI surface opacity — the chrome-side twin of the wallpaper
                 overlay dial above: one multiplier over every translucent
-                surface in the app (theme/uiOpacityPreference). 80% is the
-                default (20% clearer than fully solid); below it the glass
-                clears further, above it panels solidify over busy ones
-                (alpha caps at fully opaque). Applies live — the settings
-                window itself responds while dragging. */}
+                surface in the app (theme/uiOpacityPreference). 95% is the
+                default (a hair clearer than fully solid); below it the
+                glass clears further, above it panels solidify over busy
+                ones (alpha caps at fully opaque). Applies live — the
+                settings window itself responds while dragging. */}
             <HkSettingsSub title={t("settings.uiOpacity")}>
               <div class="settings-modal__dpi-row">
                 <HkSlider

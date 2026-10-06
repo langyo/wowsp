@@ -219,7 +219,7 @@
   "resUpdateLater": "後で",
   "wallpaperOverlay": "オーバーレイの不透明度",
   "uiOpacity": "UIの不透明度",
-  "uiOpacityHint": "すべてのガラス面を一括で調整します。80%が既定の見た目（背景がかすかに透けます）で、下げるとさらに透け、上げるとパネルが濃くなります。",
+  "uiOpacityHint": "すべてのガラス面を一括で調整します。95%が既定の見た目（背景がかすかに透けます）で、下げるとさらに透け、上げるとパネルが濃くなります。",
   "pairingPinCopy": "コードをコピー",
   "pairingPinCopied": "コードをクリップボードにコピーしました",
   "dataSourcesTitle": "動的データソース",

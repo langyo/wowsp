@@ -48,11 +48,11 @@ html.s-theme-transitioning *::after {
   --blur-lg: 24px;
   /* UI surface opacity dial (uiOpacityPreference.ts writes the inline
      override on <html>): one multiplier over every translucent surface in
-     the app. 0.8 = the shipped default — 20% clearer than the fully-solid
-     paint, so the wallpaper reads faintly under every UI element; the
-     glass family rescales together around it. See the bridge section
-     below the scrim rule. */
-  --ui-opacity: 0.8;
+     the app. 0.95 = the shipped default — a hair clearer than the
+     fully-solid paint, so the wallpaper still ghosts under every UI
+     element; the glass family rescales together around it. See the bridge
+     section below the scrim rule. */
+  --ui-opacity: 0.95;
 
   /* Z-index hierarchy */
   --z-base: 0;
@@ -283,8 +283,8 @@ html[data-wallpaper-art="true"] body::before {
 /* === UI surface opacity dial — hikari bridge ==============================
    The chrome-side twin of the wallpaper overlay scrim above: every
    translucent surface multiplies its shipped alpha by --ui-opacity
-   (default 0.8 — the shipped glass sits 20% clearer than fully solid;
-   min-capped at fully opaque), restated here for the hikari-owned
+   (default 0.95 — the shipped glass sits a hair clearer than fully
+   solid; min-capped at fully opaque), restated here for the hikari-owned
    surfaces wowsp has no SCSS of its own for. Hikari's aggregate loads
    BEFORE theme.scss (main.ts import order), so an equal-specificity
    rule in this file wins the cascade. Fully opaque surfaces (stats
@@ -311,8 +311,8 @@ html[data-wallpaper-art="true"] body::before {
 
 /* Desktop modals: hikari's default is the OPAQUE --hi-color-surface with
    no backdrop blur. Restated at base 100% so the dial rescales them like
-   every other glass surface — at the 80% default the panel rests as
-   80%-alpha glass (no blur); dragging below the default turns it clearer,
+   every other glass surface — at the 95% default the panel rests as
+   95%-alpha glass (no blur); dragging below the default turns it clearer,
    and the blur token (a no-op behind an opaque fill) kicks in there to
    keep that glass readable. The blur is keyed to the [data-ui-glass]
    marker uiOpacityPreference.ts sets only below the default percent, so
@@ -327,12 +327,12 @@ html[data-wallpaper-art="true"] body::before {
        scrolled content never slides through the whitespace. That default
        assumes an OPAQUE frame: over this glass the cover re-paints the
        same translucent fill ON TOP of the already-painted body, and the
-       stacked alpha (0.8 over 0.8 ≈ 0.96) surfaces as two visibly denser
-       24px bands above and below the settings shell. The settings body
-       never scrolls anyway (the host contract keeps the shell fitting),
-       and no wowsp modal relies on the mask — let the padding read as the
-       plain glass it is. Scoped beside the bg re-theme; phone sheets stay
-       opaque, so their covers are invisible either way. */
+       stacked alpha (0.95 over 0.95 ≈ 0.998) surfaces as two visibly
+       denser 24px bands above and below the settings shell. The settings
+       body never scrolls anyway (the host contract keeps the shell
+       fitting), and no wowsp modal relies on the mask — let the padding
+       read as the plain glass it is. Scoped beside the bg re-theme; phone
+       sheets stay opaque, so their covers are invisible either way. */
     --hk-scroll-pin-cover-bg: transparent;
   }
   :root[data-ui-glass] {

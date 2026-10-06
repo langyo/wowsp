@@ -219,7 +219,7 @@
   "resUpdateLater": "Plus tard",
   "wallpaperOverlay": "Opacité du voile",
   "uiOpacity": "Opacité de l’interface",
-  "uiOpacityHint": "Un seul réglage pour toutes les surfaces vitrées : 80 % est l’apparence par défaut (l’arrière-plan se devine derrière) ; en dessous il transparaît davantage, au-dessus les panneaux se densifient.",
+  "uiOpacityHint": "Un seul réglage pour toutes les surfaces vitrées : 95 % est l’apparence par défaut (l’arrière-plan se devine derrière) ; en dessous il transparaît davantage, au-dessus les panneaux se densifient.",
   "pairingPinCopy": "Copier le code",
   "pairingPinCopied": "Code copié dans le presse-papiers",
   "dataSourcesTitle": "Sources de données dynamiques",
