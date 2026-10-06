@@ -12,8 +12,8 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
-  resolveShipModelForEntry,
-  resolveShipModelByShipId,
+  resolveShipModelCandidatesForEntry,
+  shipModelUrlCandidates,
   shipNameFromModelDb,
   shipNameFromOfflineDb,
   shipOfflineEntry,
@@ -399,11 +399,15 @@ export function rebuildActors(ctx: MapInternals) {
     scene.add(marker);
     ctx.shipMarkers.push(marker);
 
-    const modelUrl =
-      resolveShipModelForEntry(shipInfo, encSpecs) ??
-      (rosterEntry?.shipId != null
-        ? resolveShipModelByShipId(rosterEntry.shipId)
-        : null);
+    // Ordered candidate chain: the entry's own model (ship chain + tier/
+    // nation/type substitute + encyclopedia last resort), then the roster
+    // shipId's own chain — the encyclopedia may not know roster-only ships
+    // at all. Deduped, order preserved; loadGlbModel walks it and only a
+    // total failure drops through to the same-role clone pool below.
+    const modelUrl = [
+      ...resolveShipModelCandidatesForEntry(shipInfo, encSpecs),
+      ...(rosterEntry?.shipId != null ? shipModelUrlCandidates(rosterEntry.shipId) : []),
+    ].filter((u, i, all) => all.indexOf(u) === i);
     // The marker's cone stays as-is until a model arrives; ships whose
     // own GLB is missing/unloadable still get a hull — a same-role model
     // already loaded for another ship, cloned and re-tinted — instead of
@@ -471,7 +475,7 @@ export function rebuildActors(ctx: MapInternals) {
         }
       }
     };
-    if (!modelUrl) {
+    if (modelUrl.length === 0) {
       console.warn(`[HolographicMap] no model URL for entity ${traj.entityId}`
         + ` (ship: ${shipInfo?.name ?? "?"}, shipId: ${rosterEntry?.shipId}, encyclopedia: ${encSpecs.length} entries)`);
       if (!buildFromLoadedPool()) ctx.modelWaiters.push({ marker, traj });

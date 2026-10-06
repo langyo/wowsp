@@ -12,6 +12,7 @@ import {
   resolveShipModelByShipId,
   resolvePropModelUrl,
   shipDescriptionFromOfflineDb,
+  shipModelStemCandidates,
 } from "./modelLoader";
 
 // A shipId + model stem pair straight from ship_models.json (tracked data).
@@ -67,6 +68,61 @@ describe("shipDescriptionFromOfflineDb", () => {
     expect(shipDescriptionFromOfflineDb("999999999", "zh-CN")).toBeNull();
     expect(shipDescriptionFromOfflineDb(YAMATO_ID, "xx-XX")).toBeNull();
     expect(shipDescriptionFromOfflineDb(undefined, "zh-CN")).toBeNull();
+  });
+});
+
+// ── shipModelStemCandidates: the ordered per-ship candidate chain ────────
+// The Lesta (RU realm) colour/clone series names its ships "<Base Ship> CLR"
+// ("Schlieffen CLR") but the model pack bakes only the base hull — the chain
+// must end with the suffix-stripped stem so the base GLB is reachable.
+describe("shipModelStemCandidates", () => {
+  it("lists the ship_models index then baseName for a mapped ship", () => {
+    // Schlieffen straight from the tracked data: index "PGSB210",
+    // baseName "Schlieffen".
+    expect(shipModelStemCandidates(4074714928)).toEqual(["PGSB210", "Schlieffen"]);
+  });
+
+  it("appends the CLR-stripped base for a Lesta CLR clone", () => {
+    // A shipId both DBs are missing (the actual Lesta-clone row) with the
+    // localized display name: the chain is the display name, then the base.
+    expect(shipModelStemCandidates("999999999", "Schlieffen CLR")).toEqual([
+      "Schlieffen CLR",
+      "Schlieffen",
+    ]);
+  });
+
+  it("matches the CLR suffix case-insensitively", () => {
+    expect(shipModelStemCandidates("999999999", "schlieffen clr")).toEqual([
+      "schlieffen clr",
+      "schlieffen",
+    ]);
+  });
+
+  it("leaves names without the CLR suffix alone (no duplicate append)", () => {
+    expect(shipModelStemCandidates("999999999", "Schlieffen")).toEqual(["Schlieffen"]);
+  });
+
+  it("dedupes repeated stems, keeping the first position", () => {
+    // fallbackName equal to the ship_models index: one entry only…
+    expect(shipModelStemCandidates(4074714928, "PGSB210")).toEqual([
+      "PGSB210",
+      "Schlieffen",
+    ]);
+    // …and a REAL Lesta clone row (N. Carolina CLR): index "PASB808",
+    // baseName "North", offline-DB English name "N. Carolina CLR" (a
+    // case-insensitive duplicate of the display name), CLR strip appends
+    // "N. Carolina" last.
+    expect(shipModelStemCandidates(3447666672, "N. Carolina CLR")).toEqual([
+      "PASB808",
+      "North",
+      "N. Carolina CLR",
+      "N. Carolina",
+    ]);
+  });
+
+  it("returns an empty chain for a ship with no data at all", () => {
+    expect(shipModelStemCandidates("999999999")).toEqual([]);
+    expect(shipModelStemCandidates(undefined)).toEqual([]);
   });
 });
 

@@ -8,9 +8,13 @@
  * Tauri shell downloads from GitHub Releases (`res-latest`) into
  * `%LOCALAPPDATA%/WoWSP/models/` on first launch. When the pack cache is
  * wired, URLs are constructed OPTIMISTICALLY for any stem — a build without
- * bundled GLBs must still serve models from the runtime cache; a stem the
- * pack doesn't have 404s into the per-ship fallback chain (substitute hull →
- * placeholder), exactly like any other load failure.
+ * bundled GLBs must still serve models from the runtime cache. A ship never
+ * resolves to a single optimistic URL: it expands into an ORDERED CANDIDATE
+ * CHAIN of stems (`ship_models.json` index → baseName → display name →
+ * offline-DB English name → CLR-suffix-stripped base), and `loadGlbModel`
+ * walks the chain until one candidate fetches AND parses; only when every
+ * candidate fails does the caller's per-ship fallback take over (substitute
+ * hull → placeholder), exactly like any other load failure.
  *
  * MOBILE (phone app build): the pack ships inside the APK's assets, and the
  * webui build keeps the GLBs (WOWSP_MOBILE_BUNDLE=1 skips prune-baked-glb).
@@ -181,36 +185,73 @@ export function resolveShipModelUrl(
   return null;
 }
 
-export function resolveShipModelByShipId(
+/**
+ * Ordered model-stem candidates for a ship: the `ship_models.json` index →
+ * baseName → the (possibly localized) display name → the offline DB's
+ * English name — then, last, the base behind a Lesta "CLR" suffix. Lesta's
+ * colour/clone series names ships "<Base Ship> CLR" ("Schlieffen CLR") while
+ * the model pack bakes only the base hull, so the suffix-stripped stem
+ * closes the chain. Pure data function (no model-pack wiring) so it stays
+ * unit-testable; dedupes case-insensitively, preserving first-seen casing.
+ */
+export function shipModelStemCandidates(
   shipId: number | string | undefined,
   fallbackName?: string,
-): string | null {
+): string[] {
+  const stems: string[] = [];
+  const push = (stem: string | null | undefined): void => {
+    const s = stem?.trim();
+    if (!s) return;
+    if (stems.some((x) => x.toLowerCase() === s.toLowerCase())) return;
+    stems.push(s);
+  };
   if (shipId != null) {
     const entry = shipModelMap[String(shipId)];
-    if (entry?.index) {
-      const url = shipModelUrl(entry.index);
-      if (url) return url;
-    }
-    if (entry?.baseName) {
-      const url = shipModelUrl(entry.baseName);
-      if (url) return url;
-    }
+    push(entry?.index);
+    push(entry?.baseName);
   }
   // Direct name lookup bypasses ship_models.json (handles ships not yet
   // mapped, or custom skins whose GLB filename matches the ship name).
-  if (fallbackName) {
-    const url = shipModelUrl(fallbackName);
-    if (url) return url;
-  }
+  push(fallbackName);
   // GLB filenames are English stems — a localized display name (the
   // encyclopedia store overlays names per the data-language setting) never
   // matches. Try the offline DB's English name before giving up.
   const english = shipNameFromOfflineDb(shipId, "en-US");
-  if (english) {
-    const url = shipModelUrl(english);
-    if (url) return url;
+  push(english);
+  for (const name of [fallbackName, english]) {
+    const trimmed = name?.trim();
+    if (trimmed && /\s+clr$/i.test(trimmed)) push(trimmed.replace(/\s+clr$/i, ""));
   }
-  return null;
+  return stems;
+}
+
+/** Model URL for every stem candidate, in order. Optimistic pack-cache URLs
+ *  are included per stem — availability is settled at LOAD time by the
+ *  chain-walking `loadGlbModel`, not here. */
+export function shipModelUrlCandidates(
+  shipId: number | string | undefined,
+  fallbackName?: string,
+): string[] {
+  const urls: string[] = [];
+  for (const stem of shipModelStemCandidates(shipId, fallbackName)) {
+    const url = shipModelUrl(stem);
+    if (url) urls.push(url);
+  }
+  return urls;
+}
+
+/** Armor GLB chain: the `*_armor.glb` sibling of every hull candidate. */
+export function shipArmorUrlCandidates(
+  shipId: number | string | undefined,
+): string[] {
+  return shipModelUrlCandidates(shipId).map((url) => url.replace(/\.glb$/, "_armor.glb"));
+}
+
+export function resolveShipModelByShipId(
+  shipId: number | string | undefined,
+  fallbackName?: string,
+): string | null {
+  return shipModelUrlCandidates(shipId, fallbackName)[0] ?? null;
 }
 
 /** Ship display name from the baked model DB (ship_models.json). `baseName`
@@ -510,22 +551,43 @@ export function resolveFallbackModel(
   return firstUrl(match(8, "usa", "cruiser"));
 }
 
+/**
+ * Ordered model-URL candidates for a holographic-map entry: the ship's own
+ * chain, then the tier/nation/type substitute hull, then up to four
+ * encyclopedia hulls as the last resort. The marker loader walks the chain;
+ * only when every candidate fails does the same-role clone pool take over.
+ */
+export function resolveShipModelCandidatesForEntry(
+  ship: ShipModelSpec | null | undefined,
+  encyclopedia: ShipModelSpec[],
+): string[] {
+  const urls: string[] = [];
+  const push = (url: string | null): void => {
+    if (url && !urls.includes(url)) urls.push(url);
+  };
+  if (ship) {
+    for (const url of shipModelUrlCandidates(ship.shipId)) push(url);
+    push(resolveFallbackModel(ship, encyclopedia));
+  }
+  // Ultimate fallback: any model in the encyclopedia (capped — these are
+  // arbitrary hulls and a handful of attempts already beat a bare cone).
+  let extra = 0;
+  for (const s of encyclopedia) {
+    if (extra >= 4) break;
+    const url = resolveExact(s);
+    if (url) {
+      push(url);
+      extra++;
+    }
+  }
+  return urls;
+}
+
 export function resolveShipModelForEntry(
   ship: ShipModelSpec | null | undefined,
   encyclopedia: ShipModelSpec[],
 ): string | null {
-  if (ship) {
-    const exact = resolveExact(ship);
-    if (exact) return exact;
-    const fallback = resolveFallbackModel(ship, encyclopedia);
-    if (fallback) return fallback;
-  }
-  // Ultimate fallback: any model in the encyclopedia.
-  for (const s of encyclopedia) {
-    const url = resolveExact(s);
-    if (url) return url;
-  }
-  return null;
+  return resolveShipModelCandidatesForEntry(ship, encyclopedia)[0] ?? null;
 }
 
 // ── GLTF loading ──────────────────────────────────────────────────────────
@@ -651,34 +713,60 @@ function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
   return buffer;
 }
 
-export function loadGlbModel(url: string): Promise<THREE.Group> {
+/** One chain step: fetch (with the embedded-copy fallback and payload
+ *  validation) → NUL-padding fix → GLTFLoader parse. Throws with the
+ *  candidate-specific reason so the chain wrapper can aggregate the misses. */
+async function loadGlbFromUrl(url: string): Promise<THREE.Group> {
   if (import.meta.env.DEV) console.log("[modelLoader] loading:", url);
-  return fetchModelResource(url)
-    .then((resp) => {
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
-      return resp.arrayBuffer();
-    })
-    .then((raw) => {
-      const fixed = fixGlbPadding(raw);
-      const blob = new Blob([fixed], { type: "model/gltf-binary" });
-      const blobUrl = URL.createObjectURL(blob);
-      return new Promise<THREE.Group>((resolve, reject) => {
-        getLoader().load(
-          blobUrl,
-          (gltf) => {
-            URL.revokeObjectURL(blobUrl);
-            if (import.meta.env.DEV) console.log("[modelLoader] loaded:", url);
-            resolve(gltf.scene);
-          },
-          undefined,
-          (err) => {
-            URL.revokeObjectURL(blobUrl);
-            console.error("[modelLoader] failed:", url, err);
-            reject(err);
-          },
-        );
-      });
-    });
+  const resp = await fetchModelResource(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
+  const raw = await resp.arrayBuffer();
+  const fixed = fixGlbPadding(raw);
+  const blob = new Blob([fixed], { type: "model/gltf-binary" });
+  const blobUrl = URL.createObjectURL(blob);
+  return new Promise<THREE.Group>((resolve, reject) => {
+    getLoader().load(
+      blobUrl,
+      (gltf) => {
+        URL.revokeObjectURL(blobUrl);
+        if (import.meta.env.DEV) console.log("[modelLoader] loaded:", url);
+        resolve(gltf.scene);
+      },
+      undefined,
+      (err) => {
+        URL.revokeObjectURL(blobUrl);
+        console.error("[modelLoader] failed:", url, err);
+        reject(err);
+      },
+    );
+  });
+}
+
+/**
+ * Load a GLB from a single URL, or walk an ordered candidate chain: the
+ * first candidate that fetches AND parses into a THREE.Group wins; a fetch
+ * miss (404 / SPA-fallback HTML / transport error) or a GLTF parse failure
+ * steps to the next candidate. Only when every candidate fails does this
+ * throw one aggregated error listing each miss. A single-string input keeps
+ * its previous behavior (including the error message) unchanged.
+ */
+export async function loadGlbModel(url: string | string[]): Promise<THREE.Group> {
+  if (typeof url === "string") return loadGlbFromUrl(url);
+  if (url.length === 0) {
+    throw new Error("no usable source for an empty model URL chain");
+  }
+  if (url.length === 1) return loadGlbFromUrl(url[0]);
+  const misses: string[] = [];
+  for (const candidate of url) {
+    try {
+      return await loadGlbFromUrl(candidate);
+    } catch (e) {
+      const reason = (e as Error)?.message ?? String(e);
+      misses.push(`${candidate}: ${reason}`);
+      console.warn(`[modelLoader] ${candidate} failed (${reason}), trying next candidate`);
+    }
+  }
+  throw new Error(`no usable source for ${url.join(", ")} (${misses.join("; ")})`);
 }
 
 export function hasShipModels(): boolean {

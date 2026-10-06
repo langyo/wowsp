@@ -16,7 +16,7 @@ import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
 import { HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { useImage } from "@wowsp/holo";
-import { isModelPackReady, initModelPack, resolveShipModelByShipId, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
+import { isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
@@ -56,9 +56,12 @@ export interface PlaneModelOption {
  * (bow / midship / stern / deck / waterline), used by the WeaponBar to focus
  * a weapon module. The transition is a hand-rolled eased tween (no GSAP).
  *
- * The ship GLB is resolved via `resolveShipModelByShipId`, which follows the
- * skin→base redirect in `ship_models.json` — so ARP/AZUR/Black variants reuse
- * their base ship's model.
+ * The ship GLB is resolved via `shipModelUrlCandidates`, an ordered chain
+ * (ship_models index → baseName → display name → offline-DB English name →
+ * CLR-suffix-stripped base, then the tier/nation/type substitute hull) that
+ * `loadGlbModel` walks until one candidate loads — so ARP/AZUR/Black
+ * variants reuse their base ship's model via the skin→base redirect in
+ * `ship_models.json`, and Lesta "CLR" clones land on their base hull.
  */
 
 /** Ship regions the camera can focus on (relative to model bbox). */
@@ -468,12 +471,14 @@ export default defineComponent({
       const armorSc = new THREE.Group();
       armorSc.name = "armor-scene";
 
-      // Load the pre-baked armor GLB (per-vertex coloured from game data).
+      // Load the pre-baked armor GLB (per-vertex coloured from game data) —
+      // walked as a candidate chain like the hull, so a stem the pack lacks
+      // falls through to the next candidate before the heuristic plates.
       if (props.ship) {
-        const armorUrl = resolveShipModelByShipId(props.ship.shipId, undefined)?.replace(/\.glb$/, "_armor.glb") ?? null;
-        if (armorUrl) {
+        const armorUrls = shipArmorUrlCandidates(props.ship.shipId);
+        if (armorUrls.length > 0) {
           try {
-            const armorModel = await loadGlbModel(armorUrl);
+            const armorModel = await loadGlbModel(armorUrls);
             // Superseded mid-load (toggle / rebuild / teardown): the newer
             // sync owns the scene — drop this load, touching nothing.
             if (gen !== armorSyncGen) {
@@ -1384,27 +1389,29 @@ export default defineComponent({
       busyStart();
       errorMsg.value = null;
       try {
-        let url = resolveShipModelByShipId(ship.shipId, ship.name);
-        // Fallback: try to match a model of the same tier/nation/type if no
-        // exact model exists for this ship. This lets the holographic stage
-        // show a similar hull rather than a blank viewport.
-        if (!url) {
-          const encyclopedia = useEncyclopediaStore();
-          const spec: ShipModelSpec = {
-            shipId: ship.shipId,
-            tier: ship.tier,
-            nation: ship.nation,
-            type: ship.type,
-          };
-          const pool: ShipModelSpec[] = encyclopedia.ships.map((s) => ({
-            shipId: s.shipId,
-            tier: s.tier,
-            nation: s.nation,
-            type: s.type,
-          }));
-          url = resolveFallbackModel(spec, pool);
-        }
-        if (!url) {
+        // Ordered candidate chain: ship_models index → baseName → display
+        // name → offline-DB English name → CLR-stripped base. The substitute
+        // hull is appended UNCONDITIONALLY (not only when the own chain came
+        // up empty) so a 404 anywhere in the own chain — an optimistic stem
+        // the model pack doesn't carry — still lands on a same-tier hull
+        // instead of the error overlay.
+        const urls = [...shipModelUrlCandidates(ship.shipId, ship.name)];
+        const encyclopedia = useEncyclopediaStore();
+        const spec: ShipModelSpec = {
+          shipId: ship.shipId,
+          tier: ship.tier,
+          nation: ship.nation,
+          type: ship.type,
+        };
+        const pool: ShipModelSpec[] = encyclopedia.ships.map((s) => ({
+          shipId: s.shipId,
+          tier: s.tier,
+          nation: s.nation,
+          type: s.type,
+        }));
+        const substitute = resolveFallbackModel(spec, pool);
+        if (substitute && !urls.includes(substitute)) urls.push(substitute);
+        if (urls.length === 0) {
           hasModel.value = false;
           errorMsg.value = t("ships.detail.noModel");
           // No new hull to anchor to — don't leave the previous ship's
@@ -1413,7 +1420,7 @@ export default defineComponent({
           return;
         }
         hasModel.value = true;
-        const model = await loadGlbModel(url);
+        const model = await loadGlbModel(urls);
         // Superseded while fetching (ship switch / scene teardown): drop it
         // instead of stacking the old hull into the fresh scene.
         const sc = scene.value;
