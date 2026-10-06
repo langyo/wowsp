@@ -18,7 +18,7 @@ pub struct AssetFileInfo {
     /// res_mods-relative path (forward slashes).
     pub rel: String,
     pub size: u64,
-    /// `image | audio` — what the detail pane should do with it.
+    /// `image | audio | model` — what the detail pane should do with it.
     pub kind: String,
     /// File extension, lowercased, no dot.
     pub ext: String,
@@ -55,7 +55,7 @@ const THUMB_EDGE: u32 = 320;
 
 /// res_mods-relative path sanity: relative, no `..`, no drive letters, no
 /// backslashes (the same rules the install plan paths follow).
-fn safe_rel(rel: &str) -> Result<(), String> {
+pub(crate) fn safe_rel(rel: &str) -> Result<(), String> {
     if rel.is_empty() || rel.contains('\\') || rel.contains(':') || Path::new(rel).is_absolute() {
         return Err(format!("invalid asset path: {rel:?}"));
     }
@@ -77,6 +77,9 @@ fn classify_ext(ext: &str) -> Option<(&'static str, bool)> {
     } else if ext == AUDIO_WEM {
         // Transcoded on read — playable, just slower than a native file.
         Some(("audio", true))
+    } else if ext == "geometry" {
+        // BigWorld mesh — the 3D stage's input (see model_preview.rs).
+        Some(("model", true))
     } else {
         None
     }
@@ -128,6 +131,16 @@ pub fn mod_hub_list_assets(
             let Some((kind, playable)) = classify_ext(&ext) else {
                 continue;
             };
+            // Side-geometry variants (destroyed states, distance LODs,
+            // hardpoint markers, wireframes) stay out of the model rows —
+            // clicking any family member previews the assembled ship.
+            if ext == "geometry"
+                && path
+                    .file_stem()
+                    .is_some_and(|s| super::model_preview::is_aux_stem(&s.to_string_lossy()))
+            {
+                continue;
+            }
             let Ok(rel) = path.strip_prefix(&res_mods) else {
                 continue;
             };
@@ -164,11 +177,20 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase())
         .unwrap_or_default();
-    let bytes = fs::read(&path).map_err(|e| format!("read {rel_path}: {e}"))?;
 
     if classify_ext(&ext).is_none() {
         return Err(format!("{rel_path}: not a previewable asset"));
     }
+    if ext == "geometry" {
+        // Listed for the 3D stage, but its payload is GLB parts from a
+        // different command — bail before reading a multi-MB mesh nobody
+        // will serve from here.
+        return Err(format!(
+            "{rel_path}: .geometry previews use mod_hub_read_model"
+        ));
+    }
+    let bytes = fs::read(&path).map_err(|e| format!("read {rel_path}: {e}"))?;
+
     if ext == AUDIO_WEM {
         // On-demand transcode, routed by what the file actually is:
         // PCM-flavoured .wem IS a WAV (RIFF/WAVE/fmt/data with a plain or
@@ -647,6 +669,29 @@ mod tests {
         let err = mod_hub_read_asset(root.clone(), "banks/mods/Bank/sfx.wem".into()).unwrap_err();
         assert!(err.contains("transcode"), "{err}");
         assert!(mod_hub_read_asset(root.clone(), "../escape".into()).is_err());
+
+        // Custom-model meshes: the hull base lists as a model row, its
+        // destroyed-state variant stays hidden, and read_asset redirects
+        // .geometry to the model command instead of a data URL.
+        fs::create_dir_all(res_mods.join("PnFMods/Pack/ship")).unwrap();
+        fs::write(res_mods.join("PnFMods/Pack/ship/Hull.geometry"), b"geo").unwrap();
+        fs::write(
+            res_mods.join("PnFMods/Pack/ship/Hull_dead.geometry"),
+            b"geo",
+        )
+        .unwrap();
+        fs::write(
+            res_mods.join("PnFMods/Pack/ship/Hull_lod1.geometry"),
+            b"geo",
+        )
+        .unwrap();
+        let models = mod_hub_list_assets(root.clone(), "PnFMods/Pack".into()).unwrap();
+        assert_eq!(models.len(), 1, "aux variants hidden: {models:?}");
+        assert_eq!(models[0].kind, "model");
+        assert!(models[0].playable);
+        let err =
+            mod_hub_read_asset(root.clone(), "PnFMods/Pack/ship/Hull.geometry".into()).unwrap_err();
+        assert!(err.contains("mod_hub_read_model"), "{err}");
         fs::remove_dir_all(&tmp).ok();
     }
 }

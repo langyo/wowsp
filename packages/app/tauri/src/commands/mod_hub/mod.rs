@@ -438,6 +438,7 @@ pub(crate) mod foreign;
 mod install;
 mod installed_units;
 pub(crate) mod manifest;
+mod model_preview;
 mod safe_mode;
 mod scan_installed;
 mod stale_migration;
@@ -470,6 +471,9 @@ pub use classify::{
     __cmd__mod_hub_classify_path, __tauri_command_name_mod_hub_classify_path, mod_hub_classify_path,
 };
 pub use install::{__cmd__mod_hub_install, __tauri_command_name_mod_hub_install, mod_hub_install};
+pub use model_preview::{
+    __cmd__mod_hub_read_model, __tauri_command_name_mod_hub_read_model, mod_hub_read_model,
+};
 pub use safe_mode::{
     __cmd__mod_hub_safe_mode, __tauri_command_name_mod_hub_safe_mode, mod_hub_safe_mode,
 };

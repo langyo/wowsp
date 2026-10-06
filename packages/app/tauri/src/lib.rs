@@ -550,6 +550,7 @@ pub fn run() {
             commands::mod_tags::mod_tags,
             commands::mod_hub::mod_hub_list_assets,
             commands::mod_hub::mod_hub_read_asset,
+            commands::mod_hub::mod_hub_read_model,
             commands::mod_hub::mod_hub_scan_installed,
             commands::mod_hub::mod_hub_classify_path,
             commands::mod_hub::mod_hub_install,

@@ -8,14 +8,19 @@
  * AudioPlayerToast card (play/pause, seek, stop) controls playback even
  * after the pane is left. The game's Wwise `.wem` files play through the
  * on-read decode (the first click converts to WAV in Rust, then plays).
+ * `.geometry` files (custom ship/gun/aircraft meshes) render as model
+ * rows: a click asks the backend to expand the click into its hull-family
+ * GLB parts and hands them to the holo ModelStage above the rows.
  */
 import { defineComponent, ref, watch } from "vue";
-import { ImageIcon, Music, PlayCircle } from "@lucide/vue";
+import { Box, ImageIcon, Music, PlayCircle } from "@lucide/vue";
+import { useToast } from "@celestia-island/hikari";
 
-import { api, type AssetFileInfo } from "@/api";
+import { api, type AssetFileInfo, type ModelPreviewPart } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useAudioPlayerStore } from "@/stores/audioPlayer";
+import ModelStage from "./ModelStage";
 import { compareByScene, humanizeEvent, humanizeState, sceneLabel } from "./voiceScenes";
 
 export default defineComponent({
@@ -24,8 +29,12 @@ export default defineComponent({
     gameRoot: { type: String, required: true },
     /** Installed unit primary path (res_mods-relative). */
     relPath: { type: String, required: true },
-    /** `image` grid or `audio` list. */
-    mode: { type: String as () => "image" | "audio", required: true },
+    /** `image` grid, `audio` list, or `model` rows + 3D stage. */
+    mode: { type: String as () => "image" | "audio" | "model", required: true },
+    /** Render nothing when the unit has no files of this mode — sections
+     *  that are merely possible (models under a texture unit) stay
+     *  invisible instead of showing an empty note. */
+    silentEmpty: { type: Boolean, default: false },
   },
   setup(props) {
     const files = ref<AssetFileInfo[]>([]);
@@ -36,9 +45,23 @@ export default defineComponent({
     const failed = ref<Record<string, boolean>>({});
     const player = useAudioPlayerStore();
     const { uiLocale } = useLanguage();
+    const toast = useToast();
+    // Model mode: the family parts of the clicked .geometry row. The
+    // session token kills in-flight expansions when the unit switches.
+    const modelParts = ref<ModelPreviewPart[] | null>(null);
+    const modelRel = ref("");
+    const modelLoading = ref(false);
+    let modelSession = 0;
 
     async function load() {
       loading.value = true;
+      // Kill any in-flight model expansion for the old unit — and drop its
+      // busy flag, or a load settling after a unit switch would leave the
+      // rows disabled forever (the pane patches in place across switches).
+      modelSession += 1;
+      modelLoading.value = false;
+      modelParts.value = null;
+      modelRel.value = "";
       try {
         files.value = await api.modHubListAssets(props.gameRoot, props.relPath);
       } catch {
@@ -89,12 +112,40 @@ export default defineComponent({
       });
     }
 
+    // A model row click asks the backend to expand the clicked `.geometry`
+    // into its family (hull base + sections, or a standalone mesh) and
+    // hands the cached GLB parts to the stage; the clicked row ignores
+    // re-clicks. Stale loads (superseded by a unit switch or a newer
+    // click) die on the session token.
+    async function toggleModel(file: AssetFileInfo) {
+      if (modelLoading.value) return;
+      if (modelRel.value === file.rel) return;
+      const mySession = ++modelSession;
+      modelLoading.value = true;
+      try {
+        const parts = await api.modHubReadModel(props.gameRoot, file.rel);
+        if (mySession === modelSession) {
+          modelRel.value = file.rel;
+          modelParts.value = parts;
+        }
+      } catch (e) {
+        if (mySession === modelSession) {
+          const detail = e instanceof Error ? e.message : String(e);
+          toast.error(`${t("resources.modelLoadFailed")}: ${detail}`);
+        }
+      } finally {
+        if (mySession === modelSession) modelLoading.value = false;
+      }
+    }
+
     return () => {
       if (loading.value) {
+        if (props.silentEmpty) return null;
         return <div class="asset-preview__note">{t("resources.loadingAssets")}</div>;
       }
       const usable = files.value.filter((f) => f.kind === props.mode);
       if (usable.length === 0) {
+        if (props.silentEmpty) return null;
         return <div class="asset-preview__note">{t("resources.noAssets")}</div>;
       }
       if (props.mode === "image") {
@@ -115,6 +166,37 @@ export default defineComponent({
                 <figcaption>{f.rel.split("/").pop()}</figcaption>
               </figure>
             ))}
+          </div>
+        );
+      }
+      if (props.mode === "model") {
+        // Compact mesh rows under the stage: hull sections expand to the
+        // whole ship (whichever row was clicked), other meshes (guns,
+        // aircraft, directors) preview standalone.
+        const rows = [...usable].sort((a, b) => a.rel.localeCompare(b.rel));
+        return (
+          <div class="asset-preview__model">
+            {modelParts.value ? <ModelStage parts={modelParts.value} /> : null}
+            <ul class="asset-preview__model-rows">
+              {rows.map((f) => (
+                <li key={f.rel} class="asset-preview__model-row">
+                  <button
+                    type="button"
+                    class={{
+                      "asset-preview__model-btn": true,
+                      "asset-preview__model-btn--active": modelRel.value === f.rel,
+                    }}
+                    disabled={modelLoading.value}
+                    data-hint={t("resources.modelPlay")}
+                    onClick={() => void toggleModel(f)}
+                  >
+                    <Box size={14} />
+                    <span class="asset-preview__model-name">{f.rel.split("/").pop()}</span>
+                    <span class="asset-preview__model-size">{kbFormat(f.size)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         );
       }

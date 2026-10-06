@@ -1322,6 +1322,14 @@ export default defineComponent({
             {mod.kind === "voice" && (
               <AssetPreview gameRoot={gameRoot.value} relPath={mod.relPath} mode="audio" />
             )}
+            {(bigOfKind(mod.kind) === "texture" || mod.kind === "script") && (
+              <AssetPreview
+                gameRoot={gameRoot.value}
+                relPath={mod.relPath}
+                mode="model"
+                silentEmpty
+              />
+            )}
             {mod.detail && <div class="mod-detail__desc">{mod.detail}</div>}
             {mod.paths.length > 0 ? (
               <ul class="mod-detail__paths">

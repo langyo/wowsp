@@ -35,6 +35,7 @@ export type {
   CatalogTagIndex,
   AssetFileInfo,
   AssetPayload,
+  ModelPreviewPart,
   CatalogEntryI18n,
   CatalogIndex,
   ModInstallRecord,

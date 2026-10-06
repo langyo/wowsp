@@ -1374,7 +1374,7 @@ export interface ForeignModUnit {
 export interface AssetFileInfo {
   rel: string;
   size: number;
-  /** `image | audio`. */
+  /** `image | audio | model`. */
   kind: string;
   ext: string;
   /** False for `.wem` — listed, but the browser cannot play it. */
@@ -1391,6 +1391,17 @@ export interface AssetFileInfo {
 /** Browser-ready payload of one asset (a data URL). */
 export interface AssetPayload {
   dataUrl: string;
+}
+
+/** One cached GLB part of a custom-model preview (mirrors
+ *  ModelPreviewPart in commands/mod_hub/model_preview.rs). */
+export interface ModelPreviewPart {
+  /** res_mods-relative source path. */
+  rel: string;
+  /** Absolute path of the cached GLB — asset-protocol URL-able. */
+  path: string;
+  /** GLB size in bytes. */
+  size: number;
 }
 
 /** An older `bin/<version>/` whose `res_mods` still carries files —
@@ -2017,6 +2028,10 @@ export const api = {
     transport.invoke<AssetFileInfo[]>(RPC.mod_hub_list_assets, { gameRoot, relPath }),
   modHubReadAsset: (gameRoot: string, relPath: string) =>
     transport.invoke<AssetPayload>(RPC.mod_hub_read_asset, { gameRoot, relPath }),
+  /** Custom-model 3D preview: expand a `.geometry` click into its family's
+   *  cached GLB parts (hull base + sections, or a standalone mesh). */
+  modHubReadModel: (gameRoot: string, relPath: string) =>
+    transport.invoke<ModelPreviewPart[]>(RPC.mod_hub_read_model, { gameRoot, relPath }),
   modHubClassifyPath: (sourcePath: string) =>
     transport.invoke<PackagePlan>(RPC.mod_hub_classify_path, { sourcePath }),
   modHubInstall: (sourceRoot: string, gameRoot: string, plan: PackagePlan) =>
