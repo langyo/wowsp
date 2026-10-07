@@ -390,6 +390,22 @@ html[data-wallpaper-art="true"] body::after {
     }
   }
 }
+
+/* Toast solid surfaces: white ink in BOTH color schemes. Hikari's stock
+   default preset pins the shared on-solid slot to near-black Nord ink in
+   its dark scheme — the ink its PALE primary fills need (white is ~1.9:1
+   there) — but the same slot also feeds the toast column's error/success/
+   info fills, so dark-mode toasts came out near-black on solid color
+   (user direction 2026-10-08: toasts follow shittim-chest's
+   always-white-on-solid convention, day and night). Redefined on the
+   toast container so every item, the icon and the copy/close buttons
+   inherit white again; warning keeps hikari's literal dark-amber ink
+   (white lands ~2.6:1 there) because that rule is not var-driven. */
+.hk-toast-container {
+  --hi-color-text-on-solid: #fff;
+  --hi-color-icon-on-solid: #fff;
+}
+
 a {
   color: rgb(var(--color-primary));
 }
