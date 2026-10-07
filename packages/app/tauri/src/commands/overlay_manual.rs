@@ -7,12 +7,15 @@
 //! as a positioning reference — and specifically the frame from the instant
 //! Tab was last held (the roster moment the player actually saw), NOT
 //! whatever was on screen most recently: `capture_game_rgba_cached` stores
-//! only while the key is down, so a capture that lands after the release
-//! never evicts the reference, and the cache stays frozen on the last
-//! Tab-held frame until the next hold. The player re-draws the table box
-//! against the frame the detector itself just saw, with the detector's
-//! guides overlaid, instead of holding Tab in-game and boxing against the
-//! live (dimmed, flickering) table through a transparent picker.
+//! only while the key is down AND past a short hold gate (the overlay's
+//! `TAB_STORE_MIN_HOLD`, which skips the pre-fade-in instants of a press),
+//! so a capture that lands after the release — or before the table
+//! rendered — never evicts the reference, and the cache stays frozen on
+//! the last Tab-held frame until the next hold. The player re-draws the
+//! table box against the frame the detector itself just saw, with the
+//! detector's guides overlaid, instead of holding Tab in-game and boxing
+//! against the live (dimmed, flickering) table through a transparent
+//! picker.
 //!
 //! The cache is a single static slot written by the watcher thread (and by
 //! the one-shot fresh-capture fallback in `start_manual_locate`, whose

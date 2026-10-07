@@ -21,7 +21,7 @@ pub(crate) struct HeaderBand {
     /// Green (ally) bar horizontal span.
     pub green: (usize, usize),
     /// Red (enemy) bar horizontal span. `None` marks the single-team PVE
-    /// variant: the table opens with ONE full-width teal bar and no enemy
+    /// variant: the table opens with ONE centered teal bar and no enemy
     /// half at all (see [`find_header_band`] for the acceptance gates a
     /// green-only band must pass).
     pub red: Option<(usize, usize)>,
@@ -30,18 +30,25 @@ pub(crate) struct HeaderBand {
 /// Locate the team-header band: a thick run of consecutive scan rows each
 /// carrying the teal bar plus EITHER the adjacent brick bar (the classic
 /// two-team Tab table) OR nothing at all (the single-team PVE table, whose
-/// lone teal bar spans the full table width). Single-row anchoring was
+/// lone teal bar is centered on the frame). Single-row anchoring was
 /// fragile (a stray water horizon could outscore the real header), so the
 /// band must be [`HEADER_MIN_ROWS`] rows thick and every run stays
 /// SINGLE-KIND (a two-bar row and a green-only row never share a run).
 ///
 /// The best TWO-BAR run (by total bar area) wins whenever one exists; a
-/// GREEN-ONLY run is the fallback, accepted only after two extra gates on
-/// its union green span:
+/// GREEN-ONLY run is the fallback, accepted only after the gates on its
+/// union green span:
 ///
-/// 1. WIDTH — the lone bar must span ≥ [`GREEN_ONLY_MIN_W_FRAC`] of the
-///    working width (the real PVE bar covers ~55-65%; a lone PVP bar is
-///    ~24% and mods' corner bars are smaller still). Two-bar bands are NOT
+/// 1. WIDTH — the lone bar is admitted in one of two variants. The WIDE
+///    variant (the older layout, bar ~55-65% of the frame) passes the
+///    position-agnostic [`GREEN_ONLY_MIN_W_FRAC`] floor. The NARROW variant
+///    — the WG client's current operation table measures only ~23-24% —
+///    must additionally sit dead-centered ([`GREEN_ONLY_NARROW_MIN_W_FRAC`]
+///    width + [`GREEN_ONLY_MAX_CENTER_OFF_FRAC`]): the centered panel is
+///    what separates it from a lone PVP green bar of the same width (the
+///    ally half of a centered two-bar table, whose center sits a quarter of
+///    the TABLE width — measured 0.1211 of the frame — left of the frame
+///    center) and from mod scoreboards' corner bars. Two-bar bands are NOT
 ///    width-gated: their adjacency + pair signature already suffices.
 /// 2. ROW TEXT — the frame below the band must carry ≥ 2 white text bands
 ///    ([`green_only_has_row_text`]): the PVE table always lists player
@@ -125,7 +132,12 @@ pub(crate) fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBa
         let (gx0, gx1) = rows.iter().fold((usize::MAX, 0), |(s, e), (_, g, _)| {
             (s.min(g.0), e.max(g.1))
         });
-        if (gx1 - gx0) >= (w as f32 * GREEN_ONLY_MIN_W_FRAC) as usize
+        let width = (gx1 - gx0) as f32 / w as f32;
+        let center_off = ((gx0 + gx1) as f32 / 2.0 - w as f32 / 2.0).abs() / w as f32;
+        let wide_variant = width >= GREEN_ONLY_MIN_W_FRAC;
+        let narrow_centered =
+            width >= GREEN_ONLY_NARROW_MIN_W_FRAC && center_off <= GREEN_ONLY_MAX_CENTER_OFF_FRAC;
+        if (wide_variant || narrow_centered)
             && green_only_has_row_text(px, w, h, rows[0].0, (gx0, gx1))
         {
             chosen = Some(rows);
@@ -289,8 +301,8 @@ fn header_samples(green: (usize, usize), red: Option<(usize, usize)>) -> Vec<usi
 
 /// Full-frame header presence check — the strongest "inside a battle" proof
 /// (the team-header bars exist ONLY on the in-battle Tab table: the classic
-/// teal+brick pair, or the single-team PVE variant's lone full-width teal
-/// bar accepted under [`find_header_band`]'s width + white-row-text gates —
+/// teal+brick pair, or the single-team PVE variant's lone teal bar
+/// accepted under [`find_header_band`]'s width + white-row-text gates —
 /// the text gate in particular keeps teal water/sky horizons from reading
 /// as a table). The HUD probe dims badly (holding Tab darkens the frame and
 /// real dimmed captures measure 2 icon clusters / a 12px HP run against

@@ -419,6 +419,62 @@ fn detects_real_captured_frame() {
     );
 }
 
+/// The REAL captured frame behind the scenario/operation bug report: a
+/// Tab-held WG client in an operation (行动) battle — dimmed scene, 任务/
+/// 团队成员 tabs, ONE centered teal "我的团队" header bar measuring only
+/// ~23-24% of the frame width (the narrow green-only variant), 7 ally rows,
+/// no enemy half. Downscaled to the detector's 800-wide working size from a
+/// 2000×1250 capture; the operation table is centered where the two-bar
+/// table splits, so the bar's own geometry (not its width) is what the
+/// gates key on.
+#[test]
+fn detects_real_pve_operation_frame() {
+    let png = include_bytes!("../testdata/tab_table_pve_800x500.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    assert_eq!((w, h), (800, 500));
+    let rgba = img.into_raw();
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (7, 0), &DetectProfile::WG)
+        .expect("real operation table must be detected");
+    assert!(band.red.is_none(), "single-team band carries no red span");
+    assert_eq!(det.row_centers.len(), 7, "7 allies, no enemy half");
+    assert!(
+        det.team_split >= 0.999,
+        "single-team split is exactly 1.0, got {}",
+        det.team_split
+    );
+    // Truth (measured on the fixture at working scale): header band top
+    // ≈116, green bar ≈ 305..497 (24% wide, center ≈ 50.1% of the frame).
+    assert!((band.top as i32 - 116).abs() <= 8, "band top: {}", band.top);
+    assert!(
+        (band.green.0 as i32 - 305).abs() <= 14,
+        "green start: {:?}",
+        band.green
+    );
+    assert!(
+        (band.green.1 as i32 - 497).abs() <= 14,
+        "green end: {:?}",
+        band.green
+    );
+    assert!(
+        (det.rect.x as f32 - 305.0).abs() <= 16.0,
+        "x: {:?}",
+        det.rect
+    );
+    assert!(
+        (det.rect.y as f32 - 116.0).abs() <= 12.0,
+        "y: {:?}",
+        det.rect
+    );
+    // The band detected on the fixture must also verify (the cheap path
+    // every later capture takes) and prove header presence for the scene
+    // gate.
+    assert!(verify_header_band(&rgba, w, h, &band));
+    assert!(header_bars_present(&rgba, w, h));
+}
+
 #[test]
 fn returns_none_without_header_bars() {
     // Bright scene, no table → no teal+brick pair anywhere.
@@ -494,20 +550,19 @@ fn mod_scoreboard_corner_bars_are_rejected() {
     );
 }
 
-// ── single-team PVE tables (one full-width teal bar, no enemy half) ──
+// ── single-team PVE tables (one centered teal bar, no enemy half) ──
 
 /// Synthetic PVE single-team table over the same kind of noisy scene as
-/// [`synth_table`]: ONE teal header bar spanning the full table width
-/// (~58% of the frame — the real single-team bar covers ~55-65%), its
-/// white team caption punched into the left quarter (so the bar's FIRST
-/// quarter-point sample lands inside it — the 2-of-3 sample rule exists
-/// for exactly that), and white player-name text on the rows below,
-/// LEFT-anchored like the real PVE layout where the nickname column
-/// hugs the table's left edge. The background noise stays under the
-/// near-white threshold on purpose: a real scene behind the translucent
-/// table never reads near-white across the bar's full width, and the
-/// white-row-text gate (profile max × `ROW_TEXT_FRACTION`) needs that
-/// floor to keep noise rows out of its band extraction. Returns the
+/// [`synth_table`]: ONE teal header bar — the WIDE variant's ~58% of the
+/// frame at the 10% left edge — its white team caption punched into the
+/// left quarter (so the bar's FIRST quarter-point sample lands inside it —
+/// the 2-of-3 sample rule exists for exactly that), and white player-name
+/// text on the rows below, LEFT-anchored like the real PVE layout where the
+/// nickname column hugs the table's left edge. The background noise stays
+/// under the near-white threshold on purpose: a real scene behind the
+/// translucent table never reads near-white across the bar's full width,
+/// and the white-row-text gate (profile max × `ROW_TEXT_FRACTION`) needs
+/// that floor to keep noise rows out of its band extraction. Returns the
 /// frame plus the truth rect and the drawn row centers.
 fn synth_single_team_table(
     w: u32,
@@ -515,6 +570,23 @@ fn synth_single_team_table(
     rows: usize,
     x_shift: i32,
     with_row_text: bool,
+) -> (Vec<u8>, Rect, Vec<f32>) {
+    synth_single_team_table_with_bar(w, h, rows, x_shift, with_row_text, 0.58, 0.10)
+}
+
+/// Generalized core of [`synth_single_team_table`]: the teal bar's width
+/// and left edge are fractions of the frame, so the NARROW centered
+/// operation layout can be synthesized with the same caption/rows/noise —
+/// the real current WG operation table measures ~23-24% wide with its panel
+/// dead-centered (`testdata/tab_table_pve_800x500.png`).
+fn synth_single_team_table_with_bar(
+    w: u32,
+    h: u32,
+    rows: usize,
+    x_shift: i32,
+    with_row_text: bool,
+    bar_w_frac: f32,
+    bar_x_frac: f32,
 ) -> (Vec<u8>, Rect, Vec<f32>) {
     let mut img = vec![0u8; (w * h * 4) as usize];
     let mut noise = Noise(0x5011_7ea4);
@@ -528,8 +600,8 @@ fn synth_single_team_table(
             img[i + 3] = 255;
         }
     }
-    let tx = ((w as f32 * 0.10) as i32 + x_shift).max(0) as u32;
-    let tw = (w as f32 * 0.58) as u32;
+    let tx = ((w as f32 * bar_x_frac) as i32 + x_shift).max(0) as u32;
+    let tw = (w as f32 * bar_w_frac) as u32;
     let ty = (h as f32 * 0.22) as u32;
     let bar_h = (h as f32 * 0.028) as u32; // ≈ header bar height
     let pitch = ((bar_h as f32 * 0.92) as u32).max(12);
@@ -540,7 +612,7 @@ fn synth_single_team_table(
         img[i + 2] = c.2;
         img[i + 3] = 255;
     };
-    // ONE full-width teal bar, white caption punched into its left
+    // ONE teal bar, white caption punched into its left
     // quarter (tw/6 .. tw/6 + tw*28/300 — covers the bar's first
     // quarter-point sample, misses the other two).
     for y in ty..ty + bar_h {
@@ -641,6 +713,57 @@ fn single_team_band_rejects_far_red_bar() {
             put(&mut img, x, y, BRICK);
         }
     }
+    assert!(detect_roster(&img, w, h, (7, 0), &DetectProfile::WG).is_none());
+    assert!(!header_bars_present(&img, w, h));
+}
+
+/// The CURRENT operation layout: a ~24%-wide teal bar with its panel
+/// DEAD-CENTERED (measured 23-24% wide, center 50.2% on the real capture
+/// behind `detects_real_pve_operation_frame`). Under the old width-only
+/// gate (≥ 30%) this exact shape was rejected and every scenario Tab hold
+/// fell to the centered "table not located" hint — the narrow centered
+/// variant must anchor like the wide one.
+#[test]
+fn detects_narrow_centered_single_team_table() {
+    let (w, h) = (1280u32, 720u32);
+    let (img, rect, centers) = synth_single_team_table_with_bar(w, h, 7, 0, true, 0.24, 0.38);
+    let det = detect_roster(&img, w, h, (7, 0), &DetectProfile::WG)
+        .expect("narrow centered single-team table must be detected");
+    assert_eq!(det.row_centers.len(), 7, "ally hint only — no enemy half");
+    assert!((det.rect.x - rect.x).abs() <= 12, "x: {rect:?} vs {det:?}");
+    assert!((det.rect.y - rect.y).abs() <= 12, "y: {rect:?} vs {det:?}");
+    assert!(
+        (det.rect.width - rect.width).abs() <= 24,
+        "w: {rect:?} vs {det:?}"
+    );
+    for (k, &c) in det.row_centers.iter().enumerate() {
+        assert!(
+            (c as f32 - centers[k]).abs() <= 8.0,
+            "row {k}: center {c} vs truth {}",
+            centers[k]
+        );
+    }
+    assert_eq!(det.team_split, 1.0, "single-team split is exactly 1.0");
+}
+
+/// The narrow variant's second discriminator is CENTERING, not width: a
+/// lone ~24% green bar parked where a two-bar table's ally half sits —
+/// spanning 26%..50% of the frame, the exact degraded-PVP geometry whose
+/// center offset the real fixture measures at 0.1211 — must NOT be read as
+/// a single-team table and silently drop the enemy block; nor may a mod
+/// scoreboard's corner bar. Same bar, same rows, only the position
+/// changes.
+#[test]
+fn narrow_green_only_band_rejected_when_off_center() {
+    let (w, h) = (1280u32, 720u32);
+    // The PVP ally-half position (a red-missed two-bar frame): ~52 px of
+    // margin to the 0.08 gate, ~0.8 px to a hypothetical 0.12 gate — this
+    // exact case is why the gate is not 0.12.
+    let (img, _, _) = synth_single_team_table_with_bar(w, h, 7, 0, true, 0.24, 0.26);
+    assert!(detect_roster(&img, w, h, (7, 0), &DetectProfile::WG).is_none());
+    assert!(!header_bars_present(&img, w, h));
+    // A mod scoreboard's corner bar.
+    let (img, _, _) = synth_single_team_table_with_bar(w, h, 7, 0, true, 0.24, 0.05);
     assert!(detect_roster(&img, w, h, (7, 0), &DetectProfile::WG).is_none());
     assert!(!header_bars_present(&img, w, h));
 }

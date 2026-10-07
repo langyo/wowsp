@@ -162,6 +162,16 @@ const STATE_REFRESH: Duration = Duration::from_secs(2);
 /// this window and is refused a new capture until it elapses — so frantic
 /// tapping or a focus flicker while holding Tab caps at ~0.67 captures/s.
 const CAPTURE_MIN_INTERVAL: Duration = Duration::from_millis(1500);
+/// A frame enters the manual-locate cache only once Tab has been held this
+/// long (see `capture_game_rgba_cached`): real captures taken right after
+/// the press still show an un-dimmed, table-less scene (the game fades the
+/// table in), and with the 1.5 s acquisition cadence the ONLY frame a short
+/// hold ever stored was that pre-table instant — the picker then offered a
+/// bright, table-less frame as "the Tab-held moment". With the gate, the
+/// first eligible store is a cadence capture well past the fade-in; a hold
+/// shorter than this stores nothing (the cache keeps the previous frame
+/// rather than a useless one).
+const TAB_STORE_MIN_HOLD: Duration = Duration::from_millis(750);
 /// While the overlay is shown, the pinned anchor is re-validated at this
 /// cadence: a full BitBlt + detection pass re-runs and replaces the pin only
 /// when the table moved at row scale (`overlay_detect::
@@ -245,7 +255,9 @@ use manual::{
 };
 #[cfg(test)]
 use manual::{manual_row_centers, validate_manual_selection};
-use placement::{hide_overlay, place_and_show, reassert_topmost, show_async, tab_key_down};
+use placement::{
+    hide_overlay, place_and_show, reassert_topmost, show_async, tab_held_for, tab_key_down,
+};
 use reconcile::{HeldStatus, held_status, pin_matches, revalidate_pinned_anchor, sink_check_pass};
 #[cfg(test)]
 use reconcile::{alive_changed, sink_probe_confirm};

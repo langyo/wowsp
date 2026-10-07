@@ -611,3 +611,45 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
         "the cache survives battle changes by design"
     );
 }
+
+// ── Tab hold tracking (the manual-locate cache's fade-in guard) ──
+
+/// The tracker stamps the down-edge on the first `true` of a run, keeps it
+/// across further polls, and clears it on release — so the cache store can
+/// reject captures from the pre-fade-in instants of a press.
+#[test]
+fn tab_hold_tracker_stamps_and_clears_the_edge() {
+    let mut t = placement::TabHoldTracker::default();
+    assert_eq!(t.held_for(1_000), None, "up → no hold");
+
+    assert!(t.observe(true, 1_000));
+    assert_eq!(t.held_for(1_000), Some(Duration::from_millis(0)));
+    assert_eq!(t.held_for(1_749), Some(Duration::from_millis(749)));
+    assert_eq!(
+        t.held_for(1_751),
+        Some(Duration::from_millis(751)),
+        "still the SAME edge — held time grows monotonically"
+    );
+
+    assert!(!t.observe(false, 1_800));
+    assert_eq!(t.held_for(1_800), None, "release clears the hold");
+
+    // A new press starts a NEW edge (not the accumulated one).
+    assert!(t.observe(true, 2_000));
+    assert_eq!(t.held_for(2_100), Some(Duration::from_millis(100)));
+}
+
+/// The store gate this tracker feeds: a capture at held+749 ms is refused
+/// (the table is still fading in), one at held+750 ms is cacheable — the
+/// boundary the constant promises.
+#[test]
+fn tab_store_min_hold_boundary() {
+    let mut t = placement::TabHoldTracker::default();
+    t.observe(true, 1_000);
+    let cacheable = |now: u64| t.held_for(now).is_some_and(|h| h >= TAB_STORE_MIN_HOLD);
+    assert!(
+        !cacheable(1_749),
+        "pre-fade-in frame stays out of the cache"
+    );
+    assert!(cacheable(1_750), "past the gate the frame is cacheable");
+}

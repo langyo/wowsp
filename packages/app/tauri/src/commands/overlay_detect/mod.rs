@@ -19,22 +19,26 @@
 //!   row text     ≈ pure white, row pitch ≈ 0.95× the bar height
 //!
 //! PVE modes that roster a SINGLE team (scenarios / co-op / operations)
-//! draw a variant of that header: ONE full-width teal bar — captioned "my
-//! team", spanning ~55-65% of the frame — with NO brick bar to its right.
-//! The band locator accepts that green-only shape under two extra gates (a
-//! minimum bar width plus a white-row-text check below the bar — see
+//! draw a variant of that header: ONE teal bar — captioned "my team", NO
+//! brick bar to its right — centered on the frame. Its width varies by
+//! client generation: an older wide variant spans ~55-65% of the frame,
+//! while the WG client's current operation table measures only ~23-24%
+//! (see `testdata/tab_table_pve_800x500.png`, a real Tab-held capture).
+//! The band locator accepts that green-only shape under extra gates (a
+//! width window — the wide variant anywhere, the narrow one only
+//! dead-centered — plus a white-row-text check below the bar; see
 //! [`find_header_band`]); such a band reports `team_split` exactly 1.0 and
 //! emits an ally-rows-only grid.
 //!
 //! Pipeline: find the row carrying the bars — both bars hugging the seam,
-//! or, single-team PVE only, a lone wide green bar after the two gates (a
-//! red bar FARTHER than the adjacency gap rejects the scan row outright,
-//! so mod scoreboards never degrade into green-only hits) → bar spans give
-//! the table rectangle and the team split → white-text density bands below
-//! the header give the player rows (extended with the median pitch when
-//! the arena hint asks for more rows than were visible). Position-agnostic
-//! on purpose, so scenario / co-op layouts anchor just as well as random
-//! battles.
+//! or, single-team PVE only, a lone green bar after the width + centering +
+//! row-text gates (a red bar FARTHER than the adjacency gap rejects the
+//! scan row outright, so mod scoreboards never degrade into green-only
+//! hits) → bar spans give the table rectangle and the team split →
+//! white-text density bands below the header give the player rows (extended
+//! with the median pitch when the arena hint asks for more rows than were
+//! visible). Position-agnostic on purpose, so scenario / co-op layouts
+//! anchor just as well as random battles.
 
 use wowsp_tauri_shared::{GameInstallKind, Rect};
 
@@ -59,11 +63,30 @@ const HEADER_MIN_ROWS: usize = 3;
 /// seam (gap ≈ 2 px); the mod scoreboard's corner bars are ~35% apart.
 const HEADER_MAX_BAR_GAP_FRAC: f32 = 0.15;
 /// Minimum width (fraction of the working width) for a GREEN-ONLY header
-/// candidate — the single-team PVE table's teal bar spans ~55-65% of the
-/// frame, a lone PVP bar is ~24% and mods' corner bars are smaller still.
-/// Two-bar bands are NOT width-gated: their adjacency + pair signature
-/// already suffices.
+/// candidate of the WIDE variant — position-agnostic. The wide single-team
+/// bar spans ~55-65% of the frame, comfortably above this floor, while a
+/// lone PVP bar is ~24% and mods' corner bars are smaller still. The
+/// narrow variant below covers the rest. Two-bar bands are NOT width-gated:
+/// their adjacency + pair signature already suffices.
 const GREEN_ONLY_MIN_W_FRAC: f32 = 0.30;
+/// Minimum width for a GREEN-ONLY candidate of the NARROW variant — the
+/// current WG operation table's bar measures ~23-24% of the frame (a real
+/// 2000-px capture, `tab_table_pve_800x500.png`); the floor leaves room
+/// for shrinkage on other aspect ratios without admitting mod corner bars.
+/// Narrow candidates must additionally sit dead-centered (below).
+const GREEN_ONLY_NARROW_MIN_W_FRAC: f32 = 0.15;
+/// Maximum distance between the NARROW green-only bar's center and the
+/// frame center (fraction of the working width). The operation table's
+/// panel is centered on the game window (measured center 50.0-50.2% on real
+/// captures — offset ≈ 0), which is what separates its ~24% bar from a lone
+/// PVP green bar of the SAME width: the ally half of a centered two-bar
+/// table spans its left side, so its center sits T/4 (a quarter of the
+/// TABLE width) left of the frame center — measured 0.1211 of the frame on
+/// the real PVP fixture, i.e. uncomfortably close to any gate above ~0.09.
+/// 0.08 keeps a ~32-working-px rejection margin on that geometry while the
+/// operation table keeps a ~64-px acceptance margin. Mod scoreboards'
+/// corner bars sit even farther out (< 15% / > 85%).
+const GREEN_ONLY_MAX_CENTER_OFF_FRAC: f32 = 0.08;
 /// Header-bar height bounds in working px (the real bar is ~14 px at 800-wide).
 const HEADER_MIN_H: usize = 4;
 /// White-text density bands below 22% of the row peak are noise (e.g. our

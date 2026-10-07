@@ -1,10 +1,67 @@
 use super::*;
-/// Physical state of the Tab key (true = down), regardless of focus.
+
+/// Edge tracker for the physical Tab key: remembers when the current
+/// down-period began, so a capture taken in the FIRST instants of a press
+/// can be kept out of the manual-locate cache — the game fades the table
+/// in (and dims the scene) after the press, and a BitBlt inside that
+/// window photographs an un-dimmed, table-less frame (see
+/// `capture_game_rgba_cached`). Pure logic, unit-tested without Win32.
+#[derive(Debug, Default)]
+pub(crate) struct TabHoldTracker {
+    down_at_ms: Option<u64>,
+}
+
+impl TabHoldTracker {
+    /// Feed one key sample (stamps the down-edge the first time a run of
+    /// `true` arrives, clears it on `false`); returns the sample unchanged.
+    pub(crate) fn observe(&mut self, down: bool, now_ms: u64) -> bool {
+        if down {
+            self.down_at_ms.get_or_insert(now_ms);
+        } else {
+            self.down_at_ms = None;
+        }
+        down
+    }
+
+    /// How long the key has been continuously down (`None` while up).
+    pub(crate) fn held_for(&self, now_ms: u64) -> Option<Duration> {
+        self.down_at_ms
+            .map(|at| Duration::from_millis(now_ms.saturating_sub(at)))
+    }
+}
+
+/// Shared tracker instance, fed by every `tab_key_down()` poll (the watcher
+/// ticks at 30 ms, so the down-edge is stamped within one tick).
+#[cfg(target_os = "windows")]
+static TAB_HOLD: Mutex<TabHoldTracker> = Mutex::new(TabHoldTracker { down_at_ms: None });
+
+#[cfg(target_os = "windows")]
+fn epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Physical state of the Tab key (true = down), regardless of focus. Every
+/// call also feeds [`TabHoldTracker`] so [`tab_held_for`] stays fresh.
 #[cfg(target_os = "windows")]
 pub(super) fn tab_key_down() -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_TAB};
     let state = unsafe { GetAsyncKeyState(VK_TAB.0 as i32) };
-    (state as u16) & 0x8000 != 0
+    let down = (state as u16) & 0x8000 != 0;
+    if let Ok(mut tracker) = TAB_HOLD.lock() {
+        tracker.observe(down, epoch_ms());
+    }
+    down
+}
+
+/// How long Tab has been continuously held right now (`None` while up, or
+/// when the lock is wedged — both simply mean "not cacheable yet").
+#[cfg(target_os = "windows")]
+pub(super) fn tab_held_for() -> Option<Duration> {
+    let tracker = TAB_HOLD.lock().ok()?;
+    tracker.held_for(epoch_ms())
 }
 
 /// Place the overlay window over the game rect, push the anchor to the
