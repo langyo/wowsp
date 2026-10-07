@@ -161,3 +161,22 @@ pub fn quit_app(app: tauri::AppHandle) {
     }
     app.exit(0);
 }
+
+/// Whether this process is a duplicate launch (single-instance guard, see
+/// [`crate::single_instance`]). The webui swaps its boot flow for the
+/// non-closable "already running" notice when true. Inert false on
+/// non-Windows targets and on the primary.
+#[tauri::command]
+pub fn is_second_instance() -> bool {
+    crate::single_instance::is_secondary()
+}
+
+/// Quit a duplicate launch: signal the primary to bring its window back to
+/// the front (focus event), then exit this copy. No graceful drain — the
+/// duplicate spawned none of the background tasks the drain coordinates.
+#[tauri::command]
+pub fn quit_duplicate_instance(app: tauri::AppHandle) {
+    crate::single_instance::signal_primary_to_focus();
+    tracing::info!("quit_duplicate_instance: exiting the duplicate-launch shell");
+    app.exit(0);
+}

@@ -105,6 +105,13 @@ fn complete(store_path: &Path, id: &str) -> Result<bool, String> {
 /// consumed once to seed a fresh ledger.
 #[tauri::command]
 pub fn app_migrations_pending(previous_hint: Option<String>) -> Result<Vec<String>, String> {
+    // A duplicate launch never migrates: it shares the data root with the
+    // primary, and two concurrent passes would race the ledger and any
+    // one-time migration bodies against each other (single-instance guard,
+    // see crate::single_instance).
+    if crate::single_instance::is_secondary() {
+        return Ok(Vec::new());
+    }
     run_pass(&store_path()?, previous_hint.as_deref())
 }
 

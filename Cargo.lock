@@ -7952,6 +7952,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "windows 0.61.3",
+ "windows-sys 0.61.2",
  "winreg 0.56.0",
  "wowsp_tauri_shared",
  "wowsunpack",

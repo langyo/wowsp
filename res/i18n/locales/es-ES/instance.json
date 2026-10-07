@@ -1,0 +1,5 @@
+{
+  "title": "WoWSP ya se está ejecutando",
+  "message": "Ya hay otra copia de WoWSP en ejecución en este equipo. Solo puede ejecutarse una copia a la vez. Cierra esta copia: la ventana ya abierta volverá al primer plano.",
+  "confirm": "Cerrar esta copia"
+}
