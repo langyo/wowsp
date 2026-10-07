@@ -1165,17 +1165,28 @@ export interface ResUpdate {
   deltaSteps?: ResDeltaStep[] | null;
 }
 
-/** Progress push for a resource-pack pass (`wowsp://res-progress`). */
-export interface ResProgress {
-  /** "download" | "apply" | "done" | "error". */
+/** One tick of the unified resource-download stream
+ *  (`wowsp://download-progress`) — every context (app update, resource
+ *  pack, data pack, mod-hub packages) rides this one event; see
+ *  `wowsp_tauri_shared::download` and `commands/download_hub.rs`.
+ *  Hub phases: `queued | race | download`; context continuations:
+ *  `apply | installing | install | done | error` (a user cancel surfaces
+ *  through the context's error phase / the rejected command). */
+export interface DownloadProgress {
+  /** Job identity — what a store filters on ("update", "res-pack",
+   *  "data-pack", or the mod-hub entry id). */
+  id: string;
+  /** Owning context: "update" | "res-pack" | "data-pack" | "mod-package". */
+  kind: string;
   phase: string;
   received: number;
-  /** Total bytes when known, else 0. */
+  /** Total bytes when known, else 0 (indeterminate). */
   total: number;
-  /** 1-based index of the segment streaming (full download = 1). */
-  segment: number;
-  /** How many segments the pass consists of. */
-  segments: number;
+  /** Smoothed transfer rate (bytes/sec) while streaming, else 0. */
+  speedBps: number;
+  /** Context extras: `{segment, segments}` for chain patches,
+   *  `{package, packages}` for mod installs. */
+  detail?: Record<string, number> | null;
   error?: string | null;
 }
 
@@ -1509,10 +1520,12 @@ export interface UninstallReport {
   restoredFiles: number;
 }
 
-/** Progress push for a catalog install (`wowsp://mod-catalog-progress`). */
+/** Mod-install progress, the store-side projection of a
+ *  `DownloadProgress` tick with `kind: "mod-package"` (the package
+ *  counters come from the event's `detail`). */
 export interface CatalogProgress {
   id: string;
-  /** `downloading | installing | done`. */
+  /** `download | installing | done`. */
   phase: string;
   package: number;
   packages: number;
@@ -1631,8 +1644,9 @@ export interface RelayConfig {
  *  `remoteName`. */
 export type RemoteReplayEntry = ReplayMetaLite;
 
-/** Progress push for one pairing pull (`wowsp://pairing-progress`, same
- *  plumbing as `wowsp://res-progress`). `phase` is "download" | "done" |
+/** Progress push for one pairing pull (`wowsp://pairing-progress` — pairing
+ *  keeps its OWN channel; it does not ride the unified download bus).
+ *  `phase` is "download" | "done" |
  *  "error"; one event stream serves every concurrent pull, so filter by
  *  `remoteName`. Mirrors `wowsp_tauri_shared::PairingProgress` (phase P). */
 export interface PairingProgress {
@@ -1677,6 +1691,34 @@ export interface LogsOverview {
   totalBytes: number;
   /** How many daily files the roller keeps before pruning. */
   retainedMax: number;
+}
+
+// ── Unified download-progress bus ─────────────────────────────────────────
+// One transport listener for `wowsp://download-progress`, fanned out to
+// every subscriber: stores each register a filter, and no context ever
+// listens on a second channel. In browser dev mode (no transport.listen)
+// the handlers simply never fire.
+
+type DownloadProgressHandler = (p: DownloadProgress) => void;
+
+const downloadProgressHandlers = new Set<DownloadProgressHandler>();
+let downloadProgressWired = false;
+
+function wireDownloadProgressBus(handler: DownloadProgressHandler): () => void {
+  downloadProgressHandlers.add(handler);
+  if (!downloadProgressWired) {
+    downloadProgressWired = true;
+    const un = transport.listen?.<DownloadProgress>(
+      "wowsp://download-progress",
+      (p) => {
+        for (const h of downloadProgressHandlers) h(p);
+      },
+    );
+    if (un instanceof Promise) void un.catch(() => {});
+  }
+  return () => {
+    downloadProgressHandlers.delete(handler);
+  };
 }
 
 export const api = {
@@ -2075,9 +2117,14 @@ export const api = {
   auxCacheOverview: () => transport.invoke<AuxCacheStatus[]>(RPC.aux_cache_overview),
   /** Wipe one auxiliary cache directory's contents. */
   clearAuxCache: (scope: string) => transport.invoke<null>(RPC.clear_aux_cache, { scope }),
-  /** Resource-pack progress stream (`wowsp://res-progress`). */
-  listenResProgress: (handler: (p: ResProgress) => void) =>
-    transport.listen?.<ResProgress>("wowsp://res-progress", handler),
+  /** The ONE resource-download progress stream
+   *  (`wowsp://download-progress`). Registers exactly one transport
+   *  listener process-wide and fans every tick out to the subscribers —
+   *  many readers, one writer: stores filter by `kind`/`id` and own
+   *  their state slices. The returned unlisten only detaches the
+   *  handler (the shared listener stays). */
+  listenDownloadProgress: (handler: (p: DownloadProgress) => void) =>
+    wireDownloadProgressBus(handler),
   /** Network proxy settings (system / none / manual), applied globally.
    *  The setter returns the SANITIZED config the shell actually persisted
    *  (invalid values are corrected there — see commands/network.rs), so
@@ -2180,8 +2227,7 @@ export const api = {
   modCatalogUninstall: (modId: string, gameRoot: string) =>
     transport.invoke<UninstallReport>(RPC.mod_catalog_uninstall, { modId, gameRoot }),
   modHubRecords: () => transport.invoke<ModInstallRecord[]>(RPC.mod_hub_records),
-  listenCatalogProgress: (handler: (p: CatalogProgress) => void) =>
-    transport.listen?.<CatalogProgress>("wowsp://mod-catalog-progress", handler),
+
   // ── Mobile replay acquisition + desktop pairing (commands/pairing.rs) ────
   /** Write one .wowsreplay (picked via the HTML file input on mobile) into
    *  the managed replays dir. Under the Tauri shell the bytes travel as a

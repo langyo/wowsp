@@ -18,7 +18,7 @@ export type {
   ResStatus,
   ResUpdate,
   ResDeltaStep,
-  ResProgress,
+  DownloadProgress,
   AuxCacheStatus,
   ModKind,
   InstalledMod,

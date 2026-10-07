@@ -1852,7 +1852,10 @@ export default defineComponent({
               const prog = cacheStore.progress;
               const downloading =
                 (st?.downloading ?? false) ||
-                (prog != null && (prog.phase === "download" || prog.phase === "apply"));
+                (prog != null &&
+                  (prog.phase === "download" ||
+                    prog.phase === "apply" ||
+                    prog.phase === "queued"));
               const pct =
                 prog && prog.phase === "download" && prog.total > 0
                   ? Math.min(100, Math.round((prog.received / prog.total) * 100))

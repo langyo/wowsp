@@ -1,7 +1,8 @@
 /**
  * Resource-pack + auxiliary-cache state for the Settings → updates panel.
  * Owns the single pack's status/update snapshots, the in-flight pass
- * progress (fed by the `wowsp://res-progress` stream) and the GitHub mirror
+ * progress (fed by the unified `wowsp://download-progress` stream,
+ * kind "res-pack") and the GitHub mirror
  * preference (persisted through network-config.toml, same file the network
  * section edits).
  *
@@ -25,17 +26,26 @@ import { computed, ref } from "vue";
 
 import { showBlockingToast } from "@celestia-island/hikari";
 
-import { api, type NetworkConfig, type ResProgress, type ResStatus, type ResUpdate } from "@/api";
+import { api, type DownloadProgress, type NetworkConfig, type ResStatus, type ResUpdate } from "@/api";
 import { t } from "@/i18n";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { isMobileApp } from "@/utils/platform";
 
-/** Speed smoothing over the per-event byte deltas (same shape as the
- *  Rust updater's ProgressTracker EWMA) and the minimum window between
- *  samples — the backend emits progress at most every 256 KiB, far
- *  faster than the readout needs. */
-const SPEED_EWMA_ALPHA = 0.3;
-const SPEED_MIN_SAMPLE_S = 0.25;
+/** The pack-pass progress projection the updates panel renders — the
+ *  store-side view of a `DownloadProgress` tick with kind "res-pack"
+ *  (chain-patch segment counters come from the event's `detail`). */
+interface ResProgress {
+  /** queued | download | apply | done | error. */
+  phase: string;
+  received: number;
+  /** Total bytes when known, else 0. */
+  total: number;
+  /** 1-based index of the segment streaming (full download = 1). */
+  segment: number;
+  /** How many segments the pass consists of. */
+  segments: number;
+  error?: string | null;
+}
 
 export const useCacheStore = defineStore("resourceCache", () => {
   const status = ref<ResStatus | null>(null);
@@ -58,12 +68,6 @@ export const useCacheStore = defineStore("resourceCache", () => {
   /** Whether the APK-bundled baseline was already handed to the shell
    *  (mobile; idempotence guard for the fetch + report pass). */
   let baselineReported = false;
-  // Speed sampler state: last sampled byte offset / timestamp (0 =
-  // window not open yet) and the EWMA accumulator. Closures inside the
-  // setup body — one set per store instance, never shared.
-  let sampleBytes = 0;
-  let sampleAt = 0;
-  let speedEwma = 0;
 
   /** True when the manifest is known and the local hash differs — drives
    *  the update banner in the updates section. */
@@ -80,56 +84,39 @@ export const useCacheStore = defineStore("resourceCache", () => {
     return steps ? steps.length : null;
   });
 
-  /** Close the current speed window (next event opens a fresh one). */
+  /** Drop the displayed transfer rate (the next download tick reopens it). */
   function resetSpeedSampler() {
-    sampleBytes = 0;
-    sampleAt = 0;
-    speedEwma = 0;
     speedBps.value = null;
   }
 
-  /** Fold one progress event into the store state and the speed
-   *  sampler. Any pass boundary — a phase flip, a byte regression (new
-   *  pass after the seeded restart, or a mirror failover restarting the
-   *  same segment) — closes the window AND drops the displayed rate, so
-   *  a rate measured over the old byte stream never outlives it; within
-   *  a window the per-event deltas feed an EWMA at most every
-   *  SPEED_MIN_SAMPLE_S. */
-  function noteProgress(p: ResProgress) {
-    const prev = progress.value;
-    progress.value = p;
-    const now = performance.now();
-    if (p.phase !== "download" || !prev || prev.phase !== "download" || p.received < sampleBytes) {
-      sampleBytes = p.received;
-      sampleAt = p.phase === "download" ? now : 0;
-      speedEwma = 0;
-      speedBps.value = null;
-      return;
-    }
-    if (sampleAt === 0) {
-      // First download event of a window — baseline only, no rate yet.
-      sampleBytes = p.received;
-      sampleAt = now;
-      return;
-    }
-    const elapsedS = (now - sampleAt) / 1000;
-    const deltaBytes = p.received - sampleBytes;
-    if (elapsedS < SPEED_MIN_SAMPLE_S || deltaBytes <= 0) return;
-    const instant = deltaBytes / elapsedS;
-    speedEwma = speedEwma > 0 ? SPEED_EWMA_ALPHA * instant + (1 - SPEED_EWMA_ALPHA) * speedEwma : instant;
-    speedBps.value = speedEwma;
-    sampleBytes = p.received;
-    sampleAt = now;
+  /** Fold one unified download-progress tick into the store state. The
+   *  transfer rate is the backend's EWMA (`speedBps` on download-phase
+   *  ticks); every phase boundary drops it back to null so a rate never
+   *  outlives its byte stream. A mirror failover can no longer rewind
+   *  `received` (the hub resumes from the committed offset), so no
+   *  regression handling is needed. */
+  function noteProgress(p: DownloadProgress) {
+    if (p.kind !== "res-pack") return;
+    const detail = p.detail ?? {};
+    progress.value = {
+      phase: p.phase,
+      received: p.received,
+      total: p.total,
+      segment: detail.segment ?? 1,
+      segments: detail.segments ?? 1,
+      error: p.error ?? null,
+    };
+    speedBps.value = p.phase === "download" && p.speedBps > 0 ? p.speedBps : null;
   }
 
   function wireProgressStream() {
     if (progressWired) return;
     progressWired = true;
-    // Outside the Tauri shell (browser dev) there is no event source; the
-    // optional listener simply stays unset there. The store lives for the
-    // app's lifetime, so the returned unlisten is intentionally dropped.
-    const un = api.listenResProgress?.(noteProgress);
-    if (un instanceof Promise) void un.catch(() => {});
+    // The shared download bus (one transport listener fanned out to every
+    // subscriber); outside the Tauri shell (browser dev) there is no event
+    // source and ticks simply never arrive. The store lives for the app's
+    // lifetime, so the returned detach is intentionally dropped.
+    api.listenDownloadProgress?.(noteProgress);
   }
 
   /** Mobile: fetch the APK-bundled manifest (same-origin static file the
@@ -257,7 +244,14 @@ export const useCacheStore = defineStore("resourceCache", () => {
     const upd = update.value;
     if (!upd?.updateAvailable || promptPending) return;
     const prog = progress.value;
-    if (prog && (prog.phase === "download" || prog.phase === "apply")) return;
+    if (
+      prog &&
+      (prog.phase === "download" ||
+        prog.phase === "apply" ||
+        prog.phase === "queued")
+    ) {
+      return;
+    }
     promptPending = true;
     const answered = await showBlockingToast(
       t("settings.resUpdatePrompt", {

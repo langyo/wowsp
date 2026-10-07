@@ -263,19 +263,28 @@ export default defineComponent({
       return false;
     }
 
-    let unlisten: (() => void) | undefined;
+    let detach: (() => void) | undefined;
     onMounted(() => {
-      api
-        .listenCatalogProgress?.((p) => {
-          if (p.phase === "done") {
-            progresses.value.delete(p.id);
-          } else {
-            progresses.value.set(p.id, p);
-          }
-        })
-        ?.then((un) => (unlisten = un));
+      // One subscription on the shared download bus, filtered to mod
+      // installs; the package counters ride the event's `detail`.
+      detach = api.listenDownloadProgress?.((p) => {
+        if (p.kind !== "mod-package") return;
+        if (p.phase === "done") {
+          progresses.value.delete(p.id);
+        } else {
+          const detail = p.detail ?? {};
+          progresses.value.set(p.id, {
+            id: p.id,
+            phase: p.phase,
+            package: detail.package ?? 0,
+            packages: detail.packages ?? 0,
+            received: p.received,
+            total: p.total,
+          });
+        }
+      });
     });
-    onUnmounted(() => unlisten?.());
+    onUnmounted(() => detach?.());
 
     async function loadCatalog(force: boolean) {
       if (catalogLoading.value) return;

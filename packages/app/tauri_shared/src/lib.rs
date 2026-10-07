@@ -7,6 +7,7 @@
 //! regenerate the TS bindings (planned: ts-rs) and update the webui types.
 
 mod arena;
+pub mod download;
 mod encyclopedia;
 mod game;
 mod mod_hub;
@@ -20,6 +21,7 @@ mod stream;
 mod supporters;
 
 pub use arena::*;
+pub use download::*;
 pub use encyclopedia::*;
 pub use game::*;
 pub use mod_hub::*;

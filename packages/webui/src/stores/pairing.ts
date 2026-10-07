@@ -19,7 +19,8 @@
  * - PAIRING SERVER (desktop side): the settings → pairing section's view of
  *   `pairing_start`/`pairing_stop`/`pairing_get_status`, the hidden gateway
  *   toggle, code regeneration, and the pull progress stream
- *   (`wowsp://pairing-progress`, same wiring as res-progress).
+ *   (`wowsp://pairing-progress` — pairing's own multiplexed channel; it
+ *   does not ride the unified download bus).
  */
 import { defineStore } from "pinia";
 import { ref } from "vue";

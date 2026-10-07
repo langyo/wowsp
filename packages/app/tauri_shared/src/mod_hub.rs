@@ -442,17 +442,3 @@ pub struct MigrationPlan {
     pub superseded: Vec<PlanFile>,
     pub decide: Vec<PlanFile>,
 }
-
-/// Progress push for a catalog install (`wowsp://mod-catalog-progress`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CatalogProgress {
-    pub id: String,
-    /// `downloading | installing | done`.
-    pub phase: String,
-    /// 1-based index of the package in flight.
-    pub package: u32,
-    pub packages: u32,
-    pub received: u64,
-    pub total: u64,
-}

@@ -18,7 +18,7 @@ vi.mock("@/api", () => {
       ingamePluginStatus: vi.fn(),
       ingamePluginInstall: vi.fn(),
       modCatalogInstall: vi.fn(),
-      listenCatalogProgress: vi.fn(async (_handler: unknown) => () => undefined),
+      listenDownloadProgress: vi.fn((_handler: unknown) => () => undefined),
     },
   };
 });
@@ -73,7 +73,7 @@ const mocked = {
   probe: vi.mocked(api.ingamePluginStatus),
   probeInstall: vi.mocked(api.ingamePluginInstall),
   install: vi.mocked(api.modCatalogInstall),
-  listen: vi.mocked(api.listenCatalogProgress),
+  listen: vi.mocked(api.listenDownloadProgress),
 };
 
 beforeEach(() => {
@@ -189,8 +189,8 @@ describe("usePluginUpdatesStore.updateAll", () => {
   });
 
   it("folds per-item progress events into overallPercent", async () => {
-    let emit: ((p: { id: string; phase: string; package: number; packages: number; received: number; total: number }) => void) | undefined;
-    mocked.listen.mockImplementationOnce(async (handler: unknown) => {
+    let emit: ((p: { id: string; kind: string; phase: string; received: number; total: number }) => void) | undefined;
+    mocked.listen.mockImplementationOnce((handler: unknown) => {
       emit = handler as typeof emit;
       return () => undefined;
     });
@@ -203,7 +203,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
         new Promise((resolve) => {
           release = () => resolve({} as never);
           setTimeout(() => {
-            emit?.({ id: "a", phase: "downloading", package: 1, packages: 1, received: 50, total: 100 });
+            emit?.({ id: "a", kind: "mod-package", phase: "download", received: 50, total: 100 });
           }, 0);
         }) as never,
     );
@@ -218,8 +218,12 @@ describe("usePluginUpdatesStore.updateAll", () => {
     expect(updates.running).toBe(false);
   });
 
-  it("a rejected progress listener never strands the pass", async () => {
-    mocked.listen.mockRejectedValueOnce(new Error("listen boom") as never);
+  it("a throwing progress listener never strands the pass", async () => {
+    // The shared bus registers handlers synchronously; a throwing
+    // registration must not strand the pass either.
+    mocked.listen.mockImplementationOnce(() => {
+      throw new Error("listen boom");
+    });
     const updates = usePluginUpdatesStore();
     updates.perInstall = {
       [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: false },

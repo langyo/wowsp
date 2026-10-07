@@ -66,26 +66,6 @@ pub struct ResUpdate {
     pub delta_steps: Option<Vec<ResDeltaStep>>,
 }
 
-/// Progress push for a resource-pack download (`wowsp://res-progress`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResProgress {
-    /// `download | apply | done | error`.
-    pub phase: String,
-    /// Bytes received so far across the whole pass (download phase only;
-    /// chain patches aggregate their sizes into `total`).
-    pub received: u64,
-    /// Total bytes when known (Content-Length / asset sizes), else 0.
-    pub total: u64,
-    /// 1-based index of the chain-patch / full-archive segment streaming
-    /// (1 for a full download).
-    pub segment: u32,
-    /// How many segments the pass consists of.
-    pub segments: u32,
-    /// Human-readable error on the `error` phase (empty otherwise).
-    pub error: Option<String>,
-}
-
 /// A clearable auxiliary cache directory (cache-management panel).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

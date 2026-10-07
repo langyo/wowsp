@@ -37,8 +37,9 @@
 //! `ensure_res_pack` keeps its historical fire-and-forget contract for the
 //! startup / on-demand paths (skip when the hash matches; an installer-
 //! shipped or legacy-stamped pack counts as present), while `res_download`
-//! is the panel's explicit download: streaming, progress events
-//! (`wowsp://res-progress`) and cancellable.
+//! is the panel's explicit download: streaming through the unified
+//! download hub, progress events on `wowsp://download-progress`
+//! (kind "res-pack") and cancellable.
 //!
 //! ## Mobile (Android/iOS app build)
 //!
@@ -66,10 +67,8 @@
 
 use std::fs;
 use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use flate2::read::GzDecoder;
@@ -77,8 +76,10 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tar::Archive;
 use tauri::{AppHandle, Emitter};
-use wowsp_tauri_shared::{ResProgress, ResStatus, ResUpdate};
+use wowsp_tauri_shared::download::{kind, phase};
+use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress, ResStatus, ResUpdate};
 
+use crate::commands::download_hub::{self, DownloadRequest};
 use crate::paths;
 
 const REPO: &str = "langyo/wowsp";
@@ -112,12 +113,14 @@ const PACK_TMP: &str = ".res-pack.download";
 const DELTA_TMP: &str = ".res-delta.download";
 const DELTA_STAGING_DIR: &str = ".res-delta-staging";
 
-pub const RES_PROGRESS_EVENT: &str = "wowsp://res-progress";
+/// The unified download hub's job id for every pack archive transfer
+/// (full download and each chain-patch link — cancels address the pass
+/// by it).
+const JOB_ID: &str = "res-pack";
 
 /// In-flight download bookkeeping (single-flight — there is exactly one
-/// pack now) plus a cooperative cancel flag the panel sets mid-stream.
+/// pack now; the whole install pass, transfer + apply, holds it).
 static DOWNLOAD_ACTIVE: Mutex<bool> = Mutex::new(false);
-static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
 /// Marker `ensure_res_pack` answers with on mobile when the APK bundle (not
 /// a downloaded cache pack) is serving — the webui treats it as "nothing to
@@ -494,128 +497,78 @@ fn file_sha256(path: &Path) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-/// Emit a progress event when a handle is available (ensure_* paths run
-/// headless without one).
-fn emit_progress(app: Option<&AppHandle>, progress: &ResProgress) {
+/// One pack-pass progress tick on the unified `wowsp://download-progress`
+/// channel (`kind: "res-pack"`); no-op for headless callers (the ensure_*
+/// startup paths run without a handle).
+#[allow(clippy::too_many_arguments)]
+fn emit_progress(
+    app: Option<&AppHandle>,
+    progress_phase: &str,
+    received: u64,
+    total: u64,
+    segment: u32,
+    segments: u32,
+    error: Option<String>,
+) {
     if let Some(app) = app {
-        let _ = app.emit(RES_PROGRESS_EVENT, progress);
+        let _ = app.emit(
+            DOWNLOAD_PROGRESS_EVENT,
+            DownloadProgress {
+                id: JOB_ID.to_string(),
+                kind: kind::RES_PACK.to_string(),
+                phase: progress_phase.to_string(),
+                received,
+                total,
+                speed_bps: 0.0,
+                detail: Some(serde_json::json!({ "segment": segment, "segments": segments })),
+                error,
+            },
+        );
     }
 }
 
-/// Everything a streaming download needs besides the client + progress
-/// sink: where it goes, what it must verify as, and where it sits in the
-/// multi-segment progress display (full download = segment 1 of 1; a
-/// chain patch = its index over the total, with `base_received`/`base_total`
-/// carrying the segments already accounted for).
-struct DownloadCtx<'a> {
-    url: &'a str,
-    dest: &'a Path,
-    expected_sha256: Option<&'a str>,
+/// Transfer one archive through the unified download hub: the shared
+/// mirror ladder, a single writer into the part file, cross-pass resume
+/// for the content-addressed full pack, and a mirror dying mid-stream
+/// failing over to the next candidate FROM THE COMMITTED OFFSET (the
+/// progress bar no longer restarts from zero on a mirror switch). The
+/// generous overall timeout only caps a stalled transfer — a healthy slow
+/// link streams well within it. `segment`/`segments`/`base_*` carry the
+/// multi-segment progress aggregation (full download = segment 1 of 1; a
+/// chain patch = its index over the pass total).
+#[allow(clippy::too_many_arguments)]
+async fn download_archive(
+    app: Option<&AppHandle>,
+    url: &str,
+    dest: &Path,
+    expected_sha256: Option<&str>,
     expected_size: u64,
+    resume: bool,
     segment: u32,
     segments: u32,
     base_received: u64,
     base_total: u64,
-}
-
-/// Stream `ctx.url` into `ctx.dest`, emitting throttled download progress
-/// and honouring the cancel flag. When `expected_sha256` is given the
-/// stream is hashed and verified, so a truncated or corrupted mirror copy
-/// fails BEFORE extraction instead of as a mid-unpack error. The generous
-/// overall timeout only caps a stalled transfer — a healthy slow link
-/// streams well within it.
-async fn download_to_file(
-    client: &Client,
-    ctx: &DownloadCtx<'_>,
-    app: Option<&AppHandle>,
 ) -> Result<(), String> {
-    let url = ctx.url;
-    let mut resp = client
-        .get(url)
-        .timeout(Duration::from_secs(3600))
-        .send()
-        .await
-        .map_err(|e| format!("{url}: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("{url}: HTTP {}", resp.status()));
-    }
-    let content_length = resp.content_length().unwrap_or(0);
-    let total = if content_length > 0 {
-        content_length
-    } else {
-        ctx.expected_size
-    };
-    let mut file =
-        File::create(ctx.dest).map_err(|e| format!("create {}: {e}", ctx.dest.display()))?;
-    let mut hasher = Sha256::new();
-    let mut received = 0u64;
-    let mut since_emit = 0u64;
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("{url}: {e}"))? {
-        if DOWNLOAD_CANCEL.load(Ordering::Relaxed) {
-            let _ = fs::remove_file(ctx.dest);
-            return Err("cancelled".to_string());
-        }
-        file.write_all(&chunk).map_err(|e| format!("write: {e}"))?;
-        if ctx.expected_sha256.is_some() {
-            hasher.update(&chunk);
-        }
-        received += chunk.len() as u64;
-        since_emit += chunk.len() as u64;
-        if since_emit >= 262_144 {
-            since_emit = 0;
-            emit_progress(
-                app,
-                &ResProgress {
-                    phase: "download".into(),
-                    received: ctx.base_received + received,
-                    total: if total > 0 { ctx.base_total + total } else { 0 },
-                    segment: ctx.segment,
-                    segments: ctx.segments,
-                    error: None,
-                },
-            );
-        }
-    }
-    file.flush().map_err(|e| format!("flush: {e}"))?;
-    if let Some(expected) = ctx.expected_sha256 {
-        let got = hex::encode(hasher.finalize());
-        if !got.eq_ignore_ascii_case(expected) {
-            let _ = fs::remove_file(ctx.dest);
-            return Err(format!(
-                "{url}: sha256 mismatch (got {}, expected {expected}) — likely a truncated or corrupted mirror copy",
-                &got[..got.len().min(12)]
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Mirror ladder for one archive download; a dying mirror restarts the
-/// progress stream from zero on the next candidate.
-async fn download_asset(
-    client: &Client,
-    ctx: &DownloadCtx<'_>,
-    app: Option<&AppHandle>,
-) -> Result<(), String> {
-    let mut last_err = String::from("no mirror attempted");
-    for candidate in super::github_mirror::candidates(ctx.url) {
-        let attempt = DownloadCtx {
-            url: &candidate,
-            ..*ctx
-        };
-        match download_to_file(client, &attempt, app).await {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                if e == "cancelled" {
-                    let _ = fs::remove_file(ctx.dest);
-                    return Err(e);
-                }
-                last_err = e;
-            },
-        }
-    }
-    let _ = fs::remove_file(ctx.dest);
-    Err(format!("download {}: {last_err}", ctx.url))
+    download_hub::transfer(
+        app,
+        DownloadRequest {
+            expected_sha256: expected_sha256.map(str::to_string),
+            timeout: Some(Duration::from_secs(3600)),
+            resume,
+            base_received,
+            base_total,
+            total_hint: expected_size,
+            detail: Some(serde_json::json!({ "segment": segment, "segments": segments })),
+            ..DownloadRequest::new(
+                JOB_ID,
+                kind::RES_PACK,
+                super::github_mirror::candidates(url),
+                dest.to_path_buf(),
+            )
+        },
+    )
+    .await
+    .map(|_| ())
 }
 
 // ── Staging / atomic swap ─────────────────────────────────────────────────
@@ -786,52 +739,28 @@ fn unpack_delta_blocking(archive: &Path, dest: &Path) -> Result<(), String> {
 
 /// Full download + install: fetch the archive (hash-verified), stage it,
 /// swap it in, stamp the version. Caller holds the single-flight guard.
-async fn full_install(
-    manifest: &ResManifest,
-    app: Option<&AppHandle>,
-    client: &Client,
-) -> Result<(), String> {
+async fn full_install(manifest: &ResManifest, app: Option<&AppHandle>) -> Result<(), String> {
     let cache = cache_root()?;
     let tmp = cache.join(PACK_TMP);
-    emit_progress(
-        app,
-        &ResProgress {
-            phase: "download".into(),
-            received: 0,
-            total: manifest.asset_size,
-            segment: 1,
-            segments: 1,
-            error: None,
-        },
-    );
+    emit_progress(app, phase::DOWNLOAD, 0, manifest.asset_size, 1, 1, None);
     let asset_url = release_download_url(RES_ARCHIVE);
-    download_asset(
-        client,
-        &DownloadCtx {
-            url: &asset_url,
-            dest: &tmp,
-            expected_sha256: Some(&manifest.asset_sha256),
-            expected_size: manifest.asset_size,
-            segment: 1,
-            segments: 1,
-            base_received: 0,
-            base_total: 0,
-        },
+    // The full archive is content-addressed (manifest sha256) — the part
+    // file is a safe resume base for a retry of the same version.
+    download_archive(
         app,
+        &asset_url,
+        &tmp,
+        Some(&manifest.asset_sha256),
+        manifest.asset_size,
+        true,
+        1,
+        1,
+        0,
+        0,
     )
     .await?;
 
-    emit_progress(
-        app,
-        &ResProgress {
-            phase: "apply".into(),
-            received: 0,
-            total: 0,
-            segment: 1,
-            segments: 1,
-            error: None,
-        },
-    );
+    emit_progress(app, phase::APPLY, 0, 0, 1, 1, None);
     // A cancel that lands mid-extract lets the (already verified) archive
     // finish unpacking — the swap-based installer never leaves a partial
     // pack, so aborting here would only waste the downloaded bytes. The
@@ -867,17 +796,7 @@ async fn full_install(
     let _ = fs::remove_file(&tmp);
     outcome?;
     write_local_version(&cache, &manifest.tree_sha256, &manifest.version)?;
-    emit_progress(
-        app,
-        &ResProgress {
-            phase: "done".into(),
-            received: 0,
-            total: 0,
-            segment: 1,
-            segments: 1,
-            error: None,
-        },
-    );
+    emit_progress(app, phase::DONE, 0, 0, 1, 1, None);
     Ok(())
 }
 
@@ -888,7 +807,6 @@ async fn delta_install(
     chain: &[DeltaEdge],
     manifest: &ResManifest,
     app: Option<&AppHandle>,
-    client: &Client,
 ) -> Result<(), String> {
     let cache = cache_root()?;
     let staging = move_into_staging(&cache)?;
@@ -902,35 +820,33 @@ async fn delta_install(
         for (idx, edge) in chain.iter().enumerate() {
             let segment = idx as u32 + 1;
             // The delta archive itself is not pre-hashed on the wire;
-            // every file inside it IS, and apply verifies each one.
-            download_asset(
-                client,
-                &DownloadCtx {
-                    url: &edge.url,
-                    dest: &delta_tmp,
-                    expected_sha256: None,
-                    expected_size: edge.size,
-                    segment,
-                    segments,
-                    base_received: done_bytes,
-                    // received accumulates over the whole chain, so the
-                    // total must too: chain total minus this segment (the
-                    // segment's own Content-Length completes it).
-                    base_total: base_total.saturating_sub(edge.size),
-                },
+            // every file inside it IS, and apply verifies each one. The
+            // scratch part name is shared by every link of the chain, so
+            // no resume base is carried between segments.
+            download_archive(
                 app,
+                &edge.url,
+                &delta_tmp,
+                None,
+                edge.size,
+                false,
+                segment,
+                segments,
+                done_bytes,
+                // received accumulates over the whole chain, so the
+                // total must too: chain total minus this segment (the
+                // segment's own Content-Length completes it).
+                base_total.saturating_sub(edge.size),
             )
             .await?;
             emit_progress(
                 app,
-                &ResProgress {
-                    phase: "apply".into(),
-                    received: done_bytes + edge.size,
-                    total: base_total,
-                    segment,
-                    segments,
-                    error: None,
-                },
+                phase::APPLY,
+                done_bytes + edge.size,
+                base_total,
+                segment,
+                segments,
+                None,
             );
             let outcome = tokio::task::spawn_blocking({
                 let delta_tmp = delta_tmp.clone();
@@ -954,17 +870,7 @@ async fn delta_install(
         swap_staging_in(&cache, &staging)?;
         write_local_version(&cache, &manifest.tree_sha256, &manifest.version)?;
         let _ = fs::remove_dir_all(&staging);
-        emit_progress(
-            app,
-            &ResProgress {
-                phase: "done".into(),
-                received: 0,
-                total: 0,
-                segment: segments,
-                segments,
-                error: None,
-            },
-        );
+        emit_progress(app, phase::DONE, 0, 0, segments, segments, None);
         Ok::<(), String>(())
     }
     .await;
@@ -996,17 +902,7 @@ async fn install_latest(
             // Already current — the panel seeds a progress entry before
             // invoking, so close it out (a silent Ok would strand the UI
             // on a dead progress bar until restart).
-            emit_progress(
-                app,
-                &ResProgress {
-                    phase: "done".into(),
-                    received: 0,
-                    total: 0,
-                    segment: 1,
-                    segments: 1,
-                    error: None,
-                },
-            );
+            emit_progress(app, phase::DONE, 0, 0, 1, 1, None);
             return Ok(());
         }
     }
@@ -1026,13 +922,13 @@ async fn install_latest(
                 );
                 if !chain.is_empty() {
                     tracing::info!(steps = chain.len(), "applying resource-pack chain patches");
-                    return delta_install(&chain, &manifest, app, client).await;
+                    return delta_install(&chain, &manifest, app).await;
                 }
             },
             Err(e) => tracing::warn!("delta discovery failed, falling back to full: {e}"),
         }
     }
-    full_install(&manifest, app, client).await
+    full_install(&manifest, app).await
 }
 
 /// Ensure the resource pack is present (startup / on-demand path, no
@@ -1082,7 +978,6 @@ async fn ensure_pack() -> Result<String, String> {
                 if *guard {
                     true
                 } else {
-                    DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
                     *guard = true;
                     held = true;
                     false
@@ -1109,6 +1004,10 @@ async fn ensure_pack() -> Result<String, String> {
                     );
                     break Ok(());
                 }
+                // Same stale-cancel hygiene as res_download: the
+                // automatic pass must not inherit a cancel aimed at an
+                // earlier, already-finished pass.
+                download_hub::clear_pending(kind::RES_PACK, JOB_ID);
                 break install_latest(None, &client, false).await;
             }
             waited += 1;
@@ -1288,7 +1187,7 @@ pub async fn check_res_update() -> Result<ResUpdate, String> {
 }
 
 /// Explicit download (initial, migration or update) of the pack, streaming
-/// progress through `wowsp://res-progress`. Prefers the chain-patch path
+/// progress through the unified `wowsp://download-progress` channel. Prefers the chain-patch path
 /// when one exists; falls back to the hash-verified full archive. Mobile
 /// skips the chain entirely (full download only — see module docs).
 /// Single-flight: a second call while a pass is in flight is rejected.
@@ -1302,28 +1201,16 @@ pub async fn res_download(app: AppHandle) -> Result<(), String> {
         if *guard {
             return Err("a resource-pack download is already in flight".to_string());
         }
-        // Clear any stale cancel request from a previous interaction; the
-        // flag is intentionally NOT reset at the end of a download — the
-        // next download's start (here or in ensure_res_pack) clears it
-        // instead, so a late reset can never erase a cancel aimed at a
-        // NEW download.
-        DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
         *guard = true;
     }
+    // Drop a stale cancel pressed while no pass was registered (e.g.
+    // during the previous pass's apply tail) - THIS attempt is
+    // user-initiated and must not inherit it.
+    download_hub::clear_pending(kind::RES_PACK, JOB_ID);
     // cfg! keeps one code path; the mobile false is folded at compile time.
     let result = install_latest(Some(&app), &client, !cfg!(mobile)).await;
     if let Err(e) = &result {
-        emit_progress(
-            Some(&app),
-            &ResProgress {
-                phase: "error".into(),
-                received: 0,
-                total: 0,
-                segment: 0,
-                segments: 0,
-                error: Some(e.clone()),
-            },
-        );
+        emit_progress(Some(&app), phase::ERROR, 0, 0, 0, 0, Some(e.clone()));
     }
     if let Ok(mut guard) = DOWNLOAD_ACTIVE.lock() {
         *guard = false;
@@ -1331,13 +1218,14 @@ pub async fn res_download(app: AppHandle) -> Result<(), String> {
     result
 }
 
-/// Cancel the in-flight pack pass (cooperative: checked between download
-/// chunks; an apply phase that is already running finishes — the
-/// swap-based installer never leaves a partial pack, so aborting it
+/// Cancel the in-flight pack pass (cooperative: the hub's streaming loop
+/// stops at the next chunk boundary and KEEPS the part file as the resume
+/// base of a later retry; an apply phase that is already running finishes
+/// — the swap-based installer never leaves a partial pack, so aborting it
 /// locally would only discard completed work).
 #[tauri::command]
 pub fn res_cancel() -> Result<(), String> {
-    DOWNLOAD_CANCEL.store(true, Ordering::Relaxed);
+    download_hub::cancel(kind::RES_PACK, JOB_ID);
     Ok(())
 }
 

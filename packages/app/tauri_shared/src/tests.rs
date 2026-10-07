@@ -1754,7 +1754,7 @@ fn clan_info_renames_totals_and_hidden_count() {
     );
 }
 
-// ── mod hub (client.ts: ModKind / InstalledMod / CatalogProgress) ───────
+// ── mod hub (client.ts: ModKind / InstalledMod) ───────
 
 /// `ModKind` mirrors the TS union "voice" | "skin" | ... — single-word
 /// variants under camelCase collapse to lowercase.
@@ -1963,23 +1963,6 @@ fn install_report_renames_bin_version_and_wrote_files() {
         mirrored_bins: vec!["13357625".into()],
     });
     assert_eq!(v["mirroredBins"][0], "13357625");
-}
-
-#[test]
-fn catalog_progress_renames_the_package_pair() {
-    let v = round_trips(CatalogProgress {
-        id: "aslain".into(),
-        phase: "downloading".into(),
-        package: 1,
-        packages: 3,
-        received: 2048,
-        total: 8192,
-    });
-    for key in ["id", "phase", "package", "packages", "received", "total"] {
-        assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
-    }
-    assert_eq!(v["package"], 1);
-    assert_eq!(v["packages"], 3);
 }
 
 /// Migration wizard plan (client.ts: MigrationPlan / PlanFile). `identity`
@@ -2217,7 +2200,7 @@ fn mod_install_record_renames_bin_version_installed_at_and_restore_dir() {
     );
 }
 
-// ── resource pack (client.ts: ResStatus / ResUpdate / ResProgress) ──────
+// ── resource pack (client.ts: ResStatus / ResUpdate / DownloadProgress) ──────
 
 #[test]
 fn res_status_renames_tree_sha256_and_size_bytes() {
@@ -2289,18 +2272,26 @@ fn res_update_keeps_nulls_for_a_failed_lookup() {
 
 #[test]
 fn res_progress_renames_the_segment_pair() {
-    let v = round_trips(ResProgress {
+    let v = round_trips(DownloadProgress {
+        id: "res-pack".into(),
+        kind: "res-pack".into(),
         phase: "error".into(),
         received: 512,
         total: 0,
-        segment: 2,
-        segments: 4,
+        speed_bps: 1234.5,
+        detail: Some(serde_json::json!({ "segment": 2, "segments": 4 })),
         error: Some("download failed".into()),
     });
-    for key in ["phase", "received", "total", "segment", "segments", "error"] {
+    for key in [
+        "id", "kind", "phase", "received", "total", "speedBps", "detail", "error",
+    ] {
         assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
     }
-    assert_eq!(v["segments"], 4);
+    assert_eq!(
+        v["speedBps"], 1234.5,
+        "snake_case field must rename to speedBps"
+    );
+    assert_eq!(v["detail"]["segments"], 4);
     assert_eq!(v["error"], "download failed");
 }
 

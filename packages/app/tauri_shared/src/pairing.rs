@@ -83,8 +83,9 @@ pub struct GamedataSyncResult {
     pub files: usize,
 }
 
-/// Progress push for one pairing transfer (`wowsp://pairing-progress`, same
-/// plumbing as `wowsp://res-progress`). `phase` is `"download"` | `"done"` |
+/// Progress push for one pairing transfer (`wowsp://pairing-progress` —
+/// pairing keeps its OWN channel, it does not ride the unified download
+/// hub). `phase` is `"download"` | `"done"` |
 /// `"error"`; one event stream serves every concurrent transfer, so filter by
 /// `remoteName` (the `":gamedata:"` sentinel marks the game-data sync).
 #[derive(Debug, Clone, Serialize, Deserialize)]

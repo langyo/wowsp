@@ -35,6 +35,7 @@ use std::sync::Mutex;
 use sha2::{Digest, Sha256};
 
 use super::appdata;
+use super::download_hub::{self, DownloadRequest};
 
 const REPO: &str = "langyo/wowsp";
 const DATA_TAG: &str = "data-latest";
@@ -51,6 +52,9 @@ const KIT_META: &str = "data-pack/ship-consumable-kit.meta.json";
 /// scale means the manifest pointed at the wrong asset — fail the refresh
 /// and keep the cached/bundled copy instead of absorbing it.
 const DATASET_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// The unified download hub's job id for the dataset transfer.
+const JOB_ID: &str = "data-pack";
 
 /// Single-flight guard — the main window fires the refresh once per boot,
 /// but nothing stops a second webview from calling it too.
@@ -238,55 +242,33 @@ async fn refresh_kit() -> Result<bool, String> {
         return Ok(false);
     }
     let url = data_url(&entry.asset);
-    let mut last_err = format!("no mirror attempted for {url}");
-    for candidate in super::github_mirror::candidates(&url) {
-        match client
-            .get(&candidate)
-            .header("User-Agent", "WoWSP-data-pack/1.0")
-            .timeout(std::time::Duration::from_secs(60))
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => {
-                if resp
-                    .content_length()
-                    .is_some_and(|len| len > DATASET_MAX_BYTES as u64)
-                {
-                    last_err = format!(
-                        "{candidate}: {} bytes exceeds the data-pack cap",
-                        resp.content_length().unwrap_or_default()
-                    );
-                    continue;
-                }
-                let bytes = match resp.bytes().await {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        last_err = format!("read {candidate}: {e}");
-                        continue;
-                    },
-                };
-                if bytes.len() > DATASET_MAX_BYTES {
-                    last_err = format!(
-                        "{candidate}: {} bytes exceeds the data-pack cap",
-                        bytes.len()
-                    );
-                    continue;
-                }
-                // Verify BEFORE committing so a mirror serving the wrong
-                // body (200-with-garbage, a stale interstitial) just moves
-                // the ladder on; install_kit re-checks as defense in depth.
-                let sha = sha256_hex(&bytes);
-                if !sha.eq_ignore_ascii_case(&entry.sha256) {
-                    last_err = format!("{candidate}: body sha {sha} ≠ manifest {}", entry.sha256);
-                    continue;
-                }
-                return install_kit(bytes.as_ref(), entry);
-            },
-            Ok(resp) => last_err = format!("{candidate}: HTTP {}", resp.status()),
-            Err(e) => last_err = format!("{candidate}: {e}"),
-        }
-    }
-    Err(last_err)
+    let part = appdata::appdata_dir_path()?.join(format!("{KIT_FILE}.part"));
+    // The tiny transfer goes through the unified download hub so the
+    // data pack queues behind (never contends with) the big artifacts:
+    // mirror ladder, streaming sha256 verification, the DATASET_MAX_BYTES
+    // cap as a hard ceiling. Headless — this lane deliberately has no
+    // progress UI.
+    let done = download_hub::transfer(
+        None,
+        DownloadRequest {
+            expected_sha256: Some(entry.sha256.clone()),
+            timeout: Some(std::time::Duration::from_secs(60)),
+            max_bytes: Some(DATASET_MAX_BYTES as u64),
+            ..DownloadRequest::new(
+                JOB_ID,
+                wowsp_tauri_shared::download::kind::DATA_PACK,
+                super::github_mirror::candidates(&url),
+                part,
+            )
+        },
+    )
+    .await?;
+    let bytes = tokio::fs::read(&done.path)
+        .await
+        .map_err(|e| format!("read {}: {e}", done.path.display()))?;
+    let outcome = install_kit(&bytes, entry);
+    let _ = tokio::fs::remove_file(&done.path).await;
+    outcome
 }
 
 /// Verify a downloaded body against the manifest sha and install it into

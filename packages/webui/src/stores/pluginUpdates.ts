@@ -12,8 +12,9 @@
  * signal). Both update paths already exist Rust-side (mod_catalog_
  * install rewinds+reinstalls, ingame_plugin_install overwrites in
  * place); this store aggregates the signals and orchestrates them
- * sequentially, folding each install's wowsp://mod-catalog-progress
- * event into one overall percent for the toast card.
+ * sequentially, folding each install's unified wowsp://download-progress
+ * ticks (kind "mod-package") into one overall percent for the toast
+ * card.
  */
 import { useToast } from "@celestia-island/hikari";
 import { defineStore } from "pinia";
@@ -162,16 +163,16 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     done.value = 0;
     failures.value = [];
     let currentId: string | null = null;
-    // The per-item catalog progress events fold into the overall percent.
-    // Registered INSIDE the try (the updater-store precedent): a failed
-    // listen just degrades the card to indeterminate — it must never
-    // strand the pass with running=true.
+    // The per-item unified download-progress ticks (kind "mod-package")
+    // fold into the overall percent. Registered INSIDE the try (the
+    // updater-store precedent): a failed listen just degrades the card to
+    // indeterminate — it must never strand the pass with running=true.
     let unlisten: (() => void) | undefined;
     try {
       try {
-        unlisten = await api.listenCatalogProgress?.((p) => {
-          if (!running.value || p.id !== currentId) return;
-          if (p.phase === "downloading") {
+        unlisten = api.listenDownloadProgress?.((p) => {
+          if (!running.value || p.kind !== "mod-package" || p.id !== currentId) return;
+          if (p.phase === "download") {
             phase.value = "download";
             percent.value =
               p.total > 0

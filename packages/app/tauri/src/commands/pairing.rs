@@ -67,7 +67,9 @@ use wowsp_tauri_shared::{
     PairingToken, ReplayMetaLite,
 };
 
-/// Progress event channel (mirrors `wowsp://res-progress` plumbing).
+/// Progress event channel. Pairing transfers deliberately keep their own
+/// multiplexed stream (they pull from a paired device over LAN/relay, not
+/// the GitHub mirror ladder the unified download hub serves).
 pub const PAIRING_PROGRESS_EVENT: &str = "wowsp://pairing-progress";
 /// Sentinel `remoteName` marking the game-data zip sync on the shared
 /// progress stream (no single "file" name to key on otherwise).

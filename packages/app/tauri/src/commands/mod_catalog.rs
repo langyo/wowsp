@@ -8,22 +8,25 @@
 //! installer from [`super::mod_hub`], then record every written file in
 //! `mods/installed.json` for uninstall and (later) game-update migration.
 //!
-//! Downloads go through the global proxy-aware client; GitHub release assets
-//! are also reachable through the same CN mirrors the updater uses.
+//! Package downloads stream through the unified download hub (mirror
+//! ladder + resume + the global proxy-aware client), progress flows on
+//! `wowsp://download-progress` with kind "mod-package"; the disk-side
+//! install stays serialized by the mod-hub gate below.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 
+use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{
-    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogPreset, CatalogProgress,
-    InstallReport, ModInstallRecord,
+    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogPreset,
+    DOWNLOAD_PROGRESS_EVENT, DownloadProgress, InstallReport, ModInstallRecord,
 };
 
+use super::download_hub::{self, DownloadRequest};
 use super::ingame_plugin;
 use super::mod_hub;
 use super::mod_hub::manifest::{self, WowspManifest};
@@ -31,7 +34,35 @@ use crate::paths;
 
 const INDEX_CACHE_FILE: &str = "mod-catalog.json";
 const LEDGER_FILE: &str = "mods/installed.json";
-pub const CATALOG_PROGRESS_EVENT: &str = "wowsp://mod-catalog-progress";
+
+/// One install's progress tick on the unified `wowsp://download-progress`
+/// channel (`kind: "mod-package"`): the hub streams the `download` phase
+/// with `{package, packages}` in `detail`, this module continues with
+/// `installing` / `done` on the same channel so a listener never joins
+/// two streams.
+fn emit_progress(
+    app: &AppHandle,
+    id: &str,
+    phase_name: &str,
+    package: u32,
+    packages: u32,
+    received: u64,
+    total: u64,
+) {
+    let _ = app.emit(
+        DOWNLOAD_PROGRESS_EVENT,
+        DownloadProgress {
+            id: id.to_string(),
+            kind: kind::MOD_PACKAGE.to_string(),
+            phase: phase_name.to_string(),
+            received,
+            total,
+            speed_bps: 0.0,
+            detail: Some(serde_json::json!({ "package": package, "packages": packages })),
+            error: None,
+        },
+    );
+}
 
 /// How long a cached `mod-catalog.json` is served without a re-fetch. A
 /// stale index whose package hashes drifted from the release is the classic
@@ -56,8 +87,10 @@ fn download_candidates(url: &str) -> Vec<String> {
 /// Serializes every mod-hub mutation (catalog install / uninstall, `.bak`
 /// toggles, unit uninstall): the guard is held across ledger writes and
 /// res_mods renames so parallel commands cannot interleave them. Network
-/// downloads stay outside the gate, so several installs still download in
-/// parallel and only their disk side serializes.
+/// downloads stay outside the gate (they serialize globally through the
+/// unified download hub's FIFO queue instead — several installs queue
+/// behind each other's packages, and only their disk side takes this
+/// gate).
 static MOD_HUB_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub(crate) async fn mod_hub_gate() -> tokio::sync::MutexGuard<'static, ()> {
@@ -488,19 +521,10 @@ pub async fn mod_catalog_install(
     mod_hub::ensure_game_closed(&game_root)?;
     mod_hub::ensure_res_mods_active(&game_root)?;
 
-    let progress = |p: CatalogProgress| {
-        let _ = app.emit(CATALOG_PROGRESS_EVENT, &p);
-    };
-    progress(CatalogProgress {
-        id: entry.id.clone(),
-        phase: "downloading".into(),
-        package: 0,
-        packages: packages.len() as u32,
-        received: 0,
-        total: packages.iter().map(|p| p.size).sum(),
-    });
+    let package_count = packages.len() as u32;
+    let total = packages.iter().map(|p| p.size).sum::<u64>().max(1);
+    emit_progress(&app, &entry.id, phase::DOWNLOAD, 0, package_count, 0, total);
 
-    let client = super::network::build_http_client()?;
     let work = WorkDir(std::env::temp_dir().join(format!(
         "wowsp-modhub-{}-{}",
         entry.id,
@@ -511,89 +535,80 @@ pub async fn mod_catalog_install(
     )));
     fs::create_dir_all(&work.0).map_err(|e| format!("create workdir: {e}"))?;
 
+    // Every package streams through the unified download hub: mirror
+    // ladder (GitHub direct first, then the CN mirrors — a plain
+    // `github.com` download 404s/timeout for many CN users, which used to
+    // fail every install even though the catalog itself had loaded
+    // through a mirror), streaming sha256 verification and a mirror
+    // dying mid-transfer failing over FROM THE COMMITTED OFFSET. Packages
+    // FIFO-queue behind whatever else is downloading instead of
+    // contending for the disk.
     let mut received_total = 0u64;
-    let total = packages.iter().map(|p| p.size).sum::<u64>().max(1);
     for (i, pkg) in packages.iter().enumerate() {
-        // GitHub direct first, then the CN mirrors — a plain `github.com`
-        // download 404s/timeout for many CN users, which used to fail every
-        // install even though the catalog itself had loaded through a mirror.
-        let candidates = download_candidates(&pkg.url);
-        let mut bytes: Option<Vec<u8>> = None;
-        let mut last_err = String::from("no mirror attempted");
-        for url in &candidates {
-            let mut since_emit = 0u64;
-            let id = entry.id.clone();
-            let package_count = packages.len() as u32;
-            // A mirror dying mid-transfer must not keep its bytes counted —
-            // rewind so the retry does not inflate the progress bar.
-            let attempt_start = received_total;
-            let result = fetch_package(&client, url, |n| {
-                received_total += n;
-                since_emit += n;
-                if since_emit >= 262_144 {
-                    since_emit = 0;
-                    progress(CatalogProgress {
-                        id: id.clone(),
-                        phase: "downloading".into(),
-                        package: (i + 1) as u32,
-                        packages: package_count,
-                        received: received_total,
-                        total,
-                    });
-                }
-            })
-            .await;
-            match result {
-                Ok(data) => {
-                    bytes = Some(data);
-                    break;
-                },
-                Err(e) => {
-                    received_total = attempt_start;
-                    last_err = e;
-                },
+        let done = download_hub::transfer(
+            Some(&app),
+            DownloadRequest {
+                expected_sha256: (!pkg.sha256.is_empty()).then(|| pkg.sha256.to_ascii_lowercase()),
+                timeout: Some(std::time::Duration::from_secs(600)),
+                base_received: received_total,
+                // Actual byte counts accumulate over the pass; the total
+                // is the catalog's (KiB-rounded) sum minus this package.
+                base_total: total.saturating_sub(pkg.size),
+                total_hint: pkg.size,
+                detail: Some(serde_json::json!({
+                    "package": (i + 1) as u32,
+                    "packages": package_count,
+                })),
+                ..DownloadRequest::new(
+                    &entry.id,
+                    kind::MOD_PACKAGE,
+                    download_candidates(&pkg.url),
+                    work.0.join(format!("{i:02}-{}.part", pkg.name)),
+                )
+            },
+        )
+        .await
+        .map_err(|e| {
+            if e.contains("sha256 mismatch") {
+                format!(
+                    "{} failed the SHA-256 check; refresh the catalog and retry — the cached index may be stale, or the package on the release is damaged ({e})",
+                    pkg.name
+                )
+            } else {
+                format!("download {}: {e}", pkg.name)
             }
-        }
-        let Some(bytes) = bytes else {
-            return Err(format!("download {}: {last_err}", pkg.name));
-        };
-        if !pkg.sha256.is_empty() {
-            let digest = hex::encode(Sha256::digest(&bytes));
-            if digest != pkg.sha256.to_ascii_lowercase() {
-                return Err(format!(
-                    "{} failed the SHA-256 check ({} != {}); refresh the catalog and retry — the cached index may be stale, or the package on the release is damaged",
-                    pkg.name, digest, pkg.sha256
-                ));
-            }
-        }
-        if !size_within_catalog(bytes.len(), pkg.size) {
+        })?;
+        if !size_within_catalog(done.bytes as usize, pkg.size) {
             return Err(format!(
                 "{} downloaded {} bytes, outside the catalog's listed {} (KiB-rounded) — refresh the catalog and retry; the cached index may be stale",
-                pkg.name,
-                bytes.len(),
-                pkg.size
+                pkg.name, done.bytes, pkg.size
             ));
         }
         let dest = work.0.join(format!("{i:02}-{}", pkg.name));
-        fs::write(&dest, &bytes).map_err(|e| format!("write {}: {e}", pkg.name))?;
-        progress(CatalogProgress {
-            id: entry.id.clone(),
-            phase: "downloading".into(),
-            package: (i + 1) as u32,
-            packages: packages.len() as u32,
-            received: received_total,
+        tokio::fs::rename(&done.path, &dest)
+            .await
+            .map_err(|e| format!("assemble {}: {e}", dest.display()))?;
+        received_total += done.bytes;
+        emit_progress(
+            &app,
+            &entry.id,
+            phase::DOWNLOAD,
+            (i + 1) as u32,
+            package_count,
+            received_total,
             total,
-        });
+        );
     }
 
-    progress(CatalogProgress {
-        id: entry.id.clone(),
-        phase: "installing".into(),
-        package: packages.len() as u32,
-        packages: packages.len() as u32,
-        received: received_total,
+    emit_progress(
+        &app,
+        &entry.id,
+        phase::INSTALLING,
+        package_count,
+        package_count,
+        received_total,
         total,
-    });
+    );
 
     // Serialize the disk side (unpack, res_mods writes, ledger) while other
     // installs may still be in their download phase. The game guard runs
@@ -717,43 +732,17 @@ pub async fn mod_catalog_install(
 
     drop(_gate);
 
-    progress(CatalogProgress {
-        id: entry.id.clone(),
-        phase: "done".into(),
-        package: packages.len() as u32,
-        packages: packages.len() as u32,
-        received: received_total,
+    emit_progress(
+        &app,
+        &entry.id,
+        phase::DONE,
+        package_count,
+        package_count,
+        received_total,
         total,
-    });
+    );
     tracing::info!(id = %entry.id, version = %entry.version, "mod_catalog_install done");
     Ok(report)
-}
-
-/// Stream one package URL into memory. Downloads previously buffered via
-/// `bytes()` with no timeout: a stalled connection hung the install forever
-/// and the progress bar never moved. Emits each chunk length so the caller
-/// keeps the cross-package received counter and can push progress while a
-/// big single archive is still arriving.
-async fn fetch_package(
-    client: &reqwest::Client,
-    url: &str,
-    mut on_chunk: impl FnMut(u64),
-) -> Result<Vec<u8>, String> {
-    let mut resp = client
-        .get(url)
-        .timeout(std::time::Duration::from_secs(600))
-        .send()
-        .await
-        .map_err(|e| format!("{url}: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("{url}: HTTP {}", resp.status()));
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("{url}: {e}"))? {
-        on_chunk(chunk.len() as u64);
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
 }
 
 /// Extract every package archive (part order = index order) into `work`, then
