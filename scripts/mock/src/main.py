@@ -795,6 +795,11 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "damageStats": dump.get("damageStats", []),
             "chatMessages": dump.get("chatMessages", []),
             "achievements": dump.get("achievements", []),
+            # The arena roster + the recorder's team drive the frontend's
+            # authoritative HP totals and the team/self joins — without them
+            # the dev player silently falls back to stream-peak totals.
+            "arenaPlayers": dump.get("arenaPlayers", []),
+            "selfTeam": dump.get("selfTeam"),
             "weatherTransitions": dump.get("weatherTransitions", []),
             "weatherNotifications": dump.get("weatherNotifications", []),
         }

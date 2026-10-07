@@ -337,16 +337,43 @@
      read off two shared axes. */
   &__chat-panel {
     width: min(560px, 92vw);
+
+    /* The LIST is the chat scroller, not the modal body. With the body
+       scrolling, a content overflow of less than one row made wheel deltas
+       read as dead: the rows slid UNDER the translucent bleed pin faster
+       than the fold revealed the clipped half line, so the only visible
+       change was the first message being half-swallowed by the timeline.
+       Here the timeline rides a static header (the body no longer
+       scrolls, so the sticky pin never offsets) and every scroll delta
+       moves all rows against the list's own crisp top clip. */
+    .replay-view__modal-body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .replay-view__chat-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      /* Never chain the list's scroll to the page behind it (same
+         containment the body used to carry). */
+      overscroll-behavior: contain;
+    }
   }
   &__chat-timeline {
     display: flex;
     flex-direction: column;
     gap: 5px;
     /* Padding, not margin: the gap to the message list travels INSIDE the
-       pinned wrapper's painted box, so rows scrolling underneath vanish
-       behind the pin instead of peeking through a transparent margin
-       strip (a margin would collapse out of .hk-scroll-pin unpainted). */
+       header's painted box, so the header's surface runs flush into the
+       list's top clip edge (a margin would collapse out of the pin
+       unpainted and leave a transparent strip between them). */
     padding-bottom: 0.6rem;
+    /* The header sits OUTSIDE the list's scroller, so a touch drag landing
+       on it would chain to whatever scrolls behind the sheet (the body no
+       longer scrolls, making overscroll-behavior inert here) — header
+       gestures are click-only. */
+    touch-action: none;
   }
   &__chat-track {
     position: relative;

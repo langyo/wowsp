@@ -1121,12 +1121,15 @@ const ChatLogPanel = defineComponent({
       const sel = selected.value;
       return (
         <>
-          {/* Pinned above the scroll: the timeline (and its legend) rides an
-              HkScrollPin so the message list scrolls underneath it instead of
-              carrying it away. Bleed contract: the pin must stay the FIRST
-              element of the scroll body (host class + pad var on
-              __modal-body), and the timeline keeps its gap as padding so the
-              pin's painted box covers it. */}
+          {/* Above the scroll: the timeline (and its legend) rides an
+              HkScrollPin header. The message list scrolls ITSELF (see
+              __chat-panel in the SCSS), so the body never scrolls and the
+              sticky pin stays parked in the body's top gutter via the bleed
+              contract — the pin must stay the FIRST element of the body
+              (host class + pad var on __modal-body), and the timeline keeps
+              its gap as padding so the pin's painted box covers it. Rows
+              then clip at the list's own crisp top edge, never behind the
+              translucent pin. */}
           <HkScrollPin side="top">
             <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
           </HkScrollPin>
