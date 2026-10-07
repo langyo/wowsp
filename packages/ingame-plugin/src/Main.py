@@ -834,7 +834,7 @@ class Probe(object):
         records = self.players_raw()
         # Stash this tick's raw roster records: write_telemetry reads their
         # isAlive as the authoritative alive source (see there — the entity
-        # walk alone can report uninitialized spawns dead).
+        # walk alone is not a strong enough death signal).
         self.latest_raw = records or {}
         self.observe_raw(records)
         roster = self.players(records)
@@ -937,9 +937,15 @@ class Probe(object):
             for p in self.latest_raw.values():
                 try:
                     nm = p['name']
-                    if nm:
-                        raw_alive[nm] = str(p['isAlive']) != 'False'
+                    if not nm:
+                        continue
+                    verdict = p['isAlive']
+                    # Only a recognizable verdict counts as "the field
+                    # exists": a build returning some other shape must not
+                    # disable the legacy walk fallback for the battle.
+                    if verdict is True or verdict is False or str(verdict) in ('True', 'False'):
                         self.raw_isalive_seen = True
+                    raw_alive[nm] = str(verdict) != 'False'
                 except Exception:
                     continue
             for p in self.roster:
@@ -980,7 +986,7 @@ class Probe(object):
                 # Write the authoritative verdict back into this tick's walk
                 # states: the panel rows (panel_rows, below) read them, so
                 # the in-game panel shows the same truth as the telemetry
-                # instead of the walk's raw (possibly uninitialized) read.
+                # instead of the walk's raw read.
                 if name in states:
                     states[name]['alive'] = str(alive)
                 if p.get('account_id') or p.get('realm'):

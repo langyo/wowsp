@@ -40,7 +40,7 @@ describe("gameTabRowCompare", () => {
   });
 
   it("keeps tier above the name segment on the CN order", () => {
-    // 豹(bào) sorts before 海(hǎi) pinyin-wise too, but the tier III cruiser
+    // 豺(chái) sorts before 海(hǎi) pinyin-wise too, but the tier III cruiser
     // leads the tier II group regardless of the name segment.
     const group = [
       { name: ":Apostolis:", shipId: SHIPS.gelderland },
