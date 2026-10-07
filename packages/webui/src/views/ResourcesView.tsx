@@ -170,11 +170,14 @@ export default defineComponent({
     const catalogLoading = ref(false);
     const catalogError = ref("");
     const records = ref<ModInstallRecord[]>([]);
-    // Per-mod busy/progress maps (Vue instruments collection mutations,
+    // Per-mod download-progress map (Vue instruments collection mutations,
     // so `.set`/`.delete` re-render). Only the mods currently being
     // processed appear here — every other row stays fully clickable while
     // one download runs, and parallel installs each track their own state.
-    const busy = ref(new Map<string, "install" | "uninstall">());
+    // Busy state itself is NOT local: the rows read the pluginUpdates
+    // store's SHARED per-item table (the `busy` alias below), so the
+    // sidebar's batch pass and the live page's probe card disable the
+    // same items here, and an install started here shows up on them.
     const progresses = ref(new Map<string, CatalogProgress>());
     const confirmTarget = ref<CatalogEntry | null>(null);
 
@@ -238,6 +241,12 @@ export default defineComponent({
 
     const gameStatus = useGameStatusStore();
     const pluginUpdates = usePluginUpdatesStore();
+    // The catalog rows' busy state = the pluginUpdates store's shared
+    // per-item table (probe + mod ids → op in flight). One map across
+    // every update surface: a sidebar batch pass or a live-page probe op
+    // disables its item here, and these rows' own installs register in
+    // the same table so the other surfaces disable too.
+    const busy = computed(() => pluginUpdates.itemBusy);
     // The install every mod operation targets: the user's selection, with
     // the RUNNING client's folder as the fallback (same order the ship
     // detail uses) so the page keeps working when no selection is present.
@@ -309,6 +318,18 @@ export default defineComponent({
         records.value = [];
       }
     }
+
+    // The shared busy table draining to empty means an update pass on
+    // ANOTHER surface (sidebar batch, live probe card) just finished —
+    // this page's own ops reload the ledger themselves, but the rows'
+    // up-to-date badges must follow a foreign pass too, so one ledger
+    // reload rides the busy→idle transition.
+    watch(
+      () => pluginUpdates.itemBusy.size,
+      (now, was) => {
+        if ((was ?? 0) > 0 && now === 0) void loadRecords();
+      },
+    );
 
     // ── Deep link (?mod=<catalog id>): the settings' roster plugin button ──
     // lands here. The query is watched REACTIVELY: the settings surface is a
@@ -396,13 +417,15 @@ export default defineComponent({
       if (!gameRoot.value || busy.value.has(entry.id) || gameRunning() || safeModeBlocked()) {
         return;
       }
-      busy.value.set(entry.id, "install");
       // Captured before the RPC: installing over a foreign (Aslain) copy
       // is a REGISTRATION — the backend cuts the foreign installer's
       // manifest rows, the follow-up toast says ownership moved.
       const tookOverForeign = !!foreignCopyOf(entry);
       try {
-        const r = await api.modCatalogInstall(entry.id, gameRoot.value, preset);
+        // The shared run registers the row in the store-wide busy table
+        // and fans out the freshness sync (sidebar badge + live probe)
+        // when it lands.
+        const r = await pluginUpdates.runMod(entry.id, gameRoot.value, preset);
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
         if (tookOverForeign) {
           toast.info(t("resources.registeredOverForeign", { name: r.name }));
@@ -411,11 +434,10 @@ export default defineComponent({
           toast.info(t("resources.mirroredBins", { version: v }));
         }
         for (const c of r.conflicts ?? []) toast.info(c);
-        await Promise.all([scan(), loadRecords(), pluginUpdates.refresh()]);
+        await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
-        busy.value.delete(entry.id);
         progresses.value.delete(entry.id);
       }
     }
@@ -428,9 +450,8 @@ export default defineComponent({
         return;
       }
       confirmTarget.value = null;
-      busy.value.set(entry.id, "uninstall");
       try {
-        const r = await api.modCatalogUninstall(entry.id, gameRoot.value);
+        const r = await pluginUpdates.runModUninstall(entry.id, gameRoot.value);
         toast.success(
           t("resources.uninstalledDone", {
             name: r.name,
@@ -438,11 +459,11 @@ export default defineComponent({
             restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
           }),
         );
-        await Promise.all([scan(), loadRecords(), pluginUpdates.refresh()]);
+        await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
-        busy.value.delete(entry.id);
+        progresses.value.delete(entry.id);
       }
     }
 
@@ -491,7 +512,8 @@ export default defineComponent({
             restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
           }),
         );
-        await Promise.all([scan(), loadRecords()]);
+        // The unit's ledger rows leave with its files — freshness sync.
+        await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       } finally {
@@ -704,7 +726,11 @@ export default defineComponent({
         } else if (binHadProbe) {
           toast.warning(t("resources.migrateProbeFailed"));
         }
-        await Promise.all([scan(), loadRecords()]);
+        // The carry-over may have reinstalled the probe plugin and the
+        // move rewrote the ledger — refresh BOTH freshness signals (the
+        // shared sync covers the sidebar badge and the live probe card),
+        // not just this page's scans.
+        await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
       } catch (e) {
         migError.value = e instanceof Error ? e.message : String(e);
         // Back to review so the plan stays visible instead of dead-ending
@@ -785,7 +811,8 @@ export default defineComponent({
           mirrored: r.mirroredBins ?? [],
         };
         plan.value = null;
-        await Promise.all([scan(), loadRecords()]);
+        // A local-package install writes ledger rows too — freshness sync.
+        await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
       } catch (e) {
         planError.value = e instanceof Error ? e.message : String(e);
       } finally {
@@ -1309,7 +1336,8 @@ export default defineComponent({
       const foreignCopy = foreignCopyOf(entry);
       const upToDate = !!record && record.version === entry.version;
       const busyState = busy.value.get(entry.id);
-      const busyInstall = busyState === "install";
+      // The batch pass registers its items as "update" — same busy look.
+      const busyInstall = busyState === "install" || busyState === "update";
       const busyUninstall = busyState === "uninstall";
       const progressEntry = progresses.value.get(entry.id);
       const url = discussionUrl(entry.discussion);
@@ -2565,7 +2593,8 @@ export default defineComponent({
                       const text = localized(entry);
                       const record = recordOf(entry.id);
                       const upToDate = !!record && record.version === entry.version;
-                      const busyInstall = busy.value.get(entry.id) === "install";
+                      const busyOp = busy.value.get(entry.id);
+                      const busyInstall = busyOp === "install" || busyOp === "update";
                       const RowIcon = catIcon(entry.category);
                       return (
                         <button

@@ -1,7 +1,8 @@
 /**
- * Plugin freshness + one-click batch update — the model behind the
- * client-version selector's "插件可更新" marker and the ModUpdateToast
- * progress card.
+ * Plugin freshness + the ONE update orchestration every surface shares —
+ * the client-version selector's "插件可更新" marker and hover hint, the
+ * ModUpdateToast progress card, the live page's plugin card (install /
+ * update / uninstall) and the mod hub's per-mod rows all read THIS store.
  *
  * Freshness per game install is the union of two existing signals:
  * catalog mods whose ledger record version no longer matches the
@@ -11,18 +12,33 @@
  * embedded payload (its version string is pinned, so bytes are the only
  * signal). Both update paths already exist Rust-side (mod_catalog_
  * install rewinds+reinstalls, ingame_plugin_install overwrites in
- * place); this store aggregates the signals and orchestrates them
- * sequentially, folding each install's unified wowsp://download-progress
- * ticks (kind "mod-package") into one overall percent for the toast
- * card.
+ * place); this store aggregates the signals and orchestrates every
+ * mutation — single-item or the sequential batch — folding each
+ * install's unified wowsp://download-progress ticks (kind "mod-package")
+ * into one overall percent for the toast card.
+ *
+ * The shared part that makes the surfaces agree: one per-item busy table
+ * (probe + mod ids) so an op started anywhere disables its item
+ * everywhere else, single-flight per item against double installs, and
+ * a post-op freshness fan-out (snapshot + live probe status) so a batch
+ * pass updates the sidebar badge while the live card updates the badge
+ * too — no surface is left believing a plugin is stale after any other
+ * surface just refreshed it.
  */
 import { useToast } from "@celestia-island/hikari";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { api, type CatalogEntry, type ModInstallRecord } from "@/api";
+import {
+  api,
+  type CatalogEntry,
+  type InstallReport,
+  type ModInstallRecord,
+  type UninstallReport,
+} from "@/api";
 import { t } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { sameGamePath } from "@/utils/gamePath";
 
 /** One outdated catalog mod awaiting its update run. */
@@ -39,6 +55,13 @@ export interface PluginUpdateInfo {
   probeOutdated: boolean;
 }
 
+/** The shared busy table's key for the built-in probe plugin. Namespaced
+ *  so a remote catalog mod id can never collide into the probe's slot. */
+export const PROBE_ITEM = "probe:builtin";
+
+/** Lifecycle op an item is mid-way through. */
+export type PluginItemOp = "install" | "update" | "uninstall";
+
 export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   const toast = useToast();
   const config = useConfigStore();
@@ -46,7 +69,38 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   /** Per-install snapshot; missing path = not assessed (quiet). */
   const perInstall = ref<Record<string, PluginUpdateInfo>>({});
 
-  /** --- batch update run state (drives ModUpdateToast) ---------------- */
+  /** ── shared per-item busy table ────────────────────────────────────
+   *  Probe (PROBE_ITEM) + catalog mod ids → the op in flight. Every
+   *  mutating surface registers here, so a batch pass started from the
+   *  sidebar hint disables the mod hub's row and the live page's plugin
+   *  card, and an op started on those surfaces shows up here too. */
+  const itemBusy = ref(new Map<string, PluginItemOp>());
+
+  /** The probe's busy op, or null when idle — the live surfaces' cards
+   *  derive their spinner from this, batch pass included. */
+  const probeBusy = computed<PluginItemOp | null>(
+    () => itemBusy.value.get(PROBE_ITEM) ?? null,
+  );
+
+  function itemOp(id: string): PluginItemOp | undefined {
+    return itemBusy.value.get(id);
+  }
+
+  /** Register → run → unregister + the freshness fan-out. The fan-out
+   *  runs on failure too: a failed install may have written partial
+   *  files, so both signals re-assess from disk/catalog either way. */
+  async function withItem<T>(key: string, op: PluginItemOp, run: () => Promise<T>): Promise<T> {
+    if (itemBusy.value.has(key)) throw new Error(`plugin item busy: ${key}`);
+    itemBusy.value.set(key, op);
+    try {
+      return await run();
+    } finally {
+      itemBusy.value.delete(key);
+      void syncFreshness();
+    }
+  }
+
+  /** ── batch update run state (drives ModUpdateToast) ---------------- */
   const running = ref(false);
   const total = ref(0);
   const done = ref(0);
@@ -82,6 +136,15 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     return info.mods.length + (info.probeOutdated ? 1 : 0);
   });
 
+  // Assessments coalesce: a batch pass pokes one per item completion and
+  // single ops poke their own — concurrent callers join the run in flight.
+  // A joiner whose interest landed after that run's catalog read (its own
+  // op's write is not covered by the joined snapshot) sets the dirty
+  // flag, and exactly one trailing re-assessment follows the joined run,
+  // so no op ever ends without an assessment started after it.
+  let assessing: Promise<void> | null = null;
+  let assessStale = false;
+
   /**
    * Re-assess every known install. Catalog and records are shared per
    * call; the probe status is a per-install two-file hash. Catalog
@@ -89,6 +152,21 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
    * freshness is advisory, never worth an error surface.
    */
   async function refresh(): Promise<void> {
+    if (assessing) {
+      assessStale = true;
+      return assessing;
+    }
+    assessing = doAssess().finally(() => {
+      assessing = null;
+      if (assessStale) {
+        assessStale = false;
+        void refresh();
+      }
+    });
+    return assessing;
+  }
+
+  async function doAssess(): Promise<void> {
     const paths: string[] = [];
     for (const p of [config.activeInstall?.path, ...config.installs.map((i) => i.path)]) {
       if (p && !paths.some((q) => sameGamePath(q, p))) paths.push(p);
@@ -131,11 +209,69 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   }
 
   /**
+   * The post-mutation fan-out: re-assess freshness (sidebar badge, hint,
+   * settings counts) AND re-probe the live surfaces' plugin status, so an
+   * update started on any one surface is reflected on all the others
+   * immediately — never only after the next poll or remount.
+   */
+  async function syncFreshness(): Promise<void> {
+    await Promise.allSettled([refresh(), useIngamePluginStore().refresh()]);
+  }
+
+  /**
+   * One probe-plugin lifecycle op — the single entry every surface uses
+   * (the live idle card, the onboarding wizard, the boot prompt modal,
+   * and the batch pass's probe step). Returns null on success, else the
+   * error string/key for the caller's toast; "common.game.offline" also
+   * covers a probe already busy elsewhere (same contract as before).
+   */
+  async function runProbe(gameRoot: string, op: PluginItemOp): Promise<string | null> {
+    if (!gameRoot || probeBusy.value) return "common.game.offline";
+    return withItem(PROBE_ITEM, op, async () => {
+      try {
+        if (op === "uninstall") await api.ingamePluginUninstall(gameRoot);
+        else await api.ingamePluginInstall(gameRoot);
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    });
+  }
+
+  /**
+   * One catalog-mod install (fresh or update-over) — the single entry
+   * for the mod hub's rows and the batch pass's mod steps. `op` only
+   * flavors the shared busy table ("update" during a batch pass, so the
+   * mod hub's rows spin for it too). Throws on failure (the mod hub
+   * renders the message itself); single-flight per mod id via the
+   * shared table.
+   */
+  function runMod(
+    id: string,
+    gameRoot: string,
+    preset?: string | null,
+    op: "install" | "update" = "install",
+  ): Promise<InstallReport> {
+    return withItem(id, op, () => api.modCatalogInstall(id, gameRoot, preset ?? undefined));
+  }
+
+  /**
+   * One catalog-mod uninstall — mirrors runMod so the mod hub's remove
+   * button shares the same busy table + freshness fan-out (the record
+   * leaving the ledger un-stales the item everywhere).
+   */
+  function runModUninstall(id: string, gameRoot: string): Promise<UninstallReport> {
+    return withItem(id, "uninstall", () => api.modCatalogUninstall(id, gameRoot));
+  }
+
+  /**
    * One-click update for one install: the probe plugin first (local,
    * fast), then every outdated catalog mod sequentially — the disk side
    * serializes Rust-side anyway, and a single front-end queue keeps the
-   * overall percent meaningful. Failures are collected and reported at
-   * the end; the run always ends with a freshness re-assessment.
+   * overall percent meaningful. Items already busy on another surface are
+   * skipped (that op's own fan-out keeps the snapshot honest). Failures
+   * are collected and reported at the end; every item's completion fans
+   * out a freshness sync, so the badge ticks down while the pass runs.
    */
   async function updateAll(gameRoot: string): Promise<void> {
     if (running.value) return;
@@ -143,19 +279,34 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     if (!info || (info.mods.length === 0 && !info.probeOutdated)) return;
 
     const tasks: { id: string | null; name: string; run: () => Promise<unknown> }[] = [];
-    if (info.probeOutdated) {
+    if (info.probeOutdated && !probeBusy.value) {
       tasks.push({
         id: null,
         name: t("resources.pluginProbeName"),
-        run: () => api.ingamePluginInstall(gameRoot),
+        run: async () => {
+          const err = await runProbe(gameRoot, "update");
+          if (err) throw new Error(err);
+        },
       });
     }
     for (const m of info.mods) {
+      if (itemBusy.value.has(m.id)) continue;
       tasks.push({
         id: m.id,
         name: m.name,
-        run: () => api.modCatalogInstall(m.id, gameRoot, m.preset ?? undefined),
+        run: async () => {
+          // A mod-hub install may have grabbed this id between task build
+          // and its turn in the queue — that op updates it and fans out
+          // its own sync, so skip silently instead of reporting a false
+          // failure for a mod that is, in fact, freshly updated.
+          if (itemBusy.value.has(m.id)) return;
+          await runMod(m.id, gameRoot, m.preset ?? undefined, "update");
+        },
       });
+    }
+    if (tasks.length === 0) {
+      void syncFreshness();
+      return;
     }
 
     running.value = true;
@@ -215,12 +366,14 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           }),
         );
       }
-      void refresh();
+      void syncFreshness();
     }
   }
 
   return {
     perInstall,
+    itemBusy,
+    probeBusy,
     running,
     total,
     done,
@@ -231,7 +384,12 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     failures,
     activeCount,
     infoFor,
+    itemOp,
     refresh,
+    syncFreshness,
+    runProbe,
+    runMod,
+    runModUninstall,
     updateAll,
   };
 });
