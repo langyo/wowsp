@@ -13,5 +13,7 @@
   "home": "홈",
   "openMenu": "메뉴 열기",
   "menu": "메뉴",
-  "back": "뒤로"
+  "back": "뒤로",
+  "liveRoster": "전원 전적",
+  "liveMine": "내 전적"
 }

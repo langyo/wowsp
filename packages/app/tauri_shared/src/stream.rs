@@ -559,6 +559,54 @@ pub struct ReplayStream {
     pub self_team: Option<i8>,
 }
 
+/// Slim battle snapshot for the live self-stats view (我的战绩): the
+/// [`ReplayStream`] families the personal report reads — ship trajectories,
+/// hit events, the recorder's damage stream, achievements, the arena join
+/// and the post-battle payload — with every other family (camera, net
+/// stats, squadrons, chat, weather, diagnostics…) and every non-ship
+/// trajectory dropped before serialization. The view polls this against the
+/// in-progress temp replay every few seconds, so the IPC payload stays
+/// proportional to what it renders instead of the full decode's output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveSelfStream {
+    /// Ship trajectories only (entity type 2), positions + HP timelines +
+    /// death times — the hit-attribution substrate.
+    pub trajectories: Vec<EntityTrajectory>,
+    /// Projectile kills (receiveShotKills) — the hit-level attribution key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shot_kills: Vec<ShotKillEvent>,
+    /// Cumulative damage stats for the recorder (server totals).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub damage_stats: Vec<DamageStatSample>,
+    /// In-battle achievement awards.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub achievements: Vec<AchievementEvent>,
+    /// The authoritative ship-entity → player join.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arena_players: Vec<ArenaPlayer>,
+    /// Raw post-battle payload (BattleResults 0x22) once it lands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battle_results: Option<String>,
+}
+
+impl LiveSelfStream {
+    /// Project a full decoded stream down to the slim shape (see the struct
+    /// doc): ships-only trajectories, personal-combat families only.
+    pub fn from_full(mut full: ReplayStream) -> Self {
+        full.trajectories
+            .retain(|t| t.kind.as_ref().map(|k| k.entity_type) == Some(2));
+        Self {
+            trajectories: full.trajectories,
+            shot_kills: full.shot_kills,
+            damage_stats: full.damage_stats,
+            achievements: full.achievements,
+            arena_players: full.arena_players,
+            battle_results: full.battle_results,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticCounts {

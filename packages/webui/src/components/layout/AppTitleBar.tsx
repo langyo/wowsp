@@ -1,11 +1,12 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { HkTabs, HkTitleBar } from "@celestia-island/hikari";
-import { BarChart3, Clock, Menu } from "@lucide/vue";
+import { BarChart3, Clock, Menu, Swords, Users } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useNavUiStore } from "@/stores/navUi";
 import { useShipsUiStore, type ShipsViewMode } from "@/stores/shipsUi";
+import { useLiveUiStore, type LiveViewMode } from "@/stores/liveUi";
 import TitlebarLoading from "@/components/layout/TitlebarLoading";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
@@ -53,6 +54,7 @@ export default defineComponent({
     const maximized = ref(false);
     const navUi = useNavUiStore();
     const shipsUi = useShipsUiStore();
+    const liveUi = useLiveUiStore();
     const mobileApp = isMobileApp();
     const route = useRoute();
     const router = useRouter();
@@ -64,12 +66,15 @@ export default defineComponent({
 
     // Section view switches live dead-center in the bar, each only while
     // its own section is open: the dashboard's 我的水表 ↔ 游玩时间 pair
-    // (two routes, so a plain router.push pair) and the ship encyclopedia's
+    // (two routes, so a plain router.push pair), the ship encyclopedia's
     // 科技树 / 列表 / 对比 view modes (page state — shared through shipsUi
-    // so the bar switch and the page body render from one source).
+    // so the bar switch and the page body render from one source), and the
+    // live page's 全员战绩 ↔ 我的战绩 pair (same shared-store shape as
+    // shipsUi — the mine panel is a second body of the same /live route).
     const centerSwitch = computed(() => {
       if (route.path === "/" || route.path === "/playtime") return "dashboard";
       if (route.path === "/ships") return "ships";
+      if (route.path === "/live") return "live";
       return null;
     });
 
@@ -189,6 +194,34 @@ export default defineComponent({
                           key: "playtime",
                           label: t("nav.playtime"),
                           icon: <Clock size={13} />,
+                        },
+                      ]}
+                    />
+                  </nav>
+                ) : centerSwitch.value === "live" ? (
+                  <nav
+                    class="app-titlebar__views"
+                    aria-label={t("nav.viewSwitch")}
+                    onPointerdown={(e: PointerEvent) => e.stopPropagation()}
+                    onDblclick={(e: MouseEvent) => e.stopPropagation()}
+                  >
+                    <HkTabs
+                      variant="segmented"
+                      scrollable={false}
+                      modelValue={liveUi.viewMode}
+                      onUpdate:modelValue={(v: string) =>
+                        (liveUi.viewMode = v as LiveViewMode)
+                      }
+                      tabs={[
+                        {
+                          key: "roster",
+                          label: t("nav.liveRoster"),
+                          icon: <Users size={13} />,
+                        },
+                        {
+                          key: "mine",
+                          label: t("nav.liveMine"),
+                          icon: <Swords size={13} />,
                         },
                       ]}
                     />

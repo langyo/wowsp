@@ -1461,3 +1461,85 @@ fn dump_weather_signals() {
         }
     }
 }
+
+// ── live temp-replay truncation tolerance ───────────────────────────────────
+
+/// Encrypt `plain` with the replay scheme's inverse (Blowfish-ECB + the
+/// plaintext XOR chain, `decrypt_stream` run backwards) and prefix the 8-byte
+/// marker block the decryptor skips. Mirrors what the game writes, so the
+/// partial-decode tests exercise the real wire path.
+fn encrypt_stream_for_test(plain: &[u8]) -> Vec<u8> {
+    use blowfish::cipher::{BlockCipherEncrypt, KeyInit};
+
+    let cipher = WowsBlowfish::new_from_slice(&WOWS_BLOWFISH_KEY).unwrap();
+    let mut out = vec![0u8; 8]; // the marker block decrypt_stream skips
+    let mut prev_plain: i64 = 0;
+    for chunk in plain.chunks(8) {
+        let mut block = [0u8; 8];
+        block[..chunk.len()].copy_from_slice(chunk);
+        let v = i64::from_le_bytes(block);
+        let mut buf: [u8; 8] = (v ^ prev_plain).to_le_bytes();
+        let mut block: Block<WowsBlowfish> = buf.into();
+        cipher.encrypt_block(&mut block);
+        buf = block.into();
+        out.extend_from_slice(&buf);
+        prev_plain = v;
+    }
+    out
+}
+
+/// A truncated in-progress stream decodes (partial) but is rejected by the
+/// strict path — the exact split `temp.wowsreplay` tailing relies on.
+#[test]
+fn partial_decode_tolerates_torn_tail() {
+    use std::io::Write as _;
+
+    let frames: Vec<u8> = (0..4096u32)
+        .flat_map(|i| i.to_le_bytes().to_vec())
+        .collect();
+    let mut plain = Vec::new();
+    flate2::write::ZlibEncoder::new(&mut plain, flate2::Compression::default())
+        .write_all(&frames)
+        .unwrap();
+    let encrypted = encrypt_stream_for_test(&plain);
+    // Tear the stream: a partial trailing block AND a mid-deflate cut.
+    let torn = &encrypted[..encrypted.len() - 13];
+
+    let strict = decode_replay(torn, &Default::default(), None);
+    assert!(strict.is_err(), "strict decode must reject a torn stream");
+
+    let partial = decode_replay_partial(torn, &Default::default(), None);
+    assert!(
+        partial.is_ok(),
+        "partial decode must tolerate the torn tail"
+    );
+    // The walk stays total — no panic, and the marker-only prefix decodes to
+    // an empty-but-valid result shape.
+    let decoded = partial.unwrap();
+    assert!(decoded.positions.is_empty());
+}
+
+/// A complete stream decodes identically through both entry points.
+#[test]
+fn partial_decode_matches_strict_on_complete_stream() {
+    use std::io::Write as _;
+
+    let plain = Vec::new();
+    let mut enc = flate2::write::ZlibEncoder::new(plain, flate2::Compression::default());
+    enc.write_all(&[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+    let plain = enc.finish().unwrap();
+    let encrypted = encrypt_stream_for_test(&plain);
+
+    let a = decode_replay(&encrypted, &Default::default(), None).unwrap();
+    let b = decode_replay_partial(&encrypted, &Default::default(), None).unwrap();
+    assert_eq!(a.version, b.version);
+    assert_eq!(a.positions.len(), b.positions.len());
+}
+
+/// Garbage (not a zlib stream at all) is rejected by the partial path too —
+/// only the `UnexpectedEof` truncation signal is tolerated.
+#[test]
+fn partial_decode_still_rejects_garbage() {
+    let garbage = encrypt_stream_for_test(&[0xff; 512]);
+    assert!(decode_replay_partial(&garbage, &Default::default(), None).is_err());
+}

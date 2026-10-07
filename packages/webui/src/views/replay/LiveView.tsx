@@ -19,10 +19,12 @@ import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
 import LiveIdleGuide from "@/features/replay/LiveIdleGuide";
+import LiveSelfPanel from "@/features/replay/LiveSelfPanel";
 import { useBattleClock } from "@/features/replay/useBattleClock";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
+import { useLiveUiStore } from "@/stores/liveUi";
 import { useOverlayStore } from "@/stores/overlay";
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
@@ -53,6 +55,7 @@ export default defineComponent({
     const gameStatus = useGameStatusStore();
     const overlay = useOverlayStore();
     const plugin = useIngamePluginStore();
+    const liveUi = useLiveUiStore();
 
     const activePath = computed(() => gd.config.activeInstall?.path ?? "");
 
@@ -94,6 +97,11 @@ export default defineComponent({
      *  settling pill would stick for every battle after the first in one
      *  game session. */
     const livePhase = ref<"idle" | "battle" | "settling">("idle");
+    /** The just-finished battle's replay file (a full path — listReplays
+     *  walks absolute), latched by the settling poller: the self-stats
+     *  panel's authoritative full parse reads it. Kept until the next
+     *  battle re-arms the phase. */
+    const settledReplay = ref<string | null>(null);
     let baselineFiles: Set<string> | null = null;
     async function snapshotReplayDir(): Promise<Set<string> | null> {
       const dir = liveRoot.value ? replaysDir(liveRoot.value) : undefined;
@@ -110,6 +118,7 @@ export default defineComponent({
      *  started must land in the same state a mid-page game start would. */
     async function armBattlePhase() {
       livePhase.value = "battle";
+      settledReplay.value = null;
       baselineFiles = await snapshotReplayDir();
     }
     watch(
@@ -183,6 +192,7 @@ export default defineComponent({
                 .sort()
                 .at(-1);
               if (fresh != null) {
+                settledReplay.value = fresh;
                 livePhase.value = "settling";
               } else {
                 baselineFiles = now;
@@ -226,23 +236,36 @@ export default defineComponent({
       () => gameStatus.process.running || overlay.arenaInfo != null,
     );
 
+    /** The two /live bodies share one mount point: the roster panel (全员
+     * 战绩) or the personal one (我的战绩), switched by the title-bar
+     *  segmented group (AppTitleBar) through the liveUi store. */
+    const panel = () =>
+      battleLive.value ? (
+        liveUi.viewMode === "mine" ? (
+          <LiveSelfPanel
+            arena={overlay.arenaInfo}
+            settling={livePhase.value === "settling"}
+            ended={overlay.battleEnded}
+            settledReplay={settledReplay.value ?? undefined}
+          />
+        ) : (
+          <LiveBattlePanel
+            arena={overlay.arenaInfo}
+            settling={livePhase.value === "settling"}
+            ended={overlay.battleEnded}
+            realm={realm.value}
+          />
+        )
+      ) : (
+        <LiveIdleGuide />
+      );
+
     return () => (
       <main class="live-view">
         {/* No page-level header: the panel renders the page title itself
             ("实时对局" used to appear twice — the slim eyebrow here plus the
             panel's own heading), and the idle guide carries its own. */}
-        <div class="live-view__body">
-          {battleLive.value ? (
-            <LiveBattlePanel
-              arena={overlay.arenaInfo}
-              settling={livePhase.value === "settling"}
-              ended={overlay.battleEnded}
-              realm={realm.value}
-            />
-          ) : (
-            <LiveIdleGuide />
-          )}
-        </div>
+        <div class="live-view__body">{panel()}</div>
       </main>
     );
   },

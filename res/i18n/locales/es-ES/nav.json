@@ -13,5 +13,7 @@
   "home": "Inicio",
   "openMenu": "Abrir el menú",
   "menu": "Menú",
-  "back": "Atrás"
+  "back": "Atrás",
+  "liveRoster": "Todos",
+  "liveMine": "Mi batalla"
 }

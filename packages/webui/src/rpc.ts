@@ -34,6 +34,8 @@ export const RPC = {
   ribbon_skin_dir: "ribbon_skin_dir",
   read_replay_header: "read_replay_header",
   read_replay_positions: "read_replay_positions",
+  read_live_replay_snapshot: "read_live_replay_snapshot",
+  live_temp_replay: "live_temp_replay",
   list_replays: "list_replays",
   list_replays_meta: "list_replays_meta",
   list_game_maps: "list_game_maps",

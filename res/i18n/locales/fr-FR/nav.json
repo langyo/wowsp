@@ -13,5 +13,7 @@
   "home": "Accueil",
   "openMenu": "Ouvrir le menu",
   "menu": "Menu",
-  "back": "Retour"
+  "back": "Retour",
+  "liveRoster": "Tous les joueurs",
+  "liveMine": "Ma bataille"
 }

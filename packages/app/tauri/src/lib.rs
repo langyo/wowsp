@@ -448,6 +448,8 @@ pub fn run() {
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
+            commands::replay::read_live_replay_snapshot,
+            commands::replay::live_temp_replay,
             commands::replay::list_replays,
             commands::replay::list_replays_meta,
             commands::replay::pick_replay_files,

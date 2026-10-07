@@ -125,6 +125,101 @@ pub async fn read_replay_positions(
     .map_err(|e| format!("replay positions task failed: {e}"))?
 }
 
+/// The running client's in-progress replay container (`temp.wowsreplay` /
+/// `temp.korablireplay`), as surfaced to the live self-stats view. `size` is
+/// the current byte length — the frontend re-decodes only when it grew, so
+/// the (seconds-scale) snapshot decode never re-runs on a quiescent file.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LiveTempReplay {
+    pub path: String,
+    pub size: u64,
+}
+
+/// Locate the live battle's in-progress replay container. Resolves the
+/// RUNNING install first (the file belongs to whichever client is actually
+/// in a match — the same live-order rule as the roster/telemetry pipelines),
+/// then checks each family's `temp.<ext>` name in its replays folder and
+/// returns the most recently modified hit. `None` when no game root resolves
+/// or no temp container exists (no battle in progress).
+#[tauri::command]
+pub async fn live_temp_replay() -> Result<Option<LiveTempReplay>, String> {
+    tokio::task::spawn_blocking(|| {
+        let Some(root) =
+            super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning)
+        else {
+            return Ok(None);
+        };
+        let dir = super::game_context::replays_dir(&root.root);
+        let mut best: Option<(std::time::SystemTime, LiveTempReplay)> = None;
+        for ext in super::game_client::replay_extensions() {
+            let path = dir.join(format!("temp.{ext}"));
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            if !meta.is_file() {
+                continue;
+            }
+            let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            if best.as_ref().is_none_or(|(t, _)| modified >= *t) {
+                best = Some((
+                    modified,
+                    LiveTempReplay {
+                        path: path.to_string_lossy().into_owned(),
+                        size: meta.len(),
+                    },
+                ));
+            }
+        }
+        Ok(best.map(|(_, live)| live))
+    })
+    .await
+    .map_err(|e| format!("live temp replay task failed: {e}"))?
+}
+
+/// Decode the CURRENTLY WRITING `temp.wowsreplay` into the same
+/// [`ReplayStream`] shape as [`read_replay_positions`], tolerating the torn
+/// tail the game is mid-append on (see `decode_replay_partial`). Called
+/// repeatedly by the live self-stats view while its tab is open; damage
+/// totals, hits, achievements and HP timelines all stream cumulatively, so
+/// every call is a complete "battle so far" snapshot, not a delta.
+#[tauri::command]
+pub async fn read_live_replay_snapshot(
+    path: String,
+) -> Result<wowsp_tauri_shared::LiveSelfStream, String> {
+    tokio::task::spawn_blocking(move || {
+        let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+        let stream = packet_stream_after_blocks(&bytes)
+            .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
+        // Same roster-candidate + version extraction as the finished-replay
+        // path — the temp container already carries the full header blocks.
+        let mut candidates = std::collections::HashSet::new();
+        let mut client_version: Option<String> = None;
+        if let Some(json) = extract_descriptor_json(&bytes) {
+            if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+                client_version = raw
+                    .get("clientVersionFromExe")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+                for v in roster_from_raw(std::path::Path::new(&path), &raw) {
+                    if v.ship_id > 0 {
+                        candidates.insert(v.ship_id as u32);
+                    }
+                }
+            }
+        }
+        let decoded =
+            super::packets::decode_replay_partial(stream, &candidates, client_version.as_deref())?;
+        // Slim projection: the self view never reads the camera/squadron/
+        // chat families, and the snapshot is polled every few seconds —
+        // serialize only what it renders (see LiveSelfStream).
+        Ok(wowsp_tauri_shared::LiveSelfStream::from_full(
+            group_by_entity(decoded),
+        ))
+    })
+    .await
+    .map_err(|e| format!("live replay snapshot task failed: {e}"))?
+}
+
 /// Skip the magic + JSON header blocks and return a slice over the encrypted
 /// packet stream. Shared by header parsing and position decoding.
 fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {

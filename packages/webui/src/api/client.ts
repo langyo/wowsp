@@ -760,6 +760,27 @@ export interface ReplayStream {
   weatherNotifications?: WeatherNotification[];
 }
 
+/** The running client's in-progress replay container
+ *  (`temp.wowsreplay` / `temp.korablireplay`) — the live self-stats feed's
+ *  anchor. Mirrors `commands::replay::LiveTempReplay`. */
+export interface LiveTempReplay {
+  path: string;
+  /** Current byte length — the caller re-decodes only when it grew. */
+  size: number;
+}
+
+/** Slim battle snapshot for the live self-stats view — the ReplayStream
+ *  families the personal report reads (ship trajectories only). Mirrors
+ *  `wowsp_tauri_shared::LiveSelfStream`. */
+export interface LiveSelfStream {
+  trajectories: EntityTrajectory[];
+  shotKills?: ShotKillEvent[];
+  damageStats?: DamageStatSample[];
+  achievements?: AchievementEvent[];
+  arenaPlayers?: ArenaPlayer[];
+  battleResults?: string | null;
+}
+
 /** One global-weather change window — mirrors
  *  `wowsp_tauri_shared::WeatherTransition`. The server lerps every
  *  weather-logic field (spotting caps, badness) linearly from `fromParam`
@@ -1766,6 +1787,15 @@ export const api = {
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
   readReplayPositions: (path: string) =>
     transport.invoke<ReplayStream>(RPC.read_replay_positions, { path }),
+  /** Live self-stats feed (我的战绩): locate the running client's in-progress
+   *  `temp.*replay` container. Null when no battle is being recorded. */
+  liveTempReplay: () => transport.invoke<LiveTempReplay | null>(RPC.live_temp_replay),
+  /** Decode the in-progress temp replay tolerating its torn tail — a
+   *  complete "battle so far" snapshot in the same shape as
+   *  readReplayPositions. Seconds-scale CPU work; re-call only when the
+   *  file's size grew (see liveTempReplay). */
+  readLiveReplaySnapshot: (path: string) =>
+    transport.invoke<LiveSelfStream>(RPC.read_live_replay_snapshot, { path }),
   listReplays: (dir?: string, limit?: number) =>
     transport.invoke<string[]>(RPC.list_replays, { dir, limit }),
   /** List replays with parsed descriptor metadata (date/mode/map/own ship).

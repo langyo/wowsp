@@ -13,5 +13,7 @@
   "home": "ホーム",
   "openMenu": "メニューを開く",
   "menu": "メニュー",
-  "back": "戻る"
+  "back": "戻る",
+  "liveRoster": "全員の戦績",
+  "liveMine": "自分の戦績"
 }

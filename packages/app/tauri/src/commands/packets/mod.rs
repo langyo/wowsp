@@ -296,8 +296,38 @@ pub fn decode_replay(
     ship_id_candidates: &std::collections::HashSet<u32>,
     client_version: Option<&str>,
 ) -> Result<DecodedReplay, String> {
+    decode_replay_with(packet_stream, ship_id_candidates, client_version, false)
+}
+
+/// Live-battle variant of [`decode_replay`]: the input is the game's
+/// in-progress `temp.wowsreplay`, whose tail is mid-write — the zlib stream
+/// ends abruptly and the final packet may be torn. Everything decodable up to
+/// the truncation point is returned (frames are self-delimiting, and the walk
+/// is total on malformed input), so repeated calls while the file grows yield
+/// a monotonically fuller snapshot of the battle so far. A finished replay
+/// must keep using [`decode_replay`]: corruption there should surface as an
+/// error, not silently masquerade as "battle still in progress".
+pub fn decode_replay_partial(
+    packet_stream: &[u8],
+    ship_id_candidates: &std::collections::HashSet<u32>,
+    client_version: Option<&str>,
+) -> Result<DecodedReplay, String> {
+    decode_replay_with(packet_stream, ship_id_candidates, client_version, true)
+}
+
+/// Shared body of [`decode_replay`] / [`decode_replay_partial`]; see those.
+fn decode_replay_with(
+    packet_stream: &[u8],
+    ship_id_candidates: &std::collections::HashSet<u32>,
+    client_version: Option<&str>,
+    tolerate_truncation: bool,
+) -> Result<DecodedReplay, String> {
     let decrypted = decrypt_stream(packet_stream)?;
-    let inflated = inflate_zlib(&decrypted)?;
+    let inflated = if tolerate_truncation {
+        inflate_zlib_partial(&decrypted)?
+    } else {
+        inflate_zlib(&decrypted)?
+    };
     let version_key = client_version.and_then(parse_version_key);
     if client_version.is_some() && version_key.is_none() {
         // A present-but-unparseable version would silently flip every
@@ -411,6 +441,36 @@ pub(crate) fn inflate_zlib_with_cap(decrypted: &[u8], cap: usize) -> Result<Vec<
     let mut out = Vec::new();
     dec.read_to_end(&mut out)
         .map_err(|e| format!("zlib inflate: {e}"))?;
+    if out.len() > cap {
+        return Err(format!(
+            "zlib inflate: decompressed stream exceeds the {cap}-byte cap; \
+             the replay may be corrupted or malicious"
+        ));
+    }
+    Ok(out)
+}
+
+/// Truncation-tolerant counterpart of [`inflate_zlib_with_cap`] for the live
+/// `temp.wowsreplay` snapshot: a stream the game is still appending to ends
+/// mid-deflate, which surfaces as `UnexpectedEof` from the decoder — that is
+/// not an error here, but the signal to keep the bytes decompressed so far
+/// (the frame walk then stops at the last complete frame). Every other error
+/// kind (corrupt data, the size cap) still rejects the stream.
+fn inflate_zlib_partial(decrypted: &[u8]) -> Result<Vec<u8>, String> {
+    let cap = MAX_INFLATED_STREAM_BYTES;
+    let mut dec = ZlibDecoder::new(decrypted).take(cap as u64 + 1);
+    let mut out = Vec::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        use std::io::ErrorKind;
+        match dec.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => out.extend_from_slice(&buf[..n]),
+            // Truncated tail — the game is mid-append; accept the prefix.
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(format!("zlib inflate: {e}")),
+        }
+    }
     if out.len() > cap {
         return Err(format!(
             "zlib inflate: decompressed stream exceeds the {cap}-byte cap; \
