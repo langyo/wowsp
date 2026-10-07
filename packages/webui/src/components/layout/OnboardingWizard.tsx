@@ -11,7 +11,7 @@ import {
   type ThemeModePreference,
 } from "@/theme/themeModePreference";
 import { useWallpaper } from "@/theme/useWallpaper";
-import { imageSourceUrl } from "@/theme/wallpaper";
+import { imageSourceUrl, wallpaperNameKey } from "@/theme/wallpaper";
 import { isTauri } from "@/transport";
 import { useStatsPrefsStore, STATS_PREFS_STORAGE_KEY } from "@/stores/statsPrefs";
 import { useConfigStore } from "@/stores/config";
@@ -399,6 +399,12 @@ export default defineComponent({
     const wallpaperCards = computed(() =>
       wallpaper.allWallpapers.value.map((w) => {
         const on = wallpaper.activeWallpaperId.value === w.id;
+        // Mode-aware label: the art pair is named after the character the
+        // CURRENT side depicts (settings mirrors this resolution).
+        const labelKey = wallpaperNameKey(
+          w,
+          theme.effectiveMode.value === "dark" ? "dark" : "light",
+        );
         return (
           <button
             key={w.id}
@@ -427,7 +433,7 @@ export default defineComponent({
               )}
             </span>
             <span class="onboarding__option-label">
-              {w.nameKey ? t(w.nameKey) : w.name}
+              {labelKey ? t(labelKey) : w.name}
             </span>
             {on ? <Check size={14} class="onboarding__option-check" /> : null}
           </button>

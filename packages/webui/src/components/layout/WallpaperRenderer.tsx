@@ -62,11 +62,13 @@ export default defineComponent({
       const url = wp.mediaUrl.value;
 
       if (wp.isSolid.value || !url) {
-        // Solid fallback (or nothing to paint): no layer, no scrim — body's
-        // own background color is the whole show.
+        // Solid (the pure-color preset, or nothing to paint): no layer, no
+        // scrim — body's own background color is the whole show. The same
+        // mode-following theme backdrop the image path uses, so the picker
+        // swatch (rgb(var(--color-background))) matches what paints.
         html.removeAttribute("data-wallpaper-art");
         removeLayer();
-        body.style.setProperty("--wallpaper-solid-color", wp.solidColor.value === "white" ? "#f8fafc" : backdrop);
+        body.style.setProperty("--wallpaper-solid-color", backdrop);
         body.style.setProperty("--wallpaper-overlay-opacity", "0");
         return;
       }

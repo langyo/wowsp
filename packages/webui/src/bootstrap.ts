@@ -3,8 +3,9 @@
  * shittim-chest's composables/bootstrapApp.ts: everything here must run
  * before first paint so theme/fonts/viewport never flash.
  *
- * The same routine serves BOTH windows (main shell + game overlay) — the
- * overlay is transparent but still consumes theme tokens for its roster.
+ * Serves the main shell and the lazily-created tray panel; the game
+ * overlay window keeps its own non-Vue bootstrap (see the DPI note in
+ * the body).
  */
 import { watch } from "vue";
 
@@ -24,6 +25,7 @@ import { initDpiPrefs } from "./theme/dpiPrefs";
 import { initFontScalePreference } from "./theme/fontScalePreference";
 import { initThemeModePreference } from "./theme/themeModePreference";
 import { initUiOpacityPreference } from "./theme/uiOpacityPreference";
+import { initWallpaperBlurPreferences } from "./theme/wallpaperBlur";
 import { i18n } from "./i18n";
 
 /** Canonical wowsp locale → hikari i18n dir. Hikari ships simplified-
@@ -84,6 +86,12 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // game-overlay window never calls bootstrap() (see initDpiPrefs), so its
   // transparent roster cannot pick up a dial meant for the main shell.
   initUiOpacityPreference();
+  // WoWSP's wallpaper blur preference writes the inline
+  // `--wallpaper-blur-sidebar` / `--wallpaper-blur-main` values consumed
+  // by the nav rail and the content-column blur band — same
+  // authoritative-key-wins contract as above, and equally inert in the
+  // game-overlay window (no bootstrap → stylesheet defaults, no blur).
+  initWallpaperBlurPreferences();
   // WoWSP's interface-scale (DPI) preference writes a root CSS `zoom` over
   // the whole shell — same authoritative-key-wins contract as above. Only
   // a MAIN-window bootstrap runs it: the game overlay has its own separate

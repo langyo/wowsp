@@ -53,7 +53,12 @@ import {
 } from "@celestia-island/hikari";
 
 import { useWallpaper } from "@/theme/useWallpaper";
-import { imageSourceUrl } from "@/theme/wallpaper";
+import {
+  BUILTIN_WALLPAPER_IDS,
+  imageSourceUrl,
+  wallpaperNameKey,
+} from "@/theme/wallpaper";
+import { WALLPAPER_BLUR_MAX, WALLPAPER_BLUR_MIN } from "@/theme/wallpaperBlur";
 import {
   UI_OPACITY_MAX,
   UI_OPACITY_MIN,
@@ -1039,14 +1044,25 @@ export default defineComponent({
             <HkDivider />
 
             {/* wallpaper / background — the built-in illustration pair
-                follows the theme mode; custom entries are files in the
+                follows the theme mode (its card is named after the
+                character each side depicts); the pure-color preset paints
+                the theme's own base color; custom entries are files in the
                 AppData wallpapers folder and can be deleted (two-step
                 confirm per card). */}
             <HkSettingsSub title={t("settings.wallpaper")}>
               <div class="settings-modal__wallpapers" ref={wallpaperRow}>
                 {wallpaper.allWallpapers.value.map((w) => {
                   const on = wallpaper.activeWallpaperId.value === w.id;
-                  const custom = w.nameKey == null;
+                  // Builtin-ness decides the delete affordance, not the
+                  // presence of a name key (the art pair's label is
+                  // mode-keyed now, but it is still not deletable).
+                  const custom = !BUILTIN_WALLPAPER_IDS.has(w.id);
+                  // Mode-aware label: the art pair is named after the
+                  // character the CURRENT side depicts.
+                  const labelKey = wallpaperNameKey(
+                    w,
+                    theme.effectiveMode.value === "dark" ? "dark" : "light",
+                  );
                   return (
                     <div
                       key={w.id}
@@ -1081,7 +1097,7 @@ export default defineComponent({
                           )}
                         </span>
                         <span class="settings-modal__wallpaper-name">
-                          {w.nameKey ? t(w.nameKey) : w.name}
+                          {labelKey ? t(labelKey) : w.name}
                         </span>
                         {on ? <Check size={12} class="settings-modal__wallpaper-check" /> : null}
                       </button>
@@ -1150,6 +1166,52 @@ export default defineComponent({
                     {wallpaper.overlayPercent.value}%
                   </span>
                 </div>
+              ) : null}
+              {/* Background blur — how strongly the wallpaper is diffused
+                  behind each shell region, set SEPARATELY for the sidebar
+                  rail and the main content column (wallpaperBlur.ts,
+                  0–8px, 0 the default). Same image-wallpaper gate as the
+                  overlay dial: a solid background has nothing to blur.
+                  Applies live for instant preview. */}
+              {wallpaper.isImage.value ? (
+                <>
+                  <div class="settings-modal__dpi-row">
+                    <span class="settings-modal__overlay-label">
+                      {t("settings.wallpaperBlurSidebar")}
+                    </span>
+                    <HkSlider
+                      class="settings-modal__dpi-slider"
+                      min={WALLPAPER_BLUR_MIN}
+                      max={WALLPAPER_BLUR_MAX}
+                      step={1}
+                      modelValue={wallpaper.sidebarBlurPx.value}
+                      onUpdate:modelValue={wallpaper.setSidebarBlurPx}
+                      ariaLabel={t("settings.wallpaperBlurSidebar")}
+                      formatValue={(v: number) => `${v}px`}
+                    />
+                    <span class="settings-modal__dpi-value">
+                      {wallpaper.sidebarBlurPx.value}px
+                    </span>
+                  </div>
+                  <div class="settings-modal__dpi-row">
+                    <span class="settings-modal__overlay-label">
+                      {t("settings.wallpaperBlurMain")}
+                    </span>
+                    <HkSlider
+                      class="settings-modal__dpi-slider"
+                      min={WALLPAPER_BLUR_MIN}
+                      max={WALLPAPER_BLUR_MAX}
+                      step={1}
+                      modelValue={wallpaper.mainBlurPx.value}
+                      onUpdate:modelValue={wallpaper.setMainBlurPx}
+                      ariaLabel={t("settings.wallpaperBlurMain")}
+                      formatValue={(v: number) => `${v}px`}
+                    />
+                    <span class="settings-modal__dpi-value">
+                      {wallpaper.mainBlurPx.value}px
+                    </span>
+                  </div>
+                </>
               ) : null}
               <HkSettingsHint>{t("settings.wallpaperHint")}</HkSettingsHint>
             </HkSettingsSub>

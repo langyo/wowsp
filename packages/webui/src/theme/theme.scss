@@ -65,6 +65,11 @@ html.s-theme-transitioning *::after {
 
   /* Sizing */
   --s-header-height: 3rem;
+  /* Desktop nav-rail width (Sidebar.scss consumes it; the main-column
+     blur band below offsets by it so the two never disagree). Phones
+     re-host the nav in a drawer and the band spans the full width
+     there — see the band rule. */
+  --app-sidebar-w: 240px;
 
   /* Rainbow text — the 战舰仙人 (彩表) tier. Uses the full wows-numbers band
      palette so every tier color of `utils/winrate.ts` appears in the sweep. */
@@ -278,6 +283,47 @@ html[data-wallpaper-art="true"] body::before {
   background: rgb(var(--color-background));
   opacity: var(--wallpaper-overlay-opacity, 0.8);
   pointer-events: none;
+}
+
+/* Main-column blur band — the content side of the background-blur dial
+   (theme/wallpaperBlur; the sidebar side lives on the rail's own
+   backdrop-filter, Sidebar.scss). A body-level fixed layer, NOT a
+   backdrop-filter on .app-shell__main itself: a backdrop-filter creates
+   a containing block for fixed/absolute descendants, and the content
+   column is full of viewport-anchored fixed chrome (replay post-battle
+   modal, hover cards, …) whose geometry would shift by the sidebar and
+   title-bar insets the moment the dial left zero. As a sibling pseudo
+   it blurs the same backdrop the translucent wash above it samples,
+   with zero containing-block fallout. Sits above the scrim (::before,
+   same z-level, later in paint order) and below #app (z 1), so it
+   blurs wallpaper + dim exactly as the user sees the background.
+   Geometry mirrors the main column's box: below the title bar, right
+   of the nav rail, to the bottom-right corners — full-width on phones
+   where the nav becomes a drawer. The band shares the scrim's
+   data-wallpaper-art gate (a solid background has nothing to blur) and
+   its value var is `none` at the 0 default, so the shipped no-blur
+   paint never pays the backdrop composite. */
+html[data-wallpaper-art="true"] body::after {
+  content: "";
+  position: fixed;
+  top: var(--app-titlebar-h, 32px);
+  bottom: 0;
+  left: var(--app-sidebar-w, 240px);
+  right: 0;
+  z-index: 0;
+  backdrop-filter: var(--wallpaper-blur-main, none);
+  -webkit-backdrop-filter: var(--wallpaper-blur-main, none);
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  /* The nav re-hosts in the drawer at phone widths and the main column
+     spans the viewport; the band follows it under the (taller) phone
+     title bar + status-bar cutout, same offsets .app-shell uses. */
+  html[data-wallpaper-art="true"] body::after {
+    top: calc(var(--app-titlebar-h, 48px) + env(safe-area-inset-top, 0px));
+    left: 0;
+  }
 }
 
 /* === UI surface opacity dial — hikari bridge ==============================

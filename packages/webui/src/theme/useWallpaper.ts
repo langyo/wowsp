@@ -1,9 +1,10 @@
 /**
  * WoWSP wallpaper composable. The choice is the built-in art pair (one
- * illustration per theme mode) or a custom image from the fixed AppData
- * `wallpapers/` folder. Manages the active wallpaper, keeps the custom
- * list in sync with that folder via `commands::wallpaper`, and exposes
- * CSS-var-ready computed values for the renderer.
+ * illustration per theme mode), the pure-color preset right behind it, or
+ * a custom image from the fixed AppData `wallpapers/` folder. Manages the
+ * active wallpaper, keeps the custom list in sync with that folder via
+ * `commands::wallpaper`, and exposes CSS-var-ready computed values for
+ * the renderer.
  */
 import { computed, ref } from "vue";
 
@@ -12,6 +13,7 @@ import {
   ART_WALLPAPER,
   BUILTIN_WALLPAPER_IDS,
   DEFAULT_WALLPAPER_ID,
+  PURE_COLOR_WALLPAPER,
   imageSourceUrl,
   loadActiveWallpaperId,
   saveActiveWallpaperId,
@@ -21,6 +23,12 @@ import {
   setWallpaperOverlayPercent,
   wallpaperOverlayPercent,
 } from "./wallpaperOverlay";
+import {
+  setWallpaperMainBlurPx,
+  setWallpaperSidebarBlurPx,
+  wallpaperMainBlurPx,
+  wallpaperSidebarBlurPx,
+} from "./wallpaperBlur";
 import { api } from "@/api";
 import { isTauri } from "@/transport";
 
@@ -81,8 +89,11 @@ async function refreshCustom(): Promise<void> {
 export function useWallpaper() {
   const { effectiveMode } = useTheme();
 
+  // Picker order: the art pair first (the default), the pure-color preset
+  // right behind it, then the user's imported files.
   const allWallpapers = computed<WallpaperPreset[]>(() => [
     ART_WALLPAPER,
+    PURE_COLOR_WALLPAPER,
     ...customWallpapers.value,
   ]);
 
@@ -130,13 +141,6 @@ export function useWallpaper() {
     return imageSourceUrl(src, effectiveMode.value === "dark" ? "dark" : "light");
   });
 
-  /** Solid always mirrors the theme mode — a light theme never sits on a
-   *  black background. */
-  const solidColor = computed<"black" | "white" | null>(() => {
-    if (currentSource.value.type !== "solid") return null;
-    return effectiveMode.value === "light" ? "white" : "black";
-  });
-
   /** Scrim strength over image wallpapers — the user's transparency
    *  preference (see wallpaperOverlay.ts). Solid never draws a scrim. */
   const overlayOpacity = computed(() => {
@@ -154,10 +158,13 @@ export function useWallpaper() {
     isImage,
     isSolid,
     mediaUrl,
-    solidColor,
     overlayOpacity,
     overlayPercent: wallpaperOverlayPercent,
     setOverlayPercent: setWallpaperOverlayPercent,
+    sidebarBlurPx: wallpaperSidebarBlurPx,
+    mainBlurPx: wallpaperMainBlurPx,
+    setSidebarBlurPx: setWallpaperSidebarBlurPx,
+    setMainBlurPx: setWallpaperMainBlurPx,
     setActiveWallpaper,
     importCustom,
     removeCustomById,

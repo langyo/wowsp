@@ -4,9 +4,12 @@
  * The wallpaper choice is deliberately two-dimensional and nothing more:
  *   - Built-in: the shipped art pair (正弦线's light/dark illustrations,
  *     the default — one per theme side, swapped live by the effective
- *     mode; see themeModePreference for the mode preference it follows).
- *     There is deliberately no solid preset — users who want a plain
- *     color can slide the wallpaper overlay to 100% (theme.scss scrim).
+ *     mode; see themeModePreference for the mode preference it follows)
+ *     and the pure-color preset right behind it — the art-free
+ *     alternative painting the theme's own base color. NOT the default:
+ *     a solid preset was briefly retired in favor of "slide the overlay
+ *     to 100%", but that workaround also buried the artwork for everyone
+ *     else, so the plain preset returned on its own id.
  *   - Custom: image files the user imported, stored in the fixed
  *     `<data_dir>/wallpapers/` folder (see commands::wallpaper). The
  *     directory IS the list — ids are file names, so there is no metadata
@@ -14,9 +17,8 @@
  *
  * The active wallpaper is applied by WallpaperRenderer: image sources as a
  * dedicated fixed layer on <body> — see theme.scss for the layer/scrim
- * rules. The "solid" source type survives only as the renderer's fallback
- * path (an id that resolves to nothing paints the theme base); no preset
- * carries it.
+ * rules — and the "solid" source type as body's own background color,
+ * with no layer and no scrim.
  */
 
 export type WallpaperType = "solid" | "image" | "mode-image";
@@ -45,6 +47,11 @@ export type WallpaperPreset = {
   id: string;
   /** i18n key for built-in presets; custom entries carry a literal name. */
   nameKey?: string;
+  /** Mode-specific name keys — for mode-image presets the shown variant's
+   *  art is who the entry is named after (the art pair depicts 雪风 on the
+   *  light side and 柴郡 on the dark side), so the display name follows
+   *  the effective mode like the picture does. Falls back to nameKey. */
+  nameKeyByMode?: { light?: string; dark?: string };
   name: string;
   source: WallpaperSource;
 };
@@ -53,11 +60,16 @@ export const DEFAULT_WALLPAPER_ID = "art-auto";
 
 /** The shipped art pair — the default background. One of 正弦线's light/
  *  dark illustrations per theme side, swapped live when the mode flips
- *  (files live in publicDir → served at /wallpapers). */
+ *  (files live in publicDir → served at /wallpapers). The picker labels
+ *  it after the character each side depicts — 雪风 (Yukikaze) on light,
+ *  柴郡 (Cheshire) on dark — so the name tracks the art the user sees. */
 export const ART_WALLPAPER: WallpaperPreset = {
   id: DEFAULT_WALLPAPER_ID,
-  nameKey: "settings.wallpaperArt",
-  name: "Illustration",
+  nameKeyByMode: {
+    light: "settings.wallpaperArtLight",
+    dark: "settings.wallpaperArtDark",
+  },
+  name: "Default",
   source: {
     type: "mode-image",
     light: "/wallpapers/bg_light.webp",
@@ -65,10 +77,37 @@ export const ART_WALLPAPER: WallpaperPreset = {
   },
 };
 
+/** The pure-color preset — the art-free alternative sitting right behind
+ *  the art pair in the picker. The renderer paints the theme's own base
+ *  color (mode-following, no layer, no scrim); deliberately NOT the
+ *  default. */
+export const PURE_COLOR_WALLPAPER_ID = "PureColor";
+
+export const PURE_COLOR_WALLPAPER: WallpaperPreset = {
+  id: PURE_COLOR_WALLPAPER_ID,
+  nameKey: "settings.wallpaperPureColor",
+  name: "Pure color",
+  source: { type: "solid" },
+};
+
 /** Every id the app can resolve without touching the custom folder. */
 export const BUILTIN_WALLPAPER_IDS: ReadonlySet<string> = new Set([
   ART_WALLPAPER.id,
+  PURE_COLOR_WALLPAPER.id,
 ]);
+
+/** The preset's i18n key for the given theme side — mode-specific keys
+ *  win, then the flat one; undefined for custom entries (literal name). */
+export function wallpaperNameKey(
+  preset: WallpaperPreset,
+  mode: "light" | "dark",
+): string | undefined {
+  if (preset.nameKeyByMode) {
+    const keyed = mode === "dark" ? preset.nameKeyByMode.dark : preset.nameKeyByMode.light;
+    if (keyed) return keyed;
+  }
+  return preset.nameKey;
+}
 
 /** Resolve an image-bearing source to the single URL the given mode
  *  paints — the renderer and the settings/wizard previews share this. */

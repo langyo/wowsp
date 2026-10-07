@@ -1,5 +1,5 @@
 .sidebar {
-  width: 240px;
+  width: var(--app-sidebar-w, 240px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -11,15 +11,18 @@
      height it reads as a solid panel (the wallpaper's contribution also
      shrinks further under theme.scss's readability scrim), so the rail
      needs a lighter surface to actually read as glass. The blur is the
-     shared glass strength (--blur-md), NOT the deeper --blur-lg the rail
-     once carried: over a full column height the heavy diffusion turned the
-     artwork behind the nav into a smeared haze — the 55% fill already does
-     the contrast work, so the lighter blur keeps the art legible while nav
-     text stays readable. */
+     USER's background-blur dial now (theme/wallpaperBlur — 0–8px, 0 the
+     shipped default), taking over from the fixed --blur-md the rail used
+     to carry: the 55% fill already does the contrast work, and how much
+     the artwork smears behind the nav is a taste call, not a constant.
+     The var always carries a blur() VALUE (never none) — a backdrop-
+     filter has been on this element since the glass rework, and dropping
+     it to none at 0px would silently change positioned nav chrome's
+     containing-block geometry. */
   background: rgb(var(--color-surface) / 55%);
   background: rgb(var(--color-surface) / min(100%, calc(55% * var(--ui-opacity, 1))));
-  backdrop-filter: blur(var(--blur-md));
-  -webkit-backdrop-filter: blur(var(--blur-md));
+  backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));
+  -webkit-backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));
   border-right: 1px solid rgb(var(--color-border) / 20%);
   user-select: none;
 
