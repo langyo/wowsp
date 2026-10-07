@@ -68,6 +68,20 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     if (!next && phase.value !== "final") phase.value = model.value ? "final" : "idle";
   }
 
+  /** Drop everything, retention rules aside (session-identity switch — see
+   *  features/replay/useLiveSessionGuard): when the client or the logged-in
+   *  account changed underneath the shown battle, the previous battle's
+   *  report must not linger the way an ordinary ended one does. */
+  function reset(): void {
+    arena.value = null;
+    model.value = null;
+    phase.value = "idle";
+    error.value = null;
+    battleStamp.value = null;
+    lastSize = null;
+    settledPath = null;
+  }
+
   /** Read phase behind a call so control-flow narrowing from tick()'s
    *  early return cannot hide a settle() that landed mid-decode. */
   function phaseIsFinal(): boolean {
@@ -172,5 +186,5 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     }
   }
 
-  return { model, phase, error, setArena, settle, attach, detach };
+  return { model, phase, error, setArena, settle, attach, detach, reset };
 });

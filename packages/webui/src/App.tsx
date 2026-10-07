@@ -5,6 +5,7 @@ import { Settings } from "@lucide/vue";
 import AppTitleBar from "@/components/layout/AppTitleBar";
 import AppShell from "@/components/layout/AppShell";
 import { useOverlayLifecycle } from "@/features/overlay/useOverlayLifecycle";
+import { useLiveSessionGuard } from "@/features/replay/useLiveSessionGuard";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { t } from "@/i18n";
 
@@ -28,6 +29,9 @@ export default defineComponent({
     const version = ref("");
     const ui = useSettingsUiStore();
     useOverlayLifecycle();
+    // Clears the /live retention (roster + self-stats) when the client
+    // session identity moves — see useLiveSessionGuard.
+    useLiveSessionGuard();
 
     onMounted(async () => {
       try {

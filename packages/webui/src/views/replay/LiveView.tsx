@@ -141,6 +141,19 @@ export default defineComponent({
       },
     );
 
+    /** Session-identity clears (client switched / relaunched with another
+     *  account — the App-level useLiveSessionGuard) empty the roster store;
+     *  re-arm the battle phase here so the latched settled replay can't
+     *  resurrect the previous battle's parse on a later settle/remount, and
+     *  the settling poller restarts against a fresh replay-dir baseline for
+     *  the new session's first battle. */
+    watch(
+      () => overlay.arenaInfo == null,
+      (empty) => {
+        if (empty && gameStatus.process.running) void armBattlePhase();
+      },
+    );
+
     /** Hard end-of-battle fallback. A mid-battle quit writes no .wowsreplay
      *  (the settling watcher never fires) and the game deletes
      *  tempArenaInfo.json — the poll then flags the battle ended and the
