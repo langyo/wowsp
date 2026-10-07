@@ -184,7 +184,7 @@ export default defineComponent({
     /** The game's own Tab row key: alive-first / sunk-last, then class,
      *  tier desc, nation, localized ship name, '[tag]nickname'. */
     const rows = computed<RosterRow[]>(() => {
-      const clanTagOf = (n: string) => props.stats.get(n)?.clanTag ?? null;
+      const clanTagOf = (v: { name: string }) => props.stats.get(v.name)?.clanTag ?? null;
       return (
         props.vehicles
           // Scripted scenario NPCs (story-mode ally flagships and their

@@ -47,8 +47,8 @@ forever; iteration lives in git history only):
 | --- | --- | --- |
 | Mod loads, both realms | `res_mods/<bin>/PnFModsLoader.py` (0-byte marker) + `PnFMods/<Mod>/Main.py`, `API_VERSION = 'API_v1.0'` | coexists with Aslain's mods |
 | Injected API modules | `events, ui, utils, battle, callbacks, dataHub, constants` are loader-injected globals; `import` of them fails (allowlist), never shadow them | builtins are whitelisted too: no `globals()`/`eval` |
-| Roster + identity | `battle.getPlayersInfo()` → name / accountDBID / shipParamsId / isBot / realm | records are `SafeClass`: subscripts work, dict protocol does not; iterate early-loading defensively (container is briefly non-dict) |
-| Sink attribution | `isAlive` flips, polled at 1 s | validated 1:1 against the game's own `typeDeath` log lines, ≤1 s lag, across 4 battles |
+| Roster + identity | `battle.getPlayersInfo()` → name / accountDBID / shipParamsId / isBot / realm / isAlive | records are `SafeClass`: subscripts work, dict protocol does not; iterate early-loading defensively (container is briefly non-dict). The record's own `isAlive` is now the AUTHORITATIVE alive source — its flips were validated name by name against a real Tab capture's dead rows (battle-long journal, 2026-10-07) |
+| Sink attribution | the roster record's `isAlive` flips, polled at 1 s; the avatar-entity walk supplies hp and is a fallback only | the record tracks the client's table name by name (battle-long journals, 2026-10-07). The latch is gated on the record: a single doubting read of the old walk-fed one-way latch could pin a player dead for the whole battle (one episode observed: the local player was reported sunk while alive — the journal of that battle is gone, so the exact trigger stays inferred) |
 | Live health & spotting | `dataHub.getEntityCollections('avatar')` → `entity[CC.health]` (`.value/.max/.isAlive`), `entity[CC.relation]` | enemy HP stays 0/0 until spotted — same fog-of-war as the game's own table; a 0→value jump is itself a spotting event |
 | TAB screen state | SFM events `input.tabModeIn` / `input.tabModeOut` | fires ≤3 ms after the key; does **not** fire for Tab-in-chat — fixes the false-positive class outright |
 | Roster churn | `events.onPlayersListUpdated` | 14 events in one battle |
@@ -59,16 +59,29 @@ exist on avatar entities, and the unbound-side `$datahub.getCollection()
 .getChildByPath('team.ally.sortedAlive')` path has no Python-side
 equivalent (`getCollection` does not exist on the injected dataHub).
 
-**Ordering rule** (confirmed by owner experience; matches the collection
-name `sortedAlive`): the TAB table keeps the initial order and only moves
-sunk players into a trailing "dead" group. Therefore:
+**Ordering rule** (confirmed by owner experience on the WG-family clients;
+matches the collection name `sortedAlive`): the TAB table keeps the
+initial order and only moves sunk players into a trailing "dead" group.
+Therefore:
 
 ```
 overlay order = arena vehicle order (tempArenaInfo — already parsed)
                 with isAlive=false players re-appended in sinking order
 ```
 
-is a **exact** replication, not an approximation.
+is an **exact** replication, not an approximation.
+
+**CN divergence** (360 build 13243917, captured 2026-10-07): the CN
+client's TAB table does NOT move sunk players anywhere — their rows dim
+IN PLACE at the battle-start positions (a 5-dead ally block was still
+interleaved with alive rows), and the within-(class, tier) row order
+follows the LOCALIZED SHIP NAME (pinyin collation), not the decompiled
+nation rank (see utils/shipClass). The LIVE surfaces gate both on `realm == "cn"`
+(the transparent overlay's mapping + the /live panel's predicted order —
+overlay/inferredOrder's static layout and ship-name order); the replay
+viewer and the holographic roster keep the WG rule DELIBERATELY (no CN
+capture exists for their contexts) and the plugin's own panel keeps its
+arena-rule merge, a cosmetic difference only.
 
 ## Sandbox constraints (hard-won, keep in the mod's style guide)
 

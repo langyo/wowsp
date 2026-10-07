@@ -246,10 +246,16 @@ export default defineComponent({
      *  tag + that side's trusted sunk set. */
     const predictedOptionsFor = (side: "ally" | "enemy") => {
       void sinkEpoch.value;
+      // CN clients follow the localized-ship-name row order and never
+      // re-sort the table mid-battle (utils/shipClass's module docs) — the
+      // predicted order mirrors that instead of the decompiled WG rule.
+      const cn = realm.value === "cn";
       return {
         locale: dataLanguage.value,
         clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
         sunk: sunk.sunkNames(side),
+        shipNameOrder: cn,
+        staticOrder: cn,
       };
     };
     // True once plugin telemetry has replaced the inferred sets this

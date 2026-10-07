@@ -65,7 +65,11 @@ import {
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { isKnownRealm } from "@/utils/realms";
 import { pluginRowMapping } from "./inferredOrder";
-import { gameTabRowKey, shipTierOf } from "@/utils/shipClass";
+import {
+  gameTabRowCompare,
+  shipTierOf,
+  type TabRowCompareOptions,
+} from "@/utils/shipClass";
 import { isCoopBattle, isOperationBattle } from "@/utils/modeColors";
 // The live side split — scripted scenario NPCs filtered iff this is a real
 // operation (行动), exactly the rows the game's own Tab table renders. The
@@ -235,6 +239,14 @@ let identityRealms: Record<string, string> = {};
 let identityBattle = "";
 // App locale forwarded by create_overlay_window — picks the hint copy.
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
+// CN client layout gates (realm 'cn' — the 360 client): its Tab table orders
+// same-(class, tier) rows by localized ship name (never the decompiled
+// nation rank) and NEVER re-sorts mid-battle — sunk rows dim in place at
+// their battle-start positions. Both observed on a real Tab capture
+// (2026-10-07: a 5-dead ally block still interleaving alive rows); see
+// utils/shipClass's module docs. The realm can also be unlocked later by
+// the probe's ground-truth self realm, so derive the flag per render.
+const cnLayout = () => realm === "cn";
 
 // ── Display prefs (chips / stats source / intel / team averages / seals) ─
 // One tolerant read of the statsPrefs blob the main window's store owns
@@ -791,23 +803,31 @@ function liveRosterSides(): RosterSides<Vehicle> {
 
 /** The roster's believed full-key order for one side — the same ordering
  *  inferredRowMapping applies (see utils/shipClass for the decompiled
- *  rule) over the live side split above. */
+ *  rule and its CN ship-name permutation) over the live side split above. */
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
+  const compareOptions: TabRowCompareOptions = {
+    locale,
+    clanTagOf: (v) => stats.get(cacheKey(v.name))?.clanTag ?? null,
+    shipNameOrder: cnLayout(),
+  };
   return list
-    .map((v, i) => ({
-      v,
-      i,
-      key: gameTabRowKey(v, true, locale, (n) => stats.get(cacheKey(n))?.clanTag ?? null),
-    }))
-    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
+    .map((v, i) => ({ v, i }))
+    .sort((a, b) => {
+      const c = gameTabRowCompare(a.v, b.v, compareOptions);
+      return c !== 0 ? c : a.i - b.i;
+    })
     .map(({ v }) => v.name);
 }
 
 /** The side's believed CURRENT alive order (full order minus the trusted
  *  sunk set) — what sink-attrib row indices resolve against. While the
- *  side is exact this is the game's alive block, verbatim. */
+ *  side is exact this is the game's alive block, verbatim. The channel is
+ *  dormant on CN (the capture's alive vector is never blockwise there, so
+ *  the Rust solver's gate rejects every transition and emits no rows) —
+ *  should that ever change, its indices assume the WG blockwise model and
+ *  must NOT be resolved against the CN static order. */
 function sideAliveOrder(side: SunkSide): string[] {
   const sunkSet = sunk.sunkNames(side);
   const full = sideFullOrder(side);
@@ -886,6 +906,15 @@ function render() {
   let aliveArr: boolean[] | null = null;
   if (anchor.rosterMode) {
     aliveArr = anchor.rowAlive ?? null;
+    // CN clients never re-sort the table and never follow the nation-rank
+    // order (see cnLayout above): the mapping is the battle-start key order
+    // for the whole battle, and the reconcile/degrade machinery below —
+    // whose blockwise alive-vector assumption is false there — must not
+    // run (a degraded candidate range would pin a WRONG name with
+    // battle-start confidence; the exact misattribution this page shipped
+    // to fix). The per-row sunk chip styling below already reads the alive
+    // vector row by row, which is the only thing the CN layout needs.
+    const staticLayout = cnLayout();
     // The mapping replicates the client's own Tab sort key (decompiled —
     // see inferredOrder.ts), so battle-start rows arrive as EXACT names.
     // Mid-battle, the sink tracker holds the TRUSTED sunk sets (fed by the
@@ -900,8 +929,9 @@ function render() {
     const reconcileSide = (rel: "ally" | "enemy", n: number, off: number) => {
       // Plugin telemetry outranks the capture alive vector: its sets are
       // updated off-Tab, so reconciling them against a STALE vector would
-      // wrongly degrade the side on every sink between Tab holds.
-      if (telemetryAuthoritative) return;
+      // wrongly degrade the side on every sink between Tab holds. The CN
+      // static layout has no blockwise vector to reconcile against at all.
+      if (telemetryAuthoritative || staticLayout) return;
       const slice = aliveArr == null ? null : aliveArr.slice(off, off + n);
       const aliveCount = slice == null ? n : slice.lastIndexOf(true) + 1;
       sunk.reconcile(rel, n - aliveCount);
@@ -927,11 +957,15 @@ function render() {
       }, {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
+        shipNameOrder: staticLayout,
+        staticLayout,
       });
     } else {
       players = inferredRowMapping({ allies, enemies }, aliveArr, {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
+        shipNameOrder: staticLayout,
+        staticLayout,
         sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
       });
     }

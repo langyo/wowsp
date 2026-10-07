@@ -28,6 +28,24 @@
  * on both sides): ally rows Germany→Italy→PanAsia and enemy rows
  * Japan→USA→Germany, exactly the nation order below.
  *
+ * CN clients diverge (360 build 13243917 / 15.8.1, observed 2026-10-07 on
+ * a real co-op Tab screenshot): within a (class, tier) group the rows
+ * follow the LOCALIZED ship name in the client's own collation —
+ * 海尔德兰(NLD) → 杰克逊港(CW) → 切斯特(USA) → 韦茅斯(UK), i.e. hǎi <
+ * jié < qiè < wéi pinyin order — and the nation rank DOES NOT apply
+ * (the decompiled order predicts 切斯特→韦茅斯→海尔德兰→杰克逊港 for that
+ * same group, contradicted 4/4). The group also never re-sorts mid-battle
+ * on that client: sunk rows dim IN PLACE (see overlay/inferredOrder's
+ * static CN layout). {@link gameTabRowCompare} carries the
+ * ship-name-order variant, gated per surface on the detected realm.
+ *
+ * The CN order's ship-name segment reads the app locale like the rest of
+ * the key (the pre-existing caveat above — the game's OWN locale is not
+ * observable from here). A zh app locale reproduces the CN client's order
+ * exactly; a non-zh app locale falls back to collating that locale's
+ * names, which orders differently from the client's zh table — a narrow
+ * degradation for a configuration whose game client is zh in practice.
+ *
  * Fidelity caveats, both narrow: the ship-name segment uses this DB's
  * localized name where the client uses GameParams `shortName` (identical
  * for the common short names; only two DIFFERENT same-nation same-tier
@@ -149,19 +167,26 @@ export interface TabSortVehicle {
  *  sunk-last included. Unknown DB ships get '~' segments that sort after
  *  every real digit (the game itself never has unknowns, so the sentinel
  *  is ours alone — it only keeps such rows deterministic and last).
- *  `locale` picks the ship-name segment's language (zh-CN fallback). */
+ *  `locale` picks the ship-name segment's language (zh-CN fallback).
+ *
+ *  CN clients (360 build 13243917, observed 2026-10-07) order the
+ *  within-(class, tier) group by the LOCALIZED ship name in the client's
+ *  own collation instead — the decompiled nation rank does not apply there
+ *  (see {@link gameTabRowCompare} for the ship-name-order variant; the
+ *  plain-string concatenation cannot express the pinyin collation, so that
+ *  variant must go through the comparator, not this key). */
 export function gameTabRowKey(
   vehicle: TabSortVehicle,
   alive: boolean,
   locale: string,
-  clanTagOf?: (name: string) => string | null | undefined,
+  clanTagOf?: (v: TabSortVehicle) => string | null | undefined,
 ): string {
   const tier = shipTierWeight(vehicle.shipId);
   const nation = nationSortRank(vehicle.shipId);
   const tierSegment = tier < 0 ? "~" : String(100 - tier);
   const nationSegment =
     nation >= NATION_SORT_ORDER.length ? "~" : String(nation);
-  const tag = clanTagOf?.(vehicle.name) ?? vehicle.clanTag ?? null;
+  const tag = clanTagOf?.(vehicle) ?? vehicle.clanTag ?? null;
   return (
     (alive ? "A" : "B") +
     String(shipClassRank(vehicle.shipId)) +
@@ -170,4 +195,105 @@ export function gameTabRowKey(
     shipNameOf(vehicle.shipId, locale) +
     tabDisplayName(vehicle.name, tag)
   );
+}
+
+/** Collator for the ship-name segment under the CN ship-name row order.
+ *  The client orders same-(class, tier) ships by their localized name in a
+ *  hanzi collation that matches PINYIN order (consistent with the GB2312
+ *  code order the client's locale machinery produces — the exact mechanism
+ *  is not observable from here; what IS observable is the rendered order).
+ *  Plain UTF-16 comparison does NOT reproduce it: 切 U+5207 sorts before
+ *  海 U+6D77 as code units, while the client renders 海尔德兰 ahead of
+ *  切斯特. Lazy: built on first use, reused across renders. */
+let pinyinCollator: Intl.Collator | null = null;
+function nameCollator(): Intl.Collator {
+  pinyinCollator ??= new Intl.Collator(["zh-Hans-CN-u-co-pinyin", "zh-Hans-CN", "zh"], {
+    sensitivity: "variant",
+  });
+  return pinyinCollator;
+}
+
+/** Options for {@link gameTabRowCompare} — the shape every Tab-order sort
+ *  call site already has in hand. NOTE the comparator never compares the
+ *  alive prefix: every caller sorts ONE layout (the full key order) and
+ *  applies any [alive] ++ [sunk] split itself — a future caller sorting a
+ *  MIXED list through this alone would silently lose that split. */
+export interface TabRowCompareOptions {
+  locale: string;
+  /** Clan tag per VEHICLE — from the WG batch answer (absent = clanless /
+   *  not yet landed; the entry then compares as a bare nickname). */
+  clanTagOf?: (v: TabSortVehicle) => string | null | undefined;
+  /** CN client row order (localized ship name collated by pinyin, nation
+   *  demoted to tiebreak). Absent/false keeps the decompiled nation-rank
+   *  concatenation. */
+  shipNameOrder?: boolean;
+}
+
+/** Compare two roster entries by the client's Tab row order. The nation
+ *  order degenerates to the plain concatenated {@link gameTabRowKey}
+ *  (byte-identical to comparing the key strings); the CN ship-name order
+ *  compares the same segments in the observed permutation — class, tier,
+ *  LOCALIZED SHIP NAME, then nation, then the '[TAG]nickname' display
+ *  name — with BOTH text segments routed through the pinyin collator
+ *  (the client compares its whole concatenated key in its own collation,
+ *  which for hanzi is pinyin order — see {@link nameCollator}). Both
+ *  entries of one comparison always share the same alive state (each sort
+ *  orders ONE layout — the full key order), so the alive prefix never
+ *  decides here and is not compared. A ship the offline DB does not know
+ *  sorts after every known one inside its class group under either order
+ *  (the '~'-segment sentinel, kept explicit here so the name-order branch
+ *  inherits the same determinism guarantee). */
+export function gameTabRowCompare(
+  a: TabSortVehicle,
+  b: TabSortVehicle,
+  opts: TabRowCompareOptions,
+): number {
+  if (!opts.shipNameOrder) {
+    const ka = gameTabRowKey(a, true, opts.locale, opts.clanTagOf);
+    const kb = gameTabRowKey(b, true, opts.locale, opts.clanTagOf);
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  }
+  const tierA = shipTierWeight(a.shipId);
+  const tierB = shipTierWeight(b.shipId);
+  const nationA = nationSortRank(a.shipId);
+  const nationB = nationSortRank(b.shipId);
+  // Segment order mirrors the legacy key's structure: class first, then the
+  // unknown-DB tier sentinel INSIDE the class group (the legacy '~' tier
+  // segment sorts after every real digit WITHIN a class — an unknown ship
+  // never jumps a class boundary), then tier. The nation's own unknown
+  // marker needs no separate arm: it only breaks name ties, and an unknown
+  // nation's rank (the sentinel length) already sorts last there. The alive
+  // prefix ('A'/'B') is identical for both entries of one comparison — the
+  // caller sorts one layout at a time — so it never decides here.
+  const classA = shipClassRank(a.shipId);
+  const classB = shipClassRank(b.shipId);
+  if (classA !== classB) return classA - classB;
+  const tierKnownA = tierA >= 0;
+  const tierKnownB = tierB >= 0;
+  if (tierKnownA !== tierKnownB) return tierKnownA ? -1 : 1;
+  if (tierA !== tierB) {
+    // Descending tier, ascending compared — mirror the '100-tier' segment.
+    return tierA < tierB ? 1 : -1;
+  }
+  // The client compares its whole concatenated key in ITS collation, so
+  // every TEXT segment on the CN path — the ship name AND the
+  // '[TAG]nickname' display name — goes through the same collator here (a
+  // hanzi nickname tie between division twins would otherwise order by
+  // code unit and diverge: 用户_… U+7528 before 神楽坂柚咲 U+795E, while
+  // pinyin puts shén first). Each segment falls THROUGH on a collator tie
+  // so the later segments still decide deterministically.
+  const nameA = shipNameOf(a.shipId, opts.locale);
+  const nameB = shipNameOf(b.shipId, opts.locale);
+  if (nameA !== nameB) {
+    const c = nameCollator().compare(nameA, nameB);
+    if (c !== 0) return c;
+  }
+  if (nationA !== nationB) return nationA - nationB;
+  const displayA = tabDisplayName(a.name, opts.clanTagOf?.(a) ?? a.clanTag ?? null);
+  const displayB = tabDisplayName(b.name, opts.clanTagOf?.(b) ?? b.clanTag ?? null);
+  if (displayA !== displayB) {
+    const c = nameCollator().compare(displayA, displayB);
+    if (c !== 0) return c;
+  }
+  return 0;
 }

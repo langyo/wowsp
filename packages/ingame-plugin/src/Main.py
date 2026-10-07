@@ -140,6 +140,8 @@ class Probe(object):
         self.key_log_count = 0
         self.v_down = False
         self.last_raw = ''
+        self.latest_raw = {}
+        self.raw_isalive_seen = False
         self.discovered = False
         self.journal = []
         self.empty_ticks = 0
@@ -426,12 +428,14 @@ class Probe(object):
                 # Death latch (#716): isAlive can flicker back for a tick
                 # while the sinking animation settles; random battles have
                 # no resurrects — once dead in this battle, stay dead. The
-                # latch feeds telemetry, row order AND panel rows from this
-                # single point, so a flicker can never resurrect a row.
+                # latch is SET in write_telemetry (where the game's own
+                # roster record confirms the death) and only HONORED here:
+                # this walk's read is deliberately NOT strong enough to
+                # latch on alone — a single doubting read of a one-way
+                # latch marks a player dead for the whole battle, and the
+                # walk reads a live component over changing entities (the
+                # record is the game's own verdict).
                 if name in self.dead_latch:
-                    alive = False
-                elif not alive:
-                    self.dead_latch.add(name)
                     alive = False
                 row['alive'] = str(alive)
                 side = 'enemy'
@@ -533,6 +537,8 @@ class Probe(object):
 
     def quit(self, *args):
         self.roster = []
+        self.latest_raw = {}
+        self.raw_isalive_seen = False
         self.session = ''
         self.previous = None
         self.stable = 0
@@ -567,6 +573,7 @@ class Probe(object):
         self.order = {'ally': [], 'enemy': []}
         self.alive_last = {'ally': {}, 'enemy': {}}
         self.dead_latch = set([])
+        self.raw_isalive_seen = False
         self.stats = {}
         self.labels = {}
         # The SELF latch rides the same reset story as the rest of the
@@ -825,6 +832,10 @@ class Probe(object):
 
     def tick(self):
         records = self.players_raw()
+        # Stash this tick's raw roster records: write_telemetry reads their
+        # isAlive as the authoritative alive source (see there — the entity
+        # walk alone can report uninitialized spawns dead).
+        self.latest_raw = records or {}
         self.observe_raw(records)
         roster = self.players(records)
         if roster:
@@ -910,20 +921,68 @@ class Probe(object):
             self.merge_order(sides)
             players = {}
             identity = {}
+            # The game's own roster records carry an isAlive that tracks
+            # the client's table (validated name by name against a real Tab
+            # capture's dead rows over battle-long journals, 2026-10-07), so
+            # it is the AUTHORITATIVE alive source. The avatar-entity walk
+            # supplies hp and is a fallback only: this plugin once reported
+            # a LIVING player — the local one — dead for a whole battle
+            # (reconstructed from his Tab capture: the telemetry's sunk set
+            # named him while his row was up), and the old walk-fed one-way
+            # latch was the only route that could have produced it. Latching
+            # now requires the record's own verdict, so a single doubting
+            # read can never pin anyone again; the record also supersedes
+            # the walk when it says alive.
+            raw_alive = {}
+            for p in self.latest_raw.values():
+                try:
+                    nm = p['name']
+                    if nm:
+                        raw_alive[nm] = str(p['isAlive']) != 'False'
+                        self.raw_isalive_seen = True
+                except Exception:
+                    continue
             for p in self.roster:
                 name = p['name']
                 row = states.get(name)
-                # No entity yet (loading / never spotted-and-gone): alive.
-                alive = row is None or row.get('alive') != 'False'
-                # Death latch: the isAlive bit can flicker back for a tick
-                # while the sinking animation settles. Random battles have
-                # no resurrects — once dead in this battle, stay dead.
+                raw_val = raw_alive.get(name)
                 if name in self.dead_latch:
                     alive = False
-                elif not alive:
+                elif raw_val is False:
+                    # The game says dead: report it and latch. Random
+                    # battles have no resurrects — once dead, stay dead
+                    # (this latch is also what absorbs a same-tick walk
+                    # flicker back to "alive" while the sinking animation
+                    # settles).
                     self.dead_latch.add(name)
                     alive = False
+                elif raw_val is True:
+                    # The game says alive: supersede the walk. THIS override
+                    # is load-bearing — a walk-side False here would be
+                    # reported (and, without the gate below, latched) and
+                    # pin a living player dead for the rest of the battle.
+                    alive = True
+                else:
+                    # This name has no record verdict right now — either a
+                    # transient empty getPlayersInfo() (battle boundaries,
+                    # the local death screen) or a build that never carries
+                    # the field. Report the walk's read, and latch from it
+                    # ONLY when no record verdict was EVER seen this battle
+                    # (a build predating the field, i.e. the legacy
+                    # behavior): once the field has been seen, its absence
+                    # is an outage, not evidence — a one-way latch on it
+                    # would re-arm the exact bug this gate exists for.
+                    walk_dead = row is not None and row.get('alive') == 'False'
+                    if walk_dead and not self.raw_isalive_seen:
+                        self.dead_latch.add(name)
+                    alive = not walk_dead
                 players[name] = alive
+                # Write the authoritative verdict back into this tick's walk
+                # states: the panel rows (panel_rows, below) read them, so
+                # the in-game panel shows the same truth as the telemetry
+                # instead of the walk's raw (possibly uninitialized) read.
+                if name in states:
+                    states[name]['alive'] = str(alive)
                 if p.get('account_id') or p.get('realm'):
                     identity[name] = {'account_id': p.get('account_id', 0),
                                       'realm': p.get('realm', '')}

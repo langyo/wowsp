@@ -46,9 +46,25 @@
  * render the human team only, and the caller drops their scripted units
  * up front (utils/rosterSides's splitLiveRosterSides — the sides this
  * module receives are exactly the rows the game draws).
+ *
+ * CN clients (realm 'cn' — the 360 build) break both of the assumptions
+ * above, so the callers pass `shipNameOrder` + `staticLayout` (see the
+ * options): rows order by the LOCALIZED SHIP NAME in the client's own
+ * pinyin collation (never the decompiled nation rank — observed 9/9 on a
+ * real Tab capture, and 4/4 AGAINST nation order inside one cruiser
+ * group), and the table never re-sorts — sunk rows dim IN PLACE at their
+ * battle-start positions (a 5-dead ally block was still interleaved with
+ * alive rows), so the alive vector and the trusted sunk sets must not
+ * drive positions there: the [alive] ++ [sunk] split and the candidate
+ * ranges would pin provably wrong names (they shipped a human's row onto
+ * a bot's name under the wrong order). The callers keep using the per-row
+ * alive flags for the sunk chip styling.
  */
 import type { RosterSides } from "@/utils/rosterSides";
-import { gameTabRowKey } from "@/utils/shipClass";
+import {
+  gameTabRowCompare,
+  type TabRowCompareOptions,
+} from "@/utils/shipClass";
 
 /** The roster entry shape the mapping needs (the wire's `VehicleEntry`). */
 export interface InferredVehicle {
@@ -66,11 +82,49 @@ export interface InferredOrderOptions {
    *  absent entries compare as bare nicknames and re-derive when the WG
    *  batch lands the tag (the caller re-renders on stats arrival). */
   clanTagOf?: (name: string) => string | null | undefined;
+  /** CN client row order (localized ship name, pinyin-collated — see
+   *  utils/shipClass's module docs). Absent keeps the decompiled
+   *  nation-rank order verified on WG clients. */
+  shipNameOrder?: boolean;
+  /** CN clients never re-sort the table mid-battle: sunk rows dim IN
+   *  PLACE at their battle-start positions (observed 2026-10-07 — a 5-dead
+   *  ally block still interleaved alive rows). `true` maps every row of a
+   *  side to the full key order verbatim and ignores the alive vector and
+   *  the trusted sunk sets for POSITIONING entirely — the callers keep
+   *  using the per-row alive flags for the sunk chip styling. */
+  staticLayout?: boolean;
   /** TRUSTED sunk sets per side (utils/sunkTracker): when a side's set is
    *  present AND matches the alive vector's sunk count, that side renders
    *  the EXACT layout — [alive by key] ++ [sunk by key], every row named —
-   *  instead of candidate ranges. null/absent sides keep the ranges. */
+   *  instead of candidate ranges. null/absent sides keep the ranges.
+   *  Ignored under `staticLayout` (see above). */
   sunk?: { ally?: Set<string> | null; enemy?: Set<string> | null } | null;
+}
+
+/** One side's believed full-key order — the rows as the game drew them at
+ *  battle start. Sorting goes through {@link gameTabRowCompare} so the CN
+ *  ship-name permutation (pinyin collation — plain string comparison
+ *  cannot express it) and the decompiled nation order share one code
+ *  path. */
+function sideFullOrder<T extends InferredVehicle>(
+  list: T[],
+  options: InferredOrderOptions,
+): string[] {
+  const locale = options.locale ?? "en-US";
+  const compareOptions: TabRowCompareOptions = {
+    locale,
+    // The module's clanTagOf contract is name-keyed (the overlay page's
+    // stats cache is name-keyed); the comparator looks up per vehicle.
+    clanTagOf: options.clanTagOf ? (v) => options.clanTagOf?.(v.name) : undefined,
+    shipNameOrder: options.shipNameOrder,
+  };
+  return list
+    .map((v, i) => ({ v, i }))
+    .sort((a, b) => {
+      const c = gameTabRowCompare(a.v, b.v, compareOptions);
+      return c !== 0 ? c : a.i - b.i;
+    })
+    .map(({ v }) => v.name);
 }
 
 /** One row's attribution:
@@ -94,13 +148,19 @@ export type RowAttribution = string | string[] | null;
  * so the block layout below is the caller's layout verbatim: allies
  * entries first, enemies after, no second relation split to drift out of
  * sync with the chip blocks.
+ *
+ * `staticLayout` (CN clients) collapses ALL of that to the battle-start
+ * full order per side — the client keeps row positions for the whole
+ * battle, so the re-sort/candidate-range machinery below must not run
+ * (its blockwise alive-vector assumptions are false there, and a degraded
+ * range would pin a WRONG name with battle-start confidence — the
+ * misattribution this module shipped to fix).
  */
 export function inferredRowMapping(
   sides: RosterSides<InferredVehicle>,
   alive: boolean[] | null,
   options: InferredOrderOptions = {},
 ): RowAttribution[] {
-  const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
   let offset = 0;
   const sidePairs: Array<[InferredVehicle[], "ally" | "enemy"]> = [
@@ -108,15 +168,13 @@ export function inferredRowMapping(
     [sides.enemies, "enemy"],
   ];
   for (const [list, sideKey] of sidePairs) {
-    const full = list
-      .map((v, i) => ({
-        v,
-        i,
-        key: gameTabRowKey(v, true, locale, options.clanTagOf),
-      }))
-      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
-      .map(({ v }) => v.name);
+    const full = sideFullOrder(list, options);
     const n = full.length;
+    if (options.staticLayout) {
+      for (const name of full) out.push(name);
+      offset += n;
+      continue;
+    }
     // Alive count from the CURRENT-layout flags: the last true row's
     // position + 1 (blockwise by construction; a null vector = nobody
     // sunk, and an all-false side reads 0 → the exact full order again).
@@ -165,31 +223,26 @@ function rangeNames(full: string[], lo: number, hi: number): RowAttribution {
  *
  * Same block structure as {@link inferredRowMapping}: the caller's PRE-SPLIT
  * sides (utils/rosterSides's `splitLiveRosterSides`), allies first, enemies
- * after.
+ * after. `staticLayout` (CN clients — the table never re-sorts there) keeps
+ * the full key order verbatim; the plugin's sets then drive only the SUNK
+ * STYLING in the caller, never the positions.
  */
 export function pluginRowMapping(
   sides: RosterSides<InferredVehicle>,
   sunk: { ally?: Set<string> | null; enemy?: Set<string> | null },
   options: InferredOrderOptions = {},
 ): RowAttribution[] {
-  const locale = options.locale ?? "en-US";
   const out: RowAttribution[] = [];
   const sidePairs: Array<[InferredVehicle[], "ally" | "enemy"]> = [
     [sides.allies, "ally"],
     [sides.enemies, "enemy"],
   ];
   for (const [list, sideKey] of sidePairs) {
-    const full = list
-      .map((v) => ({
-        v,
-        key: gameTabRowKey(v, true, locale, options.clanTagOf),
-      }))
-      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-      .map(({ v }) => v.name);
+    const full = sideFullOrder(list, options);
     const sunkSet = sideKey === "ally" ? sunk.ally : sunk.enemy;
-    if (sunkSet == null) {
-      // No trusted set for this side (stale stream): the full key order —
-      // battle-start layout, nobody sunk yet.
+    if (options.staticLayout || sunkSet == null) {
+      // Static CN layout, or no trusted set for this side (stale stream):
+      // the full key order — battle-start layout.
       for (const name of full) out.push(name);
       continue;
     }

@@ -40,8 +40,8 @@ git 历史）：
 | --- | --- | --- |
 | 双服加载 | `res_mods/<bin>/PnFModsLoader.py`（0 字节标记）+ `PnFMods/<Mod>/Main.py`，`API_VERSION = 'API_v1.0'` | 与 Aslain 共存 |
 | 注入 API 模块 | `events, ui, utils, battle, callbacks, dataHub, constants` 为加载器注入的全局量；对它们 import 会失败（白名单），绝不能用 import 失败回退遮蔽 | builtins 同样白名单：无 `globals()`/`eval` |
-| 名单与身份 | `battle.getPlayersInfo()` → name / accountDBID / shipParamsId / isBot / realm | 记录是 `SafeClass`：下标可用、dict 协议不可用；加载早期容器短暂非 dict，需防御 |
-| 沉船归因 | `isAlive` 翻转，1 s 轮询 | 与游戏自身 `typeDeath` 日志 1:1 对表，≤1 s 滞后，4 局复现 |
+| 名单与身份 | `battle.getPlayersInfo()` → name / accountDBID / shipParamsId / isBot / realm / isAlive | 记录是 `SafeClass`：下标可用、dict 协议不可用；加载早期容器短暂非 dict，需防御。记录自带的 `isAlive` 现为**权威**存活源——其翻转已按名字逐一与真实 Tab 截图的沉没行对表（2026-10-07 整局 journal） |
+| 沉船归因 | 名单记录的 `isAlive` 翻转，1 s 轮询；avatar 实体遍历提供血量、仅作回退 | 记录逐名跟踪客户端表格（2026-10-07 整局 journal 验证）。锁存改由记录裁决：旧版「walk 单读即锁死」的单向锁存曾把玩家整局判死（观察到一例：本人在存活时被判沉没——该局 journal 已被环形缓冲覆盖，确切触发条件只能推断） |
 | 实时血量与点亮 | `dataHub.getEntityCollections('avatar')` → `entity[CC.health]`（`.value/.max/.isAlive`）、`entity[CC.relation]` | 敌方血量点亮前为 0/0——与游戏表格同等的战争迷雾；0→实值的跳变本身就是点亮事件 |
 | TAB 屏状态 | SFM 事件 `input.tabModeIn` / `input.tabModeOut` | 按键后 ≤3 ms 触发；聊天打 Tab 不触发——直接消灭误报 |
 | 名单变更 | `events.onPlayersListUpdated` | 一局触发 14 次 |
@@ -51,8 +51,8 @@ git 历史）：
 unbound 侧的 `$datahub.getCollection().getChildByPath('team.ally.sortedAlive')`
 路径在 Python 侧没有对应（注入的 dataHub 没有 `getCollection`）。
 
-**排序规则**（经所有者经验确认；与集合名 `sortedAlive` 吻合）：TAB
-表格保持初始顺序，仅把沉没玩家移入尾部的"沉船组"。因此：
+**排序规则**（经所有者经验在 WG 系客户端确认；与集合名 `sortedAlive`
+吻合）：TAB 表格保持初始顺序，仅把沉没玩家移入尾部的"沉船组"。因此：
 
 ```
 覆盖层顺序 = tempArenaInfo 载具序（WoWSP 已解析）
@@ -60,6 +60,15 @@ unbound 侧的 `$datahub.getCollection().getChildByPath('team.ally.sortedAlive')
 ```
 
 是**精确**复刻，而非近似。
+
+**国服分叉**（360 build 13243917，2026-10-07 实拍）：国服客户端的 TAB
+表格**不重排**——沉没行留在开局原位、就地变暗（实测 5 名阵亡者的行与存活
+行交错），且同（舰种, 等级）组内按**本地化船名**（拼音序）排列，而非反编译
+出的国籍序（见 utils/shipClass）。**直播面**（透明覆盖层的映射与 /live
+面板的预测顺序）对两者均以 `realm == "cn"` 门控（overlay/inferredOrder
+的静态布局 + 船名序）；录像回放视图与全息名单**有意**保留 WG 规则
+（其场景没有 CN 实拍证据），插件自身的面板也仍用竞技场规则合并——仅为
+观感差异。
 
 ## 沙盒约束（来之不易，写进 mod 的风格守则）
 

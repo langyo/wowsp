@@ -401,7 +401,7 @@ const PostBattleFallbackPanel = defineComponent({
           { shipId: r.vehicle.shipId, name: r.vehicle.name },
           r.alive,
           dataLanguage.value,
-          (n) => nameStats.value.get(n)?.clanTag ?? null,
+          (v) => nameStats.value.get(v.name)?.clanTag ?? null,
         );
       const ka = keyOf(a);
       const kb = keyOf(b);

@@ -246,4 +246,139 @@ describe("inferredRowMapping", () => {
       "IDS_OP_17_ALLY_FLAGSHIP",
     ]);
   });
+
+  // The CN-client ground truth (360 build 13243917, 15.8.1): a real co-op
+  // battle's ally roster — ship ids straight off the replay meta, arena
+  // order = meta order — against the row order OBSERVED on the in-game Tab
+  // screenshot. The decompiled nation order predicts
+  // [杰克逊港, 切斯特, 韦茅斯, 海尔德兰] for the T2 cruiser group
+  // (commonwealth '10' sorts before '9' as a string; usa < uk < nld);
+  // the client rendered 海尔德兰 → 杰克逊港 → 切斯特 → 韦茅斯 — localized
+  // ship names in the client's own collation.
+  const CN_BATTLE = {
+    // arena-file order (the replay meta's vehicles, relation ≠ 2)
+    roster: [
+      veh("用户_14222696867", 4186912592, 1), // Turenne III France BB 杜伦尼
+      veh("用户_70297220473", 4187894992, 1), // Longjiang II pan_asia DD 龙江
+      veh("用户_61087182998", 4187894992, 1), // same ship, division twin
+      veh("用户_78851053968", 4279154384, 1), // Tenryū III japan CA 豹
+      veh("神楽坂柚咲", 4292786160, 0), // Chester II usa CA 切斯特 (self)
+      veh(":Millo:", 4282299760, 1), // Port Jackson II commonwealth CA 杰克逊港
+      veh(":Yegorov:", 4187895632, 1), // En. Gabolde II france DD 加博尔德海军少尉
+      veh(":Tributs:", 4187928528, 1), // Weymouth II united_kingdom CA 韦茅斯
+      veh(":Apostolis:", 4187928336, 1), // Gelderland II netherlands CA 海尔德兰
+    ],
+    // The client's battle-start (and battle-LONG — see staticLayout) order.
+    expected: [
+      "用户_14222696867",
+      "用户_78851053968",
+      ":Apostolis:",
+      ":Millo:",
+      "神楽坂柚咲",
+      ":Tributs:",
+      ":Yegorov:",
+      "用户_61087182998",
+      "用户_70297220473",
+    ],
+  };
+
+  it("reproduces the CN client's ship-name row order (real battle, 9/9)", () => {
+    expect(
+      inferredRowMapping(sidesOf(CN_BATTLE.roster), null, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        staticLayout: true,
+      }),
+    ).toEqual(CN_BATTLE.expected);
+  });
+
+  it("keeps the nation order for WG clients on the same roster", () => {
+    // The default (decompiled) permutation must stay byte-compatible with
+    // the verified WG behavior — the CN gate is per-realm, not global. The
+    // T2 cruiser group lands 切斯特(usa) → 韦茅斯(uk) → 海尔德兰(nld) →
+    // 杰克逊港(commonwealth, the '10' < '9' string quirk).
+    expect(
+      inferredRowMapping(sidesOf(CN_BATTLE.roster), null, { locale: "zh-CN" }),
+    ).toEqual([
+      "用户_14222696867",
+      "用户_78851053968",
+      ":Millo:",
+      "神楽坂柚咲",
+      ":Tributs:",
+      ":Apostolis:",
+      ":Yegorov:",
+      "用户_61087182998",
+      "用户_70297220473",
+    ]);
+  });
+
+  it("keeps battle-start positions under the CN static layout mid-battle", () => {
+    // The CN client dims sunk rows IN PLACE — the alive vector interleaves
+    // (rows 1,2,3,5 alive; 4,6,7,8,9 sunk, as measured off the screenshot)
+    // and is NOT blockwise. The mapping must ignore it for positions (the
+    // WG candidate-range machinery would pin WRONG names with battle-start
+    // confidence — the exact misattribution that marked a human row 机器人).
+    const alive = [
+      true, true, true, false, true, // 用户A, 用户B, :Apostolis:, :Millo:†, 神楽
+      false, false, false, false, // :Tributs:†, :Yegorov:†, 610†, 702†
+    ];
+    expect(
+      inferredRowMapping(sidesOf(CN_BATTLE.roster), alive, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        staticLayout: true,
+      }),
+    ).toEqual(CN_BATTLE.expected);
+    // Even a trusted sunk set must not re-sort the static layout (the
+    // [alive] ++ [sunk] permutation is a WG-client behavior).
+    expect(
+      inferredRowMapping(sidesOf(CN_BATTLE.roster), alive, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        staticLayout: true,
+        sunk: {
+          ally: new Set([
+            ":Millo:",
+            ":Tributs:",
+            ":Yegorov:",
+            "用户_61087182998",
+            "用户_70297220473",
+          ]),
+        },
+      }),
+    ).toEqual(CN_BATTLE.expected);
+  });
+
+  it("breaks CN same-ship ties by the display name, nation last", () => {
+    // The 龙江 twins (same ship): the collated ship names tie, so the
+    // display name decides; the nation rank only outranks EQUAL names
+    // across different ships, never the name itself.
+    const vehicles = [
+      veh("用户_70297220473", 4187894992, 1),
+      veh("用户_61087182998", 4187894992, 1),
+    ];
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        staticLayout: true,
+      }),
+    ).toEqual(["用户_61087182998", "用户_70297220473"]);
+  });
+
+  it("sorts unknown-DB ships after known ones under the CN order", () => {
+    // The '~'-segment sentinel, name-order edition: a ship the offline DB
+    // does not know stays deterministic and last within its class group.
+    const vehicles = [
+      veh("mystery", 1234567890, 1), // not in the offline DB
+      veh("knownDD", SHIPS.leone, 1), // Destroyer T6 italy
+    ];
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        staticLayout: true,
+      }),
+    ).toEqual(["knownDD", "mystery"]);
+  });
 });

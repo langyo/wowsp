@@ -96,4 +96,26 @@ describe("orderForTab", () => {
     const list = [vehicle("Konigsberg", SHIPS.konigsberg), vehicle("Saipan", SHIPS.saipan)];
     expect(names(orderForTab(list, { locale: "zh-CN" }))).toEqual(["Saipan", "Konigsberg"]);
   });
+
+  it("keeps key-order positions and only marks sinks under staticOrder (CN)", () => {
+    // The CN table never re-sorts: the sunk entry keeps its battle-start
+    // slot, flagged. The WG partition would move it to the tail — a layout
+    // the CN client never renders.
+    const list = [
+      vehicle("Iowa", SHIPS.iowa),
+      vehicle("Saipan", SHIPS.saipan),
+      vehicle("Pommern", SHIPS.pommern),
+    ];
+    const ordered = orderForTab(list, {
+      locale: "zh-CN",
+      sunk: new Set(["Saipan"]),
+      shipNameOrder: true,
+      staticOrder: true,
+    });
+    // Full key order: Saipan (carrier) → then the T9 BB pair by pinyin
+    // ship name (波美拉尼亚 bō < 依阿华 yī — the name segment outranks the
+    // nation rank under the CN order).
+    expect(names(ordered)).toEqual(["Saipan", "Pommern", "Iowa"]);
+    expect(ordered.map((o) => o.sunk)).toEqual([true, false, false]);
+  });
 });
