@@ -1,7 +1,16 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { HkTabs, HkTitleBar } from "@celestia-island/hikari";
-import { BarChart3, Clock, Menu, Swords, Users } from "@lucide/vue";
+import {
+  ArrowLeftRight,
+  BarChart3,
+  Clock,
+  GitBranch,
+  List,
+  Menu,
+  Swords,
+  Users,
+} from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useNavUiStore } from "@/stores/navUi";
@@ -241,9 +250,21 @@ export default defineComponent({
                         (shipsUi.viewMode = v as ShipsViewMode)
                       }
                       tabs={[
-                        { key: "tree", label: t("ships.viewMode.tree") },
-                        { key: "grid", label: t("ships.viewMode.grid") },
-                        { key: "compare", label: t("ships.viewMode.compare") },
+                        {
+                          key: "tree",
+                          label: t("ships.viewMode.tree"),
+                          icon: <GitBranch size={13} />,
+                        },
+                        {
+                          key: "grid",
+                          label: t("ships.viewMode.grid"),
+                          icon: <List size={13} />,
+                        },
+                        {
+                          key: "compare",
+                          label: t("ships.viewMode.compare"),
+                          icon: <ArrowLeftRight size={13} />,
+                        },
                       ]}
                     />
                   </nav>

@@ -1,6 +1,6 @@
 import { computed, defineComponent, onUnmounted, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { AlertTriangle, RotateCcw, Ship } from "@lucide/vue";
+import { AlertTriangle, ArrowLeftRight, GitBranch, List, RotateCcw, Ship } from "@lucide/vue";
 
 import { HkAlert, HkButton, HkInput, HkSpinner, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
@@ -257,9 +257,21 @@ export default defineComponent({
                 modelValue={shipsUi.viewMode}
                 onUpdate:modelValue={(v: string) => (shipsUi.viewMode = v as ShipsViewMode)}
                 tabs={[
-                  { key: "tree", label: t("ships.viewMode.tree") },
-                  { key: "grid", label: t("ships.viewMode.grid") },
-                  { key: "compare", label: t("ships.viewMode.compare") },
+                  {
+                    key: "tree",
+                    label: t("ships.viewMode.tree"),
+                    icon: <GitBranch size={14} />,
+                  },
+                  {
+                    key: "grid",
+                    label: t("ships.viewMode.grid"),
+                    icon: <List size={14} />,
+                  },
+                  {
+                    key: "compare",
+                    label: t("ships.viewMode.compare"),
+                    icon: <ArrowLeftRight size={14} />,
+                  },
                 ]}
               />
             </div>
