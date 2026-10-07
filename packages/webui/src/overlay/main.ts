@@ -93,6 +93,14 @@ interface OverlayMessages {
    *  (candidatesChip). Count-less by design — every folded face IS a bot,
    *  and the game's own table marks its bot rows anyway. */
   botLabel: string;
+  /** The per-row battle-count face (chipNumbers / candidatesChip) as a
+   *  pattern carrying the count in `{n}`: the copy owns the unit word AND
+   *  its placement, which is what lets one pattern serve all nine locales
+   *  (the Chinese measure word hugs the number, Korean's noun reads
+   *  before it). `{n}` is mandatory — scripts/check_i18n.py enforces
+   *  placeholder parity. The unit is fixed per locale — no count inflects
+   *  it, as these counts run to the thousands. */
+  battlesCount: string;
   /** Team-intel card copy (the two-sided consumable summary): side
    *  labels, the three family names, and the longest-range prefix. */
   intelAlly: string;
@@ -462,6 +470,17 @@ function fmtBattles(n: number): string {
   return n >= 100000 ? `${Math.round(n / 1000)}k` : n >= 10000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
 
+/** One battle count wearing its locale's unit ("1234 场" / "1234 battles")
+ *  — the unit rides INSIDE the bold value so the whole face keeps one
+ *  color (including the thin-sample red). Every battle-count chip face
+ *  carries it: with all four chip toggles on, a bare number between the PR
+ *  and the damage figures is exactly what a Tab-glance misreads. The count
+ *  itself keeps fmtBattles' compaction — a unit must not widen the chip by
+ *  digits the roster table already has no room for. */
+function battlesText(n: number): string {
+  return localized("battlesCount").replaceAll("{n}", fmtBattles(n));
+}
+
 /** The seal node beside the chip numbers: the verdict wording as PLAIN
  *  TEXT in cinnabar — the overlay deliberately skips the calligraphy
  *  bitmaps the in-app RatingStamp faces press (chips are too small for
@@ -502,10 +521,11 @@ function chipNumbers(v: RosterModeNumbers): string {
   if (PREFS.chips.battles) {
     // Red under 200 battles (thin-sample warning), plain above — same rule
     // as the roster panels' battles column (utils/winrate battlesColor).
+    // The count lands with its localized unit (battlesText).
     const color = battlesColor(v.battles);
     parts.push(
       v.battles != null
-        ? `<b${color ? ` style="color:${color}"` : ""}>${fmtBattles(v.battles)}</b>`
+        ? `<b${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`
         : muted,
     );
   }
@@ -622,7 +642,7 @@ function candidatesChip(members: string[], storyLayout: boolean): string {
     }
     if (PREFS.chips.battles && v.battles != null) {
       const color = battlesColor(v.battles);
-      return `<b${color ? ` style="color:${color}"` : ""}>${fmtBattles(v.battles)}</b>`;
+      return `<b${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`;
     }
     return `<span class="muted">—</span>`;
   };

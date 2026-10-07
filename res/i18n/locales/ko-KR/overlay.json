@@ -4,6 +4,7 @@
   "locatingHint": "Tab 키를 누른 채 기다리면 명단을 찾습니다",
   "queryingBadge": "전적 조회 중",
   "botLabel": "봇",
+  "battlesCount": "전투 {n}회",
   "intelAlly": "아군",
   "intelEnemy": "적군",
   "intelRadar": "레이더",

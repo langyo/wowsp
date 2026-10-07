@@ -4,6 +4,7 @@
   "locatingHint": "请按住 Tab，正在定位名单",
   "queryingBadge": "战绩查询中",
   "botLabel": "机器人",
+  "battlesCount": "{n} 场",
   "intelAlly": "我方",
   "intelEnemy": "敌方",
   "intelRadar": "雷达",

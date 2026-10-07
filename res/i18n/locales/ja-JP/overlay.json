@@ -4,6 +4,7 @@
   "locatingHint": "Tab を押し続けてください — 名簿を探しています",
   "queryingBadge": "戦績を取得中",
   "botLabel": "ボット",
+  "battlesCount": "{n} 戦",
   "intelAlly": "味方",
   "intelEnemy": "敵",
   "intelRadar": "レーダー",

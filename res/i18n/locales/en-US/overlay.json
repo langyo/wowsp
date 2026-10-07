@@ -4,6 +4,7 @@
   "locatingHint": "Hold Tab — locating the roster",
   "queryingBadge": "Fetching stats",
   "botLabel": "bot",
+  "battlesCount": "{n} battles",
   "intelAlly": "Allies",
   "intelEnemy": "Enemies",
   "intelRadar": "Radar",

@@ -4,6 +4,7 @@
   "locatingHint": "Mantén pulsado Tab: localizando la lista de jugadores",
   "queryingBadge": "Consultando estadísticas",
   "botLabel": "bot",
+  "battlesCount": "{n} batallas",
   "intelAlly": "Aliados",
   "intelEnemy": "Enemigos",
   "intelRadar": "Radar",

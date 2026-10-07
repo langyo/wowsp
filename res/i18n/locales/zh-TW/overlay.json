@@ -4,6 +4,7 @@
   "locatingHint": "請按住 Tab，正在定位名單",
   "queryingBadge": "戰績查詢中",
   "botLabel": "機器人",
+  "battlesCount": "{n} 場",
   "intelAlly": "我方",
   "intelEnemy": "敵方",
   "intelRadar": "雷達",

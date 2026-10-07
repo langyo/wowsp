@@ -4,6 +4,7 @@
   "locatingHint": "Удерживайте Tab — ищем таблицу составов",
   "queryingBadge": "Запрос статистики",
   "botLabel": "бот",
+  "battlesCount": "{n} боёв",
   "intelAlly": "Свои",
   "intelEnemy": "Враги",
   "intelRadar": "Радар",

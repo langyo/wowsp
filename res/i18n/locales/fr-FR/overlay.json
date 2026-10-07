@@ -4,6 +4,7 @@
   "locatingHint": "Maintenez Tab — recherche de la liste des joueurs",
   "queryingBadge": "Récupération des stats",
   "botLabel": "bot",
+  "battlesCount": "{n} batailles",
   "intelAlly": "Alliés",
   "intelEnemy": "Ennemis",
   "intelRadar": "Radar",
