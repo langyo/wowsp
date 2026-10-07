@@ -393,6 +393,10 @@ export interface EntityKind {
   /** Roster shipId scanned from the EntityCreate state stream — the reliable
    *  join key into `ReplayMeta.vehicles[].shipId`. Undefined when not found. */
   shipId?: number | null;
+  /** Starting (max) health scanned from the create state (ships only). The
+   *  arena broadcast stays the authoritative source; this backs the Lesta
+   * arena synthesis. Undefined when not found. */
+  maxHealth?: number | null;
   /** Capture-zone radius (m) from the create state (entityType 14 only). */
   radius?: number | null;
   /** 0-based capture-point index (A=0, B=1, ...) from the create state's

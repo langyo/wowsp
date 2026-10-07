@@ -281,6 +281,7 @@ impl ParsedCreate {
             initial_z: self.z,
             creation_time: self.creation_time,
             ship_id: None,
+            max_health: None,
             radius: self.radius,
             control_point_index: self.control_point_index,
             initial_team: self.initial_team,
@@ -355,6 +356,48 @@ pub(super) fn scan_state_for_ship_id(
         }
     }
     scan_base64_runs_for_ship_id(state, candidates)
+}
+
+/// Scan a ship's EntityCreate state stream for its starting (max) health.
+/// The state packs the entity's initial property values as
+/// `<u16 property index><value>` entries, and the health property sits at a
+/// field-order-dependent offset that drifts between game versions (verified
+/// across two clients: WG 15.8.1 carries the exact arena maxHealth at
+/// offsets 73/88 in one capture, 111/126 in another; Lesta 26.10 around
+/// 117/132), so neither a fixed offset nor an alignment guess is safe — a
+/// real capture misaligns both ways. What HOLDS on both clients: the
+/// starting health is written twice (the current-health and max-health
+/// properties, equal at spawn, ~15 bytes apart) while every other in-band
+/// reading is a one-off straddle artifact (a neighbouring field's tail
+/// bytes + a property index + the health float's exponent byte decode to a
+/// plausible-looking integer — observed as 131196 next to a true 27300 and
+/// 10816 next to a true 41200). The scan therefore takes the LARGEST
+/// integral f32 in the plausible full-HP band that occurs at least twice in
+/// the state (a per-version damage-cap constant sits far above the band —
+/// 200000 on 26.10 — and real property values sit far below it); no
+/// duplicated member yields `None` and consumers fall back to their
+/// existing peak/encyclopedia totals.
+pub(super) fn scan_state_for_max_health(state: &[u8]) -> Option<u32> {
+    const LO: f32 = 5000.0;
+    const HI: f32 = 150_000.0;
+    if state.len() < 4 {
+        return None;
+    }
+    let mut seen: Vec<(u32, u8)> = Vec::new(); // (value, times) — a handful of band members at most.
+    for off in 0..=state.len() - 4 {
+        let v = f32::from_le_bytes(state[off..off + 4].try_into().ok()?);
+        if v > LO && v < HI && v == v.trunc() {
+            let key = v as u32;
+            match seen.iter_mut().find(|(k, _)| *k == key) {
+                Some(entry) => entry.1 += 1,
+                None => seen.push((key, 1)),
+            }
+        }
+    }
+    seen.iter()
+        .filter(|(_, times)| *times >= 2)
+        .map(|(value, _)| *value)
+        .max()
 }
 
 /// Minimal base64 run finder + decoder feeding the Lesta leg of

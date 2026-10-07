@@ -783,6 +783,7 @@ fn entity_kind_skips_unrecovered_fields() {
         initial_z: 3.0,
         creation_time: 10.0,
         ship_id: None,
+        max_health: None,
         radius: None,
         control_point_index: None,
         initial_team: None,
@@ -810,6 +811,7 @@ fn entity_kind_skips_unrecovered_fields() {
         control_point_index: Some(1),
         initial_team: Some(-1),
         ship_id: Some(4282948544),
+        max_health: None,
         ..serde_json::from_value::<EntityKind>(serde_json::json!({
             "entityType": 14,
             "vehicleId": 10513,
@@ -859,6 +861,7 @@ fn entity_trajectory_emits_optional_streams_only_when_present() {
             initial_z: 6.0,
             creation_time: 7.0,
             ship_id: None,
+            max_health: None,
             radius: None,
             control_point_index: None,
             initial_team: None,

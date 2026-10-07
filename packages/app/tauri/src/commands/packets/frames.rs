@@ -86,6 +86,9 @@ pub(super) fn walk_frames(
                     let eid = created.entity_id;
                     let mut kind = created.clone_into_kind();
                     kind.ship_id = scan_state_for_ship_id(&payload[38..], ship_id_candidates);
+                    if kind.entity_type == 2 {
+                        kind.max_health = scan_state_for_max_health(&payload[38..]);
+                    }
                     // Entities destroyed and re-created mid-match (leaving and
                     // re-entering the observed area) keep their FIRST creation
                     // time so the frontend doesn't hide them until re-creation.

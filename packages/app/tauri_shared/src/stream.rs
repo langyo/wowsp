@@ -662,6 +662,14 @@ pub struct EntityKind {
     /// constant and the entity-id spawn order is not team-grouped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ship_id: Option<i64>,
+    /// Starting (max) health recovered from the EntityCreate state stream
+    /// (the largest integral f32 in the full-HP band — the property's offset
+    /// drifts between game versions, see `scan_state_for_max_health`). The
+    /// arena broadcast remains the authoritative source wherever it decodes
+    /// (WG); this field backs the Lesta arena synthesis, whose recordings
+    /// carry no arena state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_health: Option<u32>,
     /// Capture-zone radius in metres, recovered from the EntityCreate state
     /// stream (only present for entityType 14 zones; the first integral f32
     /// in the state — 80..140 m across current maps). The frontend floors

@@ -90,6 +90,43 @@ fn remaps_legacy_packet_ids() {
     );
 }
 
+/// The create-state max-health scan takes the largest integral f32 in the
+/// full-HP band that occurs at least TWICE (the current/max health property
+/// pair, equal at spawn), ignoring one-off straddle artifacts, sub-band
+/// floats and the per-version damage-cap constant above the band.
+#[test]
+fn scans_state_for_max_health_by_duplicated_value() {
+    let mk = |health: f32, hp_off_a: usize, hp_off_b: usize, artifact: Option<(f32, usize)>| {
+        let mut state = vec![0u8; 200];
+        state[4..8].copy_from_slice(&123.45f32.to_le_bytes()); // sub-band noise
+        state[40..44].copy_from_slice(&200_000.0f32.to_le_bytes()); // damage-cap constant
+        for off in [hp_off_a, hp_off_b] {
+            state[off..off + 4].copy_from_slice(&health.to_le_bytes());
+        }
+        if let Some((v, off)) = artifact {
+            state[off..off + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        state
+    };
+    // WG-shaped placement (73/88) and Lesta-shaped (117/132), each with a
+    // one-off straddle artifact that used to win a naive max-scan.
+    assert_eq!(
+        scan_state_for_max_health(&mk(31_200.0, 73, 88, Some((131_196.0, 10)))),
+        Some(31_200)
+    );
+    assert_eq!(
+        scan_state_for_max_health(&mk(42_500.0, 117, 132, Some((10_816.0, 80)))),
+        Some(42_500)
+    );
+    // An in-band value seen only once never qualifies.
+    let mut single = vec![0u8; 200];
+    single[50..54].copy_from_slice(&52_400.0f32.to_le_bytes());
+    assert_eq!(scan_state_for_max_health(&single), None);
+    // Nothing in band -> None; short states never panic.
+    assert_eq!(scan_state_for_max_health(&[0u8; 64]), None);
+    assert_eq!(scan_state_for_max_health(&[0u8; 3]), None);
+}
+
 /// End-to-end against a real replay when `WOWSP_TEST_REPLAY` is set. Asserts
 /// positions AND EntityCreate kinds are extracted and look sane, and that
 /// the version-selected method table yields battle-effect events.

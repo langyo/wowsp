@@ -560,6 +560,7 @@ use payloads::{
     parse_battle_results, parse_camera, parse_camera_mode, parse_cell_player_create,
     parse_entity_create, parse_entity_destroy, parse_entity_method, parse_map_name,
     parse_nested_property, parse_net_stats, parse_player_position, parse_position, parse_property,
-    parse_version, parse_weapon_lock, parse_weather_nested, scan_state_for_ship_id,
+    parse_version, parse_weapon_lock, parse_weather_nested, scan_state_for_max_health,
+    scan_state_for_ship_id,
 };
 use pickle::{PyVal, parse_pickle};
