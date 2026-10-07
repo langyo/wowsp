@@ -97,6 +97,8 @@ export type {
   AchievementEvent,
   ArenaPlayer,
   ReplayStream,
+  LiveTempReplay,
+  LiveSelfStream,
   PlayerStats,
   PlayerSuggestion,
   PlayerComposition,

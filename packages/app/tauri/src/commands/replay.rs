@@ -209,50 +209,116 @@ pub async fn live_temp_replay() -> Result<Option<LiveTempReplay>, String> {
 /// repeatedly by the live self-stats view while its tab is open; damage
 /// totals, hits, achievements and HP timelines all stream cumulatively, so
 /// every call is a complete "battle so far" snapshot, not a delta.
+///
+/// Mid-write states are the NORMAL first reads, not errors (see
+/// [`live_snapshot_from_bytes`]) — the view keeps its syncing state and
+/// re-polls as the file grows.
 #[tauri::command]
 pub async fn read_live_replay_snapshot(
     path: String,
 ) -> Result<wowsp_tauri_shared::LiveSelfStream, String> {
     tokio::task::spawn_blocking(move || {
         let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
-        let stream = packet_stream_after_blocks(&bytes)
-            .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
-        // Same roster-candidate + version extraction as the finished-replay
-        // path — the temp container already carries the full header blocks.
-        let lesta = std::path::Path::new(&path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(super::game_client::is_lesta_replay_extension);
-        let mut candidates = std::collections::HashSet::new();
-        let mut client_version: Option<String> = None;
-        if let Some(json) = extract_descriptor_json(&bytes) {
-            if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
-                client_version = raw
-                    .get("clientVersionFromExe")
-                    .and_then(|x| x.as_str())
-                    .map(str::to_string);
-                for v in roster_from_raw(std::path::Path::new(&path), &raw) {
-                    if v.ship_id > 0 {
-                        candidates.insert(v.ship_id as u32);
-                    }
-                }
-            }
-        }
-        let decoded = super::packets::decode_replay_partial(
-            stream,
-            &candidates,
-            client_version.as_deref(),
-            lesta,
-        )?;
-        // Slim projection: the self view never reads the camera/squadron/
-        // chat families, and the snapshot is polled every few seconds —
-        // serialize only what it renders (see LiveSelfStream).
-        Ok(wowsp_tauri_shared::LiveSelfStream::from_full(
-            group_by_entity(decoded),
-        ))
+        Ok(live_snapshot_from_bytes(&path, &bytes))
     })
     .await
     .map_err(|e| format!("live replay snapshot task failed: {e}"))?
+}
+
+/// Byte length of the last live-temp read that failed to decode — the
+/// downgrade below warns once per growth step instead of once per 5 s poll.
+static LAST_LIVE_DECODE_FAILURE_LEN: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// Parse one live-temp-container read into the slim self-stats snapshot.
+///
+/// The game writes the container progressively — right after the file is
+/// (re)created (battle start, loading screen, the next battle truncating the
+/// previous file), the magic/header blocks are not fully on disk yet, and a
+/// pre-allocated packet region may still read back as zero fill. Mid-write
+/// is the NORMAL first-read state, not corruption: it yields the EMPTY
+/// snapshot (the view stays on its syncing state and re-polls on the next
+/// size change) instead of surfacing an RpcError for a file that is simply
+/// incomplete. A valid prefix behind a torn tail still decodes (see
+/// `inflate_zlib_partial`, which keeps the prefix on InvalidData too) —
+/// only a stream with nothing decodable downgrades to empty.
+///
+/// Mirrors the finished-replay path's prologue (roster candidates, version,
+/// the Lesta arena synthesis) so the live and settled snapshots agree on
+/// identity and starting health; the strict finished-replay reader keeps
+/// its hard error for the same shapes (see [`read_replay_positions`]): a
+/// completed replay that fails to parse must surface, never masquerade as
+/// "still being written".
+fn live_snapshot_from_bytes(path: &str, bytes: &[u8]) -> wowsp_tauri_shared::LiveSelfStream {
+    use std::sync::atomic::Ordering;
+
+    let Some(stream) = packet_stream_after_blocks(bytes) else {
+        tracing::debug!(
+            path,
+            len = bytes.len(),
+            "live temp replay header not flushed yet; empty snapshot"
+        );
+        return wowsp_tauri_shared::LiveSelfStream::default();
+    };
+    let lesta = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(super::game_client::is_lesta_replay_extension);
+    let mut candidates = std::collections::HashSet::new();
+    let mut client_version: Option<String> = None;
+    let mut roster: Vec<VehicleEntry> = Vec::new();
+    if let Some(json) = extract_descriptor_json(bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            client_version = raw
+                .get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string);
+            roster = roster_from_raw(std::path::Path::new(path), &raw);
+            for v in &roster {
+                if v.ship_id > 0 {
+                    candidates.insert(v.ship_id as u32);
+                }
+            }
+        }
+    }
+    let mut decoded = match super::packets::decode_replay_partial(
+        stream,
+        &candidates,
+        client_version.as_deref(),
+        lesta,
+    ) {
+        Ok(decoded) => decoded,
+        // Nothing decodable yet (the packet region is still zero fill, or
+        // its first block is mid-flush) — the same mid-write class as the
+        // unwritten header; the next size growth gets a fresh attempt. A
+        // systematic failure (new client framing, a changed key) shows up
+        // here at every growth step, so it warns once per step instead of
+        // hiding at debug level for the whole battle.
+        Err(e) => {
+            if LAST_LIVE_DECODE_FAILURE_LEN.swap(bytes.len() as u64, Ordering::Relaxed)
+                != bytes.len() as u64
+            {
+                tracing::warn!(
+                    path,
+                    len = bytes.len(),
+                    error = %e,
+                    "live temp replay not decodable yet; empty snapshot"
+                );
+            }
+            return wowsp_tauri_shared::LiveSelfStream::default();
+        },
+    };
+    if lesta {
+        // BEFORE grouping, matching the settled path: the synthesis fills
+        // `arena_players` (starting health included) so the HP anchoring
+        // and the recorder-team slot behave exactly like a decoded WG
+        // arena state.
+        synthesize_lesta_arena_players(&mut decoded.arena_players, &decoded.kinds, &roster);
+    }
+    // Slim projection: the self view never reads the camera/squadron/
+    // chat families, and the snapshot is polled every few seconds —
+    // serialize only what it renders (see LiveSelfStream).
+    wowsp_tauri_shared::LiveSelfStream::from_full(group_by_entity(decoded))
 }
 
 /// Skip the magic + JSON header blocks and return a slice over the encrypted
@@ -2329,6 +2395,104 @@ mod tests {
             std::env::var("WOWSP_DUMP_OUT").unwrap_or_else(|_| "replay_dump.json".to_string());
         std::fs::write(&out_path, serde_json::to_string(&out).unwrap()).unwrap();
         eprintln!("dumped to {out_path}");
+    }
+
+    /// The live temp container is legitimately read mid-write: every state
+    /// before the game has flushed a complete header + packet region must
+    /// yield the EMPTY snapshot, never an error — the self view stays on its
+    /// syncing state and retries on the next size change. Pinned shapes:
+    /// nothing on disk, magic only, a declared-but-missing block table, a
+    /// complete header over a zero-filled packet region.
+    #[test]
+    fn live_snapshot_tolerates_midwrite_containers() {
+        let assert_empty = |bytes: &[u8]| {
+            let snap = live_snapshot_from_bytes("temp.wowsreplay", bytes);
+            assert!(snap.trajectories.is_empty());
+            assert!(snap.shot_kills.is_empty());
+            assert!(snap.damage_stats.is_empty());
+            assert!(snap.battle_results.is_none());
+        };
+        // The file exists but the game has not written a byte yet (or the
+        // next battle just truncated it).
+        assert_empty(&[]);
+        // Magic flushed, block table not.
+        assert_empty(&REPLAY_MAGIC);
+        let mut count_only = REPLAY_MAGIC.to_vec();
+        count_only.extend_from_slice(&3u32.to_le_bytes());
+        assert_empty(&count_only);
+        // Block count + a declared block length whose payload has not
+        // landed (the declaration runs past EOF).
+        let mut declared = REPLAY_MAGIC.to_vec();
+        declared.extend_from_slice(&1u32.to_le_bytes());
+        declared.extend_from_slice(&64u32.to_le_bytes());
+        declared.extend_from_slice(b"{\"a\"");
+        assert_empty(&declared);
+        // Header complete (one small JSON block) but the packet region is
+        // still pre-allocated zero fill.
+        let mut zero_fill = REPLAY_MAGIC.to_vec();
+        zero_fill.extend_from_slice(&1u32.to_le_bytes());
+        zero_fill.extend_from_slice(&2u32.to_le_bytes());
+        zero_fill.extend_from_slice(b"{}");
+        zero_fill.extend_from_slice(&[0u8; 4096]);
+        assert_empty(&zero_fill);
+    }
+
+    /// A container whose header walks cleanly but carries no frames yet
+    /// decodes to the empty snapshot — through the CLEAN path, not the
+    /// downgrade: the strict packet layer accepts the same bytes, which
+    /// pins the claim the helper's empty result makes.
+    #[test]
+    fn live_snapshot_reads_header_only_container() {
+        let mut bytes = REPLAY_MAGIC.to_vec();
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(b"{}");
+        let stream = packet_stream_after_blocks(&bytes).expect("header walks");
+        assert!(
+            super::super::packets::decode_replay_partial(
+                stream,
+                &std::collections::HashSet::new(),
+                None,
+                false
+            )
+            .is_ok(),
+            "an empty packet region must decode cleanly"
+        );
+        assert!(
+            live_snapshot_from_bytes("temp.wowsreplay", &bytes)
+                .trajectories
+                .is_empty()
+        );
+    }
+
+    /// The tolerant live helper must not soften the STRICT reader: the same
+    /// mid-write shape that yields an empty live snapshot is a hard error on
+    /// the finished-replay decode — a completed replay that fails to parse
+    /// must surface, never read as "still being written".
+    #[test]
+    fn strict_decode_keeps_hard_error_for_zero_fill() {
+        let mut zero_fill = REPLAY_MAGIC.to_vec();
+        zero_fill.extend_from_slice(&1u32.to_le_bytes());
+        zero_fill.extend_from_slice(&2u32.to_le_bytes());
+        zero_fill.extend_from_slice(b"{}");
+        zero_fill.extend_from_slice(&[0u8; 4096]);
+        let stream = packet_stream_after_blocks(&zero_fill).expect("header walks");
+        assert!(
+            super::super::packets::decode_replay(
+                stream,
+                &std::collections::HashSet::new(),
+                None,
+                false
+            )
+            .is_err(),
+            "strict decode must reject a zero-filled packet region"
+        );
+        assert!(
+            live_snapshot_from_bytes("temp.wowsreplay", &zero_fill)
+                .trajectories
+                .is_empty(),
+            "the live path keeps its empty-snapshot downgrade"
+        );
     }
 }
 

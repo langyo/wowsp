@@ -567,7 +567,13 @@ pub struct ReplayStream {
 /// trajectory dropped before serialization. The view polls this against the
 /// in-progress temp replay every few seconds, so the IPC payload stays
 /// proportional to what it renders instead of the full decode's output.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Default` is the "nothing decodable yet" snapshot: the live temp
+/// container exists but its header blocks are not fully flushed (battle
+/// start / loading), so there is legitimately nothing to report — an empty
+/// stream keeps the view's syncing state instead of surfacing an error for
+/// a file that is simply mid-write.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveSelfStream {
     /// Ship trajectories only (entity type 2), positions + HP timelines +

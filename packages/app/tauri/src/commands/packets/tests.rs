@@ -1674,3 +1674,44 @@ fn partial_decode_still_rejects_garbage() {
     let garbage = encrypt_stream_for_test(&[0xff; 512]);
     assert!(decode_replay_partial(&garbage, &Default::default(), None, false).is_err());
 }
+
+/// A valid deflate prefix with a zero-filled tail — the still-unwritten
+/// region of a pre-allocated temp container — must keep the frames the
+/// prefix holds on the partial path (the frame walk is total, so the
+/// snapshot loses only the tail), while the strict path keeps its hard
+/// error for the same bytes.
+#[test]
+fn partial_decode_keeps_prefix_behind_zero_fill() {
+    use std::io::Write as _;
+
+    // Server-tick frames (size 0, type 0x0e): the walk counts them even
+    // though they carry no payload, so any surviving prefix is observable.
+    let mut frames = Vec::new();
+    for i in 0..2048u32 {
+        frames.extend_from_slice(&0u32.to_le_bytes()); // payload size
+        frames.extend_from_slice(&0x0eu32.to_le_bytes()); // server tick
+        frames.extend_from_slice(&(i as f32).to_le_bytes()); // time
+    }
+    let mut compressed = Vec::new();
+    flate2::write::ZlibEncoder::new(&mut compressed, flate2::Compression::default())
+        .write_all(&frames)
+        .unwrap();
+    let encrypted = encrypt_stream_for_test(&compressed);
+    // Cut at a block boundary mid-stream, then a zero-filled region.
+    let cut = encrypted.len() / 2 / 8 * 8;
+    let mut torn = encrypted[..cut].to_vec();
+    torn.extend_from_slice(&[0u8; 8192]);
+
+    let strict = decode_replay(&torn, &Default::default(), None, false);
+    assert!(
+        strict.is_err(),
+        "the strict decode must reject the zero-filled tail"
+    );
+
+    let partial = decode_replay_partial(&torn, &Default::default(), None, false)
+        .expect("the partial decode must keep the prefix");
+    assert!(
+        partial.diagnostics.server_ticks > 0,
+        "frames before the zero fill must survive the partial decode"
+    );
+}

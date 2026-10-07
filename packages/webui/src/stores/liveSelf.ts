@@ -82,12 +82,24 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     try {
       const temp = await api.liveTempReplay();
       if (!temp) {
-        if (!model.value) phase.value = "waiting";
+        // No container = no battle in progress: a stale read error from the
+        // previous one is history, not a current condition.
+        if (!model.value) {
+          phase.value = "waiting";
+          error.value = null;
+        }
         return;
       }
       if (lastSize === temp.size) return; // no growth → skip the decode
-      lastSize = temp.size;
       const stream = await api.readLiveReplaySnapshot(temp.path);
+      // The read itself is what failed before: a successful one clears the
+      // stale error even while the snapshot is still empty (mid-write).
+      error.value = null;
+      // Record the decoded size only once the read succeeded: a failed
+      // read must be retried on the next tick even if the file has not
+      // grown yet (otherwise one transient failure pins the gate shut
+      // until the battle happens to write more).
+      lastSize = temp.size;
       const next = buildSelfStats({
         stream,
         roster: roster.vehicles,

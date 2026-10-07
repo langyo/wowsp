@@ -494,7 +494,22 @@ fn inflate_zlib_partial(decrypted: &[u8]) -> Result<Vec<u8>, String> {
             Ok(n) => out.extend_from_slice(&buf[..n]),
             // Truncated tail — the game is mid-append; accept the prefix.
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(format!("zlib inflate: {e}")),
+            Err(e) => {
+                // A torn tail also surfaces as InvalidData: behind a valid
+                // prefix, a still-zero pre-allocated region decrypts to
+                // bytes the inflater rejects mid-stream. Keep whatever
+                // decompressed already — the frame walk is total and
+                // self-delimiting, so every complete frame the prefix holds
+                // still lands in the snapshot instead of being thrown away
+                // wholesale. With NO prefix the stream is unusable outright
+                // and the error stays (the live caller turns it into the
+                // empty snapshot; the strict reader never reaches this
+                // function — see its sibling above).
+                if !out.is_empty() {
+                    break;
+                }
+                return Err(format!("zlib inflate: {e}"));
+            },
         }
     }
     if out.len() > cap {
