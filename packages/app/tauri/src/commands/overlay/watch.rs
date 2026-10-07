@@ -351,6 +351,20 @@ fn drain_watch_commands(app: &AppHandle, fsm: &mut WatchFsm) {
     }
 }
 
+/// Cadence of the NEXT acquisition retry for the current hold: the short
+/// young-hold interval while the hold is younger than the steady-state
+/// cap, the cap itself once the hold matured (or no hold is observed —
+/// `None` from a wedged tracker reads as "not young"). See
+/// [`CAPTURE_YOUNG_RETRY_INTERVAL`] for why the young cadence exists.
+#[cfg(target_os = "windows")]
+pub(super) fn acquisition_retry_interval(held: Option<Duration>) -> Duration {
+    if held.is_some_and(|held| held < CAPTURE_MIN_INTERVAL) {
+        CAPTURE_YOUNG_RETRY_INTERVAL
+    } else {
+        CAPTURE_MIN_INTERVAL
+    }
+}
+
 /// One poll iteration of the Tab watcher (factored out so the loop can wrap
 /// it in `catch_unwind`).
 #[cfg(target_os = "windows")]
@@ -568,9 +582,10 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             let Some(g) = game else {
                 return;
             };
+            let retry = acquisition_retry_interval(tab_held_for());
             if !fsm
                 .last_capture_attempt
-                .is_none_or(|t| t.elapsed() >= CAPTURE_MIN_INTERVAL)
+                .is_none_or(|t| t.elapsed() >= retry)
             {
                 tracing::debug!("tab held: capture rate-limited, waiting");
                 return;

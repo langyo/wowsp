@@ -153,21 +153,34 @@ fn window_bounds_clamped(
 
 /// Capture with the manual-locate cache refreshed. The picker's reference
 /// frame must be THE INSTANT TAB WAS LAST HELD — the roster moment the
-/// player actually saw — so only a capture that lands while the key is
-/// still down AND has been held past [`TAB_STORE_MIN_HOLD`] is remembered
+/// player actually saw — so the automatic path remembers a capture only
+/// while the key is still down, the hold has passed [`TAB_STORE_MIN_HOLD`],
+/// AND the frame itself PROVES it shows the team header
 /// (detection passes, revalidations, sink probes; the debug capture
-/// command included). The hold gate skips the first instants of a press,
-/// while the table is still fading in: those frames show an un-dimmed,
-/// table-less scene and used to evict a good cached frame for a useless
-/// one. A capture in flight when the key came up is used by the caller but
-/// NOT stored, and the cache therefore stays frozen on the last Tab-held
-/// frame until the next hold — see `commands/overlay_manual.rs`.
+/// command included). The hold gate is the cheap pre-filter that skips the
+/// first instants of a press, while the table is still fading in; the
+/// header check is what makes the rule content-verified rather than merely
+/// timing-gated — a stalled watcher tick can hide a release and re-press
+/// inside one sample gap, leaving the tracker reporting a minutes-old
+/// hold, and only the pixels can overrule that. The same
+/// [`overlay_detect::header_bars_present`] check guards the picker's
+/// fresh-capture fallback, so every frame this cache accepts is a frame
+/// the manual-locate flow itself would trust. `compute_anchor` additionally
+/// stores any capture the detector PROVED carries the table, bypassing
+/// both gate and check — so the cache converges on a table-bearing frame
+/// within one detection even on a short hold. A capture in flight when the
+/// key came up is used by the caller but NOT stored, and the cache
+/// therefore stays frozen on the last Tab-held frame until the next hold —
+/// see `commands/overlay_manual.rs`.
 #[cfg(target_os = "windows")]
 pub(super) fn capture_game_rgba_cached(
     rect: &windows::Win32::Foundation::RECT,
 ) -> Option<(Vec<u8>, u32, u32)> {
     let out = capture_game_rgba(rect)?;
-    if tab_key_down() && tab_held_for().is_some_and(|held| held >= TAB_STORE_MIN_HOLD) {
+    if tab_key_down()
+        && tab_held_for().is_some_and(|held| held >= TAB_STORE_MIN_HOLD)
+        && overlay_detect::header_bars_present(&out.0, out.1, out.2)
+    {
         super::overlay_manual::store_capture(&out.0, out.1, out.2, rect_from_win32(*rect));
     }
     Some(out)

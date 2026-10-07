@@ -159,19 +159,34 @@ const HIDE_RETRY: Duration = Duration::from_millis(300);
 const STATE_REFRESH: Duration = Duration::from_secs(2);
 /// Rate limit for capture attempts (GDI `BitBlt(CAPTUREBLT)` + detector
 /// work is expensive): a fresh Tab press reuses the cached anchor inside
-/// this window and is refused a new capture until it elapses — so frantic
-/// tapping or a focus flicker while holding Tab caps at ~0.67 captures/s.
+/// this window and is refused a new capture until it elapses — so the
+/// steady-state cadence caps at ~0.67 captures/s (the first moments of a
+/// hold retry faster, see [`CAPTURE_YOUNG_RETRY_INTERVAL`]).
 const CAPTURE_MIN_INTERVAL: Duration = Duration::from_millis(1500);
+/// Acquisition retry interval while the current Tab hold is younger than
+/// [`CAPTURE_MIN_INTERVAL`]. The first capture of a hold lands ~30 ms after
+/// the press — before the game has faded the table in — so in the modes
+/// with a visible fade (operations) it can only fail, and the full 1.5 s
+/// cadence would then park the next attempt past the end of a short
+/// glance: every press produced nothing. While the hold is young the
+/// watcher retries on this shorter cadence — bounded to
+/// `CAPTURE_MIN_INTERVAL / CAPTURE_YOUNG_RETRY_INTERVAL` extra captures per
+/// hold, and a successful detection pins and leaves the arm entirely — so
+/// the first success lands as soon as the table is actually up.
+const CAPTURE_YOUNG_RETRY_INTERVAL: Duration = Duration::from_millis(400);
 /// A frame enters the manual-locate cache only once Tab has been held this
 /// long (see `capture_game_rgba_cached`): real captures taken right after
 /// the press still show an un-dimmed, table-less scene (the game fades the
-/// table in), and with the 1.5 s acquisition cadence the ONLY frame a short
-/// hold ever stored was that pre-table instant — the picker then offered a
-/// bright, table-less frame as "the Tab-held moment". With the gate, the
-/// first eligible store is a cadence capture well past the fade-in; a hold
-/// shorter than this stores nothing (the cache keeps the previous frame
-/// rather than a useless one).
-const TAB_STORE_MIN_HOLD: Duration = Duration::from_millis(750);
+/// table in) — an old build stored exactly that pre-fade instant on every
+/// short hold and the picker then offered a bright, table-less frame as
+/// "the Tab-held moment". This gate is deliberately longer than the fade,
+/// but it is only the CHEAP PRE-FILTER: the frame must also prove it shows
+/// the team header before it is stored, because a stalled watcher tick can
+/// hide a release and re-press inside one sample gap and re-open the
+/// pre-fade window. Frames the detector PROVED carry the table bypass both
+/// (see `compute_anchor`), and a hold that yields neither simply keeps the
+/// previous frame.
+const TAB_STORE_MIN_HOLD: Duration = Duration::from_millis(1200);
 /// While the overlay is shown, the pinned anchor is re-validated at this
 /// cadence: a full BitBlt + detection pass re-runs and replaces the pin only
 /// when the table moved at row scale (`overlay_detect::

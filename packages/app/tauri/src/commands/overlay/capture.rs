@@ -102,10 +102,11 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
         // Band verify missed but the cache is not (yet) declared dead: skip
         // BOTH the gate's full scans and the detection for THIS frame — the
         // next capture (sink probe 500 ms / revalidate 5 s / acquisition
-        // 1.5 s) re-judges cheaply. A full-frame band search
-        // here would find the MOVED table, but rescanning every frame is
-        // exactly the cost this cache exists to avoid; the strike counter
-        // is the last-resort re-arm.
+        // 1.5 s, or 400 ms while the hold is young — see
+        // `CAPTURE_YOUNG_RETRY_INTERVAL`) re-judges cheaply. A full-frame
+        // band search here would find the MOVED table, but rescanning every
+        // frame is exactly the cost this cache exists to avoid; the strike
+        // counter is the last-resort re-arm.
         return None;
     }
     // Scene gate (only reached for frames that will actually be detected:
@@ -160,6 +161,17 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
             },
         }
     };
+    // A frame that PROVED to carry the Tab table — the verified cached band,
+    // or a fresh detection that just matched — is the best possible
+    // manual-locate reference: it IS the roster moment the player saw. It
+    // replaces the cache even while the hold is still young, bypassing the
+    // pre-fade-in gate in `capture_game_rgba_cached` (which exists to skip
+    // UNPROVEN frames), so a short glance still leaves the picker a
+    // table-bearing frame — and any earlier stale/table-less entry is
+    // healed within one detection. Throttled inside `store_capture`.
+    if detected && tab_key_down() {
+        super::overlay_manual::store_capture(&rgba, w, h, game_rect);
+    }
     // Row attribution, per the settings mode. Both branches run on the
     // DETECTED capture-relative geometry, before build_anchor re-bases it
     // to the overlay origin. `ally_rows` is the SAME team_sizes read the

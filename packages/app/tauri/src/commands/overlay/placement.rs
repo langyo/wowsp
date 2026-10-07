@@ -1,25 +1,53 @@
 use super::*;
 
+/// Longest sample gap (ms) the tracker still reads as "the same, unbroken
+/// key run". The watcher samples every 30 ms and its normal ticks are far
+/// shorter than this; a longer gap means samples were missed — a release
+/// inside the gap may have gone unseen — so the run is restamped. Both
+/// consequences of a restamp are the SAFE direction: a cache store waits
+/// longer (the gate is not yet passed) and the acquisition retry re-arms
+/// on the short young-hold cadence.
+const HOLD_SAMPLE_GAP_MS: u64 = 400;
+
 /// Edge tracker for the physical Tab key: remembers when the current
 /// down-period began, so a capture taken in the FIRST instants of a press
 /// can be kept out of the manual-locate cache — the game fades the table
 /// in (and dims the scene) after the press, and a BitBlt inside that
 /// window photographs an un-dimmed, table-less frame (see
 /// `capture_game_rgba_cached`). Pure logic, unit-tested without Win32.
+///
+/// Run continuity is only trusted across CONTIGUOUS samples
+/// ([`HOLD_SAMPLE_GAP_MS`]): the watcher can stop across a release (page
+/// switch, view-mode flip), and a stamp kept from before the gap would then
+/// report an hours-long "hold" on the next press — the old tracker did
+/// exactly that, silently re-opening the pre-fade store it exists to close.
+/// A stale run is restamped on the next observed press instead.
 #[derive(Debug, Default)]
 pub(crate) struct TabHoldTracker {
     down_at_ms: Option<u64>,
+    /// Arrival time of the last sample — the continuity witness.
+    last_seen_ms: Option<u64>,
 }
 
 impl TabHoldTracker {
-    /// Feed one key sample (stamps the down-edge the first time a run of
-    /// `true` arrives, clears it on `false`); returns the sample unchanged.
+    /// Feed one key sample (stamps the down-edge when a run of `true`
+    /// arrives — after a release, or across samples that were not
+    /// contiguous — and clears it on `false`); returns the sample
+    /// unchanged.
     pub(crate) fn observe(&mut self, down: bool, now_ms: u64) -> bool {
         if down {
-            self.down_at_ms.get_or_insert(now_ms);
+            let contiguous = self
+                .last_seen_ms
+                .is_some_and(|seen| now_ms.saturating_sub(seen) <= HOLD_SAMPLE_GAP_MS);
+            // No live edge (fresh press, or one that arrived after a gap the
+            // watcher did not cover) → this sample IS the edge.
+            if self.down_at_ms.is_none() || !contiguous {
+                self.down_at_ms = Some(now_ms);
+            }
         } else {
             self.down_at_ms = None;
         }
+        self.last_seen_ms = Some(now_ms);
         down
     }
 
@@ -33,7 +61,10 @@ impl TabHoldTracker {
 /// Shared tracker instance, fed by every `tab_key_down()` poll (the watcher
 /// ticks at 30 ms, so the down-edge is stamped within one tick).
 #[cfg(target_os = "windows")]
-static TAB_HOLD: Mutex<TabHoldTracker> = Mutex::new(TabHoldTracker { down_at_ms: None });
+static TAB_HOLD: Mutex<TabHoldTracker> = Mutex::new(TabHoldTracker {
+    down_at_ms: None,
+    last_seen_ms: None,
+});
 
 #[cfg(target_os = "windows")]
 fn epoch_ms() -> u64 {

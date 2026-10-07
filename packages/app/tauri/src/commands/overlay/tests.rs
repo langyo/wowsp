@@ -639,17 +639,73 @@ fn tab_hold_tracker_stamps_and_clears_the_edge() {
     assert_eq!(t.held_for(2_100), Some(Duration::from_millis(100)));
 }
 
-/// The store gate this tracker feeds: a capture at held+749 ms is refused
-/// (the table is still fading in), one at held+750 ms is cacheable — the
-/// boundary the constant promises.
+/// The store gate this tracker feeds: a capture just before the gate is
+/// refused (the table may still be fading in), one at the gate is
+/// cacheable — the boundary the constant promises.
 #[test]
 fn tab_store_min_hold_boundary() {
     let mut t = placement::TabHoldTracker::default();
     t.observe(true, 1_000);
+    let gate = TAB_STORE_MIN_HOLD.as_millis() as u64;
     let cacheable = |now: u64| t.held_for(now).is_some_and(|h| h >= TAB_STORE_MIN_HOLD);
+    assert!(!cacheable(1_000 + gate - 1), "pre-gate frame stays out");
     assert!(
-        !cacheable(1_749),
-        "pre-fade-in frame stays out of the cache"
+        cacheable(1_000 + gate),
+        "at the gate the frame is cacheable"
     );
-    assert!(cacheable(1_750), "past the gate the frame is cacheable");
+}
+
+/// A sample GAP longer than the continuity bound means the watcher was not
+/// watching across that span (stopped/restarted, stalled): a release inside
+/// the gap was never observed, so the old stamp must NOT be carried over —
+/// the old tracker kept it, reporting an hours-long "hold" on the next
+/// press and silently re-opening the pre-fade store. The next observed
+/// press restamps instead.
+#[test]
+fn tab_hold_tracker_restamps_after_a_sample_gap() {
+    let mut t = placement::TabHoldTracker::default();
+    t.observe(true, 1_000);
+    t.observe(true, 1_030);
+    assert_eq!(t.held_for(4_000), Some(Duration::from_millis(3_000)));
+
+    // The watcher stopped at ~1.03 s; the key was released (unseen) and is
+    // held again at 4.00 s. The run must NOT be read as "held since 1.0 s".
+    t.observe(true, 4_000);
+    assert_eq!(
+        t.held_for(4_000),
+        Some(Duration::from_millis(0)),
+        "a stale run is restamped at the first post-gap sample"
+    );
+    // And contiguity resumes from there.
+    t.observe(true, 4_030);
+    assert_eq!(t.held_for(4_030), Some(Duration::from_millis(30)));
+}
+
+/// The acquisition retry cadence: short while the hold is young (the first
+/// capture can only photograph the pre-fade frame), the full cap once the
+/// hold matured — and the full cap when no hold is observed at all.
+#[cfg(target_os = "windows")]
+#[test]
+fn acquisition_retry_is_short_only_while_the_hold_is_young() {
+    assert_eq!(
+        watch::acquisition_retry_interval(None),
+        CAPTURE_MIN_INTERVAL
+    );
+    assert_eq!(
+        watch::acquisition_retry_interval(Some(Duration::from_millis(0))),
+        CAPTURE_YOUNG_RETRY_INTERVAL
+    );
+    assert_eq!(
+        watch::acquisition_retry_interval(Some(CAPTURE_MIN_INTERVAL - Duration::from_millis(1))),
+        CAPTURE_YOUNG_RETRY_INTERVAL,
+        "the young window ends exactly at the steady-state cap"
+    );
+    assert_eq!(
+        watch::acquisition_retry_interval(Some(CAPTURE_MIN_INTERVAL)),
+        CAPTURE_MIN_INTERVAL
+    );
+    assert_eq!(
+        watch::acquisition_retry_interval(Some(CAPTURE_MIN_INTERVAL * 4)),
+        CAPTURE_MIN_INTERVAL
+    );
 }
