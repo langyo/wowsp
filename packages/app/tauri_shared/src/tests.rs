@@ -148,7 +148,7 @@ fn replay_meta_renames_every_multi_word_field() {
 }
 
 #[test]
-fn replay_meta_lite_renames_own_ship_fields() {
+fn replay_meta_lite_renames_player_and_install_fields() {
     let lite = ReplayMetaLite {
         path: "r.wowsreplay".into(),
         date_time: Some("20250622".into()),
@@ -160,21 +160,35 @@ fn replay_meta_lite_renames_own_ship_fields() {
         bot_count: 0,
         scripted_unit_count: 0,
         own_ship_id: Some(4282948544),
-        own_ship_name: Some("Montana".into()),
+        player_name: Some("langyo".into()),
         player_count: 12,
+        install_path: Some(r"C:\Games\World of Warships".into()),
+        install_kind: Some(GameInstallKind::Steam),
+        install_realm: Some("asia".into()),
     };
     let v = round_trips(lite);
     for key in [
         "ownShipId",
-        "ownShipName",
+        "playerName",
         "playerCount",
         "dateTime",
         "matchGroup",
         "scriptedUnitCount",
+        "installPath",
+        "installKind",
+        "installRealm",
     ] {
         assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
     }
     assert_eq!(v["ownShipId"], 4_282_948_544_i64);
+    assert_eq!(v["playerName"], "langyo");
+    assert_eq!(v["installKind"], "steam");
+    // The install tags are serde-defaulted: a payload from before they
+    // existed parses instead of failing the whole list.
+    let legacy = serde_json::json!({
+        "path": "p", "playerCount": 0, "ownShipId": null, "playerName": null,
+    });
+    assert!(serde_json::from_value::<ReplayMetaLite>(legacy).is_ok());
 }
 
 /// Wire-critical payload: pin the EXACT key set so an additive field
@@ -226,8 +240,11 @@ fn replay_meta_lite_pins_the_exact_wire_key_set() {
         bot_count: 8,
         scripted_unit_count: 0,
         own_ship_id: Some(4_279_574_672_i64),
-        own_ship_name: Some("Kremlin".into()),
+        player_name: Some("Kremlin".into()),
         player_count: 7,
+        install_path: Some(r"C:\Games\World of Warships".into()),
+        install_kind: Some(GameInstallKind::Cn360),
+        install_realm: Some("cn".into()),
     });
     assert_exact_keys(
         &v,
@@ -242,8 +259,11 @@ fn replay_meta_lite_pins_the_exact_wire_key_set() {
             "botCount",
             "scriptedUnitCount",
             "ownShipId",
-            "ownShipName",
+            "playerName",
             "playerCount",
+            "installPath",
+            "installKind",
+            "installRealm",
         ],
     );
 }
@@ -2461,7 +2481,7 @@ fn playtime_battle_pins_the_exact_wire_key_set() {
         bot_count: 6,
         scripted_unit_count: 4,
         own_ship_id: Some(4_182_828_960),
-        own_ship_name: Some("langyo".into()),
+        player_name: Some("langyo".into()),
         player_count: 7,
     });
     assert_exact_keys(
@@ -2477,7 +2497,7 @@ fn playtime_battle_pins_the_exact_wire_key_set() {
             "botCount",
             "scriptedUnitCount",
             "ownShipId",
-            "ownShipName",
+            "playerName",
             "playerCount",
         ],
     );
@@ -2497,7 +2517,7 @@ fn playtime_battle_pins_the_exact_wire_key_set() {
         bot_count: 0,
         scripted_unit_count: 0,
         own_ship_id: None,
-        own_ship_name: None,
+        player_name: None,
         player_count: 0,
     });
     assert!(bare["kind"].is_null());
@@ -2520,7 +2540,7 @@ fn playtime_battles_pins_the_exact_wire_key_set() {
             bot_count: 0,
             scripted_unit_count: 0,
             own_ship_id: None,
-            own_ship_name: None,
+            player_name: None,
             player_count: 0,
         }],
     });

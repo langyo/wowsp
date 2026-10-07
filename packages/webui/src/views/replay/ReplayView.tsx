@@ -79,7 +79,9 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useStatsStore } from "@/stores/stats";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
-import { displayMapName, replaysDir } from "@/utils/mapNames";
+import { displayMapName } from "@/utils/mapNames";
+import { clientMenuOptions, installFolderName, serverTagOf } from "@/utils/installLabel";
+import { sameGamePath } from "@/utils/gamePath";
 import MapNameTag from "@/features/replay/MapNameTag";
 import ReplayListFilter, {
   modeLabelOfKey,
@@ -1330,7 +1332,14 @@ export default defineComponent({
     // Rail filter — mode multi-select + match-time order (persisted) + a
     // session-only date window; see ReplayListFilter for the interaction
     // model.
-    const listFilter = useReplayListFilter(parser.list, parser.external);
+    // The rail lists what the user can act on: an install removed from the
+    // settings list takes its replays with it (the Rust all-clients scan
+    // keeps finding the folder — the ignore is presentation-level, webui
+    // only — and a card whose client no dropdown can pick is a dead end).
+    const scannedReplays = computed(() =>
+      parser.list.value.filter((r) => !gd.config.isIgnoredPath(r.installPath)),
+    );
+    const listFilter = useReplayListFilter(scannedReplays, parser.external);
     /**
      * What the main pane currently shows — a proper little state machine
      * (Rust-flavoured: None | Archive(Server, ID)). Invariant: exactly one
@@ -1372,24 +1381,81 @@ export default defineComponent({
       }
     });
 
-    const activePath = computed(() => gd.config.activeInstall?.path ?? "");
     const hasClient = computed(() => gd.config.installs.length > 0);
 
-    /** The realm to query player stats against. Prefer the client install's
-     *  realm, then the bound account's realm, else the UI default. */
+    /** The server tag of an entry — realm first ("ASIA"/"CN"/"RU"), else the
+     *  client kind's label, else empty for a file under no detected install.
+     *  One vocabulary for the cards, the count row and the client filter. */
+    function serverTagOfMeta(r: ReplayMetaLite): string {
+      return serverTagOf(r.installKind, r.installRealm);
+    }
+
+    /** The realm the OPEN replay's own client carries, when the scan tagged
+     *  it. The rail now mixes clients, so roster lookups must follow the
+     *  replay being reviewed rather than whatever install is active
+     *  app-wide (a CN replay opened while Steam is active would otherwise
+     *  query the ASIA stats API). */
+    const openReplayRealm = computed(() => {
+      const opened = pane.value;
+      if (opened.kind !== "archive") return null;
+      const entry = [...scannedReplays.value, ...parser.external.value].find(
+        (r) => r.path === opened.path,
+      );
+      return entry?.installRealm ?? null;
+    });
+
+    /** The realm to query player stats against: the open replay's client,
+     *  then the active install, then the bound account, else the UI
+     *  default. */
     const realm = computed(
       () =>
+        openReplayRealm.value ??
         gd.config.activeInstall?.realm ??
         accounts.activeAccount?.realm ??
         accounts.activeRealm ??
         "asia",
     );
 
-    /** Reload the replay list from the given (or active) client's replays dir. */
-    async function reload(path?: string) {
-      const dir = path ? replaysDir(path) : activePath.value ? replaysDir(activePath.value) : undefined;
+    /** The client (owning install) options of the rail's client dimension:
+     *  every detected install, labelled the way the sidebar/settings name it
+     *  (same-labelled installs disambiguated by folder — see
+     *  clientMenuOptions). A persisted pick whose install has since
+     *  disappeared is appended by its folder name so the stale selection
+     *  stays visible and clearable instead of silently filtering everything
+     *  out. */
+    const clientOptions = computed(() => {
+      const opts = clientMenuOptions(gd.config.installs);
+      const picked = listFilter.selectedClient.value;
+      if (picked && !opts.some((o) => sameGamePath(o.value, picked))) {
+        opts.push({ value: picked, label: installFolderName(picked) });
+      }
+      return opts;
+    });
+
+    /** Server tags present in the VISIBLE rail, with their entry counts, in
+     *  first-appearance order — under the default newest-first sort the
+     *  freshest client leads, and a sort flip just reorders the chips. This
+     *  is the count row's answer to "whose replays am I looking at": the
+     *  per-card tag says it for one entry, this says it for the whole list. */
+    const serverBreakdown = computed(() => {
+      const counts = new Map<string, number>();
+      for (const r of listFilter.visibleList.value) {
+        const tag = serverTagOfMeta(r);
+        if (!tag) continue;
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+      return [...counts.entries()].map(([tag, count]) => ({ tag, count }));
+    });
+
+    /** Reload the rail: EVERY detected client's replays in one list, each
+     *  entry stamped with its owning install (see the Rust command's `all`
+     *  mode). The app-wide active install no longer decides what the rail
+     *  shows — it only decides which client the OTHER data reads (mods,
+     *  stats, live) follow — so a client that is not active is still
+     *  browsable here, filtered by the rail's client dimension. */
+    async function reload() {
       try {
-        await parser.refreshList(dir);
+        await parser.refreshAll();
       } catch {
         // surfaced via store.error; list stays empty
       }
@@ -1407,7 +1473,7 @@ export default defineComponent({
       // handy for sharing a match link and for headless render checks.
       const want = route.query.open;
       if (want != null && want !== "") {
-        const list = parser.list.value;
+        const list = scannedReplays.value;
         const idx = /^\d+$/.test(String(want))
           ? Number(want)
           : list.findIndex((r) => r.path.includes(String(want)));
@@ -1417,10 +1483,6 @@ export default defineComponent({
           void parser.open(hit.path);
         }
       }
-    });
-
-    watch(activePath, (p, prev) => {
-      if (p && p !== prev) void reload(p);
     });
 
     /** Pick replays from anywhere on disk (shared files outside the game's
@@ -1710,9 +1772,14 @@ export default defineComponent({
       // localized name + class off the offline DB (same pattern as the
       // roster panels); cards without a resolvable ship keep the old foot.
       const ownEntry = r.ownShipId != null ? shipOfflineEntry(r.ownShipId) : null;
-      const ownShipName =
+      const shipName =
         r.ownShipId != null ? shipNameFromOfflineDb(r.ownShipId, dataLanguage.value) : null;
       const ownShipType = ownEntry?.type ?? null;
+      // The card's title is the RECORDING PLAYER, not the hull: a client
+      // shared by several accounts (the same install played by different
+      // nicknames in turn) is told apart by exactly this line, and the
+      // player filter above the rail groups by it. The hull rides the foot.
+      const serverTag = serverTagOfMeta(r);
       return (
         <li key={external ? `ext_${r.path}` : r.path} class="replay-view__item">
           <button
@@ -1732,11 +1799,20 @@ export default defineComponent({
             }}
           >
             <div class="replay-card__top">
-              <span class="replay-card__ship">{r.ownShipName ?? t("replay.ownShip")}</span>
+              <span class="replay-card__ship">{r.playerName ?? t("replay.list.unknownPlayer")}</span>
               <span class="replay-card__pills">
                 {external ? (
                   <span class="replay-card__pill replay-card__pill--external">
                     {t("replay.external.tag")}
+                  </span>
+                ) : null}
+                {/* The replay's server — which client's folder it came from.
+                    The rail mixes every detected client now, so each card
+                    says where it belongs; entries under no known install
+                    (a picked file, the phone's managed dir) carry none. */}
+                {serverTag ? (
+                  <span class="replay-card__pill replay-card__pill--server">
+                    {serverTag}
                   </span>
                 ) : null}
                 {r.matchGroup ? (
@@ -1772,15 +1848,15 @@ export default defineComponent({
               <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
             </div>
             <div class="replay-card__foot">
-              {ownShipName && ownEntry ? (
+              {shipName && ownEntry ? (
                 <span
                   class="replay-card__vessel"
-                  data-hint-card={ownShipHintCard(ownEntry, ownShipName, dataLanguage.value)}
+                  data-hint-card={ownShipHintCard(ownEntry, shipName, dataLanguage.value)}
                 >
                   {ownShipType ? (
                     <BattleIcon type={ownShipType} variant="plain" size={17} />
                   ) : null}
-                  <span class="replay-card__vessel-name">{ownShipName}</span>
+                  <span class="replay-card__vessel-name">{shipName}</span>
                 </span>
               ) : null}
               <span class="replay-card__players">
@@ -1815,7 +1891,7 @@ export default defineComponent({
                     persisted selection is always inspectable and clearable;
                     gated on the scanned list alone it would dead-end the
                     no-match state below. */}
-                {parser.list.value.length + parser.external.value.length > 0 ? (
+                {scannedReplays.value.length + parser.external.value.length > 0 ? (
                   <ReplayListFilter
                     modeOptions={listFilter.modeOptions.value}
                     selectedModes={listFilter.selectedModes.value}
@@ -1826,6 +1902,12 @@ export default defineComponent({
                     dateTo={listFilter.dateTo.value}
                     onUpdate:dateFrom={(v: string | null) => (listFilter.dateFrom.value = v)}
                     onUpdate:dateTo={(v: string | null) => (listFilter.dateTo.value = v)}
+                    selectedClient={listFilter.selectedClient.value}
+                    clientOptions={clientOptions.value}
+                    onUpdate:selectedClient={(v: string) => (listFilter.selectedClient.value = v)}
+                    selectedPlayer={listFilter.selectedPlayer.value}
+                    playerOptions={listFilter.playerOptions.value}
+                    onUpdate:selectedPlayer={(v: string) => (listFilter.selectedPlayer.value = v)}
                   />
                 ) : null}
                 {isMobileApp() ? (
@@ -1874,10 +1956,11 @@ export default defineComponent({
               </span>
             </div>
 
-            {/* The client/server selector lives in the sidebar footer (shared
-                with plugin management + account switching); the replay list
-                just reads the active install. (Never shown on the phone app —
-                there is no local client to pick.) */}
+            {/* The rail scans EVERY detected client (no active-install
+                scoping — the sidebar footer's picker decides what the other
+                data reads follow, not what is listed here). No detected
+                install means nothing to scan on desktop; the phone build
+                reads its managed import dir instead. */}
             {!hasClient.value && !isMobileApp() ? (
               <p class="replay-view__no-client">{t("replay.list.noClient")}</p>
             ) : null}
@@ -1885,20 +1968,33 @@ export default defineComponent({
             {/* The count stays scoped to the scanned list (externals are
                 session-temporary picks), even though the filter above also
                 applies to them. */}
-            {parser.list.value.length > 0 ? (
+            {scannedReplays.value.length > 0 ? (
               <span class="replay-view__count">
                 {listFilter.filterActive.value
                   ? t("replay.list.countFiltered", {
                       n: listFilter.visibleList.value.length,
-                      total: parser.list.value.length,
+                      total: scannedReplays.value.length,
                     })
-                  : t("replay.list.count", { n: parser.list.value.length })}
+                  : t("replay.list.count", { n: scannedReplays.value.length })}
+                {/* Which servers the visible replays come from, with counts
+                    — the at-a-glance "is every client's history in here"
+                    answer the per-card tags give one entry at a time. */}
+                {serverBreakdown.value.length > 0 ? (
+                  <span class="replay-view__count-servers">
+                    {serverBreakdown.value.map((s) => (
+                      <span key={s.tag} class="replay-view__count-server">
+                        <span class="replay-view__count-server-tag">{s.tag}</span>
+                        {s.count}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
               </span>
             ) : null}
           </div>
 
           <div class="replay-view__list-scroll">
-            {parser.external.value.length === 0 && parser.list.value.length === 0 ? (
+            {parser.external.value.length === 0 && scannedReplays.value.length === 0 ? (
               isMobileApp() ? (
                 /* Phone build's prominent acquisition empty state: pick
                     local .wowsreplay files, or pair with the desktop. */

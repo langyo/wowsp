@@ -27,8 +27,13 @@
 //!   No framework, no new dependency: requests are tiny JSON or file streams,
 //!   every response is `Connection: close`, and the whole thing must keep
 //!   compiling for cargo-deny without new licenses. Enumeration reuses
-//!   [`super::replay::scan_replays_meta`] — the SAME walk the local list
-//!   command uses, never a duplicate. While the server runs, the UDP
+//!   [`super::replay::scan_replays_meta`] — the same WALK PRIMITIVE the local
+//!   list command uses, never a duplicate. The ROOT set differs on purpose:
+//!   this server enumerates the resolved default replay dir (the active
+//!   client's `replays/` folder, or the phone's managed dir) because the
+//!   remote names it hands out are relative to that one root, while the
+//!   local rail scans every detected client
+//!   (`list_replays_meta { all: true }`). While the server runs, the UDP
 //!   discovery broadcaster announces it and — unless disabled in the hidden
 //!   relay config — the gateway host bridge (commands/pairing_relay.rs)
 //!   tunnels the same routes through the built-in Cloudflare gateway,

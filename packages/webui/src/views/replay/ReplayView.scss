@@ -80,6 +80,21 @@
     white-space: nowrap;
   }
 
+  /* The client / player single-select rows — above the date pair in the
+     same popup. HkSelect renders its own label, so the row only supplies
+     the stacking rhythm and re-reads that label in the date row's caption
+     voice; the field itself already fills the panel width. */
+  &__pop-select {
+    margin-top: 8px;
+
+    .hk-select-label {
+      margin-bottom: 2px;
+      font-size: var(--text-2xs);
+      font-weight: 400;
+      color: rgb(var(--color-muted) / 90%);
+    }
+  }
+
   &__list-title {
     margin: 0;
     font-size: var(--text-sm);
@@ -99,10 +114,44 @@
     line-height: 1.4;
   }
 
+  /* The rail's count line: the entry count on the left, the per-server
+     breakdown on the right (the empty half of the line the rail used to
+     leave blank). Wraps rather than overflowing once a machine carries
+     four-plus clients. */
   &__count {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.2rem 0.5rem;
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
     text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__count-servers {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* One server's chip: the tag + how many visible entries it owns. */
+  &__count-server {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__count-server-tag {
+    padding: 0.05rem 0.4rem;
+    background: rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-full);
+    color: rgb(var(--color-text));
+    font-weight: 600;
     letter-spacing: 0.04em;
   }
 
@@ -742,6 +791,16 @@
     &--external {
       background: rgb(var(--color-primary) / 14%);
       color: rgb(var(--color-primary));
+    }
+
+    /* The replay's server — which detected client's folder it came from.
+       The rail mixes every client's replays, so this is the card's own
+       answer to "whose history is this": muted, unlike the mode pill's
+       accent, because it labels rather than classifies. */
+    &--server {
+      background: rgb(var(--color-border) / 30%);
+      color: rgb(var(--color-muted));
+      letter-spacing: 0.04em;
     }
   }
 

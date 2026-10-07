@@ -13,6 +13,7 @@ import {
   breakdownColor,
   distinctShipCount,
   filterBattlesByScope,
+  SCOPE_ALL,
 } from "./battleBreakdown";
 
 /**
@@ -37,7 +38,7 @@ function row(over: Partial<PlaytimeBattle>): PlaytimeBattle {
     botCount: 0,
     scriptedUnitCount: 0,
     ownShipId: 4276041424,
-    ownShipName: "Yamato",
+    playerName: "Yamato",
     playerCount: 12,
     ...over,
   };
@@ -50,26 +51,31 @@ describe("filterBattlesByScope", () => {
     row({ installPath: STEAM.replace("World_of_Warships", "World_of_Warships\\") }),
   ];
 
-  it("returns every row for the all scope", () => {
-    expect(filterBattlesByScope(rows, "all", STEAM)).toHaveLength(3);
+  it("returns every row for the all-clients scope", () => {
+    expect(filterBattlesByScope(rows, SCOPE_ALL)).toHaveLength(3);
+    // An install the user picked that has no rows answers an empty set —
+    // NOT the whole ledger back.
+    expect(filterBattlesByScope(rows, "E:\\Nowhere")).toHaveLength(0);
   });
 
-  it("matches the active install case/separator-insensitively (sameGamePath)", () => {
+  it("matches the picked install case/separator-insensitively (sameGamePath)", () => {
     // Casing and trailing separator differ on purpose — path identity must
     // not be raw ===.
-    const scoped = filterBattlesByScope(rows, "selected", "c:/games/world_of_warships");
+    const scoped = filterBattlesByScope(rows, "c:/games/world_of_warships");
     expect(scoped).toHaveLength(2);
     expect(scoped.every((r) => r.kind === "steam")).toBe(true);
   });
 
-  it("falls back to all rows when no install is selected", () => {
-    expect(filterBattlesByScope(rows, "selected", null)).toHaveLength(3);
-    expect(filterBattlesByScope(rows, "selected", "")).toHaveLength(3);
-    expect(filterBattlesByScope(rows, "selected", undefined)).toHaveLength(3);
+  it("narrows to any detected client, not just the active one", () => {
+    const scoped = filterBattlesByScope(rows, LESTA);
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].kind).toBe("lesta");
   });
 
-  it("can yield an empty set for an install with no replays", () => {
-    expect(filterBattlesByScope(rows, "selected", "E:\\Nowhere")).toHaveLength(0);
+  it("keeps rows of unowned folders out of every per-client scope", () => {
+    const untagged = row({ installPath: "D:\\Replays", kind: null, realm: null });
+    expect(filterBattlesByScope([untagged], "E:\\Nowhere")).toHaveLength(0);
+    expect(filterBattlesByScope([untagged], SCOPE_ALL)).toHaveLength(1);
   });
 });
 
@@ -90,7 +96,7 @@ describe("breakdownByType", () => {
     const rows = [
       row({ ownShipId: 4276041424 }),
       row({ ownShipId: 999999 }),
-      row({ ownShipId: null, ownShipName: null, matchGroup: null }),
+      row({ ownShipId: null, playerName: null, matchGroup: null }),
     ];
     expect(breakdownByType(rows)).toEqual([
       { key: "unknown", count: 2, share: 2 / 3 },
@@ -124,7 +130,7 @@ describe("breakdownByNation", () => {
   it("buckets non-nations and unknown ships into unknown", () => {
     const rows = [
       row({ ownShipId: 4276041424 }), // japan
-      row({ ownShipId: null, ownShipName: null }),
+      row({ ownShipId: null, playerName: null }),
     ];
     expect(breakdownByNation(rows)).toEqual([
       { key: "japan", count: 1, share: 0.5 },
@@ -147,7 +153,7 @@ describe("breakdownByTier", () => {
   it("keeps unknown tiers last whatever their count", () => {
     const rows = [
       row({ ownShipId: 4178523856 }), // T11
-      row({ ownShipId: null, ownShipName: null }),
+      row({ ownShipId: null, playerName: null }),
       row({ ownShipId: 999999 }),
     ];
     expect(breakdownByTier(rows).map((e) => e.key)).toEqual(["11", "unknown"]);
@@ -302,7 +308,7 @@ describe("distinctShipCount", () => {
       row({ ownShipId: 4276041424 }),
       row({ ownShipId: 4276041424 }), // same ship again
       row({ ownShipId: 4281219056 }),
-      row({ ownShipId: null, ownShipName: null }),
+      row({ ownShipId: null, playerName: null }),
     ];
     expect(distinctShipCount(rows)).toBe(2);
   });
@@ -314,7 +320,7 @@ describe("empty input", () => {
     expect(breakdownByNation([])).toEqual([]);
     expect(breakdownByTier([])).toEqual([]);
     expect(breakdownByMode([])).toEqual([]);
-    expect(filterBattlesByScope([], "selected", STEAM)).toEqual([]);
+    expect(filterBattlesByScope([], STEAM)).toEqual([]);
     expect(distinctShipCount([])).toBe(0);
   });
 });

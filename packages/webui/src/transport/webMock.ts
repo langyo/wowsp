@@ -33,7 +33,10 @@
 /** ReplayMetaLite-shaped remote listing served by pairing_list_remote.
  *  `ownShipId`s are REAL ship indexes from `src/data/ship_names.json`
  *  (Yamato / Stalingrad / Gearing / Montana) so every ship-id-driven UI —
- *  roster panels and the list card's own-ship tag — resolves in mock mode. */
+ *  roster panels and the list card's own-ship tag — resolves in mock mode.
+ *  `playerName` carries NICKNAMES (the recorder of each row) — the pairing
+ *  list titles each entry with it, so a ship name there would read as a
+ *  wrong value in a slot whose whole meaning is "whose replay is this". */
 const REMOTE_FIXTURE: Record<string, unknown>[] = [
   {
     path: "20260918_213010.wowsreplay",
@@ -42,7 +45,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapName: "17_NA_fault_line",
     mapId: 17,
     ownShipId: 4276041424,
-    ownShipName: "Yamato",
+    playerName: "MockCaptain",
     playerCount: 12,
   },
   {
@@ -52,7 +55,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapName: "18_NE_ice_islands",
     mapId: 18,
     ownShipId: 3760109008,
-    ownShipName: "Stalingrad",
+    playerName: "MockAlt",
     playerCount: 14,
   },
   {
@@ -62,7 +65,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapName: "20_NE_two_brothers",
     mapId: 20,
     ownShipId: 4281219056,
-    ownShipName: "Gearing",
+    playerName: "MockCaptain",
     playerCount: 12,
   },
   {
@@ -72,7 +75,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapName: "14_Okinawa",
     mapId: 14,
     ownShipId: 4276041424,
-    ownShipName: "Yamato",
+    playerName: "MockCaptain",
     playerCount: 8,
   },
   {
@@ -82,7 +85,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapName: "15_NE_north",
     mapId: 15,
     ownShipId: 4277090288,
-    ownShipName: "Montana",
+    playerName: "MockAlt",
     playerCount: 12,
   },
 ];
@@ -145,14 +148,24 @@ function emitMockEvent(event: string, payload: unknown): void {
   for (const l of listeners.values()) if (l.event === event) l.fn(payload);
 }
 
+/* The fixture `playerName`s are NICKNAMES (the recorder of each row) — two of
+   them, matching the two pretend clients, so the playtime store's rows and the
+   rail's player dimension carry the same kind of identity: one client can be
+   played by several accounts in turn. */
+
 /** playtime_battles fixture — a few rows across two obviously-fake installs
  *  (shipIds are real offline-DB ids so the view's breakdown labels resolve;
  *  the last row is an unparsed Lesta replay: descriptor fields null, only
- *  the filename's dateTime recovered). Sorted dateTime asc per contract. */
+ *  the filename's dateTime recovered). Sorted dateTime asc per contract.
+ *  The paths ARE the two installs the FastAPI mock's detect_game_install
+ *  reports (scripts/mock/src/main.py), so the playtime scope menu's
+ *  per-client picks answer real rows in `just dev mock` — the menu lists
+ *  detected installs, and a fixture root no install claims would make every
+ *  client pick look empty. */
 const MOCK_BATTLES = {
   battles: [
     {
-      installPath: "C:\\MockGames\\WoWS (Steam)",
+      installPath: "D:\\Games\\World_of_Warships",
       kind: "steam",
       realm: "asia",
       dateTime: "20260910_201803",
@@ -162,7 +175,7 @@ const MOCK_BATTLES = {
       botCount: 0,
       scriptedUnitCount: 0,
       ownShipId: 4276041424, // Yamato
-      ownShipName: "Yamato",
+      playerName: "MockCaptain",
       playerCount: 12,
     },
     {
@@ -176,11 +189,11 @@ const MOCK_BATTLES = {
       botCount: 8,
       scriptedUnitCount: 8,
       ownShipId: 4179605488, // Midway
-      ownShipName: "Midway",
+      playerName: "MockCaptain",
       playerCount: 7,
     },
     {
-      installPath: "C:\\MockGames\\WoWS (Steam)",
+      installPath: "D:\\Games\\World_of_Warships",
       kind: "steam",
       realm: "asia",
       dateTime: "20260912_184417",
@@ -190,11 +203,11 @@ const MOCK_BATTLES = {
       botCount: 11,
       scriptedUnitCount: 0,
       ownShipId: 4281219056, // Gearing
-      ownShipName: "Gearing",
+      playerName: "MockCaptain",
       playerCount: 9,
     },
     {
-      installPath: "C:\\MockGames\\WoWS (Steam)",
+      installPath: "D:\\Games\\World_of_Warships",
       kind: "steam",
       realm: "asia",
       dateTime: "20260915_221301",
@@ -204,11 +217,11 @@ const MOCK_BATTLES = {
       botCount: 0,
       scriptedUnitCount: 0,
       ownShipId: 3760109008, // Stalingrad
-      ownShipName: "Stalingrad",
+      playerName: "MockAlt",
       playerCount: 12,
     },
     {
-      installPath: "C:\\MockGames\\WoWS (Steam)",
+      installPath: "D:\\Games\\World_of_Warships",
       kind: "steam",
       realm: "asia",
       dateTime: "20260918_213010",
@@ -218,7 +231,7 @@ const MOCK_BATTLES = {
       botCount: 0,
       scriptedUnitCount: 0,
       ownShipId: 4282267344, // Shimakaze
-      ownShipName: "Shimakaze",
+      playerName: "MockAlt",
       playerCount: 8,
     },
     {
@@ -233,14 +246,17 @@ const MOCK_BATTLES = {
       botCount: 0,
       scriptedUnitCount: 0,
       ownShipId: null,
-      ownShipName: null,
+      playerName: null,
       playerCount: 0,
     },
   ],
 };
 
 /** Derive a ReplayMetaLite entry for an imported/pulled mock file (the mock
- *  has no parser — recover what the filename carries, leave the rest null). */
+ *  has no parser — recover what the filename carries, leave the rest null).
+ *  The install tags stay null: these files sit in the browser mock's managed
+ *  dir, which belongs to no detected client — the unowned-root state the
+ *  rail's client filter is supposed to EXCLUDE once a client is picked. */
 function liteForName(path: string): Record<string, unknown> {
   const name = path.split(/[\\/]/).pop() ?? path;
   const m = name.match(/^(\d{8}(?:_\d{6})?)\.wowsreplay$/);
@@ -251,13 +267,19 @@ function liteForName(path: string): Record<string, unknown> {
     mapName: null,
     mapId: null,
     ownShipId: null,
-    ownShipName: null,
+    playerName: null,
     playerCount: 0,
+    installPath: null,
+    installKind: null,
+    installRealm: null,
   };
 }
 
 /** Extra entries the web mock appends to a fetched list_replays_meta
- *  response (files imported/pulled during this session). */
+ *  response (files imported/pulled during this session). The merge itself
+ *  is arg-agnostic on purpose (see MOCK_COMMANDS' note): the command's new
+ *  `all` flag only changes the BACKEND scan in Rust, and the browser mock
+ *  keeps merging its local session entries into either response shape. */
 export function mockImportedListing(): Record<string, unknown>[] {
   return importedFiles.map((f) => liteForName(f.path));
 }

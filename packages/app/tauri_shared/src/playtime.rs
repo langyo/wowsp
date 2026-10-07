@@ -117,7 +117,9 @@ pub struct PlaytimeBattle {
     pub bot_count: u32,
     pub scripted_unit_count: u32,
     pub own_ship_id: Option<i64>,
-    pub own_ship_name: Option<String>,
+    /// The recording player's nickname (see `ReplayMetaLite::player_name`) —
+    /// absent when the header is unparseable or carries no roster.
+    pub player_name: Option<String>,
     pub player_count: usize,
 }
 

@@ -29,8 +29,6 @@
   "battlesEmpty": "還沒有戰鬥記錄——戰鬥場次統計自各用戶端 replays 資料夾裡的錄影檔（與「錄影復盤」讀取的相同）。",
   "battlesNoneSelected": "選中的用戶端還沒有錄影。",
   "scopeAll": "全部用戶端",
-  "scopeSelected": "僅選中伺服器",
-  "scopeSelectedWith": "僅選中伺服器 · {label}",
   "scopeUnavailable": "請先在 設定 → 遊戲路徑 中選擇一個用戶端。",
   "breakdown": {
     "byType": "按艦種",

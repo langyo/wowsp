@@ -1,7 +1,8 @@
 {
   "list": {
+    "unknownPlayer": "Joueur inconnu",
     "title": "Replays",
-    "empty": "Aucun replay trouvé dans le dossier du client sélectionné.",
+    "empty": "Aucun replay trouvé dans les dossiers des clients.",
     "count": "{n} replays",
     "countFiltered": "{n} / {total} replays",
     "noClient": "Aucun client de jeu détecté. Lancez une analyse sur le tableau de bord, ou définissez un chemin manuellement.",
@@ -12,6 +13,10 @@
     "allModes": "Tous les modes",
     "noMatch": "Aucun replay ne correspond aux filtres actuels.",
     "modeHint": "Sélection multiple · « Tous les modes » réinitialise, ou inverse du plus récent au plus ancien si rien n'est choisi",
+    "client": "Client",
+    "allClients": "Tous les clients",
+    "player": "Joueur",
+    "allPlayers": "Tous les joueurs",
     "dateFrom": "Date de début",
     "dateTo": "Date de fin",
     "dateRange": "Période"
@@ -98,7 +103,6 @@
     "contour": "Relief en courbes de niveau",
     "contourHint": "Relief en courbes de niveau : les terres sont bandées par altitude, la mer affiche la bathymétrie (fosses comprises)."
   },
-  "ownShip": "Votre navire",
   "noShipModel": "Aucun modèle holographique pour ce navire.",
   "duration": "Durée",
   "realm": {

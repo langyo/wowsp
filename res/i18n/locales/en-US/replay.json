@@ -1,7 +1,8 @@
 {
   "list": {
+    "unknownPlayer": "Unknown player",
     "title": "Replays",
-    "empty": "No replays found in the selected client's folder.",
+    "empty": "No replays found in the clients' replay folders.",
     "count": "{n} replays",
     "countFiltered": "{n} / {total} replays",
     "noClient": "No game client detected. Run a scan on the dashboard, or set a path manually.",
@@ -12,6 +13,10 @@
     "allModes": "All modes",
     "noMatch": "No replays match the current filters.",
     "modeHint": "Multi-select · “All modes” resets, or flips newest/oldest first when nothing is picked",
+    "client": "Client",
+    "allClients": "All clients",
+    "player": "Player",
+    "allPlayers": "All players",
     "dateFrom": "Start date",
     "dateTo": "End date",
     "dateRange": "Date range"
@@ -98,7 +103,6 @@
     "contour": "Contour terrain",
     "contourHint": "Contour terrain: land banded by elevation, sea shows bathymetry (incl. trenches)."
   },
-  "ownShip": "Your ship",
   "noShipModel": "No holographic model for this ship.",
   "duration": "Duration",
   "realm": {

@@ -29,8 +29,6 @@
   "battlesEmpty": "아직 전투 기록이 없습니다. 전투 수는 각 클라이언트의 replays 폴더에 저장된 리플레이에서 집계합니다(리플레이 복기와 같은 파일).",
   "battlesNoneSelected": "선택한 클라이언트에는 아직 리플레이가 없습니다.",
   "scopeAll": "모든 클라이언트",
-  "scopeSelected": "선택한 서버만",
-  "scopeSelectedWith": "선택한 서버만 · {label}",
   "scopeUnavailable": "먼저 설정의 게임 경로에서 클라이언트를 선택하세요.",
   "breakdown": {
     "byType": "함종별",

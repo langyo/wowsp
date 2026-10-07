@@ -1,7 +1,8 @@
 {
   "list": {
+    "unknownPlayer": "Jugador desconocido",
     "title": "Repeticiones",
-    "empty": "No se encontraron repeticiones en la carpeta del cliente seleccionado.",
+    "empty": "No se encontraron repeticiones en la carpeta de ningún cliente.",
     "count": "{n} repeticiones",
     "countFiltered": "{n} / {total} repeticiones",
     "noClient": "No se detectó ningún cliente del juego. Ejecuta un escaneo en el panel de inicio o define una ruta manualmente.",
@@ -12,6 +13,10 @@
     "allModes": "Todos los modos",
     "noMatch": "Ninguna repetición coincide con los filtros actuales.",
     "modeHint": "Multiselección · «Todos los modos» restablece, o cambia de más reciente a más antiguo si no hay nada seleccionado",
+    "client": "Cliente",
+    "allClients": "Todos los clientes",
+    "player": "Jugador",
+    "allPlayers": "Todos los jugadores",
     "dateFrom": "Fecha inicial",
     "dateTo": "Fecha final",
     "dateRange": "Período"
@@ -98,7 +103,6 @@
     "contour": "Terreno de contornos",
     "contourHint": "Terreno de contornos: la tierra aparece en bandas por elevación y el mar muestra la batimetría (incluidas las fosas)."
   },
-  "ownShip": "Tu buque",
   "noShipModel": "No hay modelo holográfico para este buque.",
   "duration": "Duración",
   "realm": {

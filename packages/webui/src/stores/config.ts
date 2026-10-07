@@ -99,8 +99,13 @@ export const useConfigStore = defineStore("config", () => {
   const detecting = ref(false);
 
   // Paths removed by the user (see IGNORED_GAME_PATHS_KEY); `detect()` filters
-  // detected installs against this list.
-  let ignoredPaths = loadIgnoredGamePaths();
+  // detected installs against this list. A ref so the data surfaces that read
+  // the Rust scan — which knows nothing of this presentation-level ignore —
+  // can react too: the scan keeps finding an ignored client's replays, and a
+  // row whose client is not in the list must not pretend to be one (it could
+  // never be picked in the client menus, and filtering for it would answer an
+  // empty set).
+  const ignoredPaths = ref<string[]>(loadIgnoredGamePaths());
 
   // Custom row order dragged by the user (see GAME_PATH_ORDER_KEY); applied
   // to the list on every scan.
@@ -126,7 +131,7 @@ export const useConfigStore = defineStore("config", () => {
     detecting.value = true;
     try {
       installs.value = dedupeInstalls(await api.detectGameInstall()).filter(
-        (i) => !ignoredPaths.some((p) => sameGamePath(p, i.path)),
+        (i) => !ignoredPaths.value.some((p) => sameGamePath(p, i.path)),
       );
       // Prefer the remembered client (from last session) if it's still among
       // the detected installs; otherwise keep the current selection if valid;
@@ -147,7 +152,7 @@ export const useConfigStore = defineStore("config", () => {
       if (
         !resolved &&
         rememberedPath &&
-        !ignoredPaths.some((p) => sameGamePath(p, rememberedPath))
+        !ignoredPaths.value.some((p) => sameGamePath(p, rememberedPath))
       ) {
         try {
           resolved = await api.setGamePath(rememberedPath);
@@ -190,8 +195,8 @@ export const useConfigStore = defineStore("config", () => {
     activeInstall.value = resolved;
     // Re-adding a folder the user previously removed lifts the ignore — an
     // explicit pin always wins over the removal list.
-    ignoredPaths = ignoredPaths.filter((p) => !sameGamePath(p, resolved.path));
-    saveIgnoredGamePaths(ignoredPaths);
+    ignoredPaths.value = ignoredPaths.value.filter((p) => !sameGamePath(p, resolved.path));
+    saveIgnoredGamePaths(ignoredPaths.value);
     // Keep the manual install listed alongside the detected ones (settings
     // 游戏路径 table + replay-view selector).
     if (!installs.value.some((i) => sameGamePath(i.path, resolved.path))) {
@@ -210,8 +215,8 @@ export const useConfigStore = defineStore("config", () => {
     const target = installs.value.find((i) => sameGamePath(i.path, path));
     installs.value = installs.value.filter((i) => !sameGamePath(i.path, path));
     if (target) {
-      ignoredPaths = [...ignoredPaths, target.path];
-      saveIgnoredGamePaths(ignoredPaths);
+      ignoredPaths.value = [...ignoredPaths.value, target.path];
+      saveIgnoredGamePaths(ignoredPaths.value);
       // Drop the row's custom-order rank too — unmatched ranks are ignored
       // by applySavedOrder, but they would pile up in localStorage.
       gamePathOrder = gamePathOrder.filter((p) => !sameGamePath(p, target.path));
@@ -246,10 +251,19 @@ export const useConfigStore = defineStore("config", () => {
     }
   }
 
+  /** Whether an install path was removed from the list (settings 游戏路径
+   *  row delete). Data surfaces filter rows by it so an ignored client's
+   *  replays leave the rail/charts together with its list row. */
+  function isIgnoredPath(path: string | null | undefined): boolean {
+    if (!path) return false;
+    return ignoredPaths.value.some((p) => sameGamePath(p, path));
+  }
+
   return {
     installs,
     activeInstall,
     detecting,
+    isIgnoredPath,
     detect,
     load,
     selectInstall,

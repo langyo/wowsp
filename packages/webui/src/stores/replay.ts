@@ -20,7 +20,16 @@ function liteFromMeta(m: ReplayMeta): ReplayMetaLite {
     botCount: m.botCount,
     scriptedUnitCount: m.scriptedUnitCount,
     ownShipId: own?.shipId ?? null,
-    ownShipName: own?.shipName ?? null,
+    // The relation-0 roster entry's `name` IS the recorder's nickname —
+    // the same value the lite reader's playerName carries for scanned
+    // files (the descriptor's playerName in Rust).
+    playerName: own?.name ?? null,
+    // A picked file can sit anywhere on disk — it belongs to no DETECTED
+    // client, so the install tags stay null (the unowned-root state of the
+    // list shape) and the card omits its server tag.
+    installPath: null,
+    installKind: null,
+    installRealm: null,
     // Listed players only — mirrors the Rust lite reader's count.
     playerCount: m.vehicles.filter(isListedPlayer).length,
   };
@@ -44,8 +53,12 @@ export const useReplayStore = defineStore("replay", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
-  async function refreshList(dir?: string) {
-    list.value = await api.listReplaysMeta(dir);
+  /** Refresh the rail's DEFAULT list: every detected install's `replays/`
+   *  folder in one scan, each entry tagged with its owning install
+   *  (installPath/installKind/installRealm; unowned roots stay null) so the
+   *  rail can tag cards and filter by client. */
+  async function refreshAll() {
+    list.value = await api.listReplaysMeta(undefined, undefined, true);
   }
 
   async function open(path: string) {
@@ -103,7 +116,7 @@ export const useReplayStore = defineStore("replay", () => {
     current,
     loading,
     error,
-    refreshList,
+    refreshAll,
     open,
     addExternal,
     removeExternal,

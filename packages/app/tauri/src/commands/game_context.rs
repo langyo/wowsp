@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use wowsp_tauri_shared::GameInstall;
+use wowsp_tauri_shared::{GameInstall, GameInstallKind};
 
 // The process-image test moved into the per-client compat registry
 // (commands/game_client.rs) — keep the plain-name call sites below (and this
@@ -431,6 +431,113 @@ pub(crate) fn replays_dir(root: &Path) -> PathBuf {
     root.join("replays")
 }
 
+// ── replay roots (every client's replays folder) ────────────────────────────
+
+/// Dedupe identity for scan roots — the same normalization the install scan
+/// uses (`game_detect::install_path_key`): case-, separator- and
+/// trailing-slash-insensitive, so the registry's, the Steam vdf's and the
+/// env pin's spellings of one folder collapse. Purely string-based (no
+/// canonicalize I/O), so it never fails. A root reachable only through a
+/// differently-spelled symlink or junction stays distinct here — the
+/// pathological outcome is the same physical folder being walked (and its
+/// replays counted) twice, an accepted edge for the zero-I/O identity.
+fn replay_root_key(path: &Path) -> String {
+    super::game_detect::install_path_key(&path.to_string_lossy())
+}
+
+/// True when two replay roots are the same folder or nested inside one
+/// another (the resolved default dir can BE an install's `replays/` or live
+/// under its root in a different spelling).
+pub(crate) fn replay_roots_overlap(a: &Path, b: &Path) -> bool {
+    let (a, b) = (replay_root_key(a), replay_root_key(b));
+    a == b || a.starts_with(&format!("{b}\\")) || b.starts_with(&format!("{a}\\"))
+}
+
+/// Every replay root the app scans as a whole: each detected install's
+/// `replays/` folder (owner = that install), plus the resolved default
+/// replay dir when it is not already covered by an install root. That extra
+/// root belongs to a KNOWN-but-UNSCANNED install — a manual/portable game
+/// folder the webui lets the user pin, or (only when no usable persisted
+/// pick exists, since the extra root resolves the ACTIVE install first) a
+/// raw running client — and is tagged as such, so its rows carry the
+/// identity the client menus and filters key on instead of falling into the
+/// anonymous bucket. Ownerless roots stay ownerless: the mobile managed dir
+/// always, and an env pin (`WOWSP_REPLAY_DIR`) unless it happens to be a
+/// candidate install's own `replays/` folder. On mobile the install scan
+/// finds nothing (no registry / Steam libraries to walk; at most an
+/// env-pinned path), so the managed dir is the only root.
+///
+/// One implementation for both multi-client consumers — the playtime battle
+/// ledger (`playtime_battles`) and the replay rail's all-clients scan
+/// (`list_replays_meta { all: true }`) — so "which folders count as a
+/// client's replays" can never drift between them.
+pub(crate) fn replay_roots() -> Vec<(PathBuf, Option<GameInstall>)> {
+    let mut roots: Vec<(PathBuf, Option<GameInstall>)> = Vec::new();
+    for install in cached_scan() {
+        let dir = replays_dir(Path::new(&install.path));
+        // Two installs resolving to overlapping folders (nested roots from
+        // overlapping detection sources) must not double-count replays.
+        if roots.iter().any(|(r, _)| replay_roots_overlap(r, &dir)) {
+            continue;
+        }
+        roots.push((dir, Some(install)));
+    }
+    if let Ok(extra) = super::replay::resolve_replay_dir(None) {
+        if !roots.iter().any(|(r, _)| replay_roots_overlap(r, &extra)) {
+            let owner = unscanned_install_owning(&extra);
+            roots.push((extra, owner));
+        }
+    }
+    roots
+}
+
+/// The install a default-resolved replay root belongs to when that install
+/// is NOT in the auto-detection scan: the persisted active pick or a running
+/// client whose own `replays/` folder is this root. Such an install reaches
+/// the app only through the user's manual pin (or a raw process). The
+/// candidate gathering is the shell; the decision is [`owner_among`], a pure
+/// core so it is unit-testable without real processes or a config file.
+fn unscanned_install_owning(replays: &Path) -> Option<GameInstall> {
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(active) = persisted_active_path() {
+        candidates.push(active);
+    }
+    candidates.extend(running_roots().into_iter().map(|(_, root)| root));
+    owner_among(&candidates, replays, &cached_scan())
+}
+
+/// Pure core of [`unscanned_install_owning`]: the first candidate root whose
+/// `replays/` folder IS `replays` (same or nested spelling, path identity as
+/// everywhere else), reported as [`GameInstallKind::Manual`]. The realm is
+/// read off the install's own `clientrunner.log` when it carries one
+/// (`game_detect::detect_realm`), so the tag this scan stamps matches the
+/// label the config store shows for the same manual pick instead of reading
+/// as a bare kind on one surface and "Manual · RU" on the other. `None` when
+/// no candidate claims the folder (the phone's managed dir, `WOWSP_REPLAY_DIR`
+/// pins) or when every claiming candidate is already in `scanned` (then
+/// `replay_roots`' install loop covered the root, and tagging here would
+/// double it).
+fn owner_among(
+    candidates: &[String],
+    replays: &Path,
+    scanned: &[GameInstall],
+) -> Option<GameInstall> {
+    candidates.iter().find_map(|root| {
+        if !replay_roots_overlap(&replays_dir(Path::new(root)), replays) {
+            return None;
+        }
+        let scanned_already = scanned.iter().any(|install| {
+            super::game_detect::install_path_key(&install.path)
+                == super::game_detect::install_path_key(root)
+        });
+        (!scanned_already).then(|| GameInstall {
+            kind: GameInstallKind::Manual,
+            realm: super::game_detect::detect_realm(Path::new(root)),
+            path: root.clone(),
+        })
+    })
+}
+
 // ── process enumeration ─────────────────────────────────────────────────────
 
 /// PIDs of every running game client — the Wargaming/Steam builds run
@@ -479,6 +586,86 @@ fn snapshot_game_pids() -> Vec<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Replay-root identity is spelled the way the install scan spells
+    /// folders: same folder, different casing / separators / trailing slash
+    /// collapse, and nesting counts in BOTH directions (an install root vs
+    /// its own `replays/`, whichever order the roots arrive in) — that is
+    /// what keeps one folder from being walked twice. Sibling folders that
+    /// merely share a prefix stay distinct.
+    #[test]
+    fn replay_roots_overlap_is_symmetric_across_spellings_and_nesting() {
+        let replays = Path::new(r"C:\Games\World of Warships\replays");
+        assert!(replay_roots_overlap(
+            replays,
+            Path::new(r"c:/games/world of warships\replays")
+        ));
+        assert!(replay_roots_overlap(
+            Path::new(r"C:\Games\World of Warships"),
+            replays
+        ));
+        assert!(replay_roots_overlap(
+            replays,
+            Path::new(r"C:\Games\World of Warships")
+        ));
+        assert!(!replay_roots_overlap(
+            replays,
+            Path::new(r"C:\Games\World of Warships 2\replays")
+        ));
+    }
+
+    /// A replay root the auto-scan never reported — the user's manual pin
+    /// (`game-config.toml` active path, or a raw running client) — is owned
+    /// by that install as a `Manual` one, so its rows carry the identity the
+    /// client menus and filters key on. Roots nobody claims (the phone's
+    /// managed dir, an env pin) stay ownerless, and an install the scan
+    /// already lists is not claimed here: the install loop covered it.
+    #[test]
+    fn owner_among_tags_unscanned_installs_only() {
+        let manual = r"D:\Portable\World of Warships".to_string();
+        let scanned_path = r"C:\Games\WoWS".to_string();
+        let scanned = vec![GameInstall {
+            kind: GameInstallKind::Steam,
+            path: scanned_path.clone(),
+            realm: Some("asia".into()),
+        }];
+
+        let owned = owner_among(
+            &[manual.clone(), scanned_path.clone()],
+            Path::new(r"D:\Portable\World of Warships\replays"),
+            &scanned,
+        )
+        .expect("the manual candidate owns its replays folder");
+        assert_eq!(owned.kind, GameInstallKind::Manual);
+        assert_eq!(owned.path, manual);
+        // No clientrunner.log under the synthetic root, so the realm stays
+        // undetected — the same state a realm-less real install reports.
+        assert!(owned.realm.is_none(), "no log, no realm");
+
+        // Different spellings of the same folder still identify.
+        assert!(
+            owner_among(
+                &[r"d:/portable/world of warships".to_string()],
+                Path::new(r"D:\Portable\World of Warships\replays\"),
+                &[],
+            )
+            .is_some()
+        );
+
+        // An install the scan already lists must not be re-tagged (the
+        // install loop walked its replays folder already).
+        assert!(
+            owner_among(
+                &[scanned_path],
+                Path::new(r"C:\Games\WoWS\replays"),
+                &scanned,
+            )
+            .is_none()
+        );
+
+        // A root no candidate claims stays ownerless (managed dir / env pin).
+        assert!(owner_among(&[manual], Path::new(r"D:\Replays"), &scanned,).is_none());
+    }
 
     /// PreferRunning picks the running client over the persisted active
     /// install — the roster is written by whichever process is live.

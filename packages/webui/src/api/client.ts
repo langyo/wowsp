@@ -93,7 +93,10 @@ export interface PlaytimeBattle {
   botCount: number;
   scriptedUnitCount: number;
   ownShipId: number | null;
-  ownShipName: string | null;
+  /** The recorder's NICKNAME — the descriptor's `playerName`, absent (null)
+   *  when the header is unparseable or carries no roster. Renamed from
+   *  `ownShipName`, which promised a ship but held exactly this nickname. */
+  playerName: string | null;
   playerCount: number;
 }
 
@@ -212,10 +215,23 @@ export interface ReplayMetaLite {
   scriptedUnitCount?: number | null;
   /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
   ownShipId?: number | null;
-  /** Recorder's ship display name when resolvable, else null. */
-  ownShipName?: string | null;
+  /** The recorder's NICKNAME — the descriptor's `playerName`, or the
+   *  relation-0 roster entry's name when only the roster carries one. The
+   *  rail titles each card with it (the renamed `ownShipName`, which used
+   *  to hold this same nickname but never said so). */
+  playerName?: string | null;
   /** Number of players in the roster. */
   playerCount: number;
+  /** Root path (GameInstall.path) of the install whose `replays/` folder
+   *  holds this file — the replay's server identity, since a file is
+   *  recorded by the client that wrote it. Null (with the two tags below)
+   *  for files under an unowned replay folder, e.g. the phone's managed
+   *  dir, which belongs to no detected client. */
+  installPath?: string | null;
+  /** Client kind of the owning install (null under an unowned root). */
+  installKind?: GameInstallKind | null;
+  /** Realm of the owning install (null under an unowned root / unknown). */
+  installRealm?: string | null;
 }
 
 /** Mirrors `wowsp_tauri_shared::ArenaInfo`. */
@@ -1844,10 +1860,15 @@ export const api = {
     transport.invoke<LiveSelfStream>(RPC.read_live_replay_snapshot, { path }),
   listReplays: (dir?: string, limit?: number) =>
     transport.invoke<string[]>(RPC.list_replays, { dir, limit }),
-  /** List replays with parsed descriptor metadata (date/mode/map/own ship).
-   *  Only reads the JSON header block per file — fast even for hundreds. */
-  listReplaysMeta: (dir?: string, limit?: number) =>
-    transport.invoke<ReplayMetaLite[]>(RPC.list_replays_meta, { dir, limit }),
+  /** List replays with parsed descriptor metadata (date/mode/map/recorder).
+   *  Only reads the JSON header block per file — fast even for hundreds.
+   *  `all: true` scans EVERY detected install's `replays/` folder in one
+   *  call and tags each entry with its owning install (installPath /
+   *  installKind / installRealm), ignoring `dir` — the rail's default
+   *  multi-client mode. Without it the call keeps its historical
+   *  single-root behavior (`dir` or the active install's folder). */
+  listReplaysMeta: (dir?: string, limit?: number, all?: boolean) =>
+    transport.invoke<ReplayMetaLite[]>(RPC.list_replays_meta, { dir, limit, all }),
   /** Inventory every playable map in a local game install (space id, VFS
    *  minimap path, backing .pkg volume + its mtime). Desktop only — the
    *  shell answers with an error on phones. */

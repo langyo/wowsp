@@ -1,7 +1,8 @@
 {
   "list": {
+    "unknownPlayer": "未知玩家",
     "title": "錄影列表",
-    "empty": "所選用戶端目錄下找不到錄影檔案。",
+    "empty": "各用戶端的錄影目錄下都找不到錄影檔案。",
     "count": "{n} 個錄影",
     "countFiltered": "{n} / {total} 個錄影",
     "noClient": "未偵測到遊戲用戶端，請先在首頁掃描或手動指定路徑。",
@@ -12,6 +13,10 @@
     "allModes": "全部模式",
     "noMatch": "沒有符合篩選條件的錄影。",
     "modeHint": "可多選 · 點擊「全部模式」重置；未選中時切換最新/最早優先",
+    "client": "用戶端",
+    "allClients": "全部用戶端",
+    "player": "玩家",
+    "allPlayers": "全部玩家",
     "dateFrom": "開始日期",
     "dateTo": "結束日期",
     "dateRange": "時間區間"
@@ -98,7 +103,6 @@
     "contour": "等高線地形圖",
     "contourHint": "等高線地形：陸地按高度分層，海域含海床等深線（含海溝）。"
   },
-  "ownShip": "主艦",
   "noShipModel": "尚無該艦艇的全像白模。",
   "duration": "時長",
   "realm": {

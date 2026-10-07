@@ -29,8 +29,6 @@
   "battlesEmpty": "No battles yet — battles are counted from the replays saved in each client's replays folder (the same files the replay review view reads).",
   "battlesNoneSelected": "The selected client has no replays yet.",
   "scopeAll": "All clients",
-  "scopeSelected": "Selected client only",
-  "scopeSelectedWith": "Selected client only · {label}",
   "scopeUnavailable": "Select a client first (the game-path list in Settings).",
   "breakdown": {
     "byType": "By ship type",

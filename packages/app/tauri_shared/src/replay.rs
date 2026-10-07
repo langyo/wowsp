@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::game::GameInstallKind;
+
 /// Top-level metadata extracted from a `.wowsreplay` header.
 ///
 /// A replay file is laid out as:
@@ -97,11 +99,30 @@ pub struct ReplayMetaLite {
     /// The recording player's ship id — the roster entry with `relation == 0`.
     /// Used to render the per-replay holographic ship preview.
     pub own_ship_id: Option<i64>,
-    /// The recording player's ship display name, when resolvable.
-    pub own_ship_name: Option<String>,
+    /// The RECORDING PLAYER's nickname — the descriptor's `playerName`, or
+    /// the relation-0 roster entry's `name` when the descriptor omits it
+    /// (both clients name roster slots after the player, never the ship, so
+    /// this is an identity, not a hull). The list card titles each replay
+    /// with it and the rail's player filter groups by it, which is what
+    /// keeps a client shared by several accounts tellable apart.
+    #[serde(default)]
+    pub player_name: Option<String>,
     /// Number of LISTED players in the roster — everyone except the scripted
     /// scenario NPCs (`IDS_*` / `#Name`); the `:Name:` co-op bot fills count.
     /// Matches the frontend's player lists (utils/rosterSides): story-mode
     /// ally flagships are scenario NPCs, not roster players.
     pub player_count: usize,
+    /// The install the file was found under — its root path, kind and realm
+    /// — when the scan root belongs to a detected client. This is the
+    /// replay's SERVER identity: an all-clients scan tags every row with it
+    /// so the rail can label each card (ASIA / CN / RU) and filter by
+    /// client, while a single-dir scan leaves them as the root allows.
+    /// All `None` for files under an unowned root (the mobile managed dir,
+    /// an env-pinned folder).
+    #[serde(default)]
+    pub install_path: Option<String>,
+    #[serde(default)]
+    pub install_kind: Option<GameInstallKind>,
+    #[serde(default)]
+    pub install_realm: Option<String>,
 }

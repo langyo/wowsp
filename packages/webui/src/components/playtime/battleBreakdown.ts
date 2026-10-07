@@ -21,8 +21,16 @@ import { sameGamePath } from "@/utils/gamePath";
 import { canonicalNation } from "@/utils/nationFlags";
 import { modeColorOfKey, modeKey } from "@/utils/modeColors";
 
-/** Which installs the battle-derived content counts. */
-export type BattleScope = "all" | "selected";
+/** The battle-derived content's scope: one install's root path (the scope
+ *  menu offers every detected client) or [`SCOPE_ALL`] for every client at
+ *  once. A path value rather than an index/key because the rows carry the
+ *  owning install's root spelling, which path identity already compares. */
+export type BattleScope = string;
+
+/** "Every client" — the scope menu's first option and the view's default:
+ *  the ledger now covers all detected clients, so "all" is a real state
+ *  rather than "whatever the active install happens to be". */
+export const SCOPE_ALL: BattleScope = "";
 
 /** Which grouping a breakdown donut draws. Ship TYPE is deliberately
  *  absent from this union — its slices resolve through the app's
@@ -53,18 +61,18 @@ function shipEntryOf(b: PlaytimeBattle): ShipDbEntry | null {
   return SHIP_DB[String(b.ownShipId)] ?? null;
 }
 
-/** Filter rows to the active install when scope === "selected". Path
+/** Filter rows to one client (the scope menu's picked install path). Path
  *  identity goes through sameGamePath (the Rust scan reports the install's
  *  root spelling, which may differ from the config store's casing or
- *  trailing separator); an empty/absent active path falls back to ALL rows
- *  — "selected" without a selection would otherwise blank the section. */
+ *  trailing separator); [`SCOPE_ALL`] passes every row through, including
+ *  rows whose folder belongs to no detected install — they are visible
+ *  under "all", never under a client they do not belong to. */
 export function filterBattlesByScope(
   rows: PlaytimeBattle[],
   scope: BattleScope,
-  activeInstallPath: string | null | undefined,
 ): PlaytimeBattle[] {
-  if (scope !== "selected" || !activeInstallPath) return rows;
-  return rows.filter((r) => sameGamePath(r.installPath, activeInstallPath));
+  if (!scope) return rows;
+  return rows.filter((r) => sameGamePath(r.installPath, scope));
 }
 
 /** Count rows per key → share-scaled entries sorted by count desc (ties:

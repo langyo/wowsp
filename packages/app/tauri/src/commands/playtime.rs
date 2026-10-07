@@ -570,8 +570,11 @@ struct BattleCache {
 /// Bump when a cached parse's SEMANTICS change (not on every field added —
 /// `#[serde(default)]` heals those). v2: `player_count` counts listed
 /// players only (scripted scenario NPCs sit out), so v1 caches that carry
-/// NPC-inclusive counts must re-parse.
-const BATTLES_CACHE_VERSION: u32 = 2;
+/// NPC-inclusive counts must re-parse. v3: `own_ship_name` — which actually
+/// held the recorder's nickname — became `player_name`, and the lite gained
+/// the owning install's tags; a v2 blob would heal all of those to `None`
+/// and silently answer identity-less rows, so it re-parses instead.
+const BATTLES_CACHE_VERSION: u32 = 3;
 
 impl Default for BattleCache {
     fn default() -> Self {
@@ -613,51 +616,6 @@ fn save_battle_cache(cache: &BattleCache) -> Result<(), String> {
     super::appdata::write_appdata_json(BATTLES_CACHE_FILE, &json)
 }
 
-/// Dedupe identity for scan roots — the same normalization the install scan
-/// uses (`game_detect::install_path_key`): case-, separator- and
-/// trailing-slash-insensitive, so the registry's, the Steam vdf's and the
-/// env pin's spellings of one folder collapse. Purely string-based (no
-/// canonicalize I/O), so it never fails. A root reachable only through a
-/// differently-spelled symlink or junction stays distinct here — the
-/// pathological outcome is the same physical folder being walked (and its
-/// battles counted) twice, an accepted edge for the zero-I/O identity.
-fn battle_root_key(path: &Path) -> String {
-    super::game_detect::install_path_key(&path.to_string_lossy())
-}
-
-/// True when two replay roots are the same folder or nested inside one
-/// another (the resolved default dir can BE an install's `replays/` or live
-/// under its root in a different spelling).
-fn battle_roots_overlap(a: &Path, b: &Path) -> bool {
-    let (a, b) = (battle_root_key(a), battle_root_key(b));
-    a == b || a.starts_with(&format!("{b}\\")) || b.starts_with(&format!("{a}\\"))
-}
-
-/// Every root the battle ledger scans: each detected install's `replays/`
-/// folder (owner = that install), plus the resolved default replay dir
-/// (owner = none — the mobile managed dir or an env pin) when it is not
-/// already covered by an install root. On mobile the install scan finds
-/// nothing (no registry / Steam libraries to walk; at most an env-pinned
-/// path), so the managed dir is the ledger's only root.
-fn battle_roots() -> Vec<(PathBuf, Option<GameInstall>)> {
-    let mut roots: Vec<(PathBuf, Option<GameInstall>)> = Vec::new();
-    for install in super::game_context::cached_scan() {
-        let dir = super::game_context::replays_dir(Path::new(&install.path));
-        // Two installs resolving to overlapping folders (nested roots from
-        // overlapping detection sources) must not double-count replays.
-        if roots.iter().any(|(r, _)| battle_roots_overlap(r, &dir)) {
-            continue;
-        }
-        roots.push((dir, Some(install)));
-    }
-    if let Ok(extra) = super::replay::resolve_replay_dir(None) {
-        if !roots.iter().any(|(r, _)| battle_roots_overlap(r, &extra)) {
-            roots.push((extra, None));
-        }
-    }
-    roots
-}
-
 /// Project one parsed replay header (plus its scan root's owning install)
 /// onto the wire row. Unowned files (the resolved default dir outside every
 /// install) still count as battles — they just carry the root path itself
@@ -677,7 +635,7 @@ fn battle_of(root: &Path, owner: &Option<GameInstall>, lite: &ReplayMetaLite) ->
         bot_count: lite.bot_count,
         scripted_unit_count: lite.scripted_unit_count,
         own_ship_id: lite.own_ship_id,
-        own_ship_name: lite.own_ship_name.clone(),
+        player_name: lite.player_name.clone(),
         player_count: lite.player_count,
     }
 }
@@ -758,7 +716,7 @@ fn battles_from_roots(
 pub async fn playtime_battles() -> Result<PlaytimeBattles, String> {
     tokio::task::spawn_blocking(|| {
         let mut cache = load_battle_cache();
-        let roots = battle_roots();
+        let roots = super::game_context::replay_roots();
         // "Changed" = the cache serialization differs after the run — an
         // upsert (new/edited replay) or a prune (a deleted one). An
         // unchanged tree writes nothing back.
@@ -1135,7 +1093,7 @@ mod tests {
         assert_eq!(battles[0].bot_count, 1);
         assert_eq!(battles[0].player_count, 2);
         assert_eq!(battles[0].own_ship_id, Some(4182828960));
-        assert_eq!(battles[0].own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(battles[0].player_name.as_deref(), Some("langyo"));
         assert_eq!(battles[1].match_group.as_deref(), Some("ranked"));
         // The scan upserted every seen file into the cache.
         assert_eq!(cache.entries.len(), 3);
@@ -1186,7 +1144,7 @@ mod tests {
         assert_eq!(b.bot_count, 0);
         assert_eq!(b.scripted_unit_count, 0);
         assert_eq!(b.own_ship_id, None);
-        assert_eq!(b.own_ship_name, None);
+        assert_eq!(b.player_name, None);
         assert_eq!(b.player_count, 0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1235,7 +1193,7 @@ mod tests {
         assert_eq!(b.date_time.as_deref(), Some("20261001_025958"));
         assert_eq!(b.match_group.as_deref(), Some("cooperative"));
         assert_eq!(b.own_ship_id, Some(3340711376));
-        assert_eq!(b.own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(b.player_name.as_deref(), Some("langyo"));
         assert_eq!(b.player_count, 2);
         assert_eq!(b.bot_count, 1);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1274,8 +1232,11 @@ mod tests {
                     bot_count: 0,
                     scripted_unit_count: 0,
                     own_ship_id: None,
-                    own_ship_name: None,
+                    player_name: None,
                     player_count: 0,
+                    install_path: None,
+                    install_kind: None,
+                    install_realm: None,
                 },
             },
         );
@@ -1315,30 +1276,5 @@ mod tests {
         assert!(battles.is_empty());
         assert!(cache.entries.is_empty(), "the vanished file was pruned");
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn battle_roots_overlap_is_symmetric_across_spellings_and_nesting() {
-        let replays = Path::new(r"C:\Games\World of Warships\replays");
-        // Same folder, different casing / separators / trailing slash.
-        assert!(battle_roots_overlap(
-            replays,
-            Path::new(r"c:/games/world of warships\replays\")
-        ));
-        // Nesting counts in both directions (an install root vs its own
-        // `replays/`, whichever order the roots arrive in).
-        assert!(battle_roots_overlap(
-            Path::new(r"C:\Games\World of Warships"),
-            replays
-        ));
-        assert!(battle_roots_overlap(
-            replays,
-            Path::new(r"C:\Games\World of Warships")
-        ));
-        // Sibling folders that merely share a prefix stay distinct.
-        assert!(!battle_roots_overlap(
-            replays,
-            Path::new(r"C:\Games\World of Warships 2\replays")
-        ));
     }
 }

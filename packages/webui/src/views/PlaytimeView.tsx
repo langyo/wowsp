@@ -29,13 +29,15 @@ import {
   breakdownColor,
   distinctShipCount,
   filterBattlesByScope,
+  SCOPE_ALL,
   type BattleScope,
 } from "@/components/playtime/battleBreakdown";
 import type { PlaytimeOverview } from "@/api";
 import { usePlaytimeStore } from "@/stores/playtime";
 import { shipTypeChartColor, shipTypeCssColor } from "@/theme/shipTypeColors";
 import { useConfigStore } from "@/stores/config";
-import { installLabel } from "@/utils/installLabel";
+import { clientMenuOptions } from "@/utils/installLabel";
+import { sameGamePath } from "@/utils/gamePath";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./PlaytimeView.scss";
@@ -83,10 +85,12 @@ const ZERO_OVERVIEW: PlaytimeOverview = {
  * playtime store: the tracker observes the game client in the background,
  * so this view only reads — on mount, then on a slow poll while mounted.
  * A Steam-imported career total is footnoted, never charted (it is
- * undated). The battle rows are scanned from the installs' replays
- * folders; a top-right scope menu narrows the battle-derived content (the
- * battles card + the breakdown + the battle heatmap) to the selected
- * install — the time ledger itself is client-agnostic and always global.
+ * undated). The battle rows are scanned from every detected install's
+ * replays folder; a top-right scope menu narrows the battle-derived content
+ * (the battles card + the breakdown + the battle heatmap) to ONE of those
+ * clients — it lists the whole detected install list, not just the active
+ * one, so a client that is not currently selected app-wide is still one
+ * pick away. The time ledger itself is client-agnostic and always global.
  */
 export default defineComponent({
   name: "PlaytimeView",
@@ -125,12 +129,21 @@ export default defineComponent({
     );
 
     // ── Replay-derived battles (scope-aware) ───────────────────────────
-    // Not persisted — every mount starts global.
-    const scope = ref<BattleScope>("all");
-    const allBattles = computed(() => store.battles?.battles ?? []);
+    // Not persisted — every mount starts global. The scope is one install's
+    // root path or SCOPE_ALL; it does NOT ride the app-wide active install
+    // (that pick belongs to the settings/sidebar surface) — this menu is
+    // how a client that is not active gets inspected.
+    const scope = ref<BattleScope>(SCOPE_ALL);
+    // Rows of installs the user removed from the settings list leave with
+    // their list row: the scan is Rust-side and keeps finding the folder, so
+    // the ignore is applied here — an unpickable client must not show data
+    // the client menu cannot scope.
+    const allBattles = computed(() =>
+      (store.battles?.battles ?? []).filter((b) => !config.isIgnoredPath(b.installPath)),
+    );
     const totalBattles = computed(() => allBattles.value.length);
     const scopedBattles = computed(() =>
-      filterBattlesByScope(allBattles.value, scope.value, config.activeInstall?.path),
+      filterBattlesByScope(allBattles.value, scope.value),
     );
     /** The heatmap's points: battles per local day over the scoped rows.
      *  The time ledger's `daily` would under-draw battle history (it only
@@ -209,33 +222,41 @@ export default defineComponent({
       document.removeEventListener("pointerdown", onDocPointerDown, true);
     });
 
-    // Losing the selected install (row removed in settings) must not leave
-    // the menu wearing the "selected" label over what filterBattlesByScope
-    // already widened back to all rows.
+    // Losing the picked install (row removed in settings) must not leave
+    // the menu wearing a label whose rows filterBattlesByScope no longer
+    // answers — fall back to the all-clients scope it already widened to.
     watch(
-      () => config.activeInstall,
-      (inst) => {
-        if (!inst && scope.value === "selected") scope.value = "all";
+      () => config.installs,
+      (installs) => {
+        if (!scope.value) return;
+        const stillThere = installs.some((i) => sameGamePath(i.path, scope.value));
+        if (!stillThere) scope.value = SCOPE_ALL;
       },
     );
 
-    const scopeOptions = computed(() => {
-      const inst = config.activeInstall;
-      return [
-        { key: "all" as const, label: t("playtime.scopeAll"), disabled: false },
-        {
-          key: "selected" as const,
-          label: inst
-            ? t("playtime.scopeSelectedWith", {
-                label: installLabel(inst.kind, inst.realm),
-              })
-            : t("playtime.scopeSelected"),
-          disabled: !inst,
-        },
-      ];
-    });
+    /** One option per DETECTED client — the whole recognized install list,
+     *  not just the active one, so any client's battles are reachable
+     *  without switching the app-wide active install first. The label is
+     *  the install's own name ("Steam · ASIA", "国服 · CN"), which is what
+     *  the client row in the sidebar footer shows too. */
+    const scopeOptions = computed(() => [
+      { key: SCOPE_ALL, label: t("playtime.scopeAll") },
+      ...clientMenuOptions(config.installs).map((o) => ({ key: o.value, label: o.label })),
+    ]);
+
+    /** Whether a menu option is the picked one. The all-clients sentinel is
+     *  compared exactly (an empty scope has no path spelling to normalize);
+     *  a client option goes through path identity, so the row the settings
+     *  list holds and the row the scan reported count as the same client
+     *  even when their spelling differs. */
+    function isPickedScope(key: BattleScope): boolean {
+      return key === SCOPE_ALL ? scope.value === SCOPE_ALL : sameGamePath(scope.value, key);
+    }
+
     const scopeLabel = computed(
-      () => scopeOptions.value.find((o) => o.key === scope.value)?.label ?? "",
+      () =>
+        scopeOptions.value.find((o) => isPickedScope(o.key))?.label ??
+        t("playtime.scopeAll"),
     );
 
     function pickScope(key: BattleScope) {
@@ -428,18 +449,20 @@ export default defineComponent({
                         type="button"
                         role="menuitem"
                         class="playtime-view__scope-opt"
-                        data-active={scope.value === o.key || undefined}
-                        disabled={o.disabled}
-                        title={o.disabled ? t("playtime.scopeUnavailable") : undefined}
+                        data-active={isPickedScope(o.key) || undefined}
                         onClick={() => pickScope(o.key)}
                       >
                         <span class="playtime-view__scope-opt-label">{o.label}</span>
-                        {scope.value === o.key ? (
+                        {isPickedScope(o.key) ? (
                           <Check size={13} class="playtime-view__scope-opt-check" />
                         ) : null}
                       </button>
                     ))}
-                    {!config.activeInstall ? (
+                    {/* No detected install = nothing but the all-clients
+                        option to pick; the hint points at where clients are
+                        chosen (same wording the old single-option menu
+                        used). */}
+                    {config.installs.length === 0 ? (
                       <div class="playtime-view__scope-hint">
                         {t("playtime.scopeUnavailable")}
                       </div>

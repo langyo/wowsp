@@ -29,8 +29,6 @@
   "battlesEmpty": "戦闘記録はまだありません。戦闘数は各クライアントの replays フォルダーに保存されたリプレイから数えます（リプレイ分析と同じファイルです）。",
   "battlesNoneSelected": "選択中のクライアントにはリプレイがまだありません。",
   "scopeAll": "すべてのクライアント",
-  "scopeSelected": "選択中のサーバーのみ",
-  "scopeSelectedWith": "選択中のサーバーのみ · {label}",
   "scopeUnavailable": "先に設定の「ゲームパス」でクライアントを選択してください。",
   "breakdown": {
     "byType": "艦種別",

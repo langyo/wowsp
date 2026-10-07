@@ -49,10 +49,11 @@
 //! writes as `tempArenaInfo.json` (same logic ApeRadar's
 //! `FileUtils.ReadTempArenaInfoFile` uses).
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use wowsp_tauri_shared::{ReplayMeta, ReplayMetaLite, VehicleEntry};
+use wowsp_tauri_shared::{GameInstall, ReplayMeta, ReplayMetaLite, VehicleEntry};
 
 // The replay-container extension test lives in the per-client compat
 // registry (commands/game_client.rs); the walk below and this module's tests
@@ -805,14 +806,87 @@ pub async fn list_replays(
 /// ([`tokio::task::spawn_blocking`]) so the UI thread never stalls. Files
 /// whose header can't be parsed still appear, with whatever fields were
 /// recoverable.
+///
+/// `all` widens the scan from ONE root to every detected client
+/// ([`super::game_context::replay_roots`]): the rail then lists each
+/// client's replays side by side, every entry stamped with its owning
+/// install (`install_path`/`install_kind`/`install_realm`) so the cards can
+/// label the server and the rail can filter by it. `dir` is ignored in
+/// that mode (an explicit folder is by definition a single-root scan); with
+/// `all` unset the historical single-root behavior is unchanged, which is
+/// what the pairing / import flows keep calling.
 #[tauri::command]
 pub async fn list_replays_meta(
     dir: Option<String>,
     limit: Option<usize>,
+    all: Option<bool>,
 ) -> Result<Vec<ReplayMetaLite>, String> {
-    tokio::task::spawn_blocking(move || scan_replays_meta(dir, limit).map(|(_, entries)| entries))
-        .await
-        .map_err(|e| format!("replay listing task failed: {e}"))?
+    let all = all.unwrap_or(false);
+    tokio::task::spawn_blocking(move || {
+        if all {
+            Ok(scan_all_replays_meta(limit))
+        } else {
+            scan_replays_meta(dir, limit).map(|(_, entries)| entries)
+        }
+    })
+    .await
+    .map_err(|e| format!("replay listing task failed: {e}"))?
+}
+
+/// The all-clients enumeration core behind `list_replays_meta { all: true }`:
+/// walk every root [`super::game_context::replay_roots`] reports (each
+/// detected install's `replays/` folder plus the resolved default dir when
+/// no install covers it), parse each file's descriptor, and stamp the entry
+/// with the owning install.
+pub(crate) fn scan_all_replays_meta(limit: Option<usize>) -> Vec<ReplayMetaLite> {
+    scan_roots_meta(&super::game_context::replay_roots(), limit)
+}
+
+/// [`scan_all_replays_meta`]'s pure core — the roots arrive as a parameter
+/// so tests can drive synthetic trees, the same shape `playtime.rs` uses
+/// for its ledger. Files are de-duplicated by normalized path, so a folder
+/// reachable through two spellings still contributes each replay exactly
+/// once (root de-duplication is the caller's: `game_context::replay_roots`
+/// never reports overlapping roots).
+///
+/// Sorted by mtime descending — the same newest-first order the single-root
+/// scan answers — with an explicit `limit` applied after that sort (no
+/// implicit cap: see [`scan_replays_meta`]). A `limit` of 0 answers nothing,
+/// matching the single-root scan's `.take(0)`.
+fn scan_roots_meta(
+    roots: &[(PathBuf, Option<GameInstall>)],
+    limit: Option<usize>,
+) -> Vec<ReplayMetaLite> {
+    let mut walked: Vec<(WalkedReplay, Option<GameInstall>)> = Vec::new();
+    for (root, owner) in roots {
+        let mut files = Vec::new();
+        walk_replays(root, &mut files);
+        for file in files {
+            walked.push((file, owner.clone()));
+        }
+    }
+    use std::cmp::Reverse;
+    walked.sort_by_key(|(e, _)| Reverse(e.mtime));
+    let limit = limit.unwrap_or(usize::MAX);
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out = Vec::new();
+    for (file, owner) in walked {
+        if out.len() >= limit {
+            break;
+        }
+        let key = super::game_detect::install_path_key(&file.path.to_string_lossy());
+        if !seen.insert(key) {
+            continue;
+        }
+        let mut lite = lite_from_path(&file.path);
+        if let Some(install) = owner {
+            lite.install_path = Some(install.path.clone());
+            lite.install_kind = Some(install.kind);
+            lite.install_realm = install.realm.clone();
+        }
+        out.push(lite);
+    }
+    out
 }
 
 /// Enumeration core shared by the [`list_replays_meta`] command and the
@@ -936,8 +1010,11 @@ pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
             bot_count: 0,
             scripted_unit_count: 0,
             own_ship_id: None,
-            own_ship_name: None,
+            player_name: None,
             player_count: 0,
+            install_path: None,
+            install_kind: None,
+            install_realm: None,
         };
     };
     lite_from_raw(path_str, date_time, raw)
@@ -994,8 +1071,21 @@ fn lite_from_raw(
         });
     let own = vehicles.iter().find(|v| v.relation == 0);
     let own_ship_id = own.map(|v| v.ship_id);
-    // ship_name is left None here — the frontend resolves it via the encyclopedia.
-    let own_ship_name = own.map(|v| v.name.clone());
+    // The recorder's identity: the descriptor's own `playerName` (the
+    // client writes it verbatim, Lesta included) with the relation-0 roster
+    // entry's `name` as the fallback for headers that omit it. Roster names
+    // are player nicknames on both clients — the descriptor carries no ship
+    // name, which is why the list card titles a replay with this.
+    let player_name = obj
+        .and_then(|o| o.get("playerName"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            own.map(|v| v.name.trim().to_owned())
+                .filter(|name| !name.is_empty())
+        });
 
     ReplayMetaLite {
         path,
@@ -1008,8 +1098,12 @@ fn lite_from_raw(
         bot_count,
         scripted_unit_count,
         own_ship_id,
-        own_ship_name,
+        player_name,
         player_count,
+        // Filled by the scan that owns the root — see `scan_all_replays_meta`.
+        install_path: None,
+        install_kind: None,
+        install_realm: None,
     }
 }
 
@@ -1408,6 +1502,7 @@ pub(crate) fn walk_replays(dir: &PathBuf, out: &mut Vec<WalkedReplay>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wowsp_tauri_shared::GameInstallKind;
 
     /// The Lesta arena synthesis joins roster entries to ship entities by
     /// unique EntityCreate shipId, skips mirror picks (two roster entries on
@@ -1723,7 +1818,7 @@ mod tests {
         assert_eq!(lite.map_name.as_deref(), Some("15_NE_north"));
         assert_eq!(lite.player_count, 3);
         assert_eq!(lite.own_ship_id, Some(4182828960));
-        assert_eq!(lite.own_ship_name.as_deref(), Some("Alpha"));
+        assert_eq!(lite.player_name.as_deref(), Some("Alpha"));
     }
 
     /// Unique temp file path for `lite_from_path` tests (this crate has no
@@ -1844,7 +1939,146 @@ mod tests {
         assert_eq!(lite.map_id, Some(8));
         assert_eq!(lite.player_count, 2);
         assert_eq!(lite.own_ship_id, Some(4182828960));
-        assert_eq!(lite.own_ship_name.as_deref(), Some("Alpha"));
+        // No `playerName` in this descriptor — the relation-0 roster name
+        // stands in as the recorder's identity.
+        assert_eq!(lite.player_name.as_deref(), Some("Alpha"));
+        // A single-dir scan tags nothing: the owner is only known to the
+        // all-clients scan (see the tagging test below).
+        assert!(lite.install_path.is_none());
+        assert!(lite.install_kind.is_none());
+        assert!(lite.install_realm.is_none());
+    }
+
+    /// The recorder's nickname wins from the descriptor's own `playerName`
+    /// (the CN client fills it with the account name), and a blank value
+    /// falls back to the relation-0 roster entry — a header that carries
+    /// neither answers `None` instead of an empty identity.
+    #[test]
+    fn lite_from_raw_prefers_descriptor_player_name_with_roster_fallback() {
+        let raw = |json: &str| serde_json::from_str::<serde_json::Value>(json).unwrap();
+        let vehicles = r#""vehicles":[{"id":1,"name":"langyo","relation":0,"shipId":7}]"#;
+
+        let named = lite_from_raw(
+            "a.wowsreplay".into(),
+            Some("20261008_003254".into()),
+            raw(&format!(r#"{{"playerName":"神楽坂柚咲",{vehicles}}}"#)),
+        );
+        assert_eq!(named.player_name.as_deref(), Some("神楽坂柚咲"));
+
+        let blank = lite_from_raw(
+            "b.wowsreplay".into(),
+            None,
+            raw(&format!(r#"{{"playerName":"   ",{vehicles}}}"#)),
+        );
+        assert_eq!(blank.player_name.as_deref(), Some("langyo"));
+
+        let headerless = lite_from_raw("c.wowsreplay".into(), None, raw(r#"{"matchGroup":"pvp"}"#));
+        assert!(headerless.player_name.is_none());
+        assert!(headerless.own_ship_id.is_none());
+    }
+
+    /// The all-clients scan walks every root it is handed and stamps each
+    /// entry with that root's owning install — kind + realm + path — while
+    /// files under an unowned root stay untagged (they belong to no client
+    /// to label or filter by). The newest-first mtime order and the
+    /// explicit limit apply across the whole set, not per root.
+    #[test]
+    fn scan_roots_meta_tags_entries_with_their_owning_install() {
+        let dir = std::env::temp_dir().join(format!(
+            "wowsp-test-all-roots-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let steam_replays = dir.join("steam").join("replays");
+        let cn_replays = dir.join("cn360").join("replays");
+        let loose = dir.join("loose");
+        for root in [&steam_replays, &cn_replays, &loose] {
+            std::fs::create_dir_all(root).unwrap();
+        }
+        // Write each file and PIN its mtime one day apart: the scan's
+        // newest-first order (and the cap test below) keys on mtime, and a
+        // CI runner's filesystem can stamp three rapid writes with the SAME
+        // timestamp — the stable sort would then fall back to insertion
+        // order and "newest survived the cap" would depend on write order.
+        let write_stamped = |path: PathBuf, at: std::time::SystemTime| {
+            std::fs::write(&path, b"not a replay").unwrap();
+            // Write access, not the read-only `File::open` — Windows denies
+            // setting the modified time through a read-only handle.
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(at)
+                .unwrap();
+        };
+        let day = |n: u64| {
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000 + n * 86_400)
+        };
+        write_stamped(steam_replays.join("20261001_100000_a.wowsreplay"), day(0));
+        write_stamped(cn_replays.join("20261002_100000_b.wowsreplay"), day(1));
+        write_stamped(loose.join("20261003_100000_c.wowsreplay"), day(2));
+
+        let install = |kind: GameInstallKind, path: &std::path::Path, realm: &str| GameInstall {
+            kind,
+            path: path.to_string_lossy().into_owned(),
+            realm: Some(realm.to_string()),
+        };
+        let roots = vec![
+            (
+                steam_replays.clone(),
+                Some(install(GameInstallKind::Steam, &dir.join("steam"), "asia")),
+            ),
+            (
+                cn_replays.clone(),
+                Some(install(GameInstallKind::Cn360, &dir.join("cn360"), "cn")),
+            ),
+            (loose.clone(), None),
+        ];
+        let entries = scan_roots_meta(&roots, None);
+        assert_eq!(entries.len(), 3, "every root contributes its files");
+        let by_name = |needle: &str| {
+            entries
+                .iter()
+                .find(|e| e.path.contains(needle))
+                .unwrap_or_else(|| panic!("missing {needle}"))
+        };
+        let steam = by_name("20261001_100000_a");
+        assert_eq!(steam.install_realm.as_deref(), Some("asia"));
+        assert_eq!(steam.install_kind, Some(GameInstallKind::Steam));
+        assert_eq!(
+            steam.install_path.as_deref(),
+            Some(dir.join("steam").to_string_lossy().as_ref())
+        );
+        let cn = by_name("20261002_100000_b");
+        assert_eq!(cn.install_realm.as_deref(), Some("cn"));
+        assert_eq!(cn.install_kind, Some(GameInstallKind::Cn360));
+        let untagged = by_name("20261003_100000_c");
+        assert!(untagged.install_path.is_none());
+        assert!(untagged.install_kind.is_none());
+        assert!(untagged.install_realm.is_none());
+
+        // The cap applies to the whole set AFTER the newest-first sort, so a
+        // capped scan keeps the freshest files (the archived-history trap the
+        // single-root scan's contract calls out) — and 0 answers nothing,
+        // exactly like the single-root scan's `.take(0)`.
+        let capped = scan_roots_meta(&roots, Some(1));
+        assert_eq!(capped.len(), 1);
+        assert!(
+            capped[0].path.contains("20261003_100000_c"),
+            "the newest file survived the cap: {}",
+            capped[0].path
+        );
+        assert!(scan_roots_meta(&roots, Some(0)).is_empty());
+        // Identical roots listed twice must not duplicate entries.
+        let doubled = {
+            let mut both = roots.clone();
+            both.push(roots[0].clone());
+            scan_roots_meta(&both, None)
+        };
+        assert_eq!(doubled.len(), 3, "one file, one entry");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A file truncated mid-prologue (4 bytes) falls back to the path +
@@ -1954,7 +2188,7 @@ mod tests {
             Some("domination_sandbox_3point_alt_5-6_coop")
         );
         assert_eq!(lite.own_ship_id, Some(3340711376));
-        assert_eq!(lite.own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(lite.player_name.as_deref(), Some("langyo"));
         // The `IDS_OP_X` scripted unit sits out; the `:Bot:` fill counts.
         assert_eq!(lite.player_count, 3);
         assert_eq!(lite.bot_count, 2);
@@ -1976,7 +2210,7 @@ mod tests {
             Some(3340711376),
             "playerName langyo pins the recorder when the marker fails"
         );
-        assert_eq!(lite.own_ship_name.as_deref(), Some("langyo"));
+        assert_eq!(lite.player_name.as_deref(), Some("langyo"));
         assert_eq!(lite.player_count, 3);
     }
 

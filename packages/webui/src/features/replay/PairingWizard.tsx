@@ -640,7 +640,7 @@ export default defineComponent({
                         >
                           <span class="pairing-wizard__entry-top">
                             <span class="pairing-wizard__entry-ship">
-                              {e.ownShipName ?? t("replay.ownShip")}
+                              {e.playerName ?? t("replay.list.unknownPlayer")}
                             </span>
                             {e.matchGroup ? (
                               <span

@@ -29,6 +29,25 @@ app.add_middleware(
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
+# The pretend game installs this mock "detects" — TWO clients, so the
+# multi-client surfaces (the playtime scope menu, the rail's client filter
+# and its per-card server tags) have more than one client to exercise in
+# `just dev mock`. Shared by detect_game_install and the list_replays_meta
+# fixtures so every replay the mock serves is tagged with a client the UI can
+# actually pick, and the paths match the client-side playtime_battles
+# fixture (packages/webui/src/transport/webMock.ts) so a picked client
+# answers that client's battles instead of an empty list.
+_MOCK_INSTALL = {"kind": "steam", "path": "D:/Games/World_of_Warships", "realm": "asia"}
+_MOCK_INSTALL_PATH = _MOCK_INSTALL["path"]
+_MOCK_INSTALL_LESTA = {"kind": "lesta", "path": "C:/MockGames/WoWS (Lesta)", "realm": "ru"}
+_MOCK_INSTALL_LESTA_PATH = _MOCK_INSTALL_LESTA["path"]
+# Fixture nicknames: `playerName` is the RECORDER's nickname (the card's
+# title and the rail's player dropdown), so the fixtures carry nicknames
+# rather than ship names — two different ones, which is exactly the
+# one-client-many-accounts case the player dimension exists for.
+_MOCK_PLAYER = "MockCaptain"
+_MOCK_PLAYER_LESTA = "MockAlt"
+
 
 def wg_to_short_code(wg: str) -> str:
     """Map a WG API language code to the app's internal locale short-code.
@@ -83,12 +102,19 @@ async def cmd_get_os_preferences() -> dict:
 
 @app.get("/api/detect_game_install")
 async def cmd_detect_game_install() -> list[dict]:
-    # Pretend a Steam install exists so the replay list loads in the browser.
-    return [{"kind": "steam", "path": "D:/Games/World_of_Warships", "realm": "asia"}]
+    # Pretend a Steam install (and its Lesta sibling) exists so the replay
+    # list and the client-scoped views have real clients to work with.
+    return [dict(_MOCK_INSTALL), dict(_MOCK_INSTALL_LESTA)]
 
 
 @app.post("/api/list_replays_meta")
 async def cmd_list_replays_meta(request: Request) -> list[dict]:
+    # The command's `all` flag only widens the RUST scan (every detected
+    # install's replays/ folder vs one explicit/default root) — it is
+    # accepted and ignored here. This mock pretends the same two installs
+    # detect_game_install reports, so both modes return the same tagged
+    # fixtures anyway; the tags give the rail's client filter real clients
+    # to exercise in `just dev mock`.
     dump = _load_replay_dump()
     if dump is not None:
         meta = dump["meta"]
@@ -101,8 +127,11 @@ async def cmd_list_replays_meta(request: Request) -> list[dict]:
             # Real Yamato index from webui's ship_names.json, so ship-id-driven
             # UI (roster panels, the list card's own-ship tag) resolves.
             "ownShipId": 4276041424,
-            "ownShipName": "Yamato",
+            "playerName": meta.get("playerName") or _MOCK_PLAYER,
             "playerCount": len(meta.get("vehicles", [])),
+            "installPath": _MOCK_INSTALL_PATH,
+            "installKind": "steam",
+            "installRealm": "asia",
         }]
     return [
         {
@@ -112,8 +141,28 @@ async def cmd_list_replays_meta(request: Request) -> list[dict]:
             "mapName": "17_NA_fault_line",
             "mapId": 17,
             "ownShipId": 4276041424,
-            "ownShipName": "Yamato",
+            "playerName": _MOCK_PLAYER,
             "playerCount": 6,
+            "installPath": _MOCK_INSTALL_PATH,
+            "installKind": "steam",
+            "installRealm": "asia",
+        },
+        {
+            # The second client's replay: a Lesta .korablireplay recorded by
+            # a DIFFERENT nickname, so the rail's server tags, its client
+            # filter and its player dropdown all show two real options.
+            # Stalingrad's index is a real one from webui's ship_names.json.
+            "path": "fixtures/sample.korablireplay",
+            "dateTime": "20260710_201500",
+            "matchGroup": "pve",
+            "mapName": "28_naval_mission",
+            "mapId": 28,
+            "ownShipId": 3760109008,
+            "playerName": _MOCK_PLAYER_LESTA,
+            "playerCount": 8,
+            "installPath": _MOCK_INSTALL_LESTA_PATH,
+            "installKind": "lesta",
+            "installRealm": "ru",
         }
     ]
 

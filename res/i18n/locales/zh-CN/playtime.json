@@ -29,8 +29,6 @@
   "battlesEmpty": "还没有战斗记录——战斗场次统计自各客户端 replays 文件夹里的录像文件（与「录像复盘」读取的相同）。",
   "battlesNoneSelected": "选中的客户端还没有录像。",
   "scopeAll": "全部客户端",
-  "scopeSelected": "仅选中服务器",
-  "scopeSelectedWith": "仅选中服务器 · {label}",
   "scopeUnavailable": "请先在 设置 → 游戏路径 中选择一个客户端。",
   "breakdown": {
     "byType": "按舰种",

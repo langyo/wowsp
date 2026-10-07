@@ -29,8 +29,6 @@
   "battlesEmpty": "Aún no hay batallas: se cuentan a partir de las repeticiones guardadas en la carpeta replays de cada cliente (los mismos archivos que lee la revisión de repeticiones).",
   "battlesNoneSelected": "El cliente seleccionado aún no tiene repeticiones.",
   "scopeAll": "Todos los clientes",
-  "scopeSelected": "Solo el servidor seleccionado",
-  "scopeSelectedWith": "Solo el servidor seleccionado · {label}",
   "scopeUnavailable": "Selecciona primero un cliente (la lista de rutas de juego en los ajustes).",
   "breakdown": {
     "byType": "Por tipo de barco",

@@ -29,8 +29,6 @@
   "battlesEmpty": "Aucune bataille pour l'instant — les batailles sont comptées à partir des replays du dossier replays de chaque client (les mêmes fichiers que la revue des replays).",
   "battlesNoneSelected": "Le client sélectionné n'a pas encore de replays.",
   "scopeAll": "Tous les clients",
-  "scopeSelected": "Serveur sélectionné uniquement",
-  "scopeSelectedWith": "Serveur sélectionné uniquement · {label}",
   "scopeUnavailable": "Sélectionnez d'abord un client (la liste des chemins de jeu dans les paramètres).",
   "breakdown": {
     "byType": "Par type de navire",

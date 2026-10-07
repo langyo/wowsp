@@ -187,8 +187,10 @@
 }
 
 /* ── Scope toolbar (battle-derived content only — see the view's docs):
-   a slim right-aligned row above the cards; the button opens a two-option
-   menu (all installs / selected install) through hikari HkPopover. ─────── */
+   a slim right-aligned row above the cards; the button opens the client
+   menu (all clients / one option per detected install) through hikari
+   HkPopover. The option list can outgrow a short machine's menu, so the
+   popup body scrolls (`max-height` on the option stack). ──────────────── */
 .playtime-view__toolbar {
   display: flex;
   justify-content: flex-end;
@@ -244,6 +246,11 @@
   gap: 2px;
   padding: 8px;
   min-width: 13rem;
+  /* The menu is now one option per detected client, so it grows with the
+     machine's install list — cap it and scroll rather than letting a
+     many-client popup run off the window. */
+  max-height: min(60vh, 22rem);
+  overflow-y: auto;
 }
 
 .playtime-view__scope-opt {
@@ -262,7 +269,7 @@
   cursor: pointer;
   transition: background var(--duration-short) var(--ease-standard);
 
-  &:hover:not(:disabled) {
+  &:hover {
     background: rgb(var(--color-text) / 6%);
   }
 
@@ -270,11 +277,6 @@
     color: rgb(var(--color-text));
     background: rgb(var(--color-primary) / 12%);
     font-weight: 600;
-  }
-
-  &:disabled {
-    color: rgb(var(--color-muted) / 70%);
-    cursor: not-allowed;
   }
 
   &-label {

@@ -29,12 +29,13 @@
  *
  * Hosts that need more controls inside the popup render them through the
  * DEFAULT SLOT (between the option strip and the hint line — the replay
- * rail's date-range pair lives there). A nested popup opened from slot
- * content (an embedded HkDatePicker's calendar also teleports to body)
- * survives the outside-close: presses inside any open `.hk-popover-panel`
- * other than this panel's own count as inside, which is safe — an unrelated
- * popup can never be open alongside, its opening press would have closed
- * this panel first.
+ * rail's client/player selects and its date-range pair live there). A nested
+ * popup opened from slot content (an embedded HkDatePicker's calendar, an
+ * embedded HkSelect's option popout — both teleport to body level) survives
+ * the outside-close: presses inside any open surface of those families other
+ * than this panel's own count as inside, which is safe — an unrelated popup
+ * can never be open alongside, its opening press would have closed this
+ * panel first.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type VNode } from "vue";
 
@@ -130,14 +131,22 @@ export default defineComponent({
       const target = e.target as Node;
       if (root.value?.contains(target)) return;
       if (panelEl.value?.contains(target)) return;
-      // A popup nested in the default slot (the replay rail's embedded
-      // date pickers open their own HkPopover calendars) teleports to body
-      // level — visible to neither `root` nor `panelEl`. A press inside
-      // any OTHER open .hk-popover-panel therefore belongs to this panel's
-      // own nested content: the only way a second panel can be open at all
-      // is opened from inside this one (an unrelated popup's opening press
-      // would have landed outside and closed this panel first).
-      for (const panel of document.querySelectorAll<HTMLElement>(".hk-popover-panel")) {
+      // A popup nested in the default slot teleports to body level — visible
+      // to neither `root` nor `panelEl` — and each family carries its own
+      // surface class. A press inside any OTHER open surface of those
+      // families therefore belongs to this panel's own nested content: the
+      // only way a second surface can be open at all is opened from inside
+      // this one (an unrelated popup's opening press would have landed
+      // outside and closed this panel first).
+      //   - `.hk-popover-panel`: HkPopover — the embedded date pickers'
+      //     calendars, popup selects, menus.
+      //   - `.hk-select-popout-host` / `.hk-select-sheet-panel`: HkSelect's
+      //     option list (desktop popout / phone sheet). Without these, a
+      //     press on an option read as an outside press and closed the
+      //     panel mid-pick, losing the selection.
+      for (const panel of document.querySelectorAll<HTMLElement>(
+        ".hk-popover-panel, .hk-select-popout-host, .hk-select-sheet-panel",
+      )) {
         if (panel !== panelEl.value && panel.contains(target)) return;
       }
       close();
