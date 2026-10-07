@@ -153,6 +153,20 @@ def parse_i18n_block(body: str) -> dict:
 # consults it so future Aslain refreshes land on the same names.
 from mod_hub_slugs import CATEGORY_RENAME, SLUG_MAP  # noqa: E402 - repo-local
 
+# Repository-curated per-locale descriptions for every catalog entry
+# (scripts/mod_hub_desc_i18n.json) — Aslain only ships rich descriptions in
+# a couple of languages, so the remaining locales are curated here and laid
+# over each thread by `enrich` as the HIGHEST-priority layer. The reserved
+# "_names" entry carries name fixes (e.g. es-ES names for hand-published
+# threads outside the Aslain ingest).
+_DESC_I18N_PATH = Path(__file__).with_name("mod_hub_desc_i18n.json")
+DESC_I18N: dict = (
+    json.loads(_DESC_I18N_PATH.read_text(encoding="utf-8"))
+    if _DESC_I18N_PATH.exists()
+    else {}
+)
+DESC_I18N_NAMES: dict = DESC_I18N.pop("_names", {}) if DESC_I18N else {}
+
 CATEGORY_MAP = {
     "Team_Panel": "battle",
     "Team_Mini_Panel": "battle",
@@ -771,16 +785,24 @@ def parse_front_matter_map(body: str) -> dict[str, str]:
     return out
 
 
-def merged_i18n(curated: dict | None, body: str) -> dict:
-    """Existing block first (hand-polished zh-TW / ko-KR survive), then
-    Aslain's own localized names/descriptions overlay their languages."""
+def merged_i18n(slug: str, curated: dict | None, body: str) -> dict:
+    """Layered i18n for one thread: the live block first, Aslain's own
+    localized names/descriptions fill the gaps, and the repository's
+    curated translations (mod_hub_desc_i18n.json) win last — every locale
+    ends up with a real description instead of a name-only stub."""
     i18n = {lang: dict(v) for lang, v in parse_i18n_block(body).items()}
     for lang, meta in ((curated or {}).get("loc_meta") or {}).items():
         entry = i18n.setdefault(lang, {"name": "", "desc": ""})
         if meta.get("name") and not entry.get("name"):
             entry["name"] = meta["name"]
-        if meta.get("desc"):
+        if meta.get("desc") and not entry.get("desc"):
             entry["desc"] = meta["desc"]
+    for lang, desc in (DESC_I18N.get(slug) or {}).items():
+        i18n.setdefault(lang, {"name": "", "desc": ""})["desc"] = desc
+    for lang, name in (DESC_I18N_NAMES.get(slug) or {}).items():
+        entry = i18n.setdefault(lang, {"name": "", "desc": ""})
+        if not entry.get("name"):
+            entry["name"] = name
     return {lang: v for lang, v in i18n.items() if v.get("name") or v.get("desc")}
 
 
@@ -801,7 +823,7 @@ def enrich_body(curated: dict | None, thread: dict, gallery_urls: list[str]) -> 
         "category": category,
         "aslain_id": (curated or {}).get("aslain_id", ""),
     }
-    i18n = merged_i18n(curated, thread["body"])
+    i18n = merged_i18n(slug, curated, thread["body"])
     name_en = (curated or {}).get("name_en") or slug
     name_zh = (curated or {}).get("name_zh") or ""
     lines = ["---", f"wowsp-mod: {slug}", f"version: {version}", f'game: "{game}"', f"category: {category}"]
@@ -821,7 +843,7 @@ def enrich_body(curated: dict | None, thread: dict, gallery_urls: list[str]) -> 
     title = f"**{name_zh}** / {name_en}" if name_zh else f"**{name_en}**"
     lines.append(title)
     lines.append("")
-    desc = (curated or {}).get("description") or ""
+    desc = (DESC_I18N.get(slug) or {}).get("en-US") or (curated or {}).get("description") or ""
     if desc:
         lines.append(desc)
         lines.append("")
@@ -902,8 +924,13 @@ def enrich(cache: Path, only: str | None = None, dry_run: bool = False) -> None:
         if only and slug != only:
             continue
         curated = curated_by_id.get(slug)
-        if not curated and slug not in CATEGORY_OVERRIDE and slug not in ASLAIN_ALIASES:
-            continue  # hand-published threads outside the ingest stay untouched
+        if (
+            not curated
+            and slug not in CATEGORY_OVERRIDE
+            and slug not in ASLAIN_ALIASES
+            and slug not in DESC_I18N
+        ):
+            continue  # threads neither ingested nor curated stay untouched
         body = thread["body"]
         existing_gallery = [m.group(1) for m in re.finditer(r"!\[[^\]]*\]\((https://[^)]+)\)", body)]
         gallery = galleries.get(slug) or existing_gallery
