@@ -250,31 +250,38 @@ export const STAMP_URL: Record<StampKind, string> = {
 };
 
 /** RatingStamp's face redrawn in canvas — double rounded frame in cinnabar
- *  ink around the glyph bitmap, tilted by the shared −9° press (mini
- *  variant: no moiré weave at this size). */
+ *  ink around the glyph bitmap, tilted by the shared −9° press. The
+ *  `variant` mirrors the component's: "full" keeps the classic wide
+ *  double border, "mini" presses the thinner tighter frame with the larger
+ *  glyph (no moiré weave at these sizes either way). */
 export function drawStampSeal(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
   size: number,
   img: HTMLImageElement | null,
+  variant: "full" | "mini" = "full",
 ): void {
+  // Frame geometry per variant, in viewBox units (see RatingStamp.tsx).
+  const geo = variant === "mini"
+    ? { outer: 46.5, outerW: 93, outerR: 6, outerLw: 4, inner: 39.5, innerW: 79, innerR: 2.5, innerLw: 1.5, glyph: 36, glyphW: 72 }
+    : { outer: 45, outerW: 90, outerR: 7, outerLw: 6, inner: 35.5, innerW: 71, innerR: 3, innerLw: 2, glyph: 33, glyphW: 66 };
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(-Math.PI / 20);
   ctx.strokeStyle = rgba(STAMP_INK, 0.9);
   const s = size / 100;
-  ctx.lineWidth = 6 * s;
+  ctx.lineWidth = geo.outerLw * s;
   ctx.beginPath();
-  ctx.roundRect(-45 * s, -45 * s, 90 * s, 90 * s, 7 * s);
+  ctx.roundRect(-geo.outer * s, -geo.outer * s, geo.outerW * s, geo.outerW * s, geo.outerR * s);
   ctx.stroke();
-  ctx.lineWidth = 2 * s;
+  ctx.lineWidth = geo.innerLw * s;
   ctx.beginPath();
-  ctx.roundRect(-35.5 * s, -35.5 * s, 71 * s, 71 * s, 3 * s);
+  ctx.roundRect(-geo.inner * s, -geo.inner * s, geo.innerW * s, geo.innerW * s, geo.innerR * s);
   ctx.stroke();
   if (img) {
     ctx.globalAlpha *= 0.92;
-    ctx.drawImage(img, -33 * s, -33 * s, 66 * s, 66 * s);
+    ctx.drawImage(img, -geo.glyph * s, -geo.glyph * s, geo.glyphW * s, geo.glyphW * s);
   }
   ctx.restore();
 }

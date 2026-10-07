@@ -226,7 +226,7 @@ export default defineComponent({
               prefs.prefs.sealsEnabled ? (
                 <div class="ship-my-stats__stamps">
                   {stamps.value.map((kind) => (
-                    <RatingStamp key={kind} kind={kind} size={46} />
+                    <RatingStamp key={kind} kind={kind} size={56} />
                   ))}
                 </div>
               ) : null}

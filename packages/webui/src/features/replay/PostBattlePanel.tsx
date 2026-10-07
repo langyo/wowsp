@@ -743,7 +743,7 @@ export default defineComponent({
         return stamp && sealsShown.value ? (
           <RatingStamp
             kind={stamp}
-            size={26}
+            size={34}
             variant="mini"
             class="replay-view__postbattle-cell-stamp"
           />

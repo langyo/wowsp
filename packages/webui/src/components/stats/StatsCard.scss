@@ -17,7 +17,7 @@
     display: flex;
     align-items: stretch;
     gap: 1rem;
-    /* A full three-seal cluster (~163px, flex: none) needs room; past the
+    /* A full three-seal cluster (~225px, flex: none) needs room; past the
        hero's width it wraps to its own row instead of overflowing. */
     flex-wrap: wrap;
     padding: 0.75rem;

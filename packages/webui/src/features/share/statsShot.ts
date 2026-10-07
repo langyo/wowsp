@@ -129,8 +129,8 @@ const ROW_H = 44;
 /** Visual air between adjacent stat cells of a ship row (same value the
  *  post-battle matrix uses — below it, mono neighbors merge visually). */
 const STAT_GAP = 36;
-const SEAL_SIZE = 44;
-const SEAL_SMALL = 34;
+const SEAL_SIZE = 54;
+const SEAL_SMALL = 42;
 /** Horizontal gap between adjacent per-type chips. */
 const CHIP_GAP = 8;
 

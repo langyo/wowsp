@@ -82,7 +82,7 @@ export default defineComponent({
                 key={kind}
               >
                 <span class="seal-customizer__preview">
-                  <RatingStamp kind={kind} size={34} />
+                  <RatingStamp kind={kind} size={40} />
                 </span>
                 <span class="seal-customizer__desc">{t(`stats.${descKey}`)}</span>
                 <span class="seal-customizer__actions">

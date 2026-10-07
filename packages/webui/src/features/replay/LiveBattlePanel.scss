@@ -269,7 +269,7 @@
      element carries the cells' mono face at the cells' xs size so its ch
      matches theirs; the caption name keeps the plain title's voice and
      spans both rows. Right-edge compensation: compact rows spend width on
-     the career-seal slot (36px + one flex gap) beyond the stat columns
+     the career-seal slot (44px + one flex gap) beyond the stat columns
      whenever seals show, plus the row's own 8px padding either way — the
      modifiers reserve that same run in place of the base 2px. */
   &__col-title--agg {
@@ -287,7 +287,7 @@
 
   /* Seal-slot compensation — AFTER --agg so it wins the padding-right. */
   &__col-title--pad-seal {
-    padding-right: 52px;
+    padding-right: 60px;
   }
 
   &__col-title--agg &__col-name {
@@ -327,7 +327,7 @@
      untinted rows fall back to the neutral 4% text wash. */
   &__player {
     display: grid;
-    grid-template-columns: 10rem minmax(0, 1fr) 1.75rem;
+    grid-template-columns: 10rem minmax(0, 1fr) 2.5rem;
     column-gap: 10px;
     align-items: center;
     padding: 7px 9px;
@@ -367,8 +367,10 @@
     transition: background 0.15s;
 
     /* The hover brightens whichever wash the row carries (tinted or
-       neutral) by the same step — calc() keeps one rule for both. */
-    &:hover {
+       neutral) by the same step — calc() keeps one rule for both. Sunk
+       cards sit this out: their gray veil is the point, and this rule's
+       tint would repaint band color over the whole drained row. */
+    &:not(.live-battle__player--sunk):hover {
       background: rgb(
         var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.06)
       );
@@ -379,12 +381,38 @@
     }
   }
 
-  /* Sunk mid-battle (recognized off the dim-gray in-game Tab row): the card
-     fades and drains to gray, mirroring how the game's own Tab table grays
-     the row — same rule the replay roster's survivor-first sort uses. */
+  /* Sunk mid-battle (recognized off the dim-gray in-game Tab row): the
+     game's own Tab table grays the row — but draining the WHOLE card would
+     swallow the PR-tier wash with it, and a sunk red meter must keep
+     reading as one at a glance. The card itself swaps to a neutral gray
+     wash; the dim-and-drain (same 0.45 + grayscale the game shows) rides
+     every child EXCEPT the seal, whose track re-presses the row's PR-tier
+     tint as a placard under the stamp — the right edge keeps its band
+     color after the sink. */
   &__player--sunk {
-    opacity: 0.45;
-    filter: grayscale(0.9);
+    background: rgb(var(--color-text) / 0.055);
+
+    > :not(.live-battle__player-stamp) {
+      opacity: 0.45;
+      filter: grayscale(0.9);
+    }
+  }
+
+  /* The placard: the row's own tint variables at a stronger alpha (0.14 →
+     0.22 for a tinted row) so the patch reads as band color, not as a
+     smudge; untinted sunk rows (bots, hidden profiles) fall back to a
+     faint neutral chip. Co-rotates with the pressed stamp — the tilt is
+     shared, it reads as one inked card. */
+  &__player--sunk &__player-stamp {
+    /* content-box: the global border-box reset would fold the padding into
+       the SVG's 34px face and shrink the seal on exactly the rows this
+       rule exists for — grow the placard AROUND the stamp instead. */
+    box-sizing: content-box;
+    padding: 3px;
+    border-radius: 5px;
+    background: rgb(
+      var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.08)
+    );
   }
 
   /* Player-entry text runs ONE step up the --text-* scale (xs→sm,
@@ -603,7 +631,7 @@
      x position on every row — sealed or not — and the seal keeps air on
      both sides. */
   &__crow-stampslot {
-    flex: 0 0 36px;
+    flex: 0 0 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -619,7 +647,7 @@
     cursor: pointer;
     transition: background 0.15s;
 
-    &:hover {
+    &:not(.live-battle__crow--sunk):hover {
       background: rgb(
         var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.06)
       );
@@ -630,9 +658,26 @@
     }
   }
 
+  /* Sunk mid-battle: the compact row's split of the full card's rule —
+     the body dims and drains to gray, the seal slot keeps a PR-tint lane
+     at the row's right end so the band color survives the sink. */
   &__crow--sunk {
-    opacity: 0.45;
-    filter: grayscale(0.9);
+    background: rgb(var(--color-text) / 0.055);
+
+    > :not(.live-battle__crow-stampslot) {
+      opacity: 0.45;
+      filter: grayscale(0.9);
+    }
+  }
+
+  /* The lane: the slot already stretches the row's full height, so the
+     tint paints a proper color block behind the seal (rounded to sit
+     inside the row's own 6px radius). */
+  &__crow--sunk &__crow-stampslot:has(.rating-stamp) {
+    border-radius: 4px;
+    background: rgb(
+      var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.08)
+    );
   }
 }
 

@@ -763,7 +763,7 @@ export default defineComponent({
                 "live-battle__col-title",
                 "live-battle__col-title--agg",
                 // Right-edge compensation: compact rows spend width on the
-                // career-seal slot (36px + one flex gap) beyond the stat
+                // career-seal slot (44px + one flex gap) beyond the stat
                 // columns whenever seals show — the header reserves the
                 // same run so its columns land on the cells below.
                 {
@@ -947,7 +947,7 @@ export default defineComponent({
           stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
             <RatingStamp
               kind={stamp}
-              size={26}
+              size={34}
               variant="mini"
               class="live-battle__crow-stamp"
             />
@@ -1055,15 +1055,16 @@ export default defineComponent({
         const classes = [
           "live-battle__player",
           { "live-battle__player--link": clickable },
-          // Sunk mid-battle (recognized off the dim-gray Tab row): the card
-          // dims the same way the game grays the row.
+          // Sunk mid-battle (recognized off the dim-gray Tab row): the
+          // card grays out like the game's row, save the seal track — it
+          // keeps the row's PR-tier tint (see the SCSS sunk rules).
           { "live-battle__player--sunk": entry.sunk },
         ];
         const seal =
           stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
             <RatingStamp
               kind={stamp}
-              size={26}
+              size={34}
               variant="mini"
               class="live-battle__player-stamp"
             />

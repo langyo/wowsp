@@ -146,11 +146,18 @@ html.overlay-hidden body {
   color: rgb(226 74 66);
   font-weight: 700;
   white-space: nowrap;
+  /* One notch up from the chip's own text — the verdict wording is the
+     glance payload, players reported it too small to read at 1em. The
+     em sizing keeps it scaling with the row pitch like everything else,
+     and chipFit's trim pass still sheds seals first if a chip overflows. */
+  font-size: 1.25em;
   line-height: 1.2em;
 }
 
 .overlay-chip img.overlay-stamp {
-  height: 1.2em;
+  /* Match the enlarged text seal's line box (1.25em font × 1.2 line
+     height) so a custom picture presses at the same visual size. */
+  height: 1.5em;
   width: auto;
 }
 

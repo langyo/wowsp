@@ -102,7 +102,7 @@ const COL_GAP = 16;
 const STAT_GAP = 36;
 /** Career-seal column: a fixed slot after the last stat cell, reserved
  *  whenever any row carries a stamp so the stat columns stay put. */
-const STAMP_SIZE = 26;
+const STAMP_SIZE = 34;
 const STAMP_SLOT = STAMP_SIZE + 4;
 const ROW_H = 44;
 const HEAD_H = 66;
@@ -305,6 +305,7 @@ export async function renderPostBattleShot(
           cy,
           STAMP_SIZE,
           stampImages.get(row.stamp) ?? null,
+          "mini",
         );
       }
       ctx.globalAlpha = 1;

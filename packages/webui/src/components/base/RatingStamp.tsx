@@ -87,7 +87,10 @@ export default defineComponent({
     kind: { type: String as PropType<StampKind>, required: true },
     /** Rendered edge length in px. */
     size: { type: Number, default: 64 },
-    /** "mini" drops the moiré weave for tiny sizes (live roster rows). */
+    /** "mini" drops the moiré weave for tiny sizes (live roster rows) and
+     *  draws a THINNER, tighter frame so the glyph claims more of the face
+     *  (the full variant keeps the classic wide double border — the deep
+     *  stats surfaces have room for it, the roster rows do not). */
     variant: { type: String as PropType<"full" | "mini">, default: "full" },
   },
   setup(props) {
@@ -166,12 +169,40 @@ export default defineComponent({
                 <rect x="14" y="14" width="71" height="71" fill={url("weave-b")} />
               </g>
             )}
-            <rect class="rating-stamp__frame" x="5" y="5" width="90" height="90" rx="7" stroke-width="6" />
-            <rect class="rating-stamp__frame" x="14.5" y="14.5" width="71" height="71" rx="3" stroke-width="2" />
+            {/* Frame geometry per variant (viewBox units): the full face
+                keeps the classic wide double border; the mini face — the
+                live roster / post-battle rows, where the seals were reported
+                too small to read — presses a thinner frame closer to the
+                edge and lets the glyph grow from 66 to 72 units, spending
+                the freed border on ink instead. */}
+            <rect
+              class="rating-stamp__frame"
+              x={mini ? 3.5 : 5}
+              y={mini ? 3.5 : 5}
+              width={mini ? 93 : 90}
+              height={mini ? 93 : 90}
+              rx={mini ? 6 : 7}
+              stroke-width={mini ? 4 : 6}
+            />
+            <rect
+              class="rating-stamp__frame"
+              x={mini ? 10.5 : 14.5}
+              y={mini ? 10.5 : 14.5}
+              width={mini ? 79 : 71}
+              height={mini ? 79 : 71}
+              rx={mini ? 2.5 : 3}
+              stroke-width={mini ? 1.5 : 2}
+            />
             {/* Glyph bitmap (pre-centered cinnabar: single-glyph verdicts,
                 2x2 composition tags), inset to sit well inside the inner
                 frame — full-bleed glyphs read too heavy at seal sizes. */}
-            <image href={STAMP_GLYPHS[props.kind]} x="17" y="17" width="66" height="66" />
+            <image
+              href={STAMP_GLYPHS[props.kind]}
+              x={mini ? 14 : 17}
+              y={mini ? 14 : 17}
+              width={mini ? 72 : 66}
+              height={mini ? 72 : 66}
+            />
           </g>
         </svg>
       );

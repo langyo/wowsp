@@ -153,7 +153,7 @@
      right padding), plus the widened career-seal slot when seals are
      enabled. */
   &--pad-eye { padding-right: 34px; }
-  &--pad-seal { padding-right: 78px; }
+  &--pad-seal { padding-right: 86px; }
 }
 /* Full-card mode's aggregate: no aligned columns sit under the title, so
    the numbers ride its right end as inline text (the live panel's column
@@ -290,11 +290,11 @@
    slot rides INSIDE the drill-down button — after the XP cell — so the
    hover highlight and the click target cover the seal too; it is reserved
    whenever seals are enabled at all, so the mask eyes align across rows
-   whether or not a given player earned a stamp. Wider than the 26px stamp
+   whether or not a given player earned a stamp. Wider than the 34px stamp
    on purpose: the extra air keeps the seal clear of the XP digits on the
    left and the eye on the right. */
 .replay-view__postbattle-cell-stampslot {
-  flex: 0 0 36px;
+  flex: 0 0 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -373,7 +373,7 @@
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  grid-template-columns: 10rem minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 1.75rem;
+  grid-template-columns: 10rem minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 2.5rem;
   column-gap: 10px;
   align-items: center;
   padding: 7px 9px;
@@ -727,7 +727,7 @@
   }
   .replay-view__postbattle-fcell-btn {
     grid-template-columns:
-      minmax(0, 42%) minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 1.75rem;
+      minmax(0, 42%) minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 2.5rem;
     padding: 0.4rem 0.5rem;
   }
   .replay-view__postbattle-jump {
