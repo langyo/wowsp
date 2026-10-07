@@ -8,7 +8,6 @@ import { uiLocaleReady } from "@/i18n/useLanguage";
 import { bootstrap } from "./bootstrap";
 import { runStartupMigrations } from "./migrations";
 import { initAnalytics, trackPageView } from "@/utils/analytics";
-import { probeSecondInstance, secondInstance } from "@/utils/secondInstance";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
 import "@/styles/image-asset.scss";
@@ -31,16 +30,10 @@ import "virtual:uno.css";
 // awaited in the mount gate below so a body's visual change never flashes.
 const migrationsReady = runStartupMigrations();
 bootstrap();
-// Duplicate-launch probe (utils/secondInstance): settled inside the mount
-// gate below so the notice dialog is present at first paint — the real
-// dashboard must never flash in a second copy. Runs BEFORE mount and never
-// rejects (plain-browser and IPC-failure paths leave the flag false).
-const secondInstanceReady = probeSecondInstance();
+// Google Analytics (Tauri shell + release only, see utils/analytics).
+initAnalytics();
 // Forward SPA route changes as page_views on the virtual canonical host.
-// Registered before mount as always, but a duplicate launch reports no
-// usage — its only surface is the "already running" notice.
 router.afterEach((to) => {
-  if (secondInstance.value) return;
   trackPageView(String(to.name ?? to.path), to.fullPath);
 });
 const app = createApp(App);
@@ -57,16 +50,8 @@ void Promise.all([
   initLocaleMessages().catch(() => undefined),
   uiLocaleReady.catch(() => undefined),
   migrationsReady,
-  secondInstanceReady,
 ]).then(() => {
   app.mount("#app");
-  // Analytics rides the gate continuation, after the duplicate flag has
-  // settled: a second copy (open for the few seconds the notice is up)
-  // must not pollute the app stream, not even with its first page_view.
-  if (!secondInstance.value) {
-    // Google Analytics (Tauri shell + release only, see utils/analytics).
-    initAnalytics();
-  }
   if (typeof window.__loaderDismiss === "function") {
     window.__loaderDismiss();
   }

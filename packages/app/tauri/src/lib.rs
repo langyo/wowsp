@@ -28,7 +28,6 @@ mod logging;
 mod os_prefs;
 mod paths;
 mod settings_store;
-mod single_instance;
 #[cfg(feature = "test-harness")]
 mod test_harness;
 
@@ -63,12 +62,6 @@ pub fn run() {
     // On desktop this also attaches the daily-rolling UTF-8 file sink the
     // settings' 问题反馈 section ships (see src/logging.rs).
     logging::init();
-
-    // Single-instance guard (src/single_instance.rs): claim the instance
-    // mutex BEFORE any builder/startup work, so the setup closure below
-    // and the webui's boot probe both see the settled role. A second copy
-    // keeps running as a lightweight duplicate-notice shell from here on.
-    single_instance::probe();
 
     // Android swaps reqwest onto rustls (see the manifest's android target
     // table): `rustls-no-provider` compiles no default crypto provider, so
@@ -124,7 +117,20 @@ pub fn run() {
     #[cfg(target_os = "windows")]
     let corner_rounded = std::sync::atomic::AtomicBool::new(true);
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Single-instance guard: the plugin must be registered first so a
+    // duplicate exits during plugin init, before any other plugin or setup
+    // work runs (desktop only — mobile platforms have no such concept).
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        commands::tray_panel::hide_panel(app);
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.unminimize();
+            let _ = w.set_focus();
+        }
+    }));
+    builder
         // Default-browser hand-off for http(s) URLs (open_external) —
         // mobile-supported, replaces the Windows-only ShellExecuteW path.
         .plugin(tauri_plugin_opener::init())
@@ -202,51 +208,22 @@ pub fn run() {
             // for a data/cache dir.
             paths::init(app.handle().clone());
 
-            // ── Single-instance role split (src/single_instance.rs) ─────
-            // A duplicate launch boots as a lightweight notice shell: it
-            // spawns no pollers, no tray icon, no debug autostart hooks —
-            // a second telemetry/session poller set racing the primary's,
-            // or a second tray icon next to the primary's, are exactly the
-            // bugs the guard exists to prevent. The primary additionally
-            // watches the focus event so a duplicate's confirm button can
-            // raise this window back to the front.
-            if single_instance::is_secondary() {
-                // tauri.conf.json's static tray-panel webview exists only to
-                // serve the tray icon this copy never creates — destroy it
-                // rather than carry a hidden webview (and its mini Vue app)
-                // for the seconds the notice shell lives. Destroying a
-                // webview mid-boot is an established operation here: the
-                // overlay teardown does the same seconds after startup.
-                // Desktop-only: the tray-panel webview (and its module)
-                // exists on desktop targets only, and a mobile build can
-                // never be a secondary (probe is Windows-only).
-                #[cfg(desktop)]
-                if let Some(w) = app.get_webview_window(commands::tray_panel::TRAY_PANEL_LABEL) {
-                    if let Err(e) = w.destroy() {
-                        tracing::warn!(error = %e, "destroying the tray-panel window in the duplicate failed");
-                    }
-                }
-                tracing::debug!("duplicate launch: skipping pollers (notice shell only)");
-            } else {
-                single_instance::start_focus_watcher(app.handle().clone());
-
-                // The in-game plugin's telemetry poller (commands/ingame_plugin):
-                // broadcasts wowsp://ingame-telemetry to both surfaces — the
-                // authoritative sink/order source when the roster mode is
-                // "plugin" (see docs/en/designs/ingame-stats-plugin.md).
-                commands::ingame_plugin::spawn_telemetry_poller(app.handle().clone());
-                // The session hub's process poller (commands/session): the
-                // Rust-side source of truth for "what is running / who is
-                // playing", broadcast to every window as wowsp://session-changed.
-                // Desktop only — mobile has no tray panel, no game process and
-                // no arena watcher to feed it.
-                #[cfg(desktop)]
-                if let Err(err) = commands::session::spawn_session_poller(app.handle().clone()) {
-                    tracing::error!(
-                        %err,
-                        "session process poller did not start; live session state stays offline",
-                    );
-                }
+            // The in-game plugin's telemetry poller (commands/ingame_plugin):
+            // broadcasts wowsp://ingame-telemetry to both surfaces — the
+            // authoritative sink/order source when the roster mode is
+            // "plugin" (see docs/en/designs/ingame-stats-plugin.md).
+            commands::ingame_plugin::spawn_telemetry_poller(app.handle().clone());
+            // The session hub's process poller (commands/session): the
+            // Rust-side source of truth for "what is running / who is
+            // playing", broadcast to every window as wowsp://session-changed.
+            // Desktop only — mobile has no tray panel, no game process and
+            // no arena watcher to feed it.
+            #[cfg(desktop)]
+            if let Err(err) = commands::session::spawn_session_poller(app.handle().clone()) {
+                tracing::error!(
+                    %err,
+                    "session process poller did not start; live session state stays offline",
+                );
             }
             {
                 let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
@@ -342,119 +319,113 @@ pub fn run() {
                     .expect("spawn test-harness thread");
             }
 
-            // Single-instance gate (second half — must sit AFTER the prefs
-            // detection above: the tray tooltip picks its language from it):
-            // a duplicate launch creates no tray icon and honors no debug
-            // autostart hooks; those surfaces belong to the primary only.
-            if !single_instance::is_secondary() {
-                // ── System tray (desktop) ────────────────────────────────────
-                // The hikari-rendered tray panel (commands/tray_panel.rs) IS the
-                // tray menu: ANY click (left or right — right is the habitual
-                // "open tray menu" button on Windows) toggles it, and the panel
-                // carries the old menu's actions (show / hide / quit, quit with
-                // the graceful drain). No native menu is attached: one can't
-                // have the native popup AND a custom panel on the same button,
-                // and a mixed left/right split read as "half of it is still the
-                // old UI" (user-reported). Escape hatch if the panel webview
-                // ever fails to create: double-click still restores the main
-                // window, and its close dialog offers quit. The close button
-                // (above) triggers that frontend confirm dialog.
-                #[cfg(desktop)]
-                {
-                    let is_zh = prefs.locale.starts_with("zh");
-                    let tooltip = if is_zh {
-                        "WoWSP — 战舰世界战况面板"
-                    } else {
-                        "WoWSP — World of WarShip Panel"
-                    };
+            // ── System tray (desktop) ────────────────────────────────────
+            // The hikari-rendered tray panel (commands/tray_panel.rs) IS the
+            // tray menu: ANY click (left or right — right is the habitual
+            // "open tray menu" button on Windows) toggles it, and the panel
+            // carries the old menu's actions (show / hide / quit, quit with
+            // the graceful drain). No native menu is attached: one can't
+            // have the native popup AND a custom panel on the same button,
+            // and a mixed left/right split read as "half of it is still the
+            // old UI" (user-reported). Escape hatch if the panel webview
+            // ever fails to create: double-click still restores the main
+            // window, and its close dialog offers quit. The close button
+            // (above) triggers that frontend confirm dialog.
+            #[cfg(desktop)]
+            {
+                let is_zh = prefs.locale.starts_with("zh");
+                let tooltip = if is_zh {
+                    "WoWSP — 战舰世界战况面板"
+                } else {
+                    "WoWSP — World of WarShip Panel"
+                };
 
-                    // ── Tray icon (small, for notification area) ──────────
-                    // Windows tray icons are tiny: 16×16 at 100% DPI, 20×20 at
-                    // 125%, 24×24 at 150%, 32×32 at 200%. Using the default window
-                    // icon (256×256) forces a brutal downscale → blur. Provide a
-                    // purpose-sized tray source, compiled in and PNG-decoded up
-                    // front — never read from CWD-relative paths that don't exist
-                    // when installed.
-                    let tray_icon = tauri::image::Image::from_bytes(include_bytes!(
-                        "../icons/32x32.png"
-                    ))
-                    .expect("embedded tray icon decodes");
+                // ── Tray icon (small, for notification area) ──────────
+                // Windows tray icons are tiny: 16×16 at 100% DPI, 20×20 at
+                // 125%, 24×24 at 150%, 32×32 at 200%. Using the default window
+                // icon (256×256) forces a brutal downscale → blur. Provide a
+                // purpose-sized tray source, compiled in and PNG-decoded up
+                // front — never read from CWD-relative paths that don't exist
+                // when installed.
+                let tray_icon = tauri::image::Image::from_bytes(include_bytes!(
+                    "../icons/32x32.png"
+                ))
+                .expect("embedded tray icon decodes");
 
-                    let _tray = tauri::tray::TrayIconBuilder::new()
-                        .icon(tray_icon)
-                        .tooltip(tooltip)
-                        .on_tray_icon_event(|tray, event| {
-                            use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
-                            match event {
-                                // Left OR right click → the hikari tray panel
-                                // (session status + actions), anchored to the
-                                // icon.
-                                TrayIconEvent::Click {
-                                    button: MouseButton::Left | MouseButton::Right,
-                                    button_state: MouseButtonState::Up,
-                                    position,
-                                    rect,
-                                    ..
-                                } => commands::tray_panel::toggle_from_tray(
-                                    tray.app_handle(),
-                                    &position,
-                                    &rect,
-                                ),
-                                // Double click keeps its legacy meaning: restore
-                                // the main window. The panel (which the first
-                                // click of the pair may have opened) closes so
-                                // the two surfaces never overlap.
-                                TrayIconEvent::DoubleClick { .. } => {
-                                    let app = tray.app_handle();
-                                    commands::tray_panel::hide_panel(app);
-                                    if let Some(w) = app.get_webview_window("main") {
-                                        let _ = w.show();
-                                        let _ = w.unminimize();
-                                        let _ = w.set_focus();
-                                    }
-                                },
-                                _ => {},
-                            }
-                        })
-                        .build(app)?;
-                }
-
-                // Debug-only e2e helper: bring the pairing server up at launch so
-                // an emulator/device test can pair without driving the desktop UI
-                // (the PIN is printed to the tracing log by the server).
-                #[cfg(all(debug_assertions, desktop))]
-                if std::env::var("WOWSP_AUTOSTART_PAIRING").is_ok() {
-                    match tauri::async_runtime::block_on(commands::pairing::pairing_start()) {
-                        Ok(status) => {
-                            tracing::info!(?status, "pairing server autostarted via WOWSP_AUTOSTART_PAIRING");
+                let _tray = tauri::tray::TrayIconBuilder::new()
+                    .icon(tray_icon)
+                    .tooltip(tooltip)
+                    .on_tray_icon_event(|tray, event| {
+                        use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+                        match event {
+                            // Left OR right click → the hikari tray panel
+                            // (session status + actions), anchored to the
+                            // icon.
+                            TrayIconEvent::Click {
+                                button: MouseButton::Left | MouseButton::Right,
+                                button_state: MouseButtonState::Up,
+                                position,
+                                rect,
+                                ..
+                            } => commands::tray_panel::toggle_from_tray(
+                                tray.app_handle(),
+                                &position,
+                                &rect,
+                            ),
+                            // Double click keeps its legacy meaning: restore
+                            // the main window. The panel (which the first
+                            // click of the pair may have opened) closes so
+                            // the two surfaces never overlap.
+                            TrayIconEvent::DoubleClick { .. } => {
+                                let app = tray.app_handle();
+                                commands::tray_panel::hide_panel(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.show();
+                                    let _ = w.unminimize();
+                                    let _ = w.set_focus();
+                                }
+                            },
+                            _ => {},
                         }
-                        Err(e) => tracing::warn!(error = %e, "WOWSP_AUTOSTART_PAIRING failed"),
-                    }
-                }
+                    })
+                    .build(app)?;
+            }
 
-                // Debug-only helper: open the tray panel at launch (anchored to
-                // the primary work area's bottom-right) so manual/visual checks
-                // don't need a real tray click. Deferred + retried: startup focus
-                // churn (the main webview finishing its load) blur-hides an
-                // instantly-shown panel, so the show is re-asserted for a few
-                // seconds until it sticks — debug_show is a no-op while visible.
-                #[cfg(all(debug_assertions, desktop))]
-                if std::env::var("WOWSP_AUTOSTART_TRAY_PANEL").is_ok() {
-                    let handle = app.handle().clone();
-                    std::thread::Builder::new()
-                        .name("wowsp-traypanel-autopen".into())
-                        .spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(1200));
-                            for _ in 0..8 {
-                                let opened = handle.clone();
-                                let _ = handle.run_on_main_thread(move || {
-                                    commands::tray_panel::debug_show(&opened);
-                                });
-                                std::thread::sleep(std::time::Duration::from_millis(700));
-                            }
-                        })
-                        .expect("spawn tray panel autopen thread");
+            // Debug-only e2e helper: bring the pairing server up at launch so
+            // an emulator/device test can pair without driving the desktop UI
+            // (the PIN is printed to the tracing log by the server).
+            #[cfg(all(debug_assertions, desktop))]
+            if std::env::var("WOWSP_AUTOSTART_PAIRING").is_ok() {
+                match tauri::async_runtime::block_on(commands::pairing::pairing_start()) {
+                    Ok(status) => {
+                        tracing::info!(?status, "pairing server autostarted via WOWSP_AUTOSTART_PAIRING");
+                    }
+                    Err(e) => tracing::warn!(error = %e, "WOWSP_AUTOSTART_PAIRING failed"),
                 }
+            }
+
+            // Debug-only helper: open the tray panel at launch (anchored to
+            // the primary work area's bottom-right) so manual/visual checks
+            // don't need a real tray click. Deferred + retried: startup focus
+            // churn (the main webview finishing its load) blur-hides an
+            // instantly-shown panel, so the show is re-asserted for a few
+            // seconds until it sticks — debug_show is a no-op while visible.
+            #[cfg(all(debug_assertions, desktop))]
+            if std::env::var("WOWSP_AUTOSTART_TRAY_PANEL").is_ok() {
+                let handle = app.handle().clone();
+                std::thread::Builder::new()
+                    .name("wowsp-traypanel-autopen".into())
+                    .spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(1200));
+                        for _ in 0..8 {
+                            let opened = handle.clone();
+                            let _ = handle.run_on_main_thread(move || {
+                                commands::tray_panel::debug_show(&opened);
+                            });
+                            std::thread::sleep(std::time::Duration::from_millis(700));
+                        }
+                    })
+                    .expect("spawn tray panel autopen thread");
             }
 
             Ok(())
@@ -648,11 +619,6 @@ pub fn run() {
             #[cfg(windows)]
             commands::update::update_cancel,
             commands::quit_app,
-            // Single-instance duplicate-launch notice (commands/mod.rs): the
-            // second copy probes its role and quits through here — the quit
-            // pokes the primary to bring its window back to the front first.
-            commands::is_second_instance,
-            commands::quit_duplicate_instance,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WoWSP tauri application");

@@ -124,6 +124,9 @@ rfd.workspace = true
 arboard.workspace = true
 # Tauri tray + PNG decoding for the system-tray icon (desktop only).
 tauri = { workspace = true, features = ["tray-icon", "image-png"] }
+# Single-instance guard (desktop only): a duplicate launch exits during
+# plugin init; the init callback in lib.rs re-focuses this instance's window.
+tauri-plugin-single-instance = "^2"
 
 # Android: native-tls drags openssl-sys (no system OpenSSL on Android), so
 # swap the TLS stack per target instead of one workspace-wide choice — the
@@ -149,15 +152,6 @@ reqwest = { version = "^0.13", default-features = false, features = [
 winreg.workspace = true
 # Windows screen capture for overlay roster positioning
 windows.workspace = true
-# Single-instance guard (src/single_instance.rs): named kernel mutex +
-# focus event via raw FFI. Raw windows-sys on purpose — the GetLastError
-# semantics after CreateMutexW are unambiguous here, unlike the `windows`
-# crate's Result wrappers. Version mirrors installer-shell's declaration
-# (0.61.x is already in Cargo.lock, so no new crate version enters it).
-windows-sys = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_System_Threading",
-] }
 
 [build-dependencies]
 tauri-build.workspace = true

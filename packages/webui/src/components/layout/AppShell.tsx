@@ -31,7 +31,6 @@ import { peekLastRunVersion } from "@/utils/lastRunVersion";
 import { setRuntimeKit } from "@/overlay/teamIntel";
 import { api } from "@/api";
 import { isMobileApp, isTauri } from "@/utils/platform";
-import { secondInstance } from "@/utils/secondInstance";
 import OnboardingWizard from "./OnboardingWizard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal";
@@ -104,10 +103,6 @@ export default defineComponent({
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
     const closing = ref<"quit" | "minimize" | null>(null);
-    // Duplicate-launch notice (utils/secondInstance): the button spinner
-    // while the quit IPC round-trips; Rust exits the process, so the flag
-    // never needs resetting.
-    const quittingDuplicate = ref(false);
     // First-launch setup wizard (notice ack → prefs → theme → wallpaper).
     // Runs until completed — its absence includes pre-wizard installs, who
     // walk it once to adopt the new preference system. The wizard itself
@@ -222,15 +217,6 @@ export default defineComponent({
       closing.value = null;
     }
 
-    // Duplicate-launch notice: this copy exists only to say "already
-    // running". Confirm signals the PRIMARY to raise its window (Rust-side
-    // focus event) and exits this copy — no drain, none of the background
-    // tasks it coordinates were ever started here.
-    async function handleQuitDuplicate() {
-      quittingDuplicate.value = true;
-      await invoke("quit_duplicate_instance");
-    }
-
     // Plugin freshness (client-version selector badge + one-click batch
     // update): assessed at boot and whenever the active client switches;
     // the mod hub and the batch pass itself poke refreshes after installs.
@@ -253,45 +239,6 @@ export default defineComponent({
           if (!editable) event.preventDefault();
         });
       }
-      // The close-requested event only exists inside the Tauri shell; in a
-      // plain browser tab listen() would throw at mount, so guard it (the
-      // close dialog is desktop-app-only anyway). Registered FIRST — a
-      // duplicate's early return below must never leave it unwired: the
-      // title-bar ✕ is the notice shell's escape hatch.
-      if (isTauri()) {
-        unlistenClose = await listen("close-requested", () => {
-          // A duplicate copy must not offer minimize-to-tray: it owns no
-          // tray icon, so hiding would strand an invisible zombie process.
-          // Quit straight through the duplicate path — the same signal that
-          // raises the primary's window.
-          if (secondInstance.value) {
-            void invoke("quit_duplicate_instance");
-            return;
-          }
-          // The remembered action (AppShell's dialog checkbox / the settings'
-          // closeBehavior radio — one store, one slot). "ask" is the stored
-          // absence of a choice, and the store's loader already swept any
-          // junk value on import, so no heal-write is needed here.
-          const saved = closeBehavior.action;
-          if (saved !== "ask") {
-            void handleCloseChoice(saved);
-          } else {
-            // Fresh ask: the checkbox writes the SAME slot the settings'
-            // closeBehavior radio edits, so a tick left over from an earlier
-            // close would silently re-arm an action the user just cleared.
-            rememberChoice.value = false;
-            showCloseDialog.value = true;
-          }
-        });
-      }
-      // A duplicate launch (utils/secondInstance) is a notice shell only:
-      // every boot pass below belongs to the primary. The updater probe
-      // would raise its blocking prompt here — offering an install this
-      // copy must never run; the resource-pack pass could start a second
-      // ~1.2 GB download racing the primary's into the same
-      // content-addressed cache; game detection and the session watchers
-      // would probe machine state the primary already owns.
-      if (secondInstance.value) return;
       // Resource pack (production only; dev uses publicDir). APP UPDATES
       // GO FIRST: this pass waits for the updater's delayed probe, so a
       // pending app update (whose installer restarts the app) always
@@ -449,6 +396,28 @@ export default defineComponent({
       if (isTauri() && !mobileApp) {
         void updater.init().then(() => updater.scheduleAutoCheck());
       }
+
+      // The close-requested event only exists inside the Tauri shell; in a
+      // plain browser tab listen() would throw at mount, so guard it (the
+      // close dialog is desktop-app-only anyway).
+      if (isTauri()) {
+        unlistenClose = await listen("close-requested", () => {
+          // The remembered action (AppShell's dialog checkbox / the settings'
+          // closeBehavior radio — one store, one slot). "ask" is the stored
+          // absence of a choice, and the store's loader already swept any
+          // junk value on import, so no heal-write is needed here.
+          const saved = closeBehavior.action;
+          if (saved !== "ask") {
+            void handleCloseChoice(saved);
+          } else {
+            // Fresh ask: the checkbox writes the SAME slot the settings'
+            // closeBehavior radio edits, so a tick left over from an earlier
+            // close would silently re-arm an action the user just cleared.
+            rememberChoice.value = false;
+            showCloseDialog.value = true;
+          }
+        });
+      }
     });
     onBeforeUnmount(() => {
       gameStatus.stop();
@@ -566,57 +535,20 @@ export default defineComponent({
           }}
         </HkModal>
 
-        {/* Duplicate-launch notice — the second copy's ONLY surface. The
-            shell marked this process secondary before mount (kernel
-            mutex probe), so this is present at first paint; it cannot be
-            dismissed, only confirmed, and confirming quits this copy
-            after signaling the primary to come to the front. Non-closable
-            like the onboarding wizard (closable={false} hides the ✕ and
-            disarms Escape/overlay-click/back-guard), so a stray keypress
-            can never strand a trayless hidden duplicate. */}
-        <HkModal
-          modelValue={secondInstance.value}
-          title={t("instance.title")}
-          width="24rem"
-          closable={false}
-          backGuard={false}
-          footerActions={[
-            {
-              label: t("instance.confirm"),
-              variant: "primary",
-              loading: quittingDuplicate.value,
-              onClick: () => void handleQuitDuplicate(),
-            },
-          ]}
-        >
-          {{
-            default: () => (
-              <div class="close-dialog__body">
-                <p class="close-dialog__msg">{t("instance.message")}</p>
-              </div>
-            ),
-          }}
-        </HkModal>
-
         {/* First-launch setup wizard — a non-closable window on the shared
             modal shell; the only way forward is finishing it (its first step
-            carries the old notice's countdown-gated ack). Never in a
-            duplicate copy: the notice is the only dialog that may show. */}
-        {!secondInstance.value ? (
-          <OnboardingWizard
-            modelValue={showOnboarding.value}
-            onUpdate:modelValue={(v: boolean) => (showOnboarding.value = v)}
-          />
-        ) : null}
+            carries the old notice's countdown-gated ack). */}
+        <OnboardingWizard
+          modelValue={showOnboarding.value}
+          onUpdate:modelValue={(v: boolean) => (showOnboarding.value = v)}
+        />
 
         {/* Game-path first-launch prompt — fires whenever the detect pass
             ends without an active install; also reachable from the
             ship-detail armor-error banner. Never on the phone app build
             (no local game install to locate — the flag itself stays
-            false there, this is a belt-and-braces render guard). Never in
-            a duplicate copy either (same single-dialog rule as the
-            wizard). */}
-        {!mobileApp && !secondInstance.value ? (
+            false there, this is a belt-and-braces render guard). */}
+        {!mobileApp ? (
           <GamePathSetupModal
             modelValue={showGamePathSetup.value}
             onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}

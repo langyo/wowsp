@@ -13,11 +13,6 @@ export const RPC = {
   app_migrations_pending: "app_migrations_pending",
   app_migration_completed: "app_migration_completed",
   quit_app: "quit_app",
-  // Single-instance duplicate-launch notice (commands/mod.rs): the second
-  // copy probes its role, and its notice dialog quits through here — the
-  // Rust side pokes the primary to the front before exiting.
-  is_second_instance: "is_second_instance",
-  quit_duplicate_instance: "quit_duplicate_instance",
   open_external: "open_external",
   appdata_read: "appdata_read",
   appdata_write: "appdata_write",

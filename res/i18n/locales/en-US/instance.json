@@ -1,5 +1,0 @@
-{
-  "title": "WoWSP is already running",
-  "message": "Another copy of WoWSP is already running on this computer. Only one copy can run at the same time. Quit this duplicate and the already-running window will come back to the front.",
-  "confirm": "Close this copy"
-}
