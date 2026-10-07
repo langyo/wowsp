@@ -73,6 +73,48 @@ describe("resolveRosterAssignments", () => {
     expect(a.get(14)?.name).toBe("IDS_OP_15_DUMMY_01"); // enemy side
   });
 
+  it("falls back to the shipId heuristics for entities a partial arena list does not cover", () => {
+    // The Lesta synthesis shape: the arena covers the unique ships but
+    // skips mirror picks; the uncovered entities must still join through
+    // the shipId pass instead of dropping to null.
+    const vehicles = [
+      veh(1, "Me", 0, 100),
+      veh(2, "MirrorA", 1, 200),
+      veh(3, "MirrorB", 2, 200),
+      veh(4, "UniqueFoe", 2, 300),
+    ];
+    const shipTrajs = [
+      traj(10, 100, -50, 0), // Me — covered by the partial identities
+      traj(11, 200, -50, 5), // mirror — NOT covered
+      traj(12, 200, 50, -5), // mirror — NOT covered
+      traj(13, 300, 60, 0), // unique foe — NOT covered
+    ];
+    const partial = new Map([
+      [
+        10,
+        {
+          team: 0 as const,
+          playerId: 1,
+          shipParamsId: 100,
+          maxHealth: 0,
+          isSelf: true,
+        },
+      ],
+    ]);
+    const a = resolveRosterAssignments(shipTrajs, vehicles, false, partial);
+    // Covered entity joins authoritatively.
+    expect(a.get(10)?.id).toBe(1);
+    // Uncovered unique ship joins via shipId.
+    expect(a.get(13)?.id).toBe(4);
+    // Uncovered mirror pair resolves by spawn side (ally centroid from the
+    // authoritative join, enemy centroid from the unique foe).
+    const mirrorA = a.get(11)!;
+    const mirrorB = a.get(12)!;
+    expect(new Set([mirrorA.id, mirrorB.id])).toEqual(new Set([2, 3]));
+    expect(mirrorA.relation <= 1).toBe(mirrorB.relation > 1);
+    // Every entity is assigned something (no null degradation).
+    for (const v of a.values()) expect(v).not.toBeNull();
+  });
   it("treats the roster as one pool in operation scenarios", () => {
     const a = resolveRosterAssignments(trajs, vehicles, true);
     // No side split: the first unclaimed mirror entry wins regardless of

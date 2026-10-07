@@ -30,10 +30,14 @@
 //! Blowfish key + XOR chain + zlib, [`packets::decode_replay`]), so
 //! trajectories decode unchanged. Fixed-layout packets (positions, entity
 //! create/destroy, player position) are version-independent;
-//! EntityMethod-id-gated features (chat, achievements, arena state) are
-//! best-effort under the newest WG method table — Lesta's
-//! `clientVersionFromExe` ("26,10,0,...") parses to a version key no WG
-//! table shipped for, so the existing `*v <= k` logic picks the newest one.
+//! EntityMethod-id-gated features run under the Lesta Avatar method table
+//! ([`crate::commands::method_tables_lesta`]) selected by the container
+//! family — Lesta's `clientVersionFromExe` ("26,10,0,...") sits above every
+//! WG table, so version-keyed lookup would cross-wire those streams. Lesta
+//! recordings additionally carry NO `onArenaStateReceived` and NO chat
+//! broadcast at all (verified across 26.10 captures): the arena roster is
+//! synthesized from the block[1] roster plus the EntityCreate shipId scan
+//! ([`synthesize_lesta_arena_players`]), and the chat stream stays empty.
 //!
 //! The dual-format reader also accepts the bare-JSON variant the client
 //! writes as `tempArenaInfo.json` (same logic ApeRadar's
@@ -94,20 +98,30 @@ pub async fn read_replay_positions(
         let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
         let stream = packet_stream_after_blocks(&bytes)
             .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
+        // The container's family picks the entity-method id table (Lesta's
+        // version keys sit above every WG table — version-keyed lookup would
+        // cross-wire the method-gated streams; see method_tables_lesta).
+        let lesta = std::path::Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(super::game_client::is_lesta_replay_extension);
         // Roster shipIds — the candidate set used to recover each entity's
         // shipId from its EntityCreate state stream (the only reliable
         // entity -> player join key). Goes through the shared roster source
         // so a Lesta container (whose descriptor carries no vehicles array)
-        // contributes its synthesized roster just the same.
+        // contributes its synthesized roster just the same; the roster itself
+        // is kept for the Lesta arena synthesis below.
         let mut candidates = std::collections::HashSet::new();
         let mut client_version: Option<String> = None;
+        let mut roster: Vec<VehicleEntry> = Vec::new();
         if let Some(json) = extract_descriptor_json(&bytes) {
             if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
                 client_version = raw
                     .get("clientVersionFromExe")
                     .and_then(|x| x.as_str())
                     .map(str::to_string);
-                for v in roster_from_raw(std::path::Path::new(&path), &raw) {
+                roster = roster_from_raw(std::path::Path::new(&path), &raw);
+                for v in &roster {
                     // 0 is the degenerate "no shipId in the entry" default —
                     // offering it would let a 4-zero-byte window in any
                     // EntityCreate state label an entity with a bogus id.
@@ -118,8 +132,12 @@ pub async fn read_replay_positions(
             }
         }
         let decoded =
-            super::packets::decode_replay(stream, &candidates, client_version.as_deref())?;
-        Ok(group_by_entity(decoded))
+            super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
+        let mut out = group_by_entity(decoded);
+        if lesta {
+            synthesize_lesta_arena_players(&mut out, &roster);
+        }
+        Ok(out)
     })
     .await
     .map_err(|e| format!("replay positions task failed: {e}"))?
@@ -192,6 +210,10 @@ pub async fn read_live_replay_snapshot(
             .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
         // Same roster-candidate + version extraction as the finished-replay
         // path — the temp container already carries the full header blocks.
+        let lesta = std::path::Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(super::game_client::is_lesta_replay_extension);
         let mut candidates = std::collections::HashSet::new();
         let mut client_version: Option<String> = None;
         if let Some(json) = extract_descriptor_json(&bytes) {
@@ -207,8 +229,12 @@ pub async fn read_live_replay_snapshot(
                 }
             }
         }
-        let decoded =
-            super::packets::decode_replay_partial(stream, &candidates, client_version.as_deref())?;
+        let decoded = super::packets::decode_replay_partial(
+            stream,
+            &candidates,
+            client_version.as_deref(),
+            lesta,
+        )?;
         // Slim projection: the self view never reads the camera/squadron/
         // chat families, and the snapshot is polled every few seconds —
         // serialize only what it renders (see LiveSelfStream).
@@ -376,6 +402,69 @@ fn anchor_hp_streams(
             );
         }
     }
+}
+
+/// Synthesize the arena roster join for Lesta replays from the container's
+/// block[1] roster: Lesta recordings carry no `onArenaStateReceived`
+/// broadcast at all (verified across 26.10 captures — the roster ships in
+/// the container header instead), so the authoritative entity → team/player
+/// list is rebuilt from that roster plus each entity's EntityCreate-recovered
+/// shipId (which on Lesta hides inside a base64-wrapped state property, see
+/// `scan_state_for_ship_id`).
+///
+/// Per-entry: a roster shipId resolving to exactly ONE ship entity joins;
+/// mirror picks (two players on one ship share the shipId, common among
+/// bots) are skipped rather than guessed. The frontend's
+/// `resolveRosterAssignments` treats arena identities as authoritative for
+/// the entities they cover and falls back to its shipId/spawn heuristics for
+/// the rest, so a partial list is safe. `max_health` is unknown here (the
+/// roster block carries none): 0 leaves the frontend's stream-peak/
+/// encyclopedia totals in place and skips HP anchoring.
+fn synthesize_lesta_arena_players(
+    stream: &mut wowsp_tauri_shared::ReplayStream,
+    roster: &[VehicleEntry],
+) {
+    if !stream.arena_players.is_empty() || roster.is_empty() {
+        return;
+    }
+    let mut entities_by_ship: std::collections::BTreeMap<i64, Vec<i32>> =
+        std::collections::BTreeMap::new();
+    for t in &stream.trajectories {
+        if t.kind.as_ref().map(|k| k.entity_type) != Some(2) {
+            continue;
+        }
+        if let Some(sid) = t.kind.as_ref().and_then(|k| k.ship_id) {
+            entities_by_ship.entry(sid).or_default().push(t.entity_id);
+        }
+    }
+    let mut players = Vec::with_capacity(roster.len());
+    for v in roster {
+        if v.ship_id <= 0 {
+            continue;
+        }
+        // The unique ship-entity carrying this roster entry's shipId; zero
+        // or multiple candidates (mirror picks) are skipped, not guessed.
+        let entity_id = match entities_by_ship.get(&v.ship_id).map(|e| e.as_slice()) {
+            Some([eid]) => *eid,
+            _ => continue,
+        };
+        players.push(wowsp_tauri_shared::ArenaPlayer {
+            entity_id,
+            team_id: if v.relation > 1 { 1 } else { 0 },
+            player_id: v.id,
+            ship_params_id: v.ship_id.max(0) as u32,
+            max_health: 0,
+            name: v.name.clone(),
+            is_bot: v.id < 0,
+            avatar_id: None,
+            is_self: v.relation == 0,
+        });
+    }
+    if players.is_empty() {
+        return;
+    }
+    stream.self_team = players.iter().find(|p| p.is_self).map(|p| p.team_id);
+    stream.arena_players = players;
 }
 
 /// Group the decoded per-entity positions into trajectories, attaching each
@@ -1240,6 +1329,183 @@ pub(crate) fn walk_replays(dir: &PathBuf, out: &mut Vec<WalkedReplay>) {
 mod tests {
     use super::*;
 
+    /// The Lesta arena synthesis joins roster entries to ship entities by
+    /// unique EntityCreate shipId, skips mirror picks (two roster entries on
+    /// one shipId) instead of guessing, marks the recorder via relation 0,
+    /// and leaves an already-decoded arena list untouched.
+    #[test]
+    fn lesta_arena_synthesis_joins_unique_and_skips_mirrors() {
+        let traj = |eid: i32, ship_id: Option<i64>| wowsp_tauri_shared::EntityTrajectory {
+            entity_id: eid,
+            kind: Some(wowsp_tauri_shared::EntityKind {
+                entity_type: 2,
+                vehicle_id: 0,
+                initial_x: 0.0,
+                initial_y: 0.0,
+                initial_z: 0.0,
+                creation_time: 0.0,
+                ship_id,
+                radius: None,
+                control_point_index: None,
+                initial_team: None,
+            }),
+            samples: Vec::new(),
+            death_time: None,
+            hp_samples: Vec::new(),
+            cap_samples: Vec::new(),
+            cap_progress: Vec::new(),
+        };
+        let mut stream = lesta_test_stream(vec![
+            traj(10, Some(101)),
+            traj(11, Some(102)),
+            traj(12, Some(103)),
+            traj(13, Some(103)),
+            traj(14, None),
+        ]);
+        let roster = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 101,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -2,
+                name: ":Bot:".into(),
+                relation: 1,
+                ship_id: 102,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: 3,
+                name: "foe-a".into(),
+                relation: 2,
+                ship_id: 103,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: 4,
+                name: "foe-b".into(),
+                relation: 2,
+                ship_id: 103,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: 5,
+                name: "no-ship".into(),
+                relation: 1,
+                ship_id: 0,
+                ship_name: None,
+            },
+        ];
+        synthesize_lesta_arena_players(&mut stream, &roster);
+        // Mirror-picked 103 (two roster entries, two entities) joins
+        // nothing; shipId-less entity 14 and the ship_id-0 entry join
+        // nothing.
+        assert_eq!(stream.arena_players.len(), 2);
+        let me = stream.arena_players.iter().find(|p| p.is_self).unwrap();
+        assert_eq!((me.entity_id, me.team_id, me.player_id), (10, 0, 1));
+        let bot = stream
+            .arena_players
+            .iter()
+            .find(|p| p.player_id == -2)
+            .unwrap();
+        assert_eq!((bot.entity_id, bot.team_id, bot.is_bot), (11, 0, true));
+        assert_eq!(stream.self_team, Some(0));
+        // The two mirror entities keep no identity (frontend heuristics).
+        assert!(
+            !stream
+                .arena_players
+                .iter()
+                .any(|p| p.entity_id == 12 || p.entity_id == 13)
+        );
+    }
+
+    /// An arena list that already decoded (WG path) or an empty roster keeps
+    /// the synthesis a no-op.
+    #[test]
+    fn lesta_arena_synthesis_is_noop_when_unneeded() {
+        let mut stream = lesta_test_stream(Vec::new());
+        synthesize_lesta_arena_players(&mut stream, &[]);
+        assert!(stream.arena_players.is_empty());
+        assert!(stream.self_team.is_none());
+
+        let mut populated = lesta_test_stream(Vec::new());
+        populated
+            .arena_players
+            .push(wowsp_tauri_shared::ArenaPlayer {
+                entity_id: 1,
+                team_id: 0,
+                player_id: 7,
+                ship_params_id: 42,
+                max_health: 100,
+                name: "wg".into(),
+                is_bot: false,
+                avatar_id: None,
+                is_self: true,
+            });
+        let before: Vec<_> = populated
+            .arena_players
+            .iter()
+            .map(|p| (p.entity_id, p.player_id, p.max_health))
+            .collect();
+        synthesize_lesta_arena_players(
+            &mut populated,
+            &[VehicleEntry {
+                id: 9,
+                name: "x".into(),
+                relation: 0,
+                ship_id: 1,
+                ship_name: None,
+            }],
+        );
+        let after: Vec<_> = populated
+            .arena_players
+            .iter()
+            .map(|p| (p.entity_id, p.player_id, p.max_health))
+            .collect();
+        assert_eq!(after, before);
+    }
+
+    /// Minimal ReplayStream for the synthesis tests — every non-trajectory
+    /// field empty.
+    fn lesta_test_stream(
+        trajectories: Vec<wowsp_tauri_shared::EntityTrajectory>,
+    ) -> wowsp_tauri_shared::ReplayStream {
+        wowsp_tauri_shared::ReplayStream {
+            trajectories,
+            shell_launches: Vec::new(),
+            explosions: Vec::new(),
+            torpedoes: Vec::new(),
+            torpedo_steers: Vec::new(),
+            weapon_locks: Vec::new(),
+            battle_results: None,
+            version: None,
+            map_name: None,
+            camera: Vec::new(),
+            net_stats: Vec::new(),
+            leaves: std::collections::BTreeMap::new(),
+            camera_modes: Vec::new(),
+            diagnostics: Default::default(),
+            squadron_creates: Vec::new(),
+            squadron_planes: Vec::new(),
+            minimap_squadron_adds: Vec::new(),
+            minimap_squadron_moves: Vec::new(),
+            minimap_squadron_removes: Vec::new(),
+            wards: Vec::new(),
+            ward_removes: Vec::new(),
+            shot_kills: Vec::new(),
+            damage_stats: Vec::new(),
+            chat_messages: Vec::new(),
+            achievements: Vec::new(),
+            arena_players: Vec::new(),
+            weather_transitions: Vec::new(),
+            weather_notifications: Vec::new(),
+            self_team: None,
+        }
+    }
+
     /// HP property detection picks the index whose series behave like HP
     /// (start full, plausible magnitude, no wild upward jumps) under either
     /// int or float interpretation, regardless of game version.
@@ -1781,8 +2047,8 @@ mod tests {
             .raw
             .get("clientVersionFromExe")
             .and_then(|x| x.as_str());
-        let decoded =
-            super::super::packets::decode_replay(stream, &candidates, version).expect("decode");
+        let decoded = super::super::packets::decode_replay(stream, &candidates, version, false)
+            .expect("decode");
         let grouped = group_by_entity(decoded);
         assert!(
             !grouped.trajectories.is_empty(),
@@ -2008,8 +2274,12 @@ mod tests {
                 }
             }
         }
+        let lesta = std::path::Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(crate::commands::game_client::is_lesta_replay_extension);
         let decoded =
-            crate::commands::packets::decode_replay(pstream, &candidates, cver.as_deref())
+            crate::commands::packets::decode_replay(pstream, &candidates, cver.as_deref(), lesta)
                 .expect("decode");
         // (entityType, methodId) histogram with arg-length stats.
         let mut histo: std::collections::BTreeMap<(i16, i32), (u32, u32, f32, f32)> =

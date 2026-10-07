@@ -207,6 +207,13 @@ pub(crate) fn is_replay_extension(ext: &str) -> bool {
         .any(|client| client.replay_extension() == lower.as_str())
 }
 
+/// Whether `ext` is the Lesta (Мир кораблей) replay container — the family
+/// whose packet stream runs the Lesta entity-method id table (see
+/// [`crate::commands::method_tables_lesta`]). Case-insensitive.
+pub(crate) fn is_lesta_replay_extension(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case(LestaCompat.replay_extension())
+}
+
 /// Every family's replay container extension, in registry order.
 pub(crate) fn replay_extensions() -> Vec<&'static str> {
     CLIENTS

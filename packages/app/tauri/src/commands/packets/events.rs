@@ -411,7 +411,10 @@ pub(super) fn decode_damage_stat(
     args: &[u8],
 ) -> Vec<wowsp_tauri_shared::DamageStatSample> {
     let mut out = Vec::new();
-    // BLOB arg: u8 length prefix + that many pickle bytes.
+    // BLOB arg: u8 length prefix + that many payload bytes. WG pickles the
+    // dict; Lesta (Мир кораблей) zlib-compresses a MessagePack encoding of
+    // the same shape (blob starts with a zlib header, 0x78) and appends a
+    // second blob the decoder ignores — inflate before parsing.
     let Some(&len) = args.first() else {
         return out;
     };
@@ -419,46 +422,163 @@ pub(super) fn decode_damage_stat(
     if len == 0 || args.len() < 1 + len {
         return out;
     }
-    let Some(PyVal::Dict(entries)) = parse_pickle(&args[1..1 + len]) else {
-        return out;
+    let blob = &args[1..1 + len];
+    let pickled: Vec<u8> = match blob.first() {
+        Some(0x78) => match super::inflate_zlib_with_cap(blob, 1 << 20) {
+            Ok(inflated) => inflated,
+            Err(_) => return out,
+        },
+        _ => blob.to_vec(),
     };
-    for (k, v) in entries {
-        // Key: (weapon, category) tuple of ints. Anything else is a future
-        // shape — skip the pair rather than guessing.
-        let PyVal::Tuple(key) = k else {
-            continue;
-        };
-        if key.len() != 2 {
-            continue;
-        }
-        let (Some(PyVal::Int(weapon)), Some(PyVal::Int(category))) = (key.first(), key.get(1))
-        else {
-            continue;
-        };
-        // Value: [count, total].
-        let PyVal::List(vals) = v else {
-            continue;
-        };
-        if vals.len() != 2 {
-            continue;
-        }
-        let Some(PyVal::Int(count)) = vals.first() else {
-            continue;
-        };
-        let total = match vals.get(1) {
-            Some(PyVal::Float(f)) => *f,
-            Some(PyVal::Int(i)) => *i as f64,
-            _ => continue,
-        };
+    // WG pickles the dict; Lesta serializes the same shape as MessagePack
+    // (fixmap of (weapon, category) arrays -> [count, total] pairs, with
+    // float32 totals) — normalize both into the sample tuples below.
+    let entries: Vec<(i64, i64, i64, f64)> = match parse_pickle(&pickled) {
+        Some(PyVal::Dict(entries)) => entries
+            .iter()
+            .filter_map(|(k, v)| {
+                let PyVal::Tuple(key) = k else { return None };
+                if key.len() != 2 {
+                    return None;
+                }
+                let (Some(PyVal::Int(weapon)), Some(PyVal::Int(category))) =
+                    (key.first(), key.get(1))
+                else {
+                    return None;
+                };
+                let PyVal::List(vals) = v else { return None };
+                if vals.len() != 2 {
+                    return None;
+                }
+                let Some(PyVal::Int(count)) = vals.first() else {
+                    return None;
+                };
+                let total = match vals.get(1) {
+                    Some(PyVal::Float(f)) => *f,
+                    Some(PyVal::Int(i)) => *i as f64,
+                    _ => return None,
+                };
+                Some((*weapon, *category, *count, total))
+            })
+            .collect(),
+        _ => parse_damage_stat_msgpack(&pickled),
+    };
+    for (weapon, category, count, total) in entries {
         out.push(wowsp_tauri_shared::DamageStatSample {
             time,
-            weapon: *weapon,
-            category: *category,
-            count: *count,
+            weapon,
+            category,
+            count,
             total,
         });
     }
     out
+}
+
+/// Lesta's MessagePack form of `receiveDamageStat`'s payload: a map whose
+/// keys are `[weapon, category]` arrays and whose values are
+/// `[count, total]` pairs (totals as float32). Only the subset of
+/// MessagePack the shape uses is read (fixint / fixed collections / the
+/// 1-8 byte numeric primitives); anything else yields an empty vec.
+fn parse_damage_stat_msgpack(bytes: &[u8]) -> Vec<(i64, i64, i64, f64)> {
+    #[derive(Clone)]
+    enum Val {
+        Int(i64),
+        Float(f64),
+        Array(Vec<Val>),
+        Map(Vec<(Val, Val)>),
+    }
+    fn read(bytes: &[u8], pos: &mut usize) -> Option<Val> {
+        let &first = bytes.get(*pos)?;
+        *pos += 1;
+        match first {
+            0x00..=0x7f => Some(Val::Int(first as i64)),
+            0xe0..=0xff => Some(Val::Int(first as i8 as i64)),
+            0x80..=0x8f => {
+                let mut entries = Vec::with_capacity((first & 0x0f) as usize);
+                for _ in 0..(first & 0x0f) {
+                    let k = read(bytes, pos)?;
+                    let v = read(bytes, pos)?;
+                    entries.push((k, v));
+                }
+                Some(Val::Map(entries))
+            },
+            0x90..=0x9f => {
+                let mut items = Vec::with_capacity((first & 0x0f) as usize);
+                for _ in 0..(first & 0x0f) {
+                    items.push(read(bytes, pos)?);
+                }
+                Some(Val::Array(items))
+            },
+            0xca => {
+                let v = f32::from_be_bytes(bytes.get(*pos..*pos + 4)?.try_into().ok()?);
+                *pos += 4;
+                Some(Val::Float(v as f64))
+            },
+            0xcb => {
+                let v = f64::from_be_bytes(bytes.get(*pos..*pos + 8)?.try_into().ok()?);
+                *pos += 8;
+                Some(Val::Float(v))
+            },
+            0xcc..=0xd3 => {
+                // Width per marker: uint8/int8 → 1, uint16/int16 → 2,
+                // uint32/int32 → 4, uint64/int64 → 8 (the int markers do NOT
+                // continue the doubling sequence of the uint ones).
+                let width = match first {
+                    0xcc | 0xd0 => 1,
+                    0xcd | 0xd1 => 2,
+                    0xce | 0xd2 => 4,
+                    _ => 8,
+                };
+                let raw = bytes.get(*pos..*pos + width)?;
+                *pos += width;
+                let v = match first {
+                    0xcc => raw[0] as i64,
+                    0xcd => u16::from_be_bytes(raw.try_into().ok()?) as i64,
+                    0xce => u32::from_be_bytes(raw.try_into().ok()?) as i64,
+                    0xcf => u64::from_be_bytes(raw.try_into().ok()?) as i64,
+                    0xd0 => raw[0] as i8 as i64,
+                    0xd1 => i16::from_be_bytes(raw.try_into().ok()?) as i64,
+                    0xd2 => i32::from_be_bytes(raw.try_into().ok()?) as i64,
+                    _ => i64::from_be_bytes(raw.try_into().ok()?),
+                };
+                Some(Val::Int(v))
+            },
+            _ => None,
+        }
+    }
+    let mut pos = 0usize;
+    // The whole payload must be one map.
+    let Some(Val::Map(entries)) = read(bytes, &mut pos) else {
+        return Vec::new();
+    };
+    let as_int = |v: Option<&Val>| match v {
+        Some(Val::Int(i)) => Some(*i),
+        _ => None,
+    };
+    let as_f64 = |v: Option<&Val>| match v {
+        Some(Val::Int(i)) => Some(*i as f64),
+        Some(Val::Float(f)) => Some(*f),
+        _ => None,
+    };
+    entries
+        .into_iter()
+        .filter_map(|(key, val)| {
+            // Key: [weapon, category]; value: [count, total].
+            let Val::Array(key) = key else {
+                return None;
+            };
+            let Val::Array(val) = val else {
+                return None;
+            };
+            Some((
+                as_int(key.first())?,
+                as_int(key.get(1))?,
+                as_int(val.first())?,
+                as_f64(val.get(1))?,
+            ))
+        })
+        .collect()
 }
 
 /// The owning carrier's vehicle entity id: low 32 bits of the composite

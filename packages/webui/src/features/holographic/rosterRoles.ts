@@ -42,42 +42,53 @@ export function arenaIdentities(
 }
 
 /** Assign each ship trajectory its roster entry. When the arena's initial
- *  state decoded (`arenaIdentities`), the join is authoritative: the ship
- *  entity's roster player id comes from the server, so mirror picks (two
- *  players on the same ship share one `shipId`) can never be crossed.
- *  Without it the join falls back to the EntityCreate `shipId` (recovered
- *  from the state stream by the backend): most shipIds are unique per
- *  match; when two players sail the same ship (mirror picks, bots), the
- *  collision is broken by spawn-side: centroids are computed from the
- *  unambiguous joins, and each ambiguous entity takes the same-side roster
- *  entry. Entities with no roster hit get `null` and fall back to the
- *  spawn-order team heuristic in `resolveMarkerContext`.
+ * state decoded (`arenaIdentities`), the join is authoritative for the
+ * entities it covers: the ship entity's roster player id comes from the
+ * server, so mirror picks (two players on the same ship share one
+ * `shipId`) can never be crossed. Entities the arena list does NOT cover
+ * fall through to the EntityCreate `shipId` join below (a partial list is
+ * what Lesta replays get — their arena roster is synthesized from the
+ * container header and mirror picks are skipped rather than guessed):
+ * most shipIds are unique per match; when two players sail the same ship
+ * (mirror picks, bots), the collision is broken by spawn-side: centroids
+ * are computed from the unambiguous joins, and each ambiguous entity
+ * takes the same-side roster entry. Entities with no roster hit get
+ * `null` and fall back to the spawn-order team heuristic in
+ * `resolveMarkerContext`.
  *
- *  Operation scenarios (`operation`, 行动) still join as one pool — every
- *  marker reads as an ally there (the map colors ops as one fleet), so a
- *  side split would only starve the pool; the roster relations themselves
- *  do carry enemy semantics, but that matters to the LIST surfaces, not
- *  this marker join. */
+ * Operation scenarios (`operation`, 行动) still join as one pool — every
+ * marker reads as an ally there (the map colors ops as one fleet), so a
+ * side split would only starve the pool; the roster relations themselves
+ * do carry enemy semantics, but that matters to the LIST surfaces, not
+ * this marker join. */
 export function resolveRosterAssignments(
   shipTrajs: EntityTrajectory[],
   vehicles: VehicleEntry[],
   operation = false,
   identities?: Map<number, ArenaIdentity> | null,
 ): Map<number, VehicleEntry | null> {
-  // Authoritative path: roster join by arena player id (one roster entry
-  // per player — mirror shipIds can't collide).
+  // Authoritative pass: roster join by arena player id (one roster entry
+  // per player — mirror shipIds can't collide). Entities without an
+  // identity stay unassigned here and flow into the heuristic pass below.
+  const assignments = new Map<number, VehicleEntry | null>();
+  const remaining: EntityTrajectory[] = [];
   if (identities && identities.size > 0) {
     const byPlayerId = new Map<number, VehicleEntry>();
     for (const v of vehicles) byPlayerId.set(v.id, v);
-    const assignments = new Map<number, VehicleEntry | null>();
     for (const traj of shipTrajs) {
       const identity = identities.get(traj.entityId);
       const entry =
         identity?.playerId != null ? byPlayerId.get(identity.playerId) : undefined;
-      assignments.set(traj.entityId, entry ?? null);
+      if (entry) {
+        assignments.set(traj.entityId, entry);
+      } else {
+        remaining.push(traj);
+      }
     }
-    return assignments;
+  } else {
+    remaining.push(...shipTrajs);
   }
+  if (remaining.length === 0) return assignments;
   const byShipId = new Map<number, VehicleEntry[]>();
   for (const v of vehicles) {
     const arr = byShipId.get(v.shipId) ?? [];
@@ -88,9 +99,8 @@ export function resolveRosterAssignments(
     x: t.kind?.initialX ?? t.samples[0]?.x ?? 0,
     z: t.kind?.initialZ ?? t.samples[0]?.z ?? 0,
   });
-  const assignments = new Map<number, VehicleEntry | null>();
   const ambiguous: { traj: EntityTrajectory; entries: VehicleEntry[] }[] = [];
-  for (const traj of shipTrajs) {
+  for (const traj of remaining) {
     const sid = traj.kind?.shipId;
     const entries = sid != null ? byShipId.get(sid) : undefined;
     if (entries && entries.length === 1) {
@@ -103,8 +113,9 @@ export function resolveRosterAssignments(
   }
   if (ambiguous.length > 0) {
     let ax = 0, az = 0, an = 0, ex = 0, ez = 0, en = 0;
-    // Roster entries already taken by unique joins — ambiguous picks must
-    // not steal them, and two ambiguous entities must not share an entry.
+    // Roster entries already taken — by the authoritative arena pass or by
+    // unique heuristic joins — ambiguous picks must not steal them, and two
+    // ambiguous entities must not share an entry.
     const claimed = new Set<VehicleEntry>();
     for (const traj of shipTrajs) {
       const a = assignments.get(traj.entityId);

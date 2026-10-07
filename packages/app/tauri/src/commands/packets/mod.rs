@@ -291,12 +291,24 @@ struct RawMethodCall {
 /// shift ids down and carry no `BattleResults`; it also selects the
 /// entity-method id table (see [`method_tables`]) and the InteractiveZone
 /// entity-type index. `None` assumes the modern layout.
+///
+/// `lesta`: the replay container's family (`.korablireplay`), which selects
+/// the Lesta entity-method id table outright — Lesta's version keys sit above
+/// every WG table, so version-keyed lookup would resolve the newest WG row
+/// and cross-wire the method-gated streams (see [`method_tables_lesta`]).
 pub fn decode_replay(
     packet_stream: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
     client_version: Option<&str>,
+    lesta: bool,
 ) -> Result<DecodedReplay, String> {
-    decode_replay_with(packet_stream, ship_id_candidates, client_version, false)
+    decode_replay_with(
+        packet_stream,
+        ship_id_candidates,
+        client_version,
+        lesta,
+        false,
+    )
 }
 
 /// Live-battle variant of [`decode_replay`]: the input is the game's
@@ -307,12 +319,21 @@ pub fn decode_replay(
 /// a monotonically fuller snapshot of the battle so far. A finished replay
 /// must keep using [`decode_replay`]: corruption there should surface as an
 /// error, not silently masquerade as "battle still in progress".
+///
+/// `lesta`: same container-family meaning as [`decode_replay`]'s.
 pub fn decode_replay_partial(
     packet_stream: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
     client_version: Option<&str>,
+    lesta: bool,
 ) -> Result<DecodedReplay, String> {
-    decode_replay_with(packet_stream, ship_id_candidates, client_version, true)
+    decode_replay_with(
+        packet_stream,
+        ship_id_candidates,
+        client_version,
+        lesta,
+        true,
+    )
 }
 
 /// Shared body of [`decode_replay`] / [`decode_replay_partial`]; see those.
@@ -320,6 +341,7 @@ fn decode_replay_with(
     packet_stream: &[u8],
     ship_id_candidates: &std::collections::HashSet<u32>,
     client_version: Option<&str>,
+    lesta: bool,
     tolerate_truncation: bool,
 ) -> Result<DecodedReplay, String> {
     let decrypted = decrypt_stream(packet_stream)?;
@@ -346,8 +368,13 @@ fn decode_replay_with(
     // indices predate anything we know, so events stay empty.
     // Oldest shipped table is 0.11.6 (u32 tuple to match `version_key`).
     let in_table_range = version_key.map(|k| k >= (0, 11, 6)).unwrap_or(true);
+    let methods: Option<&'static MethodIds> = if lesta {
+        Some(&crate::commands::method_tables_lesta::LESTA_METHOD_IDS)
+    } else {
+        in_table_range.then(|| method_ids_for_version(client_version))
+    };
     let profile = LayoutProfile {
-        methods: in_table_range.then(|| method_ids_for_version(client_version)),
+        methods,
         // VehicleAppearance joins entities.xml in 14.5.0, pushing
         // InteractiveZone from 13 to 14.
         zone_entity_type: match version_key {
@@ -360,9 +387,8 @@ fn decode_replay_with(
         // parsed version the method id would come from the newest table
         // while the field indices default to the oldest layout — skip the
         // decode entirely (consumers fall back to the shipId join).
-        arena_state_method: version_key
-            .filter(|_| in_table_range)
-            .map(|_| method_ids_for_version(client_version).avatar_on_arena_state_received)
+        arena_state_method: methods
+            .map(|m| m.avatar_on_arena_state_received)
             .filter(|id| *id > 0),
     };
     Ok(walk_frames(

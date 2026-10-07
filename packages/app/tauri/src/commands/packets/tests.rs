@@ -119,6 +119,7 @@ fn decodes_real_replay_positions_and_entities() {
         &bytes[cur..],
         &std::collections::HashSet::new(),
         client_version.as_deref(),
+        false,
     )
     .expect("decode must succeed");
     let total_samples: usize = decoded.positions.values().map(|v| v.len()).sum();
@@ -1247,6 +1248,7 @@ fn dump_arena_state() {
         &bytes[cur..],
         &std::collections::HashSet::new(),
         client_version.as_deref(),
+        false,
     )
     .expect("decode must succeed");
     eprintln!(
@@ -1462,6 +1464,98 @@ fn dump_weather_signals() {
     }
 }
 
+/// The state-stream shipId scanner also looks inside base64 runs: Lesta
+/// wraps the ship's GameParams id property in a base64 blob in the
+/// EntityCreate state (26.10).
+#[test]
+fn scans_state_for_ship_id_inside_base64() {
+    // "01 00 00 00" + shipId LE + filler, base64-encoded and
+    // embedded mid-state with noise around it.
+    let mut inner = vec![0x01, 0x00, 0x00, 0x00];
+    inner.extend_from_slice(&3540989648u32.to_le_bytes());
+    inner.extend_from_slice(&[0x36, 0x00, 0x00, 0x00, 0xaa, 0xbb]);
+    let encoded = base64_encode(&inner);
+    let mut state = vec![0u8; 200];
+    let off = 120;
+    state[off..off + encoded.len()].copy_from_slice(&encoded);
+    let candidates: std::collections::HashSet<u32> = [3550394352, 3540989648].into_iter().collect();
+    assert_eq!(
+        scan_state_for_ship_id(&state, &candidates),
+        Some(3540989648)
+    );
+    // Candidates that appear nowhere (raw or in any decoded run) match
+    // nothing.
+    let none: std::collections::HashSet<u32> = [4275878552, 4026531840].into_iter().collect();
+    assert_eq!(scan_state_for_ship_id(&state, &none), None);
+}
+
+/// Minimal RFC 4648 base64 encoder for the scan test (the decoder under
+/// test lives in payloads.rs; this only produces valid input for it).
+fn base64_encode(bytes: &[u8]) -> Vec<u8> {
+    const ALPHA: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            chunk.get(1).copied().unwrap_or(0),
+            chunk.get(2).copied().unwrap_or(0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(ALPHA[(n >> 18) as usize & 63]);
+        out.push(ALPHA[(n >> 12) as usize & 63]);
+        out.push(if chunk.len() > 1 {
+            ALPHA[(n >> 6) as usize & 63]
+        } else {
+            b'='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHA[n as usize & 63]
+        } else {
+            b'='
+        });
+    }
+    out
+}
+
+/// Lesta's receiveDamageStat payload: u8 length prefix + zlib(MessagePack)
+/// map of `[weapon, category] -> [count, float32 total]` (+ an ignored
+/// trailing second blob). WG pickles the same shape (covered by captures);
+/// both decode to the same samples.
+#[test]
+fn decodes_lesta_msgpack_damage_stat() {
+    // zlib(fixmap2 { [1,0]: [6, 22162.0f32], [4,0]: [2, 1500.5f32] }) with
+    // a trailing ignored second-blob stub.
+    let arg: Vec<u8> = [
+        0x1e, 0x78, 0x9c, 0x6b, 0x9a, 0xc4, 0xc8, 0x30, 0x89, 0xed, 0x94, 0xdb, 0x5a, 0x15, 0x86,
+        0x49, 0x2c, 0x0c, 0x93, 0x98, 0x4e, 0xb9, 0xec, 0x9e, 0xc0, 0x00, 0x00, 0x4c, 0xa4, 0x07,
+        0x12, 0x00, 0x00,
+    ]
+    .to_vec();
+    let out = super::events::decode_damage_stat(12.5, &arg);
+    assert_eq!(out.len(), 2);
+    assert_eq!((out[0].weapon, out[0].category, out[0].count), (1, 0, 6));
+    assert!((out[0].total - 22162.0).abs() < 0.5);
+    assert_eq!((out[1].weapon, out[1].category, out[1].count), (4, 0, 2));
+    assert!((out[1].total - 1500.5).abs() < 0.5);
+}
+
+/// The MessagePack subset reader consumes the signed int markers with their
+/// real widths (int16/int32 → 2/4 bytes, NOT the doubling the uint sequence
+/// suggests) — a payload using them must parse without dropping.
+#[test]
+fn decodes_lesta_msgpack_damage_stat_signed_ints() {
+    // zlib(fixmap1 { [int16 2, int32 5]: [int32 100, f32 999.0] }).
+    let arg: Vec<u8> = [
+        0x1b, 0x78, 0x9c, 0x6b, 0x9c, 0x74, 0x91, 0x81, 0xe9, 0x12, 0x03, 0x03, 0x03, 0xeb, 0x24,
+        0x10, 0x99, 0x72, 0xca, 0xa5, 0xf2, 0x00, 0x03, 0x00, 0x4b, 0xd2, 0x06, 0xcd,
+    ]
+    .to_vec();
+    let out = super::events::decode_damage_stat(1.0, &arg);
+    assert_eq!(out.len(), 1);
+    assert_eq!((out[0].weapon, out[0].category, out[0].count), (2, 5, 100));
+    assert!((out[0].total - 999.0).abs() < 0.5);
+}
+
 // ── live temp-replay truncation tolerance ───────────────────────────────────
 
 /// Encrypt `plain` with the replay scheme's inverse (Blowfish-ECB + the
@@ -1505,10 +1599,10 @@ fn partial_decode_tolerates_torn_tail() {
     // Tear the stream: a partial trailing block AND a mid-deflate cut.
     let torn = &encrypted[..encrypted.len() - 13];
 
-    let strict = decode_replay(torn, &Default::default(), None);
+    let strict = decode_replay(torn, &Default::default(), None, false);
     assert!(strict.is_err(), "strict decode must reject a torn stream");
 
-    let partial = decode_replay_partial(torn, &Default::default(), None);
+    let partial = decode_replay_partial(torn, &Default::default(), None, false);
     assert!(
         partial.is_ok(),
         "partial decode must tolerate the torn tail"
@@ -1530,8 +1624,8 @@ fn partial_decode_matches_strict_on_complete_stream() {
     let plain = enc.finish().unwrap();
     let encrypted = encrypt_stream_for_test(&plain);
 
-    let a = decode_replay(&encrypted, &Default::default(), None).unwrap();
-    let b = decode_replay_partial(&encrypted, &Default::default(), None).unwrap();
+    let a = decode_replay(&encrypted, &Default::default(), None, false).unwrap();
+    let b = decode_replay_partial(&encrypted, &Default::default(), None, false).unwrap();
     assert_eq!(a.version, b.version);
     assert_eq!(a.positions.len(), b.positions.len());
 }
@@ -1541,5 +1635,5 @@ fn partial_decode_matches_strict_on_complete_stream() {
 #[test]
 fn partial_decode_still_rejects_garbage() {
     let garbage = encrypt_stream_for_test(&[0xff; 512]);
-    assert!(decode_replay_partial(&garbage, &Default::default(), None).is_err());
+    assert!(decode_replay_partial(&garbage, &Default::default(), None, false).is_err());
 }

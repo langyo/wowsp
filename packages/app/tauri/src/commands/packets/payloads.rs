@@ -335,6 +335,12 @@ pub(super) fn scan_state_for_control_point(state: &[u8]) -> Option<i32> {
 /// one of them is the ship's GameParams id (observed at offsets ~160-260
 /// depending on game version and variable-length fields before it). Returns
 /// the first candidate found; empirically each ship entity embeds exactly one.
+///
+/// Lesta (Мир кораблей) wraps that property in a base64-encoded blob inside
+/// the state (verified on 26.10: every ship entity carries exactly one long
+/// base64 run whose decoded bytes hold the shipId), so the scan also runs
+/// over each maximal base64 run's decoded bytes. A run that isn't valid
+/// base64 decodes to garbage that simply matches no candidate.
 pub(super) fn scan_state_for_ship_id(
     state: &[u8],
     candidates: &std::collections::HashSet<u32>,
@@ -346,6 +352,76 @@ pub(super) fn scan_state_for_ship_id(
         let val = u32::from_le_bytes(state[off..off + 4].try_into().ok()?);
         if candidates.contains(&val) {
             return Some(val as i64);
+        }
+    }
+    scan_base64_runs_for_ship_id(state, candidates)
+}
+
+/// Minimal base64 run finder + decoder feeding the Lesta leg of
+/// [`scan_state_for_ship_id`]: walk maximal `[A-Za-z0-9+/]{16,}` stretches,
+/// trim a trailing partial quantum, decode, and slide the same 4-byte
+/// candidate window over the decoded bytes.
+fn scan_base64_runs_for_ship_id(
+    state: &[u8],
+    candidates: &std::collections::HashSet<u32>,
+) -> Option<i64> {
+    const MIN_RUN: usize = 16;
+    let b64_val = |b: u8| -> Option<u8> {
+        match b {
+            b'A'..=b'Z' => Some(b - b'A'),
+            b'a'..=b'z' => Some(b - b'a' + 26),
+            b'0'..=b'9' => Some(b - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    };
+    let mut i = 0;
+    while i + MIN_RUN <= state.len() {
+        if b64_val(state[i]).is_none() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < state.len() && b64_val(state[i]).is_some() {
+            i += 1;
+        }
+        if i - start < MIN_RUN {
+            continue;
+        }
+        // Decode whole 4-char quanta (a trailing partial quantum carries no
+        // full byte anyway).
+        let mut decoded = Vec::with_capacity((i - start) / 4 * 3);
+        for chunk in state[start..i].chunks(4) {
+            let mut acc: u32 = 0;
+            for &b in chunk {
+                acc = (acc << 6) | b64_val(b)? as u32;
+            }
+            match chunk.len() {
+                4 => {
+                    decoded.push((acc >> 16) as u8);
+                    decoded.push((acc >> 8) as u8);
+                    decoded.push(acc as u8);
+                },
+                3 => {
+                    acc <<= 6;
+                    decoded.push((acc >> 16) as u8);
+                    decoded.push((acc >> 8) as u8);
+                },
+                2 => {
+                    acc <<= 12;
+                    decoded.push((acc >> 16) as u8);
+                },
+                _ => {},
+            }
+        }
+        if decoded.len() >= 4 {
+            for off in 0..=decoded.len() - 4 {
+                let val = u32::from_le_bytes(decoded[off..off + 4].try_into().ok()?);
+                if candidates.contains(&val) {
+                    return Some(val as i64);
+                }
+            }
         }
     }
     None
