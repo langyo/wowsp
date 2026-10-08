@@ -395,6 +395,8 @@ class Probe:
         self.dead_latch = {None} - {None}
         self.dh = None
         self.const = None
+        # False = not yet resolved; None = resolution failed (see _cc).
+        self.cc_cache = False
         self.api_dumped = False
         self.comp_dumped = False
         # In-game panel state: Tab visibility, the two sides' TAB order,
@@ -602,13 +604,31 @@ class Probe:
         except:
             log('api[%s] entity collections failed=%s' % (phase, _exc_text(160)))
 
+    def _cc(self):
+        """UiComponents resolved ONCE behind a guard. On Lesta the
+        constants module RAISES on this attribute (live 2026-10-08:
+        'CC dir failed=?' at load, then roster_raw.json and telemetry.json
+        failing every tick) — the bare `cc = self.const.UiComponents` sat
+        OUTSIDE the entity walks' guards, so the exception skipped both
+        file writes while request/heartbeat/journal kept flowing and the
+        companion never got its roster. None = the entity walks stand
+        down and the records-driven paths (teamId relations, the roster
+        records' own isAlive) carry the battle alone."""
+        if self.cc_cache is False:
+            self.cc_cache = None
+            try:
+                self.cc_cache = self.const.UiComponents
+            except:
+                log('UiComponents unavailable - entity walks disabled, records carry the battle')
+        return self.cc_cache
+
     def entity_states(self):
         """Per-avatar live state from entity components (health path is
         TeamHP-proven; enemy values are spotting-dependent per its notes).
         Diagnostics-only since the panel moved to entity_walk()."""
-        if self.dh is None or self.const is None:
+        cc = self._cc()
+        if cc is None or self.dh is None or self.const is None:
             return {}
-        cc = self.const.UiComponents
         states = {}
         try:
             for entity in self.dh.getEntityCollections('avatar'):
@@ -654,9 +674,9 @@ class Probe:
         leak the previous battle's name.
         """
         self.self_name = ''
-        if self.dh is None or self.const is None:
+        cc = self._cc()
+        if cc is None or self.dh is None or self.const is None:
             return {}, {'ally': [], 'enemy': []}
-        cc = self.const.UiComponents
         try:
             ally_relations = (self.const.PlayerRelation.SELF, self.const.PlayerRelation.ALLY)
             self_relation = self.const.PlayerRelation.SELF
@@ -1264,6 +1284,14 @@ class Probe:
                     identity[name] = {'account_id': p.get('account_id', 0),
                                       'realm': p.get('realm', '')}
             self_name = self.__dict__.get('self_name') or ''
+            if not self_name:
+                # The entity walk is the primary self latch, but it stands
+                # down when UiComponents cannot resolve (Lesta) — the game
+                # API's own self view carries the name instead.
+                try:
+                    self_name = bare_name(_fmt(battle.getSelfPlayerInfo()['name']))
+                except:
+                    self_name = ''
             self_realm = ''
             for p in self.roster:
                 if p['name'] == self_name and p.get('realm'):

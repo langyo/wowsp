@@ -111,9 +111,15 @@ class StubUtils(object):
 class StubBattle(object):
     def __init__(self):
         self.players = {}
+        # The game API's own self view (name carries the clan tag, like
+        # the live client's) — the entity-walk-independent self source.
+        self._self = FakeRecord(name="[RUQL]langyo")
 
     def getPlayersInfo(self):
         return dict(self.players)
+
+    def getSelfPlayerInfo(self):
+        return self._self
 
 
 class StubEvents(object):
@@ -197,6 +203,21 @@ class FakeAvatarEntity(object):
         return key in self._map
 
 
+class RaisingConstants(object):
+    """The LESTA-shape constants module: the UiComponents attribute
+    access itself raises (live 2026-10-08, 'CC dir failed=?') — the
+    default StubConstants models the WG-family shape where it resolves."""
+
+    class PlayerRelation(object):
+        SELF = 0
+        ALLY = 1
+        ENEMY = 2
+
+    @property
+    def UiComponents(self):
+        raise AttributeError("UiComponents unavailable on this client")
+
+
 class StubConstants(object):
     class PlayerRelation(object):
         SELF = 0
@@ -234,11 +255,13 @@ def crippled_builtins():
     return table
 
 
-def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui, failures):
-    label = "encode=%s manifest=%s ui=%s" % (
+def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
+               raising_constants, failures):
+    label = "encode=%s manifest=%s ui=%s cc=%s" % (
         "records" if encode_records else "projection",
         "yes" if with_manifest else "missing",
-        "yes" if with_ui else "absent")
+        "yes" if with_ui else "absent",
+        "raising" if raising_constants else "ok")
     utils = StubUtils(encode_records)
     battle = StubBattle()
     events = StubEvents()
@@ -262,7 +285,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui, failur
         "events": events,
         "callbacks": callbacks,
         "dataHub": StubDataHub(entities),
-        "constants": StubConstants(),
+        "constants": (RaisingConstants() if raising_constants
+                      else StubConstants()),
     }
     # `ui` only in the explicit ui-present pass: Lesta's ModsAPI injects no
     # `ui` module (census 2026-10-08), and the harness must be at least as
@@ -468,18 +492,20 @@ def main(argv):
     # handler-type evaluation on it — stays sandbox-safe, and one ui-present
     # pass (Lesta injects no `ui`; the WG-family clients do, and the panel
     # path must still work there).
-    for encode_records, with_manifest, with_ui in (
-            (True, True, False), (False, True, False), (True, False, False),
-            (True, True, True)):
+    for encode_records, with_manifest, with_ui, raising_constants in (
+            (True, True, False, False), (False, True, False, False),
+            (True, False, False, False), (True, True, True, False),
+            (True, True, False, True)):
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
-            run_once(plugin_src, workdir, encode_records, with_manifest, with_ui, failures)
+            run_once(plugin_src, workdir, encode_records, with_manifest,
+                     with_ui, raising_constants, failures)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
-    print("SANDBOX CONFORMANCE: PASS (4 passes, %s, crippled builtins: %s)"
+    print("SANDBOX CONFORMANCE: PASS (5 passes, %s, crippled builtins: %s)"
           % (os.path.basename(os.path.normpath(plugin)), ", ".join(SAFE_BUILTINS)))
     return 0
 
