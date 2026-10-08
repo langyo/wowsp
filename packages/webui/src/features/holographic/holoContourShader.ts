@@ -18,7 +18,7 @@
  */
 import * as THREE from "three";
 
-import { tickHoloUniforms, type HoloUniforms } from "./holoShader";
+import { tickHoloUniforms } from "./holoShader";
 
 /** Reuse the plain holo shader's vertex stage (it provides vWorldPos/vLocalPos). */
 import { HOLO_VERT } from "./holoShader";
@@ -102,8 +102,15 @@ export const HOLO_CONTOUR_FRAG = /* glsl */ `
   }
 `;
 
-/** Contour shader uniforms (extends the plain holo uniforms with terrain ones). */
-export interface ContourUniforms extends HoloUniforms {
+/** Contour shader uniforms: the shared time/colour pair the scanline tick
+ *  drives, plus the terrain-specific ones. Deliberately NOT `HoloUniforms` —
+ *  the contour material declares only these, so widening the type would
+ *  advertise fields that read as `undefined` at runtime. */
+export interface ContourUniforms {
+  time: { value: number };
+  scanOffset: { value: number };
+  baseColor: { value: THREE.Color };
+  fresnelColor: { value: THREE.Color };
   contourInterval: { value: number };
   seaLevel: { value: number };
   trenchDepth: { value: number };

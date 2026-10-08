@@ -28,6 +28,14 @@
  *     without a per-triangle wireframe. World space because the bake's local
  *     units differ per ship while the stage normalizes every model to the
  *     same 200-unit box.
+ *   - `uFacetGain` / `uFacetSat` / `uFacetDir` — a key light fixed in the
+ *     SHIP's frame (object space) that gives every plate orientation its own
+ *     brightness and saturation. Unlike the headlight it does not vanish at
+ *     grazing incidence, so a low broadside — the view that otherwise melts
+ *     into one flat fill — keeps its deck edge, chine and superstructure
+ *     corners. `abs(dot(n, dir))` because the bake's winding is arbitrary.
+ *     Off by default; the stage sets a low gain and a direction biased to the
+ *     vertical so the existing flank tone stays put.
  * Texture layer: three more stage-only terms push the look from "moulded
  * plastic" toward a transmitted projection —
  *   - `uScanGain` — fine CRT-pitch scanline rows in SCREEN space (constant
@@ -97,6 +105,17 @@ export interface HoloUniforms {
    *  otherwise turns the broad rim into a per-plate mosaic of bright wedges). */
   uFresnelPow: { value: number };
   uFresnelGain: { value: number };
+  /** Ship-fixed facet key: a brightness step per plate orientation (0 = the
+   *  legacy flat fill). The headlight above fades out at grazing angles, which
+   *  is exactly where a broadside melts into one fill — this term does not. */
+  uFacetGain: { value: number };
+  /** Saturation spread of the same key: differently-angled plates take
+   *  slightly different saturation, which is what makes the coarse bake read
+   *  as facets instead of one pastel wash (0 = off). */
+  uFacetSat: { value: number };
+  /** The facet key direction in OBJECT space (the ship's own frame: +Y up, bow
+   *  along ±Z) so the tone pattern is fixed to the hull, not to the camera. */
+  uFacetDir: { value: THREE.Vector3 };
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -104,6 +123,7 @@ export const HOLO_VERT = /* glsl */ `
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
   varying vec3 vNormal;
+  varying vec3 vObjNormal;
   varying float vHasNormal;
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -118,6 +138,10 @@ export const HOLO_VERT = /* glsl */ `
     // (0,0,0) — flagged via vHasNormal so the fragment shader can fall back
     // to derivative face normals.
     vNormal = normalize(mat3(modelMatrix) * normal);
+    // Object-space normal for the facet key (see uFacetDir): the mesh nodes
+    // carry no rotation, so this is the ship's own frame whatever the camera
+    // or the normalization group do.
+    vObjNormal = normal;
     vHasNormal = step(0.001, length(normal));
   }
 `;
@@ -142,10 +166,14 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float uFlickerGain;
   uniform float uFresnelPow;
   uniform float uFresnelGain;
+  uniform float uFacetGain;
+  uniform float uFacetSat;
+  uniform vec3 uFacetDir;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
   varying vec3 vNormal;
+  varying vec3 vObjNormal;
   varying float vHasNormal;
   void main() {
     vec3 n;
@@ -189,6 +217,23 @@ export const HOLO_FRAG = /* glsl */ `
     if (uLightGain > 0.0 && vHasNormal > 0.5) {
       float def = dot(n, viewDir);
       col *= 1.0 + uLightGain * def * def;
+    }
+    // Facet definition: a key light FIXED IN THE SHIP'S FRAME. The headlight
+    // above fades out at grazing incidence — a low broadside has every plate
+    // nearly parallel to the view — which is exactly where the coarse bake
+    // melts into a single pastel fill. A ship-fixed key keeps deck, flank and
+    // end plates at stable, different tones, so the deck edge, the chine and
+    // every superstructure corner read as edges without a line overlay, and
+    // the pattern does not swim as the camera moves. abs() because the bake's
+    // winding is random: a plate's tone must not depend on which way its
+    // triangle happens to face. Centred on 0.5 so the ship's overall tone is
+    // unchanged.
+    if ((uFacetGain > 0.0 || uFacetSat > 0.0) && vHasNormal > 0.5) {
+      vec3 nObj = normalize(vObjNormal);
+      float key = abs(dot(nObj, uFacetDir)) - 0.5;
+      col *= 1.0 + uFacetGain * key;
+      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(vec3(luma), col, clamp(1.0 + uFacetSat * key, 0.0, 2.0));
     }
     // Measuring grid, one line every 10 world units on each axis. Kept
     // faint: it must read as panel structure, not as a cage over the ship.
@@ -291,6 +336,11 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       uFlickerGain: { value: 0.0 },
       uFresnelPow: { value: 2.5 },
       uFresnelGain: { value: 1.2 },
+      // Facet key off (and its direction at a normalized default) so markers,
+      // terrain and the replay's ghost ships keep the legacy flat fill.
+      uFacetGain: { value: 0.0 },
+      uFacetSat: { value: 0.0 },
+      uFacetDir: { value: new THREE.Vector3(0.5, 0.78, 0.38).normalize() },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,

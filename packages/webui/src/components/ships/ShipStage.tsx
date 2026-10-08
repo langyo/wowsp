@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
+import { pruneModelDebris } from "@/features/holographic/debrisPrune";
 import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
 import { HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
@@ -1135,12 +1136,45 @@ export default defineComponent({
     }
 
     /** Shared holographic dressing for any baked GLB (hull or carrier
-     *  airframe): rebuilds winding-agnostic normals, then assigns per-
-     *  category holo materials with an opaque depth-anchor twin per mesh.
-     *  NOT normalized here — hull and plane anchoring differ. */
+     *  airframe): welds the bake's per-cluster vertices, drops the artifacts
+     *  the bake left behind (see `pruneModelDebris`), rebuilds winding-agnostic
+     *  normals, then assigns per-category holo materials with an opaque
+     *  depth-anchor twin per mesh. NOT normalized here — hull and plane
+     *  anchoring differ. */
     function prepareHoloModel(model: THREE.Object3D): void {
       // The baked GLBs drop POSITION accessor min/max (smaller files), so
       // Box3.setFromObject can't infer bounds — compute them per-geometry first.
+      model.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.geometry && mesh.geometry.attributes.position) {
+          // Attributes other than position are stripped BEFORE the weld —
+          // mergeVertices only fuses vertices whose attributes all match —
+          // except the armour thickness vertex colours, which must survive
+          // for the armor overlay.
+          const welded = mesh.geometry.clone();
+          for (const attr of Object.keys(welded.attributes)) {
+            if (attr !== "position" && attr !== "color") welded.deleteAttribute(attr);
+          }
+          welded.morphAttributes = {};
+          mesh.geometry = mergeVertices(welded, 1e-4);
+        }
+      });
+
+      // Bake artifacts, gone before normals are built: needle triangles left
+      // by the clustering (they paint as floating hairlines over the
+      // superstructure) and fragments the bake cut loose from the hull. Runs
+      // across the whole model — an AA mount touches the deck in another mesh
+      // than its own.
+      const pruned = pruneModelDebris(model);
+      if (import.meta.env.DEV && pruned.trianglesBefore !== pruned.trianglesAfter) {
+        console.log(
+          "[holo model] pruned", pruned.needleTriangles, "needle +",
+          pruned.detachedGroups, "detached fragment(s) /", pruned.detachedTriangles,
+          "tris of", pruned.trianglesBefore,
+          pruned.largestDropped.map((d) => `${d.mesh}(${d.triangles}t)`).join(" "),
+        );
+      }
+
       model.traverse((child) => {
         const mesh = child as THREE.Mesh;
         if (mesh.geometry && mesh.geometry.attributes.position) {
@@ -1156,16 +1190,7 @@ export default defineComponent({
           // those true 90° structure edges into the smooth cluster too,
           // smearing T-posts and deck steps into the plating; 65° keeps the
           // whole quantized curve range merged while every ≈90° edge splits.
-          // Attributes other than position are stripped BEFORE the weld —
-          // mergeVertices only fuses vertices whose attributes all match —
-          // except the armour thickness vertex colours, which must survive
-          // for the armor overlay.
-          const welded = mesh.geometry.clone();
-          for (const attr of Object.keys(welded.attributes)) {
-            if (attr !== "position" && attr !== "color") welded.deleteAttribute(attr);
-          }
-          welded.morphAttributes = {};
-          mesh.geometry = computeSmoothNormals(mergeVertices(welded, 1e-4), 65);
+          mesh.geometry = computeSmoothNormals(mesh.geometry, 65);
           mesh.geometry.computeBoundingBox();
           mesh.geometry.computeBoundingSphere();
         }
@@ -1199,6 +1224,16 @@ export default defineComponent({
           // flank (the headlight) or dense stripes at grazing (the grid).
           mat.uniforms.uLightGain.value = 0.30;
           mat.uniforms.uLinesGain.value = 0.12;
+          // Facet tone: a key light fixed in the ship's frame, so deck, flank
+          // and end plates keep different brightness/saturation at ANY camera
+          // angle (the headlight above fades out at the grazing angles a
+          // broadside view sits at, which is where the hull went flat). Gains
+          // stay low — the point is the tone STEP at a real edge, not a paint
+          // job — and the direction leans vertical so the flank, the tone the
+          // rest of this block is tuned around, keeps its exact value.
+          mat.uniforms.uFacetGain.value = 0.22;
+          mat.uniforms.uFacetSat.value = 0.35;
+          mat.uniforms.uFacetDir.value.set(0.5, 0.78, 0.38).normalize();
           // Glassier hologram: the fill drops to roughly 60% of the legacy
           // opacity in the dark theme (a tenth more in the light theme) so
           // broadsides show the background through them (the

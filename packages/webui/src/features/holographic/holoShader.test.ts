@@ -41,6 +41,13 @@ describe("holoShader", () => {
     expect(mat.uniforms.uFlickerGain.value).toBe(0);
     expect(mat.uniforms.uFresnelPow.value).toBeCloseTo(2.5);
     expect(mat.uniforms.uFresnelGain.value).toBeCloseTo(1.2);
+    // The facet key is the stage's edge-definition term: off for markers,
+    // terrain and ghost ships, with a normalized direction ready to use.
+    expect(mat.uniforms.uFacetGain.value).toBe(0);
+    expect(mat.uniforms.uFacetSat.value).toBe(0);
+    const dir = mat.uniforms.uFacetDir.value as THREE.Vector3;
+    expect(dir).toBeInstanceOf(THREE.Vector3);
+    expect(dir.length()).toBeCloseTo(1, 6);
     expect(mat.uniforms.ghostAlpha.value).toBe(1);
     expect(mat.transparent).toBe(true);
     expect(mat.depthWrite).toBe(false);

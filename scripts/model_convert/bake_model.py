@@ -627,6 +627,384 @@ def decimate(vertices: list[float], indices: list[int], target_tris: int,
     return new_verts.reshape(-1).tolist(), new_faces.reshape(-1).tolist()
 
 
+# ── Floating-artifact cull ────────────────────────────────────────────────
+# Vertex clustering leaves two artifacts that read as junk under the viewer's
+# rim-lit transparency: NEEDLE triangles (a corner collapsed into a far cell, so
+# the triangle keeps a long bounding box while its area collapses — an edge of
+# it paints as a floating hairline over the superstructure) and small fragments
+# the clustering cut loose from the hull. Both are measured against the model's
+# own extent. The viewer prunes the same two artifacts at load time
+# (`packages/webui/src/features/holographic/debrisPrune.ts`) so an already
+# shipped pack renders clean — keep the thresholds in sync with that module.
+CULL_CONTACT_PCT = 0.005
+CULL_NEEDLE_MAX_TRIS = 8
+CULL_NEEDLE_MIN_EXTENT_PCT = 0.015
+CULL_NEEDLE_MIN_FILL = 0.25
+CULL_MICRO_MAX_TRIS = 12
+CULL_MICRO_SPAN_CEILING_PCT = 0.25
+CULL_MICRO_MAX_EXTENT_PCT = 0.03
+CULL_MICRO_TRI_CAP = 200
+
+
+class _DSU:
+    def __init__(self, n: int):
+        self.parent = np.arange(n, dtype=np.int64)
+
+    def find(self, a: int) -> int:
+        p = self.parent
+        root = a
+        while p[root] != root:
+            root = p[root]
+        while p[a] != root:
+            p[a], a = root, p[a]
+        return root
+
+    def union(self, a: int, b: int) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[rb] = ra
+
+
+def _point_triangle_distance2(points: np.ndarray, tri: np.ndarray) -> np.ndarray:
+    """Squared distance from each `points` row to the triangle (3, 3).
+
+    Voronoi-region walk of Ericson, Real-Time Collision Detection §5.1.5 —
+    the exact surface distance, so a fitting resting in the MIDDLE of a coarse
+    plate counts as attached however far the plate's corners are.
+    """
+    a, b, c = tri[0], tri[1], tri[2]
+    ab = b - a
+    ac = c - a
+    ap = points - a
+    d1 = ap @ ab
+    d2 = ap @ ac
+    bp = points - b
+    d3 = bp @ ab
+    d4 = bp @ ac
+    cp = points - c
+    d5 = cp @ ab
+    d6 = cp @ ac
+    out = np.empty(len(points))
+    # Fully degenerate triangles — two corners collapsed onto one another, or
+    # exactly collinear points, both of which a cluster bake emits — have no
+    # interior to project onto and drive the region walk's divisions into
+    # rounding noise. Their surface IS their edges, so measure against each.
+    bc = c - b
+    cross = np.cross(ab, ac)
+    cross2 = float(cross @ cross)
+    longest_edge2 = max(float(ab @ ab), float(ac @ ac), float(bc @ bc))
+    if cross2 <= 1e-18 * longest_edge2 * longest_edge2:
+        def _seg(p0, p1):
+            d = p1 - p0
+            d2 = float(d @ d)
+            if d2 <= 1e-24:
+                q = points - p0
+                return np.einsum("ij,ij->i", q, q)
+            t = np.clip(((points - p0) @ d) / d2, 0.0, 1.0)
+            q = (points - p0) - t[:, None] * d
+            return np.einsum("ij,ij->i", q, q)
+
+        return np.minimum(np.minimum(_seg(a, b), _seg(a, c)), _seg(b, c))
+    m = (d1 <= 0) & (d2 <= 0)
+    out[m] = np.einsum("ij,ij->i", ap[m], ap[m])
+    m2 = (d3 >= 0) & (d4 <= d3)
+    out[m2] = np.einsum("ij,ij->i", bp[m2], bp[m2])
+    rest = ~(m | m2)
+    vc = d1 * d4 - d3 * d2
+    m4 = rest & (vc <= 0) & (d1 >= 0) & (d3 <= 0)
+    v = np.where(m4, d1 / np.maximum(d1 - d3, 1e-30), 0.0)
+    q = ap - v[:, None] * ab
+    out[m4] = np.einsum("ij,ij->i", q[m4], q[m4])
+    rest = rest & ~m4
+    m3 = rest & (d6 >= 0) & (d5 <= d6)
+    out[m3] = np.einsum("ij,ij->i", cp[m3], cp[m3])
+    rest = rest & ~m3
+    vb = d5 * d2 - d1 * d6
+    m5 = rest & (vb <= 0) & (d2 >= 0) & (d6 <= 0)
+    w = np.where(m5, d2 / np.maximum(d2 - d6, 1e-30), 0.0)
+    q = ap - w[:, None] * ac
+    out[m5] = np.einsum("ij,ij->i", q[m5], q[m5])
+    rest = rest & ~m5
+    va = d3 * d6 - d5 * d4
+    m6 = rest & (va <= 0) & ((d4 - d3) >= 0) & ((d5 - d6) >= 0)
+    wb = np.where(m6, (d4 - d3) / np.maximum((d4 - d3) + (d5 - d6), 1e-30), 0.0)
+    # closest = b + wb·(c - b) = b + wb·(cp - bp), so q = bp + wb·(cp - bp).
+    q = bp + wb[:, None] * (cp - bp)
+    out[m6] = np.einsum("ij,ij->i", q[m6], q[m6])
+    rest = rest & ~m6
+    denom = np.maximum(va + vb + vc, 1e-30)
+    vv = (vb / denom)[rest]
+    ww = (vc / denom)[rest]
+    qq = ap[rest] - (vv[:, None] * ab + ww[:, None] * ac)
+    out[rest] = np.einsum("ij,ij->i", qq, qq)
+    return out
+
+
+def cull_floating_artifacts(
+    parts: list[tuple[str, list[float], list[int]]],
+) -> tuple[list[tuple[str, list[float], list[int]]], dict]:
+    """Drop needle triangles and detached micro-fragments from baked parts.
+
+    `parts` is [(name, flat_vertices_xyz, indices)] as handled by `main()`.
+    Returns the filtered parts plus a stats dict for the bake log.
+    """
+    if not parts:
+        return parts, {"needles": 0, "needle_tris": 0, "fragments": 0, "fragment_tris": 0}
+
+    # Coincident duplicates are the norm in a cluster bake (the orientation-aware
+    # clustering keeps per-orientation copies), and the viewer welds them before
+    # pruning. Weld the analysis view the same way, or components fragment and
+    # perfectly attached fittings read as floating.
+    data = []
+    for name, verts, idx in parts:
+        v = np.asarray(verts, dtype=np.float64).reshape(-1, 3)
+        f = np.asarray(idx, dtype=np.int64).reshape(-1, 3)
+        keys = np.trunc(v / 1e-4 + 0.5).astype(np.int64)
+        _, canon = np.unique(keys, axis=0, return_inverse=True)
+        canon = canon.reshape(-1)
+        # One representative position per canonical vertex.
+        welded = np.zeros((int(canon.max()) + 1, 3), dtype=np.float64)
+        welded[canon] = v
+        data.append((name, welded, canon[f]))
+    allv = np.vstack([v for _, v, _ in data])
+    gmin, gmax = allv.min(axis=0), allv.max(axis=0)
+    extent = float((gmax - gmin).max())
+    if not extent > 0:
+        return parts, {"needles": 0, "needle_tris": 0, "fragments": 0, "fragment_tris": 0}
+
+    # ── Components (shared-vertex islands) per part, with their metrics.
+    comps = []  # dicts: part, faces(ids), verts(ids), ntri, bbox, area
+    drop = [np.zeros(len(f), dtype=bool) for _, _, f in data]
+    for pi, (_, verts, faces) in enumerate(data):
+        dsu = _DSU(len(verts))
+        for a, b, c in faces:
+            dsu.union(int(a), int(b))
+            dsu.union(int(a), int(c))
+        roots = np.array([dsu.find(i) for i in range(len(verts))], dtype=np.int64)
+        face_root = roots[faces[:, 0]]
+        for r in np.unique(face_root):
+            fids = np.flatnonzero(face_root == r)
+            tri = faces[fids]
+            pts = verts[tri.reshape(-1)]
+            cross = np.cross(verts[tri[:, 1]] - verts[tri[:, 0]],
+                             verts[tri[:, 2]] - verts[tri[:, 0]])
+            # Malformed coordinates are skipped rather than propagated: a NaN
+            # bound or sample silences every comparison it takes part in.
+            areas = 0.5 * np.linalg.norm(cross, axis=1)
+            area = float(areas[np.isfinite(areas)].sum())
+            if len(pts) and not np.isfinite(pts).all():
+                pts = pts[np.isfinite(pts).all(axis=1)]
+            comps.append({
+                "part": pi,
+                "faces": fids,
+                "verts": np.unique(tri),
+                "ntri": len(fids),
+                "min": pts.min(axis=0) if len(pts) else np.zeros(3),
+                "max": pts.max(axis=0) if len(pts) else np.zeros(3),
+                "area": area,
+            })
+
+    # ── Rule 1 — needle triangles: a long bounding box with no surface left.
+    stats = {"needles": 0, "needle_tris": 0, "fragments": 0, "fragment_tris": 0}
+    for ci, comp in enumerate(comps):
+        if comp["ntri"] > CULL_NEEDLE_MAX_TRIS:
+            continue
+        bb = comp["max"] - comp["min"]
+        longest = float(bb.max())
+        if longest < CULL_NEEDLE_MIN_EXTENT_PCT * extent:
+            continue
+        mid = float(np.sort(bb)[-2])
+        fill = comp["area"] / max(0.5 * longest * mid, 1e-12)
+        if comp["area"] > 0 and fill > CULL_NEEDLE_MIN_FILL:
+            continue
+        drop[comp["part"]][comp["faces"]] = True
+        stats["needles"] += 1
+        stats["needle_tris"] += comp["ntri"]
+
+    # ── Rule 2 — detached fragments. Vertex cells the size of the contact
+    #    distance; two samples within it attach their components.
+    contact_eps = CULL_CONTACT_PCT * extent
+    eps2 = contact_eps * contact_eps
+    sample_comp = np.concatenate([np.full(len(c["verts"]), ci, dtype=np.int64)
+                                  for ci, c in enumerate(comps)])
+    sample_xyz = np.concatenate([data[c["part"]][1][c["verts"]] for c in comps])
+    finite = np.isfinite(sample_xyz).all(axis=1)
+    if not finite.all():
+        keep = np.flatnonzero(finite)
+        sample_comp = sample_comp[keep]
+        sample_xyz = sample_xyz[keep]
+    cells = np.floor((sample_xyz - gmin) / contact_eps).astype(np.int64)
+    key = cells[:, 0] + cells[:, 1] * 100000 + cells[:, 2] * 100000 ** 2
+    order = np.argsort(key, kind="stable")
+    skey = key[order]
+    bounds = np.flatnonzero(np.diff(skey) != 0) + 1
+    starts = np.concatenate([[0], bounds])
+    ends = np.concatenate([bounds, [len(skey)]])
+    cell_index = {}
+    for cell, s, e in zip(cells[order][starts], starts, ends):
+        cell_index[tuple(cell)] = (s, e)
+    comp_dsu = _DSU(len(comps))
+    offsets = [(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+               if (dx, dy, dz) > (0, 0, 0)]
+    for s0, e0 in zip(starts, ends):
+        members_a = order[s0:e0]
+        cell_a = cells[order[s0]]
+        pairs = [(members_a, members_a)]
+        for dx, dy, dz in offsets:
+            other = cell_index.get((cell_a[0] + dx, cell_a[1] + dy, cell_a[2] + dz))
+            if other is not None:
+                pairs.append((members_a, order[other[0]:other[1]]))
+        for a_ids, b_ids in pairs:
+            if len(a_ids) == 0 or len(b_ids) == 0:
+                continue
+            d = sample_xyz[a_ids][:, None, :] - sample_xyz[b_ids][None, :, :]
+            close = (d * d).sum(axis=2) <= eps2
+            for ai, bi in zip(*np.nonzero(close)):
+                ca, cb = sample_comp[a_ids[ai]], sample_comp[b_ids[bi]]
+                if ca != cb:
+                    comp_dsu.union(int(ca), int(cb))
+
+    # ── Rule 2b — the coarse plates. A vertex-to-vertex test proves nothing
+    #    about a plate whose corners are far apart, so components stage 1 left
+    #    out of the body get an exact point-to-triangle pass against triangles
+    #    longer than the contact distance. (The viewer does the same, and the
+    #    two implementations must agree: without this pass a fitting resting in
+    #    the middle of a deck plate reads as floating.)
+    # The body is the group with the widest UNION bounding box (the viewer's
+    # `pickBody`): a per-component span would disagree with it and change which
+    # components this pass even considers.
+    body_root = -1
+    best_span = -1.0
+    best_surviving = -1
+    group_min: dict[int, np.ndarray] = {}
+    group_max: dict[int, np.ndarray] = {}
+    group_surviving: dict[int, int] = {}
+    group_tris: dict[int, int] = {}
+    for ci, comp in enumerate(comps):
+        root = comp_dsu.find(ci)
+        alive = int((~drop[comp["part"]][comp["faces"]]).sum())
+        group_surviving[root] = group_surviving.get(root, 0) + alive
+        group_tris[root] = group_tris.get(root, 0) + comp["ntri"]
+        group_min[root] = np.minimum(group_min.get(root, comp["min"]), comp["min"])
+        group_max[root] = np.maximum(group_max.get(root, comp["max"]), comp["max"])
+    for root, surviving in group_surviving.items():
+        if surviving == 0:
+            continue
+        span = float((group_max[root] - group_min[root]).max())
+        if span > best_span or (span == best_span and surviving > best_surviving):
+            body_root, best_span, best_surviving = root, span, surviving
+
+    #    Every triangle is indexed, matching the viewer, and their bounding
+    #    boxes pre-filter the exact tests.
+    large = []
+    large_comp = []
+    for ci, comp in enumerate(comps):
+        _, verts, faces = data[comp["part"]]
+        tri = verts[faces[comp["faces"]]]
+        # Every triangle is indexed, matching the viewer: a fitting can rest on
+        # the interior of a sliver whose corners are all farther than the
+        # contact distance, which the vertex-level pass cannot see.
+        large.append(tri)
+        large_comp.append(np.full(len(tri), ci, dtype=np.int64))
+    if large:
+        # Only components in a group small enough that the drop rule could ever
+        # apply pay for the exact pass, matching the viewer: a group already
+        # past the triangle cap only grows when the pass merges more into it.
+        prunable = {
+            root for root, surviving in group_surviving.items()
+            if surviving > 0 and group_tris.get(root, 0) <= CULL_MICRO_TRI_CAP
+        }
+        large_tri = np.concatenate(large)
+        large_owner = np.concatenate(large_comp)
+        large_lo = large_tri.min(axis=1)
+        large_hi = large_tri.max(axis=1)
+        for ci, comp in enumerate(comps):
+            if comp_dsu.find(ci) == body_root or comp["ntri"] > CULL_MICRO_TRI_CAP:
+                continue
+            if comp_dsu.find(ci) not in prunable:
+                continue
+            _, verts, _ = data[comp["part"]]
+            for p in verts[comp["verts"]]:
+                gap = np.maximum(np.maximum(large_lo - p, p - large_hi), 0.0)
+                near = np.flatnonzero((gap * gap).sum(axis=1) <= eps2)
+                for k in near:
+                    cj = int(large_owner[k])
+                    if cj == ci or comp_dsu.find(cj) == comp_dsu.find(ci):
+                        continue
+                    if _point_triangle_distance2(p[None, :], large_tri[k])[0] <= eps2:
+                        comp_dsu.union(ci, cj)
+                        break
+
+    # ── Groups: the body is the group that spans the model; small detached
+    #    groups go. A handful of triangles is a fragment however far it
+    #    stretches, larger ones only while their bounding box stays tiny.
+    groups: dict[int, dict] = {}
+    for ci, comp in enumerate(comps):
+        root = comp_dsu.find(ci)
+        g = groups.setdefault(root, {"tris": 0, "surviving": 0,
+                                     "min": comp["min"].copy(), "max": comp["max"].copy(),
+                                     "members": []})
+        g["tris"] += comp["ntri"]
+        g["surviving"] += int((~drop[comp["part"]][comp["faces"]]).sum())
+        g["min"] = np.minimum(g["min"], comp["min"])
+        g["max"] = np.maximum(g["max"], comp["max"])
+        g["members"].append(ci)
+
+    def span(g):
+        return float((g["max"] - g["min"]).max())
+
+    body = None
+    for g in groups.values():
+        if g["surviving"] == 0:
+            continue
+        if body is None or span(g) > span(body) or (span(g) == span(body) and g["surviving"] > body["surviving"]):
+            body = g
+    for g in groups.values():
+        if g is body or g["surviving"] == 0 or g["tris"] > CULL_MICRO_TRI_CAP:
+            continue
+        longest = span(g)
+        # A structure spanning a quarter of the model is never debris (and the
+        # guard keeps a pathological body pick from deleting the hull itself).
+        if longest > CULL_MICRO_SPAN_CEILING_PCT * extent:
+            continue
+        micro = g["tris"] <= CULL_MICRO_MAX_TRIS or (
+            longest <= CULL_MICRO_MAX_EXTENT_PCT * extent and g["tris"] <= CULL_MICRO_TRI_CAP
+        )
+        if not micro:
+            continue
+        stats["fragments"] += 1
+        for ci in g["members"]:
+            comp = comps[ci]
+            fresh = ~drop[comp["part"]][comp["faces"]]
+            stats["fragment_tris"] += int(fresh.sum())
+            drop[comp["part"]][comp["faces"]] = True
+
+    if stats["needle_tris"] == 0 and stats["fragment_tris"] == 0:
+        return parts, stats
+
+    # ── Rebuild the parts without the dropped triangles (orphan vertices fall
+    #    away), keeping the flat float/int lists the writer expects.
+    out: list[tuple[str, list[float], list[int]]] = []
+    for pi, ((name, _welded, _canon_faces), (_n, flat, idx)) in enumerate(zip(data, parts)):
+        original_v = np.asarray(flat, dtype=np.float64).reshape(-1, 3)
+        original_f = np.asarray(idx, dtype=np.int64).reshape(-1, 3)
+        keep = ~drop[pi]
+        if keep.all():
+            out.append((name, flat, idx))
+            continue
+        kept_faces = original_f[keep]
+        used = np.zeros(len(original_v), dtype=bool)
+        used[kept_faces.reshape(-1)] = True
+        remap = np.full(len(original_v), -1, dtype=np.int64)
+        remap[used] = np.arange(int(used.sum()))
+        verts_out = original_v[used].reshape(-1).tolist()
+        idx_out = remap[kept_faces].reshape(-1).tolist()
+        if not idx_out:
+            continue  # nothing left of this part — the writer needs vertices
+        out.append((name, verts_out, idx_out))
+    return out, stats
+
+
 def extract_meshes_by_name(gltf: dict) -> dict[str, tuple[list[float], list[int]]]:
     """Extract every mesh primitive from a GLB, grouped by mesh name.
 
@@ -974,6 +1352,12 @@ def main() -> int:
                     parts.append((name, dv, di))
                 else:
                     print(f"  [{cat}/{inst}] decimated to 0 triangles — dropped")
+
+    parts, culled = cull_floating_artifacts(parts)
+    if culled["needles"] or culled["fragments"]:
+        print(f"[bake] culled floating artifacts: {culled['needles']} needle components "
+              f"({culled['needle_tris']} tris) + {culled['fragments']} detached fragments "
+              f"({culled['fragment_tris']} tris)")
 
     print(f"[bake] writing {len(parts)} groups to {out.name} ...")
     write_glb_multimesh(out, parts)
