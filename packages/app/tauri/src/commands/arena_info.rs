@@ -106,14 +106,24 @@ pub(crate) fn last_arena_stamp() -> i64 {
 /// whether a fresh roster is now known. A partially written file fails to
 /// parse and is simply not recorded — the next press retries.
 ///
-/// This path is also the ROSTER-EVENT HEALER: the notify watcher can read
-/// the file mid-write at the battle's first write event and get exactly
-/// one broken read per battle (the write-completion event lands inside
-/// the scan debounce and is swallowed — the 2026-10-08 Lesta battle lost
-/// its arena-info event this way and ran the whole fight without a
-/// roster). So when THIS parse succeeds on a stamp NEWER than anything
-/// recorded before, the roster event the page never received is re-emitted
-/// from here, with the same pin-void the watcher's Ok branch performs.
+/// This path is also the ROSTER-EVENT HEALER — two ways a battle can end
+/// up recorded without its roster event ever delivering players:
+///
+/// - the notify watcher read the file mid-write and got exactly one broken
+///   read per battle (the write-completion event lands inside the scan
+///   debounce and is swallowed — the 2026-10-08 Lesta battle lost its
+///   arena-info event this way);
+/// - the Lesta shape: the arena file carries NO vehicles at all, so the
+///   event that DID fire delivered an empty roster; the in-game probe's
+///   roster file (the Lesta roster source — see `probe_roster`) warms up
+///   seconds later and this path re-reads until the synthesis fills in.
+///
+/// In both cases, when THIS parse succeeds where the recorded state is
+/// empty — a stamp NEWER than anything recorded, or a roster that went
+/// from zero players to some — the roster event the page is missing is
+/// (re-)emitted from here, with the same pin-void the watcher's Ok branch
+/// performs. While the roster stays empty (probe not yet answering), the
+/// Tab watcher keeps calling here on its refresh cadence.
 pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
     let Ok(dir) = resolve_arena_dir(None) else {
         return false;
@@ -128,7 +138,11 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
         return false;
     };
     let at = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
-    if at > 0 && unix_secs(mtime) <= at {
+    // A recorded battle whose roster never arrived (Lesta's empty
+    // vehicles, or a synthesized roster the probe had not written yet):
+    // the mtime gate must not pin that empty state — keep re-reading.
+    let roster_pending = at > 0 && last_known_team_sizes() == (0, 0);
+    if at > 0 && unix_secs(mtime) <= at && !roster_pending {
         // Nothing newer than what we already recorded.
         return arena_seen_within(1);
     }
@@ -136,9 +150,9 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
         Ok(info) => {
             note_arena_seen(&info, mtime);
             let after = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
-            if after > at {
-                // A stamp THIS path discovered: heal the page (same emit +
-                // BattleChanged the watcher's Ok branch does).
+            if after > at || (roster_pending && !info.vehicles.is_empty()) {
+                // A stamp or roster THIS path discovered: heal the page
+                // (same emit + BattleChanged the watcher's Ok branch does).
                 if let Some(name) = super::session::local_player_of(&info.vehicles) {
                     super::session::note_playing_from_arena(app, name, Some(unix_secs(mtime)));
                 }
@@ -285,6 +299,38 @@ fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), Strin
     let raw: serde_json::Value =
         serde_json::from_str(&json).map_err(|e| format!("parse arena JSON: {e}"))?;
     let meta = replay::meta_from_raw_pub(path.to_string_lossy().into_owned(), raw.clone());
+    let mut vehicles = meta.vehicles;
+    let mut bot_count = meta.bot_count;
+    let mut scripted_unit_count = meta.scripted_unit_count;
+    if vehicles.is_empty() {
+        // The Lesta shape: its tempArenaInfo.json carries metadata only
+        // (no vehicles array — verified 2026-10-08). The in-game probe's
+        // roster file is the one live-roster source for that client; when
+        // it has warmed up (a few seconds into the battle), its records
+        // stand in for the missing array. No probe answer keeps the empty
+        // roster — the Tab watcher's refresh retries while held.
+        if let Some(synth) = super::probe_roster::synthesize_for_arena(
+            path,
+            raw.get("playerName").and_then(|v| v.as_str()),
+        ) {
+            tracing::info!(
+                players = synth.len(),
+                "arena file carried no vehicles — roster synthesized from the in-game probe"
+            );
+            // The mode classifiers (frontend bot-fold labels, operation
+            // gates) key on these counts; the probe's records carry the
+            // same `:Name:` / IDS_* markers the arena file would have.
+            bot_count = synth
+                .iter()
+                .filter(|v| replay::is_bot_nickname(&v.name))
+                .count() as u32;
+            scripted_unit_count = synth
+                .iter()
+                .filter(|v| replay::is_scripted_unit_nickname(&v.name))
+                .count() as u32;
+            vehicles = synth;
+        }
+    }
     Ok((
         ArenaInfo {
             match_group: meta.match_group,
@@ -292,9 +338,9 @@ fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), Strin
             map_name: meta.map_name,
             scenario: meta.scenario,
             event_type: meta.event_type,
-            bot_count: meta.bot_count,
-            scripted_unit_count: meta.scripted_unit_count,
-            vehicles: meta.vehicles,
+            bot_count,
+            scripted_unit_count,
+            vehicles,
             raw,
         },
         json,

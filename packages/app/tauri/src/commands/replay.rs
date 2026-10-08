@@ -1214,7 +1214,7 @@ fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
 /// (see [`is_scripted_unit_nickname`]) — the same markers the frontend's
 /// `isAiName` uses to skip WG API lookups. Mirrors that
 /// `^(?::.*:|IDS_.*|#.+)$` rule.
-fn is_bot_nickname(name: &str) -> bool {
+pub(crate) fn is_bot_nickname(name: &str) -> bool {
     is_scripted_unit_nickname(name)
         || (name.len() >= 2 && name.starts_with(':') && name.ends_with(':'))
 }

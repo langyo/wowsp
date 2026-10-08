@@ -114,6 +114,7 @@ pub mod pairing_discovery;
 // bridge + phone client transport).
 pub mod pairing_relay;
 pub mod playtime;
+pub mod probe_roster;
 pub mod ranked;
 pub mod replay;
 pub mod res_mods;

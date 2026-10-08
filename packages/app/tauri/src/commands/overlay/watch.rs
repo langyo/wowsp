@@ -426,15 +426,24 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // the standing want; each rate-limit window retries acquisition
     // until it succeeds.
     let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
+    // A recorded battle with an EMPTY roster (the Lesta shape until the
+    // in-game probe's roster file warms up) is not done acquiring either:
+    // keep the same refresh cadence re-reading until the synthesis fills
+    // the roster (refresh_battle_state re-emits the event when it does).
+    let roster_pending = battle_known && super::arena_info::last_known_team_sizes() == (0, 0);
     if focused_on_game
         && tab_down
-        && !battle_known
+        && (!battle_known || roster_pending)
         && fsm
             .last_state_refresh
             .is_none_or(|t| t.elapsed() >= STATE_REFRESH)
     {
         fsm.last_state_refresh = Some(Instant::now());
-        battle_known = super::arena_info::refresh_battle_state(app);
+        // A failed re-read (mid-rewrite) must not flip an ALREADY known
+        // battle to unknown for one tick — that would blink the overlay
+        // off while Tab is held; the pending-roster retry continues on
+        // the next cadence tick either way.
+        battle_known |= super::arena_info::refresh_battle_state(app);
         tracing::debug!(battle_known, "tab held: refreshed battle state");
     }
     // The manual-locate picker layer is open in the main window: the

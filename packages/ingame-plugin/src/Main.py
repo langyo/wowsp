@@ -28,6 +28,10 @@ Still measured for diagnostics:
 
 Keep the syntax conservative (no f-strings, 3.6-level) and never let an
 exception escape a callback: the game keeps running but the mod dies.
+Never name an exception class in an `except` clause either — Lesta's
+ModsAPI sandbox omits the exception classes from its builtin whitelist,
+so `except Exception:` itself raises NameError there; handlers must use
+bare `except:` (with `_exc_text` for the message).
 """
 API_VERSION = 'API_v1.0'
 
@@ -65,10 +69,13 @@ def load_tool_config():
     """
     cfg = dict(CONFIG_DEFAULTS)
     try:
-        import os
-        here = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(here, os.pardir, os.pardir, 'wowsp.toml')
-        with open(path, 'r') as handle:
+        # Relative open only — no `os`, no `__file__`: the PnFMods loader
+        # runs mods with their own directory as the CWD (every bridge file
+        # in this mod relies on that convention), while `import os` and
+        # `__file__` are not resolvable in every client's sandbox (Lesta's
+        # ModsAPI whitelists imports/builtins selectively — the 2026-10-08
+        # import crash chain started exactly here).
+        with open('../../wowsp.toml', 'r') as handle:
             body = handle.read()
         header = '[tools."battle.ingame.stats"]'
         lines = body.splitlines()
@@ -87,7 +94,7 @@ def load_tool_config():
                 if key in CONFIG_DEFAULTS and raw.lstrip('-').isdigit():
                     cfg[key] = int(raw)
             break
-    except Exception:
+    except:
         pass
     return cfg
 
@@ -110,6 +117,24 @@ GUESS_FIELDS = ('name', 'accountDBID', 'realm', 'shipParamsId', 'isBot', 'teamId
                 'maxHealth', 'currHealth')
 
 import time
+
+
+def _exc_text(limit):
+    """Sandbox-safe current-exception text.
+
+    Lesta's ModsAPI sandbox resolves builtins through a whitelist that
+    omits the exception classes: the NAME `Exception` itself raises
+    NameError the first time any handler evaluates (2026-10-08: the mod
+    died at import that way, silencing telemetry, the in-game panel and
+    the roster files for every Lesta battle). Bare `except:` needs no
+    name, and the live exception still reaches this helper via
+    sys.exc_info() when the sandbox allows the import.
+    """
+    try:
+        import sys
+        return str(sys.exc_info()[1])[:limit]
+    except:
+        return '?'
 
 
 def log(message):
@@ -165,8 +190,8 @@ class Probe(object):
         self.api_probe('load')
         try:
             events.onPlayersListUpdated(self.on_players_list)
-        except Exception as exc:
-            log('onPlayersListUpdated failed=' + str(exc)[:120])
+        except:
+            log('onPlayersListUpdated failed=' + _exc_text(120))
         try:
             stream = open(ROSTER_JOURNAL_FILE, 'r')
             seeded = []
@@ -176,38 +201,38 @@ class Probe(object):
                 try:
                     utils.jsonDecode(line)
                     seeded.append(line)
-                except Exception:
+                except:
                     pass  # drop malformed lines from earlier probe builds
             self.journal = seeded
             stream.close()
-        except Exception:
+        except:
             pass
         for name, module in (('battle', battle), ('events', events), ('ui', ui),
                              ('callbacks', callbacks), ('utils', utils)):
             try:
                 try:
                     names = sorted(dir(module))
-                except Exception:
+                except:
                     names = sorted(getattr(module, '__dict__', {}).keys())
                 log('api ' + name + ' ' + str(names))
-            except Exception as exc:
-                log('api ' + name + ' dump failed=' + str(exc)[:80])
+            except:
+                log('api ' + name + ' dump failed=' + _exc_text(80))
         try:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': int(time.time() * 1000), 'phase': 'load'})
-        except Exception as exc:
-            log('heartbeat write failed=' + str(exc)[:120])
+        except:
+            log('heartbeat write failed=' + _exc_text(120))
         try:
             # ModsAPI logs an engine error before raising for a missing file;
             # seed the mailbox once so battle ticks do not flood python.log.
             stream = open(MANUAL_FLAG, 'w')
             stream.write('0')
             stream.close()
-        except Exception as exc:
-            log('flag seed failed=' + str(exc)[:120])
+        except:
+            log('flag seed failed=' + _exc_text(120))
         try:
             self.put('wowspProbe.status', {'message': 'probe ' + PROBE_VERSION + ' loaded', 'version': PROBE_VERSION})
-        except Exception as exc:
-            log('ui entity create failed=' + str(exc)[:120])
+        except:
+            log('ui entity create failed=' + _exc_text(120))
         events.onSFMEvent(self.event)
         events.onBattleQuit(self.quit)
         events.onBattleStart(self.start)
@@ -265,30 +290,30 @@ class Probe(object):
         # resolve normally and missing ones raise catchable NameError.
         try:
             self.dh = dataHub
-        except Exception:
+        except:
             self.dh = None
         try:
             self.const = constants
-        except Exception:
+        except:
             self.const = None
         if self.dh is None:
             try:
                 import dataHub as dh_module
                 self.dh = dh_module
-            except Exception as exc:
-                log('dataHub resolve failed=' + str(exc)[:400])
+            except:
+                log('dataHub resolve failed=' + _exc_text(400))
         if self.const is None:
             try:
                 import constants as const_module
                 self.const = const_module
-            except Exception as exc:
-                log('constants resolve failed=' + str(exc)[:160])
+            except:
+                log('constants resolve failed=' + _exc_text(160))
 
     def on_players_list(self, *args):
         try:
             self.journal_mark('playersListUpdated')
-        except Exception as exc:
-            self.soft('players list journal failed=' + str(exc)[:120])
+        except:
+            self.soft('players list journal failed=' + _exc_text(120))
 
     def api_probe(self, phase):
         if not self.api_dumped:
@@ -301,21 +326,21 @@ class Probe(object):
                 try:
                     getter()
                     found.append(name)
-                except Exception:
+                except:
                     pass
             log('injected names=' + str(found))
             if self.const is not None:
                 try:
                     names = [n for n in dir(self.const.UiComponents) if not n.startswith('_')]
                     log('CC names=' + str(sorted(names))[:3800])
-                except Exception as exc:
-                    log('CC dir failed=' + str(exc)[:120])
+                except:
+                    log('CC dir failed=' + _exc_text(120))
             if self.dh is not None:
                 try:
                     log('dataHub dir=' + str([n for n in dir(self.dh)
                                               if not n.startswith('_')])[:2000])
-                except Exception as exc:
-                    log('dataHub dir failed=' + str(exc)[:120])
+                except:
+                    log('dataHub dir failed=' + _exc_text(120))
         log('api[%s] dh=%s const=%s' % (phase, self.dh is not None, self.const is not None))
         # Enumerate which components actually exist on avatar entities; this
         # is the per-player data vocabulary and it only exists in battle.
@@ -335,15 +360,15 @@ class Probe(object):
                         try:
                             if comp_class in entity:
                                 present[comp_name] = True
-                        except Exception:
+                        except:
                             pass
                     self.comp_dumped = True
                     log('entity components present=' + str(sorted(present.keys()))[:3000])
-                except Exception as exc:
-                    log('component enum failed=' + str(exc)[:120])
+                except:
+                    log('component enum failed=' + _exc_text(120))
             log('api[%s] avatar entities=%d' % (phase, counted))
-        except Exception as exc:
-            log('api[%s] entity collections failed=%s' % (phase, str(exc)[:160]))
+        except:
+            log('api[%s] entity collections failed=%s' % (phase, _exc_text(160)))
 
     def entity_states(self):
         """Per-avatar live state from entity components (health path is
@@ -358,22 +383,22 @@ class Probe(object):
                 try:
                     avatar = entity[cc.avatar]
                     name = str(avatar.name)
-                except Exception:
+                except:
                     continue
                 row = {}
                 try:
                     health = entity[cc.health]
                     row['hp'] = str(health.value) + '/' + str(health.max)
                     row['alive'] = str(bool(health.isAlive))
-                except Exception:
+                except:
                     pass
                 try:
                     row['relation'] = str(entity[cc.relation].value)
-                except Exception:
+                except:
                     pass
                 states[name] = row
-        except Exception as exc:
-            self.soft('entity states failed=' + str(exc)[:120])
+        except:
+            self.soft('entity states failed=' + _exc_text(120))
         return states
 
     def entity_walk(self):
@@ -403,8 +428,8 @@ class Probe(object):
         try:
             ally_relations = (self.const.PlayerRelation.SELF, self.const.PlayerRelation.ALLY)
             self_relation = self.const.PlayerRelation.SELF
-        except Exception as exc:
-            self.soft('PlayerRelation resolve failed=' + str(exc)[:120])
+        except:
+            self.soft('PlayerRelation resolve failed=' + _exc_text(120))
             return {}, {'ally': [], 'enemy': []}
         states = {}
         sides = {'ally': [], 'enemy': []}
@@ -413,7 +438,7 @@ class Probe(object):
             for entity in self.dh.getEntityCollections('avatar'):
                 try:
                     name = bare_name(str(entity[cc.avatar].name))
-                except Exception:
+                except:
                     continue
                 if not name:
                     continue
@@ -423,7 +448,7 @@ class Probe(object):
                     health = entity[cc.health]
                     alive = bool(health.isAlive)
                     row['hp'] = str(health.value) + '/' + str(health.max)
-                except Exception:
+                except:
                     pass
                 # Death latch (#716): isAlive can flicker back for a tick
                 # while the sinking animation settles; random battles have
@@ -446,12 +471,12 @@ class Probe(object):
                         if entity[cc.relation].value == self_relation:
                             self_name = name
                     row['relation'] = str(entity[cc.relation].value)
-                except Exception:
+                except:
                     pass
                 states[name] = row
                 sides[side].append((name, alive))
-        except Exception as exc:
-            self.soft('entity walk failed=' + str(exc)[:120])
+        except:
+            self.soft('entity walk failed=' + _exc_text(120))
         self.self_name = self_name
         return states, sides
 
@@ -505,21 +530,21 @@ class Probe(object):
             from ModsShell.API_v_1_0.dataHub import ComponentClass as CC
             names = [n for n in dir(CC) if not n.startswith('_')]
             log('shell[%s] CC %d names=%s' % (phase, len(names), str(sorted(names))[:3800]))
-        except Exception as exc:
-            log('shell[%s] CC failed=%s' % (phase, str(exc)[:120]))
+        except:
+            log('shell[%s] CC failed=%s' % (phase, _exc_text(120)))
         try:
             from dh import DataHubStorage
             hub = DataHubStorage.getDataHub(DataHubStorage.CLIENT_HUB)
             names = [n for n in dir(hub) if not n.startswith('_')]
             log('shell[%s] hub type=%s dir=%s' % (phase, str(type(hub)), str(names)[:2000]))
-        except Exception as exc:
-            log('shell[%s] hub failed=%s' % (phase, str(exc)[:120]))
+        except:
+            log('shell[%s] hub failed=%s' % (phase, _exc_text(120)))
         try:
             from ModsShell.API_v_1_0 import battleGate
             names = [n for n in dir(battleGate) if not n.startswith('_')]
             log('shell[%s] battleGate=%s' % (phase, str(names)[:2000]))
-        except Exception as exc:
-            log('shell[%s] battleGate failed=%s' % (phase, str(exc)[:120]))
+        except:
+            log('shell[%s] battleGate failed=%s' % (phase, _exc_text(120)))
         try:
             import BigWorld
             ents = BigWorld.entities
@@ -532,8 +557,8 @@ class Probe(object):
                 if names:
                     log('shell[%s] entity %s type=%s attrs=%s' % (phase, eid, str(type(entity)), str(names)[:1200]))
                     break
-        except Exception as exc:
-            log('shell[%s] bigworld failed=%s' % (phase, str(exc)[:120]))
+        except:
+            log('shell[%s] bigworld failed=%s' % (phase, _exc_text(120)))
 
     def quit(self, *args):
         self.roster = []
@@ -557,8 +582,8 @@ class Probe(object):
                                            'battle': self.session or '',
                                            'players': {}}) + '\n')
             stream.close()
-        except Exception as exc:
-            self.soft('telemetry clear failed=' + str(exc)[:120])
+        except:
+            self.soft('telemetry clear failed=' + _exc_text(120))
         log('battle cleared')
 
     def details_reset(self):
@@ -587,14 +612,14 @@ class Probe(object):
             if key != 'wowspProbe.status':
                 try:
                     ui.deleteUiElement(self.entities.pop(key))
-                except Exception as exc:
-                    self.soft('entity delete failed=' + str(exc)[:120])
+                except:
+                    self.soft('entity delete failed=' + _exc_text(120))
 
     def players_raw(self):
         try:
             return battle.getPlayersInfo() or {}
-        except Exception as exc:
-            self.soft('players error=' + str(exc)[:120])
+        except:
+            self.soft('players error=' + _exc_text(120))
             return {}
 
     def players(self, records):
@@ -605,7 +630,7 @@ class Probe(object):
                     continue
                 try:
                     aid = int(p['accountDBID'])
-                except Exception:
+                except:
                     aid = 0
                 # The record carries the player's realm (the game's own
                 # roster data — see the design doc's evidence table).
@@ -615,13 +640,13 @@ class Probe(object):
                 # companion falls back to its detection chain.
                 try:
                     realm = str(p['realm'] or '')
-                except Exception:
+                except:
                     realm = ''
                 result.append({'name': p['name'], 'account_id': max(0, aid),
                                'avatar_id': int(key), 'ship_id': int(p['shipParamsId']),
                                'realm': realm})
-        except Exception as exc:
-            self.soft('players error=' + str(exc)[:120])
+        except:
+            self.soft('players error=' + _exc_text(120))
             return []
         return sorted(result, key=lambda p: p['name'])[:64]
 
@@ -637,21 +662,21 @@ class Probe(object):
             stream = open(ROSTER_JOURNAL_FILE, 'w')
             stream.write('\n'.join(self.journal) + '\n')
             stream.close()
-        except Exception as exc:
-            self.soft('journal flush failed=' + str(exc)[:120])
+        except:
+            self.soft('journal flush failed=' + _exc_text(120))
 
     def read_field(self, record, key):
         try:
             value = record[key]
-        except Exception:
+        except:
             try:
                 value = getattr(record, key)
-            except Exception:
+            except:
                 return None
         try:
             if callable(value):
                 return None
-        except Exception:
+        except:
             pass
         return str(value)[:48]
 
@@ -660,7 +685,7 @@ class Probe(object):
         guessed-field projection for records the encoder cannot handle."""
         try:
             return str(utils.jsonEncode(record))[:1200]
-        except Exception:
+        except:
             return dict((k, v) for k, v in ((k, self.read_field(record, k))
                                             for k in GUESS_FIELDS) if v is not None)
 
@@ -673,8 +698,8 @@ class Probe(object):
                             ('dir', lambda: [k for k in dir(record) if not k.startswith('_')])):
             try:
                 log('discovery ' + label + '=' + str(call())[:3000])
-            except Exception as exc:
-                log('discovery ' + label + ' failed=' + str(exc)[:80])
+            except:
+                log('discovery ' + label + ' failed=' + _exc_text(80))
         for field in GUESS_FIELDS:
             value = self.read_field(record, field)
             if value is not None:
@@ -697,8 +722,8 @@ class Probe(object):
                     stream = open(ROSTER_RAW_FILE, 'w')
                     stream.write('{"t":' + stamp + ',' + body[1:] + '\n')
                     stream.close()
-                except Exception as exc:
-                    self.soft('roster_raw write failed=' + str(exc)[:120])
+                except:
+                    self.soft('roster_raw write failed=' + _exc_text(120))
                 if records and not self.discovered:
                     # First POPULATED snapshot of this battle: document the
                     # schema (the port-empty write must not consume this).
@@ -706,14 +731,14 @@ class Probe(object):
                     record = records[list(records)[0]]
                     try:
                         self.discover(record)
-                    except Exception as exc:
-                        log('discovery crashed=' + str(exc)[:120])
+                    except:
+                        log('discovery crashed=' + _exc_text(120))
                 # body starts with '{'; splice it open so the line is one
                 # flat object: {"t":...,"players":...,"states":...}
                 self.journal.append('{"t":' + stamp + ',' + body[1:])
                 self.journal_flush()
-        except Exception as exc:
-            self.soft('roster_raw failed=' + str(exc)[:120])
+        except:
+            self.soft('roster_raw failed=' + _exc_text(120))
 
     # -- request/response ----------------------------------------------------
 
@@ -733,8 +758,8 @@ class Probe(object):
             stream.close()
             self.busy = True
             log('request written players=' + str(len(self.roster)) + ' manual=' + str(bool(manual)))
-        except Exception as exc:
-            self.soft('request write failed=' + str(exc)[:120])
+        except:
+            self.soft('request write failed=' + _exc_text(120))
 
     def read_response(self):
         try:
@@ -761,9 +786,9 @@ class Probe(object):
             self.busy = False
             self.refresh_panel()
             log('response applied revision=' + str(self.revision) + ' rows=' + str(len(rows)))
-        except Exception as exc:
+        except:
             # No response file yet is the normal state while nobody answers.
-            self.soft('response read failed=' + str(exc)[:120])
+            self.soft('response read failed=' + _exc_text(120))
 
     # -- events ---------------------------------------------------------------
 
@@ -789,8 +814,8 @@ class Probe(object):
                     name = name[len(prefix):]
             if name == 'window.hide' and isinstance(data, dict) and data.get('windowName') == 'Battle':
                 self.quit()
-        except Exception as exc:
-            self.soft('event error=' + str(exc)[:120])
+        except:
+            self.soft('event error=' + _exc_text(120))
 
     def key_event(self, event):
         try:
@@ -809,8 +834,8 @@ class Probe(object):
             self.v_down = True
             if event.isAltDown():
                 log('alt+v pressed while session=' + (self.session or 'none'))
-        except Exception as exc:
-            self.soft('key event error=' + str(exc)[:120])
+        except:
+            self.soft('key event error=' + _exc_text(120))
 
     # -- scheduler ----------------------------------------------------------
 
@@ -825,8 +850,8 @@ class Probe(object):
                 # the rest of the battle (observed 2026-09-30 15:37).
                 callbacks.cancel(handle[0])
                 self.tick()
-            except Exception as exc:
-                self.soft('tick error=' + str(exc)[:160])
+            except:
+                self.soft('tick error=' + _exc_text(160))
             self.schedule()
         handle[0] = callbacks.callback(1 if self.session else 2, tick)
 
@@ -872,8 +897,8 @@ class Probe(object):
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': int(time.time() * 1000),
                                              'phase': 'battle' if self.session else 'port',
                                              'players': len(self.roster), 'revision': self.revision})
-        except Exception as exc:
-            self.soft('heartbeat failed=' + str(exc)[:120])
+        except:
+            self.soft('heartbeat failed=' + _exc_text(120))
         self.write_telemetry()
         if not self.session:
             return
@@ -885,7 +910,7 @@ class Probe(object):
                 self.manual_stamp = stamp
                 if 0 <= time.time() - float(stamp) < 10:
                     self.request(True)
-        except Exception:
+        except:
             pass
         if self.busy:
             self.read_response()
@@ -946,7 +971,7 @@ class Probe(object):
                     if verdict is True or verdict is False or str(verdict) in ('True', 'False'):
                         self.raw_isalive_seen = True
                     raw_alive[nm] = str(verdict) != 'False'
-                except Exception:
+                except:
                     continue
             for p in self.roster:
                 name = p['name']
@@ -1006,8 +1031,8 @@ class Probe(object):
             stream = open(TELEMETRY_FILE, 'w')
             stream.write(body + '\n')
             stream.close()
-        except Exception as exc:
-            self.soft('telemetry failed=' + str(exc)[:120])
+        except:
+            self.soft('telemetry failed=' + _exc_text(120))
         self.refresh_panel()
 
     # -- in-game panel -------------------------------------------------------
@@ -1076,8 +1101,8 @@ class Probe(object):
                 return
             self.last_panel = body
             self.put(PANEL_KEY, data)
-        except Exception as exc:
-            self.soft('panel failed=' + str(exc)[:120])
+        except:
+            self.soft('panel failed=' + _exc_text(120))
 
     def soft(self, message):
         # Deduplicated soft logging: a repeating error should appear once.
