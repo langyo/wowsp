@@ -145,7 +145,12 @@ pub async fn read_replay_positions(
             // state-recovered starting health, so the HP anchoring and the
             // recorder-team slot inside `group_by_entity` treat it exactly
             // like a decoded WG arena state.
-            synthesize_lesta_arena_players(&mut decoded.arena_players, &decoded.kinds, &roster);
+            synthesize_lesta_arena_players(
+                &mut decoded.arena_players,
+                &decoded.kinds,
+                &roster,
+                decoded.recorder_ship,
+            );
         }
         Ok(group_by_entity(decoded))
     })
@@ -275,6 +280,35 @@ fn live_snapshot_from_bytes(path: &str, bytes: &[u8]) -> wowsp_tauri_shared::Liv
                 .and_then(|x| x.as_str())
                 .map(str::to_string);
             roster = roster_from_raw(std::path::Path::new(path), &raw);
+            if roster.is_empty() {
+                // The Lesta LIVE descriptor carries no roster at all (the
+                // block[1] playersPublicInfo only lands when the battle
+                // settles). The in-game probe's roster file is fresh and
+                // complete mid-battle — without it the entity-create ship
+                // ids never resolve, the self join fails, and the live
+                // view stays on its waiting state for the whole fight
+                // (2026-10-08 field session).
+                // The freshness gate anchors on the temp container's
+                // CREATION time: its mtime advances with every append, and
+                // the probe's write-once roster would go "stale" against it
+                // in any quiet phase >5 s, silently dropping the roster
+                // mid-battle (created() falls back to modified() on
+                // filesystems without birth time).
+                let battle_start = fs::metadata(path)
+                    .and_then(|m| m.created().or_else(|_| m.modified()))
+                    .ok();
+                if let Some(synth) = super::probe_roster::synthesize_for_arena_since(
+                    std::path::Path::new(path),
+                    raw.get("playerName").and_then(|v| v.as_str()),
+                    battle_start,
+                ) {
+                    tracing::info!(
+                        players = synth.len(),
+                        "live temp replay roster synthesized from the in-game probe"
+                    );
+                    roster = synth;
+                }
+            }
             for v in &roster {
                 if v.ship_id > 0 {
                     candidates.insert(v.ship_id as u32);
@@ -314,7 +348,12 @@ fn live_snapshot_from_bytes(path: &str, bytes: &[u8]) -> wowsp_tauri_shared::Liv
         // `arena_players` (starting health included) so the HP anchoring
         // and the recorder-team slot behave exactly like a decoded WG
         // arena state.
-        synthesize_lesta_arena_players(&mut decoded.arena_players, &decoded.kinds, &roster);
+        synthesize_lesta_arena_players(
+            &mut decoded.arena_players,
+            &decoded.kinds,
+            &roster,
+            decoded.recorder_ship,
+        );
     }
     // Slim projection: the self view never reads the camera/squadron/
     // chat families, and the snapshot is polled every few seconds —
@@ -502,6 +541,7 @@ fn synthesize_lesta_arena_players(
     arena_players: &mut Vec<wowsp_tauri_shared::ArenaPlayer>,
     kinds: &std::collections::BTreeMap<i32, wowsp_tauri_shared::EntityKind>,
     roster: &[VehicleEntry],
+    recorder_ship: Option<i32>,
 ) {
     if !arena_players.is_empty() || roster.is_empty() {
         return;
@@ -516,8 +556,39 @@ fn synthesize_lesta_arena_players(
             entities_by_ship.entry(sid).or_default().push(*eid);
         }
     }
-    let mut players = Vec::with_capacity(roster.len());
+    let mut players: Vec<wowsp_tauri_shared::ArenaPlayer> = Vec::with_capacity(roster.len());
+    // The recorder's own entry anchors to the self-position entity
+    // DIRECTLY: a co-op mirror (a teammate in the identical ship config)
+    // makes the config-id join ambiguous and the unique-match rule below
+    // would drop the local player's row entirely — the 2026-10-08 live
+    // calibration: `is_self` vanished mid-battle the moment the mirror's
+    // entity resolved. Removing the anchored entity from the candidate
+    // map ALSO un-ambiguates the mirror teammate's join (its config id
+    // now matches exactly one remaining entity), so the whole roster
+    // joins instead of silently losing the mirrored half.
+    if let Some(eid) = recorder_ship
+        && kinds.contains_key(&eid)
+        && let Some(self_entry) = roster.iter().find(|v| v.relation == 0)
+    {
+        players.push(wowsp_tauri_shared::ArenaPlayer {
+            entity_id: eid,
+            team_id: 0,
+            player_id: self_entry.id,
+            ship_params_id: self_entry.ship_id.max(0) as u32,
+            max_health: kinds.get(&eid).and_then(|k| k.max_health).unwrap_or(0),
+            name: self_entry.name.clone(),
+            is_bot: false,
+            avatar_id: None,
+            is_self: true,
+        });
+        if let Some(list) = entities_by_ship.get_mut(&self_entry.ship_id) {
+            list.retain(|e| *e != eid);
+        }
+    }
     for v in roster {
+        if v.relation == 0 && players.iter().any(|p| p.is_self) {
+            continue; // already anchored above
+        }
         if v.ship_id <= 0 {
             continue;
         }
@@ -553,6 +624,7 @@ fn synthesize_lesta_arena_players(
 /// EntityCreate packets. Ships (type 2 with many samples) sort first.
 fn group_by_entity(decoded: super::packets::DecodedReplay) -> wowsp_tauri_shared::ReplayStream {
     let super::packets::DecodedReplay {
+        recorder_ship: _, // consumed by the self-anchor synthesis upstream
         positions,
         kinds,
         destroys,
@@ -1575,7 +1647,7 @@ mod tests {
                 ship_name: None,
             },
         ];
-        synthesize_lesta_arena_players(&mut arena, &kinds, &roster);
+        synthesize_lesta_arena_players(&mut arena, &kinds, &roster, None);
         // Mirror-picked 103 (two roster entries, two entities) joins
         // nothing; shipId-less entity 14 and the ship_id-0 entry join
         // nothing.
@@ -1592,12 +1664,102 @@ mod tests {
 
     /// An arena list that already decoded (WG path) or an empty roster keeps
     /// the synthesis a no-op.
+    fn entity_kind_with_ship(ship: i64) -> wowsp_tauri_shared::EntityKind {
+        wowsp_tauri_shared::EntityKind {
+            entity_type: 2,
+            vehicle_id: 0,
+            initial_x: 0.0,
+            initial_y: 0.0,
+            initial_z: 0.0,
+            creation_time: 0.0,
+            ship_id: if ship > 0 { Some(ship) } else { None },
+            max_health: Some(1000),
+            control_point_index: None,
+            initial_team: None,
+            radius: None,
+        }
+    }
+
+    /// Regenerate the webui live-calibration fixture from a local LESTA
+    /// replay (.korablireplay — a WG replay would decode a stream the
+    /// calibration test's ground truth does not match):
+    /// the decoded LiveSelfStream of `WOWSP_TEST_REPLAY` is written to
+    /// `WOWSP_CALIB_FIXTURE` (see liveSelfCalibration.test.ts — the
+    /// fixture is gitignored, so fresh clones skip the calibration until
+    /// this runs against a local capture).
+    #[test]
+    #[ignore = "writes a local fixture from a machine-specific replay path"]
+    fn regenerate_live_calibration_fixture() {
+        let Some(path) = std::env::var_os("WOWSP_TEST_REPLAY") else {
+            panic!("set WOWSP_TEST_REPLAY=<replay file> and WOWSP_CALIB_FIXTURE=<out.json>");
+        };
+        let Some(out) = std::env::var_os("WOWSP_CALIB_FIXTURE") else {
+            panic!("set WOWSP_CALIB_FIXTURE=<out.json>");
+        };
+        let bytes = fs::read(&path).unwrap();
+        let stream = live_snapshot_from_bytes(&path.to_string_lossy(), &bytes);
+        let json = serde_json::to_string(&stream).unwrap();
+        fs::write(&out, json).unwrap();
+    }
+
+    #[test]
+    fn lesta_arena_synthesis_anchors_self_and_unambiguates_the_mirror() {
+        // The live-calibration scenario: two identical ship configs on
+        // the field (the recorder + a same-config enemy), so the config-id
+        // join alone cannot tell them apart — the recorder's anchor must
+        // place the relation-0 entry while the OTHER config holder joins
+        // uniquely once the anchor is removed from the candidates.
+        let mut kinds: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> =
+            std::collections::BTreeMap::new();
+        for eid in [10i32, 20] {
+            kinds.insert(eid, entity_kind_with_ship(101));
+        }
+        kinds.insert(30, entity_kind_with_ship(103));
+        let roster = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 101,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: 2,
+                name: "mirror".into(),
+                relation: 2,
+                ship_id: 101,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: 3,
+                name: "other".into(),
+                relation: 2,
+                ship_id: 103,
+                ship_name: None,
+            },
+        ];
+        let mut arena = Vec::new();
+        synthesize_lesta_arena_players(&mut arena, &kinds, &roster, Some(10));
+        let me = arena.iter().find(|p| p.is_self).expect("self anchored");
+        assert_eq!(me.entity_id, 10);
+        assert_eq!(me.player_id, 1);
+        // The mirror joined the REMAINING entity with its config id.
+        let mirror = arena
+            .iter()
+            .find(|p| p.name == "mirror")
+            .expect("mirror joined");
+        assert_eq!(mirror.entity_id, 20);
+        assert_eq!(mirror.team_id, 1);
+        // And the unrelated enemy joined normally.
+        assert!(arena.iter().any(|p| p.entity_id == 30 && p.name == "other"));
+    }
+
     #[test]
     fn lesta_arena_synthesis_is_noop_when_unneeded() {
         let kinds: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> =
             std::collections::BTreeMap::new();
         let mut arena = Vec::new();
-        synthesize_lesta_arena_players(&mut arena, &kinds, &[]);
+        synthesize_lesta_arena_players(&mut arena, &kinds, &[], None);
         assert!(arena.is_empty());
 
         let mut populated = vec![wowsp_tauri_shared::ArenaPlayer {
@@ -1625,6 +1787,7 @@ mod tests {
                 ship_id: 1,
                 ship_name: None,
             }],
+            None,
         );
         let after: Vec<_> = populated
             .iter()

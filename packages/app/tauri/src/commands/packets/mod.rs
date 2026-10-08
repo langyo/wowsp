@@ -155,6 +155,11 @@ pub struct PropertyChange {
 /// a map of entity id → sink time for ships destroyed during the match, and
 /// per-entity property change timelines (health, etc.).
 pub struct DecodedReplay {
+    /// The recorder's own SHIP entity id — the unique type-2 entity with
+    /// zero Position (0x0a) samples that still rides the 0x2c self stream
+    /// (see `frames::recorder_ship_of`). `None` when the capture is
+    /// ambiguous or carries no self stream.
+    pub recorder_ship: Option<i32>,
     pub positions: BTreeMap<i32, Vec<PositionSample>>,
     pub kinds: BTreeMap<i32, EntityKind>,
     /// Entity id → match time (seconds) at which the entity was destroyed.

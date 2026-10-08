@@ -43,6 +43,7 @@ pub(super) fn walk_frames(
     let mut chat_messages: Vec<wowsp_tauri_shared::ChatEvent> = Vec::new();
     let mut achievements: Vec<wowsp_tauri_shared::AchievementEvent> = Vec::new();
     let mut recorder_avatar: Option<i32> = None;
+    let mut position_a_counts: BTreeMap<i32, usize> = BTreeMap::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -70,6 +71,7 @@ pub(super) fn walk_frames(
         match logical_type {
             PACKET_POSITION => {
                 if let Some(sample) = parse_position(payload, time) {
+                    *position_a_counts.entry(sample.entity_id).or_default() += 1;
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
             },
@@ -381,6 +383,15 @@ pub(super) fn walk_frames(
     // (3 wire blobs, pickle pair lists, ≥2 entries) is the second defense.
     let mut arena_players: Vec<wowsp_tauri_shared::ArenaPlayer> = Vec::new();
     if profile.arena_state_method.is_some() {
+        // Lesta broadcasts onArenaStateReceived on EVERY avatar, each
+        // carrying its own view — and the client whose view contains its
+        // own calling avatar is the recorder. Picking "the first call that
+        // decodes" raced entity-kind completeness (live calibration
+        // 2026-10-08: a 10%-prefix cut picked the recorder's 9-player
+        // state, the 25% cut picked a bot's 6-player enemy list, dropping
+        // is_self mid-battle). Prefer the self-identifying call; the
+        // CellPlayerCreate avatar stays the fallback marker for WG.
+        let mut fallback: Option<Vec<wowsp_tauri_shared::ArenaPlayer>> = None;
         for call in &methods {
             if Some(call.method_id) != profile.arena_state_method {
                 continue;
@@ -392,13 +403,28 @@ pub(super) fn walk_frames(
                 continue;
             }
             if let Some(mut players) = decode_arena_state(&call.args, version_key) {
-                let avatar = recorder_avatar;
+                let self_here = players.iter().any(|p| p.avatar_id == Some(call.entity_id));
                 for p in &mut players {
-                    p.is_self = avatar.is_some_and(|a| p.avatar_id == Some(a));
+                    p.is_self = self_here && p.avatar_id == Some(call.entity_id);
                 }
-                arena_players = players;
-                break;
+                if self_here {
+                    arena_players = players;
+                    break;
+                }
+                if fallback.is_none() {
+                    if let Some(avatar) = recorder_avatar {
+                        for p in &mut players {
+                            p.is_self = p.avatar_id == Some(avatar);
+                        }
+                    }
+                    fallback = Some(players);
+                }
             }
+        }
+        if arena_players.is_empty()
+            && let Some(players) = fallback
+        {
+            arena_players = players;
         }
     }
     for samples in positions.values_mut() {
@@ -415,7 +441,17 @@ pub(super) fn walk_frames(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
+    // The recorder's own ship entity: the local player's vehicle never
+    // emits Position (0x0a) packets (its transform rides the 0x2c stream
+    // instead), while EVERY other ship streams 0x0a continuously. Exactly
+    // one type-2 entity has no 0x0a samples — that is the recorder's ship,
+    // a client-invariant anchor no roster or arena state can contradict
+    // (live-verified on a Lesta 26.10 capture: the self ship carried zero
+    // 0x0a samples while its teammate mirrored its ship config, which had
+    // been breaking the config-id join).
+    let recorder_ship = recorder_ship_of(&kinds, &position_a_counts, &positions);
     DecodedReplay {
+        recorder_ship,
         positions,
         kinds,
         destroys,
@@ -451,4 +487,28 @@ pub(super) fn walk_frames(
         weather_transitions,
         weather_notifications,
     }
+}
+
+/// The recorder's own ship entity, as an extracted production rule (the
+/// inline closure's contract, now testable): the unique type-2 entity that
+/// has streamed NO Position (0x0a) samples but IS present in the position
+/// map (its transform rides the 0x2c self stream) — the "present via 0x2c"
+/// half excludes created-but-never-sampled ships, so a torn prefix cannot
+/// mis-anchor on an enemy that simply has not streamed yet. Anything other
+/// than exactly one candidate yields None (the config-id join's fallback).
+pub(super) fn recorder_ship_of(
+    kinds: &BTreeMap<i32, wowsp_tauri_shared::EntityKind>,
+    position_a_counts: &BTreeMap<i32, usize>,
+    positions: &BTreeMap<i32, Vec<wowsp_tauri_shared::PositionSample>>,
+) -> Option<i32> {
+    let candidates: Vec<i32> = kinds
+        .iter()
+        .filter(|(eid, k)| {
+            k.entity_type == 2
+                && !position_a_counts.contains_key(eid)
+                && positions.contains_key(eid)
+        })
+        .map(|(eid, _)| *eid)
+        .collect();
+    (candidates.len() == 1).then(|| candidates[0])
 }

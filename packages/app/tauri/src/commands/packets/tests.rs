@@ -1715,3 +1715,100 @@ fn partial_decode_keeps_prefix_behind_zero_fill() {
         "frames before the zero fill must survive the partial decode"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Recorder-ship anchor (live calibration, 2026-10-08 Lesta battle)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The recorder's own ship never emits Position (0x0a) packets — its
+/// transform rides the 0x2c stream instead — so among the type-2 entities
+/// exactly ONE carries no 0x0a samples, verified on a Lesta capture; the
+/// anchor is consumed only on the Lesta paths today. That
+/// anchor survives roster gaps, co-op mirror configs and Lesta's missing
+/// arena state, where the config-id join falls apart (the live battle this
+/// rule was cut on: the self entry vanished mid-fight before it).
+fn calib_sample_at(time: f32) -> wowsp_tauri_shared::PositionSample {
+    wowsp_tauri_shared::PositionSample {
+        entity_id: 0,
+        vehicle_id: 0,
+        time,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        yaw: 0.0,
+    }
+}
+
+#[test]
+fn recorder_ship_is_the_type2_entity_without_0x0a_samples() {
+    // Three ships: 11 streams 0x0a, the recorder's 12 only ever rides the
+    // 0x2c stream (present in the position map, absent from the 0x0a
+    // counts), 13 streams 0x0a; entity 14 is not a ship.
+    let mut kinds = std::collections::BTreeMap::new();
+    kinds.insert(11, test_entity_kind(2));
+    kinds.insert(12, test_entity_kind(2));
+    kinds.insert(13, test_entity_kind(2));
+    kinds.insert(14, test_entity_kind(7));
+    let mut positions = std::collections::BTreeMap::new();
+    positions.insert(11, vec![calib_sample_at(1.0)]);
+    positions.insert(12, vec![calib_sample_at(1.0)]); // the 0x2c stream
+    positions.insert(13, vec![calib_sample_at(2.0)]);
+    let mut a_counts = std::collections::BTreeMap::new();
+    a_counts.insert(11, 1usize);
+    a_counts.insert(13, 1usize);
+    assert_eq!(
+        super::frames::recorder_ship_of(&kinds, &a_counts, &positions),
+        Some(12)
+    );
+}
+
+/// A ship created but never sampled (torn prefix) must NOT become the
+/// anchor: only a 0x2c-riding ship qualifies, and 0 or 2+ candidates
+/// mean no anchor at all (the config-id fallback stays in force).
+#[test]
+fn recorder_ship_anchor_refuses_ambiguous_captures() {
+    let mut kinds = std::collections::BTreeMap::new();
+    let mut positions = std::collections::BTreeMap::new();
+    let mut a_counts = std::collections::BTreeMap::new();
+    for eid in [21i32, 22, 23] {
+        kinds.insert(eid, test_entity_kind(2));
+        positions.insert(eid, vec![calib_sample_at(1.0)]);
+        a_counts.insert(eid, 1usize);
+    }
+    // Every ship streams 0x0a: no candidate.
+    assert_eq!(
+        super::frames::recorder_ship_of(&kinds, &a_counts, &positions),
+        None
+    );
+    // One candidate that is NOT in the position map (created, unsampled):
+    // still refused — the anchor must ride the 0x2c stream.
+    a_counts.remove(&22);
+    positions.remove(&22);
+    assert_eq!(
+        super::frames::recorder_ship_of(&kinds, &a_counts, &positions),
+        None
+    );
+    // Two 0x2c-riding ships (a spectator-era ambiguity): refused.
+    a_counts.remove(&21);
+    a_counts.remove(&23);
+    assert_eq!(
+        super::frames::recorder_ship_of(&kinds, &a_counts, &positions),
+        None
+    );
+}
+
+fn test_entity_kind(entity_type: i16) -> wowsp_tauri_shared::EntityKind {
+    wowsp_tauri_shared::EntityKind {
+        entity_type,
+        vehicle_id: 0,
+        initial_x: 0.0,
+        initial_y: 0.0,
+        initial_z: 0.0,
+        creation_time: 0.0,
+        ship_id: None,
+        max_health: None,
+        control_point_index: None,
+        initial_team: None,
+        radius: None,
+    }
+}

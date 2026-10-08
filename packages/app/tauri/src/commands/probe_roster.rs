@@ -57,6 +57,19 @@ pub(crate) fn synthesize_for_arena(
     arena_path: &Path,
     player_name: Option<&str>,
 ) -> Option<Vec<VehicleEntry>> {
+    synthesize_for_arena_since(arena_path, player_name, None)
+}
+
+/// [`synthesize_for_arena`] with an explicit BATTLE-START clock: the live
+/// temp-replay path passes the container's creation time (its mtime
+/// advances with every append — comparing the probe's write-once roster
+/// against it self-disables the synthesis in any quiet phase >5 s; the
+/// intended semantic is "roster written after THIS battle began").
+pub(crate) fn synthesize_for_arena_since(
+    arena_path: &Path,
+    player_name: Option<&str>,
+    battle_start: Option<SystemTime>,
+) -> Option<Vec<VehicleEntry>> {
     // One resolve serves both the probe dir and the same-install guard
     // (resolve_root takes a process snapshot — not twice per read).
     let ctx =
@@ -70,8 +83,21 @@ pub(crate) fn synthesize_for_arena(
     let res_mods = super::game_context::res_mods_dir(&ctx.root).ok()?;
     let roster_path = res_mods.join(PROBE_MOD_DIR).join(ROSTER_RAW_FILE);
     let roster_mtime = roster_path.metadata().and_then(|m| m.modified()).ok()?;
-    let arena_mtime = arena_path.metadata().and_then(|m| m.modified()).ok()?;
+    let arena_mtime =
+        battle_start.or_else(|| arena_path.metadata().and_then(|m| m.modified()).ok())?;
     if !roster_is_fresh(roster_mtime, arena_mtime) {
+        return None;
+    }
+    // Upper bound: a battle-start clock only moves the freshness floor
+    // DOWN (Windows keeps the birth time across the per-battle truncation,
+    // so `created()` can predate every battle this file ever held). A
+    // leftover roster from a crashed session — the probe's clear-on-quit
+    // never ran — would pass that floor; this envelope rejects anything
+    // no battle could still be running behind.
+    if let Ok(meta) = arena_path.metadata()
+        && let Ok(replay_mtime) = meta.modified()
+        && roster_mtime + std::time::Duration::from_secs(45 * 60) < replay_mtime
+    {
         return None;
     }
     let bytes = std::fs::read(&roster_path).ok()?;

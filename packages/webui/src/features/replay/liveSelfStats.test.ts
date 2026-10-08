@@ -130,8 +130,23 @@ describe("buildSelfStats", () => {
     const m = build(stream);
     expect(m!.damageSource).toBe("server");
     expect(m!.damage).toBe(5123);
-    expect(m!.hits).toBe(6);
+    // Hits ride the impact stream when the ship entity is known (the
+    // server dict counts damage-dealing hits only — field calibration
+    // 2026-10-08 measured 63 vs the game's 73 on a real Lesta battle);
+    // baseStream has one self impact near the live victim.
+    expect(m!.hits).toBe(1);
     expect(m!.dealt.find((r) => r.entityId === 20)!.damage).toBe(4000);
+  });
+
+  it("falls back to the server dict's hit counts without a ship entity", () => {
+    // No self ship entity yet (still loading): the dict counts are the
+    // only hit signal available.
+    const stream = baseStream();
+    stream.damageStats = [{ time: 20, weapon: 1, category: 0, count: 6, total: 5123 }];
+    stream.trajectories = [];
+    const m = build(stream);
+    expect(m!.selfEntityId).toBeNull();
+    expect(m!.hits).toBe(6);
   });
 
   it("localizes my achievements only", () => {

@@ -1,0 +1,4 @@
+# Local-only live-calibration fixture (~2 MB real position stream);
+# regenerated via the ignored Rust test regenerate_live_calibration_fixture
+# (see liveSelfCalibration.test.ts).
+src/features/replay/__fixtures__/

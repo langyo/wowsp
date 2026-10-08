@@ -47,8 +47,14 @@ const HIT_HP_BEFORE_S = 0.4;
 const HIT_HP_AFTER_S = 0.6;
 /** Minimum HP drop counted as damage (tick noise floor). */
 const HIT_HP_MIN_DELTA = 50;
-/** Death within this window of my impact credits the frag. */
+/** Death within this window BEFORE-OR-AFTER my impact credits the frag.
+ *  Direct shell kills land inside ±1.2 s; a sunk-by-DoT victim (fire/flood
+ *  from my earlier salvo — no impact at death time) still credits within
+ *  the longer pre-window: the 2026-10-08 calibration battle's third kill
+ *  died 3.1 s after my last hit, and the game's killer-attribution counted
+ *  it. The post-side stays tight (a post-death splash is not a kill). */
 const FRAG_DEATH_WINDOW_S = 1.2;
+const FRAG_DOT_PRE_WINDOW_S = 5.0;
 
 /** One per-ship combat row: what I did to that ship (dealt) or that ship
  *  did to me (received). */
@@ -362,6 +368,15 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
   const takenBook = new RowBook(trajectories, roster, arenaPlayers);
   const shipEntityIds = new Set(ships.map((t) => t.entityId));
   let heuristicDamage = 0;
+  /** Server-confirmed hits of mine — the game's 命中 counter semantics:
+   *  one VOLLEY tick (shells arriving inside 0.25 s count once — the game
+   *  ribbons per salvo, not per shell) landing near a ship ALIVE at impact
+   *  time on the enemy side. The receiveDamageStat dict's counts only
+   *  cover damage-dealing hits (63 vs the game's 73 on the 2026-10-08
+   *  calibration battle); the raw per-shell count over-counts splashes
+   *  (91 events → 77 volleys → 73 game hits). */
+  let impactHits = 0;
+  let lastVolleyTick = -10.0;
   /** One impact's victim HP delta, attributed by direction: my hit near a
    *  ship credits me (row = victim); their hit near me credits the firing
    *  entity (row = attacker, victim fixed to my own hull). */
@@ -384,14 +399,65 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
   };
   for (const e of shotKills) {
     if (e.ownerId === selfEntityId) {
+      const newVolley = e.time - lastVolleyTick > 0.25;
+      if (newVolley) lastVolleyTick = e.time;
+      let countedHit = false;
       for (const tr of ships) {
         if (tr.entityId === selfEntityId) continue;
+        // Hit accounting: an impact near a ship that was ALIVE at impact
+        // time is a direct hit (dead ships soak in-flight shells without
+        // ribboning — live calibration: unfiltered 91 vs the game's 73).
+        // Counted ONCE per impact even with overlapping hulls; the HP-delta
+        // attribution below runs unchanged.
+        const impactAt = sampleAtTraj(tr, e.time);
+        const diedBefore = tr.deathTime != null && tr.deathTime <= e.time;
+        if (
+          !countedHit &&
+          newVolley &&
+          impactAt &&
+          !diedBefore &&
+          // Enemy side only: the self entry anchors team 0, and friendly
+          // splashes do not ribbon.
+          (() => {
+            const ap = arenaPlayers.find((p) => p.entityId === tr.entityId);
+            return ap == null || ap.teamId !== 0;
+          })() &&
+          Math.hypot(impactAt.x - e.x, impactAt.z - e.z) <= HIT_RADIUS_M
+        ) {
+          impactHits++;
+          countedHit = true;
+        }
         const delta = attribute(dealtBook, tr, tr.entityId, e);
         if (delta > 0) {
           heuristicDamage += delta;
-          if (tr.deathTime != null && Math.abs(tr.deathTime - e.time) < FRAG_DEATH_WINDOW_S) {
-            const row = dealtBook.rows.get(tr.entityId);
-            if (row) row.killed = true;
+          // Frag credit: MY impact's HP delta must have landed while the
+          // victim was still afloat (diedBefore rejects the sinking
+          // animation's post-death splash ticks — the 2026-10-08
+          // calibration battle over-credited 4 vs the game's 3 until the
+          // alive-at-impact gate joined the death-proximity window).
+          if (!diedBefore && tr.deathTime != null) {
+            // Kill credit is ENEMY-side only: a teammate's sinking under
+            // my splash window is never my frag (the 2026-10-08
+            // calibration battle credited an ally DoT death until this
+            // gate). Unjoined entities (unknown side) stay uncredited —
+            // an estimate never guesses a kill.
+            const ap = arenaPlayers.find((p) => p.entityId === tr.entityId);
+            const enemySide = ap != null && ap.teamId !== 0;
+            const dt = e.time - tr.deathTime; // <0: my hit before death
+            // DoT kills: the victim burns/floods out seconds after my last
+            // shell, so the death-window HP delta may be unreadable (sparse
+            // sampling near death) — my row's OWN attributed damage on the
+            // victim is the fallback proof of engagement.
+            const rowSoFar = dealtBook.rows.get(tr.entityId);
+            const engaged = delta > 0 || (rowSoFar?.damage ?? 0) > 0;
+            const credited =
+              enemySide &&
+              (Math.abs(dt) < FRAG_DEATH_WINDOW_S ||
+                (dt < 0 && -dt < FRAG_DOT_PRE_WINDOW_S && engaged));
+            if (credited) {
+              const row = dealtBook.rows.get(tr.entityId);
+              if (row) row.killed = true;
+            }
           }
         }
       }
@@ -425,7 +491,9 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
     damageSource: folded ? "server" : "heuristic",
     damage: Math.round(folded?.damage ?? heuristicDamage),
     planeDamage: folded?.planeDamage ?? 0,
-    hits: folded?.hits ?? 0,
+    // The impact count matches the game's hit counter; the server dict's
+    // damage-dealing-only count stays the fallback (no ship entity yet).
+    hits: impactHits > 0 ? impactHits : (folded?.hits ?? 0),
     taken,
     hpRatio,
     sunk: selfTraj.deathTime != null,
