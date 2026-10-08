@@ -540,7 +540,11 @@ pub fn playtime_overview() -> PlaytimeOverview {
 /// The battle-ledger disk cache under the AppData root: parsed replay
 /// headers keyed by absolute path, so a scan over an unchanged replays tree
 /// reads no headers at all (a few hundred replays × the descriptor block is
-/// real I/O, and the playtime view re-scans on every open).
+/// real I/O, and the playtime view re-scans on every open). The cache is
+/// also the ledger's HISTORY: an entry survives its file being deleted (a
+/// game cleanup, a mod sweep, an uninstalled client), so a battle keeps its
+/// cell once scanned. One entry is a few hundred bytes, so even years of
+/// heavy play stay small.
 const BATTLES_CACHE_FILE: &str = "playtime-battles-cache.json";
 
 /// One cached header parse. Identity = the file's `len` + `mtime_ms` — a
@@ -554,7 +558,10 @@ const BATTLES_CACHE_FILE: &str = "playtime-battles-cache.json";
 struct BattleCacheEntry {
     len: u64,
     mtime_ms: u64,
-    lite: ReplayMetaLite,
+    /// The projected battle row, frozen at parse time — install attribution
+    /// included, so a history row keeps pointing at the client that fought
+    /// it even after that file (or the whole install) is gone.
+    battle: PlaytimeBattle,
 }
 
 /// The cache file's shape. `#[serde(default)]` keeps forward compatibility:
@@ -573,8 +580,12 @@ struct BattleCache {
 /// NPC-inclusive counts must re-parse. v3: `own_ship_name` — which actually
 /// held the recorder's nickname — became `player_name`, and the lite gained
 /// the owning install's tags; a v2 blob would heal all of those to `None`
-/// and silently answer identity-less rows, so it re-parses instead.
-const BATTLES_CACHE_VERSION: u32 = 3;
+/// and silently answer identity-less rows, so it re-parses instead. v4:
+/// the cached payload became the projected `PlaytimeBattle` row (install
+/// attribution frozen at parse time) and entries stopped being pruned when
+/// their file disappears; a v3 blob re-parses once and rebuilds history
+/// from whatever is still on disk.
+const BATTLES_CACHE_VERSION: u32 = 4;
 
 impl Default for BattleCache {
     fn default() -> Self {
@@ -616,46 +627,82 @@ fn save_battle_cache(cache: &BattleCache) -> Result<(), String> {
     super::appdata::write_appdata_json(BATTLES_CACHE_FILE, &json)
 }
 
+/// Stamp a battle row with the root's owning install — the exact
+/// `GameInstall.path` string the frontend compares against its active
+/// install, or the replay dir's own root when no detected install owns the
+/// file. Shared by the fresh-parse projection and the cache-hit re-stamp,
+/// so a live row always answers TODAY's attribution.
+fn apply_owner(
+    mut battle: PlaytimeBattle,
+    root: &Path,
+    owner: &Option<GameInstall>,
+) -> PlaytimeBattle {
+    battle.install_path = owner
+        .as_ref()
+        .map(|i| i.path.clone())
+        .unwrap_or_else(|| root.to_string_lossy().into_owned());
+    battle.kind = owner.as_ref().map(|i| i.kind);
+    battle.realm = owner.as_ref().and_then(|i| i.realm.clone());
+    battle
+}
+
 /// Project one parsed replay header (plus its scan root's owning install)
 /// onto the wire row. Unowned files (the resolved default dir outside every
 /// install) still count as battles — they just carry the root path itself
 /// and no kind/realm.
 fn battle_of(root: &Path, owner: &Option<GameInstall>, lite: &ReplayMetaLite) -> PlaytimeBattle {
-    PlaytimeBattle {
-        install_path: owner
-            .as_ref()
-            .map(|i| i.path.clone())
-            .unwrap_or_else(|| root.to_string_lossy().into_owned()),
-        kind: owner.as_ref().map(|i| i.kind),
-        realm: owner.as_ref().and_then(|i| i.realm.clone()),
-        date_time: lite.date_time.clone(),
-        match_group: lite.match_group.clone(),
-        scenario: lite.scenario.clone(),
-        event_type: lite.event_type.clone(),
-        bot_count: lite.bot_count,
-        scripted_unit_count: lite.scripted_unit_count,
-        own_ship_id: lite.own_ship_id,
-        player_name: lite.player_name.clone(),
-        player_count: lite.player_count,
-    }
+    apply_owner(
+        PlaytimeBattle {
+            install_path: String::new(),
+            kind: None,
+            realm: None,
+            date_time: lite.date_time.clone(),
+            match_group: lite.match_group.clone(),
+            scenario: lite.scenario.clone(),
+            event_type: lite.event_type.clone(),
+            bot_count: lite.bot_count,
+            scripted_unit_count: lite.scripted_unit_count,
+            own_ship_id: lite.own_ship_id,
+            player_name: lite.player_name.clone(),
+            player_count: lite.player_count,
+        },
+        root,
+        owner,
+    )
+}
+
+/// One battle per replay FILENAME, lowercased: the game never reuses a
+/// name, so it identifies a battle across the client archiving a version's
+/// replays into `replays/<version>/` (a path change, never a rename) and
+/// across same-named copies landing in several scanned roots.
+fn battle_basename(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
 }
 
 /// The command's pure core: walk every root, parse (or reuse the cached
-/// parse of) each replay header, and answer one battle row per file. Also
-/// maintains `cache` in place — upserting fresh parses and pruning entries
-/// whose file was not seen this run — so the caller can diff the cache and
-/// decide the write-back.
+/// parse of) each replay header, and answer one battle row per file — plus
+/// one row for every battle the cache still remembers whose replay file did
+/// not come back this run (deleted, moved out of every scanned root, or its
+/// whole install uninstalled). History is never pruned, so a battle keeps
+/// its cell once seen. Also maintains `cache` in place — upserting fresh
+/// parses — so the caller can diff the cache and decide the write-back.
 ///
+/// Rows dedup by replay filename: the live pass claims names first (walk
+/// order), then history entries fill in only the names no live file claimed.
 /// Per-file failures never fail the scan: `replay::lite_from_path` already
 /// degrades to a path + filename-datetime row when the header is
 /// unparseable (a corrupt or foreign container), and a file vanishing
-/// mid-walk only loses its row.
+/// mid-walk only loses that row for THIS scan — its cached history row
+/// keeps answering.
 fn battles_from_roots(
     roots: &[(PathBuf, Option<GameInstall>)],
     cache: &mut BattleCache,
 ) -> Vec<PlaytimeBattle> {
     let mut battles = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
+    let mut claimed: HashSet<String> = HashSet::new();
     for (root, owner) in roots {
         let mut walked = Vec::new();
         super::replay::walk_replays(root, &mut walked);
@@ -668,28 +715,41 @@ fn battles_from_roots(
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
             // Hit only when the file's identity is unchanged: same length
-            // AND same mtime. Anything else re-parses (and re-upserts).
-            let lite = match cache.entries.get(&key) {
-                Some(hit) if hit.len == file.len && hit.mtime_ms == mtime_ms => hit.lite.clone(),
+            // AND same mtime. Anything else re-parses (and re-upserts). A
+            // live row is re-stamped with today's owner — detection can
+            // refine kind/realm over time; only history rows stay frozen.
+            let battle = match cache.entries.get(&key) {
+                Some(hit) if hit.len == file.len && hit.mtime_ms == mtime_ms => {
+                    apply_owner(hit.battle.clone(), root, owner)
+                },
                 _ => {
                     let lite = super::replay::lite_from_path(&file.path);
+                    let battle = battle_of(root, owner, &lite);
                     cache.entries.insert(
                         key.clone(),
                         BattleCacheEntry {
                             len: file.len,
                             mtime_ms,
-                            lite: lite.clone(),
+                            battle: battle.clone(),
                         },
                     );
-                    lite
+                    battle
                 },
             };
-            battles.push(battle_of(root, owner, &lite));
+            if claimed.insert(battle_basename(&file.path)) {
+                battles.push(battle);
+            }
         }
     }
-    // Prune entries whose file disappeared (a replay deleted or a root
-    // uninstalled) so the cache cannot grow unboundedly across years.
-    cache.entries.retain(|path, _| seen.contains(path));
+    // History pass: a cached path whose file was not seen this run keeps
+    // answering — unless a live file with the same replay name already
+    // claimed the battle (the client's version-archive move is the common
+    // case: same name, new path).
+    for (path, entry) in &cache.entries {
+        if !seen.contains(path) && claimed.insert(battle_basename(Path::new(path))) {
+            battles.push(entry.battle.clone());
+        }
+    }
     // `date_time` ascending, undatable files sinking last (stable, so the
     // walk order keeps ties deterministic within one timestamp).
     battles.sort_by(|a, b| match (&a.date_time, &b.date_time) {
@@ -703,9 +763,11 @@ fn battles_from_roots(
 
 /// The 游玩时间 view's battle ledger: one row per completed replay across
 /// every detected install's `replays/` folder (plus the resolved default
-/// dir when no install owns it). Header parses are cached on disk
-/// (`playtime-battles-cache.json`, len + mtime keyed) so an unchanged tree
-/// costs a stat walk only.
+/// dir when no install owns it), with every battle the ledger has EVER
+/// scanned kept in the answer — a replay file's later deletion (game
+/// cleanup, mod sweep, uninstalled client) never blanks its history row.
+/// Header parses are cached on disk (`playtime-battles-cache.json`, len +
+/// mtime keyed) so an unchanged tree costs a stat walk only.
 ///
 /// Async command + [`tokio::task::spawn_blocking`]: the recursive walk +
 /// per-file header reads are blocking I/O that must never run on the UI
@@ -717,9 +779,9 @@ pub async fn playtime_battles() -> Result<PlaytimeBattles, String> {
     tokio::task::spawn_blocking(|| {
         let mut cache = load_battle_cache();
         let roots = super::game_context::replay_roots();
-        // "Changed" = the cache serialization differs after the run — an
-        // upsert (new/edited replay) or a prune (a deleted one). An
-        // unchanged tree writes nothing back.
+        // "Changed" = the cache serialization differs after the run — a
+        // fresh parse upserted (a new or edited replay). An unchanged tree
+        // writes nothing back; history entries never churn.
         let before =
             serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
         let battles = battles_from_roots(&roots, &mut cache);
@@ -1199,9 +1261,11 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Cache semantics: a hit (len + mtime BOTH matching) answers the STORED
-    /// parse verbatim — proven by a deliberately mismatching field no
-    /// on-disk re-read could produce — and any identity drift re-parses.
+    /// Cache semantics: a hit (len + mtime BOTH matching) answers the
+    /// STORED parse without re-reading — proven by a deliberately
+    /// mismatching descriptor field no on-disk re-read could produce (the
+    /// install attribution alone is re-stamped, see the test below) — and
+    /// any identity drift re-parses.
     #[test]
     fn a_cache_hit_answers_the_stored_parse_without_rereading() {
         let dir = temp_battle_dir("hit");
@@ -1221,12 +1285,12 @@ mod tests {
             BattleCacheEntry {
                 len: meta.len(),
                 mtime_ms,
-                lite: ReplayMetaLite {
-                    path: key.clone(),
+                battle: PlaytimeBattle {
+                    install_path: key.clone(),
+                    kind: None,
+                    realm: None,
                     date_time: Some("20261003_120000".into()),
                     match_group: Some("cached".into()),
-                    map_name: None,
-                    map_id: None,
                     scenario: None,
                     event_type: None,
                     bot_count: 0,
@@ -1234,9 +1298,6 @@ mod tests {
                     own_ship_id: None,
                     player_name: None,
                     player_count: 0,
-                    install_path: None,
-                    install_kind: None,
-                    install_realm: None,
                 },
             },
         );
@@ -1258,11 +1319,41 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Prune semantics: a previously cached path that no longer exists on
-    /// disk disappears from the cache after a scan (the file's row goes too).
+    /// The cache-hit path re-stamps the row with TODAY's owning install, so
+    /// a detection refinement (path/kind/realm) reaches live rows without a
+    /// re-parse; only history rows stay frozen at parse time.
     #[test]
-    fn entries_for_vanished_files_are_pruned_after_a_scan() {
-        let dir = temp_battle_dir("prune");
+    fn a_cache_hit_answers_with_todays_install_attribution() {
+        let dir = temp_battle_dir("restamp");
+        write_synthetic_replay(
+            &dir.join("20261005_090000_retag.wowsreplay"),
+            r#"{"matchGroup":"pvp"}"#,
+        );
+        let mut cache = BattleCache::default();
+        // First scan under an unowned root: the root's own path stands in.
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles[0].install_path, dir.to_string_lossy());
+        assert_eq!(battles[0].kind, None);
+        // The same file, identity untouched, now owned by a detected install.
+        let steam = GameInstall {
+            kind: GameInstallKind::Steam,
+            path: r"C:\Games\WoWS".into(),
+            realm: Some("eu".into()),
+        };
+        let battles = battles_from_roots(&[(dir.clone(), Some(steam))], &mut cache);
+        assert_eq!(battles[0].install_path, r"C:\Games\WoWS");
+        assert_eq!(battles[0].kind, Some(GameInstallKind::Steam));
+        assert_eq!(battles[0].realm.as_deref(), Some("eu"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// History semantics: a previously cached path that no longer exists on
+    /// disk KEEPS its cache entry and still answers its battle row after a
+    /// scan — a replay deleted by a game cleanup, a mod sweep or an
+    /// uninstalled client must never blank the battle it recorded.
+    #[test]
+    fn a_vanished_replay_keeps_its_row_and_cache_entry() {
+        let dir = temp_battle_dir("gone");
         write_synthetic_replay(
             &dir.join("20261004_100000_gone.wowsreplay"),
             r#"{"matchGroup":"pvp"}"#,
@@ -1273,8 +1364,44 @@ mod tests {
         assert_eq!(cache.entries.len(), 1);
         std::fs::remove_file(dir.join("20261004_100000_gone.wowsreplay")).unwrap();
         let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
-        assert!(battles.is_empty());
-        assert!(cache.entries.is_empty(), "the vanished file was pruned");
+        assert_eq!(battles.len(), 1, "the vanished battle still answers");
+        assert_eq!(battles[0].date_time.as_deref(), Some("20261004_100000"));
+        assert_eq!(cache.entries.len(), 1, "the entry was not pruned");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Filename dedup: the client archives a version's replays into
+    /// `replays/<version>/` on update (same name, new path), and same-named
+    /// copies can land in several scanned roots — either way the battle
+    /// counts exactly once.
+    #[test]
+    fn a_replay_counts_once_across_archive_moves_and_copies() {
+        let dir = temp_battle_dir("move");
+        std::fs::create_dir_all(&dir).unwrap();
+        let name = "20261004_100000_moved.wowsreplay";
+        write_synthetic_replay(&dir.join(name), r#"{"matchGroup":"pvp"}"#);
+
+        let mut cache = BattleCache::default();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1);
+
+        // The client archives the replay into a version subfolder: same
+        // name, new path — the stale root entry must not answer twice.
+        let archived = dir.join("14.6.0.0");
+        std::fs::create_dir_all(&archived).unwrap();
+        std::fs::rename(dir.join(name), archived.join(name)).unwrap();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1, "the archive move must not double-count");
+        assert_eq!(cache.entries.len(), 2, "both paths stay cached");
+        assert_eq!(battles[0].date_time.as_deref(), Some("20261004_100000"));
+
+        // A same-named copy surfacing in a second scanned root: one battle.
+        let copy = temp_battle_dir("copy");
+        std::fs::create_dir_all(&copy).unwrap();
+        write_synthetic_replay(&copy.join(name), r#"{"matchGroup":"pvp"}"#);
+        let battles = battles_from_roots(&[(dir.clone(), None), (copy.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1, "same-named copies are one battle");
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&copy).unwrap();
     }
 }

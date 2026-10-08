@@ -562,6 +562,7 @@ export default defineComponent({
                     now={now.value}
                     locale={uiLocale.value}
                   />
+                  <p class="playtime-view__note">{t("playtime.heatHint")}</p>
                 </section>
               ) : null}
             </>

@@ -20,6 +20,7 @@
   "heatLess": "Less",
   "heatMore": "More",
   "heatDay": "{n} battles",
+  "heatHint": "Counted from the replay files in each client's replays folder (version archive subfolders included); battles already scanned stay counted even after their files are deleted.",
   "weekdayFirst": "Mon",
   "weekdayLast": "Sun",
   "importNote": "Imported ~{hours} h of historical playtime from Steam on {date}; the charts only cover locally tracked days.",

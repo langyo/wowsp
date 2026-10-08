@@ -20,6 +20,7 @@
   "heatLess": "Menos",
   "heatMore": "Más",
   "heatDay": "{n} batallas",
+  "heatHint": "Se cuenta a partir de los archivos de replay de la carpeta replays de cada cliente (incluidos los subdirectorios de archivado por versión); las batallas ya registradas se mantienen en las estadísticas aunque se borren sus archivos.",
   "weekdayFirst": "Lun",
   "weekdayLast": "Dom",
   "importNote": "Se importaron ~{hours} h de historial desde Steam el {date}; los gráficos cubren solo los días registrados localmente.",
