@@ -143,17 +143,25 @@ class StubCallbacks(object):
 
 
 class StubUi(object):
+    """The optional `ui` module. Lesta's ModsAPI does NOT inject it (live
+    census 2026-10-08) — the default passes leave it out entirely, which is
+    exactly the environment that used to crash the mod at load."""
+
+    def __init__(self):
+        self.calls = 0
+
     def createUiElement(self):
+        self.calls += 1
         return object()
 
     def addDataComponentWithId(self, entity, key, data):
-        pass
+        self.calls += 1
 
     def updateUiElementData(self, entity, data):
-        pass
+        self.calls += 1
 
     def deleteUiElement(self, entity):
-        pass
+        self.calls += 1
 
 
 class StubDataHub(object):
@@ -226,10 +234,11 @@ def crippled_builtins():
     return table
 
 
-def run_once(plugin_src, workdir, encode_records, with_manifest, failures):
-    label = "encode=%s manifest=%s" % (
+def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui, failures):
+    label = "encode=%s manifest=%s ui=%s" % (
         "records" if encode_records else "projection",
-        "yes" if with_manifest else "missing")
+        "yes" if with_manifest else "missing",
+        "yes" if with_ui else "absent")
     utils = StubUtils(encode_records)
     battle = StubBattle()
     events = StubEvents()
@@ -252,10 +261,18 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, failures):
         "battle": battle,
         "events": events,
         "callbacks": callbacks,
-        "ui": StubUi(),
         "dataHub": StubDataHub(entities),
         "constants": StubConstants(),
     }
+    # `ui` only in the explicit ui-present pass: Lesta's ModsAPI injects no
+    # `ui` module (census 2026-10-08), and the harness must be at least as
+    # strict as the client it protects — the old runs injected a StubUi
+    # everywhere and therefore missed the eager `ui` reference that killed
+    # the mod at load on the real client.
+    ui = None
+    if with_ui:
+        ui = StubUi()
+        env["ui"] = ui
     # Mirror the on-disk layout (bin/<build>/res_mods/PnFMods/<Mod>/) so
     # the plugin's relative `../../wowsp.toml` open resolves exactly like
     # on a real install; the manifest itself is optional per pass (see the
@@ -398,6 +415,13 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, failures):
                 failures.append("[%s] request row ship_id invalid: %r"
                                 % (label, row.get("ship_id")))
 
+        # The panel path: with `ui` injected (WG-family clients) the panel
+        # must actually be driven; without it (Lesta) the paths must be a
+        # silent no-op — the zero-`is not defined` contract above already
+        # proves the latter.
+        if with_ui and (ui is None or ui.calls == 0):
+            failures.append("[%s] ui was injected but the panel never wrote to it" % label)
+
         # `?` conversion fallbacks would mean a core conversion failed.
         joined = "\n".join(utils.lines)
         # The hard contract: NOT ONE `is not defined` may appear in the
@@ -431,18 +455,22 @@ def main(argv):
 
     failures = []
     # Two encodings with the manifest present (the config path proves it is
-    # READ), plus one no-manifest pass proving the fallback path — and the
-    # handler-type evaluation on it — stays sandbox-safe.
-    for encode_records, with_manifest in ((True, True), (False, True), (True, False)):
+    # READ), one no-manifest pass proving the fallback path — and the
+    # handler-type evaluation on it — stays sandbox-safe, and one ui-present
+    # pass (Lesta injects no `ui`; the WG-family clients do, and the panel
+    # path must still work there).
+    for encode_records, with_manifest, with_ui in (
+            (True, True, False), (False, True, False), (True, False, False),
+            (True, True, True)):
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
-            run_once(plugin_src, workdir, encode_records, with_manifest, failures)
+            run_once(plugin_src, workdir, encode_records, with_manifest, with_ui, failures)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
-    print("SANDBOX CONFORMANCE: PASS (3 passes, %s, crippled builtins: %s)"
+    print("SANDBOX CONFORMANCE: PASS (4 passes, %s, crippled builtins: %s)"
           % (os.path.basename(os.path.normpath(plugin)), ", ".join(SAFE_BUILTINS)))
     return 0
 

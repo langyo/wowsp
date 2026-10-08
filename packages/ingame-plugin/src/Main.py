@@ -340,12 +340,26 @@ try:
     # shipped revision, so they are live-proven present, but the census
     # names them so a crippled host is diagnosable at a glance).
     _miss = [n for n in ('len', 'open', 'True', 'False') if not _has_builtin(_bi, n)]
-    utils.logInfo(PREFIX + 'sandbox builtins=' + _fmt(_names) + ' legacy_missing=' + _fmt(_miss))
+    _miss_mod = [n for n in ('ui',) if not _has_builtin(_bi, n)]
+    utils.logInfo(PREFIX + 'sandbox builtins=' + _fmt(_names)
+                  + ' legacy_missing=' + _fmt(_miss)
+                  + ' module_missing=' + _fmt(_miss_mod))
 except:
     try:
         utils.logInfo(PREFIX + 'sandbox census failed')
     except:
         pass
+
+
+# Lesta's ModsAPI injects no `ui` module at all (live census 2026-10-08:
+# events/utils/battle/callbacks/dataHub/constants yes, `ui` no). Resolve it
+# ONCE here behind a guard so every panel path checks a plain value instead
+# of naming `ui` (the eager name reference in __init__'s diagnostic tuple
+# was the crash that killed the mod at load).
+try:
+    _UI = ui
+except:
+    _UI = None
 
 
 class Probe:
@@ -415,10 +429,16 @@ class Probe:
             stream.close()
         except:
             pass
-        for name, module in (('battle', battle), ('events', events), ('ui', ui),
-                             ('callbacks', callbacks), ('utils', utils)):
+        # Lazy getters on purpose: building a tuple of bare names evaluates
+        # ALL of them before the first handler runs, and Lesta's ModsAPI
+        # injects no `ui` module (census 2026-10-08) — the eager tuple
+        # raised NameError straight out of __init__ and killed the whole
+        # mod at load. Each getter resolves inside its own guard now.
+        for name, getter in (('battle', lambda: battle), ('events', lambda: events),
+                             ('ui', lambda: _UI), ('callbacks', lambda: callbacks),
+                             ('utils', lambda: utils)):
             try:
-                log('api ' + name + ' ' + _fmt(_public_names(module)))
+                log('api ' + name + ' ' + _fmt(_public_names(getter())))
             except:
                 log('api ' + name + ' dump failed=' + _exc_text(80))
         try:
@@ -462,12 +482,19 @@ class Probe:
     # -- UI data components (stage-B groundwork) ---------------------------
 
     def put(self, key, data):
-        if key not in self.entities:
-            entity = ui.createUiElement()
-            ui.addDataComponentWithId(entity, key, data)
-            self.entities[key] = entity
-        else:
-            ui.updateUiElementData(self.entities[key], data)
+        if _UI is None:
+            # No `ui` module on this client (Lesta): the in-game panel is
+            # unavailable — a silent no-op, not an error.
+            return
+        try:
+            if key not in self.entities:
+                entity = _UI.createUiElement()
+                _UI.addDataComponentWithId(entity, key, data)
+                self.entities[key] = entity
+            else:
+                _UI.updateUiElementData(self.entities[key], data)
+        except:
+            self.soft('ui put failed=' + _exc_text(80))
 
     # -- battle lifecycle --------------------------------------------------
 
@@ -813,10 +840,13 @@ class Probe:
         self.last_panel = ''
 
     def clear_players(self):
+        if _UI is None:
+            self.entities = {}
+            return
         for key in [k for k in self.entities]:
             if key != 'wowspProbe.status':
                 try:
-                    ui.deleteUiElement(self.entities.pop(key))
+                    _UI.deleteUiElement(self.entities.pop(key))
                 except:
                     self.soft('entity delete failed=' + _exc_text(120))
 
