@@ -49,6 +49,7 @@ struct RoomInner {
     room_key: Option<String>,
     host: Option<WebSocket>,
     clients: Vec<WebSocket>,
+    next_client_id: u64,
     sockets: std::collections::HashMap<String, ConnSockets>,
     conns: RoomConns,
 }
@@ -163,21 +164,24 @@ impl Room {
             }
             self.spawn_host_reader(server);
         } else {
-            let greeting = {
+            let (greeting, owner) = {
                 let mut inner = self.inner.borrow_mut();
                 if inner.room_key.is_none() {
                     inner.room_key = Some(room.to_string());
                 }
                 let host_up = inner.host.is_some();
+                let owner = inner.next_client_id;
+                inner.next_client_id += 1;
                 inner.clients.push(server.clone());
-                if host_up {
+                let greeting = if host_up {
                     OutboundFrame::Ready
                 } else {
                     OutboundFrame::Waiting
-                }
+                };
+                (greeting, owner)
             };
             let _ = server.send_with_str(&greeting.to_text());
-            self.spawn_client_reader(server);
+            self.spawn_client_reader(server, owner);
         }
         Ok(Response::from_websocket(pair.client)?)
     }
@@ -236,7 +240,7 @@ impl Room {
 
     /// A phone's control socket: hello→welcome, {open}→signal the host,
     /// conn-limit rejections.
-    fn spawn_client_reader(&self, server: WebSocket) {
+    fn spawn_client_reader(&self, server: WebSocket, owner: u64) {
         let inner = self.inner.clone();
         wasm_bindgen_futures::spawn_local(async move {
             let mut events = match server.events() {
@@ -255,7 +259,7 @@ impl Room {
                     InboundFrame::Open { conn_id } => {
                         let (outcome, host) = {
                             let mut inner = inner.borrow_mut();
-                            let outcome = inner.conns.open(&conn_id);
+                            let outcome = inner.conns.open(&conn_id, owner);
                             if outcome.is_ok() {
                                 inner.sockets.entry(conn_id.clone()).or_default();
                             }
@@ -292,15 +296,10 @@ impl Room {
             // (opens that never got a data socket).
             let mut inner = inner.borrow_mut();
             inner.clients.retain(|ws| ws != &server);
-            let stale: Vec<String> = inner
-                .sockets
-                .iter()
-                .filter(|(_, s)| s.client.is_none() && s.host.is_none())
-                .map(|(id, _)| id.clone())
-                .collect();
-            for id in stale {
+            // Consult attachment accounting, which is set before the async
+            // data handshake finishes, instead of the socket handle map.
+            for id in inner.conns.release_reservations(owner) {
                 inner.sockets.remove(&id);
-                inner.conns.detach(&id);
             }
         });
     }

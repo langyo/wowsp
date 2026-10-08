@@ -50,8 +50,14 @@ export const useReplayStore = defineStore("replay", () => {
   const list = ref<ReplayMetaLite[]>([]);
   const external = ref<ReplayMetaLite[]>([]);
   const current = ref<ReplayMeta | null>(null);
+  // Keep the pending/loaded selection in the store so a remounted view uses
+  // the same card and server realm even before its header has finished.
+  const selectedPath = ref<string | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  // IPC reads cannot be aborted, but only the latest selection may publish
+  // its result (including errors/loading). Clearing a card invalidates it too.
+  let openGeneration = 0;
 
   /** Refresh the rail's DEFAULT list: every detected install's `replays/`
    *  folder in one scan, each entry tagged with its owning install
@@ -62,15 +68,23 @@ export const useReplayStore = defineStore("replay", () => {
   }
 
   async function open(path: string) {
+    const generation = ++openGeneration;
+    selectedPath.value = path;
     loading.value = true;
     error.value = null;
+    current.value = null;
     try {
-      current.value = await api.readReplayHeader(path);
+      const meta = await api.readReplayHeader(path);
+      if (generation !== openGeneration) return;
+      current.value = meta;
     } catch (e) {
-      error.value = (e as Error).message;
+      if (generation !== openGeneration) return;
+      error.value = e instanceof Error ? e.message : String(e);
       current.value = null;
     } finally {
-      loading.value = false;
+      if (generation === openGeneration) {
+        loading.value = false;
+      }
     }
   }
 
@@ -89,7 +103,7 @@ export const useReplayStore = defineStore("replay", () => {
         external.value.push(liteFromMeta(await api.readReplayHeader(p)));
         added.push(p);
       } catch (e) {
-        failed.push({ path: p, error: (e as Error).message });
+        failed.push({ path: p, error: e instanceof Error ? e.message : String(e) });
       }
     }
     return { added, failed };
@@ -99,13 +113,13 @@ export const useReplayStore = defineStore("replay", () => {
    *  is the one currently open. */
   function removeExternal(path: string) {
     external.value = external.value.filter((e) => e.path !== path);
-    if (current.value?.path === path) {
-      current.value = null;
-      error.value = null;
-    }
+    if (current.value?.path === path || selectedPath.value === path) clear();
   }
 
   function clear() {
+    ++openGeneration;
+    selectedPath.value = null;
+    loading.value = false;
     current.value = null;
     error.value = null;
   }
@@ -114,6 +128,7 @@ export const useReplayStore = defineStore("replay", () => {
     list,
     external,
     current,
+    selectedPath,
     loading,
     error,
     refreshAll,

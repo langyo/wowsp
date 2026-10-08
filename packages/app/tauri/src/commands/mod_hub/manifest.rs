@@ -125,10 +125,11 @@ fn manifest_path(res_mods: &Path) -> PathBuf {
 }
 
 /// A manifest loaded off disk, or a fresh empty one when no file exists.
-/// `future_schema` marks a file this build must not rewrite.
+/// `read_only` protects newer schemas, unreadable files, and damaged files
+/// whose recovery copy could not be saved.
 struct Loaded {
     manifest: WowspManifest,
-    future_schema: bool,
+    read_only: bool,
 }
 
 /// Raw bytes of the manifest, when the file exists — the stale-bin
@@ -139,20 +140,77 @@ pub(crate) fn read_raw(res_mods: &Path) -> Option<String> {
 
 fn load(res_mods: &Path) -> Loaded {
     let path = manifest_path(res_mods);
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return Loaded {
-            manifest: WowspManifest::default(),
-            future_schema: false,
-        };
+    let raw = match fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Loaded {
+                manifest: WowspManifest::default(),
+                read_only: false,
+            };
+        },
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "wowsp.toml unreadable — preserving it");
+            return Loaded {
+                manifest: WowspManifest::default(),
+                read_only: true,
+            };
+        },
     };
     parse(&raw, Some(&path))
 }
 
-/// Parse manifest bytes. `quarantine` names the on-disk file to move aside
+/// Preserve every damaged snapshot before replacing it. The traditional
+/// `.invalid` name is used first; an earlier recovery copy is never replaced.
+fn preserve_invalid(path: &Path) -> Result<(), String> {
+    let mut backup = path.with_file_name(INVALID_SUFFIX);
+    let open = |path: &Path| {
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+    };
+    let file = match open(&backup) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let mut nonce = [0u8; 16];
+            getrandom::fill(&mut nonce).map_err(|e| format!("manifest recovery entropy: {e}"))?;
+            backup = path.with_file_name(format!("{INVALID_SUFFIX}.{}", hex::encode(nonce)));
+            open(&backup).map_err(|e| format!("create {}: {e}", backup.display()))?
+        },
+        Err(e) => return Err(format!("create {}: {e}", backup.display())),
+    };
+    drop(file);
+    // Move into the exclusively reserved backup, as the original quarantine
+    // policy did. Leaving the damaged source in place would let no-op scans
+    // repeatedly create new backups of the same unchanged file.
+    if let Err(e) = fs::rename(path, &backup) {
+        let _ = fs::remove_file(&backup);
+        return Err(format!("preserve {}: {e}", backup.display()));
+    }
+    Ok(())
+}
+
+/// Parse manifest bytes. `quarantine` names the on-disk file to back up
 /// when the bytes are unparseable — `Some` for the real loader, `None` when
 /// the bytes were merely captured (migration): renaming the CURRENT bin's
 /// valid manifest because the STALE bin's copy is corrupt would be wrong.
 fn parse(raw: &str, quarantine: Option<&Path>) -> Loaded {
+    // Inspect the version independently of today's row shapes. A newer
+    // schema may intentionally omit/rename fields required by ManagedEntry;
+    // failing that older decoder must never turn it into a repair candidate.
+    if toml::from_str::<toml::Value>(raw)
+        .ok()
+        .and_then(|value| value.get("version").and_then(toml::Value::as_integer))
+        .is_some_and(|version| version > MANIFEST_VERSION)
+    {
+        tracing::warn!(
+            "wowsp.toml schema is newer than this build — manifest maintenance disabled"
+        );
+        return Loaded {
+            manifest: WowspManifest::default(),
+            read_only: true,
+        };
+    }
     match toml::from_str::<WowspManifest>(raw) {
         Ok(manifest) => {
             let future = manifest.version > MANIFEST_VERSION;
@@ -164,19 +222,25 @@ fn parse(raw: &str, quarantine: Option<&Path>) -> Loaded {
             }
             Loaded {
                 manifest,
-                future_schema: future,
+                read_only: future,
             }
         },
         Err(e) => {
-            // Unparseable: keep the bytes as `.invalid` and start over — a
-            // corrupt manifest must not brick every future mutation.
+            // Start over only after preserving this snapshot. If recovery
+            // cannot be saved, leave the original file entirely untouched.
             if let Some(path) = quarantine {
-                let _ = fs::rename(path, path.with_file_name(INVALID_SUFFIX));
+                if let Err(error) = preserve_invalid(path) {
+                    tracing::warn!(%error, "wowsp.toml recovery copy failed — preserving original");
+                    return Loaded {
+                        manifest: WowspManifest::default(),
+                        read_only: true,
+                    };
+                }
             }
             tracing::warn!(error = %e, "wowsp.toml unparseable — starting from scratch");
             Loaded {
                 manifest: WowspManifest::default(),
-                future_schema: false,
+                read_only: false,
             }
         },
     }
@@ -188,8 +252,11 @@ fn parse(raw: &str, quarantine: Option<&Path>) -> Loaded {
 fn store(res_mods: &Path, manifest: &WowspManifest) -> Result<(), String> {
     let path = manifest_path(res_mods);
     if manifest.managed.is_empty() && manifest.tools.is_empty() && manifest.foreign.is_empty() {
-        fs::remove_file(&path).ok();
-        return Ok(());
+        return match fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("remove {}: {e}", path.display())),
+        };
     }
     let mut out: WowspManifest = (*manifest).clone();
     out.version = MANIFEST_VERSION;
@@ -197,10 +264,7 @@ fn store(res_mods: &Path, manifest: &WowspManifest) -> Result<(), String> {
                 # may be overwritten. Tool configs under [tools.*] are yours.\n"
         .to_string()
         + &toml::to_string_pretty(&out).map_err(|e| format!("serialize wowsp.toml: {e}"))?;
-    let tmp = path.with_file_name(format!("{MANIFEST_FILE}.tmp"));
-    fs::write(&tmp, body).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    Ok(())
+    crate::atomic_file::write(&path, &body)
 }
 
 /// res_mods path of one bin version.
@@ -219,7 +283,7 @@ pub(crate) fn res_mods_of(game_root: &str, bin_version: &str) -> PathBuf {
 /// twins stay untouched.
 pub(crate) fn upsert_managed(res_mods: &Path, id: &str, entry: ManagedEntry) {
     let loaded = load(res_mods);
-    if loaded.future_schema {
+    if loaded.read_only {
         return;
     }
     let mut manifest = loaded.manifest;
@@ -236,7 +300,7 @@ pub(crate) fn upsert_managed(res_mods: &Path, id: &str, entry: ManagedEntry) {
 /// remains; `[tools.*]` keeps it alive on its own.
 pub(crate) fn remove_managed(res_mods: &Path, id: &str) {
     let loaded = load(res_mods);
-    if loaded.future_schema {
+    if loaded.read_only {
         return;
     }
     let mut manifest = loaded.manifest;
@@ -256,7 +320,7 @@ pub(crate) fn set_managed_enabled(res_mods: &Path, records: &[ModInstallRecord],
         return;
     }
     let loaded = load(res_mods);
-    if loaded.future_schema {
+    if loaded.read_only {
         return;
     }
     let mut manifest = loaded.manifest;
@@ -288,7 +352,7 @@ pub(crate) fn set_managed_enabled(res_mods: &Path, records: &[ModInstallRecord],
 /// tool already set — by hand or a previous seed — are never overwritten).
 pub(crate) fn seed_tool_config(res_mods: &Path, tool_id: &str, defaults: &BTreeMap<String, i64>) {
     let loaded = load(res_mods);
-    if loaded.future_schema {
+    if loaded.read_only {
         return;
     }
     let mut manifest = loaded.manifest;
@@ -322,7 +386,7 @@ pub(crate) fn replace_foreign(
     units: BTreeMap<String, ForeignEntry>,
 ) {
     let loaded = load(res_mods);
-    if loaded.future_schema {
+    if loaded.read_only {
         return;
     }
     let mut manifest = loaded.manifest;
@@ -354,7 +418,7 @@ pub(crate) fn merge_after_migration(
     bin_version: &str,
 ) {
     let current = load(to_res_mods);
-    if current.future_schema {
+    if current.read_only {
         return;
     }
     // The stale copy was captured before the migration's bookkeeping sweep
@@ -363,7 +427,7 @@ pub(crate) fn merge_after_migration(
     let stale = stale_raw.map(|raw| parse(raw, None));
     let mut manifest = current.manifest;
     if let Some(stale) = stale.as_ref() {
-        if stale.future_schema {
+        if stale.read_only {
             return;
         }
         // Tool configs: the current bin wins, the stale one fills gaps.
@@ -531,6 +595,159 @@ mod tests {
     }
 
     #[test]
+    fn unreadable_manifest_is_not_replaced_with_an_empty_snapshot() {
+        let dir = tmp_res_mods("unreadable_preserved");
+        let original = [0xff, 0xfe, 0x80];
+        fs::write(manifest_path(&dir), original).unwrap();
+        hub_apply(ManifestOp::UpsertManaged {
+            res_mods: dir.clone(),
+            id: "new-mod".into(),
+            entry: entry("New mod"),
+        });
+        assert_eq!(fs::read(manifest_path(&dir)).unwrap(), original);
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_future_schema_with_new_row_shapes_is_never_treated_as_corrupt() {
+        let dir = tmp_res_mods("future_row_shape");
+        let original = "version = 2\n[managed.new]\ndisplay_name = 'New format'\n";
+        fs::write(manifest_path(&dir), original).unwrap();
+        hub_apply(ManifestOp::UpsertManaged {
+            res_mods: dir.clone(),
+            id: "new-mod".into(),
+            entry: entry("New mod"),
+        });
+        assert_eq!(fs::read_to_string(manifest_path(&dir)).unwrap(), original);
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn repeated_corruption_preserves_each_recovery_copy() {
+        let dir = tmp_res_mods("repeated_corruption");
+        let previous = "first broken [ config";
+        let current = "second broken [ config";
+        fs::write(dir.join(INVALID_SUFFIX), previous).unwrap();
+        fs::write(manifest_path(&dir), current).unwrap();
+        hub_apply(ManifestOp::UpsertManaged {
+            res_mods: dir.clone(),
+            id: "new-mod".into(),
+            entry: entry("New mod"),
+        });
+        assert_eq!(
+            fs::read_to_string(dir.join(INVALID_SUFFIX)).unwrap(),
+            previous
+        );
+        let copies: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| fs::read_to_string(entry.unwrap().path()).unwrap())
+            .collect();
+        assert!(copies.iter().any(|body| body == current));
+        assert!(load(&dir).manifest.managed.contains_key("new-mod"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reading_a_corrupt_snapshot_never_moves_the_manifest() {
+        let dir = tmp_res_mods("readonly_snapshot");
+        let original = "broken [ config";
+        fs::write(manifest_path(&dir), original).unwrap();
+        assert!(read_snapshot(&dir).managed.is_empty());
+        assert_eq!(fs::read_to_string(manifest_path(&dir)).unwrap(), original);
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn repeated_noop_scans_do_not_accumulate_identical_recovery_copies() {
+        let dir = tmp_res_mods("noop_corruption");
+        let original = "broken [ config";
+        fs::write(manifest_path(&dir), original).unwrap();
+        for _ in 0..3 {
+            hub_apply(ManifestOp::RemoveManaged {
+                res_mods: dir.clone(),
+                id: "missing-mod".into(),
+            });
+            hub_apply(ManifestOp::ReplaceForeign {
+                res_mods: dir.clone(),
+                installer: "aslain".into(),
+                units: BTreeMap::new(),
+            });
+        }
+        assert_eq!(
+            fs::read_to_string(dir.join(INVALID_SUFFIX)).unwrap(),
+            original
+        );
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn preload_sync_never_replaces_or_deletes_a_future_schema() {
+        let game = tmp_res_mods("future_mirror");
+        let live = game.join("bin/1/res_mods");
+        let twin = game.join("bin/2/res_mods");
+        for bin in ["1", "2"] {
+            fs::create_dir_all(game.join("bin").join(bin).join("idx")).unwrap();
+            fs::create_dir_all(game.join("bin").join(bin).join("res_mods")).unwrap();
+        }
+        fs::write(
+            game.join("preferences.xml"),
+            "<root><last_server_version> 15,8,0,1 </last_server_version></root>",
+        )
+        .unwrap();
+        let future = format!(
+            "version = {}\n[tools.next]\ncustom = 42\n",
+            MANIFEST_VERSION + 1
+        );
+        fs::write(manifest_path(&twin), &future).unwrap();
+        hub_apply(ManifestOp::UpsertManaged {
+            res_mods: live.clone(),
+            id: "new-mod".into(),
+            entry: entry("New mod"),
+        });
+        assert_eq!(fs::read_to_string(manifest_path(&twin)).unwrap(), future);
+        hub_apply(ManifestOp::RemoveManaged {
+            res_mods: live.clone(),
+            id: "new-mod".into(),
+        });
+        assert!(!manifest_path(&live).exists());
+        assert_eq!(fs::read_to_string(manifest_path(&twin)).unwrap(), future);
+        fs::remove_dir_all(&game).unwrap();
+    }
+
+    #[test]
+    fn quarantining_a_corrupt_live_file_does_not_delete_a_usable_replica() {
+        let game = tmp_res_mods("quarantine_mirror");
+        let live = game.join("bin/1/res_mods");
+        let twin = game.join("bin/2/res_mods");
+        for bin in ["1", "2"] {
+            fs::create_dir_all(game.join("bin").join(bin).join("idx")).unwrap();
+            fs::create_dir_all(game.join("bin").join(bin).join("res_mods")).unwrap();
+        }
+        fs::write(
+            game.join("preferences.xml"),
+            "<root><last_server_version> 15,8,0,1 </last_server_version></root>",
+        )
+        .unwrap();
+        let replica = "version = 1\n[tools.probe]\ncustom = 42\n";
+        fs::write(manifest_path(&live), "broken [ config").unwrap();
+        fs::write(manifest_path(&twin), replica).unwrap();
+        for _ in 0..2 {
+            hub_apply(ManifestOp::ReplaceForeign {
+                res_mods: live.clone(),
+                installer: "aslain".into(),
+                units: BTreeMap::new(),
+            });
+        }
+        assert_eq!(fs::read_to_string(manifest_path(&twin)).unwrap(), replica);
+        assert!(live.join(INVALID_SUFFIX).is_file());
+        fs::remove_dir_all(&game).unwrap();
+    }
+
+    #[test]
     fn migration_merge_carries_toggles_and_unions_tools() {
         let from = tmp_res_mods("mig_from");
         let to = tmp_res_mods("mig_to");
@@ -662,6 +879,12 @@ impl ManifestHub {
             | ManifestOp::ReplaceForeign { res_mods, .. } => res_mods.clone(),
             ManifestOp::MergeAfterMigration { to_res_mods, .. } => to_res_mods.clone(),
         };
+        // A missing file after quarantining corruption is not an intentional
+        // deletion of the last valid row. Keep a usable replica in that case.
+        let had_readable_manifest = read_raw(&target).is_some_and(|raw| {
+            toml::from_str::<WowspManifest>(&raw)
+                .is_ok_and(|manifest| manifest.version <= MANIFEST_VERSION)
+        });
         let out = Self::apply_op(op);
         // Pre-release twins carry the same files as the live tree, so a
         // LIVE-tree manifest change syncs to them wholesale (a stale-bin
@@ -669,7 +892,7 @@ impl ManifestHub {
         // Inside the writer thread: strictly serialized behind the
         // mutation it follows.
         if out.is_ok() {
-            sync_preload_twins(&target);
+            sync_preload_twins(&target, had_readable_manifest);
         }
         out
     }
@@ -757,7 +980,7 @@ pub(crate) fn hub_apply(op: ManifestOp) {
 /// three levels up, path-identity compared spelling-insensitively like the
 /// install scan. Best effort: a twin that cannot be written is skipped,
 /// never propagated.
-fn sync_preload_twins(live_res_mods: &Path) {
+fn sync_preload_twins(live_res_mods: &Path, allow_removal: bool) {
     let Some(root) = live_res_mods.ancestors().nth(3) else {
         return;
     };
@@ -770,27 +993,33 @@ fn sync_preload_twins(live_res_mods: &Path) {
     }
     let twins = super::preload_mirror::preload_res_mods(&root.to_string_lossy());
     let live_manifest = live_res_mods.join(MANIFEST_FILE);
-    let Ok(body) = fs::read_to_string(&live_manifest) else {
-        // The live manifest removed itself (its last row went away) — the
-        // twins' copies must not outlive it as phantom rows describing
-        // files that are no longer there.
-        if !live_manifest.exists() {
-            for mirror in twins {
-                let _ = fs::remove_file(mirror.join(MANIFEST_FILE));
+    let body = match fs::read_to_string(&live_manifest) {
+        Ok(body) => {
+            // A rejected mutation must not propagate a malformed or newer
+            // document to other bins through the mirror side effect.
+            let Ok(manifest) = toml::from_str::<WowspManifest>(&body) else {
+                return;
+            };
+            if manifest.version > MANIFEST_VERSION {
+                return;
             }
-        }
-        return;
+            Some(body)
+        },
+        // Delete replicas only after a confirmed missing live file, never
+        // because a temporary read/permission failure made it unavailable.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && allow_removal => None,
+        Err(_) => return,
     };
     for mirror in twins {
-        if fs::create_dir_all(&mirror).is_err() {
+        // The future-schema/read-error guard also applies to replicas.
+        // A corrupt replica is preserved before it can be replaced/deleted.
+        if load(&mirror).read_only {
             continue;
         }
-        let tmp = mirror.join(format!("{MANIFEST_FILE}.tmp"));
-        if fs::write(&tmp, &body).is_err() {
-            continue;
-        }
-        if fs::rename(&tmp, mirror.join(MANIFEST_FILE)).is_err() {
-            let _ = fs::remove_file(&tmp);
+        if let Some(body) = &body {
+            let _ = crate::atomic_file::write(&manifest_path(&mirror), body);
+        } else {
+            let _ = fs::remove_file(manifest_path(&mirror));
         }
     }
 }
@@ -801,7 +1030,9 @@ fn sync_preload_twins(live_res_mods: &Path) {
 /// beyond the tests — the API is the documented read contract.)
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn read_snapshot(res_mods: &Path) -> WowspManifest {
-    load(res_mods).manifest
+    read_raw(res_mods)
+        .map(|raw| parse(&raw, None).manifest)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

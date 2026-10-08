@@ -39,7 +39,9 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
   let lastSize: number | null = null;
   /** The settled replay path already parsed (re-arm per battle). */
   let settledPath: string | null = null;
-  let inFlight = false;
+  /** Async reads belong to one battle/session, even if paths are reused. */
+  let generation = 0;
+  let inFlight: number | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let consumers = 0;
 
@@ -49,7 +51,9 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     () => arena.value?.dateTime ?? null,
     (stamp) => {
       if (stamp != null && stamp !== battleStamp.value) {
+        generation += 1;
         model.value = null;
+        error.value = null;
         phase.value = arena.value ? "waiting" : "idle";
         battleStamp.value = stamp;
         lastSize = null;
@@ -60,6 +64,8 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
         battleStamp.value = null;
       }
     },
+    // Re-arm before a caller can immediately start settle()/attach().
+    { flush: "sync" },
   );
 
   function setArena(next: ArenaInfo | null): void {
@@ -73,6 +79,7 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
    *  account changed underneath the shown battle, the previous battle's
    *  report must not linger the way an ordinary ended one does. */
   function reset(): void {
+    generation += 1;
     arena.value = null;
     model.value = null;
     phase.value = "idle";
@@ -89,12 +96,14 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
   }
 
   async function tick(): Promise<void> {
-    if (inFlight || phaseIsFinal()) return;
+    if (inFlight === generation || phaseIsFinal()) return;
     const roster = arena.value;
     if (!roster || roster.vehicles.length === 0) return;
-    inFlight = true;
+    const seq = generation;
+    inFlight = seq;
     try {
       const temp = await api.liveTempReplay();
+      if (seq !== generation) return;
       if (!temp) {
         // No container = no battle in progress: a stale read error from the
         // previous one is history, not a current condition.
@@ -106,6 +115,7 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
       }
       if (lastSize === temp.size) return; // no growth → skip the decode
       const stream = await api.readLiveReplaySnapshot(temp.path);
+      if (seq !== generation) return;
       // The read itself is what failed before: a successful one clears the
       // stale error even while the snapshot is still empty (mid-write).
       error.value = null;
@@ -132,12 +142,13 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
         phase.value = "waiting";
       }
     } catch (e) {
+      if (seq !== generation) return;
       // A torn read racing the game's append is routine mid-battle — keep
       // the last good model and retry on the next tick; surface only as
       // transient state, never a user-facing error for it.
       if (!model.value) error.value = String(e);
     } finally {
-      inFlight = false;
+      if (inFlight === seq) inFlight = null;
     }
   }
 
@@ -148,17 +159,18 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
   async function settle(path: string): Promise<void> {
     if (settledPath === path) return;
     settledPath = path;
-    await parseSettled(path, true);
+    await parseSettled(path, true, generation);
   }
 
-  async function parseSettled(path: string, allowRetry: boolean): Promise<void> {
+  async function parseSettled(path: string, allowRetry: boolean, seq: number): Promise<void> {
     // A delayed retry must not outlive its battle: if a new arena already
     // re-armed the feed (settledPath moved on), the stale parse would
     // overwrite the new battle's model and pin it "final".
-    if (settledPath !== path) return;
+    if (seq !== generation || settledPath !== path) return;
     const roster = arena.value;
     try {
       const stream = await api.readReplayPositions(path);
+      if (seq !== generation || settledPath !== path) return;
       const next = buildSelfStats({
         stream,
         roster: roster?.vehicles ?? [],
@@ -170,8 +182,9 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
         error.value = null;
       }
     } catch (e) {
+      if (seq !== generation || settledPath !== path) return;
       if (allowRetry) {
-        window.setTimeout(() => void parseSettled(path, false), 2500);
+        window.setTimeout(() => void parseSettled(path, false, seq), 2500);
         return;
       }
       // The settled file parse is the authoritative one — worth surfacing,

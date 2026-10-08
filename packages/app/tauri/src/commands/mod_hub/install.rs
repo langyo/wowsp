@@ -306,7 +306,7 @@ fn install_plan_inner(
 /// letters, no backslashes. `from_rel` may be `.` (the bare-voice wrapper
 /// maps the package root itself); `to_rel` must name a concrete destination
 /// under res_mods.
-fn validate_plan(plan: &PackagePlan) -> Result<(), String> {
+pub(crate) fn validate_plan(plan: &PackagePlan) -> Result<(), String> {
     if plan.entries.is_empty() {
         return Err("plan has no entries".into());
     }

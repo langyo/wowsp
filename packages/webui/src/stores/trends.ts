@@ -13,6 +13,8 @@ export const useTrendsStore = defineStore("trends", () => {
   const communityTrend = ref<CommunityTrend | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  let playerSeq = 0;
+  let communitySeq = 0;
 
   /** Server-wide averages for the ship currently open in the detail modal. */
   const serverStats = ref<ShipServerStats | null>(null);
@@ -25,23 +27,37 @@ export const useTrendsStore = defineStore("trends", () => {
 
   /** Load the version-bucketed trend for a player. */
   async function loadPlayer(accountId: number, realm: string) {
+    const seq = ++playerSeq;
+    // A chart for another identity must not remain visible during this load
+    // or become the fallback if the new player's request fails.
+    if (playerTrend.value?.accountId !== accountId || playerTrend.value.realm !== realm) {
+      playerTrend.value = null;
+    }
     loading.value = true;
     error.value = null;
     try {
-      playerTrend.value = await api.getPlayerTrend(accountId, realm);
+      const trend = await api.getPlayerTrend(accountId, realm);
+      if (seq !== playerSeq) return;
+      playerTrend.value = trend;
     } catch (e) {
+      if (seq !== playerSeq) return;
       error.value = (e as Error).message;
     } finally {
-      loading.value = false;
+      if (seq === playerSeq) loading.value = false;
     }
   }
 
   /** Load community-wide trend for a ship (placeholder — returns
    *  available:false until a data source is wired). */
   async function loadCommunity(shipId: number) {
+    const seq = ++communitySeq;
+    if (communityTrend.value?.shipId !== shipId) communityTrend.value = null;
     try {
-      communityTrend.value = await api.getCommunityShipTrend(shipId);
+      const trend = await api.getCommunityShipTrend(shipId);
+      if (seq !== communitySeq) return;
+      communityTrend.value = trend;
     } catch {
+      if (seq !== communitySeq) return;
       communityTrend.value = { available: false, shipId, buckets: [] };
     }
   }

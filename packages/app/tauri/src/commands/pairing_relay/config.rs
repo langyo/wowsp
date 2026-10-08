@@ -35,6 +35,8 @@ pub fn pairing_get_relay_config() -> RelayConfig {
 /// bridge is restarted live so the change applies at once.
 #[tauri::command]
 pub async fn pairing_set_relay(config: RelayConfig) -> Result<(), String> {
+    #[cfg(desktop)]
+    let _lifecycle = super::pairing::server::lifecycle_gate().lock().await;
     save_relay_config(&config)?;
     #[cfg(desktop)]
     restart_bridge_for_config(&config).await;

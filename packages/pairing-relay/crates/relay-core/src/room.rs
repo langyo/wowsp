@@ -77,6 +77,7 @@ pub struct RoomConns {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct Halves {
+    owner: u64,
     client: bool,
     host: bool,
 }
@@ -102,9 +103,9 @@ impl RoomConns {
         self.conns.is_empty()
     }
 
-    /// A client asked to open `connId`. Reserves a slot; the actual
-    /// sockets attach later by id.
-    pub fn open(&mut self, conn_id: &str) -> Result<(), OpenError> {
+    /// A client asked to open `connId`. Reserves a slot owned by its control
+    /// socket; the actual data sockets attach later by id.
+    pub fn open(&mut self, conn_id: &str, owner: u64) -> Result<(), OpenError> {
         if !crate::valid_conn_id(conn_id) {
             return Err(OpenError::InvalidId);
         }
@@ -114,8 +115,29 @@ impl RoomConns {
         if self.conns.len() >= MAX_DATA_CONNECTIONS {
             return Err(OpenError::ConnLimit);
         }
-        self.conns.push((conn_id.to_string(), Halves::default()));
+        self.conns.push((
+            conn_id.to_string(),
+            Halves {
+                owner,
+                ..Halves::default()
+            },
+        ));
         Ok(())
+    }
+
+    /// Release a departing control socket's opens that have not started a
+    /// data handshake. Attached streams outlive their control socket.
+    pub fn release_reservations(&mut self, owner: u64) -> Vec<String> {
+        let mut removed = Vec::new();
+        self.conns.retain(|(id, halves)| {
+            if halves.owner == owner && halves.count() == 0 {
+                removed.push(id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        removed
     }
 
     /// A data socket arrived for `connId` on `side`.
@@ -198,36 +220,39 @@ mod tests {
     fn open_tracks_and_enforces_the_connection_cap() {
         let mut conns = RoomConns::new();
         for n in 0..MAX_DATA_CONNECTIONS {
-            conns.open(&format!("conn{n:04}")).unwrap();
+            conns.open(&format!("conn{n:04}"), 0).unwrap();
         }
         assert_eq!(
-            conns.open("conn9999").unwrap_err(),
+            conns.open("conn9999", 0).unwrap_err(),
             OpenError::ConnLimit,
             "the 5th concurrent data connection is refused"
         );
         // Freeing one slot lets a new conn in.
         assert!(conns.detach("conn0000"));
-        conns.open("conn9999").unwrap();
+        conns.open("conn9999", 0).unwrap();
         assert_eq!(conns.len(), MAX_DATA_CONNECTIONS);
     }
 
     #[test]
     fn open_validates_and_deduplicates_ids() {
         let mut conns = RoomConns::new();
-        assert_eq!(conns.open("short").unwrap_err(), OpenError::InvalidId);
+        assert_eq!(conns.open("short", 0).unwrap_err(), OpenError::InvalidId);
         assert_eq!(
-            conns.open(&"x".repeat(65)).unwrap_err(),
+            conns.open(&"x".repeat(65), 0).unwrap_err(),
             OpenError::InvalidId
         );
-        assert_eq!(conns.open("has space").unwrap_err(), OpenError::InvalidId);
-        conns.open(CID).unwrap();
-        assert_eq!(conns.open(CID).unwrap_err(), OpenError::Duplicate);
+        assert_eq!(
+            conns.open("has space", 0).unwrap_err(),
+            OpenError::InvalidId
+        );
+        conns.open(CID, 0).unwrap();
+        assert_eq!(conns.open(CID, 0).unwrap_err(), OpenError::Duplicate);
     }
 
     #[test]
     fn attach_pairs_only_when_both_halves_arrive() {
         let mut conns = RoomConns::new();
-        conns.open(CID).unwrap();
+        conns.open(CID, 0).unwrap();
         assert_eq!(conns.attach(CID, Side::Client), AttachOutcome::HalfOpen);
         assert!(!conns.is_paired(CID));
         assert_eq!(conns.attach(CID, Side::Host), AttachOutcome::Paired);
@@ -244,13 +269,53 @@ mod tests {
     #[test]
     fn first_detach_kills_the_whole_connection() {
         let mut conns = RoomConns::new();
-        conns.open(CID).unwrap();
+        conns.open(CID, 0).unwrap();
         conns.attach(CID, Side::Client);
         conns.attach(CID, Side::Host);
         assert!(conns.detach(CID));
         assert_eq!(conns.attach(CID, Side::Host), AttachOutcome::UnknownId);
         assert!(conns.is_empty());
         assert!(!conns.detach(CID));
+    }
+
+    #[test]
+    fn disconnect_releases_only_its_own_reservations() {
+        let mut conns = RoomConns::new();
+        conns.open("phone_a1", 1).unwrap();
+        conns.open("phone_b1", 2).unwrap();
+        assert_eq!(conns.release_reservations(1), vec!["phone_a1"]);
+        assert_eq!(
+            conns.attach("phone_a1", Side::Client),
+            AttachOutcome::UnknownId
+        );
+        assert_eq!(
+            conns.attach("phone_b1", Side::Client),
+            AttachOutcome::HalfOpen
+        );
+    }
+
+    #[test]
+    fn disconnect_preserves_handshakes_and_active_streams() {
+        let mut conns = RoomConns::new();
+        conns.open("pending1", 1).unwrap();
+        conns.open("paired01", 1).unwrap();
+        // Accounting attaches before the worker awaits TTL storage and
+        // installs the actual WebSocket; this half is already in flight.
+        conns.attach("pending1", Side::Client);
+        conns.attach("paired01", Side::Client);
+        conns.attach("paired01", Side::Host);
+        assert!(conns.release_reservations(1).is_empty());
+        assert_eq!(conns.attach("pending1", Side::Host), AttachOutcome::Paired);
+        assert!(conns.is_paired("paired01"));
+    }
+
+    #[test]
+    fn rejected_duplicate_open_does_not_take_reservation_ownership() {
+        let mut conns = RoomConns::new();
+        conns.open(CID, 1).unwrap();
+        assert_eq!(conns.open(CID, 2), Err(OpenError::Duplicate));
+        assert!(conns.release_reservations(2).is_empty());
+        assert_eq!(conns.attach(CID, Side::Client), AttachOutcome::HalfOpen);
     }
 
     #[test]

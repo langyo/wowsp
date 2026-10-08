@@ -553,6 +553,325 @@ fn plan_paths_are_validated_before_touching_disk() {
     assert!(check_plan_rel("gui/unbound2", "toRel", false).is_ok());
 }
 
+struct OverlappingMods {
+    root: PathBuf,
+    game: PathBuf,
+    res_mods: PathBuf,
+    older_restore: PathBuf,
+    newer_restore: PathBuf,
+    installs: Vec<ModInstallRecord>,
+}
+
+impl OverlappingMods {
+    fn new() -> Self {
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce).unwrap();
+        let root = std::env::temp_dir().join(format!("wowsp-overlap-{}", hex::encode(nonce)));
+        let game = root.join("game");
+        let res_mods = game.join("bin/1/res_mods");
+        let older_restore = root.join("restore-older");
+        let newer_restore = root.join("restore-newer");
+        for dir in [&res_mods, &older_restore, &newer_restore] {
+            fs::create_dir_all(dir.join("content")).unwrap();
+        }
+        fs::write(res_mods.join("content/shared.dds"), b"newer mod").unwrap();
+        fs::write(older_restore.join("content/shared.dds"), b"original").unwrap();
+        fs::write(newer_restore.join("content/shared.dds"), b"older mod").unwrap();
+        let record = |id: &str, restore: &Path| ModInstallRecord {
+            id: id.into(),
+            name: id.into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["content/shared.dds".into()],
+            restore_dir: Some(restore.to_string_lossy().into_owned()),
+            game_root: game.to_string_lossy().into_owned(),
+        };
+        let installs = vec![
+            record("older", &older_restore),
+            record("newer", &newer_restore),
+        ];
+        Self {
+            root,
+            game,
+            res_mods,
+            older_restore,
+            newer_restore,
+            installs,
+        }
+    }
+
+    fn content_unit(&self) -> InstalledMod {
+        classify_installed_root(&self.res_mods, None)
+            .into_iter()
+            .find(|u| u.rel_path == "content")
+            .unwrap()
+    }
+}
+
+impl Drop for OverlappingMods {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+#[test]
+fn uninstall_refuses_an_older_owner_without_touching_files_or_snapshots() {
+    let mut fixture = OverlappingMods::new();
+    let root = fixture.game.to_string_lossy().into_owned();
+    let before = serde_json::to_value(&fixture.installs).unwrap();
+    let err =
+        mod_catalog::uninstall_from_ledger(&mut fixture.installs, "older", &root).unwrap_err();
+    assert!(err.contains("newer"), "{err}");
+    assert_eq!(
+        fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
+        b"newer mod"
+    );
+    assert_eq!(
+        fs::read(fixture.older_restore.join("content/shared.dds")).unwrap(),
+        b"original"
+    );
+    assert_eq!(
+        fs::read(fixture.newer_restore.join("content/shared.dds")).unwrap(),
+        b"older mod"
+    );
+    assert_eq!(serde_json::to_value(&fixture.installs).unwrap(), before);
+
+    mod_catalog::uninstall_from_ledger(&mut fixture.installs, "newer", &root).unwrap();
+    assert_eq!(
+        fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
+        b"older mod"
+    );
+    mod_catalog::uninstall_from_ledger(&mut fixture.installs, "older", &root).unwrap();
+    assert_eq!(
+        fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
+        b"original"
+    );
+    assert!(fixture.installs.is_empty());
+}
+
+#[test]
+fn unit_uninstall_unwinds_overlapping_snapshots_newest_first() {
+    let mut fixture = OverlappingMods::new();
+    let unit = fixture.content_unit();
+    let report = uninstall_unit_core(
+        &fixture.game.to_string_lossy(),
+        &fixture.res_mods,
+        &unit,
+        &mut fixture.installs,
+    )
+    .unwrap();
+    assert_eq!(report.restored_files, 2);
+    assert_eq!(
+        fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
+        b"original"
+    );
+    assert!(fixture.installs.is_empty());
+    assert!(!fixture.older_restore.exists() && !fixture.newer_restore.exists());
+}
+
+#[test]
+fn unit_uninstall_preflights_a_partial_owner_that_keeps_a_game_root_payload() {
+    let mut fixture = OverlappingMods::new();
+    let unit = fixture.content_unit();
+    touch(&fixture.res_mods.join("PnFMods/Newer/Main.py"));
+    fixture.installs[1]
+        .files
+        .push("PnFMods/Newer/Main.py".into());
+    for record in &mut fixture.installs {
+        record.files.push("@game/shared.dll".into());
+    }
+    fs::write(fixture.game.join("shared.dll"), b"newer dll").unwrap();
+    for (restore, bytes) in [
+        (&fixture.older_restore, b"original dll".as_slice()),
+        (&fixture.newer_restore, b"older dll"),
+    ] {
+        fs::create_dir_all(restore.join("@game")).unwrap();
+        fs::write(restore.join("@game/shared.dll"), bytes).unwrap();
+    }
+    let before = serde_json::to_value(&fixture.installs).unwrap();
+    let err = uninstall_unit_core(
+        &fixture.game.to_string_lossy(),
+        &fixture.res_mods,
+        &unit,
+        &mut fixture.installs,
+    )
+    .unwrap_err();
+    assert!(err.contains("@game/shared.dll"), "{err}");
+    assert_eq!(
+        fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
+        b"newer mod"
+    );
+    assert_eq!(
+        fs::read(fixture.game.join("shared.dll")).unwrap(),
+        b"newer dll"
+    );
+    assert!(fixture.res_mods.join("PnFMods/Newer/Main.py").is_file());
+    assert_eq!(
+        fs::read(fixture.older_restore.join("content/shared.dds")).unwrap(),
+        b"original"
+    );
+    assert_eq!(
+        fs::read(fixture.newer_restore.join("content/shared.dds")).unwrap(),
+        b"older mod"
+    );
+    assert_eq!(
+        fs::read(fixture.older_restore.join("@game/shared.dll")).unwrap(),
+        b"original dll"
+    );
+    assert_eq!(
+        fs::read(fixture.newer_restore.join("@game/shared.dll")).unwrap(),
+        b"older dll"
+    );
+    assert_eq!(serde_json::to_value(&fixture.installs).unwrap(), before);
+}
+
+#[test]
+fn uninstall_order_scopes_files_by_game_root_and_bin_and_covers_disabled_aliases() {
+    let fixture = OverlappingMods::new();
+    let root = fixture.game.to_string_lossy().into_owned();
+    let mut records = fixture.installs.clone();
+    records[1].files = vec!["CONTENT/shared.dds.bak".into()];
+    assert!(mod_catalog::validate_uninstall_order(&records, "older", &root).is_err());
+    records[1].game_root = fixture
+        .root
+        .join("other-game")
+        .to_string_lossy()
+        .into_owned();
+    assert!(mod_catalog::validate_uninstall_order(&records, "older", &root).is_ok());
+    records[1].game_root = root.clone();
+    records[1].bin_version = "2".into();
+    assert!(mod_catalog::validate_uninstall_order(&records, "older", &root).is_ok());
+    records[0].files.push("@game/shared.dll".into());
+    records[1].files.push("@game/shared.dll".into());
+    assert!(mod_catalog::validate_uninstall_order(&records, "older", &root).is_err());
+    for record in &mut records {
+        record.files = vec!["PnFModsLoader.py".into()];
+        record.bin_version = "1".into();
+    }
+    assert!(mod_catalog::validate_uninstall_order(&records, "older", &root).is_ok());
+}
+
+#[test]
+fn stale_record_uninstall_preserves_newer_owned_preload_mirrors() {
+    let mut fixture = OverlappingMods::new();
+    for bin in ["2", "3"] {
+        fs::create_dir_all(fixture.game.join("bin").join(bin).join("idx")).unwrap();
+        let content = fixture.game.join("bin").join(bin).join("res_mods/content");
+        fs::create_dir_all(&content).unwrap();
+        fs::write(content.join("shared.dds"), b"newer mod").unwrap();
+    }
+    fs::write(
+        fixture.game.join("preferences.xml"),
+        "<root><last_server_version>15,8,0,2</last_server_version></root>",
+    )
+    .unwrap();
+    fs::write(fixture.res_mods.join("content/shared.dds"), b"older mod").unwrap();
+    fixture.installs[1].bin_version = "2".into();
+    let before = serde_json::to_value(&fixture.installs).unwrap();
+    let err = mod_catalog::uninstall_from_ledger(
+        &mut fixture.installs,
+        "older",
+        &fixture.game.to_string_lossy(),
+    )
+    .unwrap_err();
+    assert!(err.contains("newer"), "{err}");
+    assert_eq!(
+        fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
+        b"older mod"
+    );
+    for bin in ["2", "3"] {
+        assert_eq!(
+            fs::read(
+                fixture
+                    .game
+                    .join("bin")
+                    .join(bin)
+                    .join("res_mods/content/shared.dds")
+            )
+            .unwrap(),
+            b"newer mod"
+        );
+    }
+    assert_eq!(serde_json::to_value(&fixture.installs).unwrap(), before);
+    assert!(fixture.older_restore.is_dir() && fixture.newer_restore.is_dir());
+}
+
+#[test]
+fn unit_partial_uninstall_refuses_an_uncovered_newer_case_alias_before_deleting() {
+    let mut fixture = OverlappingMods::new();
+    let unit = fixture.content_unit();
+    for (index, name) in [(0, "Older"), (1, "Newer")] {
+        let rel = format!("PnFMods/{name}/Main.py");
+        touch(&fixture.res_mods.join(&rel));
+        fixture.installs[index].files.push(rel);
+    }
+    fixture.installs[1].files[0] = "CONTENT/shared.dds".into();
+    let before = serde_json::to_value(&fixture.installs).unwrap();
+    let err = uninstall_unit_core(
+        &fixture.game.to_string_lossy(),
+        &fixture.res_mods,
+        &unit,
+        &mut fixture.installs,
+    )
+    .unwrap_err();
+    assert!(err.contains("newer"), "{err}");
+    assert_eq!(
+        fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
+        b"newer mod"
+    );
+    assert_eq!(
+        fs::read(fixture.older_restore.join("content/shared.dds")).unwrap(),
+        b"original"
+    );
+    assert_eq!(
+        fs::read(fixture.newer_restore.join("content/shared.dds")).unwrap(),
+        b"older mod"
+    );
+    assert!(fixture.res_mods.join("PnFMods/Older/Main.py").is_file());
+    assert!(fixture.res_mods.join("PnFMods/Newer/Main.py").is_file());
+    assert_eq!(serde_json::to_value(&fixture.installs).unwrap(), before);
+}
+
+#[test]
+fn stale_record_uninstall_preserves_live_bin_case_and_disabled_alias_owners() {
+    for rel in ["CONTENT/shared.dds", "content/shared.dds.bak"] {
+        let mut fixture = OverlappingMods::new();
+        let live = fixture.game.join("bin/2/res_mods");
+        fs::create_dir_all(fixture.game.join("bin/2/idx")).unwrap();
+        fs::create_dir_all(live.join(rel).parent().unwrap()).unwrap();
+        fs::write(live.join(rel), b"newer mod").unwrap();
+        fs::write(
+            fixture.game.join("preferences.xml"),
+            "<root><last_server_version>15,8,0,2</last_server_version></root>",
+        )
+        .unwrap();
+        fixture.installs[1].bin_version = "2".into();
+        fixture.installs[1].files = vec![rel.into()];
+        let newer_record = serde_json::to_value(&fixture.installs[1]).unwrap();
+        mod_catalog::uninstall_from_ledger(
+            &mut fixture.installs,
+            "older",
+            &fixture.game.to_string_lossy(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(live.join(rel)).unwrap(), b"newer mod");
+        assert_eq!(
+            fs::read(fixture.newer_restore.join("content/shared.dds")).unwrap(),
+            b"older mod"
+        );
+        assert_eq!(fixture.installs.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&fixture.installs[0]).unwrap(),
+            newer_record
+        );
+    }
+}
+
 #[test]
 fn unit_uninstall_trims_partially_overlapping_record() {
     // Uninstalling the shared `content` group must NOT uninstall another

@@ -46,19 +46,15 @@ const OCTET_STREAM: &str = "application/octet-stream";
 
 /// Normalized host of an HTTPS URL: scheme must be https (case-insensitive,
 /// as URLs are per RFC 3986 §3.1), port and trailing FQDN dot stripped, case
-/// normalized. Parsed manually (the `url` crate is not a direct dependency)
-/// — pure and unit-tested. Any userinfo (`user@host`) stays inside the host
-/// chunk and simply fails exact/suffix comparisons, which is the safe
-/// direction (rejection).
+/// normalized. Use the same URL parser as the HTTP client: an allowlisted
+/// name inside userinfo must never stand in for the actual destination.
+/// Credentials are not supported in image URLs.
 fn https_host(url: &str) -> Option<String> {
-    let (scheme, rest) = url.split_once("://")?;
-    if !scheme.eq_ignore_ascii_case("https") {
+    let url = reqwest::Url::parse(url).ok()?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return None;
     }
-    // Host = everything up to the first path/query/fragment separator.
-    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let host = host.split(':').next().unwrap_or("");
-    Some(host.trim_end_matches('.').to_ascii_lowercase())
+    Some(url.host_str()?.trim_end_matches('.').to_ascii_lowercase())
 }
 
 /// Whether `url` may be fetched through the scheme: HTTPS only, and the host
@@ -375,6 +371,57 @@ mod tests {
     }
 
     #[test]
+    fn rejects_allowed_hosts_disguised_as_userinfo() {
+        for url in [
+            "https://wows-gloss-icons.wgcdn.co:443@evil.example/a.png",
+            "https://i0.hdslb.com:443@evil.example/a.png",
+            "https://mirror.example.com:443@evil.example/a.png",
+            "https://evil.example\\@wows-gloss-icons.wgcdn.co/a.png",
+        ] {
+            let request = reqwest::Client::new().get(url).build().unwrap();
+            assert_eq!(request.url().host_str(), Some("evil.example"));
+            assert!(
+                !is_allowed(url, Some("https://mirror.example.com")),
+                "userinfo is not the fetch host: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_credentials_even_when_the_fetch_host_is_allowed() {
+        for url in [
+            "https://user@wows-gloss-icons.wgcdn.co/a.png",
+            "https://user:password@wows-gloss-icons.wgcdn.co/a.png",
+            "https://:password@i0.hdslb.com/a.png",
+        ] {
+            assert!(!is_allowed(url, None), "credentials are not image URLs");
+        }
+        assert!(!is_allowed(
+            "https://evil.example/a.png",
+            Some("https://user:password@evil.example")
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_authorities_and_preserves_valid_ports() {
+        for url in [
+            "https://wows-gloss-icons.wgcdn.co:invalid/a.png",
+            "https://wows-gloss-icons.wgcdn.co:65536/a.png",
+            "https://wows-gloss-icons.wgcdn.co:443./a.png",
+        ] {
+            assert!(reqwest::Url::parse(url).is_err());
+            assert!(!is_allowed(url, None), "invalid authority: {url}");
+        }
+        for url in [
+            "HTTPS://WOWS-GLOSS-ICONS.WGCDN.CO:443/a.png",
+            "https://wows-gloss-icons.wgcdn.co.:8443/a.png",
+            "https://i0.hdslb.com:9443/a.png",
+        ] {
+            assert!(is_allowed(url, None), "valid CDN authority: {url}");
+        }
+    }
+
+    #[test]
     fn allows_configured_mirror_host() {
         const BASE: Option<&str> = Some("https://mirror.example.com/wg/");
         assert!(is_allowed("https://mirror.example.com/a.png", BASE));
@@ -384,7 +431,7 @@ mod tests {
             BASE
         ));
         // Same normalization as the default host: port / case / FQDN dot.
-        assert!(is_allowed("https://MIRROR.example.com:443./a.png", BASE));
+        assert!(is_allowed("https://MIRROR.example.com.:443/a.png", BASE));
         // Base variants (whitespace, non-https) are ignored — default only.
         assert!(!is_allowed("https://mirror.example.com/a.png", Some("  ")));
         assert!(!is_allowed(

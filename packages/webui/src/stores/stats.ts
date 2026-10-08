@@ -71,6 +71,9 @@ export const useStatsStore = defineStore("stats", () => {
    *  dashboard refresh racing another consumer can't double-hit the WG
    *  API or interleave two cache writes for one player. */
   const inflight = new Map<string, Promise<PlayerStats>>();
+  /** Keep best-effort disk snapshots in API completion order, without
+   *  making a slow or failed save block lookup results. */
+  let pendingSave = Promise.resolve();
 
   function cacheKey(realm: string, accountId: number) {
     return `${realm}_${accountId}`;
@@ -89,17 +92,22 @@ export const useStatsStore = defineStore("stats", () => {
       const raw = await api.appdataRead(INDEX_FILE);
       if (raw) {
         const j = JSON.parse(raw) as Record<string, number>;
-        index.value = new Map(Object.entries(j));
+        // A lookup may have learned newer mappings while disk I/O waited.
+        index.value = new Map([...Object.entries(j), ...index.value]);
       }
     } catch {
       // index missing/corrupt — rebuild lazily from lookups
     }
   }
 
-  function persistIndex() {
-    void api
-      .appdataWrite(INDEX_FILE, JSON.stringify(Object.fromEntries(index.value)))
+  function persistFile(file: string, contents: string): void {
+    pendingSave = pendingSave
+      .then(async () => { await api.appdataWrite(file, contents); })
       .catch(() => {});
+  }
+
+  function persistIndex() {
+    persistFile(INDEX_FILE, JSON.stringify(Object.fromEntries(index.value)));
   }
 
   /** Read + parse a cache file, handling both the envelope and legacy shapes.
@@ -108,8 +116,13 @@ export const useStatsStore = defineStore("stats", () => {
     realm: string,
     accountId: number,
   ): Promise<PlayerStats | null> {
+    const key = cacheKey(realm, accountId);
     try {
       const raw = await api.appdataRead(cacheFile(realm, accountId));
+      // Hydration only fills missing entries. An API refresh (or another
+      // reader) may already have populated this player while we waited.
+      const current = cache.value.get(key);
+      if (current) return current;
       if (!raw) return null;
       const j = JSON.parse(raw) as CachedStats | PlayerStats;
       const enveloped = (j as CachedStats).stats != null;
@@ -117,12 +130,11 @@ export const useStatsStore = defineStore("stats", () => {
       const ts = enveloped && typeof (j as CachedStats).fetchedAt === "number"
         ? (j as CachedStats).fetchedAt
         : 0;
-      const key = cacheKey(realm, accountId);
       cache.value.set(key, stats);
       fetchedAt.value.set(key, ts);
       return stats;
     } catch {
-      return null;
+      return cache.value.get(key) ?? null;
     }
   }
 
@@ -159,7 +171,7 @@ export const useStatsStore = defineStore("stats", () => {
     persistIndex();
     // Persist current snapshot to AppData (best-effort, don't block UI).
     const envelope: CachedStats = { fetchedAt: Date.now(), stats: merged };
-    void api.appdataWrite(cacheFile(realm, stats.accountId), JSON.stringify(envelope)).catch(() => {});
+    persistFile(cacheFile(realm, stats.accountId), JSON.stringify(envelope));
     // Append a versioned snapshot for trend tracking (best-effort).
     void api.snapshotPlayerStats(
       stats.accountId,

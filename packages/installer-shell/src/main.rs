@@ -51,6 +51,7 @@ use tauri::Emitter;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 
+mod resource_pack;
 mod uninstall_egui;
 
 /// WebView2 Evergreen runtime product GUID.
@@ -1110,8 +1111,9 @@ fn entry_path_is_unsafe(path: &Path) -> bool {
 /// behind. `None` when absent or unparsable — no previous install to
 /// diff against, or one too damaged to trust.
 fn read_installed_manifest(install_dir: &Path) -> Option<Vec<PayloadEntry>> {
-    let bytes = std::fs::read(install_dir.join(MANIFEST_PATH)).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    shun::targets::install::read_manifest(install_dir)
+        .ok()
+        .map(|manifest| manifest.entries)
 }
 
 /// Deletes the files the PREVIOUS payload delivered that the new one no
@@ -1273,7 +1275,7 @@ async fn start_install(
             );
         }
         cleanup_bootstrap_payload(&install_dir);
-        relocate_res_pack(&install_dir, portable);
+        relocate_res_pack(&install_dir, portable)?;
         write_flavor_marker(&install_dir);
         Ok(())
     })
@@ -1289,80 +1291,25 @@ fn cleanup_bootstrap_payload(install_dir: &Path) {
     let _ = std::fs::remove_dir_all(install_dir.join(WEBVIEW2_PAYLOAD_PREFIX));
 }
 
-/// Relocates the payload's shipped resource pack (`models/` + `dogtags/`)
-/// into the location the application's resource cache resolves to (the
-/// paths.rs conventions: portable → `<dir>/data/cache`, local →
-/// `%LOCALAPPDATA%\WoWSP`). The extraction lands at `<dir>/models` /
-/// `<dir>/dogtags`; a rename usually suffices, falling back to a recursive
-/// copy across volumes. An existing target sub-directory is REMOVED first
-/// so the shipped pack REPLACES (not merges with) whatever an older full
-/// installer left behind — a merge would keep files the new pack dropped,
-/// which is exactly the stale-mix that broke parsing before.
-///
-/// After a successful relocation the pack is stamped with the
-/// content-tree hash + published-at it was packed from
-/// (`<cache>/.res-version.json`) so the app treats it as current instead
-/// of re-downloading on first launch; no stamp when the hash is unknown
-/// or the pack is absent (plain `cargo build` payload).
-fn relocate_res_pack(install_dir: &Path, portable: bool) {
+/// Publishes the shipped snapshot only after all resource trees are staged.
+/// The helper retains the original cache and stamp for rollback; an unknown
+/// build hash replaces the pack without carrying an older version stamp over.
+fn relocate_res_pack(install_dir: &Path, portable: bool) -> Result<(), String> {
     let cache = if portable {
         install_dir.join("data").join("cache")
     } else {
         local_appdata().join("WoWSP")
     };
-    let _ = std::fs::create_dir_all(&cache);
-
-    // The stamp may only be written when EVERY shipped sub-directory
-    // landed — a partial relocation (disk full / AV lock mid-copy) stamped
-    // as complete would leave the app believing it is current and never
-    // offering the repair download.
-    let mut shipped = 0usize;
-    let mut relocated = 0usize;
-    for subdir in ["models", "dogtags"] {
-        let from = install_dir.join(subdir);
-        if !from.is_dir() {
-            continue;
-        }
-        shipped += 1;
-        let to = cache.join(subdir);
-        if to == from {
-            relocated += 1;
-            continue;
-        }
-        // Replace semantics: wipe the target first so no stale files from
-        // an older shipped pack survive beside the new one.
-        if to.exists() {
-            let _ = std::fs::remove_dir_all(&to);
-        }
-        let moved = if std::fs::rename(&from, &to).is_ok() {
-            true
-        } else {
-            let copied = copy_dir_recursive(&from, &to);
-            if copied {
-                let _ = std::fs::remove_dir_all(&from);
-            }
-            copied
-        };
-        relocated += usize::from(moved);
-    }
-    if shipped == 0 || relocated != shipped {
-        return;
-    }
-
-    // Stamp the relocated pack with the content hash it was packed from,
-    // so the app's update check sees it as current instead of re-downloading
-    // ~1.2 GB on first launch. No stamp when the hash is unknown; the app
-    // then falls back to its normal fetch-or-serve behavior. (Same file the
-    // app's write_local_version uses; both values are build-time constants
-    // so the JSON needs no serializer.)
     let tree = SHUN_RES_TREE_SHA256.trim();
-    let version = SHUN_RES_VERSION.trim();
-    if !tree.is_empty() {
-        let stamp = format!("{{\"treeSha256\":\"{tree}\",\"version\":\"{version}\"}}");
-        let _ = std::fs::write(cache.join(".res-version.json"), stamp);
-    }
+    let stamp = (!tree.is_empty()).then(|| {
+        serde_json::json!({
+            "treeSha256": tree,
+            "version": SHUN_RES_VERSION.trim(),
+        })
+        .to_string()
+    });
+    resource_pack::relocate(install_dir, &cache, stamp.as_deref().map(str::as_bytes))
 }
-
 /// Stages the install flavor (`full` / `full-webview2` / `lite`) next to the
 /// app as `wowsp-flavor.txt`. Since 0.4 the app updater always picks the
 /// `-lite` artifact (the resource pack rides its own channel), so this is
@@ -1370,27 +1317,6 @@ fn relocate_res_pack(install_dir: &Path, portable: bool) {
 /// to pick their update artifact. Failures are ignored.
 fn write_flavor_marker(install_dir: &Path) {
     let _ = std::fs::write(install_dir.join("wowsp-flavor.txt"), SHUN_FLAVOR.trim());
-}
-
-/// Recursively copies `from` into `to` (creating directories as needed).
-/// Existing files are overwritten; unreadable entries are skipped — the
-/// app re-downloads the model pack when the cache turns out incomplete.
-fn copy_dir_recursive(from: &Path, to: &Path) -> bool {
-    let _ = std::fs::create_dir_all(to);
-    let Ok(entries) = std::fs::read_dir(from) else {
-        return false;
-    };
-    for entry in entries.flatten() {
-        let target = to.join(entry.file_name());
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            if !copy_dir_recursive(&entry.path(), &target) {
-                return false;
-            }
-        } else if std::fs::copy(entry.path(), &target).is_err() {
-            return false;
-        }
-    }
-    true
 }
 
 /// Automated-install arguments (headless mode): `--silent` skips the UI
@@ -1509,7 +1435,7 @@ fn run_headless(
         println!("shun: removed {stale} stale file(s) from the previous install");
     }
     cleanup_bootstrap_payload(&install_dir);
-    relocate_res_pack(&install_dir, portable);
+    relocate_res_pack(&install_dir, portable)?;
     write_flavor_marker(&install_dir);
     // Shortcut policy on the silent path:
     //
@@ -1835,6 +1761,35 @@ mod tests {
         assert!(dir.join("shared.txt").is_file());
         assert!(dir.join("new.txt").is_file());
         assert!(dir.join(MANIFEST_PATH).is_file());
+    }
+
+    #[test]
+    fn stale_cleanup_reads_the_wrapped_manifest_written_by_the_install_flow() {
+        let guard = scratch("wrapped-manifest");
+        let dir = guard.path();
+        let write_current = |entries: Vec<PayloadEntry>| {
+            let manifest = shun::targets::install::InstallManifest {
+                language: Some("en".into()),
+                entries,
+            };
+            std::fs::write(
+                dir.join(MANIFEST_PATH),
+                serde_json::to_vec(&manifest).unwrap(),
+            )
+            .unwrap();
+        };
+        std::fs::write(dir.join("removed.dll"), b"old").unwrap();
+        std::fs::write(dir.join("kept.dll"), b"new").unwrap();
+        std::fs::write(dir.join("user.txt"), b"user data").unwrap();
+        write_current(vec![entry("removed.dll"), entry("kept.dll")]);
+        let previous = read_installed_manifest(dir).unwrap();
+        write_current(vec![entry("kept.dll")]);
+
+        assert_eq!(remove_stale_payload_files(dir, &previous), 1);
+        assert!(!dir.join("removed.dll").exists());
+        assert_eq!(std::fs::read(dir.join("kept.dll")).unwrap(), b"new");
+        assert_eq!(std::fs::read(dir.join("user.txt")).unwrap(), b"user data");
+        assert_eq!(manifest_language_of(dir).as_deref(), Some("en"));
     }
 
     #[test]

@@ -130,13 +130,11 @@ fn load_from(dir: &Path) -> GameConfigFile {
 
 /// Testable write core: canonical TOML → atomic write → retire the legacy
 /// JSON twin (only after the write succeeded).
-fn set_file_from(dir: &Path, file: &GameConfigFile) {
-    let Ok(canonical) = canonical_toml(file) else {
-        return;
-    };
-    if settings_store::store(dir, GAME_CONFIG_FILE, &canonical).is_ok() {
-        settings_store::retire_legacy_json(dir, LEGACY_GAME_CONFIG_FILE);
-    }
+fn set_file_from(dir: &Path, file: &GameConfigFile) -> Result<(), String> {
+    let canonical = canonical_toml(file)?;
+    settings_store::store(dir, GAME_CONFIG_FILE, &canonical)?;
+    settings_store::retire_legacy_json(dir, LEGACY_GAME_CONFIG_FILE);
+    Ok(())
 }
 
 /// The remembered active-install path (null when unset). Runs the
@@ -163,7 +161,7 @@ pub fn set_game_config(active_path: Option<String>) -> Result<GameConfigResponse
     let dir = paths::ensure_data_dir()?;
     let mut file = load_from(&dir);
     file.active_path = active_path;
-    set_file_from(&dir, &file);
+    set_file_from(&dir, &file)?;
     Ok(GameConfigResponse {
         active_path: file.active_path,
         replay_dirs: file.replay_dirs,
@@ -204,7 +202,7 @@ fn add_replay_dir_in(
     let mut file = load_from(dir);
     file.replay_dirs.push(path.to_string());
     file.replay_dirs = sanitize_replay_dirs(std::mem::take(&mut file.replay_dirs));
-    set_file_from(dir, &file);
+    set_file_from(dir, &file)?;
     tracing::info!(path, "replay dir pinned");
     Ok(GameConfigResponse {
         active_path: file.active_path,
@@ -232,7 +230,7 @@ pub async fn add_replay_dir(path: String) -> Result<GameConfigResponse, String> 
 #[tauri::command]
 pub fn remove_replay_dir(path: String) -> Result<GameConfigResponse, String> {
     let dir = paths::ensure_data_dir()?;
-    let file = remove_replay_dir_in(&dir, &path);
+    let file = remove_replay_dir_in(&dir, &path)?;
     Ok(GameConfigResponse {
         active_path: file.active_path,
         replay_dirs: file.replay_dirs,
@@ -241,7 +239,7 @@ pub fn remove_replay_dir(path: String) -> Result<GameConfigResponse, String> {
 
 /// Removal core (hermetic to `dir`): drop the list row whose path identity
 /// (`install_path_key`) matches, write only when something actually left.
-fn remove_replay_dir_in(dir: &Path, path: &str) -> GameConfigFile {
+fn remove_replay_dir_in(dir: &Path, path: &str) -> Result<GameConfigFile, String> {
     let key = super::game_detect::install_path_key(path.trim());
     let mut file = load_from(dir);
     let before = file.replay_dirs.len();
@@ -249,9 +247,9 @@ fn remove_replay_dir_in(dir: &Path, path: &str) -> GameConfigFile {
         .retain(|d| super::game_detect::install_path_key(d) != key);
     if file.replay_dirs.len() != before {
         tracing::info!(path, "replay dir unpinned");
-        set_file_from(dir, &file);
+        set_file_from(dir, &file)?;
     }
-    file
+    Ok(file)
 }
 
 /// The sanitized persisted active-install path for a given data dir — the
@@ -306,7 +304,7 @@ mod tests {
         // Clearing the path rewrites canonical (empty) and stays stable.
         let mut file = load_from(&dir);
         file.active_path = None;
-        set_file_from(&dir, &file);
+        set_file_from(&dir, &file).unwrap();
         assert_eq!(load_from(&dir).active_path, None);
         let cleared = std::fs::read_to_string(dir.join(GAME_CONFIG_FILE)).unwrap();
         assert!(!cleared.contains("activePath"));
@@ -353,14 +351,14 @@ mod tests {
         // the pinned list intact.
         let mut file = load_from(&dir);
         file.active_path = Some(r"C:\Games\WoWS".into());
-        set_file_from(&dir, &file);
+        set_file_from(&dir, &file).unwrap();
         let file = load_from(&dir);
         assert_eq!(file.active_path.as_deref(), Some(r"C:\Games\WoWS"));
         assert_eq!(file.replay_dirs.len(), 1);
 
         // Unpinning by yet another spelling empties the list (and drops the
         // key from the canonical TOML).
-        let resp = remove_replay_dir_in(&dir, &replays.to_string_lossy());
+        let resp = remove_replay_dir_in(&dir, &replays.to_string_lossy()).unwrap();
         assert!(resp.replay_dirs.is_empty());
         assert!(
             !std::fs::read_to_string(dir.join(GAME_CONFIG_FILE))
@@ -393,5 +391,25 @@ mod tests {
         assert!(add_replay_dir_in(&dir, "  ", &roots).is_err());
         assert!(load_from(&dir).replay_dirs.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn failed_save_returns_an_error_and_preserves_legacy_settings() {
+        let dir = temp_dir("write-failure");
+        std::fs::create_dir(dir.join(GAME_CONFIG_FILE)).unwrap();
+        std::fs::write(
+            dir.join(LEGACY_GAME_CONFIG_FILE),
+            "{\"activePath\":\"old\"}",
+        )
+        .unwrap();
+        let mut file = load_from(&dir);
+        file.active_path = Some("new".into());
+        assert!(set_file_from(&dir, &file).is_err());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(LEGACY_GAME_CONFIG_FILE)).unwrap(),
+            "{\"activePath\":\"old\"}"
+        );
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -41,6 +41,25 @@ beforeEach(() => {
 });
 
 describe("ranked store ttl guard", () => {
+  it.each(["success", "failure"] as const)("a cached revisit supersedes another player's pending %s", async (outcome) => {
+    const store = useRankedStore();
+    vi.mocked(api.getRankedStats).mockResolvedValueOnce(mockSeasons(1));
+    await store.load(101, "asia", undefined, { ttlMs: 60_000 });
+    let resolve!: (rows: RankedSeasonStats[]) => void;
+    let reject!: (reason: unknown) => void;
+    const pending = new Promise<RankedSeasonStats[]>((yes, no) => { resolve = yes; reject = no; });
+    vi.mocked(api.getRankedStats).mockReturnValueOnce(pending);
+    const otherPlayer = store.load(202, "eu");
+    await store.load(101, "asia", undefined, { ttlMs: 60_000 });
+    if (outcome === "success") resolve(mockSeasons(2));
+    else reject(new Error("the superseded player failed"));
+    await otherPlayer;
+    expect(store.accountId).toBe(101);
+    expect(store.seasons).toEqual(mockSeasons(1));
+    expect(store.error).toBeNull();
+    expect(api.getRankedStats).toHaveBeenCalledTimes(2);
+  });
+
   it("serves the slot within the ttl for the same player and window", async () => {
     const store = useRankedStore();
     vi.mocked(api.getRankedStats).mockResolvedValue(mockSeasons());

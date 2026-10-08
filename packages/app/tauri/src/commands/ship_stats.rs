@@ -363,8 +363,22 @@ const HISTORY_MAX_POINTS: usize = 240;
 /// so they never become a baseline row and a merge keeps the stored
 /// healthy totals instead of regressing them to zero.
 fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], timestamp: i64) {
+    let result = appdata_dir_path()
+        .and_then(|dir| append_ship_history_in(&dir, realm, account_id, stats, timestamp));
+    if let Err(error) = result {
+        tracing::warn!(%error, "could not append per-ship history");
+    }
+}
+
+fn append_ship_history_in(
+    dir: &std::path::Path,
+    realm: &str,
+    account_id: i64,
+    stats: &[PlayerShipStats],
+    timestamp: i64,
+) -> Result<(), String> {
     if stats.is_empty() {
-        return;
+        return Ok(());
     }
     let mut fresh: Vec<ShipCareerTotals> = Vec::with_capacity(stats.len());
     let mut poisoned_ids: Vec<i64> = Vec::new();
@@ -378,44 +392,64 @@ fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], 
     // Nothing healthy came back — record nothing, same reasoning as the
     // empty check above.
     if fresh.is_empty() {
-        return;
+        return Ok(());
     }
     let file = format!("ship-history/{realm}_{account_id}.json");
-    let mut history: Vec<ShipStatsHistoryPoint> = read_appdata_json(&file)
-        .ok()
-        .flatten()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default();
+    update_history_in(dir, &file, |history: &mut Vec<ShipStatsHistoryPoint>| {
+        let merges_with_last = history
+            .last()
+            .is_some_and(|last| timestamp - last.timestamp < HISTORY_MERGE_SECS);
+        if merges_with_last {
+            let last = history.last_mut().expect("is_some_and checked for Some");
+            last.timestamp = timestamp;
+            // Fresh totals replace their stored row; a ship whose fresh row is
+            // poisoned keeps its previously stored totals instead of regressing
+            // the baseline to a zero-counter row.
+            let previous = std::mem::take(&mut last.ships);
+            last.ships = fresh
+                .into_iter()
+                .chain(
+                    previous
+                        .into_iter()
+                        .filter(|stored| poisoned_ids.contains(&stored.ship_id)),
+                )
+                .collect();
+        } else {
+            history.push(ShipStatsHistoryPoint {
+                timestamp,
+                ships: fresh,
+            });
+        }
+        if history.len() > HISTORY_MAX_POINTS {
+            let drop = history.len() - HISTORY_MAX_POINTS;
+            history.drain(0..drop);
+        }
+    })
+}
 
-    let merges_with_last = history
-        .last()
-        .is_some_and(|last| timestamp - last.timestamp < HISTORY_MERGE_SECS);
-    if merges_with_last {
-        let last = history.last_mut().expect("is_some_and checked for Some");
-        last.timestamp = timestamp;
-        // Fresh totals replace their stored row; a ship whose fresh row is
-        // poisoned keeps its previously stored totals instead of regressing
-        // the baseline to a zero-counter row.
-        let previous = std::mem::take(&mut last.ships);
-        last.ships = fresh
-            .into_iter()
-            .chain(
-                previous
-                    .into_iter()
-                    .filter(|stored| poisoned_ids.contains(&stored.ship_id)),
-            )
-            .collect();
-    } else {
-        history.push(ShipStatsHistoryPoint {
-            timestamp,
-            ships: fresh,
-        });
-    }
-    if history.len() > HISTORY_MAX_POINTS {
-        let drop = history.len() - HISTORY_MAX_POINTS;
-        history.drain(0..drop);
-    }
-    let _ = write_appdata_json(&file, &serde_json::to_string(&history).unwrap_or_default());
+/// Keep each history read-modify-write together. Atomic replacement alone
+/// cannot stop concurrent appends from reading and then overwriting the same
+/// old array. Only local file work runs under this gate, never a WG request.
+static HISTORY_WRITE_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn update_history_in<T: serde::de::DeserializeOwned + serde::Serialize>(
+    dir: &std::path::Path,
+    file: &str,
+    update: impl FnOnce(&mut Vec<T>),
+) -> Result<(), String> {
+    let _writer = HISTORY_WRITE_GATE.lock().unwrap_or_else(|p| p.into_inner());
+    // Only a missing file starts fresh. A read/parse failure must preserve
+    // the existing history, including a temporarily locked Windows file.
+    let mut history = match super::appdata::read_json_in(dir, file)? {
+        Some(raw) => {
+            serde_json::from_str(&raw).map_err(|error| format!("parse history {file}: {error}"))?
+        },
+        None => Vec::new(),
+    };
+    update(&mut history);
+    let raw = serde_json::to_string(&history)
+        .map_err(|error| format!("serialize history {file}: {error}"))?;
+    super::appdata::write_json_in(dir, file, &raw)
 }
 
 /// A career row with battles recorded but zero damage AND zero kills cannot
@@ -486,20 +520,25 @@ pub async fn snapshot_player_stats(
         pr,
     };
 
-    let file = format!("snapshots/{realm}_{account_id}.json");
-    let mut history: Vec<StatsSnapshot> = read_appdata_json(&file)
-        .ok()
-        .flatten()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default();
-    history.push(snap.clone());
-    // Cap at 500 snapshots (~years of daily lookups) to bound file growth.
-    if history.len() > 500 {
-        let drop = history.len() - 500;
-        history.drain(0..drop);
-    }
-    let _ = write_appdata_json(&file, &serde_json::to_string(&history).unwrap_or_default());
+    append_snapshot_in(&appdata_dir_path()?, &realm, account_id, snap.clone())?;
     Ok(snap)
+}
+
+fn append_snapshot_in(
+    dir: &std::path::Path,
+    realm: &str,
+    account_id: i64,
+    snap: StatsSnapshot,
+) -> Result<(), String> {
+    let file = format!("snapshots/{realm}_{account_id}.json");
+    update_history_in(dir, &file, |history: &mut Vec<StatsSnapshot>| {
+        history.push(snap);
+        // Cap at 500 snapshots (~years of daily lookups) to bound file growth.
+        if history.len() > 500 {
+            let drop = history.len() - 500;
+            history.drain(0..drop);
+        }
+    })
 }
 
 /// Read the snapshot history for an account (used by the trends module).
@@ -924,6 +963,171 @@ fn now_ts() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct HistoryFixture(std::path::PathBuf);
+
+    impl HistoryFixture {
+        fn new() -> Self {
+            let mut nonce = [0u8; 16];
+            getrandom::fill(&mut nonce).unwrap();
+            let dir = std::env::temp_dir().join(format!("wowsp-history-{}", hex::encode(nonce)));
+            fs::create_dir(&dir).unwrap();
+            Self(dir)
+        }
+
+        fn write(&self, file: &str, bytes: &[u8]) {
+            let path = self.0.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+    }
+
+    impl Drop for HistoryFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn history_snapshot(timestamp: i64) -> StatsSnapshot {
+        StatsSnapshot {
+            timestamp,
+            game_version: "test-version".into(),
+            battles: timestamp,
+            wins: timestamp / 2,
+            winrate: 50.0,
+            avg_damage: 10_000.0,
+            pr: None,
+        }
+    }
+
+    #[test]
+    fn persistence_snapshot_preserves_unparseable_history() {
+        let fixture = HistoryFixture::new();
+        let file = "snapshots/test_1.json";
+        for original in [b"[{broken history".as_slice(), &[0xff]] {
+            fixture.write(file, original);
+            let result = append_snapshot_in(&fixture.0, "test", 1, history_snapshot(1));
+            assert_eq!(fs::read(fixture.0.join(file)).unwrap(), original);
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn persistence_ship_history_preserves_unparseable_history() {
+        let fixture = HistoryFixture::new();
+        let file = "ship-history/test_1.json";
+        for original in [b"[{broken history".as_slice(), &[0xff]] {
+            fixture.write(file, original);
+            let result = append_ship_history_in(&fixture.0, "test", 1, &[mk_stats(1, 100)], 1);
+            assert_eq!(fs::read(fixture.0.join(file)).unwrap(), original);
+            assert!(result.is_err());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn persistence_read_failure_cannot_replace_existing_history() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let fixture = HistoryFixture::new();
+        let file = "snapshots/test_1.json";
+        let original = serde_json::to_vec(&vec![history_snapshot(1)]).unwrap();
+        fixture.write(file, &original);
+        // Deny reads but allow replace/delete: a failed read is not evidence
+        // that no history exists, even if the subsequent write can succeed.
+        let lock = fs::OpenOptions::new()
+            .write(true)
+            .share_mode(0x2 | 0x4)
+            .open(fixture.0.join(file))
+            .unwrap();
+        let result = append_snapshot_in(&fixture.0, "test", 1, history_snapshot(2));
+        drop(lock);
+        assert_eq!(fs::read(fixture.0.join(file)).unwrap(), original);
+        assert!(result.is_err());
+        append_snapshot_in(&fixture.0, "test", 1, history_snapshot(2)).unwrap();
+        let history: Vec<StatsSnapshot> =
+            serde_json::from_slice(&fs::read(fixture.0.join(file)).unwrap()).unwrap();
+        assert_eq!(history.len(), 2, "a later retry retains the old point");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn persistence_snapshot_reports_failed_publish() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let fixture = HistoryFixture::new();
+        let file = "snapshots/test_1.json";
+        let original = serde_json::to_vec(&vec![history_snapshot(1)]).unwrap();
+        fixture.write(file, &original);
+        // Read succeeds, but the destination cannot be replaced while open.
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0x1)
+            .open(fixture.0.join(file))
+            .unwrap();
+        let result = append_snapshot_in(&fixture.0, "test", 1, history_snapshot(2));
+        drop(lock);
+        assert_eq!(fs::read(fixture.0.join(file)).unwrap(), original);
+        assert!(
+            result.is_err(),
+            "the command must not report an unsaved snapshot"
+        );
+    }
+
+    #[test]
+    fn persistence_concurrent_snapshots_retain_both_updates() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let fixture = HistoryFixture::new();
+        let file = "snapshots/test_1.json";
+        append_snapshot_in(&fixture.0, "test", 1, history_snapshot(0)).unwrap();
+        let (loaded, first_loaded) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let first_dir = fixture.0.clone();
+        let first = std::thread::spawn(move || {
+            update_history_in(&first_dir, file, |history: &mut Vec<StatsSnapshot>| {
+                loaded.send(()).unwrap();
+                wait.recv().unwrap();
+                history.push(history_snapshot(1));
+            })
+        });
+        first_loaded.recv_timeout(Duration::from_secs(5)).unwrap();
+        let (started, second_started) = mpsc::channel();
+        let (done, second_done) = mpsc::channel();
+        let second_dir = fixture.0.clone();
+        let second = std::thread::spawn(move || {
+            started.send(()).unwrap();
+            let result = append_snapshot_in(&second_dir, "test", 1, history_snapshot(2));
+            done.send(()).unwrap();
+            result
+        });
+        second_started.recv_timeout(Duration::from_secs(5)).unwrap();
+        // With the old read/write gap this second update completes while the
+        // first still holds an older snapshot, which then overwrites it.
+        let overtook = second_done.recv_timeout(Duration::from_millis(250)).is_ok();
+        release.send(()).unwrap();
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+        let history: Vec<StatsSnapshot> =
+            serde_json::from_slice(&fs::read(fixture.0.join(file)).unwrap()).unwrap();
+        assert_eq!(history.len(), 3, "neither concurrent append may disappear");
+        assert!(
+            !overtook,
+            "read-modify-write must finish as one transaction"
+        );
+    }
+
+    #[test]
+    fn persistence_snapshot_caps_existing_history_without_losing_latest() {
+        let fixture = HistoryFixture::new();
+        let file = "snapshots/test_1.json";
+        let original: Vec<_> = (0..500).map(history_snapshot).collect();
+        fixture.write(file, &serde_json::to_vec(&original).unwrap());
+        append_snapshot_in(&fixture.0, "test", 1, history_snapshot(500)).unwrap();
+        let history: Vec<StatsSnapshot> =
+            serde_json::from_slice(&fs::read(fixture.0.join(file)).unwrap()).unwrap();
+        assert_eq!(history.len(), 500);
+        assert_eq!(history.first().unwrap().timestamp, 1);
+        assert_eq!(history.last().unwrap().timestamp, 500);
+    }
 
     #[test]
     fn ship_stats_session_cache_roundtrip_clear_and_cap() {

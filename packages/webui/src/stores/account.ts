@@ -50,9 +50,11 @@ export const useAccountStore = defineStore("account", () => {
    *  users can promote another from the account modal. */
   const preferredByRealm = ref<Record<string, number>>({});
   const loading = ref(false);
+  let pendingLoad: Promise<void> | null = null;
+  let pendingSave: Promise<void> = Promise.resolve();
 
   const activeAccount = computed(() =>
-    accounts.value.find((a) => a.accountId === activeAccountId.value) ?? null,
+    accounts.value.find((a) => a.realm === activeRealm.value && a.accountId === activeAccountId.value) ?? null,
   );
 
   /** The preferred account for a realm (null when none is bound). */
@@ -68,56 +70,70 @@ export const useAccountStore = defineStore("account", () => {
   );
 
   /** Load accounts from AppData on startup. */
-  async function load() {
+  function load(): Promise<void> {
+    if (pendingLoad) return pendingLoad;
     loading.value = true;
-    try {
-      const raw = await api.appdataRead(ACCOUNTS_FILE);
-      if (raw) {
-        const data = JSON.parse(raw);
-        accounts.value = Array.isArray(data.accounts) ? data.accounts : [];
-        if (data.activeAccountId) activeAccountId.value = data.activeAccountId;
-        // Same realm validation as the localStorage seed — a corrupt file
-        // value never overrides the default.
-        if (
-          typeof data.activeRealm === "string" &&
-          (REALMS as readonly string[]).includes(data.activeRealm)
-        ) {
-          activeRealm.value = data.activeRealm;
+    pendingLoad = (async () => {
+      // A reload must observe any saves already requested by this store.
+      await pendingSave;
+      try {
+        const raw = await api.appdataRead(ACCOUNTS_FILE);
+        if (raw) {
+          const data = JSON.parse(raw);
+          accounts.value = Array.isArray(data.accounts) ? data.accounts : [];
+          if ("activeAccountId" in data) activeAccountId.value = data.activeAccountId ?? null;
+          // Same realm validation as the localStorage seed — a corrupt file
+          // value never overrides the default.
+          if (
+            typeof data.activeRealm === "string" &&
+            (REALMS as readonly string[]).includes(data.activeRealm)
+          ) {
+            activeRealm.value = data.activeRealm;
+          }
+          preferredByRealm.value =
+            typeof data.preferred === "object" && data.preferred != null ? data.preferred : {};
         }
-        preferredByRealm.value =
-          typeof data.preferred === "object" && data.preferred != null ? data.preferred : {};
+      } catch {
+        // file doesn't exist yet — that's fine
+      } finally {
+        loading.value = false;
+        pendingLoad = null;
       }
-    } catch {
-      // file doesn't exist yet — that's fine
-    } finally {
-      loading.value = false;
-    }
+    })();
+    return pendingLoad;
   }
 
   /** Persist accounts + active selection + per-realm preferences to AppData. */
   async function persist() {
+    const realm = activeRealm.value;
+    const accountId = activeAccountId.value;
     const data = JSON.stringify({
       accounts: accounts.value,
       activeAccountId: activeAccountId.value,
       activeRealm: activeRealm.value,
       preferred: preferredByRealm.value,
     });
-    await api.appdataWrite(ACCOUNTS_FILE, data);
-    localStorage.setItem("wowsp-active-realm", activeRealm.value);
-    if (activeAccountId.value) {
-      localStorage.setItem("wowsp-active-account", String(activeAccountId.value));
-    }
-    // Mirror the selection into the Rust session hub (immediate cross-window
-    // sync for the tray panel; the file write above is the backstop). Fire
-    // and forget — browser dev has no hub and must not fail the persist.
-    void api
-      .syncActiveAccount(activeRealm.value, activeAccountId.value)
-      .catch(() => undefined);
+    // The transport may complete commands out of order. Keep the file,
+    // fallback selection and session hub on the same captured snapshot.
+    const save = pendingSave.then(async () => {
+      await api.appdataWrite(ACCOUNTS_FILE, data);
+      try {
+        localStorage.setItem("wowsp-active-realm", realm);
+        if (accountId != null) localStorage.setItem("wowsp-active-account", String(accountId));
+        else localStorage.removeItem("wowsp-active-account");
+      } catch {
+        // The AppData file remains authoritative when browser storage fails.
+      }
+      await api.syncActiveAccount(realm, accountId).catch(() => undefined);
+    });
+    pendingSave = save.catch(() => undefined);
+    await save;
   }
 
   /** Add a new account profile (after WG API search confirms accountId). The
    *  first account bound on a realm implicitly becomes its preferred one. */
   async function addAccount(profile: AccountProfile) {
+    if (pendingLoad) await pendingLoad;
     // De-dupe by (realm, accountId).
     if (!accounts.value.some((a) => a.realm === profile.realm && a.accountId === profile.accountId)) {
       accounts.value.push(profile);
@@ -130,8 +146,9 @@ export const useAccountStore = defineStore("account", () => {
 
   /** Remove an account profile (clearing a preference that pointed at it). */
   async function removeAccount(realm: string, accountId: number) {
+    if (pendingLoad) await pendingLoad;
     accounts.value = accounts.value.filter((a) => !(a.realm === realm && a.accountId === accountId));
-    if (activeAccountId.value === accountId) activeAccountId.value = null;
+    if (activeRealm.value === realm && activeAccountId.value === accountId) activeAccountId.value = null;
     if (preferredByRealm.value[realm] === accountId) {
       const next = accounts.value.find((a) => a.realm === realm);
       const preferred = { ...preferredByRealm.value };
@@ -144,6 +161,7 @@ export const useAccountStore = defineStore("account", () => {
 
   /** Switch the active account. */
   async function setActive(realm: string, accountId: number) {
+    if (pendingLoad) await pendingLoad;
     activeRealm.value = realm;
     activeAccountId.value = accountId;
     await persist();
@@ -153,6 +171,7 @@ export const useAccountStore = defineStore("account", () => {
    *  array order IS the card order — `persist()` writes it straight into
    *  accounts.json, so a reorder survives a restart on its own. */
   async function reorderAccounts(from: number, to: number) {
+    if (pendingLoad) await pendingLoad;
     const arr = [...accounts.value];
     const [moved] = arr.splice(from, 1);
     if (!moved) return;
@@ -166,6 +185,7 @@ export const useAccountStore = defineStore("account", () => {
    *  the list reads primary-first without touching the other realms'
    *  manual drag order. */
   async function setPreferred(realm: string, accountId: number) {
+    if (pendingLoad) await pendingLoad;
     preferredByRealm.value = { ...preferredByRealm.value, [realm]: accountId };
     const arr = [...accounts.value];
     const firstOfRealm = arr.findIndex((a) => a.realm === realm);
@@ -184,6 +204,7 @@ export const useAccountStore = defineStore("account", () => {
    *  account or the right one is already active. Returns the account
    *  switched to, if any. */
   async function autoSwitchRealm(realm: string): Promise<AccountProfile | null> {
+    if (pendingLoad) await pendingLoad;
     const target = preferredAccount.value(realm);
     if (!target) return null;
     if (activeRealm.value === target.realm && activeAccountId.value === target.accountId) {

@@ -2,7 +2,7 @@
  * Replay-parsing composable. Wraps the replay store so the ReplayView can
  * trigger a header parse and hand the result to the holographic map.
  *
- * Uses `storeToRefs` so the returned `list`/`external`/`current`/`loading`/
+ * Uses `storeToRefs` so the returned `list`/`external`/`current`/`selectedPath`/`loading`/
  * `error` stay as refs (callers use `.value` in render functions). The action
  * methods (`refreshAll`/`open`/`clear`/`addExternal`/`removeExternal`) are
  * returned as plain functions — Pinia actions are not refs. The rail always
@@ -17,11 +17,12 @@ import { useReplayStore } from "@/stores/replay";
 
 export function useReplayParser() {
   const store = useReplayStore();
-  const { list, external, current, loading, error } = storeToRefs(store);
+  const { list, external, current, selectedPath, loading, error } = storeToRefs(store);
   return {
     list,
     external,
     current,
+    selectedPath,
     loading,
     error,
     refreshAll: () => store.refreshAll(),

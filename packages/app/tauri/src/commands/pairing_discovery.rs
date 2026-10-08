@@ -298,7 +298,7 @@ pub async fn broadcast_stop() {
         .take();
     if let Some(st) = joined {
         let _ = st.shutdown.send(true);
-        let _ = tokio::time::timeout(Duration::from_secs(2), st.task).await;
+        super::pairing::await_shutdown(st.task, Duration::from_secs(2)).await;
         tracing::info!("discovery broadcaster stopped");
     }
 }

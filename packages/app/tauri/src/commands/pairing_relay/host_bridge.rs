@@ -14,6 +14,20 @@ fn host_slot() -> &'static Mutex<Option<HostSession>> {
     ST.get_or_init(|| Mutex::new(None))
 }
 
+#[cfg(desktop)]
+fn session_gate() -> &'static tokio::sync::Mutex<()> {
+    static GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    &GATE
+}
+
+#[cfg(test)]
+pub(super) fn session_present() -> bool {
+    host_slot()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .is_some()
+}
+
 /// Start the host bridge session (desktop only; called from pairing_start
 /// when the relay is enabled, and from pairing_set_relay on a live server).
 /// Idempotent — an existing session is left running. The gateway ROOT is
@@ -27,6 +41,7 @@ pub async fn host_session_start(
     local_port: u16,
     room: &str,
 ) -> Result<(), String> {
+    let _lifecycle = session_gate().lock().await;
     {
         let st = host_slot().lock().unwrap_or_else(|p| p.into_inner());
         if st.is_some() {
@@ -49,14 +64,6 @@ pub async fn host_session_start(
     let task = tokio::spawn(async move {
         host_bridge_loop(ws_base, local_port, room, rx, alloc_rx).await;
     });
-    // A concurrent start won the race — retire ours (in a SEPARATE lock
-    // scope: a std mutex guard must never ride an await) before parking
-    // the new session.
-    let raced = host_slot().lock().unwrap_or_else(|p| p.into_inner()).take();
-    if let Some(existing) = raced {
-        let _ = existing.shutdown.send(true);
-        let _ = existing.task.await;
-    }
     *host_slot().lock().unwrap_or_else(|p| p.into_inner()) = Some(HostSession {
         shutdown: tx,
         task,
@@ -69,14 +76,17 @@ pub async fn host_session_start(
 /// Stop the host bridge session (pairing_stop / live config change).
 #[cfg(desktop)]
 pub async fn host_session_stop() {
+    let _lifecycle = session_gate().lock().await;
     let joined = host_slot().lock().unwrap_or_else(|p| p.into_inner()).take();
-    store_code(None);
-    store_gateway_info(None);
     if let Some(session) = joined {
         let _ = session.shutdown.send(true);
-        let _ = tokio::time::timeout(Duration::from_secs(3), session.task).await;
+        pairing::await_shutdown(session.task, Duration::from_secs(3)).await;
         tracing::info!("relay host session stopped");
     }
+    // A handshake finishing during graceful shutdown must not republish a
+    // code after this final clear or after a replacement bridge starts.
+    store_code(None);
+    store_gateway_info(None);
 }
 
 /// Ask the running bridge for a FRESH pairing code (the desktop's
@@ -127,7 +137,8 @@ async fn host_bridge_loop(
     mut alloc_req: tokio::sync::mpsc::UnboundedReceiver<()>,
 ) {
     let mut backoff = Duration::from_secs(1);
-    loop {
+    let mut bridges = tokio::task::JoinSet::new();
+    'session: loop {
         if *shutdown.borrow() {
             break;
         }
@@ -151,7 +162,12 @@ async fn host_bridge_loop(
                             tracing::info!("pairing code allocated by the relay gateway");
                         },
                         ControlMsg::Conn { id } => {
-                            tokio::spawn(bridge_one(ws_base.clone(), room.clone(), id, local_port));
+                            bridges.spawn(bridge_one(
+                                ws_base.clone(),
+                                room.clone(),
+                                id,
+                                local_port,
+                            ));
                         },
                         _ => {},
                     }
@@ -187,10 +203,12 @@ async fn host_bridge_loop(
         }
         loop {
             tokio::select! {
+                biased;
                 _ = shutdown.changed() => {
                     let _ = control.close(None).await;
-                    return;
+                    break 'session;
                 },
+                _ = bridges.join_next(), if !bridges.is_empty() => {},
                 // A fresh-sleep-in-arm keepalive: only fires when the
                 // channel is otherwise idle for a full interval — any traffic
                 // restarts the timer. The TEXT frame both refreshes the
@@ -222,7 +240,7 @@ async fn host_bridge_loop(
                             break;
                         },
                         Ok(ControlMsg::Conn { id }) => {
-                            tokio::spawn(bridge_one(
+                            bridges.spawn(bridge_one(
                                 ws_base.clone(), room.clone(), id, local_port,
                             ));
                         },
@@ -243,6 +261,7 @@ async fn host_bridge_loop(
             _ = tokio::time::sleep(backoff) => {},
         }
     }
+    bridges.shutdown().await;
 }
 
 /// Bridge one signaled connection: loopback TCP to the local pairing server
@@ -287,7 +306,10 @@ where
 
     // Downstream (WS → TCP): the request arrives in one frame, usually. Runs
     // on its own task so the current task can own the upstream direction.
-    let up = tokio::spawn(async move {
+    // The parent bridge owns this direction too: cancellation must close both
+    // halves instead of leaving a detached socket reader behind.
+    let mut downstream = tokio::task::JoinSet::new();
+    downstream.spawn(async move {
         while let Some(Ok(msg)) = ws_stream.next().await {
             match msg {
                 Message::Binary(b) => {
@@ -332,5 +354,32 @@ where
             },
         }
     }
-    let _ = up.await;
+    downstream.shutdown().await;
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn tcp_eof_retires_the_other_tunnel_direction() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let peer = TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (tcp, _) = listener.accept().await.unwrap();
+        let (wire, _idle_peer) = tokio::io::duplex(1024);
+        let ws = WebSocketStream::from_raw_socket(
+            wire,
+            tokio_tungstenite::tungstenite::protocol::Role::Server,
+            None,
+        )
+        .await;
+        drop(peer);
+        tokio::time::timeout(Duration::from_secs(1), pipe_ws_tcp(ws, tcp))
+            .await
+            .expect("TCP EOF must also release the idle WebSocket reader");
+    }
 }

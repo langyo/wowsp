@@ -347,7 +347,9 @@ const STAMP_TEXT: Record<StampKind, string> = {
 // text seal; the kind-keyed file name in the stamps folder IS the state,
 // so a plain list call is the whole sync.
 const CUSTOM_STAMPS: Partial<Record<StampKind, string>> = {};
+let stampsSequence = 0;
 async function loadCustomStamps(invoke: OverlayTauriApi["core"]["invoke"]) {
+  const sequence = ++stampsSequence;
   try {
     const files = (await invoke("stamp_list")) as Array<{ kind: string; path: string }>;
     const { convertFileSrc } = await import("@tauri-apps/api/core");
@@ -361,6 +363,8 @@ async function loadCustomStamps(invoke: OverlayTauriApi["core"]["invoke"]) {
         next[f.kind as StampKind] = convertFileSrc(f.path);
       }
     }
+    // A newer import/reset owns the display even if this read finishes last.
+    if (sequence !== stampsSequence) return;
     for (const key of Object.keys(CUSTOM_STAMPS) as StampKind[]) {
       if (next[key] === undefined) delete CUSTOM_STAMPS[key];
     }

@@ -10,9 +10,9 @@ import { battlesActivityKey } from "@/components/playtime/battleBreakdown";
  * frontend only reads: one overview + battles fetch on start, then a slow
  * 30 s overview poll while the page keeps it alive (a running session's
  * duration ticks with that cadence). The battles payload is NOT refetched
- * every cycle — fresh replay files only land while a client runs or right
- * after it exits, so the poll re-pulls battles only when the overview's
- * activity key moves (battlesActivityKey); an idle view never pays the
+ * every idle cycle — fresh replay files can land while a client runs or
+ * right after it exits, so the poll re-pulls battles during a run and when
+ * the overview's activity key moves; an idle view never pays the
  * potentially multi-MB scan round trip again. Polling lives behind
  * start/stop like gameStatus so the ledger stops being read the moment the
  * view unmounts.
@@ -24,31 +24,33 @@ export const usePlaytimeStore = defineStore("playtime", () => {
   const battles = ref<PlaytimeBattles | null>(null);
   const loaded = ref(false);
   let pollHandle: number | null = null;
-  /** Activity key the current `battles` payload was fetched under. Null
-   *  until the first overview lands — start() fetches battles once
-   *  unconditionally, so the initial key is only recorded, never
-   *  re-triggered. */
+  let overviewSeq = 0;
+  let battlesSeq = 0;
+  let lifecycleSeq = 0;
+  let pendingPollBattles: Promise<boolean> | null = null;
+  /** Activity key covered by a successful battles scan. A failed scan
+   *  leaves it unchanged so the next overview poll retries. */
   let battlesKey: string | null = null;
 
-  async function fetch() {
+  async function fetchOverview(initialBattles?: Promise<boolean>) {
+    const seq = ++overviewSeq;
+    const lifecycle = lifecycleSeq;
     try {
-      overview.value = await api.getPlaytimeOverview();
+      const next = await api.getPlaytimeOverview();
+      if (seq !== overviewSeq) return;
+      overview.value = next;
       loaded.value = true;
-      const key = battlesActivityKey(overview.value);
-      if (battlesKey === null) {
-        // start()'s unconditional battles fetch already covered this key —
-        // record it without re-triggering.
-        battlesKey = key;
-      } else if (key !== battlesKey) {
-        // A moved key (new launch, or the run state flipping either way)
-        // means replay files may have appeared since the last battles
-        // fetch — the only moments that payload can change on disk. The
-        // key advances only on a successful pull, so a transient failure
-        // retries on the next poll instead of going stale until the next
-        // game session.
-        void fetchBattles().then((ok) => {
-          if (ok) battlesKey = key;
-        });
+      const key = battlesActivityKey(next);
+      if (initialBattles || next.lastLaunch?.running || key !== battlesKey) {
+        // A large replay directory can take longer than the poll interval.
+        // Keep its scan alive rather than queuing and superseding it forever.
+        if (!initialBattles && pendingPollBattles) return;
+        const ok = await (initialBattles ?? scanForPoll());
+        // Same-activity overview polls do not invalidate a successful scan.
+        // A changed activity or remount still needs its own scan.
+        if (ok && lifecycle === lifecycleSeq && key === battlesActivityKey(overview.value)) {
+          battlesKey = key;
+        }
       }
     } catch {
       // Browser-dev mock doesn't serve the ledger — the view keeps its
@@ -56,9 +58,16 @@ export const usePlaytimeStore = defineStore("playtime", () => {
     }
   }
 
+  async function fetch() {
+    await fetchOverview();
+  }
+
   async function fetchBattles(): Promise<boolean> {
+    const seq = ++battlesSeq;
     try {
-      battles.value = await api.playtimeBattles();
+      const next = await api.playtimeBattles();
+      if (seq !== battlesSeq) return false;
+      battles.value = next;
       return true;
     } catch {
       // Same empty-state contract as fetch(): a backend without the scan
@@ -88,19 +97,33 @@ export const usePlaytimeStore = defineStore("playtime", () => {
 
   /** Rebuild the ledger from disk (the 录像来源 manager's 重建 action):
    *  the backend drops its parse + history cache and answers rows built
-   *  from the replays currently present. */
+   *  from the replays currently present. Bumping the battles sequence
+   *  first discards any in-flight poll scan — its pre-reset rows must not
+   *  overwrite the rebuilt ledger when they land. */
   async function resetBattles() {
+    ++battlesSeq;
     battles.value = await api.playtimeBattlesReset();
     battlesKey = battlesActivityKey(overview.value);
   }
 
+  /** One poll-driven scan at a time: a large replay tree can outlast the
+   *  30 s poll interval, and queueing a fresh scan every cycle would
+   *  supersede the running one forever. Callers share the live promise. */
+  function scanForPoll(): Promise<boolean> {
+    if (pendingPollBattles) return pendingPollBattles;
+    const pending = fetchBattles().finally(() => {
+      if (pendingPollBattles === pending) pendingPollBattles = null;
+    });
+    pendingPollBattles = pending;
+    return pending;
+  }
+
   /** Start fetching + polling (called on view mount). */
   function start() {
-    void fetch();
-    // The unconditional battles fetch — the overview fetch above only
-    // records the initial activity key; it re-pulls on movement from
-    // there on.
-    void fetchBattles();
+    // Keep the initial scan independent of overview availability, but let
+    // its successful completion acknowledge the initial activity key.
+    const initialBattles = scanForPoll();
+    void fetchOverview(initialBattles);
     if (pollHandle === null) {
       pollHandle = window.setInterval(() => {
         void fetch();
@@ -110,6 +133,10 @@ export const usePlaytimeStore = defineStore("playtime", () => {
 
   /** Stop polling (called on view unmount). */
   function stop() {
+    ++overviewSeq;
+    ++battlesSeq;
+    ++lifecycleSeq;
+    pendingPollBattles = null;
     if (pollHandle !== null) {
       clearInterval(pollHandle);
       pollHandle = null;

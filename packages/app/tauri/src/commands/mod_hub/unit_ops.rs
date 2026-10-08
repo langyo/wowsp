@@ -223,6 +223,7 @@ pub(crate) fn uninstall_unit_core(
     unit: &InstalledMod,
     installs: &mut Vec<ModInstallRecord>,
 ) -> Result<super::mod_catalog::UninstallReport, String> {
+    preflight_unit_uninstall(installs, &unit.paths, game_root)?;
     let mut removed = 0usize;
     let mut restored = 0usize;
 
@@ -261,13 +262,15 @@ pub(crate) fn uninstall_unit_core(
     // folder tree — is trimmed to match instead: the old behavior silently
     // uninstalled that whole mod, deleting files the user never asked about
     // and leaving a half-removed plugin behind.
-    let mut idx = 0usize;
-    while idx < installs.len() {
+    // Unwind snapshots newest first: the newer record restores the older
+    // layer, then removing that layer restores the original underneath it.
+    let mut idx = installs.len();
+    while idx > 0 {
+        idx -= 1;
         let (all_covered, id, covered) = {
             let record = &installs[idx];
             // Another install's records are not ours to uninstall or trim.
             if !record.game_root.is_empty() && record.game_root != game_root {
-                idx += 1;
                 continue;
             }
             let covered: Vec<String> = record
@@ -286,21 +289,19 @@ pub(crate) fn uninstall_unit_core(
             )
         };
         if covered.is_empty() {
-            idx += 1;
             continue;
         }
         if all_covered {
             let report = super::mod_catalog::uninstall_from_ledger(installs, &id, game_root)?;
             removed += report.removed_files;
             restored += report.restored_files;
+            idx = idx.min(installs.len());
         } else {
             let (r, s) = trim_covered_files(&mut installs[idx], &covered, game_root)?;
             removed += r;
             restored += s;
             if installs[idx].files.is_empty() {
                 installs.remove(idx);
-            } else {
-                idx += 1;
             }
         }
     }
@@ -327,6 +328,54 @@ pub(crate) fn uninstall_unit_core(
         removed_files: removed,
         restored_files: restored,
     })
+}
+
+/// Simulate the complete newest-first ledger unwind before deleting any
+/// unit files. A partial record can keep a shared game-root DLL even after
+/// its covered res_mods files are removed, blocking an older full uninstall.
+fn preflight_unit_uninstall(
+    installs: &[ModInstallRecord],
+    paths: &[String],
+    game_root: &str,
+) -> Result<(), String> {
+    let mut projected = installs.to_vec();
+    let mut idx = projected.len();
+    while idx > 0 {
+        idx -= 1;
+        let record = &projected[idx];
+        if !record.game_root.is_empty() && record.game_root != game_root {
+            continue;
+        }
+        let covered = |f: &String| !f.starts_with("@game/") && unit_covers(paths, f);
+        if !record.files.iter().any(covered) {
+            continue;
+        }
+        if record
+            .files
+            .iter()
+            .all(|f| f.starts_with("@game/") || covered(f))
+        {
+            let id = record.id.clone();
+            super::mod_catalog::validate_uninstall_order(&projected, &id, game_root)?;
+            projected
+                .retain(|r| !(r.id == id && (r.game_root.is_empty() || r.game_root == game_root)));
+            idx = idx.min(projected.len());
+        } else {
+            // Coverage classification is spelling-sensitive; ownership on
+            // Windows is not. Refuse a trim whose case/.bak alias is still
+            // claimed by a newer record skipped by that classification.
+            let id = record.id.clone();
+            let removed: Vec<_> = record
+                .files
+                .iter()
+                .filter(|f| covered(f))
+                .cloned()
+                .collect();
+            super::mod_catalog::validate_file_removal_order(&projected, &id, game_root, &removed)?;
+            projected[idx].files.retain(|f| !covered(f));
+        }
+    }
+    Ok(())
 }
 
 /// Remove directories a unit emptied, walking each root's parents up to (and

@@ -80,6 +80,47 @@ pub const PAIRING_PROGRESS_EVENT: &str = "wowsp://pairing-progress";
 /// progress stream (no single "file" name to key on otherwise).
 pub const GAMEDATA_SENTINEL: &str = ":gamedata:";
 
+/// A stop budget must not detach the task: it could still publish old-session
+/// state or retain sockets after a replacement session starts.
+pub(super) async fn await_shutdown(
+    mut task: tokio::task::JoinHandle<()>,
+    budget: std::time::Duration,
+) {
+    if tokio::time::timeout(budget, &mut task).await.is_err() {
+        task.abort();
+        let _ = task.await;
+    }
+}
+
+/// Private scratch space for one server snapshot or client pull. Blocking
+/// builders/extractors retain an Arc so cancellation cannot remove their files
+/// while they are still using them, or let a later run reuse their paths.
+struct GamedataWorkspace(PathBuf);
+
+impl GamedataWorkspace {
+    fn create(cache: &Path) -> Result<Self, String> {
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce).map_err(|e| format!("gamedata workspace entropy: {e}"))?;
+        let path = cache.join(format!("pairing-gamedata-{}", hex::encode(nonce)));
+        std::fs::create_dir(&path).map_err(|e| format!("create {}: {e}", path.display()))?;
+        Ok(Self(path))
+    }
+
+    fn archive(&self) -> PathBuf {
+        self.0.join("pairing-gamedata.zip")
+    }
+
+    fn part(&self) -> PathBuf {
+        self.archive().with_extension("zip.part")
+    }
+}
+
+impl Drop for GamedataWorkspace {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 // ── managed replays dir + filename handling (all targets) ───────────────────
 
 /// The directory imported / pulled replays land in — the SAME directory the
@@ -167,12 +208,44 @@ pub fn dedupe_path(dir: &Path, name: &str) -> PathBuf {
     ))
 }
 
-/// Write replay bytes into the managed dir: sanitize → dedupe → write.
-/// Returns the final local path.
+/// Atomically claim a free name. A name selected before a download (or an
+/// import on another blocking thread) is only a hint, never permission to
+/// replace a file that appeared in the meantime.
+fn reserve_replay_file(dir: &Path, name: &str) -> Result<(PathBuf, std::fs::File), String> {
+    for _ in 0..1000 {
+        let path = dedupe_path(dir, name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => return Ok((path, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("create {}: {e}", path.display())),
+        }
+    }
+    Err("could not reserve a unique replay file name".into())
+}
+
+fn write_replay_file(
+    dir: &Path,
+    name: &str,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> Result<PathBuf, String> {
+    let (path, mut file) = reserve_replay_file(dir, name)?;
+    let result = write(&mut file);
+    drop(file);
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&path);
+        return Err(format!("write {}: {e}", path.display()));
+    }
+    Ok(path)
+}
+
+/// Write replay bytes into a newly reserved file in the managed dir.
 fn store_replay_bytes(dir: &Path, raw_name: &str, bytes: &[u8]) -> Result<String, String> {
     let name = sanitize_replay_name(raw_name)?;
-    let path = dedupe_path(dir, &name);
-    std::fs::write(&path, bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
+    let path = write_replay_file(dir, &name, |file| std::io::Write::write_all(file, bytes))?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -427,7 +500,7 @@ pub async fn pairing_pull_replay(
     }
     let local_name = sanitize_replay_name(&remote_name)?;
     let dir = managed_replays_dir()?;
-    let final_path = dedupe_path(&dir, &local_name);
+    let final_path = dir.join(&local_name);
     let seq = part_seq();
     let part = final_path.with_file_name(format!(
         "{}.{seq}.part",
@@ -474,8 +547,29 @@ pub async fn pairing_pull_replay(
     }
 }
 
+/// Copy a completed download into a newly reserved file. Both files live in
+/// the replay directory, but a no-replace hard link is not available on every
+/// supported filesystem (for example removable game drives).
+fn finalize_replay_part(part: &Path, proposed_path: &Path) -> Result<PathBuf, String> {
+    let dir = proposed_path.parent().ok_or("missing replay directory")?;
+    let name = proposed_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("invalid replay file name")?;
+    let mut source =
+        std::fs::File::open(part).map_err(|e| format!("read {}: {e}", part.display()))?;
+    let result = write_replay_file(dir, name, |dest| {
+        std::io::copy(&mut source, dest).map(|_| ())
+    });
+    drop(source);
+    if result.is_ok() {
+        let _ = std::fs::remove_file(part);
+    }
+    result
+}
+
 /// Shared tail of both pull paths: finalize the `.part` file, emit the
-/// terminal progress event, clean up on failure.
+/// terminal progress event, clean up on failure (including finalization).
 async fn finish_replay_pull(
     app: AppHandle,
     received: Result<u64, String>,
@@ -483,10 +577,20 @@ async fn finish_replay_pull(
     final_path: PathBuf,
     remote_name: String,
 ) -> Result<PairingPathResult, String> {
-    match received {
+    let result = match received {
         Ok(n) => {
-            std::fs::rename(&part, &final_path)
-                .map_err(|e| format!("finalize {}: {e}", final_path.display()))?;
+            let source = part.clone();
+            tokio::task::spawn_blocking(move || finalize_replay_part(&source, &final_path))
+                .await
+                .map_err(|e| format!("replay finalization task failed: {e}"))
+                .and_then(|result| result)
+                .map(|path| (n, path))
+        },
+        Err(e) => Err(e),
+    };
+    let _ = std::fs::remove_file(&part);
+    match result {
+        Ok((n, final_path)) => {
             emit_progress(
                 &app,
                 &PairingProgress {
@@ -503,7 +607,6 @@ async fn finish_replay_pull(
             })
         },
         Err(e) => {
-            let _ = std::fs::remove_file(&part);
             emit_progress(
                 &app,
                 &PairingProgress {
@@ -543,7 +646,8 @@ pub async fn pairing_pull_gamedata(
     const GAMEDATA_RETRY_AFTER_FALLBACK_SECS: u64 = 2;
 
     let cache = crate::paths::ensure_cache_dir()?;
-    let part = cache.join("pairing-gamedata.zip.part");
+    let workspace = std::sync::Arc::new(GamedataWorkspace::create(&cache)?);
+    let part = workspace.part();
     let started = std::time::Instant::now();
 
     let status_is_success = match &target {
@@ -615,8 +719,8 @@ pub async fn pairing_pull_gamedata(
     }
     let data_dir = crate::paths::ensure_data_dir()?;
     let extract = {
-        let part = part.clone();
-        tokio::task::spawn_blocking(move || extract_gamedata_zip(&part, &data_dir))
+        let workspace = workspace.clone();
+        tokio::task::spawn_blocking(move || extract_gamedata_zip(&workspace.part(), &data_dir))
             .await
             .map_err(|e| format!("gamedata extract task failed: {e}"))?
     };
@@ -652,43 +756,146 @@ pub async fn pairing_pull_gamedata(
     }
 }
 
-/// Zip-slip-safe extraction of the game-data zip into the data dir
-/// (merge/overwrite). Entry names must be relative, stay inside the
-/// destination, and use forward slashes only per the zip spec: `enclosed_name`
-/// rejects `..` and absolute components, and the RAW name check rejects
-/// backslashes — necessary because on Windows `enclosed_name()` normalizes
-/// separators, so a hostile packer could otherwise smuggle `..\` components
-/// past a naive display-string check (and legit nested entries must NOT be
-/// rejected for the normalization either).
+/// The pairing protocol exports only these two cache trees. Validate the
+/// raw ZIP spelling before Path normalizes it, including Windows aliases
+/// (trailing dots/spaces and DOS device names), on every platform.
+fn gamedata_entry_path(name: &str, is_dir: bool) -> Option<PathBuf> {
+    if name
+        .chars()
+        .any(|c| c.is_control() || matches!(c, '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*'))
+    {
+        return None;
+    }
+    let name = if is_dir {
+        name.strip_suffix('/')?
+    } else {
+        name
+    };
+    let parts: Vec<&str> = name.split('/').collect();
+    if !matches!(parts.first().copied(), Some("gameparams" | "encyclopedia"))
+        || (!is_dir && parts.len() < 2)
+    {
+        return None;
+    }
+    for part in &parts {
+        if part.is_empty() || part.ends_with('.') || part.ends_with(' ') {
+            return None;
+        }
+        let base = part.split('.').next()?.to_ascii_uppercase();
+        if matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || ["COM", "LPT"].iter().any(|prefix| {
+                base.strip_prefix(prefix).is_some_and(|n| {
+                    matches!(
+                        n,
+                        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                    )
+                })
+            })
+        {
+            return None;
+        }
+    }
+    Some(PathBuf::from(name))
+}
+
+fn gamedata_link(metadata: &std::fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // Junctions and other reparse points need the same treatment as
+        // symlinks; is_symlink alone does not cover every reparse tag.
+        if metadata.file_attributes() & 0x400 != 0 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Create only plain directories below the canonical extraction root.
+/// Existing links must never redirect a cache write into another tree.
+fn gamedata_parent(root: &Path, rel: &Path) -> Result<PathBuf, String> {
+    let mut dir = root.to_path_buf();
+    for part in rel.components() {
+        dir.push(part);
+        match std::fs::symlink_metadata(&dir) {
+            Ok(meta) if meta.is_dir() && !gamedata_link(&meta) => {},
+            Ok(_) => return Err(format!("unsafe gamedata directory: {}", dir.display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+            },
+            Err(e) => return Err(format!("inspect {}: {e}", dir.display())),
+        }
+    }
+    Ok(dir)
+}
+
+/// Merge only gameparams/** and encyclopedia/** from the paired host.
+/// Unrelated app data, Windows path aliases and filesystem links are never
+/// writable through this protocol. Each file is verified by the ZIP reader
+/// before replacing its old cache entry, preserving it on CRC/read failure.
 pub(crate) fn extract_gamedata_zip(archive: &Path, dest: &Path) -> Result<usize, String> {
     let file =
         std::fs::File::open(archive).map_err(|e| format!("open {}: {e}", archive.display()))?;
     let mut zip =
         zip::ZipArchive::new(file).map_err(|e| format!("read {}: {e}", archive.display()))?;
+    std::fs::create_dir_all(dest).map_err(|e| format!("mkdir {}: {e}", dest.display()))?;
+    let root = dest
+        .canonicalize()
+        .map_err(|e| format!("resolve {}: {e}", dest.display()))?;
     let mut extracted = 0usize;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| format!("zip entry {i}: {e}"))?;
-        if entry.name().contains('\\') || entry.name().contains(':') {
-            tracing::warn!(entry = entry.name(), "gamedata zip: skipping unsafe entry");
-            continue;
-        }
-        let Some(rel) = entry.enclosed_name() else {
+        let Some(rel) = gamedata_entry_path(entry.name(), entry.is_dir()) else {
             tracing::warn!(entry = entry.name(), "gamedata zip: skipping unsafe entry");
             continue;
         };
-        let out = dest.join(&rel);
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
+            return Err(format!(
+                "gamedata zip contains a symbolic link: {}",
+                entry.name()
+            ));
+        }
         if entry.is_dir() {
-            std::fs::create_dir_all(&out).map_err(|e| format!("mkdir {}: {e}", out.display()))?;
+            gamedata_parent(&root, &rel)?;
             continue;
         }
-        if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+        let parent = gamedata_parent(&root, rel.parent().unwrap_or(Path::new("")))?;
+        let out = root.join(&rel);
+        match std::fs::symlink_metadata(&out) {
+            Ok(meta) if !meta.is_file() || gamedata_link(&meta) => {
+                return Err(format!("unsafe gamedata file: {}", out.display()));
+            },
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                return Err(format!("inspect {}: {e}", out.display()));
+            },
+            _ => {},
         }
-        let mut fout =
-            std::fs::File::create(&out).map_err(|e| format!("create {}: {e}", out.display()))?;
-        std::io::copy(&mut entry, &mut fout)
-            .map_err(|e| format!("extract {}: {e}", out.display()))?;
+        // A fresh sibling plus rename also avoids truncating another file
+        // when an existing cache entry happens to be a hard link.
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce).map_err(|e| format!("gamedata temp entropy: {e}"))?;
+        let temp = parent.join(format!(".wowsp-gamedata-{}.part", hex::encode(nonce)));
+        let mut fout = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .map_err(|e| format!("create {}: {e}", temp.display()))?;
+        let result = (|| -> Result<(), String> {
+            std::io::copy(&mut entry, &mut fout)
+                .map_err(|e| format!("extract {}: {e}", out.display()))?;
+            drop(fout);
+            std::fs::rename(&temp, &out).map_err(|e| format!("replace {}: {e}", out.display()))
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temp);
+        }
+        result?;
         extracted += 1;
     }
     Ok(extracted)
@@ -753,7 +960,9 @@ pub fn pairing_get_status() -> PairingStatus {
 /// The desktop-side pairing server. Everything below is `#[cfg(desktop)]`.
 #[cfg(desktop)]
 pub(crate) mod server {
-    use std::net::{Ipv4Addr, TcpListener as StdListener};
+    use std::net::Ipv4Addr;
+    #[cfg(test)]
+    use std::net::TcpListener as StdListener;
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, OnceLock};
 
@@ -848,6 +1057,13 @@ pub(crate) mod server {
         SERVER.get_or_init(|| Mutex::new(ServerState::default()))
     }
 
+    /// Server state and its global sidecars change as one lifecycle operation.
+    /// The relay-config command takes this same gate before restarting a bridge.
+    pub(crate) fn lifecycle_gate() -> &'static Mutex<()> {
+        static GATE: Mutex<()> = Mutex::const_new(());
+        &GATE
+    }
+
     pub fn current_status() -> PairingStatus {
         status_of(&state().blocking_lock())
     }
@@ -881,6 +1097,8 @@ pub(crate) mod server {
         /// the background build spawned at start finishes, then the final
         /// result (None = no caches on this desktop → the route 404s).
         gamedata: watch::Receiver<GamedataState>,
+        /// Keep this run's ready snapshot alive until all handlers retire.
+        _gamedata_workspace: Option<Arc<super::GamedataWorkspace>>,
         /// /pair brute-force throttle (see [`PinThrottle`]). Std mutex: the
         /// critical sections are two integer writes, never held across an
         /// await. Fresh per server run.
@@ -930,8 +1148,8 @@ pub(crate) mod server {
         }
     }
 
-    /// Handle to a running server (also the test surface): the minted token
-    /// plus the shutdown signal.
+    /// Handle to a fixture server: the minted token plus its shutdown signal.
+    #[cfg(test)]
     pub struct ServerHandle {
         #[allow(dead_code)] // read via Debug/diagnostics in tests
         pub token: String,
@@ -939,6 +1157,7 @@ pub(crate) mod server {
         task: tokio::task::JoinHandle<()>,
     }
 
+    #[cfg(test)]
     impl ServerHandle {
         /// Signal shutdown and WAIT for the accept loop to exit, so a
         /// restart on the same port cannot race the old listener.
@@ -950,14 +1169,7 @@ pub(crate) mod server {
 
     // ── start / stop ────────────────────────────────────────────────────────
 
-    pub async fn pairing_start() -> Result<PairingStatus, String> {
-        // Fast path: already running (idempotent start).
-        {
-            let st = state().lock().await;
-            if st.running {
-                return Ok(status_of(&st));
-            }
-        }
+    async fn prepare_server() -> Result<ServerState, String> {
         let listener = bind_listener().await?;
         let port = listener
             .local_addr()
@@ -978,8 +1190,12 @@ pub(crate) mod server {
         // per-ship JSON deflates on the blocking pool while /api/gamedata
         // answers 503 + Retry-After until the zip lands.
         let (gd_tx, gd_rx) = watch::channel(GamedataState::Building);
+        let workspace = Arc::new(super::GamedataWorkspace::create(
+            &paths::ensure_cache_dir()?
+        )?);
+        let build_workspace = workspace.clone();
         tokio::spawn(async move {
-            let res = build_gamedata_zip().await;
+            let res = build_gamedata_zip(build_workspace).await;
             match &res {
                 Ok(Some(p)) => {
                     tracing::info!(zip = %p.display(), "pairing gamedata zip ready");
@@ -998,38 +1214,50 @@ pub(crate) mod server {
             room: room.clone(),
             replay_root,
             gamedata: gd_rx,
+            _gamedata_workspace: Some(workspace),
             pin_throttle: std::sync::Mutex::new(PinThrottle::default()),
             shutdown: rx,
         });
         let task = tokio::spawn(serve(listener, shared));
-        {
-            let mut st = state().lock().await;
-            // A concurrent start won the race — stop ours and report theirs.
-            if st.running {
-                drop(st);
-                ServerHandle {
-                    token,
-                    shutdown: tx,
-                    task,
-                }
-                .stop()
-                .await;
-                let st = state().lock().await;
-                return Ok(status_of(&st));
-            }
-            st.running = true;
-            st.host = host;
-            st.port = port;
-            st.pin = pin;
-            st.room = room.clone();
-            st.shutdown = Some(tx);
-            st.task = Some(task);
+        Ok(ServerState {
+            running: true,
+            host,
+            port,
+            pin,
+            room,
+            shutdown: Some(tx),
+            task: Some(task),
+        })
+    }
+
+    /// Returns whether a new run started; idempotent calls must not repeat the
+    /// optional gateway-code wait when an existing run is already available.
+    async fn start_with<P, S, F>(
+        state: &Mutex<ServerState>,
+        gate: &Mutex<()>,
+        prepare: P,
+        start_sidecars: S,
+    ) -> Result<bool, String>
+    where
+        P: std::future::Future<Output = Result<ServerState, String>>,
+        S: FnOnce(u16, String) -> F,
+        F: std::future::Future<Output = ()>,
+    {
+        let _lifecycle = gate.lock().await;
+        let mut st = state.lock().await;
+        if st.running {
+            return Ok(false);
         }
-        // Sidecars, strictly AFTER the state-lock win so a lost race never
-        // leaves them running: the UDP discovery broadcaster and — unless
-        // disabled in the hidden config — the relay host bridge toward the
-        // built-in gateway. Discovery no longer advertises a relay URL:
-        // the endpoint is built into both apps.
+        // Keep publication adjacent to preparation: once it spawns the serve
+        // task there is no await at which cancellation could orphan that task.
+        *st = prepare.await?;
+        let (port, room) = (st.port, st.room.clone());
+        drop(st);
+        start_sidecars(port, room).await;
+        Ok(true)
+    }
+
+    async fn start_sidecars(port: u16, room: String) {
         if let Err(e) = crate::commands::pairing_discovery::broadcast_start(port, None) {
             tracing::warn!(error = %e, "discovery broadcaster failed to start");
         }
@@ -1041,43 +1269,73 @@ pub(crate) mod server {
             {
                 tracing::warn!(error = %e, "relay host session failed to start");
             }
+        } else {
+            tracing::info!("internet gateway disabled by config — LAN-only pairing");
+        }
+    }
+
+    pub async fn pairing_start() -> Result<PairingStatus, String> {
+        let started =
+            start_with(state(), lifecycle_gate(), prepare_server(), start_sidecars).await?;
+        if started && crate::commands::pairing_relay::load_relay_config().enabled {
+            // Waiting for a code does not mutate lifecycle state; let stop run
+            // while the gateway is offline, and wake this wait when it stops.
+            let shutdown = state()
+                .lock()
+                .await
+                .shutdown
+                .as_ref()
+                .map(|s| s.subscribe());
             // Bounded wait so the status returned to the UI already carries
             // the gateway-allocated code when the gateway answers. A timeout
             // just means LAN-only for now: the bridge keeps retrying in the
             // background and the next status refresh picks the code up.
-            if let Err(e) =
-                crate::commands::pairing_relay::wait_for_code(std::time::Duration::from_secs(10))
-                    .await
-            {
-                tracing::info!(error = %e, "relay gateway unreachable — LAN-only pairing for now");
+            if let Some(mut shutdown) = shutdown {
+                if !*shutdown.borrow() {
+                    tokio::select! {
+                        biased;
+                        _ = shutdown.changed() => {},
+                        result = crate::commands::pairing_relay::wait_for_code(std::time::Duration::from_secs(10)) => {
+                            if let Err(e) = result {
+                                tracing::info!(error = %e, "relay gateway unreachable — LAN-only pairing for now");
+                            }
+                        },
+                    }
+                }
             }
-        } else {
-            tracing::info!("internet gateway disabled by config — LAN-only pairing");
         }
         let st = state().lock().await;
-        tracing::info!(host = %st.host, port, mode = ?status_of(&st).mode, "pairing server started");
+        tracing::info!(host = %st.host, port = st.port, mode = ?status_of(&st).mode, "pairing server started");
         Ok(status_of(&st))
     }
 
-    pub async fn pairing_stop() -> Result<(), String> {
+    async fn stop_with(
+        state: &Mutex<ServerState>,
+        gate: &Mutex<()>,
+        stop_sidecars: impl std::future::Future<Output = ()>,
+    ) {
+        let _lifecycle = gate.lock().await;
         let joined = {
-            let mut st = state().lock().await;
-            st.running = false;
-            st.host.clear();
-            st.pin.clear();
-            st.room.clear();
-            st.port = 0;
-            st.shutdown.take().zip(st.task.take())
+            let mut st = state.lock().await;
+            let old = std::mem::take(&mut *st);
+            old.shutdown.zip(old.task)
         };
         if let Some((tx, task)) = joined {
             let _ = tx.send(true);
             // Bounded wait: the accept loop only parks on accept/shutdown, so
             // it exits immediately; the bound guards against a pathological
             // in-flight request hanging stop forever.
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), task).await;
+            super::await_shutdown(task, std::time::Duration::from_secs(5)).await;
         }
-        crate::commands::pairing_discovery::broadcast_stop().await;
-        crate::commands::pairing_relay::host_session_stop().await;
+        stop_sidecars.await;
+    }
+
+    pub async fn pairing_stop() -> Result<(), String> {
+        stop_with(state(), lifecycle_gate(), async {
+            crate::commands::pairing_discovery::broadcast_stop().await;
+            crate::commands::pairing_relay::host_session_stop().await;
+        })
+        .await;
         tracing::info!("pairing server stopped");
         Ok(())
     }
@@ -1137,18 +1395,18 @@ pub(crate) mod server {
     /// "no game data" toast. Runs on the blocking pool; a few hundred MB of
     /// per-ship JSON deflate in seconds there without stalling the runtime.
     /// Outcome logging lives in the spawn wrapper in [`pairing_start`].
-    async fn build_gamedata_zip() -> Result<Option<PathBuf>, String> {
+    async fn build_gamedata_zip(
+        workspace: Arc<super::GamedataWorkspace>,
+    ) -> Result<Option<PathBuf>, String> {
         let data = paths::ensure_data_dir()?;
         let sources = vec![data.join("gameparams"), data.join("encyclopedia")];
         let existing: Vec<PathBuf> = sources.into_iter().filter(|d| d.is_dir()).collect();
         if existing.is_empty() {
             return Ok(None);
         }
-        let cache = paths::ensure_cache_dir()?;
-        let dest = cache.join("pairing-gamedata.zip");
+        let dest = workspace.archive();
         let out = {
-            let dest = dest.clone();
-            tokio::task::spawn_blocking(move || write_gamedata_zip(&existing, &dest))
+            tokio::task::spawn_blocking(move || write_gamedata_zip(&existing, &workspace.archive()))
                 .await
                 .map_err(|e| format!("gamedata zip task failed: {e}"))?
         };
@@ -1213,10 +1471,8 @@ pub(crate) mod server {
 
     /// Test surface: start serving on an ALREADY-BOUND listener with explicit
     /// replay root / gamedata zip / room id (the command path derives all of
-    /// those from the app dirs). Must be called inside a tokio runtime. Only
-    /// tests call this — the command path binds its own listener — hence the
-    /// allow.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// those from the app dirs). Must be called inside a tokio runtime.
+    #[cfg(test)]
     pub async fn spawn_on(
         listener: StdListener,
         replay_root: PathBuf,
@@ -1246,6 +1502,7 @@ pub(crate) mod server {
             room: room.to_string(),
             replay_root,
             gamedata: gd_rx,
+            _gamedata_workspace: None,
             pin_throttle: std::sync::Mutex::new(PinThrottle::default()),
             shutdown: rx,
         });
@@ -1259,10 +1516,16 @@ pub(crate) mod server {
 
     async fn serve(listener: TcpListener, shared: Arc<Shared>) {
         tracing::info!(addr = ?listener.local_addr(), "pairing server listening");
+        let mut shutdown = shared.shutdown.clone();
+        let mut connections = tokio::task::JoinSet::new();
         loop {
-            let mut shutdown = shared.shutdown.clone();
+            if *shutdown.borrow() {
+                break;
+            }
             let accepted = tokio::select! {
+                biased;
                 _ = shutdown.changed() => break,
+                _ = connections.join_next(), if !connections.is_empty() => continue,
                 res = listener.accept() => res,
             };
             let (stream, peer) = match accepted {
@@ -1274,7 +1537,7 @@ pub(crate) mod server {
                 },
             };
             let shared = shared.clone();
-            tokio::spawn(async move {
+            connections.spawn(async move {
                 // NO timeout wrapper: handle_conn bounds only the request
                 // reading internally; the response may stream for minutes.
                 if let Err(e) = handle_conn(stream, &shared).await {
@@ -1282,6 +1545,9 @@ pub(crate) mod server {
                 }
             });
         }
+        // Closing the listener alone leaves accepted sockets authorized with
+        // the old PIN/token. Stop owns and joins every request/response task.
+        connections.shutdown().await;
         tracing::info!("pairing server accept loop exited");
     }
 
@@ -1849,9 +2115,134 @@ pub(crate) mod server {
                 room: "a".repeat(64),
                 replay_root: std::env::temp_dir(),
                 gamedata,
+                _gamedata_workspace: None,
                 pin_throttle: std::sync::Mutex::new(PinThrottle::default()),
                 shutdown: shutdown_rx,
             })
+        }
+
+        fn fixture_state(port: u16) -> ServerState {
+            ServerState {
+                running: true,
+                host: "127.0.0.1".into(),
+                port,
+                pin: "123456".into(),
+                room: "a".repeat(64),
+                ..ServerState::default()
+            }
+        }
+
+        #[tokio::test]
+        async fn repeated_start_keeps_the_existing_run_without_restarting_sidecars() {
+            let state = Mutex::new(fixture_state(1));
+            let gate = Mutex::new(());
+            let started = start_with(
+                &state,
+                &gate,
+                async { panic!("a running server must not be prepared again") },
+                |_, _| async { panic!("a running sidecar must not restart") },
+            )
+            .await
+            .unwrap();
+            assert!(!started, "an idempotent start skips the first-code wait");
+            assert_eq!(state.lock().await.port, 1);
+        }
+
+        #[tokio::test]
+        async fn stop_waits_for_pending_sidecar_start_before_retiring_the_run() {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            let state = Mutex::new(ServerState::default());
+            let gate = Mutex::new(());
+            let sidecar = AtomicBool::new(false);
+            let (release, ready) = tokio::sync::oneshot::channel();
+            let start = start_with(
+                &state,
+                &gate,
+                async { Ok(fixture_state(1)) },
+                |_, _| async {
+                    ready.await.unwrap();
+                    sidecar.store(true, Ordering::SeqCst);
+                },
+            );
+            tokio::pin!(start);
+            // The real start core has published the server, but its gateway
+            // setup is still awaiting an external result.
+            assert!(futures::poll!(&mut start).is_pending());
+            assert!(state.lock().await.running);
+            let stop = stop_with(&state, &gate, async {
+                sidecar.store(false, Ordering::SeqCst);
+            });
+            tokio::pin!(stop);
+            assert!(
+                futures::poll!(&mut stop).is_pending(),
+                "stop must not pass pending setup"
+            );
+            release.send(()).unwrap();
+            start.await.unwrap();
+            stop.await;
+            assert!(!state.lock().await.running);
+            assert!(!sidecar.load(Ordering::SeqCst));
+        }
+
+        #[tokio::test]
+        async fn restart_waits_until_old_stop_has_retired_all_sidecars() {
+            use std::sync::atomic::{AtomicU16, Ordering};
+            let gate = Mutex::new(());
+            let sidecar_port = AtomicU16::new(1);
+            let (release, retired) = tokio::sync::oneshot::channel();
+            let (shutdown, _receiver) = watch::channel(false);
+            let mut old = fixture_state(1);
+            old.shutdown = Some(shutdown);
+            old.task = Some(tokio::spawn(async {
+                retired.await.unwrap();
+            }));
+            let state = Mutex::new(old);
+            let stop = stop_with(&state, &gate, async {
+                sidecar_port.store(0, Ordering::SeqCst);
+            });
+            tokio::pin!(stop);
+            assert!(futures::poll!(&mut stop).is_pending());
+            assert!(!state.lock().await.running);
+            let start = start_with(&state, &gate, async { Ok(fixture_state(2)) }, |port, _| {
+                let sidecar_port = &sidecar_port;
+                async move {
+                    sidecar_port.store(port, Ordering::SeqCst);
+                }
+            });
+            tokio::pin!(start);
+            assert!(
+                futures::poll!(&mut start).is_pending(),
+                "restart must not overtake cleanup"
+            );
+            release.send(()).unwrap();
+            stop.await;
+            start.await.unwrap();
+            assert_eq!(state.lock().await.port, 2);
+            assert_eq!(sidecar_port.load(Ordering::SeqCst), 2);
+        }
+
+        #[tokio::test]
+        async fn stop_budget_aborts_and_joins_a_stalled_session() {
+            let owner = Arc::new(());
+            let worker_owner = owner.clone();
+            let (release, stalled) = tokio::sync::oneshot::channel::<()>();
+            let (started, running) = tokio::sync::oneshot::channel();
+            let task = tokio::spawn(async move {
+                let _owner = worker_owner;
+                started.send(()).unwrap();
+                let _ = stalled.await;
+            });
+            running.await.unwrap();
+            super::super::await_shutdown(task, std::time::Duration::from_millis(10)).await;
+            assert_eq!(
+                Arc::strong_count(&owner),
+                1,
+                "stop must not detach the old worker"
+            );
+            assert!(
+                release.send(()).is_err(),
+                "cancelled session must be gone before stop returns"
+            );
         }
 
         #[test]
@@ -1907,6 +2298,58 @@ pub(crate) mod server {
                 );
             }
             assert_ne!(tokens[0], tokens[1]);
+        }
+
+        #[tokio::test]
+        async fn stopping_server_revokes_an_already_accepted_pair_request() {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let (_gd_tx, gd_rx) = watch::channel(GamedataState::Ready(Ok(None)));
+            let (shutdown, stopped) = watch::channel(false);
+            let mut shared = test_shared(gd_rx);
+            Arc::get_mut(&mut shared).unwrap().shutdown = stopped;
+            let task = tokio::spawn(serve(listener, shared.clone()));
+            let mut client = TcpStream::connect(address).await.unwrap();
+            let body = br#"{"pin":"123456"}"#;
+            let head = format!(
+                "POST /pair HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+                body.len()
+            );
+            client.write_all(head.as_bytes()).await.unwrap();
+            client.write_all(&body[..1]).await.unwrap();
+            // The serve loop and this test each hold one Arc. A third proves
+            // a handler accepted the socket before shutdown, without sleeps.
+            tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                while Arc::strong_count(&shared) < 3 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            shutdown.send(true).unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(2), task)
+                .await
+                .unwrap()
+                .unwrap();
+            // Completing a request with the old PIN after stop must not mint
+            // a still-usable session token on the old accepted socket.
+            let _ = client.write_all(&body[1..]).await;
+            let mut response = Vec::new();
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                client.read_to_end(&mut response),
+            )
+            .await;
+            assert!(
+                response.is_empty(),
+                "stopped server answered: {}",
+                String::from_utf8_lossy(&response)
+            );
+            assert_eq!(
+                Arc::strong_count(&shared),
+                1,
+                "stop must join every handler"
+            );
         }
 
         #[tokio::test]
@@ -2127,6 +2570,84 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn replay_pulls_with_colliding_names_preserve_both_downloads() {
+        let tmp = tempfile_dir();
+        // Both transfers selected the same destination before either finished.
+        let proposed = tmp.join("same.wowsreplay");
+        let first = tmp.join("same.1.part");
+        let second = tmp.join("same.2.part");
+        std::fs::write(&first, b"first replay").unwrap();
+        std::fs::write(&second, b"second replay").unwrap();
+        let first_path = finalize_replay_part(&first, &proposed).unwrap();
+        let second_path = finalize_replay_part(&second, &proposed).unwrap();
+        assert_eq!(std::fs::read(&first_path).unwrap(), b"first replay");
+        assert_eq!(std::fs::read(&second_path).unwrap(), b"second replay");
+        assert_ne!(first_path, second_path);
+        assert!(!first.exists() && !second.exists());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn replay_pull_preserves_file_created_during_download() {
+        let tmp = tempfile_dir();
+        let proposed = tmp.join("same.wowsreplay");
+        let part = tmp.join("same.1.part");
+        std::fs::write(&part, b"downloaded replay").unwrap();
+        // A normal game recording or file import lands while the pull runs.
+        std::fs::write(&proposed, b"local recording").unwrap();
+        let downloaded = finalize_replay_part(&part, &proposed).unwrap();
+        assert_eq!(std::fs::read(&proposed).unwrap(), b"local recording");
+        assert_eq!(std::fs::read(&downloaded).unwrap(), b"downloaded replay");
+        assert_ne!(downloaded, proposed);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn replay_write_failure_removes_only_its_reserved_file() {
+        let tmp = tempfile_dir();
+        let existing = tmp.join("same.wowsreplay");
+        std::fs::write(&existing, b"existing replay").unwrap();
+        let result = write_replay_file(&tmp, "same.wowsreplay", |file| {
+            std::io::Write::write_all(file, b"incomplete")?;
+            Err(std::io::Error::other("simulated storage failure"))
+        });
+        assert!(result.unwrap_err().contains("simulated storage failure"));
+        assert_eq!(std::fs::read(&existing).unwrap(), b"existing replay");
+        assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn replay_parallel_writers_claim_different_files() {
+        let tmp = tempfile_dir();
+        let barrier = std::sync::Barrier::new(2);
+        let paths = std::thread::scope(|scope| {
+            let writers: Vec<_> = [b"first replay".as_slice(), b"second replay".as_slice()]
+                .into_iter()
+                .map(|bytes| {
+                    let dir = &tmp;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        write_replay_file(dir, "same.wowsreplay", |file| {
+                            barrier.wait();
+                            std::io::Write::write_all(file, bytes)
+                        })
+                        .unwrap()
+                    })
+                })
+                .collect();
+            writers
+                .into_iter()
+                .map(|writer| writer.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_ne!(paths[0], paths[1]);
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), b"first replay");
+        assert_eq!(std::fs::read(&paths[1]).unwrap(), b"second replay");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn path_segment_encoding_round_trips() {
         assert_eq!(encode_path_segment("abc-DEF_1.2~"), "abc-DEF_1.2~");
         assert_eq!(encode_path_segment("a b/c"), "a%20b%2Fc");
@@ -2149,6 +2670,66 @@ pub(crate) mod tests {
         assert_eq!(clean_host(" 192.0.2.10 "), "192.0.2.10");
         assert_eq!(clean_host("http://192.0.2.10/"), "192.0.2.10");
         assert_eq!(clean_host("https://192.0.2.10"), "192.0.2.10");
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn restarted_gamedata_build_does_not_replace_an_earlier_snapshot() {
+        let tmp = tempfile_dir();
+        let first = GamedataWorkspace::create(&tmp).unwrap();
+        let second = GamedataWorkspace::create(&tmp).unwrap();
+        let source = tmp.join("gameparams");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("a.json"), b"first server snapshot").unwrap();
+        server::write_gamedata_zip(std::slice::from_ref(&source), &first.archive()).unwrap();
+        let original = std::fs::read(first.archive()).unwrap();
+        std::fs::write(source.join("a.json"), b"second server snapshot").unwrap();
+        server::write_gamedata_zip(&[source], &second.archive()).unwrap();
+        assert_eq!(
+            std::fs::read(first.archive()).unwrap(),
+            original,
+            "a later server run must not replace an earlier session's archive"
+        );
+        assert_ne!(std::fs::read(second.archive()).unwrap(), original);
+        let first_dir = first.0.clone();
+        let second_dir = second.0.clone();
+        drop(first);
+        assert!(!first_dir.exists());
+        assert!(second.archive().is_file());
+        drop(second);
+        assert!(!second_dir.exists());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn gamedata_workspace_outlives_a_cancelled_call_until_its_worker_finishes() {
+        let tmp = tempfile_dir();
+        let workspace = std::sync::Arc::new(GamedataWorkspace::create(&tmp).unwrap());
+        let original_dir = workspace.0.clone();
+        let replacement = GamedataWorkspace::create(&tmp).unwrap();
+        std::fs::write(replacement.part(), b"new session bytes").unwrap();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let worker_workspace = workspace.clone();
+        let worker = tokio::task::spawn_blocking(move || {
+            started_tx.send(()).unwrap();
+            finish_rx.recv().unwrap();
+            std::fs::write(worker_workspace.part(), b"old build finishes").unwrap();
+        });
+        started_rx.await.unwrap();
+        // Stopping the session/cancelling the caller cannot stop an already
+        // running blocking job. Its owned workspace stays until it exits.
+        drop(workspace);
+        assert!(original_dir.is_dir());
+        finish_tx.send(()).unwrap();
+        worker.await.unwrap();
+        assert!(!original_dir.exists());
+        assert_eq!(
+            std::fs::read(replacement.part()).unwrap(),
+            b"new session bytes"
+        );
+        drop(replacement);
+        std::fs::remove_dir(&tmp).unwrap();
     }
 
     #[cfg(desktop)]
@@ -2183,18 +2764,191 @@ pub(crate) mod tests {
         let file = std::fs::File::create(&evil).unwrap();
         let mut w = zip::ZipWriter::new(file);
         let opts = zip::write::SimpleFileOptions::default();
-        w.start_file("ok.txt", opts).unwrap();
+        w.start_file("gameparams/ok.txt", opts).unwrap();
         w.write_all(b"ok").unwrap();
         w.start_file("../evil.txt", opts).unwrap();
         w.write_all(b"evil").unwrap();
+        w.start_file("settings.json", opts).unwrap();
+        w.write_all(b"replacement settings").unwrap();
+        w.start_file("mods/installed.json", opts).unwrap();
+        w.write_all(b"replacement ledger").unwrap();
         w.finish().unwrap();
         let out_dir = tmp.join("out2");
+        std::fs::create_dir_all(&out_dir).unwrap();
+        std::fs::write(out_dir.join("settings.json"), b"original settings").unwrap();
         let extracted = extract_gamedata_zip(&evil, &out_dir).unwrap();
         assert_eq!(extracted, 1);
-        assert!(out_dir.join("ok.txt").is_file());
+        assert!(out_dir.join("gameparams/ok.txt").is_file());
         assert!(!tmp.join("evil.txt").exists());
+        assert!(!out_dir.join("mods").exists());
+        assert_eq!(
+            std::fs::read(out_dir.join("settings.json")).unwrap(),
+            b"original settings"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn gamedata_names_allow_only_cache_trees_without_platform_aliases() {
+        for name in ["gameparams/a.json", "encyclopedia/asia/船.json"] {
+            assert_eq!(gamedata_entry_path(name, false), Some(PathBuf::from(name)));
+        }
+        assert_eq!(
+            gamedata_entry_path("gameparams/", true),
+            Some(PathBuf::from("gameparams"))
+        );
+        for name in [
+            "settings.json",
+            "mods/installed.json",
+            "gameparams",
+            "gameparams.json/a",
+            "gameparams/../settings.json",
+            "gameparams/.. /settings.json",
+            "gameparams/./a.json",
+            "gameparams//a.json",
+            "gameparams/a/",
+            "gameparams/a\\b.json",
+            "gameparams/a:stream",
+            "gameparams/a.json.",
+            "gameparams/a.json ",
+            "gameparams/NUL.json",
+            "gameparams/com1/x",
+            "gameparams/LPT².json",
+            "gameparams/a\0.json",
+            "/gameparams/a.json",
+            "C:/gameparams/a.json",
+        ] {
+            assert_eq!(gamedata_entry_path(name, false), None, "{name:?}");
+        }
+    }
+
+    #[test]
+    fn gamedata_rejects_archive_symlinks() {
+        let tmp = tempfile_dir();
+        let archive = tmp.join("cache.zip");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+        writer
+            .add_symlink(
+                "gameparams/link",
+                "../../outside",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.finish().unwrap();
+        let dest = tmp.join("dest");
+        let error = extract_gamedata_zip(&archive, &dest).unwrap_err();
+        assert!(error.contains("symbolic link"), "{error}");
+        assert!(!dest.join("gameparams/link").exists());
+        std::fs::remove_dir_all(tmp).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn gamedata_rejects_existing_directory_junction() {
+        use std::io::Write;
+        use std::os::windows::process::CommandExt;
+
+        let tmp = tempfile_dir();
+        let dest = tmp.join("dest");
+        let outside = tmp.join("outside");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("a.json"), b"original").unwrap();
+        let link = dest.join("gameparams");
+        // Junction creation needs neither administrator privileges nor
+        // Developer Mode. Pass paths as data, never as PowerShell source.
+        let created = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "New-Item -ItemType Junction -Path $env:WOWSP_TEST_LINK -Target $env:WOWSP_TEST_TARGET -ErrorAction Stop | Out-Null",
+            ])
+            .env("WOWSP_TEST_LINK", &link)
+            .env("WOWSP_TEST_TARGET", &outside)
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .output()
+            .unwrap();
+        assert!(
+            created.status.success(),
+            "{}",
+            String::from_utf8_lossy(&created.stderr)
+        );
+        let archive = tmp.join("cache.zip");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+        writer
+            .start_file(
+                "gameparams/a.json",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(b"replacement").unwrap();
+        writer.finish().unwrap();
+        let result = extract_gamedata_zip(&archive, &dest);
+        let contents = std::fs::read(outside.join("a.json")).unwrap();
+        // Unlink the junction itself before recursively cleaning the fixture.
+        std::fs::remove_dir(&link).unwrap();
+        std::fs::remove_dir_all(tmp).unwrap();
+        assert!(result.is_err(), "junction must not be followed: {result:?}");
+        assert_eq!(contents, b"original");
+    }
+
+    #[test]
+    fn gamedata_replacement_does_not_modify_hard_link_target() {
+        use std::io::Write;
+        let tmp = tempfile_dir();
+        let dest = tmp.join("dest");
+        std::fs::create_dir_all(dest.join("gameparams")).unwrap();
+        let original = tmp.join("original.json");
+        std::fs::write(&original, b"original").unwrap();
+        let target = dest.join("gameparams/a.json");
+        std::fs::hard_link(&original, &target).unwrap();
+        let archive = tmp.join("cache.zip");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+        writer
+            .start_file(
+                "gameparams/a.json",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(b"updated").unwrap();
+        writer.finish().unwrap();
+        assert_eq!(extract_gamedata_zip(&archive, &dest).unwrap(), 1);
+        assert_eq!(std::fs::read(&target).unwrap(), b"updated");
+        assert_eq!(std::fs::read(&original).unwrap(), b"original");
+        std::fs::remove_dir_all(tmp).unwrap();
+    }
+
+    #[test]
+    fn gamedata_corrupt_entry_preserves_existing_cache() {
+        use std::io::Write;
+        let tmp = tempfile_dir();
+        let dest = tmp.join("dest");
+        std::fs::create_dir_all(dest.join("gameparams")).unwrap();
+        let target = dest.join("gameparams/a.json");
+        std::fs::write(&target, b"original").unwrap();
+        let archive = tmp.join("cache.zip");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        writer.start_file("gameparams/a.json", options).unwrap();
+        writer.write_all(b"synthetic-cache-payload").unwrap();
+        writer.finish().unwrap();
+        let mut bytes = std::fs::read(&archive).unwrap();
+        let offset = bytes
+            .windows(b"synthetic-cache-payload".len())
+            .position(|b| b == b"synthetic-cache-payload")
+            .unwrap();
+        bytes[offset] ^= 1; // Leave the original CRC in the central directory.
+        std::fs::write(&archive, bytes).unwrap();
+        assert!(extract_gamedata_zip(&archive, &dest).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        assert_eq!(
+            std::fs::read_dir(dest.join("gameparams")).unwrap().count(),
+            1
+        );
+        std::fs::remove_dir_all(tmp).unwrap();
     }
 
     #[cfg(desktop)]

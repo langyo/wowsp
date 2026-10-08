@@ -38,10 +38,112 @@ function mockStats(overrides: Partial<PlayerStats> = {}): PlayerStats {
 
 beforeEach(() => {
   setActivePinia(createPinia());
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("stats store lookup", () => {
+  it.each(["success", "failure"])("orders best-effort disk snapshots after an older write's %s", async (outcome) => {
+    const store = useStatsStore();
+    store.index.set("asia_langyo", 101);
+    const disk = new Map<string, string>();
+    const playerFile = "stats-cache/asia_101.json";
+    let finishWrite!: () => void;
+    let failWrite!: (error: Error) => void;
+    const pending = new Promise<void>((resolve, reject) => { finishWrite = resolve; failWrite = reject; });
+    let firstSnapshot = true;
+    vi.mocked(api.appdataWrite).mockImplementation(async (file, data) => {
+      if (file === playerFile && firstSnapshot) {
+        firstSnapshot = false;
+        await pending;
+      }
+      disk.set(file, data);
+      return null;
+    });
+    vi.mocked(api.lookupPlayerStats)
+      .mockResolvedValueOnce(mockStats({ battles: 100, dogTag: DOG_TAG }))
+      .mockResolvedValueOnce(mockStats({ battles: 200, dogTag: DOG_TAG }));
+    await store.lookup("langyo", "asia", { force: true });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const second = await store.lookup("langyo", "asia", { force: true });
+    expect(second.battles).toBe(200); // Persistence must not block fresh UI data.
+    const snapshotsStarted = vi.mocked(api.appdataWrite).mock.calls.filter(([file]) => file === playerFile).length;
+    if (outcome === "success") finishWrite();
+    else failWrite(new Error("old disk write failed"));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(JSON.parse(disk.get(playerFile)!).stats.battles).toBe(200);
+    expect(snapshotsStarted).toBe(1);
+    expect(JSON.parse(disk.get("stats-cache/index.json")!).asia_langyo).toBe(101);
+  });
+
+  it("persists the cumulative nickname index after an older index write completes", async () => {
+    const store = useStatsStore();
+    const disk = new Map<string, string>();
+    let finishWrite!: () => void;
+    const pending = new Promise<void>((resolve) => { finishWrite = resolve; });
+    let firstIndex = true;
+    vi.mocked(api.appdataWrite).mockImplementation(async (file, data) => {
+      if (file === "stats-cache/index.json" && firstIndex) {
+        firstIndex = false;
+        await pending;
+      }
+      disk.set(file, data);
+      return null;
+    });
+    vi.mocked(api.lookupPlayerStats).mockImplementation(async (name) =>
+      mockStats({ accountId: name === "alice" ? 1 : 2, name, dogTag: DOG_TAG }),
+    );
+    await store.lookup("alice", "asia", { force: true });
+    await store.lookup("bob", "asia", { force: true });
+    finishWrite();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(JSON.parse(disk.get("stats-cache/index.json")!)).toEqual({ asia_alice: 1, asia_bob: 2 });
+    expect(JSON.parse(disk.get("stats-cache/asia_1.json")!).stats.accountId).toBe(1);
+    expect(JSON.parse(disk.get("stats-cache/asia_2.json")!).stats.accountId).toBe(2);
+  });
+
+  it.each(["snapshot", "missing", "failure"])("keeps refreshed stats when an older disk read finishes with %s", async (outcome) => {
+    const store = useStatsStore();
+    store.index.set("asia_langyo", 101);
+    let finishRead!: (raw: string | null) => void;
+    let failRead!: (error: Error) => void;
+    vi.mocked(api.appdataRead).mockImplementationOnce(() => new Promise((resolve, reject) => {
+      finishRead = resolve;
+      failRead = reject;
+    }));
+    const hydration = store.loadCached("asia", 101);
+    const fresh = mockStats({ battles: 200, dogTag: DOG_TAG });
+    vi.mocked(api.lookupPlayerStats).mockResolvedValue(fresh);
+    await store.lookup("langyo", "asia", { force: true });
+    const timestamp = store.fetchedAt.get("asia_101");
+
+    if (outcome === "failure") failRead(new Error("old disk read failed"));
+    else finishRead(outcome === "missing" ? null : JSON.stringify({ fetchedAt: 1, stats: mockStats({ battles: 100 }) }));
+    expect(await hydration).toEqual(fresh);
+    expect(store.cache.get("asia_101")).toEqual(fresh);
+    expect(store.fetchedAt.get("asia_101")).toBe(timestamp);
+  });
+
+  it("keeps newly learned nickname mappings when an older index read finishes", async () => {
+    const store = useStatsStore();
+    let finishRead!: (raw: string) => void;
+    vi.mocked(api.appdataRead)
+      .mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }))
+      .mockResolvedValue(null);
+    vi.mocked(api.lookupPlayerStats).mockImplementation(async (name) =>
+      mockStats({ accountId: name === "alice" ? 1 : 2, name, dogTag: DOG_TAG }),
+    );
+    const alice = store.lookup("alice", "asia", { force: true });
+    await store.lookup("bob", "asia", { force: true });
+    finishRead(JSON.stringify({ asia_bob: 999, asia_cached: 3 }));
+    await alice;
+
+    expect(store.index.get("asia_alice")).toBe(1);
+    expect(store.index.get("asia_bob")).toBe(2);
+    expect(store.index.get("asia_cached")).toBe(3);
+  });
+
   it("carries the previous dog tag over a fresh result that lost it", async () => {
     const store = useStatsStore();
     store.cache.set("asia_101", mockStats({ dogTag: DOG_TAG }));

@@ -530,7 +530,7 @@ pub use unit_ops::{
 // pub(crate) surface consumed through direct `mod_hub::...` paths by
 // `mod_catalog` (call sites unchanged).
 pub(crate) use classify::classify_package;
-pub(crate) use install::{install_plan_with_loose, restore_root};
+pub(crate) use install::{install_plan_with_loose, restore_root, validate_plan};
 pub(crate) use stale_migration::conflict_warnings;
 pub(crate) use unit_ops::remove_manifest_entries_for_entry;
 

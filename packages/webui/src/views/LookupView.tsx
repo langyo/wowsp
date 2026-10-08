@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, ref, Transition } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, Transition } from "vue";
 import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
@@ -38,6 +38,7 @@ import {
   type DateRange,
 } from "@/utils/shipAggregation";
 import { api, type ClanInfo, type ClanSuggestion, type PlayerShipStats, type PlayerSuggestion, type PlayerStats } from "@/api";
+import { LookupError, type LookupErrorPayload } from "@/transport/types";
 import { t } from "@/i18n";
 import "./LookupView.scss";
 
@@ -142,12 +143,17 @@ export default defineComponent({
     const history = ref<HistoryEntry[]>(loadHistory());
     const encyclopedia = useEncyclopediaStore();
 
-    /** Query text of the most recent player / clan attempt (set before the
-     *  await) — feeds the "seen before" hint on a not-found error: the
-     *  history only records successes, so a match means the target WAS
-     *  findable and is now gone. */
-    const lastPlayerQuery = ref("");
-    const lastClanQuery = ref("");
+    // Stores cache all callers' requests. This view owns its selection,
+    // pending row and error: another surface's request must not change them.
+    let lookupGeneration = 0;
+    const lookupFailure = ref<{
+      kind: LookupKind;
+      realm: string;
+      query: string;
+      raw: string;
+      payload: LookupErrorPayload | null;
+    } | null>(null);
+    onBeforeUnmount(() => { lookupGeneration++; });
 
     /** Display name shown by the pending row while the WG request is in
      *  flight — set right before the request starts: the submitted
@@ -155,6 +161,30 @@ export default defineComponent({
      *  up front (suggestions, history, the card's clan jump), `#<id>`
      *  otherwise (deep links only carry the numeric clan id). */
     const pendingQuery = ref("");
+    const pendingRealm = ref(realm.value);
+
+    function beginLookup(rl: string, query: string) {
+      pendingQuery.value = query;
+      pendingRealm.value = rl;
+      lookupFailure.value = null;
+      return ++lookupGeneration;
+    }
+
+    function changeMode(next: LookupKind) {
+      if (next === mode.value) return;
+      lookupGeneration++;
+      pendingQuery.value = "";
+      lookupFailure.value = null;
+      mode.value = next;
+    }
+
+    function failLookup(e: unknown, kind: LookupKind, rl: string, query: string) {
+      lookupFailure.value = {
+        kind, realm: rl, query,
+        raw: e instanceof Error ? e.message : String(e),
+        payload: e instanceof LookupError ? e.payload : null,
+      };
+    }
 
     /** Whether this exact target was looked up successfully before —
      *  matched by displayed name (case-insensitive) or numeric id. */
@@ -212,7 +242,7 @@ export default defineComponent({
       if (dateRange.value === "all") return null;
       const acc = result.value;
       if (!acc) return null;
-      const hist = shipStats.history.get(`${realm.value}_${acc.accountId}`) ?? [];
+      const hist = shipStats.history.get(`${acc.realm}_${acc.accountId}`) ?? [];
       return computeRecentDelta(shipRows.value, hist, dateRangeCutoff(dateRange.value));
     });
     const dateFiltered = computed(
@@ -229,7 +259,7 @@ export default defineComponent({
     const shipRows = computed<PlayerShipStats[]>(() => {
       const acc = result.value;
       if (!acc) return [];
-      return shipStats.cache.get(`${realm.value}_${acc.accountId}`) ?? [];
+      return shipStats.cache.get(`${acc.realm}_${acc.accountId}`) ?? [];
     });
     /** Per-type summary cards (battles + winrate), matching the Dashboard. */
     const typeSummary = computed(() => {
@@ -271,13 +301,14 @@ export default defineComponent({
       realm.value = rl;
       result.value = null;
       ranked.reset();
-      lastPlayerQuery.value = nm;
-      pendingQuery.value = nm;
+      const generation = beginLookup(rl, nm);
       const taskId = loadingTasks.begin(t("account.searching"));
       try {
         // Explicit user query — always re-pull from the WG API. `nm` may be
         // a nickname or a numeric account id (both resolve server-side).
         const acc = await stats.lookup(nm, rl, { force: true });
+        if (generation !== lookupGeneration) return;
+        pendingQuery.value = "";
         result.value = acc;
         lastLookup.value = { kind: "player", name: acc.name, realm: rl, id: acc.accountId };
         pushHistory({ kind: "player", name: acc.name, realm: rl, id: acc.accountId });
@@ -287,9 +318,10 @@ export default defineComponent({
         // stays until done).
         void ranked.load(acc.accountId, rl);
         await shipStats.load(acc.accountId, rl).catch(() => {});
-      } catch {
-        // error surfaced via stats.error
+      } catch (e) {
+        if (generation === lookupGeneration) failLookup(e, "player", rl, nm);
       } finally {
+        if (generation === lookupGeneration) pendingQuery.value = "";
         loadingTasks.end(taskId);
       }
     }
@@ -302,17 +334,18 @@ export default defineComponent({
       mode.value = "clan";
       realm.value = rl;
       clanResult.value = null;
-      lastClanQuery.value = String(clanId);
-      pendingQuery.value = label || `#${clanId}`;
+      const generation = beginLookup(rl, label || `#${clanId}`);
       const taskId = loadingTasks.begin(t("account.searching"));
       try {
         const clan = await clanStats.lookup(clanId, rl, { force: true });
+        if (generation !== lookupGeneration) return;
         clanResult.value = clan;
         lastLookup.value = { kind: "clan", name: clan.tag, realm: rl, id: clan.clanId };
         pushHistory({ kind: "clan", name: clan.tag, realm: rl, id: clan.clanId });
-      } catch {
-        // error surfaced via clanStats.error
+      } catch (e) {
+        if (generation === lookupGeneration) failLookup(e, "clan", rl, String(clanId));
       } finally {
+        if (generation === lookupGeneration) pendingQuery.value = "";
         loadingTasks.end(taskId);
       }
     }
@@ -620,7 +653,7 @@ export default defineComponent({
                 variant="segmented"
                 block
                 modelValue={mode.value}
-                onUpdate:modelValue={(v: string) => (mode.value = v as LookupKind)}
+                onUpdate:modelValue={(v: string) => changeMode(v as LookupKind)}
                 tabs={[
                   { key: "player", label: t("lookup.player") },
                   { key: "clan", label: t("lookup.clan") },
@@ -658,7 +691,7 @@ export default defineComponent({
                   class={[
                     "lookup-view__history-item",
                     mode.value === h.kind &&
-                      h.realm === realm.value &&
+                      h.realm === (h.kind === "player" ? result.value?.realm : clanResult.value?.realm) &&
                       ((h.kind === "player" && h.name === result.value?.name) ||
                         (h.kind === "clan" && h.name === clanResult.value?.tag))
                       ? "lookup-view__history-item--active"
@@ -688,42 +721,22 @@ export default defineComponent({
         <div class="lookup-view__main">
           <h1 class="lookup-view__title">{t("nav.lookup")}</h1>
           <div class="lookup-view__scroll">
-          {mode.value === "player" && stats.error ? (
+          {lookupFailure.value?.kind === mode.value ? (
             <LookupErrorNotice
-              payload={stats.lookupError}
-              raw={stats.error}
-              seenBefore={seenInHistory("player", lastPlayerQuery.value, realm.value)}
+              payload={lookupFailure.value.payload}
+              raw={lookupFailure.value.raw}
+              seenBefore={mode.value === "player" && seenInHistory("player", lookupFailure.value.query, lookupFailure.value.realm)}
             />
           ) : null}
-          {mode.value === "clan" && clanStats.error ? (
-            <LookupErrorNotice
-              payload={clanStats.lookupError}
-              raw={clanStats.error}
-              // The fixed seenBefore copy is player-specific ("该玩家…已注
-              // 销"), so the clan notice never shows it.
-              seenBefore={false}
-            />
-          ) : null}
-          {/* Pending state: while the WG query is in flight (stores' loading
-              flag; they also clear the error notices above at request start
-              and the result branches below stay null until the await
-              settles) the result area would otherwise be blank — name the
-              target being queried, realm tag styled like the history rows.
-              The empty-label gate keeps a FOREIGN in-flight lookup (e.g. a
-              dashboard-triggered own-account refresh while this page opens,
-              before any local attempt has set a name) from rendering
-              "Looking up …" blank or co-rendering above a cache-seeded
-              result — pendingQuery only exists once this view started a
-              lookup of its own. */}
-          {pendingQuery.value !== "" &&
-          ((mode.value === "player" && stats.loading) ||
-            (mode.value === "clan" && clanStats.loading)) ? (
+          {/* Pending identity belongs to the submitted query; the picker
+              only chooses the realm for the next search. */}
+          {pendingQuery.value !== "" ? (
             <div class="lookup-view__pending" key="pending">
               <HkSpinner size="sm" />
               <span class="lookup-view__pending-text">
                 {t("lookup.searchingWho", { name: pendingQuery.value })}
               </span>
-              <span class="lookup-view__pending-realm">{realm.value.toUpperCase()}</span>
+              <span class="lookup-view__pending-realm">{pendingRealm.value.toUpperCase()}</span>
             </div>
           ) : null}
           <Transition name="s-fade-slide" mode="out-in">
@@ -731,7 +744,7 @@ export default defineComponent({
               <div class="lookup-view__result" key="clan">
                 <ClanCard
                   clan={clanResult.value}
-                  onMemberClick={(m) => void doSearch(String(m.accountId), realm.value)}
+                  onMemberClick={(m) => void doSearch(String(m.accountId), clanResult.value!.realm)}
                   v-slots={{
                     actions: () => (
                       <ShareShotButton
@@ -757,7 +770,7 @@ export default defineComponent({
                           const tag = result.value!.clanTag;
                           void doClanLookup(
                             result.value!.clanId!,
-                            realm.value,
+                            result.value!.realm,
                             tag ? `[${tag}]` : undefined,
                           );
                         }
@@ -795,7 +808,7 @@ export default defineComponent({
                   {/* Filter chips share the date-range row's height */}
                   <ShipFilterBar
                     ships={dateFiltered.value}
-                    realm={realm.value}
+                    realm={result.value.realm}
                     onChange={(v) => (filterState.value = v)}
                   />
                 </div>
@@ -846,11 +859,11 @@ export default defineComponent({
                             role="button"
                             tabindex={0}
                             data-hint={t("ships.detail.openHint")}
-                            onClick={() => shipDetail.openShip(s.shipId, displayName(s), realm.value)}
+                            onClick={() => shipDetail.openShip(s.shipId, displayName(s), result.value!.realm)}
                             onKeydown={(e: KeyboardEvent) => {
                               if (e.key !== "Enter" && e.key !== " ") return;
                               e.preventDefault();
-                              shipDetail.openShip(s.shipId, displayName(s), realm.value);
+                              shipDetail.openShip(s.shipId, displayName(s), result.value!.realm);
                             }}
                           >
                             <span class="lookup-view__ship-ico">
@@ -903,7 +916,7 @@ export default defineComponent({
           ship={shipDetail.selectedShip.value}
           source="water"
           accountId={result.value?.accountId ?? null}
-          realm={result.value ? realm.value : null}
+          realm={result.value?.realm ?? null}
           gameRoot={shipDetail.gameRoot.value}
           onClose={() => shipDetail.closeShip()}
         />

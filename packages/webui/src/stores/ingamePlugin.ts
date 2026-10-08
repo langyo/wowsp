@@ -50,25 +50,37 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
    *  surface runs a lifecycle op on it, this store's own callers
    *  included. */
   const busy = computed<PluginItemOp | null>(() => pluginUpdates.probeBusy);
+  let refreshSeq = 0;
+  let statusRoot = "";
+
+  function clearStatus() {
+    installed.value = false;
+    outdated.value = false;
+    probed.value = false;
+    discussion.value = null;
+  }
 
   async function refresh() {
+    const seq = ++refreshSeq;
     const root = gameRoot.value;
+    if (root !== statusRoot) {
+      statusRoot = root;
+      clearStatus();
+    }
     if (!root) {
-      installed.value = false;
-      outdated.value = false;
-      probed.value = false;
+      clearStatus();
       return;
     }
     try {
       const status = await api.ingamePluginStatus(root);
+      if (seq !== refreshSeq || root !== gameRoot.value) return;
       installed.value = status.installed;
       outdated.value = status.outdated === true;
       discussion.value = status.discussion;
       probed.value = true;
     } catch {
-      installed.value = false;
-      outdated.value = false;
-      probed.value = false;
+      if (seq !== refreshSeq || root !== gameRoot.value) return;
+      clearStatus();
     }
   }
 
@@ -91,10 +103,6 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     return pluginUpdates.runProbe(gameRoot.value, "uninstall");
   }
 
-  // The active install is the probe's identity — switching installs (or
-  // first detection on cold start) re-probes.
-  watch(gameRoot, () => void refresh(), { immediate: true });
-
   // ── Ground-truth identity off the probe's telemetry ──────────────────
   // The realm-reporting probe change adds `self` + `identity` to every
   // telemetry payload — the local player's cluster and a per-name
@@ -115,12 +123,21 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
   // lapses and every consumer falls back to its detection chain.
   let identityExpiry: ReturnType<typeof setTimeout> | null = null;
 
+  function clearIdentity() {
+    if (identityExpiry) clearTimeout(identityExpiry);
+    identityExpiry = null;
+    identityAt.value = 0;
+    identityBattle = "";
+    selfRealm.value = "";
+    playerRealms.value = {};
+  }
+
   /** Fold one telemetry payload's identity block in. Stale or older-probe
    *  payloads (no identity fields) leave the state untouched; `self` and
    *  `identity` gate independently (the SELF latch can fail an early walk
    *  while the per-name map is fully valid, and vice versa); a new battle
-   *  id resets the per-name map so rows from the previous battle cannot
-   *  bleed into the next one's routing. */
+   *  id resets both realm sources so the previous battle cannot bleed
+   *  into the next one's routing. */
   function applyTelemetryIdentity(payload: {
     t?: number;
     battle?: string;
@@ -133,6 +150,7 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     if (!selfCode && !hasIdentity) return;
     if (payload.battle && payload.battle !== identityBattle) {
       identityBattle = payload.battle;
+      selfRealm.value = "";
       playerRealms.value = {};
     }
     identityAt.value = Date.now();
@@ -160,6 +178,13 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
   const liveSelfRealm = computed(() =>
     identityAt.value > 0 ? selfRealm.value : "",
   );
+
+  // Status and telemetry belong to the selected install. Retire them in
+  // the same tick as its root changes, before consumers use the new root.
+  watch(gameRoot, () => {
+    clearIdentity();
+    void refresh();
+  }, { immediate: true, flush: "sync" });
 
   const state = computed<"absent" | "outdated" | "installed">(() => {
     if (!installed.value) return "absent";

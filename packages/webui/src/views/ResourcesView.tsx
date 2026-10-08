@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   AlertTriangle,
   AudioLines,
@@ -253,6 +253,14 @@ export default defineComponent({
     const gameRoot = computed(
       () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
     );
+    let rootGeneration = 0;
+    let scanGeneration = 0;
+    let migrationPlanGeneration = 0;
+    onBeforeUnmount(() => {
+      rootGeneration++;
+      scanGeneration++;
+      migrationPlanGeneration++;
+    });
 
     /** Mutating res_mods while THAT client is running tears half-loaded
      *  mods — the backend rejects it root-scoped; this pre-check mirrors
@@ -546,32 +554,48 @@ export default defineComponent({
     async function scan() {
       if (!gameRoot.value || scanning.value) return;
       scanning.value = true;
-      // Captured once: the active install may switch mid-scan, and every
-      // call below (plus the store adopt) must describe ONE tree.
       const root = gameRoot.value;
+      const generation = ++scanGeneration;
+      const isCurrent = () => generation === scanGeneration;
       try {
-        installed.value = await api.modHubScanInstalled(root);
-        foreignUnits.value = await api.modHubForeignUnits(root).catch((e) => {
+        // Publish one root's snapshot together. A root switch immediately
+        // starts its own scan; the superseded scan cannot publish or launch
+        // more root-scoped work after its current request settles.
+        const mods = await api.modHubScanInstalled(root);
+        if (!isCurrent()) return;
+        const foreign = await api.modHubForeignUnits(root).catch((e) => {
           console.warn("foreign-unit detection failed", e);
           return [];
         });
-        staleBins.value = await api.modHubStaleVersions(root).catch((e) => {
+        if (!isCurrent()) return;
+        const stale = await api.modHubStaleVersions(root).catch((e) => {
           console.warn("stale-bin detection failed", e);
           return [];
         });
-        loaderStatus.value = await api.modHubPnfLoaderStatus(root).catch((e) => {
+        if (!isCurrent()) return;
+        const loader = await api.modHubPnfLoaderStatus(root).catch((e) => {
           console.warn("loader-marker detection failed", e);
           return null;
         });
+        if (!isCurrent()) return;
+        const quarantined = await api.modHubSafeMode(root).catch(() => false);
+        if (!isCurrent()) return;
+        installed.value = mods;
+        foreignUnits.value = foreign;
+        staleBins.value = stale;
+        loaderStatus.value = loader;
+        safeMode.value = quarantined;
         // Same data the sidebar prompt polls — adopt it so the footer row
         // clears the moment a migration finishes, not on the next poll.
-        staleStore.adopt(root, staleBins.value);
-        safeMode.value = await api.modHubSafeMode(root).catch(() => false);
+        staleStore.adopt(root, stale);
         // Reconcile ghost ledger records (files gone from disk) and orphaned
         // snapshot dirs; refresh the records list when something dropped.
         const rec = await api.modHubReconcile(root).catch(() => null);
+        if (!isCurrent()) return;
         if (rec && rec.droppedRecords > 0) {
-          records.value = await api.modHubRecords().catch(() => []);
+          const refreshed = await api.modHubRecords().catch(() => []);
+          if (!isCurrent()) return;
+          records.value = refreshed;
           toast.info(t("resources.reconciled", { n: rec.droppedRecords }));
         }
         // Sidebar deep-link (?migrate=1): once the first scan says there is
@@ -581,8 +605,10 @@ export default defineComponent({
           autoMigrateArmed = false;
           openMigrateWizard();
         }
+      } catch (e) {
+        if (isCurrent()) toast.error(e instanceof Error ? e.message : String(e));
       } finally {
-        scanning.value = false;
+        if (isCurrent()) scanning.value = false;
       }
     }
 
@@ -613,6 +639,7 @@ export default defineComponent({
 
     async function loadMigPlan() {
       if (!gameRoot.value || !migFrom.value) return;
+      const generation = ++migrationPlanGeneration;
       migStep.value = "plan";
       migError.value = "";
       migPlan.value = null;
@@ -620,10 +647,12 @@ export default defineComponent({
       migGroupOpen.value = null;
       try {
         const p = await api.modHubMigrationPlan(gameRoot.value, migFrom.value);
+        if (generation !== migrationPlanGeneration) return;
         migPlan.value = p;
         migDecide.value = { keep: new Set(p.decide.map((f) => f.path)), ignore: new Set() };
         migStep.value = "review";
       } catch (e) {
+        if (generation !== migrationPlanGeneration) return;
         migError.value = e instanceof Error ? e.message : String(e);
       }
     }
@@ -655,6 +684,7 @@ export default defineComponent({
      *  back to confirm; the plan is rebuilt only on an explicit start. */
     function pickMigFrom(v: string) {
       if (v === migFrom.value || migrating.value) return;
+      migrationPlanGeneration++;
       migFrom.value = v;
       migStep.value = "confirm";
       migPlan.value = null;
@@ -692,6 +722,7 @@ export default defineComponent({
     }
 
     function closeMigrate() {
+      migrationPlanGeneration++;
       migrateWizardOpen.value = false;
       migStep.value = "confirm";
       migPlan.value = null;
@@ -704,6 +735,7 @@ export default defineComponent({
     async function startMigrate() {
       if (!gameRoot.value || !migPlan.value || migrating.value) return;
       if (gameRunning() || safeModeBlocked()) return;
+      const generation = rootGeneration;
       migrating.value = true;
       migStep.value = "executing";
       migError.value = "";
@@ -714,6 +746,7 @@ export default defineComponent({
           [...migDecide.value.keep],
           [...migDecide.value.ignore],
         );
+        if (generation !== rootGeneration) return;
         migReport.value = r;
         migStep.value = "done";
         // Probe carry-over verdict — the bin info is captured before the
@@ -732,6 +765,7 @@ export default defineComponent({
         // not just this page's scans.
         await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
       } catch (e) {
+        if (generation !== rootGeneration) return;
         migError.value = e instanceof Error ? e.message : String(e);
         // Back to review so the plan stays visible instead of dead-ending
         // the wizard on a failed execute.
@@ -1307,11 +1341,27 @@ export default defineComponent({
       );
     }
 
-    // The config store hydrates the active install asynchronously — rescan
-    // once the game root shows up (the mount-time scan is a no-op before it).
+    // All installed rows, confirmations and migration plans belong to the
+    // selected install. Invalidate synchronously so an old row can never
+    // invoke an action against the newly selected root, even mid-scan.
     watch(gameRoot, (root) => {
-      if (root && installed.value.length === 0) scan();
-    });
+      rootGeneration++;
+      scanGeneration++;
+      scanning.value = false;
+      installed.value = [];
+      foreignUnits.value = [];
+      staleBins.value = [];
+      loaderStatus.value = null;
+      safeMode.value = false;
+      selection.value = null;
+      selectedPreset.value = "";
+      confirmTarget.value = null;
+      unitTarget.value = null;
+      foreignTarget.value = null;
+      safeModeAsk.value = null;
+      closeMigrate();
+      if (root) void scan();
+    }, { flush: "sync" });
 
     onMounted(() => {
       scan();

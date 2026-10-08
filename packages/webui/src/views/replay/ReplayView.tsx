@@ -2,6 +2,7 @@ import { computed, defineComponent, onMounted, onUnmounted, ref, watch, type CSS
 import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
+import { useReplayPositions } from "@/features/replay/useReplayPositions";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
 import PairingWizard from "@/features/replay/PairingWizard";
@@ -1340,17 +1341,6 @@ export default defineComponent({
       parser.list.value.filter((r) => !gd.config.isIgnoredPath(r.installPath)),
     );
     const listFilter = useReplayListFilter(scannedReplays, parser.external);
-    /**
-     * What the main pane currently shows — a proper little state machine
-     * (Rust-flavoured: None | Archive(Server, ID)). Invariant: exactly one
-     * pane renders, and every rail card click *transitions* the state
-     * instead of flipping independent booleans.
-     */
-    type Pane =
-      | { kind: "none" }
-      | { kind: "archive"; path: string };
-    const pane = ref<Pane>({ kind: "none" });
-
     // The live battle has its own page (/live) now; this view only refreshes
     // the replay list when the game EXITS so the finished match appears
     // without a manual refresh (the game writes the .wowsreplay at battle
@@ -1396,10 +1386,10 @@ export default defineComponent({
      *  app-wide (a CN replay opened while Steam is active would otherwise
      *  query the ASIA stats API). */
     const openReplayRealm = computed(() => {
-      const opened = pane.value;
-      if (opened.kind !== "archive") return null;
+      const path = parser.selectedPath.value;
+      if (!path) return null;
       const entry = [...scannedReplays.value, ...parser.external.value].find(
-        (r) => r.path === opened.path,
+        (r) => r.path === path,
       );
       return entry?.installRealm ?? null;
     });
@@ -1479,7 +1469,6 @@ export default defineComponent({
           : list.findIndex((r) => r.path.includes(String(want)));
         const hit = idx >= 0 ? list[idx] : undefined;
         if (hit) {
-          pane.value = { kind: "archive", path: hit.path };
           void parser.open(hit.path);
         }
       }
@@ -1500,7 +1489,6 @@ export default defineComponent({
         }
         const first = added[0];
         if (first) {
-          pane.value = { kind: "archive", path: first };
           void parser.open(first);
         }
       } catch (e) {
@@ -1510,12 +1498,9 @@ export default defineComponent({
       }
     }
 
-    /** Drop an external entry; reset the pane if its replay was open. */
+    /** Drop an external entry; the store also clears its pending selection. */
     function onCloseExternal(path: string) {
       parser.removeExternal(path);
-      if (pane.value.kind === "archive" && pane.value.path === path) {
-        pane.value = { kind: "none" };
-      }
     }
 
     // ── mobile replay acquisition (phone app build) ─────────────────────
@@ -1613,9 +1598,6 @@ export default defineComponent({
      *  seek when a timeline dot/track is clicked. Null while no map mounts
      *  (decode error) — the panel then renders without the playhead. */
     const mapRef = ref<HoloMapHandle | null>(null);
-    /** True while the packet stream is decoding (post-battle results pending). */
-    const resultsLoading = ref(false);
-    const trajectoryError = ref<string | null>(null);
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
     const duration = ref(0);
@@ -1641,9 +1623,8 @@ export default defineComponent({
         cur.vehicles.map((v) => v.name),
       );
     });
-    watch(
-      () => parser.current.value?.path,
-      async (path) => {
+    const { loading: resultsLoading, error: trajectoryError } = useReplayPositions(parser.current, {
+      reset() {
         trajectories.value = [];
         shellLaunches.value = [];
         explosions.value = [];
@@ -1669,70 +1650,60 @@ export default defineComponent({
         chatMessages.value = [];
         achievements.value = [];
         arenaPlayers.value = [];
+        weatherTransitions.value = [];
+        weatherNotifications.value = [];
         inferredDeaths.value = new Set();
         showChat.value = false;
-        trajectoryError.value = null;
         duration.value = 0;
-        if (!path) return;
-        resultsLoading.value = true;
-        try {
-          const stream = await api.readReplayPositions(path);
-          // The decode is async — the user may have switched replays (or
-          // closed this one) while it ran; this continuation is then stale
-          // and must not overwrite the newer replay's state.
-          if (parser.current.value?.path !== path) return;
-          // Ships the stream never caught sinking — killed while un-spotted;
-          // modern clients emit no EntityDestroy and the HP stream only
-          // updates while observed, so they would keep sailing at their
-          // last (often full) HP reading. Patch the post-battle payload's
-          // authoritative sink list (killerId) into the trajectories once
-          // here, so the map, roster strip, tooltip and chat panel all
-          // read one uniform deathTime (see shipHp.ts for the caveats).
-          inferredDeaths.value = applyDarkDeathInference(
-            stream.trajectories,
-            parsePostBattle(stream.battleResults ?? null),
-            parser.current.value?.vehicles ?? [],
-            stream.arenaPlayers,
-          );
-          trajectories.value = stream.trajectories;
-          shellLaunches.value = stream.shellLaunches ?? [];
-          explosions.value = stream.explosions ?? [];
-          torpedoes.value = stream.torpedoes ?? [];
-          torpedoSteers.value = stream.torpedoSteers ?? [];
-          weaponLocks.value = stream.weaponLocks ?? [];
-          battleResults.value = stream.battleResults ?? null;
-          replayVersion.value = stream.version ?? null;
-          mapNamePkt.value = stream.mapName ?? null;
-          cameraFrames.value = stream.camera ?? [];
-          netStats.value = stream.netStats ?? [];
-          leavesMap.value = stream.leaves ?? {};
-          cameraModes.value = stream.cameraModes ?? [];
-          squadronCreates.value = stream.squadronCreates ?? [];
-          squadronPlanes.value = stream.squadronPlanes ?? [];
-          minimapSquadronAdds.value = stream.minimapSquadronAdds ?? [];
-          minimapSquadronMoves.value = stream.minimapSquadronMoves ?? [];
-          minimapSquadronRemoves.value = stream.minimapSquadronRemoves ?? [];
-          wards.value = stream.wards ?? [];
-          wardRemoves.value = stream.wardRemoves ?? [];
-          shotKills.value = stream.shotKills ?? [];
-          damageStats.value = stream.damageStats ?? [];
-          chatMessages.value = stream.chatMessages ?? [];
-          achievements.value = stream.achievements ?? [];
-          arenaPlayers.value = stream.arenaPlayers ?? [];
-          weatherTransitions.value = stream.weatherTransitions ?? [];
-          weatherNotifications.value = stream.weatherNotifications ?? [];
-          let maxT = 0;
-          for (const tr of stream.trajectories) {
-            for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
-          }
-          duration.value = maxT;
-        } catch (e) {
-          trajectoryError.value = (e as Error).message;
-        } finally {
-          resultsLoading.value = false;
-        }
       },
-    );
+      apply(stream, replay) {
+        // Ships the stream never caught sinking — killed while un-spotted;
+        // modern clients emit no EntityDestroy and the HP stream only
+        // updates while observed, so they would keep sailing at their
+        // last (often full) HP reading. Patch the post-battle payload's
+        // authoritative sink list (killerId) into the trajectories once
+        // here, so the map, roster strip, tooltip and chat panel all
+        // read one uniform deathTime (see shipHp.ts for the caveats).
+        inferredDeaths.value = applyDarkDeathInference(
+          stream.trajectories,
+          parsePostBattle(stream.battleResults ?? null),
+          replay.vehicles,
+          stream.arenaPlayers,
+        );
+        trajectories.value = stream.trajectories;
+        shellLaunches.value = stream.shellLaunches ?? [];
+        explosions.value = stream.explosions ?? [];
+        torpedoes.value = stream.torpedoes ?? [];
+        torpedoSteers.value = stream.torpedoSteers ?? [];
+        weaponLocks.value = stream.weaponLocks ?? [];
+        battleResults.value = stream.battleResults ?? null;
+        replayVersion.value = stream.version ?? null;
+        mapNamePkt.value = stream.mapName ?? null;
+        cameraFrames.value = stream.camera ?? [];
+        netStats.value = stream.netStats ?? [];
+        leavesMap.value = stream.leaves ?? {};
+        cameraModes.value = stream.cameraModes ?? [];
+        squadronCreates.value = stream.squadronCreates ?? [];
+        squadronPlanes.value = stream.squadronPlanes ?? [];
+        minimapSquadronAdds.value = stream.minimapSquadronAdds ?? [];
+        minimapSquadronMoves.value = stream.minimapSquadronMoves ?? [];
+        minimapSquadronRemoves.value = stream.minimapSquadronRemoves ?? [];
+        wards.value = stream.wards ?? [];
+        wardRemoves.value = stream.wardRemoves ?? [];
+        shotKills.value = stream.shotKills ?? [];
+        damageStats.value = stream.damageStats ?? [];
+        chatMessages.value = stream.chatMessages ?? [];
+        achievements.value = stream.achievements ?? [];
+        arenaPlayers.value = stream.arenaPlayers ?? [];
+        weatherTransitions.value = stream.weatherTransitions ?? [];
+        weatherNotifications.value = stream.weatherNotifications ?? [];
+        let maxT = 0;
+        for (const tr of stream.trajectories) {
+          for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
+        }
+        duration.value = maxT;
+      },
+    });
 
     /** Format a match duration (seconds) as M:SS or H:MM:SS. */
     function formatDuration(sec: number): string {
@@ -1787,14 +1758,11 @@ export default defineComponent({
             class={[
               "replay-card",
               external ? "replay-card--external" : "",
-              pane.value.kind === "archive" && pane.value.path === r.path
+              parser.selectedPath.value === r.path
                 ? "replay-card--active"
                 : "",
             ]}
             onClick={() => {
-              // Transition the pane to the new archive BEFORE opening it —
-              // exactly one pane at a time.
-              pane.value = { kind: "archive", path: r.path };
               void parser.open(r.path);
             }}
           >

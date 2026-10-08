@@ -9,7 +9,8 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ArenaInfo, LiveSelfStream } from "@/api";
+import { nextTick } from "vue";
+import type { ArenaInfo, LiveSelfStream, ReplayStream } from "@/api";
 
 vi.mock("@/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api")>();
@@ -18,6 +19,7 @@ vi.mock("@/api", async (importOriginal) => {
     api: {
       liveTempReplay: vi.fn(),
       readLiveReplaySnapshot: vi.fn(),
+      readReplayPositions: vi.fn(),
     },
   };
 });
@@ -31,6 +33,7 @@ import { useLiveSelfStore } from "./liveSelf";
 
 const liveTempReplay = vi.mocked(api.liveTempReplay);
 const readLiveReplaySnapshot = vi.mocked(api.readLiveReplaySnapshot);
+const readReplayPositions = vi.mocked(api.readReplayPositions);
 
 const EMPTY_STREAM: LiveSelfStream = {
   trajectories: [],
@@ -46,15 +49,167 @@ const ARENA = {
   vehicles: [{ id: 1, name: "Me", relation: 0, shipId: 101 }],
 } as ArenaInfo;
 
+const DAMAGE_STREAM: LiveSelfStream = {
+  ...EMPTY_STREAM,
+  damageStats: [{ time: 20, weapon: 1, category: 0, count: 6, total: 5123 }],
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((ok, fail) => { resolve = ok; reject = fail; });
+  return { promise, resolve, reject };
+}
+
 describe("liveSelf store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.useFakeTimers();
     liveTempReplay.mockReset();
     readLiveReplaySnapshot.mockReset();
+    readReplayPositions.mockReset();
   });
   afterEach(() => {
+    vi.clearAllTimers();
     vi.useRealTimers();
+  });
+
+  it("does not restore an old live snapshot after the session resets", async () => {
+    const pending = deferred<LiveSelfStream>();
+    liveTempReplay.mockResolvedValue({ path: "temp.wowsreplay", size: 100 });
+    readLiveReplaySnapshot.mockReturnValue(pending.promise);
+    const store = useLiveSelfStore();
+    store.setArena(ARENA);
+    store.attach();
+    await vi.advanceTimersByTimeAsync(1);
+    store.reset();
+    pending.resolve(DAMAGE_STREAM);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(store.model).toBeNull();
+    expect(store.phase).toBe("idle");
+    expect(store.error).toBeNull();
+    store.detach();
+  });
+
+  it("polls the new battle while the previous battle's snapshot is still pending", async () => {
+    const oldRead = deferred<LiveSelfStream>();
+    const newRead = deferred<LiveSelfStream>();
+    liveTempReplay.mockResolvedValue({ path: "temp.wowsreplay", size: 100 });
+    readLiveReplaySnapshot.mockReturnValueOnce(oldRead.promise).mockReturnValueOnce(newRead.promise);
+    const store = useLiveSelfStore();
+    store.setArena(ARENA);
+    store.attach();
+    await vi.advanceTimersByTimeAsync(1);
+    store.setArena({ ...ARENA, dateTime: "next-battle", vehicles: [{ ...ARENA.vehicles[0], id: 2, name: "New" }] });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(readLiveReplaySnapshot).toHaveBeenCalledTimes(2);
+
+    oldRead.resolve(DAMAGE_STREAM);
+    await vi.advanceTimersByTimeAsync(5000);
+    // The obsolete tick's finally must not release the new tick's slot.
+    expect(readLiveReplaySnapshot).toHaveBeenCalledTimes(2);
+    expect(store.model).toBeNull();
+    newRead.resolve(DAMAGE_STREAM);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.model?.selfPlayerId).toBe(2);
+    expect(store.phase).toBe("live");
+    store.detach();
+  });
+
+  it.each(["temp", "snapshot"])("ignores an old %s read failure after reset", async (stage) => {
+    const discovery = deferred<Awaited<ReturnType<typeof api.liveTempReplay>>>();
+    const snapshot = deferred<LiveSelfStream>();
+    liveTempReplay.mockReturnValue(stage === "temp" ? discovery.promise : Promise.resolve({ path: "temp.wowsreplay", size: 100 }));
+    readLiveReplaySnapshot.mockReturnValue(snapshot.promise);
+    const store = useLiveSelfStore();
+    store.setArena(ARENA);
+    store.attach();
+    await vi.advanceTimersByTimeAsync(1);
+    store.reset();
+    (stage === "temp" ? discovery : snapshot).reject(new Error("old session read failed"));
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(store.error).toBeNull();
+    expect(store.model).toBeNull();
+    expect(store.phase).toBe("idle");
+    store.detach();
+  });
+
+  it("retains the settled report after roster clearing and ignores a late live snapshot", async () => {
+    const pending = deferred<LiveSelfStream>();
+    liveTempReplay.mockResolvedValue({ path: "temp.wowsreplay", size: 100 });
+    readLiveReplaySnapshot.mockReturnValue(pending.promise);
+    readReplayPositions.mockResolvedValue({
+      ...DAMAGE_STREAM,
+      damageStats: [{ time: 20, weapon: 1, category: 0, count: 6, total: 6000 }],
+    } as ReplayStream);
+    const store = useLiveSelfStore();
+    store.setArena(ARENA);
+    store.attach();
+    await store.settle("finished.wowsreplay");
+    store.setArena(null);
+    pending.resolve(DAMAGE_STREAM);
+    await vi.advanceTimersByTimeAsync(1);
+    store.detach();
+    store.attach();
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(store.model?.damage).toBe(6000);
+    expect(store.phase).toBe("final");
+    expect(liveTempReplay).toHaveBeenCalledTimes(1);
+    store.detach();
+  });
+
+  it("does not pin the next battle final when an older settled parse completes", async () => {
+    const pending = deferred<ReplayStream>();
+    readReplayPositions.mockReturnValue(pending.promise);
+    const store = useLiveSelfStore();
+    store.setArena(ARENA);
+    await nextTick();
+    const parsing = store.settle("old.wowsreplay");
+    store.setArena({ ...ARENA, dateTime: "next-battle" });
+    await nextTick();
+    pending.resolve(DAMAGE_STREAM as ReplayStream);
+    await parsing;
+
+    expect(store.model).toBeNull();
+    expect(store.phase).toBe("waiting");
+  });
+
+  it("does not retry a failed old parse after reset even when the path is reused", async () => {
+    const pending = deferred<ReplayStream>();
+    readReplayPositions.mockReturnValueOnce(pending.promise).mockResolvedValue(DAMAGE_STREAM as ReplayStream);
+    const store = useLiveSelfStore();
+    store.setArena(ARENA);
+    await nextTick();
+    const oldParse = store.settle("same.wowsreplay");
+    store.reset();
+    store.setArena({ ...ARENA, dateTime: "next-battle" });
+    await nextTick();
+    await store.settle("same.wowsreplay");
+    pending.reject(new Error("old parse failed"));
+    await oldParse;
+    await vi.advanceTimersByTimeAsync(2500);
+
+    expect(readReplayPositions).toHaveBeenCalledTimes(2);
+    expect(store.error).toBeNull();
+    expect(store.phase).toBe("final");
+  });
+
+  it("invalidates an already scheduled retry when the next session reuses the path", async () => {
+    readReplayPositions.mockRejectedValueOnce(new Error("still flushing")).mockResolvedValue(DAMAGE_STREAM as ReplayStream);
+    const store = useLiveSelfStore();
+    store.setArena(ARENA);
+    await store.settle("same.wowsreplay");
+    store.reset();
+    store.setArena(ARENA);
+    await store.settle("same.wowsreplay");
+    await vi.advanceTimersByTimeAsync(2500);
+
+    expect(readReplayPositions).toHaveBeenCalledTimes(2);
+    expect(store.model?.damage).toBe(5123);
+    expect(store.phase).toBe("final");
   });
 
   it("retries a failed snapshot read even when the file size did not change", async () => {

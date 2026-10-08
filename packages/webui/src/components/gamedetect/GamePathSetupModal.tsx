@@ -72,10 +72,14 @@ export default defineComponent({
     }
 
     async function pickInstall(i: GameInstall) {
-      await config.selectInstall(i.path);
-      await followRealm(i.realm);
-      toast.info(t("common.gamePath.applied"));
-      close();
+      try {
+        await config.selectInstall(i.path);
+        await followRealm(i.realm);
+        toast.info(t("common.gamePath.applied"));
+        close();
+      } catch (e) {
+        toast.error((e as Error).message || String(e));
+      }
     }
 
     async function useRunning() {
@@ -101,6 +105,7 @@ export default defineComponent({
     async function applyManual(path: string) {
       try {
         const resolved = await config.setManualPath(path);
+        if (!resolved) return;
         await followRealm(resolved?.realm);
         toast.info(t("common.gamePath.applied"));
         close();

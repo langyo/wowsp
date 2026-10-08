@@ -5,6 +5,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { api } from "@/api";
 import type { PairedHost } from "./pairing";
 
 // ── api mock: an in-memory appdata dir + scripted pairing calls ──────────
@@ -87,7 +88,7 @@ beforeEach(() => {
   appdata.clear();
   pairShouldFail = null;
   gamedataShouldFail = null;
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   setActivePinia(createPinia());
 });
 
@@ -163,6 +164,157 @@ describe("parsePairingFile", () => {
 });
 
 describe("pairing store", () => {
+  it("retries unsaved pair and forget edits after recovery itself cannot save", async () => {
+    const forgotten: PairedHost = { host: "192.0.2.1", port: 58041, token: "test-forgotten-token", label: "Forget", lastSeen: 0, mode: "lan" };
+    const retained = { ...forgotten, host: "192.0.2.2", label: "Retain" };
+    const oldFile = JSON.stringify({ hosts: [forgotten, retained] });
+    appdata.set("pairing-hosts.json", oldFile);
+    vi.mocked(api.appdataRead).mockRejectedValueOnce(new Error("read locked")).mockRejectedValueOnce(new Error("still locked"));
+    const store = usePairingStore();
+    await store.pairAndSave({ kind: "lan", host: "192.0.2.3", port: 58041 }, "123456");
+    await store.removeEntry(forgotten);
+    expect(api.appdataWrite).not.toHaveBeenCalled();
+    expect(appdata.get("pairing-hosts.json")).toBe(oldFile);
+
+    vi.mocked(api.appdataWrite).mockRejectedValueOnce(new Error("write locked"));
+    await store.load();
+    expect(store.hosts.map((h) => h.host)).toEqual(["192.0.2.2", "192.0.2.3"]);
+    expect(appdata.get("pairing-hosts.json")).toBe(oldFile);
+    await store.load();
+    expect(parseHostsFile(appdata.get("pairing-hosts.json")).map((h) => h.host)).toEqual(["192.0.2.2", "192.0.2.3"]);
+
+    // Successful persistence retires the edits: a later explicit reload
+    // must not resurrect them over another window's updated file.
+    appdata.set("pairing-hosts.json", JSON.stringify({ hosts: [] }));
+    await store.load();
+    expect(store.hosts).toEqual([]);
+  });
+
+  it("preserves unreadable saved hosts and merges a new pairing on a later successful load", async () => {
+    const existing: PairedHost = { host: "192.0.2.1", port: 58041, token: "test-existing-token", label: "Existing", lastSeen: 0, mode: "lan" };
+    const oldFile = JSON.stringify({ hosts: [existing] });
+    appdata.set("pairing-hosts.json", oldFile);
+    vi.mocked(api.appdataRead).mockRejectedValueOnce(new Error("temporarily locked"));
+    const store = usePairingStore();
+    const added = await store.pairAndSave({ kind: "lan", host: "192.0.2.2", port: 58041 }, "123456");
+    expect(store.hosts).toEqual([added]);
+    expect(appdata.get("pairing-hosts.json")).toBe(oldFile);
+    await store.load();
+
+    expect(store.hosts.map((h) => h.host)).toEqual(["192.0.2.1", "192.0.2.2"]);
+    expect(parseHostsFile(appdata.get("pairing-hosts.json")).map((h) => h.host)).toEqual(["192.0.2.1", "192.0.2.2"]);
+  });
+
+  it("remembers a forget request without replacing an unreadable file with an empty list", async () => {
+    const forgotten: PairedHost = { host: "192.0.2.1", port: 58041, token: "test-forgotten-token", label: "Forget", lastSeen: 0, mode: "lan" };
+    const retained = { ...forgotten, host: "192.0.2.2", label: "Retain" };
+    const oldFile = JSON.stringify({ hosts: [forgotten, retained] });
+    appdata.set("pairing-hosts.json", oldFile);
+    vi.mocked(api.appdataRead).mockRejectedValueOnce(new Error("temporarily locked"));
+    const store = usePairingStore();
+    await store.removeEntry(forgotten);
+    expect(appdata.get("pairing-hosts.json")).toBe(oldFile);
+    await store.load();
+
+    expect(store.hosts).toEqual([retained]);
+    expect(parseHostsFile(appdata.get("pairing-hosts.json"))).toEqual([retained]);
+  });
+
+  it("merges a new pairing with the initial host load instead of replacing existing computers", async () => {
+    const existing: PairedHost = { host: "192.0.2.1", port: 58041, token: "test-existing-token", label: "Existing", lastSeen: 0, mode: "lan" };
+    let finishRead!: (raw: string) => void;
+    vi.mocked(api.appdataRead).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    const store = usePairingStore();
+    const loading = store.load();
+    const secondLoad = store.load();
+    const pairing = store.pairAndSave({ kind: "lan", host: "192.0.2.2", port: 58041 }, "123456");
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    finishRead(JSON.stringify({ hosts: [existing] }));
+    await Promise.all([loading, secondLoad, pairing]);
+
+    expect(api.appdataRead).toHaveBeenCalledTimes(1);
+    expect(store.hosts.map((h) => h.host)).toEqual(["192.0.2.1", "192.0.2.2"]);
+    expect(parseHostsFile(appdata.get("pairing-hosts.json")).map((h) => h.host)).toEqual(["192.0.2.1", "192.0.2.2"]);
+  });
+
+  it("loads existing computers before pairing when no view has loaded them yet", async () => {
+    appdata.set("pairing-hosts.json", JSON.stringify({ hosts: [{ host: "192.0.2.1", port: 58041, token: "test-existing-token", label: "Existing", lastSeen: 0, mode: "lan" }] }));
+    const store = usePairingStore();
+    await store.pairAndSave({ kind: "lan", host: "192.0.2.2", port: 58041 }, "123456");
+
+    expect(store.hosts.map((h) => h.host)).toEqual(["192.0.2.1", "192.0.2.2"]);
+    expect(parseHostsFile(appdata.get("pairing-hosts.json"))).toHaveLength(2);
+  });
+
+  it("waits for pending saves before reloading hosts", async () => {
+    const store = usePairingStore();
+    const entry = await store.pairAndSave({ kind: "lan", host: "192.0.2.1", port: 58041 }, "123456");
+    let finishWrite!: () => void;
+    const pending = new Promise<void>((resolve) => { finishWrite = resolve; });
+    vi.mocked(api.appdataWrite).mockImplementationOnce(async (file, content) => {
+      await pending;
+      appdata.set(file, content);
+      return null;
+    });
+    vi.mocked(api.appdataRead).mockClear();
+    const forgetting = store.removeHost(entry.host, entry.port);
+    const loading = store.load();
+    await Promise.resolve();
+    const readsBeforeSave = vi.mocked(api.appdataRead).mock.calls.length;
+    finishWrite();
+    await Promise.all([forgetting, loading]);
+
+    expect(readsBeforeSave).toBe(0);
+    expect(store.hosts).toEqual([]);
+  });
+
+  it("keeps known computers when a subsequent reload cannot read the file", async () => {
+    const store = usePairingStore();
+    const entry = await store.pairAndSave({ kind: "lan", host: "192.0.2.1", port: 58041 }, "123456");
+    vi.mocked(api.appdataRead).mockRejectedValueOnce(new Error("temporarily unreadable"));
+    await store.load();
+
+    expect(store.hosts).toEqual([entry]);
+    expect(store.loaded).toBe(true);
+  });
+
+  it("does not restore a forgotten host when an older host reload completes", async () => {
+    const store = usePairingStore();
+    const entry = await store.pairAndSave({ kind: "lan", host: "192.0.2.1", port: 58041 }, "123456");
+    const oldFile = appdata.get("pairing-hosts.json")!;
+    let finishRead!: (raw: string) => void;
+    vi.mocked(api.appdataRead).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    const loading = store.load();
+    const forgetting = store.removeEntry(entry);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    finishRead(oldFile);
+    await Promise.all([loading, forgetting]);
+
+    expect(store.hosts).toEqual([]);
+    expect(parseHostsFile(appdata.get("pairing-hosts.json"))).toEqual([]);
+  });
+
+  it.each(["success", "failure"])("keeps forgetting persisted after an older save's %s", async (outcome) => {
+    const store = usePairingStore();
+    const entry = await store.pairAndSave({ kind: "lan", host: "192.0.2.1", port: 58041 }, "123456");
+    let finishWrite!: () => void;
+    let failWrite!: (error: Error) => void;
+    const pending = new Promise<void>((resolve, reject) => { finishWrite = resolve; failWrite = reject; });
+    vi.mocked(api.appdataWrite).mockImplementationOnce(async (file, content) => {
+      await pending;
+      appdata.set(file, content);
+      return null;
+    });
+    const touching = store.touchSeen(entry);
+    const forgetting = store.removeEntry(entry);
+    if (outcome === "success") finishWrite();
+    else failWrite(new Error("old save failed"));
+    await Promise.all([touching, forgetting]);
+
+    expect(store.hosts).toEqual([]);
+    expect(parseHostsFile(appdata.get("pairing-hosts.json"))).toEqual([]);
+  });
+
   it("loads the persisted host list", async () => {
     appdata.set(
       "pairing-hosts.json",

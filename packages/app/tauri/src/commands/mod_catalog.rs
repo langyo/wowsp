@@ -473,10 +473,28 @@ fn size_within_catalog(actual: usize, listed: u64) -> bool {
 /// cleans up after itself instead of leaking archives into %TEMP%.
 struct WorkDir(PathBuf);
 
+impl WorkDir {
+    fn create(temp: &Path) -> Result<Self, String> {
+        // Catalog identifiers are display data, never filesystem paths.
+        // Create the directory exclusively before arming its cleanup guard.
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce).map_err(|e| format!("create workdir name: {e}"))?;
+        let path = temp.join(format!("wowsp-modhub-{}", hex::encode(nonce)));
+        fs::create_dir(&path).map_err(|e| format!("create workdir: {e}"))?;
+        Ok(Self(path))
+    }
+}
+
 impl Drop for WorkDir {
     fn drop(&mut self) {
         fs::remove_dir_all(&self.0).ok();
     }
+}
+
+/// Download and extraction share this private ordinal name. Asset labels
+/// from the catalog may contain separators, aliases or reserved names.
+fn package_archive(work: &Path, index: usize) -> PathBuf {
+    work.join(format!("{index:02}.zip"))
 }
 
 #[tauri::command]
@@ -525,15 +543,7 @@ pub async fn mod_catalog_install(
     let total = packages.iter().map(|p| p.size).sum::<u64>().max(1);
     emit_progress(&app, &entry.id, phase::DOWNLOAD, 0, package_count, 0, total);
 
-    let work = WorkDir(std::env::temp_dir().join(format!(
-        "wowsp-modhub-{}-{}",
-        entry.id,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    )));
-    fs::create_dir_all(&work.0).map_err(|e| format!("create workdir: {e}"))?;
+    let work = WorkDir::create(&std::env::temp_dir())?;
 
     // Every package streams through the unified download hub: mirror
     // ladder (GitHub direct first, then the CN mirrors — a plain
@@ -563,7 +573,7 @@ pub async fn mod_catalog_install(
                     &entry.id,
                     kind::MOD_PACKAGE,
                     download_candidates(&pkg.url),
-                    work.0.join(format!("{i:02}-{}.part", pkg.name)),
+                    package_archive(&work.0, i).with_extension("part"),
                 )
             },
         )
@@ -584,7 +594,7 @@ pub async fn mod_catalog_install(
                 pkg.name, done.bytes, pkg.size
             ));
         }
-        let dest = work.0.join(format!("{i:02}-{}", pkg.name));
+        let dest = package_archive(&work.0, i);
         tokio::fs::rename(&done.path, &dest)
             .await
             .map_err(|e| format!("assemble {}: {e}", dest.display()))?;
@@ -625,28 +635,13 @@ pub async fn mod_catalog_install(
     let unpack_pkgs = packages.clone();
     let unpack_work = work.0.clone();
     let (outcome, mut ledger) = tauri::async_runtime::spawn_blocking(move || {
-        // Reinstall = rewind first: restore the vanilla files the previous
-        // install snapshotted and delete its recorded files, so the new
-        // version starts from a clean baseline — files dropped by the new
-        // package don't linger, and the snapshots point at VANILLA originals
-        // instead of chaining onto the previous mod (chained snapshots used
-        // to make uninstall restore the previous mod's files).
-        let mut failure = None;
-        // Rewind THIS install's previous record — the same id may exist for
-        // another game install, and the scoped uninstall below would
-        // (rightly) not find it, aborting the install for nothing.
-        let same_install = |r: &ModInstallRecord| {
-            r.id == unpack_id && (r.game_root.is_empty() || r.game_root == unpack_root)
-        };
-        if ledger.installs.iter().any(same_install) {
-            if let Err(e) = uninstall_from_ledger(&mut ledger.installs, &unpack_id, &unpack_root) {
-                failure = Some(e);
-            }
-        }
-        let outcome = match failure {
-            Some(e) => Err(e),
-            None => unpack_and_install(&unpack_id, &unpack_work, &unpack_root, &unpack_pkgs),
-        };
+        let outcome = unpack_and_install(
+            &unpack_id,
+            &unpack_work,
+            &unpack_root,
+            &unpack_pkgs,
+            &mut ledger.installs,
+        );
         (outcome, ledger)
     })
     .await
@@ -746,7 +741,8 @@ pub async fn mod_catalog_install(
 }
 
 /// Extract every package archive (part order = index order) into `work`, then
-/// run the shared classify → install pipeline. Returns the report plus the
+/// run the shared classify → install pipeline. Validate the full replacement
+/// before rewinding an existing install. Returns the report plus the
 /// written-file list (res_mods-relative, `@game/`-prefixed for game-root
 /// files) and restore snapshot dir for the ledger.
 ///
@@ -758,12 +754,13 @@ fn unpack_and_install(
     work: &Path,
     game_root: &str,
     packages: &[CatalogPackage],
+    installs: &mut Vec<ModInstallRecord>,
 ) -> Result<(InstallReport, Vec<String>, Option<PathBuf>), String> {
     let extract_root = work.join("unpacked");
     fs::create_dir_all(&extract_root).map_err(|e| format!("create unpack dir: {e}"))?;
     let mut files = Vec::new();
-    for (i, _pkg) in packages.iter().enumerate() {
-        let archive = work.join(format!("{i:02}-{}", packages[i].name));
+    for i in 0..packages.len() {
+        let archive = package_archive(work, i);
         extract_zip(&archive, &extract_root, &mut files)?;
     }
     // The unpacked tree must still look like a mod; reuse the same classifier
@@ -789,6 +786,16 @@ fn unpack_and_install(
         (extract_root.clone(), Vec::new())
     };
     let plan = mod_hub::classify_package(&plan_root)?;
+    mod_hub::validate_plan(&plan)?;
+    // Rewind only once all archives and the classified plan are usable.
+    // Corrupt or unsupported replacement packages must leave the installed
+    // version, its ledger record and its restore snapshots untouched.
+    let same_install = |r: &ModInstallRecord| {
+        r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root)
+    };
+    if installs.iter().any(same_install) {
+        uninstall_from_ledger(installs, mod_id, game_root)?;
+    }
     let applied = mod_hub::install_plan_with_loose(&plan_root, game_root, &plan, &loose)?;
 
     Ok((applied.report, applied.written, applied.restore_dir))
@@ -861,6 +868,74 @@ pub struct UninstallReport {
     pub restored_files: usize,
 }
 
+/// Windows file spelling and the disabled twin refer to one ownership slot.
+fn uninstall_path_key(name: &str) -> String {
+    let mut key = name.to_ascii_lowercase();
+    if key.ends_with(".bak") {
+        key.truncate(key.len() - 4);
+    }
+    key
+}
+
+/// Records are appended in installation order. A newer overlapping install
+/// snapshots this record's bytes; removing the older layer first would both
+/// clobber the current owner and leave a snapshot that resurrects it later.
+pub(crate) fn validate_uninstall_order(
+    installs: &[ModInstallRecord],
+    mod_id: &str,
+    game_root: &str,
+) -> Result<(), String> {
+    let record = installs
+        .iter()
+        .find(|r| r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root))
+        .ok_or_else(|| format!("{mod_id} has no install record"))?;
+    validate_file_removal_order(installs, mod_id, game_root, &record.files)
+}
+
+/// A unit trim removes only part of a record. Apply the same ownership
+/// check to that subset without treating its untouched files as removals.
+pub(crate) fn validate_file_removal_order(
+    installs: &[ModInstallRecord],
+    mod_id: &str,
+    game_root: &str,
+    files: &[String],
+) -> Result<(), String> {
+    let position = installs
+        .iter()
+        .position(|r| r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root))
+        .ok_or_else(|| format!("{mod_id} has no install record"))?;
+    let record = &installs[position];
+    // Uninstall also removes pre-release mirror copies. A newer record at
+    // another bin can own those same physical paths, even though the plain
+    // recorded-bin and claimed-live-bin loops would leave its files alone.
+    let removes_mirrors = !mod_hub::preload_mirror::preload_res_mods(game_root).is_empty();
+    for newer in &installs[position + 1..] {
+        if !newer.game_root.is_empty() && newer.game_root != game_root {
+            continue;
+        }
+        let claimed: std::collections::HashSet<_> =
+            newer.files.iter().map(|f| uninstall_path_key(f)).collect();
+        for rel in files {
+            if rel == "PnFModsLoader.py" {
+                continue; // The loader has a separate shared-owner policy.
+            }
+            if !rel.starts_with("@game/")
+                && record.bin_version != newer.bin_version
+                && !removes_mirrors
+            {
+                continue;
+            }
+            if claimed.contains(&uninstall_path_key(rel)) {
+                return Err(format!(
+                    "\"{}\" shares {rel} with newer installed \"{}\" — uninstall \"{}\" first to preserve its files and restore snapshots",
+                    record.name, newer.name, newer.name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn mod_catalog_uninstall(
     mod_id: String,
@@ -884,6 +959,7 @@ pub(crate) fn uninstall_from_ledger(
     mod_id: &str,
     game_root: &str,
 ) -> Result<UninstallReport, String> {
+    validate_uninstall_order(installs, mod_id, game_root)?;
     // The ledger is global: the same catalog id can exist for several game
     // installs. Operate on THIS root's record (pre-field empty stamps
     // match every root, preserving the old single-install behavior).
@@ -954,14 +1030,18 @@ pub(crate) fn uninstall_from_ledger(
             .map(|(v, dir)| (v.to_string(), dir.join("res_mods")))
     {
         if live_bin != record.bin_version {
-            let claimed: std::collections::HashSet<&String> = installs
+            let claimed: std::collections::HashSet<String> = installs
                 .iter()
                 .filter(|r| r.bin_version == live_bin)
                 .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
                 .flat_map(|r| r.files.iter())
+                .map(|rel| uninstall_path_key(rel))
                 .collect();
             for rel in &record.files {
-                if rel.starts_with("@game/") || rel == "PnFModsLoader.py" || claimed.contains(rel) {
+                if rel.starts_with("@game/")
+                    || rel == "PnFModsLoader.py"
+                    || claimed.contains(&uninstall_path_key(rel))
+                {
                     continue;
                 }
                 let live_copy = live_rm.join(rel);
@@ -1258,6 +1338,139 @@ mod tests {
     }
 
     #[test]
+    fn catalog_workspaces_are_exclusive_and_clean_up_only_their_own_directory() {
+        let tmp = std::env::temp_dir().join(format!("wowsp-workdir-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let first = WorkDir::create(&tmp).unwrap();
+        let second = WorkDir::create(&tmp).unwrap();
+        let first_path = first.0.clone();
+        assert_eq!(first.0.parent(), Some(tmp.as_path()));
+        assert_eq!(second.0.parent(), Some(tmp.as_path()));
+        assert_ne!(first.0, second.0);
+        fs::write(second.0.join("keep.txt"), b"second download").unwrap();
+        drop(first);
+        assert!(!first_path.exists());
+        assert_eq!(
+            fs::read(second.0.join("keep.txt")).unwrap(),
+            b"second download"
+        );
+        drop(second);
+        fs::remove_dir(&tmp).unwrap();
+    }
+
+    #[test]
+    fn catalog_package_names_cannot_select_an_archive_outside_the_workspace() {
+        let tmp =
+            std::env::temp_dir().join(format!("wowsp-catalog-path-test-{}", std::process::id()));
+        let work = tmp.join("work");
+        fs::create_dir_all(work.join("00-stage")).unwrap();
+        let game = tmp.join("game");
+        fs::create_dir_all(game.join("bin/1")).unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        zip_fixture(
+            &tmp.join("outside.zip"),
+            &[("res_mods/gui/payload.png", b"outside archive")],
+        );
+        let packages = vec![CatalogPackage {
+            url: "https://example.com/package.zip".into(),
+            name: "stage/../../outside.zip".into(),
+            size: 0,
+            sha256: String::new(),
+        }];
+        assert!(
+            unpack_and_install(
+                "example",
+                &work,
+                &game.to_string_lossy(),
+                &packages,
+                &mut Vec::new()
+            )
+            .is_err(),
+            "a catalog name must not select an archive outside the workspace"
+        );
+        assert!(!game.join("bin/1/res_mods/gui/payload.png").exists());
+        zip_fixture(
+            &package_archive(&work, 0),
+            &[("res_mods/gui/payload.png", b"workspace archive")],
+        );
+        unpack_and_install(
+            "example",
+            &work,
+            &game.to_string_lossy(),
+            &packages,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(game.join("bin/1/res_mods/gui/payload.png")).unwrap(),
+            b"workspace archive"
+        );
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn invalid_reinstall_preserves_existing_files_record_and_backups() {
+        for valid_zip in [false, true] {
+            let tmp = std::env::temp_dir().join(format!(
+                "wowsp-catalog-reinstall-test-{}-{valid_zip}",
+                std::process::id()
+            ));
+            let work = tmp.join("work");
+            let game = tmp.join("game");
+            let rm = game.join("bin/1/res_mods");
+            let restore = tmp.join("restore");
+            fs::create_dir_all(rm.join("gui")).unwrap();
+            fs::create_dir_all(restore.join("gui")).unwrap();
+            fs::create_dir_all(&work).unwrap();
+            fs::write(rm.join("gui/a.png"), b"installed version").unwrap();
+            fs::write(restore.join("gui/a.png"), b"original").unwrap();
+            if valid_zip {
+                zip_fixture(&package_archive(&work, 0), &[("README.txt", b"not a mod")]);
+            } else {
+                fs::write(package_archive(&work, 0), b"not a zip").unwrap();
+            }
+            let mut installs = vec![ModInstallRecord {
+                id: "example".into(),
+                name: "Example".into(),
+                version: "1".into(),
+                category: "battle".into(),
+                source: "mod-hub".into(),
+                discussion: None,
+                preset: None,
+                bin_version: "1".into(),
+                installed_at: String::new(),
+                files: vec!["gui/a.png".into()],
+                restore_dir: Some(restore.to_string_lossy().into_owned()),
+                game_root: game.to_string_lossy().into_owned(),
+            }];
+            let packages = vec![CatalogPackage {
+                url: "https://example.com/pack.zip".into(),
+                name: "pack.zip".into(),
+                size: 0,
+                sha256: String::new(),
+            }];
+            let before = serde_json::to_value(&installs).unwrap();
+            assert!(
+                unpack_and_install(
+                    "example",
+                    &work,
+                    &game.to_string_lossy(),
+                    &packages,
+                    &mut installs,
+                )
+                .is_err()
+            );
+            assert_eq!(
+                fs::read(rm.join("gui/a.png")).unwrap(),
+                b"installed version"
+            );
+            assert_eq!(fs::read(restore.join("gui/a.png")).unwrap(), b"original");
+            assert_eq!(serde_json::to_value(&installs).unwrap(), before);
+            fs::remove_dir_all(&tmp).unwrap();
+        }
+    }
+
+    #[test]
     fn unpack_and_install_full_pipeline() {
         // Exercises the whole catalog install leg without network: two part
         // archives -> unpack -> res_mods peel -> classify -> install, plus a
@@ -1267,16 +1480,15 @@ mod tests {
         let work = tmp.join("work");
         fs::create_dir_all(&work).unwrap();
         zip_fixture(
-            &work.join("00-part1.zip"),
+            &package_archive(&work, 0),
             &[
                 ("res_mods/gui/x/a.png", b"a"),
                 ("res_mods/ime_config.xml", b"<ime/>"),
             ],
         );
         // Real-shape game-root payload (gettext_x64r.dll on text mods).
-        zip_fixture(&work.join("01-part2.zip"), &[("gettext_x64r.dll", b"dll")]);
-        // Downloaded files land as `<index>-<asset name>` (see the install
-        // command), so the packages carry bare asset names here.
+        zip_fixture(&package_archive(&work, 1), &[("gettext_x64r.dll", b"dll")]);
+        // Asset names are labels; stored archives use private ordinal names.
         let mk = |name: &str| CatalogPackage {
             url: format!("https://example.com/{name}"),
             sha256: String::new(),
@@ -1290,7 +1502,7 @@ mod tests {
         let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
 
         let (report, written, restore) =
-            unpack_and_install("test-mod", &work, &game_root, &packages).unwrap();
+            unpack_and_install("test-mod", &work, &game_root, &packages, &mut Vec::new()).unwrap();
         assert_eq!(report.bin_version, "1");
         let res_mods = tmp.join("game/bin/1/res_mods");
         assert!(res_mods.join("gui/x/a.png").is_file());
@@ -1303,7 +1515,7 @@ mod tests {
 
         // Re-install over it: the overwritten originals must be snapshotted.
         let (_report2, _written2, restore2) =
-            unpack_and_install("test-mod", &work, &game_root, &packages).unwrap();
+            unpack_and_install("test-mod", &work, &game_root, &packages, &mut Vec::new()).unwrap();
         let restore2 = restore2.expect("second install snapshots overwritten files");
         assert!(restore2.join("ime_config.xml").is_file());
         assert!(restore2.join("@game/gettext_x64r.dll").is_file());
@@ -1392,7 +1604,7 @@ mod tests {
         let run = |work: &Path, ime: &[u8], gui: &str| {
             fs::create_dir_all(work).unwrap();
             zip_fixture(
-                &work.join("00-part1.zip"),
+                &package_archive(work, 0),
                 &[("res_mods/ime_config.xml", ime), (gui.as_ref(), b"g")],
             );
             let packages = vec![CatalogPackage {
@@ -1401,7 +1613,7 @@ mod tests {
                 size: 0,
                 name: "part1.zip".into(),
             }];
-            unpack_and_install("m", work, &game_root, &packages).unwrap()
+            unpack_and_install("m", work, &game_root, &packages, &mut Vec::new()).unwrap()
         };
 
         // v1 adds a file the v2 package drops — leftovers must not survive.

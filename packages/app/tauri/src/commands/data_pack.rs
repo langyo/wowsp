@@ -143,17 +143,14 @@ async fn fetch_manifest(client: &reqwest::Client) -> Result<DataManifest, String
     Err(last_err)
 }
 
-/// The cached kit's recorded sha — `None` when no cache exists (or the
-/// sidecar is unreadable, which [`get_ship_kit`] then treats as corrupt).
+/// The intact cached kit's sha. A matching sidecar alone cannot make a
+/// missing/corrupt body current, or refresh would never repair that cache.
 fn local_kit_sha() -> Result<Option<String>, String> {
-    let meta = match appdata::read_appdata_json(KIT_META)? {
-        Some(raw) => raw,
-        None => return Ok(None),
-    };
-    match serde_json::from_str::<KitMeta>(&meta) {
-        Ok(m) => Ok(Some(m.sha256)),
-        Err(_) => Ok(None),
-    }
+    local_kit_sha_in(&appdata::appdata_dir_path()?)
+}
+
+fn local_kit_sha_in(dir: &Path) -> Result<Option<String>, String> {
+    Ok(verified_kit_meta_in(dir)?.map(|meta| meta.sha256))
 }
 
 /// Freshness decision, split out for tests: current means the cached sha
@@ -182,15 +179,31 @@ fn verified_kit_meta() -> Result<Option<KitMeta>, String> {
 /// [`verified_kit_meta`] against an explicit directory (tests run the
 /// four cache states against a temp dir).
 fn verified_kit_meta_in(dir: &Path) -> Result<Option<KitMeta>, String> {
-    let body = match fs::read_to_string(dir.join(KIT_FILE)) {
+    Ok(verified_kit_in(dir)?.map(|(meta, _)| meta))
+}
+
+/// Read the body once and return those exact verified bytes. A concurrent
+/// refresh may replace the on-disk file after verification; serving a second
+/// read could otherwise return a body that was never checked against its meta.
+fn verified_kit_in(dir: &Path) -> Result<Option<(KitMeta, String)>, String> {
+    let body = match fs::read_to_string(appdata::data_file_path(dir, KIT_FILE)?) {
         Ok(body) => body,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::InvalidData
+            ) =>
+        {
+            return Ok(None);
+        },
         Err(e) => return Err(format!("read {}: {e}", KIT_FILE)),
     };
-    let meta = fs::read_to_string(dir.join(KIT_META))
+    let meta = fs::read_to_string(appdata::data_file_path(dir, KIT_META)?)
         .ok()
         .and_then(|raw| serde_json::from_str::<KitMeta>(&raw).ok());
-    Ok(meta.filter(|m| m.sha256 == sha256_hex(body.as_bytes())))
+    Ok(meta
+        .filter(|m| m.sha256.eq_ignore_ascii_case(&sha256_hex(body.as_bytes())))
+        .map(|meta| (meta, body)))
 }
 
 /// The cached, hash-verified kit JSON for the webui to overlay onto its
@@ -202,11 +215,7 @@ pub fn get_ship_kit() -> Result<Option<String>, String> {
     // Corrupt or tampered cache (or a missing sidecar): report absent
     // rather than serving data nobody vouched for; the next refresh
     // re-downloads over it (verification via [`verified_kit_meta`]).
-    if verified_kit_meta()?.is_some() {
-        Ok(appdata::read_appdata_json(KIT_FILE)?)
-    } else {
-        Ok(None)
-    }
+    Ok(verified_kit_in(&appdata::appdata_dir_path()?)?.map(|(_, body)| body))
 }
 
 /// One refresh pass for every dataset this shell knows: fetch the
@@ -309,6 +318,87 @@ fn install_kit_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> Result<bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct KitFixture(std::path::PathBuf);
+
+    impl KitFixture {
+        fn new() -> Self {
+            let mut nonce = [0u8; 16];
+            getrandom::fill(&mut nonce).unwrap();
+            let dir = std::env::temp_dir().join(format!("wowsp-kit-repair-{}", hex::encode(nonce)));
+            fs::create_dir(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for KitFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn matching_sidecar_does_not_mark_a_missing_or_corrupt_body_current() {
+        let fixture = KitFixture::new();
+        let body = br#"{"3763300940":{"r":2}}"#;
+        let entry = entry(&sha256_hex(body));
+        for corrupt in [None, Some(b"{\"corrupt\":1}".as_slice()), Some(&[0xff])] {
+            install_kit_in(&fixture.0, body, &entry).unwrap();
+            if let Some(bytes) = corrupt {
+                fs::write(fixture.0.join(KIT_FILE), bytes).unwrap();
+            } else {
+                fs::remove_file(fixture.0.join(KIT_FILE)).unwrap();
+            }
+            assert!(
+                !kit_is_current(local_kit_sha_in(&fixture.0).unwrap().as_deref(), &entry),
+                "a matching sidecar must not stop refresh from repairing its absent/corrupt body"
+            );
+        }
+    }
+
+    #[test]
+    fn verified_kit_snapshot_keeps_the_body_that_was_actually_hashed() {
+        let fixture = KitFixture::new();
+        let body = br#"{"3763300940":{"r":2}}"#;
+        let entry = entry(&sha256_hex(body));
+        install_kit_in(&fixture.0, body, &entry).unwrap();
+        let (meta, verified) = verified_kit_in(&fixture.0).unwrap().unwrap();
+        fs::write(fixture.0.join(KIT_FILE), b"unverified replacement").unwrap();
+        assert_eq!(verified.as_bytes(), body);
+        assert_eq!(meta.sha256, sha256_hex(verified.as_bytes()));
+        assert!(verified_kit_in(&fixture.0).unwrap().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verified_kit_snapshot_rejects_a_cache_directory_junction() {
+        use std::os::windows::process::CommandExt;
+        let fixture = KitFixture::new();
+        let outside = fixture.0.join("outside");
+        let body = br#"{"3763300940":{"r":2}}"#;
+        let entry = entry(&sha256_hex(body));
+        install_kit_in(&outside, body, &entry).unwrap();
+        let junction = fixture.0.join("data-pack");
+        let result = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(outside.join("data-pack"))
+            .creation_flags(0x0800_0000)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let snapshot = verified_kit_in(&fixture.0);
+        fs::remove_dir(junction).unwrap();
+        assert!(
+            snapshot.is_err(),
+            "verified snapshots must retain the AppData path guard"
+        );
+        assert_eq!(fs::read(outside.join(KIT_FILE)).unwrap(), body);
+    }
 
     fn entry(sha: &str) -> DatasetEntry {
         DatasetEntry {

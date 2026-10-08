@@ -56,6 +56,9 @@ const POLL_INTERVAL: Duration = Duration::from_secs(3);
 /// inputs, not part of the broadcast snapshot.
 struct SessionState {
     process: wowsp_tauri_shared::GameProcessInfo,
+    /// Invalidates observations resolving outside the state lock when the
+    /// poller changes clients, including a switch away and back to one PID.
+    process_generation: u64,
     playing: Option<PlayingAccount>,
     /// The webui's active selection, mirrored through `sync_active_account`
     /// and adopted from `accounts.json` on refresh: `(realm, account_id)`.
@@ -80,6 +83,7 @@ impl SessionState {
     fn new() -> Self {
         Self {
             process: offline_process(),
+            process_generation: 0,
             playing: None,
             active: None,
             plugin_ids: Vec::new(),
@@ -115,6 +119,18 @@ fn with_state<R>(f: impl FnOnce(&mut SessionState) -> R) -> R {
     f(state)
 }
 
+#[cfg(any(desktop, test))]
+fn apply_process_info(state: &mut SessionState, info: wowsp_tauri_shared::GameProcessInfo) {
+    if state.process.pid != info.pid || state.process.running != info.running {
+        state.process_generation = state.process_generation.wrapping_add(1);
+        state.playing = None;
+        state.plugin_ids.clear();
+        // Keep the last roster's stamp: when process start is unavailable,
+        // the same leftover arena file must still fail the freshness gate.
+    }
+    state.process = info;
+}
+
 // ── identity matching (pure core, unit-tested) ──────────────────────────────
 
 /// Match a playing observation against the bound profiles: account id when
@@ -127,13 +143,14 @@ fn match_account(
     nickname: &str,
     account_id: Option<i64>,
 ) -> Option<AccountProfile> {
-    if let Some(id) = account_id {
-        if let Some(hit) = accounts
+    if let Some(id) = account_id.filter(|id| *id > 0) {
+        // An observed ID cannot belong to a different same-named binding.
+        // Nickname fallback is only for observations without exact identity.
+        // Main.py uses zero when accountDBID is unavailable.
+        return accounts
             .iter()
             .find(|a| a.realm == realm && a.account_id == id)
-        {
-            return Some(hit.clone());
-        }
+            .cloned();
     }
     if let Some(hit) = accounts
         .iter()
@@ -288,12 +305,13 @@ const ARENA_FRESHNESS_SKEW_SECS: i64 = 5;
 /// up the plugin bridge's nickname→id map. Broadcasts when the resolved
 /// snapshot moved.
 pub(crate) fn note_playing_from_arena(app: &AppHandle, nickname: &str, arena_mtime: Option<i64>) {
-    let realm = {
-        let (running, known, pid) = with_state(|state| {
+    let (realm, observed_generation) = {
+        let (running, known, pid, generation) = with_state(|state| {
             (
                 state.process.running,
                 state.process.realm.clone(),
                 state.process.pid,
+                state.process_generation,
             )
         });
         if !running {
@@ -315,36 +333,51 @@ pub(crate) fn note_playing_from_arena(app: &AppHandle, nickname: &str, arena_mti
                 }
             }
         }
-        realm
+        (realm, generation)
     };
     let noted = with_state(|state| {
-        if let Some(m) = arena_mtime {
-            // Belt for the no-process-start case; harmless otherwise.
-            if m <= state.last_noted_arena_mtime {
-                return false;
-            }
-            state.last_noted_arena_mtime = m;
-        }
-        let account_id = state
-            .plugin_ids
-            .iter()
-            .find(|(name, _)| name == nickname)
-            .map(|(_, id)| *id);
-        let next = PlayingAccount {
-            realm,
-            nickname: nickname.to_string(),
-            account_id,
-            source: PlayingSource::Arena,
-        };
-        let changed = state.playing.as_ref() != Some(&next);
-        if changed {
-            state.playing = Some(next);
-        }
-        changed
+        record_arena_player(state, observed_generation, realm, nickname, arena_mtime)
     });
     if noted {
         broadcast_if_changed(app);
     }
+}
+
+fn record_arena_player(
+    state: &mut SessionState,
+    observed_generation: u64,
+    realm: String,
+    nickname: &str,
+    arena_mtime: Option<i64>,
+) -> bool {
+    // Realm/process-start resolution runs outside the mutex. A poll may
+    // have retired its source in the meantime; do not revive that identity
+    // or let its timestamp suppress the new client's next observation.
+    if !state.process.running || state.process_generation != observed_generation {
+        return false;
+    }
+    if let Some(m) = arena_mtime {
+        if m <= state.last_noted_arena_mtime {
+            return false;
+        }
+        state.last_noted_arena_mtime = m;
+    }
+    let account_id = state
+        .plugin_ids
+        .iter()
+        .find(|(name, _)| name == nickname)
+        .map(|(_, id)| *id);
+    let next = PlayingAccount {
+        realm,
+        nickname: nickname.to_string(),
+        account_id,
+        source: PlayingSource::Arena,
+    };
+    let changed = state.playing.as_ref() != Some(&next);
+    if changed {
+        state.playing = Some(next);
+    }
+    changed
 }
 
 /// Note the plugin bridge's latest request roster (nickname → exact account
@@ -504,15 +537,7 @@ pub fn spawn_session_poller(app: AppHandle) -> Result<(), String> {
                 }
                 with_state(|state| {
                     refresh_accounts(state);
-                    let was_running = state.process.running;
-                    state.process = info.clone();
-                    // The playing identity is only observable while the client
-                    // runs; a fresh launch is a new login until a new roster
-                    // says otherwise.
-                    if was_running && !state.process.running {
-                        state.playing = None;
-                        state.plugin_ids.clear();
-                    }
+                    apply_process_info(state, info.clone());
                 });
                 if info.running {
                     if let Some((name, mtime)) =
@@ -543,6 +568,168 @@ mod tests {
             nickname: nickname.to_string(),
             realm: realm.to_string(),
         }
+    }
+
+    fn process(pid: u32, realm: &str) -> wowsp_tauri_shared::GameProcessInfo {
+        wowsp_tauri_shared::GameProcessInfo {
+            running: true,
+            pid: Some(pid),
+            realm: Some(realm.to_string()),
+            ..offline_process()
+        }
+    }
+
+    #[test]
+    fn exact_unbound_id_never_adopts_a_same_named_bound_account() {
+        let accounts = vec![
+            account(1, "ReusedName", "asia"),
+            account(99, "Elsewhere", "eu"),
+        ];
+        for nickname in ["ReusedName", "REUSEDNAME"] {
+            let playing = PlayingAccount {
+                realm: "asia".into(),
+                nickname: nickname.into(),
+                account_id: Some(99),
+                source: PlayingSource::Arena,
+            };
+            let display = resolve_display(Some(&playing), None, &accounts).unwrap();
+            assert_eq!(
+                display.account_id,
+                Some(99),
+                "the observed ID is authoritative"
+            );
+            assert!(
+                !display.registered,
+                "the same-name binding is another account"
+            );
+            assert_eq!(display.nickname, nickname);
+        }
+    }
+
+    #[test]
+    fn unknown_plugin_id_retains_nickname_fallback() {
+        let accounts = vec![account(10, "Main", "asia")];
+        // Main.py sends zero when the game has not provided accountDBID.
+        for account_id in [None, Some(0)] {
+            let playing = PlayingAccount {
+                realm: "asia".into(),
+                nickname: "MAIN".into(),
+                account_id,
+                source: PlayingSource::Arena,
+            };
+            let display = resolve_display(Some(&playing), None, &accounts).unwrap();
+            assert_eq!(display.account_id, Some(10));
+            assert!(display.registered);
+        }
+    }
+
+    #[test]
+    fn process_switch_retires_playing_identity_without_an_offline_tick() {
+        let mut state = SessionState::new();
+        state.process = process(1, "asia");
+        state.accounts = vec![account(10, "Main", "asia")];
+        state.active = Some(("asia".into(), 10));
+        state.plugin_ids = vec![("Alt".into(), 20)];
+        assert!(record_arena_player(
+            &mut state,
+            0,
+            "asia".into(),
+            "Alt",
+            Some(500)
+        ));
+        apply_process_info(&mut state, process(2, "eu"));
+        assert!(
+            state.playing.is_none(),
+            "the new client has no known login yet"
+        );
+        assert!(
+            state.plugin_ids.is_empty(),
+            "plugin IDs belong to the old client"
+        );
+        assert_eq!(state.last_noted_arena_mtime, 500);
+        assert_eq!(snapshot_of(&state).display.unwrap().account_id, Some(10));
+        let generation = state.process_generation;
+        assert!(!record_arena_player(
+            &mut state,
+            generation,
+            "eu".into(),
+            "OldFile",
+            Some(500)
+        ));
+    }
+
+    #[test]
+    fn late_arena_observation_cannot_restore_a_retired_process() {
+        for replacement in [process(2, "eu"), offline_process()] {
+            let mut state = SessionState::new();
+            state.process = process(1, "asia");
+            let observed_generation = state.process_generation;
+            // The poller changes clients while the arena hook resolves the
+            // old process's realm/start time outside the state lock.
+            apply_process_info(&mut state, replacement);
+            assert!(!record_arena_player(
+                &mut state,
+                observed_generation,
+                "asia".into(),
+                "Old",
+                Some(500)
+            ));
+            assert!(state.playing.is_none());
+            assert_eq!(
+                state.last_noted_arena_mtime, 0,
+                "a rejected observation cannot advance the gate"
+            );
+            if state.process.running {
+                let generation = state.process_generation;
+                assert!(record_arena_player(
+                    &mut state,
+                    generation,
+                    "eu".into(),
+                    "New",
+                    Some(100)
+                ));
+                assert_eq!(state.playing.as_ref().unwrap().nickname, "New");
+            }
+        }
+    }
+
+    #[test]
+    fn an_old_observation_stays_retired_after_switching_back_to_its_pid() {
+        for intermediate in [process(2, "eu"), offline_process()] {
+            let mut state = SessionState::new();
+            state.process = process(1, "asia");
+            let observed_generation = state.process_generation;
+            apply_process_info(&mut state, intermediate);
+            apply_process_info(&mut state, process(1, "asia"));
+            assert!(!record_arena_player(
+                &mut state,
+                observed_generation,
+                "asia".into(),
+                "Old",
+                Some(500)
+            ));
+            assert!(state.playing.is_none());
+        }
+    }
+
+    #[test]
+    fn unchanged_process_retains_its_identity_and_roster_gate() {
+        let mut state = SessionState::new();
+        state.process = process(1, "asia");
+        state.plugin_ids = vec![("Main".into(), 10)];
+        record_arena_player(&mut state, 0, "asia".into(), "Main", Some(500));
+        let playing = state.playing.clone();
+        apply_process_info(&mut state, process(1, "asia"));
+        assert_eq!(state.playing, playing);
+        assert_eq!(state.plugin_ids, vec![("Main".into(), 10)]);
+        assert_eq!(state.last_noted_arena_mtime, 500);
+        assert!(!record_arena_player(
+            &mut state,
+            0,
+            "asia".into(),
+            "Stale",
+            Some(500)
+        ));
     }
 
     /// Two alts bound on the SAME realm: nickname matching picks the one

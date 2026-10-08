@@ -252,14 +252,19 @@ export default defineComponent({
     /** Confirm a detected install as the active one — the wizard stays
      *  open (the step's 下一步 advances), only the choice applies. */
     async function pickInstall(i: GameInstall) {
-      await config.selectInstall(i.path);
-      await followRealm(i.realm);
-      toast.info(t("common.gamePath.applied"));
+      try {
+        await config.selectInstall(i.path);
+        await followRealm(i.realm);
+        toast.info(t("common.gamePath.applied"));
+      } catch (e) {
+        toast.error((e as Error).message || String(e));
+      }
     }
 
     async function applyManual(path: string) {
       try {
         const resolved = await config.setManualPath(path);
+        if (!resolved) return;
         await followRealm(resolved?.realm);
         toast.info(t("common.gamePath.applied"));
       } catch (e) {

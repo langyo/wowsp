@@ -32,6 +32,11 @@
 //! stores; only human-editable configuration moved to TOML.
 
 use std::path::Path;
+use std::sync::Mutex;
+
+// Serialize the heal comparison and write with explicit settings saves.
+// Reads remain snapshots; an obsolete snapshot must never be written back.
+static WRITE_GATE: Mutex<()> = Mutex::new(());
 
 /// Where a settings payload was found — decides how the caller parses it and
 /// whether a migration write is due.
@@ -53,47 +58,42 @@ pub(crate) struct LoadedSettings {
 }
 
 /// Read the canonical TOML file, falling back to the legacy JSON twin only
-/// when the TOML file is absent (fresh upgrade). Read errors other than
-/// "not found" are treated as absent too — a locked/unreadable file must not
-/// take the feature down with it; the caller's defaults apply and the next
-/// successful heal-write replaces the file.
+/// when the TOML file is absent (fresh upgrade). An unreadable canonical
+/// file returns no payload, so callers use temporary defaults without
+/// reviving a stale JSON twin or overwriting the unreadable file.
 pub(crate) fn load_raw(dir: &Path, toml_file: &str, legacy_json_file: &str) -> LoadedSettings {
     match std::fs::read_to_string(dir.join(toml_file)) {
         Ok(raw) => LoadedSettings {
             raw: Some(raw),
             source: SettingsSource::Toml,
         },
-        Err(_) => match std::fs::read_to_string(dir.join(legacy_json_file)) {
-            Ok(raw) => LoadedSettings {
-                raw: Some(raw),
-                source: SettingsSource::LegacyJson,
-            },
-            Err(_) => LoadedSettings {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            match std::fs::read_to_string(dir.join(legacy_json_file)) {
+                Ok(raw) => LoadedSettings {
+                    raw: Some(raw),
+                    source: SettingsSource::LegacyJson,
+                },
+                Err(_) => LoadedSettings {
+                    raw: None,
+                    source: SettingsSource::Missing,
+                },
+            }
+        },
+        Err(e) => {
+            tracing::warn!(file = toml_file, error = %e, "settings file unreadable; preserving it");
+            LoadedSettings {
                 raw: None,
-                source: SettingsSource::Missing,
-            },
+                source: SettingsSource::Toml,
+            }
         },
     }
 }
 
-/// Atomic write (unique `.tmp` + rename) — a settings file is never observed
-/// half-written, even if the process dies mid-save. The tmp name carries a
-/// nanosecond stamp so a concurrent heal-write and user save on the same
-/// file cannot collide on the tmp path (one rename would then fail with a
-/// spurious error while the other's content lands — always a valid
-/// canonical file, but the error would be misleading).
+/// Atomic replacement, serialized with conditional heal writes. Each write
+/// exclusively creates its own temporary file and removes it on failure.
 pub(crate) fn store(dir: &Path, file: &str, content: &str) -> Result<(), String> {
-    let path = dir.join(file);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp = dir.join(format!("{file}.{stamp}.tmp"));
-    std::fs::write(&tmp, content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
+    let _gate = WRITE_GATE.lock().unwrap_or_else(|e| e.into_inner());
+    crate::atomic_file::write(&dir.join(file), content)?;
     tracing::debug!(file, bytes = content.len(), "settings file written");
     Ok(())
 }
@@ -147,7 +147,31 @@ pub(crate) fn heal(
     on_disk: Option<&str>,
     canonical: &str,
 ) {
-    if needs_rewrite(source, on_disk, canonical) && store(dir, toml_file, canonical).is_ok() {
+    let _gate = WRITE_GATE.lock().unwrap_or_else(|e| e.into_inner());
+    let toml = dir.join(toml_file);
+    let legacy = dir.join(legacy_json_file);
+    let matches_snapshot = |path: &Path| {
+        on_disk
+            .is_some_and(|snapshot| std::fs::read_to_string(path).is_ok_and(|now| now == snapshot))
+    };
+    let unchanged = match source {
+        SettingsSource::Toml => matches_snapshot(&toml),
+        SettingsSource::LegacyJson => {
+            toml.try_exists().is_ok_and(|exists| !exists) && matches_snapshot(&legacy)
+        },
+        SettingsSource::Missing => {
+            on_disk.is_none()
+                && toml.try_exists().is_ok_and(|exists| !exists)
+                && legacy.try_exists().is_ok_and(|exists| !exists)
+        },
+    };
+    if !unchanged {
+        return;
+    }
+    if needs_rewrite(source, on_disk, canonical) {
+        if crate::atomic_file::write(&toml, canonical).is_err() {
+            return;
+        }
         // Migration or garbage-repair landed — exactly the kind of event a
         // feedback log should carry (explains "my settings reset" reports).
         tracing::info!(file = toml_file, ?source, "settings file healed");
@@ -162,6 +186,112 @@ pub(crate) fn heal(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Fixture(std::path::PathBuf);
+
+    impl Fixture {
+        fn new() -> Self {
+            let mut nonce = [0u8; 16];
+            getrandom::fill(&mut nonce).unwrap();
+            let dir =
+                std::env::temp_dir().join(format!("wowsp-settings-race-{}", hex::encode(nonce)));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn stale_heal_does_not_revert_a_newer_explicit_save() {
+        let fixture = Fixture::new();
+        for source in [
+            SettingsSource::Toml,
+            SettingsSource::LegacyJson,
+            SettingsSource::Missing,
+        ] {
+            let _ = std::fs::remove_file(fixture.0.join("x.toml"));
+            let _ = std::fs::remove_file(fixture.0.join("x.json"));
+            match source {
+                SettingsSource::Toml => {
+                    std::fs::write(fixture.0.join("x.toml"), "value=1").unwrap()
+                },
+                SettingsSource::LegacyJson => {
+                    std::fs::write(fixture.0.join("x.json"), "{\"value\":1}").unwrap()
+                },
+                SettingsSource::Missing => {},
+            }
+            let loaded = load_raw(&fixture.0, "x.toml", "x.json");
+            store(&fixture.0, "x.toml", "value = 2\n").unwrap();
+            heal(
+                &fixture.0,
+                "x.toml",
+                "x.json",
+                loaded.source,
+                loaded.raw.as_deref(),
+                "value = 1\n",
+            );
+            assert_eq!(
+                std::fs::read_to_string(fixture.0.join("x.toml")).unwrap(),
+                "value = 2\n",
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unreadable_canonical_settings_do_not_revive_legacy_or_heal_defaults() {
+        let fixture = Fixture::new();
+        std::fs::write(fixture.0.join("x.toml"), [0xff]).unwrap();
+        std::fs::write(fixture.0.join("x.json"), "{\"value\":1}").unwrap();
+        let loaded = load_raw(&fixture.0, "x.toml", "x.json");
+        assert_eq!(loaded.source, SettingsSource::Toml);
+        assert!(loaded.raw.is_none());
+        heal(
+            &fixture.0,
+            "x.toml",
+            "x.json",
+            loaded.source,
+            loaded.raw.as_deref(),
+            "value = 0\n",
+        );
+        assert_eq!(std::fs::read(fixture.0.join("x.toml")).unwrap(), [0xff]);
+        assert!(fixture.0.join("x.json").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_heal_preserves_the_legacy_copy_and_cleans_its_temporary_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let fixture = Fixture::new();
+        std::fs::write(fixture.0.join("x.toml"), "value=1").unwrap();
+        std::fs::write(fixture.0.join("x.json"), "{\"value\":1}").unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(fixture.0.join("x.toml"))
+            .unwrap();
+        let loaded = load_raw(&fixture.0, "x.toml", "x.json");
+        heal(
+            &fixture.0,
+            "x.toml",
+            "x.json",
+            loaded.source,
+            loaded.raw.as_deref(),
+            "value = 1\n",
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.0.join("x.toml")).unwrap(),
+            "value=1"
+        );
+        assert!(fixture.0.join("x.json").is_file());
+        assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 2);
+        drop(lock);
+    }
 
     /// load_raw prefers TOML, falls back to the legacy JSON twin, and reports
     /// Missing when neither exists.
@@ -277,12 +407,13 @@ mod tests {
 
         // Legacy source: migration write, then retire.
         std::fs::remove_file(dir.join("x.toml")).unwrap();
+        std::fs::write(dir.join("x.json"), "{\"a\":1}").unwrap();
         heal(
             &dir,
             "x.toml",
             "x.json",
             SettingsSource::LegacyJson,
-            None,
+            Some("{\"a\":1}"),
             canonical,
         );
         assert_eq!(

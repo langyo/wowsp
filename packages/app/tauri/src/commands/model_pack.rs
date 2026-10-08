@@ -28,11 +28,10 @@
 //! China networks can pin a working prefix instead of waiting out the dead
 //! direct attempt.
 //!
-//! Installs are ATOMIC: extraction and patch application happen inside a
-//! `.res-staging` directory (existing sub-directories are moved in, patched,
-//! then swapped back), so a cancel, corrupt archive or failed check restores
-//! the previous pack instead of leaving a half-new/half-old mix — the exact
-//! failure mode the legacy `updated_at` overwrite scheme produced.
+//! Extraction and patch application prepare a separate `.res-staging`
+//! tree while the current pack keeps serving. Publishing backs up the old
+//! directories and version stamp, restoring them on an I/O failure. A
+//! cancelled or corrupt delta never changes the old pack's bytes.
 //!
 //! `ensure_res_pack` keeps its historical fire-and-forget contract for the
 //! startup / on-demand paths (skip when the hash matches; an installer-
@@ -109,6 +108,7 @@ const LEGACY_STAMPS: [&str; 2] = [".version", ".version-dogtags"];
 
 /// Staging roots the installer flow uses under the cache directory.
 const STAGING_DIR: &str = ".res-staging";
+const BACKUP_DIR: &str = ".res-backup";
 const PACK_TMP: &str = ".res-pack.download";
 const DELTA_TMP: &str = ".res-delta.download";
 const DELTA_STAGING_DIR: &str = ".res-delta-staging";
@@ -571,69 +571,139 @@ async fn download_archive(
     .map(|_| ())
 }
 
-// ── Staging / atomic swap ─────────────────────────────────────────────────
+// ── Staging / publication ─────────────────────────────────────────────────
 
-/// Move every existing pack sub-directory into a fresh staging root. The
-/// renames are same-volume and instant; a half-done move is rolled back
-/// here (the caller's [`restore_staging`] only sees a complete staging).
-fn move_into_staging(cache: &Path) -> Result<PathBuf, String> {
+/// Clone regular pack files without removing the serving tree. Hard links
+/// avoid copying the whole pack when supported; delta writes must replace
+/// their destination rather than truncating a shared inode.
+fn clone_pack_tree(from: &Path, to: &Path) -> Result<(), String> {
+    let meta =
+        fs::symlink_metadata(from).map_err(|e| format!("inspect {}: {e}", from.display()))?;
+    let linked = meta.file_type().is_symlink();
+    #[cfg(windows)]
+    let linked = {
+        use std::os::windows::fs::MetadataExt;
+        linked || meta.file_attributes() & 0x400 != 0
+    };
+    if linked {
+        return Err(format!(
+            "resource pack contains a filesystem link: {}",
+            from.display()
+        ));
+    }
+    if meta.is_dir() {
+        fs::create_dir(to).map_err(|e| format!("create {}: {e}", to.display()))?;
+        for entry in fs::read_dir(from).map_err(|e| format!("read {}: {e}", from.display()))? {
+            let entry = entry.map_err(|e| format!("read directory entry: {e}"))?;
+            clone_pack_tree(&entry.path(), &to.join(entry.file_name()))?;
+        }
+    } else if meta.is_file() {
+        if fs::hard_link(from, to).is_err() {
+            fs::copy(from, to).map_err(|e| format!("copy {}: {e}", from.display()))?;
+        }
+    } else {
+        return Err(format!(
+            "resource pack contains a non-file entry: {}",
+            from.display()
+        ));
+    }
+    Ok(())
+}
+
+fn stage_existing_pack(cache: &Path) -> Result<PathBuf, String> {
     let staging = cache.join(STAGING_DIR);
     if staging.exists() {
         fs::remove_dir_all(&staging).map_err(|e| format!("clean staging dir: {e}"))?;
     }
     fs::create_dir_all(&staging).map_err(|e| format!("create staging dir: {e}"))?;
-    let mut moved: Vec<&str> = Vec::new();
     for subdir in SUBDIRS {
         let from = cache.join(subdir);
         if !from.exists() {
             continue;
         }
-        match fs::rename(&from, staging.join(subdir)) {
-            Ok(()) => moved.push(subdir),
-            Err(e) => {
-                // Put the already-moved sub-directories back so a retry
-                // starts from an intact cache instead of the next pass's
-                // staging clean-up destroying the pack.
-                for done in moved {
-                    let _ = fs::rename(staging.join(done), cache.join(done));
-                }
-                let _ = fs::remove_dir_all(&staging);
-                return Err(format!("move {subdir} into staging: {e}"));
-            },
+        if let Err(e) = clone_pack_tree(&from, &staging.join(subdir)) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(e);
         }
     }
     Ok(staging)
 }
 
-/// Swap the staged sub-directories into the cache root (replacing whatever
-/// is there — normally nothing, [`move_into_staging`] took it away).
+/// Publish the directories and their stamp together, retaining originals
+/// until all renames succeed. The stamp is removed first and published last
+/// so an interrupted commit cannot advertise a complete new pack.
 fn swap_staging_in(cache: &Path, staging: &Path) -> Result<(), String> {
-    for subdir in SUBDIRS {
-        let staged = staging.join(subdir);
-        if !staged.exists() {
-            continue;
+    if !staging.join(VERSION_FILE).is_file() {
+        return Err("staged resource pack has no version stamp".into());
+    }
+    let backup = cache.join(BACKUP_DIR);
+    // The stamp is published last. Its presence means a previous commit
+    // finished (or failed before touching the old tree), so a backup left
+    // only by cleanup failure can now be retried safely.
+    if backup.exists() && cache.join(VERSION_FILE).is_file() {
+        fs::remove_dir_all(&backup).map_err(|e| format!("clean committed resource backup: {e}"))?;
+    }
+    // Never delete an earlier recovery copy to make room for a retry.
+    fs::create_dir(&backup)
+        .map_err(|e| format!("create resource backup {}: {e}", backup.display()))?;
+    let mut saved = Vec::new();
+    let mut published = Vec::new();
+    let outcome = (|| -> Result<(), String> {
+        for name in [VERSION_FILE, SUBDIRS[0], SUBDIRS[1]] {
+            let old = cache.join(name);
+            if old
+                .try_exists()
+                .map_err(|e| format!("inspect {name}: {e}"))?
+            {
+                fs::rename(&old, backup.join(name)).map_err(|e| format!("back up {name}: {e}"))?;
+                saved.push(name);
+            }
         }
-        let final_dir = cache.join(subdir);
-        if final_dir.exists() {
-            fs::remove_dir_all(&final_dir).map_err(|e| format!("replace old {subdir} dir: {e}"))?;
+        for name in [SUBDIRS[0], SUBDIRS[1], VERSION_FILE] {
+            let new = staging.join(name);
+            if new
+                .try_exists()
+                .map_err(|e| format!("inspect staged {name}: {e}"))?
+            {
+                fs::rename(&new, cache.join(name)).map_err(|e| format!("publish {name}: {e}"))?;
+                published.push(name);
+            }
         }
-        fs::rename(&staged, &final_dir)
-            .map_err(|e| format!("move staged {subdir} into place: {e}"))?;
+        Ok(())
+    })();
+    if let Err(error) = outcome {
+        let mut rollback_errors = Vec::new();
+        for name in published.into_iter().rev() {
+            if let Err(e) = fs::rename(cache.join(name), staging.join(name)) {
+                rollback_errors.push(format!("unpublish {name}: {e}"));
+            }
+        }
+        for name in saved.into_iter().rev() {
+            if name == VERSION_FILE && !rollback_errors.is_empty() {
+                // Leave a damaged tree unstamped, with its original stamp
+                // in the retained backup alongside any unrestored data.
+                continue;
+            }
+            if let Err(e) = fs::rename(backup.join(name), cache.join(name)) {
+                rollback_errors.push(format!("restore {name}: {e}"));
+            }
+        }
+        if rollback_errors.is_empty() {
+            let _ = fs::remove_dir(&backup);
+            return Err(error);
+        }
+        return Err(format!(
+            "{error}; recovery retained in {}: {}",
+            backup.display(),
+            rollback_errors.join("; ")
+        ));
+    }
+    // The new pack and its stamp are now committed. A locked old file must
+    // not turn a successful update into a rollback or erase the backup.
+    if let Err(e) = fs::remove_dir_all(&backup) {
+        tracing::warn!("resource backup cleanup {}: {e}", backup.display());
     }
     Ok(())
-}
-
-/// Rollback: put staged sub-directories back under the cache root. Only
-/// restores directories that are actually missing there — a half-swapped
-/// state keeps its already-swapped (newer) halves.
-fn restore_staging(cache: &Path, staging: &Path) {
-    for subdir in SUBDIRS {
-        let staged = staging.join(subdir);
-        if staged.exists() && !cache.join(subdir).exists() {
-            let _ = fs::rename(&staged, cache.join(subdir));
-        }
-    }
-    let _ = fs::remove_dir_all(staging);
 }
 
 /// Unpack the full-pack tar.gz into `staging` (top-level `models/` +
@@ -708,6 +778,12 @@ fn apply_delta_blocking(
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
+        // Staging may share this inode with the serving pack. Unlink only
+        // our staged name before copying so a later failed link/cancel can
+        // discard staging without having modified the original bytes.
+        if dest.exists() {
+            fs::remove_file(&dest).map_err(|e| format!("replace staged {}: {e}", entry.path))?;
+        }
         fs::copy(&src, &dest).map_err(|e| format!("apply {}: {e}", entry.path))?;
     }
     for path in &manifest.removed {
@@ -762,11 +838,9 @@ async fn full_install(manifest: &ResManifest, app: Option<&AppHandle>) -> Result
 
     emit_progress(app, phase::APPLY, 0, 0, 1, 1, None);
     // A cancel that lands mid-extract lets the (already verified) archive
-    // finish unpacking — the swap-based installer never leaves a partial
-    // pack, so aborting here would only waste the downloaded bytes. The
-    // staging root is a FRESH extraction (not a move-in of the previous
-    // tree): a full pack is a complete snapshot, so files the new version
-    // dropped must not survive the swap.
+    // finish unpacking and publishing; cancellation does not interrupt the
+    // commit/rollback sequence. A full pack is a complete snapshot, so it
+    // starts in an empty staging tree and drops files the new version omits.
     let staging = cache.join(STAGING_DIR);
     if staging.exists() {
         if let Err(e) = fs::remove_dir_all(&staging) {
@@ -776,26 +850,24 @@ async fn full_install(manifest: &ResManifest, app: Option<&AppHandle>) -> Result
     fs::create_dir_all(&staging).map_err(|e| format!("create staging dir: {e}"))?;
     let archive = tmp.clone();
     let cache_for_task = cache.clone();
+    let tree_sha256 = manifest.tree_sha256.clone();
+    let version = manifest.version.clone();
     let outcome = tokio::task::spawn_blocking({
         let staging = staging.clone();
         move || -> Result<(), String> {
             unpack_full_blocking(&archive, &staging)?;
+            write_local_version(&staging, &tree_sha256, &version)?;
             swap_staging_in(&cache_for_task, &staging)
         }
     })
     .await
     .map_err(|e| format!("extract task: {e}"))
     .and_then(|r| r);
-    // Either way the staging tree itself is disposable: on success its
-    // sub-directories have been renamed into the cache root; on an
-    // extraction failure the previous pack was never touched. A SWAP
-    // mid-failure can leave a half-replaced cache (one sub-directory new,
-    // the other old) — the stamp is only written after a full success, so
-    // the next pass re-runs and converges.
+    // Staging holds only new files. Originals remain in the serving cache
+    // or, if rollback itself failed, in the separate recovery backup.
     let _ = fs::remove_dir_all(&staging);
     let _ = fs::remove_file(&tmp);
     outcome?;
-    write_local_version(&cache, &manifest.tree_sha256, &manifest.version)?;
     emit_progress(app, phase::DONE, 0, 0, 1, 1, None);
     Ok(())
 }
@@ -809,7 +881,12 @@ async fn delta_install(
     app: Option<&AppHandle>,
 ) -> Result<(), String> {
     let cache = cache_root()?;
-    let staging = move_into_staging(&cache)?;
+    let staging = tokio::task::spawn_blocking({
+        let cache = cache.clone();
+        move || stage_existing_pack(&cache)
+    })
+    .await
+    .map_err(|e| format!("stage resource pack: {e}"))??;
 
     let result = async {
         let delta_tmp = cache.join(DELTA_TMP);
@@ -867,8 +944,8 @@ async fn delta_install(
             let _ = fs::remove_file(&delta_tmp);
             let _ = fs::remove_dir_all(&delta_dir);
         }
+        write_local_version(&staging, &manifest.tree_sha256, &manifest.version)?;
         swap_staging_in(&cache, &staging)?;
-        write_local_version(&cache, &manifest.tree_sha256, &manifest.version)?;
         let _ = fs::remove_dir_all(&staging);
         emit_progress(app, phase::DONE, 0, 0, segments, segments, None);
         Ok::<(), String>(())
@@ -876,7 +953,7 @@ async fn delta_install(
     .await;
 
     if result.is_err() {
-        restore_staging(&cache, &staging);
+        let _ = fs::remove_dir_all(&staging);
         let _ = fs::remove_file(cache.join(DELTA_TMP));
         let _ = fs::remove_dir_all(cache.join(DELTA_STAGING_DIR));
     }
@@ -1245,7 +1322,7 @@ pub async fn clear_res() -> Result<(), String> {
         for name in SUBDIRS
             .iter()
             .map(|s| s.to_string())
-            .chain([STAGING_DIR, DELTA_STAGING_DIR].map(|s| s.to_string()))
+            .chain([STAGING_DIR, DELTA_STAGING_DIR, BACKUP_DIR].map(|s| s.to_string()))
         {
             let dir = cache.join(&name);
             if dir.exists() {
@@ -1365,6 +1442,147 @@ pub async fn res_cache_root() -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PackFixture(PathBuf);
+
+    impl PackFixture {
+        fn new() -> Self {
+            let mut nonce = [0u8; 16];
+            getrandom::fill(&mut nonce).unwrap();
+            let root = std::env::temp_dir().join(format!("wowsp-pack-{}", hex::encode(nonce)));
+            fs::create_dir_all(root.join("models")).unwrap();
+            fs::create_dir(root.join("dogtags")).unwrap();
+            fs::write(root.join("models/a.glb"), b"old-a").unwrap();
+            fs::write(root.join("models/b.glb"), b"old-b").unwrap();
+            fs::write(root.join("dogtags/old.png"), b"old-tag").unwrap();
+            write_local_version(&root, &hash(1), "old").unwrap();
+            Self(root)
+        }
+
+        fn delta(&self, name: &str, corrupt_second: bool) -> PathBuf {
+            let delta = self.0.join(name);
+            fs::create_dir_all(delta.join("files/models")).unwrap();
+            fs::write(delta.join("files/models/a.glb"), b"new-a").unwrap();
+            fs::write(delta.join("files/models/b.glb"), b"new-b").unwrap();
+            let digest = |name: &str| file_sha256(&delta.join("files/models").join(name)).unwrap();
+            let manifest = serde_json::json!({
+                "from": hash(1), "to": hash(2),
+                "changed": [
+                    {"path": "models/a.glb", "sha256": digest("a.glb")},
+                    {"path": "models/b.glb", "sha256": if corrupt_second { hash(0) } else { digest("b.glb") }}
+                ],
+                "removed": ["dogtags/old.png"]
+            });
+            fs::write(delta.join(DELTA_MANIFEST_FILE), manifest.to_string()).unwrap();
+            delta
+        }
+
+        fn assert_original(&self) {
+            assert_eq!(fs::read(self.0.join("models/a.glb")).unwrap(), b"old-a");
+            assert_eq!(fs::read(self.0.join("models/b.glb")).unwrap(), b"old-b");
+            assert_eq!(
+                fs::read(self.0.join("dogtags/old.png")).unwrap(),
+                b"old-tag"
+            );
+            assert_eq!(read_local_version(&self.0).tree_sha256, Some(hash(1)));
+        }
+    }
+
+    impl Drop for PackFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn corrupt_delta_preserves_the_serving_pack_and_its_stamp() {
+        let fixture = PackFixture::new();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        fixture.assert_original();
+        let delta = fixture.delta("bad-delta", true);
+        assert!(apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).is_err());
+        // The first entry was applied before the second entry failed.
+        assert_eq!(fs::read(staging.join("models/a.glb")).unwrap(), b"new-a");
+        fs::remove_dir_all(staging).unwrap();
+        fixture.assert_original();
+    }
+
+    #[test]
+    fn cancellation_between_delta_links_discards_changes_and_removals() {
+        let fixture = PackFixture::new();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        let delta = fixture.delta("good-delta", false);
+        apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).unwrap();
+        assert!(!staging.join("dogtags/old.png").exists());
+        fixture.assert_original();
+        // A cancelled or failed download of the next link discards staging.
+        fs::remove_dir_all(staging).unwrap();
+        fixture.assert_original();
+    }
+
+    #[test]
+    fn completed_delta_publishes_the_pack_and_stamp_together() {
+        let fixture = PackFixture::new();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        let delta = fixture.delta("good-delta", false);
+        apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).unwrap();
+        write_local_version(&staging, &hash(2), "new").unwrap();
+        swap_staging_in(&fixture.0, &staging).unwrap();
+        assert_eq!(fs::read(fixture.0.join("models/a.glb")).unwrap(), b"new-a");
+        assert_eq!(fs::read(fixture.0.join("models/b.glb")).unwrap(), b"new-b");
+        assert!(!fixture.0.join("dogtags/old.png").exists());
+        assert_eq!(read_local_version(&fixture.0).tree_sha256, Some(hash(2)));
+        assert!(!fixture.0.join(BACKUP_DIR).exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn publish_failure_restores_all_original_directories_and_stamp() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let fixture = PackFixture::new();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        let delta = fixture.delta("good-delta", false);
+        apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).unwrap();
+        write_local_version(&staging, &hash(2), "new").unwrap();
+        // Fail the LAST publish step, after both new directories landed.
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(staging.join(VERSION_FILE))
+            .unwrap();
+        assert!(swap_staging_in(&fixture.0, &staging).is_err());
+        fixture.assert_original();
+        assert!(!fixture.0.join(BACKUP_DIR).exists());
+        drop(lock);
+    }
+
+    #[test]
+    fn full_snapshot_removes_an_omitted_old_subdirectory() {
+        let fixture = PackFixture::new();
+        let staging = fixture.0.join(STAGING_DIR);
+        fs::create_dir_all(staging.join("models")).unwrap();
+        fs::write(staging.join("models/new.glb"), b"new").unwrap();
+        write_local_version(&staging, &hash(2), "new").unwrap();
+        swap_staging_in(&fixture.0, &staging).unwrap();
+        assert!(!fixture.0.join("models/a.glb").exists());
+        assert!(!fixture.0.join("dogtags").exists());
+        assert_eq!(read_local_version(&fixture.0).tree_sha256, Some(hash(2)));
+    }
+
+    #[test]
+    fn incomplete_recovery_backup_is_not_deleted_by_a_retry() {
+        let fixture = PackFixture::new();
+        let backup = fixture.0.join(BACKUP_DIR);
+        fs::create_dir(&backup).unwrap();
+        fs::rename(fixture.0.join(VERSION_FILE), backup.join(VERSION_FILE)).unwrap();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        write_local_version(&staging, &hash(2), "new").unwrap();
+        assert!(swap_staging_in(&fixture.0, &staging).is_err());
+        assert_eq!(read_local_version(&backup).tree_sha256, Some(hash(1)));
+        assert!(fixture.0.join("models/a.glb").is_file());
+        assert!(!fixture.0.join(VERSION_FILE).exists());
+    }
 
     fn edge(from: &str, to: &str) -> DeltaEdge {
         DeltaEdge {

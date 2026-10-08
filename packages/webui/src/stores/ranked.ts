@@ -62,7 +62,7 @@ export const useRankedStore = defineStore("ranked", () => {
     opts: { ttlMs?: number } = {},
   ) {
     const ttlMs = opts.ttlMs ?? 0;
-    // Fast path (read-only, never queues).
+    // Fast path (never queues).
     const cur = loaded;
     if (
       ttlMs > 0 &&
@@ -72,6 +72,9 @@ export const useRankedStore = defineStore("ranked", () => {
       cur.seasonCount === seasonCount &&
       Date.now() - cur.fetchedAt < ttlMs
     ) {
+      // Re-selecting the cached player also supersedes an older request
+      // for another player, including that request's failure path.
+      token++;
       return;
     }
     const current = ++token;

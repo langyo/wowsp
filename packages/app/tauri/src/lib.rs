@@ -23,6 +23,7 @@
 // quiet; the desktop build still enforces dead_code.
 #![cfg_attr(mobile, allow(dead_code))]
 
+mod atomic_file;
 mod commands;
 mod logging;
 mod os_prefs;

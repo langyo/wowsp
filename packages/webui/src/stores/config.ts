@@ -121,14 +121,37 @@ export const useConfigStore = defineStore("config", () => {
   // Path remembered from the previous session (restored by `load()`, consumed
   // by `detect()` so a previously-selected client survives a rescan).
   let rememberedPath: string | null = null;
+  let scanSequence = 0;
+  let selectionSequence = 0;
+  let pendingSave: Promise<unknown> = Promise.resolve();
+
+  function invalidateScan() {
+    scanSequence++;
+    detecting.value = false;
+  }
+
+  function beginSelection() {
+    rememberedPath = null;
+    invalidateScan();
+    return ++selectionSequence;
+  }
+
+  /** Keep state changes and their writes in order. Explicit actions publish
+   *  only after saving, so failed choices never become a rollback baseline. */
+  function enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const save = pendingSave.then(operation);
+    pendingSave = save.catch(() => undefined);
+    return save;
+  }
 
   /** Load the persisted active-install path from AppData. Call once on app
    *  startup BEFORE `detect()`; `detect()` then re-resolves it against the
    *  fresh scan and keeps it if the install still exists. */
   async function load() {
+    const selection = selectionSequence;
     try {
       const cfg = await api.getGameConfig();
-      rememberedPath = cfg?.activePath ?? null;
+      if (selection === selectionSequence) rememberedPath = cfg?.activePath ?? null;
       replayDirs.value = cfg?.replayDirs ?? [];
     } catch {
       // command unavailable (mock backend) — nothing remembered
@@ -136,21 +159,18 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   async function detect() {
+    const sequence = ++scanSequence;
     detecting.value = true;
     try {
-      installs.value = dedupeInstalls(await api.detectGameInstall()).filter(
+      const scanned = dedupeInstalls(await api.detectGameInstall()).filter(
         (i) => !ignoredPaths.value.some((p) => sameGamePath(p, i.path)),
       );
-      // Prefer the remembered client (from last session) if it's still among
-      // the detected installs; otherwise keep the current selection if valid;
-      // otherwise fall back to the first detected install.
-      const pickByPath = (path: string | null) =>
-        path ? installs.value.find((i) => sameGamePath(i.path, path)) ?? null : null;
+      if (sequence !== scanSequence) return;
+      // Validate the user's choice BEFORE falling back to an auto-detected
+      // client. Manual installs need not appear in the automatic scan.
+      const preferredPath = rememberedPath ?? activeInstall.value?.path ?? null;
       let resolved: GameInstall | null =
-        pickByPath(rememberedPath) ??
-        pickByPath(activeInstall.value?.path ?? null) ??
-        installs.value[0] ??
-        null;
+        scanned.find((i) => sameGamePath(i.path, preferredPath)) ?? null;
       // A remembered manual path that auto-detection can't see (custom
       // folder, unusual Steam library layout) must survive the rescan —
       // re-validate it through the backend instead of dropping the user's
@@ -159,28 +179,33 @@ export const useConfigStore = defineStore("config", () => {
       // the ignore list wins over a stale persisted activePath.
       if (
         !resolved &&
-        rememberedPath &&
-        !ignoredPaths.value.some((p) => sameGamePath(p, rememberedPath))
+        preferredPath &&
+        !ignoredPaths.value.some((p) => sameGamePath(p, preferredPath))
       ) {
         try {
-          resolved = await api.setGamePath(rememberedPath);
+          resolved = await api.setGamePath(preferredPath);
         } catch {
           resolved = null; // the folder is truly gone — prompt again
         }
       }
-      activeInstall.value = resolved;
+      if (sequence !== scanSequence) return;
+      resolved ??= scanned[0] ?? null;
       // A remembered manual path that auto-detection can't see must still be
       // selectable in the sidebar's server dropdown.
-      if (resolved && !installs.value.some((i) => sameGamePath(i.path, resolved.path))) {
-        installs.value = [...installs.value, resolved];
+      if (resolved && !scanned.some((i) => sameGamePath(i.path, resolved.path))) {
+        scanned.push(resolved);
       }
-      // Restore the user's dragged row order on top of the fresh scan (rows
-      // found since the last drag keep scan order and append).
-      installs.value = applySavedOrder(installs.value, gamePathOrder);
-      rememberedPath = null; // consumed
-      await persist();
+      const selection = resolved;
+      await enqueue(async () => {
+        if (sequence !== scanSequence) return;
+        // Background detection remains usable if persistence is unavailable.
+        await api.setGameConfig(selection?.path ?? null).catch(() => undefined);
+        activeInstall.value = selection;
+        installs.value = applySavedOrder(scanned, gamePathOrder);
+        rememberedPath = null; // consumed
+      });
     } finally {
-      detecting.value = false;
+      if (sequence === scanSequence) detecting.value = false;
     }
   }
 
@@ -188,30 +213,50 @@ export const useConfigStore = defineStore("config", () => {
    *  the settings 游戏路径 table. Persists the choice so it survives a
    *  restart. */
   async function selectInstall(path: string) {
+    // Capture the row the user clicked. A scan already saving ahead of this
+    // action may replace the list before the queued selection can run.
     const found = installs.value.find((i) => sameGamePath(i.path, path));
-    if (found) {
+    if (!found) return;
+    beginSelection();
+    await enqueue(async () => {
+      await api.setGameConfig(found.path);
+      invalidateScan();
       activeInstall.value = found;
-      await persist();
-    }
+      ignoredPaths.value = ignoredPaths.value.filter((p) => !sameGamePath(p, found.path));
+      saveIgnoredGamePaths(ignoredPaths.value);
+      if (!installs.value.some((i) => sameGamePath(i.path, found.path))) {
+        installs.value = [...installs.value, found];
+      }
+    });
   }
 
   /** Validate a folder through the backend and pin it as the active install
    *  (manual paths live in `installs` too). Returns the resolved install so
-   *  callers can react to its realm. */
-  async function setManualPath(path: string): Promise<GameInstall> {
-    const resolved = await api.setGamePath(path);
-    activeInstall.value = resolved;
-    // Re-adding a folder the user previously removed lifts the ignore — an
-    // explicit pin always wins over the removal list.
-    ignoredPaths.value = ignoredPaths.value.filter((p) => !sameGamePath(p, resolved.path));
-    saveIgnoredGamePaths(ignoredPaths.value);
-    // Keep the manual install listed alongside the detected ones (settings
-    // 游戏路径 table + replay-view selector).
-    if (!installs.value.some((i) => sameGamePath(i.path, resolved.path))) {
-      installs.value = [...installs.value, resolved];
+   *  callers can react to its realm, or null when a newer choice supersedes it. */
+  async function setManualPath(path: string): Promise<GameInstall | null> {
+    const selection = beginSelection();
+    let resolved: GameInstall;
+    try {
+      resolved = await api.setGamePath(path);
+    } catch (error) {
+      if (selection !== selectionSequence) return null;
+      throw error;
     }
-    await persist();
-    return resolved;
+    return enqueue(async () => {
+      // Another explicit choice superseded this folder validation. Callers
+      // can quietly leave the newer choice in place without an error toast.
+      if (selection !== selectionSequence) return null;
+      await api.setGameConfig(resolved.path);
+      invalidateScan();
+      activeInstall.value = resolved;
+      // Re-adding a removed folder lifts the ignore only after it saves.
+      ignoredPaths.value = ignoredPaths.value.filter((p) => !sameGamePath(p, resolved.path));
+      saveIgnoredGamePaths(ignoredPaths.value);
+      if (!installs.value.some((i) => sameGamePath(i.path, resolved.path))) {
+        installs.value = [...installs.value, resolved];
+      }
+      return resolved;
+    });
   }
 
   /** Drop an install from the list (settings 游戏路径 table's per-row
@@ -221,19 +266,23 @@ export const useConfigStore = defineStore("config", () => {
    *  the first-launch prompt). */
   async function removeInstall(path: string) {
     const target = installs.value.find((i) => sameGamePath(i.path, path));
-    installs.value = installs.value.filter((i) => !sameGamePath(i.path, path));
-    if (target) {
-      ignoredPaths.value = [...ignoredPaths.value, target.path];
-      saveIgnoredGamePaths(ignoredPaths.value);
-      // Drop the row's custom-order rank too — unmatched ranks are ignored
-      // by applySavedOrder, but they would pile up in localStorage.
-      gamePathOrder = gamePathOrder.filter((p) => !sameGamePath(p, target.path));
-      saveGamePathOrder(gamePathOrder);
-    }
-    if (activeInstall.value && sameGamePath(activeInstall.value.path, path)) {
-      activeInstall.value = installs.value[0] ?? null;
-      await persist();
-    }
+    beginSelection();
+    await enqueue(async () => {
+      const remaining = installs.value.filter((i) => !sameGamePath(i.path, path));
+      if (activeInstall.value && sameGamePath(activeInstall.value.path, path)) {
+        const next = remaining[0] ?? null;
+        await api.setGameConfig(next?.path ?? null);
+        activeInstall.value = next;
+      }
+      invalidateScan();
+      installs.value = remaining;
+      if (target) {
+        ignoredPaths.value = [...ignoredPaths.value, target.path];
+        saveIgnoredGamePaths(ignoredPaths.value);
+        gamePathOrder = gamePathOrder.filter((p) => !sameGamePath(p, target.path));
+        saveGamePathOrder(gamePathOrder);
+      }
+    });
   }
 
   /** Reorder the install list (settings 游戏路径 rows, drag handles). The
@@ -247,16 +296,6 @@ export const useConfigStore = defineStore("config", () => {
     installs.value = arr;
     gamePathOrder = arr.map((i) => i.path);
     saveGamePathOrder(gamePathOrder);
-  }
-
-  /** Persist the active install's path (just the path — `detect()` re-resolves
-   *  kind/realm on the next scan, so we don't risk storing a stale kind). */
-  async function persist() {
-    try {
-      await api.setGameConfig(activeInstall.value?.path ?? null);
-    } catch {
-      // best-effort — don't fail the action if persistence is unavailable
-    }
   }
 
   /** Pin an extra replay folder into the scan (游玩时间 view's 录像来源

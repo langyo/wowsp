@@ -56,6 +56,7 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
    *  previous `if (loading) return` silently DROPPED the switch instead, so
    *  the UI kept showing the previous language's names under the new setting. */
   let loadSeq = 0;
+  let pendingLoad: { realm: string; lang: string } | null = null;
 
   /** In-game nation order (matching the port tech-tree panel left-to-right). */
   const NATION_ORDER: Record<string, number> = {
@@ -123,8 +124,20 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     // The WG API takes lowercase codes ("zh-cn"); the store keys caches by
     // the canonical lang-loc ("zh-CN").
     const apiLang = wgApiLanguage(lang);
-    if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) return;
+    if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) {
+      // Passive consumers of the same cache must not cancel an explicit
+      // refresh already fetching that realm/language.
+      if (pendingLoad?.realm === realm && pendingLoad.lang === lang) return;
+      // Reusing the current realm is still a new selection: a pending
+      // request for another realm must no longer own this shared slot.
+      loadSeq += 1;
+      pendingLoad = null;
+      loading.value = false;
+      error.value = null;
+      return;
+    }
     const seq = ++loadSeq;
+    pendingLoad = { realm, lang };
     loading.value = true;
     error.value = null;
     try {
@@ -152,18 +165,22 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
           loadedLanguage.value = lang; // stay as user's preference
           console.warn("[encyclopedia] INVALID_LANGUAGE for %s, fell back to en", lang);
         } catch (e2) {
-          if (!(await loadBundled(realm, lang, seq))) {
+          if (seq !== loadSeq) return;
+          if (!(await loadBundled(realm, lang, seq)) && seq === loadSeq) {
             error.value = ((e2 as Error).message || String(e2)).slice(0, 300);
           }
         }
       } else if (await loadBundled(realm, lang, seq)) {
         // Bundled basics took over — no error surface, the UI is fully
         // populated (just without the online-only realm cache semantics).
-      } else {
+      } else if (seq === loadSeq) {
         error.value = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
       }
     } finally {
-      if (seq === loadSeq) loading.value = false;
+      if (seq === loadSeq) {
+        loading.value = false;
+        pendingLoad = null;
+      }
     }
   }
 

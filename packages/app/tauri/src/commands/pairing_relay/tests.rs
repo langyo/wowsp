@@ -1577,6 +1577,51 @@ async fn oversized_writes_round_trip_via_chunking() {
 /// Gateway unreachable → no code ever lands, relay stays offline (the
 /// desktop's LAN-only fallback). The bridge keeps retrying in the
 /// background and must stop cleanly.
+#[tokio::test]
+async fn stop_waits_for_pending_gateway_resolution_before_retiring_the_bridge() {
+    let _serial = HOST_SLOT_LOCK.lock().await;
+    host_session_stop().await;
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let root = format!("http://{}", listener.local_addr().unwrap());
+    let start = tokio::spawn(async move { host_session_start(&root, 1, &"a".repeat(64)).await });
+    let (mut health, _) = listener.accept().await.unwrap();
+    let mut request = Vec::new();
+    while !request.ends_with(b"\r\n\r\n") {
+        let mut byte = [0];
+        health.read_exact(&mut byte).await.unwrap();
+        request.push(byte[0]);
+        assert!(request.len() < 8192);
+    }
+    // The actual start is inside gateway resolution, before host_slot exists.
+    assert!(!host_bridge::session_present());
+    let stop = host_session_stop();
+    tokio::pin!(stop);
+    let waited = futures::poll!(&mut stop).is_pending();
+    // Only the already accepted HTTP fixture remains. A background WebSocket
+    // dial cannot reach any endpoint or perform a persistent host-id handshake.
+    drop(listener);
+    health
+        .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    drop(health);
+    start.await.unwrap().unwrap();
+    if waited {
+        stop.await;
+    } else {
+        // Keep the shared fixture clean even on the old buggy implementation.
+        host_session_stop().await;
+    }
+    assert!(
+        waited,
+        "stop must not finish while a bridge start can still publish its slot"
+    );
+    assert!(!host_bridge::session_present());
+    assert_eq!(current_relay_code(), None);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dead_gateway_leaves_relay_offline() {
     let _serial = HOST_SLOT_LOCK.lock().await;

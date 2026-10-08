@@ -38,12 +38,15 @@ export function useOverlayLifecycle() {
   let active = false;
   let bridgeActive = false;
   let createdRealm: string | null | undefined;
+  let syncing = false;
+  let syncRequested = false;
 
   function locale(): string {
     return (i18n.global.locale as unknown as { value: string }).value;
   }
 
   async function sync() {
+    if (!overlayCfg.loaded) return;
     const running = game.process.running;
     const mode = overlayCfg.table;
     const wantOverlay = running && mode === "detect";
@@ -55,45 +58,62 @@ export function useOverlayLifecycle() {
       plugin.liveSelfRealm || (game.process.realm ?? installs.activeInstall?.realm ?? null);
     // The realm is baked into the overlay window's URL — recreate the window
     // when it changes while active (e.g. a different client started).
-    if (wantOverlay && active && realm !== createdRealm) {
+    if (active && (!wantOverlay || realm !== createdRealm)) {
       try {
         await api.destroyOverlayWindow();
+        active = false;
+        createdRealm = undefined;
       } catch {
-        // best-effort teardown; the create below replaces it anyway
+        // Retain the active state so the next transition retries teardown.
+        // Starting a replacement now could leave both backends running.
+        return;
       }
-      active = false;
     }
-    // Overlay window (the "detect" backend).
-    if (wantOverlay !== active) {
+    if (bridgeActive && !wantBridge) {
       try {
-        if (wantOverlay) {
-          await api.createOverlayWindow(realm ?? undefined, locale());
-          active = true;
-          createdRealm = realm;
-        } else {
-          await api.destroyOverlayWindow();
-          active = false;
-          createdRealm = undefined;
-        }
+        await api.stopIngameBridge();
+        bridgeActive = false;
+      } catch {
+        return;
+      }
+    }
+    // Teardown may have outlived the requested replacement. Recompute first
+    // so an off/exit arriving during cleanup cannot start a cancelled mode.
+    if (syncRequested) return;
+    // Stop the previous backend before starting its replacement. Starts
+    // remain best-effort on mobile/older shells and retry next transition.
+    if (wantOverlay && !active) {
+      try {
+        await api.createOverlayWindow(realm ?? undefined, locale());
+        active = true;
+        createdRealm = realm;
       } catch {
         // Retry on the next state change (e.g. watcher lock hiccup).
-        active = false;
       }
     }
-    // In-game stats bridge (the "ingame" backend). Best-effort both ways:
-    // on mobile (or an older shell) the invoke rejects — the panel mode is
-    // desktop-only, and the failed call retries on the next transition.
-    if (wantBridge !== bridgeActive) {
+    if (wantBridge && !bridgeActive) {
       try {
-        if (wantBridge) {
-          await api.startIngameBridge(locale());
-        } else {
-          await api.stopIngameBridge();
-        }
-        bridgeActive = wantBridge;
+        await api.startIngameBridge(locale());
+        bridgeActive = true;
       } catch {
-        bridgeActive = false;
+        // Retry on the next state change.
       }
+    }
+  }
+
+  // An IPC still in flight owns its transition. Changes arriving meanwhile
+  // request another pass against current state instead of racing its flags.
+  async function requestSync() {
+    syncRequested = true;
+    if (syncing) return;
+    syncing = true;
+    try {
+      while (syncRequested) {
+        syncRequested = false;
+        await sync();
+      }
+    } finally {
+      syncing = false;
     }
   }
 
@@ -101,6 +121,7 @@ export function useOverlayLifecycle() {
     [
       () => game.process.running,
       () => overlayCfg.table,
+      () => overlayCfg.loaded,
       () => game.process.realm,
       // The active install's realm rides the same list: the config store's
       // selection can flip AFTER the overlay window was created (the
@@ -118,7 +139,7 @@ export function useOverlayLifecycle() {
       // window realm with no path to re-sync.
       () => plugin.liveSelfRealm,
     ],
-    () => void sync(),
+    () => void requestSync(),
     { immediate: true },
   );
 }

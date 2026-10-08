@@ -4,7 +4,7 @@
 //! plain JSON — no SQLite. The directory is created on first write.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::paths;
 
@@ -19,10 +19,61 @@ pub(crate) fn appdata_dir_path() -> Result<PathBuf, String> {
     paths::ensure_data_dir()
 }
 
+/// IPC names are relative data-file names, never arbitrary filesystem paths.
+/// Reject Windows aliases on every platform and links below the chosen root.
+pub(crate) fn data_file_path(dir: &Path, file: &str) -> Result<PathBuf, String> {
+    let mut path = dir.to_path_buf();
+    for segment in file.split('/') {
+        let stem = segment.split('.').next().unwrap_or("").to_ascii_uppercase();
+        let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
+            || ["COM", "LPT"].iter().any(|prefix| {
+                stem.strip_prefix(prefix).is_some_and(|suffix| {
+                    matches!(
+                        suffix,
+                        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                    )
+                })
+            });
+        if segment.is_empty()
+            || matches!(segment, "." | "..")
+            || segment.ends_with(['.', ' '])
+            || segment
+                .chars()
+                .any(|c| c.is_control() || "\\:<>\"|?*".contains(c))
+            || device
+        {
+            return Err(format!("invalid app data file name: {file:?}"));
+        }
+        path.push(segment);
+        match fs::symlink_metadata(&path) {
+            Ok(meta) => {
+                let linked = meta.file_type().is_symlink();
+                #[cfg(windows)]
+                let linked = {
+                    use std::os::windows::fs::MetadataExt;
+                    linked || meta.file_attributes() & 0x400 != 0
+                };
+                if linked {
+                    return Err(format!(
+                        "app data file path contains a filesystem link: {path:?}"
+                    ));
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(format!("inspect {path:?}: {e}")),
+        }
+    }
+    Ok(path)
+}
+
 /// Read a file from the AppData root. Returns `None` when the file doesn't
 /// exist yet (the "no cache yet" state every consumer treats as empty).
 pub(crate) fn read_appdata_json(file: &str) -> Result<Option<String>, String> {
-    let path = appdata_dir_path()?.join(file);
+    read_json_in(&appdata_dir_path()?, file)
+}
+
+pub(crate) fn read_json_in(dir: &Path, file: &str) -> Result<Option<String>, String> {
+    let path = data_file_path(dir, file)?;
     match fs::read_to_string(&path) {
         Ok(content) => Ok(Some(content)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -46,15 +97,7 @@ pub(crate) fn write_json_in(
     file: &str,
     content: &str,
 ) -> Result<(), String> {
-    let path = dir.join(file);
-    // Ensure any parent subdirectory (stats-cache/, snapshots/, ...) exists.
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
-    Ok(())
+    crate::atomic_file::write(&data_file_path(dir, file)?, content)
 }
 
 /// Read a JSON file from AppData. Returns None if the file doesn't exist yet.
@@ -73,7 +116,11 @@ pub fn appdata_write(file: String, content: String) -> Result<(), String> {
 /// Delete a file from AppData. Idempotent (missing file is OK).
 #[tauri::command]
 pub fn appdata_delete(file: String) -> Result<(), String> {
-    let path = appdata_dir_path()?.join(&file);
+    delete_json_in(&appdata_dir_path()?, &file)
+}
+
+fn delete_json_in(dir: &Path, file: &str) -> Result<(), String> {
+    let path = data_file_path(dir, file)?;
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -339,9 +386,8 @@ fn match_install<'a>(
     installs
         .iter()
         .filter(|i| {
-            let dir = normalize(&i.path);
-            !dir.is_empty()
-                && (exe_norm.starts_with(&dir) || exe_norm.starts_with(&format!("{dir}\\")))
+            let dir = normalize(&i.path).trim_end_matches('\\').to_string();
+            !dir.is_empty() && (exe_norm == dir || exe_norm.starts_with(&format!("{dir}\\")))
         })
         .max_by_key(|i| i.path.len())
 }
@@ -349,6 +395,164 @@ fn match_install<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let mut nonce = [0u8; 16];
+            getrandom::fill(&mut nonce).unwrap();
+            let dir = std::env::temp_dir().join(format!("wowsp-appdata-{}", hex::encode(nonce)));
+            fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn appdata_operations_reject_paths_outside_the_data_root_and_windows_aliases() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("data");
+        fs::create_dir_all(&root).unwrap();
+        let victim = fixture.0.join("victim.json");
+        fs::write(&victim, "existing").unwrap();
+        for name in [
+            "../victim.json",
+            "sub/../../victim.json",
+            "..\\victim.json",
+            "C:relative.json",
+            "/absolute.json",
+            "x.json:stream",
+            "CON.json",
+            "LPT¹.json",
+            "cache./x.json",
+            "cache /x.json",
+            "",
+            "./x.json",
+            "x//y.json",
+            "x.json/",
+        ] {
+            assert!(write_json_in(&root, name, "overwrite").is_err(), "{name}");
+            assert!(read_json_in(&root, name).is_err(), "{name}");
+            assert!(delete_json_in(&root, name).is_err(), "{name}");
+        }
+        let absolute = victim.to_string_lossy();
+        assert!(write_json_in(&root, &absolute, "overwrite").is_err());
+        assert_eq!(fs::read_to_string(victim).unwrap(), "existing");
+        assert_eq!(fs::read_dir(root).unwrap().count(), 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn appdata_operations_do_not_follow_a_directory_junction() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("data");
+        let outside = fixture.0.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("victim.json"), "existing").unwrap();
+        let junction = root.join("linked");
+        let result = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(read_json_in(&root, "linked/victim.json").is_err());
+        assert!(write_json_in(&root, "linked/victim.json", "overwrite").is_err());
+        assert!(delete_json_in(&root, "linked/victim.json").is_err());
+        assert_eq!(
+            fs::read_to_string(outside.join("victim.json")).unwrap(),
+            "existing"
+        );
+        fs::remove_dir(junction).unwrap();
+    }
+
+    #[test]
+    fn concurrent_writes_use_distinct_temporary_files_and_publish_complete_payloads() {
+        let fixture = Fixture::new();
+        let barrier = std::sync::Barrier::new(8);
+        let payloads: Vec<_> = (0..8)
+            .map(|id| format!("{{\"id\":{id},\"data\":\"{}\"}}", "x".repeat(65536)))
+            .collect();
+        std::thread::scope(|scope| {
+            for payload in &payloads {
+                let root = &fixture.0;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    for _ in 0..20 {
+                        write_json_in(root, "accounts.json", payload).unwrap();
+                    }
+                });
+            }
+        });
+        let saved = read_json_in(&fixture.0, "accounts.json").unwrap().unwrap();
+        assert!(payloads.contains(&saved));
+        assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn failed_replacement_keeps_the_destination_and_leaves_no_temporary_file() {
+        let fixture = Fixture::new();
+        fs::create_dir(fixture.0.join("blocked.json")).unwrap();
+        fs::write(fixture.0.join("blocked.json/keep"), "existing").unwrap();
+        assert!(write_json_in(&fixture.0, "blocked.json", "new").is_err());
+        assert_eq!(
+            fs::read_to_string(fixture.0.join("blocked.json/keep")).unwrap(),
+            "existing"
+        );
+        assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn atomic_replacement_does_not_truncate_a_hard_link_target() {
+        let fixture = Fixture::new();
+        let outside = fixture.0.join("outside.json");
+        fs::write(&outside, "existing").unwrap();
+        fs::hard_link(&outside, fixture.0.join("linked.json")).unwrap();
+        write_json_in(&fixture.0, "linked.json", "new").unwrap();
+        assert_eq!(fs::read_to_string(outside).unwrap(), "existing");
+        assert_eq!(
+            read_json_in(&fixture.0, "linked.json").unwrap().as_deref(),
+            Some("new")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn process_install_matching_requires_a_directory_boundary() {
+        use wowsp_tauri_shared::{GameInstall, GameInstallKind};
+        let install = |path: &str| GameInstall {
+            path: path.into(),
+            kind: GameInstallKind::Wargaming,
+            realm: None,
+        };
+        let installs = vec![install(r"C:\Games\WoWS"), install(r"C:\Games\WoWS\Nested\")];
+        assert!(
+            match_install(&installs, r"C:\Games\WoWS-backup\bin\WorldOfWarships64.exe").is_none()
+        );
+        assert_eq!(
+            match_install(&installs, "c:/games/wows/bin/WorldOfWarships64.exe")
+                .unwrap()
+                .path,
+            installs[0].path
+        );
+        assert_eq!(
+            match_install(&installs, r"C:\Games\WoWS\Nested\bin\WorldOfWarships64.exe")
+                .unwrap()
+                .path,
+            installs[1].path
+        );
+    }
 
     /// The running-exe fallback infers the client kind from path markers so a
     /// CN / Lesta client that no detected install claims is still labeled

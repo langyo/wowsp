@@ -62,37 +62,54 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
   const table = ref<TableAnchorMode>(DEFAULT_TABLE);
   const roster = ref<RosterRecognitionMode>(DEFAULT_ROSTER);
   const loaded = ref(false);
+  let pendingLoad: Promise<void> | null = null;
+  let pendingSave = Promise.resolve();
+  let saveSequence = 0;
 
-  async function load() {
-    if (loaded.value) return;
-    loaded.value = true;
-    try {
-      const cfg = await api.getOverlayConfig();
-      table.value = parseTable(cfg?.table);
-      roster.value = parseRoster(cfg?.roster);
-    } catch {
-      // missing command / mock backend — keep the defaults
+  function load(): Promise<void> {
+    if (!pendingLoad) {
+      pendingLoad = (async () => {
+        try {
+          const cfg = await api.getOverlayConfig();
+          table.value = parseTable(cfg?.table);
+          roster.value = parseRoster(cfg?.roster);
+        } catch {
+          // missing command / mock backend — keep the defaults
+        } finally {
+          loaded.value = true;
+        }
+      })();
     }
+    return pendingLoad;
   }
 
   /** Persist through the typed command; the shell sanitizes and writes the
-   *  TOML file, and the returned values are what actually landed. */
-  async function persist() {
-    try {
-      const saved = await api.setOverlayConfig(table.value, roster.value);
-      table.value = parseTable(saved?.table);
-      roster.value = parseRoster(saved?.roster);
-    } catch {
-      // best-effort persistence; the in-memory flag still applies
-    }
+   *  TOML file. Captured writes stay ordered, and an older reply cannot
+   *  roll back a choice the user made while that write was pending. */
+  function persist(): Promise<void> {
+    const sequence = ++saveSequence;
+    const snapshot = { table: table.value, roster: roster.value };
+    pendingSave = pendingSave.then(async () => {
+      try {
+        const saved = await api.setOverlayConfig(snapshot.table, snapshot.roster);
+        if (sequence !== saveSequence) return;
+        table.value = parseTable(saved?.table);
+        roster.value = parseRoster(saved?.roster);
+      } catch {
+        // best-effort persistence; the in-memory flag still applies
+      }
+    });
+    return pendingSave;
   }
 
   async function setTable(v: TableAnchorMode) {
+    await load();
     table.value = v;
     await persist();
   }
 
   async function setRoster(v: RosterRecognitionMode) {
+    await load();
     roster.value = v;
     await persist();
   }

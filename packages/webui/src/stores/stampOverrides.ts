@@ -26,6 +26,7 @@ const STAMPS_CHANGED_EVENT = "wowsp://stamps-changed";
 const overrides = ref<Partial<Record<StampKind, string>>>({});
 
 let _convertFileSrc: ((path: string) => string) | false | null = null;
+let refreshSequence = 0;
 
 /** Asset-protocol URL for a stamp file (identity in non-Tauri contexts,
  *  where custom stamps don't exist anyway). */
@@ -45,6 +46,7 @@ async function toAssetUrl(path: string): Promise<string> {
 /** Re-read the stamps folder (boot + after every import/reset). */
 export async function refreshStampOverrides(): Promise<void> {
   if (!isTauri()) return;
+  const sequence = ++refreshSequence;
   try {
     const files = await api.stampList();
     const next: Partial<Record<StampKind, string>> = {};
@@ -53,7 +55,8 @@ export async function refreshStampOverrides(): Promise<void> {
         next[f.kind as StampKind] = await toAssetUrl(f.path);
       }),
     );
-    overrides.value = next;
+    // Imports/resets may finish while an earlier folder listing is pending.
+    if (sequence === refreshSequence) overrides.value = next;
   } catch {
     // Shell without the stamp commands — keep the defaults showing.
   }

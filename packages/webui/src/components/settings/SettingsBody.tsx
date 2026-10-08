@@ -313,8 +313,12 @@ export default defineComponent({
      *  resurrect them. */
     async function removeInstall(i: GameInstall) {
       installArmed.value = null;
-      await configStore.removeInstall(i.path);
-      toast.info(t("common.gamePath.removed"));
+      try {
+        await configStore.removeInstall(i.path);
+        toast.info(t("common.gamePath.removed"));
+      } catch (e) {
+        toast.error((e as Error).message || String(e));
+      }
     }
 
     /** Follow a client switch to that realm's preferred account. */
@@ -328,9 +332,13 @@ export default defineComponent({
 
     async function activateInstall(i: GameInstall) {
       if (sameGamePath(i.path, activePath.value)) return;
-      await configStore.selectInstall(i.path);
-      await followRealm(i.realm);
-      toast.info(t("common.gamePath.applied"));
+      try {
+        await configStore.selectInstall(i.path);
+        await followRealm(i.realm);
+        toast.info(t("common.gamePath.applied"));
+      } catch (e) {
+        toast.error((e as Error).message || String(e));
+      }
     }
 
     /** Native folder picker → validate → pin as the active install.
@@ -343,8 +351,9 @@ export default defineComponent({
         // Null = the user closed the native dialog — not an error.
         const picked = await api.pickGameFolder();
         if (!picked) return false;
-        await configStore.setManualPath(picked.path);
-        await followRealm(picked.realm);
+        const resolved = await configStore.setManualPath(picked.path);
+        if (!resolved) return false;
+        await followRealm(resolved.realm);
         toast.info(t("common.gamePath.applied"));
         return true;
       } catch (e) {
@@ -365,8 +374,9 @@ export default defineComponent({
       if (!i) return;
       pickingPath.value = true;
       try {
-        await configStore.setManualPath(i.path);
-        await followRealm(i.realm);
+        const resolved = await configStore.setManualPath(i.path);
+        if (!resolved) return;
+        await followRealm(resolved.realm);
         toast.info(t("common.gamePath.applied"));
       } catch (e) {
         toast.error(`${t("common.gamePath.invalid")}\n${(e as Error).message || e}`);

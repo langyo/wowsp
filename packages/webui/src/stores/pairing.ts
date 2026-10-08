@@ -155,25 +155,55 @@ export const usePairingStore = defineStore("pairing", () => {
   // ── paired hosts (mobile side, persisted) ─────────────────────────────
   const hosts = ref<PairedHost[]>([]);
   const loaded = ref(false);
+  let pendingLoad: Promise<void> | null = null;
+  let pendingSave: Promise<void> = Promise.resolve();
+  let hasLoadedFile = false;
+  type HostEdit = (current: PairedHost[]) => PairedHost[];
+  let unsavedEdits: HostEdit[] = [];
 
-  async function load() {
-    try {
-      const file = parsePairingFile(await api.appdataRead(PAIRING_HOSTS_FILE));
-      hosts.value = file.hosts;
-    } catch {
-      hosts.value = [];
-    } finally {
-      loaded.value = true;
-    }
+  function editHosts(edit: HostEdit): void {
+    hosts.value = edit(hosts.value);
+    unsavedEdits.push(edit);
   }
 
-  async function persist() {
-    try {
-      const file: PairingFile = { hosts: hosts.value };
-      await api.appdataWrite(PAIRING_HOSTS_FILE, JSON.stringify(file));
-    } catch {
-      // best-effort — don't fail the action if persistence is unavailable
-    }
+  function load(): Promise<void> {
+    if (pendingLoad) return pendingLoad;
+    pendingLoad = (async () => {
+      // A reload must observe every save already requested by this store.
+      await pendingSave;
+      try {
+        const file = parsePairingFile(await api.appdataRead(PAIRING_HOSTS_FILE));
+        hosts.value = unsavedEdits.reduce((current, edit) => edit(current), file.hosts);
+        hasLoadedFile = true;
+        // Replay edits made while the file was unreadable, or whose last
+        // save failed, over the recovered list before replacing the file.
+        if (unsavedEdits.length) await persist();
+      } catch {
+        // Keep the known hosts on a transient read failure.
+      } finally {
+        loaded.value = true;
+        pendingLoad = null;
+      }
+    })();
+    return pendingLoad;
+  }
+
+  function persist(): Promise<void> {
+    // A failed first read is not an empty file. Keep local edits visible,
+    // but do not erase computers we have not been able to read yet.
+    if (!hasLoadedFile) return Promise.resolve();
+    const file: PairingFile = { hosts: hosts.value };
+    const snapshot = JSON.stringify(file);
+    const savedEdits = new Set(unsavedEdits);
+    // A slow lastSeen/upsert write must not restore a subsequently forgotten
+    // host. Capture each snapshot now, then save in mutation order.
+    pendingSave = pendingSave
+      .then(async () => {
+        await api.appdataWrite(PAIRING_HOSTS_FILE, snapshot);
+        unsavedEdits = unsavedEdits.filter((edit) => !savedEdits.has(edit));
+      })
+      .catch(() => { /* best-effort; a failed save must not block later ones */ });
+    return pendingSave;
   }
 
   /** PIN exchange → upsert the host entry with the minted token. Throws the
@@ -184,6 +214,7 @@ export const usePairingStore = defineStore("pairing", () => {
     label?: string,
   ): Promise<PairedHost> {
     const { token, room } = await api.pairingPair(target, pin);
+    if (!hasLoadedFile || pendingLoad) await load();
     const entry: PairedHost =
       target.kind === "lan"
         ? {
@@ -205,33 +236,45 @@ export const usePairingStore = defineStore("pairing", () => {
             room: room ?? undefined,
           };
     const key = entryKey(entry);
-    const idx = hosts.value.findIndex((h) => entryKey(h) === key);
-    if (idx >= 0) hosts.value.splice(idx, 1, entry);
-    else hosts.value.push(entry);
+    editHosts((current) => {
+      const idx = current.findIndex((h) => entryKey(h) === key);
+      const next = [...current];
+      if (idx >= 0) next.splice(idx, 1, entry);
+      else next.push(entry);
+      return next;
+    });
     await persist();
     return entry;
   }
 
-  function removeHost(host: string, port: number) {
+  async function removeHost(host: string, port: number) {
     const key = hostKey(host, port);
-    hosts.value = hosts.value.filter((h) => entryKey(h) !== key && hostKey(h.host, h.port) !== key);
-    void persist();
+    if (!hasLoadedFile || pendingLoad) await load();
+    editHosts((current) => current.filter((h) => entryKey(h) !== key && hostKey(h.host, h.port) !== key));
+    await persist();
   }
 
   /** Forget one entry by identity (mode-aware — internet entries all share
    *  the empty host:port, so removeHost cannot express them). */
-  function removeEntry(entry: PairedHost) {
+  async function removeEntry(entry: PairedHost) {
     const key = entryKey(entry);
-    hosts.value = hosts.value.filter((h) => entryKey(h) !== key);
-    void persist();
+    if (!hasLoadedFile || pendingLoad) await load();
+    editHosts((current) => current.filter((h) => entryKey(h) !== key));
+    await persist();
   }
 
   /** Stamp lastSeen after a successful listing/pull (no-op on an unknown host). */
   async function touchSeen(entry: PairedHost) {
     const key = entryKey(entry);
+    if (!hasLoadedFile || pendingLoad) await load();
     const hit = hosts.value.find((h) => entryKey(h) === key);
-    if (!hit) return;
-    hit.lastSeen = Date.now();
+    if (!hit && hasLoadedFile) return;
+    const seen = Date.now();
+    editHosts((current) => {
+      const entry = current.find((h) => entryKey(h) === key);
+      if (entry) entry.lastSeen = seen;
+      return current;
+    });
     await persist();
   }
 
