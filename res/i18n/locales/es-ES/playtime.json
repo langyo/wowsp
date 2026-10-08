@@ -37,8 +37,10 @@
   "sourcesAdd": "Añadir carpeta",
   "sourcesRemove": "Quitar {path}",
   "sourcesHint": "Las carpetas añadidas aquí se analizan junto con la carpeta replays de cada cliente; las batallas ya contadas se mantienen tras quitar una carpeta.",
+  "rescanLoading": "Escaneando replays...",
   "rebuild": "Reconstruir el registro de batallas",
   "rebuildConfirm": "Se borrará la caché de análisis y se volverá a contar a partir de los replays presentes en el disco. Se perderá el historial de los replays ya eliminados. ¿Continuar?",
+  "rebuildLoading": "Reconstruyendo el registro de batallas...",
   "breakdown": {
     "byType": "Por tipo de barco",
     "byNation": "Por nación",

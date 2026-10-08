@@ -37,8 +37,10 @@
   "sourcesAdd": "Add folder",
   "sourcesRemove": "Remove {path}",
   "sourcesHint": "Folders pinned here are scanned alongside each client's replays folder; battles already counted stay after a folder is removed.",
+  "rescanLoading": "Scanning replays...",
   "rebuild": "Rebuild battle ledger",
   "rebuildConfirm": "This clears the scan cache and recounts from the replays currently on disk. The history of already-deleted replays will be lost. Continue?",
+  "rebuildLoading": "Rebuilding the battle ledger...",
   "breakdown": {
     "byType": "By ship type",
     "byNation": "By nation",

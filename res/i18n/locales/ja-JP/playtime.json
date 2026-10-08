@@ -37,8 +37,10 @@
   "sourcesAdd": "フォルダーを追加",
   "sourcesRemove": "{path} を削除",
   "sourcesHint": "ここに追加したフォルダーは、各クライアントの replays フォルダーと一緒にスキャンされます。一度集計された戦闘は、フォルダーを削除しても記録に残ります。",
+  "rescanLoading": "リプレイをスキャン中...",
   "rebuild": "戦闘記録を再構築",
   "rebuildConfirm": "スキャンキャッシュを消去し、現在ディスク上にあるリプレイから再集計します。削除済みリプレイの履歴は失われます。続行しますか？",
+  "rebuildLoading": "戦闘記録を再構築中...",
   "breakdown": {
     "byType": "艦種別",
     "byNation": "国別",

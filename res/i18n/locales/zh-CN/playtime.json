@@ -37,8 +37,10 @@
   "sourcesAdd": "添加目录",
   "sourcesRemove": "移除 {path}",
   "sourcesHint": "此处添加的目录会与各客户端的 replays 文件夹一起扫描；移除目录后，已统计的战斗仍会保留。",
+  "rescanLoading": "正在扫描录像...",
   "rebuild": "重建战斗统计",
   "rebuildConfirm": "将清空扫描缓存，并按当前磁盘上的录像重新统计。已删除录像的历史记录会一并丢失，确定继续吗？",
+  "rebuildLoading": "重建战斗统计中...",
   "breakdown": {
     "byType": "按舰种",
     "byNation": "按阵营",

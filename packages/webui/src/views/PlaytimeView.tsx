@@ -42,6 +42,7 @@ import {
 } from "@/components/playtime/battleBreakdown";
 import { api, type PlaytimeOverview } from "@/api";
 import { usePlaytimeStore } from "@/stores/playtime";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { shipTypeChartColor, shipTypeCssColor } from "@/theme/shipTypeColors";
 import { useConfigStore } from "@/stores/config";
 import { clientMenuOptions } from "@/utils/installLabel";
@@ -105,6 +106,7 @@ export default defineComponent({
   setup() {
     const store = usePlaytimeStore();
     const config = useConfigStore();
+    const loadingTasks = useLoadingTasksStore();
     const { uiLocale } = useLanguage();
     const { isMobile } = useBreakpoint();
     const range = ref<TrendRange>("15d");
@@ -259,9 +261,19 @@ export default defineComponent({
       addingSource.value = true;
       try {
         const picked = await api.pickReplayDir();
+        // The chip starts AFTER the pick: the native folder dialog is not
+        // owner-modal to the webui window (rfd gets no parent handle), so
+        // the user can browse for a long while — showing a load chip for
+        // the picker itself (and flashing it on a cancel) would misstate
+        // where the app is busy.
         if (picked) {
-          await config.addReplayDir(picked);
-          await store.refreshAll();
+          const taskId = loadingTasks.begin(t("playtime.rescanLoading"));
+          try {
+            await config.addReplayDir(picked);
+            await store.refreshAll();
+          } finally {
+            loadingTasks.end(taskId);
+          }
         }
       } catch (e) {
         toastError(e);
@@ -271,26 +283,33 @@ export default defineComponent({
     }
 
     async function onRemoveSource(path: string) {
+      const taskId = loadingTasks.begin(t("playtime.rescanLoading"));
       try {
         await config.removeReplayDir(path);
         await store.refreshAll();
       } catch (e) {
         toastError(e);
+      } finally {
+        loadingTasks.end(taskId);
       }
     }
 
     /** Rebuild the ledger from disk (confirm-dialog armed): drops the
      *  backend's parse + history cache, so battles whose replays are
      *  already gone leave with it. The full re-parse can run for seconds —
-     *  the button stays disabled (and spins) until the fresh rows land. */
+     *  the button stays disabled (and spins) locally, and the title-bar
+     *  chip shows the persistent "rebuilding" progress while it runs (the
+     *  sources popover may be closed by the time it settles). */
     async function onRebuild() {
       rebuildArmed.value = false;
       rebuilding.value = true;
+      const taskId = loadingTasks.begin(t("playtime.rebuildLoading"));
       try {
         await store.resetBattles();
       } catch (e) {
         toastError(e);
       } finally {
+        loadingTasks.end(taskId);
         rebuilding.value = false;
       }
     }

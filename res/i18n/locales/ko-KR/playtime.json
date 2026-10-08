@@ -37,8 +37,10 @@
   "sourcesAdd": "폴더 추가",
   "sourcesRemove": "{path} 제거",
   "sourcesHint": "여기에 추가한 폴더는 각 클라이언트의 replays 폴더와 함께 스캔됩니다. 한 번 집계된 전투는 폴더를 제거해도 기록에 남습니다.",
+  "rescanLoading": "리플레이 스캔 중...",
   "rebuild": "전투 기록 재구성",
   "rebuildConfirm": "스캔 캐시를 지우고 현재 디스크에 있는 리플레이 기준으로 다시 집계합니다. 삭제된 리플레이의 기록은 사라집니다. 계속하시겠습니까?",
+  "rebuildLoading": "전투 기록 재구성 중...",
   "breakdown": {
     "byType": "함종별",
     "byNation": "국가별",

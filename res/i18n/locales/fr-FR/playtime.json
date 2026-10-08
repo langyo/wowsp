@@ -37,8 +37,10 @@
   "sourcesAdd": "Ajouter un dossier",
   "sourcesRemove": "Retirer {path}",
   "sourcesHint": "Les dossiers ajoutés ici sont analysés avec le dossier replays de chaque client ; les batailles déjà comptées restent après le retrait d'un dossier.",
+  "rescanLoading": "Analyse des replays...",
   "rebuild": "Reconstruire le journal des batailles",
   "rebuildConfirm": "Le cache d'analyse sera effacé et les statistiques recalculées à partir des replays présents sur le disque. L'historique des replays déjà supprimés sera perdu. Continuer ?",
+  "rebuildLoading": "Reconstruction du journal des batailles...",
   "breakdown": {
     "byType": "Par type de navire",
     "byNation": "Par nation",

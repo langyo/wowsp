@@ -37,8 +37,10 @@
   "sourcesAdd": "新增資料夾",
   "sourcesRemove": "移除 {path}",
   "sourcesHint": "於此新增的資料夾會與各用戶端的 replays 資料夾一起掃描；移除資料夾後，已統計的戰鬥仍會保留。",
+  "rescanLoading": "正在掃描錄影...",
   "rebuild": "重建戰鬥統計",
   "rebuildConfirm": "將清空掃描快取，並依目前磁碟上的錄影重新統計。已刪除錄影的歷史記錄會一併遺失，確定要繼續嗎？",
+  "rebuildLoading": "重建戰鬥統計中...",
   "breakdown": {
     "byType": "按艦種",
     "byNation": "按陣營",
