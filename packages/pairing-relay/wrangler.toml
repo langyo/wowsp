@@ -86,7 +86,7 @@ TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 # combobox for browser visitors (desktop links carry their own build).
 # scripts/check_versions.py enforces this stays equal to the other seven
 # version fields.
-FEEDBACK_LATEST_VERSION = "0.5.4"
+FEEDBACK_LATEST_VERSION = "0.5.5"
 # ── QQ 通知机器人（可选，缺失即整链路静默停用）───────────────────────
 # QQBOT_APPID / QQBOT_SECRET — 开放平台凭证（wrangler secret put）。
 # 回调验签的 Ed25519 密钥按官方方案直接从 Secret 派生（wiki

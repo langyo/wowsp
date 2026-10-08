@@ -223,11 +223,11 @@ export default defineComponent({
     const shot = useShareShot(buildShotModel, () => root.value);
 
     // Overlay detection state, streamed by the Rust Tab watcher as
-    // transition-only `wowsp://overlay-status` events. Rendered as a badge
-    // in the panel's head (right corner) next to the manual-locate button.
-    // `null` = nothing received yet → show no badge (the button itself is
-    // permanent — idle stretches between battles must not strand the
-    // manual-locate entry point).
+    // transition-only `wowsp://overlay-status` events. Rendered by the
+    // manual-locate button itself in the panel's head (right corner) — the
+    // locate state IS the button's voice. `null` = nothing received yet →
+    // the button reads plain "manual locate" (it is permanent — idle
+    // stretches between battles must not strand the entry point).
     const overlayStatus = ref<OverlayStatus | null>(null);
     let unlistenStatus: (() => void) | null = null;
     // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
@@ -376,14 +376,13 @@ export default defineComponent({
       }
     });
 
-    const statusBadge = computed(() => {
+    const locateState = computed(() => {
       const s = overlayStatus.value;
       if (!s) return null;
       // A manual anchor stays ARMED across Idle/Searching (Rust marks every
-      // automatic report manual:true while it is stored): the badge must
+      // automatic report manual:true while it is stored): the button must
       // survive those transitions too, since the anchor re-anchors on the
-      // same battle's next Tab hold. (The clear button itself is permanent
-      // regardless — see the head markup below.)
+      // same battle's next Tab hold.
       if (s.manual) {
         return { cls: "manual", spin: false, text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
       }
@@ -400,8 +399,8 @@ export default defineComponent({
       return { cls: "searching", spin: true, text: t("replay.live.searching") };
     });
 
-    /** A manual anchor is in force: the badge turns green and the button
-     *  flips from "manual locate" to "clear locate". */
+    /** A manual anchor is in force: the button turns green and its click
+     *  flips from opening the picker to clearing the anchor. */
     const manualActive = computed(() => overlayStatus.value?.manual === true);
 
     // ── Telemetry-source grade (the head's state pill) ───────────────────
@@ -1290,39 +1289,48 @@ export default defineComponent({
               )}
               {t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}`)}
             </span>
-            {statusBadge.value ? (
-              <span
-                class={[
-                  "live-battle__pill",
-                  `live-battle__pill--status-${statusBadge.value.cls}`,
-                ]}
-              >
-                {statusBadge.value.spin && <HkSpinner size="xs" tone="current" />}
-                {statusBadge.value.text}
-              </span>
-            ) : null}
-            {/* The manual-locate entry point is PERMANENT: idle stretches
-                between battles (and battles where Tab was never held) leave
-                no overlay status to badge, and stranding the region-picker
-                entry on those states is exactly what made it look flaky. */}
+            {/* One widget, four voices: idle reads as the manual-locate
+                entry, searching/detected carry the automatic Tab-pass state,
+                and a live manual anchor reads the anchored state (its click
+                then clears it). This button absorbed the separate read-only
+                status pill that used to sit beside it — two widgets voicing
+                one locate state pushed the head onto a second line. The
+                entry itself stays PERMANENT: idle stretches between battles
+                (and battles where Tab was never held) leave no overlay
+                status at all, and stranding the region-picker entry on
+                those states is exactly what made it look flaky. */}
             <button
               class={[
                 "live-battle__manual-btn",
                 {
                   "live-battle__manual-btn--active": manualActive.value,
+                  "live-battle__manual-btn--detected":
+                    locateState.value?.cls === "detected",
+                  "live-battle__manual-btn--searching":
+                    locateState.value?.cls === "searching",
                   "live-battle__manual-btn--shake": manualShake.value,
                 },
               ]}
               type="button"
               disabled={manualBusy.value}
+              data-hint={
+                manualActive.value ? t("replay.live.manualClearHint") : undefined
+              }
               onClick={() => void onManualButton()}
             >
               {/* Icon = the action a click performs, matching the
                   nickname/density toggles: crosshair while idle, X to
-                  clear an anchor that is live. */}
-              {manualActive.value ? <X size={13} /> : <LocateFixed size={13} />}
-              {manualActive.value
-                ? t("replay.live.manualClear")
+                  clear an anchor that is live; the spinner only while the
+                  automatic Tab pass is still settling. */}
+              {locateState.value?.spin ? (
+                <HkSpinner size="xs" tone="current" />
+              ) : manualActive.value ? (
+                <X size={13} />
+              ) : (
+                <LocateFixed size={13} />
+              )}
+              {locateState.value
+                ? locateState.value.text
                 : t("replay.live.manualLocate")}
             </button>
           </div>

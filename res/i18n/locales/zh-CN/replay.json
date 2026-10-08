@@ -217,7 +217,7 @@
     "refreshStatsHint": "清空缓存并从头重新请求全部名单战绩；已加载的数据在请求成功前保持显示",
     "statsSourceTitle": "战绩筛选",
     "manualLocate": "手动定位",
-    "manualClear": "清除定位",
+    "manualClearHint": "点击清除手动定位，恢复自动识别",
     "manualRows": "已手动定位 · {n} 行",
     "hideNicks": "隐藏昵称",
     "showNicks": "显示昵称",

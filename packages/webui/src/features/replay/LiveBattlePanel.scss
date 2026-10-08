@@ -43,7 +43,7 @@
   }
 
   /* One row, one alignment: every head item — title, status/mode pills,
-     clock, map label, share actions, badge, manual-locate — centers on the
+     clock, map label, share actions, locate button — centers on the
      same flex line. Text-baseline alignment looked right for plain text
      pills but sat crooked for icon/spinner-led ones (their baseline is the
      icon's bottom edge, not the text's), which is exactly how buttons in
@@ -118,29 +118,11 @@
      mode pills, clock): no auto margin, it just follows the row gap. Its
      compact pill voice is MapNameTag.scss's own base — no override needed. */
 
-  .live-battle__pill--status-detected {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    background: rgb(var(--color-success, 74 222 128) / 16%);
-    color: rgb(var(--color-success, 74 222 128));
-  }
-
-  .live-battle__pill--status-searching {
-    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
-    background: rgb(var(--color-warning, 251 191 36) / 16%);
-    color: rgb(var(--color-warning, 251 191 36));
-  }
-
-  /* Manual anchor in force — same green family as the detected badge. */
-  .live-battle__pill--status-manual {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    background: rgb(var(--color-success, 74 222 128) / 16%);
-    color: rgb(var(--color-success, 74 222 128));
-  }
-
   /* Head action pills (copy-shot / hide-nicknames / density / manual-locate)
      share one voice: a quiet neutral pill; the nicknames and density
-     toggles flip green while their mode is on. (The stats-source mode tag
-     keeps the same voice from its own sheet — LiveStatsModeChip.scss.) */
+     toggles flip green while their mode is on, and the locate button picks
+     up its own locate-state voices below. (The stats-source mode tag keeps
+     the same voice from its own sheet — LiveStatsModeChip.scss.) */
   &__shot-btn,
   &__mask-btn,
   &__density-btn,
@@ -173,7 +155,7 @@
   }
 
   /* Nicknames are masked: the toggle reads "show nicknames" in the same
-     success green as the manual-anchor button and the detected badge. */
+     success green as the locate button's located/anchored states. */
   &__mask-btn--on {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     color: rgb(var(--color-success, 74 222 128));
@@ -186,10 +168,21 @@
     color: rgb(var(--color-success, 74 222 128));
   }
 
-  /* A manual anchor is live: the button now reads "clear locate". */
-  &__manual-btn--active {
+  /* The locate button's state voices, inherited from the status pills this
+     button absorbed: an anchored or automatically located roster fills the
+     pill in the success green, a settling Tab pass in the warning amber —
+     the whole locate story now reads off one widget. */
+  &__manual-btn--active,
+  &__manual-btn--detected {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
+  }
+
+  &__manual-btn--searching {
+    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
+    background: rgb(var(--color-warning, 251 191 36) / 16%);
+    color: rgb(var(--color-warning, 251 191 36));
   }
 
   /* Backend refused the manual-locate request (no battle / no game window):

@@ -217,7 +217,7 @@
     "refreshStatsHint": "Borra la caché y vuelve a pedir todas las estadísticas; los datos cargados se mantienen hasta que la petición tenga éxito",
     "statsSourceTitle": "Filtro de estadísticas",
     "manualLocate": "Ubicación manual",
-    "manualClear": "Quitar ubicación manual",
+    "manualClearHint": "Haz clic para quitar la ubicación manual y volver a la detección automática",
     "manualRows": "Ubicado manualmente · {n} filas",
     "hideNicks": "Ocultar apodos",
     "showNicks": "Mostrar apodos",

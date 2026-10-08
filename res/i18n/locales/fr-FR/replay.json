@@ -217,7 +217,7 @@
     "refreshStatsHint": "Vide le cache et redemande toutes les statistiques ; les données chargées restent affichées jusqu'au succès",
     "statsSourceTitle": "Filtre de statistiques",
     "manualLocate": "Positionnement manuel",
-    "manualClear": "Effacer le positionnement",
+    "manualClearHint": "Cliquez pour effacer le positionnement manuel et revenir à la détection automatique",
     "manualRows": "Positionné manuellement · {n} lignes",
     "hideNicks": "Masquer les pseudos",
     "showNicks": "Afficher les pseudos",

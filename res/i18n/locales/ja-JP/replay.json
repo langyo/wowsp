@@ -217,7 +217,7 @@
     "refreshStatsHint": "キャッシュを破棄して全名簿の戦績を再取得します。取得が成功するまで既存のデータは保持されます",
     "statsSourceTitle": "戦績フィルター",
     "manualLocate": "手動で位置合わせ",
-    "manualClear": "配置を解除",
+    "manualClearHint": "クリックで手動配置を解除し、自動検出に戻します",
     "manualRows": "手動配置済み · {n} 行",
     "hideNicks": "ニックネームを隠す",
     "showNicks": "ニックネームを表示",

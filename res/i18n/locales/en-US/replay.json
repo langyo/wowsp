@@ -217,7 +217,7 @@
     "refreshStatsHint": "Clears the cache and re-requests every roster stat from scratch; loaded data stays on screen until the request succeeds",
     "statsSourceTitle": "Stats filter",
     "manualLocate": "Manual locate",
-    "manualClear": "Clear locate",
+    "manualClearHint": "Click to clear the manual anchor and return to automatic detection",
     "manualRows": "Manually located · {n} rows",
     "hideNicks": "Hide nicknames",
     "showNicks": "Show nicknames",

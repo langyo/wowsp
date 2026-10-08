@@ -217,7 +217,7 @@
     "refreshStatsHint": "캐시를 지우고 전체 명단 전적을 다시 요청합니다. 성공할 때까지 기존 데이터가 유지됩니다",
     "statsSourceTitle": "전적 필터",
     "manualLocate": "수동 위치 지정",
-    "manualClear": "위치 지정 해제",
+    "manualClearHint": "클릭하면 수동 위치 지정이 해제되고 자동 인식으로 돌아갑니다",
     "manualRows": "수동 위치 지정됨 · {n}행",
     "hideNicks": "닉네임 숨기기",
     "showNicks": "닉네임 표시",
