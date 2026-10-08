@@ -309,7 +309,9 @@ export function pruneModelDebris(
   const eps2 = contactEps * contactEps;
   const contactUf = new UnionFind(components.length);
   // Cell key = cx + cy*SPAN + cz*SPAN². A cell is `contactEps` wide, so a model
-  // spans at most 1/contactPct = 200 cells per axis — far below SPAN.
+  // spans at most 1/contactPct = 200 cells per axis — far below SPAN. The
+  // packing is injective only while contactPct stays above ~1/SPAN (1.2e-4);
+  // the default is forty times that.
   const SPAN = 8192;
   const cellKey = (gx: number, gy: number, gz: number) => gx + gy * SPAN + gz * SPAN * SPAN;
   const cellX = (px: number) => Math.floor((px - minX) / contactEps);
