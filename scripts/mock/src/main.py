@@ -1163,7 +1163,7 @@ async def cmd_set_network_config(payload: dict) -> dict:
 # --- Settings files the shell persists as TOML (in-memory mirrors) ----------
 
 _MOCK_OVERLAY_CONFIG = {"table": "detect", "roster": "ocr"}
-_MOCK_GAME_CONFIG = {"activePath": None}
+_MOCK_GAME_CONFIG = {"activePath": None, "replayDirs": []}
 
 
 @app.post("/api/get_overlay_config")
@@ -1186,6 +1186,30 @@ async def cmd_get_game_config() -> dict:
 @app.post("/api/set_game_config")
 async def cmd_set_game_config(payload: dict) -> dict:
     _MOCK_GAME_CONFIG["activePath"] = payload.get("activePath")
+    return {**_MOCK_GAME_CONFIG}
+
+
+@app.post("/api/pick_replay_dir")
+async def cmd_pick_replay_dir() -> None:
+    # No native folder dialog exists in the browser mock — answer
+    # "cancelled" (null), same contract as the shell's cancelled picker.
+    return None
+
+
+@app.post("/api/add_replay_dir")
+async def cmd_add_replay_dir(payload: dict) -> dict:
+    path = str(payload.get("path") or "").strip()
+    if path and path.lower() not in (d.lower() for d in _MOCK_GAME_CONFIG["replayDirs"]):
+        _MOCK_GAME_CONFIG["replayDirs"].append(path)
+    return {**_MOCK_GAME_CONFIG}
+
+
+@app.post("/api/remove_replay_dir")
+async def cmd_remove_replay_dir(payload: dict) -> dict:
+    path = str(payload.get("path") or "").strip().lower()
+    _MOCK_GAME_CONFIG["replayDirs"] = [
+        d for d in _MOCK_GAME_CONFIG["replayDirs"] if d.strip().lower() != path
+    ]
     return {**_MOCK_GAME_CONFIG}
 
 

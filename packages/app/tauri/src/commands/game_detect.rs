@@ -208,6 +208,33 @@ pub async fn pick_game_folder() -> Result<Option<GameInstall>, String> {
     }
 }
 
+/// Open a native folder picker for a user-pinned extra replay folder (the
+/// 游玩时间 view's 录像来源 manager). `Ok(None)` = the user cancelled (not
+/// an error). No game-install validation — any folder is pin-able; the
+/// overlap/existence validation happens in `game_config::add_replay_dir`.
+#[tauri::command]
+pub async fn pick_replay_dir() -> Result<Option<String>, String> {
+    // Mobile: no native folder picker — the managed replays dir is the
+    // only replay source there anyway.
+    #[cfg(mobile)]
+    {
+        return Err(crate::mobile_unsupported::PICKER.into());
+    }
+    // rfd pumps its own message loop — run it on a blocking thread, never
+    // the async runtime workers or the app's UI thread.
+    #[cfg(desktop)]
+    {
+        let picked = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Select the replay folder to scan")
+                .pick_folder()
+        })
+        .await
+        .map_err(|e| format!("文件夹选择器任务异常退出：{e}"))?;
+        Ok(picked.map(|p| p.to_string_lossy().into_owned()))
+    }
+}
+
 /// Pin a user-chosen path as the active install (no validation beyond the
 /// exe existing).
 #[tauri::command]

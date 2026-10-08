@@ -24,6 +24,9 @@ export const RPC = {
   // Lists replay-derived battles (one row per .wowsreplay, across every
   // detected install) for the 游玩时间 view's battle ledger.
   playtime_battles: "playtime_battles",
+  // Drop the battle ledger's disk cache and rescan from whatever is on
+  // disk right now (the replay-sources manager's rebuild action).
+  playtime_battles_reset: "playtime_battles_reset",
   // Rust session hub (commands/session.rs) + the tray panel actions.
   get_session_state: "get_session_state",
   sync_active_account: "sync_active_account",
@@ -31,6 +34,11 @@ export const RPC = {
   detect_game_install: "detect_game_install",
   set_game_path: "set_game_path",
   pick_game_folder: "pick_game_folder",
+  // Extra replay folders pinned by the 游玩时间 view's replay-sources
+  // manager (commands/game_config.rs) — scanned alongside each client's.
+  pick_replay_dir: "pick_replay_dir",
+  add_replay_dir: "add_replay_dir",
+  remove_replay_dir: "remove_replay_dir",
   ribbon_skin_dir: "ribbon_skin_dir",
   read_replay_header: "read_replay_header",
   read_replay_positions: "read_replay_positions",

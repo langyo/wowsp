@@ -761,13 +761,37 @@ fn battles_from_roots(
     battles
 }
 
+/// The blocking core both ledger commands share: load the cache, scan the
+/// roots, answer the rows (and write the cache back only when it changed).
+fn scan_battles() -> Result<PlaytimeBattles, String> {
+    let mut cache = load_battle_cache();
+    let roots = super::game_context::replay_roots();
+    // "Changed" = the cache serialization differs after the run — a
+    // fresh parse upserted (a new or edited replay). An unchanged tree
+    // writes nothing back; history entries never churn.
+    let before =
+        serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
+    let battles = battles_from_roots(&roots, &mut cache);
+    let after =
+        serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
+    if before != after {
+        // A failed cache write must not fail the ledger — the rows are
+        // already correct; only the next scan re-parses.
+        if let Err(e) = save_battle_cache(&cache) {
+            tracing::warn!(error = %e, "playtime battle cache persist failed");
+        }
+    }
+    Ok(PlaytimeBattles { battles })
+}
+
 /// The 游玩时间 view's battle ledger: one row per completed replay across
 /// every detected install's `replays/` folder (plus the resolved default
-/// dir when no install owns it), with every battle the ledger has EVER
-/// scanned kept in the answer — a replay file's later deletion (game
-/// cleanup, mod sweep, uninstalled client) never blanks its history row.
-/// Header parses are cached on disk (`playtime-battles-cache.json`, len +
-/// mtime keyed) so an unchanged tree costs a stat walk only.
+/// dir when no install owns it) and the user's pinned extra replay folders,
+/// with every battle the ledger has EVER scanned kept in the answer — a
+/// replay file's later deletion (game cleanup, mod sweep, uninstalled
+/// client) never blanks its history row. Header parses are cached on disk
+/// (`playtime-battles-cache.json`, len + mtime keyed) so an unchanged tree
+/// costs a stat walk only.
 ///
 /// Async command + [`tokio::task::spawn_blocking`]: the recursive walk +
 /// per-file header reads are blocking I/O that must never run on the UI
@@ -776,28 +800,27 @@ fn battles_from_roots(
 /// ledger's only root.
 #[tauri::command]
 pub async fn playtime_battles() -> Result<PlaytimeBattles, String> {
+    tokio::task::spawn_blocking(scan_battles)
+        .await
+        .map_err(|e| format!("playtime battles task failed: {e}"))?
+}
+
+/// Drop the ledger's disk cache and answer the rows rebuilt from whatever
+/// is on disk RIGHT NOW (the 录像来源 manager's 重建 action): every header
+/// re-parses once, and battles whose replay files are already gone leave
+/// the ledger together with the cache. A failed cache reset must not fail
+/// the command — the scan answers correct live rows either way; only the
+/// reset itself would retry next call.
+#[tauri::command]
+pub async fn playtime_battles_reset() -> Result<PlaytimeBattles, String> {
     tokio::task::spawn_blocking(|| {
-        let mut cache = load_battle_cache();
-        let roots = super::game_context::replay_roots();
-        // "Changed" = the cache serialization differs after the run — a
-        // fresh parse upserted (a new or edited replay). An unchanged tree
-        // writes nothing back; history entries never churn.
-        let before =
-            serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
-        let battles = battles_from_roots(&roots, &mut cache);
-        let after =
-            serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
-        if before != after {
-            // A failed cache write must not fail the ledger — the rows are
-            // already correct; only the next scan re-parses.
-            if let Err(e) = save_battle_cache(&cache) {
-                tracing::warn!(error = %e, "playtime battle cache persist failed");
-            }
+        if let Err(e) = save_battle_cache(&BattleCache::default()) {
+            tracing::warn!(error = %e, "playtime battle cache reset failed");
         }
-        Ok(PlaytimeBattles { battles })
+        scan_battles()
     })
     .await
-    .map_err(|e| format!("playtime battles task failed: {e}"))?
+    .map_err(|e| format!("playtime battles reset task failed: {e}"))?
 }
 
 // ── tests ──────────────────────────────────────────────────────────────────

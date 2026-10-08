@@ -451,6 +451,7 @@ pub fn run() {
             // the battle ledger scans the managed replays dir only.
             commands::playtime::playtime_overview,
             commands::playtime::playtime_battles,
+            commands::playtime::playtime_battles_reset,
             // The tray panel's action buttons (desktop only — the panel
             // window itself is tray-bound).
             #[cfg(desktop)]
@@ -458,6 +459,7 @@ pub fn run() {
             commands::game_detect::detect_game_install,
             commands::game_detect::set_game_path,
             commands::game_detect::pick_game_folder,
+            commands::game_detect::pick_replay_dir,
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
@@ -499,6 +501,8 @@ pub fn run() {
             commands::ingame_bridge::ingame_bridge_stop,
             commands::game_config::get_game_config,
             commands::game_config::set_game_config,
+            commands::game_config::add_replay_dir,
+            commands::game_config::remove_replay_dir,
             commands::open_external::open_external,
             commands::network::set_network_config,
             // Mobile replay acquisition + desktop pairing (all targets — the

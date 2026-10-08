@@ -455,17 +455,21 @@ pub(crate) fn replay_roots_overlap(a: &Path, b: &Path) -> bool {
 
 /// Every replay root the app scans as a whole: each detected install's
 /// `replays/` folder (owner = that install), plus the resolved default
-/// replay dir when it is not already covered by an install root. That extra
-/// root belongs to a KNOWN-but-UNSCANNED install — a manual/portable game
-/// folder the webui lets the user pin, or (only when no usable persisted
-/// pick exists, since the extra root resolves the ACTIVE install first) a
-/// raw running client — and is tagged as such, so its rows carry the
-/// identity the client menus and filters key on instead of falling into the
-/// anonymous bucket. Ownerless roots stay ownerless: the mobile managed dir
-/// always, and an env pin (`WOWSP_REPLAY_DIR`) unless it happens to be a
-/// candidate install's own `replays/` folder. On mobile the install scan
-/// finds nothing (no registry / Steam libraries to walk; at most an
-/// env-pinned path), so the managed dir is the only root.
+/// replay dir when it is not already covered by an install root, plus the
+/// user's pinned extra replay folders (the 游玩时间 view's 录像来源
+/// manager) as ownerless roots. That extra default root belongs to a
+/// KNOWN-but-UNSCANNED install — a manual/portable game folder the webui
+/// lets the user pin, or (only when no usable persisted pick exists, since
+/// the extra root resolves the ACTIVE install first) a raw running client
+/// — and is tagged as such, so its rows carry the identity the client
+/// menus and filters key on instead of falling into the anonymous bucket.
+/// Ownerless roots stay ownerless: the mobile managed dir always, an env
+/// pin (`WOWSP_REPLAY_DIR`) unless it happens to be a candidate install's
+/// own `replays/` folder, and every pinned folder (its rows carry the
+/// folder path itself as their install identity, so the playtime scope
+/// menu can key on it). On mobile the install scan finds nothing (no
+/// registry / Steam libraries to walk; at most an env-pinned path), so the
+/// managed dir is the only root.
 ///
 /// One implementation for both multi-client consumers — the playtime battle
 /// ledger (`playtime_battles`) and the replay rail's all-clients scan
@@ -488,7 +492,35 @@ pub(crate) fn replay_roots() -> Vec<(PathBuf, Option<GameInstall>)> {
             roots.push((extra, owner));
         }
     }
+    merge_pinned_replay_dirs(&mut roots, persisted_replay_dirs());
     roots
+}
+
+/// Append the user's pinned replay folders to the root list as OWNERLESS
+/// roots, with the same first-wins overlap rule as the install loop above.
+/// Add-time validation (`game_config::add_replay_dir`) already rejects
+/// overlaps; this dedup is the belt to that braces — a folder pinned before
+/// a client that now covers it appeared still scans once. A pure core so
+/// the merge itself is unit-testable without a real data dir.
+fn merge_pinned_replay_dirs(roots: &mut Vec<(PathBuf, Option<GameInstall>)>, pinned: Vec<PathBuf>) {
+    for dir in pinned {
+        if !roots.iter().any(|(r, _)| replay_roots_overlap(r, &dir)) {
+            roots.push((dir, None));
+        }
+    }
+}
+
+/// The user's pinned extra replay folders (`game-config.toml`, set through
+/// the 游玩时间 view's 录像来源 manager), as paths. A data dir that cannot
+/// be resolved answers empty — pinning rides alongside detection, never
+/// fails it.
+fn persisted_replay_dirs() -> Vec<PathBuf> {
+    crate::paths::data_dir()
+        .map(|dir| super::game_config::persisted_replay_dirs(&dir))
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// The install a default-resolved replay root belongs to when that install
@@ -612,6 +644,39 @@ mod tests {
             replays,
             Path::new(r"C:\Games\World of Warships 2\replays")
         ));
+    }
+
+    /// The pinned-folder merge (`merge_pinned_replay_dirs`): a pinned folder
+    /// joins as an ownerless root unless it overlaps a root already in the
+    /// list (first wins, same rule as the install loop). `replay_roots`
+    /// itself reads the real data dir, so this drives the extracted pure
+    /// core it delegates to.
+    #[test]
+    fn pinned_replay_dirs_merge_ownerless_and_overlap_deduped() {
+        let mut roots: Vec<(PathBuf, Option<GameInstall>)> = vec![(
+            PathBuf::from(r"C:\Games\World of Warships\replays"),
+            Some(GameInstall {
+                kind: GameInstallKind::Steam,
+                path: r"C:\Games\World of Warships".into(),
+                realm: Some("eu".into()),
+            }),
+        )];
+        merge_pinned_replay_dirs(
+            &mut roots,
+            vec![
+                // A disjoint archive folder joins, ownerless.
+                PathBuf::from(r"D:\wows-replay-archive"),
+                // The install's own replays folder in another spelling, a
+                // parent of it, and the just-added archive again — all
+                // overlap something and must not join.
+                PathBuf::from(r"c:/games/world of warships\replays"),
+                PathBuf::from(r"C:\Games"),
+                PathBuf::from(r"d:\WOWS-Replay-Archive"),
+            ],
+        );
+        assert_eq!(roots.len(), 2, "only the disjoint folder joined");
+        assert!(roots[1].1.is_none(), "the pinned root is ownerless");
+        assert_eq!(roots[1].0, PathBuf::from(r"D:\wows-replay-archive"));
     }
 
     /// A replay root the auto-scan never reported — the user's manual pin

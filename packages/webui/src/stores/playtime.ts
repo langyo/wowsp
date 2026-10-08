@@ -67,6 +67,33 @@ export const usePlaytimeStore = defineStore("playtime", () => {
     }
   }
 
+  const refreshing = ref(false);
+
+  /** Manual "refresh now" (the toolbar's refresh button): re-pull the
+   *  overview AND the battles unconditionally. The poll's activity-key
+   *  gate never re-pulls battles while the game is idle, so replay folders
+   *  that changed on disk outside a session (a freshly pinned source,
+   *  files copied in by hand) otherwise wait for the next launch. */
+  async function refreshAll() {
+    refreshing.value = true;
+    try {
+      await fetch();
+      if (await fetchBattles()) {
+        battlesKey = battlesActivityKey(overview.value);
+      }
+    } finally {
+      refreshing.value = false;
+    }
+  }
+
+  /** Rebuild the ledger from disk (the 录像来源 manager's 重建 action):
+   *  the backend drops its parse + history cache and answers rows built
+   *  from the replays currently present. */
+  async function resetBattles() {
+    battles.value = await api.playtimeBattlesReset();
+    battlesKey = battlesActivityKey(overview.value);
+  }
+
   /** Start fetching + polling (called on view mount). */
   function start() {
     void fetch();
@@ -89,5 +116,16 @@ export const usePlaytimeStore = defineStore("playtime", () => {
     }
   }
 
-  return { overview, battles, loaded, fetch, fetchBattles, start, stop };
+  return {
+    overview,
+    battles,
+    loaded,
+    refreshing,
+    fetch,
+    fetchBattles,
+    refreshAll,
+    resetBattles,
+    start,
+    stop,
+  };
 });

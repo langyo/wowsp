@@ -1781,9 +1781,27 @@ export const api = {
     transport.invoke<boolean>(RPC.app_migration_completed, { id }),
   /** Remembered game-install path — sanitized + persisted as TOML by the
    *  shell (see commands/game_config.rs). */
-  getGameConfig: () => transport.invoke<{ activePath: string | null }>(RPC.get_game_config),
+  getGameConfig: () =>
+    transport.invoke<{ activePath: string | null; replayDirs: string[] }>(RPC.get_game_config),
   setGameConfig: (activePath: string | null) =>
-    transport.invoke<{ activePath: string | null }>(RPC.set_game_config, { activePath }),
+    transport.invoke<{ activePath: string | null; replayDirs: string[] }>(RPC.set_game_config, {
+      activePath,
+    }),
+  /** Pin an extra replay folder into the scan (游玩时间 view's replay
+   *  sources). Throws when the folder overlaps what the scan already
+   *  covers — the caller surfaces the message. */
+  addReplayDir: (path: string) =>
+    transport.invoke<{ activePath: string | null; replayDirs: string[] }>(RPC.add_replay_dir, {
+      path,
+    }),
+  /** Unpin an extra replay folder; its already-counted battles stay. */
+  removeReplayDir: (path: string) =>
+    transport.invoke<{ activePath: string | null; replayDirs: string[] }>(RPC.remove_replay_dir, {
+      path,
+    }),
+  /** Native folder picker for pinning an extra replay folder; null = the
+   *  user cancelled the dialog. */
+  pickReplayDir: () => transport.invoke<string | null>(RPC.pick_replay_dir),
   isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
   getGameProcess: (installs: GameInstall[]) =>
     transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
@@ -1797,6 +1815,11 @@ export const api = {
    *  install's replays folder behind a cache, so this is cheap to poll. */
   playtimeBattles: () =>
     transport.invoke<PlaytimeBattles>(RPC.playtime_battles),
+  /** Drop the battle ledger's disk cache and rescan from disk (the replay
+   *  sources manager's rebuild action) — history of already-deleted
+   *  replays leaves with the cache. */
+  playtimeBattlesReset: () =>
+    transport.invoke<PlaytimeBattles>(RPC.playtime_battles_reset),
   /** Rust session hub snapshot (commands/session.rs) — the running process
    *  plus the resolved "who is playing" identity. Live updates arrive via
    *  listenSessionChanged; this is the boot/fetch side. */

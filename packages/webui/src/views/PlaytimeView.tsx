@@ -7,8 +7,16 @@ import {
   ref,
   watch,
 } from "vue";
-import { HkPopover, HkTabs, useBreakpoint } from "@celestia-island/hikari";
-import { Check, ChevronDown } from "@lucide/vue";
+import {
+  HkButton,
+  HkConfirmDialog,
+  HkIconButton,
+  HkPopover,
+  HkTabs,
+  useBreakpoint,
+  useToast,
+} from "@celestia-island/hikari";
+import { Check, ChevronDown, FolderOpen, FolderPlus, RefreshCw, X } from "@lucide/vue";
 
 import PlaytimeBreakdownPie from "@/components/playtime/PlaytimeBreakdownPie";
 import PlaytimeTrendChart from "@/components/playtime/PlaytimeTrendChart";
@@ -32,7 +40,7 @@ import {
   SCOPE_ALL,
   type BattleScope,
 } from "@/components/playtime/battleBreakdown";
-import type { PlaytimeOverview } from "@/api";
+import { api, type PlaytimeOverview } from "@/api";
 import { usePlaytimeStore } from "@/stores/playtime";
 import { shipTypeChartColor, shipTypeCssColor } from "@/theme/shipTypeColors";
 import { useConfigStore } from "@/stores/config";
@@ -191,7 +199,6 @@ export default defineComponent({
 
     // ── Scope menu (battle-derived content only — see module docs) ─────
     const scopeOpen = ref(false);
-    const scopeRoot = ref<HTMLElement | null>(null);
     const scopeBtn = ref<HTMLButtonElement | null>(null);
     const scopePanel = ref<HTMLElement | null>(null);
 
@@ -199,50 +206,147 @@ export default defineComponent({
       scopeOpen.value = false;
     }
 
-    function onDocPointerDown(e: PointerEvent) {
-      const target = e.target as Node;
-      if (scopeRoot.value?.contains(target)) return;
-      if (scopePanel.value?.contains(target)) return;
-      closeScope();
+    // ── Replay-sources manager (录像来源) ───────────────────────────────
+    // Extra replay folders the user pins into the scan; persisted by the
+    // typed backend commands and merged into the very same roots the
+    // clients' own replays folders come from.
+    const sourcesOpen = ref(false);
+    const sourcesBtn = ref<HTMLButtonElement | null>(null);
+    const sourcesPanel = ref<HTMLElement | null>(null);
+    const addingSource = ref(false);
+    const rebuilding = ref(false);
+    const rebuildArmed = ref(false);
+    const toast = useToast();
+
+    function closeSources() {
+      sourcesOpen.value = false;
     }
 
-    // The outside-close listener lives exactly while the menu is open
+    function toastError(e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+
+    // One shared outside-close for both menus: a click inside a menu's own
+    // trigger/panel is that menu's business; anything else closes whichever
+    // of the two is open. (Same contract the scope menu had alone.)
+    function onDocPointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      const inScope = scopeBtn.value?.contains(target) || scopePanel.value?.contains(target);
+      const inSources =
+        sourcesBtn.value?.contains(target) || sourcesPanel.value?.contains(target);
+      if (!inScope) closeScope();
+      if (!inSources) closeSources();
+    }
+
+    // The outside-close listener lives exactly while a menu is open
     // (FilterCategoryChip's pattern); Escape close is HkPopover's own.
-    watch(
-      scopeOpen,
-      (open) => {
-        if (open) {
-          document.addEventListener("pointerdown", onDocPointerDown, true);
-        } else {
-          document.removeEventListener("pointerdown", onDocPointerDown, true);
-        }
-      },
-    );
+    watch([scopeOpen, sourcesOpen], ([a, b]) => {
+      if (a || b) {
+        document.addEventListener("pointerdown", onDocPointerDown, true);
+      } else {
+        document.removeEventListener("pointerdown", onDocPointerDown, true);
+      }
+    });
     onBeforeUnmount(() => {
       document.removeEventListener("pointerdown", onDocPointerDown, true);
     });
 
+    /** Pin a freshly picked replay folder and rescan right away — a new
+     *  source's battles reach the cards/heatmap immediately, not at the
+     *  next game session. Null pick (cancel) is not an error. */
+    async function onAddSource() {
+      if (addingSource.value) return;
+      addingSource.value = true;
+      try {
+        const picked = await api.pickReplayDir();
+        if (picked) {
+          await config.addReplayDir(picked);
+          await store.refreshAll();
+        }
+      } catch (e) {
+        toastError(e);
+      } finally {
+        addingSource.value = false;
+      }
+    }
+
+    async function onRemoveSource(path: string) {
+      try {
+        await config.removeReplayDir(path);
+        await store.refreshAll();
+      } catch (e) {
+        toastError(e);
+      }
+    }
+
+    /** Rebuild the ledger from disk (confirm-dialog armed): drops the
+     *  backend's parse + history cache, so battles whose replays are
+     *  already gone leave with it. The full re-parse can run for seconds —
+     *  the button stays disabled (and spins) until the fresh rows land. */
+    async function onRebuild() {
+      rebuildArmed.value = false;
+      rebuilding.value = true;
+      try {
+        await store.resetBattles();
+      } catch (e) {
+        toastError(e);
+      } finally {
+        rebuilding.value = false;
+      }
+    }
+
     // Losing the picked install (row removed in settings) must not leave
     // the menu wearing a label whose rows filterBattlesByScope no longer
     // answers — fall back to the all-clients scope it already widened to.
+    // A pinned replay folder leaving the sources list takes its scope
+    // option with it the same way.
     watch(
-      () => config.installs,
-      (installs) => {
+      [() => config.installs, () => config.replayDirs],
+      ([installs, replayDirs]) => {
         if (!scope.value) return;
-        const stillThere = installs.some((i) => sameGamePath(i.path, scope.value));
+        const stillThere =
+          installs.some((i) => sameGamePath(i.path, scope.value)) ||
+          replayDirs.some((d) => sameGamePath(d, scope.value));
         if (!stillThere) scope.value = SCOPE_ALL;
       },
     );
 
-    /** One option per DETECTED client — the whole recognized install list,
-     *  not just the active one, so any client's battles are reachable
-     *  without switching the app-wide active install first. The label is
-     *  the install's own name ("Steam · ASIA", "国服 · CN"), which is what
-     *  the client row in the sidebar footer shows too. */
+    /** Scope options: one per DETECTED client — the whole recognized
+     *  install list, not just the active one, so any client's battles are
+     *  reachable without switching the app-wide active install first; the
+     *  label is the install's own name ("Steam · ASIA", "国服 · CN"), which
+     *  is what the client row in the sidebar footer shows too. Then one
+     *  option per pinned replay folder, labeled by the folder's own
+     *  name — its rows carry the folder path as their install identity,
+     *  which is exactly the key this menu matches on. Folders sharing a
+     *  leaf name disambiguate with their parent segment. */
     const scopeOptions = computed(() => [
       { key: SCOPE_ALL, label: t("playtime.scopeAll") },
       ...clientMenuOptions(config.installs).map((o) => ({ key: o.value, label: o.label })),
+      ...disambiguatedDirNames(config.replayDirs).map((d) => ({
+        key: d.path,
+        label: d.label,
+      })),
     ]);
+
+    /** The folders' own names (last path segment, both separators tolerated
+     *  — backend paths are Windows-shaped; the browser-dev mock may hand
+     *  over forward slashes); a leaf name used by more than one pinned
+     *  folder carries its parent segment ("archive · wows录像"). */
+    function disambiguatedDirNames(paths: string[]): { path: string; label: string }[] {
+      const counts = new Map<string, number>();
+      const segments = paths.map((p) => p.split(/[\\/]/).filter(Boolean));
+      for (const segs of segments) {
+        const leaf = segs[segs.length - 1] ?? "";
+        counts.set(leaf, (counts.get(leaf) ?? 0) + 1);
+      }
+      return paths.map((p, i) => {
+        const segs = segments[i];
+        const leaf = segs[segs.length - 1] ?? p;
+        const dup = (counts.get(leaf) ?? 0) > 1 && segs.length >= 2;
+        return { path: p, label: dup ? `${segs[segs.length - 2]} · ${leaf}` : leaf };
+      });
+    }
 
     /** Whether a menu option is the picked one. The all-clients sentinel is
      *  compared exactly (an empty scope has no path spelling to normalize);
@@ -398,6 +502,186 @@ export default defineComponent({
     return () => (
       <div class="playtime-view">
         <div class="playtime-view__content">
+          {/* ── Toolbar — ALWAYS rendered, empty state included: a fresh
+              install's first playtime data can come from a pinned replay
+              archive, and "rescan now" must never depend on data existing.
+              The scope pill narrows ONLY the battle-derived content
+              (battles card + breakdown + battle heatmap) — the ledger
+              itself is global. */}
+          <div class="playtime-view__toolbar">
+            <button
+              type="button"
+              ref={scopeBtn}
+              class="playtime-view__scope"
+              aria-haspopup="menu"
+              aria-expanded={scopeOpen.value}
+              onClick={() => (scopeOpen.value = !scopeOpen.value)}
+            >
+              <span class="playtime-view__scope-label">{scopeLabel.value}</span>
+              <ChevronDown
+                size={13}
+                class="playtime-view__scope-chevron"
+                data-open={scopeOpen.value || undefined}
+              />
+            </button>
+            {/* Desktop keeps closeOnBackdrop off: HkPopover's own
+                document listener would close on the re-click of the
+                open button before that click re-toggles it; the
+                pointerdown listener above is the outside-close and
+                Escape rides closeOnEscape. Phones dock the menu as a
+                bottom sheet (sheetOnMobile, same convention as the
+                filter chips). Both menus below share that contract. */}
+            <HkPopover
+              modelValue={scopeOpen.value}
+              onUpdate:modelValue={(v: boolean) => {
+                if (!v) closeScope();
+              }}
+              anchorRef={scopeBtn.value}
+              placement="bottom-end"
+              closeOnBackdrop={isMobile.value}
+              sheetOnMobile
+              title={t("playtime.battlesTitle")}
+            >
+              <div ref={scopePanel} class="playtime-view__scope-menu" role="menu">
+                {scopeOptions.value.map((o) => (
+                  <button
+                    key={o.key}
+                    type="button"
+                    role="menuitem"
+                    class="playtime-view__scope-opt"
+                    data-active={isPickedScope(o.key) || undefined}
+                    onClick={() => pickScope(o.key)}
+                  >
+                    <span class="playtime-view__scope-opt-label">{o.label}</span>
+                    {isPickedScope(o.key) ? (
+                      <Check size={13} class="playtime-view__scope-opt-check" />
+                    ) : null}
+                  </button>
+                ))}
+                {/* No detected install = nothing but the all-clients
+                    option to pick; the hint points at where clients are
+                    chosen (same wording the old single-option menu
+                    used). */}
+                {config.installs.length === 0 ? (
+                  <div class="playtime-view__scope-hint">
+                    {t("playtime.scopeUnavailable")}
+                  </div>
+                ) : null}
+              </div>
+            </HkPopover>
+            {/* ── Replay sources (录像来源): pins extra replay folders into
+                the same scan that feeds the battles card + heatmap + replay
+                rail. Removal keeps already-counted battles (history); the
+                rebuild action at the bottom drops that history on purpose
+                and requires the confirm dialog. */}
+            <button
+              type="button"
+              ref={sourcesBtn}
+              class="playtime-view__scope"
+              aria-haspopup="menu"
+              aria-expanded={sourcesOpen.value}
+              onClick={() => (sourcesOpen.value = !sourcesOpen.value)}
+            >
+              <FolderOpen size={13} class="playtime-view__scope-lead" />
+              <span class="playtime-view__scope-label">{t("playtime.sourcesTitle")}</span>
+              <ChevronDown
+                size={13}
+                class="playtime-view__scope-chevron"
+                data-open={sourcesOpen.value || undefined}
+              />
+            </button>
+            <HkPopover
+              modelValue={sourcesOpen.value}
+              onUpdate:modelValue={(v: boolean) => {
+                if (!v) closeSources();
+              }}
+              anchorRef={sourcesBtn.value}
+              placement="bottom-end"
+              closeOnBackdrop={isMobile.value}
+              sheetOnMobile
+              title={t("playtime.sourcesTitle")}
+            >
+              <div ref={sourcesPanel} class="playtime-view__sources-menu">
+                {config.replayDirs.length === 0 ? (
+                  <div class="playtime-view__sources-empty">
+                    {t("playtime.sourcesEmpty")}
+                  </div>
+                ) : (
+                  config.replayDirs.map((d) => (
+                    <div key={d} class="playtime-view__sources-row">
+                      <span class="playtime-view__sources-path" title={d}>
+                        {d}
+                      </span>
+                      <button
+                        type="button"
+                        class="playtime-view__sources-remove"
+                        aria-label={t("playtime.sourcesRemove", { path: d })}
+                        onClick={() => void onRemoveSource(d)}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))
+                )}
+                {/* Phones have no native folder picker (rfd has no Android
+                    backend) — the add row is desktop-only; pinned folders
+                    still list and remove everywhere. */}
+                {!isMobile.value ? (
+                  <HkButton
+                    size="sm"
+                    variant="ghost"
+                    disabled={addingSource.value}
+                    loading={addingSource.value}
+                    onClick={() => void onAddSource()}
+                  >
+                    <FolderPlus size={14} />
+                    <span>{t("playtime.sourcesAdd")}</span>
+                  </HkButton>
+                ) : null}
+                <div class="playtime-view__sources-hint">{t("playtime.sourcesHint")}</div>
+                <div class="playtime-view__sources-footer">
+                  <button
+                    type="button"
+                    class="playtime-view__sources-rebuild"
+                    disabled={rebuilding.value}
+                    onClick={() => (rebuildArmed.value = true)}
+                  >
+                    <RefreshCw
+                      size={12}
+                      class={rebuilding.value ? "playtime-view__spin" : undefined}
+                    />
+                    <span>{t("playtime.rebuild")}</span>
+                  </button>
+                </div>
+              </div>
+            </HkPopover>
+            {/* Manual rescan: re-pulls overview + battles now. The 30 s poll
+                re-pulls battles only around game sessions (activity key),
+                so files that changed on disk while idle — a hand-copied
+                replay, a pinned folder — otherwise wait for a launch. */}
+            <HkIconButton
+              size={24}
+              variant="ghost"
+              disabled={store.refreshing}
+              aria-label={t("playtime.refresh")}
+              onClick={() => void store.refreshAll()}
+            >
+              <RefreshCw
+                size={15}
+                class={store.refreshing ? "playtime-view__spin" : undefined}
+              />
+            </HkIconButton>
+          </div>
+          <HkConfirmDialog
+            open={rebuildArmed.value}
+            title={t("playtime.rebuild")}
+            message={t("playtime.rebuildConfirm")}
+            confirmLabel={t("playtime.rebuild")}
+            onConfirm={() => void onRebuild()}
+            onUpdate:open={(v: boolean) => {
+              if (!v) rebuildArmed.value = false;
+            }}
+          />
           {!hasAnyData.value ? (
             <div class="playtime-view__empty">
               <h2 class="playtime-view__title">{t("playtime.emptyTitle")}</h2>
@@ -405,72 +689,6 @@ export default defineComponent({
             </div>
           ) : (
             <>
-              {/* ── Scope toolbar: narrows ONLY the battle-derived content
-                  (battles card + breakdown + battle heatmap) — the ledger
-                  itself is global. */}
-              <div ref={scopeRoot} class="playtime-view__toolbar">
-                <button
-                  type="button"
-                  ref={scopeBtn}
-                  class="playtime-view__scope"
-                  aria-haspopup="menu"
-                  aria-expanded={scopeOpen.value}
-                  onClick={() => (scopeOpen.value = !scopeOpen.value)}
-                >
-                  <span class="playtime-view__scope-label">{scopeLabel.value}</span>
-                  <ChevronDown
-                    size={13}
-                    class="playtime-view__scope-chevron"
-                    data-open={scopeOpen.value || undefined}
-                  />
-                </button>
-                {/* Desktop keeps closeOnBackdrop off: HkPopover's own
-                    document listener would close on the re-click of the
-                    open button before that click re-toggles it; the
-                    pointerdown listener above is the outside-close and
-                    Escape rides closeOnEscape. Phones dock the menu as a
-                    bottom sheet (sheetOnMobile, same convention as the
-                    filter chips). */}
-                <HkPopover
-                  modelValue={scopeOpen.value}
-                  onUpdate:modelValue={(v: boolean) => {
-                    if (!v) closeScope();
-                  }}
-                  anchorRef={scopeBtn.value}
-                  placement="bottom-end"
-                  closeOnBackdrop={isMobile.value}
-                  sheetOnMobile
-                  title={t("playtime.battlesTitle")}
-                >
-                  <div ref={scopePanel} class="playtime-view__scope-menu" role="menu">
-                    {scopeOptions.value.map((o) => (
-                      <button
-                        key={o.key}
-                        type="button"
-                        role="menuitem"
-                        class="playtime-view__scope-opt"
-                        data-active={isPickedScope(o.key) || undefined}
-                        onClick={() => pickScope(o.key)}
-                      >
-                        <span class="playtime-view__scope-opt-label">{o.label}</span>
-                        {isPickedScope(o.key) ? (
-                          <Check size={13} class="playtime-view__scope-opt-check" />
-                        ) : null}
-                      </button>
-                    ))}
-                    {/* No detected install = nothing but the all-clients
-                        option to pick; the hint points at where clients are
-                        chosen (same wording the old single-option menu
-                        used). */}
-                    {config.installs.length === 0 ? (
-                      <div class="playtime-view__scope-hint">
-                        {t("playtime.scopeUnavailable")}
-                      </div>
-                    ) : null}
-                  </div>
-                </HkPopover>
-              </div>
-
               {/* ── Record cards ─────────────────────────────────────── */}
               <div class="playtime-cards">
                 {cards.value.map((card) => (

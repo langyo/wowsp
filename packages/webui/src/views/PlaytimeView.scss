@@ -186,15 +186,29 @@
   }
 }
 
-/* ── Scope toolbar (battle-derived content only — see the view's docs):
-   a slim right-aligned row above the cards; the button opens the client
-   menu (all clients / one option per detected install) through hikari
-   HkPopover. The option list can outgrow a short machine's menu, so the
-   popup body scrolls (`max-height` on the option stack). ──────────────── */
+/* ── Toolbar (battle-derived content only — see the view's docs): a slim
+   right-aligned row above the cards. The scope pill opens the client menu
+   (all clients / one option per detected install / one per pinned replay
+   folder), the sources pill manages those pinned folders, and the refresh
+   icon rescans now. The scope option list can outgrow a short machine's
+   menu, so the popup bodies scroll (`max-height`). ──────────────────── */
 .playtime-view__toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
   min-height: 28px;
+}
+
+/* Shared spinner for the toolbar's refresh icon. */
+.playtime-view__spin {
+  animation: playtime-spin 0.9s linear infinite;
+}
+
+@keyframes playtime-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .playtime-view__scope {
@@ -224,6 +238,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 18rem;
+  }
+
+  &-lead {
+    flex: none;
+    color: rgb(var(--color-muted));
   }
 
   &-chevron {
@@ -297,6 +316,112 @@
   padding: 0 10px;
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted) / 90%);
+}
+
+/* ── Replay-sources menu (the sources pill's popup): one row per pinned
+   folder (full path, ellipsized; the title attribute carries the whole
+   spelling on hover) with a ghost remove button, the add action, the
+   retention hint and the destructive rebuild entry tucked at the bottom.
+   Same HkPopover contract as the scope menu — chrome outside, spacing
+   here. ─────────────────────────────────────────────────────────────── */
+.playtime-view__sources-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  min-width: 16rem;
+  max-width: 24rem;
+  max-height: min(60vh, 22rem);
+  overflow-y: auto;
+}
+
+.playtime-view__sources-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    background: rgb(var(--color-text) / 5%);
+  }
+}
+
+.playtime-view__sources-path {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--color-text) / 85%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playtime-view__sources-remove {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+  transition:
+    background var(--duration-short) var(--ease-standard),
+    color var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    color: rgb(var(--color-danger, 240 80 80));
+    background: rgb(var(--color-text) / 8%);
+  }
+}
+
+.playtime-view__sources-empty {
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+}
+
+.playtime-view__sources-hint {
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: rgb(var(--color-muted) / 90%);
+}
+
+.playtime-view__sources-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-faint);
+}
+
+.playtime-view__sources-rebuild {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: rgb(var(--color-muted));
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  transition: color var(--duration-short) var(--ease-standard);
+
+  &:hover:not(:disabled) {
+    color: rgb(var(--color-danger, 240 80 80));
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
 }
 
 /* ── Battle breakdown (replay-derived rows: type / nation / tier / mode,

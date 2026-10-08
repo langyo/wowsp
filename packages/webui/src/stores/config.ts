@@ -111,6 +111,13 @@ export const useConfigStore = defineStore("config", () => {
   // to the list on every scan.
   let gamePathOrder = loadGamePathOrder();
 
+  // Extra replay folders pinned by the user (游玩时间 view's 录像来源
+  // manager) — persisted shell-side in game-config.toml and scanned
+  // alongside each client's own replays folder. Seeded by `load()`;
+  // add/remove go through the typed backend commands (they validate
+  // overlap against the live scan roots), never a raw set.
+  const replayDirs = ref<string[]>([]);
+
   // Path remembered from the previous session (restored by `load()`, consumed
   // by `detect()` so a previously-selected client survives a rescan).
   let rememberedPath: string | null = null;
@@ -122,6 +129,7 @@ export const useConfigStore = defineStore("config", () => {
     try {
       const cfg = await api.getGameConfig();
       rememberedPath = cfg?.activePath ?? null;
+      replayDirs.value = cfg?.replayDirs ?? [];
     } catch {
       // command unavailable (mock backend) — nothing remembered
     }
@@ -251,6 +259,22 @@ export const useConfigStore = defineStore("config", () => {
     }
   }
 
+  /** Pin an extra replay folder into the scan (游玩时间 view's 录像来源
+   *  manager). Rejects (throws) when the folder is missing or overlaps what
+   *  the scan already covers — the caller surfaces the message. */
+  async function addReplayDir(path: string) {
+    const cfg = await api.addReplayDir(path);
+    replayDirs.value = cfg?.replayDirs ?? replayDirs.value;
+  }
+
+  /** Unpin an extra replay folder (any spelling of its path). Its
+   *  already-counted battles stay in the playtime ledger — removal stops
+   *  future scans, it does not rewrite history. */
+  async function removeReplayDir(path: string) {
+    const cfg = await api.removeReplayDir(path);
+    replayDirs.value = cfg?.replayDirs ?? replayDirs.value;
+  }
+
   /** Whether an install path was removed from the list (settings 游戏路径
    *  row delete). Data surfaces filter rows by it so an ignored client's
    *  replays leave the rail/charts together with its list row. */
@@ -263,6 +287,7 @@ export const useConfigStore = defineStore("config", () => {
     installs,
     activeInstall,
     detecting,
+    replayDirs,
     isIgnoredPath,
     detect,
     load,
@@ -270,5 +295,7 @@ export const useConfigStore = defineStore("config", () => {
     setManualPath,
     removeInstall,
     reorderInstalls,
+    addReplayDir,
+    removeReplayDir,
   };
 });
