@@ -147,7 +147,31 @@ def bare_name(name):
     return name.split(']', 1)[-1] if name.startswith('[') else name
 
 
-class Probe(object):
+# One-shot sandbox census: Lesta's ModsAPI resolves builtins through a
+# narrow whitelist that omits the class machinery (both `Exception` and
+# `object` crashed the mod at import in the field — 2026-10-08). Dump
+# whatever names ARE reachable so any remaining gap is fixable from
+# python.log alone, without another crash-iterate game restart. Uses only
+# the injected utils encoder and bare excepts.
+try:
+    _bi = __builtins__
+    try:
+        _census = _bi.keys()
+    except:
+        _census = [n for n in dir(_bi)]
+    utils.logInfo(PREFIX + 'sandbox builtins=' + utils.jsonEncode(list(_census)))
+except:
+    try:
+        utils.logInfo(PREFIX + 'sandbox census failed')
+    except:
+        pass
+
+
+class Probe:
+    # Old-style on purpose: `object` is not in the Lesta sandbox's
+    # builtin whitelist (`class Probe(object)` was the 2026-10-08 14:04
+    # import crash, one fix past the Exception one). Nothing here needs
+    # new-style machinery — no super(), no properties.
 
     def __init__(self):
         self.session = ''
@@ -160,7 +184,10 @@ class Probe(object):
         self.manual_stamp = ''
         self.last_error = ''
         self.entities = {}
-        self.known_events = set([])
+        # {…} - {…} instead of set([]): set literals/differences compile
+        # to display + arithmetic opcodes, so the Lesta sandbox's builtin
+        # whitelist is never consulted for the empty-set construction.
+        self.known_events = {None} - {None}
         self.event_log_count = 0
         self.key_log_count = 0
         self.v_down = False
