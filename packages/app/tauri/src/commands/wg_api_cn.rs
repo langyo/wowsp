@@ -519,8 +519,8 @@ async fn lookup_one(
 }
 
 /// CN arm of `wg_api::lookup_player_stats`. The expected PR algorithm works
-/// here too: the vortex serves the per-ship endpoint
-/// (`fetch_expected_pr_rows` routes "cn" to it), so the CN card aggregates
+/// here too: the vortex serves the per-ship endpoints
+/// (`fetch_expected_pr_rows` reads them on every realm), so the CN card aggregates
 /// the wows-numbers PR exactly like the API realms — one transport-agnostic
 /// code path. Rejects with a structured [`LookupError`] like the WG arm.
 pub(crate) async fn lookup_player_stats(

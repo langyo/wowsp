@@ -37,7 +37,29 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("shipStats store ttl guard", () => {
+describe("shipStats store", () => {
+  /** The backend keeps zero-pvp ship rows for the roster's ranked/co-op
+   *  buckets; this store feeds the randoms per-ship table, where such a
+   *  row (battles 0, 0% winrate) is noise — it must filter out at load. */
+  it("filters zero-pvp rows out of the table's list", async () => {
+    const store = useShipStatsStore();
+    const zeroPvp: PlayerShipStats = {
+      ...mockShips(2)[0]!,
+      shipId: 2,
+      battles: 0,
+      wins: 0,
+      winrate: 0,
+      avgDamage: 0,
+    };
+    vi.mocked(api.lookupPlayerShipStats).mockResolvedValue([...mockShips(1), zeroPvp]);
+
+    const rows = await store.load(101, "asia");
+
+    expect(rows.map((r) => r.shipId)).toEqual([1]);
+    // The filtered shape is what lands in the cache (and history reads).
+    expect(store.cache.get("asia_101")?.map((r) => r.shipId)).toEqual([1]);
+  });
+
   it("serves a cached result within the ttl without re-querying", async () => {
     const store = useShipStatsStore();
     vi.mocked(api.lookupPlayerShipStats).mockResolvedValue(mockShips());

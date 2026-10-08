@@ -78,9 +78,16 @@ export const useShipStatsStore = defineStore("shipStats", () => {
     error.value = null;
     try {
       // Executed only by the pipeline's worker (single writer), strictly
-      // after every earlier queued query.
+      // after every earlier queued query. Zero-pvp rows (kept by the
+      // backend for the roster's ranked/co-op buckets — see the ship-scoped
+      // pipeline in composables/useRosterStats) are not randoms-table rows:
+      // this store feeds the per-ship table and its distributions, which
+      // read the pvp career, so they filter out here exactly as they did
+      // before the backend started retaining them.
       const stats = await query.enqueue(message, async () => {
-        const fresh = await api.lookupPlayerShipStats(accountId, realm, algo);
+        const fresh = (await api.lookupPlayerShipStats(accountId, realm, algo)).filter(
+          (s) => s.battles > 0,
+        );
         cache.value.set(k, fresh);
         fetchedAt.value.set(k, Date.now());
         return fresh;
