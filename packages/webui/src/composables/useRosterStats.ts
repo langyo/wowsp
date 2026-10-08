@@ -186,9 +186,9 @@ function rosterStatOf(r: {
  *  utils/clanWinrate — one clans/info call per clan per window) and write
  *  the verdict back into THIS cache's entry in place, so a later lookup
  *  seeding the name from cache carries the verdict instantly. `onResolved`
- *  lets the live pipeline mirror the verdict into its reactive slots (it
- *  owns the battle-generation guard); the one-shot name-keyed pipeline
- *  passes none — its consumers already hold the same object. */
+ *  mirrors the verdict onto a caller-owned copy (the live pipeline's
+ *  reactive slots, or the one-shot's returned entries — they are copies,
+ *  not the cache objects, so the in-place writeback does not reach them). */
 function resolveClanGate(
   st: RosterStat,
   key: string,
@@ -843,35 +843,54 @@ export async function fetchRosterStatsByNames(
   const out = new Map<string, RosterStat>();
   if (!realm) return out;
   const misses: string[] = [];
+  // Cache hits answer a COPY, not the cached object itself: the ship-scoped
+  // attach below writes `ships` onto the returned entries, and writing it
+  // onto the shared cache entry would leak this battle's list verdict into
+  // every FUTURE battle's cache hit — the live pipeline copies the entry
+  // verbatim (ensureStats) and then skips the player's per-ship attach as
+  // "already attached", pinning a stale or empty list for the rest of the
+  // session.
+  const settle = (name: string, entry: RosterStat) => {
+    out.set(name, entry);
+    // The copy does not receive resolveClanGate's in-place writeback on the
+    // cache entry, so the gate re-fires against the COPY for the hidden +
+    // clanful rows the post-battle seals grade (already-judged entries are a
+    // no-op; concurrent lookups dedupe inside utils/clanWinrate). A
+    // cross-server CW entry's clan lives on ITS cluster — the gate queries
+    // there, not the panel realm (same rule as the live pipeline's gate).
+    const key = rosterCacheKey(realm, name);
+    resolveClanGate(entry, key, entry.realm ?? realm, (wr) => {
+      if (entry.clanWinrate === undefined) entry.clanWinrate = wr;
+    });
+  };
   for (const name of names) {
     if (isAiName(name)) continue;
-    // Cache hits are NOT re-fired through the clan gate (unlike ensureStats):
-    // no current consumer renders career stamps off this one-shot map, and a
-    // hit returns the cached object itself, so an in-flight verdict still
-    // lands on it via resolveClanGate's writeback. A future stamp-rendering
-    // consumer must re-fire the gate here or a pending verdict (undefined)
-    // would hold its stamp forever.
     const cached = statCache.get(rosterCacheKey(realm, name));
-    if (cached) out.set(name, cached);
+    if (cached) settle(name, { ...cached });
     else misses.push(name);
   }
-  if (misses.length === 0) return out;
   try {
-    const results = await enqueueRosterBatch(misses, realm, false);
-    misses.forEach((name, i) => {
-      const r = results[i];
-      const st = r ? rosterStatOf(r) : emptyStat(false);
-      const key = rosterCacheKey(realm, name);
-      if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
-      statCache.set(key, st);
-      out.set(name, st);
-      // No battle generation to guard here — the verdict only needs the
-      // module-cache writeback (callers already hold the same object).
-      resolveClanGate(st, key, realm);
-    });
+    if (misses.length > 0) {
+      const results = await enqueueRosterBatch(misses, realm, false);
+      misses.forEach((name, i) => {
+        const r = results[i];
+        const st = r ? rosterStatOf(r) : emptyStat(false);
+        const key = rosterCacheKey(realm, name);
+        if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
+        // The cache keeps the pristine entry; the caller gets a copy for
+        // the same ships-attachment isolation as the cache-hit path above.
+        statCache.set(key, st);
+        settle(name, { ...st });
+      });
+    }
     // Ship-scoped source active → attach every resolved account's per-ship
     // list before returning, so the caller's rows aggregate complete data
     // (the same bounded fetch + session cache the live pipeline uses).
+    // Runs on EVERY call — including fully-warm ones (no batch misses): the
+    // returned copies never inherit an earlier call's attachment, so a
+    // warm re-run (the post-battle panel's dims watch, a second replay with
+    // overlapping names) must re-attach or its ship-scoped columns dash.
+    // Warm attachments answer from the session cache without new requests.
     if (dimsNeedShipStats(rosterDimsOf(statsPrefsState.value))) {
       // Group by each entry's resolved realm — a cross-server CW entry
       // cached from the live panel fetches (and attaches) under ITS
@@ -888,11 +907,10 @@ export async function fetchRosterStatsByNames(
         const ships = await fetchShipLists(entryRealm, ids);
         for (const st of out.values()) {
           if (st.accountId == null || (st.realm ?? realm) !== entryRealm) continue;
-          // Only SUCCESSFUL lists attach to the shared cache objects: a
-          // null verdict here would pin the player to "no data" for the
-          // rest of the session (the live pipeline skips ships !==
-          // undefined), so failures stay "not requested" and retry with
-          // the next battle.
+          // Only SUCCESSFUL lists attach to the caller's copies: a null
+          // verdict here would pin the player to "no data" for the rest of
+          // the session (the live pipeline skips ships !== undefined), so
+          // failures stay "not requested" and retry with the next battle.
           const list = ships.get(st.accountId);
           if (list != null) st.ships = list;
         }

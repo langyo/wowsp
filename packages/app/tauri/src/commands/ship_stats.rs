@@ -1,9 +1,10 @@
 //! Per-player per-ship stats + career stat snapshots (milestone M10).
 //!
 //! Two concerns:
-//!   1. `/wows/ships/stats/` — the player's PvP stats broken down by ship.
-//!      Cached to `ship-stats/<realm>_<accountId>.json`. Ship names are
-//!      back-filled from the encyclopedia cache when available.
+//!   1. The vortex per-mode ships endpoints — the player's stats broken
+//!      down by ship and battle type (see [`fetch_ship_stats`]). Cached to
+//!      `ship-stats/<realm>_<accountId>.json`. Ship names are back-filled
+//!      from the encyclopedia cache when available.
 //!   2. Snapshots — on each account-level lookup we append a timestamped
 //!      career-summary point to `snapshots/<realm>_<accountId>.json`. This
 //!      time series is what the trends module buckets by game version.
@@ -11,7 +12,6 @@
 use std::fs;
 
 use futures::stream::{self, StreamExt};
-use serde::Deserialize;
 use wowsp_tauri_shared::{
     GameVersionInfo, PlayerShipStats, ShipCareerTotals, ShipModeBreakdown, ShipModeStats,
     ShipStatsHistoryPoint, StatsSnapshot,
@@ -31,7 +31,7 @@ use super::wg_api::{ExpectedPrRow, PrAlgo};
 /// (the in-flight single-flight, see [`raw_ship_stats_shared`], applies to
 /// every caller) — the
 /// roster surfaces (the main window's live panel AND the Tab overlay
-/// window) pass it so both windows share ONE WG request per player per
+/// window) pass it so both windows share ONE upstream request per player per
 /// process instead of each re-fetching the other's answers. Default
 /// (None/false) keeps the historical always-fresh contract the per-ship
 /// detail panel relies on.
@@ -71,7 +71,7 @@ pub async fn lookup_player_ship_stats(
     }
 
     // The shared single-writer fetch: concurrent callers (either window)
-    // join the ONE in-flight request instead of stacking duplicate WG
+    // join the ONE in-flight request instead of stacking duplicate
     // hits; a success lands in the session cache before the round closes.
     let result = raw_ship_stats_shared(&realm, account_id).await;
     let stats = match result {
@@ -114,7 +114,7 @@ pub async fn lookup_player_ship_stats(
 // ROSTER_STATS_CACHE in wg_api.rs), the RAW counters live here behind:
 //
 //   - an in-flight single-flight: the first caller per (realm, account)
-//     becomes THE writer and holds the per-key lock while the WG request
+//     becomes THE writer and holds the per-key lock while the upstream request
 //     is out; callers arriving mid-flight wait on the same lock and read
 //     the round's shared answer — never a duplicate concurrent request;
 //   - a session cache: one process-wide answer per player, served to
@@ -204,7 +204,7 @@ pub(crate) fn clear_ship_stats_session_cache() {
 }
 
 /// The single-writer raw fetch. The first caller per key becomes the round's
-/// writer (holding the per-key lock across the WG request); concurrent
+/// writer (holding the per-key lock across the upstream request); concurrent
 /// callers clone the round handle, wait on the lock, then read the shared
 /// answer. The round leaves the map once complete — later calls either
 /// serve from the session cache (inserted by the writer before the round
@@ -231,7 +231,23 @@ async fn raw_ship_stats_shared(realm: &str, account_id: i64) -> Result<Vec<RawSh
     }
     // We are this round's single writer.
     let round_epoch = SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire);
-    let result = fetch_ship_stats(account_id, realm, true).await;
+    let result = match fetch_ship_stats(account_id, realm, true).await {
+        Ok(mut raw) => {
+            // The vortex transport serves no per-ship last_battle_time (the
+            // retired WG API did). Carry the previous disk-cache write's
+            // stamps forward BEFORE the session insert, so every serving
+            // path (session cache, disk cache, direct return) agrees and
+            // the date-range career fallback keeps filtering on recency. A
+            // ship the previous write never saw stays 0 — the face a
+            // brand-new ship always had.
+            if !raw.is_empty() {
+                let prev = read_prev_ship_stats(realm, account_id);
+                carry_last_battle_times(&mut raw, &prev);
+            }
+            Ok(raw)
+        },
+        Err(e) => Err(e),
+    };
     if let Ok(raw) = &result {
         ship_stats_session_insert(realm, account_id, raw, round_epoch);
     }
@@ -239,9 +255,33 @@ async fn raw_ship_stats_shared(realm: &str, account_id: i64) -> Result<Vec<RawSh
     drop(guard);
     // Remove only OUR round: an unconditional delete could drop a NEWER
     // round's entry (installed after a waiter cleaned ours or a clear
-    // drained the map) and briefly allow a duplicate concurrent fetch.
+    // drained the map) and would briefly allow a duplicate concurrent fetch.
     remove_live_round(&key, &round).await;
     result
+}
+
+/// The previous disk-cache write for one player, if any (unreadable =
+/// none). Shared by the stamp carry-forward and nothing else — the cache
+/// FALLBACK path in the command reads the file itself.
+fn read_prev_ship_stats(realm: &str, account_id: i64) -> Vec<PlayerShipStats> {
+    read_appdata_json(&format!("ship-stats/{realm}_{account_id}.json"))
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str::<Vec<PlayerShipStats>>(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Zero `last_battle_time` stamps take the previous write's value for the
+/// same ship (pure so the carry rule is unit-testable without disk).
+fn carry_last_battle_times(raw: &mut [RawShipStats], prev: &[PlayerShipStats]) {
+    if prev.is_empty() {
+        return;
+    }
+    for row in raw.iter_mut().filter(|r| r.last_battle_time == 0) {
+        if let Some(p) = prev.iter().find(|p| p.ship_id == row.ship_id) {
+            row.last_battle_time = p.last_battle_time;
+        }
+    }
 }
 
 /// Remove `round` from the in-flight map iff it is still the live entry
@@ -318,7 +358,10 @@ const HISTORY_MAX_POINTS: usize = 240;
 /// returning an empty list must never become a baseline — an empty baseline
 /// would turn the player's whole career into "recent" deltas later. Rows
 /// whose counters are impossible are dropped for the same reason (see
-/// [`is_poisoned_career_row`]).
+/// [`is_poisoned_career_row`]). Zero-pvp rows the vortex retention keeps
+/// (ranked/co-op ships) route the same way: they carry no randoms totals,
+/// so they never become a baseline row and a merge keeps the stored
+/// healthy totals instead of regressing them to zero.
 fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], timestamp: i64) {
     if stats.is_empty() {
         return;
@@ -326,7 +369,7 @@ fn append_ship_history(realm: &str, account_id: i64, stats: &[PlayerShipStats], 
     let mut fresh: Vec<ShipCareerTotals> = Vec::with_capacity(stats.len());
     let mut poisoned_ids: Vec<i64> = Vec::new();
     for row in stats.iter().map(career_totals) {
-        if is_poisoned_career_row(&row) {
+        if row.battles <= 0 || is_poisoned_career_row(&row) {
             poisoned_ids.push(row.ship_id);
         } else {
             fresh.push(row);
@@ -469,82 +512,46 @@ pub(crate) fn read_snapshots(realm: &str, account_id: i64) -> Vec<StatsSnapshot>
         .unwrap_or_default()
 }
 
-// ── WG API fetch ────────────────────────────────────────────────────────
+// ── Vortex fetch (every realm) ──────────────────────────────────────────
 
+/// Fetch a player's per-ship stats from the vortex per-battle-type bulk
+/// endpoints — the transport the official profile site lazy-loads. The WG
+/// API arm (`/wows/ships/stats/`) that used to serve the international
+/// realms stopped returning the mode-split fields (observed live 2026-10:
+/// `fields=…pvp_solo,pvp_div2,pvp_div3,pve,rank_solo,rank_div2,rank_div3`
+/// answers only `ship_id,last_battle_time,pvp` on every cluster — asia and
+/// Lesta alike), which silently emptied the per-ship ranked/solo/coop
+/// buckets behind the stats-source filter. Every cluster (WG, Lesta, CN)
+/// runs the same vortex service, so ONE arm serves all realms.
 async fn fetch_ship_stats(
     account_id: i64,
     realm: &str,
     mode_splits: bool,
 ) -> Result<Vec<RawShipStats>, String> {
-    if realm == "cn" {
-        return fetch_ship_stats_cn(account_id, mode_splits).await;
-    }
-    let app_id = super::wg_realm::application_id(realm);
-    let host = super::wg_realm::api_host(realm)?;
-    let client = wg_client()?;
-    let url = format!(
-        "https://{host}/wows/ships/stats/?application_id={app_id}&account_id={account_id}\
-         &fields=ship_id,last_battle_time,pvp,pvp_solo,pvp_div2,pvp_div3,pve,\
-         rank_solo,rank_div2,rank_div3"
-    );
-    let resp: WgResponse<serde_json::Value> = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("ships/stats request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("ships/stats parse: {e}"))?;
-    if resp.status != "ok" {
-        return Err(format!(
-            "ships/stats: {}",
-            resp.error.message.unwrap_or_default()
-        ));
-    }
-    // data is { "<accountId>": [ { ship_id, pvp: {...}, ... }, ... ] }
-    let key = account_id.to_string();
-    let arr: Vec<serde_json::Value> = match resp.data {
-        Some(d) => d
-            .get(&key)
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default(),
-        None => Vec::new(),
-    };
-    let mut out = Vec::new();
-    for entry in arr {
-        if let Some(raw) = RawShipStats::from_wg(&entry) {
-            out.push(raw);
-        }
-    }
-    Ok(out)
+    fetch_ship_stats_vortex(account_id, realm, mode_splits).await
 }
 
-/// CN arm: the vortex per-battle-type bulk endpoints
-/// `GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/<battle_type>/`.
+/// Vortex per-battle-type bulk endpoints
+/// `GET https://vortex.<cluster>/api/accounts/<id>/ships/<battle_type>/`.
 ///
-/// The ship *list* endpoint (`/api/accounts/<id>/ships/`) was reworked by
-/// the service (observed live 2026-09) to serve only summary counters —
-/// battles/wins/losses/premium_exp per battle type — with damage, frags,
-/// survival and XP gone, which used to render every CN row as
-/// "data anomaly" (battles > 0, damage 0). The full counters moved to the
-/// per-battle-type bulk endpoints above (the same family the official
-/// profile site lazy-loads per ship as `/ships/<shipId>/<battleType>/`).
-/// Each response's `data.<id>.statistics` is a ship_id-keyed map whose
-/// nodes carry that one battle type's subtree with vortex field names, so
-/// merging the per-mode maps rebuilds exactly the battle-type node shape
-/// [`RawShipStats::from_vortex`] has always consumed.
+/// The CN cluster's WG-style API never existed and the international
+/// clusters' `/wows/ships/stats/` lost its mode splits (see
+/// [`fetch_ship_stats`]), so EVERY realm reads here. Each response's
+/// `data.<id>.statistics` is a ship_id-keyed map whose nodes carry that one
+/// battle type's subtree with vortex field names, so merging the per-mode
+/// maps rebuilds the battle-type node shape [`RawShipStats::from_vortex`]
+/// consumes.
 ///
 /// `pvp` is the only mode the row itself needs — callers that only
 /// aggregate account totals (the expected-PR rows) skip the other seven
 /// requests via `mode_splits = false`. A `pvp` transport failure fails the
 /// whole fetch (the caller's cache fallback then kicks in); a split
 /// failure only narrows that mode's breakdown, the same tolerance the WG
-/// path applies to absent fields. A hidden profile answers ok with no
+/// path applied to absent fields. A hidden profile answers ok with no
 /// statistics map at all — the empty list that yields is the "hidden"
 /// marker, not an error.
-const CN_SHIP_MODE_CORE: &str = "pvp";
-const CN_SHIP_MODE_SPLITS: [&str; 7] = [
+const SHIP_MODE_CORE: &str = "pvp";
+const SHIP_MODE_SPLITS: [&str; 7] = [
     "pvp_solo",
     "pvp_div2",
     "pvp_div3",
@@ -555,20 +562,21 @@ const CN_SHIP_MODE_SPLITS: [&str; 7] = [
 ];
 /// Parallel per-mode requests, capped politely like the CN batch resolver
 /// (the vortex service is unauthenticated).
-const CN_SHIP_MODE_CONCURRENCY: usize = 4;
+const SHIP_MODE_CONCURRENCY: usize = 4;
 
-async fn fetch_ship_stats_cn(
+async fn fetch_ship_stats_vortex(
     account_id: i64,
+    realm: &str,
     mode_splits: bool,
 ) -> Result<Vec<RawShipStats>, String> {
-    let host = super::wg_realm::vortex_host("cn")?;
+    let host = super::wg_realm::vortex_host(realm)?;
     let client = super::wg_api_cn::vortex_client()?;
     let modes: Vec<&'static str> = if mode_splits {
-        std::iter::once(CN_SHIP_MODE_CORE)
-            .chain(CN_SHIP_MODE_SPLITS)
+        std::iter::once(SHIP_MODE_CORE)
+            .chain(SHIP_MODE_SPLITS)
             .collect()
     } else {
-        vec![CN_SHIP_MODE_CORE]
+        vec![SHIP_MODE_CORE]
     };
     // Built with a plain loop instead of a `.map(|mode| …)` closure: the
     // tauri command boundary type-checks this future at higher rank, where
@@ -581,22 +589,22 @@ async fn fetch_ship_stats_cn(
         tasks.push(async move {
             (
                 mode,
-                fetch_cn_ships_mode(client, host, account_id, mode).await,
+                fetch_vortex_ships_mode(client, host, account_id, mode).await,
             )
         });
     }
     let results: Vec<(&str, Result<serde_json::Value, String>)> = stream::iter(tasks)
-        .buffered(CN_SHIP_MODE_CONCURRENCY)
+        .buffered(SHIP_MODE_CONCURRENCY)
         .collect()
         .await;
-    merge_cn_mode_maps(account_id, results)
+    merge_vortex_mode_maps(account_id, results)
 }
 
-/// Fetch one CN per-mode ships document and validate its envelope. Takes
-/// the client owned (a cheap clone) and the host/mode as `'static` names so
-/// the spawned future is `Send` without higher-ranked lifetime proof over
-/// borrowed parameters.
-async fn fetch_cn_ships_mode(
+/// Fetch one cluster's per-mode ships document and validate its envelope.
+/// Takes the client owned (a cheap clone) and the host/mode as `'static`
+/// names so the spawned future is `Send` without higher-ranked lifetime
+/// proof over borrowed parameters.
+async fn fetch_vortex_ships_mode(
     client: reqwest::Client,
     host: &'static str,
     account_id: i64,
@@ -607,17 +615,17 @@ async fn fetch_cn_ships_mode(
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("CN ships request: {e}"))?;
+        .map_err(|e| format!("vortex ships request: {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!("CN ships: HTTP {}", resp.status()));
+        return Err(format!("vortex ships: HTTP {}", resp.status()));
     }
     let v: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("CN ships parse: {e}"))?;
+        .map_err(|e| format!("vortex ships parse: {e}"))?;
     if v.get("status").and_then(|s| s.as_str()) != Some("ok") {
         let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
-        return Err(format!("CN ships: {err}"));
+        return Err(format!("vortex ships: {err}"));
     }
     Ok(v)
 }
@@ -626,7 +634,7 @@ async fn fetch_cn_ships_mode(
 /// parse them. Pure so the merge rule is unit-testable without HTTP. The
 /// ship id lives in the map key; a deterministic (id-sorted) order falls
 /// out of the BTreeMap, keeping cache writes and history diffs stable.
-fn merge_cn_mode_maps(
+fn merge_vortex_mode_maps(
     account_id: i64,
     results: Vec<(&str, Result<serde_json::Value, String>)>,
 ) -> Result<Vec<RawShipStats>, String> {
@@ -638,7 +646,7 @@ fn merge_cn_mode_maps(
             // The pvp core failing is a real outage — surface it so the
             // caller falls back to its cache instead of reading the empty
             // list as a hidden profile.
-            Err(e) if mode == CN_SHIP_MODE_CORE => return Err(e),
+            Err(e) if mode == SHIP_MODE_CORE => return Err(e),
             // A split failing only narrows the mode breakdown.
             Err(_) => continue,
         };
@@ -684,22 +692,11 @@ struct RawShipStats {
     modes: Option<ShipModeBreakdown>,
 }
 
-/// How a battle-type node spells its counter fields.
-#[derive(Clone, Copy)]
-enum ModeDialect {
-    /// WG `/wows/ships/stats/`: `battles` / `survived_battles`.
-    Wg,
-    /// CN vortex: `battles_count` / `survived`.
-    Vortex,
-}
-
-fn mode_from_node(node: Option<&serde_json::Value>, dialect: ModeDialect) -> Option<ShipModeStats> {
+/// Parse one battle-type node (vortex field names: `battles_count` /
+/// `survived`). None when the node is absent/null or carries no battles.
+fn mode_from_node(node: Option<&serde_json::Value>) -> Option<ShipModeStats> {
     let v = node.filter(|v| !v.is_null())?;
-    let (battles_key, survived_key) = match dialect {
-        ModeDialect::Wg => ("battles", "survived_battles"),
-        ModeDialect::Vortex => ("battles_count", "survived"),
-    };
-    let battles = v.get(battles_key).and_then(|x| x.as_i64())?;
+    let battles = v.get("battles_count").and_then(|x| x.as_i64())?;
     if battles <= 0 {
         return None;
     }
@@ -711,7 +708,7 @@ fn mode_from_node(node: Option<&serde_json::Value>, dialect: ModeDialect) -> Opt
         wins,
         damage_caused: damage,
         frags: field("frags"),
-        survived_battles: field(survived_key),
+        survived_battles: field("survived"),
         winrate: 100.0 * wins as f32 / battles as f32,
         avg_damage: damage as f32 / battles as f32,
     })
@@ -742,118 +739,73 @@ fn combine_modes(parts: [Option<ShipModeStats>; 3]) -> Option<ShipModeStats> {
 }
 
 impl RawShipStats {
-    fn from_wg(entry: &serde_json::Value) -> Option<Self> {
-        let pvp = entry.get("pvp")?;
-        if pvp.is_null() {
-            return None;
-        }
-        let battles = pvp.get("battles")?.as_i64()?;
-        if battles == 0 {
-            return None;
-        }
-        let solo = mode_from_node(entry.get("pvp_solo"), ModeDialect::Wg);
-        let div2 = mode_from_node(entry.get("pvp_div2"), ModeDialect::Wg);
-        let div3 = mode_from_node(entry.get("pvp_div3"), ModeDialect::Wg);
-        let coop = mode_from_node(entry.get("pve"), ModeDialect::Wg);
-        let ranked = combine_modes([
-            mode_from_node(entry.get("rank_solo"), ModeDialect::Wg),
-            mode_from_node(entry.get("rank_div2"), ModeDialect::Wg),
-            mode_from_node(entry.get("rank_div3"), ModeDialect::Wg),
-        ]);
-        let has_modes = [
-            solo.is_some(),
-            div2.is_some(),
-            div3.is_some(),
-            coop.is_some(),
-            ranked.is_some(),
-        ];
-        Some(Self {
-            ship_id: entry.get("ship_id")?.as_i64()?,
-            battles,
-            wins: pvp.get("wins").and_then(|v| v.as_i64()).unwrap_or(0),
-            damage_caused: pvp
-                .get("damage_dealt")
-                .or_else(|| pvp.get("damage_caused"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0),
-            frags: pvp.get("frags").and_then(|v| v.as_i64()).unwrap_or(0),
-            survived_battles: pvp
-                .get("survived_battles")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0),
-            last_battle_time: entry
-                .get("last_battle_time")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0),
-            xp: pvp.get("xp").and_then(|v| v.as_i64()).unwrap_or(0),
-            modes: if has_modes.iter().any(|&b| b) {
-                Some(ShipModeBreakdown {
-                    solo,
-                    div2,
-                    div3,
-                    coop,
-                    ranked,
-                })
-            } else {
-                None
-            },
-        })
-    }
-
-    /// CN vortex per-ship node: a battle-type map whose `pvp` entry carries
+    /// Vortex per-ship node: a battle-type map whose `pvp` entry carries
     /// vortex field names and the ship id comes from the enclosing map key
-    /// (the CN transport rebuilds this shape by merging the per-mode bulk
-    /// endpoints — see `fetch_ship_stats_cn`). Counters absent from a node
-    /// degrade to 0, same tolerance as the WG path; XP is the base-XP total
-    /// `original_exp` (see the xp read below for why the vortex `exp` is
-    /// never divided by battles). No last_battle_time is served at all.
+    /// (the vortex transport rebuilds this shape by merging the per-mode
+    /// bulk endpoints — see [`fetch_ship_stats_vortex`]). Counters absent
+    /// from a node degrade to 0; XP is the base-XP total `original_exp`
+    /// (see the xp read below for why the vortex `exp` is never divided by
+    /// battles). No last_battle_time is served at all. Zero-pvp rows with
+    /// other-mode battles keep their row — the top-level pvp counters stay
+    /// 0 so the randoms view reads "never played" while the ranked/co-op
+    /// buckets still answer their scopes (dropping them wholesale used to
+    /// empty the ship-scoped view for every ranked-only ship and, on co-op
+    /// rosters, for entire teams).
     fn from_vortex(ship_id: i64, node: &serde_json::Value) -> Option<Self> {
-        let pvp = node.get("pvp").filter(|v| !v.is_null())?;
-        let battles = pvp.get("battles_count")?.as_i64()?;
-        if battles == 0 {
-            return None;
-        }
+        let pvp = node.get("pvp").filter(|v| !v.is_null());
+        let battles = pvp
+            .and_then(|p| p.get("battles_count"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
         let field = |node: &serde_json::Value, key: &str| {
             node.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
         };
-        let solo = mode_from_node(node.get("pvp_solo"), ModeDialect::Vortex);
-        let div2 = mode_from_node(node.get("pvp_div2"), ModeDialect::Vortex);
-        let div3 = mode_from_node(node.get("pvp_div3"), ModeDialect::Vortex);
-        let coop = mode_from_node(node.get("pve"), ModeDialect::Vortex);
+        let solo = mode_from_node(node.get("pvp_solo"));
+        let div2 = mode_from_node(node.get("pvp_div2"));
+        let div3 = mode_from_node(node.get("pvp_div3"));
+        let coop = mode_from_node(node.get("pve"));
         let ranked = combine_modes([
-            mode_from_node(node.get("rank_solo"), ModeDialect::Vortex),
-            mode_from_node(node.get("rank_div2"), ModeDialect::Vortex),
-            mode_from_node(node.get("rank_div3"), ModeDialect::Vortex),
+            mode_from_node(node.get("rank_solo")),
+            mode_from_node(node.get("rank_div2")),
+            mode_from_node(node.get("rank_div3")),
         ]);
-        let has_modes = [
+        let any_mode = [
             solo.is_some(),
             div2.is_some(),
             div3.is_some(),
             coop.is_some(),
             ranked.is_some(),
-        ];
+        ]
+        .iter()
+        .any(|&b| b);
+        if battles == 0 && !any_mode {
+            return None;
+        }
+        // Base XP only. The vortex `exp` is the boost-multiplied total
+        // (premium account + economic bonuses): measured live on the 360
+        // cluster, exp/battles exceeded the node's own `max_exp` on 384
+        // of 397 ships — a per-battle average above the per-battle max,
+        // impossible — and rendered absurd average-XP figures for boost-heavy CN
+        // players. `original_exp` is the base-XP total matching what the
+        // WG realms serve as `xp`; the legacy list-endpoint spelling
+        // `xp` (pre-2026 shape) was base-XP too and stays the fallback.
+        let xp = pvp
+            .and_then(|p| {
+                p.get("original_exp")
+                    .and_then(|v| v.as_i64())
+                    .or_else(|| p.get("xp").and_then(|v| v.as_i64()))
+            })
+            .unwrap_or(0);
         Some(Self {
             ship_id,
             battles,
-            wins: field(pvp, "wins"),
-            damage_caused: field(pvp, "damage_dealt"),
-            frags: field(pvp, "frags"),
-            survived_battles: field(pvp, "survived"),
+            wins: pvp.map(|p| field(p, "wins")).unwrap_or(0),
+            damage_caused: pvp.map(|p| field(p, "damage_dealt")).unwrap_or(0),
+            frags: pvp.map(|p| field(p, "frags")).unwrap_or(0),
+            survived_battles: pvp.map(|p| field(p, "survived")).unwrap_or(0),
             last_battle_time: 0,
-            // Base XP only. The vortex `exp` is the boost-multiplied total
-            // (premium account + economic bonuses): measured live on the 360
-            // cluster, exp/battles exceeded the node's own `max_exp` on 384
-            // of 397 ships — a per-battle average above the per-battle max,
-            // impossible — and rendered absurd average-XP figures for boost-heavy CN
-            // players. `original_exp` is the base-XP total matching what the
-            // WG realms serve as `xp`; the legacy list-endpoint spelling
-            // `xp` (pre-2026 shape) was base-XP too and stays the fallback.
-            xp: pvp
-                .get("original_exp")
-                .and_then(|v| v.as_i64())
-                .or_else(|| pvp.get("xp").and_then(|v| v.as_i64()))
-                .unwrap_or(0),
-            modes: if has_modes.iter().any(|&b| b) {
+            xp,
+            modes: if any_mode {
                 Some(ShipModeBreakdown {
                     solo,
                     div2,
@@ -962,27 +914,11 @@ async fn get_game_version_cached() -> Result<GameVersionInfo, String> {
 
 // ── shared helpers (same pattern as encyclopedia.rs) ─────────────────────
 
-fn wg_client() -> Result<reqwest::Client, String> {
-    crate::commands::network::build_http_client()
-}
-
 fn now_ts() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
-
-#[derive(Deserialize)]
-struct WgResponse<T> {
-    status: String,
-    data: Option<T>,
-    #[serde(default)]
-    error: WgError,
-}
-#[derive(Deserialize, Default)]
-struct WgError {
-    message: Option<String>,
 }
 
 #[cfg(test)]
@@ -1038,29 +974,25 @@ mod tests {
         assert!(ship_stats_session_get("eu", 987_654_321).is_none());
     }
 
+    /// Live vortex shape (the per-mode merge's output): pvp subtree plus the
+    /// mode splits, all with vortex counter names. Pins the top-level
+    /// career, the solo/div/coop/ranked buckets and the PR anchor mapping.
     #[test]
-    fn raw_ship_stats_from_wg_parses() {
-        // Shape from /wows/ships/stats/ — note pvp subtree + mode splits.
-        let entry = serde_json::json!({
-            "ship_id": 4282948544_i64,
-            "last_battle_time": 1700000000,
+    fn raw_ship_stats_from_vortex_parses_full_breakdown() {
+        let node = serde_json::json!({
             "pvp": {
-                "battles": 100,
-                "wins": 55,
-                "damage_dealt": 2500000,
-                "frags": 80,
-                "survived_battles": 30,
-                "xp": 900000
+                "battles_count": 100, "wins": 55, "damage_dealt": 2500000,
+                "frags": 80, "survived": 30, "xp": 900000
             },
-            "pvp_solo": { "battles": 60, "wins": 30, "damage_dealt": 1500000, "frags": 45, "survived_battles": 18 },
-            "pvp_div2": { "battles": 30, "wins": 18, "damage_dealt": 750000, "frags": 25, "survived_battles": 9 },
-            "pvp_div3": { "battles": 10, "wins": 7, "damage_dealt": 250000, "frags": 10, "survived_battles": 3 },
-            "pve": { "battles": 5, "wins": 4, "damage_dealt": 100000, "frags": 6, "survived_battles": 2 },
-            "rank_solo": { "battles": 12, "wins": 6, "damage_dealt": 300000, "frags": 10, "survived_battles": 4 },
-            "rank_div2": { "battles": 8, "wins": 5, "damage_dealt": 200000, "frags": 7, "survived_battles": 3 },
+            "pvp_solo": { "battles_count": 60, "wins": 30, "damage_dealt": 1500000, "frags": 45, "survived": 18 },
+            "pvp_div2": { "battles_count": 30, "wins": 18, "damage_dealt": 750000, "frags": 25, "survived": 9 },
+            "pvp_div3": { "battles_count": 10, "wins": 7, "damage_dealt": 250000, "frags": 10, "survived": 3 },
+            "pve": { "battles_count": 5, "wins": 4, "damage_dealt": 100000, "frags": 6, "survived": 2 },
+            "rank_solo": { "battles_count": 12, "wins": 6, "damage_dealt": 300000, "frags": 10, "survived": 4 },
+            "rank_div2": { "battles_count": 8, "wins": 5, "damage_dealt": 200000, "frags": 7, "survived": 3 },
             "rank_div3": null
         });
-        let raw = RawShipStats::from_wg(&entry).unwrap();
+        let raw = RawShipStats::from_vortex(4282948544, &node).unwrap();
         assert_eq!(raw.ship_id, 4282948544);
         assert_eq!(raw.battles, 100);
         assert_eq!(raw.wins, 55);
@@ -1090,30 +1022,47 @@ mod tests {
 
     #[test]
     fn raw_ship_stats_without_modes_yields_none_breakdown() {
-        let entry = serde_json::json!({
-            "ship_id": 1,
-            "pvp": { "battles": 10, "wins": 5, "damage_dealt": 100000, "frags": 5, "survived_battles": 2 }
+        let node = serde_json::json!({
+            "pvp": { "battles_count": 10, "wins": 5, "damage_dealt": 100000, "frags": 5, "survived": 2 }
         });
-        let raw = RawShipStats::from_wg(&entry).unwrap();
+        let raw = RawShipStats::from_vortex(1, &node).unwrap();
         assert!(raw.modes.is_none());
         let stats = PlayerShipStats::from(&raw);
         assert!(stats.modes.is_none());
         assert_eq!(stats.avg_xp, None, "no xp served → None");
     }
 
+    /// The vortex serves no last_battle_time; the carry-forward keeps the
+    /// previous disk write's stamps so the date-range career fallback keeps
+    /// filtering on recency. Ships the previous write never saw stay 0.
+    #[test]
+    fn carry_last_battle_times_fills_zeros_from_the_previous_write() {
+        let mut raw = vec![zeroed_raw(1), zeroed_raw(2)];
+        // mk_stats carries last_battle_time 1_700_000_000 — the stored stamp.
+        let prev = vec![mk_stats(1, 100)];
+        carry_last_battle_times(&mut raw, &prev);
+        assert_eq!(raw[0].last_battle_time, 1_700_000_000);
+        assert_eq!(raw[1].last_battle_time, 0, "a never-seen ship stays 0");
+        // A non-zero fresh stamp is never overwritten.
+        raw[0].last_battle_time = 42;
+        carry_last_battle_times(&mut raw, &prev);
+        assert_eq!(raw[0].last_battle_time, 42);
+        // Nothing previous on disk at all — a no-op.
+        carry_last_battle_times(&mut raw, &[]);
+        assert_eq!(raw[0].last_battle_time, 42);
+    }
+
     #[test]
     fn raw_ship_stats_skips_zero_battles() {
-        let entry = serde_json::json!({
-            "ship_id": 1,
-            "pvp": { "battles": 0, "wins": 0, "damage_dealt": 0, "frags": 0, "survived_battles": 0 }
+        let node = serde_json::json!({
+            "pvp": { "battles_count": 0, "wins": 0, "damage_dealt": 0, "frags": 0, "survived": 0 }
         });
-        assert!(RawShipStats::from_wg(&entry).is_none());
+        assert!(RawShipStats::from_vortex(1, &node).is_none());
     }
 
     #[test]
     fn raw_ship_stats_skips_null_pvp() {
-        let entry = serde_json::json!({ "ship_id": 1, "pvp": null });
-        assert!(RawShipStats::from_wg(&entry).is_none());
+        assert!(RawShipStats::from_vortex(1, &serde_json::json!({ "pvp": null })).is_none());
     }
 
     #[test]
@@ -1181,7 +1130,7 @@ mod tests {
     /// boost-multiplied `exp` total is ignored), a failed split degrades to
     /// a missing breakdown entry, and zero-pvp ships are skipped.
     #[test]
-    fn merge_cn_mode_maps_rebuilds_per_ship_nodes() {
+    fn merge_vortex_mode_maps_rebuilds_per_ship_nodes() {
         let pvp = serde_json::json!({
             "status": "ok",
             "data": { "7048272283": { "statistics": {
@@ -1203,19 +1152,19 @@ mod tests {
                 } }
             } } }
         });
-        let rows = merge_cn_mode_maps(
+        let rows = merge_vortex_mode_maps(
             7048272283,
             vec![
                 ("pvp", Ok(pvp)),
                 (
                     "pvp_div2",
-                    Err::<serde_json::Value, String>("CN ships: HTTP 503".to_string()),
+                    Err::<serde_json::Value, String>("vortex ships: HTTP 503".to_string()),
                 ),
                 ("rank_solo", Ok(rank_solo)),
             ],
         )
         .expect("merge succeeds");
-        assert_eq!(rows.len(), 1, "the zero-pvp ship is skipped");
+        assert_eq!(rows.len(), 1, "a ship with no served battles is skipped");
         let r = &rows[0];
         assert_eq!(r.ship_id, 4065212112);
         assert_eq!(r.battles, 536);
@@ -1241,33 +1190,68 @@ mod tests {
     /// statistics answer stays the empty-list "hidden" marker, never an
     /// error.
     #[test]
-    fn merge_cn_mode_maps_requires_pvp_core_but_tolerates_hidden() {
-        let err = merge_cn_mode_maps(
+    fn merge_vortex_mode_maps_requires_pvp_core_but_tolerates_hidden() {
+        let err = merge_vortex_mode_maps(
             1,
             vec![(
                 "pvp",
-                Err::<serde_json::Value, String>("CN ships: HTTP 500".to_string()),
+                Err::<serde_json::Value, String>("vortex ships: HTTP 500".to_string()),
             )],
         )
         .expect_err("pvp failure must surface");
-        assert!(err.contains("CN ships"));
+        assert!(err.contains("vortex ships"));
         let hidden = serde_json::json!({
             "status": "ok",
             "data": { "1": { "name": "ghost", "hidden_profile": true } }
         });
         let rows =
-            merge_cn_mode_maps(1, vec![("pvp", Ok(hidden))]).expect("hidden is not an error");
+            merge_vortex_mode_maps(1, vec![("pvp", Ok(hidden))]).expect("hidden is not an error");
         assert!(rows.is_empty());
-        // Splits alone (pvp missing from the data map entirely) yield no
-        // rows either — a pvp-less node never parses.
+        // A split-only ship (pvp missing from the data map entirely) keeps
+        // its row: the co-op bucket answers future scopes and the ranked
+        // bucket answers 排位 today, with the pvp career reading as zero.
         let split_only = serde_json::json!({
             "status": "ok",
             "data": { "1": { "statistics": {
                 "42": { "pve": { "battles_count": 5, "wins": 4, "damage_dealt": 100000 } }
             } } }
         });
-        let rows = merge_cn_mode_maps(1, vec![("pve", Ok(split_only))]).expect("ok");
-        assert!(rows.is_empty(), "no pvp node parses to no row");
+        let rows = merge_vortex_mode_maps(1, vec![("pve", Ok(split_only))]).expect("ok");
+        assert_eq!(rows.len(), 1, "a co-op-only ship keeps its row");
+        let r = &rows[0];
+        assert_eq!(r.ship_id, 42);
+        assert_eq!(r.battles, 0, "the pvp career stays zero");
+        assert_eq!(r.modes.as_ref().unwrap().coop.as_ref().unwrap().battles, 5);
+    }
+
+    /// Zero-pvp ships that still carry ranked battles keep their row — the
+    /// regression that emptied the 单船+排位 view for ranked-only ships
+    /// (and whole co-op rosters) when rows were dropped on
+    /// `pvp.battles == 0` alone.
+    #[test]
+    fn zero_pvp_rows_survive_on_other_mode_battles() {
+        let vortex_node = serde_json::json!({
+            "rank_solo": { "battles_count": 7, "wins": 5, "damage_dealt": 140000 }
+        });
+        let raw = RawShipStats::from_vortex(4282948544, &vortex_node)
+            .expect("pvp-less vortex node with ranked battles survives");
+        assert_eq!(raw.battles, 0);
+        assert_eq!(raw.wins, 0);
+        assert_eq!(raw.damage_caused, 0);
+        assert_eq!(
+            raw.modes.as_ref().unwrap().ranked.as_ref().unwrap().battles,
+            7
+        );
+        // The display conversion reads a zero-pvp row as 0% / 0 damage —
+        // the randoms view's `battles > 0` gate keeps it out of aggregates.
+        let stats = PlayerShipStats::from(&raw);
+        assert_eq!(stats.battles, 0);
+        assert_eq!(stats.winrate, 0.0);
+
+        // No pvp AND no other mode → still dropped (an unplayed ship the
+        // vortex map happened to carry).
+        let empty = serde_json::json!({ "pvp": { "battles_count": 0, "wins": 0 } });
+        assert!(RawShipStats::from_vortex(1, &empty).is_none());
     }
 
     /// Defensive-branch coverage for the merge: a non-numeric ship-id key is
@@ -1276,7 +1260,7 @@ mod tests {
     /// mode documents combine into the single ranked bucket exactly like
     /// the WG path's integration test.
     #[test]
-    fn merge_cn_mode_maps_skips_noise_and_combines_ranked_splits() {
+    fn merge_vortex_mode_maps_skips_noise_and_combines_ranked_splits() {
         let pvp = serde_json::json!({
             "status": "ok",
             "data": { "7": { "statistics": {
@@ -1300,7 +1284,7 @@ mod tests {
                 "42": { "rank_div2": { "battles_count": 8, "wins": 5, "damage_dealt": 200000 } }
             } } }
         });
-        let rows = merge_cn_mode_maps(
+        let rows = merge_vortex_mode_maps(
             7,
             vec![
                 ("pvp", Ok(pvp)),
@@ -1365,6 +1349,20 @@ mod tests {
         let mut other = mk_stats(999, 10);
         apply_pr_algo(&mut other, PrAlgo::Expected, &Some(table));
         assert_eq!(other.pr, None);
+    }
+
+    fn zeroed_raw(ship_id: i64) -> RawShipStats {
+        RawShipStats {
+            ship_id,
+            battles: 10,
+            wins: 5,
+            damage_caused: 100_000,
+            frags: 5,
+            survived_battles: 2,
+            last_battle_time: 0,
+            xp: 0,
+            modes: None,
+        }
     }
 
     fn read_history_file(file: &str) -> Vec<ShipStatsHistoryPoint> {
@@ -1517,6 +1515,38 @@ mod tests {
             "poisoned refresh must keep the stored healthy totals",
         );
         assert_eq!(by_ship[&2].damage_caused, 40 * 10_000);
+
+        let path = appdata_dir_path().unwrap().join(&file);
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A retained zero-pvp row (ranked/co-op ship the vortex merge keeps)
+    /// must never enter a history point, and a merge must keep the stored
+    /// healthy totals for that ship instead of regressing them to zero —
+    /// the same treatment poisoned rows get.
+    #[test]
+    fn ship_history_keeps_stored_totals_against_zero_battle_rows() {
+        let ts: i64 = 1_790_000_000;
+        let file = format!("ship-history/test_{ts}.json");
+        let _ = write_appdata_json(&file, "[]");
+
+        let t0: i64 = 1_700_000_000;
+        append_ship_history("test", ts, &[mk_stats(2, 40)], t0);
+        // Same session → merge; ship 2 comes back as a zero-pvp row.
+        let mut zero = mk_stats(2, 0);
+        zero.damage_caused = 0;
+        zero.frags = 0;
+        append_ship_history("test", ts, &[mk_stats(1, 10), zero], t0 + 3600);
+
+        let history = read_history_file(&file);
+        assert_eq!(history.len(), 1);
+        let by_ship: std::collections::HashMap<i64, _> =
+            history[0].ships.iter().map(|s| (s.ship_id, s)).collect();
+        assert_eq!(by_ship[&1].battles, 10, "healthy fresh row is recorded");
+        assert_eq!(
+            by_ship[&2].battles, 40,
+            "zero-pvp refresh keeps the stored totals"
+        );
 
         let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);
