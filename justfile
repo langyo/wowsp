@@ -177,6 +177,14 @@ i18n-check *FLAGS='':
 check:
     cargo check --workspace
 
+# Offline sandbox-conformance harness for the in-game probe (Main.py):
+# execs it under a deliberately crippled builtins set and drives a full
+# battle, asserting the bridge artifacts the app consumes. Run on every
+# Main.py change — the Lesta ModsAPI whitelist cost too many field
+# restart cycles to rediscover.
+check-ingame-plugin:
+    python scripts/check_ingame_plugin.py
+
 # ── pairing relay ─────────────────────────────────────────────────────
 # The pairing gateway (packages/pairing-relay) is a STANDALONE Rust
 # workspace compiled to wasm32 for Cloudflare Workers (excluded from the

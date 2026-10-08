@@ -32,6 +32,18 @@ Never name an exception class in an `except` clause either — Lesta's
 ModsAPI sandbox omits the exception classes from its builtin whitelist,
 so `except Exception:` itself raises NameError there; handlers must use
 bare `except:` (with `_exc_text` for the message).
+
+Stronger still: the CORE paths (roster projection, request/telemetry
+writes, the panel payload) never look up a builtin name at all —
+%-formatting, bound methods, comprehensions and `__dict__` access carry
+them, so a whitelist that also drops `str`/`int`/`sorted`/`dir`/`getattr`
+cannot empty the roster. `len`/`open` and the `True`/`False` constants
+(builtin globals on py2.7) are the only builtins the shipped file still
+resolves by name — all live-proven on Lesta since the first shipped
+revision — and a census line reports them at import. `import time` is
+the sole imported module. `scripts/check_ingame_plugin.py`
+proves this offline: it execs this file under a crippled builtins set
+and drives a full battle — run it on every change here.
 """
 API_VERSION = 'API_v1.0'
 
@@ -67,7 +79,9 @@ def load_tool_config():
     the sandbox. Any problem (missing file, changed layout, odd values)
     falls back to CONFIG_DEFAULTS; never raises.
     """
-    cfg = dict(CONFIG_DEFAULTS)
+    # dict.copy() is a bound method — no `dict(...)` name lookup on the
+    # import path (the harness proves the crippled-builtins run).
+    cfg = CONFIG_DEFAULTS.copy()
     try:
         # Relative open only — no `os`, no `__file__`: the PnFMods loader
         # runs mods with their own directory as the CWD (every bridge file
@@ -79,11 +93,22 @@ def load_tool_config():
             body = handle.read()
         header = '[tools."battle.ingame.stats"]'
         lines = body.splitlines()
-        for idx in range(len(lines)):
-            if lines[idx].strip() != header:
-                continue
-            for line in lines[idx + 1:]:
-                stripped = line.strip()
+        # Indexed walk by hand: `range`/`enumerate` are builtin NAMES the
+        # Lesta whitelist may withhold, and a bare except would silently
+        # drop the table (the old code did exactly that).
+        total = len(lines)
+        idx = 0
+        found = False
+        while idx < total:
+            if lines[idx].strip() == header:
+                found = True
+                break
+            idx += 1
+        if found:
+            pos = idx + 1
+            while pos < total:
+                stripped = lines[pos].strip()
+                pos += 1
                 if stripped.startswith('['):
                     break  # next table — ours ended
                 if '=' not in stripped or stripped.startswith('#'):
@@ -92,15 +117,11 @@ def load_tool_config():
                 key = key.strip()
                 raw = raw.split('#', 1)[0].strip()
                 if key in CONFIG_DEFAULTS and raw.lstrip('-').isdigit():
-                    cfg[key] = int(raw)
-            break
+                    cfg[key] = _to_int(raw)
     except:
         pass
     return cfg
 
-
-TOOL_CONFIG = load_tool_config()
-JOURNAL_LIMIT = TOOL_CONFIG['journal_limit']
 
 # The in-game panel's single data component: the unbound view watches this
 # key (getPrimWatcher(CC.mods_DataComponent, ...)) and redraws on every
@@ -119,22 +140,169 @@ GUESS_FIELDS = ('name', 'accountDBID', 'realm', 'shipParamsId', 'isBot', 'teamId
 import time
 
 
+# ── sandbox-proof primitives ────────────────────────────────────────────
+# The Lesta ModsAPI sandbox resolves builtins through a whitelist that
+# omits the class AND reflection machinery wholesale: `Exception` and
+# `object` each killed the mod at import (2026-10-08), and a missing
+# `str`/`int`/`sorted`/`isinstance` would silently empty the roster path
+# these helpers replace. Everything below is pure syntax and protocol
+# access — %-formatting is a C-level bytecode operation, `.index`/`.sort`/
+# `.copy` are bound methods, subscript/attribute lookups need no names —
+# so the core paths keep working under ANY builtin subset.
+_DIGITS = '0123456789'
+
+
+def _fmt(value):
+    """`str(value)` without the builtin: %s-formatting never looks a
+    name up in `__builtins__`."""
+    try:
+        return '%s' % (value,)
+    except:
+        return '?'
+
+
+def _parse_int(s):
+    """Digit-string -> int by hand (sign honoured, surrounding blanks
+    tolerated, junk -> 0)."""
+    s = s.strip()
+    neg = s[:1] == '-'
+    if neg or s[:1] == '+':
+        s = s[1:]
+    n = 0
+    for ch in s:
+        try:
+            d = _DIGITS.index(ch)
+        except:
+            return 0
+        n = n * 10 + d
+    return -n if neg else n
+
+
+def _to_int(value):
+    """`int(value)` without the builtin: %d formats int/long/bool and
+    truncates floats exactly like int() (and, on py2, even accepts digit
+    strings); anything else falls back to the %s form."""
+    try:
+        return _parse_int('%d' % (value,))
+    except:
+        pass
+    try:
+        return _parse_int(('%s' % (value,)).strip())
+    except:
+        return 0
+
+
+def _to_float(value):
+    """`float(value)` without the builtin — enough for timestamp strings
+    and numbers ('12.5', u'12.5', 12, 12.5, '-3.25'); junk -> 0.0.
+    Known divergences from float(), none reachable at the one call site
+    (a seconds-since-epoch flag stamp): bool -> 0.0, exponents/NaN/inf
+    -> 0.0, a second dot is tolerated."""
+    try:
+        text = ('%s' % (value,)).strip()
+        whole, _, frac = text.partition('.')
+        base = _to_int(whole)
+        if not frac:
+            return base * 1.0
+        scale = 1
+        for _ in frac:
+            scale = scale * 10
+        part = (_to_int(frac) * 1.0) / scale
+        # The sign lives on the whole part: -3.25 is -3 MINUS .25.
+        if text[:1] == '-':
+            return base - part
+        return base + part
+    except:
+        return 0.0
+
+
+def _is_kind(value, *names):
+    """Class-name probe without `isinstance`/`object`. Exact class names
+    only — subclasses of dict/list would not match where isinstance did;
+    callers feed it codec-produced containers (exact dict/list), so the
+    difference is unreachable."""
+    try:
+        return value.__class__.__name__ in names
+    except:
+        return False
+
+
+def _is_num(value):
+    """Number probe without `isinstance`: for int/long/float (and bool)
+    `value + 0 == value`; strings concatenate or raise, everything else
+    raises or compares unequal. Divergences kept in mind: py2 long and
+    complex pass, NaN fails — callers only see numbers their own codec
+    produced (jsonDecode rows, jsonEncode echoes)."""
+    try:
+        return value + 0 == value
+    except:
+        return False
+
+
+def _is_callable(value):
+    """`callable(value)` without the builtin."""
+    try:
+        value.__call__
+        return True
+    except:
+        return False
+
+
+def _public_names(obj):
+    """Diagnostic name enumeration without `dir`/`sorted`: `__dict__` is
+    plain attribute access and list.sort is a bound method. Drops
+    INHERITED names `dir()` used to include — diagnostics only, and the
+    namespaces this walks (injected modules, component classes) keep
+    their API in their own __dict__."""
+    try:
+        names = [n for n in obj.__dict__]
+    except:
+        try:
+            names = [n for n in obj]
+        except:
+            return []
+    names = [n for n in names if not n.startswith('_')]
+    names.sort()
+    return names
+
+
+def _has_builtin(table, name):
+    """Membership probe for the census: `__builtins__` is a dict on some
+    builds and a module on others."""
+    try:
+        return name in table
+    except:
+        try:
+            return name in table.__dict__
+        except:
+            return False
+
+
 def _exc_text(limit):
     """Sandbox-safe current-exception text.
 
-    Lesta's ModsAPI sandbox resolves builtins through a whitelist that
-    omits the exception classes: the NAME `Exception` itself raises
-    NameError the first time any handler evaluates (2026-10-08: the mod
-    died at import that way, silencing telemetry, the in-game panel and
-    the roster files for every Lesta battle). Bare `except:` needs no
-    name, and the live exception still reaches this helper via
-    sys.exc_info() when the sandbox allows the import.
+    Lesta's ModsAPI sandbox omits the exception classes from its builtins:
+    the NAME `Exception` itself raises NameError the first time any
+    handler evaluates (2026-10-08: the mod died at import that way,
+    silencing telemetry, the in-game panel and the roster files for every
+    Lesta battle). Bare `except:` needs no name, and the live exception
+    still reaches this helper via sys.exc_info() when the sandbox allows
+    the import.
     """
     try:
         import sys
-        return str(sys.exc_info()[1])[:limit]
+        return ('%s' % (sys.exc_info()[1],))[:limit]
     except:
         return '?'
+
+
+# Deliberately AFTER the helper block: `load_tool_config` calls `_to_int`,
+# and name resolution happens at CALL time — while this statement ran
+# above the helpers, the NameError was swallowed by the loader's bare
+# except and res_mods/wowsp.toml was silently ignored (caught by the
+# round-2 review; the harness now pins it with a planted wowsp.toml).
+TOOL_CONFIG = load_tool_config()
+JOURNAL_LIMIT = TOOL_CONFIG['journal_limit']
 
 
 def log(message):
@@ -149,17 +317,30 @@ def bare_name(name):
 
 # One-shot sandbox census: Lesta's ModsAPI resolves builtins through a
 # narrow whitelist that omits the class machinery (both `Exception` and
-# `object` crashed the mod at import in the field — 2026-10-08). Dump
-# whatever names ARE reachable so any remaining gap is fixable from
-# python.log alone, without another crash-iterate game restart. Uses only
-# the injected utils encoder and bare excepts.
+# `object` crashed the mod at import in the field — 2026-10-08). Dump the
+# reachable names AND whether the handful the legacy paths still use are
+# present, so any remaining gap is diagnosable from python.log alone.
+# Pure syntax + bare excepts: no `list`, no `dir`, no `sorted`.
 try:
     _bi = __builtins__
+    _names = []
     try:
-        _census = _bi.keys()
+        for _n in _bi.keys():
+            _names.append(_fmt(_n))
     except:
-        _census = [n for n in dir(_bi)]
-    utils.logInfo(PREFIX + 'sandbox builtins=' + utils.jsonEncode(list(_census)))
+        try:
+            for _n in _bi.__dict__:
+                _names.append(_fmt(_n))
+        except:
+            pass
+    # The survivors the shipped file still resolves by NAME: `len`/`open`
+    # (protocol primitives with no pure-syntax substitute), `True`/`False`
+    # (builtin globals on the game's py2.7 — LOAD_GLOBAL, not compiler
+    # constants as on py3; the plugin has used them since the first
+    # shipped revision, so they are live-proven present, but the census
+    # names them so a crippled host is diagnosable at a glance).
+    _miss = [n for n in ('len', 'open', 'True', 'False') if not _has_builtin(_bi, n)]
+    utils.logInfo(PREFIX + 'sandbox builtins=' + _fmt(_names) + ' legacy_missing=' + _fmt(_miss))
 except:
     try:
         utils.logInfo(PREFIX + 'sandbox census failed')
@@ -197,7 +378,7 @@ class Probe:
         self.discovered = False
         self.journal = []
         self.empty_ticks = 0
-        self.dead_latch = set()
+        self.dead_latch = {None} - {None}
         self.dh = None
         self.const = None
         self.api_dumped = False
@@ -237,15 +418,11 @@ class Probe:
         for name, module in (('battle', battle), ('events', events), ('ui', ui),
                              ('callbacks', callbacks), ('utils', utils)):
             try:
-                try:
-                    names = sorted(dir(module))
-                except:
-                    names = sorted(getattr(module, '__dict__', {}).keys())
-                log('api ' + name + ' ' + str(names))
+                log('api ' + name + ' ' + _fmt(_public_names(module)))
             except:
                 log('api ' + name + ' dump failed=' + _exc_text(80))
         try:
-            self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': int(time.time() * 1000), 'phase': 'load'})
+            self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': _to_int(time.time() * 1000), 'phase': 'load'})
         except:
             log('heartbeat write failed=' + _exc_text(120))
         try:
@@ -355,17 +532,16 @@ class Probe:
                     found.append(name)
                 except:
                     pass
-            log('injected names=' + str(found))
+            log('injected names=' + _fmt(found))
             if self.const is not None:
                 try:
-                    names = [n for n in dir(self.const.UiComponents) if not n.startswith('_')]
-                    log('CC names=' + str(sorted(names))[:3800])
+                    names = _public_names(self.const.UiComponents)
+                    log('CC names=' + _fmt(names)[:3800])
                 except:
                     log('CC dir failed=' + _exc_text(120))
             if self.dh is not None:
                 try:
-                    log('dataHub dir=' + str([n for n in dir(self.dh)
-                                              if not n.startswith('_')])[:2000])
+                    log('dataHub dir=' + _fmt(_public_names(self.dh))[:2000])
                 except:
                     log('dataHub dir failed=' + _exc_text(120))
         log('api[%s] dh=%s const=%s' % (phase, self.dh is not None, self.const is not None))
@@ -382,15 +558,17 @@ class Probe:
                 if self.comp_dumped:
                     break
                 try:
-                    for comp_name in [n for n in dir(self.const.UiComponents) if not n.startswith('_')]:
-                        comp_class = getattr(self.const.UiComponents, comp_name)
+                    for comp_name in _public_names(self.const.UiComponents):
+                        # __dict__ subscript: comp_name came from
+                        # _public_names (i.e. IS a __dict__ key) — no getattr.
+                        comp_class = self.const.UiComponents.__dict__[comp_name]
                         try:
                             if comp_class in entity:
                                 present[comp_name] = True
                         except:
                             pass
                     self.comp_dumped = True
-                    log('entity components present=' + str(sorted(present.keys()))[:3000])
+                    log('entity components present=' + _fmt(present.keys())[:3000])
                 except:
                     log('component enum failed=' + _exc_text(120))
             log('api[%s] avatar entities=%d' % (phase, counted))
@@ -409,18 +587,18 @@ class Probe:
             for entity in self.dh.getEntityCollections('avatar'):
                 try:
                     avatar = entity[cc.avatar]
-                    name = str(avatar.name)
+                    name = _fmt(avatar.name)
                 except:
                     continue
                 row = {}
                 try:
                     health = entity[cc.health]
-                    row['hp'] = str(health.value) + '/' + str(health.max)
-                    row['alive'] = str(bool(health.isAlive))
+                    row['hp'] = _fmt(health.value) + '/' + _fmt(health.max)
+                    row['alive'] = 'True' if health.isAlive else 'False'
                 except:
                     pass
                 try:
-                    row['relation'] = str(entity[cc.relation].value)
+                    row['relation'] = _fmt(entity[cc.relation].value)
                 except:
                     pass
                 states[name] = row
@@ -464,7 +642,7 @@ class Probe:
         try:
             for entity in self.dh.getEntityCollections('avatar'):
                 try:
-                    name = bare_name(str(entity[cc.avatar].name))
+                    name = bare_name(_fmt(entity[cc.avatar].name))
                 except:
                     continue
                 if not name:
@@ -473,8 +651,8 @@ class Probe:
                 row = {}
                 try:
                     health = entity[cc.health]
-                    alive = bool(health.isAlive)
-                    row['hp'] = str(health.value) + '/' + str(health.max)
+                    alive = True if health.isAlive else False
+                    row['hp'] = _fmt(health.value) + '/' + _fmt(health.max)
                 except:
                     pass
                 # Death latch (#716): isAlive can flicker back for a tick
@@ -489,7 +667,7 @@ class Probe:
                 # record is the game's own verdict).
                 if name in self.dead_latch:
                     alive = False
-                row['alive'] = str(alive)
+                row['alive'] = 'True' if alive else 'False'
                 side = 'enemy'
                 try:
                     if cc.relation in entity:
@@ -497,7 +675,7 @@ class Probe:
                             side = 'ally'
                         if entity[cc.relation].value == self_relation:
                             self_name = name
-                    row['relation'] = str(entity[cc.relation].value)
+                    row['relation'] = _fmt(entity[cc.relation].value)
                 except:
                     pass
                 states[name] = row
@@ -555,34 +733,34 @@ class Probe:
         """
         try:
             from ModsShell.API_v_1_0.dataHub import ComponentClass as CC
-            names = [n for n in dir(CC) if not n.startswith('_')]
-            log('shell[%s] CC %d names=%s' % (phase, len(names), str(sorted(names))[:3800]))
+            names = _public_names(CC)
+            log('shell[%s] CC %d names=%s' % (phase, len(names), _fmt(names)[:3800]))
         except:
             log('shell[%s] CC failed=%s' % (phase, _exc_text(120)))
         try:
             from dh import DataHubStorage
             hub = DataHubStorage.getDataHub(DataHubStorage.CLIENT_HUB)
-            names = [n for n in dir(hub) if not n.startswith('_')]
-            log('shell[%s] hub type=%s dir=%s' % (phase, str(type(hub)), str(names)[:2000]))
+            names = _public_names(hub)
+            log('shell[%s] hub type=%s dir=%s' % (phase, _fmt(hub.__class__), _fmt(names)[:2000]))
         except:
             log('shell[%s] hub failed=%s' % (phase, _exc_text(120)))
         try:
             from ModsShell.API_v_1_0 import battleGate
-            names = [n for n in dir(battleGate) if not n.startswith('_')]
-            log('shell[%s] battleGate=%s' % (phase, str(names)[:2000]))
+            names = _public_names(battleGate)
+            log('shell[%s] battleGate=%s' % (phase, _fmt(names)[:2000]))
         except:
             log('shell[%s] battleGate failed=%s' % (phase, _exc_text(120)))
         try:
             import BigWorld
             ents = BigWorld.entities
             count = len(ents)
-            sample = sorted(ents.keys())[:8]
-            log('shell[%s] bigworld entities=%d sampleIds=%s' % (phase, count, str(sample)))
+            sample = [eid for eid in ents][:8]
+            log('shell[%s] bigworld entities=%d sampleIds=%s' % (phase, count, _fmt(sample)))
             for eid in sample:
                 entity = ents[eid]
-                names = [n for n in dir(entity) if not n.startswith('_')]
+                names = _public_names(entity)
                 if names:
-                    log('shell[%s] entity %s type=%s attrs=%s' % (phase, eid, str(type(entity)), str(names)[:1200]))
+                    log('shell[%s] entity %s type=%s attrs=%s' % (phase, eid, _fmt(entity.__class__), _fmt(names)[:1200]))
                     break
         except:
             log('shell[%s] bigworld failed=%s' % (phase, _exc_text(120)))
@@ -602,10 +780,10 @@ class Probe:
         self.discovered = False
         self.comp_dumped = False
         self.empty_ticks = 0
-        self.dead_latch = set()
+        self.dead_latch = {None} - {None}
         try:
             stream = open(TELEMETRY_FILE, 'w')
-            stream.write(utils.jsonEncode({'t': int(time.time() * 1000),
+            stream.write(utils.jsonEncode({'t': _to_int(time.time() * 1000),
                                            'battle': self.session or '',
                                            'players': {}}) + '\n')
             stream.close()
@@ -624,7 +802,7 @@ class Probe:
         self.tab = False
         self.order = {'ally': [], 'enemy': []}
         self.alive_last = {'ally': {}, 'enemy': {}}
-        self.dead_latch = set([])
+        self.dead_latch = {None} - {None}
         self.raw_isalive_seen = False
         self.stats = {}
         self.labels = {}
@@ -635,7 +813,7 @@ class Probe:
         self.last_panel = ''
 
     def clear_players(self):
-        for key in list(self.entities):
+        for key in [k for k in self.entities]:
             if key != 'wowspProbe.status':
                 try:
                     ui.deleteUiElement(self.entities.pop(key))
@@ -656,7 +834,7 @@ class Probe:
                 if p['isBot'] or not p['name'] or p['name'].startswith(':'):
                     continue
                 try:
-                    aid = int(p['accountDBID'])
+                    aid = _to_int(p['accountDBID'])
                 except:
                     aid = 0
                 # The record carries the player's realm (the game's own
@@ -666,19 +844,22 @@ class Probe:
                 # battle; '' when a build stops exposing it, and the
                 # companion falls back to its detection chain.
                 try:
-                    realm = str(p['realm'] or '')
+                    realm = _fmt(p['realm'] or '')
                 except:
                     realm = ''
-                result.append({'name': p['name'], 'account_id': max(0, aid),
-                               'avatar_id': int(key), 'ship_id': int(p['shipParamsId']),
+                result.append({'name': p['name'], 'account_id': (aid if aid > 0 else 0),
+                               'avatar_id': _to_int(key), 'ship_id': _to_int(p['shipParamsId']),
                                'realm': realm})
         except:
             self.soft('players error=' + _exc_text(120))
             return []
-        return sorted(result, key=lambda p: p['name'])[:64]
+        # list.sort is a bound method (no builtin-name lookup) and py2.7
+        # supports the key argument — the same order sorted() produced.
+        result.sort(key=lambda p: p['name'])
+        return result[:64]
 
     def journal_mark(self, kind):
-        self.journal.append('{"t":' + str(int(time.time() * 1000)) + ',"ev":' + utils.jsonEncode(kind) + '}')
+        self.journal.append('{"t":' + _fmt(_to_int(time.time() * 1000)) + ',"ev":' + utils.jsonEncode(kind) + '}')
         self.journal_flush()
 
     def journal_flush(self):
@@ -697,34 +878,37 @@ class Probe:
             value = record[key]
         except:
             try:
-                value = getattr(record, key)
+                # __dict__ only (no getattr): a property/__getattr__-
+                # exposed field can slip the PROJECTION fallback — the
+                # encoder path that keeps every field is unaffected, and
+                # this path only runs when the encoder rejected the
+                # record outright.
+                value = record.__dict__[key]
             except:
                 return None
-        try:
-            if callable(value):
-                return None
-        except:
-            pass
-        return str(value)[:48]
+        if _is_callable(value):
+            return None
+        return _fmt(value)[:48]
 
     def project_record(self, record):
         """Full JSON encode when possible (keeps every field), else the
         guessed-field projection for records the encoder cannot handle."""
         try:
-            return str(utils.jsonEncode(record))[:1200]
+            return _fmt(utils.jsonEncode(record))[:1200]
         except:
-            return dict((k, v) for k, v in ((k, self.read_field(record, k))
-                                            for k in GUESS_FIELDS) if v is not None)
+            # Dict comprehension: pure syntax, no `dict(...)` name lookup.
+            return {k: v for k, v in ((k, self.read_field(record, k))
+                                      for k in GUESS_FIELDS) if v is not None}
 
     def discover(self, record):
         """One-shot battery: what does a SafeClass record actually expose?"""
         for label, call in (('jsonEncode', lambda: utils.jsonEncode(record)),
-                            ('str', lambda: str(record)),
-                            ('keys', lambda: list(record.keys())),
-                            ('iter', lambda: list(record)),
-                            ('dir', lambda: [k for k in dir(record) if not k.startswith('_')])):
+                            ('str', lambda: _fmt(record)),
+                            ('keys', lambda: [k for k in record.keys()]),
+                            ('iter', lambda: [v for v in record]),
+                            ('names', lambda: [k for k in record.__dict__])):
             try:
-                log('discovery ' + label + '=' + str(call())[:3000])
+                log('discovery ' + label + '=' + _fmt(call())[:3000])
             except:
                 log('discovery ' + label + ' failed=' + _exc_text(80))
         for field in GUESS_FIELDS:
@@ -739,12 +923,12 @@ class Probe:
         try:
             projection = {}
             for key, p in records.items():
-                projection[str(key)] = self.project_record(p)
+                projection[_fmt(key)] = self.project_record(p)
             body = utils.jsonEncode({'players': projection, 'states': self.entity_states()})
             if body != self.last_raw:
                 first = self.last_raw == ''
                 self.last_raw = body
-                stamp = str(int(time.time() * 1000))
+                stamp = _fmt(_to_int(time.time() * 1000))
                 try:
                     stream = open(ROSTER_RAW_FILE, 'w')
                     stream.write('{"t":' + stamp + ',' + body[1:] + '\n')
@@ -755,7 +939,12 @@ class Probe:
                     # First POPULATED snapshot of this battle: document the
                     # schema (the port-empty write must not consume this).
                     self.discovered = True
-                    record = records[list(records)[0]]
+                    # First key of the records mapping, without list():
+                    # subscript with a break is pure iteration syntax.
+                    record = None
+                    for _key in records:
+                        record = records[_key]
+                        break
                     try:
                         self.discover(record)
                     except:
@@ -776,7 +965,7 @@ class Probe:
         self.revision = -1
         try:
             self.write_json(REQUEST_FILE, {'version': 1, 'created': self.last_request,
-                                           'session': self.session, 'manual': bool(manual),
+                                           'session': self.session, 'manual': True if manual else False,
                                            'players': self.roster})
             # Empty response mailbox: read_json treats a file without the
             # trailing newline as absent, and no engine error is logged for
@@ -784,7 +973,7 @@ class Probe:
             stream = open(RESPONSE_FILE, 'w')
             stream.close()
             self.busy = True
-            log('request written players=' + str(len(self.roster)) + ' manual=' + str(bool(manual)))
+            log('request written players=' + _fmt(len(self.roster)) + ' manual=' + ('True' if manual else 'False'))
         except:
             self.soft('request write failed=' + _exc_text(120))
 
@@ -796,23 +985,23 @@ class Probe:
             if data.get('session') != self.session or data.get('revision', -1) <= self.revision:
                 return
             rows = data.get('rows', [])
-            if not isinstance(rows, list) or len(rows) > 64:
+            if not _is_kind(rows, 'list') or len(rows) > 64:
                 return
-            allowed = set(p['name'] for p in self.roster)
-            stats = dict(self.stats)
+            allowed = {p['name'] for p in self.roster}
+            stats = self.stats.copy()
             for row in rows:
                 name = row.get('name', '')
                 if not name or name not in allowed:
                     continue
                 stats[name] = row
             labels = data.get('labels')
-            if isinstance(labels, dict):
+            if _is_kind(labels, 'dict'):
                 self.labels = labels
             self.stats = stats
             self.revision = data.get('revision', -1)
             self.busy = False
             self.refresh_panel()
-            log('response applied revision=' + str(self.revision) + ' rows=' + str(len(rows)))
+            log('response applied revision=' + _fmt(self.revision) + ' rows=' + _fmt(len(rows)))
         except:
             # No response file yet is the normal state while nobody answers.
             self.soft('response read failed=' + _exc_text(120))
@@ -825,7 +1014,7 @@ class Probe:
                 self.known_events.add(name)
                 if self.event_log_count < 400:
                     self.event_log_count += 1
-                    log('sfm event ' + str(name))
+                    log('sfm event ' + _fmt(name))
             if name == 'input.tabModeIn' or name == 'input.tabModeOut':
                 # The panel's visibility driver: fires <=3 ms after the key
                 # and never for Tab typed in battle chat (design-doc-proven).
@@ -839,7 +1028,7 @@ class Probe:
             for prefix in ('action.', 'inputMapping.'):
                 if name.startswith(prefix):
                     name = name[len(prefix):]
-            if name == 'window.hide' and isinstance(data, dict) and data.get('windowName') == 'Battle':
+            if name == 'window.hide' and _is_kind(data, 'dict') and data.get('windowName') == 'Battle':
                 self.quit()
         except:
             self.soft('event error=' + _exc_text(120))
@@ -850,7 +1039,7 @@ class Probe:
             down = event.isKeyDown()
             if self.key_log_count < 200 and key in (15, 47, 56, 184):
                 self.key_log_count += 1
-                log('key code=' + str(key) + ' down=' + str(bool(down)) + ' alt=' + str(bool(event.isAltDown())))
+                log('key code=' + _fmt(key) + ' down=' + ('True' if down else 'False') + ' alt=' + ('True' if event.isAltDown() else 'False'))
             if key != 47:
                 return
             if not down:
@@ -902,13 +1091,13 @@ class Probe:
                 # the log so the roster schema is documented where it happens.
                 self.clear_players()
                 self.roster = roster
-                self.dead_latch = set()
-                self.session = str(int(time.time() * 1000))
+                self.dead_latch = {None} - {None}
+                self.session = _fmt(_to_int(time.time() * 1000))
                 self.details_reset()
                 self.busy = False
                 self.last_request = 0
                 self.request(False)
-                log('roster stable players=' + str(len(roster)) + ' sample=' + utils.jsonEncode(roster[0]))
+                log('roster stable players=' + _fmt(len(roster)) + ' sample=' + utils.jsonEncode(roster[0]))
         elif self.session:
             # A transient empty roster happens MID-BATTLE: the player's own
             # death screen empties getPlayersInfo() for a second or two.
@@ -921,7 +1110,7 @@ class Probe:
         else:
             self.empty_ticks = 0
         try:
-            self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': int(time.time() * 1000),
+            self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': _to_int(time.time() * 1000),
                                              'phase': 'battle' if self.session else 'port',
                                              'players': len(self.roster), 'revision': self.revision})
         except:
@@ -935,7 +1124,7 @@ class Probe:
             stream.close()
             if stamp != self.manual_stamp:
                 self.manual_stamp = stamp
-                if 0 <= time.time() - float(stamp) < 10:
+                if 0 <= time.time() - _to_float(stamp) < 10:
                     self.request(True)
         except:
             pass
@@ -995,9 +1184,9 @@ class Probe:
                     # Only a recognizable verdict counts as "the field
                     # exists": a build returning some other shape must not
                     # disable the legacy walk fallback for the battle.
-                    if verdict is True or verdict is False or str(verdict) in ('True', 'False'):
+                    if verdict is True or verdict is False or _fmt(verdict) in ('True', 'False'):
                         self.raw_isalive_seen = True
-                    raw_alive[nm] = str(verdict) != 'False'
+                    raw_alive[nm] = _fmt(verdict) != 'False'
                 except:
                     continue
             for p in self.roster:
@@ -1040,17 +1229,17 @@ class Probe:
                 # the in-game panel shows the same truth as the telemetry
                 # instead of the walk's raw read.
                 if name in states:
-                    states[name]['alive'] = str(alive)
+                    states[name]['alive'] = 'True' if alive else 'False'
                 if p.get('account_id') or p.get('realm'):
                     identity[name] = {'account_id': p.get('account_id', 0),
                                       'realm': p.get('realm', '')}
-            self_name = getattr(self, 'self_name', '') or ''
+            self_name = self.__dict__.get('self_name') or ''
             self_realm = ''
             for p in self.roster:
                 if p['name'] == self_name and p.get('realm'):
                     self_realm = p['realm']
                     break
-            body = utils.jsonEncode({'t': int(time.time() * 1000),
+            body = utils.jsonEncode({'t': _to_int(time.time() * 1000),
                                      'battle': self.session,
                                      'players': players,
                                      'self': {'name': self_name, 'realm': self_realm},
@@ -1072,7 +1261,7 @@ class Probe:
     def wr_color(self, wr):
         # ARGB values, same form the unbound template literals use. Bands
         # mirror the overlay page's winrate coloring.
-        if not isinstance(wr, (int, float)):
+        if not _is_num(wr):
             return 0xB4FFFFFF  # translucent white (no data)
         if wr >= 53:
             return 0xFF66FF66  # green
@@ -1083,7 +1272,7 @@ class Probe:
         return 0xFFFF5555      # red
 
     def pr_color(self, pr):
-        if not isinstance(pr, (int, float)):
+        if not _is_num(pr):
             return 0xB4FFFFFF
         if pr >= 1700:
             return 0xFFCC66FF  # purple
@@ -1103,11 +1292,11 @@ class Probe:
             alive = name not in self.dead_latch and (
                 state is None or state.get('alive') != 'False')
             row = self.stats.get(name)
-            wr = row.get('wr') if isinstance(row, dict) else None
-            pr = row.get('pr') if isinstance(row, dict) else None
+            wr = row.get('wr') if _is_kind(row, 'dict') else None
+            pr = row.get('pr') if _is_kind(row, 'dict') else None
             rows.append({'name': name,
-                         'wr': ('%.1f%%' % wr) if isinstance(wr, (int, float)) else '--',
-                         'pr': str(int(pr)) if isinstance(pr, (int, float)) else '--',
+                         'wr': ('%.1f%%' % wr) if _is_num(wr) else '--',
+                         'pr': _fmt(_to_int(pr)) if _is_num(pr) else '--',
                          'alive': alive,
                          'wrColor': self.wr_color(wr),
                          'prColor': self.pr_color(pr)})
@@ -1119,7 +1308,7 @@ class Probe:
         try:
             ally = self.panel_rows('ally')
             enemy = self.panel_rows('enemy')
-            data = {'visible': bool(self.tab and (ally or enemy)),
+            data = {'visible': True if (self.tab and (ally or enemy)) else False,
                     'ally': ally,
                     'enemy': enemy,
                     'labels': self.labels}

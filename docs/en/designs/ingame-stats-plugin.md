@@ -204,8 +204,27 @@ Bridge files (protocol v1, all in the mod directory):
 ## Test plan
 
 - **Sandbox conformance**: every shipped `Main.py` change is validated
-  against the constraints list (py2.7 parse, no blocked builtins, no
-  append-mode opens, guarded callbacks) plus `python -m py_compile`.
+  by `scripts/check_ingame_plugin.py` (CI: "In-game probe sandbox
+  conformance"): the file is exec'd under a deliberately crippled
+  builtins set — only `open`, `len`, `__import__` (plus the py3-only
+  `__build_class__`, a harness artifact; py2.7 class creation needs no
+  builtin — and the game's py2.7 also resolves `True`/`False` as
+  builtin globals, which a py3 harness cannot withhold; the
+  client-side census reports them) — with the injected mods stubbed (the engine modules
+  ModsShell/dh/BigWorld stay missing on purpose: their diagnostic blocks
+  may legally degrade, and the harness pins the bridge artifacts those
+  blocks never feed) and a planted `wowsp.toml` asserting the tool-config
+  read, a full battle is driven, and
+  the bridge artifacts the app consumes (roster_raw.json in both probe
+  encodings — bots included — telemetry.json with the self/identity
+  block and numeric `t`, heartbeat/request with valid numeric ids) must
+  come out correct with ZERO `is not defined` degradations in the probe
+  log.
+  Background: Lesta's builtin whitelist omits the class/reflection
+  machinery (`Exception`, `object` and more each killed the mod at
+  import across 2026-10-08), so the core paths are written to need no
+  builtin names at all; the harness is the regression net. Also keep
+  `python -m py_compile` green.
 - **Port-only smoke test** (no battle): launch the game, sit in port
   ~15 s, exit; assert `injected names=[…]`, `api[load] dh=True`, and a
   fresh heartbeat in `python.log`. This is the cheap protocol that kept
