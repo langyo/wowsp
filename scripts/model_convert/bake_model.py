@@ -1100,9 +1100,13 @@ def write_glb_multimesh(
     `write_glb` (flat cyan, alpha blend) — the frontend overrides materials at
     load time for holographic styling, so the on-disk material is a placeholder.
     """
-    def pad4(data: bytes) -> bytes:
+    def pad4(data: bytes, fill: bytes = b"\x00") -> bytes:
+        """Align to 4 bytes. Binary chunks pad with zeros; the JSON chunk
+        MUST pad with SPACES (glTF 2.0 GLB container rule): NUL padding is what made
+        the shipped pack need `repair_glbs.py` and the loader's
+        `fixGlbPadding` workaround."""
         pad = (4 - len(data) % 4) % 4
-        return data + b"\x00" * pad
+        return data + fill * pad
 
     bin_chunks: list[bytes] = []
     accessors: list[dict] = []
@@ -1165,7 +1169,7 @@ def write_glb_multimesh(
         "accessors": accessors,
     }
 
-    json_bytes = pad4(json.dumps(gjson, separators=(",", ":")).encode("utf-8"))
+    json_bytes = pad4(json.dumps(gjson, separators=(",", ":")).encode("utf-8"), b" ")
     total_len = 12 + 8 + len(json_bytes) + 8 + len(bin_data)
     with open(path, "wb") as f:
         f.write(struct.pack("<III", 0x46546C67, 2, total_len))
@@ -1178,10 +1182,13 @@ def write_glb_multimesh(
 def write_glb(path: Path, vertices: list[float], indices: list[int]):
     """Write a minimal GLB with one mesh: position attribute + indices,
     flat material."""
-    # Align to 4 bytes
-    def pad4(data: bytes) -> bytes:
+    def pad4(data: bytes, fill: bytes = b"\x00") -> bytes:
+        """Align to 4 bytes. Binary chunks pad with zeros; the JSON chunk
+        MUST pad with SPACES (glTF 2.0 GLB container rule): NUL padding is what made
+        the shipped pack need `repair_glbs.py` and the loader's
+        `fixGlbPadding` workaround."""
         pad = (4 - len(data) % 4) % 4
-        return data + b"\x00" * pad
+        return data + fill * pad
 
     # Binary: vertices (float32) + indices (uint16 or uint32)
     n_verts = len(vertices) // 3
@@ -1235,7 +1242,7 @@ def write_glb(path: Path, vertices: list[float], indices: list[int]):
         ],
     }
 
-    json_bytes = pad4(json.dumps(gjson, separators=(",", ":")).encode("utf-8"))
+    json_bytes = pad4(json.dumps(gjson, separators=(",", ":")).encode("utf-8"), b" ")
     total_len = 12 + 8 + len(json_bytes) + 8 + len(bin_data)
 
     with open(path, "wb") as f:
@@ -1245,10 +1252,12 @@ def write_glb(path: Path, vertices: list[float], indices: list[int]):
         f.write(struct.pack("<II", len(bin_data), 0x004E4942))
         f.write(bin_data)
 
-def _pad4(data: bytes) -> bytes:
-    """Pad to 4-byte alignment."""
-    r = len(data) % 4
-    return data + b"\x00" * (4 - r) if r else data
+def _pad4(data: bytes, fill: bytes = b"\x00") -> bytes:
+    """Align to 4 bytes. Binary chunks pad with zeros; the JSON chunk MUST
+    pad with SPACES (glTF 2.0 GLB container rule) — NUL padding is rejected
+    by strict JSON parsers."""
+    pad = (4 - len(data) % 4) % 4
+    return data + fill * pad
 
 
 def write_glb_dual(path: Path,
@@ -1293,7 +1302,7 @@ def write_glb_dual(path: Path,
             {"bufferView":3,"componentType":itt,"count":nit,"type":"SCALAR"},
         ],
     }
-    json_bytes = _pad4(json.dumps(gjson, separators=(",",":")).encode("utf-8"))
+    json_bytes = _pad4(json.dumps(gjson, separators=(",",":")).encode("utf-8"), b" ")
     total_len = 12 + 8 + len(json_bytes) + 8 + len(bin_data)
     with open(path, "wb") as f:
         f.write(struct.pack("<III", 0x46546C67, 2, total_len))

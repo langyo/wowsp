@@ -45,6 +45,15 @@ jobs:
         # The ~500 vitest cases (webui). happy-dom environment, no game
         # assets needed.
         run: pnpm --filter @wowsp/webui test
+      - name: Bake writer unit tests
+        # Locks the GLB container contract on every writer in
+        # scripts/model_convert/bake_model.py (JSON chunk space-padded, BIN
+        # zero-padded, accessor bounds hold) — the pack's NUL-padding defect
+        # needed repair_glbs.py + a loader workaround to ship.
+        run: |
+          python -m pip install --quiet numpy pytest
+          python -m pytest scripts/model_convert/test_bake_model.py -q -p no:cacheprovider
+
       - name: Frontend lint
         # Non-mutating (`oxlint .` check mode; the fix mode lives in the
         # packages' `lint:fix` script) — CI must never rewrite the tree.
