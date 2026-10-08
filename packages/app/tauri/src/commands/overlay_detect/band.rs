@@ -361,13 +361,15 @@ const BAND_EDGE_COUNTER_OFFSETS_PX: usize = 2;
 /// table did not slide horizontally": the bars are ~24% of the width each
 /// and the sample columns sit at their quarter points, so a shift of a few
 /// pixels keeps every interior sample on bar color. The counter columns
-/// (1–2 working px outside each end) must stay bar-COLOR-FREE — a maximal
-/// color run's neighborhood is by construction not bar color on the frame
-/// the band was detected on — and a shift lights them on essentially every
-/// band row. Failure of either half means the table moved or the scene
-/// changed: the cached geometry must not anchor that frame. A lone noisy
-/// counter row is tolerated (the positive half has the same tolerance for
-/// caption text punching holes); two or more mean the band drifted.
+/// (1–2 working px outside each end) must stay bar-COLOR-FREE on MOST band
+/// rows — a maximal color run's neighborhood is by construction not bar
+/// color on the frame the band was detected on, and a shift lights them on
+/// essentially every band row. Failure of either half means the table moved
+/// or the scene changed: the cached geometry must not anchor that frame. A
+/// minority of counter rows is tolerated (the Lesta panels' tinted bezel
+/// keeps bar color alive one-two rows past the bar ends — see the return
+/// rule below; the positive half tolerates the same kind of noise from
+/// caption text punching holes).
 pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &HeaderBand) -> bool {
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let w_work = (width / scale) as usize;
@@ -425,10 +427,21 @@ pub(crate) fn verify_header_band(rgba: &[u8], width: u32, height: u32, band: &He
     // A perfect score is not required (the white captions punch holes into
     // individual rows — the height scan tolerates the same), but a moved or
     // vanished table loses most rows at once. AND the band edges must stay
-    // clean: header-colored columns outside the cached band mean the table
-    // slid horizontally (the interior samples above would miss it) and the
-    // cached x must be re-detected.
-    hits * 2 >= rows && counter_rows < 2
+    // MOSTLY clean: header-colored columns outside the cached band mean the
+    // table slid horizontally (the interior samples above would miss it)
+    // and the cached x must be re-detected.
+    //
+    // The edge rule is proportional, not absolute, because real clients
+    // grow bar-colored chrome past the bar ends on a few rows: the Lesta
+    // scoreboard's panels carry a tinted bezel that keeps both header
+    // colors alive one-two rows below the bars (measured on the real
+    // capture in `testdata/tab_table_lesta_768x480.png` — 3 of 14 band
+    // rows trip the counter columns on a table that never moved, and the
+    // old `< 2` rule therefore voided EVERY Lesta geometry cache entry
+    // within three sink probes, killing the sink fast-path and pinning
+    // nothing). A real slide is a different signature: the bar lands over
+    // the counter columns on essentially EVERY band row, far past half.
+    hits * 2 >= rows && counter_rows * 2 < rows
 }
 
 /// Geometric rebuild of the row grid from a CACHED header band for NEW team

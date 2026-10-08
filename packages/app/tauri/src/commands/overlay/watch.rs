@@ -434,7 +434,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             .is_none_or(|t| t.elapsed() >= STATE_REFRESH)
     {
         fsm.last_state_refresh = Some(Instant::now());
-        battle_known = super::arena_info::refresh_battle_state();
+        battle_known = super::arena_info::refresh_battle_state(app);
         tracing::debug!(battle_known, "tab held: refreshed battle state");
     }
     // The manual-locate picker layer is open in the main window: the

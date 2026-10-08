@@ -105,7 +105,16 @@ pub(crate) fn last_arena_stamp() -> i64 {
 /// parse, when newer) `<replays>/tempArenaInfo.json` directly. Returns
 /// whether a fresh roster is now known. A partially written file fails to
 /// parse and is simply not recorded — the next press retries.
-pub(crate) fn refresh_battle_state() -> bool {
+///
+/// This path is also the ROSTER-EVENT HEALER: the notify watcher can read
+/// the file mid-write at the battle's first write event and get exactly
+/// one broken read per battle (the write-completion event lands inside
+/// the scan debounce and is swallowed — the 2026-10-08 Lesta battle lost
+/// its arena-info event this way and ran the whole fight without a
+/// roster). So when THIS parse succeeds on a stamp NEWER than anything
+/// recorded before, the roster event the page never received is re-emitted
+/// from here, with the same pin-void the watcher's Ok branch performs.
+pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
     let Ok(dir) = resolve_arena_dir(None) else {
         return false;
     };
@@ -126,6 +135,19 @@ pub(crate) fn refresh_battle_state() -> bool {
     match read_arena_file(&path) {
         Ok(info) => {
             note_arena_seen(&info, mtime);
+            let after = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
+            if after > at {
+                // A stamp THIS path discovered: heal the page (same emit +
+                // BattleChanged the watcher's Ok branch does).
+                if let Some(name) = super::session::local_player_of(&info.vehicles) {
+                    super::session::note_playing_from_arena(app, name, Some(unix_secs(mtime)));
+                }
+                #[cfg(desktop)]
+                super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
+                if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
+                    tracing::warn!(error = %e, "emit arena-info event failed");
+                }
+            }
             true
         },
         Err(e) => {
@@ -319,6 +341,7 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
     let state = Mutex::new(WatchState {
         last_mtime,
         last_scan: std::time::Instant::now(),
+        retry_pending: false,
     });
     let app_for_cb = app.clone();
     let watch_root = target_dir.clone();
@@ -339,10 +362,19 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
     Ok(watcher)
 }
 
-/// Watcher bookkeeping: the last-emitted arena mtime plus a scan debouncer.
+/// Watcher bookkeeping: the last-emitted arena mtime, a scan debouncer,
+/// and the mid-write retry flag (see [`handle_watch_event`]).
 struct WatchState {
     last_mtime: SystemTime,
     last_scan: std::time::Instant,
+    /// A read just failed on a half-written file: the game is still
+    /// streaming it, and its write-COMPLETION event — the one the failed
+    /// read was waiting for — lands inside the debounce window. When set,
+    /// the next touching event skips the debounce AND the mtime gate once
+    /// (a same-mtime completion is possible on coarse-stamp filesystems),
+    /// giving the battle's roster exactly one prompt second chance instead
+    /// of losing the whole fight's arena-info event.
+    retry_pending: bool,
 }
 
 /// Minimum spacing between directory scans in the notify callback. During a
@@ -374,16 +406,24 @@ fn handle_watch_event(
     }
     // Debounce: a write typically arrives as a create+modify pair; one scan
     // per window is plenty and the mtime compare keeps the semantics exact.
-    {
+    // A PENDING RETRY bypasses it once — the previous scan read the file
+    // mid-write, and the event this callback is now serving is the
+    // write-completion notification that read was waiting for. The retry
+    // is only good for that immediate completion: past the debounce window
+    // an armed flag expires and the ordinary gates apply again.
+    let retry = {
         let mut guard = match state.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
-        if guard.last_scan.elapsed() < ARENA_SCAN_DEBOUNCE {
+        let retry = guard.retry_pending && guard.last_scan.elapsed() <= ARENA_SCAN_DEBOUNCE;
+        if !retry && guard.last_scan.elapsed() < ARENA_SCAN_DEBOUNCE {
             return;
         }
+        guard.retry_pending = false;
         guard.last_scan = std::time::Instant::now();
-    }
+        retry
+    };
     let Some(path) = find_latest_arena_info(target_dir) else {
         return;
     };
@@ -394,14 +434,26 @@ fn handle_watch_event(
         Ok(g) => g,
         Err(_) => return,
     };
-    if mtime <= guard.last_mtime {
+    if !retry && mtime <= guard.last_mtime {
         return; // not newer — skip (requireFileToBeNewer)
     }
+    let prev_mtime = guard.last_mtime;
     guard.last_mtime = mtime;
     drop(guard);
 
     match read_arena_file(&path) {
         Ok(info) => {
+            // The heal path in `refresh_battle_state` may have recorded (and
+            // emitted) THIS battle already — a Tab press that raced the write
+            // completion parses the same file first. The atomic then carries
+            // this file's own stamp: skip the duplicate emit + pin-void, the
+            // page already has the roster.
+            let already_recorded =
+                unix_secs(mtime) <= LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
+            if already_recorded {
+                tracing::debug!("arena file already recorded — another path delivered the roster");
+                return;
+            }
             tracing::info!(
                 players = info.vehicles.len(),
                 "fresh tempArenaInfo.json — emitting arena-info event"
@@ -426,7 +478,20 @@ fn handle_watch_event(
                 tracing::warn!(error = %e, "emit arena-info event failed");
             }
         },
-        Err(e) => tracing::warn!(error = %e, "re-read tempArenaInfo.json after change failed"),
+        Err(e) => {
+            // The read raced the game's write and caught a half-written
+            // file. Do NOT let this consume the battle's roster: restore
+            // the stamp the failed read claimed and arm the retry so the
+            // write-completion event (typically milliseconds away, INSIDE
+            // the debounce window) re-scans at once. Without this, the
+            // failed read was the only scan the file ever got and the
+            // whole battle ran without an arena-info event.
+            if let Ok(mut g) = state.lock() {
+                g.last_mtime = prev_mtime;
+                g.retry_pending = true;
+            }
+            tracing::warn!(error = %e, "re-read tempArenaInfo.json after change failed");
+        },
     }
 }
 

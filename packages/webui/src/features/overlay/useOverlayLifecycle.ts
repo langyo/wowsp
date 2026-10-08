@@ -102,6 +102,14 @@ export function useOverlayLifecycle() {
       () => game.process.running,
       () => overlayCfg.table,
       () => game.process.realm,
+      // The active install's realm rides the same list: the config store's
+      // selection can flip AFTER the overlay window was created (the
+      // backend follows the running client a beat after startup — on a
+      // Lesta machine whose persisted pick was another install, the
+      // watcher below never fired, the window kept the stale realm in its
+      // URL, and every stats lookup of the session ran against the WRONG
+      // cluster — chips stuck on their no-data face all battle).
+      () => installs.activeInstall?.realm ?? null,
       // The probe's ground-truth realm is part of the same decision: it
       // both corrects a wrong detection (the window recreates with the
       // true realm) and lapses back to detection when the identity

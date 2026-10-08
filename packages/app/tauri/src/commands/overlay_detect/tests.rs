@@ -1909,3 +1909,84 @@ fn sink_victims_rejects_garbage_and_unreadable_rows() {
     // Not a sink transition.
     assert!(sink_victims(&old, &old, 2, 3).is_none());
 }
+
+/// The REAL captured Lesta frame behind the Lesta overlay bug report
+/// (Мир кораблей client, dark-twilight map, the tabbed 任务/团队成员/小队
+/// scoreboard: teal/brick header bars ~35% wide each over left-aligned
+/// name columns, a quick-commands hint column left of the table and a
+/// consumables strip inside the roster window). Downscaled to the
+/// detector's 768-wide working size from the 3072×1920 capture.
+///
+/// Pins the full pipeline on this layout: the table detects with the
+/// LESTA profile at the true row grid, the detected band VERIFIES (the
+/// panel bezel keeps header-colored pixels one-two rows past the bar
+/// ends — the counter-evidence rule used to read those 3 of 14 rows as a
+/// horizontal slide and voided every Lesta geometry cache within three
+/// sink probes), and the full-frame presence check passes (the scene
+/// gate's OR half — a dead player has no HP bar, as in the source
+/// battle).
+#[test]
+fn detects_and_verifies_the_real_lesta_frame() {
+    let png = include_bytes!("../testdata/tab_table_lesta_768x480.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    assert_eq!((w, h), (768, 480));
+    let rgba = img.into_raw();
+
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (6, 1), &DetectProfile::LESTA)
+        .expect("real Lesta table must be detected");
+    assert_eq!(det.row_centers.len(), 7, "6 allies + 1 enemy");
+    assert!(
+        (det.team_split - 0.5).abs() <= 0.04,
+        "two-side split, got {}",
+        det.team_split
+    );
+    // Truth (working px — the fixture IS the detector's working frame):
+    // header top ≈231/4, six ally rows one 56px(physical) pitch apart, the
+    // lone enemy row aligned with the first ally row.
+    let truth: [f32; 7] = [78.25, 92.25, 106.25, 120.5, 134.5, 148.5, 78.75];
+    for (k, (&got, want)) in det.row_centers.iter().zip(&truth).enumerate() {
+        assert!((got as f32 - want).abs() <= 4.0, "row {k}: {got} vs {want}");
+    }
+    // The regression half: the band the detector just found must VERIFY —
+    // the Lesta panel bezel trips the edge counter-columns on 3 of the 14
+    // band rows, which the old absolute `< 2` rule read as a slid table.
+    assert!(
+        verify_header_band(&rgba, w, h, &band),
+        "detected band must verify on the Lesta frame"
+    );
+    assert!(header_bars_present(&rgba, w, h));
+}
+
+/// A genuinely slid table must still fail the verify's edge rule under
+/// the proportional threshold: shifting the real Lesta frame's content
+/// right by more than a bar's quarter parks the brick bar over the RIGHT
+/// counter columns (the teal bar's left edge moves away from its own), so
+/// nearly every band row lights a counter column.
+#[test]
+fn lesta_frame_verify_still_rejects_a_slid_table() {
+    let png = include_bytes!("../testdata/tab_table_lesta_768x480.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    let mut rgba = img.into_raw();
+    let (band, _) = detect_roster_with_band(&rgba, w, h, (6, 1), &DetectProfile::LESTA)
+        .expect("table detected on the original frame");
+    // Shift the whole frame right by 24 working px (a third of a bar) —
+    // the bars vacate their cached spans and cover the right counters.
+    let shift = 24usize;
+    let stride = w as usize * 4;
+    for y in 0..h as usize {
+        let row = y * stride;
+        for x in (shift * 4..stride).rev() {
+            rgba[row + x] = rgba[row + x - shift * 4];
+        }
+    }
+    assert!(
+        !verify_header_band(&rgba, w, h, &band),
+        "a slid table must not verify"
+    );
+}

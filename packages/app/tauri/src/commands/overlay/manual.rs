@@ -192,10 +192,10 @@ pub(super) fn force_close_manual_locate(app: &AppHandle) {
 /// Single-instance by construction: the layer is webui state, and a call
 /// while it is open just re-runs the gates and re-arms the flag.
 #[tauri::command]
-pub async fn start_manual_locate() -> Result<(), String> {
+pub async fn start_manual_locate(app: AppHandle) -> Result<(), String> {
     let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
     if !battle_known {
-        battle_known = super::arena_info::refresh_battle_state();
+        battle_known = super::arena_info::refresh_battle_state(&app);
     }
     if !battle_known {
         tracing::warn!("manual locate refused: no fresh battle roster");
@@ -366,6 +366,7 @@ pub async fn cancel_manual_locate() -> Result<(), String> {
 /// drawing is relative to.
 #[tauri::command]
 pub async fn set_manual_roster_rect(
+    app: AppHandle,
     x: i32,
     y: i32,
     width: i32,
@@ -382,7 +383,7 @@ pub async fn set_manual_roster_rect(
     // Battle gate — same freshness rule as the Tab watcher.
     let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
     if !battle_known {
-        battle_known = super::arena_info::refresh_battle_state();
+        battle_known = super::arena_info::refresh_battle_state(&app);
     }
     if !battle_known {
         tracing::warn!("manual locate refused: no fresh battle roster");

@@ -551,6 +551,26 @@ function chipNumbers(v: RosterModeNumbers): string {
   return parts.join(`<span class="sep">·</span>`);
 }
 
+/** The face a stats-LESS chip wears: the player's bare nickname (the clan
+ *  tag prefix stays off — the game's own table next to the chip already
+ *  carries it; the chip only needs to identify the row). Escaped — roster
+ *  names are game data.
+ *
+ *  This face is the overlay's entire failure VISIBILITY: the chip never
+ *  renders the name when stats are present, so a "…" here was the ONLY
+ *  content a broken lookup path (wrong realm baked into the window URL,
+ *  unreachable API, lookups disabled) ever showed — on a Lesta client
+ *  whose realm the main window had not detected that reads as "the
+ *  overlay never appeared at all". Naming the row keeps the overlay
+ *  informative through every such outage. */
+function chipFallbackName(name: string): string {
+  const bare = name.replace(/^\[[^\]]*\]/, "");
+  return (bare.length > 0 ? bare : name)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 /** `storyLayout` = the single-team story/operation table — the layout gate
  *  EXCLUDING plain co-op (see render()): bot rows are aux noise on a
  *  script-driven roster, and the game's own table marks them anyway. */
@@ -565,7 +585,7 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
   // either; the seals below still render (they are their own switch).
   let core: string;
   if (!ANY_CHIP_ON) core = "";
-  else if (!st) core = `<span class="muted">…</span>`;
+  else if (!st) core = `<span class="muted">${chipFallbackName(name)}</span>`;
   else if (st.hidden) core = `<span class="hidden">●</span>`;
   // Ship-scoped source with the per-ship list still on its way: keep the
   // "querying" face instead of dashes — dashes read as "never played in
@@ -635,7 +655,7 @@ function candidatesChip(members: string[], storyLayout: boolean): string {
   }
   const face = (m: string): string => {
     const st = stats.get(cacheKey(m));
-    if (!st) return `<span class="muted">…</span>`;
+    if (!st) return `<span class="muted">${chipFallbackName(m)}</span>`;
     if (st.hidden) return `<span class="hidden">●</span>`;
     // Same pending face as chipContent: dashes would read as "never
     // played in this scope" a beat before the landed numbers arrive.
