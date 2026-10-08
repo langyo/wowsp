@@ -441,6 +441,15 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui, failur
         elif "legacy_missing=['len']" in census[0]:
             failures.append("[%s] census reports the harness withheld len: %s"
                             % (label, census[0]))
+        # Beyond the log: the probe's own soft-error latch must be EMPTY.
+        # Some guards record the failure only here (no log line), so a
+        # bare-name reference inside a guarded block would otherwise slip
+        # through — the latch closes that blind spot. In a healthy run
+        # every path succeeds and nothing lands here.
+        probe = env.get("probe")
+        if probe is not None and probe.last_error:
+            failures.append("[%s] probe recorded a soft error: %r"
+                            % (label, probe.last_error))
         if "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
