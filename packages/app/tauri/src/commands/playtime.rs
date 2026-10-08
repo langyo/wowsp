@@ -761,6 +761,48 @@ fn battles_from_roots(
     battles
 }
 
+/// The machine owner's recorder names, as evidenced by the data itself:
+/// every name that appears as the recorder of a battle from an OWNED root
+/// (a detected install's own `replays/` folder — folders the game itself
+/// writes, including a friend's account played on this machine, whose
+/// battles the game writes just as faithfully). A PINNED archive cannot
+/// leak a name in because its root is ownerless — but a foreign folder
+/// nested INSIDE an install's replays tree scans as owned, so its names
+/// do leak in (and stick, since history rows keep their frozen kind);
+/// the 录像来源 manager's 重建 action is the escape hatch that rebuilds
+/// the evidence from disk. Names from before an account rename predate
+/// the local evidence and fall outside the set — another accepted edge
+/// (the cache keeps those rows, so a future rule change can re-derive).
+fn own_recorders(battles: &[PlaytimeBattle]) -> HashSet<String> {
+    battles
+        .iter()
+        .filter(|b| b.kind.is_some())
+        .filter_map(|b| b.player_name.clone())
+        .collect()
+}
+
+/// Keep only the owner's battles in the LEDGER ANSWER. The cache keeps
+/// every scanned row (the replay browser stays unfiltered, and a future
+/// rule change re-derives from full history): a row survives when its
+/// recorder is one of [`own_recorders`]' names, or when no recorder could
+/// be parsed (an unparseable header cannot testify either way, and the
+/// "still a battle" contract keeps it). With no owned root establishing
+/// any name — a fresh machine, a phone — there is no basis to
+/// discriminate and every row survives.
+fn retain_own_battles(battles: Vec<PlaytimeBattle>) -> Vec<PlaytimeBattle> {
+    let own = own_recorders(&battles);
+    if own.is_empty() {
+        return battles;
+    }
+    battles
+        .into_iter()
+        .filter(|b| match b.player_name.as_deref() {
+            Some(name) => own.contains(name),
+            None => true,
+        })
+        .collect()
+}
+
 /// The blocking core both ledger commands share: load the cache, scan the
 /// roots, answer the rows (and write the cache back only when it changed).
 fn scan_battles() -> Result<PlaytimeBattles, String> {
@@ -771,7 +813,7 @@ fn scan_battles() -> Result<PlaytimeBattles, String> {
     // writes nothing back; history entries never churn.
     let before =
         serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
-    let battles = battles_from_roots(&roots, &mut cache);
+    let mut battles = battles_from_roots(&roots, &mut cache);
     let after =
         serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
     if before != after {
@@ -781,6 +823,7 @@ fn scan_battles() -> Result<PlaytimeBattles, String> {
             tracing::warn!(error = %e, "playtime battle cache persist failed");
         }
     }
+    battles = retain_own_battles(battles);
     Ok(PlaytimeBattles { battles })
 }
 
@@ -789,9 +832,13 @@ fn scan_battles() -> Result<PlaytimeBattles, String> {
 /// dir when no install owns it) and the user's pinned extra replay folders,
 /// with every battle the ledger has EVER scanned kept in the answer — a
 /// replay file's later deletion (game cleanup, mod sweep, uninstalled
-/// client) never blanks its history row. Header parses are cached on disk
-/// (`playtime-battles-cache.json`, len + mtime keyed) so an unchanged tree
-/// costs a stat walk only.
+/// client) never blanks its history row. Only battles recorded by the
+/// machine owner's accounts answer (see [`retain_own_battles`] for the
+/// evidence rule and its edges): someone else's replays in a pinned
+/// archive still browse fine in the replay rail, they just never count
+/// as the owner's playtime. Header parses are cached on disk
+/// (`playtime-battles-cache.json`, len + mtime keyed) so an unchanged
+/// tree costs a stat walk only.
 ///
 /// Async command + [`tokio::task::spawn_blocking`]: the recursive walk +
 /// per-file header reads are blocking I/O that must never run on the UI
@@ -1426,5 +1473,89 @@ mod tests {
         assert_eq!(battles.len(), 1, "same-named copies are one battle");
         std::fs::remove_dir_all(&dir).unwrap();
         std::fs::remove_dir_all(&copy).unwrap();
+    }
+
+    /// The own-battles filter: names evidenced by OWNED roots (the game's
+    /// own replays folders) define the machine owner; rows recorded by
+    /// anyone else — wherever the file sits — leave the LEDGER ANSWER,
+    /// while the cache (and so the replay browser) keeps them.
+    #[test]
+    fn the_answer_keeps_only_own_recorded_battles() {
+        // An owned install whose rows evidence the owner's name.
+        let own_dir = temp_battle_dir("own-root");
+        write_synthetic_replay(
+            &own_dir.join("20261001_080000_own.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"langyo","relation":0,"shipId":1},
+                {"id":2,"name":"ShigureKira","relation":1,"shipId":2}]}"#,
+        );
+        let steam = GameInstall {
+            kind: GameInstallKind::Steam,
+            path: r"C:\Games\WoWS".into(),
+            realm: Some("eu".into()),
+        };
+        // An ownerless pinned archive holding a foreign recording, a
+        // matching-name recording, and an unparseable-header file.
+        let pin_dir = temp_battle_dir("pinned");
+        write_synthetic_replay(
+            &pin_dir.join("20261002_090000_foreign.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"ShigureKira","relation":0,"shipId":1},
+                {"id":2,"name":"langyo","relation":1,"shipId":2}]}"#,
+        );
+        write_synthetic_replay(
+            &pin_dir.join("20261002_093000_own_copy.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"langyo","relation":0,"shipId":1}]}"#,
+        );
+        std::fs::create_dir_all(&pin_dir).unwrap();
+        std::fs::write(
+            pin_dir.join("20261002_095000_unparseable.korablireplay"),
+            b"foreign binary framing",
+        )
+        .unwrap();
+
+        let mut cache = BattleCache::default();
+        let all = battles_from_roots(
+            &[(own_dir.clone(), Some(steam)), (pin_dir.clone(), None)],
+            &mut cache,
+        );
+        // The scan itself is unfiltered — the cache (and the replay rail's
+        // own scan, which shares no code with this cache) keeps everything.
+        assert_eq!(all.len(), 4);
+        assert_eq!(cache.entries.len(), 4);
+
+        let kept = retain_own_battles(all);
+        // The foreign recording is gone; the own recording from the pinned
+        // folder, the owned root's row and the unparseable header survive.
+        let count = |n: Option<&str>| {
+            kept.iter()
+                .filter(|b| b.player_name.as_deref() == n)
+                .count()
+        };
+        assert_eq!(kept.len(), 3);
+        assert_eq!(count(Some("ShigureKira")), 0, "the foreign row left");
+        assert_eq!(count(Some("langyo")), 2, "both own rows stayed");
+        assert_eq!(count(None), 1, "the unparseable header stayed");
+        std::fs::remove_dir_all(&own_dir).unwrap();
+        std::fs::remove_dir_all(&pin_dir).unwrap();
+    }
+
+    /// With no owned root evidencing any recorder name (a fresh machine, a
+    /// phone with only the managed replays dir), the filter has no basis
+    /// to discriminate — every row survives, matching the pre-filter
+    /// behavior.
+    #[test]
+    fn with_no_owned_roots_every_row_survives() {
+        let dir = temp_battle_dir("ownerless");
+        write_synthetic_replay(
+            &dir.join("20261003_100000_any.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"whoever","relation":0,"shipId":1}]}"#,
+        );
+        let mut cache = BattleCache::default();
+        let all = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(retain_own_battles(all).len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

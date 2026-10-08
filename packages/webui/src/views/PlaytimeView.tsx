@@ -25,6 +25,7 @@ import {
   bucketDaily,
   fmtDuration,
   parseDayKey,
+  type HeatYear,
   type TrendRange,
 } from "@/components/playtime/playtimeAgg";
 import {
@@ -159,6 +160,34 @@ export default defineComponent({
      *  The time ledger's `daily` would under-draw battle history (it only
      *  covers days the tracker saw a client running). */
     const battleHeat = computed(() => battlesDaily(scopedBattles.value));
+
+    // ── Heatmap year switcher (GitHub-style): the grid shows the rolling
+    //    past year by default; the tabs jump to a calendar year (or the
+    //    adaptive full window) so older history stays reachable. Tabs list
+    //    the years the data actually covers, newest first, capped at six —
+    //    anything older folds into 全部.
+    const heatYearKey = ref("recent");
+    const heatYear = computed<HeatYear>(() =>
+      heatYearKey.value === "recent"
+        ? null
+        : heatYearKey.value === "all"
+          ? "all"
+          : Number(heatYearKey.value),
+    );
+    const heatYearOptions = computed(() => {
+      const years = new Set<string>();
+      for (const p of battleHeat.value) years.add(p.date.slice(0, 4));
+      const list = [...years]
+        .filter((y) => /^\d{4}$/.test(y))
+        .sort()
+        .reverse()
+        .slice(0, 6);
+      return [
+        { key: "recent", label: t("playtime.heatRecent") },
+        ...list.map((y) => ({ key: y, label: y })),
+        { key: "all", label: t("playtime.heatAll") },
+      ];
+    });
 
     const hasAnyData = computed(() => {
       const o = overview.value;
@@ -569,6 +598,10 @@ export default defineComponent({
                     role="menuitem"
                     class="playtime-view__scope-opt"
                     data-active={isPickedScope(o.key) || undefined}
+                    // The all-clients sentinel is not a client like the
+                    // rows under it — italics set it apart as the
+                    // aggregate it is.
+                    data-all={o.key === SCOPE_ALL || undefined}
                     onClick={() => pickScope(o.key)}
                   >
                     <span class="playtime-view__scope-opt-label">{o.label}</span>
@@ -785,12 +818,20 @@ export default defineComponent({
                 <section class="play-section">
                   <div class="play-section__head">
                     <h3>{t("playtime.heatTitle")}</h3>
-                    <div class="play-heat-legend">
-                      <span>{t("playtime.heatLess")}</span>
-                      {[1, 2, 3, 4].map((level) => (
-                        <span key={level} class={`play-heat-legend__swatch is-${level}`} />
-                      ))}
-                      <span>{t("playtime.heatMore")}</span>
+                    <div class="play-heat-controls">
+                      <HkTabs
+                        variant="segmented"
+                        modelValue={heatYearKey.value}
+                        onUpdate:modelValue={(v: string) => (heatYearKey.value = v)}
+                        tabs={heatYearOptions.value}
+                      />
+                      <div class="play-heat-legend">
+                        <span>{t("playtime.heatLess")}</span>
+                        {[1, 2, 3, 4].map((level) => (
+                          <span key={level} class={`play-heat-legend__swatch is-${level}`} />
+                        ))}
+                        <span>{t("playtime.heatMore")}</span>
+                      </div>
                     </div>
                   </div>
                   <PlaytimeHeatmap
@@ -798,6 +839,7 @@ export default defineComponent({
                     hintOf={heatHint}
                     now={now.value}
                     locale={uiLocale.value}
+                    year={heatYear.value}
                   />
                   <p class="playtime-view__note">{t("playtime.heatHint")}</p>
                 </section>

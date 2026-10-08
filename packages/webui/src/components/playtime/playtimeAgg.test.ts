@@ -110,7 +110,7 @@ describe("buildHeatGrid", () => {
   ];
 
   it("builds 53 Monday-first columns ending with the current week", () => {
-    const grid = buildHeatGrid(daily, NOW, "en-US");
+    const grid = buildHeatGrid(daily, NOW, "en-US", "all");
     expect(grid.columns).toHaveLength(53);
     expect(grid.columns.every((c) => c.length === 7)).toBe(true);
     // The first cell is the Monday 52 weeks back: 2025-10-06.
@@ -127,7 +127,7 @@ describe("buildHeatGrid", () => {
   });
 
   it("anchors one month label per month on the day-1 column", () => {
-    const grid = buildHeatGrid(daily, NOW, "en-US");
+    const grid = buildHeatGrid(daily, NOW, "en-US", "all");
     // The grid starts on 2025-10-06, so 2025-10-01 is BEFORE it — the
     // labels run 2025-11 .. 2026-10, twelve in total.
     expect(grid.months).toHaveLength(12);
@@ -150,6 +150,7 @@ describe("buildHeatGrid", () => {
       ],
       NOW,
       "en-US",
+      "all",
     );
     expect(grid.columns).toHaveLength(69);
     expect(grid.columns[0][0].key).toBe("2025-06-16");
@@ -159,10 +160,58 @@ describe("buildHeatGrid", () => {
   });
 
   it("caps the window at three years and drops what falls outside", () => {
-    const grid = buildHeatGrid([{ date: "2010-01-04", value: 1 }], NOW, "en-US");
+    const grid = buildHeatGrid([{ date: "2010-01-04", value: 1 }], NOW, "en-US", "all");
     expect(grid.columns).toHaveLength(HEAT_MAX_WEEKS);
     // The 2010 point predates even the capped window: no cell carries it.
     expect(grid.columns.every((c) => c.every((cell) => cell.value === 0))).toBe(true);
+  });
+
+  it("defaults to the rolling past year regardless of older points", () => {
+    // A 2023 point would stretch the "all" window to its 156-week cap —
+    // the null selection stays the fixed 53-week GitHub year and drops
+    // what falls off its left edge.
+    const grid = buildHeatGrid(
+      [
+        { date: "2023-03-01", value: 1 },
+        { date: "2026-10-05", value: 3 },
+      ],
+      NOW,
+      "en-US",
+      null,
+    );
+    expect(grid.columns).toHaveLength(HEAT_MIN_WEEKS);
+    expect(grid.columns[0][0].key).toBe("2025-10-06");
+    expect(grid.columns[52][0].key).toBe("2026-10-05");
+    // The 2023 point fell off the left edge: only the 2026-10-05 cell is
+    // hot.
+    const hot = grid.columns.flat().filter((c) => c.value > 0);
+    expect(hot.map((c) => c.key)).toEqual(["2026-10-05"]);
+  });
+
+  it("shows exactly the picked calendar year, current year ending today", () => {
+    // 2025: Jan 1 is a Wednesday → the window anchors to Monday 2024-12-30
+    // and runs to Wednesday 2025-12-31 — 53 columns; the 2025-10-06 point
+    // lands mid-grid while the 2026 one stays out.
+    const grid = buildHeatGrid(daily, NOW, "en-US", 2025);
+    expect(grid.columns[0][0].key).toBe("2024-12-30");
+    expect(grid.columns).toHaveLength(53);
+    // The trailing week is whole (Monday-start grid), so it spills into
+    // 2026: the last column runs 2025-12-29 .. 2026-01-04 with the year's
+    // last day on its Wednesday row.
+    const last = grid.columns[52];
+    expect(last[0].key).toBe("2025-12-29");
+    expect(last[2].key).toBe("2025-12-31");
+    // The 2025-10-06 point lands mid-grid (its Monday) while the 2026 one
+    // stays out.
+    expect(grid.columns[40][0].key).toBe("2025-10-06");
+    expect(grid.columns[40][0].value).toBe(3600);
+
+    // The CURRENT year ends today: 2026 anchors to Monday 2025-12-29 and
+    // the last column is the current (partial) week.
+    const current = buildHeatGrid(daily, NOW, "en-US", 2026);
+    expect(current.columns[0][0].key).toBe("2025-12-29");
+    expect(current.columns[current.columns.length - 1][0].key).toBe("2026-10-05");
+    expect(current.columns[current.columns.length - 1][0].value).toBe(7200);
   });
 });
 

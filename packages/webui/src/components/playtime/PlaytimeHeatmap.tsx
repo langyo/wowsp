@@ -1,28 +1,28 @@
 import { computed, defineComponent, type PropType } from "vue";
 
 import { t } from "@/i18n";
-import { buildHeatGrid, type HeatPoint } from "./playtimeAgg";
+import { buildHeatGrid, type HeatPoint, type HeatYear } from "./playtimeAgg";
 import "./PlaytimeHeatmap.scss";
 
 /** Heatmap cell metrics — the SVG's whole geometry derives from these.
  *  The week count is NOT a constant: the grid's columns carry it (the
- *  window is adaptive — see playtimeAgg.heatWeeks). */
+ *  window rides the `year` selection — see playtimeAgg.buildHeatGrid). */
 const CELL = 12;
 const GAP = 3;
 const LEFT = 34;
 const TOP = 2;
 
 /**
- * The playtime heatmap — GitHub-style calendar (Monday-first rows, ending
- * with the current partial week), Starward-style month labels UNDER the
- * grid and weekday markers (周一 / 周日) on the left edge. The window
- * spans every week back to the earliest point (heatWeeks: ≥ one year, ≤
- * three), so the canvas width follows the grid's column count. Hand-drawn
- * SVG; cell fills ride the theme's primary color at four opacity levels
- * (SCSS). Value-agnostic: the view feeds it `points` plus a `hintOf`
- * formatter (today: battles per local day — see battlesDaily), so hover
- * hints carry the exact day + the caller's phrasing. Empty days render a
- * blank cell with no hint at all.
+ * The playtime heatmap — GitHub-style calendar (Monday-first rows),
+ * Starward-style month labels UNDER the grid and weekday markers (周一 /
+ * 周日) on the left edge. The window rides the view's year switcher
+ * (`year`: null = the rolling past year, a number = that calendar year,
+ * "all" = the adaptive full window), so the canvas width follows the
+ * grid's column count. Hand-drawn SVG; cell fills ride the theme's
+ * primary color at four opacity levels (SCSS). Value-agnostic: the view
+ * feeds it `points` plus a `hintOf` formatter (today: battles per local
+ * day — see battlesDaily), so hover hints carry the exact day + the
+ * caller's phrasing. Empty days render a blank cell with no hint at all.
  */
 export default defineComponent({
   name: "PlaytimeHeatmap",
@@ -31,9 +31,12 @@ export default defineComponent({
     hintOf: { type: Function as PropType<(value: number) => string>, required: true },
     now: { type: Object as () => Date, required: true },
     locale: { type: String, required: true },
+    year: { type: [Number, String] as unknown as PropType<HeatYear>, default: null },
   },
   setup(props) {
-    const grid = computed(() => buildHeatGrid(props.points, props.now, props.locale));
+    const grid = computed(() =>
+      buildHeatGrid(props.points, props.now, props.locale, props.year),
+    );
 
     return () => {
       const g = grid.value;

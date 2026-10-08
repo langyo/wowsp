@@ -174,14 +174,21 @@ export interface HeatPoint {
   value: number;
 }
 
-/** The heatmap window's week count: enough Monday-start weeks to reach
- *  back to the earliest point, floored at HEAT_MIN_WEEKS (a fresh history
- *  keeps the GitHub-year shape instead of a stubby grid) and capped at
- *  HEAT_MAX_WEEKS (three years — past that the 12px cells render too
- *  small to read at the view's column width, and replay archives that old
- *  are rare). Junk day keys are ignored; no parsable point (or a
- *  future-only set) falls back to the floor. Pure — `now` pins the
- *  current week the same way buildHeatGrid does. */
+/** The heatmap window selection: `null` = the rolling past year (a fixed
+ *  53 weeks), a number = that calendar year (Jan..Dec, the current year
+ *  ending today), `"all"` = every week back to the earliest point (the
+ *  old adaptive window, capped at HEAT_MAX_WEEKS). The view's year tabs
+ *  carry these. */
+export type HeatYear = number | "all" | null;
+
+/** The heatmap window's week count for the `"all"` selection: enough
+ *  Monday-start weeks to reach back to the earliest point, floored at
+ *  HEAT_MIN_WEEKS (a fresh history keeps the GitHub-year shape instead of
+ *  a stubby grid) and capped at HEAT_MAX_WEEKS (three years — past that
+ *  the 12px cells render too small to read at the view's column width,
+ *  and replay archives that old are rare). Junk day keys are ignored; no
+ *  parsable point (or a future-only set) falls back to the floor. Pure —
+ *  `now` pins the current week the same way buildHeatGrid does. */
 export const HEAT_MIN_WEEKS = 53;
 export const HEAT_MAX_WEEKS = 156;
 
@@ -204,24 +211,57 @@ export function heatWeeks(points: HeatPoint[], now: Date): number {
   return Math.min(HEAT_MAX_WEEKS, Math.max(HEAT_MIN_WEEKS, span));
 }
 
-/** GitHub-style heatmap grid: Monday-start weeks ending with the CURRENT
- *  (partial) week, weekday rows Monday..Sunday. The window spans every
- *  week back to the earliest point (heatWeeks — at least a year, at most
- *  three), so battle history predating the last 52 weeks still lights up
- *  instead of falling off a fixed 53-week window. `points` may be the
- *  time ledger's days or battle counts per day — only `date` / `value`
- *  are read. `locale` formats the month labels (and the future days are
- *  blank, not zero). */
+/** The Monday on or before `d`, local noon like every other anchor here. */
+function mondayOnOrBefore(d: Date): Date {
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return monday;
+}
+
+/** GitHub-style heatmap grid: Monday-start weeks, weekday rows
+ *  Monday..Sunday. The window rides the `year` selection — `null` shows
+ *  the rolling past year (a fixed 53-week GitHub year), a number shows
+ *  that calendar year (the current year's window ends today; future
+ *  cells render blank), and `"all"` spans every week back to the
+ *  earliest point (heatWeeks: at least a year, at most three). `points`
+ *  may be the time ledger's days or battle counts per day — only
+ *  `date` / `value` are read. `locale` formats the month labels. */
 export function buildHeatGrid(
   points: HeatPoint[],
   now: Date,
   locale: string,
+  year: HeatYear,
 ): HeatGrid {
   const map = new Map(points.map((p) => [p.date, p.value]));
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
-  const weeks = heatWeeks(points, now);
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) - (weeks - 1) * 7);
+  let weeks: number;
+  let monday: Date;
+  if (year === "all") {
+    weeks = heatWeeks(points, now);
+    monday = mondayOnOrBefore(today);
+    monday.setDate(monday.getDate() - (weeks - 1) * 7);
+  } else if (year === null) {
+    weeks = HEAT_MIN_WEEKS;
+    monday = mondayOnOrBefore(today);
+    monday.setDate(monday.getDate() - (weeks - 1) * 7);
+  } else {
+    const start = new Date(year, 0, 1, 12);
+    const endCandidate = new Date(year, 11, 31, 12);
+    const end = endCandidate > today ? today : endCandidate;
+    if (start > today) {
+      // A future selection can't happen through the view's tabs — fall
+      // back to the rolling year rather than rendering an empty canvas.
+      weeks = HEAT_MIN_WEEKS;
+      monday = mondayOnOrBefore(today);
+      monday.setDate(monday.getDate() - (weeks - 1) * 7);
+    } else {
+      const startMonday = mondayOnOrBefore(start);
+      weeks =
+        Math.round((mondayOnOrBefore(end).getTime() - startMonday.getTime()) / (7 * 86_400_000)) +
+        1;
+      monday = startMonday;
+    }
+  }
 
   // Pass 1: each cell's date + value, the window's max, and the month
   // anchors — a month's day 1 falls in exactly one column, which pins its

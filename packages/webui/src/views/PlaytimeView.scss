@@ -158,7 +158,16 @@
   }
 }
 
-/* ── Heatmap legend (少 → 多 swatches, mirrors the cell ramp) ──────────── */
+/* ── Heatmap legend (少 → 多 swatches, mirrors the cell ramp) + the year
+   switcher to its left (GitHub-style year tabs); the pair wraps on a
+   narrow column. ────────────────────────────────────────────────────── */
+.play-heat-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .play-heat-legend {
   display: flex;
   align-items: center;
@@ -303,6 +312,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* The all-clients sentinel row — an aggregate, not a client like the
+     rows under it — wears italics. */
+  &[data-all] &-label {
+    font-style: italic;
   }
 
   &-check {
