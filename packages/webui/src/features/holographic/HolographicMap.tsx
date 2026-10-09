@@ -84,6 +84,7 @@ import { foldDamageStats } from "@/api";
 import { parsePostBattle } from "@/features/replay/postBattle";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import type { ResolvedStatsMode } from "@/utils/statView";
+import { realmUsesShipNameOrder } from "@/utils/realms";
 import { splitRosterSides } from "@/utils/rosterSides";
 import { isScriptedUnitName } from "@/utils/aiNames";
 import planeIcon from "./planeIcons";
@@ -110,7 +111,6 @@ for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
  *  read the same tables. */
 
 import { useStatsStore } from "@/stores/stats";
-import { useAccountStore } from "@/stores/account";
 import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
 import TacticalBoard from "./tactical/TacticalBoard";
 import {
@@ -317,8 +317,24 @@ export default defineComponent({
      *  Resolved lazily when the menu opens; missing/failed lookups render "—". */
     const followStats = ref<Map<number, string>>(new Map());
     let statsSeq = 0;
+    // The entries are resolved against the OPEN REPLAY's realm (same rule
+    // as every other replay-scoped lookup here). A realm retarget — the
+    // replay chain re-resolving onto another realm — invalidates them
+    // wholesale; a full replay switch is covered by the replayPath watcher
+    // (realm swaps ride a replay change in practice, an external replay's
+    // install-less realm chain following the selection does not).
+    watch(
+      () => props.realm,
+      () => {
+        statsSeq += 1;
+        followStats.value.clear();
+      },
+    );
     async function loadFollowStats() {
-      const realm = useAccountStore().activeAccount?.realm;
+      // The replay's own realm (the parent resolves it install-first) —
+      // NOT the bound account's: reviewing another realm's replay while a
+      // different realm is active must not resolve these names there.
+      const realm = props.realm;
       if (!realm) return;
       const seq = ++statsSeq;
       const store = useStatsStore();
@@ -1334,6 +1350,12 @@ export default defineComponent({
         // re-arms the batch (and stale in-flight answers are gated out).
         nameStatsLoadedFor = "";
         nameStats.value = new Map();
+        // The follow menu's per-entity career blurbs belong to ONE replay
+        // too — entity ids repeat across replays, so a same-realm switch
+        // would otherwise serve the previous replay's players' numbers
+        // (the realm watch above only covers the realm-change subset).
+        statsSeq += 1;
+        followStats.value = new Map();
         tipVehicleId.value = null;
         tipAnchorEl.value = null;
         tipIconHover.value = false;
@@ -1825,6 +1847,7 @@ export default defineComponent({
             showKills={killerRosterIdOf.value != null}
             stats={nameStats.value}
             encyclopedia={props.encyclopedia}
+            shipNameOrder={realmUsesShipNameOrder(props.realm)}
           />
         ) : null}
         {tipVehicle && tipAnchorEl.value ? (

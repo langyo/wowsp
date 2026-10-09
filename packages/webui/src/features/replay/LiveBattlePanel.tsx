@@ -201,6 +201,14 @@ export default defineComponent({
       realms: () => (plugin.installed ? plugin.playerRealms : null),
     });
 
+    /** Localized realm label (replay.realm.*) with an uppercase-code
+     *  fallback for unknown codes. */
+    const realmLabelOf = (code: string): string => {
+      const r = code.toLowerCase();
+      const key = `replay.realm.${r}`;
+      return t(key) === key ? code.toUpperCase() : t(key);
+    };
+
     /** Realm chip for a row whose stats resolved on ANOTHER cluster
      *  (cross-server CW) — same vocabulary as the post-battle panels
      *  (replay.realm.*). Null on same-realm / unresolved rows. */
@@ -209,9 +217,7 @@ export default defineComponent({
     ): string | null => {
       const r = st?.realm;
       if (!r || r.toLowerCase() === realm.value.toLowerCase()) return null;
-      return t(`replay.realm.${r.toLowerCase()}`) === `replay.realm.${r.toLowerCase()}`
-        ? r.toUpperCase()
-        : t(`replay.realm.${r.toLowerCase()}`);
+      return realmLabelOf(r);
     };
 
     // ── Share-time privacy + copy-shot (head actions) ───────────────────
@@ -502,8 +508,16 @@ export default defineComponent({
       ),
     );
 
-    function openLookup(name: string) {
-      void router.push({ path: "/lookup", query: { name, realm: realm.value } });
+    /** Lookup jump for one roster player. The row's OWN resolved realm
+     *  wins when present (cross-server CW rows resolve on another
+     *  cluster — account ids are unique per realm, so the panel realm
+     *  would name a different player there); the panel realm (the
+     *  battle's own chain, latch included) is the fallback. */
+    function openLookup(name: string, rowRealm?: string | null) {
+      void router.push({
+        path: "/lookup",
+        query: { name, realm: rowRealm || realm.value },
+      });
     }
 
     /** The stats-source dimensions (ship scope / battle scope / solo
@@ -1022,7 +1036,7 @@ export default defineComponent({
             key={v.id}
             type="button"
             data-hint={t("replay.live.viewProfile")}
-            onClick={() => openLookup(v.name)}
+            onClick={() => openLookup(v.name, st?.realm)}
           >
             {content}
           </button>
@@ -1158,7 +1172,7 @@ export default defineComponent({
             key={v.id}
             type="button"
             data-hint={t("replay.live.viewProfile")}
-            onClick={() => openLookup(v.name)}
+            onClick={() => openLookup(v.name, st?.realm)}
           >
             {content}
           </button>
@@ -1186,6 +1200,20 @@ export default defineComponent({
             ) : (
               <span class="live-battle__pill live-battle__pill--live">LIVE</span>
             )}
+            {/* The battle's own server (来源服务器): the roster's stats
+                resolve on THIS cluster for the roster's whole retention,
+                ended battles included. The value rides LiveView's chain —
+                the probe's and the running client's ground truth may still
+                refine it while fresh — but the bottom-left client-version
+                switcher cannot move it once latched (overlay.battleRealm). */}
+            {realm.value ? (
+              <span
+                class="live-battle__pill live-battle__pill--realm"
+                data-hint={t("replay.live.battleRealmHint")}
+              >
+                {realmLabelOf(realm.value)}
+              </span>
+            ) : null}
             {modePill}
             {!props.ended && clockLabel.value ? (
               <span class="live-battle__clock">{clockLabel.value}</span>

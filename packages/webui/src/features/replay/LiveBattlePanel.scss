@@ -101,6 +101,14 @@
     color: rgb(var(--color-muted));
   }
 
+  /* The battle's own server (来源服务器) — a data label, not a state:
+     the quiet primary voice, distinct from LIVE/settling/ended. */
+  &__pill--realm {
+    border-color: rgb(var(--color-primary) / 40%);
+    background: rgb(var(--color-primary) / 10%);
+    color: rgb(var(--color-text) / 75%);
+  }
+
   &__clock {
     display: inline-flex;
     align-items: baseline;

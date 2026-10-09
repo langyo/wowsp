@@ -214,6 +214,7 @@
     "detectedRows": "Localisé · {n} lignes",
     "searching": "Localisation",
     "refreshStats": "Actualiser les stats",
+    "battleRealmHint": "Serveur sur lequel cette bataille a été jouée : les stats de la liste restent épinglées à ce serveur, quel que soit le client/compte choisi en bas à gauche",
     "refreshStatsHint": "Vide le cache et redemande toutes les statistiques ; les données chargées restent affichées jusqu'au succès",
     "statsSourceTitle": "Filtre de statistiques",
     "manualLocate": "Positionnement manuel",

@@ -214,6 +214,7 @@
     "detectedRows": "Ubicado · {n} filas",
     "searching": "Localizando",
     "refreshStats": "Actualizar estadísticas",
+    "battleRealmHint": "Servidor donde se jugó esta batalla: las estadísticas de la lista quedan fijas en él, sin importar el cliente/cuenta elegido abajo a la izquierda",
     "refreshStatsHint": "Borra la caché y vuelve a pedir todas las estadísticas; los datos cargados se mantienen hasta que la petición tenga éxito",
     "statsSourceTitle": "Filtro de estadísticas",
     "manualLocate": "Ubicación manual",

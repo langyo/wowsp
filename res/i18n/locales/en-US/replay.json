@@ -214,6 +214,7 @@
     "detectedRows": "Located · {n} rows",
     "searching": "Locating",
     "refreshStats": "Refresh stats",
+    "battleRealmHint": "The server this battle was played on: the roster's stats stay pinned to it, whatever the bottom-left client/account switchers say",
     "refreshStatsHint": "Clears the cache and re-requests every roster stat from scratch; loaded data stays on screen until the request succeeds",
     "statsSourceTitle": "Stats filter",
     "manualLocate": "Manual locate",

@@ -69,7 +69,8 @@ import {
   shipNameFromOfflineDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
-import { gameTabRowKey } from "@/utils/shipClass";
+import { gameTabRowCompare } from "@/utils/shipClass";
+import { realmUsesShipNameOrder } from "@/utils/realms";
 import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
 import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
 import { shipIconUrl, shipTypeClass } from "@/features/holographic/shipIcons";
@@ -392,32 +393,39 @@ const PostBattleFallbackPanel = defineComponent({
         };
       }),
     );
-    // Sort order: the game's own fixed Tab key (alive, class, tier desc,
+    // Sort order: the game's own fixed Tab order (alive, class, tier desc,
     // nation, ship name, '[tag]nick') — the exact row order the in-game
-    // table shows, instead of a hand-rolled approximation.
-    const sortRows = (
+    // table shows, instead of a hand-rolled approximation. The OPEN
+    // REPLAY's realm picks the flavor: CN/Lesta replays order the
+    // within-(class, tier) group by the localized ship name, everything
+    // else keeps the decompiled nation rank.
+    const compareRows = (
       a: (typeof rows.value)[number],
       b: (typeof rows.value)[number],
-    ) => {
-      const keyOf = (r: (typeof rows.value)[number]) =>
-        gameTabRowKey(
-          { shipId: r.vehicle.shipId, name: r.vehicle.name },
-          r.alive,
-          dataLanguage.value,
-          (v) => nameStats.value.get(v.name)?.clanTag ?? null,
-        );
-      const ka = keyOf(a);
-      const kb = keyOf(b);
-      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    ) =>
+      gameTabRowCompare(
+        { shipId: a.vehicle.shipId, name: a.vehicle.name },
+        { shipId: b.vehicle.shipId, name: b.vehicle.name },
+        {
+          locale: dataLanguage.value,
+          clanTagOf: (v) => nameStats.value.get(v.name)?.clanTag ?? null,
+          shipNameOrder: realmUsesShipNameOrder(realm.value),
+        },
+      );
+    // The comparator skips the alive prefix on purpose (each sort orders
+    // one layout), so the game's [alive] ++ [sunk] split happens here.
+    const tabOrdered = (list: (typeof rows.value)[number][]) => {
+      const alive = list.filter((r) => r.alive).sort(compareRows);
+      const sunk = list.filter((r) => !r.alive).sort(compareRows);
+      return [...alive, ...sunk];
     };
     const allies = computed(() =>
-      rows.value.filter((r) => r.vehicle.relation <= 1).sort(sortRows),
+      tabOrdered(rows.value.filter((r) => r.vehicle.relation <= 1)),
     );
     const enemies = computed(() =>
-      (props.operation
+      props.operation
         ? []
-        : rows.value.filter((r) => r.vehicle.relation > 1)
-      ).sort(sortRows),
+        : tabOrdered(rows.value.filter((r) => r.vehicle.relation > 1)),
     );
 
     const selected = ref<null | (typeof rows.value)[number]>(null);

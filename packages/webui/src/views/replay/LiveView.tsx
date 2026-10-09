@@ -68,20 +68,34 @@ export default defineComponent({
       () => gameStatus.process.matchedInstall?.path ?? activePath.value,
     );
 
+    /** The selection-tier fallback: the battle's own LATCHED realm first
+     *  (frozen when this arena file first appeared — running client
+     *  first, selection tiers as the fallback — so the battle belongs to
+     *  the server it played on and the bottom-left client-version /
+     *  account switchers cannot retarget an ended battle's roster; see
+     *  the overlay store's battleRealm), then the current selection
+     *  tiers, else the default. */
+    const selectionRealm = computed(() => {
+      if (overlay.battleRealm) return overlay.battleRealm;
+      return (
+        gd.config.activeInstall?.realm ??
+        accounts.activeAccount?.realm ??
+        accounts.activeRealm ??
+        "asia"
+      );
+    });
+
     /** The realm to query live-roster stats against. Prefer the probe's
      *  ground truth while its telemetry stream is fresh (the local
      *  player's cluster straight off the game's roster records — beats
      *  every install/log inference), then the RUNNING client's detected
-     *  realm (the roster belongs to it), then the selected install's,
-     *  then the bound account's, else the default. */
+     *  realm (the roster belongs to it), then the selection fallback
+     *  above. */
     const realm = computed(
       () =>
         plugin.liveSelfRealm ||
-        (gameStatus.process.matchedInstall?.realm ??
-          gd.config.activeInstall?.realm ??
-          accounts.activeAccount?.realm ??
-          accounts.activeRealm ??
-          "asia"),
+        gameStatus.process.matchedInstall?.realm ||
+        selectionRealm.value,
     );
 
     /** Live battle clock (from tempArenaInfo's dateTime) — feeds the

@@ -214,6 +214,7 @@
     "detectedRows": "已定位 · {n} 行",
     "searching": "定位中",
     "refreshStats": "刷新战绩",
+    "battleRealmHint": "本局对局所在的服务器：名单战绩查询锁定该服务器，不受左下角客户端版本/账户切换影响",
     "refreshStatsHint": "清空缓存并从头重新请求全部名单战绩；已加载的数据在请求成功前保持显示",
     "statsSourceTitle": "战绩筛选",
     "manualLocate": "手动定位",
