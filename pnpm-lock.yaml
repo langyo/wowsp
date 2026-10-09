@@ -43,33 +43,6 @@ importers:
         specifier: ^*
         version: 3.5.42(typescript@7.0.2)
 
-  packages/installer-shell/web:
-    dependencies:
-      '@celestia-island/hikari':
-        specifier: ^0.55.128
-        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))
-      lucide-vue-next:
-        specifier: ^*
-        version: 1.0.0(vue@3.5.42(typescript@7.0.2))
-      vue:
-        specifier: ^3.5.42
-        version: 3.5.42(typescript@7.0.2)
-    devDependencies:
-      '@vitejs/plugin-vue':
-        specifier: ^*
-        version: 6.0.8(vite@8.3.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))(vue@3.5.42(typescript@7.0.2))
-      '@vitejs/plugin-vue-jsx':
-        specifier: ^*
-        version: 5.1.6(supports-color@10.2.2)(vite@8.3.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))(vue@3.5.42(typescript@7.0.2))
-      sass:
-        specifier: ^1.103.1
-        version: 1.103.1
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-      vite:
-        specifier: ^8.3.0
-        version: 8.3.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1)
 
   packages/pairing-relay:
     devDependencies:

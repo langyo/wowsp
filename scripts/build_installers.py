@@ -1,49 +1,47 @@
 #!/usr/bin/env python3
-"""Build the WoWSP shun installer artifacts.
+"""Build the WoWSP installers with the shun CLI.
 
-1. Build the application and stage its executable as the installer payload.
-2. Build the installer shell once per variant with ``SHUN_PAYLOAD`` pointing
-   at the staged directory (the payload is packed into the shell binary —
-   the single-file installer pattern; see packages/installer-shell/build.rs).
-   Flavor split:
+WoWSP ships no custom installer shell: the published artifacts are built
+by `shun build` (https://github.com/celestia-island/shun) from
+``packages/installer/shun.toml.template`` against a staged, self-contained
+tree. This script assembles that tree and drives the CLI.
 
-     - ``full-webview2`` — application + the current 2D/3D model pack AND
-       the Evergreen offline WebView2 runtime, so an install never touches
-       the network for resources and survives machines without the
-       WebView2 runtime (the installer silently runs the carried runtime
-       and, failing that, degrades to its native notice pointing at
-       Microsoft's download page). The pack comes
-       from a local bake (``packages/webui/src/res/models`` —
-       ``scripts/fetch_models.py`` output) when present, and is otherwise
-       fetched ONCE from the published ``res-latest`` release and
-       extracted into the same layout — which is what release CI does on
-       its clean runners. The ship preview portraits
-       (``wowsp-images.tar.gz``, gitignored derived downloads) are likewise
-       fetched from ``res-latest`` BEFORE the webui build, because they
-       embed into the app binary itself via the frontend dist. A
-       materials-only ``full`` flavor (pack but no runtime) is
-       intentionally NOT built anymore: the complete flavor always
-       carries the runtime so the WebView2-less story is single and
-       testable.
-     - ``lite`` — the bare application, NO model pack: most features work
-       out of the box and the pack downloads on demand (Settings → cache
-       management, or automatically on the first 3D view). The shell
-       stages a ``wowsp-flavor.txt`` marker so the app's updater keeps
-       picking the ``-lite`` artifact.
+Staging layout (``target/installer-stage/``), entirely relative-path
+driven from the rendered manifest:
 
-The shell's own frontend (``@wowsp/installer-web`` → ``web/dist``) is
-rebuilt before the shell compiles, and the shell's codegen cache is
-purged so the embedded UI is never stale — plain ``cargo build`` would
-happily re-link with a previously expanded asset set.
+    shun.toml              ← template + __WOWSP_VERSION__ substituted
+    logo.webp              ← product logo for the shell chrome
+    licenses/              ← copyright notices + SySL agreements (10 locales)
+    telemetry/             ← per-locale telemetry notices (from docs/)
+    payload-lite/          ← wowsp.exe + wowsp-flavor.txt
+    payload-webview2/      ← + models/ dogtags/ res stamp + webview2 runtime
+
+Flavor split (the two published artifacts):
+
+    - ``webview2`` — the complete build: application + the current 2D/3D
+      model pack + the Evergreen offline WebView2 runtime. An install never
+      touches the network for resources and survives machines without the
+      WebView2 runtime (the shell silently runs the carried runtime and,
+      failing that, degrades to its egui face).
+    - ``lite`` — the bare application, NO model pack: most features work
+      out of the box and the pack downloads on demand (Settings → cache
+      management, or automatically on the first 3D view). The app's
+      updater always picks the ``-lite`` artifact.
+
+The shun checkout: pass ``--shun-repo`` or set ``SHUN_REPO`` (release CI
+checks the pinned tag out into ``shun/`` and exports it). The CLI builds
+shun's own shell with our manifest embedded; the first run is a full
+cargo build of that workspace, later runs are incremental.
 
 Artifacts land in ``target/release/bundle/installer/`` as
 ``WoWSP_<version>_x64-installer-webview2.exe`` and
 ``WoWSP_<version>_x64-installer-lite.exe``.
 
 The Evergreen offline runtime (~180 MB) is cached under
-``packages/installer-shell/vendor/`` (gitignored).
+``packages/installer/vendor/`` (gitignored).
 
-    python scripts/build_installers.py [--skip-app-build] [--flavors ...]
+    python scripts/build_installers.py [--skip-app-build] [--flavors ...] \
+        [--shun-repo <path>]
 """
 
 from __future__ import annotations
@@ -59,18 +57,19 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 TAURI = REPO / "packages" / "app" / "tauri"
-SHELL = REPO / "packages" / "installer-shell"
 MODELS = REPO / "packages" / "webui" / "src" / "res" / "models"
 IMAGES = REPO / "packages" / "webui" / "src" / "res" / "images"
-SHELL_WEB = REPO / "packages" / "installer-shell" / "web"
-SHELL_ENTRY = REPO / "packages" / "installer-shell" / "src" / "main.rs"
-VENDOR = SHELL / "vendor"
+INSTALLER = REPO / "packages" / "installer"
+VENDOR = INSTALLER / "vendor"
 WV2_URL = "https://go.microsoft.com/fwlink/?linkid=2099617"
 WV2_NAME = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 WV2_PAYLOAD_PREFIX = "webview2"
 TARGET = REPO / "target" / "release"
 OUT = TARGET / "bundle" / "installer"
-SHELL_BUILD_DIR = TARGET / "build"
+STAGE = REPO / "target" / "installer-stage"
+# Default shun source for local builds: a sibling checkout. CI points
+# SHUN_REPO at the tag it checks out.
+DEFAULT_SHUN_REPO = REPO.parent / "shun"
 
 # Resource-pack fetch (release CI runners hold no local bake): the published
 # res-latest assets and where the one-time downloads cache themselves.
@@ -85,6 +84,35 @@ RES_RELEASE_DL = (
 RES_ASSET_URL = RES_RELEASE_DL + RES_ARCHIVE
 IMAGES_ASSET_URL = RES_RELEASE_DL + IMAGES_ARCHIVE
 GH_REPO = "langyo/wowsp"
+
+# Wizard locales → the telemetry document's docs/ language directory
+# (de/pt have no localized page yet — they read the English one).
+TELEMETRY_LOCALES = [
+    ("en", "en"),
+    ("zh-Hans", "zh-CN"),
+    ("zh-Hant", "zh-TW"),
+    ("ja", "ja"),
+    ("ko", "ko"),
+    ("ru", "ru"),
+    ("fr", "fr"),
+    ("es", "es"),
+    ("de", "en"),
+    ("pt", "en"),
+]
+# shun::license_sysl's locale → sysl-repo i18n directory mapping
+SYSL_I18N_DIRS = {
+    "zh-Hans": "zhs",
+    "zh-Hant": "zht",
+    "ja": "ja",
+    "ko": "ko",
+    "fr": "fr",
+    "ru": "ru",
+    "es": "es",
+    "de": "de",
+    "pt": "pt",
+}
+SYSL_REPO = "celestia-island/sysl"
+SYSL_BRANCH = "master"
 
 
 def app_version() -> str:
@@ -133,9 +161,9 @@ def res_manifest() -> dict | None:
 
 
 def res_stamp() -> tuple[str, str]:
-    """(treeSha256, publishedAt) the installer stamps the shipped pack
-    with, so first launch treats it as current instead of re-downloading;
-    empty strings when the manifest is unreachable."""
+    """(treeSha256, publishedAt) the installer ships beside the pack, so
+    the app's first-launch publication treats it as current instead of
+    re-downloading; empty strings when the manifest is unreachable."""
     manifest = res_manifest()
     if not manifest:
         return "", ""
@@ -325,92 +353,105 @@ def build_app() -> Path:
     return exe
 
 
-def build_shell_web() -> None:
-    """Builds the installer shell's own frontend into web/dist.
-
-    The shell embeds that directory at compile time (tauri's
-    frontendDist), and plain `cargo build` runs no beforeBuildCommand —
-    without this step the binary would carry whatever stale bundle last
-    landed in web/dist."""
-    print("[shell-web] building installer shell frontend …")
-    pnpm = shutil.which("pnpm") or "pnpm"
-    run([pnpm, "--filter", "@wowsp/installer-web", "build"])
-
-
-def reset_shell_codegen() -> None:
-    """Forces the shell's embedded-frontend codegen to re-expand.
-
-    cargo's fingerprint cannot see inside the `generate_context!` proc
-    macro: when only `web/dist` changed, the shell may re-link with a
-    fresh payload while quietly keeping the previously expanded assets.
-    Purging the build-script outputs and touching the entry source makes
-    the re-expansion unconditional (verified by decompressing the emitted
-    tauri-codegen-assets bundle)."""
-    for path in SHELL_BUILD_DIR.glob("wowsp_installer_shell-*"):
-        shutil.rmtree(path, ignore_errors=True)
-    SHELL_ENTRY.touch()
-
-
-def stage_payload(app_exe: Path) -> Path:
-    stage = TARGET / "installer-stage"
-    shutil.rmtree(stage, ignore_errors=True)
-    stage.mkdir(parents=True)
-    shutil.copy2(app_exe, stage / app_exe.name)
-    print(f"[stage] payload: {stage} ({app_exe.name})")
-    return stage
+def fetch_sysl_agreements(stage: Path) -> None:
+    """Stage the SySL agreement per locale: fresh from the sysl repo when
+    the network allows (matching the old installer-shell build), the
+    vendored copy otherwise — a build must never fail over a translation."""
+    licenses = stage / "licenses"
+    licenses.mkdir(parents=True, exist_ok=True)
+    for locale in ["en"] + list(SYSL_I18N_DIRS):
+        vendored = INSTALLER / "licenses" / f"{locale}.txt"
+        dest = licenses / f"{locale}.txt"
+        if locale == "en":
+            url = f"https://raw.githubusercontent.com/{SYSL_REPO}/{SYSL_BRANCH}/LICENSE.txt"
+        else:
+            i18n = SYSL_I18N_DIRS[locale]
+            url = f"https://raw.githubusercontent.com/{SYSL_REPO}/{SYSL_BRANCH}/i18n/{i18n}/LICENSE.txt"
+        text = None
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(url, headers={"User-Agent": "wowsp-installer-build"}),
+                timeout=20,
+            ) as resp:
+                text = resp.read().decode("utf-8")
+            print(f"[license] fetched SySL {locale} from upstream")
+        except Exception as exc:
+            print(f"[license] SySL {locale} fetch failed ({exc}); using vendored copy")
+        if text is None:
+            if not vendored.is_file():
+                sys.exit(f"no SySL agreement for {locale}: fetch failed and no vendored copy")
+            text = vendored.read_text(encoding="utf-8")
+        dest.write_text(text, encoding="utf-8", newline="")
 
 
-def stage_res(stage: Path) -> None:
-    """Stage the resource pack (models + dog-tag art) into the payload. The
-    shell relocates both sub-directories into the app's resource cache
-    after extraction (replacing, not merging), so a fresh install ships
-    with ships/maps/planes models AND the dog-tag snapshot — and existing
-    caches never keep files a newer pack dropped."""
-    dest = stage / "models"
-    shutil.copytree(MODELS, dest)
-    print(f"[stage] model pack: {dest}")
+def stage_documents(stage: Path, version: str) -> None:
+    """Render the manifest and stage every document it references."""
+    # Manifest: version-stamped template.
+    manifest = (INSTALLER / "shun.toml.template").read_text(encoding="utf-8")
+    if "__WOWSP_VERSION__" not in manifest:
+        sys.exit("shun.toml.template lost its __WOWSP_VERSION__ placeholder")
+    (stage / "shun.toml").write_text(
+        manifest.replace("__WOWSP_VERSION__", version), encoding="utf-8", newline=""
+    )
+    shutil.copy2(INSTALLER / "logo.webp", stage / "logo.webp")
+
+    # Copyright notices (product-owned, vendored per locale).
+    licenses = stage / "licenses"
+    licenses.mkdir(parents=True, exist_ok=True)
+    for src in sorted((INSTALLER / "licenses").glob("copyright-*.txt")):
+        shutil.copy2(src, licenses / src.name)
+
+    fetch_sysl_agreements(stage)
+
+    # Telemetry notices: the canonical docs/<lang>/license pages.
+    telemetry = stage / "telemetry"
+    telemetry.mkdir(parents=True, exist_ok=True)
+    for locale, doc_lang in TELEMETRY_LOCALES:
+        src = REPO / "docs" / doc_lang / "license" / "usage-telemetry.md"
+        if not src.is_file():
+            sys.exit(f"telemetry document missing for `{locale}`: {src}")
+        shutil.copy2(src, telemetry / f"{locale}.md")
+
+
+def stage_payload(stage: Path, app_exe: Path, variant: str) -> Path:
+    """Assemble one variant's payload directory."""
+    payload = stage / f"payload-{variant}"
+    shutil.rmtree(payload, ignore_errors=True)
+    payload.mkdir(parents=True)
+    shutil.copy2(app_exe, payload / app_exe.name)
+    # Diagnostic flavor marker beside the app (the updater picks -lite
+    # regardless — this is the wizard's identity line + older builds).
+    (payload / "wowsp-flavor.txt").write_text(variant, encoding="utf-8", newline="")
+    print(f"[stage] payload-{variant}: {payload} ({app_exe.name})")
+    return payload
+
+
+def stage_res(payload: Path, tree: str, version: str) -> None:
+    """Stage the resource pack (models + dog-tag art) and its stamp file.
+
+    The app's first-launch pass (resource_pack.rs) publishes these trees
+    into its cache root and stamps it with wowsp-res-stamp.json — the
+    stamp ships as a plain payload file, no installer code involved."""
+    shutil.copytree(MODELS, payload / "models")
     dogtags = REPO / "packages" / "webui" / "src" / "res" / "dogtags"
     if dogtags.is_dir():
-        shutil.copytree(dogtags, stage / "dogtags")
-        print(f"[stage] dog-tag art: {stage / 'dogtags'}")
+        shutil.copytree(dogtags, payload / "dogtags")
+        print(f"[stage] dog-tag art: {payload / 'dogtags'}")
+    if tree:
+        stamp = {"treeSha256": tree, "version": version}
+        (payload / "wowsp-res-stamp.json").write_text(
+            json.dumps(stamp), encoding="utf-8", newline=""
+        )
+        print(f"[stage] res stamp: tree {tree[:12]}…")
+    print(f"[stage] model pack: {payload / 'models'}")
 
 
-def build_installer(stage: Path, flavor: str = "lite",
-                    res_tree: str = "", res_version: str = "") -> Path:
-    print(f"[installer:{flavor}] cargo build -p wowsp_installer_shell --release …")
-    env = {
-        **os.environ,
-        "SHUN_PAYLOAD": str(stage),
-        "SHUN_FLAVOR": flavor,
-        # Baked into the shell so it can stamp the relocated pack with the
-        # content tree hash it was packed from (empty → no stamp, the app
-        # falls back to its normal update check).
-        "SHUN_RES_TREE_SHA256": res_tree,
-        "SHUN_RES_VERSION": res_version,
-        # The multi-hundred-MB embedded payload defeats LTO (the link step
-        # fail-fasts with STATUS_STACK_BUFFER_OVERRUN under thin LTO) and
-        # gains nothing from it; skip LTO and any rustc wrapper cache.
-        "CARGO_PROFILE_RELEASE_LTO": "off",
-        "RUSTC_WRAPPER": "",
-    }
-    subprocess.run(
-        ["cargo", "build", "-p", "wowsp_installer_shell", "--release"],
-        check=True,
-        env=env,
-    )
-    exe = TARGET / "wowsp-installer.exe"
-    if not exe.is_file():
-        sys.exit(f"installer binary missing: {exe}")
-    return exe
-
-
-def stage_webview2(stage: Path, wv2: Path) -> Path:
-    """Copy the offline runtime into the staging tree under ``webview2/`` —
-    the payload-relative prefix the shell extracts it from."""
-    dest = stage / WV2_PAYLOAD_PREFIX
+def stage_webview2(payload: Path, wv2: Path) -> None:
+    """Copy the offline runtime into the payload under ``webview2/`` — the
+    prefix shun's Evergreen bootstrap extracts and runs silently."""
+    dest = payload / WV2_PAYLOAD_PREFIX
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copy2(wv2, dest / WV2_NAME)
-    return stage
 
 
 def ensure_payload() -> Path:
@@ -435,14 +476,59 @@ def ensure_payload() -> Path:
     return payload
 
 
-def emit(version: str, installer: Path, suffix: str) -> Path:
-    """Copies a freshly built installer into the artifact name. Called right
-    after each variant's build: the second build overwrites the shared
-    target/release/wowsp-installer.exe, so the bare copy must land on disk
-    before the webview2 build starts."""
+def resolve_shun_repo(explicit: str | None) -> Path:
+    repo = Path(explicit or os.environ.get("SHUN_REPO") or DEFAULT_SHUN_REPO)
+    if not (repo / "Cargo.toml").is_file() or not (repo / "shell").is_dir():
+        sys.exit(
+            f"no shun checkout at {repo} — pass --shun-repo <path> or set SHUN_REPO "
+            "(release CI checks the pinned tag out into `shun/`)"
+        )
+    return repo
+
+
+def build_variant(
+    shun_repo: Path, stage: Path, variant: str, out_name: str
+) -> Path:
+    """Drive `shun build` for one variant and collect the artifact under
+    its published name."""
+    print(f"[installer:{variant}] shun build --variant {variant} …")
+    env = {
+        **os.environ,
+        # The multi-hundred-MB embedded payload defeats LTO (the link step
+        # fail-fasts with STATUS_STACK_BUFFER_OVERRUN under thin LTO) and
+        # gains nothing from it; skip LTO and any rustc wrapper cache.
+        "CARGO_PROFILE_RELEASE_LTO": "off",
+        "RUSTC_WRAPPER": "",
+    }
+    subprocess.run(
+        [
+            "cargo", "run", "--release",
+            "--manifest-path", shun_repo / "Cargo.toml",
+            "-p", "shun",
+            "--", "build",
+            "--manifest", stage / "shun.toml",
+            "--variant", variant,
+            "--out", stage / "out",
+            # Artifacts are published unsigned here; the release workflow
+            # signs them separately (a local build has no signing config).
+            "--no-sign",
+        ],
+        check=True,
+        env=env,
+        # The shun CLI resolves its default `shell/` (and its target
+        # dir) against the INVOKING directory — pin it to the shun
+        # checkout or a wowsp-root invocation cannot find a shell.
+        cwd=shun_repo,
+    )
+    produced = list((stage / "out").glob(f"wowsp-*-{variant}*.exe"))
+    if len(produced) != 1:
+        sys.exit(
+            f"expected exactly one shun artifact for `{variant}`, found: "
+            f"{[p.name for p in produced]}"
+        )
     OUT.mkdir(parents=True, exist_ok=True)
-    artifact = OUT / f"WoWSP_{version}_x64-installer{suffix}.exe"
-    shutil.copy2(installer, artifact)
+    artifact = OUT / out_name
+    shutil.copy2(produced[0], artifact)
     print(f"[ok] {artifact.name}: {artifact.stat().st_size:,} bytes")
     return artifact
 
@@ -471,25 +557,28 @@ def main() -> int:
     )
     ap.add_argument(
         "--flavors",
-        default="full-webview2,lite",
-        help="comma list of artifacts to build: full-webview2, lite "
-        "(the full flavor carries the model pack and the WebView2 "
-        "runtime; lite downloads the pack on demand and relies on the "
-        "native degrade notice + Microsoft download link when the runtime is "
-        "missing)",
+        default="webview2,lite",
+        help="comma list of artifacts to build: webview2, lite "
+        "(the webview2 flavor carries the model pack and the WebView2 "
+        "runtime; lite downloads the pack on demand)",
+    )
+    ap.add_argument(
+        "--shun-repo",
+        default=None,
+        help="path to a shun checkout to build with (default: $SHUN_REPO, "
+        "else a sibling checkout at ../shun)",
     )
     args = ap.parse_args()
 
-    flavors = [f.strip() for f in args.flavors.split(",") if f.strip()]
-    unknown = [f for f in flavors if f not in ("full-webview2", "lite")]
+    variants = [f.strip() for f in args.flavors.split(",") if f.strip()]
+    unknown = [f for f in variants if f not in ("webview2", "lite")]
     if unknown:
         sys.exit(
-            f"unknown flavor(s): {', '.join(unknown)} — expected full-webview2, lite "
-            "(the materials-only 'full' flavor was retired: the complete "
-            "build always carries the WebView2 runtime)"
+            f"unknown flavor(s): {', '.join(unknown)} — expected webview2, lite"
         )
 
     version = app_version()
+    shun_repo = resolve_shun_repo(args.shun_repo)
 
     # The portraits ride publicDir into the webui dist and from there into
     # the app binary itself — they must be on disk BEFORE build_app, which
@@ -504,45 +593,32 @@ def main() -> int:
     else:
         app_exe = build_app()
 
-    # The shell's embedded UI must be rebuilt from current sources and
-    # re-expanded unconditionally — see the two functions above.
-    build_shell_web()
-    reset_shell_codegen()
-
-    # The res-latest stamp baked into the shell so relocated packs count
-    # as current on first launch (empty when GitHub is unreachable — the
-    # app then re-downloads as usual).
+    # The res-latest stamp shipped beside the pack (empty when GitHub is
+    # unreachable — the app then re-downloads as usual).
     res_tree, res_version = res_stamp()
 
-    # One shared staging directory: application + full model pack; the
-    # webview2 variant just adds the offline runtime subdirectory. The
-    # Evergreen download is only needed when a webview2 flavor is built.
-    wv2 = ensure_payload() if any(f.endswith("webview2") for f in flavors) else None
+    # The Evergreen download is only needed when the webview2 flavor builds.
+    wv2 = ensure_payload() if "webview2" in variants else None
 
-    suffixes = {
-        "full-webview2": "-webview2",
-        "lite": "-lite",
-    }
+    # Stage the self-contained tree, then build each variant.
+    shutil.rmtree(STAGE, ignore_errors=True)
+    STAGE.mkdir(parents=True)
+    stage_documents(STAGE, version)
 
-    stage = stage_payload(app_exe)
-    # The lite installer packs the BARE app: build it before the model pack
-    # is staged into the shared directory, so its payload stays slim.
-    if "lite" in flavors:
-        exe = build_installer(stage, "lite", res_tree, res_version)
-        emit(version, exe, suffixes["lite"])
+    # The lite payload packs the BARE app: build it before the model pack
+    # is staged, so its payload stays slim.
+    if "lite" in variants:
+        stage_payload(STAGE, app_exe, "lite")
+        build_variant(shun_repo, STAGE, "lite", f"WoWSP_{version}_x64-installer-lite.exe")
 
-    full_flavors = [f for f in flavors if f != "lite"]
-    if full_flavors:
+    if "webview2" in variants:
+        payload = stage_payload(STAGE, app_exe, "webview2")
         ensure_models(force_fetch=args.models == "fetch")
-        stage_res(stage)
-    for flavor in full_flavors:
-        flavor_stage = stage
-        if flavor.endswith("webview2"):
-            flavor_stage = stage_webview2(stage, wv2)
-        exe = build_installer(flavor_stage, flavor, res_tree, res_version)
-        # Copy right after the build: the next variant overwrites the
-        # shared output binary.
-        emit(version, exe, suffixes[flavor])
+        stage_res(payload, res_tree, res_version)
+        stage_webview2(payload, wv2)
+        build_variant(
+            shun_repo, STAGE, "webview2", f"WoWSP_{version}_x64-installer-webview2.exe"
+        )
     return 0
 
 

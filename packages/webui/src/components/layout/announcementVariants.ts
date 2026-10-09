@@ -5,18 +5,11 @@
  *
  * Both notices render ONCE, in the user's own language: zh locales split
  * into Simplified / Traditional, the other offered UI locales map by code,
- * and anything unmapped reads English. (The installer shell's license step
- * deliberately keeps a multi-language free-notice card — there the notice
- * is part of the agreement text and must stay legible to a buyer no matter
- * which locale they picked; the in-app surfaces don't need that.)
+ * and anything unmapped reads English.
  *
  * Canonical long-form telemetry copy: docs/{lang}/license/usage-telemetry.md
- * (the webui offers no de / pt UI locale, so those entries only surface in
- * the installer shell's mirror).
- *
- * This module shares its copy texts with the announcement module in
- * packages/installer-shell/web (which keeps its own multi-language picker)
- * — keep the texts in sync across both.
+ * (the webui offers no de / pt UI locale, so those entries only surface
+ * in the installers' license step, which offers all ten wizard locales).
  */
 
 export interface AnnouncementVariant {

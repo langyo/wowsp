@@ -13,6 +13,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The shun tag the installers build from (checked out into `shun/`
+  # by the release job). v0.6.2 is the minimum: the shell localized
+  # the license step for de/pt there.
+  SHUN_TAG: v0.6.2
 
 # One release flow per ref, never cancelled mid-flight: a cancelled run can
 # leave a half-uploaded draft; a re-push of the same tag queues behind this
@@ -30,6 +34,19 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+
+      - name: Check out the shun tag
+        # The installers build from shun's own checkout (the pinned
+        # tag) via the shun CLI — packages/installer carries the
+        # manifest only, no installer code lives in this repo. SHUN_REPO
+        # is what build_installers.py resolves.
+        uses: actions/checkout@v7
+        with:
+          repository: celestia-island/shun
+          # env context expansion — a bare $SHUN_TAG does NOT expand
+          # inside a step's with: block.
+          ref: ${{ env.SHUN_TAG }}
+          path: shun
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -91,8 +108,11 @@ jobs:
         # GH_TOKEN lets build_installers fetch the res-latest manifest via
         # gh — without it the installers build with no res stamp AND the
         # size/sha checks silently accept a stale cargo-cached pack.
+        # SHUN_REPO points at the checked-out shun tag (see the checkout
+        # step); the CLI builds shun's shell with our manifest embedded.
         env:
           GH_TOKEN: ${{ github.token }}
+          SHUN_REPO: ${{ github.workspace }}/shun
         run: |
           rm -rf target/release/bundle/installer
           python scripts/build_installers.py --models fetch --images fetch

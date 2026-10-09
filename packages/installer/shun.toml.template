@@ -1,0 +1,145 @@
+# WoWSP installer manifest — consumed by the shun CLI (`shun build`).
+# Requires shun >= 0.6.2 (de/pt license localization).
+#
+# This file is a TEMPLATE: scripts/build_installers.py renders it into the
+# staging tree (substituting __WOWSP_VERSION__ with the workspace version)
+# next to the staged payloads and license documents, then invokes
+# `shun build --manifest <stage>/shun.toml --variant lite|webview2` inside
+# a shun checkout (see the script and packages/installer/README.md).
+#
+# Schema: shun's configuration guide (celestia-island/shun
+# docs/en/guides/configuration.md). Everything the installer does is
+# declared here — WoWSP ships no custom installer shell anymore.
+
+# Standalone manifest shape (consumed by `shun build`; see shun's
+# docs/en/guides/configuration.md): product identity is flat.
+product = "WoWSP"
+version = "__WOWSP_VERSION__"
+publisher = "langyo"
+# Caption-bar / window icon source, staged beside this manifest.
+logo = "logo.webp"
+
+# Each published artifact is one variant; the base payload exists only so
+# `shun config` has a default (every build pins --variant).
+payload = "payload-lite"
+
+# The complete flavor carries the Evergreen offline runtime under its
+# payload's webview2/ subtree: on a machine the WebView2 loader rejects,
+# the shell silently runs it (silent-install, default on) and, failing
+# that, degrades to its egui face with the missing-runtime warnings and
+# Microsoft's official download link (warn-missing, default on). The lite
+# flavor carries nothing — discovery no-ops, the egui degrade covers it.
+[webview2]
+type = "evergreen-installer"
+
+[install]
+local = true
+portable = true
+# The wowsp app detects this marker beside its executable (paths.rs).
+portable-marker = ".portable"
+main-exe = "wowsp.exe"
+# NSIS checkbox conventions: desktop asked (default checked), start menu
+# always; the wizard's done page applies the answers, headless runs take
+# the same defaults or the updater's explicit --shortcut-* answers.
+desktop-shortcut = "ask"
+start-menu-shortcut = "always"
+# Unattended updates self-heal: the silent flow stopped the running app on
+# the overwrite, "always" puts it back (the GUI done page keeps its own
+# checkbox — this knob only pins the headless lane).
+launch-after-install = "always"
+# %LOCALAPPDATA%\WoWSP is the app's model-pack cache root — installing
+# there would churn the cache on every reinstall and endanger it on
+# uninstall, so the per-user install lives one Programs level deeper.
+default-dir = '%LOCALAPPDATA%\Programs\WoWSP'
+
+# ── Wizard license documents (three docs, ten locales) ────────────────────
+# The agreement bodies are the vendored SySL translations (staged as
+# licenses/<locale>.txt; the build refreshes them from celestia-island/sysl
+# when the network allows), the copyright notices and telemetry pages are
+# WoWSP's own (docs/<lang>/license/usage-telemetry.md staged as
+# telemetry/<locale>.md; de/pt read the English page).
+
+[[licenses]]
+title = "WoWSP Copyright Notice"
+path = "licenses/copyright-en.txt"
+[licenses.title-locales]
+zh-Hans = "WoWSP 版权声明"
+zh-Hant = "WoWSP 版權聲明"
+ja = "WoWSP 著作権表示"
+ko = "WoWSP 저작권 고지"
+ru = "Уведомление об авторских правах WoWSP"
+fr = "Avis de droit d'auteur WoWSP"
+es = "Aviso de derechos de autor de WoWSP"
+de = "Urheberrechtshinweis von WoWSP"
+pt = "Aviso de direitos de autor de WoWSP"
+[licenses.locale-paths]
+zh-Hans = "licenses/copyright-zh-Hans.txt"
+zh-Hant = "licenses/copyright-zh-Hant.txt"
+ja = "licenses/copyright-ja.txt"
+ko = "licenses/copyright-ko.txt"
+ru = "licenses/copyright-ru.txt"
+fr = "licenses/copyright-fr.txt"
+es = "licenses/copyright-es.txt"
+de = "licenses/copyright-de.txt"
+pt = "licenses/copyright-pt.txt"
+
+[[licenses]]
+title = "Synthetic Source License 1.0"
+path = "licenses/en.txt"
+[licenses.title-locales]
+zh-Hans = "合成源码协议 1.0"
+zh-Hant = "合成原始碼協議 1.0"
+ja = "合成ソースライセンス 1.0"
+ko = "합성 소스 라이선스 1.0"
+ru = "Лицензия на синтетический исходный код 1.0"
+fr = "Licence de Source Synthétique 1.0"
+es = "Licencia de Código Sintético 1.0"
+de = "Synthetische-Quellcode-Lizenz 1.0"
+pt = "Licença de Código Sintético 1.0"
+[licenses.locale-paths]
+zh-Hans = "licenses/zh-Hans.txt"
+zh-Hant = "licenses/zh-Hant.txt"
+ja = "licenses/ja.txt"
+ko = "licenses/ko.txt"
+ru = "licenses/ru.txt"
+fr = "licenses/fr.txt"
+es = "licenses/es.txt"
+de = "licenses/de.txt"
+pt = "licenses/pt.txt"
+
+[[licenses]]
+title = "Usage Telemetry Notice"
+path = "telemetry/en.md"
+[licenses.title-locales]
+zh-Hans = "使用量遥测告知"
+zh-Hant = "使用量遙測告知"
+ja = "利用統計（テレメトリー）に関する通知"
+ko = "사용량 원격 측정(텔레메트리) 안내"
+ru = "Уведомление о телеметрии использования"
+fr = "Avis de télématique d'utilisation"
+es = "Aviso de telemetría de uso"
+de = "Hinweis zur Nutzungstelemetrie"
+pt = "Aviso de telemetria de utilização"
+[licenses.locale-paths]
+zh-Hans = "telemetry/zh-Hans.md"
+zh-Hant = "telemetry/zh-Hant.md"
+ja = "telemetry/ja.md"
+ko = "telemetry/ko.md"
+ru = "telemetry/ru.md"
+fr = "telemetry/fr.md"
+es = "telemetry/es.md"
+de = "telemetry/en.md"
+pt = "telemetry/en.md"
+
+# ── Published artifacts ────────────────────────────────────────────────────
+# `--variant lite` / `--variant webview2` map onto these; the shipped
+# wowsp-flavor.txt markers ride the payloads themselves (the app updater
+# picks -lite regardless, this is diagnostics + the wizard's identity line).
+
+[[variant]]
+name = "lite"
+payload = "payload-lite"
+
+[[variant]]
+name = "webview2"
+payload = "payload-webview2"

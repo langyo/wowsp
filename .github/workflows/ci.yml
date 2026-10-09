@@ -105,15 +105,13 @@ jobs:
         # tauri::generate_context!() embeds the frontendDist directory at
         # compile time and panics when it is missing. CI only lints/tests
         # the Rust side (the web job typechecks the frontend; the release
-        # workflow builds the real bundle via tauri-action), so
-        # placeholders are enough — one per Tauri crate: the app shell
-        # (dist/webui) and the installer shell (web/dist).
+        # workflow builds the real bundle), so a placeholder is enough —
+        # the app shell (dist/webui); the installers build from the shun
+        # checkout (packages/installer carries no Rust).
         shell: bash
         run: |
           mkdir -p dist/webui
           printf '<!doctype html><title>ci placeholder</title>\n' > dist/webui/index.html
-          mkdir -p packages/installer-shell/web/dist
-          printf '<!doctype html><title>ci placeholder</title>\n' > packages/installer-shell/web/dist/index.html
       - name: Rustfmt
         # Only the app crates are in-repo code; wowsunpack/wows-core are
         # vendored wows-toolkit sources that keep upstream formatting.
@@ -127,8 +125,8 @@ jobs:
         run: cargo check -p wowsp_tauri
       - name: Test (workspace)
         # Full workspace, not just the app crate: the vendored
-        # wowsunpack/wows-core members and the installer shell ride along
-        # (836 tests total vs 414 for -p wowsp_tauri alone). Verified green
+        # wowsunpack/wows-core members ride along (their test count
+        # dwarfs the app crate's). Verified green
         # locally on Windows in ~2 min on a warm target; the tests
         # themselves are fast (wowsp_tauri 9s, wowsunpack <1s) — the cost
         # is the one-time compile of the extra members, well inside this

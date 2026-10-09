@@ -156,8 +156,8 @@ windows.workspace = true
 [build-dependencies]
 tauri-build.workspace = true
 serde_json.workspace = true
-# Parses `[package.metadata.shun.update]` out of this manifest at build time
-# (same pattern as the installer shell's build.rs). Build-deps run on the host,
+# Parses `[package.metadata.shun.update]` out of this manifest at build time.
+# Build-deps run on the host,
 # so its `online` feature never cross-compiles.
 shun = { version = "^0.4.1", default-features = false, features = ["online"] }
 

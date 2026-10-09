@@ -2,7 +2,6 @@ packages:
   - 'packages/webui'
   - 'packages/website'
   - 'packages/holo'
-  - 'packages/installer-shell/web'
   - 'packages/pairing-relay'
 allowBuilds:
   '@parcel/watcher': true

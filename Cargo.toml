@@ -8,7 +8,6 @@ default-members = [
 members = [
     "packages/app/tauri",
     "packages/app/tauri_shared",
-    "packages/installer-shell",
     "packages/tools/wowsunpack-vendor/crates/wowsunpack",
     "packages/tools/wowsunpack-vendor/crates/wows-core",
 ]

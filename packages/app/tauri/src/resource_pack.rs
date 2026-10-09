@@ -1,5 +1,11 @@
 //! Publish the bundled resource snapshot without consuming the previous cache
-//! or the installer payload until all trees and their version stamp are ready.
+//! or the shipped payload until all trees and their version stamp are ready.
+//!
+//! The shun-built installer delivers the model/dog-tag pack inside the
+//! install directory (payload files, nothing more); the app publishes it
+//! into its cache root on first launch via [`relocate_shipped`] — run
+//! synchronously before the UI boots so the pack-aware views never race
+//! the relocation. A failed run logs and retries on the next launch.
 
 use std::fs;
 use std::io;
@@ -143,7 +149,7 @@ fn publish(cache: &Path, staged: &Path, backup: &Path) -> Result<(), String> {
     }
 }
 
-pub(super) fn relocate(
+pub(crate) fn relocate(
     install_dir: &Path,
     cache: &Path,
     stamp: Option<&[u8]>,
@@ -218,6 +224,41 @@ pub(super) fn relocate(
             let _ = fs::remove_dir_all(install_dir.join(name));
         }
     }
+    Ok(())
+}
+
+/// First-launch publication of the installer-shipped pack: relocates the
+/// `models/` + `dogtags/` trees from beside the executable into the cache
+/// root (see [`crate::paths::cache_dir`]), stamps the cache with the
+/// shipped `wowsp-res-stamp.json`, and drops the bootstrap-only `webview2/`
+/// subtree the -webview2 flavor carried. A no-op (one cheap metadata
+/// probe) when the payload shipped no pack — lite installs and every
+/// later launch pay nothing.
+pub fn relocate_shipped() -> Result<(), String> {
+    let exe_dir = std::env::current_exe()
+        .map_err(|e| format!("locate the running executable: {e}"))?
+        .parent()
+        .ok_or("the executable has no parent directory")?
+        .to_path_buf();
+    // An in-place layout (the app lives inside its own cache root) has
+    // nothing to relocate: the trees ARE the cache. Relocating would
+    // re-copy ~500 MB on every launch and stamp-downgrade a newer
+    // downloaded pack back to the shipped one.
+    if crate::paths::cache_dir()? == exe_dir {
+        return Ok(());
+    }
+    let shipped = TREES.iter().any(|name| exe_dir.join(name).is_dir());
+    if !shipped {
+        // The webview2/ bootstrap subtree rides the -webview2 flavor even
+        // though the payload carries no pack distinction — drop it
+        // regardless, best-effort.
+        let _ = fs::remove_dir_all(exe_dir.join("webview2"));
+        return Ok(());
+    }
+    let stamp = fs::read(exe_dir.join("wowsp-res-stamp.json")).ok();
+    let cache = crate::paths::cache_dir()?;
+    relocate(&exe_dir, &cache, stamp.as_deref())?;
+    let _ = fs::remove_dir_all(exe_dir.join("webview2"));
     Ok(())
 }
 
