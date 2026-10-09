@@ -76,7 +76,11 @@ export function useLiveSessionGuard() {
   // shown roster came from invalidates the content. Checked only while a
   // client runs — the offline stretches keep the review feature intact,
   // and a transient poll failure (an offline blip) recovers with the same
-  // PID and clears nothing.
+  // PID and clears nothing. On multi-client machines the pid follows the
+  // WATCHED instance (the gameStatus store's derived process), so the same
+  // rule covers the instance switch: switching the watched card away from
+  // the roster's writer, or the writer exiting while another client takes
+  // over the watched slot, both read as "a different client is live now".
   watch(
     () => [gameStatus.process.running, gameStatus.process.pid ?? null] as const,
     ([running, pid]) => {

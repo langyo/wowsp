@@ -59,6 +59,25 @@ pub struct GameProcessInfo {
     pub matched_install: Option<GameInstall>,
 }
 
+/// Plural process report for multi-instance machines: EVERY running game
+/// client (one entry per OS process, so two clients — same realm different
+/// accounts, different realms, or twin installs — are all visible), plus
+/// the pid of the PREFERRED one (the client the single-process surfaces —
+/// capture, session hub, arena fallback resolution — follow, exactly as
+/// [`GameProcessInfo`](GameProcessInfo)'s singular command reports it).
+/// The webui lets the user pick a different instance to watch on the live
+/// page; `preferred_pid` is what the selection defaults to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameProcessReport {
+    /// All running game-client processes, pid-ascending (ToolHelp snapshot
+    /// order is unspecified; the sort keeps the sidebar cards stable).
+    pub processes: Vec<GameProcessInfo>,
+    /// Pid of the preferred instance (active-install match, else the first
+    /// running one), when any process runs.
+    pub preferred_pid: Option<u32>,
+}
+
 /// One remembered account profile, mirroring the webui's `accounts.json`
 /// entry (the file is webui-owned; the Rust session reads it back to resolve
 /// WHICH of several bound accounts is the one actually playing).

@@ -326,15 +326,21 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     if (groups.length === 0) return;
 
     const multi = groups.length > 1;
-    const proc = useGameStatusStore().process;
-    const runningPath = proc.running ? (proc.matchedInstall?.path ?? null) : null;
+    // Multi-instance: EVERY running client's tree is write-locked by its
+    // own process (the backend refuses res_mods work per running root), so
+    // all of them skip — not just the watched one.
+    const { processes } = useGameStatusStore();
+    const runningPaths = processes
+      .filter((p) => p.running)
+      .map((p) => p.matchedInstall?.path ?? null)
+      .filter((p): p is string => p != null);
 
     const tasks: { id: string | null; name: string; run: () => Promise<unknown> }[] = [];
     let skipped = 0;
     const skippedClients: string[] = [];
     for (const g of groups) {
       const label = installLabel(g.install?.kind, g.install?.realm) || installFolderName(g.path);
-      if (runningPath && sameGamePath(g.path, runningPath)) {
+      if (runningPaths.some((path) => sameGamePath(g.path, path))) {
         skipped += g.info.mods.length + (g.info.probeOutdated ? 1 : 0);
         if (!skippedClients.includes(label)) skippedClients.push(label);
         continue;

@@ -18,6 +18,7 @@
   "game": {
     "online": "ゲーム起動中",
     "offline": "ゲーム未起動",
+    "switchInstance": "リアルタイム対局で観戦するクライアントインスタンスを切り替えます",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

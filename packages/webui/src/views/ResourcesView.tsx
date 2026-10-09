@@ -271,13 +271,20 @@ export default defineComponent({
      *  mods — the backend rejects it root-scoped; this pre-check mirrors
      *  the same rule (a different client running elsewhere must not block
      *  work on the selected install) and gives the localized message.
-     *  When the running process's folder is unknown, stay conservative and
+     *  Multi-instance: ANY running client whose folder matches the target
+     *  blocks it — the watched instance alone is not the whole picture.
+     *  When a running process's folder is unknown, stay conservative and
      *  block (the old blanket behavior). */
     function gameRunning(): boolean {
-      const runningRoot = gameStatus.process.matchedInstall?.path;
+      const roots = gameStatus.processes
+        .filter((p) => p.running)
+        .map((p) => p.matchedInstall?.path ?? null);
+      if (roots.length === 0) return false;
+      // Unknown folder → stay conservative and block (the old blanket
+      // behavior); otherwise only a root match on the target blocks.
       const targetsRunningClient =
-        gameStatus.process.running &&
-        (runningRoot === undefined || sameGamePath(gameRoot.value, runningRoot));
+        roots.some((r) => r == null) ||
+        roots.some((r) => r != null && sameGamePath(gameRoot.value, r));
       if (targetsRunningClient) {
         toast.error(t("resources.gameRunningBlock"));
         return true;

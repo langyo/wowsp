@@ -149,13 +149,40 @@ pub async fn is_game_running() -> bool {
 ///
 /// This mirrors Starward's approach: enumerate processes by name, then resolve
 /// the running client by matching the exe's directory against known installs.
-/// `is_game_running` is the boolean projection of this.
+/// `is_game_running` is the boolean projection of this. With several clients
+/// running this reports the PREFERRED one only — the plural view is
+/// [`get_game_processes`].
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn get_game_process(
     installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
     compute_process_info(&installs)
+}
+
+/// Plural, multi-instance view of [`get_game_process`]: EVERY running game
+/// client as its own entry (same per-process matching — kind/realm/install
+/// resolved from the exe path), plus the pid of the preferred instance the
+/// single-process surfaces follow. The webui renders one sidebar card per
+/// entry and lets the user pick which instance the live page watches;
+/// `preferred_pid` is that selection's default.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn get_game_processes(
+    installs: Vec<wowsp_tauri_shared::GameInstall>,
+) -> wowsp_tauri_shared::GameProcessReport {
+    compute_process_report(&installs)
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub async fn get_game_processes(
+    _installs: Vec<wowsp_tauri_shared::GameInstall>,
+) -> wowsp_tauri_shared::GameProcessReport {
+    wowsp_tauri_shared::GameProcessReport {
+        processes: Vec::new(),
+        preferred_pid: None,
+    }
 }
 
 /// The offline projection every non-running answer shares.
@@ -170,27 +197,21 @@ fn offline_process() -> wowsp_tauri_shared::GameProcessInfo {
     }
 }
 
-/// Shared core of [`get_game_process`] — also the session poller's per-tick
-/// body (it resolves the same preferred PID + install matching without a
-/// webui round-trip). Pure w.r.t. its inputs, so the poller and the command
-/// can never disagree about which client is running.
+/// Build one process's [`wowsp_tauri_shared::GameProcessInfo`] from its
+/// already-queried image path: match the exe against the known installs to
+/// decide which client (Steam / Wargaming / ...) is running. When detection
+/// came up empty (unusual Steam library layout, moved folder), synthesize
+/// an install from the exe's own path so downstream features (GameParams,
+/// replays, mods) still get a usable game root — the same unification the
+/// setup modal offers as its "use running game's path" action.
 #[cfg(target_os = "windows")]
-pub(crate) fn compute_process_info(
+fn process_info_of(
+    pid: u32,
+    exe_path: Option<String>,
     installs: &[wowsp_tauri_shared::GameInstall],
 ) -> wowsp_tauri_shared::GameProcessInfo {
     use wowsp_tauri_shared::GameProcessInfo;
 
-    let Some(pid) = find_game_pid() else {
-        return offline_process();
-    };
-
-    // Resolve the exe's full path, then match it against the known installs to
-    // decide which client (Steam / Wargaming / ...) is running. When detection
-    // came up empty (unusual Steam library layout, moved folder), synthesize
-    // an install from the exe's own path so downstream features (GameParams,
-    // replays, mods) still get a usable game root — the same unification the
-    // setup modal offers as its "use running game's path" action.
-    let exe_path = query_process_image_path(pid);
     let owned_matched = exe_path
         .as_deref()
         .and_then(|exe| match_install(installs, exe))
@@ -213,6 +234,45 @@ pub(crate) fn compute_process_info(
         realm,
         exe_path,
         matched_install: owned_matched,
+    }
+}
+
+/// Shared core of [`get_game_process`] — also the session poller's per-tick
+/// body (it resolves the same preferred PID + install matching without a
+/// webui round-trip). Pure w.r.t. its inputs, so the poller and the command
+/// can never disagree about which client is running.
+#[cfg(target_os = "windows")]
+pub(crate) fn compute_process_info(
+    installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessInfo {
+    let Some(pid) = find_game_pid() else {
+        return offline_process();
+    };
+    process_info_of(pid, query_process_image_path(pid), installs)
+}
+
+/// Shared core of [`get_game_processes`]: every running instance from ONE
+/// process snapshot (the preferred flag resolves over that same snapshot, so
+/// it can never name a pid the report did not list).
+#[cfg(target_os = "windows")]
+pub(crate) fn compute_process_report(
+    installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessReport {
+    use wowsp_tauri_shared::GameProcessReport;
+
+    let running = super::game_context::running_processes();
+    let validated: Vec<(u32, String)> = running
+        .iter()
+        .filter_map(|p| p.validated_root.as_ref().map(|root| (p.pid, root.clone())))
+        .collect();
+    let preferred_pid = super::game_context::preferred_pid_in(&validated);
+    let processes = running
+        .into_iter()
+        .map(|p| process_info_of(p.pid, p.exe_path, installs))
+        .collect();
+    GameProcessReport {
+        processes,
+        preferred_pid,
     }
 }
 

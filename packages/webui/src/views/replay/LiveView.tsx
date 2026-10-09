@@ -57,16 +57,18 @@ export default defineComponent({
     const plugin = useIngamePluginStore();
     const liveUi = useLiveUiStore();
 
-    const activePath = computed(() => gd.config.activeInstall?.path ?? "");
-
-    /** The folder live battle data comes from: while a client is actually
-     *  running, ITS replays folder is the one receiving tempArenaInfo.json
-     *  and the settling .wowsreplay — on multi-install machines that can
-     *  differ from the selected install, so the running process's folder
-     *  wins (mirrors the backend's live-order resolution). */
-    const liveRoot = computed(
-      () => gameStatus.process.matchedInstall?.path ?? activePath.value,
-    );
+    /** The replays dir every live read polls (arena roster + settling
+     *  replay snapshot): the WATCHED instance's folder (the sidebar's
+     *  instance cards pick it — see the gameStatus store). While a client
+     *  runs, ITS replays folder is the one receiving tempArenaInfo.json
+     *  and the settling .wowsreplay. Undefined = let the backend resolve —
+     *  its PreferRunning chain finds the validated running root, which
+     *  beats guessing from the active install when the watched entry has
+     *  no matched install. */
+    const arenaDir = computed(() => {
+      const root = gameStatus.process.matchedInstall?.path;
+      return root ? replaysDir(root) : undefined;
+    });
 
     /** The selection-tier fallback: the battle's own LATCHED realm first
      *  (frozen when this arena file first appeared — running client
@@ -118,9 +120,8 @@ export default defineComponent({
     const settledReplay = ref<string | null>(null);
     let baselineFiles: Set<string> | null = null;
     async function snapshotReplayDir(): Promise<Set<string> | null> {
-      const dir = liveRoot.value ? replaysDir(liveRoot.value) : undefined;
       try {
-        const files = await api.listReplays(dir);
+        const files = await api.listReplays(arenaDir.value);
         return new Set(files);
       } catch {
         return null;
@@ -237,7 +238,12 @@ export default defineComponent({
     // While the page is open, poll the game's tempArenaInfo.json so the
     // roster refreshes as players load in / the battle ends (the game
     // DELETES the file at battle end — an absent read flags the battle
-    // ended and keeps the last roster on screen).
+    // ended and keeps the last roster on screen). The dir is EXPLICIT —
+    // the WATCHED instance's replays folder (the sidebar's instance cards
+    // pick it; without a matched install the dir is undefined and the
+    // backend's PreferRunning chain resolves instead — see arenaDir) — so
+    // on multi-client machines the poll reads the instance the user
+    // selected, not the backend's preferred one.
     let arenaTimer: number | null = null;
     onMounted(async () => {
       await gd.detect();
@@ -247,8 +253,11 @@ export default defineComponent({
       if (gameStatus.process.running) {
         await armBattlePhase();
       }
-      void overlay.refreshArenaInfo();
-      arenaTimer = window.setInterval(() => void overlay.refreshArenaInfo(), 3000);
+      void overlay.refreshArenaInfo(arenaDir.value);
+      arenaTimer = window.setInterval(
+        () => void overlay.refreshArenaInfo(arenaDir.value),
+        3000,
+      );
     });
     onBeforeUnmount(() => {
       if (endPoll !== null) clearInterval(endPoll);

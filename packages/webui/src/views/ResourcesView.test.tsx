@@ -20,7 +20,9 @@ vi.mock("@/api", () => ({ api: {
   modHubRecords: mocks.records, modTags: async () => ({ tags: [] }),
 } }));
 vi.mock("@/stores/config", () => ({ useConfigStore: () => mocks.config }));
-vi.mock("@/stores/gameStatus", () => ({ useGameStatusStore: () => ({ process: { running: false } }) }));
+vi.mock("@/stores/gameStatus", () => ({
+  useGameStatusStore: () => ({ process: { running: false }, processes: [] }),
+}));
 vi.mock("@/stores/pluginUpdates", () => ({ usePluginUpdatesStore: () => ({ itemBusy: new Map(), syncFreshness: vi.fn() }) }));
 vi.mock("@/stores/staleBins", () => ({ useStaleBinsStore: () => ({ adopt: mocks.adopt }) }));
 vi.mock("@/i18n", () => ({ t: (key: string) => key }));
