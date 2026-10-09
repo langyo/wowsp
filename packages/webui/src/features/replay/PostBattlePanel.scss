@@ -119,6 +119,59 @@
   font-size: var(--text-2xs);
 }
 
+/* The 全员/我的 view switcher — a segmented pair leading the toolbar
+   (the roster matrix and the self report are two views of one battle, so
+   they read as tabs, not as toggles). */
+.replay-view__postbattle-viewswitch {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgb(var(--color-text) / 20%);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.replay-view__postbattle-viewswitch-btn {
+  padding: 0.1rem 0.65rem;
+  border: none;
+  background: transparent;
+  color: rgb(var(--color-text) / 60%);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+
+  & + & {
+    border-left: 1px solid rgb(var(--color-text) / 14%);
+  }
+
+  &:hover {
+    color: rgb(var(--color-text) / 85%);
+  }
+
+  &--on {
+    background: rgb(var(--color-primary) / 14%);
+    color: rgb(var(--color-primary));
+  }
+}
+
+/* The 我的 view of the results modal — the shared self report body laid
+   out like the live panel's scroll area (SelfReportBody.scss carries the
+   .live-self__* classes; this only stacks them). */
+.replay-view__postbattle-self {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.replay-view__postbattle-self-empty {
+  margin: 0;
+  padding: 1.2rem 0.6rem;
+  border: 1px dashed rgb(var(--color-text) / 14%);
+  border-radius: 10px;
+  color: rgb(var(--color-text) / 38%);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
 .replay-view__postbattle-matrix {
   display: grid;
   grid-template-columns: 1fr 1fr;

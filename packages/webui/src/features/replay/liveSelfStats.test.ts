@@ -14,10 +14,25 @@ import { describe, expect, it } from "vitest";
 import type {
   EntityTrajectory,
   ReplayStream,
+  ShellLaunchEvent,
   ShotKillEvent,
+  TorpedoLaunch,
   VehicleEntry,
 } from "@/api";
 import { buildSelfStats, type BuildSelfStatsInput } from "./liveSelfStats";
+
+/** The stream slice the model consumes, launch joins included. */
+type TestStream = Pick<
+  ReplayStream,
+  | "trajectories"
+  | "shotKills"
+  | "damageStats"
+  | "achievements"
+  | "arenaPlayers"
+  | "battleResults"
+  | "shellLaunches"
+  | "torpedoes"
+>;
 
 function traj(
   entityId: number,
@@ -60,7 +75,7 @@ const ARENA_PLAYERS = [
   { entityId: 30, teamId: 1, playerId: 99, shipParamsId: 103, maxHealth: 30000, name: "Attacker", isBot: false, avatarId: null, isSelf: false },
 ];
 
-function baseStream(): Pick<ReplayStream, "trajectories" | "shotKills" | "damageStats" | "achievements" | "arenaPlayers" | "battleResults"> {
+function baseStream(): TestStream {
   return {
     trajectories: [
       traj(10, 101, { x: 0, z: 0 }, [
@@ -93,8 +108,44 @@ function baseStream(): Pick<ReplayStream, "trajectories" | "shotKills" | "damage
   };
 }
 
-function build(stream: Pick<ReplayStream, "trajectories" | "shotKills" | "damageStats" | "achievements" | "arenaPlayers" | "battleResults">) {
+function build(stream: TestStream) {
   return buildSelfStats({ stream, roster: ROSTER, dataLang: "en-US" } satisfies BuildSelfStatsInput);
+}
+
+function shellLaunch(ownerId: number, shotId: number): ShellLaunchEvent {
+  return {
+    time: 1,
+    ownerId,
+    paramsId: 1,
+    salvoId: 1,
+    shotId,
+    x: 0,
+    y: 0,
+    z: 0,
+    targetX: 0,
+    targetY: 0,
+    targetZ: 0,
+    serverTimeLeft: 0,
+    speed: 800,
+    gunBarrelId: 0,
+  };
+}
+
+function torpedoLaunch(ownerId: number, shotId: number): TorpedoLaunch {
+  return {
+    time: 1,
+    ownerId,
+    paramsId: 2,
+    salvoId: 1,
+    shotId,
+    x: 0,
+    y: 0,
+    z: 0,
+    dirX: 1,
+    dirY: 0,
+    dirZ: 0,
+    armed: true,
+  };
 }
 
 describe("buildSelfStats", () => {
@@ -258,5 +309,80 @@ describe("buildSelfStats", () => {
       dataLang: "en-US",
     });
     expect(m).toBeNull();
+  });
+
+  it("keeps known allies out of the dealt ledger and the heuristic total", () => {
+    // The 2026-10-09 co-op shape: my splash grazes a TEAMMATE (Stenga) —
+    // the attributed HP drop is friendly fire / graze noise, not damage
+    // dealt, and an ally row must not render inside the enemies-only list.
+    const ally = traj(40, 104, { x: 1800, z: 0 }, [
+      { time: 0, value: 20000 },
+      { time: 11, value: 20000 },
+      { time: 12, value: 17000 },
+      { time: 30, value: 17000 },
+    ]);
+    const stream = baseStream();
+    stream.trajectories = [...stream.trajectories, ally];
+    stream.shotKills = [
+      impact(11, 10, 905, 5),
+      impact(12, 10, 1805, 0), // near the ally
+      impact(15, 30, 10, 8),
+    ];
+    const roster: VehicleEntry[] = [
+      ...ROSTER,
+      { id: 111, name: "Stenga", relation: 1, shipId: 104, shipName: "AllyShip" },
+    ];
+    const arena = [
+      ...ARENA_PLAYERS,
+      { entityId: 40, teamId: 0, playerId: 111, shipParamsId: 104, maxHealth: 20000, name: "Stenga", isBot: false, avatarId: null, isSelf: false },
+    ];
+    stream.arenaPlayers = arena;
+    const m = buildSelfStats({ stream, roster, dataLang: "en-US" });
+    expect(m).not.toBeNull();
+    expect(m!.dealt.find((r) => r.entityId === 40)).toBeUndefined();
+    // The heuristic fallback total counts enemy-side damage only.
+    expect(m!.damage).toBe(4000);
+    expect(m!.damageSource).toBe("heuristic");
+    // The received ledger keeps its sources (a teammate hurting me is
+    // real information there).
+    expect(m!.received.find((r) => r.entityId === 30)).toBeDefined();
+  });
+
+  it("splits attributed damage by the launch join (shell / torpedo / other)", () => {
+    const second = traj(50, 105, { x: 3000, z: 0 }, [
+      { time: 0, value: 25000 },
+      { time: 10, value: 25000 },
+      { time: 12, value: 22000 },
+      { time: 30, value: 22000 },
+    ]);
+    const stream = baseStream();
+    stream.trajectories = [...stream.trajectories, second];
+    stream.shotKills = [
+      // shell (shotId 5) near Victim, torpedo (shotId 6) near the second
+      // enemy, unlaunched shotId 1 attacker hit near me.
+      { time: 11, ownerId: 10, hitType: 100, shotId: 5, x: 905, y: 0, z: 5 },
+      { time: 12, ownerId: 10, hitType: 100, shotId: 6, x: 3005, y: 0, z: 0 },
+      impact(15, 30, 10, 8),
+    ];
+    stream.shellLaunches = [shellLaunch(10, 5)];
+    stream.torpedoes = [torpedoLaunch(10, 6), torpedoLaunch(30, 9)];
+    const roster: VehicleEntry[] = [
+      ...ROSTER,
+      { id: 122, name: "Enemy2", relation: 2, shipId: 105, shipName: "EnemyShip3" },
+    ];
+    const arena = [
+      ...ARENA_PLAYERS,
+      { entityId: 50, teamId: 1, playerId: 122, shipParamsId: 105, maxHealth: 25000, name: "Enemy2", isBot: false, avatarId: null, isSelf: false },
+    ];
+    stream.arenaPlayers = arena;
+    const m = buildSelfStats({ stream, roster, dataLang: "en-US" });
+    expect(m).not.toBeNull();
+    const shellRow = m!.dealt.find((r) => r.entityId === 20);
+    expect(shellRow!.comp).toEqual({ shell: 4000 });
+    const torpedoRow = m!.dealt.find((r) => r.entityId === 50);
+    expect(torpedoRow!.comp).toEqual({ torpedo: 3000 });
+    // The attacker's hit near me rode no launch of theirs → other.
+    const rec = m!.received.find((r) => r.entityId === 30);
+    expect(rec!.comp).toEqual({ other: 4000 });
   });
 });

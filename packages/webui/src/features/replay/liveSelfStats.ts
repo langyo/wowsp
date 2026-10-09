@@ -12,6 +12,8 @@
  *  - `damageStats`  — cumulative per-weapon damage dealt (server truth).
  *  - `shotKills`    — server-confirmed hits with firing entity + impact
  *                     point: the per-target attribution key.
+ *  - `shellLaunches`/`torpedoes` — launch joins classifying each hit's
+ *                     weapon bucket (the row composition chips).
  *  - `trajectories` — per-ship HP timelines (hpSamples) + deathTime.
  *  - `arenaPlayers` — the authoritative entity ↔ player join (isSelf marks
  *                     the recorder).
@@ -32,6 +34,7 @@ import type {
 import { foldDamageStats } from "@/api";
 import achievementNamesRaw from "@/data/achievement_names.json";
 import { parsePostBattle, type PostBattleData } from "./postBattle";
+import { shotWeaponJoiner, foldDamageComp, type FamilyDamage, type RowComp, type RowCompKey } from "./damageComp";
 
 const achievementNames: Record<
   string,
@@ -70,6 +73,9 @@ export interface SelfCombatRow {
   relation: number | null;
   /** Attributed hull damage within this row. */
   damage: number;
+  /** The same damage split by weapon bucket (launch-join estimate): shells
+   *  vs torpedoes vs everything the launches never carried. */
+  comp: RowComp;
   /** The ship's starting hull HP (arena value preferred). */
   maxHp: number | null;
   /** Current hull HP % (0..100) at the model's battle time. */
@@ -123,6 +129,10 @@ export interface SelfStatsModel {
   dealt: SelfCombatRow[];
   /** Damage I took, per attacker ship (desc). */
   received: SelfCombatRow[];
+  /** The server's own damage split by weapon family (enemy category) — the
+   *  composition strip under the summary tiles. Empty when the damage-stat
+   *  stream has nothing decodable yet. */
+  damageComp: FamilyDamage[];
   achievements: SelfAchievement[];
   final: SelfFinalStats | null;
 }
@@ -218,6 +228,7 @@ class RowBook {
         shipId: vehicle?.shipId ?? arena?.shipParamsId ?? traj.kind.shipId ?? null,
         relation: vehicle ? vehicle.relation : null,
         damage: 0,
+        comp: {},
         maxHp: maxHpOf(traj, arena),
         hpRatio: null,
         killed: false,
@@ -227,8 +238,9 @@ class RowBook {
   }
 
   /** Attribute `delta` HP loss at time `t` onto the row (creating a bare
-   *  one for entities the pre-pass missed — e.g. a scripted spawn). */
-  add(entityId: number, delta: number, t: number): void {
+   *  one for entities the pre-pass missed — e.g. a scripted spawn). The
+   *  hit's weapon bucket rides along into the row's composition. */
+  add(entityId: number, delta: number, t: number, compKey?: RowCompKey): void {
     let row = this.rows.get(entityId);
     if (!row) {
       row = {
@@ -239,6 +251,7 @@ class RowBook {
         shipId: null,
         relation: null,
         damage: 0,
+        comp: {},
         maxHp: null,
         hpRatio: null,
         killed: false,
@@ -247,6 +260,7 @@ class RowBook {
       this.rows.set(entityId, row);
     }
     row.damage += delta;
+    if (compKey) row.comp[compKey] = (row.comp[compKey] ?? 0) + delta;
     if (t > row.lastAt) row.lastAt = t;
   }
 
@@ -275,7 +289,14 @@ class RowBook {
  *  polled temp-replay snapshot). */
 export type SelfStatsStream = Pick<
   ReplayStream,
-  "trajectories" | "shotKills" | "damageStats" | "achievements" | "arenaPlayers" | "battleResults"
+  | "trajectories"
+  | "shotKills"
+  | "damageStats"
+  | "achievements"
+  | "arenaPlayers"
+  | "battleResults"
+  | "shellLaunches"
+  | "torpedoes"
 >;
 
 export interface BuildSelfStatsInput {
@@ -328,6 +349,7 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
     (stream.damageStats?.length ?? 0) > 0
       ? foldDamageStats(stream.damageStats, Infinity)
       : null;
+  const damageComp = foldDamageComp(stream.damageStats);
   const battleTime = lastTimeOf(trajectories, shotKills, stream.damageStats ?? []);
 
   if (!selfTraj) {
@@ -352,6 +374,7 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
       frags: 0,
       dealt: [],
       received: [],
+      damageComp,
       achievements: achievementsOf(stream.achievements ?? [], selfPlayerId, dataLang),
       final: null,
     };
@@ -367,6 +390,9 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
   const dealtBook = new RowBook(trajectories, roster, arenaPlayers);
   const takenBook = new RowBook(trajectories, roster, arenaPlayers);
   const shipEntityIds = new Set(ships.map((t) => t.entityId));
+  // The launch join behind the per-row composition chips (shell / torpedo /
+  // other) — classifies each impact once per event, both directions.
+  const weaponOf = shotWeaponJoiner(stream.shellLaunches, stream.torpedoes);
   let heuristicDamage = 0;
   /** Server-confirmed hits of mine — the game's 命中 counter semantics:
    *  one VOLLEY tick (shells arriving inside 0.25 s count once — the game
@@ -385,6 +411,7 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
     victim: EntityTrajectory,
     rowKey: number,
     e: ShotKillEvent,
+    compKey: RowCompKey,
   ): number => {
     const at = sampleAtTraj(victim, e.time);
     if (!at) return 0;
@@ -394,13 +421,14 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
     if (hpBefore == null || hpAfter == null) return 0;
     const delta = hpBefore - hpAfter;
     if (delta < HIT_HP_MIN_DELTA) return 0;
-    book.add(rowKey, delta, e.time);
+    book.add(rowKey, delta, e.time, compKey);
     return delta;
   };
   for (const e of shotKills) {
     if (e.ownerId === selfEntityId) {
       const newVolley = e.time - lastVolleyTick > 0.25;
       if (newVolley) lastVolleyTick = e.time;
+      const compKey = weaponOf(e.ownerId, e.shotId, e.time) ?? "other";
       let countedHit = false;
       for (const tr of ships) {
         if (tr.entityId === selfEntityId) continue;
@@ -427,9 +455,15 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
           impactHits++;
           countedHit = true;
         }
-        const delta = attribute(dealtBook, tr, tr.entityId, e);
+        const delta = attribute(dealtBook, tr, tr.entityId, e, compKey);
         if (delta > 0) {
-          heuristicDamage += delta;
+          // The server's totals (and this fallback) count ENEMY-side damage
+          // only — a teammate my splash grazed (the 2026-10-09 co-op battle
+          // credited an ally 693 HP here) is not damage dealt.
+          const victim = dealtBook.rows.get(tr.entityId);
+          if (!victim || victim.relation == null || victim.relation > 1) {
+            heuristicDamage += delta;
+          }
           // Frag credit: MY impact's HP delta must have landed while the
           // victim was still afloat (diedBefore rejects the sinking
           // animation's post-death splash ticks — the 2026-10-08
@@ -465,7 +499,7 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
       // Received: only ship entities can be attackers (squadron/ward owners
       // are not in the ship set).
       if (!shipEntityIds.has(e.ownerId)) continue;
-      attribute(takenBook, selfTraj, e.ownerId, e);
+      attribute(takenBook, selfTraj, e.ownerId, e, weaponOf(e.ownerId, e.shotId, e.time) ?? "other");
     }
   }
   dealtBook.finish(trajectories, battleTime);
@@ -498,8 +532,14 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
     hpRatio,
     sunk: selfTraj.deathTime != null,
     frags: [...dealtBook.rows.values()].filter((r) => r.killed).length,
-    dealt: dealtBook.sorted(),
+    // 对敌造成伤害: known allies stay out of the dealt ledger entirely —
+    // the attribution cannot help grazing one (its row would read as a
+    // green ally inside an enemies-only list; the 2026-10-09 co-op
+    // "Stenga" case). Unjoined entities (no roster relation) stay listed —
+    // they are overwhelmingly enemies whose join simply missed.
+    dealt: dealtBook.sorted().filter((r) => r.relation == null || r.relation > 1),
     received: takenBook.sorted(),
+    damageComp,
     achievements: achievementsOf(stream.achievements ?? [], selfPlayerId, dataLang),
     final: null,
   };
@@ -528,7 +568,15 @@ function mergeFinal(model: SelfStatsModel, post: PostBattleData): void {
   const selfId = self?.accountId ?? post.selfId ?? model.selfPlayerId ?? null;
   const killedPlayers =
     selfId != null ? post.players.filter((p) => p.killerId === selfId) : [];
-  const killedIds = new Set(killedPlayers.map((p) => p.accountId));
+  // The dealt ledger is enemies-only — a server-credited TEAM kill must not
+  // append an ally row (relation null would render it as an unjoined enemy)
+  // nor re-stamp one with a kill skull. Unknown teams (legacy payloads) keep
+  // the old behavior.
+  const selfTeam = self?.team ?? null;
+  const killedEnemies = killedPlayers.filter(
+    (p) => selfTeam == null || p.team == null || p.team !== selfTeam,
+  );
+  const killedIds = new Set(killedEnemies.map((p) => p.accountId));
   if (self) {
     model.damage = self.damage;
     model.taken = self.damageTaken;
@@ -544,7 +592,7 @@ function mergeFinal(model: SelfStatsModel, post: PostBattleData): void {
     const withRow = new Set(
       model.dealt.filter((r) => r.killed).map((r) => r.playerId ?? r.name),
     );
-    for (const p of killedPlayers) {
+    for (const p of killedEnemies) {
       if (withRow.has(p.accountId) || withRow.has(p.name)) continue;
       // The heuristic may already carry the sink as an UNJOINED row (no
       // arena join): stamp its identity instead of duplicating it.
@@ -565,6 +613,7 @@ function mergeFinal(model: SelfStatsModel, post: PostBattleData): void {
         shipId: p.shipId,
         relation: null,
         damage: 0,
+        comp: {},
         maxHp: null,
         hpRatio: null,
         killed: true,

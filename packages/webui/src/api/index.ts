@@ -1,4 +1,4 @@
-export { api, foldDamageStats, GAMEDATA_SENTINEL } from "./client";
+export { api, foldDamageStats, isPlaneWeapon, GAMEDATA_SENTINEL } from "./client";
 export type {
   GameInstall,
   GameInstallKind,

@@ -2,7 +2,11 @@
  * Post-battle panel: the two-column result matrix shown by the replay
  * "结果" modal (mounted by ReplayView once the replay carries its
  * BattleResults payload; the live view reads its own roster straight from
- * the arena store instead). Rows sort by
+ * the arena store instead). The toolbar's segmented 全员/我的 switcher
+ * flips the panel between this roster matrix and the self report
+ * (我的战绩) — the shared SelfReportBody over the live panel's own model
+ * builder, fed from the replay's decoded stream; the camera button copies
+ * whichever view is showing. The matrix rows sort by
  * settlement base exp (裸经验 — bots report 0, legacy short arrays fall back
  * to an estimate) and carry the same roster dressing as the live-battle
  * panel: clan tags, PR column, career seals, team aggregates in the column
@@ -40,7 +44,7 @@ import { useRouter } from "vue-router";
 import { Eye, EyeOff, X } from "@lucide/vue";
 import { HkSpinner } from "@celestia-island/hikari";
 
-import { type PlayerStats } from "@/api";
+import { type PlayerStats, type VehicleEntry } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import BattleIcon from "@/components/base/BattleIcon";
@@ -70,7 +74,13 @@ import {
   type RosterStat,
 } from "@/composables/useRosterStats";
 import { parsePostBattle, type PostBattleRibbon } from "./postBattle";
+import { buildSelfStats, type SelfStatsModel, type SelfStatsStream } from "./liveSelfStats";
+import { renderLiveSelfShot, type SelfShotModel } from "./liveSelfShot";
+import { buildSelfShotModel } from "./selfReportView";
+import { shareFooterStrings } from "@/features/share/shotKit";
+import { useShareImage } from "@/features/share/useShareImage";
 import LiveShipMeta from "./LiveShipMeta";
+import SelfReportBody from "./SelfReportBody";
 import {
   PostBattleShareBar,
   rosterColumns,
@@ -162,6 +172,17 @@ export default defineComponent({
     /** Operation battle (行动): the roster renders as ONE full-width allies
      *  column, matching the live panel / fallback panel. */
     operation: { type: Boolean, default: false },
+    /** The replay's decoded packet stream — the families the 我的战绩 view
+     *  runs through the live panel's own model builder (buildSelfStats);
+     *  battleResults rides the `raw` prop. Null (no decode yet) keeps the
+     *  view switcher off. */
+    stream: {
+      type: Object as () => SelfStatsStream | null,
+      default: null,
+    },
+    /** The replay's roster (descriptor vehicles) — names, relations and the
+     *  self fallback for the self report's identity join. */
+    roster: { type: Array as () => VehicleEntry[], default: () => [] },
   },
   emits: ["close"],
   setup(props, { emit }) {
@@ -422,7 +443,67 @@ export default defineComponent({
 
     // ── Share-time privacy + share shot ─────────────────────────────────
     const masking = useNickMasking();
+    /** The active view: the roster matrix (default) or the self report —
+     *  the toolbar's segmented 全员/我的 switch. Ephemeral per open (a
+     *  share-time choice, not a preference). */
+    const view = ref<"roster" | "self">("roster");
+    /** The personal report (我的战绩) — the exact pure model the live
+     *  panel runs, fed from the replay's decoded stream; the battle
+     *  results ride the `raw` prop. */
+    const selfModel = computed<SelfStatsModel | null>(() => {
+      if (!props.stream) return null;
+      return buildSelfStats({
+        stream: { ...props.stream, battleResults: props.raw },
+        roster: props.roster,
+        dataLang: dataLanguage.value,
+      });
+    });
+    /** The head's battle-mode pill data, shared by both shot models. */
+    const headMode = (): SelfShotModel["mode"] => {
+      const head = props.head;
+      if (!head?.matchGroup) return null;
+      const c = modeColor(
+        head.matchGroup,
+        head.scenario,
+        head.eventType,
+        head.botCount ?? 0,
+        head.scriptedUnitCount ?? 0,
+      );
+      return {
+        label: modeLabelOf(
+          head.matchGroup,
+          head.scenario,
+          head.eventType,
+          head.botCount ?? 0,
+          head.scriptedUnitCount ?? 0,
+        ),
+        color: c.color,
+        background: c.background,
+      };
+    };
     const shot = useShareShot(buildShotModel, () => root.value);
+    /** The self report's own copy shot — the live panel's renderer over
+     *  the shared model, so the copied 我的战绩 matches the view beside
+     *  the button (nicks arrive masked). */
+    const selfShot = useShareImage(() =>
+      renderLiveSelfShot(
+        buildSelfShotModel(selfModel.value, {
+          title: t("replay.live.selfTitle"),
+          mode: headMode(),
+          mapLabel: props.head?.mapName
+            ? displayMapName(props.head.mapName, dataLanguage.value)
+            : null,
+          metaLine: selfModel.value?.final ? t("replay.live.selfSettled") : null,
+          selfLine: selfModel.value
+            ? `${masking.maskOf(selfModel.value.selfName ?? "")}${selfModel.value.selfShipId != null ? " · " + (shipNameFromOfflineDb(selfModel.value.selfShipId, dataLanguage.value) ?? "") : ""}`
+            : "",
+          lang: dataLanguage.value,
+          maskOf: masking.maskOf,
+          estimateNote: t("replay.live.selfEstimate"),
+        }),
+        { el: root.value, ...shareFooterStrings() },
+      ),
+    );
     /** The career seal a row carries into the share shot — the exact gate
      *  chain the DOM cells render (settings master switch, zh-only bitmaps,
      *  verdict-pending holds, per-kind kill switch), so a seal switched off
@@ -438,28 +519,7 @@ export default defineComponent({
     function buildShotModel(): ShotModel {
       const pb = parsed.value;
       const head = props.head;
-      const mode = head?.matchGroup
-        ? (() => {
-            const c = modeColor(
-              head.matchGroup!,
-              head.scenario,
-              head.eventType,
-              head.botCount ?? 0,
-              head.scriptedUnitCount ?? 0,
-            );
-            return {
-              label: modeLabelOf(
-                head.matchGroup,
-                head.scenario,
-                head.eventType,
-                head.botCount ?? 0,
-                head.scriptedUnitCount ?? 0,
-              ),
-              color: c.color,
-              background: c.background,
-            };
-          })()
-        : null;
+      const mode = headMode();
       /** One row's shot cells: the chip-gated columns of the roster's
        *  stats-source view (the exact columns the panel shows) plus the
        *  settlement XP — dashes for bots / misses. */
@@ -997,30 +1057,53 @@ export default defineComponent({
           ) : null}
           <PostBattleShareBar
             hideAll={masking.hideAll.value}
-            shotBusy={shot.busy.value}
+            shotBusy={view.value === "self" ? selfShot.busy.value : shot.busy.value}
             showModeToggle
             fullMode={fullMode.value}
+            view={props.stream ? view.value : undefined}
             onToggleAll={() => masking.toggleAll()}
-            onShot={() => void shot.copyShot()}
+            onShot={() => {
+              // The self view's camera copies the personal report; without
+              // a model there is nothing to render — sit out (the panel
+              // shows the selfUnavailable note instead).
+              if (view.value === "self") {
+                if (selfModel.value) void selfShot.copyShot();
+              } else {
+                void shot.copyShot();
+              }
+            }}
             onToggleMode={toggleFullMode}
+            onSetView={(v) => (view.value = v)}
           />
-          <div
-            class={[
-              "replay-view__postbattle-matrix",
-              { "replay-view__postbattle-matrix--single": enemyRows.length === 0 },
-            ]}
-          >
-            <div class="replay-view__postbattle-col">
-              {colTitle(t("replay.roster.allies"), allies.value)}
-              {allies.value.map(rowOf)}
+          {view.value === "self" ? (
+            <div class="replay-view__postbattle-self">
+              {selfModel.value ? (
+                <SelfReportBody model={selfModel.value} maskOf={masking.maskOf} />
+              ) : (
+                <p class="replay-view__postbattle-self-empty">
+                  {t("replay.postbattle.selfUnavailable")}
+                </p>
+              )}
             </div>
-            {enemyRows.length > 0 ? (
+          ) : (
+            <div
+              class={[
+                "replay-view__postbattle-matrix",
+                { "replay-view__postbattle-matrix--single": enemyRows.length === 0 },
+              ]}
+            >
               <div class="replay-view__postbattle-col">
-                {colTitle(t("replay.roster.enemies"), enemyRows)}
-                {enemyRows.map(rowOf)}
+                {colTitle(t("replay.roster.allies"), allies.value)}
+                {allies.value.map(rowOf)}
               </div>
-            ) : null}
-          </div>
+              {enemyRows.length > 0 ? (
+                <div class="replay-view__postbattle-col">
+                  {colTitle(t("replay.roster.enemies"), enemyRows)}
+                  {enemyRows.map(rowOf)}
+                </div>
+              ) : null}
+            </div>
+          )}
 
           {/* Level-2 modal: player detail */}
           {detailOpen.value && sel ? (

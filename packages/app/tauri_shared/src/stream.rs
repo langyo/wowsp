@@ -591,6 +591,14 @@ pub struct LiveSelfStream {
     /// The authoritative ship-entity → player join.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arena_players: Vec<ArenaPlayer>,
+    /// Artillery launches (receiveArtilleryShots) — the (ownerId, shotId)
+    /// join that classifies a hit event's damage as gun fire for the
+    /// per-target damage composition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell_launches: Vec<ShellLaunchEvent>,
+    /// Torpedo launches (receiveTorpedoes) — the same join's torpedo side.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub torpedoes: Vec<TorpedoLaunch>,
     /// Raw post-battle payload (BattleResults 0x22) once it lands.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battle_results: Option<String>,
@@ -608,6 +616,8 @@ impl LiveSelfStream {
             damage_stats: full.damage_stats,
             achievements: full.achievements,
             arena_players: full.arena_players,
+            shell_launches: full.shell_launches,
+            torpedoes: full.torpedoes,
             battle_results: full.battle_results,
         }
     }

@@ -268,7 +268,8 @@
     "selfSunk": "已沉没",
     "selfKiller": "被 {name} 击沉",
     "selfKillMark": "击沉",
-    "selfKillHint": "已击沉该舰"
+    "selfKillHint": "已击沉该舰",
+    "selfCompTitle": "伤害组成"
   },
   "postbattle": {
     "loadingGlobal": "加载 {name} 全局战绩…",
@@ -288,7 +289,22 @@
     "showAll": "显示全部昵称",
     "maskHint": "行尾的眼睛可隐藏单个昵称，截图不含已隐藏昵称",
     "hideName": "隐藏该昵称",
-    "showName": "显示该昵称"
+    "showName": "显示该昵称",
+    "viewAll": "全员战绩",
+    "viewSelf": "我的战绩",
+    "selfUnavailable": "暂无法生成个人战报（缺少解码数据）"
+  },
+  "comp": {
+    "main": "主炮",
+    "atba": "副炮",
+    "torpedo": "鱼雷",
+    "air": "航空",
+    "burn": "火烧",
+    "flood": "进水",
+    "depth": "深弹",
+    "ram": "撞击",
+    "other": "其他",
+    "shell": "炮弹"
   },
   "capture": {
     "contested": "双方压点，进度暂停",

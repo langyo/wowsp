@@ -680,19 +680,26 @@ export interface AchievementEvent {
   achievementId: number;
 }
 
-/** Aircraft weapon ids (DamageStatWeapon): carrier rockets / bombers /
- *  torpedo bombers / skip bombers plus the Alt-/Tb- variants. Burn (17) and
- *  flood (20) are DoT categories shared with ship weapons, so they stay out. */
+/** Aircraft weapon ids (DamageStatWeapon), straight off the vendored enum
+ *  table (wows-core game_constants.rs): carrier rockets / bombs / torpedo
+ *  bombers / skip bombers / fighters plus the Asup-, Alter- and Tc-built
+ *  variants. Burn (17) and flood (20) are DoT categories shared with ship
+ *  weapons, so they stay out; 70 (Recon) only spots and 79-81 are the
+ *  laser/event weapons — no aircraft, no damage. The 飞机伤害 tile and the
+ *  航空 composition chip sum exactly this set. */
 const PLANE_WEAPON_IDS: ReadonlySet<number> = new Set<number>([
-  11, 12, 28, 41, 42, 43, ...range(51, 58), ...range(63, 70), ...range(74, 81),
+  10, 11, 12, 13, 14, 28, 41, 42, 43,
+  ...range(51, 58), ...range(61, 69), ...range(71, 78),
 ]);
 
 function range(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, i) => from + i);
 }
 
-/** Whether a damage-stat weapon id is an aircraft weapon (carrier planes). */
-function isPlaneWeapon(weapon: number): boolean {
+/** Whether a damage-stat weapon id is an aircraft weapon (carrier planes).
+ *  Exported for the damage-composition split (features/replay/damageComp.ts)
+ *  so the 航空 family matches the 飞机伤害 tile exactly. */
+export function isPlaneWeapon(weapon: number): boolean {
   return PLANE_WEAPON_IDS.has(weapon);
 }
 
@@ -798,6 +805,10 @@ export interface LiveSelfStream {
   damageStats?: DamageStatSample[];
   achievements?: AchievementEvent[];
   arenaPlayers?: ArenaPlayer[];
+  /** Launch events — the (ownerId, shotId) join that classifies a hit's
+   *  weapon family for the per-target damage composition. */
+  shellLaunches?: ShellLaunchEvent[];
+  torpedoes?: TorpedoLaunch[];
   battleResults?: string | null;
 }
 

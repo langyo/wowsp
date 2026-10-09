@@ -268,7 +268,8 @@
     "selfSunk": "沈没",
     "selfKiller": "{name} に撃沈された",
     "selfKillMark": "撃沈",
-    "selfKillHint": "この艦を撃沈しました"
+    "selfKillHint": "この艦を撃沈しました",
+    "selfCompTitle": "ダメージ内訳"
   },
   "postbattle": {
     "loadingGlobal": "{name} の全体戦績を読み込み中…",
@@ -288,7 +289,22 @@
     "showAll": "全ニックネームを表示",
     "maskHint": "行末の目のアイコンで個別のニックネームを非表示にできます。非表示の名前はスクリーンショットに含まれません",
     "hideName": "このニックネームを隠す",
-    "showName": "このニックネームを表示"
+    "showName": "このニックネームを表示",
+    "viewAll": "全員の成績",
+    "viewSelf": "自分の成績",
+    "selfUnavailable": "個人レポートを生成できません（デコードデータなし）"
+  },
+  "comp": {
+    "main": "主砲",
+    "atba": "副砲",
+    "torpedo": "魚雷",
+    "air": "航空",
+    "burn": "火災",
+    "flood": "浸水",
+    "depth": "爆雷",
+    "ram": "体当たり",
+    "other": "その他",
+    "shell": "砲弾"
   },
   "capture": {
     "contested": "双方が占拠中のため進行が停止しています",
