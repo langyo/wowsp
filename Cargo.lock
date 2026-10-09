@@ -7923,7 +7923,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_installer_shell"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "eframe",
  "mslnk",
@@ -7940,7 +7940,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7988,7 +7988,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri_shared"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "chrono",
  "serde",
