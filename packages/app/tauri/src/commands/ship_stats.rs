@@ -599,9 +599,15 @@ const SHIP_MODE_SPLITS: [&str; 7] = [
     "rank_div2",
     "rank_div3",
 ];
-/// Parallel per-mode requests, capped politely like the CN batch resolver
-/// (the vortex service is unauthenticated).
-const SHIP_MODE_CONCURRENCY: usize = 4;
+/// Parallel per-mode requests — all eight fly at once. The frontend paces
+/// whole ACCOUNTS (three lanes per window across its query pipelines, one
+/// pipeline message per player, with cross-window single-flight dedupe in
+/// front), so widening a single player's modes to full parallelism resolves
+/// that player's list in one request round-trip (the per-player arrival
+/// cadence rides it) while the cross-account width stays bounded by that
+/// same pacing. The vortex service is unauthenticated and tolerates this
+/// politely.
+const SHIP_MODE_CONCURRENCY: usize = 8;
 
 async fn fetch_ship_stats_vortex(
     account_id: i64,

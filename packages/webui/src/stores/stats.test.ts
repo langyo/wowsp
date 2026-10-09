@@ -1,11 +1,14 @@
 /** Stats store: in-flight lookup dedupe (concurrent lookups share ONE API
- *  call) and dog-tag continuity — a fresh pull that lost the emblem must
- *  not wipe the previously cached one (the Rust command swallows Vortex
- *  dog-tag failures into null). */
+ *  call), dog-tag continuity — a fresh pull that lost the emblem must not
+ *  wipe the previously cached one (the Rust command swallows Vortex
+ *  dog-tag failures into null) — and the fetch-ticket arbitration that
+ *  keeps a stale-caliber lookup from overwriting the cache when two
+ *  same-player fetches ride the pipeline's lanes side by side. */
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api, type PlayerStats } from "@/api";
+import { statsPrefsState } from "@/stores/statsPrefs";
 import { useStatsStore } from "./stats";
 
 vi.mock("@/api", () => ({
@@ -228,7 +231,7 @@ describe("stats store lookup", () => {
     expect(api.lookupPlayerStats).toHaveBeenCalledTimes(2);
   });
 
-  it("runs different players' lookups serially, in FIFO submission order", async () => {
+  it("dispatches different players' lookups in FIFO order and settles each on its own", async () => {
     const store = useStatsStore();
     const calls: string[] = [];
     const resolvers = new Map<string, (value: PlayerStats) => void>();
@@ -240,20 +243,58 @@ describe("stats store lookup", () => {
         }),
     );
 
-    // Two surfaces querying two different players "at once" — the WG API
-    // must still see them strictly one after the other.
+    // Two surfaces querying two different players "at once" — both ride
+    // free lanes of the shared pipeline (bounded at three concurrent
+    // messages), dispatched strictly in submission order.
     const p1 = store.lookup("alice", "asia", { force: true });
     const p2 = store.lookup("bob", "asia", { force: true });
     await new Promise<void>((r) => setTimeout(r, 0));
-    expect(calls).toEqual(["alice"]);
-
-    resolvers.get("alice")!(mockStats({ accountId: 1, name: "alice" }));
-    await p1;
-    await new Promise<void>((r) => setTimeout(r, 0));
     expect(calls).toEqual(["alice", "bob"]);
 
+    // First-arrived-first-shown: bob's lane settling first resolves p2
+    // while alice's lane is still out — and vice versa.
     resolvers.get("bob")!(mockStats({ accountId: 2, name: "bob" }));
     await p2;
+    resolvers.get("alice")!(mockStats({ accountId: 1, name: "alice" }));
+    await p1;
     expect(api.lookupPlayerStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets only the latest-started same-player lookup write the cache across an algo flip", async () => {
+    const store = useStatsStore();
+    statsPrefsState.value.prEnabled = true;
+    statsPrefsState.value.prAlgo = "winrate";
+    try {
+      const resolvers: Array<(v: PlayerStats) => void> = [];
+      vi.mocked(api.lookupPlayerStats).mockImplementation(
+        () => new Promise<PlayerStats>((r) => { resolvers.push(r); }),
+      );
+
+      // The old-caliber fetch starts first and hangs.
+      const pOld = store.lookup("flip_flop", "asia", { force: true });
+      await new Promise<void>((r) => setTimeout(r, 0));
+      expect(resolvers).toHaveLength(1);
+
+      // A PR-pref flip re-queries under the new caliber — both fetches now
+      // ride the pipeline's lanes side by side (the dedupe key embeds the
+      // algo, so they are two messages).
+      statsPrefsState.value.prAlgo = "expected";
+      const pNew = store.lookup("flip_flop", "asia", { force: true });
+      await new Promise<void>((r) => setTimeout(r, 0));
+      expect(resolvers).toHaveLength(2);
+
+      // The NEWER fetch settles first — its write must stick.
+      resolvers[1](mockStats({ battles: 222 }));
+      await expect(pNew).resolves.toMatchObject({ battles: 222 });
+      expect(store.cache.get("asia_101")?.battles).toBe(222);
+
+      // The older fetch settles LAST — its stale caliber must serve its own
+      // awaiter but never overwrite the newer cache write.
+      resolvers[0](mockStats({ battles: 111 }));
+      await expect(pOld).resolves.toMatchObject({ battles: 111 });
+      expect(store.cache.get("asia_101")?.battles).toBe(222);
+    } finally {
+      statsPrefsState.value.prAlgo = "winrate";
+    }
   });
 });

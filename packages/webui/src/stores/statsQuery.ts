@@ -42,57 +42,72 @@ interface QueryEnvelope {
   reject: (reason: unknown) => void;
 }
 
-/** The ONE serial query pipeline every water-table surface funnels its WG
+/** The ONE shared query pipeline every water-table surface funnels its WG
  *  queries through — 我的水表 (dashboard), 常规水表查询 (lookup page),
  *  录像水表查询 (replay drill-downs, hologram follow menu, roster
  *  batches) alike.
  *
  *  Multi-read / single-write: all surfaces freely READ the same reactive
  *  store caches (and the cheap cache/TTL fast paths in front of this
- *  queue never enter it); only this pipeline's single worker EXECUTES
- *  queries and writes those caches.
+ *  queue never enter it); only this pipeline's lanes EXECUTE queries and
+ *  write those caches.
  *
- *  FIFO message queue: messages run strictly one at a time, in submission
- *  order — concurrent surfaces (e.g. a dashboard refresh racing the
- *  replay follow menu's player batch) queue behind each other instead of
- *  bursting the WG API in parallel. A rejecting message settles only its
- *  own awaiter and never stalls the pipeline.
+ *  FIFO dispatch, bounded-parallel execution: messages START strictly in
+ *  submission order, but up to QUERY_LANES of them run concurrently, and
+ *  each settles the moment ITS executor finishes — a fast roster
+ *  sub-batch (or a cache-backed single hit) displays without waiting for
+ *  the slower query dispatched beside it, and a slow one never blocks the
+ *  queue behind it. A rejecting message settles only its own awaiter and
+ *  never stalls the pipeline.
  *
  *  The Rust layer keeps its own bounded-parallelism batch fan-out and
  *  same-key single-flight caches; this queue adds the cross-surface,
- *  cross-player ordering the backend doesn't provide. */
+ *  cross-player pacing the backend doesn't provide (QUERY_LANES × the
+ *  backend's per-command fan-out ≈ the request width the old chunked
+ *  frontend fetchers already kept, so the WG endpoints see the same
+ *  storm shape they tolerate). */
 export const useStatsQueryStore = defineStore("statsQuery", () => {
+  /** Concurrent messages ("lanes"). Three keeps a full roster's sub-batches
+   *  moving together without re-creating the thundering herd the serial
+   *  worker existed to prevent. */
+  const QUERY_LANES = 3;
   /** The FIFO (plain closure state — envelopes carry functions and promise
    *  callbacks that must not become reactive). */
   const queue: QueryEnvelope[] = [];
-  /** True while the worker is executing a message. */
+  /** Messages currently executing (0 … QUERY_LANES). */
+  let running = 0;
+  /** True while at least one lane is executing a message. */
   const active = ref(false);
-  /** What the worker is executing right now (null = idle). */
+  /** The kind most recently DISPATCHED (null = all lanes idle). With
+   *  several lanes in flight this is an observability hint, not the
+   *  single running kind. */
   const activeKind = ref<StatsQueryMessage["kind"] | null>(null);
-  /** Messages waiting in the queue (excludes the running one). */
+  /** Messages waiting in the queue (excludes the running ones). */
   const pending = ref(0);
 
   /** Push one message and await its result. Resolves/rejects with whatever
-   *  the producer-bound executor settles with, in strict FIFO turn. */
+   *  the producer-bound executor settles with, in FIFO dispatch turn —
+   *  completion order is the executor's own. */
   function enqueue<T>(message: StatsQueryMessage, run: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       queue.push({ message, run, resolve: resolve as (value: unknown) => void, reject });
       pending.value = queue.length;
-      void drain();
+      pump();
     });
   }
 
-  /** The single worker loop — at most one drain() pass ever runs (`active`
-   *  gates re-entry); messages enqueued while it awaits are picked up by
-   *  the same pass. */
-  async function drain() {
-    if (active.value) return;
-    active.value = true;
-    try {
-      while (queue.length > 0) {
-        const env = queue.shift()!;
-        pending.value = queue.length;
-        activeKind.value = env.message.kind;
+  /** The dispatcher: starts queued messages in FIFO order while a lane is
+   *  free. Each lane settles its own message and immediately frees the
+   *  slot for the next one — no pass ever awaits inside, so re-entry
+   *  needs no gate. */
+  function pump() {
+    while (running < QUERY_LANES && queue.length > 0) {
+      const env = queue.shift()!;
+      pending.value = queue.length;
+      running += 1;
+      active.value = true;
+      activeKind.value = env.message.kind;
+      void (async () => {
         try {
           env.resolve(await env.run());
         } catch (e) {
@@ -100,11 +115,14 @@ export const useStatsQueryStore = defineStore("statsQuery", () => {
           // pipeline itself must keep flowing.
           env.reject(e);
         } finally {
-          activeKind.value = null;
+          running -= 1;
+          if (running === 0) {
+            active.value = false;
+            activeKind.value = null;
+          }
+          pump();
         }
-      }
-    } finally {
-      active.value = false;
+      })();
     }
   }
 
