@@ -75,7 +75,7 @@ wowsdeob 反编译本机安装的 `ShipSystem.add` / `AvatarSystem.__sortKeyAliv
 app 把这些编码为离线排序键上的按服门控（utils/realms 的
 `realmUsesShipNameOrder`；utils/shipClass 承载排序键本身与 CN 静态布局），
 并拒绝把推断当作游戏内真值：
-即使插件已连接，/live 面板头部仍评级"未完整工作"（警告药丸 + tooltip，
+插件已连接时，/live 面板头部仍把行序标注为推断（警告药丸 + tooltip，
 `features/replay/telemetryGrade.ts`）——遥测载荷带沉没状态，但**不带行序**。
 终极方案是探针在引擎内读到游戏自己的排序——TAB 渲染的集合
 （`team.ally.sortedAlive`）是天然来源，但注入的 dataHub 没有

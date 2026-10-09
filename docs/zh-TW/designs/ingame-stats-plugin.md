@@ -71,8 +71,8 @@ WoWSP。該 mod **不渲染任何內容**——透明覆蓋層仍是顯示層—
 
 應用程式把這些編碼為離線排序鍵之上的按服門控（utils/realms 的
 `realmUsesShipNameOrder`；utils/shipClass 承載排序鍵本身與 CN 靜態布局），
-並拒絕把推斷當作遊戲內真值：即使插件已連線，/live 面板標頭仍評級為
-「未完整工作」（警告藥丸 + tooltip，`features/replay/telemetryGrade.ts`）
+並拒絕把推斷當作遊戲內真值：插件已連線時，/live 面板標頭仍把行序標注為
+推斷（警告藥丸 + tooltip，`features/replay/telemetryGrade.ts`）
 ——遙測酬載帶有存活/沉沒狀態，但**不帶行序**。終極方案是探針在引擎內讀到
 遊戲自己的排序——TAB 所渲染的集合（`team.ally.sortedAlive`）是天然來源，
 但注入的 dataHub 上沒有 `getCollection`；未來的酬載契約

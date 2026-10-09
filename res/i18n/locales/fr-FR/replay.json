@@ -186,7 +186,7 @@
     "idleStep1Hint": "Démarrez le jeu et entrez en bataille — les compositions des deux équipes apparaissent ici automatiquement",
     "idleStep2Title": "Maintenez Tab pour lancer la détection",
     "idleStep2Hint": "En bataille, maintenez Tab pour ouvrir le tableau des joueurs ; WoWSP le localise et superpose les stats des deux équipes dans le jeu",
-    "telemetryPartial": "Plugin partiellement opérationnel",
+    "telemetryPartial": "Plugin (ordre déduit)",
     "telemetryPartialHint": "Le plugin est connecté — les états de coulé viennent de l'intérieur du jeu — mais il ne peut pas encore lire le véritable ordre TAB du jeu ; l'ordre reste déduit hors ligne par des règles propres à chaque client, qui peuvent changer à chaque mise à jour",
     "telemetryIncomplete": "Plugin non connecté",
     "telemetryIncompleteHint": "La détection par plugin est sélectionnée mais le plugin manque dans cette installation — fonctionnement dégradé en analyse par pixels ; installez-le ci-dessous",

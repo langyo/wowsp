@@ -92,8 +92,8 @@ decompilation as corroborating evidence only — never as proof. The
 The app encodes this as per-realm gates over the offline sort key
 (utils/realms's `realmUsesShipNameOrder`; utils/shipClass carries the
 key itself and the CN static layout) and
-refuses to present the inference as game-truth: a CONNECTED plugin still
-grades "not fully working" in the /live panel's head (warning pill +
+refuses to present the inference as game-truth: with a plugin CONNECTED
+the row order still reads as inferred in the /live panel's head (warning pill +
 tooltip, `features/replay/telemetryGrade.ts`), because the telemetry
 payload carries alive/sunk states but NO row order. The endgame is the
 probe reading the game's own order in-engine — the collection the TAB

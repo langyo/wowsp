@@ -82,8 +82,8 @@ Python 측 대응물이 없다(주입된 dataHub에는 `getCollection`이 없다
 앱은 이것을 오프라인 정렬 키 위의 서버별 게이트로 구현한다(utils/realms의
 `realmUsesShipNameOrder`; 키 자체와 CN 정적 레이아웃은 utils/shipClass가
 가진다). 그리고 추론을 게임 내 진실로 내보내는 것을 거부한다: 플러그인이
-연결돼 있어도 /live 패널 헤드에서는 여전히 "완전히 동작하지 않음"으로
-평가된다(경고 필 + tooltip, `features/replay/telemetryGrade.ts`). 텔레메트리
+연결돼 있어도 /live 패널 헤드에서는 행 순서가 여전히 "추정"으로
+표시된다(경고 필 + tooltip, `features/replay/telemetryGrade.ts`). 텔레메트리
 페이로드에는 생존/침몰 상태가 담기지만 행 순서는 담기지 **않기** 때문이다.
 최종 목표는 프로브가 게임 자체의 순서를 엔진 안에서 읽는 것이다 — TAB이
 렌더링하는 컬렉션(`team.ally.sortedAlive`)이 자연스러운 원천이지만, 주입된

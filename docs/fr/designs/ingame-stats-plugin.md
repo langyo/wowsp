@@ -91,8 +91,8 @@ depuis les installations de cette machine (wowsdeob, `ShipSystem.add` /
 L'app encode cela en gardes par realm sur la clé de tri hors ligne (le
 `realmUsesShipNameOrder` de utils/realms ; utils/shipClass porte la clé
 elle-même et la disposition statique CN) et refuse de présenter l'inférence
-comme vérité du jeu : un plugin CONNECTÉ continue d'être évalué « pas
-totalement fonctionnel » dans l'en-tête du panneau /live (pastille
+comme vérité du jeu : avec un plugin CONNECTÉ, l'ordre continue d'être
+affiché comme déduit dans l'en-tête du panneau /live (pastille
 d'avertissement + tooltip, `features/replay/telemetryGrade.ts`), car la
 charge utile de télémétrie porte les états vivant/coulé mais AUCUN ordre de
 lignes. La fin du chemin, c'est la sonde qui lit l'ordre propre du jeu dans
