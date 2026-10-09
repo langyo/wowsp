@@ -43,7 +43,7 @@ WoWSP は Windows 向けの **World of Warships** デスクトップパネルで
 
 ## ダウンロード
 
-Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) から最新の `WoWSP_<version>_x64-setup-webview2.exe` を入手（WebView2 同梱）。GitHub が遅い地域では、ミラー対応の[ダウンロードページ](https://wowsp.langyo.xyz/download)を利用。Android 版はソースからビルドする — [ビルドガイド](building.md)を参照。
+Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) から最新の `WoWSP_<version>_x64-installer-webview2.exe` を入手（WebView2 同梱）。GitHub が遅い地域では、ミラー対応の[ダウンロードページ](https://wowsp.langyo.xyz/download)を利用。Android 版はソースからビルドする — [ビルドガイド](building.md)を参照。
 
 全ビュー・全 UI 言語のスクリーンショットは[ウェブサイトのギャラリー](https://wowsp.langyo.xyz/#gallery)で公開。
 

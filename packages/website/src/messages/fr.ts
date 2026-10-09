@@ -307,7 +307,7 @@ lookup: {
   },
   download: {
     title: "Télécharger WoWSP",
-    lede: "Windows x64 · le runtime WebView2 s'installe automatiquement",
+    lede: "Windows x64 · runtime WebView2 absent : installation silencieuse automatique ou guidage du téléchargement",
     latest: "Dernière version",
     loading: "Chargement de la dernière version…",
     modesTitle: "Deux façons de l'utiliser",
@@ -315,7 +315,7 @@ lookup: {
     modeInstallDesc: "Installation standard par utilisateur avec raccourci du menu Démarrer et mises à jour automatiques. Recommandé.",
     modeUsbTitle: "Clé USB (mode cybercafé)",
     modeUsbDesc: "Copie portable sur clé USB — aucune entrée de registre, toutes les données restent sur la clé. Idéal pour les PC partagés.",
-    assetInstaller: "Installateur",
+    assetInstallerLite: "Installateur (allégé)",
     assetInstallerWv2: "Installateur (runtime WebView2 hors ligne inclus)",
     loadFailed: "Impossible de récupérer la dernière version — téléchargez directement depuis GitHub Releases",
     assets: "Ressources de la release",

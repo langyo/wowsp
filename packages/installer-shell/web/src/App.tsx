@@ -728,8 +728,8 @@ export default defineComponent({
                   {`WoWSP ${identity.value.version} · `}
                   {identity.value.flavor === "full-webview2"
                     ? s.flavors.fullWebview2
-                    : identity.value.flavor === "full"
-                      ? s.flavors.full
+                    : identity.value.flavor === "lite"
+                      ? s.flavors.lite
                       : identity.value.flavor}
                 </p>
               )}

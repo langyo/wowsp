@@ -307,7 +307,7 @@ lookup: {
   },
   download: {
     title: "WoWSP 다운로드",
-    lede: "Windows x64 · WebView2 런타임이 자동으로 설치됩니다",
+    lede: "Windows x64 · WebView2 런타임이 없으면 자동 설치 또는 다운로드 안내",
     latest: "최신 버전",
     loading: "최신 버전을 가져오는 중…",
     modesTitle: "두 가지 실행 방법",
@@ -315,7 +315,7 @@ lookup: {
     modeInstallDesc: "시작 메뉴 바로 가기와 자동 업데이트를 포함한 표준 단일 사용자 설치. 권장.",
     modeUsbTitle: "USB 드라이브 (PC방 모드)",
     modeUsbDesc: "USB 스틱의 포터블 사본——레지스트리 항목 없이 모든 데이터가 드라이브에. 공용 PC에 적합.",
-    assetInstaller: "인스톨러",
+    assetInstallerLite: "인스톨러 (라이트)",
     assetInstallerWv2: "인스톨러 (WebView2 오프라인 런타임 포함)",
     loadFailed: "최신 버전을 가져올 수 없습니다 — GitHub Releases에서 직접 다운로드해 주세요",
     assets: "릴리스 에셋",

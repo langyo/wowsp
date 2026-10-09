@@ -307,7 +307,7 @@ lookup: {
   },
   download: {
     title: "WoWSP をダウンロード",
-    lede: "Windows x64 · WebView2 ランタイムは自動でインストールされます",
+    lede: "Windows x64 · WebView2 ランタイムがない場合は自動サイレントインストールまたはダウンロードへ案内",
     latest: "最新リリース",
     loading: "最新リリースを取得中…",
     modesTitle: "2 つの実行方法",
@@ -315,7 +315,7 @@ lookup: {
     modeInstallDesc: "スタートメニューのショートカットと自動更新を含む標準的な単一ユーザーインストール。推奨。",
     modeUsbTitle: "USB ドライブ（ネットカフェ向け）",
     modeUsbDesc: "USB スティック上のポータブルコピー——レジストリ不要、データはすべてドライブ内に。共有 PC に最適。",
-    assetInstaller: "インストーラー",
+    assetInstallerLite: "インストーラー（ライト版）",
     assetInstallerWv2: "インストーラー（WebView2 オフラインランタイム同梱）",
     loadFailed: "最新リリースを取得できませんでした。GitHub Releases から直接ダウンロードしてください",
     assets: "リリースアセット",

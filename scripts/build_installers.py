@@ -7,22 +7,29 @@
    the single-file installer pattern; see packages/installer-shell/build.rs).
    Flavor split:
 
-     - ``full`` (default) — application + the current 2D/3D model pack, so an
-       install never touches the network for resources. The pack comes from a
-       local bake (``packages/webui/src/res/models`` — ``scripts/fetch_models.py``
-       output) when present, and is otherwise fetched ONCE from the published
-       ``res-latest`` release and extracted into the same layout — which is
-       what release CI does on its clean runners. The ship preview portraits
+     - ``full-webview2`` — application + the current 2D/3D model pack AND
+       the Evergreen offline WebView2 runtime, so an install never touches
+       the network for resources and survives machines without the
+       WebView2 runtime (the installer silently runs the carried runtime
+       and, failing that, degrades to its native notice pointing at
+       Microsoft's download page). The pack comes
+       from a local bake (``packages/webui/src/res/models`` —
+       ``scripts/fetch_models.py`` output) when present, and is otherwise
+       fetched ONCE from the published ``res-latest`` release and
+       extracted into the same layout — which is what release CI does on
+       its clean runners. The ship preview portraits
        (``wowsp-images.tar.gz``, gitignored derived downloads) are likewise
-       fetched from ``res-latest`` BEFORE the webui build, because they embed
-       into the app binary itself via the frontend dist.
-   - ``webview2`` — the full payload with the Evergreen offline runtime
-     embedded for machines without the WebView2 runtime.
-   - ``lite`` — the bare application, NO model pack: most features work
-     out of the box and the pack downloads on demand (Settings → cache
-     management, or automatically on the first 3D view). The shell stages a
-     ``wowsp-flavor.txt`` marker so the app's updater keeps picking the
-     ``-lite`` artifact.
+       fetched from ``res-latest`` BEFORE the webui build, because they
+       embed into the app binary itself via the frontend dist. A
+       materials-only ``full`` flavor (pack but no runtime) is
+       intentionally NOT built anymore: the complete flavor always
+       carries the runtime so the WebView2-less story is single and
+       testable.
+     - ``lite`` — the bare application, NO model pack: most features work
+       out of the box and the pack downloads on demand (Settings → cache
+       management, or automatically on the first 3D view). The shell
+       stages a ``wowsp-flavor.txt`` marker so the app's updater keeps
+       picking the ``-lite`` artifact.
 
 The shell's own frontend (``@wowsp/installer-web`` → ``web/dist``) is
 rebuilt before the shell compiles, and the shell's codegen cache is
@@ -30,7 +37,8 @@ purged so the embedded UI is never stale — plain ``cargo build`` would
 happily re-link with a previously expanded asset set.
 
 Artifacts land in ``target/release/bundle/installer/`` as
-``WoWSP_<version>_x64-installer[-webview2|-lite].exe``.
+``WoWSP_<version>_x64-installer-webview2.exe`` and
+``WoWSP_<version>_x64-installer-lite.exe``.
 
 The Evergreen offline runtime (~180 MB) is cached under
 ``packages/installer-shell/vendor/`` (gitignored).
@@ -463,16 +471,23 @@ def main() -> int:
     )
     ap.add_argument(
         "--flavors",
-        default="full,full-webview2,lite",
-        help="comma list of artifacts to build: full, full-webview2, lite "
-        "(full flavors carry the model pack; lite downloads it on demand)",
+        default="full-webview2,lite",
+        help="comma list of artifacts to build: full-webview2, lite "
+        "(the full flavor carries the model pack and the WebView2 "
+        "runtime; lite downloads the pack on demand and relies on the "
+        "native degrade notice + Microsoft download link when the runtime is "
+        "missing)",
     )
     args = ap.parse_args()
 
     flavors = [f.strip() for f in args.flavors.split(",") if f.strip()]
-    unknown = [f for f in flavors if f not in ("full", "full-webview2", "lite")]
+    unknown = [f for f in flavors if f not in ("full-webview2", "lite")]
     if unknown:
-        sys.exit(f"unknown flavor(s): {', '.join(unknown)} — expected full, full-webview2, lite")
+        sys.exit(
+            f"unknown flavor(s): {', '.join(unknown)} — expected full-webview2, lite "
+            "(the materials-only 'full' flavor was retired: the complete "
+            "build always carries the WebView2 runtime)"
+        )
 
     version = app_version()
 
@@ -505,7 +520,6 @@ def main() -> int:
     wv2 = ensure_payload() if any(f.endswith("webview2") for f in flavors) else None
 
     suffixes = {
-        "full": "",
         "full-webview2": "-webview2",
         "lite": "-lite",
     }

@@ -7923,7 +7923,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_installer_shell"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "eframe",
  "mslnk",
@@ -7935,7 +7935,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "toml 1.1.3+spec-1.1.0",
  "windows-sys 0.61.2",
- "winreg 0.56.0",
+ "wry",
 ]
 
 [[package]]

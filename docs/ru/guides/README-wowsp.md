@@ -43,7 +43,7 @@ WoWSP — настольная панель для **«Мира кораблей
 
 ## Скачать
 
-Для Windows 10/11 — скачайте свежий `WoWSP_<version>_x64-setup-webview2.exe` из [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (WebView2 уже включён в комплект) или воспользуйтесь [страницей загрузки](https://wowsp.langyo.xyz/download) с зеркалами, если GitHub у вас работает медленно. Версия для Android собирается из исходников — см. [руководство по сборке](building.md).
+Для Windows 10/11 — скачайте свежий `WoWSP_<version>_x64-installer-webview2.exe` из [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (WebView2 уже включён в комплект) или воспользуйтесь [страницей загрузки](https://wowsp.langyo.xyz/download) с зеркалами, если GitHub у вас работает медленно. Версия для Android собирается из исходников — см. [руководство по сборке](building.md).
 
 Скриншоты всех экранов на всех языках интерфейса доступны в [галерее на сайте](https://wowsp.langyo.xyz/#gallery).
 

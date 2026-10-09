@@ -15,6 +15,9 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build.workspace = true
 serde_json.workspace = true
+# Parsing this crate's own [package.metadata.wowsp-installer] policy
+# table (build.rs) — the shun manifest loader would drop unknown keys.
+toml.workspace = true
 shun = "^0.4.1"
 
 [dependencies]
@@ -24,8 +27,12 @@ serde_json.workspace = true
 toml.workspace = true
 shun = "^0.4.1"
 
-# WebView2 runtime detection (same registry layout the NSIS engine used)
-winreg.workspace = true
+# WebView2 runtime detection at loader parity: `wry::webview_version()`
+# is the exact call tauri-runtime-wry gates webview creation on, so the
+# shell's probe can never disagree with the gate (a registry-based probe
+# accepted stale pv keys and sent broken setups into tauri's English
+# "runtime missing" box). Same version line tauri already pulls in.
+wry = "^0.57"
 
 # Direct (non-workspace) deps so the shell compiles without the app's extra
 # tauri features (tray-icon / image-png) — an installer exe should build lean.
@@ -80,3 +87,16 @@ start-menu-shortcut = "never"
 # The wowsp app detects this marker beside its executable (paths.rs).
 portable-marker = ".portable"
 main-exe = "wowsp.exe"
+
+# WebView2 fallback policy for machines the loader reports as runtime-less
+# (stamped by build.rs into wv2-policy.json; see Webview2Policy in main.rs).
+# `silent-install`: silently run the carried Evergreen offline installer
+# before anything renders — the -webview2 flavor carries one under the
+# payload's `webview2/` subtree; the lite flavor carries nothing, so the
+# knob is a no-op there. `warn-missing`: when the machine still has no
+# runtime and nothing was carried, the native degrade notice (message
+# box + link) points at Microsoft's official download page. Both
+# default on; set either to false to turn the behavior off per build.
+[package.metadata.wowsp-installer.webview2]
+silent-install = true
+warn-missing = true

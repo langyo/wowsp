@@ -285,8 +285,9 @@ jobs:
 
           # Never publish a half-uploaded release.
           assets="$(gh api "$api_base/releases/$rel_id" --jq '.assets[].name')"
+          # The materials-only plain installer (-installer.exe) was
+          # retired: the complete build always carries WebView2.
           for want in \
-            "WoWSP_${ver}_x64-installer.exe" \
             "WoWSP_${ver}_x64-installer-lite.exe" \
             "WoWSP_${ver}_x64-installer-webview2.exe" \
             latest; do

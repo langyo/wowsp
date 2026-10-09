@@ -45,7 +45,7 @@ WoWSP هو لوحة سطح مكتب للعبة **World of Warships** على نظ
 
 ## التحميل
 
-لأنظمة Windows 10/11 — حمّل أحدث إصدار من الملف `WoWSP_<version>_x64-setup-webview2.exe` من [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (مع تضمين WebView2)، أو استخدم [صفحة التحميل](https://wowsp.langyo.xyz/download) الداعمة للمرايا إذا كان الوصول إلى GitHub بطيئًا في منطقتك. أما نسخة Android فتُبنى من المصدر — راجع [دليل البناء](building.md).
+لأنظمة Windows 10/11 — حمّل أحدث إصدار من الملف `WoWSP_<version>_x64-installer-webview2.exe` من [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (مع تضمين WebView2)، أو استخدم [صفحة التحميل](https://wowsp.langyo.xyz/download) الداعمة للمرايا إذا كان الوصول إلى GitHub بطيئًا في منطقتك. أما نسخة Android فتُبنى من المصدر — راجع [دليل البناء](building.md).
 
 لقطات شاشة لجميع الواجهات، وبكل لغات واجهة المستخدم، متاحة في [معرض الموقع](https://wowsp.langyo.xyz/#gallery).
 
