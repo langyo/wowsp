@@ -33,5 +33,13 @@
     "hikariRole": "UI 组件库",
     "devtoolsRole": "Agent 纪律设施（工作区规范与工具链）",
     "shittimRole": "前端外壳与构建设施"
+  },
+  "sponsor": {
+    "cardName": "爱发电 · langyo",
+    "lead": "所有赞助将全部用于开发本软件的 AI 开销。",
+    "voluntary": "赞助完全自愿、非强制。",
+    "noHire": "赞助不构成雇佣、委托或其他任何法律关系。",
+    "openSource": "项目始终保持开源，软件本体不会内嵌任何需要赞助才能使用的特殊功能。",
+    "noAffiliation": "本软件与 Wargaming（WG）、Lesta、360 官方没有直接关系。"
   }
 }

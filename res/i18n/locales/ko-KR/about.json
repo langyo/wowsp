@@ -33,5 +33,13 @@
     "hikariRole": "UI 컴포넌트 라이브러리",
     "devtoolsRole": "에이전트 규율 인프라 (워크스페이스 규칙 및 툴체인)",
     "shittimRole": "프런트엔드 셸 및 빌드 인프라"
+  },
+  "sponsor": {
+    "cardName": "afdian · langyo",
+    "lead": "모든 후원금은 이 소프트웨어 개발에 필요한 AI 비용에 전액 사용됩니다.",
+    "voluntary": "후원은 완전히 자발적입니다.",
+    "noHire": "후원은 고용·위탁 등 어떠한 법적 관계도 성립시키지 않습니다.",
+    "openSource": "프로젝트는 항상 오픈소스로 유지되며, 앱 본체에 후원해야 사용할 수 있는 기능은 결코 포함되지 않습니다.",
+    "noAffiliation": "이 소프트웨어는 Wargaming·Lesta·360 공식과 직접적인 관계가 없습니다."
   }
 }

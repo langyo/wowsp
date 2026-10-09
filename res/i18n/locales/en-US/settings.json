@@ -240,6 +240,8 @@
   "dataSourceModCatalogAt": "Updated",
   "supportersTitle": "Special thanks",
   "supportersHint": "Everyone who helped the project — click a card to open their Bilibili space.",
+  "sponsorTitle": "Support the author",
+  "sponsorHint": "Donations are optional — click the card to open the author's afdian page.",
   "upstreamTitle": "Upstream projects",
   "upstreamHint": "Open-source projects this app builds on.",
   "resourcesTitle": "Assets & resources",

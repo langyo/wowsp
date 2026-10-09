@@ -240,6 +240,8 @@
   "dataSourceModCatalogAt": "更新日時",
   "supportersTitle": "特別感謝",
   "supportersHint": "プロジェクトを支援してくれた方々です。カードをクリックするとBilibiliのホームページが開きます。",
+  "sponsorTitle": "作者を支援",
+  "sponsorHint": "支援は任意です。カードをクリックすると作者の afdian ページが開きます。",
   "upstreamTitle": "アップストリームプロジェクト",
   "upstreamHint": "このアプリが基づくオープンソースプロジェクト。",
   "resourcesTitle": "素材とリソース",
