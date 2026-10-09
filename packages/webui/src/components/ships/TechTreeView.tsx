@@ -2,10 +2,19 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, next
 
 import { t } from "@/i18n";
 import { resolveShipImage } from "@/utils/shipImages";
-import { nationTree, techTreeNode, type TechTreeNode, type TechTreeRealm } from "@/utils/techTreeData";
+import {
+  nationCrossLinks,
+  nationTree,
+  techTreeNode,
+  treeNextShipIds,
+  type TechTreeNode,
+  type TechTreeRealm,
+} from "@/utils/techTreeData";
 import { archetypeKey } from "@/utils/archetypeLabels";
+import { resolveNationFlag } from "@/utils/nationFlags";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { tierToRoman } from "@wowsp/holo";
-import { GitBranch } from "@lucide/vue";
+import { GitBranch, Info } from "@lucide/vue";
 import { AssetImage } from "@/components/base/AssetImage";
 import BattleIcon from "@/components/base/BattleIcon";
 import { recordShipImageFailure } from "@/utils/shipImageFailures";
@@ -26,8 +35,15 @@ import "./TechTreeView.scss";
  *     absolutely positioned so tiers align horizontally across columns.
  *   - Fork branches start their own column at the fork tier; shared
  *     prefix ships appear only in the first/main column, never duplicated.
- *   - SVG connectors draw vertical links within a column and diagonal
- *     fork connectors from the parent ship to the fork column's first ship.
+ *   - SVG connectors draw vertical links within a column, diagonal fork
+ *     connectors from the parent ship to the fork column's first ship, and
+ *     cross-type research links straight across the type-section gap (the
+ *     cruiser→battleship, destroyer→carrier hand-offs the in-game tree also
+ *     bridges).
+ *   - Research links that change something — a fork or a cross-type hop —
+ *     carry a small ⓘ button on the line whose hover card names the ship the
+ *     link leads to and what changes (type hand-off, parallel branches,
+ *     line-focus switch), mirroring the in-game link info.
  */
 export default defineComponent({
   name: "TechTreeView",
@@ -40,6 +56,7 @@ export default defineComponent({
   emits: { open: (_ship: ShipInfo) => true },
   setup(props, { emit }) {
     const tree = computed(() => nationTree(props.nation, props.realm));
+    const crossLinks = computed(() => nationCrossLinks(props.nation, props.realm));
     const hasTree = computed(() => tree.value.some((g) => g.branches.length > 0));
 
     // Layout dimensions
@@ -150,29 +167,101 @@ export default defineComponent({
       return mins.length ? Math.min(...mins) : 1;
     });
 
+    function shipLabel(cell: PosCell): string {
+      return cell.ship?.name ?? cell.node?.name ?? String(cell.shipId);
+    }
+    function labelOf(shipId: number): string {
+      return props.byId.get(shipId)?.name ?? techTreeNode(shipId, props.realm)?.name ?? String(shipId);
+    }
+
+    /**
+     * Hover-card JSON for one research link (the ⓘ the in-game tree puts on
+     * lines that change something): what the link leads to, plus a row per
+     * change — the type hand-off, the parallel branch ships, the line-focus
+     * switch. Everything is pre-localized here; the global tooltip hook only
+     * parses and renders.
+     */
+    function linkHintCard(parentNode: TechTreeNode, childNode: TechTreeNode): string {
+      const rows: { label: string; value: string }[] = [];
+      if (childNode.type !== parentNode.type) {
+        rows.push({
+          label: t("ships.techTree.linkTypeChange"),
+          value: `${t(`ships.type.${parentNode.type}`)} → ${t(`ships.type.${childNode.type}`)}`,
+        });
+      }
+      const others = treeNextShipIds(parentNode, props.realm)
+        .filter((id) => id !== childNode.shipId)
+        .map((id) => {
+          const n = techTreeNode(id, props.realm);
+          return n ? `${labelOf(id)} ${tierToRoman(n.tier)}` : String(id);
+        });
+      if (others.length > 0) {
+        rows.push({ label: t("ships.techTree.linkBranches"), value: others.join(" / ") });
+      }
+      const fromArch = archetypeKey(parentNode.archetype);
+      const toArch = archetypeKey(childNode.archetype);
+      if (fromArch && toArch && fromArch !== toArch) {
+        rows.push({
+          label: t("ships.techTree.linkArchetype"),
+          value: `${t(`ships.archetype.${fromArch}`)} → ${t(`ships.archetype.${toArch}`)}`,
+        });
+      }
+      return JSON.stringify({
+        title: labelOf(childNode.shipId),
+        badge: tierToRoman(childNode.tier),
+        subtitle: t(`ships.type.${childNode.type}`),
+        subtitleFlagUrl: resolveNationFlag(childNode.nation, "flag"),
+        rows,
+      });
+    }
+
     // ── SVG overlay measurement ──────────────────────────────────────────
     const containerRef = ref<HTMLElement | null>(null);
     interface DItem { key: string; d: string; cls: string; cx?: number; cy?: number }
     const drawItems = ref<DItem[]>([]);
+    /** ⓘ buttons on change-links, positioned by measure() next to the paths. */
+    interface LinkIcon { key: string; x: number; y: number; card: string }
+    const linkIcons = ref<LinkIcon[]>([]);
     const svgSize = ref({ w: 0, h: 0 });
     let ro: ResizeObserver | null = null;
+
+    interface Rect { x: number; y: number; w: number; h: number }
 
     function measure() {
       const root = containerRef.value;
       if (!root) return;
       const rootR = root.getBoundingClientRect();
+      // The shell's interface-scale preference is a root CSS `zoom`, which
+      // scales getBoundingClientRect away from the layout px the SVG's user
+      // units live in — fold every rect back so lines land on cards at any
+      // zoom level (1 is the common case, so this is a no-op by default).
+      const zoom = Number(window.getComputedStyle(document.documentElement).zoom) || 1;
+      const rel = (el: HTMLElement): Rect => {
+        const r = el.getBoundingClientRect();
+        return { x: (r.left - rootR.left) / zoom, y: (r.top - rootR.top) / zoom, w: r.width / zoom, h: r.height / zoom };
+      };
+
       const out: DItem[] = [];
+      const icons: LinkIcon[] = [];
+      const dotSet = new Set<string>();
+      const dot = (key: string, cx: number, cy: number): void => {
+        if (!dotSet.has(key)) {
+          dotSet.add(key);
+          out.push({ key, cx, cy, d: "", cls: "dot" });
+        }
+      };
+
+      // One root-wide card rect map: cross-type connectors reach across
+      // sections, so a per-section map would miss the far endpoint.
+      const cardEls = new Map<number, Rect>();
+      for (const sec of sections.value) {
+        for (const c of sec.cells) {
+          const el = root.querySelector(`[data-sid="${c.shipId}"]`) as HTMLElement | null;
+          if (el) cardEls.set(c.shipId, rel(el));
+        }
+      }
 
       sections.value.forEach((sec) => {
-        const cardEls = new Map<number, { x: number; y: number; w: number; h: number }>();
-        sec.cells.forEach((c) => {
-          const el = root.querySelector(`[data-sid="${c.shipId}"]`) as HTMLElement | null;
-          if (el) {
-            const r = el.getBoundingClientRect();
-            cardEls.set(c.shipId, { x: r.left - rootR.left, y: r.top - rootR.top, w: r.width, h: r.height });
-          }
-        });
-
         // Tracks: per-branch dashed vertical guide lines
         for (let bi = 0; bi < sec.numBranches; bi++) {
           const col = sec.cells.filter((c) => c.branchIdx === bi);
@@ -185,9 +274,6 @@ export default defineComponent({
           }
         }
 
-        // Connectors: parent → child with right-angle paths
-        const dotSet = new Set<string>();
-
         // 1. Same-column vertical connectors (parentId in same branch)
         sec.cells.forEach((c) => {
           if (!c.parentId) return;
@@ -199,12 +285,22 @@ export default defineComponent({
           const cCX = ch.x + ch.w / 2;
           const cCY = ch.y;
 
-          const dk1 = `dot-${c.parentId}-out`;
-          if (!dotSet.has(dk1)) { dotSet.add(dk1); out.push({ key: dk1, cx: pCX, cy: pCY, d: "", cls: "dot" }); }
-          const dk2 = `dot-${c.shipId}-in`;
-          if (!dotSet.has(dk2)) { dotSet.add(dk2); out.push({ key: dk2, cx: cCX, cy: cCY, d: "", cls: "dot" }); }
+          dot(`dot-${c.parentId}-out`, pCX, pCY);
+          dot(`dot-${c.shipId}-in`, cCX, cCY);
 
           out.push({ key: `v-${c.parentId}-${c.shipId}`, d: `M ${pCX} ${pCY} V ${cCY}`, cls: "conn" });
+
+          // ⓘ on links that change something: the parent forks into several
+          // research lines (the direct continuation included).
+          const parentNode = techTreeNode(c.parentId, props.realm);
+          if (parentNode && treeNextShipIds(parentNode, props.realm).length > 1) {
+            icons.push({
+              key: `i-${c.parentId}-${c.shipId}`,
+              x: pCX,
+              y: (pCY + cCY) / 2,
+              card: linkHintCard(parentNode, c.node),
+            });
+          }
         });
 
         // 2. Fork connectors: from forkFromId to first unique ship (right-angle path)
@@ -228,14 +324,72 @@ export default defineComponent({
             cls: "conn",
           });
 
-          const dk1 = `dot-${c.forkFromId}-fout`;
-          if (!dotSet.has(dk1)) { dotSet.add(dk1); out.push({ key: dk1, cx: pCX, cy: pCY, d: "", cls: "dot" }); }
-          const dk2 = `dot-${c.shipId}-fin`;
-          if (!dotSet.has(dk2)) { dotSet.add(dk2); out.push({ key: dk2, cx: cCX, cy: cCY, d: "", cls: "dot" }); }
+          dot(`dot-${c.forkFromId}-fout`, pCX, pCY);
+          dot(`dot-${c.shipId}-fin`, cCX, cCY);
+
+          const parentNode = techTreeNode(c.forkFromId, props.realm);
+          if (parentNode) {
+            icons.push({
+              key: `i-${c.forkFromId}-${c.shipId}`,
+              x: (pCX + cCX) / 2,
+              y: midY,
+              card: linkHintCard(parentNode, c.node),
+            });
+          }
         });
       });
 
+      // 3. Cross-type research links, straight across the section gap. The
+      // in-game tree bridges these too — the cruiser→battleship, DD→CV/SS
+      // hand-offs where the unlocked ship roots its own type section, usually
+      // on the same tier row as its unlocker.
+      for (const link of crossLinks.value) {
+        const p = cardEls.get(link.from);
+        const ch = cardEls.get(link.to);
+        const parentNode = techTreeNode(link.from, props.realm);
+        const childNode = techTreeNode(link.to, props.realm);
+        if (!p || !ch || !parentNode || !childNode) continue;
+        // Leave from the facing edges: BB lines unlock from cruisers to
+        // their right, CV/SS lines from DDs to their left; some hand-offs
+        // skip a section — the run passes harmlessly behind the intervening
+        // cards (SVG sits under the card layer).
+        const rightward = ch.x + ch.w / 2 > p.x + p.w / 2;
+        const pX = rightward ? p.x + p.w : p.x;
+        const cX = rightward ? ch.x : ch.x + ch.w;
+        const pMidY = p.y + p.h / 2;
+
+        if (childNode.tier === parentNode.tier) {
+          out.push({ key: `x-${link.from}-${link.to}`, d: `M ${pX} ${pMidY} H ${cX}`, cls: "conn" });
+          dot(`dot-${link.from}-xout`, pX, pMidY);
+          dot(`dot-${link.to}-xin`, cX, pMidY);
+          icons.push({
+            key: `i-${link.from}-${link.to}`,
+            x: (pX + cX) / 2,
+            y: pMidY,
+            card: linkHintCard(parentNode, childNode),
+          });
+        } else {
+          // Tier-shifted hand-offs (Pan-Asia DD→CA at IV→V): run across at
+          // the parent's mid height, then drop into the child's top.
+          const cCX = ch.x + ch.w / 2;
+          out.push({
+            key: `x-${link.from}-${link.to}`,
+            d: `M ${pX} ${pMidY} H ${cCX} V ${ch.y}`,
+            cls: "conn",
+          });
+          dot(`dot-${link.from}-xout`, pX, pMidY);
+          dot(`dot-${link.to}-xin`, cCX, ch.y);
+          icons.push({
+            key: `i-${link.from}-${link.to}`,
+            x: (pX + cCX) / 2,
+            y: pMidY,
+            card: linkHintCard(parentNode, childNode),
+          });
+        }
+      }
+
       drawItems.value = out;
+      linkIcons.value = icons;
       svgSize.value = { w: root.scrollWidth, h: root.scrollHeight };
     }
 
@@ -248,6 +402,12 @@ export default defineComponent({
       }
     });
     onBeforeUnmount(() => ro?.disconnect());
+    // An interface-scale change rewrites the root CSS `zoom` without
+    // resizing anything in this component's own coordinate space, so the
+    // ResizeObserver never fires — watch the scale and re-measure.
+    watch(useAppliedDpiScale(), () => {
+      void nextTick(() => measure());
+    });
     watch(
       () => [props.nation, props.realm] as const,
       () => {
@@ -255,9 +415,6 @@ export default defineComponent({
       },
     );
 
-    function shipLabel(cell: PosCell): string {
-      return cell.ship?.name ?? cell.node?.name ?? String(cell.shipId);
-    }
     function shipImg(cell: PosCell): string | null {
       return cell.ship ? resolveShipImage(cell.ship.shipId, cell.ship.images?.small) : null;
     }
@@ -344,6 +501,21 @@ export default defineComponent({
               );
             })}
           </div>
+
+          {/* ⓘ buttons on change-links — geometry lands after measure() */}
+          {linkIcons.value.map((ic) => (
+            <button
+              key={ic.key}
+              type="button"
+              class="tech-tree-v3__linkinfo"
+              style={{ left: `${ic.x - 8}px`, top: `${ic.y - 8}px` }}
+              data-hint-card={ic.card}
+              data-hint-pos="top"
+              aria-label={t("ships.techTree.linkInfo")}
+            >
+              <Info size={10} />
+            </button>
+          ))}
         </div>
       );
     };

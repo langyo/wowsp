@@ -18,6 +18,13 @@ Usage:
   just extract all --path D:\\WoWS   # explicit game path
   just extract rarity,techtree       # only these modules (skip the slow ones)
   python scripts/extract/run.py --module assets --path "D:\\Steam\\...\\World of Warships"
+
+The techtree module also builds the Lesta tree from a Lesta client (Мир
+кораблей) install — point one out with --lesta-path / WOWSP_GAME_PATH_LESTA
+(or have one registered in the registry), or feed a pre-decoded Lesta
+GameParams.json via --lesta-gameparams (pullable without the client through
+OpenKorabli/lgc-download + `wowsunpack game-params`); without either the
+Lesta tree is skipped rather than faked from the WG client's dump.
 """
 from __future__ import annotations
 
@@ -33,6 +40,7 @@ sys.path.insert(0, str(HERE))
 
 from _common import (  # noqa: E402
     find_game_path,
+    find_lesta_game_path,
     find_wowsunpack,
     run_game_params,
     run_metadata,
@@ -49,6 +57,11 @@ RES_IMG = REPO / "packages" / "webui" / "src" / "res" / "images"
 # Shared intermediate artifacts cached across runs.
 CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))) / "WoWSP-extract"
 GAMEPARAMS_JSON = CACHE_DIR / "GameParams.json"
+# The Lesta client's own GameParams — a separate dump from a separate game.
+# Never reuse GAMEPARAMS_JSON for it: that file comes from the WG client, and
+# WG's research graph is not Lesta's (the lines Lesta added — IJN CV line II,
+# US BB line IV — exist only in its own client files).
+GAMEPARAMS_LESTA_JSON = CACHE_DIR / "GameParams_lesta.json"
 WOWSINFO_JSON = CACHE_DIR / "wowsinfo.json"
 METADATA_JSON = CACHE_DIR / "wows_meta.json"
 RARITY_JSON = SRC_DATA / "ship_rarity.json"
@@ -62,6 +75,20 @@ def main() -> None:
     ap.add_argument("module_pos", nargs="?", help="modules (positional alt to --module)")
     ap.add_argument("--module", default="all", help="comma list of modules or 'all'")
     ap.add_argument("--path", default=None, help="game install path (default: auto-detect)")
+    ap.add_argument(
+        "--lesta-path",
+        default=None,
+        help="Lesta client (Мир кораблей) install path for the Lesta tech tree "
+        "(default: WOWSP_GAME_PATH_LESTA, then a registry scan for a Lesta install)",
+    )
+    ap.add_argument(
+        "--lesta-gameparams",
+        default=None,
+        help="pre-decoded Lesta GameParams.json for the Lesta tech tree — skips "
+        "the client step entirely (e.g. pulled remotely with OpenKorabli/"
+        "lgc-download and decoded with wowsunpack game-params); "
+        "WOWSP_LESTA_GAMEPARAMS env works too",
+    )
     ap.add_argument(
         "--bridge",
         default="https://raw.githubusercontent.com/wowsinfo/data/master/live/app/data/wowsinfo.json",
@@ -107,7 +134,7 @@ def main() -> None:
         _run_rarity()
     if "techtree" in modules:
         _run_techtree()
-        _run_techtree_lesta()
+        _run_techtree_lesta(args.lesta_path, args.lesta_gameparams, args.refresh)
     if "models" in modules:
         _run_shipmodels()
     if "dogtags" in modules:
@@ -212,15 +239,63 @@ def _run_techtree() -> None:
     )
 
 
-def _run_techtree_lesta() -> None:
-    """Lesta tree: the local client's own research graph (no wowsinfo bridge)."""
-    _py(
+def _run_techtree_lesta(
+    explicit_lesta_path: str | None,
+    explicit_gameparams: str | None,
+    refresh: bool,
+) -> None:
+    """Lesta tree: the Lesta client's own research graph (no wowsinfo bridge).
+
+    Requires an actual Lesta (Мир кораблей) install — its GameParams is the
+    only source of the research lines Lesta diverged from WG with — or a
+    pre-decoded Lesta GameParams.json via --lesta-gameparams. Without either,
+    the bundled tech_tree_lesta.json is left untouched: generating it from
+    the WG client's dump would silently re-emit the WG tree under the Lesta
+    name, which is exactly the defect this separate path exists to prevent.
+    """
+    lesta_gp = explicit_gameparams or os.environ.get("WOWSP_LESTA_GAMEPARAMS")
+    if lesta_gp:
+        if not Path(lesta_gp).is_file():
+            _die(f"Lesta GameParams not found: {lesta_gp}")
+        print(f"[extract] lesta gameparams: {lesta_gp}")
+        _py(*_lesta_tree_cmd(lesta_gp))
+        return
+    lesta = find_lesta_game_path(explicit_lesta_path)
+    if not lesta:
+        print(
+            "[techtree] WARNING: no Lesta (Мир кораблей) client found — skipping the "
+            "Lesta tech tree. The bundled tech_tree_lesta.json is left as-is; pass "
+            "--lesta-path / --lesta-gameparams or set WOWSP_GAME_PATH_LESTA to "
+            "regenerate it.",
+            flush=True,
+        )
+        return
+    print(f"[extract] lesta game: {lesta}")
+    if not GAMEPARAMS_LESTA_JSON.exists() or refresh:
+        print("[extract] generating Lesta GameParams_lesta.json (one-time, ~350 MB) ...")
+        rc = run_game_params(GAMEPARAMS_LESTA_JSON, lesta)
+        if rc != 0:
+            _die(f"wowsunpack game-params failed for the Lesta client (rc={rc}).")
+    _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
+
+
+def _lesta_tree_cmd(gameparams: Path) -> list[str]:
+    """build_techtree.py invocation for the Lesta tree.
+
+    The Lesta dump carries no archetype field — borrow the codes for the
+    shared ships from the WG client's dump (generated earlier by the same
+    run whenever it exists) so branch labels survive on the Lesta tree.
+    """
+    cmd = [
         "build_techtree.py",
         "--source", "gameparams",
-        "--gameparams", str(GAMEPARAMS_JSON),
+        "--gameparams", str(gameparams),
         "--rarity", str(RARITY_JSON),
         "--out", str(TECHTREE_LESTA_JSON),
-    )
+    ]
+    if GAMEPARAMS_JSON.exists():
+        cmd[1:1] = ["--archetypes", str(GAMEPARAMS_JSON)]
+    return cmd
 
 
 def _run_shipmodels() -> None:

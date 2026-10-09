@@ -48,8 +48,28 @@ def find_game_path(explicit: str | None = None) -> str | None:
             if (root / "WorldOfWarships.exe").is_file():
                 return str(root)
 
-    for path in _registry_scan():
+    for path, _pub in _registry_scan():
         return path
+    return None
+
+
+def find_lesta_game_path(explicit: str | None = None) -> str | None:
+    """Return the Lesta client (Мир кораблей) install directory, or None.
+
+    Only the registry path can identify a Lesta install — the Steam appid is
+    Wargaming's client, and the publisher string ("Lesta …") is the one
+    reliable marker distinguishing korabli.su's client from WG's own RU
+    install. Never falls back to a Wargaming/360 hit: the Lesta research
+    graph is exactly what must not be faked from a WG client (the tech-tree
+    lines Lesta added — IJN CV line II, US BB line IV, … — exist only in its
+    GameParams).
+    """
+    env_or_arg = explicit or os.environ.get("WOWSP_GAME_PATH_LESTA")
+    if env_or_arg and Path(env_or_arg, "WorldOfWarships.exe").is_file():
+        return env_or_arg
+    for path, publisher in _registry_scan():
+        if "lesta" in publisher and Path(path, "WorldOfWarships.exe").is_file():
+            return path
     return None
 
 
@@ -133,16 +153,19 @@ def _try_int(s: str) -> int:
         return 0
 
 
-def _registry_scan() -> list[str]:
+def _registry_scan() -> list[tuple[str, str]]:
+    """(install dir, lower-cased publisher) pairs for every WoWS-family hit.
+
+    Substring patterns (lower-cased), mirroring the app's game_detect.rs:
+    publisher strings vary across installer generations — the legacy
+    KongZhong (空中网) CN client registers its own name, not 360's.
+    """
     try:
         import winreg  # type: ignore
     except ImportError:
         return []
-    # Substring patterns (lower-cased), mirroring the app's game_detect.rs:
-    # publisher strings vary across installer generations — the legacy
-    # KongZhong (空中网) CN client registers its own name, not 360's.
     patterns = ("wargaming", "lesta", "kongzhong", "空中网", "360")
-    hits: list[str] = []
+    hits: list[tuple[str, str]] = []
     for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
         for sub in (
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -166,7 +189,7 @@ def _registry_scan() -> list[str]:
                             continue
                         loc = winreg.QueryValueEx(ck, "InstallLocation")[0]
                         if loc and Path(loc, "WorldOfWarships.exe").is_file():
-                            hits.append(loc)
+                            hits.append((loc, pub))
                 except OSError:
                     continue
     return hits

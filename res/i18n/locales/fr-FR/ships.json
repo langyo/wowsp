@@ -494,7 +494,11 @@
     "locked": "Palier {n} requis",
     "premium": "Premium",
     "special": "Spécial",
-    "empty": "Aucun arbre technologique pour cette nation."
+    "empty": "Aucun arbre technologique pour cette nation.",
+    "linkTypeChange": "Changement de type",
+    "linkBranches": "Branches parallèles",
+    "linkArchetype": "Profil de branche",
+    "linkInfo": "Infos sur la ligne de recherche"
   },
   "banner": {
     "imageFailed": "Échec du chargement de certains portraits de navires",

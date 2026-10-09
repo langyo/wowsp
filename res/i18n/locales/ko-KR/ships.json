@@ -494,7 +494,11 @@
     "locked": "티어 {n} 필요",
     "premium": "프리미엄",
     "special": "특수",
-    "empty": "이 국가에는 테크 트리가 없습니다."
+    "empty": "이 국가에는 테크 트리가 없습니다.",
+    "linkTypeChange": "함종 변경",
+    "linkBranches": "병렬 분기",
+    "linkArchetype": "계열 특성",
+    "linkInfo": "연구 라인 정보"
   },
   "banner": {
     "imageFailed": "일부 함선 이미지를 불러오지 못했습니다",

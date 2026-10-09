@@ -43,6 +43,34 @@
     fill: rgb(var(--color-primary) / 48%);
   }
 
+  /* ⓘ on research links that change something (fork, cross-type hop).
+     Sits ON the connector — geometry comes from measure(), like the SVG
+     paths — and carries a data-hint-card hover card (global tooltip hook).
+     z-band matches the card cells: it lives in the row gaps, so it never
+     covers a card, but must stay above the SVG to be hoverable. */
+  &__linkinfo {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid rgb(var(--color-primary) / 35%);
+    border-radius: 50%;
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-primary) / 75%);
+    cursor: help;
+    transition: border-color var(--duration-short), color var(--duration-short);
+
+    &:hover,
+    &:focus-visible {
+      border-color: rgb(var(--color-primary) / 70%);
+      color: rgb(var(--color-primary));
+    }
+  }
+
   &__row {
     display: flex;
     gap: 1.2rem;

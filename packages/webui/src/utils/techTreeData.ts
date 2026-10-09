@@ -99,26 +99,65 @@ export function nationTree(nation: string, realm: TechTreeRealm = "wg"): NationT
     const roots = list.filter((n) => !pointedTo.has(n.shipId)).sort((a, b) => a.tier - b.tier);
 
     const branches: TechTreeBranch[] = [];
-    const walk = (start: TechTreeNode): void => {
-      // DFS from root; each fork spawns a new branch.
-      const stack: { node: TechTreeNode; path: number[] }[] = [{ node: start, path: [start.shipId] }];
-      while (stack.length) {
-        const { node, path } = stack.pop()!;
-        const kids = node.nextShips.map((id) => byId.get(id)).filter((n): n is TechTreeNode => !!n);
-        if (kids.length === 0) {
-          const tip = byId.get(path[path.length - 1])!;
-          branches.push({ ships: path, archetype: tip.archetype });
-          continue;
-        }
-        // Each child continues; if multiple, each becomes its own branch.
-        for (const k of kids) stack.push({ node: k, path: [...path, k.shipId] });
+    const walk = (node: TechTreeNode, path: number[]): void => {
+      // Depth-first in nextShips order, so fork columns keep the game's own
+      // line order (the LIFO stack this once used emitted them reversed —
+      // the leftmost fork column was the last-listed line). Cross-type
+      // children are simply absent from byId here: they root their own
+      // column in their own type section, and nationCrossLinks hands the
+      // edge to the renderer for the across-section connector.
+      const kids = node.nextShips.map((id) => byId.get(id)).filter((n): n is TechTreeNode => !!n);
+      if (kids.length === 0) {
+        branches.push({ ships: path, archetype: node.archetype });
+        return;
       }
+      for (const k of kids) walk(k, [...path, k.shipId]);
     };
-    for (const r of roots) walk(r);
+    for (const r of roots) walk(r, [r.shipId]);
     out.push({ type, branches });
   }
   // Stable type order: Battleship, Cruiser, Destroyer, AirCarrier, Submarine.
   const TYPE_ORDER = ["Battleship", "Cruiser", "Destroyer", "AirCarrier", "Submarine"];
   out.sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
+  return out;
+}
+
+/**
+ * The tree ships a node unlocks: nextShips minus the premium/special side
+ * leaves (those render as attached leaves, never as research continuations).
+ * This is the "does this ship fork" / "which links are research links" test
+ * the renderer and the link-info tooltips share.
+ */
+export function treeNextShipIds(node: TechTreeNode, realm: TechTreeRealm = "wg"): number[] {
+  return node.nextShips.filter((id) => {
+    const child = TREES[realm][String(id)];
+    return !!child && !child.isPremium && !child.isSpecial;
+  });
+}
+
+/** A research edge whose two ends are different ship types (e.g. the IJN
+ *  cruiser 筑摩 unlocking the destroyer 海风). The tree groups nodes by type,
+ *  so these edges never surface inside `nationTree`'s branches — the renderer
+ *  draws them as connectors across the type sections instead. */
+export interface TechTreeCrossLink {
+  /** shipId of the unlocking (parent) ship. */
+  from: number;
+  /** shipId of the unlocked (child) ship, in its own type section. */
+  to: number;
+}
+
+/** Every cross-type research edge within a nation, both ends researchable. */
+export function nationCrossLinks(nation: string, realm: TechTreeRealm = "wg"): TechTreeCrossLink[] {
+  const key = NATION_ALIASES[nation] ?? nation;
+  const out: TechTreeCrossLink[] = [];
+  for (const n of Object.values(TREES[realm])) {
+    if (n.nation !== key || n.isPremium || n.isSpecial) continue;
+    for (const id of treeNextShipIds(n, realm)) {
+      const child = TREES[realm][String(id)];
+      if (child.nation === key && child.type !== n.type) {
+        out.push({ from: n.shipId, to: child.shipId });
+      }
+    }
+  }
   return out;
 }

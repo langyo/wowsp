@@ -494,7 +494,11 @@
     "locked": "Se requiere nivel {n}",
     "premium": "Premium",
     "special": "Especial",
-    "empty": "No hay árbol tecnológico para esta nación."
+    "empty": "No hay árbol tecnológico para esta nación.",
+    "linkTypeChange": "Cambio de tipo",
+    "linkBranches": "Ramas paralelas",
+    "linkArchetype": "Perfil de rama",
+    "linkInfo": "Info de la línea de investigación"
   },
   "banner": {
     "imageFailed": "No se pudieron cargar algunas imágenes de buques",

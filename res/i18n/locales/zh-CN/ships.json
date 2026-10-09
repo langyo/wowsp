@@ -494,7 +494,11 @@
     "locked": "需达到 {n} 级",
     "premium": "金币",
     "special": "特种",
-    "empty": "该阵营暂无科技树。"
+    "empty": "该阵营暂无科技树。",
+    "linkTypeChange": "舰种变更",
+    "linkBranches": "并行分支",
+    "linkArchetype": "线路定位",
+    "linkInfo": "研发线路信息"
   },
   "banner": {
     "imageFailed": "部分舰艇图片加载失败",

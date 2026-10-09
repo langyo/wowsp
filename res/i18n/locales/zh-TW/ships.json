@@ -494,7 +494,11 @@
     "locked": "需達到 {n} 階",
     "premium": "金幣",
     "special": "特種",
-    "empty": "該陣營暫無科技樹。"
+    "empty": "該陣營暫無科技樹。",
+    "linkTypeChange": "艦種變更",
+    "linkBranches": "並行分支",
+    "linkArchetype": "線路定位",
+    "linkInfo": "研發線路資訊"
   },
   "banner": {
     "imageFailed": "部分艦艇圖片載入失敗",
