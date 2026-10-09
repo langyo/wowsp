@@ -191,7 +191,79 @@ WEAPON_INSTANCE_CATS = {
 _INSTANCE_NO = re.compile(r"\(HP_\w+_(\d+)\)|_(\d+)\s*$")
 
 
-def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], list[int]]]]:
+# Two primitives whose bounding boxes agree on every corner within this
+# fraction of the model extent are the same section at different LODs. Measured
+# on plane exports: true LOD sets coincide to <0.2% of extent, while neighbouring
+# sections (a canopy inside the fuselage box, prim-15-style detail plates) miss
+# at least one bound by >1% — the window separates them with margin on both sides.
+LOD_BBOX_TOL_PCT = 0.005
+
+
+def dedup_lod_primitives(
+    staged: list[tuple[str, str, np.ndarray, np.ndarray]],
+    model_extent: float,
+) -> tuple[list[tuple[str, str, np.ndarray, np.ndarray]], dict]:
+    """Collapse WoWS LOD sets — equal-bbox primitives — to their top detail.
+
+    Plane .geometry files carry every section at three detail levels: one
+    primitive each, identical transforms, IDENTICAL bounding boxes, decreasing
+    triangle counts. Merging all of them (the old behaviour) pushes three
+    overlapping shells of every section through the vertex clustering, and
+    wherever the shells disagree they leave doubled surfaces whose stray bits
+    the cull then measures as detached debris — measured on the shipped plane
+    pack: 470/865 GLBs carry surviving detached geometry, up to a 19%-extent
+    626-triangle flake, which is the "detached small component" the airframe
+    stage shows. Grouping by bounding box keeps only the densest primitive of
+    each set — the surface the game itself draws.
+
+    Matching is per (category, instance) bucket and per-axis on BOTH bbox
+    corners, within `LOD_BBOX_TOL_PCT` of the model extent: mirrored or
+    adjacent sections sit at different positions, and sections that merely
+    overlap (a canopy inside the fuselage box) never match all six bounds, so
+    both survive. Ties keep the earliest primitive, so output is deterministic.
+    Non-finite bounds never match (they would silently swallow everything).
+    """
+    stats = {"sets": 0, "dropped": 0, "dropped_tris": 0}
+    if not staged or not model_extent > 0:
+        return staged, stats
+    tol = LOD_BBOX_TOL_PCT * model_extent
+    boxes: dict[tuple[str, str], list[tuple[int, np.ndarray, np.ndarray, int]]] = {}
+    for si, (cat, inst, vt, prim_idx) in enumerate(staged):
+        if len(vt) == 0:
+            continue
+        lo = np.asarray(vt, dtype=np.float64).min(axis=0)
+        hi = np.asarray(vt, dtype=np.float64).max(axis=0)
+        if not (np.isfinite(lo).all() and np.isfinite(hi).all()):
+            continue
+        bucket = boxes.setdefault((cat, inst), [])
+        bucket.append((si, lo, hi, len(prim_idx) // 3))
+    drop: set[int] = set()
+    for members in boxes.values():
+        if len(members) < 2:
+            continue
+        order = sorted(members, key=lambda m: (-m[3], m[0]))
+        for i, rep in enumerate(order):
+            if rep[0] in drop:
+                continue
+            absorbed: set[int] = set()
+            for cand in order[i + 1 :]:
+                if cand[0] in drop or cand[0] in absorbed:
+                    continue
+                if np.all(np.abs(rep[1] - cand[1]) <= tol) and np.all(
+                    np.abs(rep[2] - cand[2]) <= tol
+                ):
+                    absorbed.add(cand[0])
+            if absorbed:
+                stats["sets"] += 1
+                stats["dropped"] += len(absorbed)
+                stats["dropped_tris"] += sum(m[3] for m in members if m[0] in absorbed)
+                drop |= absorbed
+    if not drop:
+        return staged, stats
+    return [s for si, s in enumerate(staged) if si not in drop], stats
+
+
+def extract_by_instance(gltf: dict, dedup_lods: bool = False) -> dict[str, dict[str, tuple[list[float], list[int]]]]:
     """Extract geometry grouped by (category, weapon instance).
 
     Returns {category: {instance_label: (verts, indices)}}. Hull categories
@@ -199,6 +271,10 @@ def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], li
     labelled group (main_battery_0, main_battery_1, …) so single turrets /
     mounts are addressable downstream, while staying same-coloured per
     category in the UI.
+
+    With `dedup_lods`, primitives whose bounding boxes coincide (WoWS LOD
+    sets) collapse to their densest member before any budget is spent — see
+    `dedup_lod_primitives`.
     """
     gjson = gltf["json"]
     binary = gltf["binary"]
@@ -394,6 +470,12 @@ def extract_by_instance(gltf: dict) -> dict[str, dict[str, tuple[list[float], li
         model_extent = float((gmax - gmin).max())
     else:
         model_extent = 0.0
+    if dedup_lods:
+        staged, dedup_stats = dedup_lod_primitives(staged, model_extent)
+        if dedup_stats["dropped"]:
+            print(f"[bake] deduped {dedup_stats['sets']} LOD set(s): dropped "
+                  f"{dedup_stats['dropped']} duplicate primitive(s) "
+                  f"({dedup_stats['dropped_tris']} tris)")
     min_extent = min(0.2, model_extent * 0.002) if model_extent > 0 else 0.2
     for cat, inst, vt, prim_idx in staged:
         bb_min = vt.min(axis=0)
@@ -1316,6 +1398,9 @@ def main() -> int:
     parser.add_argument("input", help="input GLB path")
     parser.add_argument("-o", "--output", required=True, help="output GLB path")
     parser.add_argument("--triangles", type=int, default=6000, help="target triangle count (default: 6000)")
+    parser.add_argument("--dedup-lods", action="store_true",
+                        help="collapse equal-bbox LOD primitives to their densest member "
+                             "(plane exports carry every section at 3 detail levels)")
     args = parser.parse_args()
 
     inp = Path(args.input)
@@ -1323,7 +1408,7 @@ def main() -> int:
 
     print(f"[bake] loading {inp.name} ...")
     gltf = parse_glb(inp)
-    buckets = extract_by_instance(gltf)
+    buckets = extract_by_instance(gltf, dedup_lods=args.dedup_lods)
 
     # Decimate each category: proportional budget with 200-tri floor.
     total_raw = sum(len(idx) // 3 for insts in buckets.values() for _, idx in insts.values())
