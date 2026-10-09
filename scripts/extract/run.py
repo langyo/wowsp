@@ -53,6 +53,7 @@ WOWSINFO_JSON = CACHE_DIR / "wowsinfo.json"
 METADATA_JSON = CACHE_DIR / "wows_meta.json"
 RARITY_JSON = SRC_DATA / "ship_rarity.json"
 TECHTREE_JSON = SRC_DATA / "tech_tree.json"
+TECHTREE_LESTA_JSON = SRC_DATA / "tech_tree_lesta.json"
 SHIPMODELS_JSON = SRC_DATA / "ship_models.json"
 
 
@@ -106,6 +107,7 @@ def main() -> None:
         _run_rarity()
     if "techtree" in modules:
         _run_techtree()
+        _run_techtree_lesta()
     if "models" in modules:
         _run_shipmodels()
     if "dogtags" in modules:
@@ -207,6 +209,17 @@ def _run_techtree() -> None:
         "--gameparams", str(GAMEPARAMS_JSON),
         "--rarity", str(RARITY_JSON),
         "--out", str(TECHTREE_JSON),
+    )
+
+
+def _run_techtree_lesta() -> None:
+    """Lesta tree: the local client's own research graph (no wowsinfo bridge)."""
+    _py(
+        "build_techtree.py",
+        "--source", "gameparams",
+        "--gameparams", str(GAMEPARAMS_JSON),
+        "--rarity", str(RARITY_JSON),
+        "--out", str(TECHTREE_LESTA_JSON),
     )
 
 

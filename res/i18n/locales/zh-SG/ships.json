@@ -488,6 +488,7 @@
     "defensiveAA": "防空弹幕"
   },
   "techTree": {
+    "realmHint": "科技树分支来源：WG 为基准拓扑，Lesta 为客户端自身研究线。",
     "title": "科技树",
     "branch": "分支",
     "locked": "需达到 {n} 级",

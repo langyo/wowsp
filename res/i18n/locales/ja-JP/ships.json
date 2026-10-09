@@ -488,6 +488,7 @@
     "defensiveAA": "対空弾幕"
   },
   "techTree": {
+    "realmHint": "テックツリーの分岐ソース：WG 基準トポロジと Lesta クライアント自身の研究ライン。",
     "title": "テックツリー",
     "branch": "分岐",
     "locked": "ティア {n} が必要",

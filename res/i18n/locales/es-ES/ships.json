@@ -488,6 +488,7 @@
     "defensiveAA": "Fuego AA defensivo"
   },
   "techTree": {
+    "realmHint": "Fuente de las ramas del árbol técnico: topología de referencia de WG y líneas de investigación del propio cliente Lesta.",
     "title": "Árbol tecnológico",
     "branch": "Rama",
     "locked": "Se requiere nivel {n}",

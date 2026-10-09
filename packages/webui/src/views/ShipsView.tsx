@@ -16,7 +16,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
-import { useShipsUiStore, type ShipsViewMode } from "@/stores/shipsUi";
+import { useShipsUiStore, type ShipsViewMode, type ShipsTreeRealm } from "@/stores/shipsUi";
 import { useTrendsStore } from "@/stores/trends";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -275,10 +275,20 @@ export default defineComponent({
                 ]}
               />
             </div>
-            {/* Passive badge: the realm is followed from the sidebar's app-wide
-                server selector, so it's shown here read-only. */}
-            <div class="ships-view__realm">
-              <HkTag variant="info" size="sm">{accounts.activeRealm.toUpperCase()}</HkTag>
+            {/* Tech-tree branch source: WG (reference topology, wowsinfo
+                bridge) vs Lesta (the client's own research graph). Replaces
+                the old passive realm tag — the data realm still follows the
+                sidebar's app-wide server selector. */}
+            <div class="ships-view__realm" data-hint={t("ships.techTree.realmHint")}>
+              <HkTabs
+                variant="segmented"
+                modelValue={shipsUi.treeRealm}
+                onUpdate:modelValue={(v: string) => shipsUi.setTreeRealm(v as ShipsTreeRealm)}
+                tabs={[
+                  { key: "wg", label: "WG" },
+                  { key: "lesta", label: "Lesta" },
+                ]}
+              />
               <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
               </HkButton>
@@ -459,6 +469,7 @@ export default defineComponent({
                 {treeNation.value ? (
                   <TechTreeView
                     nation={treeNation.value}
+                    realm={shipsUi.treeRealm}
                     byId={shipsById.value}
                     onOpen={(ship: ShipInfo) => openDetail(ship)}
                   />

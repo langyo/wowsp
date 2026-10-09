@@ -488,6 +488,7 @@
     "defensiveAA": "대공 탄막"
   },
   "techTree": {
+    "realmHint": "테크 트리 분기 소스: WG 기준 토폴로지와 Lesta 클라이언트 자체 연구 라인.",
     "title": "테크 트리",
     "branch": "분기",
     "locked": "티어 {n} 필요",

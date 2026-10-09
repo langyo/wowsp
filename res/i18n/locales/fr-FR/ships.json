@@ -488,6 +488,7 @@
     "defensiveAA": "Feu AA défensif"
   },
   "techTree": {
+    "realmHint": "Source des branches de l'arbre technologique : topologie de référence WG et lignes de recherche propres au client Lesta.",
     "title": "Arbre technologique",
     "branch": "Branche",
     "locked": "Palier {n} requis",
