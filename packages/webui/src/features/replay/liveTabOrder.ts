@@ -16,9 +16,16 @@
  * row order on for both realms, `staticOrder` adds the CN-only
  * never-re-sorts behavior on top — under IT alone, the sunk set only
  * MARKS entries.
+ *
+ * `sortKeyOf` supersedes ALL of that per battle: the plugin telemetry can
+ * carry the game's OWN per-player sort keys (read off the avatars' ship
+ * components), and when the map covers the whole list the sort switches
+ * to the client's exact comparison — key + '[TAG]nickname' ascending, the
+ * concatenation __sortKeyAlive compares — on every realm, inference
+ * unused.
  */
 import type { VehicleEntry } from "@/api";
-import { gameTabRowCompare, type TabRowCompareOptions } from "@/utils/shipClass";
+import { gameTabRowCompare, tabDisplayName, type TabRowCompareOptions } from "@/utils/shipClass";
 
 /** One roster entry with its display state after Tab-ordering. */
 export interface TabOrderedVehicle {
@@ -40,6 +47,16 @@ export interface PredictedOrderOptions {
    *  events): the predicted order splits [alive by key] ++ [sunk by key]
    *  and marks the sunk entries — the exact layout those clients show. */
   sunk?: Set<string> | null;
+  /** Game-true TAB sort keys per vehicle (telemetry `sortKeys`, read off
+   *  the avatars' ship components — ShipSystem's own class+tier+nation+
+   *  shortName string). When EVERY entry of the list yields a non-empty
+   *  key, the sort switches to the CLIENT's own comparison — key +
+   *  '[TAG]nickname' ascending, exactly __sortKeyAlive's concatenated
+   *  string — and the offline per-realm inference is not consulted at
+   *  all. Any entry missing a key disables the override wholesale
+   *  (game-true and inferred rows must never interleave; the caller
+   *  grades coverage separately for the pill). */
+  sortKeyOf?: (v: VehicleEntry) => string | undefined;
   /** CN/Lesta client row order (localized ship name, pinyin-collated —
    *  see utils/shipClass's module docs). */
   shipNameOrder?: boolean;
@@ -69,6 +86,24 @@ export function orderForTab(
   // nation, ship name, '[tag]name') with the arena order as the final
   // stable tie-break; the trusted sunk set splits [alive] ++ [sunk].
   const sunk = options.sunk ?? null;
+  // Game-true sort keys: only a FULLY covered list switches the sort to
+  // the client's own comparison (key + '[tag]name' ascending — the exact
+  // string __sortKeyAlive builds; plain code-unit compare matches the
+  // client's Python str ordering). Anything less keeps the offline
+  // inference for the WHOLE list — no interleaving.
+  const keyOf = options.sortKeyOf;
+  const clientKeys =
+    keyOf && list.length > 0
+      ? list.map((v) => keyOf(v))
+      : null;
+  const useClientKeys =
+    clientKeys != null && clientKeys.every((k) => typeof k === "string" && k.length > 0);
+  const clientKeyOf = useClientKeys
+    ? (v: VehicleEntry) => {
+        const key = keyOf!(v);
+        return key + tabDisplayName(v.name, options.clanTagOf?.(v) ?? null);
+      }
+    : null;
   const compareOptions: TabRowCompareOptions = {
     locale: options.locale ?? "en-US",
     // The comparator only ever calls this with the list's own entries, so
@@ -82,6 +117,11 @@ export function orderForTab(
   const rest = list
     .map((v, i) => ({ v, i }))
     .sort((a, b) => {
+      if (clientKeyOf) {
+        const ka = clientKeyOf(a.v);
+        const kb = clientKeyOf(b.v);
+        return ka < kb ? -1 : ka > kb ? 1 : a.i - b.i;
+      }
       // The comparator sorts one layout at a time (the alive prefix never
       // decides within it), so the per-vehicle sunk state rides AFTER the
       // sort: entries keep their key-order position and the sunk split —

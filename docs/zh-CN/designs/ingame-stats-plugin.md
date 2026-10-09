@@ -75,13 +75,23 @@ wowsdeob 反编译本机安装的 `ShipSystem.add` / `AvatarSystem.__sortKeyAliv
 app 把这些编码为离线排序键上的按服门控（utils/realms 的
 `realmUsesShipNameOrder`；utils/shipClass 承载排序键本身与 CN 静态布局），
 并拒绝把推断当作游戏内真值：
-插件已连接时，/live 面板头部仍把行序标注为推断（警告药丸 + tooltip，
-`features/replay/telemetryGrade.ts`）——遥测载荷带沉没状态，但**不带行序**。
-终极方案是探针在引擎内读到游戏自己的排序——TAB 渲染的集合
-（`team.ally.sortedAlive`）是天然来源，但注入的 dataHub 没有
-`getCollection`（见上）；未来的载荷契约（`order: {ally: [...], enemy:
-[...]}`，仅收游戏内真值）将把药丸翻回"精确"。在此之前，推断只是经过校准的
-回退。
+排序键映射未覆盖时，即使插件已连接，/live 面板头部仍把行序标注为推断
+（警告药丸 + tooltip，`features/replay/telemetryGrade.ts`）。
+
+**终极方案当日落地（2026-10-09）**——走舰船组件而非排序集合：注入的
+ModAPI dataHub 只对 `SYNCED` 白名单导出 `getSingleEntity` /
+`getEntityCollections` 两个方法（反编译
+`ModsShell/API_v_1_0/dataHub.py`——仅此两个导出），而 **`'ship'` 在白名单
+里**。探针顺 avatar 的 `ship` 槽摸到每名玩家的 Ship 组件，其 `sortKey`
+正是客户端自己的 TAB 排序键（`str(SORT_ORDER.index(subtype)) +
+str(100 - level) + str(NATION.SORT_ORDER.index(nation)) + shortName`，
+`ShipSystem.add`，build 13357625），随遥测带出（`sortKeys`，名字 → 键）。
+/live 面板按"键 + '[TAG]昵称'"排序——与 `__sortKeyAlive` 逐字节同一比较串
+——映射覆盖全员时药丸评级**精确**，任何服务器皆然（国服含在内：其视图层
+即便重排，起点也是这些同样的键；游戏内面板的存活块同样按它排序）。遗留
+事项：Lesta 沙箱对 'ship' 集合的行为要等真实对局验证（每处读取都有守卫，
+缺口会把该局降级回按服推断）；部分覆盖的对局保持校准回退——游戏内真值
+行与推断行绝不交错。
 
 **国服分叉**（360 build 13243917，2026-10-07 实拍）：国服客户端的 TAB
 表格**不重排**——沉没行留在开局原位、就地变暗（实测 5 名阵亡者的行与存活

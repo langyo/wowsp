@@ -2,30 +2,32 @@
  * The live panel head's telemetry-source grade (the pill left of the
  * manual-locate button).
  *
- * "partial" is the load-bearing state: the plugin is connected and its
- * alive/sunk states ARE authoritative, but it cannot read the game's true
- * TAB row order — the datahub collection the TAB renders
- * (`team.ally.sortedAlive`) has no Python-side equivalent on the injected
- * dataHub (docs/en/designs/ingame-stats-plugin.md), so the row ORDER
- * remains the offline per-realm inference (utils/shipClass — knowledge
- * calibrated per client against rendered captures, and unstable: it
- * differs per realm and can change with any client update). The pill
- * therefore states the row order is inferred — a permanent, neutral
- * fact-voice (NOT "plugin not fully working": the plugin delivers
- * everything it can, and that phrasing would read as a fault the user
- * cannot fix; the fault-voice is reserved for a future state where a
- * telemetry contract carries an order but the plugin fails to deliver
- * it). The grade flips to a fully-working state only if the telemetry
- * payload ever carries a game-true order — no such field exists today.
+ * "exact" is the top state: the plugin's telemetry carried the game's OWN
+ * Tab sort keys for every roster row (`sortKeys`, read off the avatars'
+ * ship components — ShipSystem writes str(classRank) + str(100 - level)
+ * + str(NATION.SORT_ORDER.index(nation)) + shortName onto each), so the
+ * row order IS the client's, not an inference. The grade is per-battle:
+ * a battle whose sort-key map covers the whole live roster grades exact;
+ * anything less falls back through "partial" (connected: alive/sunk
+ * states authoritative, row order the offline per-realm inference —
+ * utils/shipClass, unstable per-client knowledge) and "incomplete"
+ * (mode picked, plugin missing/outdated). The pill must never present
+ * the inferred order as game-truth: "partial" reads a neutral fact-voice
+ * ("Plugin (order inferred)"), NOT a fault — the plugin delivers
+ * everything it can, and a fault phrasing the user cannot clear would
+ * read as breakage; the fault-voice is reserved for a state where an
+ * order-bearing contract exists but the plugin fails to deliver it.
  */
-export type TelemetryGrade = "partial" | "incomplete" | "infer";
+export type TelemetryGrade = "exact" | "partial" | "incomplete" | "infer";
 
 export function telemetryGradeFor(
   rosterMode: string,
   plugin: { installed: boolean; outdated: boolean },
+  exactOrder: boolean,
 ): TelemetryGrade {
   if (rosterMode !== "plugin") return "infer";
   // An outdated build predates telemetry.json — it is "installed" but
   // will never emit, so it grades as not-connected until updated.
-  return plugin.installed && !plugin.outdated ? "partial" : "incomplete";
+  if (!plugin.installed || plugin.outdated) return "incomplete";
+  return exactOrder ? "exact" : "partial";
 }

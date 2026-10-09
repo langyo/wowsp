@@ -1972,11 +1972,17 @@ export const api = {
    *  set when the roster mode is "plugin". Probe builds with realm
    *  reporting add ground-truth identity: `self` (the local player's name
    *  + realm) and `identity` (name → account/realm) straight off the
-   *  game's own roster records; older builds omit both. */
+   *  game's own roster records; older builds omit both. Probes reading the
+   *  avatars' ship components add `sortKeys` (name → the client's OWN Tab
+   *  sort key — ShipSystem's str(class)+str(100-tier)+str(nation)+shortName
+   *  string): sorting the roster by it reproduces the game's row order
+   *  exactly; a build/prefix that cannot read the component omits the
+   *  field. */
   listenIngameTelemetry: (handler: (payload: {
     t: number;
     battle: string;
     players: Record<string, boolean>;
+    sortKeys?: Record<string, string>;
     self?: { name?: string; realm?: string };
     identity?: Record<string, { account_id?: number; realm?: string }>;
   }) => void) =>

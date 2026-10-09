@@ -73,6 +73,7 @@
 import type { RosterSides } from "@/utils/rosterSides";
 import {
   gameTabRowCompare,
+  tabDisplayName,
   type TabRowCompareOptions,
 } from "@/utils/shipClass";
 
@@ -109,13 +110,24 @@ export interface InferredOrderOptions {
    *  instead of candidate ranges. null/absent sides keep the ranges.
    *  Ignored under `staticLayout` (see above). */
   sunk?: { ally?: Set<string> | null; enemy?: Set<string> | null } | null;
+  /** Game-true TAB sort keys per name (telemetry `sortKeys`, read off the
+   *  avatars' ship components — the client's own ShipSystem key string).
+   *  When EVERY entry of a side's list yields a non-empty key, the sort
+   *  switches to the CLIENT's own comparison — key + '[TAG]nickname'
+   *  ascending, exactly __sortKeyAlive's concatenated string — on every
+   *  realm, and the offline per-realm inference is not consulted at all.
+   *  Any entry missing a key disables the override wholesale (game-true
+   *  and inferred rows must never interleave). */
+  sortKeyOf?: (name: string) => string | undefined;
 }
 
 /** One side's believed full-key order — the rows as the game drew them at
  *  battle start. Sorting goes through {@link gameTabRowCompare} so the
  *  ship-name permutation (CN/Lesta clients; pinyin collation — plain
  *  string comparison cannot express it) and the decompiled nation order
- *  share one code path. */
+ *  share one code path — unless the game's own sort keys cover the list,
+ *  in which case the client's exact key + display-name comparison takes
+ *  over entirely. */
 function sideFullOrder<T extends InferredVehicle>(
   list: T[],
   options: InferredOrderOptions,
@@ -128,9 +140,31 @@ function sideFullOrder<T extends InferredVehicle>(
     clanTagOf: options.clanTagOf ? (v) => options.clanTagOf?.(v.name) : undefined,
     shipNameOrder: options.shipNameOrder,
   };
+  // Game-true sort keys: only a FULLY covered list switches the sort to
+  // the client's own comparison (plain code-unit compare matches the
+  // client's Python str ordering); anything less keeps the offline
+  // inference for the WHOLE side — no interleaving.
+  const keyOf = options.sortKeyOf;
+  const clientKeys =
+    keyOf && list.length > 0
+      ? list.map((v) => keyOf(v.name))
+      : null;
+  const useClientKeys =
+    clientKeys != null && clientKeys.every((k) => typeof k === "string" && k.length > 0);
+  const clientKeyOf = useClientKeys
+    ? (v: T) => {
+        const key = keyOf!(v.name);
+        return key + tabDisplayName(v.name, options.clanTagOf?.(v.name) ?? null);
+      }
+    : null;
   return list
     .map((v, i) => ({ v, i }))
     .sort((a, b) => {
+      if (clientKeyOf) {
+        const ka = clientKeyOf(a.v);
+        const kb = clientKeyOf(b.v);
+        return ka < kb ? -1 : ka > kb ? 1 : a.i - b.i;
+      }
       const c = gameTabRowCompare(a.v, b.v, compareOptions);
       return c !== 0 ? c : a.i - b.i;
     })

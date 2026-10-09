@@ -95,13 +95,23 @@
 
   /* Plugin connected, row order inferred: its alive/sunk states are
      authoritative while the TAB row order is still the offline per-realm
-     inference (the telemetry payload carries no game-true order — see
-     features/replay/telemetryGrade.ts). Warning voice, the settling
+     inference (this battle's telemetry carried no covering sort-key map —
+     see features/replay/telemetryGrade.ts). Warning voice, the settling
      pill's recipe. */
   &__pill--telemetry-partial {
     border-color: rgb(var(--color-warning, 251 191 36) / 55%);
     background: rgb(var(--color-warning, 251 191 36) / 16%);
     color: rgb(var(--color-warning, 251 191 36));
+  }
+
+  /* Plugin connected AND the telemetry's game-true sort keys cover the
+     roster: the row order IS the client's (read off the avatars' ship
+     components — the same string the game's own Tab sort compares).
+     Success green, the manual-locate anchored pill's recipe. */
+  &__pill--telemetry-exact {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    background: rgb(var(--color-success, 74 222 128) / 16%);
+    color: rgb(var(--color-success, 74 222 128));
   }
 
   /* Battle over for good — the roster on screen is the last battle's,

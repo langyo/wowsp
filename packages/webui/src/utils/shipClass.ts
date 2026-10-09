@@ -62,9 +62,12 @@
  * lineage (360-CN renders a ship-name order its OWN scripts do not
  * compute — the divergence sits in the view layer), and any client
  * update can move it. Recalibrate per realm per build against rendered
- * captures; the plugin-first path — reading the game's own row order
- * in-engine — is the real fix (docs/en/designs/ingame-stats-plugin.md,
- * "Ordering rule").
+ * captures. The plugin-first fix SHIPPED (2026-10-09): the probe bridges
+ * each player's client-side Tab sort key (`sortKeys` in telemetry — read
+ * off the avatars' ship components) and the live panel sorts by it,
+ * exact on every realm, whenever the map covers the roster; THIS
+ * module's inference remains the fallback for battles without the keys
+ * (docs/en/designs/ingame-stats-plugin.md, "Ordering rule").
  *
  * Fidelity caveats, both narrow: the ship-name segment uses this DB's
  * localized name where the client uses GameParams `shortName` (identical

@@ -92,16 +92,32 @@ máquina (wowsdeob, `ShipSystem.add` / `AvatarSystem.__sortKeyAlive`):
 La app codifica esto como compuertas por reino sobre la clave de orden sin
 conexión (el `realmUsesShipNameOrder` de utils/realms; utils/shipClass lleva
 la clave en sí y la disposición estática de CN) y se niega a presentar la
-inferencia como verdad del juego: con un plugin CONECTADO el orden sigue
-mostrándose como inferido en la cabecera del panel /live (píldora de aviso +
-tooltip, `features/replay/telemetryGrade.ts`), porque la carga de telemetría
-lleva los estados vivo/hundido pero NINGÚN orden de filas. El final del
-camino es que la sonda lea el orden propio del juego dentro del motor — la
-colección que TAB renderiza (`team.ally.sortedAlive`) es la fuente natural,
-pero `getCollection` no existe en el dataHub inyectado, así que un contrato
-futuro de carga (`order: {ally: [...], enemy: [...]}`, solo contenido
-verdadero del juego) devolverá la píldora a «exacto». Hasta entonces, la
-inferencia es un fallback calibrado, nada más.
+inferencia como verdad del juego: sin un mapa de claves de orden que cubra
+el roster, una batalla con plugin CONECTADO sigue leyendo su orden de filas
+como inferido en la cabecera del panel /live (píldora de aviso + tooltip,
+`features/replay/telemetryGrade.ts`).
+
+**El final del camino SE ENTREGÓ (2026-10-09, el mismo día)** — vía los
+componentes de barco, no la colección ordenada: el dataHub de ModAPI
+inyectado solo exporta `getSingleEntity` / `getEntityCollections` sobre su
+lista de permitidos `SYNCED` (`ModsShell/API_v_1_0/dataHub.py`
+descompilado — exactamente dos exportaciones), y `'ship'` SÍ está en la
+lista de permitidos. La sonda recorre pues el slot `ship` de los avatares
+hasta el componente Ship de cada jugador, cuyo `sortKey` es la PROPIA
+clave de Tab del cliente (`str(SORT_ORDER.index(subtype)) +
+str(100 - level) + str(NATION.SORT_ORDER.index(nation)) + shortName` —
+`ShipSystem.add`, build 13357625) y la lleva en la telemetría (`sortKeys`,
+nombre → clave). El panel /live ordena el roster por clave +
+`'[TAG]nickname'` — la misma concatenación exacta que compara
+`__sortKeyAlive` — y califica la píldora como EXACTA cuando el mapa cubre
+el roster en vivo, en todos los reinos (CN incluido: su reordenación en la
+capa de vista, si la hay, parte de estas mismas claves; el bloque de vivos
+del panel dentro del juego también ordena por ellas). Pendientes: el
+comportamiento del sandbox de Lesta ante la colección 'ship' queda sin
+verificar hasta una batalla real (cada lectura está protegida; un hueco
+degrada esa batalla a la inferencia por reino), y una batalla con cobertura
+parcial conserva el fallback calibrado — las filas verdaderas del juego y
+las inferidas nunca se intercalan.
 
 ## Restricciones del sandbox (aprendidas por las malas; consérvelas en la guía de estilo del mod)
 

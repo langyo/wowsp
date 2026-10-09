@@ -92,16 +92,29 @@ decompilation as corroborating evidence only — never as proof. The
 The app encodes this as per-realm gates over the offline sort key
 (utils/realms's `realmUsesShipNameOrder`; utils/shipClass carries the
 key itself and the CN static layout) and
-refuses to present the inference as game-truth: with a plugin CONNECTED
-the row order still reads as inferred in the /live panel's head (warning pill +
-tooltip, `features/replay/telemetryGrade.ts`), because the telemetry
-payload carries alive/sunk states but NO row order. The endgame is the
-probe reading the game's own order in-engine — the collection the TAB
-renders (`team.ally.sortedAlive`) is the natural source, but
-`getCollection` does not exist on the injected dataHub (above), so a
-future payload contract (`order: {ally: [...], enemy: [...]}`, game-true
-content only) will flip the pill back to exact. Until then the inference
-is a calibrated fallback, nothing more.
+refuses to present the inference as game-truth: without a covering
+sort-key map, a plugin-CONNECTED battle still reads its row order as
+inferred in the /live panel's head (warning pill + tooltip,
+`features/replay/telemetryGrade.ts`).
+
+**The endgame SHIPPED (2026-10-09, same day)** — via the ship components,
+not the sorted collection: the injected ModAPI dataHub exports only
+`getSingleEntity` / `getEntityCollections` over its `SYNCED` whitelist
+(decompiled `ModsShell/API_v_1_0/dataHub.py` — exactly two exports), and
+`'ship'` IS whitelisted. The probe therefore walks the avatars' `ship`
+slot to each player's Ship component, whose `sortKey` is the client's OWN
+Tab key (`str(SORT_ORDER.index(subtype)) + str(100 - level) +
+str(NATION.SORT_ORDER.index(nation)) + shortName` — `ShipSystem.add`,
+build 13357625) and carries it in telemetry (`sortKeys`, name → key).
+The /live panel sorts the roster by key + '[TAG]nickname' — the exact
+concatenation `__sortKeyAlive` compares — and grades the pill EXACT when
+the map covers the live roster, on every realm (CN included: its
+view-layer re-sort, if any, starts from these same keys; the in-game
+panel's alive block sorts by them too). Open items: the Lesta sandbox's
+behavior toward the 'ship' collection is unverified until a real battle
+(every read is guarded; a gap degrades that battle to the per-realm
+inference), and a partial-coverage battle keeps the calibrated fallback —
+game-true and inferred rows never interleave.
 
 **CN divergence** (360 build 13243917, captured 2026-10-07): the CN
 client's TAB table does NOT move sunk players anywhere — their rows dim

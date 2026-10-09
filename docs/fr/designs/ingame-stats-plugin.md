@@ -91,16 +91,31 @@ depuis les installations de cette machine (wowsdeob, `ShipSystem.add` /
 L'app encode cela en gardes par realm sur la clé de tri hors ligne (le
 `realmUsesShipNameOrder` de utils/realms ; utils/shipClass porte la clé
 elle-même et la disposition statique CN) et refuse de présenter l'inférence
-comme vérité du jeu : avec un plugin CONNECTÉ, l'ordre continue d'être
-affiché comme déduit dans l'en-tête du panneau /live (pastille
-d'avertissement + tooltip, `features/replay/telemetryGrade.ts`), car la
-charge utile de télémétrie porte les états vivant/coulé mais AUCUN ordre de
-lignes. La fin du chemin, c'est la sonde qui lit l'ordre propre du jeu dans
-le moteur — la collection que TAB rend (`team.ally.sortedAlive`) est la
-source naturelle, mais `getCollection` n'existe pas sur le dataHub injecté ;
-un futur contrat de charge utile (`order: {ally: [...], enemy: [...]}`,
-contenu vrai du jeu uniquement) fera repasser la pastille à « exact ».
-D'ici là, l'inférence est un repli calibré, rien de plus.
+comme vérité du jeu : sans une carte de clés de tri qui couvre le roster,
+une bataille avec plugin CONNECTÉ voit toujours son ordre de lignes lu
+comme déduit dans l'en-tête du panneau /live (pastille d'avertissement +
+tooltip, `features/replay/telemetryGrade.ts`).
+
+**La fin du chemin est LIVRÉE (2026-10-09, le jour même)** — via les
+composants de navire, pas la collection triée : le dataHub ModAPI injecté
+n'exporte que `getSingleEntity` / `getEntityCollections` sur sa liste
+blanche `SYNCED` (`ModsShell/API_v_1_0/dataHub.py` décompilé — exactement
+deux exportations), et `'ship'` EST en liste blanche. La sonde parcourt
+donc le slot `ship` des avatars jusqu'au composant Ship de chaque joueur,
+dont le `sortKey` est la PROPRE clé de Tab du client
+(`str(SORT_ORDER.index(subtype)) + str(100 - level) +
+str(NATION.SORT_ORDER.index(nation)) + shortName` — `ShipSystem.add`,
+build 13357625) et l'emporte dans la télémétrie (`sortKeys`, nom → clé).
+Le panneau /live trie le roster par clé + `'[TAG]nickname'` — la
+concaténation exacte que compare `__sortKeyAlive` — et note la pastille
+EXACT quand la carte couvre le roster en direct, sur tous les realms (CN
+compris : son re-tri en couche vue, s'il existe, part de ces mêmes clés ;
+le bloc des vivants du panneau en jeu trie aussi par elles). Reste ouvert :
+le comportement du bac à sable Lesta face à la collection 'ship' reste
+invérifié jusqu'à une vraie bataille (chaque lecture est gardée ; un manque
+dégrade cette bataille vers l'inférence par realm), et une bataille à
+couverture partielle garde le repli calibré — les lignes vraies du jeu et
+les lignes déduites ne s'entremêlent jamais.
 
 ## Contraintes du bac à sable (durement acquises, à conserver dans le guide de style du mod)
 

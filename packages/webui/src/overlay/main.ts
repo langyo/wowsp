@@ -68,6 +68,7 @@ import { pluginRowMapping } from "./inferredOrder";
 import {
   gameTabRowCompare,
   shipTierOf,
+  tabDisplayName,
   type TabRowCompareOptions,
 } from "@/utils/shipClass";
 import { isCoopBattle, isOperationBattle } from "@/utils/modeColors";
@@ -396,6 +397,14 @@ let telemetryAuthoritative = false;
 /** The plugin's trusted sunk names, flat — stamps and the authoritative
  *  mapping branch read this instead of the capture alive vector. */
 let pluginSunkNames: Set<string> | null = null;
+/** The plugin's game-true TAB sort keys (telemetry `sortKeys`, read off
+ *  the avatars' ship components — the client's own ShipSystem key string).
+ *  When the map covers a side's roster, the row→name mapping sorts that
+ *  side by key + '[TAG]nickname' — the exact string the game's Tab sort
+ *  compares — instead of the offline per-realm inference. Dropped with the
+ *  alive sets on a stale stream (a dead plugin must not keep pinning rows
+ *  game-true). */
+let telemetrySortKeys: Record<string, string> | null = null;
 // Latest `wowsp://overlay-status` detection state (mirrors OverlayState on
 // the wire; null before the first event). Picks the two-level hint copy:
 // only `fallback` is a tried-and-failed state, everything else still reads
@@ -855,7 +864,10 @@ function liveRosterSides(): RosterSides<Vehicle> {
 /** The roster's believed full-key order for one side — the same ordering
  *  inferredRowMapping applies (see utils/shipClass for the decompiled
  *  rule and its ship-name permutation, CN/Lesta clients) over the live
- *  side split above. */
+ *  side split above. When this battle's telemetry sort-key map covers the
+ *  side's roster, the client's OWN key + '[TAG]nickname' comparison takes
+ *  over entirely (the exact string __sortKeyAlive compares — no
+ *  inference). */
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
@@ -864,9 +876,28 @@ function sideFullOrder(side: SunkSide): string[] {
     clanTagOf: (v) => stats.get(cacheKey(v.name))?.clanTag ?? null,
     shipNameOrder: nameOrderLayout(),
   };
+  // Game-true sort keys: only a FULLY covered list switches the sort
+  // (game-true and inferred rows must never interleave).
+  const keyOf = telemetrySortKeys
+    ? (v: (typeof list)[number]) => telemetrySortKeys![v.name]
+    : undefined;
+  const clientKeys = keyOf && list.length > 0 ? list.map((v) => keyOf(v)) : null;
+  const useClientKeys =
+    clientKeys != null && clientKeys.every((k) => typeof k === "string" && k.length > 0);
+  const clientKeyOf = useClientKeys
+    ? (v: (typeof list)[number]) => {
+        const key = keyOf!(v);
+        return key + tabDisplayName(v.name, stats.get(cacheKey(v.name))?.clanTag ?? null);
+      }
+    : null;
   return list
     .map((v, i) => ({ v, i }))
     .sort((a, b) => {
+      if (clientKeyOf) {
+        const ka = clientKeyOf(a.v);
+        const kb = clientKeyOf(b.v);
+        return ka < kb ? -1 : ka > kb ? 1 : a.i - b.i;
+      }
       const c = gameTabRowCompare(a.v, b.v, compareOptions);
       return c !== 0 ? c : a.i - b.i;
     })
@@ -1013,6 +1044,7 @@ function render() {
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
         shipNameOrder: nameOrderLayout(),
         staticLayout,
+        sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
       });
     } else {
       players = inferredRowMapping({ allies, enemies }, aliveArr, {
@@ -1020,6 +1052,7 @@ function render() {
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
         shipNameOrder: nameOrderLayout(),
         staticLayout,
+        sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
         sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
       });
     }
@@ -1793,6 +1826,7 @@ async function start() {
       t?: number;
       battle?: string;
       players?: Record<string, boolean>;
+      sortKeys?: Record<string, string>;
       self?: { name?: string; realm?: string };
       identity?: Record<string, { account_id?: number; realm?: string }>;
     } | null;
@@ -1822,15 +1856,19 @@ async function start() {
       }
     }
     if (!payload?.players || !arena) return;
-    if (Date.now() - (payload.t ?? 0) > 30_000) return;
-    if ((anchor?.rosterMode ?? "") !== "plugin") {
-      telemetryAuthoritative = false;
-      return;
-    }
     if (Date.now() - (payload.t ?? 0) > 30_000) {
-      // Stale stream: release the authoritative lock (resume inference).
+      // Stale stream (the Rust poller normally pre-filters these — this is
+      // the defensive belt): release the authoritative lock so the
+      // inference chain resumes, and drop the trusted sets + the game-true
+      // sort keys with it (a dead plugin must not keep pinning rows).
       telemetryAuthoritative = false;
       pluginSunkNames = null;
+      telemetrySortKeys = null;
+      render();
+      return;
+    }
+    if ((anchor?.rosterMode ?? "") !== "plugin") {
+      telemetryAuthoritative = false;
       return;
     }
     const bySide: { ally?: Set<string>; enemy?: Set<string> } = {
@@ -1856,6 +1894,7 @@ async function start() {
     telemetryAuthoritative = true;
     sunk.applyNamedSunk(bySide, rosterNames);
     pluginSunkNames = new Set([...bySide.ally!, ...bySide.enemy!]);
+    telemetrySortKeys = payload.sortKeys ?? null;
     render();
   });
   await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {
