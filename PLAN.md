@@ -102,12 +102,18 @@ official mini-patches (IME fix, fonts) are the foundation.
 - [ ] M10.5 — Content browser: skin/voice categories with previews & audition, batch install, resumable downloads; CC0-only index
 - [ ] M10.6 — Aslain migration assistant: adopt Aslain-installed entries into the install record
 
-> **WebView2 note:** the installer never ships or silently installs the
-> runtime (`webviewInstallMode: skip`). `installer.nsi` gates `.onInit` on a
-> registry check instead: a machine without WebView2 gets a dialog pointing at
-> the bundled-WebView2 release build and the installer exits. Silent/unattended
-> runs (updater flow) log and continue — the app surfaces the same guidance on
-> launch.
+> **WebView2 note:** the shun installer probes with the loader's own verdict
+> (`wry::webview_version()`, the exact call tauri gates webview creation on).
+> The `-webview2` flavor carries the Evergreen offline runtime and silently
+> installs it when the machine reports none (`[package.metadata.
+> wowsp-installer.webview2]`, default on); the lite flavor carries nothing,
+> and its last resort is a native degrade notice — a locale-resolved
+> message box linking Microsoft's official download page (the full
+> degraded egui wizard face is shun's own shell's job; this crate is
+> slated to converge on shun-built installers).
+> A materials-only full flavor is no longer published — the complete build
+> always carries the runtime. Silent/unattended runs (updater flow) stay
+> fully headless and log and continue.
 
 ## Release notes history
 

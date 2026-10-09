@@ -43,7 +43,7 @@ WoWSP는 Windows용 **월드 오브 워십** 데스크톱 패널이다. 게임 �
 
 ## 다운로드
 
-Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/latest)에서 최신 `WoWSP_<version>_x64-setup-webview2.exe`를 내려받는다(WebView2 포함). GitHub 접속이 느린 환경에서는 미러를 지원하는 [다운로드 페이지](https://wowsp.langyo.xyz/download)를 이용한다. Android 버전은 소스에서 직접 빌드한다 — [빌드 가이드](building.md) 참고.
+Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/latest)에서 최신 `WoWSP_<version>_x64-installer-webview2.exe`를 내려받는다(WebView2 포함). GitHub 접속이 느린 환경에서는 미러를 지원하는 [다운로드 페이지](https://wowsp.langyo.xyz/download)를 이용한다. Android 버전은 소스에서 직접 빌드한다 — [빌드 가이드](building.md) 참고.
 
 모든 화면의 스크린샷은 UI 언어별로 [웹사이트 갤러리](https://wowsp.langyo.xyz/#gallery)에서 볼 수 있다.
 

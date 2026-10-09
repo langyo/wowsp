@@ -43,7 +43,7 @@ WoWSP 是 Windows 上的《战舰世界》桌面面板。它会自动检测游�
 
 ## 下载
 
-Windows 10/11 —— 从 [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) 下载最新的 `WoWSP_<version>_x64-setup-webview2.exe`（安装器自带 WebView2）；GitHub 访问缓慢时可改用官网的 [下载页](https://wowsp.langyo.xyz/download)（内置加速镜像）。Android 版需从源码构建，见[构建指南](building.md)。
+Windows 10/11 —— 从 [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) 下载最新的 `WoWSP_<version>_x64-installer-webview2.exe`（安装器自带 WebView2）；GitHub 访问缓慢时可改用官网的 [下载页](https://wowsp.langyo.xyz/download)（内置加速镜像）。Android 版需从源码构建，见[构建指南](building.md)。
 
 所有界面、所有语言下的截图都在[官网画廊](https://wowsp.langyo.xyz/#gallery)。
 

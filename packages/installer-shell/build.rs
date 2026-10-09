@@ -26,6 +26,29 @@ fn main() {
     std::fs::write(out_dir.join("shun-config.json"), config_json).expect("write embedded config");
     println!("cargo:rerun-if-changed={}", manifest_path.display());
 
+    // 1b. The WoWSP-local WebView2 fallback policy
+    // ([package.metadata.wowsp-installer.webview2]): parsed straight from
+    // the manifest — the shun loader would drop the unknown section —
+    // and stamped as its own embedded JSON. Defaults live in the
+    // runtime struct (Webview2Policy in main.rs), so a missing or
+    // partial table still yields the documented behavior.
+    // (`toml::Table`, not `toml::Value`: a manifest is a multi-table
+    // document, and Value's FromStr accepts a single value only.)
+    let manifest_toml: toml::Table = std::fs::read_to_string(&manifest_path)
+        .expect("manifest reads")
+        .parse()
+        .expect("manifest parses as TOML");
+    let policy = manifest_toml
+        .get("package")
+        .and_then(|package| package.get("metadata"))
+        .and_then(|metadata| metadata.get("wowsp-installer"))
+        .and_then(|wowsp| wowsp.get("webview2"))
+        .cloned()
+        .unwrap_or_else(|| toml::Value::Table(Default::default()));
+    let policy_json = serde_json::to_string(&policy).expect("policy serializes");
+    std::fs::write(out_dir.join("wv2-policy.json"), policy_json)
+        .expect("write embedded webview2 policy");
+
     // 2. Pack the payload directory (SHUN_PAYLOAD > metadata declaration).
     println!("cargo:rerun-if-env-changed=SHUN_PAYLOAD");
     let payload_dir = std::env::var_os("SHUN_PAYLOAD")

@@ -43,7 +43,7 @@ Autour de ces deux modes, il vous propose également :
 
 ## Téléchargement
 
-Windows 10/11 — récupérez le dernier `WoWSP_<version>_x64-setup-webview2.exe` depuis [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (WebView2 est inclus), ou la [page de téléchargement](https://wowsp.langyo.xyz/download), qui choisit automatiquement un miroir, si GitHub est lent depuis votre région. L'édition Android se compile à partir des sources — consultez le [guide de compilation](building.md).
+Windows 10/11 — récupérez le dernier `WoWSP_<version>_x64-installer-webview2.exe` depuis [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (WebView2 est inclus), ou la [page de téléchargement](https://wowsp.langyo.xyz/download), qui choisit automatiquement un miroir, si GitHub est lent depuis votre région. L'édition Android se compile à partir des sources — consultez le [guide de compilation](building.md).
 
 Des captures d'écran de chaque vue, dans chaque langue de l'interface, sont disponibles dans la [galerie du site](https://wowsp.langyo.xyz/#gallery).
 

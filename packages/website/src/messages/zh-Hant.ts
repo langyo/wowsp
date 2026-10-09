@@ -307,7 +307,7 @@ lookup: {
   },
   download: {
     title: "下載 WoWSP",
-    lede: "Windows x64 · WebView2 執行時將自動安裝",
+    lede: "Windows x64 · 缺少 WebView2 時自動靜默安裝或引導下載",
     latest: "最新版本",
     loading: "正在取得最新版本…",
     modesTitle: "兩種執行方式",
@@ -315,7 +315,7 @@ lookup: {
     modeInstallDesc: "標準單使用者安裝，含開始功能表捷徑與自動更新。推薦。",
     modeUsbTitle: "USB 碟（網咖模式）",
     modeUsbDesc: "便攜副本放在 USB 碟上——無登錄檔項，所有資料留在碟內。適合共用電腦。",
-    assetInstaller: "安裝程式",
+    assetInstallerLite: "安裝程式（輕量版）",
     assetInstallerWv2: "安裝程式（內建 WebView2 離線執行時）",
     loadFailed: "暫時無法取得最新版本，請直接前往 GitHub Releases 下載",
     assets: "發佈資源",

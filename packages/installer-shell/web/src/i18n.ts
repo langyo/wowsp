@@ -161,7 +161,7 @@ export interface InstallerStrings {
     /** Note shown after the root-drive nesting pass rewrites the path. */
     nestedNote: string;
   };
-  flavors: { full: string; fullWebview2: string };
+  flavors: { lite: string; fullWebview2: string };
   license: {
     title: string;
     sub: string;
@@ -240,7 +240,7 @@ const zhHans: InstallerStrings = {
     nestedNote: "已自动垫一层文件夹，避免直接安装到盘符根目录。",
   },
   flavors: {
-    full: "完整版 · 含 2D/3D 模型资源包",
+    lite: "便捷版 · 精简安装，模型资源包按需下载",
     fullWebview2: "完整版 · 含 2D/3D 模型资源包与 WebView2 运行时",
   },
   license: {
@@ -356,7 +356,7 @@ const zhHant: InstallerStrings = {
     nestedNote: "已自動墊一層資料夾，避免直接安裝到磁碟根目錄。",
   },
   flavors: {
-    full: "完整版 · 含 2D/3D 模型資源包",
+    lite: "輕量版 · 精簡安裝，模型資源包按需下載",
     fullWebview2: "完整版 · 含 2D/3D 模型資源包與 WebView2 執行階段",
   },
   license: {
@@ -472,7 +472,7 @@ const en: InstallerStrings = {
     nestedNote: "A folder layer was added automatically so the payload never lands on the drive root.",
   },
   flavors: {
-    full: "Full edition · includes the 2D/3D model packs",
+    lite: "Lite edition · slim install, model packs download on demand",
     fullWebview2: "Full edition · includes the 2D/3D model packs and the WebView2 runtime",
   },
   license: {
@@ -590,7 +590,7 @@ const ru: InstallerStrings = {
     nestedNote: "Автоматически добавлен уровень папки, чтобы установка не шла в корень диска.",
   },
   flavors: {
-    full: "Полная версия · с наборами 2D/3D-моделей",
+    lite: "Облегчённая версия · компактная установка, наборы моделей загружаются по требованию",
     fullWebview2: "Полная версия · с наборами 2D/3D-моделей и средой WebView2",
   },
   license: {
@@ -718,7 +718,7 @@ const ja: InstallerStrings = {
       "ドライブのルートに直接インストールされないよう、フォルダーを一階層自動で追加しました。",
   },
   flavors: {
-    full: "完全版 · 2D/3D モデルパック同梱",
+    lite: "軽量版 · コンパクトなインストール、モデルパックは必要時にダウンロード",
     fullWebview2: "完全版 · 2D/3D モデルパックと WebView2 ランタイム同梱",
   },
   license: {
@@ -850,7 +850,7 @@ const ko: InstallerStrings = {
       "드라이브 루트에 바로 설치되지 않도록 폴더를 한 단계 자동으로 추가했습니다.",
   },
   flavors: {
-    full: "풀 버전 · 2D/3D 모델 팩 포함",
+    lite: "라이트 버전 · 슬림 설치, 모델 팩은 필요할 때 다운로드",
     fullWebview2: "풀 버전 · 2D/3D 모델 팩 및 WebView2 런타임 포함",
   },
   license: {
@@ -973,7 +973,7 @@ const fr: InstallerStrings = {
       "Un niveau de dossier a été ajouté automatiquement afin que l'installation n'atterrisse jamais à la racine du lecteur.",
   },
   flavors: {
-    full: "Édition complète · inclut les packs de modèles 2D/3D",
+    lite: "Édition allégée · installation compacte, packs de modèles téléchargés à la demande",
     fullWebview2:
       "Édition complète · inclut les packs de modèles 2D/3D et le runtime WebView2",
   },
@@ -1102,7 +1102,7 @@ const es: InstallerStrings = {
       "Se añadió automáticamente un nivel de carpeta para que la instalación nunca caiga en la raíz de la unidad.",
   },
   flavors: {
-    full: "Edición completa · incluye los paquetes de modelos 2D/3D",
+    lite: "Edición ligera · instalación compacta, los paquetes de modelos se descargan bajo demanda",
     fullWebview2:
       "Edición completa · incluye los paquetes de modelos 2D/3D y el runtime de WebView2",
   },
@@ -1231,7 +1231,7 @@ const de: InstallerStrings = {
       "Automatisch wurde eine Ordnerebene eingefügt, damit nichts direkt im Wurzelverzeichnis des Laufwerks landet.",
   },
   flavors: {
-    full: "Vollversion · inklusive der 2D-/3D-Modellpakete",
+    lite: "Lite-Version · schlanke Installation, Modellpakete laden bei Bedarf",
     fullWebview2: "Vollversion · inklusive der 2D-/3D-Modellpakete und der WebView2-Laufzeit",
   },
   license: {
@@ -1359,7 +1359,7 @@ const pt: InstallerStrings = {
       "Foi adicionado automaticamente um nível de pastas para que a instalação nunca caia na raiz da unidade.",
   },
   flavors: {
-    full: "Edição completa · inclui os pacotes de modelos 2D/3D",
+    lite: "Edição leve · instalação compacta, os pacotes de modelos são descarregados a pedido",
     fullWebview2:
       "Edição completa · inclui os pacotes de modelos 2D/3D e o runtime WebView2",
   },

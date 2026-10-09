@@ -16,11 +16,22 @@
 //! (config `portable-marker`).
 //!
 //! The shell is itself a Tauri app, so the WebView2 runtime is a hard
-//! prerequisite for its own UI: before any window is created we check the
-//! Evergreen runtime and, when missing, run the offline installer shipped
-//! next to the shell (`MicrosoftEdgeWebView2RuntimeInstallerX64.exe`). If
-//! the runtime still cannot be found we fall back to a native message box
-//! (no WebView needed) and point the user at the releases page.
+//! prerequisite for its own UI — but never a fatal one. The runtime
+//! check probes with the loader's own verdict (`wry::webview_version()`,
+//! the exact call tauri-runtime-wry gates webview creation on, so the
+//! two can never disagree — a registry-based probe used to accept stale
+//! `pv` keys and send broken setups into tauri's English "Could not
+//! find the WebView2 Runtime" box). When the loader reports the runtime
+//! missing we first try to fix the machine — the offline installer
+//! shipped beside the shell or carried in the payload (`webview2/`, the
+//! -webview2 flavor) runs silently, gated by the build policy
+//! (`[package.metadata.wowsp-installer.webview2]`) — and when the
+//! runtime still cannot be found the shell's last resort is a native
+//! degrade notice — a locale-resolved message box plus Microsoft's
+//! official download page (`warn-missing` policy, default on). The
+//! full degraded WIZARD face (egui) is deliberately NOT hand-rolled
+//! here: shun's own shell renders it, and this crate is slated to
+//! converge on shun-built installers driven by a config manifest.
 //!
 //! Uninstall entry points: `/uninstall` (the ARP `UninstallString`) opens
 //! a dedicated uninstall page in the same Tauri window — confirm →
@@ -48,14 +59,10 @@ use shun::targets::install::{
     default_aumid,
 };
 use tauri::Emitter;
-use winreg::RegKey;
-use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 
 mod resource_pack;
 mod uninstall_egui;
 
-/// WebView2 Evergreen runtime product GUID.
-const WEBVIEW2_APP_GUID: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
 /// Offline WebView2 Evergreen installer file name. Delivered two ways: a
 /// file beside the shell (paired delivery), or a `webview2/` subtree
 /// inside the embedded payload (the single-file -webview2 build — see
@@ -63,8 +70,11 @@ const WEBVIEW2_APP_GUID: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
 const WEBVIEW2_PAYLOAD: &str = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe";
 /// Payload-relative directory carrying the offline installer.
 const WEBVIEW2_PAYLOAD_PREFIX: &str = "webview2";
-/// Page opened when WebView2 is missing and no offline payload is available.
-const RELEASES_URL: &str = "https://github.com/langyo/wowsp/releases/latest";
+/// Microsoft's official WebView2 download page — the jump target of the
+/// native degrade notice (locale-neutral URL; the page itself offers
+/// every language).
+pub(crate) const WEBVIEW2_DOWNLOAD_URL: &str =
+    "https://developer.microsoft.com/microsoft-edge/webview2/";
 
 /// The resolved configuration, embedded by build.rs.
 const SHUN_CONFIG_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/shun-config.json"));
@@ -104,36 +114,43 @@ struct AppState {
 
 impl AppState {
     fn install_target(&self) -> Result<shun::config::InstallConfig, String> {
-        self.config
-            .targets
-            .iter()
-            .find_map(|t| match t {
-                TargetConfig::Install(install) => Some(install.clone()),
-                _ => None,
-            })
-            .ok_or_else(|| "此配置未声明安装目标".to_string())
+        install_target_of(&self.config)
     }
+}
 
-    /// The install context for a wizard run: `local` registers the
-    /// install, `usb` / `green` deliver a portable copy.
-    fn install_context(
-        &self,
-        mode: &str,
-        dir: &str,
-        answers: WizardAnswers,
-    ) -> Result<InstallContext, String> {
-        let install = self.install_target()?;
-        let mut ctx = InstallContext::new(
-            self.config.product.name.clone(),
-            self.config.product.version.clone(),
-            PathBuf::from(dir),
-            mode != "local",
-        );
-        ctx.publisher = self.config.product.publisher.clone();
-        ctx.main_exe = install.main_exe.clone();
-        ctx.apply_config(&install, answers);
-        Ok(ctx)
-    }
+/// The configured install target of a shun config (the first `install`
+/// target it declares).
+fn install_target_of(config: &ShunConfig) -> Result<shun::config::InstallConfig, String> {
+    config
+        .targets
+        .iter()
+        .find_map(|t| match t {
+            TargetConfig::Install(install) => Some(install.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| "此配置未声明安装目标".to_string())
+}
+
+/// The install context for a wizard run (both faces build it the same
+/// way): `local` registers the install, `usb` / `green` deliver a
+/// portable copy.
+fn install_context_for(
+    config: &ShunConfig,
+    mode: &str,
+    dir: &str,
+    answers: WizardAnswers,
+) -> Result<InstallContext, String> {
+    let install = install_target_of(config)?;
+    let mut ctx = InstallContext::new(
+        config.product.name.clone(),
+        config.product.version.clone(),
+        PathBuf::from(dir),
+        mode != "local",
+    );
+    ctx.publisher = config.product.publisher.clone();
+    ctx.main_exe = install.main_exe.clone();
+    ctx.apply_config(&install, answers);
+    Ok(ctx)
 }
 
 #[derive(Serialize)]
@@ -303,29 +320,73 @@ fn wide_null(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(once(0)).collect()
 }
 
+/// The loader's own verdict on whether a WebView2 runtime is usable —
+/// the exact call (`wry::webview_version()` →
+/// `GetAvailableCoreWebView2BrowserVersionString`) that
+/// tauri-runtime-wry gates webview creation on. Probing with anything
+/// else (the old registry `pv` scan) can disagree with that gate on
+/// broken setups — stale keys, half-removed runtimes, per-user installs
+/// under another account — and the disagreement ends in tauri's English
+/// "Could not find the WebView2 Runtime" box plus a dead shell instead
+/// of a fallback.
 fn webview2_installed() -> bool {
-    let hives = [
-        (
-            HKEY_LOCAL_MACHINE,
-            r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients",
-        ),
-        (HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\EdgeUpdate\Clients"),
-        (HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\EdgeUpdate\Clients"),
-    ];
-    for (hive, path) in hives {
-        let Ok(clients) = RegKey::predef(hive).open_subkey_with_flags(path, KEY_READ) else {
-            continue;
-        };
-        let Ok(runtime) = clients.open_subkey_with_flags(WEBVIEW2_APP_GUID, KEY_READ) else {
-            continue;
-        };
-        let version: String = runtime.get_value("pv").unwrap_or_default();
-        if !version.is_empty() {
-            return true;
+    // Test override: forces the degraded paths (the uninstall egui
+    // window / the native degrade notice) on machines that DO have the
+    // runtime, so the fallback stays regression-testable — the same
+    // contract as shun's env_probe override. Deliberately compiled
+    // into release builds (no debug gate): an explicitly set env var
+    // degrades at worst to a notice box, never to a broken install.
+    if std::env::var_os("SHUN_FORCE_FALLBACK").is_some() {
+        return false;
+    }
+    wry::webview_version().is_ok()
+}
+
+/// The build-time WebView2 fallback policy, stamped by build.rs from
+/// `[package.metadata.wowsp-installer.webview2]` (kebab-case keys, both
+/// default on — a missing or partial table still yields the documented
+/// behavior).
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct Webview2Policy {
+    /// Silently run the carried Evergreen installer when the loader
+    /// reports no runtime (default on; the lite flavor carries nothing,
+    /// so the knob only bites the -webview2 build).
+    #[serde(default = "default_true")]
+    silent_install: bool,
+    /// Show the native degrade notice (message box + the Microsoft
+    /// download link) when the machine still has no runtime after the
+    /// silent-install attempt (default on).
+    #[serde(default = "default_true")]
+    warn_missing: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+// NOT derived: `bool`'s derived default is `false`, but this policy's
+// documented behavior is both knobs ON — a broken stamp must degrade to
+// the safe (warning-armed) side, never silently disarm the fallback.
+impl Default for Webview2Policy {
+    fn default() -> Self {
+        Self {
+            silent_install: true,
+            warn_missing: true,
         }
     }
-    false
 }
+
+impl Webview2Policy {
+    /// Decodes the embedded policy table; unparsable input degrades to
+    /// the defaults instead of failing the shell.
+    fn embedded() -> Self {
+        serde_json::from_str(WV2_POLICY_JSON).unwrap_or_default()
+    }
+}
+
+/// The WebView2 fallback policy, embedded by build.rs.
+const WV2_POLICY_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/wv2-policy.json"));
 
 /// Runs `exe` with `args`, waiting for exit. Handles executables whose
 /// manifest requires elevation (os error 740) by relaunching through UAC
@@ -343,10 +404,15 @@ fn run_waiting(exe: &Path, args: &[&str]) -> std::io::Result<std::process::ExitS
     {
         Ok(status) => Ok(status),
         Err(e) if e.raw_os_error() == Some(740) => {
+            // COMMA-join into one -ArgumentList array: a space join
+            // passes two positional parameters and PowerShell rejects
+            // the command outright (verified:
+            // ParameterBindingException, exit 1) — which would silently
+            // defeat the silent install on every non-elevated launch.
             let script = format!(
                 "Start-Process -FilePath '{}' -ArgumentList '{}' -Wait",
                 exe.display(),
-                args.join("' '")
+                args.join("','")
             );
             std::process::Command::new("powershell")
                 .args(["-NoProfile", "-Command", &script])
@@ -357,22 +423,10 @@ fn run_waiting(exe: &Path, args: &[&str]) -> std::io::Result<std::process::ExitS
     }
 }
 
-fn show_fatal_error(title: &str, text: &str) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
-
-    let title_w = wide_null(title);
-    let text_w = wide_null(text);
-    unsafe {
-        MessageBoxW(
-            std::ptr::null_mut(),
-            text_w.as_ptr(),
-            title_w.as_ptr(),
-            MB_ICONERROR | MB_OK,
-        );
-    }
-}
-
-fn open_url(url: &str) {
+/// Opens `url` in the system browser — the Microsoft WebView2 download
+/// link behind the native degrade notice (no webview involved; this IS
+/// the runtime-less path).
+pub(crate) fn open_url(url: &str) {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -390,21 +444,25 @@ fn open_url(url: &str) {
     }
 }
 
-/// Makes sure the WebView2 runtime is present before the Tauri UI starts.
-/// The offline installer comes either from beside the shell or, in the
-/// single-file -webview2 build, out of the embedded payload (extracted
-/// once into a per-user cache). Returns normally once installed;
-/// otherwise shows a native error, opens the releases page and exits — a
-/// WebView-less shell cannot render UI.
-fn ensure_webview2(exe_dir: &Path, payload: &ArchivePayload) {
+/// Makes sure the WebView2 runtime is present before the Tauri UI
+/// starts, and reports whether the machine ended up ready. The offline
+/// installer comes either from beside the shell or, in the single-file
+/// -webview2 build, out of the embedded payload (extracted once into a
+/// per-user cache) — and only runs when the build policy allows the
+/// silent install (default on). Never fatal: a `false` return hands the
+/// caller to the native degrade notice instead of a dead shell.
+fn ensure_webview2(exe_dir: &Path, payload: &ArchivePayload, policy: &Webview2Policy) -> bool {
     if webview2_installed() {
-        return;
+        return true;
+    }
+    if !policy.silent_install {
+        return false;
     }
 
     // Paired delivery: the offline installer sits next to the shell.
     let beside = exe_dir.join(WEBVIEW2_PAYLOAD);
     if beside.is_file() && run_offline_installer(&beside) {
-        return;
+        return true;
     }
 
     // Single-file delivery: extract the `webview2/` subtree from the
@@ -416,18 +474,11 @@ fn ensure_webview2(exe_dir: &Path, payload: &ArchivePayload) {
     {
         let extracted = cache.join(WEBVIEW2_PAYLOAD_PREFIX).join(WEBVIEW2_PAYLOAD);
         if extracted.is_file() && run_offline_installer(&extracted) {
-            return;
+            return true;
         }
     }
 
-    show_fatal_error(
-        "WoWSP 安装器",
-        "本系统缺少 WoWSP 运行所必需的 Microsoft WebView2 运行时。\n\n\
-         请从即将打开的发布页下载自带 WebView2 的完整安装包，\
-         或先安装 WebView2 运行时后重试。",
-    );
-    open_url(RELEASES_URL);
-    std::process::exit(1);
+    webview2_installed()
 }
 
 /// Runs the Evergreen offline installer and reports whether the runtime
@@ -499,22 +550,28 @@ async fn set_shortcuts(
 /// through shun's launch helper.
 #[tauri::command]
 fn launch_app(state: tauri::State<'_, AppState>, dir: String) -> Result<(), String> {
-    let install = state.install_target()?;
+    launch_installed(&state.config, &dir)
+}
+
+/// Launches the freshly installed/copied application (the done page's
+/// option) through shun's launch helper.
+pub(crate) fn launch_installed(config: &ShunConfig, dir: &str) -> Result<(), String> {
+    let install = install_target_of(config)?;
     // Same root-drive guard as the install: the padded path is what the
     // flow delivered, so the launch resolves the same directory.
     let dir = shun::targets::install::nest_root_dir(
         Path::new(dir.trim().trim_end_matches('\\')),
-        &state.config.product.name,
+        &config.product.name,
         install.root_dir_folder.as_deref(),
     );
     let mut ctx = InstallContext::new(
-        state.config.product.name.clone(),
-        state.config.product.version.clone(),
+        config.product.name.clone(),
+        config.product.version.clone(),
         dir,
         false,
     );
     ctx.main_exe = install.main_exe.clone();
-    // The done-page checkbox is the answer: reaching this command means
+    // The done-page checkbox is the answer: reaching this helper means
     // the user asked for a launch.
     ctx.launch_after_install = true;
     shun::targets::install::launch(&ctx).map_err(|e| e.to_string())
@@ -1201,6 +1258,36 @@ async fn start_install(
     dir: String,
     language: Option<String>,
 ) -> Result<(), String> {
+    let config = state.config.clone();
+    let payload = state.payload.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        run_install_flow(
+            &config,
+            &payload,
+            &mode,
+            &dir,
+            language.as_deref(),
+            &mut |event| emit_progress(&app, &event),
+        )
+    })
+    .await
+    .map_err(|e| format!("安装任务异常退出: {e}"))?
+}
+
+/// The install execution behind the Tauri wizard's `start_install`
+/// command: writability gate → shun flow (stopping a running app first,
+/// diffing the previous manifest) → stale-file cleanup →
+/// bootstrap-payload removal → res-pack relocation → flavor marker.
+/// Progress events funnel into `on_event`, which the command re-emits
+/// over IPC from a blocking thread.
+fn run_install_flow(
+    config: &ShunConfig,
+    payload: &ArchivePayload,
+    mode: &str,
+    dir: &str,
+    language: Option<&str>,
+    on_event: &mut dyn FnMut(FlowEvent),
+) -> Result<(), String> {
     let dir = dir.trim().trim_end_matches('\\').to_string();
     if dir.is_empty() {
         return Err("安装目录不能为空".into());
@@ -1218,69 +1305,57 @@ async fn start_install(
         launch_after_install: false,
         machine: false,
     };
-    let mut ctx = state.install_context(&mode, &dir, answers)?;
+    let mut ctx = install_context_for(config, mode, &dir, answers)?;
     // The wizard language rides into the on-disk manifest (shun 0.4.1) so
     // later passes — and the installed app — can see it. An explicit
     // answer from the wizard wins; when none is passed (the uninstall
     // page's repair path) fall back to what the previous install recorded,
     // so a repair keeps the language the original install ran under.
     ctx.language = match language {
-        Some(l) if !l.trim().is_empty() => Some(l),
+        Some(l) if !l.trim().is_empty() => Some(l.to_string()),
         _ => current_exe_dir()
             .ok()
             .as_deref()
             .and_then(manifest_language_of),
     };
 
-    let payload = state.payload.clone();
     let install_dir = ctx.install_dir.clone();
     let portable = ctx.portable;
-    let flow_ctx = ctx;
-    tauri::async_runtime::spawn_blocking(move || {
-        // Capture what a previous install left behind before the flow
-        // replaces the on-disk manifest — the stale-file pass diffs
-        // against it after a successful extract.
-        let previous = read_installed_manifest(&install_dir).unwrap_or_default();
-        // An overwrite install must stop the running application first:
-        // its locked executable would fail the extraction (os error 5).
-        // The label is emitted BEFORE the blocking helper so it covers the
-        // taskkill + settle window too.
-        if install_dir.join("wowsp.exe").is_file() {
-            emit_progress(
-                &app,
-                &FlowEvent::Progress {
-                    phase: FlowPhase::Prepare,
-                    step: "Stopping wowsp.exe".into(),
-                    percent: None,
-                },
-            );
-        }
-        stop_running_app(&install_dir);
-        let flow = InstallFlow {
-            payload: &payload,
-            registration: &WindowsRegistration,
-            ctx: flow_ctx,
-        };
-        flow.run(&mut |event| emit_progress(&app, &event))
-            .map_err(|e| e.to_string())?;
-        let stale = remove_stale_payload_files(&install_dir, &previous);
-        if stale > 0 {
-            emit_progress(
-                &app,
-                &FlowEvent::Progress {
-                    phase: FlowPhase::Extract,
-                    step: format!("Removed {stale} stale file(s)"),
-                    percent: None,
-                },
-            );
-        }
-        cleanup_bootstrap_payload(&install_dir);
-        relocate_res_pack(&install_dir, portable)?;
-        write_flavor_marker(&install_dir);
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("安装任务异常退出: {e}"))?
+    // Capture what a previous install left behind before the flow
+    // replaces the on-disk manifest — the stale-file pass diffs
+    // against it after a successful extract.
+    let previous = read_installed_manifest(&install_dir).unwrap_or_default();
+    // An overwrite install must stop the running application first:
+    // its locked executable would fail the extraction (os error 5).
+    // The label is emitted BEFORE the blocking helper so it covers the
+    // taskkill + settle window too.
+    if install_dir.join("wowsp.exe").is_file() {
+        on_event(FlowEvent::Progress {
+            phase: FlowPhase::Prepare,
+            step: "Stopping wowsp.exe".into(),
+            percent: None,
+        });
+    }
+    stop_running_app(&install_dir);
+    let flow = InstallFlow {
+        payload,
+        registration: &WindowsRegistration,
+        ctx,
+    };
+    flow.run(&mut |event| on_event(event))
+        .map_err(|e| e.to_string())?;
+    let stale = remove_stale_payload_files(&install_dir, &previous);
+    if stale > 0 {
+        on_event(FlowEvent::Progress {
+            phase: FlowPhase::Extract,
+            step: format!("Removed {stale} stale file(s)"),
+            percent: None,
+        });
+    }
+    cleanup_bootstrap_payload(&install_dir);
+    relocate_res_pack(&install_dir, portable)?;
+    write_flavor_marker(&install_dir);
+    Ok(())
 }
 
 /// The -webview2 build carries the Evergreen offline installer inside the
@@ -1310,7 +1385,7 @@ fn relocate_res_pack(install_dir: &Path, portable: bool) -> Result<(), String> {
     });
     resource_pack::relocate(install_dir, &cache, stamp.as_deref().map(str::as_bytes))
 }
-/// Stages the install flavor (`full` / `full-webview2` / `lite`) next to the
+/// Stages the install flavor (`full-webview2` / `lite`) next to the
 /// app as `wowsp-flavor.txt`. Since 0.4 the app updater always picks the
 /// `-lite` artifact (the resource pack rides its own channel), so this is
 /// now a diagnostic marker; it stays for older builds that still read it
@@ -1527,13 +1602,28 @@ fn main() {
         }
         return;
     }
+    // Install runs: repair the machine first (silently run the carried
+    // Evergreen installer when the policy allows). When the runtime is
+    // STILL missing there is no UI this shell can render (its wizard is
+    // webview-only; the degraded wizard face belongs to shun's own
+    // shell), so the last resort is the native degrade notice: a
+    // locale-resolved message box and Microsoft's official download
+    // page — never tauri's English runtime box, never a silent death.
+    // Uninstall runs keep their existing ladder: the probe below just
+    // proved the runtime state, and a missing runtime takes
+    // `uninstall_egui`.
     if !uninstalling {
-        if let Some(dir) = exe_dir() {
-            ensure_webview2(&dir, &payload);
+        let policy = Webview2Policy::embedded();
+        let ready = match exe_dir() {
+            Some(dir) => ensure_webview2(&dir, &payload, &policy),
+            None => webview2_installed(),
+        };
+        if !ready {
+            degrade_to_webview2_notice(&policy);
         }
     }
 
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             config,
@@ -1582,8 +1672,113 @@ fn main() {
             set_shortcuts,
             start_install
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running WoWSP installer shell");
+        .run(tauri::generate_context!());
+
+    // The probe above and tauri's own gate read the same loader verdict,
+    // so a webview-runtime failure here should be unreachable — but if
+    // one still slips through (the English runtime box may already have
+    // shown on release builds), the same native degrade notice applies.
+    // Any other failure is real: report and exit.
+    if let Err(err) = result {
+        if !webview2_installed() {
+            degrade_to_webview2_notice(&Webview2Policy::embedded());
+        }
+        eprintln!("shun: error while running WoWSP installer shell: {err}");
+        std::process::exit(1);
+    }
+}
+
+/// The last resort for a machine the WebView2 loader rejects and the
+/// silent Evergreen bootstrap could not fix: a native message box (no
+/// webview, no custom UI — the degraded wizard face is shun's own
+/// shell's job, not this crate's) explaining what is missing, then
+/// Microsoft's official download page. Gated by the build policy's
+/// `warn-missing` knob (default on); always terminal — there is nothing
+/// left this shell can render.
+fn degrade_to_webview2_notice(policy: &Webview2Policy) -> ! {
+    if policy.warn_missing {
+        let saved = read_saved_language_in(&local_appdata()).filter(|l| is_wizard_locale(l));
+        let tag = saved.unwrap_or_else(|| system_locale_tag().unwrap_or_else(|| "zh-Hans".into()));
+        let body = webview2_notice_body(license_locale_key(&tag));
+        let title = os_window_title(&tag, false);
+        let title_w = wide_null(title);
+        let body_w = wide_null(body);
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
+                std::ptr::null_mut(),
+                body_w.as_ptr(),
+                title_w.as_ptr(),
+                windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONWARNING
+                    | windows_sys::Win32::UI::WindowsAndMessaging::MB_OK,
+            );
+        }
+        open_url(WEBVIEW2_DOWNLOAD_URL);
+    }
+    std::process::exit(1);
+}
+
+/// The degrade-notice body per wizard locale: what is missing, that the
+/// automatic install did not complete (covers both the lite build —
+/// nothing carried — and the -webview2 build — a failed or declined
+/// silent run), and the two ways forward. Condition-correct for either
+/// flavor. Unmapped keys read the English set.
+const WEBVIEW2_NOTICE_BODIES: &[(&str, &str)] = &[
+    (
+        "zh-Hans",
+        "本机缺少运行 WoWSP 所必需的 Microsoft WebView2 运行时，且本次未能自动安装完成。\n\n即将打开微软官方下载页——安装 WebView2 后重新运行本安装包即可。\n若您使用的是便捷版安装包，也可以改用内置离线运行时、可自动安装的完整版安装包。",
+    ),
+    (
+        "zh-Hant",
+        "本機缺少執行 WoWSP 所必需的 Microsoft WebView2 執行階段，且本次未能自動安裝完成。\n\n即將開啟微軟官方下載頁——安裝 WebView2 後重新執行本安裝包即可。\n若您使用的是輕量版安裝包，也可以改用內建離線執行階段、可自動安裝的完整版安裝包。",
+    ),
+    (
+        "en",
+        "This machine lacks the Microsoft WebView2 runtime WoWSP requires, and it could not be installed automatically this time.\n\nMicrosoft's official download page is about to open — install WebView2, then run this installer again.\nIf you are on the lite installer, you can also switch to the full installer, which bundles the offline runtime and installs it automatically.",
+    ),
+    (
+        "ru",
+        "На этом компьютере нет среды выполнения Microsoft WebView2, необходимой для WoWSP, и автоматически установить её не удалось.\n\nСейчас откроется официальная страница загрузки Microsoft — установите WebView2 и запустите установщик снова.\nЕсли у вас облегчённая версия, можно взять и полный установщик: он включает офлайн-среду и ставит её автоматически.",
+    ),
+    (
+        "ja",
+        "このコンピューターには WoWSP の動作に必要な Microsoft WebView2 ランタイムがなく、今回の自動インストールも完了しませんでした。\n\nMicrosoft 公式ダウンロードページを開きます——WebView2 をインストールしてからこのインストーラーを再実行してください。\n軽量版をお使いの場合は、オフラインランタイム同梱・自動インストールの完全版インストーラーに切り替えることもできます。",
+    ),
+    (
+        "ko",
+        "이 컴퓨터에는 WoWSP 실행에 필요한 Microsoft WebView2 런타임이 없고 이번 자동 설치도 완료되지 않았습니다.\n\nMicrosoft 공식 다운로드 페이지를 열어 드립니다 — WebView2를 설치한 뒤 이 설치 관리자를 다시 실행하세요.\n라이트 설치 관리자를 사용 중이라면 오프라인 런타임을 포함해 자동 설치하는 전체 설치 관리자로 바꿀 수도 있습니다.",
+    ),
+    (
+        "fr",
+        "Cette machine n'a pas l'exécutable Microsoft WebView2 requis par WoWSP, et son installation automatique n'a pas abouti cette fois.\n\nLa page officielle de téléchargement Microsoft va s'ouvrir — installez WebView2 puis relancez cet installeur.\nSi vous utilisez l'installeur allégé, vous pouvez aussi passer à l'installeur complet, qui embarque l'exécutable hors ligne et l'installe automatiquement.",
+    ),
+    (
+        "es",
+        "Este equipo no tiene el runtime de Microsoft WebView2 que WoWSP necesita, y su instalación automática no se completó esta vez.\n\nSe abrirá la página oficial de descargas de Microsoft — instala WebView2 y vuelve a ejecutar este instalador.\nSi usas el instalador ligero, también puedes pasar al instalador completo, que incluye el runtime sin conexión y lo instala automáticamente.",
+    ),
+    (
+        "de",
+        "Auf diesem Rechner fehlt die Microsoft WebView2-Runtime, die WoWSP braucht, und ihre automatische Installation ist diesmal nicht abgeschlossen worden.\n\nMicrosofts offizielle Downloadseite wird gleich geöffnet — installiere die WebView2-Runtime und starte den Installer erneut.\nWenn du den Lite-Installer nutzt, kannst du auch zum vollständigen Installer wechseln: Er bringt die Offline-Runtime mit und installiert sie automatisch.",
+    ),
+    (
+        "pt",
+        "Este computador não tem o runtime da Microsoft WebView2 de que o WoWSP precisa, e a sua instalação automática não foi concluída desta vez.\n\nA página oficial de download da Microsoft vai abrir — instale o WebView2 e volte a executar este instalador.\nSe usa o instalador leve, também pode mudar para o instalador completo, que inclui o runtime offline e o instala automaticamente.",
+    ),
+];
+
+/// The notice body for a resolved wizard locale key (`license_locale_key`
+/// output); the English set is the universal fallback.
+fn webview2_notice_body(locale: &str) -> &'static str {
+    WEBVIEW2_NOTICE_BODIES
+        .iter()
+        .find(|(key, _)| *key == locale)
+        .map(|(_, body)| *body)
+        .or_else(|| {
+            WEBVIEW2_NOTICE_BODIES
+                .iter()
+                .find(|(key, _)| *key == "en")
+                .map(|(_, body)| *body)
+        })
+        .unwrap_or("")
 }
 
 #[cfg(test)]
@@ -1629,6 +1824,69 @@ mod tests {
             serde_json::to_vec(entries).unwrap(),
         )
         .unwrap();
+    }
+
+    /// The policy table is stamped by build.rs from
+    /// [package.metadata.wowsp-installer.webview2]; both knobs default
+    /// on for empty, partial, and unparsable input alike (a broken
+    /// build input must never silently disarm the fallback warnings).
+    #[test]
+    fn webview2_policy_defaults_and_overrides() {
+        for raw in ["{}", "{\"silent-install\":true}", "{\"x\":1}"] {
+            let policy: Webview2Policy = serde_json::from_str(raw).unwrap();
+            assert!(policy.silent_install, "{raw}");
+            assert!(policy.warn_missing, "{raw}");
+        }
+        let off: Webview2Policy =
+            serde_json::from_str("{\"silent-install\":false,\"warn-missing\":false}").unwrap();
+        assert!(!off.silent_install);
+        assert!(!off.warn_missing);
+        // A garbage stamp degrades to the defaults instead of failing.
+        let fallen = serde_json::from_str::<Webview2Policy>("not json").unwrap_or_default();
+        assert!(fallen.silent_install && fallen.warn_missing);
+    }
+
+    /// The degrade notice must speak every wizard locale (the body is
+    /// the machine's last readable message before the shell gives up),
+    /// and unmapped locales read the English set.
+    #[test]
+    fn webview2_notice_bodies_cover_every_wizard_locale() {
+        for (locale, _, _) in WINDOW_TITLES {
+            assert!(
+                WEBVIEW2_NOTICE_BODIES
+                    .iter()
+                    .any(|(key, body)| key == locale && !body.is_empty()),
+                "the `{locale}` notice body is authored (not an English fallback)"
+            );
+        }
+        assert_eq!(webview2_notice_body("klingon"), webview2_notice_body("en"));
+        // Script sentinels: each locale really carries its own script,
+        // not a neighbor's text (the sister repo once shipped 8
+        // locales of Chinese copy).
+        let han = |c: char| ('\u{4e00}'..='\u{9fff}').contains(&c);
+        assert!(webview2_notice_body("zh-Hans").chars().any(han));
+        assert!(webview2_notice_body("zh-Hant").chars().any(han));
+        assert!(
+            webview2_notice_body("ru")
+                .chars()
+                .any(|c| ('\u{0400}'..='\u{04FF}').contains(&c))
+        );
+        assert!(
+            webview2_notice_body("ja")
+                .chars()
+                .any(|c| ('\u{3040}'..='\u{30FF}').contains(&c))
+        );
+        assert!(
+            webview2_notice_body("ko")
+                .chars()
+                .any(|c| ('\u{AC00}'..='\u{D7AF}').contains(&c))
+        );
+        assert!(
+            webview2_notice_body("en")
+                .chars()
+                // The em-dash (U+2014) is deliberate English punctuation.
+                .all(|c| (c as u32) < 0x2000 || c == '\u{2014}')
+        );
     }
 
     #[test]

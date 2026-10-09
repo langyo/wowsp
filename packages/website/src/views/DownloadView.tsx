@@ -148,7 +148,10 @@ export default defineComponent({
 
     function assetLabel(name: string): string {
       if (/\.msi$/.test(name)) return "MSI";
-      return /webview2/.test(name) ? t("download.assetInstallerWv2") : t("download.assetInstaller");
+      if (/webview2/.test(name)) return t("download.assetInstallerWv2");
+      // The materials-only plain installer was retired — everything
+      // else on the release page is the lite artifact.
+      return t("download.assetInstallerLite");
     }
 
     const modes = [
