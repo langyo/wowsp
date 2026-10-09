@@ -18,7 +18,7 @@
   "game": {
     "online": "Jeu en cours",
     "offline": "Jeu non lancé",
-    "switchInstance": "Changer l'instance de client suivie par la page en direct",
+    "multiRunning": "{n} clients de jeu sont actuellement en cours d'exécution",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

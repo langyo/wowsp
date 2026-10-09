@@ -114,24 +114,11 @@ export default defineComponent({
 
     const proc = computed(() => gameStatus.process);
 
-    // ── Running instances (multi-instance view) ─────────────────────────
-    // One card per running game process. The display order keeps the
-    // PREFERRED instance in today's bottom slot and stacks every additional
-    // instance ABOVE it, so the card grows bottom-to-top as clients launch
-    // and a single-client machine renders exactly the old layout.
-    const instances = computed(() => {
-      const list = gameStatus.processes;
-      const preferred = list.find((p) => p.pid === gameStatus.preferredPid);
-      const rest = list.filter((p) => p.pid !== gameStatus.preferredPid);
-      return preferred ? [...rest, preferred] : list;
-    });
-    /** Only a genuinely multi-client machine gets the switcher affordances
-     *  (whole-card click + watched outline); one instance stays a plain
-     *  indicator, as before. */
-    const multiInstance = computed(() => instances.value.length > 1);
-    /** The pid the app currently watches (the store's effective process) —
-     *  the outlined card. */
-    const watchedPid = computed(() => proc.value.pid ?? null);
+    // Multi-instance awareness: several game clients can run at once. The
+    // card stays the ONE instance the app follows (the preferred one), and
+    // a count badge under the status dot marks that OTHER games are also
+    // running (the number is the total running instances, 2+ here).
+    const runningCount = computed(() => gameStatus.processes.length);
 
     /** "Steam · ASIA" or just "Steam" when realm is unknown. */
     const clientLabelOf = (p: { kind?: GameProcessInfo["kind"]; realm?: string | null }) => {
@@ -144,21 +131,13 @@ export default defineComponent({
       void copy(String(pid), t("common.copied"));
     }
 
-    /** Whole-card click: watch THIS instance (the live page, the realm
-     *  latch and the session guard follow the store's selection). */
-    function selectInstance(pid: number) {
-      gameStatus.selectProcess(pid);
-    }
-
     // Footer button: the ACTIVE install (what data reads use), not the
     // running process — they can differ while another client is playing.
     const activeInstall = computed(() => config.activeInstall ?? null);
     const activeInstallPath = computed(() => activeInstall.value?.path ?? "");
 
     // The game-status card element — PluginUpdateHint anchors its popup
-    // to the RIGHT of this card, vertically centered on it. With several
-    // instances the anchor rides the BOTTOM card (the preferred instance's
-    // slot — the single-card position of old).
+    // to the RIGHT of this card, vertically centered on it.
     const statusCardEl = ref<HTMLElement | null>(null);
 
     return () => (
@@ -211,76 +190,56 @@ export default defineComponent({
         <div class="sidebar__spacer" />
 
         <div class="sidebar__footer">
-          {/* Game status — one card per running instance (multi-client
-              machines stack them bottom-to-top; single-client machines see
-              exactly the old indicator). Only when more than one client
-              runs does the card become a control: the whole card switches
-              WHICH instance the live page watches, the watched one framed. */}
-          {instances.value.length === 0 ? (
+          {/* Game status — an indicator, not a control. The card follows the
+              ONE instance the app serves (the preferred running client);
+              when OTHER clients also run, a count badge under the dot says
+              how many are up (see the gameStatus store's plural report). */}
+          {proc.value.running ? (
+            <div ref={statusCardEl} class="sidebar__game-status is-running">
+              <div class="sidebar__game-status-row">
+                <span
+                  class="sidebar__status-dot sidebar__status-dot--on"
+                  data-hint={
+                    runningCount.value > 1
+                      ? t("common.game.multiRunning", { n: runningCount.value })
+                      : undefined
+                  }
+                  data-hint-pos="right"
+                >
+                  {runningCount.value > 1 ? (
+                    <span class="sidebar__status-count">{runningCount.value}</span>
+                  ) : null}
+                </span>
+                <span class="sidebar__status-text">{t("common.game.online")}</span>
+              </div>
+              <div class="sidebar__game-detail">
+                {clientLabelOf(proc.value) ? (
+                  <HkTooltip text={proc.value.exePath ?? ""} placement="right">
+                    <span class="sidebar__game-client">{clientLabelOf(proc.value)}</span>
+                  </HkTooltip>
+                ) : null}
+                {proc.value.pid != null ? (
+                  <HkTooltip text={t("common.clickToCopy")} placement="right">
+                    <span
+                      class="sidebar__game-pid"
+                      onClick={() => {
+                        if (proc.value.pid != null) copyPid(proc.value.pid);
+                      }}
+                    >
+                      {t("common.game.pid")}:{" "}
+                      <span class="sidebar__game-pid-val">{proc.value.pid}</span>
+                    </span>
+                  </HkTooltip>
+                ) : null}
+              </div>
+            </div>
+          ) : (
             <div ref={statusCardEl} class="sidebar__game-status is-offline">
               <div class="sidebar__game-status-row">
                 <span class="sidebar__status-dot sidebar__status-dot--off" />
                 <span class="sidebar__status-text">{t("common.game.offline")}</span>
               </div>
             </div>
-          ) : (
-            instances.value.map((p, i) => {
-              const pid = p.pid ?? null;
-              const selectable = multiInstance.value && pid != null;
-              const watched = pid != null && pid === watchedPid.value;
-              const card = (
-                <div
-                  key={pid ?? i}
-                  ref={i === instances.value.length - 1 ? statusCardEl : undefined}
-                  class={[
-                    "sidebar__game-status",
-                    "is-running",
-                    { "is-selectable": selectable },
-                    { "is-watched": watched },
-                  ]}
-                >
-                  <div class="sidebar__game-status-row">
-                    <span class="sidebar__status-dot sidebar__status-dot--on" />
-                    <span class="sidebar__status-text">{t("common.game.online")}</span>
-                  </div>
-                  <div class="sidebar__game-detail">
-                    {clientLabelOf(p) ? (
-                      <HkTooltip text={p.exePath ?? ""} placement="right">
-                        <span class="sidebar__game-client">{clientLabelOf(p)}</span>
-                      </HkTooltip>
-                    ) : null}
-                    {pid != null ? (
-                      <HkTooltip text={t("common.clickToCopy")} placement="right">
-                        <span
-                          class="sidebar__game-pid"
-                          onClick={(e: MouseEvent) => {
-                            e.stopPropagation();
-                            copyPid(pid);
-                          }}
-                        >
-                          {t("common.game.pid")}:{" "}
-                          <span class="sidebar__game-pid-val">{pid}</span>
-                        </span>
-                      </HkTooltip>
-                    ) : null}
-                  </div>
-                </div>
-              );
-              if (!selectable) return card;
-              return (
-                <button
-                  key={pid ?? i}
-                  type="button"
-                  class="sidebar__instance-btn"
-                  aria-pressed={watched}
-                  data-hint={t("common.game.switchInstance")}
-                  data-hint-pos="right"
-                  onClick={() => selectInstance(pid)}
-                >
-                  {card}
-                </button>
-              );
-            })
           )}
 
           {/* game upgrade — the ACTIVE install still holds mods (and

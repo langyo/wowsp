@@ -18,7 +18,7 @@
   "game": {
     "online": "ゲーム起動中",
     "offline": "ゲーム未起動",
-    "switchInstance": "リアルタイム対局で観戦するクライアントインスタンスを切り替えます",
+    "multiRunning": "現在 {n} 個のゲームクライアントが起動しています",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

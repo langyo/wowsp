@@ -18,7 +18,7 @@
   "game": {
     "online": "游戏运行中",
     "offline": "游戏未启动",
-    "switchInstance": "切换实时对局观看的客户端实例",
+    "multiRunning": "当前共有 {n} 个游戏客户端在运行",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

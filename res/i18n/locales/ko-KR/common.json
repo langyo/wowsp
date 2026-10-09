@@ -18,7 +18,7 @@
   "game": {
     "online": "게임 실행 중",
     "offline": "게임 꺼짐",
-    "switchInstance": "실시간 전적 페이지가 관전할 클라이언트 인스턴스를 전환합니다",
+    "multiRunning": "현재 {n}개의 게임 클라이언트가 실행 중입니다",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

@@ -65,7 +65,6 @@ import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import BattleIcon from "@/components/base/BattleIcon";
 import { useAccountStore } from "@/stores/account";
-import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -193,19 +192,6 @@ export default defineComponent({
     const crossRealm = () =>
       (props.arena?.matchGroup ?? "").toLowerCase().includes("clan");
 
-    /** The in-game probe's telemetry is broadcast from the backend's
-     *  PREFERRED install only (the bridge reads one dir — see
-     *  commands/ingame_plugin.rs), so on multi-client machines its identity
-     *  (per-name realms, the local player's cluster) describes the
-     *  preferred instance's battle, not necessarily the watched one.
-     *  Applying it to another instance's roster would misroute realms, so
-     *  the identity gates on "watched == preferred" (always true on
-     *  single-client machines). */
-    const gameStatus = useGameStatusStore();
-    const telemetryOwnsWatched = () =>
-      gameStatus.processes.length <= 1 ||
-      gameStatus.process.pid === gameStatus.preferredPid;
-
     const { stats, forceRefresh } = useRosterStats({
       realm: () => realm.value,
       arena: () => props.arena,
@@ -213,10 +199,8 @@ export default defineComponent({
       // The probe's ground-truth per-name realms (straight off the game's
       // roster records): names found here resolve on THEIR cluster — the
       // cross-realm pass only remains for rows the probe could not report
-      // (older build / roster mode without the plugin). Gated on the probe
-      // describing the WATCHED instance (see telemetryOwnsWatched).
-      realms: () =>
-        plugin.installed && telemetryOwnsWatched() ? plugin.playerRealms : null,
+      // (older build / roster mode without the plugin).
+      realms: () => (plugin.installed ? plugin.playerRealms : null),
     });
 
     /** Localized realm label (replay.realm.*) with an uppercase-code
@@ -391,12 +375,8 @@ export default defineComponent({
         // Ground truth first, in every roster mode: the probe's identity
         // block (per-name realms + the local player's cluster) steers
         // stats routing even when alive-sets come from another source.
-        // Multi-client gate: the telemetry stream describes the PREFERRED
-        // instance's battle — applying it to another watched instance's
-        // roster would misroute realms (see telemetryOwnsWatched).
-        if (telemetryOwnsWatched()) plugin.applyTelemetryIdentity(payload);
+        plugin.applyTelemetryIdentity(payload);
         if (overlayCfg.roster !== "plugin" || !plugin.installed) return;
-        if (!telemetryOwnsWatched()) return;
         if (!props.arena) return;
         // Stale file from a previous battle (game closed without a quit
         // event): the plugin clears players on quit, so an empty map IS a
