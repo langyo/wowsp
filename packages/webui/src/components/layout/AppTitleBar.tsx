@@ -17,6 +17,7 @@ import { useNavUiStore } from "@/stores/navUi";
 import { useShipsUiStore, type ShipsViewMode } from "@/stores/shipsUi";
 import { useLiveUiStore, type LiveViewMode } from "@/stores/liveUi";
 import TitlebarLoading from "@/components/layout/TitlebarLoading";
+import { watchChromeInsets } from "@/composables/popupChrome";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
 import "./AppTitleBar.scss";
@@ -105,8 +106,21 @@ export default defineComponent({
       }
     });
 
+    // Declare the caption strip as the app's popup chrome band: every
+    // floating surface (the data-hint tooltip, popovers, selects)
+    // positions itself below the bar instead of over it. Mounted here —
+    // the shell owns the band; popups never re-measure the bar.
+    const chromeEl = ref<HTMLElement | null>(null);
+    let stopChromeInsets: (() => void) | null = null;
+    onMounted(() => {
+      const bar = chromeEl.value?.querySelector<HTMLElement>(".hk-titlebar") ?? null;
+      if (bar) stopChromeInsets = watchChromeInsets(bar);
+    });
+
     onBeforeUnmount(() => {
       unlistenResize?.();
+      stopChromeInsets?.();
+      stopChromeInsets = null;
     });
 
     function interactive(target: EventTarget | null): boolean {
@@ -125,6 +139,7 @@ export default defineComponent({
 
     return () => (
       <div
+        ref={(el) => (chromeEl.value = el as HTMLElement | null)}
         class={["app-titlebar", { "app-titlebar--maximized": maximized.value }]}
         onPointerdown={onPointerDown}
         onDblclick={onDblClick}
