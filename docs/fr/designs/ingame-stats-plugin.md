@@ -2,9 +2,11 @@
 
 > **Statut** : expérience conclue (2026-09-28) ; prête pour l'implémentation.
 > Document compagnon de l'overlay : la couche d'affichage reste la fenêtre
-> transparente ; ce plugin est la source de données en jeu qui rend
-> l'ordonnancement de l'overlay exact sur toute configuration, plein écran
-> exclusif compris.
+> transparente ; ce plugin est la source de données en jeu qui garde les
+> états vivant/coulé de l'overlay exacts sur toute configuration, plein écran
+> exclusif compris. L'ORDRE des lignes TAB reste une inférence calibrée par
+> client jusqu'à ce que la sonde puisse lire l'ordre propre du jeu dans le
+> moteur — voir la règle d'ordonnancement ci-dessous.
 
 ## Contexte et objectifs
 
@@ -56,17 +58,49 @@ joueur n'existent pas sur les entités avatar, et le chemin côté unbound
 d'équivalent côté Python (`getCollection` n'existe pas sur le dataHub
 injecté).
 
-**Règle d'ordonnancement** (confirmée par l'expérience du propriétaire ;
-correspond au nom de collection `sortedAlive`) : la table TAB conserve
-l'ordre initial et ne déplace que les joueurs coulés vers un groupe
-« mort » en fin de liste. Par conséquent :
+**Règle d'ordonnancement — INSTABLE, connaissance propre à chaque client ;
+la vérité doit venir de l'intérieur du jeu.** L'ordre des lignes du tableau
+TAB est celui que rend le HUD de chaque client, et les éditeurs ont
+véritablement divergé (le premier modèle « ordre des véhicules de l'arène
+avec les coulés réajoutés à la fin » n'a jamais été que l'approximation de la
+famille WG — les groupes d'égalités qu'il ne pouvait résoudre sont ce que les
+pastilles à points de #604 ont maquillés). Calibrez par realm contre de
+VRAIES captures de Tab, attendez-vous à ce qu'il bouge à chaque mise à jour
+du client, et ne considérez la décompilation des scripts que comme un indice
+corroborant — jamais comme une preuve. La matrice du 2026-10-09, décompilée
+depuis les installations de cette machine (wowsdeob, `ShipSystem.add` /
+`AvatarSystem.__sortKeyAlive`) :
 
-```
-ordre de l'overlay = ordre des véhicules de l'arène (tempArenaInfo — déjà analysé)
-                     avec les joueurs isAlive=false réajoutés en fin dans l'ordre de coulage
-```
+- **Famille WG** (eu/na/asia partagent un même build) : drapeau vivant, rang
+  de classe (CV < BB < CA < DD < SS < auxiliaire), tier décroissant, rang
+  `NATION.SORT_ORDER`, nom court localisé du navire, `[TAG]pseudo` — une
+  seule chaîne concaténée. La 15.8.0 en production a été vérifiée 6/6 sur
+  une capture de Tab (2026-09-27), et le build SUIVANT (13357625, téléchargé
+  le 2026-10-06) se décompile en la MÊME formule à rang de nation en tête —
+  WG n'a pas bougé.
+- **360-CN** : son propre Python (les builds 13243917 ET l'actuel 13357822)
+  calcule toujours la clé de rang de nation de WG, mais le client REND
+  l'ordre par nom de navire localisé (capture du 2026-10-07, 9/9 pinyin) —
+  la divergence vit dans la couche HUD/vue. La décompilation de scripts ne
+  peut donc JAMAIS trancher ce client ; seules les captures rendues comptent.
+- **Lesta** (ru) : rend lui aussi l'ordre par nom de navire localisé
+  (capture du 2026-10-09 : le Bogatyr devançait deux lignes de St. Louis à
+  rebours de `usa < russia`) ; son build actuel (8867689) embarque un
+  conteneur `.pyc` modifié que le décompilateur ne sait pas encore ouvrir.
 
-est une réplication **exacte**, pas une approximation.
+L'app encode cela en gardes par realm sur la clé de tri hors ligne (le
+`realmUsesShipNameOrder` de utils/realms ; utils/shipClass porte la clé
+elle-même et la disposition statique CN) et refuse de présenter l'inférence
+comme vérité du jeu : un plugin CONNECTÉ continue d'être évalué « pas
+totalement fonctionnel » dans l'en-tête du panneau /live (pastille
+d'avertissement + tooltip, `features/replay/telemetryGrade.ts`), car la
+charge utile de télémétrie porte les états vivant/coulé mais AUCUN ordre de
+lignes. La fin du chemin, c'est la sonde qui lit l'ordre propre du jeu dans
+le moteur — la collection que TAB rend (`team.ally.sortedAlive`) est la
+source naturelle, mais `getCollection` n'existe pas sur le dataHub injecté ;
+un futur contrat de charge utile (`order: {ally: [...], enemy: [...]}`,
+contenu vrai du jeu uniquement) fera repasser la pastille à « exact ».
+D'ici là, l'inférence est un repli calibré, rien de plus.
 
 ## Contraintes du bac à sable (durement acquises, à conserver dans le guide de style du mod)
 

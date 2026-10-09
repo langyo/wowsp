@@ -2,8 +2,11 @@
 
 > **Status**: experiment concluded (2026-09-28); ready for implementation.
 > Companion doc for the overlay: the display layer stays the transparent
-> window; this plugin is the in-game data source that makes the overlay's
-> ordering exact on every setup, including exclusive fullscreen.
+> window; this plugin is the in-game data source that keeps the overlay's
+> alive/sunk states exact on every setup, including exclusive fullscreen.
+> The TAB row ORDER stays a per-client calibrated inference until the
+> probe can read the game's own order in-engine — see the ordering rule
+> below.
 >
 > **Update (2026-10-01)**: a second view mode landed — 游戏内展示 renders
 > the stats INSIDE the game through this plugin's unbound view
@@ -59,17 +62,46 @@ exist on avatar entities, and the unbound-side `$datahub.getCollection()
 .getChildByPath('team.ally.sortedAlive')` path has no Python-side
 equivalent (`getCollection` does not exist on the injected dataHub).
 
-**Ordering rule** (confirmed by owner experience on the WG-family clients;
-matches the collection name `sortedAlive`): the TAB table keeps the
-initial order and only moves sunk players into a trailing "dead" group.
-Therefore:
+**Ordering rule — UNSTABLE, per-client knowledge; ground truth must come
+from inside the game.** The TAB table's row order is whatever each
+client's HUD renders, and the vendors have genuinely diverged (the early
+"arena vehicle order with sunk players re-appended" model was only ever
+the WG-family approximation — the tie groups it could not resolve are
+what #604's dot chips papered over). Calibrate per realm against REAL Tab
+captures, expect it to move with any client update, and treat script
+decompilation as corroborating evidence only — never as proof. The
+2026-10-09 matrix, decompiled from this machine's installs (wowsdeob,
+`ShipSystem.add` / `AvatarSystem.__sortKeyAlive`):
 
-```
-overlay order = arena vehicle order (tempArenaInfo — already parsed)
-                with isAlive=false players re-appended in sinking order
-```
+- **WG family** (eu/na/asia share one build): alive flag, class rank
+  (CV < BB < CA < DD < SS < aux), tier descending, `NATION.SORT_ORDER`
+  rank, localized ship short name, `[TAG]nickname` — one concatenated
+  string. Live 15.8.0 verified 6/6 on a Tab capture (2026-09-27), and the
+  NEXT build (13357625, downloaded 2026-10-06) decompiles to the SAME
+  nation-rank-first formula — WG has not moved.
+- **360-CN**: its own Python (builds 13243917 AND the current 13357822)
+  still computes the WG nation-rank key, yet the client RENDERS the
+  localized-ship-name order (2026-10-07 capture, 9/9 pinyin) — the
+  divergence lives in the HUD/view layer. Script decompilation therefore
+  can NEVER settle this client; only rendered captures count.
+- **Lesta** (ru): renders the localized-ship-name order too (2026-10-09
+  capture: Bogatyr led two St. Louis rows against `usa < russia`); its
+  current build (8867689) ships a changed `.pyc` container the
+  decompiler cannot open (yet).
 
-is an **exact** replication, not an approximation.
+The app encodes this as per-realm gates over the offline sort key
+(utils/realms's `realmUsesShipNameOrder`; utils/shipClass carries the
+key itself and the CN static layout) and
+refuses to present the inference as game-truth: a CONNECTED plugin still
+grades "not fully working" in the /live panel's head (warning pill +
+tooltip, `features/replay/telemetryGrade.ts`), because the telemetry
+payload carries alive/sunk states but NO row order. The endgame is the
+probe reading the game's own order in-engine — the collection the TAB
+renders (`team.ally.sortedAlive`) is the natural source, but
+`getCollection` does not exist on the injected dataHub (above), so a
+future payload contract (`order: {ally: [...], enemy: [...]}`, game-true
+content only) will flip the pill back to exact. Until then the inference
+is a calibrated fallback, nothing more.
 
 **CN divergence** (360 build 13243917, captured 2026-10-07): the CN
 client's TAB table does NOT move sunk players anywhere — their rows dim

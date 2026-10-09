@@ -57,6 +57,15 @@
  * degradation for a configuration whose game client is zh in practice
  * (both observed realms' clients were zh).
  *
+ * Treat the whole matrix as UNSTABLE per-client knowledge: the rendered
+ * order is what each vendor's HUD does, it diverges despite shared code
+ * lineage (360-CN renders a ship-name order its OWN scripts do not
+ * compute — the divergence sits in the view layer), and any client
+ * update can move it. Recalibrate per realm per build against rendered
+ * captures; the plugin-first path — reading the game's own row order
+ * in-engine — is the real fix (docs/en/designs/ingame-stats-plugin.md,
+ * "Ordering rule").
+ *
  * Fidelity caveats, both narrow: the ship-name segment uses this DB's
  * localized name where the client uses GameParams `shortName` (identical
  * for the common short names; only two DIFFERENT same-nation same-tier

@@ -38,7 +38,7 @@
   "gameDesc": "WoWSP scanned this machine for World of Warships installs — click one to confirm it as the active client, or re-scan / browse for the folder manually.",
   "gameDetecting": "Scanning for installed games…",
   "pluginSection": "In-game plugin",
-  "pluginDesc": "Consider installing the WoWSP in-game plugin: live battles gain the precise TAB ordering and more reliable detection signals, it renders nothing in-game, and it uninstalls anytime.",
+  "pluginDesc": "Consider installing the WoWSP in-game plugin: live battles gain more reliable detection signals (authoritative alive/sunk states from inside the game), it renders nothing in-game, and it uninstalls anytime.",
   "pluginInstall": "Install plugin",
   "pluginSkip": "Not now",
   "pluginSkipCountdown": "Not now ({n}s)",

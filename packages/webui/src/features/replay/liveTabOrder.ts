@@ -7,8 +7,8 @@
  * '[TAG]nickname' display name — and re-sorts live as ships sink. The
  * order here is the same key over the roster, with the trusted sunk set
  * (sink-attrib events, utils/sunkTracker) splitting [alive] ++ [sunk]:
- * the exact layout the game shows, re-derived reactively when the WG
- * batch lands a clan tag or a sink event fires.
+ * the exact layout the verified WG-family clients show, re-derived
+ * reactively when the WG batch lands a clan tag or a sink event fires.
  *
  * CN and Lesta clients (realms 'cn' / 'ru') order rows by the localized
  * ship name (pinyin-collated) instead of the decompiled nation rank; only
@@ -38,7 +38,7 @@ export interface PredictedOrderOptions {
   clanTagOf?: (v: VehicleEntry) => string | null | undefined;
   /** Trusted sunk names (utils/sunkTracker, fed by the sink-attrib
    *  events): the predicted order splits [alive by key] ++ [sunk by key]
-   *  and marks the sunk entries — the exact layout the game shows. */
+   *  and marks the sunk entries — the exact layout those clients show. */
   sunk?: Set<string> | null;
   /** CN/Lesta client row order (localized ship name, pinyin-collated —
    *  see utils/shipClass's module docs). */

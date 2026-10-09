@@ -11,8 +11,11 @@
  *     alive('A'/'B') + classRank + (100-tier) + nationRank
  *     + localized ship name + '[TAG]nickname'
  *
- * — compared ascending. At battle start that is the table's EXACT order:
- * every row maps to one player (the former "tie group" residue is decided
+ * — compared ascending. At battle start that is the table's exact order
+ * ON THE VERIFIED WG-FAMILY CLIENTS (the per-client permutations — CN and
+ * Lesta render a different order — are the caller's `shipNameOrder` flag;
+ * see utils/shipClass's module docs for the unstable matrix): every row
+ * maps to one player (the former "tie group" residue is decided
  * by nation → ship name → clan-tag-prefixed display name, all derivable
  * from the offline ship DB plus the WG batch's clan tags). Verified
  * against a replay + matching Tab screenshot; see shipClass.ts.

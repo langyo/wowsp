@@ -93,6 +93,17 @@
     color: rgb(var(--color-warning, 251 191 36));
   }
 
+  /* Plugin connected but not fully working: its alive/sunk states are
+     authoritative while the TAB row order is still the offline per-realm
+     inference (the telemetry payload carries no game-true order — see
+     features/replay/telemetryGrade.ts). Warning voice, the settling
+     pill's recipe. */
+  &__pill--telemetry-partial {
+    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
+    background: rgb(var(--color-warning, 251 191 36) / 16%);
+    color: rgb(var(--color-warning, 251 191 36));
+  }
+
   /* Battle over for good — the roster on screen is the last battle's,
      kept until the next one starts. Muted: nothing is live here. */
   &__pill--ended {
