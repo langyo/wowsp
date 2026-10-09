@@ -10,6 +10,9 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { api, type ArenaInfo, type VehicleEntry } from "@/api";
+import { useAccountStore } from "@/stores/account";
+import { useConfigStore } from "@/stores/config";
+import { useGameStatusStore } from "@/stores/gameStatus";
 import { isOperationBattle } from "@/utils/modeColors";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
 
@@ -27,6 +30,34 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
    *  waiting state, until a new battle's roster replaces it or the hard
    *  duration cap clears it. */
   const battleEnded = ref(false);
+  /** The server the CURRENT roster's battle was captured on, latched the
+   *  moment its arena file first appears (a fresh dateTime) and kept for
+   *  the roster's whole retention — the bottom-left client-version /
+   *  account switchers must not retarget an already-captured battle, or a
+   *  post-battle switch would re-query the ended roster (refresh button
+   *  included) on another cluster where these names are other players.
+   *  The latch anchors on the RUNNING client when it is matched (the file
+   *  was just written by that client — the truest read of where the
+   *  battle is played, robust against a non-selected install), falling
+   *  back to the selection tiers. It never reads the in-game probe: at
+   *  first-file time this battle's identity has not landed yet, and a
+   *  lingering previous-battle identity adds nothing (same client). */
+  const battleRealm = ref("");
+
+  /** Freeze the battle realm into `battleRealm` — called only on a
+   *  battle-identity change (a new arena dateTime), never on same-battle
+   *  roster refreshes. */
+  function latchBattleRealm() {
+    const gameStatus = useGameStatusStore();
+    const config = useConfigStore();
+    const accounts = useAccountStore();
+    battleRealm.value =
+      gameStatus.process.matchedInstall?.realm ??
+      config.activeInstall?.realm ??
+      accounts.activeAccount?.realm ??
+      accounts.activeRealm ??
+      "asia";
+  }
 
   let arenaUnlisten: (() => void) | null = null;
 
@@ -81,6 +112,9 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
     try {
       const info = await api.readTempArenaInfo(dir);
       if (info) {
+        // A fresh dateTime is a NEW battle: re-latch the battle realm (a
+        // same-battle roster refresh — players loading in — keeps it).
+        if (arenaInfo.value?.dateTime !== info.dateTime) latchBattleRealm();
         arenaInfo.value = info;
         battleEnded.value = false;
       } else if (arenaInfo.value) {
@@ -98,6 +132,7 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
   function clearArenaInfo() {
     arenaInfo.value = null;
     battleEnded.value = false;
+    battleRealm.value = "";
   }
 
   /** Start the file watcher; incoming arena-info events update `arenaInfo`,
@@ -108,7 +143,10 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
       await api.startArenaWatcher(dir);
       arenaUnlisten = (await api.listenArenaInfo((info) => {
         // Watcher events only fire for a NEWER tempArenaInfo.json — i.e. a
-        // new battle's roster, which ends the retained-battle state.
+        // new battle's roster, which ends the retained-battle state. (A
+        // same-battle rewrite — players loading in — carries the same
+        // dateTime and keeps the latch.)
+        if (arenaInfo.value?.dateTime !== info.dateTime) latchBattleRealm();
         arenaInfo.value = info;
         battleEnded.value = false;
       })) as (() => void) | null;
@@ -133,6 +171,7 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
   return {
     arenaInfo,
     realm,
+    battleRealm,
     allies,
     enemies,
     battleEnded,

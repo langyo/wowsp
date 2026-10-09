@@ -9,9 +9,10 @@
  *     the crossed death times — hidden entirely when the replay carries
  *     no BattleResults packet),
  *   - sunk rows dimmed with their sinking time,
- *   - the game's OWN row order (utils/shipClass.gameTabRowKey, recovered
- *     from the decompiled client): alive rows first in class/tier/nation
- *     order, sunk rows re-sorted to the bottom.
+ *   - the game's OWN row order (utils/shipClass's recovered Tab sort —
+ *     alive rows first in class/tier/nation order, sunk rows re-sorted to
+ *     the bottom; CN/Lesta replays flip the within-(class, tier) order to
+ *     the localized-ship-name permutation via `shipNameOrder`).
  *
  * Clan tags come from the lazily armed WG roster batch (they participate
  * in the game's sort key via the '[TAG]nick' display name).
@@ -22,7 +23,7 @@ import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { RosterStat } from "@/composables/useRosterStats";
-import { gameTabRowKey } from "@/utils/shipClass";
+import { gameTabRowCompare, type TabRowCompareOptions } from "@/utils/shipClass";
 import { isListedPlayer } from "@/utils/rosterSides";
 import BattleIcon from "@/components/base/BattleIcon";
 import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "./modelLoader";
@@ -45,9 +46,6 @@ interface RosterRow {
   /** Battle seconds the ship sank at (null = still afloat at the playhead). */
   deathTime: number | null;
   kills: number;
-  /** Precomputed game Tab sort key (alive flag + class/tier/nation/name)
-   *  — built once per row per pass, the comparator only string-compares. */
-  sortKey: string;
 }
 
 function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean) {
@@ -156,6 +154,10 @@ export default defineComponent({
      *  DBs (supertest hulls like Sovetskaya) still resolve when the
      *  encyclopedia knows them. */
     encyclopedia: { type: Object as PropType<Map<number, ShipInfo>>, required: true },
+    /** CN/Lesta row order (localized ship name, pinyin-collated) for the
+     *  open replay's own realm — the replay scoreboard must mirror the
+     *  client the replay was recorded on, not the WG permutation. */
+    shipNameOrder: { type: Boolean, default: false },
   },
   setup(props) {
     const { dataLanguage } = useLanguage();
@@ -181,39 +183,49 @@ export default defineComponent({
       };
     };
 
-    /** The game's own Tab row key: alive-first / sunk-last, then class,
-     *  tier desc, nation, localized ship name, '[tag]nickname'. */
+    /** The game's own Tab row order: alive-first / sunk-last, then class,
+     *  tier desc, and — per the replay's realm flavor — nation rank or
+     *  the localized-ship-name permutation. */
     const rows = computed<RosterRow[]>(() => {
       const clanTagOf = (v: { name: string }) => props.stats.get(v.name)?.clanTag ?? null;
-      return (
-        props.vehicles
-          // Scripted scenario NPCs (story-mode ally flagships and their
-          // `IDS_*` kin) are not players — the scoreboard lists players
-          // only; `:Name:` co-op fills stay.
-          .filter(isListedPlayer)
-          .map((v): RosterRow => {
-            const st = props.rosterState.get(v.id);
-            const deathTime = st?.deathTime ?? null;
-            const alive = deathTime == null || deathTime > props.time;
-            const id = identityOf(v);
-            return {
-              vehicle: v,
-              shipName: id.name,
-              tier: id.tier,
-              type: id.type,
-              alive,
-              deathTime,
-              kills: props.kills.get(v.id) ?? 0,
-              sortKey: gameTabRowKey(
-                { shipId: v.shipId, name: v.name },
-                alive,
-                dataLanguage.value,
-                clanTagOf,
-              ),
-            };
-          })
-          .sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
-      );
+      const compareOptions: TabRowCompareOptions = {
+        locale: dataLanguage.value,
+        clanTagOf,
+        shipNameOrder: props.shipNameOrder,
+      };
+      // The comparator deliberately never compares the alive prefix (each
+      // sort orders ONE layout), so the game's [alive] ++ [sunk] split
+      // happens here — the same partition the live panel's orderForTab
+      // applies.
+      const byTab = (a: RosterRow, b: RosterRow) =>
+        gameTabRowCompare(
+          { shipId: a.vehicle.shipId, name: a.vehicle.name },
+          { shipId: b.vehicle.shipId, name: b.vehicle.name },
+          compareOptions,
+        );
+      const all = props.vehicles
+        // Scripted scenario NPCs (story-mode ally flagships and their
+        // `IDS_*` kin) are not players — the scoreboard lists players
+        // only; `:Name:` co-op fills stay.
+        .filter(isListedPlayer)
+        .map((v): RosterRow => {
+          const st = props.rosterState.get(v.id);
+          const deathTime = st?.deathTime ?? null;
+          const id = identityOf(v);
+          return {
+            vehicle: v,
+            shipName: id.name,
+            tier: id.tier,
+            type: id.type,
+            alive: deathTime == null || deathTime > props.time,
+            deathTime,
+            kills: props.kills.get(v.id) ?? 0,
+          };
+        });
+      return [
+        ...all.filter((r) => r.alive).sort(byTab),
+        ...all.filter((r) => !r.alive).sort(byTab),
+      ];
     });
 
     // The relation split holds in operations (行动) too — their rosters
