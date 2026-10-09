@@ -975,6 +975,26 @@ _SHIP_NAMES_PATH = (
     / "packages" / "webui" / "src" / "data" / "ship_names.json"
 )
 
+# The two bundled data sources spell nations differently: tech_tree.json keeps
+# the WG-encyclopedia codes except its own "pan_europe" slot, while
+# ship_names.json keeps the raw game-file spellings ("united_kingdom",
+# "russia", "europe") plus an "events" bucket. The real encyclopedia API only
+# ever returns the 13 clean codes, so normalize everything to that set before
+# serving — otherwise the ships view's nation rail shows duplicates ("Europe"
+# twice, raw `ships.nation.united_kingdom` keys).
+_API_NATION_RENAMES = {
+    "pan_europe": "europe",
+    "united_kingdom": "uk",
+    "russia": "ussr",
+}
+
+
+def _api_nation(code: str | None) -> str:
+    c = (code or "").strip().lower()
+    if not c:
+        return "usa"
+    return _API_NATION_RENAMES.get(c, c)
+
 
 def _load_encyclopedia() -> list[dict[str, Any]]:
     import json
@@ -1001,7 +1021,7 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
             "name": node.get("name", "").replace("IDS_", ""),
             "tier": node.get("tier", 1),
             "type": node.get("type", "Cruiser"),
-            "nation": node.get("nation", "usa"),
+            "nation": _api_nation(node.get("nation")),
             "isPremium": node.get("isPremium", False),
             "isSpecial": node.get("isSpecial", False),
             "description": "",
@@ -1031,6 +1051,12 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 continue
             if sid in seen:
                 continue
+            nation = _api_nation(entry.get("nation"))
+            # The encyclopedia API carries no "events" nation — event ships
+            # stay out of the mock ship list (their replay labels resolve via
+            # the frontend's own ship_names.json overlay instead).
+            if nation == "events":
+                continue
             seen.add(sid)
             name = entry.get("names", {}).get("en") or next(iter(entry.get("names", {}).values()), "")
             hp = entry.get("hp") or 30000
@@ -1039,7 +1065,7 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 "name": name,
                 "tier": entry.get("tier") or 5,
                 "type": entry.get("type") or "Cruiser",
-                "nation": entry.get("nation") or "usa",
+                "nation": nation,
                 "isPremium": True,
                 "isSpecial": False,
                 "description": "",
