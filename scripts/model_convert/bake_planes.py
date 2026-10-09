@@ -75,7 +75,12 @@ def export_and_bake(wowsunpack: Path, game: str, vfs_path: str, out_glb: Path,
             return False
         rc = subprocess.call(
             [sys.executable, str(BAKE_SCRIPT), str(raw),
-             "-o", str(out_glb), "--triangles", str(triangles)],
+             "-o", str(out_glb), "--triangles", str(triangles),
+             # Plane .geometry files (and some props) carry every section at
+             # three LODs; keep only the top shell or the bake merges three
+             # overlapping copies and sheds the disagreement as detached
+             # debris in the stage.
+             "--dedup-lods"],
             timeout=60,
         )
         return rc == 0 and out_glb.exists()
