@@ -240,6 +240,8 @@
   "dataSourceModCatalogAt": "更新於",
   "supportersTitle": "特別致謝",
   "supportersHint": "為專案提供幫助的夥伴，點擊卡片開啟其嗶哩嗶哩主頁。",
+  "sponsorTitle": "支持作者",
+  "sponsorHint": "贊助完全自願，點擊卡片開啟作者的愛發電主頁。",
   "upstreamTitle": "上游專案",
   "upstreamHint": "本應用程式在其基礎上建置的開源專案。",
   "resourcesTitle": "素材與資源",

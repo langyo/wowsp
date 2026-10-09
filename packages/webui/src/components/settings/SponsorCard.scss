@@ -1,0 +1,74 @@
+/* Sponsor card (credits section's second group, right after the special
+   thanks): one full-width card mirroring the supporter-card look. The
+   whole surface opens the author's afdian page; the notes list carries
+   the per-locale sponsor disclaimers. */
+.sponsor-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid rgb(var(--color-border) / 22%);
+  border-radius: 12px;
+  background: rgb(var(--color-surface) / 82%);
+  background: rgb(var(--color-surface) / min(100%, calc(82% * var(--ui-opacity, 1))));
+  color: rgb(var(--color-text));
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: rgb(var(--color-border) / 45%);
+  }
+
+  &__icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    color: rgb(var(--color-on-primary));
+    background: rgb(var(--color-primary));
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  &__name {
+    font-weight: 600;
+  }
+
+  &__lead {
+    font-size: 0.82rem;
+    color: rgb(var(--color-text) / 78%);
+  }
+
+  &__notes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+    margin-top: 0.15rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: rgb(var(--color-text) / 58%);
+
+    > span::before {
+      content: "· ";
+      color: rgb(var(--color-text) / 40%);
+    }
+  }
+
+  &__platform {
+    margin-left: auto;
+    flex: none;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-text) / 42%);
+  }
+}

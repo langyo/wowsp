@@ -240,6 +240,8 @@
   "dataSourceModCatalogAt": "Mis à jour",
   "supportersTitle": "Remerciements particuliers",
   "supportersHint": "Tous ceux qui ont aidé le projet — un clic sur une carte ouvre leur page Bilibili.",
+  "sponsorTitle": "Soutenir l'auteur",
+  "sponsorHint": "Le don est facultatif — la carte ouvre la page afdian de l'auteur.",
   "upstreamTitle": "Projets amont",
   "upstreamHint": "Les projets open source sur lesquels l'application est construite.",
   "resourcesTitle": "Ressources et éléments",

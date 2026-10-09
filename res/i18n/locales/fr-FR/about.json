@@ -33,5 +33,13 @@
     "hikariRole": "Bibliothèque de composants UI",
     "devtoolsRole": "Infrastructure de discipline agent (règles de workspace et chaîne d'outils)",
     "shittimRole": "Coquille frontale et outillage de build"
+  },
+  "sponsor": {
+    "cardName": "afdian · langyo",
+    "lead": "Chaque don est intégralement consacré aux coûts d'IA nécessaires au développement de ce logiciel.",
+    "voluntary": "Le don est entièrement facultatif.",
+    "noHire": "Un don ne crée aucune relation d'emploi, de commande ni aucun autre lien juridique.",
+    "openSource": "Le projet reste open source : le logiciel n'embarquera jamais de fonctions réservées aux donateurs.",
+    "noAffiliation": "Ce logiciel n'entretient aucune relation directe avec Wargaming, Lesta ou 360."
   }
 }

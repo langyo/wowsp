@@ -132,6 +132,7 @@ import {
   UPSTREAM_ATTRIBUTIONS,
 } from "@/data/attributions";
 import SupporterCards from "@/components/settings/SupporterCards";
+import SponsorCard from "@/components/settings/SponsorCard";
 import { kindLabel } from "@/utils/installLabel";
 import { sameGamePath } from "@/utils/gamePath";
 import "../layout/SettingsModal.scss";
@@ -2305,12 +2306,22 @@ export default defineComponent({
           <>
           {/* attributions — the categorized supporter page: SPECIAL
               THANKS first (cards with live Bilibili avatars, the whole
-              card opens their space page), then the upstream projects,
-              and the asset / resource partners LAST. The same AuthorMark
-              component annotates the desktop wallpaper. */}
+              card opens their space page), then the author's afdian
+              SPONSOR card, then the upstream projects, and the asset /
+              resource partners LAST. The same AuthorMark component
+              annotates the desktop wallpaper. */}
           <HkSettingsGroup title={t("settings.supportersTitle")}>
             <HkSettingsHint>{t("settings.supportersHint")}</HkSettingsHint>
             <SupporterCards />
+          </HkSettingsGroup>
+          {/* sponsor — second group: one wide card opening the author's
+              afdian page, carrying the per-locale sponsor disclaimers
+              (what the funds buy, voluntary, no hiring relation, open
+              source with no sponsor-gated features, no WG/Lesta/360
+              affiliation). */}
+          <HkSettingsGroup title={t("settings.sponsorTitle")}>
+            <HkSettingsHint>{t("settings.sponsorHint")}</HkSettingsHint>
+            <SponsorCard />
           </HkSettingsGroup>
           <HkSettingsGroup title={t("settings.upstreamTitle")}>
             <HkSettingsHint>{t("settings.upstreamHint")}</HkSettingsHint>

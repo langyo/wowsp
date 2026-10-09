@@ -1,7 +1,8 @@
-/** Supporters & credits, surfaced in the settings 支持与致谢 section in
- *  three groups: SPECIAL THANKS first (cards with the helpers' live
- *  Bilibili avatars — no identity labels beyond what each person actually
- *  contributed), upstream projects, and asset/resource partners last.
+/** Supporters & credits, surfaced in the settings 支持与致谢 section:
+ *  SPECIAL THANKS first (cards with the helpers' live Bilibili avatars —
+ *  no identity labels beyond what each person actually contributed), the
+ *  author's afdian SPONSOR card (see SponsorCard.tsx — not data-driven),
+ *  upstream projects, and asset/resource partners last.
  *  Names, links and Bilibili UIDs are data; role/note wording lives in
  *  i18n (`about.attribution.*`). The seal fonts are declared as partners
  *  but only used as rendered bitmaps — the font files are NOT bundled.

@@ -46,5 +46,13 @@
     "hikariRole": "UI component library",
     "devtoolsRole": "Agent-discipline infrastructure (workspace rules and toolchain)",
     "shittimRole": "Frontend shell & build infrastructure"
+  },
+  "sponsor": {
+    "cardName": "afdian · langyo",
+    "lead": "Every donation goes entirely to the AI costs of developing this app.",
+    "voluntary": "Donating is completely optional.",
+    "noHire": "A donation does not create any employment, commissioning, or other legal relationship.",
+    "openSource": "The project stays open source — the app itself will never embed features that require a donation to use.",
+    "noAffiliation": "This software has no direct relationship with Wargaming, Lesta, or 360."
   }
 }
