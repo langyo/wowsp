@@ -3,7 +3,9 @@
  * donut, hand-drawn as declarative Vue-rendered SVG (no chart library).
  * Three blocks side by side on wide layouts, wrapped on narrow ones, so
  * they never overlap. Shared by the replay player-detail modal and the
- * lookup screen.
+ * lookup screen. The `forcedRow` prop opts a host out of the narrow
+ * stacking: the three blocks stay on one row at ANY container width and
+ * the row scrolls horizontally once the blocks hit their size floors.
  *
  * Everything is computed -> SVG: geometry comes from the PURE helpers
  * donutSlices() / tierBars() (unit-tested in ShipDistCharts.test.ts),
@@ -318,6 +320,13 @@ export default defineComponent({
     ships: { type: Array as () => DistDatum[], default: () => [] },
     /** Only render the tier histogram (compact mode). */
     tiersOnly: { type: Boolean, default: false },
+    /** Keep all three blocks on ONE row regardless of container width:
+     *  the row flexes down to the blocks' min-width floors, then the
+     *  host grows a horizontal scrollbar instead of stacking vertically
+     *  (the named-container collapse in ShipDistCharts.scss). Designed
+     *  for the full three-block host — with tiersOnly only the
+     *  histogram renders and it just fills the row. */
+    forcedRow: { type: Boolean, default: false },
   },
   setup(props) {
     // One aggregation shared by the SVGs and the DOM legends, so the slice
@@ -457,7 +466,12 @@ export default defineComponent({
     return () => {
       const layout = tierLayout.value;
       return (
-        <div class="ship-dist-charts">
+        <div
+          class={{
+            "ship-dist-charts": true,
+            "ship-dist-charts--forced-row": props.forcedRow,
+          }}
+        >
           {/* ALL eleven tier bins always render — an unplayed tier stays
               an empty gap on the axis instead of the neighbours
               stretching over it, and the fixed bar width keeps bars

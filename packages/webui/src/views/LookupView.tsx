@@ -793,8 +793,13 @@ export default defineComponent({
                 {shipRows.value.length > 0 ? (
                   <div class="lookup-view__dist">
                     <div class="lookup-view__dist-title">{t("lookup.distTitle")}</div>
+                    {/* forcedRow keeps the histogram + both donuts on one
+                        row at low window resolutions — the blocks shrink
+                        to their floors and a horizontal scrollbar appears
+                        below them instead of stacking one per row. */}
                     <ShipDistCharts
                       ships={shipRows.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
+                      forcedRow
                     />
                   </div>
                 ) : null}

@@ -56,6 +56,38 @@
   .ship-dist-charts { flex-direction: column; }
 }
 
+/* Forced one-row variant (opt-in via the `forcedRow` prop — the lookup
+   screen): the three blocks NEVER stack, however narrow the host gets.
+   Bases drop to zero so the row packs proportionally at the wrapped
+   mode's 32 : 30 : 30 ratio while flexing down to the min-width floors:
+   one row now holds from 704px (200 + 240 + 240 + two 12px gaps) up —
+   below ≈760px the pies' proportional share ((W−24)×30/92) dips under
+   their 240px floor and they sit pinned there with the bar absorbing
+   the slack — and below 704px the floors bind, the row overflows and
+   the scrollbar below the charts takes over. The
+   doubled class selector outranks the @container collapse above no
+   matter the source order, so a named `ship-dist-host` ancestor cannot
+   stack this variant; the min() caps on the floors stay from the base
+   rules (harmless here — a host narrow enough to bind them is already
+   scrolling). `thin` matches the app's other horizontal strips (the
+   ranked timeline), and overscroll containment keeps a wheel-over-strip
+   from chaining the page scroll once the row is exhausted. */
+.ship-dist-charts.ship-dist-charts--forced-row {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.ship-dist-charts--forced-row .ship-dist-charts__bar {
+  flex: 32 1 0%;
+}
+
+.ship-dist-charts--forced-row .ship-dist-charts__piewrap {
+  flex: 30 1 0%;
+}
+
 .ship-dist-charts__bar {
   flex: 1 1 32%;
   min-width: min(200px, 100%);

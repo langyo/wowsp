@@ -384,6 +384,19 @@ describe("mounted DOM legend", () => {
     expect(star.attributes("y")).toBe("135.5");
   });
 
+  it("carries the forced-row modifier class only when the prop is set", () => {
+    // The class is the whole contract: ShipDistCharts.scss hangs the
+    // never-stack/overflow-scroll rules on it, so a lost binding would
+    // silently return the lookup screen to the stacked narrow layout.
+    const stacked = mount(ShipDistCharts, { props: { ships } });
+    expect(stacked.classes()).not.toContain("ship-dist-charts--forced-row");
+    const forced = mount(ShipDistCharts, { props: { ships, forcedRow: true } });
+    expect(forced.classes()).toContain("ship-dist-charts--forced-row");
+    // The doubled-class override in the SCSS needs the base class to
+    // coexist on the same element.
+    expect(forced.classes()).toContain("ship-dist-charts");
+  });
+
   // Hover focus contract: the hovered shape (bar / slice / legend row)
   // gets is-hot, its siblings in the SAME block get is-dim, and nothing
   // ever leaks across blocks. Class-level only here — the paint (opacity/
