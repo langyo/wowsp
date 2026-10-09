@@ -50,44 +50,43 @@ ship's model dir when driving wowsunpack's `--disk-root`).
   blob0 (mfm) 29,377 records, blob1 39,793, blob2 119,631, blob3 (model)
   119,659 — counts look sane, **but see below**.
 
-## The wall: payload serialization
+## Phase 2 (2026-10-10): r2p addressing SOLVED, records located
 
-Inside the blobs the WG fixed-size-record layouts (e.g. VisualPrototype
-0x70 B) do not exist:
+The decisive oracle: a ship `.geometry` file's **vertex/indices mapping IDs**
+(printed by `wowsunpack geometry --no-vfs`) must appear verbatim inside the
+visual payload that references it. Searching the file for Zuiho's main
+geometry mapping IDs (`0x3F66C155`/`0x3622C904` vertex, `0x1A080768`/
+`0x8017BAF0` indices) surfaced the render-set store and cracked the chain:
 
-- No item size in 0x60..0xB0 yields sane WG-layout fields across blob1/blob2
-  visual records (best case ~17% plausible — noise).
-- The r2p value's upper 24 bits exceed the blob record counts (up to
-  ~16.3 M while staying under the blob *size*), so the WG
-  `(recordIndex << 8) | blob*4` decoding does not hold beyond the tag byte;
-  the upper bits look like **byte offsets into the blob**, but records at
-  those offsets are not WG-shaped either.
-- What IS there: recursive 8-byte cells `(u32 kind, u32 payload)` — `kind`
-  0 with an offset payload, or `(1,1)` separators — grouping runs of ~7
-  offsets (seven ≈ the WG visual's seven node arrays, suggestive but
-  unconfirmed). Following offsets lands in zero-filled array regions with
-  `-360.0` sentinel floats (the game's null marker).
-- **Node-transform arrays confirmed present** (verified after this doc was
-  first drafted): blob1 contains ~381k affine-matrix 64-byte windows
-  (`f[15]≈1`, `f[3]=f[7]=f[11]≈0`, finite, non-trivial translation) plus
-  long runs of consecutive identity matrices (stride 64) — a plain-float
-  scene-graph node store, not encoded/quantized. First strict hit in the
-  26.10 file: blob1+0x26df88 (≈85.7M+2.55M absolute). blob5 (18.4 MB, the
-  one whose header count reads as garbage) holds another ~15k matrix
-  windows — likely a second graph database, so blob0..3 identification is
-  incomplete too. The arrays' true starts (leading identities) and the
-  cells that reference them were not yet pinned — u32/u64 searches for the
-  strict-run start came up empty, so either the array header sits further
-  back or references target the array's nominal base, not the first
-  non-identity element.
+- **r2p value = byte offset, taken as the FULL u32, into the owning blob.**
+  For `.visual` payloads use only the entries whose low byte is `0x08`
+  (blob2 = the visual database): record @ `blob2_base + value`. Verified:
+  2,637 building visuals (`LBV*/LL*/LMC*`) land exactly on their render-set
+  zone, and Zuiho's root visual sits at `blob2 + 0x002BBC08` (= 2,867,208).
+- The same path name has multiple r2p entries: low byte `0x08` = live
+  (byte offset); odd low bytes (`0x95/0x99/0x9d/0xa1/0xa5` — same values as
+  the tombstone journal tag!) = legacy/junk twins; low byte `0x04` entries
+  are a second (older?) pointer space. Ignore everything but `0x08` for
+  visuals. `.mfm` (tag 0) values do NOT fit the full-offset reading (their
+  upper 24 bits look like the offset instead) — per-type encodings differ;
+  visuals are the only ones the bake needs.
+- **Render-set records** (found around `blob2+25.4M..26.3M`): the geometry
+  mapping-id pair `(vertices_mapping_id, indices_mapping_id)` appears
+  side-by-side as leading u32s, followed by a material-ish hash, a `0x100`
+  flags word, a u64 hash (mfm path id shape), node-count-ish u32s
+  (`0x50/0x54`), sentinel float3 arrays (`0x7F7FFFFF`/`0xFF7FFFFF` —
+  ±FLT_MAX defaults), and more material hashes — WG `RenderSet` semantics
+  (0x28-byte fixed record in WG) in a new variable layout with inline
+  arrays.
+- **Node records** (Zuiho root visual @ `blob2+0x2BBC08`): ~0x40-stride
+  records = `(u32 link_offset, u32 0, transform floats (small values —
+  angles/translations), id hashes, 01 00 00 00 00 00 00 00 separator)`.
+  The link offsets (e.g. `0x0165D0E0` ≈ blob2+23.4M) chain deeper toward
+  the render-set zone — the visual's arrays are linked, not contiguous.
+- The earlier phase-1 read of `blob1 + upper` was a mis-address; blob1's
+  role remains unclear (possibly the older twin store) — not needed.
 
-So the visual/model prototypes are wrapped in a new tree/DOM container —
-probably the same serialization the 26.x client uses for its new asset
-pipeline. Decoding it needs the cell grammar → array encodings →
-matrix/transform encoding → render-set/LOD → geometry-path resolution,
-each of which is a separate reverse-engineering step.
-
-## Also verified
+## Also verified## Also verified
 
 - **Decode integrity is NOT the problem**: local install pkg and the CDN
   pkg decode to identical bytes; the idx CRC mismatch on this entry is a
@@ -107,18 +106,19 @@ each of which is a separate reverse-engineering step.
   either (their 1.x releases sidestep via Steam depot downloads), so there
   is no reference implementation to borrow from for either game.
 
-## Next steps (for whoever picks this up)
+## Next steps (phase 3)
 
-1. Decode the `(kind, payload)` cell grammar from a small visual (a single
-   gun mount) by cross-referencing which cells the r2p byte-offset points
-   at; the `-360.0` sentinel regions are likely zero-initialized name-id
-   arrays — finding a NON-zero example (a visual with few nodes) will pin
-   the array encodings fastest.
-2. Matrices: scan blobs for 64-byte float blocks matching affine matrices
-   (m[15]≈1, m[3]=m[7]=m[11]=0, finite |values|<1e4) and find the cells
-   that reference them; that fixes the transform encoding and the
-   record-base convention in one step.
-3. Once nodes/matrices decode, port into
-   `packages/tools/wowsunpack-vendor/.../models/visual.rs` behind a
-   Lesta-signature gate (the tombstone block is a reliable detector), then
-   `bake_lesta_ships.py` runs end to end.
+1. Finish the render-set field map: collect many `(vert_id, idx_id)` pairs
+   across the store, diff their byte layouts against WG's 0x28 layout
+   (`parse_render_set_fields`: name/material/vertices/indices u32s + mfm
+   u64 + skinned/count u8s + relptr) — pin the variable-length prefix and
+   where the inline node-id arrays start/end.
+2. Decode the node grammar at the visual record: walk the link chain
+   (link → child arrays), identify matrices (plain f32 4x4s exist in blob1
+   by the hundreds of thousands; find them relative to the link targets),
+   and the name-map/parent-id arrays.
+3. Python-prototype the full decode for Zuiho's root visual + its Bow/
+   MidBack/MidFront/Stern sub-visuals (r2p 0x08 values 11,196..11,204),
+   validating against the geometry mapping IDs, then port into vendored
+   `visual.rs` behind a Lesta gate (`r2p_lowByte==8` is a clean detector).
+4. `bake_lesta_ships.py` end-to-end, then the res pack publish.

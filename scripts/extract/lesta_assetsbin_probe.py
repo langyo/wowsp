@@ -154,6 +154,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("assets_bin", type=Path)
     ap.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
+    ap.add_argument("--visual", help="resolve one visual leaf name to its blob2 record and dump it")
     ap.add_argument("--matrix-census", action="store_true",
                     help="census affine-matrix windows per database blob")
     args = ap.parse_args()
@@ -218,6 +219,32 @@ def main() -> int:
         missing = [d for d, c in full.items() if c == 0]
         if missing:
             print(f"  missing: {missing}")
+
+    if args.visual:
+        # Resolve one visual by leaf name through the live tag-0x08 r2p
+        # entries and dump its record (full u32 = byte offset into blob2).
+        blob2_base = b.dbs[2][0] if len(b.dbs) > 2 else 0
+        seen = set()
+        for i, (sid, pid, nm) in enumerate(entries):
+            if nm != args.visual or sid in seen:
+                continue
+            v = b.lookup_r2p(sid)
+            if v is None or (v & 0xFF) != 0x08:
+                continue
+            seen.add(sid)
+            path = Bin.reconstruct(entries, self_idx, i)
+            rec = blob2_base + v
+            print(f"\n== visual {args.visual!r} ==")
+            print(f"  path: {path}")
+            print(f"  r2p value: {v:#010x} -> record @ blob2+{v:,} (abs {rec:,})")
+            for row in range(0, 0xC0, 16):
+                chunk = b.data[rec + row:rec + row + 16]
+                f = struct.unpack("<4f", chunk)
+                print(f"  +{row:03x}: {chunk.hex(' ')} | u32({int.from_bytes(chunk[0:4], 'little'):#010x},"
+                      f"{int.from_bytes(chunk[4:8], 'little'):#010x}) f[{','.join('%8.4f' % x for x in f)}]")
+            break
+        if not seen:
+            print(f"\n== visual {args.visual!r}: no live tag-0x08 r2p entry found")
 
     if args.matrix_census:
         import numpy as np
