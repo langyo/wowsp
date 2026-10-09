@@ -163,6 +163,109 @@ def _fmt(value):
         return '?'
 
 
+def _json_string(value):
+    """JSON string literal for one bridge value (nickname, key).
+
+    Primary path: the client's own utils.jsonEncode on the bare value —
+    its escaping is the exact table the game's own jsonDecode expects
+    (astral-char nicknames included). Fallback (the encoder has
+    build-dependent quirks — 15.9 raised on payloads 15.8 accepted, live
+    2026-10-09): a char-loop that quotes, backslash-escapes and DROPS
+    control characters (raw control bytes would break the JSON; dropping
+    one pathological nickname character beats losing the whole payload).
+    """
+    try:
+        return utils.jsonEncode(value)
+    except:
+        pass
+    try:
+        chars = value.decode('utf-8')
+    except:
+        chars = value
+    out = ['"']
+    for ch in chars:
+        if ch == '"':
+            out.append('\\"')
+        elif ch == '\\':
+            out.append('\\\\')
+        elif ch == '\n':
+            out.append('\\n')
+        elif ch == '\r':
+            out.append('\\r')
+        elif ch == '\t':
+            out.append('\\t')
+        elif ch < ' ':
+            pass
+        else:
+            out.append(ch)
+    out.append('"')
+    # utf-8 bytes flow through unchanged; a unicode text encodes to utf-8
+    # (a lone surrogate raises — return it raw and let the file write's own
+    # guard degrade).
+    text = ''.join(out)
+    try:
+        return text.encode('utf-8')
+    except:
+        return text
+
+
+def _json_encode(value):
+    """Minimal JSON writer for the bridge payload shapes (dicts, lists,
+    tuples, str/unicode, int/long/bool, None) — the same vocabulary
+    utils.jsonEncode serves, without touching a single builtin name.
+    Anything outside the shapes degrades to a quoted string (parseable,
+    type-loose) so one odd value can never kill the file write."""
+    try:
+        pairs = value.items()
+    except:
+        pairs = None
+    if pairs is not None:
+        parts = []
+        for key, item in pairs:
+            try:
+                parts.append(_json_string(key) + ':' + _json_encode(item))
+            except:
+                continue
+        return '{' + ','.join(parts) + '}'
+    if value is True:
+        return 'true'
+    if value is False:
+        return 'false'
+    if value is None:
+        return 'null'
+    # Strings BEFORE numbers: py2's %d accepts digit strings, and the
+    # bridge's 'session' value is ALWAYS a digit string — a number-typed
+    # session would make the app's strict serde parse skip the whole
+    # stats cycle for the battle.
+    try:
+        probe = value + ''
+    except:
+        probe = None
+    if probe is not None:
+        return _json_string(value)
+    try:
+        return '%d' % (value,)
+    except:
+        pass
+    parts = []
+    try:
+        for item in value:
+            parts.append(_json_encode(item))
+    except:
+        return _json_string(_fmt(value))
+    return '[' + ','.join(parts) + ']'
+
+
+def json_encode_safe(value):
+    """utils.jsonEncode with the hand-rolled writer as the fallback —
+    the bridge files (telemetry first) must flow even when the client's
+    own encoder raises on a payload shape it used to accept."""
+    try:
+        return utils.jsonEncode(value)
+    except:
+        return _json_encode(value)
+
+
 def _parse_int(s):
     """Digit-string -> int by hand (sign honoured, surrounding blanks
     tolerated, junk -> 0)."""
@@ -473,7 +576,7 @@ class Probe:
 
     def write_json(self, name, data):
         stream = open(name, 'w')
-        stream.write(utils.jsonEncode(data) + '\n')
+        stream.write(json_encode_safe(data) + '\n')
         stream.close()
 
     def read_json(self, name, limit):
@@ -933,7 +1036,7 @@ class Probe:
         self.dead_latch = {None} - {None}
         try:
             stream = open(TELEMETRY_FILE, 'w')
-            stream.write(utils.jsonEncode({'t': _to_int(time.time() * 1000),
+            stream.write(json_encode_safe({'t': _to_int(time.time() * 1000),
                                            'battle': self.session or '',
                                            'players': {}}) + '\n')
             stream.close()
@@ -1013,7 +1116,7 @@ class Probe:
         return result[:64]
 
     def journal_mark(self, kind):
-        self.journal.append('{"t":' + _fmt(_to_int(time.time() * 1000)) + ',"ev":' + utils.jsonEncode(kind) + '}')
+        self.journal.append('{"t":' + _fmt(_to_int(time.time() * 1000)) + ',"ev":' + json_encode_safe(kind) + '}')
         self.journal_flush()
 
     def journal_flush(self):
@@ -1046,7 +1149,12 @@ class Probe:
 
     def project_record(self, record):
         """Full JSON encode when possible (keeps every field), else the
-        guessed-field projection for records the encoder cannot handle."""
+        guessed-field projection for records the encoder cannot handle.
+        NOTE: the RAISE is the dispatch — utils.jsonEncode stays raw here
+        (json_encode_safe never raises, so the guessed-projection arm
+        would go dead and roster_raw's players would degrade to quoted
+        strings). Only the load-bearing file writers use the safe
+        wrapper."""
         try:
             return _fmt(utils.jsonEncode(record))[:1200]
         except:
@@ -1078,7 +1186,7 @@ class Probe:
             projection = {}
             for key, p in records.items():
                 projection[_fmt(key)] = self.project_record(p)
-            body = utils.jsonEncode({'players': projection, 'states': self.entity_states()})
+            body = json_encode_safe({'players': projection, 'states': self.entity_states()})
             if body != self.last_raw:
                 first = self.last_raw == ''
                 self.last_raw = body
@@ -1251,7 +1359,7 @@ class Probe:
                 self.busy = False
                 self.last_request = 0
                 self.request(False)
-                log('roster stable players=' + _fmt(len(roster)) + ' sample=' + utils.jsonEncode(roster[0]))
+                log('roster stable players=' + _fmt(len(roster)) + ' sample=' + json_encode_safe(roster[0]))
         elif self.session:
             # A transient empty roster happens MID-BATTLE: the player's own
             # death screen empties getPlayersInfo() for a second or two.
@@ -1411,7 +1519,7 @@ class Probe:
                 if p['name'] == self_name and p.get('realm'):
                     self_realm = p['realm']
                     break
-            body = utils.jsonEncode({'t': _to_int(time.time() * 1000),
+            body = json_encode_safe({'t': _to_int(time.time() * 1000),
                                      'battle': self.session,
                                      'players': players,
                                      'sortKeys': sort_keys,
@@ -1485,7 +1593,7 @@ class Probe:
                     'ally': ally,
                     'enemy': enemy,
                     'labels': self.labels}
-            body = utils.jsonEncode(data)
+            body = json_encode_safe(data)
             if body == self.last_panel:
                 return
             self.last_panel = body

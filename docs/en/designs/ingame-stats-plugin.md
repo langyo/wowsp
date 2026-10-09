@@ -116,6 +116,15 @@ behavior toward the 'ship' collection is unverified until a real battle
 inference), and a partial-coverage battle keeps the calibrated fallback —
 game-true and inferred rows never interleave.
 
+**Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
+own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
+plain dict payloads 15.8 accepted, freezing telemetry.json at its
+quit-clear while heartbeat/request kept flowing (the probe stayed alive:
+key events, records, journal all normal). Every bridge write now routes
+through `json_encode_safe` — the client encoder first, a hand-rolled
+ASCII-safe serializer as the fallback (harness pass `plain=reject`) —
+so one encoder quirk can never silence the telemetry again.
+
 **CN divergence** (360 build 13243917, captured 2026-10-07): the CN
 client's TAB table does NOT move sunk players anywhere — their rows dim
 IN PLACE at the battle-start positions (a 5-dead ally block was still

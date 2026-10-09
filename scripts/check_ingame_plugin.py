@@ -24,7 +24,8 @@ companion app consumes:
   - roster_raw.json: every roster record present, in BOTH probe encodings
     (the double-encoded string shape and the guessed-projection shape —
     the app's Lesta roster synthesizer parses both),
-  - telemetry.json: per-name alive flags + the self identity,
+  - telemetry.json: per-name alive flags + the self identity + the
+    client sort-key map (empty in the harness, present in battles),
   - heartbeat.json / request.json written with the roster count,
   - the scheduler survives tick-over-tick (no swallowed exception text).
 
@@ -79,12 +80,18 @@ class FakeRecord(object):
 
 
 class StubUtils(object):
-    def __init__(self, encode_records):
+    def __init__(self, encode_records, fail_plain=False):
         self.lines = []
         # True = the sandbox encoder accepts SafeClass records (produces
         # the DOUBLE-ENCODED string shape on disk); False = it rejects
         # them (the guessed-projection shape).
         self.encode_records = encode_records
+        # True = the 15.9-style quirk: the encoder RAISES on plain dict
+        # payloads it accepted in earlier builds (live WG 2026-10-09 —
+        # telemetry.json froze at its quit-clear while heartbeat/request
+        # shaped differently). The load-bearing writers must fall back to
+        # the hand-rolled serializer and keep every file flowing.
+        self.fail_plain = fail_plain
         self.log_info_calls = 0
 
     def logInfo(self, message):
@@ -92,6 +99,8 @@ class StubUtils(object):
         self.lines.append(str(message))
 
     def jsonEncode(self, value):
+        if self.fail_plain and isinstance(value, dict):
+            raise TypeError("15.9-style plain-dict rejection")
         if isinstance(value, FakeRecord):
             if not self.encode_records:
                 raise TypeError("encoder rejects SafeClass")
@@ -256,13 +265,14 @@ def crippled_builtins():
 
 
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
-               raising_constants, failures):
-    label = "encode=%s manifest=%s ui=%s cc=%s" % (
+               raising_constants, fail_plain, failures):
+    label = "encode=%s manifest=%s ui=%s cc=%s plain=%s" % (
         "records" if encode_records else "projection",
         "yes" if with_manifest else "missing",
         "yes" if with_ui else "absent",
-        "raising" if raising_constants else "ok")
-    utils = StubUtils(encode_records)
+        "raising" if raising_constants else "ok",
+        "reject" if fail_plain else "ok")
+    utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle()
     events = StubEvents()
     callbacks = StubCallbacks()
@@ -406,6 +416,14 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if type(tele.get("t")) is not int:
             failures.append("[%s] telemetry t is %s (must be int)"
                             % (label, type(tele.get("t")).__name__))
+        # The game-true sort-key map: the harness carries no ship
+        # entities, so the probe must degrade to an EMPTY mapping here —
+        # but the FIELD itself must be present (its absence is exactly
+        # what keys the app's offline-inference fallback), and it must
+        # survive even a raising client encoder (the fail_plain passes).
+        if tele.get("sortKeys") != {}:
+            failures.append("[%s] telemetry sortKeys unexpected: %r"
+                            % (label, tele.get("sortKeys")))
 
         # Bots must SURVIVE into roster_raw.json: the app's synthesizer
         # keeps ':Name:' rows because they hold co-op table rows and team
@@ -489,23 +507,27 @@ def main(argv):
     failures = []
     # Two encodings with the manifest present (the config path proves it is
     # READ), one no-manifest pass proving the fallback path — and the
-    # handler-type evaluation on it — stays sandbox-safe, and one ui-present
+    # handler-type evaluation on it — stays sandbox-safe, one ui-present
     # pass (Lesta injects no `ui`; the WG-family clients do, and the panel
-    # path must still work there).
-    for encode_records, with_manifest, with_ui, raising_constants in (
-            (True, True, False, False), (False, True, False, False),
-            (True, False, False, False), (True, True, True, False),
-            (True, True, False, True)):
+    # path must still work there), one raising-constants pass (Lesta's
+    # UiComponents attribute), and one 15.9-quirk pass where the client's
+    # own jsonEncode REJECTS plain dict payloads (live WG 2026-10-09 —
+    # telemetry.json froze at its quit-clear) and every bridge file must
+    # still flow through the hand-rolled serializer.
+    for encode_records, with_manifest, with_ui, raising_constants, fail_plain in (
+            (True, True, False, False, False), (False, True, False, False, False),
+            (True, False, False, False, False), (True, True, True, False, False),
+            (True, True, False, True, False), (True, True, False, False, True)):
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
             run_once(plugin_src, workdir, encode_records, with_manifest,
-                     with_ui, raising_constants, failures)
+                     with_ui, raising_constants, fail_plain, failures)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
-    print("SANDBOX CONFORMANCE: PASS (5 passes, %s, crippled builtins: %s)"
+    print("SANDBOX CONFORMANCE: PASS (6 passes, %s, crippled builtins: %s)"
           % (os.path.basename(os.path.normpath(plugin)), ", ".join(SAFE_BUILTINS)))
     return 0
 
