@@ -528,8 +528,11 @@ fn anchor_hp_streams(
 /// `scan_state_for_ship_id`).
 ///
 /// Per-entry: a roster shipId resolving to exactly ONE ship entity joins;
-/// mirror picks (two players on one ship share the shipId, common among
-/// bots) are skipped rather than guessed. `max_health` comes from the
+/// a COMPLETE same-config group (N unjoined entities + N unjoined roster
+/// entries on one shipId — co-op's mirrored bot fits) pairs by the game's
+/// team-blocked spawn order unless the joined entries contradict that
+/// model (an ambiguous or partial group is never guessed — a cross-team
+/// mis-pairing would paint an ally enemy-red). `max_health` comes from the
 /// EntityCreate state scan (`scan_state_for_max_health`) — the starting
 /// health of the exact build, so HP anchoring and the frontend totals read
 /// like a decoded WG arena. The frontend's `resolveRosterAssignments`
@@ -612,6 +615,107 @@ fn synthesize_lesta_arena_players(
             avatar_id: None,
             is_self: v.relation == 0,
         });
+    }
+    // Same-config groups (co-op fields MIRRORED bot fits — one of every
+    // bot config per side): each of those candidates is "multiple" for the
+    // unique rule above, so a whole mirror pair used to stay unjoined and
+    // surface as bare "#entityId" gray rows (the 2026-10-09 co-op battle
+    // left a Nassau and a Phoenix pair that way). The game spawns vehicle
+    // entities team-blocked in player-list order — the joined entries
+    // themselves prove it (allied ids 158821-158827, enemy 158828-158833
+    // on that battle) — so a COMPLETE group (N unjoined entities, N
+    // unjoined roster entries, one shipId) pairs the k-th entity with the
+    // k-th candidate ordered by (relation, id). GUARD: the joined
+    // evidence must not contradict the team-block model (every joined
+    // team-0 entity below every joined team-1 entity); if they interleave,
+    // the order assumption is untrustworthy and the group stays skipped —
+    // a cross-team mis-pairing would paint an ally enemy-red, which is the
+    // exact confusion this join exists to prevent. (Joined evidence absent
+    // on both sides pairs on the model alone.)
+    let mut team0_max: Option<i32> = None;
+    let mut team1_min: Option<i32> = None;
+    for p in &players {
+        if p.team_id == 0 {
+            team0_max = Some(team0_max.map_or(p.entity_id, |m| m.max(p.entity_id)));
+        } else {
+            team1_min = Some(team1_min.map_or(p.entity_id, |m| m.min(p.entity_id)));
+        }
+    }
+    let blocks_monotone = match (team0_max, team1_min) {
+        (Some(max0), Some(min1)) => max0 < min1,
+        _ => true,
+    };
+    if blocks_monotone {
+        let joined_ids: std::collections::HashSet<i64> =
+            players.iter().map(|p| p.player_id).collect();
+        let mut joined_entities: std::collections::HashSet<i32> =
+            players.iter().map(|p| p.entity_id).collect();
+        for (ship_id, eids) in &entities_by_ship {
+            if *ship_id <= 0 {
+                continue;
+            }
+            // kinds is a BTreeMap, so `eids` ascend — the game's spawn order.
+            let free_entities: Vec<i32> = eids
+                .iter()
+                .copied()
+                .filter(|e| !joined_entities.contains(e))
+                .collect();
+            if free_entities.len() < 2 {
+                continue;
+            }
+            let mut candidates: Vec<&VehicleEntry> = roster
+                .iter()
+                .filter(|v| v.ship_id == *ship_id && v.relation != 0 && !joined_ids.contains(&v.id))
+                .collect();
+            // An incomplete group (a config whose entity never resolved or
+            // whose roster entry is missing) cannot be paired in order
+            // without a guess — stay skipped.
+            if candidates.len() != free_entities.len() {
+                continue;
+            }
+            candidates.sort_by(|a, b| a.relation.cmp(&b.relation).then(a.id.cmp(&b.id)));
+            // zip yields exactly the matched count (>= 2), so the tail pop
+            // below always knows how many entries to undo.
+            for (eid, v) in free_entities.iter().zip(candidates) {
+                joined_entities.insert(*eid);
+                players.push(wowsp_tauri_shared::ArenaPlayer {
+                    entity_id: *eid,
+                    team_id: if v.relation > 1 { 1 } else { 0 },
+                    player_id: v.id,
+                    ship_params_id: v.ship_id.max(0) as u32,
+                    max_health: kinds.get(eid).and_then(|k| k.max_health).unwrap_or(0),
+                    name: v.name.clone(),
+                    is_bot: v.id < 0,
+                    avatar_id: None,
+                    is_self: false,
+                });
+            }
+            let pushed = free_entities.len();
+            // Post-pairing re-check: a mixed group's own insertions could
+            // create the interleaved state the guard rejects (a paired
+            // ally landing above an existing enemy block) — the just-pushed
+            // entries are the vec tail, so pop them and leave the group
+            // unjoined rather than keep a layout the model says is wrong.
+            let t0 = players
+                .iter()
+                .filter(|p| p.team_id == 0)
+                .map(|p| p.entity_id)
+                .max();
+            let t1 = players
+                .iter()
+                .filter(|p| p.team_id != 0)
+                .map(|p| p.entity_id)
+                .min();
+            let monotone = match (t0, t1) {
+                (Some(max0), Some(min1)) => max0 < min1,
+                _ => true,
+            };
+            if !monotone {
+                for p in players.drain(players.len() - pushed..) {
+                    joined_entities.remove(&p.entity_id);
+                }
+            }
+        }
     }
     if players.is_empty() {
         return;
@@ -1577,12 +1681,12 @@ mod tests {
     use wowsp_tauri_shared::GameInstallKind;
 
     /// The Lesta arena synthesis joins roster entries to ship entities by
-    /// unique EntityCreate shipId, skips mirror picks (two roster entries on
-    /// one shipId) instead of guessing, marks the recorder via relation 0,
-    /// carries the create-state starting health through, and leaves an
-    /// already-decoded arena list untouched.
+    /// unique EntityCreate shipId, pairs COMPLETE same-config groups by the
+    /// game's team-blocked spawn order (see the synthesis's group comment),
+    /// marks the recorder via relation 0, carries the create-state starting
+    /// health through, and leaves an already-decoded arena list untouched.
     #[test]
-    fn lesta_arena_synthesis_joins_unique_and_skips_mirrors() {
+    fn lesta_arena_synthesis_joins_unique_and_pairs_complete_mirrors() {
         let kind = |eid: i32, ship_id: Option<i64>, max_health: Option<u32>| {
             (
                 eid,
@@ -1648,18 +1752,23 @@ mod tests {
             },
         ];
         synthesize_lesta_arena_players(&mut arena, &kinds, &roster, None);
-        // Mirror-picked 103 (two roster entries, two entities) joins
-        // nothing; shipId-less entity 14 and the ship_id-0 entry join
-        // nothing.
-        assert_eq!(arena.len(), 2);
+        // The mirrored 103 pair (two roster entries, two entities) now
+        // PAIRS by spawn order — blocks monotone (joined: team-0 only), so
+        // k-th entity takes the k-th candidate (relation, id ascending);
+        // shipId-less entity 14 and the ship_id-0 entry join nothing.
+        assert_eq!(arena.len(), 4);
         let me = arena.iter().find(|p| p.is_self).unwrap();
         assert_eq!((me.entity_id, me.team_id, me.player_id), (10, 0, 1));
         assert_eq!(me.max_health, 42_500);
         let bot = arena.iter().find(|p| p.player_id == -2).unwrap();
         assert_eq!((bot.entity_id, bot.team_id, bot.is_bot), (11, 0, true));
         assert_eq!(bot.max_health, 12_000);
-        // The two mirror entities keep no identity (frontend heuristics).
-        assert!(!arena.iter().any(|p| p.entity_id == 12 || p.entity_id == 13));
+        let foe_a = arena.iter().find(|p| p.player_id == 3).unwrap();
+        assert_eq!((foe_a.entity_id, foe_a.team_id), (12, 1));
+        let foe_b = arena.iter().find(|p| p.player_id == 4).unwrap();
+        assert_eq!((foe_b.entity_id, foe_b.team_id), (13, 1));
+        // The ship_id-0 roster entry still joins nothing.
+        assert!(!arena.iter().any(|p| p.player_id == 5));
     }
 
     /// An arena list that already decoded (WG path) or an empty roster keeps
@@ -1752,6 +1861,317 @@ mod tests {
         assert_eq!(mirror.team_id, 1);
         // And the unrelated enemy joined normally.
         assert!(arena.iter().any(|p| p.entity_id == 30 && p.name == "other"));
+    }
+
+    /// The co-op mirror shape (the 2026-10-09 Nassau/Phoenix pairs): every
+    /// bot config fields ONE ally and ONE enemy, so the complete group must
+    /// pair by spawn order — the ally block's lower entity id takes the
+    /// ally candidate, the enemy's the enemy candidate — while an
+    /// interleaved joined-block layout (the guard's counterfactual) keeps
+    /// the group skipped, and an incomplete group (3 entities, 2
+    /// candidates) never guesses.
+    #[test]
+    fn lesta_arena_synthesis_pairs_complete_config_groups_by_spawn_order() {
+        let mut kinds: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> = [
+            (10, entity_kind_with_ship(100)),
+            (20, entity_kind_with_ship(200)),
+            (30, entity_kind_with_ship(200)),
+            (40, entity_kind_with_ship(201)),
+        ]
+        .into();
+        let mut arena = Vec::new();
+        let roster = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 100,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -2,
+                name: ":AllyBot:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -3,
+                name: ":FoeBot:".into(),
+                relation: 2,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -4,
+                name: ":Foe2:".into(),
+                relation: 2,
+                ship_id: 201,
+                ship_name: None,
+            },
+        ];
+        // The recorder anchors entity 10; the unique 201 config joins
+        // entity 40 on the enemy side; the mirrored 200 group pairs
+        // 20 -> ally (team 0), 30 -> foe (team 1).
+        synthesize_lesta_arena_players(&mut arena, &kinds, &roster, Some(10));
+        assert_eq!(arena.len(), 4);
+        let ally = arena.iter().find(|p| p.player_id == -2).unwrap();
+        assert_eq!(
+            (ally.entity_id, ally.team_id, ally.name.as_str()),
+            (20, 0, ":AllyBot:")
+        );
+        let foe = arena.iter().find(|p| p.player_id == -3).unwrap();
+        assert_eq!(
+            (foe.entity_id, foe.team_id, foe.name.as_str()),
+            (30, 1, ":FoeBot:")
+        );
+        let foe2 = arena.iter().find(|p| p.player_id == -4).unwrap();
+        assert_eq!((foe2.entity_id, foe2.team_id), (40, 1));
+
+        // Guard counterfactual: with a joined enemy entity BELOW the joined
+        // ally block (team blocks interleaved) the spawn-order model is
+        // untrustworthy and the same group stays unjoined.
+        kinds.insert(5, entity_kind_with_ship(201));
+        kinds.remove(&40);
+        let mut guarded = Vec::new();
+        let roster_guard = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 100,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -2,
+                name: ":AllyBot:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -3,
+                name: ":FoeBot:".into(),
+                relation: 2,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -4,
+                name: ":Foe2:".into(),
+                relation: 2,
+                ship_id: 201,
+                ship_name: None,
+            },
+        ];
+        synthesize_lesta_arena_players(&mut guarded, &kinds, &roster_guard, Some(10));
+        // Entity 5 (ship 201) is the only 201 carrier — the unique rule
+        // joins it on the enemy side at id 5 < the anchored ally 10, which
+        // trips the monotonicity guard: the 200 group stays out.
+        assert_eq!(guarded.len(), 2);
+        assert!(
+            guarded
+                .iter()
+                .all(|p| p.entity_id == 10 || p.entity_id == 5)
+        );
+
+        // Incomplete group: three entities on one config with two
+        // candidates pair nothing (an order-based partial guess would
+        // mis-name one of them).
+        let mut triple: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> = [
+            (10, entity_kind_with_ship(100)),
+            (40, entity_kind_with_ship(200)),
+            (50, entity_kind_with_ship(200)),
+            (60, entity_kind_with_ship(200)),
+        ]
+        .into();
+        triple.insert(70, entity_kind_with_ship(201));
+        let mut incomplete = Vec::new();
+        let roster_triple = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 100,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -2,
+                name: ":A:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -3,
+                name: ":B:".into(),
+                relation: 2,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -4,
+                name: ":C:".into(),
+                relation: 2,
+                ship_id: 201,
+                ship_name: None,
+            },
+        ];
+        synthesize_lesta_arena_players(&mut incomplete, &triple, &roster_triple, Some(10));
+        assert_eq!(incomplete.len(), 2);
+        assert!(
+            incomplete
+                .iter()
+                .all(|p| p.entity_id == 10 || p.entity_id == 70)
+        );
+
+        // Incomplete group, candidates > entities: two entities on one
+        // config with three roster candidates pair nothing either — the
+        // counts must match exactly in both directions.
+        let mut pair: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> = [
+            (10, entity_kind_with_ship(100)),
+            (40, entity_kind_with_ship(200)),
+            (50, entity_kind_with_ship(200)),
+        ]
+        .into();
+        pair.insert(70, entity_kind_with_ship(201));
+        let mut over = Vec::new();
+        let roster_over = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 100,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -2,
+                name: ":A:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -3,
+                name: ":B:".into(),
+                relation: 2,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -5,
+                name: ":D:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -4,
+                name: ":C:".into(),
+                relation: 2,
+                ship_id: 201,
+                ship_name: None,
+            },
+        ];
+        synthesize_lesta_arena_players(&mut over, &pair, &roster_over, Some(10));
+        assert_eq!(over.len(), 2);
+        assert!(over.iter().all(|p| p.entity_id == 10 || p.entity_id == 70));
+
+        // Single-sided layout ((None, Some) guard arm): no team-0 entry
+        // joined at all — a lone enemy entity is the only join evidence.
+        // No contradicting blocks, so the complete 200 group still pairs.
+        let oneside_kinds: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> = [
+            (40, entity_kind_with_ship(200)),
+            (50, entity_kind_with_ship(200)),
+            (70, entity_kind_with_ship(201)),
+        ]
+        .into();
+        let mut oneside = Vec::new();
+        let roster_oneside = vec![
+            VehicleEntry {
+                id: -2,
+                name: ":A:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -3,
+                name: ":B:".into(),
+                relation: 2,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -4,
+                name: ":C:".into(),
+                relation: 2,
+                ship_id: 201,
+                ship_name: None,
+            },
+        ];
+        synthesize_lesta_arena_players(&mut oneside, &oneside_kinds, &roster_oneside, None);
+        // Ship 201 joins :C: uniquely on the enemy side; the mirrored 200
+        // group pairs by order (40 -> ally :A: team 0, 50 -> foe :B:
+        // team 1) — the single-side arm permits it (no team-0 block to
+        // contradict).
+        assert_eq!(oneside.len(), 3);
+        let a = oneside.iter().find(|p| p.player_id == -2).unwrap();
+        assert_eq!((a.entity_id, a.team_id), (40, 0));
+        let b = oneside.iter().find(|p| p.player_id == -3).unwrap();
+        assert_eq!((b.entity_id, b.team_id), (50, 1));
+        let c = oneside.iter().find(|p| p.player_id == -4).unwrap();
+        assert_eq!((c.entity_id, c.team_id), (70, 1));
+
+        // Post-pairing re-check: the pre-guard passed on the joined
+        // evidence (10 < 30), but the group's OWN insertions broke the
+        // blocks (a paired ally at 40 above the existing enemy floor 30) —
+        // the just-pushed entries pop and the group stays unjoined.
+        let pop_kinds: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> = [
+            (10, entity_kind_with_ship(100)),
+            (30, entity_kind_with_ship(201)),
+            (40, entity_kind_with_ship(200)),
+            (50, entity_kind_with_ship(200)),
+        ]
+        .into();
+        let mut popped = Vec::new();
+        let roster_popped = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 100,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -2,
+                name: ":A:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -3,
+                name: ":B:".into(),
+                relation: 2,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -4,
+                name: ":C:".into(),
+                relation: 2,
+                ship_id: 201,
+                ship_name: None,
+            },
+        ];
+        synthesize_lesta_arena_players(&mut popped, &pop_kinds, &roster_popped, Some(10));
+        assert_eq!(popped.len(), 2);
+        assert!(
+            popped
+                .iter()
+                .all(|p| p.entity_id == 10 || p.entity_id == 30)
+        );
     }
 
     #[test]
