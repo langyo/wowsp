@@ -27,7 +27,11 @@
 //! name `scripts/build_installers.py` produces is
 //! `WoWSP_<version>_x64-installer-lite.exe` (see `artifact_url`: an app
 //! update never re-ships the resource pack, which updates through its own
-//! channel) under each mirror base.
+//! channel), fetched from the release's VERSIONED download tree
+//! (`…/releases/download/v<version>/<file>`) — the URL carries both the
+//! version and the file name and is immutable per release, so a stale
+//! mirror 404s and fails over instead of serving old bytes under the
+//! moving `releases/latest/download` mount.
 //! Releases also carry the retired bare name
 //! `WoWSP_<version>_x64-installer.exe` as a byte-identical lite alias —
 //! pre-v0.3.1 updaters fetch exactly that; this build never does.
@@ -185,19 +189,44 @@ const CANCEL_MSG: &str = "update cancelled";
 const JOB_ID: &str = "update";
 
 /// The installer artifact URL under a mirror base — the exact name
-/// `scripts/build_installers.py::emit` produces. App updates ALWAYS fetch
-/// the `-lite` artifact: the resource pack lives in its own cache and
-/// updates through its own hash-versioned channel (see `model_pack.rs`),
-/// so an app update never needs to re-ship the ~1.2 GB pack — the full
-/// installer is only worth downloading on a fresh install.
+/// `scripts/build_installers.py::emit` produces, under the release's
+/// versioned download tree. App updates ALWAYS fetch the `-lite` artifact:
+/// the resource pack lives in its own cache and updates through its own
+/// hash-versioned channel (see `model_pack.rs`), so an app update never
+/// needs to re-ship the ~1.2 GB pack — the full installer is only worth
+/// downloading on a fresh install.
+///
+/// The path carries BOTH the version and the file name
+/// (`…/releases/download/v<version>/<file>`), so it is immutable per
+/// release: a stale mirror 404s and fails over instead of serving an
+/// older release's bytes under the moving `releases/latest/download`
+/// mount, and the fetched URL always names the tag it belongs to.
 fn artifact_url(base: &str, version: &str) -> String {
-    let base = base.trim().trim_end_matches('/');
-    format!("{base}/{}", artifact_name(version))
+    format!(
+        "{}/v{version}/{}",
+        versioned_download_base(base),
+        artifact_name(version)
+    )
 }
 
 /// The bare installer asset name for a release (see [`artifact_url`]).
 fn artifact_name(version: &str) -> String {
     format!("WoWSP_{version}_x64-installer-lite.exe")
+}
+
+/// Rewrite a source base into the versioned-download root. Every
+/// configured source ends with the `/releases/latest/download` mount
+/// (the discovery side: marker fallback + tag-page probe both live one
+/// step up); downloads rewrite that tail to the versioned
+/// `/releases/download` tree. A base without the suffix is taken as-is —
+/// a custom mirror root is then expected to lay out
+/// `v<version>/<file>` underneath it.
+fn versioned_download_base(base: &str) -> String {
+    let trimmed = base.trim().trim_end_matches('/');
+    match trimmed.strip_suffix("releases/latest/download") {
+        Some(head) => format!("{head}releases/download"),
+        None => trimmed.to_string(),
+    }
 }
 
 // ── Artifact integrity (official digest) ─────────────────────────────────
@@ -858,19 +887,45 @@ mod tests {
 
     #[test]
     fn artifact_url_matches_build_script_emission() {
-        // App updates always fetch the -lite artifact — the resource pack
-        // rides its own update channel, never the installer.
+        // App updates always fetch the -lite artifact from the release's
+        // VERSIONED download tree — the URL carries both the version and
+        // the file name and never rides the moving latest mount.
         assert_eq!(
             artifact_url(
                 "https://github.com/langyo/wowsp/releases/latest/download",
                 "0.1.0"
             ),
-            "https://github.com/langyo/wowsp/releases/latest/download/WoWSP_0.1.0_x64-installer-lite.exe"
+            "https://github.com/langyo/wowsp/releases/download/v0.1.0/WoWSP_0.1.0_x64-installer-lite.exe"
         );
-        // Trailing slashes and stray whitespace on a mirror base are trimmed.
+        // Mirror prefixes ride along: only the mount tail is rewritten.
         assert_eq!(
-            artifact_url("https://mirror.example.test/files/", "1.2.3"),
-            "https://mirror.example.test/files/WoWSP_1.2.3_x64-installer-lite.exe"
+            artifact_url(
+                "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/latest/download",
+                "0.5.9"
+            ),
+            "https://gh-proxy.com/https://github.com/langyo/wowsp/releases/download/v0.5.9/WoWSP_0.5.9_x64-installer-lite.exe"
+        );
+    }
+
+    #[test]
+    fn versioned_download_base_rewrites_the_latest_mount() {
+        // The configured sources end with the /releases/latest/download
+        // mount (the discovery side); downloads rewrite exactly that tail.
+        assert_eq!(
+            versioned_download_base("https://github.com/langyo/wowsp/releases/latest/download"),
+            "https://github.com/langyo/wowsp/releases/download"
+        );
+        // Trailing slashes and stray whitespace are trimmed before matching.
+        assert_eq!(
+            versioned_download_base(
+                "https://ghfast.top/https://github.com/langyo/wowsp/releases/latest/download/"
+            ),
+            "https://ghfast.top/https://github.com/langyo/wowsp/releases/download"
+        );
+        // A base without the mount is taken as a versioned root as-is.
+        assert_eq!(
+            versioned_download_base("https://mirror.example.test/files/"),
+            "https://mirror.example.test/files"
         );
     }
 

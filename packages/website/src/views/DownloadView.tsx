@@ -146,13 +146,40 @@ export default defineComponent({
       }
     });
 
-    function assetLabel(name: string): string {
-      if (/\.msi$/.test(name)) return "MSI";
-      if (/webview2/.test(name)) return t("download.assetInstallerWv2");
-      // The materials-only plain installer was retired — everything
-      // else on the release page is the lite artifact.
-      return t("download.assetInstallerLite");
+    // The two published installer flavors, resolved against the latest
+    // release's assets. The raw file names never reach the page: a card
+    // carries an internationalized title + audience description, and its
+    // button downloads the matching asset directly. The legacy bare-name
+    // alias (the desktop updater's bridge) and every unrecognized asset
+    // stay invisible — novices see exactly two choices.
+    const FLAVORS = [
+      { key: "lite", icon: Zap },
+      { key: "full", icon: HardDriveDownload },
+    ] as const;
+
+    type FlavorKey = (typeof FLAVORS)[number]["key"];
+
+    function flavorOf(name: string): FlavorKey | null {
+      if (/x64-installer-lite\.exe$/.test(name)) return "lite";
+      if (/x64-installer-webview2\.exe$/.test(name)) return "full";
+      return null;
     }
+
+    const flavorCards = computed(() =>
+      FLAVORS.map((flavor) => {
+        const asset = release.value?.assets.find(
+          (a) => flavorOf(a.name) === flavor.key,
+        );
+        return asset
+          ? {
+              key: flavor.key,
+              icon: flavor.icon,
+              url: asset.url,
+              size: asset.size,
+            }
+          : null;
+      }).filter((card): card is NonNullable<typeof card> => card !== null),
+    );
 
     const modes = [
       { icon: HardDriveDownload, key: "modeInstall" },
@@ -214,11 +241,11 @@ export default defineComponent({
           </div>
         </section>
 
-        {/* ── assets ── */}
+        {/* ── flavors ── */}
         <section class="download__assets container">
           <Reveal>
             <div class="download__assets-head">
-              <h2>{t("download.assets")}</h2>
+              <h2>{t("download.flavorsTitle")}</h2>
               {/* Hidden when the official route served the release info
                * (and on a failed fetch, when only the Releases-page link
                * remains): the note only ever names a mirror in use. */}
@@ -234,36 +261,64 @@ export default defineComponent({
             </div>
           </Reveal>
           <Reveal delay={80}>
-            <ul class="download__list glass-panel">
-              {phase.value === "ready" && release.value
-                ? release.value.assets.map((a) => (
-                  <li key={a.name}>
-                    <a href={mirrorPrefix.value + a.url} target="_blank" rel="noopener">
-                      <span class="download__file">
-                        <FileDown size={14} />
-                        {a.name}
-                      </span>
-                      <span class="download__label">
-                        {assetLabel(a.name)}
-                        {a.size ? ` · ${formatSize(a.size)}` : ""}
-                      </span>
-                    </a>
-                  </li>
-                ))
-                : phase.value === "loading" ? (
-                  <li class="download__placeholder">{t("download.loading")}</li>
-                ) : (
-                  <li>
-                    <a href={RELEASES} target="_blank" rel="noopener">
-                      <span class="download__file">
-                        <FileDown size={14} />
-                        GitHub Releases
-                      </span>
-                      <span class="download__label">{t("download.loadFailed")}</span>
-                    </a>
-                  </li>
-                )}
-            </ul>
+            {phase.value === "ready" && flavorCards.value.length ? (
+              <div class="download__flavors">
+                {flavorCards.value.map((card, i) => {
+                  const Icon = card.icon;
+                  return (
+                    <Reveal delay={i * 90} key={card.key}>
+                      <article
+                        class={`flavor-card glass-panel${card.key === "lite" ? " is-recommended" : ""}`}
+                      >
+                        {card.key === "lite" && (
+                          <span class="flavor-card__badge">
+                            <Zap size={11} />
+                            {t("download.flavorLiteBadge")}
+                          </span>
+                        )}
+                        <div class="flavor-card__icon">
+                          <Icon size={22} />
+                        </div>
+                        <h3>
+                          {t(`download.flavor${card.key === "lite" ? "Lite" : "Full"}Title`)}
+                        </h3>
+                        <p>
+                          {t(`download.flavor${card.key === "lite" ? "Lite" : "Full"}Desc`)}
+                        </p>
+                        {card.size ? (
+                          <span class="flavor-card__meta">
+                            ≈ {formatSize(card.size)}
+                          </span>
+                        ) : null}
+                        <LinkButton
+                          href={mirrorPrefix.value + card.url}
+                          external
+                        >
+                          <FileDown size={15} />
+                          {t("download.flavorDownload")}
+                        </LinkButton>
+                      </article>
+                    </Reveal>
+                  );
+                })}
+              </div>
+            ) : phase.value === "loading" ? (
+              <ul class="download__list glass-panel">
+                <li class="download__placeholder">{t("download.loading")}</li>
+              </ul>
+            ) : (
+              <ul class="download__list glass-panel">
+                <li>
+                  <a href={RELEASES} target="_blank" rel="noopener">
+                    <span class="download__file">
+                      <FileDown size={14} />
+                      GitHub Releases
+                    </span>
+                    <span class="download__label">{t("download.loadFailed")}</span>
+                  </a>
+                </li>
+              </ul>
+            )}
           </Reveal>
           <p class="download__notes">{t("download.notes")}</p>
         </section>
