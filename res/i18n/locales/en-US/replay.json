@@ -267,7 +267,8 @@
     "selfSunk": "Sunk",
     "selfKiller": "Sunk by {name}",
     "selfKillMark": "SUNK",
-    "selfKillHint": "You sank this ship"
+    "selfKillHint": "You sank this ship",
+    "selfCompTitle": "Damage composition"
   },
   "postbattle": {
     "loadingGlobal": "Loading {name}'s global stats…",
@@ -287,7 +288,22 @@
     "showAll": "Show all nicknames",
     "maskHint": "The eye at a row's end hides one nick; share shots never include hidden nicks",
     "hideName": "Hide this nickname",
-    "showName": "Show this nickname"
+    "showName": "Show this nickname",
+    "viewAll": "All players",
+    "viewSelf": "My battle",
+    "selfUnavailable": "Personal report unavailable (decoded stream missing)"
+  },
+  "comp": {
+    "main": "Main battery",
+    "atba": "Secondary battery",
+    "torpedo": "Torpedoes",
+    "air": "Aircraft",
+    "burn": "Fire",
+    "flood": "Flooding",
+    "depth": "Depth charges",
+    "ram": "Ramming",
+    "other": "Other",
+    "shell": "Shells"
   },
   "capture": {
     "contested": "Both sides capping — progress paused",

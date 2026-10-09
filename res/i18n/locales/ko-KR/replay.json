@@ -267,7 +267,8 @@
     "selfSunk": "침몰",
     "selfKiller": "{name}에게 격침됨",
     "selfKillMark": "격침",
-    "selfKillHint": "이 함선을 격침했습니다"
+    "selfKillHint": "이 함선을 격침했습니다",
+    "selfCompTitle": "피해 구성"
   },
   "postbattle": {
     "loadingGlobal": "{name}의 전체 전적을 불러오는 중…",
@@ -287,7 +288,22 @@
     "showAll": "모든 닉네임 표시",
     "maskHint": "행 끝의 눈 아이콘으로 개별 닉네임을 숨길 수 있으며, 숨긴 이름은 스크린샷에 포함되지 않습니다",
     "hideName": "이 닉네임 숨기기",
-    "showName": "이 닉네임 표시"
+    "showName": "이 닉네임 표시",
+    "viewAll": "전체 전적",
+    "viewSelf": "내 전적",
+    "selfUnavailable": "개인 리포트를 생성할 수 없습니다(디코딩 데이터 없음)"
+  },
+  "comp": {
+    "main": "주포",
+    "atba": "부포",
+    "torpedo": "어뢰",
+    "air": "항공",
+    "burn": "화재",
+    "flood": "침수",
+    "depth": "폭뢰",
+    "ram": "충돌",
+    "other": "기타",
+    "shell": "포탄"
   },
   "capture": {
     "contested": "양측 모두 점령 중 — 진행 일시 정지",

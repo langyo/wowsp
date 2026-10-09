@@ -1,0 +1,546 @@
+/**
+ * Shared 我的战绩 report body styles — the flat .live-self__* classes for
+ * the report body SelfReportBody.tsx renders (moved here from
+ * LiveSelfPanel.scss so the live panel and the replay results modal's
+ * self view wear the exact same look). The panel-shell classes (__body /
+ * __sync / __pending) stay in LiveSelfPanel.scss — they belong to the
+ * live host's head/scroll wiring.
+ */
+.live-self {
+  /* ── self identity card (the results screen's page-1 headline). ─────── */
+  &__card {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 10px;
+    background: rgb(var(--color-text) / 5%);
+    flex-shrink: 0;
+  }
+
+  &__card-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: rgb(var(--color-text) / 8%);
+    flex-shrink: 0;
+  }
+
+  &__card-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__card-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__card-sunk {
+    padding: 0 0.45rem;
+    border-radius: 999px;
+    background: rgb(var(--color-error) / 16%);
+    color: rgb(var(--color-error));
+    font-size: var(--text-2xs);
+    font-style: normal;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  &__card-ship {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__card-hp {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+    min-width: 130px;
+  }
+
+  &__card-hp-bar {
+    display: block;
+    width: 110px;
+    height: 7px;
+    border-radius: 999px;
+    background: rgb(var(--color-text) / 10%);
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: rgb(74 222 128 / 85%);
+      transition: width 0.4s ease;
+
+      &.is-sunk {
+        background: rgb(var(--color-error) / 80%);
+      }
+    }
+  }
+
+  &__card-hp-num {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text) / 80%);
+  }
+
+  &__card-killer {
+    flex-shrink: 0;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    background: rgb(var(--color-error) / 12%);
+    color: rgb(var(--color-error));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* ── summary tiles (page 1's figures). ──────────────────────────────── */
+  &__tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  &__tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.5rem 0.4rem;
+    border-radius: 10px;
+    background: rgb(var(--color-text) / 5%);
+  }
+
+  &__tile-label {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+  }
+
+  &__tile-value {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-lg);
+    font-weight: 700;
+  }
+
+  /* ── damage composition (伤害组成): one proportional strip + chips. ─── */
+  &__comp {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 10px;
+    background: rgb(var(--color-text) / 5%);
+    flex-shrink: 0;
+  }
+
+  &__comp-title {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  &__comp-bar {
+    display: flex;
+    flex: 1;
+    min-width: 120px;
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgb(var(--color-text) / 8%);
+  }
+
+  &__comp-seg {
+    display: block;
+    height: 100%;
+
+    &--main {
+      background: rgb(251 146 60 / 85%);
+    }
+
+    &--atba {
+      background: rgb(251 191 36 / 80%);
+    }
+
+    &--torpedo {
+      background: rgb(45 212 191 / 80%);
+    }
+
+    &--air {
+      background: rgb(125 211 252 / 80%);
+    }
+
+    &--burn {
+      background: rgb(248 113 113 / 80%);
+    }
+
+    &--flood {
+      background: rgb(96 165 250 / 80%);
+    }
+
+    &--depth {
+      background: rgb(167 139 250 / 80%);
+    }
+
+    &--ram {
+      background: rgb(203 213 225 / 80%);
+    }
+
+    &--other {
+      background: rgb(var(--color-text) / 28%);
+    }
+  }
+
+  &__comp-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.55rem;
+  }
+
+  /* One composition chip — the strip's legend and the ledger rows' per-row
+     split share the vocabulary (and the muted tint). */
+  &__comp-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-text) / 16%);
+    background: rgb(var(--color-text) / 4%);
+    color: rgb(var(--color-text) / 72%);
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+
+    b {
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: rgb(var(--color-text) / 88%);
+    }
+
+    // A 3px family dot rides the strip's palette so the chips read as its
+    // legend without duplicating every hue on the border.
+    &::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgb(var(--color-text) / 30%);
+      align-self: center;
+    }
+
+    &--main::before {
+      background: rgb(251 146 60 / 90%);
+    }
+
+    // The row ledger's "shell" bucket covers main and secondary fire —
+    // the strip's gun orange.
+    &--shell::before {
+      background: rgb(251 146 60 / 90%);
+    }
+
+    &--atba::before {
+      background: rgb(251 191 36 / 90%);
+    }
+
+    &--torpedo::before {
+      background: rgb(45 212 191 / 90%);
+    }
+
+    &--air::before {
+      background: rgb(125 211 252 / 90%);
+    }
+
+    &--burn::before {
+      background: rgb(248 113 113 / 90%);
+    }
+
+    &--flood::before {
+      background: rgb(96 165 250 / 90%);
+    }
+
+    &--depth::before {
+      background: rgb(167 139 250 / 90%);
+    }
+
+    &--ram::before {
+      background: rgb(203 213 225 / 90%);
+    }
+  }
+
+  /* ── achievements + ribbons. ────────────────────────────────────────── */
+  &__achs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  &__ach {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    padding: 0.12rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+
+    em {
+      font-style: normal;
+      font-family: var(--font-mono, ui-monospace, monospace);
+      opacity: 0.85;
+    }
+
+    &--heroic {
+      border-color: rgb(245 158 11 / 45%);
+      background: rgb(245 158 11 / 12%);
+      color: rgb(252 211 77);
+    }
+
+    &--honorable {
+      border-color: rgb(96 165 250 / 45%);
+      background: rgb(96 165 250 / 12%);
+      color: rgb(147 197 253);
+    }
+
+    &--service {
+      border-color: rgb(148 163 184 / 45%);
+      background: rgb(148 163 184 / 12%);
+      color: rgb(203 213 225);
+    }
+
+    &--squad {
+      border-color: rgb(74 222 128 / 45%);
+      background: rgb(74 222 128 / 12%);
+      color: rgb(134 239 172);
+    }
+
+    &--common {
+      border-color: rgb(var(--color-text) / 22%);
+      background: rgb(var(--color-text) / 6%);
+      color: rgb(var(--color-text) / 80%);
+    }
+  }
+
+  &__ribbons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+    flex-shrink: 0;
+  }
+
+  &__ribbon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.9;
+
+    em {
+      position: absolute;
+      top: -6px;
+      right: -8px;
+      min-width: 14px;
+      padding: 0 3px;
+      border-radius: 999px;
+      background: rgb(var(--color-text) / 82%);
+      color: rgb(var(--color-bg, 255 255 255));
+      font-style: normal;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1.4;
+      text-align: center;
+    }
+  }
+
+  /* ── the damage ledger (page 3). ────────────────────────────────────── */
+  &__matrix {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.9rem;
+    align-items: start;
+    flex: 1;
+  }
+
+  &__col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  &__col-title {
+    color: rgb(var(--color-text) / 55%);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 0.8rem 0.6rem;
+    border-radius: 10px;
+    border: 1px dashed rgb(var(--color-text) / 14%);
+    color: rgb(var(--color-text) / 38%);
+    font-size: var(--text-xs);
+    text-align: center;
+  }
+
+  &__crow {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem 0.6rem;
+    border-radius: 10px;
+    background: rgb(var(--color-text) / 5%);
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: rgb(var(--color-text) / 8%);
+    }
+
+    &--sunk {
+      opacity: 0.55;
+    }
+  }
+
+  &__crow-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    flex-shrink: 0;
+  }
+
+  &__crow-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__crow-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 600;
+    font-size: var(--text-sm);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  &__crow-nick {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__crow-bot {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-style: normal;
+  }
+
+  &__crow-kill {
+    display: inline-flex;
+    align-items: center;
+    color: rgb(var(--color-error));
+    flex-shrink: 0;
+  }
+
+  &__crow-ship {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  &__crow-at {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-variant-numeric: tabular-nums;
+    font-size: 9.5px;
+    opacity: 0.75;
+    flex-shrink: 0;
+  }
+
+  /* Per-row weapon composition — the chips wrap onto their own line under
+     the nick/ship stack. */
+  &__crow-comp {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.35rem;
+    margin-top: 0.15rem;
+  }
+
+  &__crow-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  /* Damage share against the target's hull pool — thin amber strip. */
+  &__crow-bar {
+    display: block;
+    width: 64px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgb(var(--color-text) / 10%);
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: rgb(245 158 11 / 80%);
+    }
+  }
+
+  &__crow-dmg {
+    min-width: 52px;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-sm);
+    text-align: right;
+  }
+
+  &__note {
+    margin: 0;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    opacity: 0.85;
+    flex-shrink: 0;
+  }
+
+  /* Phone layout: the ledger stacks like the roster matrix does. */
+  @media (max-width: 767px) {
+    &__matrix {
+      grid-template-columns: 1fr;
+    }
+  }
+}

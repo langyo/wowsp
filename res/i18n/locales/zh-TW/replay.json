@@ -267,7 +267,8 @@
     "selfSunk": "已沉沒",
     "selfKiller": "被 {name} 擊沉",
     "selfKillMark": "擊沉",
-    "selfKillHint": "已擊沉該艦"
+    "selfKillHint": "已擊沉該艦",
+    "selfCompTitle": "傷害組成"
   },
   "postbattle": {
     "loadingGlobal": "載入 {name} 的全域戰績…",
@@ -287,7 +288,22 @@
     "showAll": "顯示全部暱稱",
     "maskHint": "行尾的眼睛可隱藏單一暱稱，截圖不含已隱藏暱稱",
     "hideName": "隱藏該暱稱",
-    "showName": "顯示該暱稱"
+    "showName": "顯示該暱稱",
+    "viewAll": "全員戰績",
+    "viewSelf": "我的戰績",
+    "selfUnavailable": "暫無法產生個人戰報（缺少解碼資料）"
+  },
+  "comp": {
+    "main": "主砲",
+    "atba": "副砲",
+    "torpedo": "魚雷",
+    "air": "航空",
+    "burn": "火災",
+    "flood": "進水",
+    "depth": "深水炸彈",
+    "ram": "衝撞",
+    "other": "其他",
+    "shell": "砲彈"
   },
   "capture": {
     "contested": "雙方壓點，進度暫停",

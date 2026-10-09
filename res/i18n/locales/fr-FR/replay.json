@@ -267,7 +267,8 @@
     "selfSunk": "Coulé",
     "selfKiller": "Coulé par {name}",
     "selfKillMark": "COULÉ",
-    "selfKillHint": "Vous avez coulé ce navire"
+    "selfKillHint": "Vous avez coulé ce navire",
+    "selfCompTitle": "Composition des dégâts"
   },
   "postbattle": {
     "loadingGlobal": "Chargement des statistiques globales de {name}…",
@@ -287,7 +288,22 @@
     "showAll": "Afficher tous les pseudos",
     "maskHint": "L'œil en fin de ligne masque un pseudo ; les captures n'incluent jamais les pseudos masqués",
     "hideName": "Masquer ce pseudo",
-    "showName": "Afficher ce pseudo"
+    "showName": "Afficher ce pseudo",
+    "viewAll": "Tous les joueurs",
+    "viewSelf": "Mon combat",
+    "selfUnavailable": "Rapport personnel indisponible (flux décodé manquant)"
+  },
+  "comp": {
+    "main": "Artillerie principale",
+    "atba": "Artillerie secondaire",
+    "torpedo": "Torpilles",
+    "air": "Aviation",
+    "burn": "Incendie",
+    "flood": "Inondation",
+    "depth": "Charges de profondeur",
+    "ram": "Éperonnage",
+    "other": "Autres",
+    "shell": "Obus"
   },
   "capture": {
     "contested": "Les deux camps capturent — progression en pause",

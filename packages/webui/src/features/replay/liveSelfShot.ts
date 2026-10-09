@@ -67,6 +67,8 @@ export interface SelfShotModel {
   /** My nick · ship line under the title. */
   selfLine: string;
   summary: SelfShotStat[];
+  /** The damage-composition line (伤害组成 chips), already localized. */
+  compLine?: string | null;
   /** Localized achievement names (duplicates already folded by the caller). */
   achievements?: string[];
   columns: SelfShotColumn[];
@@ -82,6 +84,7 @@ const ROW_H = 40;
 const HEAD_H = 66;
 const SELF_LINE_H = 30;
 const SUMMARY_H = 52;
+const COMP_H = 30;
 const ACH_H = 30;
 const COL_TITLE_H = 30;
 const NOTE_H = 24;
@@ -102,10 +105,12 @@ export async function renderLiveSelfShot(
     0,
   );
   const hasAch = (model.achievements?.length ?? 0) > 0;
+  const hasComp = !!model.compLine;
   const height =
     HEAD_H +
     SELF_LINE_H +
     SUMMARY_H +
+    (hasComp ? COMP_H : 0) +
     (hasAch ? ACH_H : 0) +
     COL_TITLE_H +
     maxRows * (ROW_H + 6) +
@@ -172,6 +177,15 @@ export async function renderLiveSelfShot(
   });
   ctx.textAlign = "left";
   y += SUMMARY_H;
+
+  // ── damage-composition line (the same muted chips style as the
+  //    achievements run below).
+  if (hasComp) {
+    ctx.font = font(11.5, 500);
+    ctx.fillStyle = rgba(palette.text, 0.62);
+    ctx.fillText(model.compLine!, PAD, y + COMP_H / 2, width - PAD * 2);
+    y += COMP_H;
+  }
 
   // ── achievements run (muted chips, single ellipsized line).
   if (hasAch) {

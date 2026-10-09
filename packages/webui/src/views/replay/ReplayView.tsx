@@ -2119,6 +2119,16 @@ export default defineComponent({
                             durationSec: duration.value > 0 ? duration.value : null,
                           }}
                           operation={isOperation.value}
+                          stream={{
+                            trajectories: trajectories.value,
+                            shotKills: shotKills.value,
+                            damageStats: damageStats.value,
+                            achievements: achievements.value,
+                            arenaPlayers: arenaPlayers.value,
+                            shellLaunches: shellLaunches.value,
+                            torpedoes: torpedoes.value,
+                          }}
+                          roster={parser.current.value.vehicles}
                           onClose={() => (showResults.value = false)}
                         />
                       ) : (

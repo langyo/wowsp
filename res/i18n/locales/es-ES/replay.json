@@ -267,7 +267,8 @@
     "selfSunk": "Hundido",
     "selfKiller": "Hundido por {name}",
     "selfKillMark": "HUNDIDO",
-    "selfKillHint": "Hundiste este barco"
+    "selfKillHint": "Hundiste este barco",
+    "selfCompTitle": "Composición del daño"
   },
   "postbattle": {
     "loadingGlobal": "Cargando las estadísticas globales de {name}…",
@@ -287,7 +288,22 @@
     "showAll": "Mostrar todos los apodos",
     "maskHint": "El ojo al final de la fila oculta un apodo; las capturas nunca incluyen apodos ocultos",
     "hideName": "Ocultar este apodo",
-    "showName": "Mostrar este apodo"
+    "showName": "Mostrar este apodo",
+    "viewAll": "Todos los jugadores",
+    "viewSelf": "Mi batalla",
+    "selfUnavailable": "Informe personal no disponible (falta el stream decodificado)"
+  },
+  "comp": {
+    "main": "Artillería principal",
+    "atba": "Artillería secundaria",
+    "torpedo": "Torpedos",
+    "air": "Aeronaves",
+    "burn": "Incendio",
+    "flood": "Inundación",
+    "depth": "Cargas de profundidad",
+    "ram": "Embestida",
+    "other": "Otros",
+    "shell": "Obuses"
   },
   "capture": {
     "contested": "Ambos bandos capturando — progreso en pausa",

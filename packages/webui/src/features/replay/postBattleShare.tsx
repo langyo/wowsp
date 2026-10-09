@@ -13,7 +13,7 @@
  * privacy choice, not a preference. The fixed-width mask is NOT
  * length-preserving: a nick's length is itself information.
  */
-import { defineComponent, ref, type VNode } from "vue";
+import { defineComponent, ref, type PropType, type VNode } from "vue";
 import { Camera, Eye, EyeOff, Rows2, Rows3 } from "@lucide/vue";
 import { HkSpinner } from "@celestia-island/hikari";
 
@@ -303,15 +303,18 @@ export function rosterShotColIndex(key: RosterColumnSpec["key"]): number {
  *  display view (randoms / ranked / global). */
 export { rosterStatView };
 
-/** Toolbar riding the post-battle panel top: the stats-source chip (the
- *  identical selector the live panel's head carries — one shared statsPrefs
- *  store, so a flip here re-resolves the roster and shows up in the live
- *  head / settings immediately), the hide-all-nicknames toggle (with the
- *  per-row eye hint), the optional roster-density toggle (compact rows ⇄
- *  the live panel's full cards — rendered only when the host passes the
- *  props) and the copy-share-shot action. Shared by the results panel and
- *  the incomplete-results fallback so both post-battle windows expose the
- *  same controls. */
+/** Toolbar riding the post-battle panel top: the optional 全员/我的 view
+ *  switcher (a segmented pair — hosts without a second view leave it off),
+ *  the stats-source chip (the identical selector the live panel's head
+ *  carries — one shared statsPrefs store, so a flip here re-resolves the
+ *  roster and shows up in the live head / settings immediately), the
+ *  hide-all-nicknames toggle (with the per-row eye hint), the optional
+ *  roster-density toggle (compact rows ⇄ the live panel's full cards —
+ *  rendered only when the host passes the props) and the copy-share-shot
+ *  action. In the 我的 view the roster-only controls (stats chip, density,
+ *  mask hint) sit out — the camera button then copies the self report.
+ *  Shared by the results panel and the incomplete-results fallback so both
+ *  post-battle windows expose the same controls. */
 export const PostBattleShareBar = defineComponent({
   name: "PostBattleShareBar",
   props: {
@@ -323,15 +326,55 @@ export const PostBattleShareBar = defineComponent({
     /** Current density for the toggle: true = full cards, false = compact
      *  rows. The button always offers the switch TO the other mode. */
     fullMode: { type: Boolean, default: false },
+    /** The active view when the host carries both (the roster matrix + the
+     *  self report): renders the segmented 全员/我的 switcher up front and
+     *  trims the toolbar to the controls that view honors. */
+    view: {
+      type: String as PropType<"roster" | "self" | undefined>,
+      default: undefined,
+    },
   },
-  emits: ["toggleAll", "shot", "toggleMode"],
+  emits: ["toggleAll", "shot", "toggleMode", "setView"],
   setup(props, { emit }) {
-    return () => (
+    return () => {
+      // Re-read per render: the view flips at toolbar level, the captured
+      // value would go stale after the first switch.
+      const isSelf = props.view === "self";
+      return (
       <div class="replay-view__postbattle-toolbar">
+        {props.view ? (
+          <span class="replay-view__postbattle-viewswitch" role="tablist">
+            <button
+              class={[
+                "replay-view__postbattle-viewswitch-btn",
+                { "replay-view__postbattle-viewswitch-btn--on": !isSelf },
+              ]}
+              type="button"
+              role="tab"
+              aria-selected={!isSelf}
+              onClick={() => emit("setView", "roster")}
+            >
+              {t("replay.postbattle.viewAll")}
+            </button>
+            <button
+              class={[
+                "replay-view__postbattle-viewswitch-btn",
+                { "replay-view__postbattle-viewswitch-btn--on": isSelf },
+              ]}
+              type="button"
+              role="tab"
+              aria-selected={isSelf}
+              onClick={() => emit("setView", "self")}
+            >
+              {t("replay.postbattle.viewSelf")}
+            </button>
+          </span>
+        ) : null}
         {/* Stats-source filter: ship/battle/solo dimensions, the same chip
-            the live head mounts — the rows below already resolve through
-            the shared prefs, so flips apply without host wiring. */}
-        <LiveStatsModeChip />
+            the live head mounts — the roster rows below already resolve
+            through the shared prefs, so flips apply without host wiring.
+            The self report reads no career stats; the chip sits out there. */}
+        {!isSelf ? <LiveStatsModeChip /> : null}
         <button
           class={[
             "replay-view__postbattle-tool",
@@ -345,10 +388,12 @@ export const PostBattleShareBar = defineComponent({
             ? t("replay.postbattle.showAll")
             : t("replay.postbattle.hideAll")}
         </button>
-        <span class="replay-view__postbattle-toolbar-hint">
-          {t("replay.postbattle.maskHint")}
-        </span>
-        {props.showModeToggle ? (
+        {!isSelf ? (
+          <span class="replay-view__postbattle-toolbar-hint">
+            {t("replay.postbattle.maskHint")}
+          </span>
+        ) : null}
+        {props.showModeToggle && !isSelf ? (
           <button
             class={[
               "replay-view__postbattle-tool",
@@ -375,6 +420,7 @@ export const PostBattleShareBar = defineComponent({
           {t("share.copyShot")}
         </button>
       </div>
-    );
+      );
+    };
   },
 });
