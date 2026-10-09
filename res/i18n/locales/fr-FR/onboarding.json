@@ -38,7 +38,7 @@
   "gameDesc": "WoWSP a analysé ce PC à la recherche d'installations de World of Warships — cliquez sur le client à confirmer, ou relancez la détection / choisissez le dossier manuellement.",
   "gameDetecting": "Recherche des jeux installés…",
   "pluginSection": "Plugin en jeu",
-  "pluginDesc": "Pensez à installer le plugin WoWSP en jeu : les batailles en direct gagnent l'ordre TAB précis et des signaux de détection plus fiables, rien n'est affiché en jeu et la désinstallation reste possible à tout moment.",
+  "pluginDesc": "Pensez à installer le plugin WoWSP en jeu : les batailles en direct gagnent des signaux de détection plus fiables (états de coulé directement depuis le jeu), rien n'est affiché en jeu et la désinstallation reste possible à tout moment.",
   "pluginInstall": "Installer le plugin",
   "pluginSkip": "Plus tard",
   "pluginSkipCountdown": "Plus tard ({n} s)",

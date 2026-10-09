@@ -38,7 +38,7 @@
   "gameDesc": "WoWSP buscó automáticamente instalaciones de World of Warships en este equipo: haz clic en el cliente que quieras confirmar, o vuelve a detectar / elige la carpeta manualmente.",
   "gameDetecting": "Buscando juegos instalados…",
   "pluginSection": "Complemento dentro del juego",
-  "pluginDesc": "Recomendamos instalar el complemento de WoWSP dentro del juego: las batallas en directo ganan el orden TAB preciso y señales de detección más fiables, no muestra nada dentro del juego y se puede desinstalar en cualquier momento.",
+  "pluginDesc": "Recomendamos instalar el complemento de WoWSP dentro del juego: las batallas en directo ganan señales de detección más fiables (estados de hundimiento directamente desde el juego), no muestra nada dentro del juego y se puede desinstalar en cualquier momento.",
   "pluginInstall": "Instalar complemento",
   "pluginSkip": "Por ahora no",
   "pluginSkipCountdown": "Por ahora no ({n} s)",

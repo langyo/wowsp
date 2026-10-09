@@ -182,7 +182,9 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     //   mapping from the client's own Tab sort key (decompiled) over the
     //   roster, so this side only contributes the per-row alive/sunk
     //   classification (pure luma, no text recognition). The mapping is
-    //   exact at battle start (the key is a total order) and stays exact
+    //   exact at battle start on the verified WG-family clients (the key
+    //   is a total order; the per-client permutations live in the
+    //   frontend, utils/shipClass) and stays exact
     //   mid-battle via the sink fast-path's strip-fingerprint solver.
     // - `off`: neither — the frontend falls back to the historical index
     //   mapping, all rows read alive.

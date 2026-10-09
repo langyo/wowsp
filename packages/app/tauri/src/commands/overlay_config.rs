@@ -87,8 +87,10 @@ pub(crate) enum TableAnchor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RosterRecognition {
     /// In-game plugin telemetry (packages/ingame-plugin) is the PRIMARY
-    /// detector: the PnFMods bridge feeds the exact arena order with
-    /// `isAlive` sinking and the TAB screen's own tabModeIn/Out marks.
+    /// detector: the PnFMods bridge feeds the arena walk order with
+    /// authoritative `isAlive` sinking and the TAB screen's own
+    /// tabModeIn/Out marks (the TAB ROW order itself stays the frontend's
+    /// per-client inference — see the plugin design doc's ordering rule).
     /// A missing/outdated plugin or a stale stream degrades that battle to
     /// the passive capture pipeline.
     Plugin,

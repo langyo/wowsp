@@ -3,8 +3,11 @@
 > **Estado**: experimento concluido (2026-09-28); listo para su implementación.
 > Documento complementario de la superposición: la capa de visualización sigue
 > siendo la ventana transparente; este plugin es la fuente de datos dentro del
-> juego que hace que el orden de la superposición sea exacto en cualquier
-> configuración, incluida la pantalla completa exclusiva.
+> juego que mantiene exactos los estados vivo/hundido de la superposición en
+> cualquier configuración, incluida la pantalla completa exclusiva. El ORDEN
+> de las filas de TAB sigue siendo una inferencia calibrada por cliente hasta
+> que la sonda pueda leer el orden propio del juego dentro del motor — véase
+> la regla de ordenación más abajo.
 
 ## Contexto y objetivos
 
@@ -56,17 +59,49 @@ jugador no existen en las entidades avatar, y la ruta del lado unbound
 equivalente en el lado Python (`getCollection` no existe en el dataHub
 inyectado).
 
-**Regla de ordenación** (confirmada por la experiencia del propietario;
-coincide con el nombre de la colección `sortedAlive`): la tabla TAB conserva
-el orden inicial y solo mueve a los jugadores hundidos a un grupo final de
-«muertos». Por lo tanto:
+**Regla de ordenación — INESTABLE, conocimiento por cliente; la verdad debe
+venir de dentro del juego.** El orden de las filas de la tabla TAB es
+cualquiera que renderice el HUD de cada cliente, y los fabricantes han
+divergido de verdad (el primer modelo «orden de vehículos de arena con los
+hundidos reañadidos al final» nunca fue más que la aproximación de la familia
+WG — los grupos de empates que no podía resolver son lo que los chips de
+puntos de #604 maquillaron). Calíbrelo por reino contra capturas de Tab
+REALES, espere que cambie con cualquier actualización del cliente y trate la
+descompilación de scripts solo como evidencia corroborante — nunca como
+prueba. La matriz de 2026-10-09, descompilada de las instalaciones de esta
+máquina (wowsdeob, `ShipSystem.add` / `AvatarSystem.__sortKeyAlive`):
 
-```
-overlay order = arena vehicle order (tempArenaInfo — already parsed)
-                with isAlive=false players re-appended in sinking order
-```
+- **Familia WG** (eu/na/asia comparten una build): indicador de vivo, rango
+  de clase (CV < BB < CA < DD < SS < auxiliar), tier descendente, rango
+  `NATION.SORT_ORDER`, nombre corto localizado del barco, `[TAG]apodo` — una
+  sola cadena concatenada. La 15.8.0 en vivo se verificó 6/6 sobre una
+  captura de Tab (2026-09-27), y la SIGUIENTE build (13357625, descargada el
+  2026-10-06) descompila a la MISMA fórmula con el rango de nación primero —
+  WG no se ha movido.
+- **360-CN**: su propio Python (las builds 13243917 Y la actual 13357822)
+  sigue calculando la clave de rango de nación de WG, pero el cliente
+  RENDERIZA el orden por nombre localizado de barco (captura de 2026-10-07,
+  9/9 pinyin) — la divergencia vive en la capa HUD/vista. La descompilación
+  de scripts por tanto nunca podrá zanjar este cliente; solo cuentan las
+  capturas renderizadas.
+- **Lesta** (ru): también renderiza el orden por nombre localizado de barco
+  (captura de 2026-10-09: Bogatyr encabezó dos filas de St. Louis contra
+  `usa < russia`); su build actual (8867689) trae un contenedor `.pyc`
+  cambiado que el descompilador todavía no puede abrir.
 
-es una replicación **exacta**, no una aproximación.
+La app codifica esto como compuertas por reino sobre la clave de orden sin
+conexión (el `realmUsesShipNameOrder` de utils/realms; utils/shipClass lleva
+la clave en sí y la disposición estática de CN) y se niega a presentar la
+inferencia como verdad del juego: un plugin CONECTADO sigue calificando de
+«no funciona del todo» en la cabecera del panel /live (píldora de aviso +
+tooltip, `features/replay/telemetryGrade.ts`), porque la carga de telemetría
+lleva los estados vivo/hundido pero NINGÚN orden de filas. El final del
+camino es que la sonda lea el orden propio del juego dentro del motor — la
+colección que TAB renderiza (`team.ally.sortedAlive`) es la fuente natural,
+pero `getCollection` no existe en el dataHub inyectado, así que un contrato
+futuro de carga (`order: {ally: [...], enemy: [...]}`, solo contenido
+verdadero del juego) devolverá la píldora a «exacto». Hasta entonces, la
+inferencia es un fallback calibrado, nada más.
 
 ## Restricciones del sandbox (aprendidas por las malas; consérvelas en la guía de estilo del mod)
 

@@ -76,6 +76,7 @@ import LiveStatLine from "./LiveStatLine";
 import LiveStatsModeChip from "./LiveStatsModeChip";
 import MapNameTag from "./MapNameTag";
 import PluginStatusCard from "./PluginStatusCard";
+import { telemetryGradeFor } from "./telemetryGrade";
 import { WaitingRadarArt } from "./liveGuideArt";
 import {
   rosterColumns,
@@ -412,19 +413,15 @@ export default defineComponent({
     const manualActive = computed(() => overlayStatus.value?.manual === true);
 
     // ── Telemetry-source grade (the head's state pill) ───────────────────
-    // "plugin" roster mode + the PnFMods bridge installed = full precision
-    // (the exact TAB order arrives from inside the client); the mode picked
-    // but the plugin absent degrades to the screen-capture inference and
-    // the pill says so — staged per the owner's spec. Until the M2 bridge
-    // consumer lands, a connected plugin renders the same order as
-    // inference; the pill already reflects the source, not the pipeline.
+    // Staged per the roster mode and the plugin's presence. A CONNECTED
+    // plugin grades "partial", not "exact": its alive/sunk states are
+    // authoritative, but the TAB row ORDER is still the offline per-realm
+    // inference (utils/shipClass — unstable per-client knowledge; the
+    // plugin cannot read the game's own sorted collection today). The
+    // pill must never present the inferred order as game-truth — see
+    // telemetryGrade.ts.
     const overlayCfg = useOverlayConfigStore();
-    const telemetryGrade = computed<"plugin" | "incomplete" | "infer">(() => {
-      if (overlayCfg.roster !== "plugin") return "infer";
-      // An outdated build predates telemetry.json — it is "installed" but
-      // will never emit, so it grades as not-connected until updated.
-      return plugin.installed && !plugin.outdated ? "plugin" : "incomplete";
-    });
+    const telemetryGrade = computed(() => telemetryGradeFor(overlayCfg.roster, plugin));
 
     /** Manual-locate entry point: opens the cached-frame picker layer inside
      *  the main window (ManualLocateOverlay, after the backend gates pass),
@@ -1298,9 +1295,13 @@ export default defineComponent({
                 : t("replay.live.hideNicks")}
             </button>
             {/* Telemetry-source grade: staged per the roster mode and the
-                plugin's presence — plugin connected (full precision) >
-                incomplete (mode picked, plugin missing: the capture
-                inference still runs) > inference (default pipeline). */}
+                plugin's presence — partial (connected: alive/sunk states
+                authoritative, but the TAB row order is still the offline
+                per-realm inference — the plugin cannot read the game's own
+                sorted collection) > incomplete (mode picked, plugin
+                missing: the capture inference still runs) > inference
+                (default pipeline). The pill is the honesty marker: the
+                inferred order is never presented as game-truth. */}
             <span
               class={[
                 "live-battle__pill",
@@ -1310,7 +1311,7 @@ export default defineComponent({
                 t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}Hint`)
               }
             >
-              {telemetryGrade.value === "plugin" ? (
+              {telemetryGrade.value === "partial" ? (
                 <Plug size={12} />
               ) : telemetryGrade.value === "incomplete" ? (
                 <Unplug size={12} />
