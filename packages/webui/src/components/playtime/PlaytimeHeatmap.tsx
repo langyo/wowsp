@@ -22,8 +22,9 @@ const TOP = 2;
  * primary color at four opacity levels (SCSS). Value-agnostic: the view
  * feeds it `points` plus a `hintOf` formatter (today: battles per local
  * day — see battlesDaily), so hover hints carry the exact day + the
- * caller's phrasing. Empty days render a blank cell with no hint at all.
- */
+ * caller's phrasing. Empty days render a blank cell with no hint at all;
+ * days that haven't arrived yet (a whole in-progress year's tail) hatch
+ * gray instead — the year grid stays whole, the mask reads "not yet". */
 export default defineComponent({
   name: "PlaytimeHeatmap",
   props: {
@@ -49,10 +50,40 @@ export default defineComponent({
             viewBox={`0 0 ${width} ${height}`}
             preserveAspectRatio="xMidYMid meet"
           >
+            <defs>
+              {/* The not-yet days' mask: a 45° stripe per 4px tile over a
+                  faint base. Colors live in the SCSS (theme text tint) —
+                  the pattern here is pure geometry. */}
+              <pattern
+                id="playtime-heat-hatch"
+                width={4}
+                height={4}
+                patternUnits="userSpaceOnUse"
+                patternTransform="rotate(45)"
+              >
+                <rect width={4} height={4} class="playtime-heat__hatch-bg" />
+                {/* Centered in the tile so the 1.2px stroke survives the
+                    tile-edge clip whole. */}
+                <line x1={2} y1={0} x2={2} y2={4} class="playtime-heat__hatch-line" />
+              </pattern>
+            </defs>
             {g.columns.map((column, w) => (
               <g key={w}>
                 {column.map((cell, r) => {
-                  if (cell.future || !cell.key) return null;
+                  if (cell.future) {
+                    return (
+                      <rect
+                        key={`f${w}-${r}`}
+                        class="playtime-heat__cell is-future"
+                        x={LEFT + w * (CELL + GAP)}
+                        y={TOP + r * (CELL + GAP)}
+                        width={CELL}
+                        height={CELL}
+                        rx={2.5}
+                      />
+                    );
+                  }
+                  if (!cell.key) return null;
                   return (
                     <rect
                       key={cell.key}

@@ -154,7 +154,8 @@ export interface HeatCell {
   key: string;
   value: number;
   level: 0 | 1 | 2 | 3 | 4;
-  /** True for cells after today (rendered blank, never hovered). */
+  /** True for cells after today: the grid stays whole, but the day
+   *  hasn't arrived — the component hatches it (no key, no hint). */
   future: boolean;
 }
 
@@ -221,11 +222,12 @@ function mondayOnOrBefore(d: Date): Date {
 /** GitHub-style heatmap grid: Monday-start weeks, weekday rows
  *  Monday..Sunday. The window rides the `year` selection — `null` shows
  *  the rolling past year (a fixed 53-week GitHub year), a number shows
- *  that calendar year (the current year's window ends today; future
- *  cells render blank), and `"all"` spans every week back to the
- *  earliest point (heatWeeks: at least a year, at most three). `points`
- *  may be the time ledger's days or battle counts per day — only
- *  `date` / `value` are read. `locale` formats the month labels. */
+ *  that FULL calendar year (Jan..Dec even mid-year; days after today
+ *  stay in their cells flagged `future` for the component to hatch),
+ *  and `"all"` spans every week back to the earliest point (heatWeeks:
+ *  at least a year, at most three). `points` may be the time ledger's
+ *  days or battle counts per day — only `date` / `value` are read.
+ *  `locale` formats the month labels. */
 export function buildHeatGrid(
   points: HeatPoint[],
   now: Date,
@@ -245,22 +247,20 @@ export function buildHeatGrid(
     monday = mondayOnOrBefore(today);
     monday.setDate(monday.getDate() - (weeks - 1) * 7);
   } else {
-    const start = new Date(year, 0, 1, 12);
-    const endCandidate = new Date(year, 11, 31, 12);
-    const end = endCandidate > today ? today : endCandidate;
-    if (start > today) {
-      // A future selection can't happen through the view's tabs — fall
-      // back to the rolling year rather than rendering an empty canvas.
-      weeks = HEAT_MIN_WEEKS;
-      monday = mondayOnOrBefore(today);
-      monday.setDate(monday.getDate() - (weeks - 1) * 7);
-    } else {
-      const startMonday = mondayOnOrBefore(start);
-      weeks =
-        Math.round((mondayOnOrBefore(end).getTime() - startMonday.getTime()) / (7 * 86_400_000)) +
-        1;
-      monday = startMonday;
-    }
+    // The FULL calendar year: Jan 1 anchors to its Monday and the window
+    // always runs through Dec 31 — even when the year is still in
+    // progress, so the grid keeps the year's true shape. Days after
+    // today stay in place as `future` cells (the component hatches
+    // them). The tabs only offer years the data covers, so a wholly
+    // future selection needs a hand-edited future-dated ledger — and
+    // even then the math just hatches the whole grid, which reads fine.
+    const startMonday = mondayOnOrBefore(new Date(year, 0, 1, 12));
+    weeks =
+      Math.round(
+        (mondayOnOrBefore(new Date(year, 11, 31, 12)).getTime() - startMonday.getTime()) /
+          (7 * 86_400_000),
+      ) + 1;
+    monday = startMonday;
   }
 
   // Pass 1: each cell's date + value, the window's max, and the month

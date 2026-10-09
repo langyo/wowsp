@@ -188,7 +188,7 @@ describe("buildHeatGrid", () => {
     expect(hot.map((c) => c.key)).toEqual(["2026-10-05"]);
   });
 
-  it("shows exactly the picked calendar year, current year ending today", () => {
+  it("shows exactly the picked calendar year, whole even mid-year", () => {
     // 2025: Jan 1 is a Wednesday → the window anchors to Monday 2024-12-30
     // and runs to Wednesday 2025-12-31 — 53 columns; the 2025-10-06 point
     // lands mid-grid while the 2026 one stays out.
@@ -206,12 +206,28 @@ describe("buildHeatGrid", () => {
     expect(grid.columns[40][0].key).toBe("2025-10-06");
     expect(grid.columns[40][0].value).toBe(3600);
 
-    // The CURRENT year ends today: 2026 anchors to Monday 2025-12-29 and
-    // the last column is the current (partial) week.
+    // The CURRENT year renders WHOLE even mid-year: 2026 anchors to
+    // Monday 2025-12-29 and runs through Dec 31 — 53 columns; days after
+    // the pinned today stay in their cells flagged future (the component
+    // hatches them).
     const current = buildHeatGrid(daily, NOW, "en-US", 2026);
+    expect(current.columns).toHaveLength(53);
     expect(current.columns[0][0].key).toBe("2025-12-29");
-    expect(current.columns[current.columns.length - 1][0].key).toBe("2026-10-05");
-    expect(current.columns[current.columns.length - 1][0].value).toBe(7200);
+    // The 2026-10-05 point lands mid-grid on its Monday, exactly where
+    // the old ends-today window put it.
+    expect(current.columns[40][0].key).toBe("2026-10-05");
+    expect(current.columns[40][0].value).toBe(7200);
+    // The tail past today is all future: 2026-12-31 (a Thursday) pulls
+    // the last column to Monday 2026-12-28 (hence 53 columns total), and
+    // those cells carry no key and no value — hatch fodder only.
+    const tail = current.columns[52];
+    expect(tail.every((cell) => cell.future)).toBe(true);
+    expect(tail[0].key).toBe("");
+    expect(tail[0].value).toBe(0);
+    // Only future cells blank out; every arrived day keeps its key.
+    expect(
+      current.columns.every((c) => c.every((cell) => cell.future === (cell.key === ""))),
+    ).toBe(true);
   });
 });
 
