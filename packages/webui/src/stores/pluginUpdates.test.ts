@@ -1,9 +1,10 @@
 /** pluginUpdates store: freshness aggregation (catalog ledger records +
- *  probe hash status) per install, the sequential one-click batch pass
- *  with overall progress folding, and the SHARED per-item orchestration
- *  (busy table + freshness fan-out) every update surface routes through.
- *  The api module is mocked; the config store is real (its refs are set
- *  directly). */
+ *  probe hash status) per install, the sequential all-installs one-click
+ *  batch pass with overall progress folding (the running client's install
+ *  skipped with a warning), and the SHARED per-item orchestration (busy
+ *  table + freshness fan-out) every update surface routes through.
+ *  The api module is mocked; the config/gameStatus stores are real
+ *  (their refs are set directly). */
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,6 +29,7 @@ vi.mock("@/api", () => {
 });
 
 import { api } from "@/api";
+import { useGameStatusStore } from "./gameStatus";
 import { useIngamePluginStore } from "./ingamePlugin";
 import { usePluginUpdatesStore } from "./pluginUpdates";
 
@@ -122,7 +124,10 @@ describe("usePluginUpdatesStore.refresh", () => {
     const info = updates.infoFor(GAME);
     expect(info?.mods.map((m) => m.id)).toEqual(["a"]);
     expect(info?.probeOutdated).toBe(true);
-    expect(updates.activeCount).toBe(2); // one mod + the probe
+    // GAME: one stale mod + the outdated probe; OTHER: the same probe
+    // mock reports its probe outdated too — totalCount spans every
+    // install now, unlike the old active-install-only count.
+    expect(updates.totalCount).toBe(3);
   });
 
   it("keeps other installs' records out of this install's snapshot", async () => {
@@ -158,7 +163,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
       },
     };
 
-    await updates.updateAll(GAME);
+    await updates.updateAll();
 
     expect(mocked.probeInstall).toHaveBeenCalledWith(GAME);
     expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, "lite");
@@ -184,7 +189,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
       },
     };
 
-    await updates.updateAll(GAME);
+    await updates.updateAll();
 
     // The test env's i18n has no catalogs, so the toast text falls back
     // to the raw key — assert on the collected failures instead (the
@@ -218,7 +223,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
     updates.perInstall = {
       [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: true },
     };
-    const run = updates.updateAll(GAME);
+    const run = updates.updateAll();
     await vi.waitFor(() => expect(updates.overallPercent).toBe(75));
     release({});
     await run;
@@ -235,7 +240,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
     updates.perInstall = {
       [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: false },
     };
-    await updates.updateAll(GAME);
+    await updates.updateAll();
     expect(mocked.install).toHaveBeenCalled();
     expect(updates.running).toBe(false);
     expect(updates.done).toBe(1);
@@ -250,9 +255,9 @@ describe("usePluginUpdatesStore.updateAll", () => {
     updates.perInstall = {
       [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: false },
     };
-    const first = updates.updateAll(GAME);
+    const first = updates.updateAll();
     await vi.waitFor(() => expect(updates.running).toBe(true));
-    await updates.updateAll(GAME); // must return immediately
+    await updates.updateAll(); // must return immediately
     expect(mocked.install).toHaveBeenCalledTimes(1);
     release();
     await first;
@@ -274,7 +279,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
     const held = updates.runMod("b", GAME);
     await vi.waitFor(() => expect(updates.itemOp("b")).toBe("install"));
 
-    await updates.updateAll(GAME);
+    await updates.updateAll();
 
     // The batch must not report the foreign-held item as a failure — it
     // is freshly updated by the op that holds it.
@@ -285,7 +290,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
   it("is a no-op with nothing to update", async () => {
     const updates = usePluginUpdatesStore();
     updates.perInstall = { [GAME]: { mods: [], probeOutdated: false } };
-    await updates.updateAll(GAME);
+    await updates.updateAll();
     expect(mocked.install).not.toHaveBeenCalled();
     expect(updates.running).toBe(false);
   });
@@ -311,7 +316,7 @@ describe("usePluginUpdatesStore.updateAll", () => {
     const held = updates.runMod("b", GAME);
     await vi.waitFor(() => expect(updates.itemOp("b")).toBe("install"));
 
-    await updates.updateAll(GAME);
+    await updates.updateAll();
 
     // Each id installed exactly once: "b" only by the held op, never
     // re-run by the batch pass.
@@ -331,12 +336,89 @@ describe("usePluginUpdatesStore.updateAll", () => {
     const held = updates.runMod("a", GAME);
     await vi.waitFor(() => expect(updates.itemOp("a")).toBe("install"));
 
-    await updates.updateAll(GAME);
+    await updates.updateAll();
 
     expect(updates.running).toBe(false); // no flash of an empty pass
     expect(mocked.install).toHaveBeenCalledTimes(1); // the held op only
     release();
     await held;
+  });
+});
+
+describe("usePluginUpdatesStore all-installs batch", () => {
+  it("aggregates pending installs, active install first, into totalCount", () => {
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [OTHER]: { mods: [], probeOutdated: true },
+      [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: false },
+    };
+
+    expect(updates.pendingInstalls.map((g) => g.path)).toEqual([GAME, OTHER]);
+    expect(updates.totalCount).toBe(2);
+  });
+
+  it("updateAll covers every pending install, active install first", async () => {
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [OTHER]: { mods: [], probeOutdated: true },
+      [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    // Active install (GAME) first: its probe, its mod, then OTHER's probe.
+    expect(mocked.probeInstall).toHaveBeenNthCalledWith(1, GAME);
+    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, undefined);
+    expect(mocked.probeInstall).toHaveBeenNthCalledWith(2, OTHER);
+    expect(updates.done).toBe(3);
+  });
+
+  it("updateAll skips the running client's install and warns instead", async () => {
+    const gameStatus = useGameStatusStore();
+    gameStatus.process = {
+      running: true,
+      pid: 7,
+      kind: "manual",
+      realm: null,
+      exePath: `${OTHER}\\WorldOfWarships.exe`,
+      matchedInstall: { kind: "manual", path: OTHER },
+    };
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: { mods: [{ id: "b", name: "mod-b", preset: null }], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    // Only the not-running install is touched; the running one becomes a
+    // warning toast, never a failed item.
+    expect(mocked.probeInstall).toHaveBeenCalledTimes(1);
+    expect(mocked.probeInstall).toHaveBeenCalledWith(GAME);
+    expect(mocked.install).not.toHaveBeenCalled();
+    expect(updates.done).toBe(1);
+    expect(updates.failures).toEqual([]);
+    expect(useToast().toasts.some((s) => s.type === "warning")).toBe(true);
+  });
+
+  it("updateAll reports the skip even when the running client is the only one pending", async () => {
+    const gameStatus = useGameStatusStore();
+    gameStatus.process = {
+      running: true,
+      pid: 7,
+      kind: "manual",
+      realm: null,
+      exePath: null,
+      matchedInstall: { kind: "manual", path: GAME },
+    };
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = { [GAME]: { mods: [], probeOutdated: true } };
+
+    await updates.updateAll();
+
+    expect(mocked.probeInstall).not.toHaveBeenCalled();
+    expect(updates.running).toBe(false);
+    expect(useToast().toasts.some((s) => s.type === "warning")).toBe(true);
   });
 });
 
