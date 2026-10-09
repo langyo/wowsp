@@ -22,6 +22,7 @@ import numpy as np
 
 from bake_model import (
     LOD_BBOX_TOL_PCT,
+    _lod_structure_scale,
     dedup_lod_primitives,
     extract_by_instance,
     _pad4,
@@ -138,7 +139,8 @@ def test_accessor_bounds_hold_on_a_fresh_multimesh_bake(tmp_path: Path) -> None:
 # primitives with IDENTICAL bounding boxes and decreasing triangle counts.
 # Merging all of them triple-surfaces the model and sheds detached debris in
 # the airframe stage. `dedup_lod_primitives` collapses each equal-bbox set to
-# its densest member; these tests lock the matching rules.
+# its densest member; these tests lock the matching rules and the robust
+# structure scale that sizes the window.
 
 
 def _staged(verts: list[float], tris: list[int], cat: str = "misc", inst: str = "0"):
@@ -154,7 +156,7 @@ def test_dedup_collapses_an_lod_set_to_its_densest_member() -> None:
     octa = _staged([0, .5, .5, 1, .5, .5, .5, 0, .5, .5, 1, .5, .5, .5, 0, .5, .5, 1],
                    list(range(24)))                           # 8 tris — LOD1
     tetra = _staged([0, 0, 0, 1, 0, 0, .5, 1, .5, .5, .5, 1], list(range(12)))
-    kept, stats = dedup_lod_primitives([octa, tetra, box], model_extent=1.0)
+    kept, stats = dedup_lod_primitives([octa, tetra, box])
     assert len(kept) == 1 and kept[0] is box, "only the densest primitive of the set survives"
     assert stats["sets"] == 1 and stats["dropped"] == 2 and stats["dropped_tris"] == 8 + 4
 
@@ -168,7 +170,7 @@ def test_dedup_keeps_distinct_overlapping_and_mirrored_parts() -> None:
     # A mirrored twin at negative x: same SIZE, different POSITION — stays.
     twin = _staged([v + (-3 if i % 3 == 0 else 0) for i, v in enumerate(_UNIT_BOX_VERTS)],
                    list(range(36)))
-    kept, stats = dedup_lod_primitives([fuselage, canopy, twin], model_extent=4.0)
+    kept, stats = dedup_lod_primitives([fuselage, canopy, twin])
     assert len(kept) == 3 and kept[0] is fuselage and kept[1] is canopy and kept[2] is twin
     assert stats["dropped"] == 0
 
@@ -177,33 +179,60 @@ def test_dedup_never_crosses_category_or_instance_buckets() -> None:
     a = _staged(_UNIT_BOX_VERTS, list(range(36)), cat="misc", inst="0")
     b = _staged(_UNIT_BOX_VERTS, list(range(36)), cat="misc", inst="7")
     c = _staged(_UNIT_BOX_VERTS, list(range(36)), cat="aircraft", inst="0")
-    kept, stats = dedup_lod_primitives([a, b, c], model_extent=1.0)
+    kept, stats = dedup_lod_primitives([a, b, c])
     assert len(kept) == 3 and kept[0] is a and kept[1] is b and kept[2] is c
     assert stats["dropped"] == 0
 
 
 def test_dedup_tolerance_splits_at_the_documented_window() -> None:
+    # The unit box's diagonal is the structure scale here (sqrt(3) ≈ 1.73), so
+    # the window is ≈ 0.0087 — shifts of 0.001 fall inside, 0.05 falls outside.
     rep = _staged(_UNIT_BOX_VERTS, list(range(36)))
-    tol = LOD_BBOX_TOL_PCT  # of the model extent (1.0 below)
-    inside = _staged([v + (tol * 0.5 if i % 3 == 0 else 0) for i, v in enumerate(_UNIT_BOX_VERTS)],
+    inside = _staged([v + (0.001 if i % 3 == 0 else 0) for i, v in enumerate(_UNIT_BOX_VERTS)],
                      list(range(24)))
-    outside = _staged([v + (tol * 1.5 if i % 3 == 0 else 0) for i, v in enumerate(_UNIT_BOX_VERTS)],
+    outside = _staged([v + (0.05 if i % 3 == 0 else 0) for i, v in enumerate(_UNIT_BOX_VERTS)],
                       list(range(24)))
-    kept, stats = dedup_lod_primitives([rep, inside], model_extent=1.0)
+    kept, stats = dedup_lod_primitives([rep, inside])
     assert len(kept) == 1 and kept[0] is rep and stats["dropped"] == 1, "within the window: same LOD set"
-    kept, stats = dedup_lod_primitives([rep, outside], model_extent=1.0)
+    kept, stats = dedup_lod_primitives([rep, outside])
     assert len(kept) == 2 and kept[0] is rep and kept[1] is outside and stats["dropped"] == 0, "past the window: separate section"
+
+
+def test_dedup_scale_ignores_far_away_strays() -> None:
+    # A stray parked at 100 units would inflate the GLOBAL extent ~50x and the
+    # old extent-based window with it (absorbing the 0.05-shifted section).
+    # The structure scale keys on the second-largest primitive diagonal, so
+    # the stray cannot move the window and the section stays its own.
+    stray = _staged([100, 100, 100, 150, 100, 100, 150, 150, 100, 100, 150, 150],
+                    list(range(12)))
+    rep = _staged(_UNIT_BOX_VERTS, list(range(36)))
+    near = _staged([v + (0.001 if i % 3 == 0 else 0) for i, v in enumerate(_UNIT_BOX_VERTS)],
+                   list(range(24)))
+    far = _staged([v + (0.05 if i % 3 == 0 else 0) for i, v in enumerate(_UNIT_BOX_VERTS)],
+                  list(range(24)))
+    assert _lod_structure_scale(np.asarray([1.0, 5.0, 50.0])) == 5.0
+    kept, stats = dedup_lod_primitives([stray, rep, near])
+    assert len(kept) == 2 and kept[0] is stray and kept[1] is rep
+    assert stats["sets"] == 1 and stats["dropped"] == 1, "the true LOD set still collapses beside the stray"
+    kept, stats = dedup_lod_primitives([stray, rep, far])
+    assert len(kept) == 3 and stats["dropped"] == 0, "the window did not grow with the stray"
 
 
 def test_dedup_on_empty_input_and_nonfinite_bounds_is_a_noop() -> None:
     empty = _staged([], [])
-    kept, stats = dedup_lod_primitives([], model_extent=1.0)
+    kept, stats = dedup_lod_primitives([])
     assert kept == [] and stats["dropped"] == 0
     nan_prim = _staged([float("nan")] * 12, list(range(12)))
+    empty_vt = _staged([], [])
     box = _staged(_UNIT_BOX_VERTS, list(range(36)))
-    kept, stats = dedup_lod_primitives([nan_prim, box], model_extent=1.0)
+    kept, stats = dedup_lod_primitives([nan_prim, box])
     assert len(kept) == 2 and kept[0] is nan_prim and kept[1] is box, "non-finite bounds never match — both stay"
     assert stats["dropped"] == 0
+    # ALL primitives degenerate: no diagonal survives to scale the window —
+    # a no-op, never an IndexError.
+    kept, stats = dedup_lod_primitives([nan_prim, empty_vt])
+    assert kept == [nan_prim, empty_vt] or kept == [empty_vt, nan_prim]
+    assert stats == {"sets": 0, "dropped": 0, "dropped_tris": 0}
 
 
 def _synthetic_lod_gltf() -> dict:

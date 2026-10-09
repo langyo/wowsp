@@ -192,16 +192,43 @@ _INSTANCE_NO = re.compile(r"\(HP_\w+_(\d+)\)|_(\d+)\s*$")
 
 
 # Two primitives whose bounding boxes agree on every corner within this
-# fraction of the model extent are the same section at different LODs. Measured
-# on plane exports: true LOD sets coincide to <0.2% of extent, while neighbouring
-# sections (a canopy inside the fuselage box, prim-15-style detail plates) miss
-# at least one bound by >1% — the window separates them with margin on both sides.
+# fraction of the model's structure scale are the same section at different
+# LODs. Measured on plane exports: true LOD sets coincide to <0.2% of the
+# extent, while neighbouring sections (a canopy inside the fuselage box,
+# prim-15-style detail plates) miss at least one bound by >1% — the window
+# separates them with margin on both sides.
 LOD_BBOX_TOL_PCT = 0.005
+
+
+def _lod_structure_scale(diags: np.ndarray) -> float:
+    """Robust length scale of the model's real structure, from the primitive
+    bbox diagonals.
+
+    The window above is RELATIVE, so its reference must not move when a stray
+    far-away piece (a discarded catapult shuttle, an unused state mesh parked
+    off to the side) inflates the global bounding box: on a 10x-inflated
+    extent the tolerance would swallow neighbouring sections that miss their
+    shared bounds by ~1% of the TRUE extent — silent geometry loss. The
+    SECOND-largest diagonal is the model's largest companion section: one
+    large far-away stray — which can only ever rank first — cannot move it,
+    and small strays sort below the real structure and are harmless (two or
+    more strays larger than everything real would still slip through; none
+    exist in the measured exports, and the window can only ever NARROW
+    against the master baseline, never widen). With no strays the scale sits
+    within a small factor of the global extent — a plane's fuselage and wing
+    diagonals are near-equal, a fuselage-dominated model lands near half of
+    it — and the window's 5x documented margin absorbs that reference shift
+    down to ~0.4x of the extent; a single-primitive model falls back to its
+    only diagonal.
+    """
+    ordered = np.sort(np.asarray(diags, dtype=np.float64))
+    if not len(ordered):
+        return 0.0
+    return float(ordered[-2]) if len(ordered) >= 2 else float(ordered[-1])
 
 
 def dedup_lod_primitives(
     staged: list[tuple[str, str, np.ndarray, np.ndarray]],
-    model_extent: float,
 ) -> tuple[list[tuple[str, str, np.ndarray, np.ndarray]], dict]:
     """Collapse WoWS LOD sets — equal-bbox primitives — to their top detail.
 
@@ -217,17 +244,18 @@ def dedup_lod_primitives(
     each set — the surface the game itself draws.
 
     Matching is per (category, instance) bucket and per-axis on BOTH bbox
-    corners, within `LOD_BBOX_TOL_PCT` of the model extent: mirrored or
-    adjacent sections sit at different positions, and sections that merely
-    overlap (a canopy inside the fuselage box) never match all six bounds, so
-    both survive. Ties keep the earliest primitive, so output is deterministic.
-    Non-finite bounds never match (they would silently swallow everything).
+    corners, within `LOD_BBOX_TOL_PCT` of the structure scale (`_lod_structure_scale`,
+    robust against far-away strays): mirrored or adjacent sections sit at
+    different positions, and sections that merely overlap (a canopy inside the
+    fuselage box) never match all six bounds, so both survive. Ties keep the
+    earliest primitive, so output is deterministic. Non-finite bounds never
+    match (they would silently swallow everything).
     """
     stats = {"sets": 0, "dropped": 0, "dropped_tris": 0}
-    if not staged or not model_extent > 0:
+    if not staged:
         return staged, stats
-    tol = LOD_BBOX_TOL_PCT * model_extent
     boxes: dict[tuple[str, str], list[tuple[int, np.ndarray, np.ndarray, int]]] = {}
+    diags: list[float] = []
     for si, (cat, inst, vt, prim_idx) in enumerate(staged):
         if len(vt) == 0:
             continue
@@ -235,8 +263,15 @@ def dedup_lod_primitives(
         hi = np.asarray(vt, dtype=np.float64).max(axis=0)
         if not (np.isfinite(lo).all() and np.isfinite(hi).all()):
             continue
+        diags.append(float(np.linalg.norm(hi - lo)))
         bucket = boxes.setdefault((cat, inst), [])
         bucket.append((si, lo, hi, len(prim_idx) // 3))
+    if not diags:  # every primitive empty or non-finite — nothing to scale
+        return staged, stats
+    scale = _lod_structure_scale(np.asarray(diags, dtype=np.float64))
+    if not scale > 0:
+        return staged, stats
+    tol = LOD_BBOX_TOL_PCT * scale
     drop: set[int] = set()
     for members in boxes.values():
         if len(members) < 2:
@@ -274,7 +309,8 @@ def extract_by_instance(gltf: dict, dedup_lods: bool = False) -> dict[str, dict[
 
     With `dedup_lods`, primitives whose bounding boxes coincide (WoWS LOD
     sets) collapse to their densest member before any budget is spent — see
-    `dedup_lod_primitives`.
+    `dedup_lod_primitives`; the matching window keys on a structure scale
+    computed from the staged primitives themselves, not the global extent.
     """
     gjson = gltf["json"]
     binary = gltf["binary"]
@@ -471,7 +507,7 @@ def extract_by_instance(gltf: dict, dedup_lods: bool = False) -> dict[str, dict[
     else:
         model_extent = 0.0
     if dedup_lods:
-        staged, dedup_stats = dedup_lod_primitives(staged, model_extent)
+        staged, dedup_stats = dedup_lod_primitives(staged)
         if dedup_stats["dropped"]:
             print(f"[bake] deduped {dedup_stats['sets']} LOD set(s): dropped "
                   f"{dedup_stats['dropped']} duplicate primitive(s) "
