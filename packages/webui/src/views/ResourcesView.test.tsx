@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
   adopt: vi.fn(), uninstall: vi.fn(), error: vi.fn(),
   migrationPlan: vi.fn(),
+  records: vi.fn(), catalog: vi.fn(),
 }));
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/api", () => ({ api: {
@@ -15,8 +16,8 @@ vi.mock("@/api", () => ({ api: {
   modHubPnfLoaderStatus: mocks.loader, modHubSafeMode: mocks.safe, modHubReconcile: mocks.reconcile,
   modHubUninstallUnit: mocks.uninstall,
   modHubMigrationPlan: mocks.migrationPlan,
-  modCatalogRefresh: async () => ({ mods: [], sourceVersion: "test", fetchedAt: "" }),
-  modHubRecords: async () => [], modTags: async () => ({ tags: [] }),
+  modCatalogRefresh: mocks.catalog,
+  modHubRecords: mocks.records, modTags: async () => ({ tags: [] }),
 } }));
 vi.mock("@/stores/config", () => ({ useConfigStore: () => mocks.config }));
 vi.mock("@/stores/gameStatus", () => ({ useGameStatusStore: () => ({ process: { running: false } }) }));
@@ -32,6 +33,7 @@ vi.mock("@celestia-island/hikari", () => {
     HkTabs: component("HkTabs"), HkSpinner: component("HkSpinner"), HkButton: component("HkButton"),
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
     HkIconButton: component("HkIconButton"), HkModal: component("HkModal"), HkSwitch: component("HkSwitch"), HMenu: component("HMenu"),
+    HkImagePreview: component("HkImagePreview"),
     useToast: () => ({ error: mocks.error, success: vi.fn(), warning: vi.fn(), info: vi.fn() }),
   };
 });
@@ -65,6 +67,8 @@ beforeEach(() => {
   mocks.loader.mockResolvedValue(null);
   mocks.safe.mockResolvedValue(false);
   mocks.reconcile.mockResolvedValue(null);
+  mocks.records.mockResolvedValue([]);
+  mocks.catalog.mockResolvedValue({ mods: [], sourceVersion: "test", fetchedAt: "" });
 });
 
 describe("mod inventory root ownership", () => {
@@ -179,5 +183,51 @@ describe("mod inventory root ownership", () => {
     pending.resolve({ fromVersion: "1", toVersion: "2", duplicate: [], superseded: [], decide: [{ path: "old.xml", size: 1 }] });
     await flushPromises();
     expect(wizard().props("footerActions")[1].label).toBe("resources.migrateScanStart");
+  });
+});
+
+describe("list filter chips & install lights", () => {
+  it("multi-selects chips with union semantics; the empty selection shows all", async () => {
+    mocks.scan.mockResolvedValue([
+      { ...mod("Mod A"), relPath: "PnFMods/a" },
+      { ...mod("Mod P"), relPath: "PnFMods/p", kind: "patch" },
+    ]);
+    const view = await mountInstalled();
+    const rows = () => view.findAll(".mod-row").length;
+    expect(rows()).toBe(2);
+    const chips = view.findAll(".resources-chips .chip");
+    expect(chips).toHaveLength(2);
+    await chips[0].trigger("click");
+    expect(rows()).toBe(1);
+    expect(view.findAll(".chip--on")).toHaveLength(1);
+    await chips[1].trigger("click");
+    expect(rows()).toBe(2);
+    expect(view.findAll(".chip--on")).toHaveLength(2);
+    await chips[0].trigger("click");
+    expect(rows()).toBe(1);
+    await chips[1].trigger("click");
+    expect(rows()).toBe(2);
+    expect(view.findAll(".chip--on")).toHaveLength(0);
+  });
+
+  it("marks rows with corner lights: yellow stale, blue aslain, green otherwise", async () => {
+    mocks.catalog.mockResolvedValue({
+      mods: [{ id: "mod-a", version: "2", category: "text", nameEn: "Mod A" }],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.records.mockResolvedValue([{ id: "mod-a", version: "1", gameRoot: "C:/TestGameA" }]);
+    mocks.scan.mockResolvedValue([
+      { ...mod("Mod A"), relPath: "PnFMods/a", identity: "mod-a" },
+      { ...mod("Aslain One"), relPath: "PnFMods/b" },
+      { ...mod("Plain"), relPath: "PnFMods/c" },
+    ]);
+    mocks.foreign.mockResolvedValue([
+      { installer: "aslain", key: "k1", name: "Aslain One", identity: "mod-b" },
+    ]);
+    const view = await mountInstalled();
+    expect(view.findAll(".mod-row__dot--yellow")).toHaveLength(1);
+    expect(view.findAll(".mod-row__dot--blue")).toHaveLength(1);
+    expect(view.findAll(".mod-row__dot--green")).toHaveLength(1);
   });
 });

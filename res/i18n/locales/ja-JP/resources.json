@@ -113,6 +113,7 @@
   "uninstalledDone": "「{name}」を削除しました — {removed} 個のファイルを削除{restored}。",
   "restoredPart": "、{count} 個の上書き元ファイルを復元",
   "confirmUninstall": "「{name}」をアンインストールしますか？書き込まれたファイルを削除し、上書きされた元のファイルを復元します。",
+  "chipsHint": "クリックでフィルターを切り替えられます（複数選択可）。未選択ならすべて表示されます。",
   "cat": {
     "battle": "戦闘",
     "minimap": "ミニマップ",

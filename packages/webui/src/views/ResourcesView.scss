@@ -349,6 +349,7 @@
 
 .mod-row__tile {
   --accent: var(--color-muted);
+  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -382,6 +383,24 @@
     width: 56px;
     height: 56px;
   }
+}
+
+// ── Row-tile corner lights: green = installed & current, yellow = update
+// available, blue = a third-party (Aslain/ModStation) copy. Punched into
+// the tile's lower-right corner; the surface ring keeps the light legible
+// on every tile hue.
+.mod-row__dot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgb(var(--color-surface, 255 255 255));
+
+  &--green  { background: rgb(var(--color-success, 14 184 64)); }
+  &--yellow { background: rgb(var(--color-warning, 238 214 119)); }
+  &--blue   { background: rgb(var(--color-info, 106 190 214)); }
 }
 
 // ── Search-combo candidate innards (row chrome lives in the combo) ──────────
@@ -1073,14 +1092,6 @@
     font-size: var(--text-xs);
     line-height: 1.5;
     color: rgb(var(--color-text) / 75%);
-  }
-
-  /* First screenshot of the online entry — full-width, quiet radius. */
-  &__preview {
-    width: 100%;
-    border-radius: var(--radius-sm);
-    border: 1px solid rgb(var(--color-border) / 25%);
-    display: block;
   }
 
   /* Install-time scheme selector (palette / position / display mode):

@@ -113,6 +113,7 @@
   "uninstalledDone": "Removed \"{name}\" — {removed} files deleted{restored}.",
   "restoredPart": ", {count} originals restored",
   "confirmUninstall": "Uninstall \"{name}\"? Recorded files are removed; overwritten originals are restored.",
+  "chipsHint": "Multi-select filters — with no chip selected, everything is shown.",
   "cat": {
     "battle": "Battle",
     "minimap": "Minimap",

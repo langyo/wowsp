@@ -113,6 +113,7 @@
   "uninstalledDone": "« {name} » supprimé — {removed} fichiers supprimés{restored}.",
   "restoredPart": ", {count} originaux restaurés",
   "confirmUninstall": "Désinstaller « {name} » ? Les fichiers enregistrés seront supprimés ; les originaux écrasés seront restaurés.",
+  "chipsHint": "Cliquez pour activer des filtres (sélection multiple) ; sans sélection, tout est affiché.",
   "cat": {
     "battle": "Combat",
     "minimap": "Minimap",

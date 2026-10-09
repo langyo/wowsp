@@ -113,6 +113,7 @@
   "uninstalledDone": "已移除「{name}」——删除 {removed} 个文件{restored}。",
   "restoredPart": "，还原 {count} 个被覆盖文件",
   "confirmUninstall": "卸载「{name}」？将删除其写入的文件，并还原被覆盖的原始文件。",
+  "chipsHint": "点击标签进行筛选，可多选；不选则显示全部",
   "cat": {
     "battle": "战斗",
     "minimap": "小地图",
