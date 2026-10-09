@@ -1,11 +1,25 @@
 /* HoloShipTooltip — the rich hover card for one scorebar ship slot.
    Teleported to <body>, OUTSIDE .holo-map, so the HUD custom properties do
-   not resolve here: the card paints the same neutral translucent glass the
-   scorebar pill uses (readable on the dark map AND the light one) and the
-   team accents are the scorebar's own green/red tokens. */
+   not resolve here: the card carries its own self-contained tokens (below)
+   and the team accents are the scorebar's green/red family. */
 .holo-ship-tip {
+  /* The card used to paint the scorebar's 42% grey glass + blur(14px) —
+     but the blur never samples the WebGL canvas behind it in WebView2
+     (Chromium mishandles backdrop roots under the app's CSS zoom), so the
+     sea, ship labels and event feed read straight through the panel, and
+     the light theme's dark ink sat on a mid-grey wash. The panel is now
+     near-opaque — the same 96% recipe the pop-up menus use via
+     --holo-hud-menu — with per-theme flips for every dark-biased inner
+     surface (chips, HP rail, scrollbar, accents). */
   --tip-ally: #4ade80;
   --tip-enemy: #f87171;
+  --tip-panel: rgb(12 16 26 / 96%);
+  --tip-chip: rgb(0 0 0 / 40%);
+  --tip-chip-border: rgb(255 255 255 / 12%);
+  --tip-tag: rgb(0 0 0 / 35%);
+  --tip-tag-ink: rgb(255 255 255 / 85%);
+  --tip-rail: rgb(9 13 22 / 65%);
+  --tip-scrollbar: rgb(255 255 255 / 30%);
 
   position: fixed;
   z-index: 1000;
@@ -17,12 +31,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgb(255 255 255 / 30%) transparent;
   padding: 0.65rem 0.8rem 0.5rem;
   border-radius: 12px;
-  /* Same neutral grey glass as .holo-scorebar — readable over either map
-     theme; numbers carry the meaning, the glass only frames them. */
-  background: rgb(96 108 126 / 42%);
+  /* Near-opaque themed panel — see the token block above. The blur stays
+     as progressive enhancement for engines where backdrop sampling works. */
+  background: var(--tip-panel);
   border: 1px solid rgb(255 255 255 / 22%);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -31,6 +44,7 @@
   font-size: 0.75rem;
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
+  scrollbar-color: var(--tip-scrollbar) transparent;
 
   /* Left rail picks the side tint so the card reads ally/enemy at a glance. */
   &--enemy { border-left: 3px solid var(--tip-enemy); }
@@ -65,8 +79,8 @@
     flex: none;
     padding: 0 5px;
     border-radius: 999px;
-    background: rgb(0 0 0 / 35%);
-    color: rgb(255 255 255 / 85%);
+    background: var(--tip-tag);
+    color: var(--tip-tag-ink);
     font-size: 0.625rem;
     font-style: normal;
     font-weight: 600;
@@ -190,14 +204,14 @@
     }
   }
 
-  /* Hull HP bar — dark rail so the team-coloured fill reads on either
-     glass, same recipe as the scorebar slot bar. */
+  /* Hull HP bar — themed rail so the team-coloured fill reads on either
+     panel, same recipe as the scorebar slot bar. */
   &__hpbar {
     position: relative;
     height: 5px;
     margin: 2px 0 3px;
     border-radius: 3px;
-    background: rgb(9 13 22 / 65%);
+    background: var(--tip-rail);
     overflow: hidden;
   }
 
@@ -223,8 +237,8 @@
     gap: 3px;
     padding: 1px 6px;
     border-radius: 999px;
-    background: rgb(0 0 0 / 30%);
-    border: 1px solid rgb(255 255 255 / 12%);
+    background: var(--tip-chip);
+    border: 1px solid var(--tip-chip-border);
     font-size: 0.625rem;
     font-weight: 600;
     white-space: nowrap;
@@ -267,4 +281,29 @@
     color: rgb(var(--color-text, 235 240 248) / 42%);
     text-align: center;
   }
+}
+
+/* Light theme: the card rides the app's root [data-mode] even teleported
+   to <body> — white 96% panel (the pop-up menus' recipe), grey-700 ink
+   from --color-text, darker team accents so the metrics and the left rail
+   keep their contrast on white, and every dark-biased inner surface flips
+   with the tokens above. */
+:root[data-mode="light"] .holo-ship-tip {
+  --tip-ally: #16a34a;
+  --tip-enemy: #dc2626;
+  --tip-panel: rgb(255 255 255 / 96%);
+  --tip-chip: rgb(55 65 81 / 8%);
+  --tip-chip-border: rgb(55 65 81 / 16%);
+  --tip-tag: rgb(55 65 81 / 12%);
+  --tip-tag-ink: rgb(55 65 81 / 85%);
+  --tip-rail: rgb(55 65 81 / 18%);
+  --tip-scrollbar: rgb(55 65 81 / 30%);
+
+  /* Only the three neutral sides — the left longhand stays owned by the
+     ally/enemy accent rail rules above (border-color here would grey the
+     team tint out). */
+  border-top-color: rgb(55 65 81 / 22%);
+  border-right-color: rgb(55 65 81 / 22%);
+  border-bottom-color: rgb(55 65 81 / 22%);
+  box-shadow: 0 6px 24px rgb(55 65 81 / 20%), inset 0 1px 0 rgb(255 255 255 / 60%);
 }
