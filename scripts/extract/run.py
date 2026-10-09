@@ -259,6 +259,7 @@ def _run_techtree_lesta(
             _die(f"Lesta GameParams not found: {lesta_gp}")
         print(f"[extract] lesta gameparams: {lesta_gp}")
         _py(*_lesta_tree_cmd(lesta_gp))
+        _run_lesta_overlay(lesta_gp)
         return
     lesta = find_lesta_game_path(explicit_lesta_path)
     if not lesta:
@@ -277,6 +278,54 @@ def _run_techtree_lesta(
         if rc != 0:
             _die(f"wowsunpack game-params failed for the Lesta client (rc={rc}).")
     _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
+    _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
+
+
+def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> None:
+    """The encyclopedia overlay + offline-names merge for Lesta-only ships.
+
+    Needs the client's ru gettext catalog next to the dump (a full install
+    provides bin/<build>/res/texts/ru/LC_MESSAGES/global.mo); without one the
+    bundled ships_lesta.json / ship_names.json stay untouched. Portraits and
+    the plaque silhouettes are one-shot asset pulls off the same install —
+    see lesta_extract.py's docstring (gui/ship_previews → images/ships,
+    gui/ships_silhouettes → trace_silhouettes.py --merge-indexes).
+    """
+    mo = None
+    version_stamp = "lesta"
+    if lesta_game:
+        bin_dir = Path(lesta_game, "bin")
+        builds = sorted(
+            (p for p in bin_dir.iterdir() if p.is_dir() and p.name.isdigit()),
+            key=lambda p: int(p.name),
+            reverse=True,
+        ) if bin_dir.is_dir() else []
+        for build in builds:
+            cand = build / "res" / "texts" / "ru" / "LC_MESSAGES" / "global.mo"
+            if cand.is_file():
+                mo = cand
+                version_stamp = f"lesta-{build.name}"
+                break
+    if mo is None:
+        print(
+            "[techtree] WARNING: no Lesta ru catalog found — skipping the "
+            "ships_lesta.json overlay build (names fall back to the "
+            "GameParams working names).",
+            flush=True,
+        )
+        return
+    _py(
+        "build_lesta_overlay.py",
+        "--gameparams", str(gameparams),
+        "--mo", str(mo),
+        "--mo-lang", "ru-RU",
+        "--curated", str(HERE / "lesta_names_curated.json"),
+        "--lesta-tree", str(TECHTREE_LESTA_JSON),
+        "--wg-tree", str(TECHTREE_JSON),
+        "--version", version_stamp,
+        "--out", str(SRC_DATA / "ships_lesta.json"),
+        "--merge-names", str(SRC_DATA / "ship_names.json"),
+    )
 
 
 def _lesta_tree_cmd(gameparams: Path) -> list[str]:
@@ -300,12 +349,17 @@ def _lesta_tree_cmd(gameparams: Path) -> list[str]:
 
 def _run_shipmodels() -> None:
     """shipId → base model name map (skin→base dedup for the 3D viewer)."""
-    _py(
+    cmd = [
         "build_ship_models.py",
         "--gameparams", str(GAMEPARAMS_JSON),
         "--bridge", str(WOWSINFO_JSON),
         "--out", str(SHIPMODELS_JSON),
-    )
+    ]
+    # The Lesta-only ships ride along (name/silhouette resolution needs their
+    # entries even before their GLBs exist — see bake_lesta_ships.py).
+    if GAMEPARAMS_LESTA_JSON.exists():
+        cmd[1:1] = ["--extra-gameparams", str(GAMEPARAMS_LESTA_JSON)]
+    _py(*cmd)
 
 
 def _run_dogtags(game: str) -> None:
