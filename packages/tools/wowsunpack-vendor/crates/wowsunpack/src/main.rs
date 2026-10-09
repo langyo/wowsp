@@ -66,6 +66,16 @@ struct Args {
     #[clap(short, long)]
     idx_files: Vec<PathBuf>,
 
+    /// Mount a plain directory as the VFS root instead of the idx/pkg game
+    /// VFS. The directory must carry the already-extracted `content/...`
+    /// tree (plus `content/assets.bin` and a GameParams blob). This is the
+    /// Lesta (Мир кораблей) route: its vehicle packs are Oodle-compressed,
+    /// which the pkg reader cannot decode — extract the needed files first
+    /// (scripts/extract/lesta_extract.py + ooz) and point this at the
+    /// extraction. `--game-dir` still supplies translations when given.
+    #[clap(long)]
+    disk_root: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -591,6 +601,14 @@ fn run() -> Result<(), Report> {
                 vfs = Some(pkg_vfs);
             }
         }
+    }
+
+    // --disk-root: a plain extracted tree replaces the idx/pkg VFS entirely.
+    // Used for clients whose packs the pkg reader cannot decode (Lesta's
+    // Oodle-compressed vehicles) — the needed files are extracted to disk
+    // first and mounted through PhysicalFS.
+    if let Some(disk_root) = args.disk_root.take() {
+        vfs = Some(VfsPath::new(vfs::PhysicalFS::new(disk_root)));
     }
 
     match args.command {

@@ -55,6 +55,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "extract"))
 from _common import find_game_path, latest_bin_with_idx, run_game_params  # noqa: E402
+from build_techtree import _params_root  # noqa: E402
 
 DEFAULT_OUT = ROOT / "packages/webui/src/res/data/gameparams"
 CACHE_DIR = Path(
@@ -206,7 +207,17 @@ def main() -> int:
     parser.add_argument("--pretty", action="store_true", help="pretty-print the JSON")
     parser.add_argument("--force", action="store_true",
                         help="re-extract ships even when already written")
+    parser.add_argument(
+        "--lesta-input", type=Path,
+        help="decoded Lesta GameParams.json — a merge-only pass that fills the "
+             "pack's missing (Lesta-only) ship slices. Never rewrites "
+             "build.txt/upgrade-prices/WG files, so the WG freshness gate stays "
+             "the single owner of pack regeneration.",
+    )
     args = parser.parse_args()
+
+    if args.lesta_input:
+        return merge_lesta_slices(args)
 
     game = args.game or find_game_path()
     out_dir: Path = args.out
@@ -278,6 +289,36 @@ def main() -> int:
         f"({written} written, {skipped} skipped), {len(prices)} price keys, "
         f"{raw_total / 1024 / 1024:.1f} MB raw → {out_dir}"
     )
+    return 0
+
+
+def merge_lesta_slices(args) -> int:
+    """Fill the pack's missing ship slices from a Lesta GameParams dump.
+
+    The pack's primary pass is WG-driven (build.txt owns regeneration); this
+    side pass only ADDS files whose shipId is absent — on a WG-built pack
+    that is exactly the Lesta-only ships (shared ships keep identical ids
+    and already have files). Refuses to run without a WG pack present, so a
+    bare --lesta-input can never seed the pack with a Lesta-only roster.
+    """
+    out_dir: Path = args.out
+    if not out_dir.is_dir() or not any(out_dir.glob("*.json")):
+        raise SystemExit(
+            "--lesta-input needs the WG pack already built (run the WG pass "
+            "first) — a Lesta merge must only ever fill gaps, not seed the pack."
+        )
+    print(f"[extract-gameparams] loading Lesta dump {args.lesta_input} ...")
+    raw = json.loads(args.lesta_input.read_text(encoding="utf-8"))
+    data = _params_root(raw)
+    slices = collect_ship_slices(data)
+    written = 0
+    for ship_id in sorted(slices):
+        target = _ship_file(out_dir, ship_id)
+        if target.is_file() and target.stat().st_size > 0:
+            continue  # WG (or an earlier Lesta pass) already covers this id
+        _write_json(target, slices[ship_id], args.pretty)
+        written += 1
+    print(f"[extract-gameparams] Lesta merge: +{written} ship slices -> {out_dir}")
     return 0
 
 

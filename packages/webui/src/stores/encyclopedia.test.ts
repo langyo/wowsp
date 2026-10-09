@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ShipInfo } from "@/api";
 import { loadShipsBasics } from "@/utils/shipsBasics";
 import { useEncyclopediaStore } from "./encyclopedia";
+import { useShipsUiStore } from "@/stores/shipsUi";
 
 vi.mock("@/api", () => ({ api: { getGameVersion: vi.fn(), getShipEncyclopedia: vi.fn() } }));
 vi.mock("@/i18n/useLanguage", () => ({
@@ -16,6 +17,17 @@ vi.mock("@/features/holographic/modelLoader", () => ({
   shipNameFromOfflineDb: vi.fn(), shipDescriptionFromOfflineDb: vi.fn(),
 }));
 vi.mock("@/utils/shipsBasics", () => ({ loadShipsBasics: vi.fn(), basicsToShipInfo: vi.fn() }));
+
+// The overlay module is exercised by its own test against the generated
+// data; here it stands in deterministically — appending one fake Lesta ship
+// whenever the tree realm is lesta, exactly the contract the store relies on.
+vi.mock("@/utils/shipsLesta", () => ({
+  withLestaOverlay: vi.fn(async (list: ShipInfo[], _lang: string) => {
+    const { useShipsUiStore: ui } = await import("@/stores/shipsUi");
+    if (ui().treeRealm !== "lesta") return list;
+    return [...list, { shipId: 9001, name: "Lesta ship" } as ShipInfo];
+  }),
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -92,5 +104,32 @@ describe("encyclopedia request ownership", () => {
     expect(store.ships).toEqual(ASIA_SHIPS);
     expect(store.error).toBeNull();
     expect(store.loading).toBe(false);
+  });
+});
+
+describe("Lesta overlay", () => {
+  it("appends the overlay ships while the branch source is Lesta", async () => {
+    vi.mocked(api.getShipEncyclopedia).mockResolvedValue(ASIA_SHIPS);
+    const store = useEncyclopediaStore();
+    useShipsUiStore().setTreeRealm("lesta");
+    await store.load("asia", true);
+
+    expect(store.ships.map((s) => s.shipId)).toEqual([1, 9001]);
+  });
+
+  it("re-derives the list locally when the branch source flips, no refetch", async () => {
+    vi.mocked(api.getShipEncyclopedia).mockResolvedValue(ASIA_SHIPS);
+    // The previous test persists lesta through localStorage — start clean.
+    useShipsUiStore().setTreeRealm("wg");
+    const store = useEncyclopediaStore();
+    await store.load("asia", true);
+    expect(store.ships.map((s) => s.shipId)).toEqual([1]);
+
+    useShipsUiStore().setTreeRealm("lesta");
+    await vi.waitFor(() => expect(store.ships.map((s) => s.shipId)).toEqual([1, 9001]));
+    useShipsUiStore().setTreeRealm("wg");
+    await vi.waitFor(() => expect(store.ships.map((s) => s.shipId)).toEqual([1]));
+    // One fetch only — the flip never round-tripped the WG API.
+    expect(api.getShipEncyclopedia).toHaveBeenCalledTimes(1);
   });
 });

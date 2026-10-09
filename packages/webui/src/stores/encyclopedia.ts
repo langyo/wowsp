@@ -3,7 +3,9 @@ import { computed, ref, watch } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
 import { basicsToShipInfo, loadShipsBasics } from "@/utils/shipsBasics";
+import { withLestaOverlay } from "@/utils/shipsLesta";
 import { useAccountStore } from "@/stores/account";
+import { useShipsUiStore } from "@/stores/shipsUi";
 import { useLanguage, wgApiLanguage } from "@/i18n/useLanguage";
 import { shipDescriptionFromOfflineDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
@@ -57,6 +59,12 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
    *  the UI kept showing the previous language's names under the new setting. */
   let loadSeq = 0;
   let pendingLoad: { realm: string; lang: string } | null = null;
+
+  /** The last WG-sourced list before any Lesta overlay, with its language —
+   *  kept so the WG/Lesta branch switch can re-derive `ships` locally,
+   *  without a network round-trip through the (unchanged) WG cache. */
+  let baseShips: ShipInfo[] | null = null;
+  let baseLang: string | null = null;
 
   /** In-game nation order (matching the port tech-tree panel left-to-right). */
   const NATION_ORDER: Record<string, number> = {
@@ -143,11 +151,11 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     try {
       const ver = await api.getGameVersion();
       const fresh = await api.getShipEncyclopedia(realm, forceRefresh, apiLang);
-      if (seq !== loadSeq) return; // a newer realm/language load took over
-      version.value = ver;
-      ships.value = localizeShips(fresh, lang);
-      loadedRealm.value = realm;
-      loadedLanguage.value = lang;
+      if (await finalize(fresh, lang, seq)) {
+        version.value = ver;
+        loadedRealm.value = realm;
+        loadedLanguage.value = lang;
+      }
     } catch (e) {
       if (seq !== loadSeq) return;
       const msg = (e as Error).message || String(e);
@@ -158,11 +166,11 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
         try {
           const ver = await api.getGameVersion();
           const fresh = await api.getShipEncyclopedia(realm, true, "en");
-          if (seq !== loadSeq) return;
-          version.value = ver;
-          ships.value = localizeShips(fresh, lang);
-          loadedRealm.value = realm;
-          loadedLanguage.value = lang; // stay as user's preference
+          if (await finalize(fresh, lang, seq)) {
+            version.value = ver;
+            loadedRealm.value = realm;
+            loadedLanguage.value = lang; // stay as user's preference
+          }
           console.warn("[encyclopedia] INVALID_LANGUAGE for %s, fell back to en", lang);
         } catch (e2) {
           if (seq !== loadSeq) return;
@@ -184,6 +192,19 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     }
   }
 
+  /** Localize + apply the Lesta overlay to a fresh WG-sourced list and adopt
+   *  it. Returns false when a newer load took over mid-await (caller skips
+   *  its bookkeeping); remembers the pre-overlay list for the treeRealm
+   *  watcher's local re-derivation. */
+  async function finalize(fresh: ShipInfo[], lang: string, seq: number): Promise<boolean> {
+    const overlaid = await withLestaOverlay(fresh, lang);
+    if (seq !== loadSeq) return false;
+    baseShips = fresh;
+    baseLang = lang;
+    ships.value = localizeShips(overlaid, lang);
+    return true;
+  }
+
   /** Offline fallback: build the roster from the bundled ship-basics asset
    *  (shipped with every install, lite included). Used when the WG API is
    *  unreachable so 舰艇百科 / specs / the planner keep working; returns
@@ -197,10 +218,11 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
       const list = Object.entries(basics.ships).map(([shipId, entry]) =>
         basicsToShipInfo(Number(shipId), basics, entry),
       );
-      version.value = { gameVersion: basics.gameVersion, shipsTotal: list.length, timestamp: 0 };
-      ships.value = localizeShips(list, lang);
-      loadedRealm.value = realm;
-      loadedLanguage.value = lang;
+      if (await finalize(list, lang, seq)) {
+        version.value = { gameVersion: basics.gameVersion, shipsTotal: list.length, timestamp: 0 };
+        loadedRealm.value = realm;
+        loadedLanguage.value = lang;
+      }
       console.warn("[encyclopedia] WG API unreachable — bundled ship basics in use");
       return true;
     } catch {
@@ -214,6 +236,25 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     ([lang, realm], [oldLang, oldRealm]) => {
       if (oldLang && (lang !== oldLang || realm !== oldRealm)) {
         load(realm, true);
+      }
+    },
+  );
+
+  // The WG/Lesta branch switch changes only WHICH ships exist — the WG cache
+  // is untouched — so re-derive the list from the last base instead of a
+  // network round-trip. (Until a first load lands there is nothing to
+  // re-derive; the mounting view's load() covers it.) The identity re-check
+  // after the await drops derivations made stale by a newer load finalizing
+  // while the overlay chunk was still importing.
+  watch(
+    () => useShipsUiStore().treeRealm,
+    async () => {
+      const base = baseShips;
+      const lang = baseLang;
+      if (!base || !lang) return;
+      const overlaid = await withLestaOverlay(base, lang);
+      if (baseShips === base && baseLang === lang) {
+        ships.value = localizeShips(overlaid, lang);
       }
     },
   );
