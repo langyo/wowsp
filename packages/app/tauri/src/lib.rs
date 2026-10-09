@@ -443,6 +443,7 @@ pub fn run() {
             commands::appdata::appdata_delete,
             commands::appdata::is_game_running,
             commands::appdata::get_game_process,
+            commands::appdata::get_game_processes,
             // Session hub (commands/session.rs): snapshot + the main window's
             // active-account mirror push.
             commands::session::get_session_state,

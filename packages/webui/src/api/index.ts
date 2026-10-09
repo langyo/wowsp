@@ -3,6 +3,7 @@ export type {
   GameInstall,
   GameInstallKind,
   GameProcessInfo,
+  GameProcessReport,
   PlaytimeSource,
   PlaytimeDay,
   PlaytimeLaunch,

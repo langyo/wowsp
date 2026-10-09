@@ -584,6 +584,12 @@ async def cmd_get_game_process() -> dict:
     }
 
 
+@app.post("/api/get_game_processes")
+async def cmd_get_game_processes() -> dict:
+    # Mock: game not running — an empty multi-instance report.
+    return {"processes": [], "preferredPid": None}
+
+
 @app.post("/api/lookup_player_stats")
 async def cmd_lookup_player_stats(request: Request) -> dict:
     body = await request.json()

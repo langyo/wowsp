@@ -154,7 +154,12 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
                 // A stamp or roster THIS path discovered: heal the page
                 // (same emit + BattleChanged the watcher's Ok branch does).
                 if let Some(name) = super::session::local_player_of(&info.vehicles) {
-                    super::session::note_playing_from_arena(app, name, Some(unix_secs(mtime)));
+                    super::session::note_playing_from_arena(
+                        app,
+                        name,
+                        Some(unix_secs(mtime)),
+                        Some(&dir),
+                    );
                 }
                 #[cfg(desktop)]
                 super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
@@ -207,7 +212,7 @@ pub async fn read_temp_arena_info(
     // feeds the session hub's freshness gate (crash leftovers must not
     // re-identify the player under a relaunched client).
     if let Some(name) = super::session::local_player_of(&info.vehicles) {
-        super::session::note_playing_from_arena(&app, name, mtime.map(unix_secs));
+        super::session::note_playing_from_arena(&app, name, mtime.map(unix_secs), Some(&dir));
     }
     Ok(Some(info))
 }
@@ -510,7 +515,12 @@ fn handle_watch_event(
             // matches it against the bound profiles so multi-account
             // machines follow the alt actually playing (commands/session.rs).
             if let Some(name) = super::session::local_player_of(&info.vehicles) {
-                super::session::note_playing_from_arena(app, name, Some(unix_secs(mtime)));
+                super::session::note_playing_from_arena(
+                    app,
+                    name,
+                    Some(unix_secs(mtime)),
+                    Some(target_dir),
+                );
             }
             // A NEW battle voids the Tab watcher's pinned anchor for the
             // PREVIOUS one. Pushed as a FIFO command (not applied here) so
@@ -553,9 +563,10 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     }
     // Live roster data is written by the client that is RUNNING right now —
     // its folder wins, then the persisted active install, then the first
-    // detected install (the unified game context's live order; the frontend
-    // never passes `dir` in production, so this chain is what multi-install
-    // machines actually ride on).
+    // detected install (the unified game context's live order; the /live
+    // page passes its WATCHED instance's dir explicitly on multi-client
+    // machines, so this chain answers for the backend-side reads — the
+    // session poller, the overlay healer — and dir-less callers).
     match super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning) {
         Some(ctx) => Ok(super::game_context::replays_dir(&ctx.root)),
         None => Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into()),

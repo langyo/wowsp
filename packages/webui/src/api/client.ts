@@ -31,6 +31,14 @@ export interface GameProcessInfo {
   matchedInstall?: GameInstall | null;
 }
 
+/** Mirrors `wowsp_tauri_shared::GameProcessReport` — the multi-instance
+ *  view: every running game client as its own entry plus the pid of the
+ *  preferred instance (the one the single-process surfaces follow). */
+export interface GameProcessReport {
+  processes: GameProcessInfo[];
+  preferredPid: number | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::PlaytimeSource` — where the playtime
  *  ledger's career total came from. */
 export type PlaytimeSource = "local" | "steam";
@@ -1816,6 +1824,8 @@ export const api = {
   isGameRunning: () => transport.invoke<boolean>(RPC.is_game_running),
   getGameProcess: (installs: GameInstall[]) =>
     transport.invoke<GameProcessInfo>(RPC.get_game_process, { installs }),
+  getGameProcesses: (installs: GameInstall[]) =>
+    transport.invoke<GameProcessReport>(RPC.get_game_processes, { installs }),
   /** Playtime ledger overview (commands/playtime.rs) — career totals
    *  (Steam-seeded on first run when possible) plus the local per-day
    *  series the 游玩时间 view renders. */

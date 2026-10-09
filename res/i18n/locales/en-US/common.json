@@ -18,6 +18,7 @@
   "game": {
     "online": "Game running",
     "offline": "Game offline",
+    "switchInstance": "Switch which client instance the live page watches",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

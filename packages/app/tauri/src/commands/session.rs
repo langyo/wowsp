@@ -288,14 +288,23 @@ const ARENA_FRESHNESS_SKEW_SECS: i64 = 5;
 /// event path — battle start is the one moment the logged-in account becomes
 /// observable on the wire; the poll path re-notes on its 3 s cadence).
 ///
+/// `arena_dir` names the replays folder the roster was read FROM. On
+/// multi-instance machines the live page may watch a client that is NOT the
+/// preferred one, so the observation is attributed to the process OWNING
+/// that folder (realm off its own root, freshness gate against ITS start
+/// time). A dir NO running process claims drops the note — attributing a
+/// foreign dir's roster to the preferred process would pin another client's
+/// account to the wrong cluster; without a dir (the backend-preferred poll
+/// path) the preferred process answers, exactly as before.
+///
 /// Freshness gates, in order:
 /// * no client running → drop (a `tempArenaInfo.json` that survives the
 ///   game — crash / hard kill — is re-read by the poll paths forever, and
 ///   without this gate it would resurrect the identity the exit transition
 ///   just cleared);
-/// * `arena_mtime` older than the running process's creation time → drop
-///   (the roster predates this client session: a crash leftover seen right
-///   after relaunch, before any new battle was written);
+/// * `arena_mtime` older than the attributing process's creation time →
+///   drop (the roster predates this client session: a crash leftover seen
+///   right after relaunch, before any new battle was written);
 /// * no process start available → fall back to "strictly newer than the
 ///   last noted roster" (fresh WoWSP mid-game notes once, then the same
 ///   file never re-notes).
@@ -304,43 +313,127 @@ const ARENA_FRESHNESS_SKEW_SECS: i64 = 5;
 /// walks the process list and reads clientrunner.log); the id upgrade looks
 /// up the plugin bridge's nickname→id map. Broadcasts when the resolved
 /// snapshot moved.
-pub(crate) fn note_playing_from_arena(app: &AppHandle, nickname: &str, arena_mtime: Option<i64>) {
-    let (realm, observed_generation) = {
-        let (running, known, pid, generation) = with_state(|state| {
-            (
-                state.process.running,
-                state.process.realm.clone(),
-                state.process.pid,
-                state.process_generation,
-            )
-        });
-        if !running {
-            return;
-        }
-        let realm = known.or_else(running_realm).filter(|r| !r.is_empty());
-        let Some(realm) = realm else {
-            return;
-        };
-        if let Some(m) = arena_mtime {
-            if let Some(start) = pid.and_then(super::appdata::query_process_start_unix) {
-                if m < start - ARENA_FRESHNESS_SKEW_SECS {
+pub(crate) fn note_playing_from_arena(
+    app: &AppHandle,
+    nickname: &str,
+    arena_mtime: Option<i64>,
+    arena_dir: Option<&std::path::Path>,
+) {
+    // Attribute the roster. Three cases:
+    // * dir given and a running process OWNS it (same-folder compare after
+    //   stripping the trailing `replays` segment) → attribute to THAT
+    //   process. The validated chain answers first (the rule
+    //   `running_root_matching` established); a raw-root fallback finds
+    //   stub-less installs the validated chain deliberately hides (the note
+    //   can still be refused downstream — record_arena_player keeps the
+    //   poller's own running view as its final gate).
+    // * dir given and UNCLAIMED → drop the note entirely: attributing a
+    //   foreign dir's roster to the preferred process would pin another
+    //   client's account to the wrong cluster — exactly what this lookup
+    //   exists to prevent.
+    // * no dir (the backend-preferred poll path) → the preferred-process
+    //   fallback below, exactly as before.
+    let dir_owner = match arena_dir.map(arena_game_root) {
+        Some(Some(root)) => {
+            let procs = super::game_context::running_processes();
+            let pid = procs
+                .iter()
+                .find(|p| {
+                    p.validated_root
+                        .as_deref()
+                        .is_some_and(|r| super::game_context::same_folder(r, &root))
+                })
+                .or_else(|| {
+                    procs.iter().find(|p| {
+                        p.raw_root
+                            .as_deref()
+                            .is_some_and(|r| super::game_context::same_folder(r, &root))
+                    })
+                })
+                .map(|p| p.pid);
+            match pid {
+                Some(pid) => Some((pid, root)),
+                None => {
                     tracing::debug!(
-                        mtime = m,
-                        process_start = start,
-                        "arena roster predates the running client — dropped"
+                        dir = %root,
+                        "no running client owns the arena dir — dropped"
                     );
                     return;
-                }
+                },
+            }
+        },
+        Some(None) => return, // not a `<root>/replays` shape — unattributable
+        None => None,
+    };
+    let (realm, gate_pid, observed_generation) = match dir_owner {
+        Some((pid, root)) => {
+            // The owner is running by construction, so the "no client
+            // running" gate cannot apply here; the realm must come off the
+            // OWNER's root — the preferred process's realm would attribute
+            // another client's account to the wrong cluster.
+            let Some(realm) = super::game_detect::detect_realm(std::path::Path::new(&root))
+                .filter(|r| !r.is_empty())
+            else {
+                return;
+            };
+            let generation = with_state(|state| state.process_generation);
+            (realm, Some(pid), generation)
+        },
+        None => {
+            let (running, known, pid, generation) = with_state(|state| {
+                (
+                    state.process.running,
+                    state.process.realm.clone(),
+                    state.process.pid,
+                    state.process_generation,
+                )
+            });
+            if !running {
+                return;
+            }
+            let realm = known.or_else(running_realm).filter(|r| !r.is_empty());
+            let Some(realm) = realm else {
+                return;
+            };
+            (realm, pid, generation)
+        },
+    };
+    if let Some(m) = arena_mtime {
+        if let Some(start) = gate_pid.and_then(super::appdata::query_process_start_unix) {
+            if m < start - ARENA_FRESHNESS_SKEW_SECS {
+                tracing::debug!(
+                    mtime = m,
+                    process_start = start,
+                    "arena roster predates the attributing client — dropped"
+                );
+                return;
             }
         }
-        (realm, generation)
-    };
+    }
     let noted = with_state(|state| {
         record_arena_player(state, observed_generation, realm, nickname, arena_mtime)
     });
     if noted {
         broadcast_if_changed(app);
     }
+}
+
+/// The game root an arena/replays directory belongs to: strip ONE trailing
+/// `replays` path component (case-insensitive — Windows folders), tolerating
+/// stray separators. `None` when the dir is not a `<root>/replays` shape.
+fn arena_game_root(dir: &std::path::Path) -> Option<String> {
+    let s = dir.to_str()?;
+    let norm = s.trim_end_matches(['/', '\\']);
+    let cut = norm.rfind(['/', '\\'])?;
+    let (root, leaf) = norm.split_at(cut);
+    if !leaf
+        .trim_start_matches(['/', '\\'])
+        .eq_ignore_ascii_case("replays")
+    {
+        return None;
+    }
+    let root = root.trim_end_matches(['/', '\\']);
+    (!root.is_empty()).then(|| root.to_string())
 }
 
 fn record_arena_player(
@@ -544,7 +637,10 @@ pub fn spawn_session_poller(app: AppHandle) -> Result<(), String> {
                         super::arena_info::newer_arena_local_player(arena_parsed_mtime)
                     {
                         arena_parsed_mtime = mtime;
-                        note_playing_from_arena(&app, &name, Some(mtime));
+                        // The poller's arena read follows the backend-preferred
+                        // dir (newer_arena_local_player), so the note attributes to
+                        // the preferred process.
+                        note_playing_from_arena(&app, &name, Some(mtime), None);
                     }
                 }
                 broadcast_if_changed(&app);
@@ -561,6 +657,24 @@ pub fn spawn_session_poller(app: AppHandle) -> Result<(), String> {
 mod tests {
     use super::*;
     use wowsp_tauri_shared::PlayingSource;
+
+    #[test]
+    fn arena_game_root_strips_one_trailing_replays_component() {
+        use std::path::Path;
+        assert_eq!(
+            arena_game_root(Path::new(r"C:\Games\Steam\replays")),
+            Some(r"C:\Games\Steam".to_string())
+        );
+        // Case-insensitive leaf, stray separators tolerated.
+        assert_eq!(
+            arena_game_root(Path::new("D:/Korabli/Replays/")),
+            Some("D:/Korabli".to_string())
+        );
+        // Not a replays folder / no parent / drive root — no owner.
+        assert_eq!(arena_game_root(Path::new(r"C:\Games\bin64")), None);
+        assert_eq!(arena_game_root(Path::new("replays")), None);
+        assert_eq!(arena_game_root(Path::new("/replays")), None);
+    }
 
     fn account(id: i64, nickname: &str, realm: &str) -> AccountProfile {
         AccountProfile {

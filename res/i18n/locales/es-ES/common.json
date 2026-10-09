@@ -18,6 +18,7 @@
   "game": {
     "online": "Juego en ejecución",
     "offline": "Juego no iniciado",
+    "switchInstance": "Cambiar la instancia de cliente que sigue la página en directo",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

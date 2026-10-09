@@ -149,9 +149,15 @@ fn resolve_head(
 /// different installs. `None` when no validated client process exists (with
 /// `PreferRunning`, a non-process root implies the process list was empty).
 pub(crate) fn preferred_game_pid() -> Option<u32> {
-    let running = running_roots();
+    preferred_pid_in(&running_roots())
+}
+
+/// [`preferred_game_pid`] over an already-enumerated validated running list
+/// — the plural process report resolves its preferred pid from ONE snapshot
+/// so the flag can never name a pid the same report did not list.
+pub(crate) fn preferred_pid_in(running: &[(u32, String)]) -> Option<u32> {
     let active = persisted_active_path();
-    let resolved = resolve_head(&running, active.as_deref(), RootPreference::PreferRunning)?;
+    let resolved = resolve_head(running, active.as_deref(), RootPreference::PreferRunning)?;
     // The running root was built verbatim from one of `running`'s strings,
     // so exact Path equality finds its producing entry.
     running
@@ -177,17 +183,82 @@ pub(crate) fn running_root_matching(root: &str) -> Option<(u32, String)> {
 /// exotic/partial tree is treated as "not running" rather than routing work
 /// to a bogus root. The exe-path query is Windows-only, so non-Windows
 /// targets (the mobile build) always see an empty list here.
+///
+/// Pid-ascending, like [`running_processes`]: the plural report and the
+/// singular preferred-pick chain must agree on "first" even when no
+/// validated client matches the persisted active install (the tie-break
+/// falls to the first entry — ToolHelp snapshot order alone is unspecified
+/// and would let the two paths follow different clients).
 fn running_roots() -> Vec<(u32, String)> {
     #[cfg(target_os = "windows")]
     {
-        snapshot_game_pids()
+        let mut roots: Vec<(u32, String)> = snapshot_game_pids()
             .into_iter()
             .filter_map(|pid| {
                 let exe = super::appdata::query_process_image_path(pid)?;
                 let root = exe_game_root(&exe)?;
                 super::game_detect::is_game_dir(&root).then_some((pid, root))
             })
-            .collect()
+            .collect();
+        roots.sort_by_key(|(pid, _)| *pid);
+        roots
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Vec::new()
+    }
+}
+
+/// One enumerated game-client process for the plural report — richer than
+/// [`running_roots`]: unvalidated roots stay visible (a card the UI can
+/// still label "running, unmatched") and the raw exe path rides along for
+/// install matching. See [`running_processes`].
+pub(crate) struct RunningProcess {
+    pub pid: u32,
+    /// Full image path, when queryable — `None` only for processes the OS
+    /// refuses to describe (access-denied system contexts).
+    pub exe_path: Option<String>,
+    /// The implied game root when it validates as a game install
+    /// (`is_game_dir`); `None` = root unresolvable or unvalidated.
+    pub validated_root: Option<String>,
+    /// The implied game root BEFORE validation — the same value
+    /// [`exe_game_root`] yields, kept so consumers that must attribute
+    /// something to a specific process (the arena dir's owner) can still
+    /// find stub-less installs the validated chain deliberately hides.
+    pub raw_root: Option<String>,
+}
+
+/// EVERY running game-client process (multi-instance report base): one
+/// entry per OS pid with a game exe name, pid-ascending (ToolHelp snapshot
+/// order is unspecified; the sort keeps the report — and the sidebar cards
+/// built from it — stable across polls, and keeps the plural report's
+/// "first" tie-break identical to [`running_roots`]'s). Unlike
+/// [`running_roots`] nothing is filtered out: capture/roster resolution
+/// still keys on validated folders, but the process REPORT must show every
+/// instance so the user can pick which one to watch. Non-Windows targets
+/// see an empty list.
+pub(crate) fn running_processes() -> Vec<RunningProcess> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut procs: Vec<RunningProcess> = snapshot_game_pids()
+            .into_iter()
+            .filter_map(|pid| {
+                let exe = super::appdata::query_process_image_path(pid)?;
+                let root = exe_game_root(&exe);
+                let validated_root = root
+                    .as_deref()
+                    .filter(|r| super::game_detect::is_game_dir(r))
+                    .map(|r| r.to_string());
+                Some(RunningProcess {
+                    pid,
+                    exe_path: Some(exe),
+                    validated_root,
+                    raw_root: root,
+                })
+            })
+            .collect();
+        procs.sort_by_key(|p| p.pid);
+        procs
     }
     #[cfg(not(target_os = "windows"))]
     {

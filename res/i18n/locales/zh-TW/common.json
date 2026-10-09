@@ -18,6 +18,7 @@
   "game": {
     "online": "遊戲執行中",
     "offline": "遊戲未啟動",
+    "switchInstance": "切換即時對局觀看的用戶端實例",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

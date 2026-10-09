@@ -19,6 +19,7 @@ export const RPC = {
   appdata_delete: "appdata_delete",
   is_game_running: "is_game_running",
   get_game_process: "get_game_process",
+  get_game_processes: "get_game_processes",
   // Playtime ledger (commands/playtime.rs) — the 游玩时间 view's data.
   playtime_overview: "playtime_overview",
   // Lists replay-derived battles (one row per .wowsreplay, across every
