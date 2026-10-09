@@ -18,7 +18,7 @@
   "game": {
     "online": "Game running",
     "offline": "Game offline",
-    "switchInstance": "Switch which client instance the live page watches",
+    "multiRunning": "{n} game clients are currently running",
     "pid": "PID",
     "kind": {
       "steam": "Steam",

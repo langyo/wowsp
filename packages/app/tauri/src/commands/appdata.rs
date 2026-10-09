@@ -163,9 +163,9 @@ pub async fn get_game_process(
 /// Plural, multi-instance view of [`get_game_process`]: EVERY running game
 /// client as its own entry (same per-process matching — kind/realm/install
 /// resolved from the exe path), plus the pid of the preferred instance the
-/// single-process surfaces follow. The webui renders one sidebar card per
-/// entry and lets the user pick which instance the live page watches;
-/// `preferred_pid` is that selection's default.
+/// single-process surfaces follow. The webui shows that preferred client as
+/// its one status card and counts the entries under the status dot when
+/// other clients run alongside it.
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn get_game_processes(
