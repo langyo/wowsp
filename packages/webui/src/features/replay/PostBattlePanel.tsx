@@ -236,7 +236,6 @@ export default defineComponent({
      *  cache). Entries without a realm ride the roster's dominant one — a
      *  battle is single-realm in practice. */
     const nameStats = ref<Map<string, RosterStat>>(new Map());
-    const nameStatsLoading = ref(false);
     async function loadNameStats() {
       const pb = parsed.value;
       if (!pb) return;
@@ -251,19 +250,22 @@ export default defineComponent({
         byRealm.set(realm, set);
       }
       if (byRealm.size === 0) return;
-      nameStatsLoading.value = true;
-      try {
-        const maps = await Promise.all(
-          [...byRealm].map(([realm, names]) =>
-            fetchRosterStatsByNames([...names], realm),
-          ),
-        );
-        const merged = new Map<string, RosterStat>();
-        for (const m of maps) for (const [k, v] of m) merged.set(k, v);
-        nameStats.value = merged;
-      } finally {
-        nameStatsLoading.value = false;
-      }
+      // Progressive arrival: every landed row settles over the map the
+      // moment its sub-batch (and later its per-ship list) resolves, so
+      // the matrix fills in first-arrived-first-shown instead of one
+      // block at the end — rows still absent spin on their own. Already
+      // -landed rows keep their numbers across the dims-watch re-run
+      // until their fresh settle replaces them.
+      const arrive = (name: string, st: RosterStat) => {
+        const next = new Map(nameStats.value);
+        next.set(name, st);
+        nameStats.value = next;
+      };
+      await Promise.all(
+        [...byRealm].map(([realm, names]) =>
+          fetchRosterStatsByNames([...names], realm, arrive),
+        ),
+      );
     }
     // A hidden profile's 过街老鼠 seal is held while its clan verdict is out,
     // but the one-shot stats map is not reactive to the roster cache's async
@@ -825,8 +827,10 @@ export default defineComponent({
               {rosterStatCols(
                 p.name,
                 nameStats.value,
-                nameStatsLoading.value ||
-                  Boolean(shipScopeOn.value && nameStats.value.get(p.name)?.shipsLoading),
+                // Per-row loading only (the global load no longer gates
+                // arrived rows): an absent entry is itself the spinner —
+                // every queried name settles into the map when it lands.
+                Boolean(shipScopeOn.value && nameStats.value.get(p.name)?.shipsLoading),
                 (st) => viewOf(st, p.shipId ?? null),
               )}
               <span
@@ -861,11 +865,9 @@ export default defineComponent({
         const stat = ai ? undefined : nameStats.value.get(p.name);
         const statLine = () => {
           if (ai) return "—";
-          if (
-            !stat ||
-            nameStatsLoading.value ||
-            (shipScopeOn.value && stat.shipsLoading)
-          ) {
+          // Absent = still querying (progressive arrival: the row spins
+          // until ITS entry lands); arrived rows render immediately.
+          if (!stat || (shipScopeOn.value && stat.shipsLoading)) {
             return <HkSpinner size="xs" tone="current" />;
           }
           if (stat.hidden) {
@@ -887,9 +889,7 @@ export default defineComponent({
         const dmgView = stat ? rowViewOf(stat, p.shipId ?? null) : null;
         const dmgBody = ai ? (
           <em>—</em>
-        ) : !stat ||
-            nameStatsLoading.value ||
-            (shipScopeOn.value && stat.shipsLoading) ? (
+        ) : !stat || (shipScopeOn.value && stat.shipsLoading) ? (
           <HkSpinner size="xs" tone="current" />
         ) : dmgView?.avgDamage == null ? (
           <em>—</em>

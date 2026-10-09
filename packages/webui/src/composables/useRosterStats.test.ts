@@ -116,3 +116,80 @@ describe("fetchRosterStatsByNames cache isolation", () => {
     expect(lookupClanWinrate).toHaveBeenCalledWith("asia", 501);
   });
 });
+
+describe("fetchRosterStatsByNames progressive arrival", () => {
+  it("sub-batches the misses and settles each chunk's names through onArrive", async () => {
+    // Ship scope off — this test exercises the name phase only.
+    statsPrefsState.value.overlayShipScope = "all";
+    const calls: string[][] = [];
+    vi.mocked(api.lookupPlayersStatsBatch).mockImplementation(async (names: string[]) => {
+      calls.push(names);
+      return names.map((name, i) => mockPlayer({ name, accountId: 9_000 + i }));
+    });
+    const arrived: string[] = [];
+    const names = ["p01", "p02", "p03", "p04", "p05", "p06", "p07"];
+
+    const out = await fetchRosterStatsByNames(names, "asia", (name) => {
+      arrived.push(name);
+    });
+
+    // 7 misses → 6 + 1 chunks, dispatched in FIFO order.
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toHaveLength(6);
+    expect(calls[1]).toHaveLength(1);
+    expect(out.size).toBe(7);
+    expect([...arrived].sort()).toEqual([...names].sort());
+  });
+
+  it("marks the copy ships-loading, then re-settles onArrive when its list lands", async () => {
+    // Ship scope on (the beforeEach default).
+    vi.mocked(api.lookupPlayersStatsBatch).mockResolvedValue([
+      mockPlayer({ name: "luna_sea", accountId: 77 }),
+    ]);
+    let resolveShips!: (v: PlayerShipStats[]) => void;
+    vi.mocked(api.lookupPlayerShipStats).mockImplementation(
+      () =>
+        new Promise<PlayerShipStats[]>((r) => {
+          resolveShips = r;
+        }),
+    );
+    const events: Array<{ shipsLoading?: boolean; hasShips: boolean }> = [];
+    const pending = fetchRosterStatsByNames(["luna_sea"], "asia", (_name, st) => {
+      events.push({ shipsLoading: st.shipsLoading, hasShips: st.ships != null });
+    });
+
+    // Career settle first (no ship flag yet), then the pending flag the
+    // moment the ship phase starts — the row spinner rides it.
+    await vi.waitFor(() => {
+      expect(events.some((e) => e.shipsLoading === true)).toBe(true);
+    });
+    expect(events[0]).toEqual({ shipsLoading: undefined, hasShips: false });
+
+    resolveShips(mockShipList());
+    const out = await pending;
+    // The attach re-settles: list on, flag cleared.
+    expect(events[events.length - 1]).toEqual({ shipsLoading: false, hasShips: true });
+    expect(out.get("luna_sea")?.ships).toEqual(mockShipList());
+    expect(out.get("luna_sea")?.shipsLoading).toBe(false);
+  });
+
+  it("leaves a failed sub-batch's names absent from the result", async () => {
+    statsPrefsState.value.overlayShipScope = "all";
+    let call = 0;
+    vi.mocked(api.lookupPlayersStatsBatch).mockImplementation(async (names: string[]) => {
+      call += 1;
+      // The FIRST-dispatched chunk (6 names) fails; the second lands.
+      if (call === 1) throw new Error("wg down");
+      return names.map((name, i) => mockPlayer({ name, accountId: 8_000 + i }));
+    });
+
+    const out = await fetchRosterStatsByNames(
+      ["fail_a", "fail_b", "ok_c", "ok_d", "ok_e", "ok_f", "ok_g"],
+      "asia",
+    );
+
+    expect(out.size).toBe(1);
+    expect(out.has("ok_g")).toBe(true);
+    expect(out.has("fail_a")).toBe(false);
+  });
+});

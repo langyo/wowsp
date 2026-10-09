@@ -26,10 +26,13 @@ const INDEX_FILE = "stats-cache/index.json";
  *
  *  Querying is multi-read / single-write: `lookup` answers from the
  *  memory/disk cache whenever it can (read) and otherwise enqueues ONE
- *  "player-stats" message on the shared FIFO pipeline
- *  (stores/statsQuery.ts) — only that pipeline's worker executes the WG
- *  query and writes the cache (write), strictly one query at a time, in
- *  submission order, shared with every other water-table surface.
+ *  "player-stats" message on the shared query pipeline
+ *  (stores/statsQuery.ts) — only that pipeline's lanes execute the WG
+ *  queries and write the cache (write), dispatched in submission order and
+ *  running beside at most two other messages, shared with every other
+ *  water-table surface. Same-player fetches that overlap across a PR-pref
+ *  flip are arbitrated by the fetch tickets in `fetchTickets`: the
+ *  LATEST-started lookup owns the cache write.
  *
  *  Refresh policy:
  *  - Your OWN account (activeAccount): the dashboard opens with a short
@@ -71,6 +74,15 @@ export const useStatsStore = defineStore("stats", () => {
    *  dashboard refresh racing another consumer can't double-hit the WG
    *  API or interleave two cache writes for one player. */
   const inflight = new Map<string, Promise<PlayerStats>>();
+  /** Per-player fetch tickets (nickname key → latest issued ticket): only
+   *  the newest lookup started for a player owns the shared-cache write —
+   *  the pipeline's lanes can run two same-player fetches side by side
+   *  across a PR-pref flip, and the cache key does not embed the algo.
+   *  Minted from a process-wide monotonic counter: a per-key increment
+   *  would REUSE numbers after the finally deletes the entry, letting a
+   *  stale fetch impersonate the latest one. */
+  const fetchTickets = new Map<string, number>();
+  let ticketSeq = 0;
   /** Keep best-effort disk snapshots in API completion order, without
    *  making a slow or failed save block lookup results. */
   let pendingSave = Promise.resolve();
@@ -139,18 +151,25 @@ export const useStatsStore = defineStore("stats", () => {
   }
 
   /** The single API pull + cache write for one player — executed ONLY by
-   *  the shared pipeline's worker (single writer). `algo` is captured at
-   *  enqueue time so a PR-pref flip while the message waits in the FIFO
-   *  can't change what the dedupe key promised. A fresh result that comes
-   *  back without a dog tag keeps the previous snapshot's emblem: the Rust
-   *  command swallows a Vortex dog-tag fetch failure into `null`, so
-   *  without this carry-over a routine refresh could wipe a perfectly good
-   *  avatar from every surface rendering the cache (dashboard header,
-   *  sidebar, cards). */
+   *  the shared pipeline's lanes. `algo` is captured at enqueue time so a
+   *  PR-pref flip while the message waits in the queue can't change what
+   *  the dedupe key promised. `ticket` is this fetch's turn for the
+   *  player: the lanes can run two lookups of the same player side by
+   *  side (the pref flip re-querying under a new caliber while the old
+   *  one is still out), and the cache key does NOT embed the algo — only
+   *  the LATEST-started lookup may write, or a stale fetch settling last
+   *  would pin its caliber into every passive consumer until the next
+   *  force refresh. A fresh result that comes back without a dog tag
+   *  keeps the previous snapshot's emblem: the Rust command swallows a
+   *  Vortex dog-tag fetch failure into `null`, so without this carry-over
+   *  a routine refresh could wipe a perfectly good avatar from every
+   *  surface rendering the cache (dashboard header, sidebar, cards). */
   async function fetchAndCache(
     nickname: string,
     realm: string,
     algo: ReturnType<typeof prAlgoForRequest>,
+    nickKey: string,
+    ticket: number,
   ): Promise<PlayerStats> {
     const stats = await api.lookupPlayerStats(nickname, realm, algo);
     const key = cacheKey(realm, stats.accountId);
@@ -165,10 +184,12 @@ export const useStatsStore = defineStore("stats", () => {
     if (stats.dogTag == null && prevDogTag != null) {
       merged = { ...stats, dogTag: prevDogTag };
     }
-    cache.value.set(key, merged);
-    fetchedAt.value.set(key, Date.now());
+    // The nickname→account mapping is algo-independent — always fresh.
     index.value.set(indexKey(realm, nickname), stats.accountId);
     persistIndex();
+    if (fetchTickets.get(nickKey) !== ticket) return merged;
+    cache.value.set(key, merged);
+    fetchedAt.value.set(key, Date.now());
     // Persist current snapshot to AppData (best-effort, don't block UI).
     const envelope: CachedStats = { fetchedAt: Date.now(), stats: merged };
     persistFile(cacheFile(realm, stats.accountId), JSON.stringify(envelope));
@@ -214,9 +235,10 @@ export const useStatsStore = defineStore("stats", () => {
    *  trigger network calls. On a fresh API result the disk cache, the
    *  nickname→accountId index and the trend snapshot are all updated.
    *
-   *  Cache misses become ONE message on the shared FIFO pipeline: the WG
-   *  query runs strictly after every earlier water-table query from any
-   *  surface, never in parallel with one. */
+   *  Cache misses become ONE message on the shared query pipeline: the WG
+   *  query dispatches after every earlier water-table query from any
+   *  surface (FIFO), running beside at most two others (the pipeline's
+   *  lane cap) and never bursting past that. */
   async function lookup(
     nickname: string,
     realm: string,
@@ -252,12 +274,19 @@ export const useStatsStore = defineStore("stats", () => {
         force,
         ttlMs,
       };
+      // Mint this fetch's turn for the player BEFORE dispatching (see
+      // fetchTickets): whatever lookup starts later wins the cache write.
+      const nickKey = indexKey(realm, nickname);
+      ticketSeq += 1;
+      const ticket = ticketSeq;
+      fetchTickets.set(nickKey, ticket);
       const task = query
-        .enqueue(message, () => fetchAndCache(nickname, realm, algo))
+        .enqueue(message, () => fetchAndCache(nickname, realm, algo, nickKey, ticket))
         .finally(() => {
           // Release the slot on success AND failure so a rejected attempt
           // can be retried immediately.
           inflight.delete(dedupeKey);
+          if (fetchTickets.get(nickKey) === ticket) fetchTickets.delete(nickKey);
         });
       inflight.set(dedupeKey, task);
       // `await` (not a bare return) so this call's rejection flows through

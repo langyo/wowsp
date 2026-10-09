@@ -1229,6 +1229,32 @@ const RETRY_DELAY_MAX_MS = 10000;
 const RETRIES_PER_BATTLE = 2;
 let retriesLeft = RETRIES_PER_BATTLE;
 
+// ── Query lanes (the overlay page's mirror of the main window's shared
+// statsQuery pipeline) ───────────────────────────────────────────────────
+// Roster sub-batches and per-ship lookups dispatch in FIFO order but run
+// up to QUERY_LANES at once, each result rendering the moment it lands —
+// the chips fill in first-arrived-first-shown instead of one block when a
+// single mega-batch resolves. Lanes × the backend's own bounded fan-out
+// keeps the request width in the same envelope the chunked fetchers of
+// old already held.
+const QUERY_LANES = 3;
+/** Roster sub-batch width (see useRosterStats' ROSTER_QUERY_CHUNK). */
+const ROSTER_QUERY_CHUNK = 6;
+
+/** Run `fn` over `items`, at most QUERY_LANES at a time, dispatching in
+ *  order. `fn` failures are the caller's to catch inside itself. */
+async function runLanes<T>(items: readonly T[], fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) {
+      const item = items[next];
+      next += 1;
+      await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(QUERY_LANES, items.length) }, lane));
+}
+
 // A "not found" answer (null result, cached as the "—" no-data stat) is not
 // always final: WG/vortex lookups occasionally answer empty for a name the
 // same API resolves moments later, and the main window's panel would then
@@ -1352,47 +1378,40 @@ async function runShipBatch() {
   shipsInFlight = true;
   const gen = statsGeneration;
   try {
-    const list = [...ids.values()];
-    // Chunk-serial: the same WG-friendly width the main window's fetcher
-    // and the backend's own fan-out keep.
-    for (let i = 0; i < list.length; i += 4) {
-      // A prefs flip mid-batch (statsGeneration moved) threw the cache this
-      // batch was filling away — abandon the remaining chunks; the career
-      // refetch re-arms this pipeline (runBatch's scheduleBatch, then
-      // scheduleShipLists once the new entries have landed).
-      if (gen !== statsGeneration) return;
-      await Promise.all(
-        list.slice(i, i + 4).map(async ({ id, entryRealm }) => {
-          try {
-            const ships = (await tauri.core.invoke("lookup_player_ship_stats", {
-              accountId: id,
-              realm: entryRealm,
-              // Tauri v2 matches command args camelCase (ArgumentCase::Camel):
-              // a snake_case key here is silently dropped and the command
-              // would run the winrate algorithm under an expected-PR pref.
-              ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
-              sessionCache: true,
-            })) as NonNullable<RawStat["ships"]>;
-            // Currency guard (the same one useRosterStats keeps): a
-            // stale-algo answer must not adopt the refetched entries —
-            // ships !== undefined reads as "answered" and would block
-            // their refetch for the rest of the session.
-            if (gen === statsGeneration) applyShips(id, entryRealm, ships ?? null);
-          } catch {
-            // One attempt per battle — a hard-down API must not be probed
-            // on every anchor event (the battle switch re-arms below). The
-            // mark and the null verdict only stick while this batch is
-            // still current: after a prefs flip neither may survive into
-            // the refetch (a stale null would block it the same way).
-            if (gen === statsGeneration) {
-              shipFetched.add(`${entryRealm}:${id}`);
-              applyShips(id, entryRealm, null);
-            }
-          }
-        }),
-      );
-    }
-    render();
+    // One lane slot per account: each list lands and renders the moment
+    // it resolves (the main window's pipeline keeps the same contract).
+    await runLanes([...ids.values()], async ({ id, entryRealm }) => {
+      try {
+        const ships = (await tauri.core.invoke("lookup_player_ship_stats", {
+          accountId: id,
+          realm: entryRealm,
+          // Tauri v2 matches command args camelCase (ArgumentCase::Camel):
+          // a snake_case key here is silently dropped and the command
+          // would run the winrate algorithm under an expected-PR pref.
+          ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
+          sessionCache: true,
+        })) as NonNullable<RawStat["ships"]>;
+        // Currency guard (the same one useRosterStats keeps): a
+        // stale-algo answer must not adopt the refetched entries —
+        // ships !== undefined reads as "answered" and would block
+        // their refetch for the rest of the session.
+        if (gen === statsGeneration) {
+          applyShips(id, entryRealm, ships ?? null);
+          render();
+        }
+      } catch {
+        // One attempt per battle — a hard-down API must not be probed
+        // on every anchor event (the battle switch re-arms below). The
+        // mark and the null verdict only stick while this batch is
+        // still current: after a prefs flip neither may survive into
+        // the refetch (a stale null would block it the same way).
+        if (gen === statsGeneration) {
+          shipFetched.add(`${entryRealm}:${id}`);
+          applyShips(id, entryRealm, null);
+          render();
+        }
+      }
+    });
   } finally {
     shipsInFlight = false;
     scheduleShipLists();
@@ -1429,14 +1448,17 @@ async function runBatch() {
   pending.clear();
   inFlight = true;
   const gen = statsGeneration;
+  let anyFailed = false;
+  // Names riding chunks that THREW (transport / WG limits) — only these
+  // spend their not-found budget below; a sibling chunk's failure must not
+  // tax the names that already settled their own null answers.
+  const failedChunkNames: string[] = [];
   try {
     // Ground-truth per-name realms (the realm-reporting probe reports each
     // player's cluster straight off the game's roster records): routed
     // groups resolve on their REPORTED realm with the cross pass off (the
     // realm is known — probing would be guessing); rows the probe could
-    // not report ride the window realm + the cross pass. Groups run
-    // sequentially, keeping the request storm at WG-friendly widths
-    // whatever the roster's cluster mix.
+    // not report ride the window realm + the cross pass.
     const groups: Array<{ realm: string; names: string[]; cross: boolean }> = [];
     const rest: string[] = [];
     for (const name of names) {
@@ -1452,121 +1474,146 @@ async function runBatch() {
     if (rest.length > 0) {
       groups.push({ realm, names: rest, cross: crossRealmBattle() });
     }
-    const byName = new Map<string, BatchStat | null>();
+    // Sub-batches: every group splits into ROSTER_QUERY_CHUNK-sized chunks
+    // that run through the lanes — each landed chunk caches and renders
+    // immediately, so the chips fill in as the answers arrive (the
+    // first-arrived-first-shown contract the main window's shared pipeline
+    // keeps).
+    const chunks: Array<{ realm: string; names: string[]; cross: boolean }> = [];
     for (const group of groups) {
+      for (let i = 0; i < group.names.length; i += ROSTER_QUERY_CHUNK) {
+        chunks.push({
+          realm: group.realm,
+          names: group.names.slice(i, i + ROSTER_QUERY_CHUNK),
+          cross: group.cross,
+        });
+      }
+    }
+    await runLanes(chunks, async (chunk) => {
       // pr_algo rides along while the PR rating is on — the same param the
       // main window injects (prAlgoForRequest), so chip PRs never disagree
       // with the app's cards under the expected algorithm.
-      const results = (await tauri.core.invoke("lookup_players_stats_batch", {
-        names: group.names,
-        realm: group.realm,
-        // camelCase key (Tauri v2 ArgumentCase::Camel) — the snake_case
-        // spelling that used to live here was silently dropped, so chip PRs
-        // kept the winrate proxy while the expected algorithm was selected.
-        ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
-        // Cross-server Clan Battles probe the other WG clusters for names
-        // this realm cannot explain; adopted rows carry their true realm.
-        ...(group.cross ? { crossRealm: true } : {}),
-      })) as Array<BatchStat | null>;
-      group.names.forEach((name, i) => byName.set(name, results[i] ?? null));
-    }
-    // A prefs flip mid-flight bumped statsGeneration (the cache was cleared
-    // for the new PR-algo param) — these answers were computed under the
-    // previous one; drop them instead of re-caching stale numbers (the
-    // finally below re-runs the pipeline under the fresh prefs right away).
-    if (gen !== statsGeneration) return;
-    names.forEach((name) => {
-      const r = byName.get(name) ?? null;
-      if (r) {
-        stats.set(cacheKey(name), {
-          accountId: r.accountId ?? null,
-          winrate: r.winrate ?? null,
-          avgDamage: r.avgDamage ?? null,
-          pr: r.pr ?? null,
-          battles: r.battles ?? null,
-          ranked:
-            r.rankedBattles != null || r.rankedWinrate != null
-              ? {
-                  winrate: r.rankedWinrate ?? null,
-                  pr: r.rankedPr ?? null,
-                  battles: r.rankedBattles ?? null,
-                  avgDamage: r.rankedAvgDamage ?? null,
-                }
-              : null,
-          global:
-            r.globalBattles != null || r.globalWinrate != null
-              ? {
-                  winrate: r.globalWinrate ?? null,
-                  pr: r.globalPr ?? null,
-                  battles: r.globalBattles ?? null,
-                  avgDamage: r.globalAvgDamage ?? null,
-                }
-              : null,
-          clanId: r.clanId ?? null,
-          clanTag: r.clanTag ?? null,
-          // The cluster the answer resolved on — the window realm for
-          // same-realm rows, a foreign cluster for cross-server CW rows.
-          realm: r.realm ?? null,
-          hidden: r.hidden,
+      try {
+        const results = (await tauri.core.invoke("lookup_players_stats_batch", {
+          names: chunk.names,
+          realm: chunk.realm,
+          // camelCase key (Tauri v2 ArgumentCase::Camel) — the snake_case
+          // spelling that used to live here was silently dropped, so chip PRs
+          // kept the winrate proxy while the expected algorithm was selected.
+          ...(PREFS.prAlgo != null ? { prAlgo: PREFS.prAlgo } : {}),
+          // Cross-server Clan Battles probe the other WG clusters for names
+          // this realm cannot explain; adopted rows carry their true realm.
+          ...(chunk.cross ? { crossRealm: true } : {}),
+        })) as Array<BatchStat | null>;
+        // A prefs flip mid-flight bumped statsGeneration (the cache was
+        // cleared for the new PR-algo param) — these answers were computed
+        // under the previous one; drop them instead of re-caching stale
+        // numbers (the finally below re-runs the pipeline under the fresh
+        // prefs right away).
+        if (gen !== statsGeneration) return;
+        chunk.names.forEach((name, i) => {
+          const r = results[i] ?? null;
+          if (r) {
+            stats.set(cacheKey(name), {
+              accountId: r.accountId ?? null,
+              winrate: r.winrate ?? null,
+              avgDamage: r.avgDamage ?? null,
+              pr: r.pr ?? null,
+              battles: r.battles ?? null,
+              ranked:
+                r.rankedBattles != null || r.rankedWinrate != null
+                  ? {
+                      winrate: r.rankedWinrate ?? null,
+                      pr: r.rankedPr ?? null,
+                      battles: r.rankedBattles ?? null,
+                      avgDamage: r.rankedAvgDamage ?? null,
+                    }
+                  : null,
+              global:
+                r.globalBattles != null || r.globalWinrate != null
+                  ? {
+                      winrate: r.globalWinrate ?? null,
+                      pr: r.globalPr ?? null,
+                      battles: r.globalBattles ?? null,
+                      avgDamage: r.globalAvgDamage ?? null,
+                    }
+                  : null,
+              clanId: r.clanId ?? null,
+              clanTag: r.clanTag ?? null,
+              // The cluster the answer resolved on — the window realm for
+              // same-realm rows, a foreign cluster for cross-server CW rows.
+              realm: r.realm ?? null,
+              hidden: r.hidden,
+            });
+            notFoundLeft.delete(name);
+            notFoundRetry.delete(name);
+          } else {
+            stats.set(cacheKey(name), {
+              accountId: null,
+              winrate: null,
+              avgDamage: null,
+              pr: null,
+              battles: null,
+              ranked: null,
+              global: null,
+              clanId: null,
+              clanTag: null,
+              hidden: false,
+            });
+            // Cache the "—" now, but keep a bounded re-queue armed: an empty
+            // answer is sometimes a hiccup, not a verdict (see the retry
+            // bookkeeping above).
+            spendNotFoundRetry(name);
+          }
         });
-        notFoundLeft.delete(name);
-        notFoundRetry.delete(name);
-      } else {
-        stats.set(cacheKey(name), {
-          accountId: null,
-          winrate: null,
-          avgDamage: null,
-          pr: null,
-          battles: null,
-          ranked: null,
-          global: null,
-          clanId: null,
-          clanTag: null,
-          hidden: false,
-        });
-        // Cache the "—" now, but keep a bounded re-queue armed: an empty
-        // answer is sometimes a hiccup, not a verdict (see the retry
-        // bookkeeping above).
-        spendNotFoundRetry(name);
+        render();
+        // Freshly landed stats unlock the composition-seal lookups for
+        // those names (seals only queue names that already have their
+        // stats), the hidden-profile clan gates and the ship-scoped lists
+        // alike — per chunk, so a slow chunk no longer delays the unlock
+        // for names that already landed (all three are idempotent).
+        scheduleCompBatch();
+        scheduleClanGates();
+        scheduleShipLists();
+      } catch {
+        anyFailed = true;
+        failedChunkNames.push(...chunk.names);
       }
     });
     // Success: restore the initial cadence for any future failure.
-    retryDelayMs = 2000;
+    if (!anyFailed) retryDelayMs = 2000;
     scheduleNotFoundRetry();
-    // Freshly landed stats unlock the composition-seal lookups for those
-    // names (seals only queue names that already have their stats), the
-    // hidden-profile clan gates and the ship-scoped lists alike.
-    scheduleCompBatch();
-    scheduleClanGates();
-    scheduleShipLists();
     render();
   } catch {
-    // A batch the prefs flip already discarded (statsGeneration moved under
-    // it) pays no retry / not-found budget — its names re-queue through the
-    // finally's scheduleBatch anyway, under the fresh prefs.
-    if (gen !== statsGeneration) return;
-    // Transient WG hiccup: retry the same (still-uncached) names after a
-    // capped, doubling pause — but only while the per-battle retry budget
-    // lasts (see RETRIES_PER_BATTLE). The chips honestly stay "…" until a
-    // retry lands — never a silently wrong "no data".
-    if (retriesLeft > 0) {
-      retriesLeft -= 1;
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        scheduleBatch();
-      }, retryDelayMs);
-      retryDelayMs = Math.min(retryDelayMs * 2, RETRY_DELAY_MAX_MS);
-    }
-    // A thrown batch is still an ATTEMPT against the suspected-absent names
-    // riding in it: spend their budget and re-arm, so their re-queue stays
-    // bounded even while the API is hard-down (the backoff above never
-    // re-queues them — their null answers are cached).
-    for (const name of names) {
-      if (notFoundRetry.has(name)) spendNotFoundRetry(name);
-    }
-    scheduleNotFoundRetry();
+    anyFailed = true;
   } finally {
     inFlight = false;
+    if (anyFailed && gen === statsGeneration) {
+      // Transient WG hiccup: retry the same (still-uncached) names after a
+      // capped, doubling pause — but only while the per-battle retry budget
+      // lasts (see RETRIES_PER_BATTLE). The chips honestly stay "…" until a
+      // retry lands — never a silently wrong "no data". A batch the prefs
+      // flip already discarded (statsGeneration moved under it) pays no
+      // retry / not-found budget — its names re-queue through the
+      // scheduleBatch below, under the fresh prefs.
+      if (retriesLeft > 0) {
+        retriesLeft -= 1;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          scheduleBatch();
+        }, retryDelayMs);
+        retryDelayMs = Math.min(retryDelayMs * 2, RETRY_DELAY_MAX_MS);
+      }
+      // A thrown chunk is still an ATTEMPT against the suspected-absent
+      // names riding in it: spend their budget and re-arm, so their
+      // re-queue stays bounded even while the API is hard-down (the
+      // backoff above never re-queues them — their null answers are
+      // cached).
+      for (const name of failedChunkNames) {
+        if (notFoundRetry.has(name)) spendNotFoundRetry(name);
+      }
+      scheduleNotFoundRetry();
+    }
     // A discarded batch (statsGeneration moved under it) left the roster
     // uncached — re-run the pipeline under the fresh prefs immediately
     // instead of waiting for the next anchor event.
