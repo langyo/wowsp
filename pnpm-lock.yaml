@@ -43,7 +43,6 @@ importers:
         specifier: ^*
         version: 3.5.42(typescript@7.0.2)
 
-
   packages/pairing-relay:
     devDependencies:
       wrangler:
@@ -93,8 +92,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.128
-        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.131
+        version: 0.55.131(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.48.0
         version: 1.52.0(vue@3.5.43(typescript@7.0.2))
@@ -278,6 +277,13 @@ packages:
 
   '@celestia-island/hikari@0.55.128':
     resolution: {integrity: sha512-cu2Upr83coo/rSQvkNyrga3NPdE2mSUWkASBcHyBYHlGvjcdmSkLZCBIlXcuPMLAQrgx+iXt73O4djiqYIjHGg==}
+    peerDependencies:
+      '@types/three': ^*
+      three: ^0.185
+      vue: ^*
+
+  '@celestia-island/hikari@0.55.131':
+    resolution: {integrity: sha512-V9HcZYPnpIzvjBIGB36rAhaFYaIAvaccwX51FdIx43i+Wkgb5drGJylEyewZaRbBr0fL39G4a+6OUJJOMrPGeg==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
@@ -2956,7 +2962,7 @@ snapshots:
       three: 0.185.1
       vue: 3.5.42(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.131(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@types/three': 0.185.4
       '@xterm/addon-fit': 0.11.0
