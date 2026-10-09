@@ -4626,9 +4626,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.150"
+version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
  "itoa",
  "memchr",
@@ -7386,19 +7386,3 @@ dependencies = [
  "syn 3.0.6",
  "winnow 1.0.4",
 ]
-
-[[patch.unused]]
-name = "plana"
-version = "0.2.1"
-
-[[patch.unused]]
-name = "plana-celestia-config"
-version = "0.1.29"
-
-[[patch.unused]]
-name = "plana-rpc-client"
-version = "0.2.2"
-
-[[patch.unused]]
-name = "plana-rpc-server"
-version = "0.1.0"
