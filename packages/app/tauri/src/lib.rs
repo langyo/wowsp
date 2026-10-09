@@ -28,6 +28,8 @@ mod commands;
 mod logging;
 mod os_prefs;
 mod paths;
+// Installer-shipped resource-pack publication (see the module docs).
+mod resource_pack;
 mod settings_store;
 #[cfg(feature = "test-harness")]
 mod test_harness;
@@ -208,6 +210,23 @@ pub fn run() {
             // paths.rs); capture the AppHandle globally before anything asks
             // for a data/cache dir.
             paths::init(app.handle().clone());
+
+            // ── Installer-shipped resource-pack publication (desktop) ─────
+            //
+            // The shun-built installer delivers the model/dog-tag pack as
+            // plain payload files inside the install directory; publish
+            // them into the cache root BEFORE the window opens (pack-aware
+            // views would otherwise race a background relocation and
+            // re-download). Runs after the single-instance plugin has
+            // registered, so a near-simultaneous duplicate launch exits
+            // before reaching this. First launch after a full install pays
+            // the copy; lite installs and every later launch no-op on one
+            // metadata probe. A failure logs and retries next launch — the
+            // pack staying beside the executable is never a broken state.
+            #[cfg(desktop)]
+            if let Err(err) = resource_pack::relocate_shipped() {
+                tracing::warn!(error = %err, "shipped resource-pack publication failed (retries next launch)");
+            }
 
             // The in-game plugin's telemetry poller (commands/ingame_plugin):
             // broadcasts wowsp://ingame-telemetry to both surfaces — the

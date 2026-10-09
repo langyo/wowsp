@@ -143,8 +143,8 @@ function loadUiLocale(): Locale {
   return detected;
 }
 
-/** Installer-wizard locale → canonical UI locale. The installer shell
- *  offers ten wizard locales; the eight with a matching webui UI copy
+/** Installer-wizard locale → canonical UI locale. The shun-built
+ *  installers offer ten wizard locales; the eight with a matching webui
  *  seed that locale, while de / pt have no UI locale here and stay
  *  unmapped — the seed ignores them. Anything else is unmappable and
  *  ignored too. */

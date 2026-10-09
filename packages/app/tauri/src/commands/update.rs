@@ -640,8 +640,10 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
     // Install over the directory the running exe lives in; the hardened
     // installer takes it from here — it kills this app, extracts, leaves
     // every launcher untouched (they point at the same exe) and relaunches
-    // the new build. No shortcut flags ride along: updates never touch
-    // shortcuts.
+    // the new build. No shortcut flags ride along: the shun headless
+    // lane re-applies the manifest policy (start menu always, desktop
+    // asked → checked), refreshing launchers in place — paths are
+    // stable, so existing links stay valid.
     let install_dir = std::env::current_exe()
         .map_err(|e| format!("resolve current exe: {e}"))?
         .parent()

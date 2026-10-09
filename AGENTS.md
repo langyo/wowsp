@@ -163,19 +163,19 @@ Before submitting, the relevant subset of `just lint` (or scoped
      PRs are allowed only when there is genuinely nothing to bundle (urgent
      hotfix, an isolated single-rule change).
 - **Version bumps ride along with the main PR**: when the version changes,
-  bump all eight places in the same feature/fix PR (`Cargo.toml` workspace
-  version, `packages/app/tauri/tauri.conf.json`,
-  `packages/installer-shell/tauri.conf.json`, root `package.json`, the
+  bump all seven places in the same feature/fix PR (`Cargo.toml` workspace
+  version, `packages/app/tauri/tauri.conf.json`, root `package.json`, the
   `version` field of `packages/webui`, `packages/website`, `packages/holo`,
   and `packages/pairing-relay/wrangler.toml`'s `[vars]
   FEEDBACK_LATEST_VERSION` — the /feedback form's browser-side version
-  default);
+  default); the installers take their version from the stamped
+  shun.toml manifest (see packages/installer), so no separate slot.
   `scripts/check_versions.py` enforces consistency in CI. **Do not** open
   version-bump-only PRs (unless the user explicitly asks).
 - **Version bump authorization tiers**: without explicit user consent, an
   agent may autonomously advance **at most the patch digit**. minor / major
   bumps must never be advanced unilaterally — first get the user's explicit
-  approval of the target version, then bump all eight places in the same PR.
+  approval of the target version, then bump all seven places in the same PR.
 - **Create PRs only when asked, or as a step of an approved workflow**;
   never open unsolicited PRs.
 

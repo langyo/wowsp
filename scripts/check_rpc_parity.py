@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tauri RPC command-name parity validator for WoWSP.
 
-The Rust <-> TypeScript command contract is hand-mirrored across two full
-surfaces (the main app and the installer shell) plus a dev mock:
+The Rust <-> TypeScript command contract is hand-mirrored across the app
+surface plus a dev mock:
 
   - `packages/app/tauri/src/**/*.rs` — the `#[tauri::command]` functions
     (the wire truth; includes the mobile stand-ins in `commands/mod.rs`),
@@ -15,12 +15,7 @@ surfaces (the main app and the installer shell) plus a dev mock:
     (overlay/ bypasses rpc.ts entirely) — a typo'd literal
     here passes every other check and explodes at runtime,
   - `scripts/mock/src/main.py` — the browser-dev mock backend, which
-    mirrors a SUBSET of the same names under `/api/<cmd>`,
-  - the installer shell's own IPC surface: `#[tauri::command]` fns + the
-    `generate_handler!` list in `packages/installer-shell/src/main.rs` and
-    the raw invokes in `packages/installer-shell/web/src/**/*.{ts,tsx}`
-    (the installer UI has no rpc.ts-style table — it calls a local
-    `invoke(cmd)` helper with literal names).
+    mirrors a SUBSET of the same names under `/api/<cmd>`.
 
 Drift here compiles fine everywhere and only explodes at runtime ("command
 not found"), so this script diffs all the name sets:
@@ -68,14 +63,11 @@ RPC_TS_PATH = REPO_ROOT / "packages" / "webui" / "src" / "rpc.ts"
 WEBUI_SRC_DIR = REPO_ROOT / "packages" / "webui" / "src"
 MOCK_PY_PATH = REPO_ROOT / "scripts" / "mock" / "src" / "main.py"
 APP_LIB_RS = REPO_ROOT / "packages" / "app" / "tauri" / "src" / "lib.rs"
-INSTALLER_SRC_DIR = REPO_ROOT / "packages" / "installer-shell" / "src"
-INSTALLER_MAIN_RS = INSTALLER_SRC_DIR / "main.rs"
-INSTALLER_WEB_SRC_DIR = REPO_ROOT / "packages" / "installer-shell" / "web" / "src"
 
 # `#[tauri::command]` / `#[tauri::command(...)]` — anchored on '[', so the
 # doc/comment lines that merely mention the attribute never match.
 COMMAND_ATTR_RE = re.compile(r"^\s*#\[\s*tauri::command(?:\([^)]*\))?\s*\]")
-# `pub` is optional: the installer shell's command fns are crate-private.
+# `pub` is optional: crate-private command fns count too.
 PUB_FN_RE = re.compile(r"^\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z0-9_]+)")
 # Lines allowed to sit between the attribute and its fn: doc comments,
 # other attributes, blanks.
@@ -276,8 +268,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Validate WoWSP Rust/webui/mock RPC command-name parity, "
-            "generate_handler! registration, raw invoke literals, and the "
-            "installer shell IPC surface"
+            "generate_handler! registration, and raw invoke literals"
         )
     )
     parser.add_argument("--quiet", action="store_true")
@@ -289,9 +280,6 @@ def main() -> int:
     ts, ts_key_drift = collect_rpc_ts()
     webui_invokes = collect_invoke_literals(WEBUI_SRC_DIR)
     mock = collect_mock_routes()
-    installer_rust = collect_rust_commands(INSTALLER_SRC_DIR)
-    installer_registered = collect_registered_commands(INSTALLER_MAIN_RS)
-    installer_invokes = collect_invoke_literals(INSTALLER_WEB_SRC_DIR)
 
     problems: dict[str, list[str]] = {}
 
@@ -312,8 +300,6 @@ def main() -> int:
 
     diff_registration("app", rust, registered, problems)
     diff_invoke_literals("webui", webui_invokes, rust, problems)
-    diff_registration("installer", installer_rust, installer_registered, problems)
-    diff_invoke_literals("installer", installer_invokes, installer_rust, problems)
 
     stale_mock = sorted(set(mock) - set(rust))
     if stale_mock:
@@ -322,7 +308,6 @@ def main() -> int:
         ]
 
     invoke_site_count = sum(len(s) for s in webui_invokes.values())
-    installer_invoke_site_count = sum(len(s) for s in installer_invokes.values())
 
     if args.json:
         print(
@@ -334,12 +319,6 @@ def main() -> int:
                     "raw_invoke_literals": len(webui_invokes),
                     "raw_invoke_sites": invoke_site_count,
                     "mock_routes": len(mock),
-                    "installer": {
-                        "rust_commands": len(installer_rust),
-                        "registered_commands": len(installer_registered),
-                        "raw_invoke_literals": len(installer_invokes),
-                        "raw_invoke_sites": installer_invoke_site_count,
-                    },
                     "parity": not problems,
                     "problems": problems,
                 },
@@ -357,10 +336,6 @@ def main() -> int:
             f"RPC parity OK: {len(rust)} Rust commands == {len(ts)} rpc.ts entries; "
             f"{len(registered)} registered; "
             f"{len(webui_invokes)} raw invoke names ({invoke_site_count} sites) all resolve; "
-            f"installer: {len(installer_rust)} commands == "
-            f"{len(installer_registered)} registered, "
-            f"{len(installer_invokes)} invoke names "
-            f"({installer_invoke_site_count} sites) all resolve; "
             f"{len(mock)} mock routes all resolve"
         )
 
