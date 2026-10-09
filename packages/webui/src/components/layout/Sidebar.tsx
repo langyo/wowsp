@@ -1,4 +1,4 @@
-import { computed, defineComponent, watch } from "vue";
+import { computed, defineComponent, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle } from "@lucide/vue";
 
@@ -127,6 +127,10 @@ export default defineComponent({
     const activeInstall = computed(() => config.activeInstall ?? null);
     const activeInstallPath = computed(() => activeInstall.value?.path ?? "");
 
+    // The game-status card element — PluginUpdateHint anchors its popup
+    // to the RIGHT of this card, vertically centered on it.
+    const statusCardEl = ref<HTMLElement | null>(null);
+
     function copyPid() {
       if (proc.value.pid != null) {
         void copy(String(proc.value.pid), t("common.copied"));
@@ -184,7 +188,10 @@ export default defineComponent({
 
         <div class="sidebar__footer">
           {/* game status — an indicator, not a control */}
-          <div class={["sidebar__game-status", running.value ? "is-running" : "is-offline"]}>
+          <div
+            ref={statusCardEl}
+            class={["sidebar__game-status", running.value ? "is-running" : "is-offline"]}
+          >
             <div class="sidebar__game-status-row">
               <span
                 class={[
@@ -265,11 +272,13 @@ export default defineComponent({
               Phone app build: no local installs to switch — the whole row
               (and its settings section) is desktop-app territory. */}
           {!isMobileApp() ? (
-          // While plugins await updates the selector wears a count badge
-          // and the hover surface becomes PluginUpdateHint (stale-plugin
-          // list + one-click update); otherwise the plain path tooltip.
-          pluginUpdates.activeCount > 0 ? (
-          <PluginUpdateHint class="sidebar__footer-slot">
+          // While ANY install's plugins await updates the selector wears
+          // a count badge and the hover surface becomes PluginUpdateHint
+          // (per-client stale-plugin list + one-click update across all
+          // of them; pinned open while the running client's probe plugin
+          // is stale); otherwise the plain path tooltip.
+          pluginUpdates.totalCount > 0 ? (
+          <PluginUpdateHint class="sidebar__footer-slot" anchor={statusCardEl}>
             <button
               type="button"
               class="sidebar__footer-btn"

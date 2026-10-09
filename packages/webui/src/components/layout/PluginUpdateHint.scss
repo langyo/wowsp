@@ -1,6 +1,9 @@
-// PluginUpdateHint — the client-version selector's hover card. Fixed,
-// teleported to body, in hikari's popup z-band (the tooltip band), with
-// an app-surface look (dark surface tokens like the settings cards).
+// PluginUpdateHint — the client-version selector's hover card (pinned
+// open while the running client's probe plugin is stale). Fixed,
+// teleported to body, anchored to the RIGHT of the game-status card and
+// vertically centered on it, in hikari's popup z-band (the tooltip
+// band), with an app-surface look (dark surface tokens like the settings
+// cards).
 
 .plugin-update-hint {
   position: relative;
@@ -44,6 +47,56 @@
     font-size: var(--text-xs, 0.75rem);
     font-weight: 600;
     color: var(--hi-color-warning, #d29922);
+  }
+
+  // The standing reminder shown while the running client's probe plugin
+  // is stale — warning-toned, icon-led, the card's reason for being
+  // pinned open.
+  &__warn {
+    margin: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.45;
+    color: var(--hi-color-warning, #d29922);
+  }
+
+  &__warn-icon {
+    flex: none;
+    margin-top: 1px;
+  }
+
+  // Client group headers — only rendered when more than one client has
+  // pending items ("Steam · ASIA" over that client's stale list).
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__group + &__group {
+    margin-top: var(--hi-space-8, 8px);
+  }
+
+  &__group-label {
+    font-size: var(--text-3xs, 0.625rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgb(var(--color-muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__group-items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   &__list {

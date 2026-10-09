@@ -13,9 +13,9 @@
  * signal). Both update paths already exist Rust-side (mod_catalog_
  * install rewinds+reinstalls, ingame_plugin_install overwrites in
  * place); this store aggregates the signals and orchestrates every
- * mutation — single-item or the sequential batch — folding each
- * install's unified wowsp://download-progress ticks (kind "mod-package")
- * into one overall percent for the toast card.
+ * mutation — single-item or the sequential all-installs batch — folding
+ * each install's unified wowsp://download-progress ticks (kind
+ * "mod-package") into one overall percent for the toast card.
  *
  * The shared part that makes the surfaces agree: one per-item busy table
  * (probe + mod ids) so an op started anywhere disables its item
@@ -32,14 +32,17 @@ import { computed, ref } from "vue";
 import {
   api,
   type CatalogEntry,
+  type GameInstall,
   type InstallReport,
   type ModInstallRecord,
   type UninstallReport,
 } from "@/api";
 import { t } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
+import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { sameGamePath } from "@/utils/gamePath";
+import { installFolderName, installLabel } from "@/utils/installLabel";
 
 /** One outdated catalog mod awaiting its update run. */
 export interface OutdatedMod {
@@ -53,6 +56,16 @@ export interface OutdatedMod {
 export interface PluginUpdateInfo {
   mods: OutdatedMod[];
   probeOutdated: boolean;
+}
+
+/** One install's pending items plus the metadata needed to label it in
+ *  the hint card and the batch pass (`install` is null when an assessed
+ *  path no longer resolves to a detected install — the folder name
+ *  stands in for the label then). */
+export interface PendingInstall {
+  path: string;
+  install: GameInstall | null;
+  info: PluginUpdateInfo;
 }
 
 /** The shared busy table's key for the built-in probe plugin. Namespaced
@@ -129,12 +142,39 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     return null;
   }
 
-  /** Count for the ACTIVE install — what the sidebar marker shows. */
-  const activeCount = computed(() => {
-    const info = infoFor(config.activeInstall?.path);
-    if (!info) return 0;
-    return info.mods.length + (info.probeOutdated ? 1 : 0);
+  /** Installs with at least one outdated item, ACTIVE install first and
+   *  then settings order — the order the hint card groups them by and
+   *  the batch pass updates them in. Paths match through sameGamePath
+   *  (perInstall keys and config paths may differ in casing). */
+  const pendingInstalls = computed<PendingInstall[]>(() => {
+    const activePath = config.activeInstall?.path;
+    const metaFor = (path: string): GameInstall | null => {
+      if (activePath && sameGamePath(path, activePath)) return config.activeInstall;
+      return config.installs.find((i) => sameGamePath(i.path, path)) ?? null;
+    };
+    const rankOf = (path: string): number => {
+      if (activePath && sameGamePath(path, activePath)) return 0;
+      let rank = 1;
+      for (const i of config.installs) {
+        if (sameGamePath(i.path, path)) return rank;
+        rank += 1;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    };
+    return Object.entries(perInstall.value)
+      .filter(([, info]) => info.mods.length > 0 || info.probeOutdated)
+      .map(([path, info]) => ({ path, install: metaFor(path), info }))
+      .sort((a, b) => rankOf(a.path) - rankOf(b.path));
   });
+
+  /** Total outdated items across EVERY install — the sidebar hint's badge.
+   *  The one-click pass covers them all, so the marker counts them all. */
+  const totalCount = computed(() =>
+    pendingInstalls.value.reduce(
+      (n, g) => n + g.info.mods.length + (g.info.probeOutdated ? 1 : 0),
+      0,
+    ),
+  );
 
   // Assessments coalesce: a batch pass pokes one per item completion and
   // single ops poke their own — concurrent callers join the run in flight.
@@ -265,46 +305,87 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   }
 
   /**
-   * One-click update for one install: the probe plugin first (local,
-   * fast), then every outdated catalog mod sequentially — the disk side
-   * serializes Rust-side anyway, and a single front-end queue keeps the
-   * overall percent meaningful. Items already busy on another surface are
-   * skipped (that op's own fan-out keeps the snapshot honest). Failures
-   * are collected and reported at the end; every item's completion fans
-   * out a freshness sync, so the badge ticks down while the pass runs.
+   * One-click update across EVERY pending install: per install the probe
+   * plugin first (local, fast), then its outdated catalog mods — installs
+   * run sequentially too, and a single front-end queue keeps the overall
+   * percent meaningful. Task names carry the client label ("mod-a ·
+   * Steam · ASIA") whenever more than one install is pending, so the
+   * progress card and the failure toast read unambiguously on
+   * multi-client machines. The install whose client is RUNNING is
+   * skipped up front — Rust refuses writes into a live game tree, so
+   * attempting it would only surface a raw backend refusal — and gets a
+   * dedicated warning toast instead. Items already busy on another
+   * surface are skipped (that op's own fan-out keeps the snapshot
+   * honest). Failures are collected and reported at the end; every
+   * item's completion fans out a freshness sync, so the badge ticks
+   * down while the pass runs.
    */
-  async function updateAll(gameRoot: string): Promise<void> {
+  async function updateAll(): Promise<void> {
     if (running.value) return;
-    const info = infoFor(gameRoot);
-    if (!info || (info.mods.length === 0 && !info.probeOutdated)) return;
+    const groups = pendingInstalls.value;
+    if (groups.length === 0) return;
+
+    const multi = groups.length > 1;
+    const proc = useGameStatusStore().process;
+    const runningPath = proc.running ? (proc.matchedInstall?.path ?? null) : null;
 
     const tasks: { id: string | null; name: string; run: () => Promise<unknown> }[] = [];
-    if (info.probeOutdated && !probeBusy.value) {
-      tasks.push({
-        id: null,
-        name: t("resources.pluginProbeName"),
-        run: async () => {
-          const err = await runProbe(gameRoot, "update");
-          if (err) throw new Error(err);
-        },
-      });
+    let skipped = 0;
+    const skippedClients: string[] = [];
+    for (const g of groups) {
+      const label = installLabel(g.install?.kind, g.install?.realm) || installFolderName(g.path);
+      if (runningPath && sameGamePath(g.path, runningPath)) {
+        skipped += g.info.mods.length + (g.info.probeOutdated ? 1 : 0);
+        if (!skippedClients.includes(label)) skippedClients.push(label);
+        continue;
+      }
+      const suffix = multi ? ` · ${label}` : "";
+      if (g.info.probeOutdated && !probeBusy.value) {
+        tasks.push({
+          id: null,
+          name: t("resources.pluginProbeName") + suffix,
+          run: async () => {
+            // Another surface (live page, onboarding) may have grabbed
+            // the probe between task build and its queue turn — that op
+            // updates it and fans out its own sync, so skip silently
+            // instead of recording its refusal as a false failure.
+            if (probeBusy.value) return;
+            const err = await runProbe(g.path, "update");
+            if (err) throw new Error(err);
+          },
+        });
+      }
+      for (const m of g.info.mods) {
+        if (itemBusy.value.has(m.id)) continue;
+        tasks.push({
+          id: m.id,
+          name: m.name + suffix,
+          run: async () => {
+            // A mod-hub install may have grabbed this id between task
+            // build and its turn in the queue — that op updates it and
+            // fans out its own sync, so skip silently instead of
+            // reporting a false failure for a mod that is, in fact,
+            // freshly updated.
+            if (itemBusy.value.has(m.id)) return;
+            await runMod(m.id, g.path, m.preset ?? undefined, "update");
+          },
+        });
+      }
     }
-    for (const m of info.mods) {
-      if (itemBusy.value.has(m.id)) continue;
-      tasks.push({
-        id: m.id,
-        name: m.name,
-        run: async () => {
-          // A mod-hub install may have grabbed this id between task build
-          // and its turn in the queue — that op updates it and fans out
-          // its own sync, so skip silently instead of reporting a false
-          // failure for a mod that is, in fact, freshly updated.
-          if (itemBusy.value.has(m.id)) return;
-          await runMod(m.id, gameRoot, m.preset ?? undefined, "update");
-        },
-      });
+
+    function reportSkipped(): void {
+      if (skipped > 0) {
+        toast.warning(
+          t("resources.pluginUpdateSkipped", {
+            count: skipped,
+            names: skippedClients.join(", "),
+          }),
+        );
+      }
     }
+
     if (tasks.length === 0) {
+      reportSkipped();
       void syncFreshness();
       return;
     }
@@ -366,6 +447,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           }),
         );
       }
+      reportSkipped();
       void syncFreshness();
     }
   }
@@ -382,7 +464,8 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     percent,
     overallPercent,
     failures,
-    activeCount,
+    pendingInstalls,
+    totalCount,
     infoFor,
     itemOp,
     refresh,
