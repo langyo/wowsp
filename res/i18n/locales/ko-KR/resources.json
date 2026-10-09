@@ -113,6 +113,7 @@
   "uninstalledDone": "\"{name}\" 제거 완료 — 파일 {removed}개 삭제됨{restored}.",
   "restoredPart": ", 원본 {count}개 복원됨",
   "confirmUninstall": "\"{name}\"을(를) 제거할까요? 기록된 파일은 삭제되고, 덮어쓰인 원본 파일은 복원됩니다.",
+  "chipsHint": "클릭하면 필터가 켜지고 여러 개 선택할 수 있으며, 아무것도 선택하지 않으면 모두 표시됩니다.",
   "cat": {
     "battle": "전투",
     "minimap": "미니맵",

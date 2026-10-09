@@ -113,6 +113,7 @@
   "uninstalledDone": "已移除「{name}」——刪除 {removed} 個檔案{restored}。",
   "restoredPart": "，還原 {count} 個被覆蓋的檔案",
   "confirmUninstall": "解除安裝「{name}」？將刪除其寫入的檔案，並還原被覆蓋的原始檔案。",
+  "chipsHint": "點擊標籤進行篩選，可多選；不選則顯示全部",
   "cat": {
     "battle": "戰鬥",
     "minimap": "小地圖",

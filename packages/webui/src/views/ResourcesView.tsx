@@ -22,6 +22,7 @@ import {
   HkCheckbox,
   HkConfirmDialog,
   HkIconButton,
+  HkImagePreview,
   HkModal,
   HkSpinner,
   HkSwitch,
@@ -139,8 +140,12 @@ export default defineComponent({
     // delisted notice) so a stale choice never leaks across entries.
     const selectedPreset = ref("");
     const bigCat = ref<BigCat>("function");
-    const catalogFilter = ref<"all" | CatalogCat>("all");
-    const filter = ref<"all" | ModKind>("all");
+    // Sub-division chip selections (multi-select, union semantics): an
+    // EMPTY set shows everything, each clicked chip adds/removes its
+    // bucket. No "all" pseudo-chip — clearing the selection is the all
+    // view, which is why these reset wholesale on a big-category switch.
+    const catalogCats = ref(new Set<CatalogCat>());
+    const kindFilters = ref(new Set<ModKind>());
     const selection = ref<Selection | null>(null);
 
     const installed = ref<InstalledMod[]>([]);
@@ -407,7 +412,7 @@ export default defineComponent({
       delistedHit.value = null;
       source.value = "online";
       bigCat.value = catBig(hit.category);
-      catalogFilter.value = "all";
+      catalogCats.value = new Set();
       selection.value = { mode: "catalog", entry: hit };
     });
 
@@ -866,8 +871,8 @@ export default defineComponent({
     // A chip picked under one big category must not leak an empty list into
     // the next one — reset both sub-filters on the category switch.
     watch(bigCat, () => {
-      catalogFilter.value = "all";
-      filter.value = "all";
+      catalogCats.value = new Set();
+      kindFilters.value = new Set();
     });
 
     /** Big category of an installed unit's kind (preview routing). */
@@ -1012,10 +1017,12 @@ export default defineComponent({
       // Most-covered parts first; labels keep it stable within a count.
       out.sort((a, b) => b.units.length - a.units.length || a.label.localeCompare(b.label));
       // The kind chips keep meaning in the component view too: a chip
-      // keeps the parts whose packs include that kind.
-      if (filter.value !== "all") {
-        const kind = filter.value;
-        const hits = out.filter((comp) => comp.units.some((u) => u.kind === kind));
+      // keeps the parts whose packs include that kind (any selected kind
+      // qualifies — the chips' union semantics).
+      if (kindFilters.value.size > 0) {
+        const hits = out.filter((comp) =>
+          comp.units.some((u) => kindFilters.value.has(u.kind)),
+        );
         out.length = 0;
         out.push(...hits);
       }
@@ -1113,13 +1120,32 @@ export default defineComponent({
 
     const catalogShown = computed(() =>
       catalogInCat.value.filter(
-        (m) => catalogFilter.value === "all" || m.category === catalogFilter.value,
+        (m) =>
+          catalogCats.value.size === 0 ||
+          (isCatalogCat(m.category) && catalogCats.value.has(m.category)),
       ),
     );
 
     const shown = computed(() =>
-      installedInCat.value.filter((m) => filter.value === "all" || m.kind === filter.value),
+      installedInCat.value.filter(
+        (m) => kindFilters.value.size === 0 || kindFilters.value.has(m.kind),
+      ),
     );
+
+    /** Chip toggles: reassign a fresh Set so the reactive swap is plain. */
+    function toggleCatalogCat(c: CatalogCat) {
+      const next = new Set(catalogCats.value);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      catalogCats.value = next;
+    }
+
+    function toggleKindFilter(k: ModKind) {
+      const next = new Set(kindFilters.value);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      kindFilters.value = next;
+    }
 
     // ── Row → pane selection (the master/detail pair) ──
     // Every real selection replaces the delisted notice (it only exists to
@@ -1462,11 +1488,10 @@ export default defineComponent({
               <p class="mod-detail__desc">{text.desc || entry.description}</p>
             )}
             {entry.preview && (
-              <img
-                class="mod-detail__preview"
+              <HkImagePreview
                 src={entry.preview}
                 alt={text.name || entry.title}
-                loading="lazy"
+                objectFit="contain"
               />
             )}
             <div class="mod-detail__meta">
@@ -2586,50 +2611,38 @@ export default defineComponent({
                 </div>
               )}
 
-              {/* Sub-division chips, scoped to the active big category. */}
+              {/* Sub-division chips, scoped to the active big category.
+                  Multi-select toggles: no chips picked = show everything,
+                  each clicked chip narrows to its bucket (union). */}
               <div class="resources-chips">
-                {source.value === "online" ? (
-                  <>
-                    <button
-                      class={["chip", catalogFilter.value === "all" && "chip--on"]}
-                      onClick={() => (catalogFilter.value = "all")}
-                    >
-                      {t("resources.cat.all")} · {catalogInCat.value.length}
-                    </button>
-                    {CATALOG_CATS.filter(
+                {source.value === "online"
+                  ? CATALOG_CATS.filter(
                       (c) =>
                         catBig(c) === bigCat.value && (catCounts.value.get(c) ?? 0) > 0,
                     ).map((c) => (
                       <button
                         key={c}
-                        class={["chip", catalogFilter.value === c && "chip--on"]}
-                        onClick={() => (catalogFilter.value = c)}
+                        class={["chip", catalogCats.value.has(c) && "chip--on"]}
+                        aria-pressed={catalogCats.value.has(c)}
+                        title={t("resources.chipsHint")}
+                        onClick={() => toggleCatalogCat(c)}
                       >
                         {t(`resources.cat.${c}`)} · {catCounts.value.get(c)}
                       </button>
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    <button
-                      class={["chip", filter.value === "all" && "chip--on"]}
-                      onClick={() => (filter.value = "all")}
-                    >
-                      {t("resources.filterAll")} · {installedInCat.value.length}
-                    </button>
-                    {KIND_ORDER.filter(
+                    ))
+                  : KIND_ORDER.filter(
                       (k) => KIND_BIG[k] === bigCat.value && (kindCounts.value.get(k) ?? 0) > 0,
                     ).map((k) => (
                       <button
                         key={k}
-                        class={["chip", filter.value === k && "chip--on"]}
-                        onClick={() => (filter.value = k)}
+                        class={["chip", kindFilters.value.has(k) && "chip--on"]}
+                        aria-pressed={kindFilters.value.has(k)}
+                        title={t("resources.chipsHint")}
+                        onClick={() => toggleKindFilter(k)}
                       >
                         {kindLabel(k)} · {kindCounts.value.get(k)}
                       </button>
                     ))}
-                  </>
-                )}
               </div>
             </div>
 
@@ -2643,6 +2656,17 @@ export default defineComponent({
                       const text = localized(entry);
                       const record = recordOf(entry.id);
                       const upToDate = !!record && record.version === entry.version;
+                      // Corner light — install state at a glance: yellow
+                      // while a newer catalog version exists, green once
+                      // current, blue when only a third-party copy (no
+                      // WoWSP ledger row) occupies the slot.
+                      const light: "green" | "yellow" | "blue" | null = record
+                        ? upToDate
+                          ? "green"
+                          : "yellow"
+                        : foreignCopyOf(entry)
+                          ? "blue"
+                          : null;
                       const busyOp = busy.value.get(entry.id);
                       const busyInstall = busyOp === "install" || busyOp === "update";
                       const RowIcon = catIcon(entry.category);
@@ -2654,6 +2678,9 @@ export default defineComponent({
                         >
                           <span class="mod-row__tile mod-row__tile--cat">
                             <RowIcon size={20} />
+                            {light && (
+                              <span class={["mod-row__dot", `mod-row__dot--${light}`]} />
+                            )}
                           </span>
                           <span class="mod-row__body">
                             <span class="mod-row__name">
@@ -2710,6 +2737,22 @@ export default defineComponent({
                       const meta = KIND_META[m.kind];
                       const Icon = meta.icon;
                       const state = unitBusy.value.get(m.relPath);
+                      // Corner light — every listed unit is installed.
+                      // A ledger row (WoWSP's own install) speaks first,
+                      // mirroring pairedRelationOf: yellow when it lags
+                      // the catalog, green when current. Only units the
+                      // ledger doesn't know fall to the Aslain verdict
+                      // (blue); everything else is plain-installed green.
+                      const paired = pairedEntryOf(m);
+                      const ledger = m.identity ? recordOf(m.identity) : null;
+                      const light: "blue" | "yellow" | "green" =
+                        paired && ledger
+                          ? ledger.version !== paired.version
+                            ? "yellow"
+                            : "green"
+                          : isAslainUnit(m)
+                            ? "blue"
+                            : "green";
                       return (
                         <button
                           key={m.relPath}
@@ -2722,6 +2765,7 @@ export default defineComponent({
                         >
                           <span class={["mod-row__tile", `mod-row__tile--${meta.class}`]}>
                             <Icon size={20} />
+                            <span class={["mod-row__dot", `mod-row__dot--${light}`]} />
                           </span>
                           <span class="mod-row__body">
                             <span class="mod-row__name">
