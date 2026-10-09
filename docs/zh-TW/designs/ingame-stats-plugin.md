@@ -71,13 +71,24 @@ WoWSP。該 mod **不渲染任何內容**——透明覆蓋層仍是顯示層—
 
 應用程式把這些編碼為離線排序鍵之上的按服門控（utils/realms 的
 `realmUsesShipNameOrder`；utils/shipClass 承載排序鍵本身與 CN 靜態布局），
-並拒絕把推斷當作遊戲內真值：插件已連線時，/live 面板標頭仍把行序標注為
-推斷（警告藥丸 + tooltip，`features/replay/telemetryGrade.ts`）
-——遙測酬載帶有存活/沉沒狀態，但**不帶行序**。終極方案是探針在引擎內讀到
-遊戲自己的排序——TAB 所渲染的集合（`team.ally.sortedAlive`）是天然來源，
-但注入的 dataHub 上沒有 `getCollection`；未來的酬載契約
-（`order: {ally: [...], enemy: [...]}`，只收遊戲內真值）將把藥丸翻回
-「精確」。在此之前，推斷只是經過校準的回退，僅此而已。
+並拒絕把推斷當作遊戲內真值：排序鍵映射未覆蓋時，即使插件已連線，
+/live 面板標頭仍把行序標注為推斷（警告藥丸 + tooltip，
+`features/replay/telemetryGrade.ts`）。
+
+**終極方案當日落地（2026-10-09）**——走艦船元件而非排序集合：注入的
+ModAPI dataHub 只對 `SYNCED` 白名單匯出 `getSingleEntity` /
+`getEntityCollections` 兩個方法（反編譯
+`ModsShell/API_v_1_0/dataHub.py`——僅此兩個匯出），而 **`'ship'` 在白名單
+裡**。探針順 avatar 的 `ship` 槽摸到每名玩家的 Ship 元件，其 `sortKey`
+正是用戶端自己的 TAB 排序鍵（`str(SORT_ORDER.index(subtype)) +
+str(100 - level) + str(NATION.SORT_ORDER.index(nation)) + shortName`，
+`ShipSystem.add`，build 13357625），隨遙測帶出（`sortKeys`，名字 → 鍵）。
+/live 面板按「鍵 + `'[TAG]nickname'`」排序——與 `__sortKeyAlive` 同一比較串
+——映射覆蓋全員時藥丸評級**精確**，任何伺服器皆然（國服含在內：其視圖層
+即便重排，起點也是這些同樣的鍵；遊戲內面板的存活塊同樣按它排序）。遺留
+事項：Lesta 沙箱對 'ship' 集合的行為要等真實對局驗證（每處讀取都有守衛，
+缺口會把該局降級回按服推斷）；部分覆蓋的對局保持校準回退——遊戲內真值
+行與推斷行絕不交錯。
 
 ## 沙盒約束（得來不易，寫進 mod 的風格守則）
 

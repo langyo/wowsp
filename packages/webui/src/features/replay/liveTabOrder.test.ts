@@ -139,4 +139,65 @@ describe("orderForTab", () => {
     expect(names(ordered)).toEqual(["Saipan", "Pommern", "Iowa"]);
     expect(ordered.map((o) => o.sunk)).toEqual([true, false, false]);
   });
+
+  it("switches to the client's own sort keys when the telemetry covers the roster", () => {
+    // The plugin's game-true sort keys (read off the avatars' ship
+    // components) supersede every offline permutation: the comparator is
+    // exactly __sortKeyAlive's — key + '[TAG]nickname' ascending, plain
+    // string compare. BILTEMA8's key sorts after the two St. Louis keys
+    // (nation segment '2' > '1' at the same class+tier), and the two
+    // SAME-SHIP keys tie exactly as they do in the client — the display
+    // name decides. Both offline permutations would interleave these
+    // three differently; the keys are the client's verdict, not an
+    // inference.
+    const list = [
+      vehicle("BILTEMA8", SHIPS.bogatyr),
+      vehicle("langyo", SHIPS.stLouis),
+      vehicle("Fisher", SHIPS.stLouis),
+    ];
+    const keys: Record<string, string> = {
+      Fisher: "2981St. Louis",
+      langyo: "2981St. Louis",
+      BILTEMA8: "2982Bogatyr",
+    };
+    expect(
+      names(
+        orderForTab(list, {
+          locale: "zh-CN",
+          shipNameOrder: true,
+          sortKeyOf: (v) => keys[v.name],
+        }),
+      ),
+    ).toEqual(["Fisher", "langyo", "BILTEMA8"]);
+    // The clan tag rides the display-name tail exactly like the client's
+    // own compare: '[PLC]zed' jumps ahead of 'amy' when the keys tie.
+    const twins = [vehicle("amy", SHIPS.stLouis), vehicle("zed", SHIPS.stLouis)];
+    expect(
+      names(
+        orderForTab(twins, {
+          locale: "zh-CN",
+          sortKeyOf: () => "2981St. Louis",
+          clanTagOf: (v) => (v.name === "zed" ? "PLC" : null),
+        }),
+      ),
+    ).toEqual(["zed", "amy"]);
+  });
+
+  it("ignores the sort-key override unless it covers the whole list", () => {
+    // Game-true and inferred rows must never interleave: one missing key
+    // disables the override for the WHOLE side, keeping the offline
+    // inference (here the WG nation rank: 圣路易斯/usa before 博加特里/russia).
+    const list = [
+      vehicle("langyo", SHIPS.stLouis),
+      vehicle("BILTEMA8", SHIPS.bogatyr),
+    ];
+    expect(
+      names(
+        orderForTab(list, {
+          locale: "zh-CN",
+          sortKeyOf: (v) => (v.name === "langyo" ? "2981St. Louis" : undefined),
+        }),
+      ),
+    ).toEqual(["langyo", "BILTEMA8"]);
+  });
 });

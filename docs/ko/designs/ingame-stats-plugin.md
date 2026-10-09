@@ -81,16 +81,28 @@ Python 측 대응물이 없다(주입된 dataHub에는 `getCollection`이 없다
 
 앱은 이것을 오프라인 정렬 키 위의 서버별 게이트로 구현한다(utils/realms의
 `realmUsesShipNameOrder`; 키 자체와 CN 정적 레이아웃은 utils/shipClass가
-가진다). 그리고 추론을 게임 내 진실로 내보내는 것을 거부한다: 플러그인이
-연결돼 있어도 /live 패널 헤드에서는 행 순서가 여전히 "추정"으로
-표시된다(경고 필 + tooltip, `features/replay/telemetryGrade.ts`). 텔레메트리
-페이로드에는 생존/침몰 상태가 담기지만 행 순서는 담기지 **않기** 때문이다.
-최종 목표는 프로브가 게임 자체의 순서를 엔진 안에서 읽는 것이다 — TAB이
-렌더링하는 컬렉션(`team.ally.sortedAlive`)이 자연스러운 원천이지만, 주입된
-dataHub에는 `getCollection`이 없다. 훗날의 페이로드 계약
-(`order: {ally: [...], enemy: [...]}`, 게임 내 실제 값만)이 필을 다시
-"정확"으로 되돌린다. 그때까지 추론은 보정된 폴백일 뿐, 그 이상도 이하도
-아니다.
+가진다). 그리고 추론을 게임 내 진실로 내보내는 것을 거부한다: 정렬 키 맵이
+로스터를 커버하지 않는 한, 플러그인이 연결된 전투도 /live 패널 헤드에서는
+행 순서가 여전히 "추정"으로 표시된다(경고 필 + tooltip,
+`features/replay/telemetryGrade.ts`).
+
+**최종 목표는 당일(2026-10-09)에 구현됐다** — 정렬된 컬렉션이 아니라 함선
+컴포넌트를 통해: 주입된 ModAPI dataHub는 `SYNCED` 화이트리스트 위에서
+`getSingleEntity` / `getEntityCollections`만 내보낸다(디컴파일된
+`ModsShell/API_v_1_0/dataHub.py` — 딱 두 개의 익스포트), 그리고 `'ship'`는
+화이트리스트에 **포함돼 있다**. 따라서 프로브는 avatar의 `ship` 슬롯을
+따라 각 플레이어의 Ship 컴포넌트에 이른다. 그 `sortKey`야말로 클라이언트
+자신의 Tab 키다(`str(SORT_ORDER.index(subtype)) + str(100 - level) +
+str(NATION.SORT_ORDER.index(nation)) + shortName` — `ShipSystem.add`,
+빌드 13357625) — 프로브는 이것을 텔레메트리에 실어 보낸다(`sortKeys`,
+이름 → 키). /live 패널은 명단을 키 + `'[TAG]nickname'`으로 정렬한다 —
+`__sortKeyAlive`가 비교하는 그 연결 문자열 그대로 — 그리고 맵이 라이브
+명단을 커버하면 필을 **정확**으로 판정한다. 모든 서버에서 마찬가지다(CN
+포함: 뷰 계층의 재정렬이 있다 해도 그 출발점은 같은 이 키들이다; 게임 내
+패널의 생존 블록도 이 키로 정렬한다). 남은 과제: Lesta 샌드박스의 'ship'
+컬렉션에 대한 동작은 실제 전투까지 미검증이다(모든 읽기에는 가드가 있다;
+공백이 있으면 그 전투는 서버별 추론으로 강등된다). 부분 커버 전투는 보정된
+폴백을 유지한다 — 게임 진실 행과 추론 행은 절대 섞이지 않는다.
 
 ## 샌드박스 제약 (고생 끝에 얻은 것, 모드의 스타일 가이드에 유지할 것)
 

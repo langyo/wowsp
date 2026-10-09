@@ -46,6 +46,7 @@ import {
 } from "vue";
 import { useRouter } from "vue-router";
 import {
+  BadgeCheck,
   Camera,
   Eye,
   EyeOff,
@@ -242,22 +243,41 @@ export default defineComponent({
     // strip-fingerprint matching) — feed the predicted order below so the
     // columns mirror the game's [alive] ++ [sunk] layout live.
     const sunk = new SunkTracker();
+    // Per-battle game-true TAB sort keys (telemetry `sortKeys`, read off
+    // the avatars' ship components) — when they cover the live split, the
+    // predicted order below switches to the client's own comparison and
+    // the pill grades exact. Dropped on battle change (with the sunk set)
+    // and on a stale stream (the same 30 s freshness gate as the alive
+    // sets — a dead plugin must not keep pinning rows game-true).
+    let telemetrySortKeys: Record<string, string> | null = null;
     watch(
       () => props.arena?.dateTime ?? null,
-      (stamp) => sunk.reset(stamp),
+      (stamp) => {
+        sunk.reset(stamp);
+        if (telemetrySortKeys) {
+          telemetrySortKeys = null;
+          sortKeyEpoch.value += 1;
+        }
+      },
       { immediate: true },
     );
     // The tracker is plain state, so `sinkEpoch` is its reactive trigger:
     // every sink event bumps it and the computed orders below re-derive.
     const sinkEpoch = ref(0);
+    // Same trick for the sort-key map: plain state + a bump on every
+    // fresh telemetry event.
+    const sortKeyEpoch = ref(0);
     /** Predicted-order key inputs for one side: locale + per-vehicle clan
-     *  tag + that side's trusted sunk set. */
+     *  tag + that side's trusted sunk set (+ the game-true sort keys when
+     *  this battle's telemetry delivered them). */
     const predictedOptionsFor = (side: "ally" | "enemy") => {
       void sinkEpoch.value;
+      void sortKeyEpoch.value;
       // CN and Lesta clients follow the localized-ship-name row order
       // (utils/shipClass's module docs) instead of the decompiled WG rule;
       // only the CN client never re-sorts the table mid-battle, so the
-      // static layout stays CN-gated.
+      // static layout stays CN-gated. All of it is superseded per battle
+      // when the telemetry's sort-key map covers the roster (sortKeyOf).
       const cn = realm.value === "cn";
       return {
         locale: dataLanguage.value,
@@ -265,6 +285,7 @@ export default defineComponent({
         sunk: sunk.sunkNames(side),
         shipNameOrder: realmUsesShipNameOrder(realm.value),
         staticOrder: cn,
+        sortKeyOf: telemetrySortKeys ? (v: VehicleEntry) => telemetrySortKeys![v.name] : undefined,
       };
     };
     // True once plugin telemetry has replaced the inferred sets this
@@ -305,6 +326,21 @@ export default defineComponent({
     const liveSides = computed(() =>
       splitLiveRosterSides(props.arena?.vehicles ?? [], operation.value),
     );
+    /** True when this battle's telemetry sort-key map covers EVERY name
+     *  of the live split — the exact-order gate for the pill and the
+     *  orderForTab override alike. Partial coverage must not interleave
+     *  game-true rows with inferred ones, so anything less grades
+     *  partial. An empty roster (no battle) is never exact. */
+    const telemetryExactOrder = (): boolean => {
+      void sortKeyEpoch.value;
+      if (!telemetrySortKeys) return false;
+      const sides = liveSides.value;
+      if (sides.allies.length + sides.enemies.length === 0) return false;
+      for (const v of [...sides.allies, ...sides.enemies]) {
+        if (!telemetrySortKeys[v.name]) return false;
+      }
+      return true;
+    };
     /** The side's believed alive order for resolving sink-attrib rows:
      *  the predicted key order minus the trusted sunk set. */
     const sideAliveOrder = (side: SunkSide): string[] => {
@@ -347,8 +383,14 @@ export default defineComponent({
         // reset; a fresh timestamp is required either way.
         if (Date.now() - payload.t > 30_000) {
           // Stale stream (plugin died mid-battle): release the lock so the
-          // luma solver resumes instead of staying frozen forever.
+          // luma solver resumes instead of staying frozen forever. The
+          // sort-key map goes with it — a dead plugin must not keep
+          // pinning rows game-true.
           telemetryAuthoritative = false;
+          if (telemetrySortKeys) {
+            telemetrySortKeys = null;
+            sortKeyEpoch.value += 1;
+          }
           return;
         }
         const ally = new Set<string>();
@@ -369,6 +411,13 @@ export default defineComponent({
         }
         telemetryAuthoritative = true;
         sunk.applyNamedSunk({ ally, enemy }, rosterNames);
+        // The game-true sort keys ride the same freshness gate: store the
+        // map and let the orders + the pill re-derive (the Rust poller
+        // dedupes events on content, so this fires on change only; a probe
+        // build that cannot read the ship components omits the field — the
+        // map then stays null → the offline inference).
+        telemetrySortKeys = payload.sortKeys ?? null;
+        sortKeyEpoch.value += 1;
         sinkEpoch.value += 1;
       })) as (() => void) | null;
     });
@@ -413,15 +462,18 @@ export default defineComponent({
     const manualActive = computed(() => overlayStatus.value?.manual === true);
 
     // ── Telemetry-source grade (the head's state pill) ───────────────────
-    // Staged per the roster mode and the plugin's presence. A CONNECTED
-    // plugin grades "partial", not "exact": its alive/sunk states are
-    // authoritative, but the TAB row ORDER is still the offline per-realm
-    // inference (utils/shipClass — unstable per-client knowledge; the
-    // plugin cannot read the game's own sorted collection today). The
-    // pill must never present the inferred order as game-truth — see
-    // telemetryGrade.ts.
+    // Staged per the roster mode, the plugin's presence and the battle's
+    // sort-key coverage: a connected plugin whose telemetry carried the
+    // game's OWN TAB sort keys for the whole live split grades "exact"
+    // (the row order above IS the client's); without that map it grades
+    // "partial" — alive/sunk states authoritative, the TAB row ORDER
+    // still the offline per-realm inference (utils/shipClass — unstable
+    // per-client knowledge). The pill must never present the inferred
+    // order as game-truth — see telemetryGrade.ts.
     const overlayCfg = useOverlayConfigStore();
-    const telemetryGrade = computed(() => telemetryGradeFor(overlayCfg.roster, plugin));
+    const telemetryGrade = computed(() =>
+      telemetryGradeFor(overlayCfg.roster, plugin, telemetryExactOrder()),
+    );
 
     /** Manual-locate entry point: opens the cached-frame picker layer inside
      *  the main window (ManualLocateOverlay, after the backend gates pass),
@@ -1294,14 +1346,16 @@ export default defineComponent({
                 ? t("replay.live.showNicks")
                 : t("replay.live.hideNicks")}
             </button>
-            {/* Telemetry-source grade: staged per the roster mode and the
-                plugin's presence — partial (connected: alive/sunk states
-                authoritative, but the TAB row order is still the offline
-                per-realm inference — the plugin cannot read the game's own
-                sorted collection) > incomplete (mode picked, plugin
-                missing: the capture inference still runs) > inference
-                (default pipeline). The pill is the honesty marker: the
-                inferred order is never presented as game-truth. */}
+            {/* Telemetry-source grade: staged per the roster mode, the
+                plugin's presence and this battle's sort-key coverage —
+                exact (connected AND the telemetry's game-true sort keys
+                cover the roster: the row order above IS the client's) >
+                partial (connected: alive/sunk states authoritative, but
+                the TAB row order is still the offline per-realm
+                inference) > incomplete (mode picked, plugin missing: the
+                capture inference still runs) > inference (default
+                pipeline). The pill is the honesty marker: the inferred
+                order is never presented as game-truth. */}
             <span
               class={[
                 "live-battle__pill",
@@ -1311,7 +1365,9 @@ export default defineComponent({
                 t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}Hint`)
               }
             >
-              {telemetryGrade.value === "partial" ? (
+              {telemetryGrade.value === "exact" ? (
+                <BadgeCheck size={12} />
+              ) : telemetryGrade.value === "partial" ? (
                 <Plug size={12} />
               ) : telemetryGrade.value === "incomplete" ? (
                 <Unplug size={12} />

@@ -435,4 +435,38 @@ describe("inferredRowMapping", () => {
       "langyo",
     ]);
   });
+
+  it("switches to the client's own sort keys when the map covers a side", () => {
+    // The plugin's game-true sort keys (telemetry `sortKeys`, read off the
+    // avatars' ship components) supersede BOTH offline permutations: the
+    // St. Louis keys ('2981…') sort ahead of Bogatyr's ('2982…' — the
+    // nation segment at the same class+tier) even though the CN/Lesta
+    // ship-name permutation puts 博加特里(bó) first, and the same-ship tie
+    // breaks by display name exactly as __sortKeyAlive compares.
+    const vehicles = [
+      veh("BILTEMA8", 4186879440, 1), // Bogatyr III russia CA 博加特里
+      veh("langyo", 4290689008, 0), // St. Louis III usa CA 圣路易斯 (self)
+      veh("Fisher", 4290689008, 1), // St. Louis III usa CA 圣路易斯
+    ];
+    const keys: Record<string, string> = {
+      BILTEMA8: "2982Bogatyr",
+      langyo: "2981St. Louis",
+      Fisher: "2981St. Louis",
+    };
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        sortKeyOf: (n) => keys[n],
+      }),
+    ).toEqual(["Fisher", "langyo", "BILTEMA8"]);
+    // One missing key disables the override wholesale — no interleaving.
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        sortKeyOf: (n) => (n === "BILTEMA8" ? undefined : keys[n]),
+      }),
+    ).toEqual(["BILTEMA8", "Fisher", "langyo"]);
+  });
 });

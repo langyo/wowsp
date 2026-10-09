@@ -16,9 +16,11 @@ in-game display mode landed) renders:
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
     views) watches this file's single 'wowspProbe.panel' data component
     and draws the ally/enemy stat columns while Tab is held. The sides
-    and row order come from the per-tick relation walk (entity_walk);
-    no companion answer means no panel - the transparent-overlay view
-    mode simply never turns the bridge on.
+    come from the per-tick relation walk (entity_walk); the row order
+    follows the client's OWN TAB sort keys when the ship-component probe
+    delivers them (sort_key_probe), else the walk's arena rule. No
+    companion answer means no panel - the transparent-overlay view mode
+    simply never turns the bridge on.
 
 Still measured for diagnostics:
   1. load + heartbeat (heartbeat.json, phase port/battle),
@@ -406,6 +408,7 @@ class Probe:
         self.tab = False
         self.order = {'ally': [], 'enemy': []}
         self.alive_last = {'ally': {}, 'enemy': {}}
+        self.sort_keys = {}
         self.stats = {}
         self.labels = {}
         self.states = {}
@@ -653,6 +656,86 @@ class Probe:
             self.soft('entity states failed=' + _exc_text(120))
         return states
 
+    def sort_key_probe(self):
+        """The game's OWN per-player TAB sort keys, constants-free.
+
+        ShipSystem.add writes the client's Tab key onto every ship
+        component — str(SORT_ORDER.index(subtype)) + str(100 - level)
+        + str(NATION.SORT_ORDER.index(nation)) + shortName (decompiled
+        build 13357625) — and the Tab table sorts by that key plus the
+        avatar name (__sortKeyAlive: ship.sortKey + component.name).
+        Sorting the roster by the same strings reproduces the client's
+        row order exactly, on every realm (CN included: its view-layer
+        re-sort, if any, starts from these same keys).
+
+        The path avoids UiComponents/imports entirely (Lesta raises on
+        the constants attribute and omits every ModsShell import — both
+        live-proven 2026-10-08/09), duck-typing the components off the
+        two SYNCED collections the ModAPI dataHub serves by NAME:
+        'avatar' entries carry the real Avatar component (its `.ship`
+        slot is an Entity reference to the player's ship entity), and
+        'ship' entries carry the real Ship component (`.sortKey`). The
+        reference's entity id matches the ship collection's entry id.
+
+        Returns {bare name: sortKey} for every avatar the walk can pair
+        with a ship; any shape change or withholding degrades to {} and
+        the companion falls back to its offline per-realm inference.
+        """
+        keys = {}
+        if self.dh is None:
+            return keys
+        ship_by_id = {}
+        try:
+            for ent in self.dh.getEntityCollections('ship'):
+                try:
+                    sid = _to_int(ent.id)
+                except:
+                    continue
+                try:
+                    for comp in ent.components.values():
+                        try:
+                            key = comp.sortKey
+                        except:
+                            continue
+                        if key:
+                            ship_by_id[sid] = _fmt(key)
+                            break
+                except:
+                    continue
+        except:
+            self.soft('ship collection failed=' + _exc_text(120))
+            return keys
+        if not ship_by_id:
+            return keys
+        try:
+            for ent in self.dh.getEntityCollections('avatar'):
+                try:
+                    name = ''
+                    ref_id = 0
+                    for comp in ent.components.values():
+                        try:
+                            ref = comp.ship.ref
+                        except:
+                            continue
+                        if ref is None:
+                            continue
+                        try:
+                            name = bare_name(_fmt(comp.name))
+                            ref_id = _to_int(ref.id)
+                        except:
+                            continue
+                        break
+                    if not name or not ref_id:
+                        continue
+                    key = ship_by_id.get(ref_id)
+                    if key:
+                        keys[name] = key
+                except:
+                    continue
+        except:
+            self.soft('avatar pairing failed=' + _exc_text(120))
+        return keys
+
     def entity_walk(self):
         """ONE entity walk feeding the panel + telemetry: per-avatar live
         state plus the ally/enemy side split and row order.
@@ -768,6 +851,26 @@ class Probe:
                         front.append(name)
                     else:
                         tail.append(name)
+            # The client's OWN alive-block order: sort the front by the ship
+            # components' sortKey + name — the concatenated string the
+            # game's Tab sort compares (decompiled __sortKeyAlive; one nuance:
+            # the client tails the TAGGED name, the panel ties on the bare
+            # roster name, so same-ship clan-mates can order differently in
+            # a key tie). Applied only when EVERY front name carries a key;
+            # any gap keeps the walk order (game-true and walk-order rows
+            # must not interleave). The tail keeps its sinking chronology
+            # either way — the friendlier in-game panel read (the client's
+            # own dead block re-sorts by key; documented as the panel's one
+            # cosmetic difference).
+            keys = {}
+            for nm in front:
+                key = self.sort_keys.get(nm)
+                if not key:
+                    keys = None
+                    break
+                keys[nm] = key
+            if keys and len(front) > 1:
+                front.sort(key=lambda nm: keys[nm] + nm)
             self.order[side] = front + tail
             self.alive_last[side] = alive_now
 
@@ -849,6 +952,7 @@ class Probe:
         self.tab = False
         self.order = {'ally': [], 'enemy': []}
         self.alive_last = {'ally': {}, 'enemy': {}}
+        self.sort_keys = {}
         self.dead_latch = {None} - {None}
         self.raw_isalive_seen = False
         self.stats = {}
@@ -1206,6 +1310,10 @@ class Probe:
             return
         try:
             states, sides = self.entity_walk()
+            # The game's own TAB sort keys (see sort_key_probe): read BEFORE
+            # the panel fold so merge_order can sort the in-game panel's
+            # alive block with them too, and carried in the payload below.
+            self.sort_keys = self.sort_key_probe()
             # Shared with the panel builder so alive flags + sides cost one
             # entity walk per tick, not two.
             self.states = states
@@ -1292,6 +1400,12 @@ class Probe:
                     self_name = bare_name(_fmt(battle.getSelfPlayerInfo()['name']))
                 except:
                     self_name = ''
+            # The per-player client sort keys (sort_key_probe above): the
+            # game-true Tab-order ingredients, keyed by bare name. An empty
+            # map (a sandbox withholding the ship collection) keys the
+            # offline per-realm inference in the companion; a covered roster
+            # keys its exact-order grade.
+            sort_keys = self.sort_keys
             self_realm = ''
             for p in self.roster:
                 if p['name'] == self_name and p.get('realm'):
@@ -1300,6 +1414,7 @@ class Probe:
             body = utils.jsonEncode({'t': _to_int(time.time() * 1000),
                                      'battle': self.session,
                                      'players': players,
+                                     'sortKeys': sort_keys,
                                      'self': {'name': self_name, 'realm': self_realm},
                                      'identity': identity})
             stream = open(TELEMETRY_FILE, 'w')
