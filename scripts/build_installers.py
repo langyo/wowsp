@@ -16,7 +16,7 @@ driven from the rendered manifest:
     payload-lite/          ← wowsp.exe + wowsp-flavor.txt
     payload-webview2/      ← + models/ dogtags/ res stamp + webview2 runtime
 
-Flavor split (the two published artifacts):
+Flavor split (the two build flavors, three published artifacts):
 
     - ``webview2`` — the complete build: application + the current 2D/3D
       model pack + the Evergreen offline WebView2 runtime. An install never
@@ -28,14 +28,27 @@ Flavor split (the two published artifacts):
       management, or automatically on the first 3D view). The app's
       updater always picks the ``-lite`` artifact.
 
+The legacy ``WoWSP_<version>_x64-installer.exe`` name (no flavor suffix)
+stays published as a byte-identical copy of lite. The materials-only
+plain installer it once named is retired, but every updater older than
+v0.3.1 — v0.1.0/v0.2.0 unconditionally, v0.3.0 on a non-lite flavor —
+resolves every update to exactly that bare name under
+``releases/latest/download``; once a release stops carrying it those
+installs 404 on their download and strand. One bridge update lands them
+on a modern client that fetches ``-lite`` for good, so the alias simply
+rides every release (it costs one extra copy of the small lite
+artifact). The ``-webview2`` name is fresh-install only: no updater has
+ever fetched it.
+
 The shun checkout: pass ``--shun-repo`` or set ``SHUN_REPO`` (release CI
 checks the pinned tag out into ``shun/`` and exports it). The CLI builds
 shun's own shell with our manifest embedded; the first run is a full
 cargo build of that workspace, later runs are incremental.
 
 Artifacts land in ``target/release/bundle/installer/`` as
-``WoWSP_<version>_x64-installer-webview2.exe`` and
-``WoWSP_<version>_x64-installer-lite.exe``.
+``WoWSP_<version>_x64-installer-webview2.exe``,
+``WoWSP_<version>_x64-installer-lite.exe`` and the legacy alias
+``WoWSP_<version>_x64-installer.exe``.
 
 The Evergreen offline runtime (~180 MB) is cached under
 ``packages/installer/vendor/`` (gitignored).
@@ -509,8 +522,8 @@ def build_variant(
             "--manifest", stage / "shun.toml",
             "--variant", variant,
             "--out", stage / "out",
-            # Artifacts are published unsigned here; the release workflow
-            # signs them separately (a local build has no signing config).
+            # Artifacts are published unsigned (--no-sign): release CI
+            # uploads them as-is, and a local build has no signing config.
             "--no-sign",
         ],
         check=True,
@@ -609,7 +622,12 @@ def main() -> int:
     # is staged, so its payload stays slim.
     if "lite" in variants:
         stage_payload(STAGE, app_exe, "lite")
-        build_variant(shun_repo, STAGE, "lite", f"WoWSP_{version}_x64-installer-lite.exe")
+        lite = build_variant(shun_repo, STAGE, "lite", f"WoWSP_{version}_x64-installer-lite.exe")
+        # The legacy bare name stays live for pre-v0.3.1 updaters (see the
+        # module docstring): a byte-identical copy of the lite installer.
+        alias = OUT / f"WoWSP_{version}_x64-installer.exe"
+        shutil.copy2(lite, alias)
+        print(f"[ok] {alias.name}: legacy alias of {lite.name}")
 
     if "webview2" in variants:
         payload = stage_payload(STAGE, app_exe, "webview2")

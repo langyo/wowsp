@@ -28,6 +28,9 @@
 //! `WoWSP_<version>_x64-installer-lite.exe` (see `artifact_url`: an app
 //! update never re-ships the resource pack, which updates through its own
 //! channel) under each mirror base.
+//! Releases also carry the retired bare name
+//! `WoWSP_<version>_x64-installer.exe` as a byte-identical lite alias —
+//! pre-v0.3.1 updaters fetch exactly that; this build never does.
 //! Before any byte is accepted, the installer's sha256 is read from the
 //! official release API (`api.github.com`, never a mirror — the `digest`
 //! GitHub computes for every release asset) and the hub verifies the
