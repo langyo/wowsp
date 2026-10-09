@@ -25,6 +25,15 @@ and `WoWSP_<version>_x64-installer-webview2.exe`:
   machines; the egui degrade face warns and links Microsoft's official
   download page otherwise).
 
+The build script also publishes `WoWSP_<version>_x64-installer.exe` (no
+suffix) as a byte-identical copy of lite. The name is not a flavor — the
+materials-only plain installer it once named is retired — but every
+updater older than v0.3.1 resolves every update to exactly that bare
+name, so it must ride every release or those installs strand mid-update
+(they fetch it from `releases/latest/download` on GitHub and the
+mirrors). One such bridge update lands them on a client that fetches
+`-lite` for good.
+
 ## Who does what
 
 - The **installer** (shun) delivers files, registers ARP/uninstall,
