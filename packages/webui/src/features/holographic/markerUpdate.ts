@@ -15,19 +15,19 @@ import achievementNamesRaw from "@/data/achievement_names.json";
 import { sampleAt, hpAtTime } from "./trajectoryMath";
 import { clampXZ } from "./sceneUtils";
 import type { TeamRole } from "./teamColors";
-import { paintCapSprite } from "./screenOverlays";
+import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
 import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./modelLoader";
 import { isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
-import { updateLabelPositions } from "./labelOverlay";
 import { formationOffsets } from "./planeFormation";
-import { updateRangeRings } from "./rangeRings";
 import { updateStormZone } from "./weatherScene";
+import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
+import type { OsdTone } from "./osdContrast";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
 import { shipStatusAt } from "./shipStatusModel";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import type { ShipInfo, SquadronPlane, VehicleEntry } from "@/api";
+import type { ShipInfo, SquadronPlane, VehicleEntry, WeaponLockEvent } from "@/api";
 import type { FeedEntry } from "./HoloEventFeed";
 import type { MapInternals, ShellTraceSlot } from "./mapInternals";
 
@@ -138,7 +138,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     const marker = ctx.shipMarkers[i];
     const label = labels[i];
     const entityId = marker.userData.entityId as number;
-    const traj = ctx.props.trajectories.find((tr) => tr.entityId === entityId);
+    // O(1) trajectory join — rebuilt with the actors (mapInternals.trajById),
+    // replacing the per-frame linear scan over every trajectory.
+    const traj = ctx.trajById.get(entityId);
     if (!traj || traj.samples.length === 0) {
       marker.visible = false;
       if (label) label.visible = false;
@@ -356,13 +358,17 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       c.etaSeconds != null && c.etaSeconds > 0
         ? Math.ceil(c.etaSeconds) + " s"
         : "";
-    const key = `${text}|${etaLine}|${quickEta}`;
+    // The OSD ink tone rides in userData (osdContrast flips it between
+    // playhead ticks) — a flip invalidates the cached paint immediately.
+    const tone = (sprite.userData.tone as OsdTone | undefined) ?? "light";
+    const key = `${text}|${etaLine}|${quickEta}|${tone}`;
     if (sprite.userData.text === key) return;
     sprite.userData.text = key;
     paintCapSprite(
       sprite.userData.canvas as HTMLCanvasElement,
       text,
       quickEta || etaLine,
+      tone,
     );
     (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
   });
@@ -405,18 +411,13 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     if (sprite) {
       const secs = Math.ceil(cl.endT - t);
       const text = `${secs}s`;
+      // Ink tone lives in userData.tone — osdContrast flips and repaints it
+      // between playhead ticks; this repaint picks up whichever tone is
+      // current whenever the countdown text itself changes.
+      const tone = (sprite.userData.tone as OsdTone | undefined) ?? "light";
       if (sprite.userData.text !== text) {
         sprite.userData.text = text;
-        const cvs = sprite.userData.canvas as HTMLCanvasElement;
-        const c2d = cvs.getContext("2d")!;
-        c2d.clearRect(0, 0, cvs.width, cvs.height);
-        c2d.fillStyle = "rgba(255,255,255,0.9)";
-        c2d.font = "bold 80px sans-serif";
-        c2d.textAlign = "center";
-        c2d.textBaseline = "middle";
-        c2d.shadowColor = "rgba(0,0,0,0.9)";
-        c2d.shadowBlur = 12;
-        c2d.fillText(text, cvs.width / 2, cvs.height / 2);
+        paintSmokeCountdown(sprite.userData.canvas as HTMLCanvasElement, text, tone);
         (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
       }
       sprite.position.set(pStart.x, 34, -pStart.z);
@@ -431,6 +432,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       ? (ctx.planeCloud.geometry.getAttribute("position") as THREE.BufferAttribute)
       : null;
     const arr = attr ? (attr.array as Float32Array) : null;
+    const activeSlots = ctx.planeCloudActive;
+    if (activeSlots.length > 0) activeSlots.fill(0);
     let anyPoints = false;
     // Sample helper: last sample at or before t.
     const sampleOf = (samples: SquadronPlane[]): SquadronPlane | null => {
@@ -443,7 +446,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     };
     // Formation anchors: index-0 trail of each planeId (position + yaw),
     // alive between its first update and ~2 min after the last one.
-    const formationAnchor = new Map<number, { s: SquadronPlane; born: number; expiry: number }>();
+    // Reused scratch map — the old code allocated a fresh Map per tick.
+    const formationAnchor = ctx.planeAnchorScratch;
+    formationAnchor.clear();
     for (const trail of ctx.planeTrails) {
       const planeId = Math.floor(trail.id / 16);
       if (trail.id % 16 !== 0) continue;
@@ -507,8 +512,20 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           arr[cloudSlot * 3] = cx;
           arr[cloudSlot * 3 + 1] = yBase;
           arr[cloudSlot * 3 + 2] = -cz;
+          if (activeSlots.length > 0) activeSlots[cloudSlot] = 1;
           anyPoints = true;
         }
+      }
+    }
+    // Park every slot NOT written this tick deep below the sea. Without
+    // this, a squadron that expired (shot down / recalled / trail end)
+    // left its dot frozen at the last centroid for the rest of the replay
+    // — a growing graveyard of red/green dots — and never-launched slots
+    // stacked at the world origin. Parked dots sit under the seabed, out
+    // of every camera angle (the orbit never dips below the horizon).
+    if (arr && activeSlots.length > 0) {
+      for (let s = 0; s < activeSlots.length; s++) {
+        if (activeSlots[s] === 0) arr[s * 3 + 1] = PLANE_DOT_PARKED_Y;
       }
     }
     // Hide pools of formations currently not anchored.
@@ -587,7 +604,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         arr[i * 3 + 2] = p.z;
       }
       attr.needsUpdate = true;
+      // The tracer dots share the arc's points — their buffer was never
+      // written (only flagged dirty), so all 28 points stacked at the
+      // world origin as a mysterious colored speck whenever any shell
+      // flew. Mirror the freshly written arc into the dots buffer.
       const dotAttr = slot.dots.geometry.getAttribute("position") as THREE.BufferAttribute;
+      (dotAttr.array as Float32Array).set(arr);
       dotAttr.needsUpdate = true;
       // Shell position + orientation: interpolate k across the flight,
       // tip pointing along the local tangent.
@@ -648,8 +670,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       tm.mesh.position.set(p.x, 1.2, p.z);
       tm.mesh.quaternion.setFromUnitVectors(ctx._shellUp, tm.dir);
       const wakeAttr = tm.wake.geometry.getAttribute("position") as THREE.BufferAttribute;
-      const tail = tm.dir.clone().multiplyScalar(40);
-      wakeAttr.setXYZ(0, p.x - tail.x, 0.4, p.z - tail.z);
+      ctx._wakeTail.copy(tm.dir).multiplyScalar(40);
+      wakeAttr.setXYZ(0, p.x - ctx._wakeTail.x, 0.4, p.z - ctx._wakeTail.z);
       wakeAttr.setXYZ(1, p.x, 0.4, p.z);
       wakeAttr.needsUpdate = true;
     }
@@ -662,8 +684,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   }
   // Recorder aim line: from the own ship to the currently locked target.
   if (ctx.lockLine) {
-    const cur = ctx.props.weaponLocks.filter((l) => l.time <= t);
-    const last = cur.length > 0 ? cur[cur.length - 1] : null;
+    // Latest lock at or before the playhead — a scan, not a filter, so no
+    // throwaway array is allocated per tick.
+    let last: WeaponLockEvent | null = null;
+    for (const l of ctx.props.weaponLocks) {
+      if (l.time <= t) last = l;
+    }
     const selfMarker = ctx.shipMarkers.find((m) => m.userData.role === "self");
     const targetMarker = last
       ? ctx.shipMarkers.find((m) => m.userData.entityId === last.targetId)
@@ -722,11 +748,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       label.visible = visible;
     }
   }
-  // Update screen-space positions of floating labels from marker world positions.
-  updateLabelPositions(ctx);
-  // 3D dashed range rings follow the recorder's marker (2D circles are
-  // painted by drawMinimap; these are their sea-surface twins).
-  updateRangeRings(ctx, t);
+  // The scene RAF loop (HolographicMap's onFrame) refreshes the floating
+  // labels and the 3D range rings every frame — including while paused, so
+  // they stay glued to the camera there. Duplicating them here ran both
+  // twice per playback frame for no visual gain.
   // The cyclone's dark core drifts across the sea (3D twin of the minimap
   // weather overlay — same geometry, same per-match drift seed).
   updateStormZone(ctx, t);

@@ -56,6 +56,7 @@ import type { TeamRole } from "./teamColors";
 import type { ShipLabel } from "./shipLabel";
 import type { FeedEntry } from "./HoloEventFeed";
 import type { TacticalView } from "./tactical/render";
+import type { OsdContrast } from "./osdContrast";
 
 /** The subset of HolographicMap's props the extracted map modules read.
  *  Structurally satisfied by the component's reactive props object. */
@@ -326,6 +327,16 @@ export interface MapInternals extends MapInternalsDeps {
   planeCloud: THREE.Points | null;
   /** Live colour buffer of the plane cloud (rebuilt with the cloud). */
   colorsCloud: Float32Array;
+  /** Per-frame "this cloud slot was written" flags (plane cloud housekeeping
+   *  in markerUpdate) — slots not flagged park below the sea so expired
+   *  squadrons stop leaving frozen dots behind. */
+  planeCloudActive: Uint8Array;
+  /** Per-frame formation anchor table — cleared and reused every playhead
+   *  tick instead of allocating a fresh Map per frame. */
+  planeAnchorScratch: Map<
+    number,
+    { s: SquadronPlane; born: number; expiry: number }
+  >;
   /** Per-plane sample lists grouped by plane id, sorted by time. */
   planeTrails: { id: number; samples: SquadronPlane[] }[];
   /** Real aircraft models: planeId → 3D model pool (one per slot). */
@@ -358,6 +369,10 @@ export interface MapInternals extends MapInternalsDeps {
   // ── World geometry & roster join state ───────────────────────────────
   /** Fitted battle bounds in scene coordinates (z mirrored). */
   bounds: SceneBounds | null;
+  /** entityId → trajectory lookup, rebuilt with the actors — replaces the
+   *  per-frame linear `trajectories.find` scans in the hot playhead path
+   *  (marker refresh, cap simulator, plane carrier resolution). */
+  trajById: Map<number, EntityTrajectory>;
   /** Roster assignment per ship entity — THE single source of truth for
    *  team roles, shared by 3D markers, minimap trails, shell-arc targets
    *  and self-stats. Rebuilt in rebuildActors; empty before first build. */
@@ -416,6 +431,11 @@ export interface MapInternals extends MapInternalsDeps {
 
   /** Shared projection scratch vector (label projection / canvas picking). */
   _projVec: THREE.Vector3;
+  /** Torpedo-wake tail scratch (per-frame wake line endpoint). */
+  _wakeTail: THREE.Vector3;
+  /** OSD auto-contrast sampler (osdContrast.ts) — created lazily once the
+   *  scene is live, disposed on unmount. Null until then. */
+  osd: OsdContrast | null;
 }
 
 /** Create the per-instance context. Called exactly once from
@@ -439,6 +459,8 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     lockLine: null,
     planeCloud: null,
     colorsCloud: new Float32Array(0),
+    planeCloudActive: new Uint8Array(0),
+    planeAnchorScratch: new Map(),
     planeTrails: [],
     planeMeshes: new Map(),
     planeFormations: new Map(),
@@ -453,6 +475,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     stormZone: null,
 
     bounds: null,
+    trajById: new Map(),
     rosterAssignments: new Map(),
     shipEntityIds: [],
     arenaIdentities: null,
@@ -481,6 +504,8 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     capSim: new Map(),
 
     _projVec: new THREE.Vector3(),
+    _wakeTail: new THREE.Vector3(),
+    osd: null,
   };
 }
 

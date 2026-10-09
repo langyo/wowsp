@@ -20,7 +20,7 @@ function shipsInZone(ctx: MapInternals, zone: EntityTrajectory, t: number): { al
   let ally = 0;
   let enemy = 0;
   for (const m of ctx.shipMarkers) {
-    const traj = ctx.props.trajectories.find((tr) => tr.entityId === m.userData.entityId);
+    const traj = ctx.trajById.get(m.userData.entityId as number);
     if (!traj || traj.samples.length === 0) continue;
     const s = sampleAt(traj, t);
     if (!s) continue;
@@ -88,7 +88,7 @@ function simulateZone(ctx: MapInternals,
     let ally = 0;
     let enemy = 0;
     for (const m of ctx.shipMarkers) {
-      const traj = ctx.props.trajectories.find((tr) => tr.entityId === m.userData.entityId);
+      const traj = ctx.trajById.get(m.userData.entityId as number);
       if (!traj || traj.samples.length === 0) continue;
       const s = sampleAt(traj, mid);
       if (!s) continue;

@@ -26,12 +26,49 @@ export interface HoloLabelData {
   ghostText?: string | null;
   visible?: boolean;
   selected?: boolean;
+  /** OSD auto-contrast ink tone (the host samples the rendered backdrop
+   *  under the label and flips this). Undefined → theme-driven ink. */
+  tone?: "light" | "dark" | null;
 }
 
 const ROLE_BAR: Record<HoloLabelData["role"], string> = {
   self: "#4ade80",
   ally: "#3cb478",
   enemy: "#cc3333",
+};
+
+/** Ink palettes for the OSD auto-contrast tone (see the app's
+ *  osdContrast.ts): "light" = white ink over a dark backdrop (the
+ *  historical look), "dark" = grey-800 ink over a bright one. Applied as
+ *  inline CSS custom properties — they override both the default (dark
+ *  theme) rules and the `:root[data-mode="light"]` flip, so a tone pin
+ *  wins regardless of theme while `tone: undefined` keeps the historical
+ *  theme-driven behavior untouched. */
+const TONE_INK_VARS: Record<NonNullable<HoloLabelData["tone"]>, Record<string, string>> = {
+  light: {
+    "--label-ink": "rgba(255, 255, 255, 0.92)",
+    "--label-ink-name": "rgba(255, 255, 255, 0.95)",
+    "--label-ink-ship": "rgba(255, 255, 255, 0.7)",
+    "--label-ink-tier": "rgba(100, 200, 255, 0.85)",
+    "--label-ink-hp": "rgba(100, 255, 150, 0.9)",
+    "--label-ink-hp-bar-bg": "rgba(5, 8, 15, 0.55)",
+    "--label-ink-hp-text": "#ffffff",
+    "--label-ink-hp-text-shadow": "0 0 2px rgba(0, 0, 0, 0.9)",
+    "--label-ink-ghost-bg": "rgba(5, 8, 15, 0.55)",
+    "--label-ink-ghost": "rgba(255, 255, 255, 0.75)",
+  },
+  dark: {
+    "--label-ink": "rgb(55 65 81 / 92%)",
+    "--label-ink-name": "rgb(55 65 81 / 96%)",
+    "--label-ink-ship": "rgb(55 65 81 / 72%)",
+    "--label-ink-tier": "rgb(23 100 170 / 95%)",
+    "--label-ink-hp": "rgb(20 130 80 / 95%)",
+    "--label-ink-hp-bar-bg": "rgb(55 65 81 / 10%)",
+    "--label-ink-hp-text": "#374151",
+    "--label-ink-hp-text-shadow": "0 0 2px rgb(255 255 255 / 80%)",
+    "--label-ink-ghost-bg": "rgb(255 255 255 / 55%)",
+    "--label-ink-ghost": "rgb(55 65 81 / 78%)",
+  },
 };
 
 export default defineComponent({
@@ -60,7 +97,13 @@ export default defineComponent({
             l.visible === false ? "holo-label--hidden" : "",
             l.selected ? "holo-label--selected" : "",
           ].join(" ")}
-          style={{ left: `${l.x}px`, top: `${l.y}px` }}
+          style={{
+            left: `${l.x}px`,
+            top: `${l.y}px`,
+            // Ink override only when the OSD sampler has spoken; otherwise
+            // the stylesheet's theme-driven palette applies untouched.
+            ...(l.tone ? TONE_INK_VARS[l.tone] : null),
+          }}
         >
           {/* Empty name (scripted scenario NPCs sail under their ship name
               only) renders nothing — not a blank flex row. */}

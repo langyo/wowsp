@@ -15,7 +15,7 @@ import {
 } from "./modelLoader";
 import { clearShipMarkerCache } from "./shipMarker";
 import { clearPropMarkerCache } from "./propMarker";
-import { sampleAt, hpAtTime } from "./trajectoryMath";
+import { hpAtTime } from "./trajectoryMath";
 import { shouldReserveTabKey } from "./tabKeyGate";
 import { arenaIdentities, resolveRosterAssignments } from "./rosterRoles";
 import { encyclopediaHullHealth, resolveMaxHp } from "./shipHp";
@@ -35,6 +35,8 @@ import { updateLabelPositions, updateOverlayScale } from "./labelOverlay";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
 import { disposeStormZone } from "./weatherScene";
+import { applyOsdTones, createOsdContrast, OSD_REFRESH_S } from "./osdContrast";
+import { buildSelfShotLedger, querySelfShotLedger } from "./selfShotLedger";
 import { isCaptureZone, type CapZoneState } from "./capZones";
 import type { ShipLabel } from "./shipLabel";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
@@ -245,10 +247,23 @@ export default defineComponent({
   },
   setup(props, { expose }) {
     const container = ref<HTMLElement | null>(null);
-    const { ready, api } = useThreeScene(container, (_dt) => {
+    // The 2D minimap repaints at ~16 Hz — the game's own minimap cadence —
+    // instead of once per render frame. The enlarged overlay repaints all
+    // ship trails sample-by-sample, which dominated the frame budget when
+    // it ran at 60 Hz; 16 Hz reads identically and costs a fraction.
+    const MM_REDRAW_S = 0.06;
+    let mmAccum = 0;
+    let osdAccum = 0;
+    /** Text sprites hidden around the OSD readback render (see below). */
+    let osdHiddenSprites: THREE.Sprite[] = [];
+    const { ready, api } = useThreeScene(container, (dt) => {
       advanceMmViewTween();
       updateLabelPositions(ctx);
-      drawMinimap(ctx);
+      mmAccum += dt;
+      if (mmAccum >= MM_REDRAW_S) {
+        mmAccum = 0;
+        drawMinimap(ctx);
+      }
       // Range-ring radius ease steps on the RAF clock (not the playhead)
       // so spotter/smoke transitions keep breathing while paused.
       updateRangeRings(ctx, current.value);
@@ -257,11 +272,52 @@ export default defineComponent({
       // After the camera updates so the overlay scale reflects THIS frame's
       // distance/fov (the original replay camera changes fov per frame).
       updateOverlayScale(ctx);
+      // OSD auto-contrast: re-render the scene into a tiny readback target
+      // at ~5 Hz and flip every in-scene text's ink to match the backdrop
+      // it actually sits on (cyclone wash, smoke, light-theme sea). The
+      // sampler is created lazily — the renderer only exists once mounted.
+      // The text sprites are culled around the readback render so their
+      // own ink never biases the backdrop sample.
+      osdAccum += dt;
+      if (osdAccum >= OSD_REFRESH_S) {
+        osdAccum = 0;
+        if (!ctx.osd && api.value) {
+          ctx.osd = createOsdContrast(api, container, {
+            cull: () => {
+              osdHiddenSprites = [];
+              for (const s of ctx.capLetterSprites) {
+                if (s.visible) {
+                  osdHiddenSprites.push(s);
+                  s.visible = false;
+                }
+              }
+              for (const cl of ctx.smokeClusters) {
+                const s = cl.timeSprite;
+                if (s?.visible) {
+                  osdHiddenSprites.push(s);
+                  s.visible = false;
+                }
+              }
+            },
+            restore: () => {
+              for (const s of osdHiddenSprites) s.visible = true;
+              osdHiddenSprites = [];
+            },
+          });
+        }
+        if (ctx.osd && ctx.osd.refresh()) applyOsdTones(ctx, ctx.osd);
+      }
     });
 
     // Playback state.
     const duration = ref(0);
     const current = ref(0);
+    /** Quantized playhead for the heavy HUD derivations (scorebar, roster
+     *  strip, self stats, weather badge): the rAF clock advances `current`
+     *  at frame rate, and recomputing those every frame dominated the main
+     *  thread. They read this 10 Hz shadow instead — 100 ms of staleness
+     *  is invisible on a seconds-resolution HUD. Seeks sync it instantly. */
+    const hudCurrent = ref(0);
     const playing = ref(false);
     /** Playback speed multiplier; the dropdown sits next to the clock. */
     const playbackSpeed = ref(2);
@@ -528,10 +584,10 @@ export default defineComponent({
       const mk = (v: VehicleEntry): ShipRowEntry => {
         const st = rs.get(v.id);
         const d = st?.deathTime ?? null;
-        const dead = d != null && d <= current.value;
+        const dead = d != null && d <= hudCurrent.value;
         const info = props.encyclopedia.get(v.shipId) as ShipInfo | undefined;
         const offline = shipOfflineEntry(v.shipId);
-        const hp = !dead && st?.traj ? hpAtTime(st.traj.hpSamples, current.value) : null;
+        const hp = !dead && st?.traj ? hpAtTime(st.traj.hpSamples, hudCurrent.value) : null;
         return {
           key: v.id,
           vehicle: v,
@@ -574,61 +630,55 @@ export default defineComponent({
     // carry receiveExplosions, so this — not the explosion stream — is the
     // reliable hit signal. Damage is the HP loss of ships near the impact
     // right after it; a sinking near an impact counts as a frag.
+    // The expensive part (per shot: sample every ship trajectory, HP-delta
+    // attribution, frag proximity) is a pure function of immutable stream
+    // data — it runs once per stream change in the ledger below, and the
+    // playhead query is a binary search (selfShotLedger.ts).
+    const selfShotBook = computed(() => {
+      // Reading `props.vehicles` keeps the ledger in lockstep with the
+      // roster-arrival rebuild (the rebuild that repopulates the
+      // non-reactive roster assignments resolveRoleQuick reads below).
+      void props.vehicles.length;
+      const selfTraj = props.trajectories.find(
+        (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(ctx, tr) === "self",
+      );
+      if (!selfTraj || selfTraj.samples.length === 0) return null;
+      return {
+        selfTraj,
+        ledger: buildSelfShotLedger({
+          shotKills: props.shotKills,
+          trajectories: props.trajectories,
+          selfEntityId: selfTraj.entityId,
+          inferredDeaths: props.inferredDeaths,
+        }),
+      };
+    });
     const selfStats = computed(() => {
       // Server-authoritative totals (receiveDamageStat) — exact per-weapon
       // damage incl. aircraft weapons, folded to the playhead. When present
       // they override the heuristic damage/hits below (the HP-delta estimate
       // over-counts multi-hit salvos and misses out-of-view DoT).
       const folded = props.damageStats.length
-        ? foldDamageStats(props.damageStats, current.value)
+        ? foldDamageStats(props.damageStats, hudCurrent.value)
         : null;
-      const selfTraj = props.trajectories.find(
-        (tr) => tr.kind?.entityType === 2 && resolveRoleQuick(ctx, tr) === "self",
-      );
-      if (!selfTraj || selfTraj.samples.length === 0) {
+      const book = selfShotBook.value;
+      if (!book) {
         // No trajectory join (very early battle): the authoritative stream is
         // still the recorder's own and usable on its own.
         return folded ? { ...folded, frags: 0, taken: 0 } : null;
       }
-      let hits = 0;
-      let damage = 0;
-      let frags = 0;
+      const shot = querySelfShotLedger(book.ledger, hudCurrent.value);
+      let hits = shot.hits;
+      let damage = shot.damage;
+      let frags = shot.frags;
       // Damage taken: every point of HP the self ship lost up to the
       // playhead (the in-game "承受伤害" readout beside the HP plaque).
       let taken = 0;
-      const hps = selfTraj.hpSamples ?? [];
+      const hps = book.selfTraj.hpSamples ?? [];
       for (let i = 1; i < hps.length; i++) {
-        if (hps[i].time > current.value) break;
+        if (hps[i].time > hudCurrent.value) break;
         const drop = hps[i - 1].value - hps[i].value;
         if (drop > 0) taken += drop;
-      }
-      for (const e of props.shotKills) {
-        if (e.ownerId !== selfTraj.entityId) continue;
-        if (e.time > current.value) continue; // not time-sorted in all dumps
-        hits++;
-        // Damage: HP drop of ships near the impact (500 m window).
-        for (const tr of props.trajectories) {
-          if (tr.kind?.entityType !== 2 || tr.entityId === selfTraj.entityId) continue;
-          const at = sampleAt(tr, e.time);
-          if (!at) continue;
-          if (Math.hypot(at.x - e.x, at.z - e.z) > 500) continue;
-          const hpBefore = hpAtTime(tr.hpSamples, e.time - 0.4);
-          const hpAfter = hpAtTime(tr.hpSamples, e.time + 0.6);
-          if (hpBefore != null && hpAfter != null && hpBefore - hpAfter > 50) {
-            damage += hpBefore - hpAfter;
-          }
-          const death = tr.deathTime;
-          // Inferred (dark) sinks carry no observed sink instant — the
-          // ±1.2 s proximity would mis-credit the recorder a frag the
-          // post-battle payload attributes to someone else.
-          if (
-            death != null &&
-            !props.inferredDeaths.has(tr.entityId) &&
-            Math.abs(death - e.time) < 1.2
-          ) {
-            frags++;
-          }
-        }
       }
       if (folded) {
         damage = folded.damage;
@@ -941,6 +991,7 @@ export default defineComponent({
       playing.value = false;
       const clamped = Math.max(0, Math.min(duration.value || t, t));
       current.value = clamped;
+      hudCurrent.value = clamped;
       updateMarkersAt(ctx, clamped);
       drawMinimap(ctx);
     }
@@ -1084,7 +1135,10 @@ export default defineComponent({
       }
       if (Number.isFinite(minT)) {
         duration.value = Math.max(maxT - minT, 0.1);
-        if (current.value > duration.value) current.value = duration.value;
+        if (current.value > duration.value) {
+          current.value = duration.value;
+          hudCurrent.value = current.value;
+        }
         if (Number.isFinite(minX)) {
           const mx = Math.max((maxX - minX) * 0.08, 80);
           const mz = Math.max((maxZ - minZ) * 0.08, 80);
@@ -1133,7 +1187,7 @@ export default defineComponent({
         scoreAlly: allyScore.value,
         scoreEnemy: enemyScore.value,
         aliveAlly: 0, aliveEnemy: 0,
-        time: current.value,
+        time: hudCurrent.value,
         duration: duration.value,
         caps,
         ships,
@@ -1196,7 +1250,7 @@ export default defineComponent({
     /** Weather restriction at the playhead — the top-right badge snapshot
      *  (null while the sky is clear with nothing announced). */
     const weatherView = computed<WeatherView | null>(() =>
-      weatherStateAt(props.weatherTransitions, props.weatherNotifications, current.value),
+      weatherStateAt(props.weatherTransitions, props.weatherNotifications, hudCurrent.value),
     );
 
     /** First-person camera: keep the selected ship centered, camera trailing
@@ -1321,15 +1375,25 @@ export default defineComponent({
     // tick after resuming sees the whole hidden span as dt — clamp it so
     // playback never fast-forwards through the match on return.
     const MAX_PLAYBACK_TICK_SECONDS = 0.5;
+    /** Shadow-clock cadence for the HUD derivations (see hudCurrent). */
+    const HUD_TICK_S = 0.1;
+    let hudAccum = 0;
     function playTick(now: number) {
       if (!playing.value) return;
       if (lastTick === 0) lastTick = now;
       const dt = Math.min((now - lastTick) / 1000, MAX_PLAYBACK_TICK_SECONDS);
       lastTick = now;
       current.value += dt * playbackSpeed.value; // playback multiplier (0.5–10×)
+      // 10 Hz shadow clock for the heavy HUD computeds (see hudCurrent).
+      hudAccum += dt;
+      if (hudAccum >= HUD_TICK_S) {
+        hudAccum = 0;
+        hudCurrent.value = current.value;
+      }
       if (current.value >= duration.value) {
         current.value = duration.value;
         playing.value = false;
+        hudCurrent.value = current.value;
       }
       playRaf = requestAnimationFrame(playTick);
     }
@@ -1337,7 +1401,10 @@ export default defineComponent({
       playing.value = !playing.value;
       if (playing.value) {
         lastTick = 0;
-        if (current.value >= duration.value) current.value = 0;
+        if (current.value >= duration.value) {
+          current.value = 0;
+          hudCurrent.value = 0;
+        }
         playRaf = requestAnimationFrame(playTick);
       }
     }
@@ -1366,6 +1433,7 @@ export default defineComponent({
         }
         if (ready.value) {
           current.value = 0;
+          hudCurrent.value = 0;
           playing.value = false;
           duration.value = 0;
           // The enlarged 2D view belongs to ONE replay — close it on switch
@@ -1387,6 +1455,7 @@ export default defineComponent({
       (trajs) => {
         if (trajs.length === 0) {
           current.value = 0;
+          hudCurrent.value = 0;
           playing.value = false;
           return;
         }
@@ -1395,6 +1464,7 @@ export default defineComponent({
         // One-shot deep-link seek: ?t=<seconds> jumps playback on load.
         if (props.initialTime > 0 && current.value === 0) {
           current.value = Math.min(props.initialTime, duration.value);
+          hudCurrent.value = current.value;
         }
         updateMarkersAt(ctx, current.value);
       },
@@ -1496,6 +1566,8 @@ export default defineComponent({
       }
       clearActors(ctx);
       clearMapModel(ctx);
+      ctx.osd?.dispose();
+      ctx.osd = null;
       if (ctx.waterFloor) {
         api.value?.scene.remove(ctx.waterFloor);
         ctx.waterFloor.geometry.dispose();
@@ -1592,6 +1664,7 @@ export default defineComponent({
                 ghostText: lbl.ghostText,
                 visible: lbl.visible,
                 selected: selectedEntityId.value === lbl.entityId,
+                tone: lbl.tone,
               }}
             />
           ))}
@@ -1808,6 +1881,9 @@ export default defineComponent({
               onInput={(e) => {
                 playing.value = false;
                 current.value = Number((e.target as HTMLInputElement).value);
+                // Scrubbing must move the HUD (scorebar clock, roster strip,
+                // self stats) with the thumb — no 10 Hz lag on drag.
+                hudCurrent.value = current.value;
               }}
             />
             <span class="holo-map__time">{displayTime()}</span>            <div class="holo-map__speed">

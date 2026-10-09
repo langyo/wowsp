@@ -7,6 +7,7 @@
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import type { OsdTone } from "./osdContrast";
 
 // --- Screen-space overlay sizing -------------------------------------------
 //
@@ -64,18 +65,45 @@ export const OVERLAY_RING_ORDER = 7;
 
 /** Paint the cap-point sprite: big zone letter on top, optional capture
  *  countdown below. Shared by the initial draw and the per-frame redraw so
- *  both stay on the same hi-res layout. */
-export function paintCapSprite(canvas: HTMLCanvasElement, letter: string, eta: string) {
+ *  both stay on the same hi-res layout. `tone` picks the ink: light (the
+ *  historical white) or dark (OSD auto-contrast over a bright backdrop —
+ *  see osdContrast.ts); the amber ETA darkens one step with the ink. */
+export function paintCapSprite(
+  canvas: HTMLCanvasElement,
+  letter: string,
+  eta: string,
+  tone: OsdTone = "light",
+) {
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.fillStyle = tone === "dark" ? "rgba(31, 41, 55, 0.92)" : "rgba(255,255,255,0.8)";
   ctx.font = "bold 140px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(letter, canvas.width / 2, canvas.height * 0.34);
   if (eta) {
-    ctx.fillStyle = "rgba(251,191,36,0.95)";
+    ctx.fillStyle = tone === "dark" ? "rgba(180, 83, 9, 0.95)" : "rgba(251,191,36,0.95)";
     ctx.font = "bold 56px sans-serif";
     ctx.fillText(eta, canvas.width / 2, canvas.height * 0.78);
   }
+}
+
+/** Paint a smoke cluster's remaining-seconds tag. Same ink semantics as
+ *  paintCapSprite: the shadow flips with the ink so the countdown reads
+ *  over both the dark sea and its own bright smoke / cyclone wash. */
+export function paintSmokeCountdown(
+  canvas: HTMLCanvasElement,
+  text: string,
+  tone: OsdTone = "light",
+) {
+  const c2d = canvas.getContext("2d")!;
+  c2d.clearRect(0, 0, canvas.width, canvas.height);
+  c2d.fillStyle = tone === "dark" ? "rgba(31, 41, 55, 0.92)" : "rgba(255,255,255,0.9)";
+  c2d.font = "bold 80px sans-serif";
+  c2d.textAlign = "center";
+  c2d.textBaseline = "middle";
+  c2d.shadowColor = tone === "dark" ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.9)";
+  c2d.shadowBlur = 12;
+  c2d.fillText(text, canvas.width / 2, canvas.height / 2);
+  c2d.shadowBlur = 0;
 }
