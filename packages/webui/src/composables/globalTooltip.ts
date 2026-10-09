@@ -21,14 +21,16 @@
  * teleports (same fade cadence, same dark-mode palette from
  * HkTooltip.scss), and registers with usePopupManager kind "tooltip" so
  * it holds the tooltip z band — above modals/drawers, below toasts.
- * The one deliberate delta over HkTooltip: placement clamps to the
- * viewport, so hints anchored at screen edges stay readable.
+ * The deliberate deltas over HkTooltip: placement is title-bar aware —
+ * nothing ever renders over the window chrome, so a hint anchored near
+ * the caption strip pops down instead of up — and the popup clamps to
+ * the viewport, so hints anchored at screen edges stay readable.
  */
 import { usePopupManager } from "@celestia-island/hikari";
 import "@celestia-island/hikari/components/HkTooltip.scss";
 import "./globalTooltip.scss";
 
-type Placement = "top" | "bottom" | "left" | "right";
+export type Placement = "top" | "bottom" | "left" | "right";
 
 /** A ribbon-style qualifier chip rendered under the hint text. Call sites
  *  pass these pre-localized via the `data-hint-tags` JSON attribute. */
@@ -201,6 +203,84 @@ const ANCHOR_GAP_PX = 8;
 /** Viewport clamp margin. */
 const EDGE_MARGIN_PX = 8;
 
+/** Anchor rectangle in viewport coordinates — structurally a DOMRect. */
+export interface TooltipAnchorRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/** Resolved popup origin plus the placement that produced it (the flip
+ *  may override the preferred side). */
+export interface TooltipPosition {
+  placement: Placement;
+  left: number;
+  top: number;
+}
+
+/**
+ * Resolve the popup origin for an anchor — the same per-side base math
+ * as before, with the flip decision made title-bar aware. The popup
+ * must never render above `chromeTop` (the window chrome's bottom edge
+ * plus the edge margin), so a "top" hint whose popup would cross that
+ * line flips below its anchor — first-row hints under the caption strip
+ * pop down — and a "bottom" hint that would run past the viewport
+ * bottom flips back up, but only when the space above still clears the
+ * chrome line. Sides that fit stay verbatim; a popup fitting nowhere
+ * clamps with the chrome line winning over the bottom edge, so it
+ * overlaps content before it could ever cover the caption strip.
+ * Horizontal placements stay clamp-only (their only caller, the
+ * sidebar, owns the room beside it).
+ */
+export function resolveTooltipPlacement(
+  anchor: TooltipAnchorRect,
+  popup: { width: number; height: number },
+  preferred: Placement,
+  viewport: { width: number; height: number },
+  chromeTop: number,
+): TooltipPosition {
+  const centerX = anchor.left + anchor.width / 2;
+  const centerY = anchor.top + anchor.height / 2;
+  const maxTop = Math.max(viewport.height - EDGE_MARGIN_PX - popup.height, chromeTop);
+  let placement = preferred;
+  let left: number;
+  let top: number;
+  switch (preferred) {
+    case "bottom":
+      left = centerX - popup.width / 2;
+      top = anchor.bottom + ANCHOR_GAP_PX;
+      if (top > maxTop && anchor.top - ANCHOR_GAP_PX - popup.height >= chromeTop) {
+        placement = "top";
+        top = anchor.top - ANCHOR_GAP_PX - popup.height;
+      }
+      break;
+    case "left":
+      left = anchor.left - ANCHOR_GAP_PX - popup.width;
+      top = centerY - popup.height / 2;
+      break;
+    case "right":
+      left = anchor.right + ANCHOR_GAP_PX;
+      top = centerY - popup.height / 2;
+      break;
+    default:
+      left = centerX - popup.width / 2;
+      top = anchor.top - ANCHOR_GAP_PX - popup.height;
+      if (top < chromeTop) {
+        placement = "bottom";
+        top = anchor.bottom + ANCHOR_GAP_PX;
+      }
+  }
+  left = Math.min(
+    Math.max(left, EDGE_MARGIN_PX),
+    Math.max(viewport.width - popup.width - EDGE_MARGIN_PX, EDGE_MARGIN_PX),
+  );
+  top = Math.min(Math.max(top, chromeTop), maxTop);
+  return { placement, left, top };
+}
+
 let installed = false;
 
 export function installGlobalTooltip(): void {
@@ -238,33 +318,34 @@ export function installGlobalTooltip(): void {
     }
   }
 
+  /** Viewport y the popup must never render above — the app title
+   *  bar's bottom edge plus the edge margin (the bare margin on
+   *  surfaces without the bar, e.g. the tray window). Re-read on every
+   *  placement so layout, maximized and phone-layout switches are
+   *  honored. The wrapper is display:contents — boxless, so Chromium
+   *  measures its rect as all-zero — and the real box is the fixed
+   *  hikari bar root inside it; only a zero rect anywhere (bar absent
+   *  or hidden) degrades to the margin. */
+  function chromeLineTop(): number {
+    const bar =
+      document.querySelector<HTMLElement>(".app-titlebar .hk-titlebar") ??
+      document.querySelector<HTMLElement>(".app-titlebar");
+    if (!bar) return EDGE_MARGIN_PX;
+    const bottom = bar.getBoundingClientRect().bottom;
+    return bottom > EDGE_MARGIN_PX ? bottom + EDGE_MARGIN_PX : EDGE_MARGIN_PX;
+  }
+
   function place(): void {
     if (!anchor) return;
     const pos = (anchor.dataset.hintPos || "top") as Placement;
     const r = anchor.getBoundingClientRect();
-    const w = popup.offsetWidth;
-    const h = popup.offsetHeight;
-    let left: number;
-    let top: number;
-    switch (pos) {
-      case "bottom":
-        left = r.left + r.width / 2 - w / 2;
-        top = r.bottom + ANCHOR_GAP_PX;
-        break;
-      case "left":
-        left = r.left - ANCHOR_GAP_PX - w;
-        top = r.top + r.height / 2 - h / 2;
-        break;
-      case "right":
-        left = r.right + ANCHOR_GAP_PX;
-        top = r.top + r.height / 2 - h / 2;
-        break;
-      default:
-        left = r.left + r.width / 2 - w / 2;
-        top = r.top - ANCHOR_GAP_PX - h;
-    }
-    left = Math.min(Math.max(left, EDGE_MARGIN_PX), Math.max(window.innerWidth - w - EDGE_MARGIN_PX, EDGE_MARGIN_PX));
-    top = Math.min(Math.max(top, EDGE_MARGIN_PX), Math.max(window.innerHeight - h - EDGE_MARGIN_PX, EDGE_MARGIN_PX));
+    const { left, top } = resolveTooltipPlacement(
+      r,
+      { width: popup.offsetWidth, height: popup.offsetHeight },
+      pos,
+      { width: window.innerWidth, height: window.innerHeight },
+      chromeLineTop(),
+    );
     popup.style.left = `${Math.round(left)}px`;
     popup.style.top = `${Math.round(top)}px`;
   }
