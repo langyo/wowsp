@@ -17,7 +17,7 @@ import { clampXZ } from "./sceneUtils";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
 import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./modelLoader";
-import { isScriptedUnitName } from "@/utils/aiNames";
+import { isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
 import { formationOffsets } from "./planeFormation";
@@ -288,24 +288,37 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
               "";
             killerShipType = kinfo?.type ?? koff?.type ?? null;
           }
-          const feedId = ++ctx.feedSeq;
-          ctx.feed.value.unshift({
-            kind: "kill",
-            id: feedId,
-            // A scripted NPC victim already shows its ship name in the
-            // card's ship slot — an extra name slot would repeat it.
-            text: label?.scripted ? "" : who,
-            shipName: label?.shipName ?? "",
-            shipType: label?.type ?? null,
-            killerShipName,
-            killerShipType,
-            killerName,
-            role,
-          });
-          if (ctx.feed.value.length > FEED_CAP) ctx.feed.value.pop();
-          window.setTimeout(() => {
-            ctx.feed.value = ctx.feed.value.filter((k) => k.id !== feedId);
-          }, FEED_TTL_MS);
+          // PvE operations flood the feed with NPC deaths — the ledger
+          // lists only HUMAN sink records there (see isAiSinkVictim). The
+          // kill bookkeeping above and the score ticks are untouched —
+          // this gate is feed-only.
+          const victimEntry = ctx.rosterAssignments.get(entityId);
+          if (
+            !isAiSinkVictim(
+              ctx.props.operation,
+              label?.scripted,
+              victimEntry?.name ?? null,
+            )
+          ) {
+            const feedId = ++ctx.feedSeq;
+            ctx.feed.value.unshift({
+              kind: "kill",
+              id: feedId,
+              // A scripted NPC victim already shows its ship name in the
+              // card's ship slot — an extra name slot would repeat it.
+              text: label?.scripted ? "" : who,
+              shipName: label?.shipName ?? "",
+              shipType: label?.type ?? null,
+              killerShipName,
+              killerShipType,
+              killerName,
+              role,
+            });
+            if (ctx.feed.value.length > FEED_CAP) ctx.feed.value.pop();
+            window.setTimeout(() => {
+              ctx.feed.value = ctx.feed.value.filter((k) => k.id !== feedId);
+            }, FEED_TTL_MS);
+          }
         }
       }
       continue;
