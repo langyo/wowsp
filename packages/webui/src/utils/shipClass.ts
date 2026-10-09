@@ -39,12 +39,23 @@
  * static CN layout). {@link gameTabRowCompare} carries the
  * ship-name-order variant, gated per surface on the detected realm.
  *
- * The CN order's ship-name segment reads the app locale like the rest of
+ * The Lesta client shares that row order's first half (observed 2026-10-09
+ * on a real co-op Tab screenshot, realm ru): inside one tier-III cruiser
+ * group the single 博加特里/Bogatyr(RUS) row led the two
+ * 圣路易斯/St. Louis(USA) rows — the decompiled nation rank (usa <
+ * russia) predicts the opposite order for all three. utils/realms's
+ * `realmUsesShipNameOrder` therefore enables the ship-name variant for
+ * BOTH realms, while the never-re-sorts static layout stays CN-only: no
+ * Lesta capture has diverged from the WG [alive] ++ [sunk] regroup, so
+ * its surfaces keep the blockwise alive-vector machinery live.
+ *
+ * The ship-name order's segment reads the app locale like the rest of
  * the key (the pre-existing caveat above — the game's OWN locale is not
  * observable from here). A zh app locale reproduces the CN client's order
  * exactly; a non-zh app locale falls back to collating that locale's
  * names, which orders differently from the client's zh table — a narrow
- * degradation for a configuration whose game client is zh in practice.
+ * degradation for a configuration whose game client is zh in practice
+ * (both observed realms' clients were zh).
  *
  * Fidelity caveats, both narrow: the ship-name segment uses this DB's
  * localized name where the client uses GameParams `shortName` (identical
@@ -172,7 +183,8 @@ export interface TabSortVehicle {
  *  CN clients (360 build 13243917, observed 2026-10-07) order the
  *  within-(class, tier) group by the LOCALIZED ship name in the client's
  *  own collation instead — the decompiled nation rank does not apply there
- *  (see {@link gameTabRowCompare} for the ship-name-order variant; the
+ *  (the Lesta client orders the same way; see {@link gameTabRowCompare}
+ *  for the ship-name-order variant; the
  *  plain-string concatenation cannot express the pinyin collation, so that
  *  variant must go through the comparator, not this key). */
 export function gameTabRowKey(
@@ -197,8 +209,9 @@ export function gameTabRowKey(
   );
 }
 
-/** Collator for the ship-name segment under the CN ship-name row order.
- *  The client orders same-(class, tier) ships by their localized name in a
+/** Collator for the ship-name segment under the ship-name row order (the
+ *  CN and Lesta clients). The client orders same-(class, tier) ships by
+ *  their localized name in a
  *  hanzi collation that matches PINYIN order (consistent with the GB2312
  *  code order the client's locale machinery produces — the exact mechanism
  *  is not observable from here; what IS observable is the rendered order).
@@ -223,18 +236,20 @@ export interface TabRowCompareOptions {
   /** Clan tag per VEHICLE — from the WG batch answer (absent = clanless /
    *  not yet landed; the entry then compares as a bare nickname). */
   clanTagOf?: (v: TabSortVehicle) => string | null | undefined;
-  /** CN client row order (localized ship name collated by pinyin, nation
-   *  demoted to tiebreak). Absent/false keeps the decompiled nation-rank
+  /** CN/Lesta client row order (localized ship name collated by pinyin,
+   *  nation demoted to tiebreak — both realms share the permutation, see
+   *  the module docs). Absent/false keeps the decompiled nation-rank
    *  concatenation. */
   shipNameOrder?: boolean;
 }
 
 /** Compare two roster entries by the client's Tab row order. The nation
  *  order degenerates to the plain concatenated {@link gameTabRowKey}
- *  (byte-identical to comparing the key strings); the CN ship-name order
- *  compares the same segments in the observed permutation — class, tier,
- *  LOCALIZED SHIP NAME, then nation, then the '[TAG]nickname' display
- *  name — with BOTH text segments routed through the pinyin collator
+ *  (byte-identical to comparing the key strings); the ship-name order
+ *  (CN/Lesta clients) compares the same segments in the observed
+ *  permutation — class, tier, LOCALIZED SHIP NAME, then nation, then the
+ *  '[TAG]nickname' display name — with BOTH text segments routed through
+ *  the pinyin collator
  *  (the client compares its whole concatenated key in its own collation,
  *  which for hanzi is pinyin order — see {@link nameCollator}). Both
  *  entries of one comparison always share the same alive state (each sort
@@ -276,7 +291,7 @@ export function gameTabRowCompare(
     return tierA < tierB ? 1 : -1;
   }
   // The client compares its whole concatenated key in ITS collation, so
-  // every TEXT segment on the CN path — the ship name AND the
+  // every TEXT segment on the name-order path — the ship name AND the
   // '[TAG]nickname' display name — goes through the same collator here (a
   // hanzi nickname tie between division twins would otherwise order by
   // code unit and diverge: 用户_… U+7528 before 神楽坂柚咲 U+795E, while

@@ -1,20 +1,26 @@
 /** Tests for the Tab row-order comparator's two client permutations: the
  *  decompiled nation-rank concatenation (WG clients, byte-compatible with
- *  gameTabRowKey) and the CN ship-name order (localized name collated by
- *  the client's pinyin order — the permutation the 360 client renders,
- *  which plain code-unit comparison gets backwards for hanzi). */
+ *  gameTabRowKey) and the ship-name order (localized name collated by
+ *  pinyin — the permutation the CN 360 client renders and the Lesta
+ *  client shares, which plain code-unit comparison gets backwards for
+ *  hanzi). */
 import { describe, expect, it } from "vitest";
 
 import { gameTabRowCompare, gameTabRowKey } from "./shipClass";
 
 // Real offline-DB ship ids — the T2 cruiser group of the observed CN
-// co-op battle (2026-10-07) plus its tier-III cruiser.
+// co-op battle (2026-10-07) plus its tier-III cruiser, and the Lesta
+// co-op capture (2026-10-09, realm ru).
 const SHIPS = {
   gelderland: 4187928336, // Cruiser T2 netherlands 海尔德兰
   portJackson: 4282299760, // Cruiser T2 commonwealth 杰克逊港
   chester: 4292786160, // Cruiser T2 usa 切斯特
   weymouth: 4187928528, // Cruiser T2 united_kingdom 韦茅斯
   tenryu: 4279154384, // Cruiser T3 japan 豺 (Tenryū)
+  nassau: 4186912560, // Battleship T3 germany 拿骚
+  bogatyr: 4186879440, // Cruiser T3 russia 博加特里
+  stLouis: 4290689008, // Cruiser T3 usa 圣路易斯
+  v25: 4187895600, // Destroyer T2 germany V-25
 };
 
 const opts = (shipNameOrder: boolean) => ({ locale: "zh-CN", shipNameOrder });
@@ -36,6 +42,48 @@ describe("gameTabRowCompare", () => {
       ":Millo:",
       "神楽坂柚咲",
       ":Tributs:",
+    ]);
+  });
+
+  it("orders the observed Lesta roster by ship name, not nation", () => {
+    // 2026-10-09 Lesta co-op Tab capture (realm ru) — the game rendered
+    // Sturdee → BILTEMA8 → Fisher → langyo → Navy_804 → Hollmann. Under
+    // the decompiled nation rank (usa < russia) both 圣路易斯(USA) rows
+    // jump ahead of 博加特里(RUS) — the shipped misorder the live panel
+    // showed (the Bogatyr row landing after both St. Louis rows); the
+    // ship-name order is the fix.
+    const roster = [
+      { name: "langyo", shipId: SHIPS.stLouis },
+      { name: ":Sturdee:", shipId: SHIPS.nassau },
+      { name: "Navy_804", shipId: SHIPS.weymouth },
+      { name: "BILTEMA8", shipId: SHIPS.bogatyr },
+      { name: ":Hollmann:", shipId: SHIPS.v25 },
+      { name: ":Fisher:", shipId: SHIPS.stLouis },
+    ];
+    const wg = [...roster].sort((a, b) => gameTabRowCompare(a, b, opts(false)));
+    expect(wg.map((v) => v.name)).toEqual([
+      ":Sturdee:",
+      ":Fisher:",
+      "langyo",
+      "BILTEMA8",
+      "Navy_804",
+      ":Hollmann:",
+    ]);
+    const lesta = [...roster].sort((a, b) =>
+      gameTabRowCompare(a, b, {
+        ...opts(true),
+        clanTagOf: (v) => (v.name === "BILTEMA8" ? "PLC" : null),
+      }),
+    );
+    // 博加特里(bó) leads the 圣路易斯(shèng) pair; the tier-III BB opens
+    // and the tier-II cruiser/destroyer close — the client's exact order.
+    expect(lesta.map((v) => v.name)).toEqual([
+      ":Sturdee:",
+      "BILTEMA8",
+      ":Fisher:",
+      "langyo",
+      "Navy_804",
+      ":Hollmann:",
     ]);
   });
 

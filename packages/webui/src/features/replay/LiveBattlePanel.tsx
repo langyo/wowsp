@@ -89,6 +89,7 @@ import {
 } from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
+import { realmUsesShipNameOrder } from "@/utils/realms";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
 import {
   battlesColor,
@@ -246,15 +247,16 @@ export default defineComponent({
      *  tag + that side's trusted sunk set. */
     const predictedOptionsFor = (side: "ally" | "enemy") => {
       void sinkEpoch.value;
-      // CN clients follow the localized-ship-name row order and never
-      // re-sort the table mid-battle (utils/shipClass's module docs) — the
-      // predicted order mirrors that instead of the decompiled WG rule.
+      // CN and Lesta clients follow the localized-ship-name row order
+      // (utils/shipClass's module docs) instead of the decompiled WG rule;
+      // only the CN client never re-sorts the table mid-battle, so the
+      // static layout stays CN-gated.
       const cn = realm.value === "cn";
       return {
         locale: dataLanguage.value,
         clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
         sunk: sunk.sunkNames(side),
-        shipNameOrder: cn,
+        shipNameOrder: realmUsesShipNameOrder(realm.value),
         staticOrder: cn,
       };
     };
