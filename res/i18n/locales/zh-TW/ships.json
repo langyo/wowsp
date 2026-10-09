@@ -488,6 +488,7 @@
     "defensiveAA": "防空彈幕"
   },
   "techTree": {
+    "realmHint": "科技樹分支來源：WG 為基準拓撲，Lesta 為用戶端自身研究線。",
     "title": "科技樹",
     "branch": "分支",
     "locked": "需達到 {n} 階",

@@ -488,6 +488,7 @@
     "defensiveAA": "Defensive AA Fire"
   },
   "techTree": {
+    "realmHint": "Tech-tree branch source: the WG reference topology vs the Lesta client's own research lines.",
     "title": "Tech Tree",
     "branch": "Branch",
     "locked": "Tier {n} required",

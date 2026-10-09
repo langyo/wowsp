@@ -2,11 +2,12 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, next
 
 import { t } from "@/i18n";
 import { resolveShipImage } from "@/utils/shipImages";
-import { nationTree, techTreeNode, type TechTreeNode } from "@/utils/techTreeData";
+import { nationTree, techTreeNode, type TechTreeNode, type TechTreeRealm } from "@/utils/techTreeData";
 import { archetypeKey } from "@/utils/archetypeLabels";
 import { tierToRoman } from "@wowsp/holo";
 import { GitBranch } from "@lucide/vue";
 import { AssetImage } from "@/components/base/AssetImage";
+import BattleIcon from "@/components/base/BattleIcon";
 import { recordShipImageFailure } from "@/utils/shipImageFailures";
 import type { ShipInfo } from "@/api";
 import "./TechTreeView.scss";
@@ -16,8 +17,11 @@ import "./TechTreeView.scss";
  *
  * Layout (matching the in-game port tech-tree panel):
  *   - Nation rail on the left (handled by ShipsView).
- *   - Ship-type sections laid out left-to-right in a horizontal row.
- *     Each section header labels the type (Battleship / Cruiser / ...).
+ *   - Ship-type sections laid out left-to-right in a horizontal row, all
+ *     sharing one tier ladder: row N is tier (topTier + N) in every section,
+ *     so a branch that starts mid-tree (Pan-Am battleships at VIII) sits on
+ *     the same row as the tier-VIII ship of the neighboring lines. Section
+ *     headers stick to the top of the scroll container while scrolling.
  *   - Within a section, each research branch is a column. Cards are
  *     absolutely positioned so tiers align horizontally across columns.
  *   - Fork branches start their own column at the fork tier; shared
@@ -29,11 +33,13 @@ export default defineComponent({
   name: "TechTreeView",
   props: {
     nation: { type: String, required: true },
+    /** Branch source: the WG reference topology or the Lesta client's own. */
+    realm: { type: String as () => TechTreeRealm, required: true },
     byId: { type: Object as () => Map<number, ShipInfo>, required: true },
   },
   emits: { open: (_ship: ShipInfo) => true },
   setup(props, { emit }) {
-    const tree = computed(() => nationTree(props.nation));
+    const tree = computed(() => nationTree(props.nation, props.realm));
     const hasTree = computed(() => tree.value.some((g) => g.branches.length > 0));
 
     // Layout dimensions
@@ -86,7 +92,7 @@ export default defineComponent({
 
           for (let i = startIdx; i < branch.ships.length; i++) {
             const sid = branch.ships[i];
-            const node = techTreeNode(sid);
+            const node = techTreeNode(sid, props.realm);
             if (!node) continue;
             const ship = props.byId.get(sid);
             if (node.tier < minTier) minTier = node.tier;
@@ -134,6 +140,14 @@ export default defineComponent({
           })),
         };
       });
+    });
+
+    /** Tier of the topmost row, shared across every section of the nation:
+        rows line up at the same tier in all type columns, so a line starting
+        mid-tree (Pan-Am BBs at VIII) renders on the VIII row, not at the top. */
+    const globalMinTier = computed(() => {
+      const mins = sections.value.map((s) => s.minTier);
+      return mins.length ? Math.min(...mins) : 1;
     });
 
     // ── SVG overlay measurement ──────────────────────────────────────────
@@ -234,9 +248,12 @@ export default defineComponent({
       }
     });
     onBeforeUnmount(() => ro?.disconnect());
-    watch(() => props.nation, () => {
-      void nextTick(() => { setTimeout(measure, 150); setTimeout(measure, 500); });
-    });
+    watch(
+      () => [props.nation, props.realm] as const,
+      () => {
+        void nextTick(() => { setTimeout(measure, 150); setTimeout(measure, 500); });
+      },
+    );
 
     function shipLabel(cell: PosCell): string {
       return cell.ship?.name ?? cell.node?.name ?? String(cell.shipId);
@@ -262,19 +279,22 @@ export default defineComponent({
             })}
           </svg>
 
-          {/* Type sections laid out left-to-right */}
+          {/* Type sections laid out left-to-right on one shared tier ladder */}
           <div class="tech-tree-v3__row">
             {sections.value.map((sec) => {
               const tierH = CARD_H + GAP_Y;
               const w = sec.numBranches * (COL_W + GAP_X) - GAP_X + PAD * 2;
-              const h = (sec.maxTier - sec.minTier + 1) * tierH + PAD * 2;
+              const h = (sec.maxTier - globalMinTier.value + 1) * tierH + PAD * 2;
               return (
                 <div class="tech-type-v3" key={sec.type}>
-                  <div class="tech-type-v3__head">{t(`ships.type.${sec.type}`)}</div>
+                  <div class="tech-type-v3__head">
+                    <BattleIcon type={sec.type} kind="ship" variant="plain" size={14} />
+                    {t(`ships.type.${sec.type}`)}
+                  </div>
                   <div class="tech-type-v3__canvas" style={{ width: `${w}px`, height: `${h}px` }}>
                     {sec.cells.map((cell) => {
                       const left = PAD + cell.branchIdx * (COL_W + GAP_X);
-                      const top = PAD + (cell.tier - sec.minTier) * tierH;
+                      const top = PAD + (cell.tier - globalMinTier.value) * tierH;
                       const img = shipImg(cell);
                       const name = shipLabel(cell);
                       return (

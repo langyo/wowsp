@@ -58,13 +58,32 @@
   gap: 0.3rem;
   flex-shrink: 0;
 
+  /* Faint vertical rule between neighbouring type sections. */
+  & + & {
+    border-left: 1px solid rgb(var(--color-border) / 30%);
+    padding-left: 1.2rem;
+  }
+
   &__head {
+    /* Sticky within the scroll body: the label rides the top edge while
+       its column scrolls past, so a mid-tree branch (Pan-Am BBs at VIII)
+       stays identifiable deep down. Confined to this section's height. */
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
     font-size: var(--text-2xs);
     color: rgb(var(--color-primary));
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 0 0.25rem;
+    padding: 0.35rem 0.25rem;
+    /* Keep cards readable as they slide underneath. */
+    background: rgb(var(--color-bg) / 92%);
+    border-radius: var(--radius-xs);
   }
 
   &__canvas {
