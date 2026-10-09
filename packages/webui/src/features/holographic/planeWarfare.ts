@@ -94,6 +94,13 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
   return minimapAddFirst;
 }
 
+/** Y coordinate a cloud slot is parked at while its squadron has nothing
+ *  airborne — deep below the seabed, out of every legal camera angle (the
+ *  orbit caps at ~85°, never below the horizon). Expired squadrons' dots
+ *  used to freeze at their last centroid for the whole replay (the
+ *  "inexplicable floating dots" report); see markerUpdate's park pass. */
+export const PLANE_DOT_PARKED_Y = -100000;
+
 /** Points fallback cloud: one slot per unique SQUADRON, team-tinted. */
 export function buildPlaneCloud(ctx: MapInternals, scene: THREE.Scene) {
   if (ctx.planeTrails.length > 0) {
@@ -120,6 +127,9 @@ export function buildPlaneCloud(ctx: MapInternals, scene: THREE.Scene) {
       slot++;
     }
     const slotCount = Math.max(1, slot);
+    // Per-frame activity flags (markerUpdate): slots not written on a tick
+    // are parked below the sea instead of lingering at their last position.
+    ctx.planeCloudActive = new Uint8Array(slotCount);
     const pg = new THREE.BufferGeometry();
     pg.setAttribute(
       "position",
@@ -151,6 +161,9 @@ export function buildPlaneCloud(ctx: MapInternals, scene: THREE.Scene) {
     });
     const points = new THREE.Points(pg, pm);
     points.visible = false;
+    // Parked/teleporting slot positions invalidate the build-time bounding
+    // sphere every frame — culling is skipped instead of recomputing it.
+    points.frustumCulled = false;
     scene.add(points);
     ctx.planeCloud = points;
   }
@@ -271,7 +284,7 @@ export function resolvePlaneCarriers(
     let anyId: number | null = null;
     let anyD = 400;
     for (const m of ctx.shipMarkers) {
-      const tr = ctx.props.trajectories.find((t) => t.entityId === m.userData.entityId);
+      const tr = ctx.trajById.get(m.userData.entityId as number);
       if (!tr) continue;
       const s = sampleAt(tr, first.time);
       if (!s) continue;

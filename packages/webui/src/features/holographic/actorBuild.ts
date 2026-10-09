@@ -62,6 +62,15 @@ import { parsePostBattle } from "@/features/replay/postBattle";
 export function rebuildActors(ctx: MapInternals) {
   clearActors(ctx);
   ctx.followStats.value.clear();
+  // entityId → trajectory join table for the hot per-frame lookups
+  // (marker refresh, cap simulator, plane carrier resolution). First
+  // entry wins, matching the linear `trajectories.find` this replaces —
+  // malformed dumps with duplicate entity ids keep resolving to the same
+  // trajectory they always did.
+  ctx.trajById.clear();
+  for (const tr of ctx.props.trajectories) {
+    if (!ctx.trajById.has(tr.entityId)) ctx.trajById.set(tr.entityId, tr);
+  }
   const scene = ctx.api.value?.scene;
   if (!scene || ctx.props.trajectories.length === 0) { ctx.shipLabels.value = []; return; }
   const epoch = ctx.markerEpoch;

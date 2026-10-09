@@ -208,24 +208,26 @@ export function buildShellTracePool(ctx: MapInternals, scene: THREE.Scene) {
   if (ctx.shellStates.length > 0) {
     for (let i = 0; i < 220; i++) {
       const curveArr = new Float32Array(28 * 3);
-      // Manual BufferGeometry has no bounding sphere; without computing
-      // one (or disabling culling) the frustum culler skips these lines.
+      // The arc positions are rewritten every frame, so the build-time
+      // bounding sphere (computed over the zero-filled buffer) goes stale
+      // immediately — a sphere at the origin radius 0 culled arcs whose
+      // launch point sat off-screen. Culling is disabled instead of paying
+      // a per-frame recompute for a handful of visible slots.
       const lineGeo = new THREE.BufferGeometry();
       lineGeo.setAttribute("position", new THREE.BufferAttribute(curveArr, 3));
-      lineGeo.computeBoundingSphere();
       const lineMat = new THREE.LineBasicMaterial({
         transparent: true,
         opacity: 0.9,
         depthWrite: false,
       });
       const line = new THREE.Line(lineGeo, lineMat);
+      line.frustumCulled = false;
       line.visible = false;
       scene.add(line);
       // Same curve rendered as fixed-pixel points so the flight reads
       // even at full-map zoom (a 1px line vanishes at that distance).
       const dotGeo = new THREE.BufferGeometry();
       dotGeo.setAttribute("position", new THREE.BufferAttribute(curveArr.slice(), 3));
-      dotGeo.computeBoundingSphere();
       const dotMat = new THREE.PointsMaterial({
         size: 3.5,
         sizeAttenuation: false,
@@ -234,6 +236,7 @@ export function buildShellTracePool(ctx: MapInternals, scene: THREE.Scene) {
         depthWrite: false,
       });
       const dots = new THREE.Points(dotGeo, dotMat);
+      dots.frustumCulled = false;
       dots.visible = false;
       scene.add(dots);
       // In-flight shell: a pointed cone sliding along the arc (swapped

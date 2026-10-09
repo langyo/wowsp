@@ -78,10 +78,16 @@ export function useThreeScene(
     // the pixel ratio by the applied zoom so the map stays crisp at
     // non-Auto scales; stopDpiWatch below re-runs this on changes
     // (setPixelRatio re-applies the current buffer size internally).
+    // The product is clamped at 2: a 1.5× DPR with 1.5× DPI zoom asked the
+    // GPU for 9× the CSS pixels every frame (the single biggest lag source
+    // on hi-dpi screens), while everything past 2× is imperceptible here —
+    // the scene is flat-shaded holo art, not fine text.
     const dpiZoom = useAppliedDpiScale();
-    renderer.setPixelRatio(window.devicePixelRatio * dpiZoom.value);
+    const applyPixelRatio = (zoom: number) =>
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio * zoom, 2));
+    applyPixelRatio(dpiZoom.value);
     stopDpiWatch = watch(dpiZoom, (zoom) => {
-      renderer.setPixelRatio(window.devicePixelRatio * zoom);
+      applyPixelRatio(zoom);
     });
     renderer.setSize(width, height, true);
     el.appendChild(renderer.domElement);

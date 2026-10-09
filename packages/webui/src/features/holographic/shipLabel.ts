@@ -3,6 +3,7 @@
  * extracted verbatim from HolographicMap.tsx. Shared by the map component
  * (label list + per-frame screen projection) and the camera follow menu.
  */
+import type { OsdTone } from "./osdContrast";
 import type { TeamRole } from "./teamColors";
 import type { ShipStatusSnapshot } from "./shipStatusModel";
 
@@ -45,4 +46,8 @@ export interface ShipLabel {
   belowY: number;
   /** Rows render only when the camera is close enough for them to read. */
   belowVisible: boolean;
+  /** OSD auto-contrast ink tone (osdContrast.ts): the label flips between
+   *  light and dark ink so it reads over whatever the scene rendered
+   *  behind it. Undefined → theme-driven ink (the historical behavior). */
+  tone?: OsdTone;
 }
