@@ -147,15 +147,35 @@ def load_meta(meta_path: Path) -> dict[str, dict]:
 
 
 class OozDecoder:
-    def __init__(self, exe: Path):
+    """Chunk-container decoder. The per-chunk backend matters: powzix/ooz
+    SILENTLY mis-decodes some Oodle streams written by the newer SDK the
+    26.10 client uses (length-exact, wrong bytes — the hull MidBack/
+    MidFront geometry files all hit this); the oozextract Rust port
+    (github.com/lvlvllvlvllvlvl/oozextract, `unoodle`) decodes them
+    correctly. Prefer unoodle when present; keep ooz as the fallback."""
+
+    def __init__(self, exe: Path, mode: str = "ooz"):
         self.exe = exe
+        self.mode = mode
         if not exe.is_file():
-            raise SystemExit(f"ooz decoder not found at {exe} (build github.com/powzix/ooz)")
+            raise SystemExit(f"decoder not found at {exe}")
+
+    def _decode_chunk(self, src: str, dst: str, want: int) -> bytes:
+        if self.mode == "unoodle":
+            # unoodle takes (u64 size + stream) like ooz's -f file format.
+            r = subprocess.run([str(self.exe), src, "-o", dst], capture_output=True)
+        else:
+            r = subprocess.run([str(self.exe), "-f", src, dst], capture_output=True)
+        if r.returncode != 0:
+            raise RuntimeError(
+                f"{self.mode} chunk failed: " + r.stderr.decode("utf-8", "replace")[:120]
+            )
+        return Path(dst).read_bytes()
 
     def decompress(self, raw: bytes) -> bytes:
         """Decode the Lesta Oodle chunk container: 56-byte header + chunk
-        table, each chunk a standalone Kraken stream ooz decodes when the
-        u64 unpacked size is prefixed."""
+        table, each chunk a standalone Kraken stream the backend decodes
+        when the u64 unpacked size is prefixed."""
         total_unp = struct.unpack_from("<Q", raw, 16)[0]
         count = struct.unpack_from("<I", raw, 32)[0]
         chunk_unp = struct.unpack_from("<I", raw, 36)[0]
@@ -174,14 +194,7 @@ class OozDecoder:
                 chunk = raw[pos:pos + cl]
                 pos += cl
                 Path(src).write_bytes(struct.pack("<Q", want) + chunk)
-                r = subprocess.run(
-                    [str(self.exe), "-f", src, dst], capture_output=True
-                )
-                if r.returncode != 0:
-                    raise RuntimeError(
-                        "ooz chunk failed: " + r.stderr.decode("utf-8", "replace")
-                    )
-                data = Path(dst).read_bytes()
+                data = self._decode_chunk(src, dst, want)
                 out.append(data)
                 got += len(data)
         return b"".join(out)
@@ -200,22 +213,30 @@ def main() -> int:
     args = ap.parse_args()
 
     game = find_game_dir(args.game_dir)
-    ooz_arg = args.ooz or os.environ.get("WOWSP_OOZ")
-    ooz = Path(ooz_arg) if ooz_arg else None
-    if ooz is None or not ooz.is_file():
+    # Decoder preference: unoodle (correct for the newer Oodle streams),
+    # then ooz. --ooz / WOWSP_OOZ may point at EITHER binary (the mode is
+    # sniffed from the file name).
+    ooz_arg = args.ooz or os.environ.get("WOWSP_OOZ") or os.environ.get("WOWSP_UNOODLE")
+    cand_bin = Path(ooz_arg) if ooz_arg else None
+    if cand_bin is None or not cand_bin.is_file():
         for cand in (
+            ROOT / "target/model-tools/unoodle.exe",
+            ROOT / "target/release/unoodle.exe",
             ROOT / "target/model-tools/ooz.exe",
             ROOT / "target/release/ooz.exe",
         ):
             if cand.is_file():
-                ooz = cand
+                cand_bin = cand
                 break
-    if ooz is None or not ooz.is_file():
+    if cand_bin is None or not cand_bin.is_file():
         raise SystemExit(
-            "ooz decoder not found — build github.com/powzix/ooz and pass "
-            "--ooz (or set WOWSP_OOZ)"
+            "no Oodle decoder found — build github.com/lvlvllvlvllvlvl/"
+            "oozextract (unoodle, preferred) or powzix/ooz, pass --ooz or "
+            "set WOWSP_OOZ"
         )
-    decoder = OozDecoder(ooz)
+    mode = "unoodle" if "unoodle" in cand_bin.name.lower() else "ooz"
+    decoder = OozDecoder(cand_bin, mode)
+    print(f"[lesta-extract] oodle backend: {mode} ({cand_bin})")
 
     wowsunpack = args.wowsunpack
     if not wowsunpack:
