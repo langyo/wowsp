@@ -1,6 +1,8 @@
 /* Activity heatmap — cell fills ride the primary color at four opacity
    steps (mirrored by the view's legend swatches); ink labels at half
-   strength. */
+   strength. Not-yet days hatch gray via the SVG <pattern> the component
+   defines — deliberately NOT the primary hue, so "hasn't happened" reads
+   apart from "happened, little". */
 .playtime-heat {
   width: 100%;
   overflow-x: auto;
@@ -30,10 +32,28 @@
     fill: rgb(var(--color-primary));
   }
 
-  &:hover {
+  /* Not-yet days: the diagonal-stripe pattern (the <defs> tile). No
+     hover stroke — there is nothing to inspect on a day that hasn't
+     arrived. */
+  &.is-future {
+    fill: url(#playtime-heat-hatch);
+  }
+
+  &:not(.is-future):hover {
     stroke: rgb(var(--color-text) / 0.4);
     stroke-width: 1;
   }
+}
+
+/* The hatch tile's innards: a faint base matching the empty-cell fill
+   plus a text-tinted stripe — gray in both themes. */
+.playtime-heat__hatch-bg {
+  fill: rgb(var(--color-text) / 4%);
+}
+
+.playtime-heat__hatch-line {
+  stroke: rgb(var(--color-text) / 16%);
+  stroke-width: 1.2;
 }
 
 .playtime-heat__weekday,
