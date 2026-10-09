@@ -7,7 +7,7 @@
  * math lives in weather.ts.
  */
 import { defineComponent, type PropType } from "vue";
-import { Cloud, CloudLightning, CloudRain, CloudSnow } from "@lucide/vue";
+import { Cloud, CloudLightning, CloudRain, CloudSnow, Sun } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import { M_PER_WORLD_UNIT, weatherVisKm, type WeatherView } from "./weather";
 import { ringLabelKm } from "./rangeRings";
@@ -38,9 +38,11 @@ export default defineComponent({
           ? CloudLightning
           : namedKind === "snowstorm"
             ? CloudSnow
-            : namedKind === "calm" || namedKind === "other"
-              ? Cloud
-              : CloudRain;
+            : namedKind === "calm"
+              ? Sun
+              : namedKind === "other"
+                ? Cloud
+                : CloudRain;
       // Meta line: countdown while incoming, live/target spotting cap
       // otherwise (the in-game HUD's "visibility" readout).
       let meta = "";

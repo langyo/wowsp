@@ -495,7 +495,7 @@
       "storm": "Storm",
       "snowstorm": "Snowstorm",
       "cvc": "Clan-battle weather",
-      "calm": "Clear skies",
+      "calm": "Day",
       "other": "Weather change"
     },
     "phase": {
