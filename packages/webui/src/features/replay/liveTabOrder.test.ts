@@ -26,6 +26,8 @@ const SHIPS = {
   renown: 4078909392, // Battleship T6 united_kingdom
   konigsberg: 4184782640, // Cruiser T5 germany
   leone: 3764270832, // Destroyer T6 italy
+  bogatyr: 4186879440, // Cruiser T3 russia 博加特里
+  stLouis: 4290689008, // Cruiser T3 usa 圣路易斯
 } as const;
 
 function vehicle(name: string, shipId: number, relation = 1): VehicleEntry {
@@ -95,6 +97,25 @@ describe("orderForTab", () => {
   it("orders carriers first and battleships by nation otherwise", () => {
     const list = [vehicle("Konigsberg", SHIPS.konigsberg), vehicle("Saipan", SHIPS.saipan)];
     expect(names(orderForTab(list, { locale: "zh-CN" }))).toEqual(["Saipan", "Konigsberg"]);
+  });
+
+  it("keeps the WG [alive] ++ [sunk] regroup under the Lesta name order", () => {
+    // Lesta (realm 'ru') takes the ship-name permutation — 博加特里(bó)
+    // leads the 圣路易斯(shèng) pair, the 2026-10-09 capture's order —
+    // but, unlike CN, still re-sorts the table as ships sink: the sunk
+    // 圣路易斯 drops to the tail instead of dimming in place.
+    const list = [
+      vehicle("Fisher", SHIPS.stLouis),
+      vehicle("langyo", SHIPS.stLouis),
+      vehicle("BILTEMA8", SHIPS.bogatyr),
+    ];
+    const ordered = orderForTab(list, {
+      locale: "zh-CN",
+      shipNameOrder: true,
+      sunk: new Set(["Fisher"]),
+    });
+    expect(names(ordered)).toEqual(["BILTEMA8", "langyo", "Fisher"]);
+    expect(ordered.map((o) => o.sunk)).toEqual([false, false, true]);
   });
 
   it("keeps key-order positions and only marks sinks under staticOrder (CN)", () => {

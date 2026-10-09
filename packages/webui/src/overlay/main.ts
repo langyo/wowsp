@@ -63,7 +63,7 @@ import {
   type ResolvedStatsMode,
 } from "./overlayPrefs";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
-import { isKnownRealm } from "@/utils/realms";
+import { isKnownRealm, realmUsesShipNameOrder } from "@/utils/realms";
 import { pluginRowMapping } from "./inferredOrder";
 import {
   gameTabRowCompare,
@@ -247,14 +247,21 @@ let identityRealms: Record<string, string> = {};
 let identityBattle = "";
 // App locale forwarded by create_overlay_window — picks the hint copy.
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
-// CN client layout gates (realm 'cn' — the 360 client): its Tab table orders
-// same-(class, tier) rows by localized ship name (never the decompiled
-// nation rank) and NEVER re-sorts mid-battle — sunk rows dim in place at
-// their battle-start positions. Both observed on a real Tab capture
-// (2026-10-07: a 5-dead ally block still interleaving alive rows); see
-// utils/shipClass's module docs. The realm can also be unlocked later by
-// the probe's ground-truth self realm, so derive the flag per render.
+// CN client static layout (realm 'cn' — the 360 client): its Tab table
+// NEVER re-sorts mid-battle — sunk rows dim in place at their battle-start
+// positions (observed on a real Tab capture, 2026-10-07: a 5-dead ally
+// block still interleaving alive rows; see utils/shipClass's module docs).
+// The realm can also be unlocked later by the probe's ground-truth self
+// realm, so derive the flag per render.
 const cnLayout = () => realm === "cn";
+// The row-ORDER half (localized ship name, never the nation rank) is
+// shared with the Lesta client (realm 'ru' — 2026-10-09 co-op capture: one
+// 博加特里/Bogatyr row led two 圣路易斯/St. Louis rows against the
+// usa < russia nation rank; see utils/realms's realmUsesShipNameOrder).
+// The never-re-sorts half stays CN-only: no Lesta capture has diverged
+// from the WG [alive] ++ [sunk] regroup, so its row mapping keeps the
+// blockwise alive-vector machinery.
+const nameOrderLayout = () => realmUsesShipNameOrder(realm);
 
 // ── Display prefs (chips / stats source / intel / team averages / seals) ─
 // One tolerant read of the statsPrefs blob the main window's store owns
@@ -847,14 +854,15 @@ function liveRosterSides(): RosterSides<Vehicle> {
 
 /** The roster's believed full-key order for one side — the same ordering
  *  inferredRowMapping applies (see utils/shipClass for the decompiled
- *  rule and its CN ship-name permutation) over the live side split above. */
+ *  rule and its ship-name permutation, CN/Lesta clients) over the live
+ *  side split above. */
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
   const compareOptions: TabRowCompareOptions = {
     locale,
     clanTagOf: (v) => stats.get(cacheKey(v.name))?.clanTag ?? null,
-    shipNameOrder: cnLayout(),
+    shipNameOrder: nameOrderLayout(),
   };
   return list
     .map((v, i) => ({ v, i }))
@@ -957,7 +965,9 @@ function render() {
     // run (a degraded candidate range would pin a WRONG name with
     // battle-start confidence; the exact misattribution this page shipped
     // to fix). The per-row sunk chip styling below already reads the alive
-    // vector row by row, which is the only thing the CN layout needs.
+    // vector row by row, which is the only thing the CN layout needs. The
+    // row-order permutation itself also covers Lesta (nameOrderLayout),
+    // but there the blockwise machinery stays live — the WG regroup holds.
     const staticLayout = cnLayout();
     // The mapping replicates the client's own Tab sort key (decompiled —
     // see inferredOrder.ts), so battle-start rows arrive as EXACT names.
@@ -1001,14 +1011,14 @@ function render() {
       }, {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
-        shipNameOrder: staticLayout,
+        shipNameOrder: nameOrderLayout(),
         staticLayout,
       });
     } else {
       players = inferredRowMapping({ allies, enemies }, aliveArr, {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
-        shipNameOrder: staticLayout,
+        shipNameOrder: nameOrderLayout(),
         staticLayout,
         sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
       });

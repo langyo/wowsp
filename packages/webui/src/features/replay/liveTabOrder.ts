@@ -10,10 +10,12 @@
  * the exact layout the game shows, re-derived reactively when the WG
  * batch lands a clan tag or a sink event fires.
  *
- * CN clients (realm 'cn') follow neither half of that rule: rows order by
- * the localized ship name (pinyin-collated) and the table NEVER re-sorts —
- * sunk rows dim in place. `shipNameOrder` + `staticOrder` switch the
- * prediction to that behavior; the sunk set then only MARKS entries.
+ * CN and Lesta clients (realms 'cn' / 'ru') order rows by the localized
+ * ship name (pinyin-collated) instead of the decompiled nation rank; only
+ * CN never re-sorts — sunk rows dim in place. `shipNameOrder` switches the
+ * row order on for both realms, `staticOrder` adds the CN-only
+ * never-re-sorts behavior on top — under IT alone, the sunk set only
+ * MARKS entries.
  */
 import type { VehicleEntry } from "@/api";
 import { gameTabRowCompare, type TabRowCompareOptions } from "@/utils/shipClass";
@@ -38,8 +40,8 @@ export interface PredictedOrderOptions {
    *  events): the predicted order splits [alive by key] ++ [sunk by key]
    *  and marks the sunk entries — the exact layout the game shows. */
   sunk?: Set<string> | null;
-  /** CN client row order (localized ship name, pinyin-collated — see
-   *  utils/shipClass's module docs). */
+  /** CN/Lesta client row order (localized ship name, pinyin-collated —
+   *  see utils/shipClass's module docs). */
   shipNameOrder?: boolean;
   /** CN clients never re-sort the table mid-battle — sunk rows dim in
    *  place at their battle-start positions. `true` keeps every entry at

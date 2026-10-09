@@ -59,6 +59,13 @@
  * ranges would pin provably wrong names (they shipped a human's row onto
  * a bot's name under the wrong order). The callers keep using the per-row
  * alive flags for the sunk chip styling.
+ *
+ * The Lesta client (realm 'ru') shares the row ORDER (observed 2026-10-09:
+ * one Bogatyr row led two St. Louis rows in a tier-III cruiser group,
+ * against the usa < russia nation rank) but NOT the static layout — no
+ * Lesta capture has diverged from the WG [alive] ++ [sunk] regroup, so
+ * the callers pass `shipNameOrder` alone there and the full blockwise
+ * machinery below stays live for it.
  */
 import type { RosterSides } from "@/utils/rosterSides";
 import {
@@ -82,8 +89,8 @@ export interface InferredOrderOptions {
    *  absent entries compare as bare nicknames and re-derive when the WG
    *  batch lands the tag (the caller re-renders on stats arrival). */
   clanTagOf?: (name: string) => string | null | undefined;
-  /** CN client row order (localized ship name, pinyin-collated — see
-   *  utils/shipClass's module docs). Absent keeps the decompiled
+  /** CN/Lesta client row order (localized ship name, pinyin-collated —
+   *  see utils/shipClass's module docs). Absent keeps the decompiled
    *  nation-rank order verified on WG clients. */
   shipNameOrder?: boolean;
   /** CN clients never re-sort the table mid-battle: sunk rows dim IN
@@ -102,10 +109,10 @@ export interface InferredOrderOptions {
 }
 
 /** One side's believed full-key order — the rows as the game drew them at
- *  battle start. Sorting goes through {@link gameTabRowCompare} so the CN
- *  ship-name permutation (pinyin collation — plain string comparison
- *  cannot express it) and the decompiled nation order share one code
- *  path. */
+ *  battle start. Sorting goes through {@link gameTabRowCompare} so the
+ *  ship-name permutation (CN/Lesta clients; pinyin collation — plain
+ *  string comparison cannot express it) and the decompiled nation order
+ *  share one code path. */
 function sideFullOrder<T extends InferredVehicle>(
   list: T[],
   options: InferredOrderOptions,

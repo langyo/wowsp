@@ -381,4 +381,58 @@ describe("inferredRowMapping", () => {
       }),
     ).toEqual(["knownDD", "mystery"]);
   });
+
+  // The Lesta-client ground truth (2026-10-09 co-op capture, realm ru):
+  // the game's Tab order for the allied team, ship ids straight off the
+  // offline DB. The decompiled nation rank puts 圣路易斯(usa) ahead of
+  // 博加特里(russia); the client rendered the opposite — the ship-name
+  // order, like the CN client. Unlike CN, no static layout: the blockwise
+  // machinery stays live for Lesta.
+  const LESTA_ROSTER = [
+    veh(":Sturdee:", 4186912560, 1), // Nassau III germany BB 拿骚
+    veh("BILTEMA8", 4186879440, 1), // Bogatyr III russia CA 博加特里
+    veh(":Fisher:", 4290689008, 1), // St. Louis III usa CA 圣路易斯
+    veh("langyo", 4290689008, 0), // St. Louis III usa CA 圣路易斯 (self)
+    veh("Navy_804", 4187928528, 1), // Weymouth II united_kingdom CA 韦茅斯
+    veh(":Hollmann:", 4187895600, 1), // V-25 II germany DD
+  ];
+
+  it("reproduces the Lesta client's ship-name row order (real battle, 6/6)", () => {
+    // shipNameOrder WITHOUT staticLayout — the Lesta combination: the
+    // battle-start mapping is the name-order key over the block layout.
+    expect(
+      inferredRowMapping(sidesOf(LESTA_ROSTER), null, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+      }),
+    ).toEqual([
+      ":Sturdee:",
+      "BILTEMA8",
+      ":Fisher:",
+      "langyo",
+      "Navy_804",
+      ":Hollmann:",
+    ]);
+  });
+
+  it("keeps the WG regroup live for Lesta once ships sink", () => {
+    // The blockwise vector holds (sunk rows re-sort to the tail), so the
+    // trusted sunk set renders the exact [alive] ++ [sunk] layout — the
+    // sunk 圣路易斯 lands on the tail row, not its battle-start slot.
+    const alive = [true, true, true, true, true, false];
+    expect(
+      inferredRowMapping(sidesOf(LESTA_ROSTER), alive, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        sunk: { ally: new Set(["langyo"]) },
+      }),
+    ).toEqual([
+      ":Sturdee:",
+      "BILTEMA8",
+      ":Fisher:",
+      "Navy_804",
+      ":Hollmann:",
+      "langyo",
+    ]);
+  });
 });
