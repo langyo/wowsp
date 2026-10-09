@@ -494,7 +494,11 @@
     "locked": "Tier {n} required",
     "premium": "Premium",
     "special": "Special",
-    "empty": "No tech tree for this nation."
+    "empty": "No tech tree for this nation.",
+    "linkTypeChange": "Type change",
+    "linkBranches": "Parallel lines",
+    "linkArchetype": "Line focus",
+    "linkInfo": "Research link info"
   },
   "banner": {
     "imageFailed": "Some ship portraits failed to load.",

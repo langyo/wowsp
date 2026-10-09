@@ -494,7 +494,11 @@
     "locked": "ティア {n} が必要",
     "premium": "プレミアム",
     "special": "特殊",
-    "empty": "この国のテックツリーはありません。"
+    "empty": "この国のテックツリーはありません。",
+    "linkTypeChange": "艦種の変更",
+    "linkBranches": "並行する分岐",
+    "linkArchetype": "系統の特徴",
+    "linkInfo": "研究ラインの情報"
   },
   "banner": {
     "imageFailed": "一部の艦艇画像を読み込めませんでした",
