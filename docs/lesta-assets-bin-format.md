@@ -122,3 +122,21 @@ geometry mapping IDs (`0x3F66C155`/`0x3622C904` vertex, `0x1A080768`/
    validating against the geometry mapping IDs, then port into vendored
    `visual.rs` behind a Lesta gate (`r2p_lowByte==8` is a clean detector).
 4. `bake_lesta_ships.py` end-to-end, then the res pack publish.
+
+## Phase 3 addendum (2026-10-10): the models are baked — decoder was the bug
+
+The payload crack turned out to be unnecessary for the holographic bakes:
+the per-part `.geometry` files are **already positioned in ship space**
+(Connecticut MidFront z∈[-7.2, 0.4] vs MidBack z∈[-0.1, 7.3] — disjoint
+halves), so each ship is the union of its non-LOD part meshes and
+`bake_lesta_ships.py` bakes straight from them (extract → export-model
+--no-vfs → merge → bake_model, 58/58 Lesta-only ships, 12-15k tris each).
+
+The remaining decode mystery also fell: **powzix/ooz silently mis-decodes
+the Oodle streams of files written by the newer SDK in 26.10** (the
+MidBack/MidFront hull parts — length-exact output, wrong bytes, meshopt
+`UnexpectedEof` downstream). The oozextract Rust port
+(github.com/lvlvllvlvllvlvl/oozextract, `unoodle`) decodes every such
+stream CRC-exact. `lesta_extract.py` now prefers unoodle and falls back to
+ooz; build it with `cargo build --release --features cli` and drop
+`unoodle.exe` into `target/release/`.
