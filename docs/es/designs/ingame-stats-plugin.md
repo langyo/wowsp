@@ -92,8 +92,8 @@ máquina (wowsdeob, `ShipSystem.add` / `AvatarSystem.__sortKeyAlive`):
 La app codifica esto como compuertas por reino sobre la clave de orden sin
 conexión (el `realmUsesShipNameOrder` de utils/realms; utils/shipClass lleva
 la clave en sí y la disposición estática de CN) y se niega a presentar la
-inferencia como verdad del juego: un plugin CONECTADO sigue calificando de
-«no funciona del todo» en la cabecera del panel /live (píldora de aviso +
+inferencia como verdad del juego: con un plugin CONECTADO el orden sigue
+mostrándose como inferido en la cabecera del panel /live (píldora de aviso +
 tooltip, `features/replay/telemetryGrade.ts`), porque la carga de telemetría
 lleva los estados vivo/hundido pero NINGÚN orden de filas. El final del
 camino es que la sonda lea el orden propio del juego dentro del motor — la

@@ -93,7 +93,7 @@
     color: rgb(var(--color-warning, 251 191 36));
   }
 
-  /* Plugin connected but not fully working: its alive/sunk states are
+  /* Plugin connected, row order inferred: its alive/sunk states are
      authoritative while the TAB row order is still the offline per-realm
      inference (the telemetry payload carries no game-true order — see
      features/replay/telemetryGrade.ts). Warning voice, the settling

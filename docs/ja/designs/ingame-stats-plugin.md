@@ -85,7 +85,7 @@ Python 側の等価物がない（注入された dataHub に `getCollection` �
 （utils/realms の `realmUsesShipNameOrder`; ソートキー本体と CN の静的
 レイアウトは utils/shipClass が持つ）。そして推定をゲーム内の真実として
 提示することを拒む: プラグインが接続済みでも、/live パネルのヘッダでは
-「完全には動作していない」と評定され続ける（警告ピル + tooltip、
+並び順は「推定」と表示され続ける（警告ピル + tooltip、
 `features/replay/telemetryGrade.ts`）。テレメトリのペイロードは生存/撃沈
 状態を運ぶが、行順は**運ばない**からだ。最終形は、プローブがゲーム自身の
 順序をエンジン内で読み取ることだ —— TAB がレンダリングするコレクション
