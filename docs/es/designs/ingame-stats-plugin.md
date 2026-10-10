@@ -5,9 +5,10 @@
 > siendo la ventana transparente; este plugin es la fuente de datos dentro del
 > juego que mantiene exactos los estados vivo/hundido de la superposición en
 > cualquier configuración, incluida la pantalla completa exclusiva. El ORDEN
-> de las filas de TAB sigue siendo una inferencia calibrada por cliente hasta
-> que la sonda pueda leer el orden propio del juego dentro del motor — véase
-> la regla de ordenación más abajo.
+> de las filas de TAB fue una inferencia calibrada por cliente hasta que la
+> sonda pudo leer el orden propio del juego dentro del motor — ya puede
+> (véase el final del camino más abajo); la regla de ordenación que sigue
+> permanece como fallback y como la historia de CN.
 
 ## Contexto y objetivos
 
@@ -84,10 +85,17 @@ máquina (wowsdeob, `ShipSystem.add` / `AvatarSystem.__sortKeyAlive`):
   9/9 pinyin) — la divergencia vive en la capa HUD/vista. La descompilación
   de scripts por tanto nunca podrá zanjar este cliente; solo cuentan las
   capturas renderizadas.
-- **Lesta** (ru): también renderiza el orden por nombre localizado de barco
-  (captura de 2026-10-09: Bogatyr encabezó dos filas de St. Louis contra
-  `usa < russia`); su build actual (8867689) trae un contenedor `.pyc`
-  cambiado que el descompilador todavía no puede abrir.
+- **Lesta** (ru): renderiza su PROPIO orden de claves de ordenación —
+  ZANJADO por la batalla en vivo del 2026-10-10 (las claves puenteadas por
+  la sonda reprodujeron la tabla fila por fila, 6/6 aliados). La lectura del
+  2026-10-09 «orden por nombre de barco, como CN» fue una mala lectura: la
+  tabla de naciones propia de Lesta clasifica russia PRIMERO y el segmento
+  de nombre de la clave es un código interno («2970PRSC103»), así que
+  Bogatyr encabezando dos filas de St. Louis era el rango de nación, no una
+  colación de nombres — y el contenedor `.pyc` no abierto dejó de importar
+  (las claves SON el orden). Las claves iguales conservan allí el orden
+  propio del roster (no el desempate «+ nombre» que la descompilación de WG
+  añade).
 
 La app codifica esto como compuertas por reino sobre la clave de orden sin
 conexión (el `realmUsesShipNameOrder` de utils/realms; utils/shipClass lleva
@@ -107,27 +115,35 @@ hasta el componente Ship de cada jugador, cuyo `sortKey` es la PROPIA
 clave de Tab del cliente (`str(SORT_ORDER.index(subtype)) +
 str(100 - level) + str(NATION.SORT_ORDER.index(nation)) + shortName` —
 `ShipSystem.add`, build 13357625) y la lleva en la telemetría (`sortKeys`,
-nombre → clave). El panel /live ordena el roster por clave +
-`'[TAG]nickname'` — la misma concatenación exacta que compara
-`__sortKeyAlive` — y califica la píldora como EXACTA cuando el mapa cubre
-el roster en vivo, en todos los reinos (CN incluido: su reordenación en la
-capa de vista, si la hay, parte de estas mismas claves; el bloque de vivos
-del panel dentro del juego también ordena por ellas). La conformidad fuera
-de línea de esta ruta llegó el 2026-10-10 (los pases de barco de
-`scripts/check_ingame_plugin.py`): entidades de barco plantadas fijan la
-forma WG (la tabla exacta de claves en la telemetría Y el pliegue del panel
-ordenando su bloque de vivos por clave + nombre), la forma Lesta
-(UiComponents lanza una excepción — la ruta hace duck-typing sobre los
-componentes y no necesita constantes), la cobertura parcial (un avatar sin
-pareja conserva el orden de recorrido de ese lado — las filas verdaderas
-del juego y las del orden de recorrido nunca se intercalan — mientras el
-lado aún cubierto sí se ordena) y la peculiaridad del codificador (la tabla
-de claves sobrevive al serializador hecho a mano). Pendientes: el
-comportamiento del sandbox de Lesta ante la colección 'ship' queda sin
-verificar hasta una batalla real (cada lectura está protegida; un hueco
-degrada esa batalla a la inferencia por reino), y una batalla con cobertura
-parcial conserva el fallback calibrado — las filas verdaderas del juego y
-las inferidas nunca se intercalan.
+nombre → clave). El panel /live ordena el roster por la comparación propia
+del cliente y califica la píldora como EXACTA cuando el mapa cubre el
+roster en vivo — la familia WG por clave + `'[TAG]nickname'` (la misma
+concatenación exacta que compara `__sortKeyAlive`), Lesta por las claves a
+SOLAS con las claves iguales conservando el orden propio del roster (en
+vivo 2026-10-10: dos filas Turenne de la misma clave, un humano y un
+':bot:', se renderizaron en orden de registro contra el desempate
+«':'-primero» de la comparación simple). Un cliente de orden por nombre de
+barco (CN) nunca renderiza el orden de claves que sus propios scripts
+calculan, así que allí el override se retira y la píldora no puede
+calificarse de exacta. La conformidad fuera de línea de esta ruta llegó el
+2026-10-10 (los pases de barco de `scripts/check_ingame_plugin.py`):
+entidades de barco plantadas fijan la forma WG (la tabla exacta de claves
+en la telemetría Y el pliegue del panel ordenando su bloque de vivos por
+las claves, estable — la pareja de claves iguales del fixture conserva el
+orden de recorrido), la forma Lesta (UiComponents lanza una excepción — la
+ruta hace duck-typing sobre los componentes y no necesita constantes), la
+cobertura parcial (un avatar sin pareja conserva el orden de recorrido de
+ese lado — las filas verdaderas del juego y las del orden de recorrido
+nunca se intercalan — mientras el lado aún cubierto sí se ordena) y la
+peculiaridad del codificador (la tabla de claves sobrevive al serializador
+hecho a mano). El antiguo punto pendiente se CERRÓ el mismo día, en vivo:
+una batalla cooperativa real de Lesta sirvió la colección 'ship' completa
+(11/11 claves incluyendo bots) y asentó el modelo de arriba —
+`realmUsesShipNameOrder` es ahora solo-CN (el fallback fuera de línea de ru
+es la clave de la familia WG: acierta en clase/tier, a sabiendas falla en
+el rango de russia-primero — las claves puenteadas son la verdad del
+juego), y una batalla con cobertura parcial conserva el fallback calibrado
+— las filas verdaderas del juego y las inferidas nunca se intercalan.
 
 ## Restricciones del sandbox (aprendidas por las malas; consérvelas en la guía de estilo del mod)
 
@@ -265,14 +281,14 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
   builtins bloqueados, sin aperturas en modo append, callbacks protegidos).
   Desde el 2026-10-10 cuatro pases de barco ejercitan además la ruta de
   claves de ordenación verdaderas del juego con entidades de barco plantadas
-  (la forma WG afirmando la tabla exacta de claves y el orden clave + nombre
+  (la forma WG afirmando la tabla exacta de claves y el orden estable por claves
   del pliegue del panel, la forma Lesta con UiComponents lanzando una
   excepción, una forma de cobertura parcial cuyo lado sin pareja conserva el
   orden de recorrido, y la peculiaridad del codificador 15.9 que la tabla de
-  claves debe sobrevivir) — lo único que no pueden hacer es responder qué
-  sirve el sandbox real de Lesta para la colección 'ship'; eso sigue siendo
-  una comprobación de batalla real. Siga manteniendo en verde `python -m
-  py_compile`.
+  claves debe sobrevivir) — y la pregunta de batalla real que no podían
+  responder (qué sirve el sandbox real de Lesta para la colección 'ship')
+  quedó zanjada el mismo día, 2026-10-10: la tabla de claves completa, 11/11
+  incluyendo bots. Siga manteniendo en verde `python -m py_compile`.
 - **Prueba de humo solo en puerto** (sin batalla): lance el juego, permanezca
   en el puerto ~15 s, salga; verifique `injected names=[…]`,
   `api[load] dh=True` y un heartbeat reciente en `python.log`. Este es el

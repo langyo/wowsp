@@ -145,20 +145,14 @@
     color: rgb(var(--color-muted));
   }
 
-  /* Data labels (来源服务器 / 识别窗口) — not states: the quiet primary
-     voice, distinct from LIVE/settling/ended. The focus pill's PID tail
-     goes mono (LiveBattlePanel.tsx's __focus-pid) so the number reads as
-     an identifier, not prose. */
-  &__pill--realm,
-  &__pill--focus {
+  /* Data labels (来源服务器) — not states: the quiet primary voice,
+     distinct from LIVE/settling/ended. (The serving-window focus pill
+     that used to sit here was dropped 2026-10-10: the realm pill plus
+     the bottom-left running-clients card already carry that data.) */
+  &__pill--realm {
     border-color: rgb(var(--color-primary) / 40%);
     background: rgb(var(--color-primary) / 10%);
     color: rgb(var(--color-text) / 75%);
-  }
-
-  &__focus-pid {
-    font-family: var(--font-mono);
-    color: rgb(var(--color-primary));
   }
 
   &__clock {

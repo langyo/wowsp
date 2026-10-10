@@ -11,8 +11,10 @@
  *   - sunk rows dimmed with their sinking time,
  *   - the game's OWN row order (utils/shipClass's recovered Tab sort —
  *     alive rows first in class/tier/nation order, sunk rows re-sorted to
- *     the bottom; CN/Lesta replays flip the within-(class, tier) order to
- *     the localized-ship-name permutation via `shipNameOrder`).
+ *     the bottom; CN replays flip the within-(class, tier) order to the
+ *     localized-ship-name permutation via `shipNameOrder` — Lesta
+ *     renders its own key order, established by the 2026-10-10
+ *     capture).
  *
  * Clan tags come from the lazily armed WG roster batch (they participate
  * in the game's sort key via the '[TAG]nick' display name).
@@ -154,9 +156,9 @@ export default defineComponent({
      *  DBs (supertest hulls like Sovetskaya) still resolve when the
      *  encyclopedia knows them. */
     encyclopedia: { type: Object as PropType<Map<number, ShipInfo>>, required: true },
-    /** CN/Lesta row order (localized ship name, pinyin-collated) for the
-     *  open replay's own realm — the replay scoreboard must mirror the
-     *  client the replay was recorded on, not the WG permutation. */
+    /** CN row order (localized ship name, pinyin-collated) for the open
+     *  replay's own realm — the replay scoreboard must mirror the client
+     *  the replay was recorded on, not the WG permutation. */
     shipNameOrder: { type: Boolean, default: false },
   },
   setup(props) {

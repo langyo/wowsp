@@ -765,11 +765,15 @@ class Probe:
         ShipSystem.add writes the client's Tab key onto every ship
         component — str(SORT_ORDER.index(subtype)) + str(100 - level)
         + str(NATION.SORT_ORDER.index(nation)) + shortName (decompiled
-        build 13357625) — and the Tab table sorts by that key plus the
-        avatar name (__sortKeyAlive: ship.sortKey + component.name).
-        Sorting the roster by the same strings reproduces the client's
-        row order exactly, on every realm (CN included: its view-layer
-        re-sort, if any, starts from these same keys).
+        build 13357625; Lesta's live keys carry its own nation table —
+        russia FIRST — and an internal shortName code, observed
+        2026-10-10). The client's Tab table sorts by that key — the
+        WG family appends the avatar name (__sortKeyAlive: ship.sortKey
+        + component.name) while Lesta breaks EQUAL keys by the roster's
+        own order (live 2026-10-10) — so the panel fold below sorts by
+        the keys alone, stable. CN's HUD renders a different order
+        altogether (its scripts still compute these keys); the companion
+        stands the override down there.
 
         The path avoids UiComponents/imports entirely (Lesta raises on
         the constants attribute and omits every ModsShell import — both
@@ -954,17 +958,21 @@ class Probe:
                         front.append(name)
                     else:
                         tail.append(name)
-            # The client's OWN alive-block order: sort the front by the ship
-            # components' sortKey + name — the concatenated string the
-            # game's Tab sort compares (decompiled __sortKeyAlive; one nuance:
-            # the client tails the TAGGED name, the panel ties on the bare
-            # roster name, so same-ship clan-mates can order differently in
-            # a key tie). Applied only when EVERY front name carries a key;
-            # any gap keeps the walk order (game-true and walk-order rows
-            # must not interleave). The tail keeps its sinking chronology
-            # either way — the friendlier in-game panel read (the client's
-            # own dead block re-sorts by key; documented as the panel's one
-            # cosmetic difference).
+            # The client's OWN alive-block order: sort the front by the
+            # ship components' sortKey ALONE, stable — the live 2026-10-10
+            # Lesta capture showed the client breaks EQUAL keys by the
+            # roster's own order, not the '+ name' concatenation the WG
+            # decompile appends (two same-key Turenne rows, a human and a
+            # ':bot:', rendered in record order; the name tie would put
+            # the bot's ':' first and swap them). Equal keys therefore
+            # keep the fold's incoming order here (the walk order — the
+            # roster order's stand-in). Applied only when EVERY front
+            # name carries a key; any gap keeps the walk order outright
+            # (game-true and walk-order rows must not interleave). The
+            # tail keeps its sinking chronology either way — the
+            # friendlier in-game panel read (the client's own dead block
+            # re-sorts by key; documented as the panel's one cosmetic
+            # difference).
             keys = {}
             for nm in front:
                 key = self.sort_keys.get(nm)
@@ -973,7 +981,7 @@ class Probe:
                     break
                 keys[nm] = key
             if keys and len(front) > 1:
-                front.sort(key=lambda nm: keys[nm] + nm)
+                front.sort(key=lambda nm: keys[nm])
             self.order[side] = front + tail
             self.alive_last[side] = alive_now
 
@@ -1512,7 +1520,9 @@ class Probe:
             # game-true Tab-order ingredients, keyed by bare name. An empty
             # map (a sandbox withholding the ship collection) keys the
             # offline per-realm inference in the companion; a covered roster
-            # keys its exact-order grade.
+            # keys its exact-order grade (except on the CN client, whose
+            # HUD renders an order the keys cannot express — the companion
+            # stands the override down there).
             sort_keys = self.sort_keys
             self_realm = ''
             for p in self.roster:

@@ -395,9 +395,11 @@ const PostBattleFallbackPanel = defineComponent({
     );
     // Sort order: the client's Tab key (alive, class, tier desc, nation,
     // ship name, '[tag]nick') — the verified WG-family base, with the OPEN
-    // REPLAY's realm picking the flavor: CN/Lesta replays order the
+    // REPLAY's realm picking the flavor: CN replays order the
     // within-(class, tier) group by the localized ship name, everything
-    // else keeps the decompiled nation rank. The permutation is unstable
+    // else keeps the decompiled nation rank (Lesta included — the
+    // approximation, nation rank and name segment alike, is documented
+    // in utils/shipClass). The permutation is unstable
     // per-client knowledge (utils/shipClass's module docs) — recalibrate
     // against rendered captures.
     const compareRows = (

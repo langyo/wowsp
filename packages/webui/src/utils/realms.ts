@@ -11,10 +11,13 @@ export const isKnownRealm = (code: string): boolean =>
 
 /** Realms whose client orders same-(class, tier) Tab rows by the LOCALIZED
  *  ship name instead of the decompiled nation rank (utils/shipClass's
- *  module docs): the 360 CN build (observed 2026-10-07) and the Lesta
- *  client (observed 2026-10-09 — one 博加特里/Bogatyr row led two
- *  圣路易斯/St. Louis rows inside a tier-III cruiser group, against the
- *  usa < russia nation rank). Only the row ORDER is shared; the
- *  never-re-sorts static layout stays CN-only. */
+ *  module docs): the 360 CN build (observed 2026-10-07). The Lesta client
+ *  was moved OFF this gate by the 2026-10-10 live capture: its rendered
+ *  Tab order follows the client's OWN sort keys (the probe's `sortKeys`
+ *  reproduced it row for row), and the earlier "ship-name order" reading
+ *  of the 2026-10-09 capture was a misread — Bogatyr leading two
+ *  St. Louis rows was Lesta's own NATION.SORT_ORDER ranking russia first,
+ *  not a name collation. Only the CN build's HUD re-sorts by the
+ *  localized name; the static never-re-sorts layout stays CN-only too. */
 export const realmUsesShipNameOrder = (code: string): boolean =>
-  code === "cn" || code === "ru";
+  code === "cn";

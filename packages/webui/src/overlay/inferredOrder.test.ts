@@ -384,10 +384,15 @@ describe("inferredRowMapping", () => {
 
   // The Lesta-client ground truth (2026-10-09 co-op capture, realm ru):
   // the game's Tab order for the allied team, ship ids straight off the
-  // offline DB. The decompiled nation rank puts 圣路易斯(usa) ahead of
-  // 博加特里(russia); the client rendered the opposite — the ship-name
-  // order, like the CN client. Unlike CN, no static layout: the blockwise
-  // machinery stays live for Lesta.
+  // offline DB. The 2026-10-10 live capture SETTLED what that order is:
+  // Lesta renders its OWN sort-key order — its NATION.SORT_ORDER ranks
+  // russia FIRST, so 博加特里 legitimately led the two 圣路易斯 (the
+  // earlier "ship-name order, like CN" reading was a misread), and its
+  // keys carry internal shortName codes (e.g. "2970PRSC103") this
+  // offline DB cannot reproduce. The tests below pin what the offline
+  // fallback DOES for ru now: the WG-family key — right on class/tier,
+  // knowingly wrong on the russia rank — with the plugin's bridged keys
+  // as the game-truth (they covered the roster in the live battle).
   const LESTA_ROSTER = [
     veh(":Sturdee:", 4186912560, 1), // Nassau III germany BB 拿骚
     veh("BILTEMA8", 4186879440, 1), // Bogatyr III russia CA 博加特里
@@ -397,28 +402,34 @@ describe("inferredRowMapping", () => {
     veh(":Hollmann:", 4187895600, 1), // V-25 II germany DD
   ];
 
-  it("reproduces the Lesta client's ship-name row order (real battle, 6/6)", () => {
-    // shipNameOrder WITHOUT staticLayout — the Lesta combination: the
-    // battle-start mapping is the name-order key over the block layout.
+  it("approximates the Lesta client with the WG-family key (known nation gap)", () => {
+    // The ru offline fallback since 2026-10-10: the decompiled WG key —
+    // Nassau's battleship block first, then the cruisers by tier, the
+    // nation rank ordering 圣路易斯(usa) ahead of 博加特里(russia). The
+    // rendered Lesta table swapped that pair (its own nation table ranks
+    // russia first) — the documented approximation; no static layout,
+    // the blockwise machinery stays live.
     expect(
       inferredRowMapping(sidesOf(LESTA_ROSTER), null, {
         locale: "zh-CN",
-        shipNameOrder: true,
       }),
     ).toEqual([
       ":Sturdee:",
-      "BILTEMA8",
       ":Fisher:",
       "langyo",
+      "BILTEMA8",
       "Navy_804",
       ":Hollmann:",
     ]);
   });
 
-  it("keeps the WG regroup live for Lesta once ships sink", () => {
+  it("keeps the WG regroup live under the name-order permutation once ships sink", () => {
     // The blockwise vector holds (sunk rows re-sort to the tail), so the
     // trusted sunk set renders the exact [alive] ++ [sunk] layout — the
     // sunk 圣路易斯 lands on the tail row, not its battle-start slot.
+    // (The permutation is the CN client's; a name-order surface without
+    // the static layout — the replay viewer's CN path — keeps the
+    // regroup.)
     const alive = [true, true, true, true, true, false];
     expect(
       inferredRowMapping(sidesOf(LESTA_ROSTER), alive, {
@@ -438,11 +449,52 @@ describe("inferredRowMapping", () => {
 
   it("switches to the client's own sort keys when the map covers a side", () => {
     // The plugin's game-true sort keys (telemetry `sortKeys`, read off the
-    // avatars' ship components) supersede BOTH offline permutations: the
-    // St. Louis keys ('2981…') sort ahead of Bogatyr's ('2982…' — the
-    // nation segment at the same class+tier) even though the CN/Lesta
-    // ship-name permutation puts 博加特里(bó) first, and the same-ship tie
-    // breaks by display name exactly as __sortKeyAlive compares.
+    // avatars' ship components) supersede the offline permutations: here
+    // Lesta's OWN key format ('2970PRSC103' — its nation rank puts russia
+    // FIRST, the live 2026-10-10 capture's shape) orders 博加特里 ahead
+    // of the two St. Louis keys, and the same-ship tie breaks by display
+    // name exactly as __sortKeyAlive compares.
+    const vehicles = [
+      veh("BILTEMA8", 4186879440, 1), // Bogatyr III russia CA 博加特里
+      veh("langyo", 4290689008, 0), // St. Louis III usa CA 圣路易斯 (self)
+      veh("Fisher", 4290689008, 1), // St. Louis III usa CA 圣路易斯
+    ];
+    const keys: Record<string, string> = {
+      BILTEMA8: "2970PRSC103",
+      langyo: "2971St. Louis",
+      Fisher: "2971St. Louis",
+    };
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        sortKeyOf: (n) => keys[n],
+      }),
+    ).toEqual(["BILTEMA8", "Fisher", "langyo"]);
+    // The Lesta tie rule (live 2026-10-10): equal keys keep the ROSTER's
+    // own order — langyo precedes Fisher in the list and stays there.
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        tieByRosterOrder: true,
+        sortKeyOf: (n) => keys[n],
+      }),
+    ).toEqual(["BILTEMA8", "langyo", "Fisher"]);
+    // One missing key disables the override wholesale — no interleaving:
+    // the offline WG key takes over and ranks usa ahead of russia,
+    // flipping the whole order against the Lesta keys above.
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        sortKeyOf: (n) => (n === "BILTEMA8" ? undefined : keys[n]),
+      }),
+    ).toEqual(["Fisher", "langyo", "BILTEMA8"]);
+  });
+
+  it("stands the sort-key override down under the ship-name order", () => {
+    // A ship-name-order client (CN) never renders the key order — its HUD
+    // re-sorts by the localized name — so even a COVERING key map must
+    // not take the sort over there: the name permutation keeps the rows,
+    // 博加特里(bó) ahead of the 圣路易斯(shèng) pair, whatever the keys say.
     const vehicles = [
       veh("BILTEMA8", 4186879440, 1), // Bogatyr III russia CA 博加特里
       veh("langyo", 4290689008, 0), // St. Louis III usa CA 圣路易斯 (self)
@@ -458,14 +510,6 @@ describe("inferredRowMapping", () => {
         locale: "zh-CN",
         shipNameOrder: true,
         sortKeyOf: (n) => keys[n],
-      }),
-    ).toEqual(["Fisher", "langyo", "BILTEMA8"]);
-    // One missing key disables the override wholesale — no interleaving.
-    expect(
-      inferredRowMapping(sidesOf(vehicles), null, {
-        locale: "zh-CN",
-        shipNameOrder: true,
-        sortKeyOf: (n) => (n === "BILTEMA8" ? undefined : keys[n]),
       }),
     ).toEqual(["BILTEMA8", "Fisher", "langyo"]);
   });

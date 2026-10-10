@@ -216,7 +216,6 @@
     "detectedRows": "已定位 · {n} 行",
     "searching": "定位中",
     "refreshStats": "重新整理戰績",
-    "tabFocusHint": "按住 Tab 時的戰績識別來自此遊戲視窗（切換左下角用戶端版本可更換）",
     "battleRealmHint": "本局對局所在的伺服器：名單戰績查詢鎖定該伺服器，不受左下角用戶端版本/帳戶切換影響",
     "refreshStatsHint": "清空快取並從頭重新請求全部名單戰績；已載入的資料在請求成功前保持顯示",
     "statsSourceTitle": "戰績篩選",

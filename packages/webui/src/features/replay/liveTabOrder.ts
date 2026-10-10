@@ -10,19 +10,22 @@
  * the exact layout the verified WG-family clients show, re-derived
  * reactively when the WG batch lands a clan tag or a sink event fires.
  *
- * CN and Lesta clients (realms 'cn' / 'ru') order rows by the localized
- * ship name (pinyin-collated) instead of the decompiled nation rank; only
- * CN never re-sorts — sunk rows dim in place. `shipNameOrder` switches the
- * row order on for both realms, `staticOrder` adds the CN-only
- * never-re-sorts behavior on top — under IT alone, the sunk set only
- * MARKS entries.
+ * The CN client (realm 'cn') orders rows by the localized ship name
+ * (pinyin-collated) instead of the decompiled nation rank, and never
+ * re-sorts — sunk rows dim in place. `shipNameOrder` switches that row
+ * order on, `staticOrder` adds the CN-only never-re-sorts behavior on
+ * top — under IT alone, the sunk set only MARKS entries. (The Lesta
+ * client used to be grouped here; the 2026-10-10 live capture showed it
+ * renders its own sort-key order instead.)
  *
- * `sortKeyOf` supersedes ALL of that per battle: the plugin telemetry can
- * carry the game's OWN per-player sort keys (read off the avatars' ship
- * components), and when the map covers the whole list the sort switches
- * to the client's exact comparison — key + '[TAG]nickname' ascending, the
- * concatenation __sortKeyAlive compares — on every realm, inference
- * unused.
+ * `sortKeyOf` supersedes the offline permutations per battle: the plugin
+ * telemetry can carry the game's OWN per-player sort keys (read off the
+ * avatars' ship components), and when the map covers the whole list the
+ * sort switches to the client's exact comparison — key + '[TAG]nickname'
+ * ascending, the concatenation __sortKeyAlive compares — EXCEPT on a
+ * ship-name-order client (CN: the override stands down, its HUD renders
+ * an order the keys cannot express), and with Lesta's equal keys keeping
+ * the roster order (`tieByRosterOrder`).
  */
 import type { VehicleEntry } from "@/api";
 import { gameTabRowCompare, tabDisplayName, type TabRowCompareOptions } from "@/utils/shipClass";
@@ -50,15 +53,25 @@ export interface PredictedOrderOptions {
   /** Game-true TAB sort keys per vehicle (telemetry `sortKeys`, read off
    *  the avatars' ship components — ShipSystem's own class+tier+nation+
    *  shortName string). When EVERY entry of the list yields a non-empty
-   *  key, the sort switches to the CLIENT's own comparison — key +
-   *  '[TAG]nickname' ascending, exactly __sortKeyAlive's concatenated
-   *  string — and the offline per-realm inference is not consulted at
-   *  all. Any entry missing a key disables the override wholesale
+   *  key, the sort switches to the CLIENT's own comparison and the
+   *  offline per-realm inference is not consulted at all — EXCEPT under
+   *  `shipNameOrder`, where the client's HUD re-sorts rows by the
+   *  localized ship name and the keys cannot express the rendered order
+   *  (the 2026-10-10 Lesta lesson, applied to the one realm that still
+   *  re-sorts). Any entry missing a key disables the override wholesale
    *  (game-true and inferred rows must never interleave; the caller
    *  grades coverage separately for the pill). */
   sortKeyOf?: (v: VehicleEntry) => string | undefined;
-  /** CN/Lesta client row order (localized ship name, pinyin-collated —
-   *  see utils/shipClass's module docs). */
+  /** Lesta clients break EQUAL keys by the roster's own order, not the
+   *  '[TAG]nickname' concatenation the WG decompile appends (live
+   *  2026-10-10, realm ru: two same-key Turenne rows — a human and a
+   *  ':bot:' — rendered in roster-record order; the plain compare puts
+   *  the colon first and swaps them). `true` compares the keys alone and
+   *  lets equal keys keep the incoming list order (a stable key sort,
+   *  the arena order as the tie-break). */
+  tieByRosterOrder?: boolean;
+  /** CN client row order (localized ship name, pinyin-collated — see
+   *  utils/shipClass's module docs). */
   shipNameOrder?: boolean;
   /** CN clients never re-sort the table mid-battle — sunk rows dim in
    *  place at their battle-start positions. `true` keeps every entry at
@@ -85,9 +98,14 @@ export function orderForTab(
   // stable tie-break; the trusted sunk set splits [alive] ++ [sunk].
   const sunk = options.sunk ?? null;
   // Game-true sort keys: only a FULLY covered list switches the sort to
-  // the client's own comparison (key + '[tag]name' ascending — the exact
+  // the client's own comparison — key + '[tag]name' ascending (the exact
   // string __sortKeyAlive builds; plain code-unit compare matches the
-  // client's Python str ordering). Anything less keeps the offline
+  // client's Python str ordering), or the keys alone when the realm
+  // breaks equal keys by the roster order (Lesta; see tieByRosterOrder).
+  // A ship-name-order client (CN) never renders the key order at all —
+  // its HUD re-sorts by the localized name — so there the override
+  // stands down entirely and the calibrated name-order inference keeps
+  // the rows. Anything less than full coverage keeps the offline
   // inference for the WHOLE list — no interleaving.
   const keyOf = options.sortKeyOf;
   const clientKeys =
@@ -95,11 +113,16 @@ export function orderForTab(
       ? list.map((v) => keyOf(v))
       : null;
   const useClientKeys =
-    clientKeys != null && clientKeys.every((k) => typeof k === "string" && k.length > 0);
+    clientKeys != null &&
+    !options.shipNameOrder &&
+    clientKeys.every((k) => typeof k === "string" && k.length > 0);
   const clientKeyOf = useClientKeys
     ? (v: VehicleEntry) => {
-        const key = keyOf!(v);
-        return key + tabDisplayName(v.name, options.clanTagOf?.(v) ?? null);
+        // useClientKeys verified every key is a non-empty string.
+        const key = keyOf!(v) as string;
+        return options.tieByRosterOrder
+          ? key
+          : key + tabDisplayName(v.name, options.clanTagOf?.(v) ?? null);
       }
     : null;
   const compareOptions: TabRowCompareOptions = {

@@ -39,15 +39,22 @@
  * static CN layout). {@link gameTabRowCompare} carries the
  * ship-name-order variant, gated per surface on the detected realm.
  *
- * The Lesta client shares that row order's first half (observed 2026-10-09
- * on a real co-op Tab screenshot, realm ru): inside one tier-III cruiser
- * group the single 博加特里/Bogatyr(RUS) row led the two
- * 圣路易斯/St. Louis(USA) rows — the decompiled nation rank (usa <
- * russia) predicts the opposite order for all three. utils/realms's
- * `realmUsesShipNameOrder` therefore enables the ship-name variant for
- * BOTH realms, while the never-re-sorts static layout stays CN-only: no
- * Lesta capture has diverged from the WG [alive] ++ [sunk] regroup, so
- * its surfaces keep the blockwise alive-vector machinery live.
+ * The Lesta client renders its OWN sort-key order — settled by the
+ * 2026-10-10 live capture (realm ru, the probe's bridged `sortKeys`
+ * reproduced the rendered Tab row for row, equal keys keeping the
+ * roster's own order). The earlier "shares the CN ship-name order"
+ * reading of the 2026-10-09 capture (one 博加特里/Bogatyr row leading two
+ * 圣路易斯/St. Louis rows) was a MISREAD: that order is Lesta's own
+ * NATION.SORT_ORDER ranking russia FIRST (its keys read e.g.
+ * "2970PRSC103" — nation 0 = russia, and an internal shortName code
+ * where the WG key carries the localized name). Two consequences:
+ * `realmUsesShipNameOrder` is CN-only now, and this module's offline
+ * WG-family key stays an APPROXIMATION for ru (class + tier right; the
+ * nation segment ranks russia 2nd, not 1st; the name segment compares
+ * localized names, not the internal codes) — the plugin's sortKeys are
+ * the game-truth there, and the exact-grade sort breaks equal keys by
+ * the roster order, not the '[TAG]name' concatenation (see
+ * liveTabOrder/inferredOrder's tieByRosterOrder).
  *
  * The ship-name order's segment reads the app locale like the rest of
  * the key (the pre-existing caveat above — the game's OWN locale is not
@@ -55,7 +62,7 @@
  * exactly; a non-zh app locale falls back to collating that locale's
  * names, which orders differently from the client's zh table — a narrow
  * degradation for a configuration whose game client is zh in practice
- * (both observed realms' clients were zh).
+ * (the observed CN client was zh).
  *
  * Treat the whole matrix as UNSTABLE per-client knowledge: the rendered
  * order is what each vendor's HUD does, it diverges despite shared code
@@ -65,8 +72,10 @@
  * captures. The plugin-first fix SHIPPED (2026-10-09): the probe bridges
  * each player's client-side Tab sort key (`sortKeys` in telemetry — read
  * off the avatars' ship components) and the live panel sorts by it,
- * exact on every realm, whenever the map covers the roster; THIS
- * module's inference remains the fallback for battles without the keys
+ * exact whenever the map covers the roster (WG family and Lesta — the
+ * latter with equal keys keeping the roster order; a ship-name-order
+ * client stands the override down); THIS module's inference remains the
+ * fallback for battles without the keys
  * (docs/en/designs/ingame-stats-plugin.md, "Ordering rule").
  *
  * Fidelity caveats, both narrow: the ship-name segment uses this DB's
@@ -213,7 +222,7 @@ export interface TabSortVehicle {
  *  CN clients (360 build 13243917, observed 2026-10-07) order the
  *  within-(class, tier) group by the LOCALIZED ship name in the client's
  *  own collation instead — the decompiled nation rank does not apply there
- *  (the Lesta client orders the same way; see {@link gameTabRowCompare}
+ *  (see {@link gameTabRowCompare}
  *  for the ship-name-order variant; the
  *  plain-string concatenation cannot express the pinyin collation, so that
  *  variant must go through the comparator, not this key). */
@@ -240,7 +249,7 @@ export function gameTabRowKey(
 }
 
 /** Collator for the ship-name segment under the ship-name row order (the
- *  CN and Lesta clients). The client orders same-(class, tier) ships by
+ *  the CN client). The client orders same-(class, tier) ships by
  *  their localized name in a
  *  hanzi collation that matches PINYIN order (consistent with the GB2312
  *  code order the client's locale machinery produces — the exact mechanism
@@ -266,17 +275,17 @@ export interface TabRowCompareOptions {
   /** Clan tag per VEHICLE — from the WG batch answer (absent = clanless /
    *  not yet landed; the entry then compares as a bare nickname). */
   clanTagOf?: (v: TabSortVehicle) => string | null | undefined;
-  /** CN/Lesta client row order (localized ship name collated by pinyin,
-   *  nation demoted to tiebreak — both realms share the permutation, see
-   *  the module docs). Absent/false keeps the decompiled nation-rank
-   *  concatenation. */
+  /** CN client row order (localized ship name collated by pinyin,
+   *  nation demoted to tiebreak — see the module docs; the Lesta client
+   *  was moved off this permutation by the 2026-10-10 live capture).
+   *  Absent/false keeps the decompiled nation-rank concatenation. */
   shipNameOrder?: boolean;
 }
 
 /** Compare two roster entries by the client's Tab row order. The nation
  *  order degenerates to the plain concatenated {@link gameTabRowKey}
  *  (byte-identical to comparing the key strings); the ship-name order
- *  (CN/Lesta clients) compares the same segments in the observed
+ *  (the CN client) compares the same segments in the observed
  *  permutation — class, tier, LOCALIZED SHIP NAME, then nation, then the
  *  '[TAG]nickname' display name — with BOTH text segments routed through
  *  the pinyin collator
