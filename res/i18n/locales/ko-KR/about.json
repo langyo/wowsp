@@ -28,6 +28,7 @@
     "wallpaperRole": "배경화면 화가",
     "wallpaperNote": "배경화면 이미지의 저작권은 작가에게 있습니다.",
     "aperadarRole": "조회 로직 및 평가 기준의 주요 출처",
+    "aperadarAuthorRole": "ApeRadar(海猴雷达) 제작자",
     "wowsunpackRole": "게임 데이터 언패킹 (vendored)",
     "wowscoreRole": "게임 데이터 모델 (vendored)",
     "hikariRole": "UI 컴포넌트 라이브러리",

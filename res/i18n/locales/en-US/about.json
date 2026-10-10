@@ -41,6 +41,7 @@
     "wallpaperRole": "Wallpaper artist",
     "wallpaperNote": "The wallpaper artwork remains the property of its author.",
     "aperadarRole": "Primary source of the lookup logic and rating conventions",
+    "aperadarAuthorRole": "Author of ApeRadar (海猴雷达)",
     "wowsunpackRole": "Game-data unpacking (vendored)",
     "wowscoreRole": "Game-data model (vendored)",
     "hikariRole": "UI component library",
