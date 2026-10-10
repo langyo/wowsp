@@ -39,6 +39,19 @@ export interface GameProcessReport {
   preferredPid: number | null;
 }
 
+/** One in-game probe telemetry frame (the `wowsp://ingame-telemetry(-watched)`
+ *  events). `root` (watched stream only) names the install the frame was
+ *  read from — the multi-instance tag consumers filter by. */
+export interface TelemetryPayload {
+  t: number;
+  battle: string;
+  players: Record<string, boolean>;
+  sortKeys?: Record<string, string>;
+  self?: { name?: string; realm?: string };
+  identity?: Record<string, { account_id?: number; realm?: string }>;
+  root?: string;
+}
+
 /** Mirrors `wowsp_tauri_shared::PlaytimeSource` — where the playtime
  *  ledger's career total came from. */
 export type PlaytimeSource = "local" | "steam";
@@ -1988,15 +2001,16 @@ export const api = {
    *  string): sorting the roster by it reproduces the game's row order
    *  exactly; a build/prefix that cannot read the component omits the
    *  field. */
-  listenIngameTelemetry: (handler: (payload: {
-    t: number;
-    battle: string;
-    players: Record<string, boolean>;
-    sortKeys?: Record<string, string>;
-    self?: { name?: string; realm?: string };
-    identity?: Record<string, { account_id?: number; realm?: string }>;
-  }) => void) =>
+  listenIngameTelemetry: (handler: (payload: TelemetryPayload) => void) =>
     transport.listen?.("wowsp://ingame-telemetry", handler),
+  /** The per-instance stream: EVERY running install's telemetry frames,
+   *  each tagged with the `root` it came from (the plain event above
+   *  carries the PREFERRED install's frames only). Consumers that serve a
+   *  user-selected install — the live panel — filter by root; `root` is
+   *  absent on older shells, where the frames describe the preferred
+   *  install and adopting them unfiltered matches the old behavior. */
+  listenIngameTelemetryWatched: (handler: (payload: TelemetryPayload) => void) =>
+    transport.listen?.("wowsp://ingame-telemetry-watched", handler),
   /** Player stats lookup. `prAlgo` picks the PR formula ("winrate" =
    *  ApeRadar weighted winrate, "expected" = wows-numbers expected values);
    *  omitted → the backend's zero-cost default. Forward it only while the

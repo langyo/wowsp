@@ -375,6 +375,15 @@ fn payload_fresh(value: &serde_json::Value, now_ms: i64) -> bool {
     }
 }
 
+/// The per-instance companion of the plain telemetry event: EVERY running
+/// install's stream, each payload tagged with the `root` it came from. The
+/// main window's live panel listens here and keeps only the frames whose
+/// root matches the install it serves — on multi-client machines (a Lesta
+/// and a WG client both running their probe) that makes the exact TAB
+/// ordering follow the CLIENT-VERSION selection instead of silently
+/// following whichever install the backend prefers.
+pub(crate) const TELEMETRY_WATCHED_EVENT: &str = "wowsp://ingame-telemetry-watched";
+
 /// Spawn the detached telemetry poller: every 2 s it resolves the active
 /// game install, reads the plugin's `telemetry.json` (written by the
 /// in-game bridge on every alive-set change) and emits
@@ -384,6 +393,13 @@ fn payload_fresh(value: &serde_json::Value, now_ms: i64) -> bool {
 /// the plugin's observations into authoritative sink marking and TAB
 /// ordering.
 ///
+/// Multi-instance machines: the poller walks EVERY running install's probe
+/// file (one dedupe/freshness state per root). The PREFERRED root's frames
+/// ride `wowsp://ingame-telemetry` unchanged (the overlay window and every
+/// existing consumer keep seeing exactly one stream); every root — the
+/// preferred one included — rides [`TELEMETRY_WATCHED_EVENT`] with a `root`
+/// field stamped in, for consumers that select their stream themselves.
+///
 /// The poller is otherwise a best-effort publisher, but the CHAIN has been
 /// hard to diagnose from the field (a silent gap anywhere looks identical
 /// to "the feature is broken"), so state transitions log: file acquired /
@@ -392,67 +408,173 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
     let _ = std::thread::Builder::new()
         .name("ingame-telemetry-poll".into())
         .spawn(move || {
-            let mut last: Option<String> = None;
-            let mut had_file = false;
+            // Per-root dedupe/bookkeeping: (last raw content, had file).
+            let mut states: std::collections::HashMap<String, (Option<String>, bool)> =
+                std::collections::HashMap::new();
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(2));
-                let root = super::game_context::resolve_root(
+                let preferred_root = super::game_context::resolve_root(
                     super::game_context::RootPreference::PreferRunning,
                 )
                 .map(|r| r.root);
-                let Some(root) = root else {
-                    continue;
-                };
-                let Some(path) = telemetry_file(&root) else {
-                    continue;
-                };
-                let Ok(raw) = std::fs::read_to_string(&path) else {
-                    if had_file {
-                        had_file = false;
-                        tracing::info!(
-                            "ingame telemetry stream lost (file gone) — resuming inference"
-                        );
+                let mut roots: Vec<std::path::PathBuf> = super::game_context::running_processes()
+                    .into_iter()
+                    .filter_map(|p| p.validated_root.map(std::path::PathBuf::from))
+                    .collect();
+                roots.sort();
+                roots.dedup();
+                // A root that stopped running drops its state (its leftover
+                // file must not resume as "unchanged" if that client starts
+                // another battle later) — but not before ONE last read+emit:
+                // the probe clears `players` on quit and the consumers treat
+                // an empty map as the reset that releases the authoritative
+                // alive-sets/sort keys (LiveBattlePanel, the overlay). The
+                // old single-root poller delivered that quit-clear through
+                // its active-install fallback; without this final pass the
+                // exit races the 2 s tick and a missed frame would pin the
+                // battle's final sunk sets until the next battle.
+                let mut evicted: Vec<String> = Vec::new();
+                states.retain(|root, (_, had_file)| {
+                    let alive = roots.iter().any(|r| r == std::path::Path::new(root));
+                    if !alive {
+                        if *had_file {
+                            tracing::info!(
+                                root,
+                                "ingame telemetry stream lost (client exited) — resuming inference"
+                            );
+                            evicted.push(root.clone());
+                        }
+                        return false;
                     }
-                    continue;
-                };
-                if !had_file {
-                    had_file = true;
-                    tracing::info!(path = %path.display(), "ingame telemetry stream acquired");
+                    true
+                });
+                for root in evicted {
+                    if let Some(mut st) = states.remove(&root) {
+                        emit_once(&app, &root, Some(&mut st), &preferred_root, now_unix_ms());
+                    }
                 }
-                let raw = raw.trim().to_owned();
-                if raw.is_empty() || raw.len() > 262_144 || last.as_deref() == Some(raw.as_str()) {
-                    continue;
-                }
-                // Only emit parseable JSON: a half-written file (the plugin
-                // rewrites whole, but the reader can still race the write)
-                // must not poison `last` — otherwise the good rewrite would
-                // be swallowed as "unchanged" while windows never saw it.
-                let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
-                    continue;
-                };
-                last = Some(raw);
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                if !payload_fresh(&value, now_ms) {
-                    // Parseable but old (a dead session's leftover): it
-                    // entered `last` above, so this logs once per content
-                    // and the live rewrite still emits.
-                    tracing::debug!("ingame telemetry payload stale — emit skipped");
-                    continue;
-                }
-                let alive = value
-                    .get("players")
-                    .and_then(|p| p.as_object())
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                tracing::debug!(alive, "ingame telemetry emitted");
-                if let Err(e) = app.emit("wowsp://ingame-telemetry", value) {
-                    tracing::warn!(error = %e, "emit ingame-telemetry failed");
+                for root in roots {
+                    let Some(path) = telemetry_file(&root) else {
+                        continue;
+                    };
+                    let state = states
+                        .entry(root.display().to_string())
+                        .or_insert((None, false));
+                    let Ok(raw) = std::fs::read_to_string(&path) else {
+                        if state.1 {
+                            state.1 = false;
+                            tracing::info!(
+                                root = %root.display(),
+                                "ingame telemetry stream lost (file gone) — resuming inference"
+                            );
+                        }
+                        continue;
+                    };
+                    if !state.1 {
+                        state.1 = true;
+                        tracing::info!(path = %path.display(), "ingame telemetry stream acquired");
+                    }
+                    let root = root.display().to_string();
+                    if let Some(value) = parse_fresh_frame(&raw, state, &root, now_unix_ms()) {
+                        emit_frame(&app, &root, value, &preferred_root);
+                    }
                 }
             }
         });
+}
+
+/// Wall clock in unix milliseconds (the payload freshness base).
+fn now_unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Dedupe + parse + freshness over one root's raw file content. Mutates the
+/// dedupe slot (a parseable payload must always enter it — a half-written
+/// read must not poison the next good rewrite into "unchanged"), logs at
+/// the same points the single-root poller always did, and answers the value
+/// to emit.
+fn parse_fresh_frame(
+    raw: &str,
+    state: &mut (Option<String>, bool),
+    root: &str,
+    now_ms: i64,
+) -> Option<serde_json::Value> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.len() > 262_144 || state.0.as_deref() == Some(raw) {
+        return None;
+    }
+    // Only emit parseable JSON: a half-written file (the plugin rewrites
+    // whole, but the reader can still race the write) must not poison the
+    // dedupe — otherwise the good rewrite would be swallowed as "unchanged"
+    // while windows never saw it.
+    let value = serde_json::from_str::<serde_json::Value>(raw).ok()?;
+    state.0 = Some(raw.to_owned());
+    if !payload_fresh(&value, now_ms) {
+        // Parseable but old (a dead session's leftover): it entered the
+        // dedupe above, so this logs once per content and the live rewrite
+        // still emits.
+        tracing::debug!(root, "ingame telemetry payload stale — emit skipped");
+        return None;
+    }
+    Some(value)
+}
+
+/// Read one root's file (when still present) and emit its final frame —
+/// the eviction path's quit-clear delivery (see the loop comment).
+fn emit_once(
+    app: &tauri::AppHandle,
+    root: &str,
+    state: Option<&mut (Option<String>, bool)>,
+    preferred_root: &Option<std::path::PathBuf>,
+    now_ms: i64,
+) {
+    let Some(state) = state else { return };
+    let Some(path) = telemetry_file(std::path::Path::new(root)) else {
+        return;
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    if let Some(value) = parse_fresh_frame(&raw, state, root, now_ms) {
+        emit_frame(app, root, value, preferred_root);
+    }
+}
+
+/// Emit one parsed frame: the plain stream for the preferred root (spelling
+/// -insensitive identity — the resolved preferred root may come from the
+/// active-install tier whose path spelling differs from the exe-derived
+/// root), and the watched stream for every root with its `root` stamped.
+fn emit_frame(
+    app: &tauri::AppHandle,
+    root: &str,
+    mut value: serde_json::Value,
+    preferred_root: &Option<std::path::PathBuf>,
+) {
+    let alive = value
+        .get("players")
+        .and_then(|p| p.as_object())
+        .map(|m| m.len())
+        .unwrap_or(0);
+    tracing::debug!(alive, root, "ingame telemetry emitted");
+    let is_preferred = preferred_root
+        .as_ref()
+        .is_some_and(|p| super::game_context::same_folder(&p.to_string_lossy(), root));
+    if is_preferred {
+        if let Err(e) = app.emit("wowsp://ingame-telemetry", &value) {
+            tracing::warn!(error = %e, "emit ingame-telemetry failed");
+        }
+    }
+    // The per-instance stream tags its origin; consumers match it against
+    // the install they serve.
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("root".into(), serde_json::Value::String(root.to_owned()));
+    }
+    if let Err(e) = app.emit(TELEMETRY_WATCHED_EVENT, &value) {
+        tracing::warn!(error = %e, "emit ingame-telemetry-watched failed");
+    }
 }
 
 #[cfg(test)]
