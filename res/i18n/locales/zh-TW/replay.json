@@ -248,6 +248,7 @@
       "noData": "暫無該艦參數"
     },
     "tier": "階級",
+    "unknownShip": "未知艦船",
     "pluginPromptTitle": "安裝遊戲內插件",
     "pluginPromptDesc": "偵測到目前遊戲未安裝 WoWSP 遊戲內插件。安裝後即時對局將獲得更可靠的偵測訊號——沉沒狀態由遊戲內直出；遊戲內不渲染任何內容，隨時可解除安裝。",
     "pluginPromptLater": "暫不安裝",

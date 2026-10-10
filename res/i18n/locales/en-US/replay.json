@@ -248,6 +248,7 @@
       "noData": "No parameters for this ship"
     },
     "tier": "Tier",
+    "unknownShip": "Unknown ship",
     "pluginPromptTitle": "Install the in-game plugin",
     "pluginPromptDesc": "The active game has no WoWSP in-game plugin installed. Installing it gives live battles more reliable detection signals — authoritative alive/sunk states from inside the game; it renders nothing in-game and uninstalls anytime.",
     "pluginPromptLater": "Not now",

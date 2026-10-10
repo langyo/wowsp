@@ -79,9 +79,14 @@
  * This module deliberately does NOT import the model loader: the overlay
  * page is a bare-DOM static entry that must stay light, so the ship DB is
  * read directly here (the same JSON module the loader consumes — one
- * bundled copy).
+ * bundled copy). The one import beside the JSON is `runtimeShipDb`, itself
+ * dependency-free — ships missing from the baked DB fall through to the
+ * runtime GameParams registrations (new releases / collaboration clones the
+ * bake predates), so an id the bake never knew still sorts by its real
+ * class/tier instead of the unknown sentinel.
  */
 import shipNamesDbRaw from "@/data/ship_names.json";
+import { runtimeShipEntry } from "./runtimeShipDb";
 
 interface ShipNameEntry {
   tier?: number | null;
@@ -93,25 +98,33 @@ interface ShipNameEntry {
 const SHIP_DB = shipNamesDbRaw as Record<string, ShipNameEntry>;
 
 function entryOf(shipId: number): ShipNameEntry | null {
-  return SHIP_DB[String(shipId)] ?? null;
+  // Baked DB first; a runtime registration only fills a hole, never
+  // overrides a baked entry.
+  return SHIP_DB[String(shipId)] ?? runtimeShipEntry(shipId);
 }
 
-/** Best-effort ship class string for a ship id (offline DB only). */
+/** Best-effort ship class string for a ship id (baked DB, then the runtime
+ *  registrations). */
 export function shipTypeOf(shipId: number): string {
   return entryOf(shipId)?.type ?? "";
 }
 
-/** Ship tier from the offline DB (null when the ship is unknown there). */
+/** Ship tier (null when no database knows the ship). */
 export function shipTierOf(shipId: number): number | null {
   return entryOf(shipId)?.tier ?? null;
 }
 
-/** Best-effort localized ship name for a ship id (offline DB only, per the
- *  caller's locale, zh-CN fallback) — the sort key's ship-name segment. */
+/** Best-effort localized ship name for a ship id (baked DB, then the
+ *  runtime registrations — per the caller's locale, zh-CN fallback) — the
+ *  sort key's ship-name segment. The "en" link serves the RUNTIME entries
+ *  only: the resolver registers the GameParams basic English name under
+ *  "en" and nothing else, so every locale must land on it (the baked DB's
+ *  key set carries no bare "en" — verified — so the extra link is a no-op
+ *  for baked data). */
 export function shipNameOf(shipId: number, locale: string): string {
   const e = entryOf(shipId);
   if (!e?.names) return "";
-  return e.names[locale] ?? e.names["zh-CN"] ?? "";
+  return e.names[locale] ?? e.names["en"] ?? e.names["zh-CN"] ?? "";
 }
 
 /** Sort weight for a ship class: carrier > battleship > cruiser >
@@ -127,8 +140,9 @@ export function shipClassRank(shipId: number): number {
 }
 
 /** Sort weight for a ship's tier inside its class group: the game lists
- *  HIGHER tiers first (see the module docs); -1 marks a ship the offline
- *  DB does not know (the key then pushes it after every known tier). */
+ *  HIGHER tiers first (see the module docs); -1 marks a ship neither the
+ *  offline DB nor the runtime registrations know (the key then pushes it
+ *  after every known tier). */
 export function shipTierWeight(shipId: number): number {
   const tier = entryOf(shipId)?.tier;
   return typeof tier === "number" ? tier : -1;
@@ -187,9 +201,13 @@ export interface TabSortVehicle {
 /** The game's full Tab row key, as one string — replicate the client's
  *  concatenation EXACTLY (see the module docs): comparing these strings
  *  reproduces the on-screen row order of a team block, alive-first and
- *  sunk-last included. Unknown DB ships get '~' segments that sort after
- *  every real digit (the game itself never has unknowns, so the sentinel
- *  is ours alone — it only keeps such rows deterministic and last).
+ *  sunk-last included. Ships NO database knows (baked or runtime) get '~'
+ *  segments that sort after every real digit (the game itself never has
+ *  unknowns, so the sentinel is ours alone — it only keeps such rows
+ *  deterministic and last; a runtime-registered ship carries its real
+ *  class/tier/nation/name and sorts inside its group like any baked one —
+ *  its name registers under "en" only, so every locale's ship-name
+ *  segment falls back to it, see shipNameOf).
  *  `locale` picks the ship-name segment's language (zh-CN fallback).
  *
  *  CN clients (360 build 13243917, observed 2026-10-07) order the
@@ -266,10 +284,11 @@ export interface TabRowCompareOptions {
  *  which for hanzi is pinyin order — see {@link nameCollator}). Both
  *  entries of one comparison always share the same alive state (each sort
  *  orders ONE layout — the full key order), so the alive prefix never
- *  decides here and is not compared. A ship the offline DB does not know
- *  sorts after every known one inside its class group under either order
- *  (the '~'-segment sentinel, kept explicit here so the name-order branch
- *  inherits the same determinism guarantee). */
+ *  decides here and is not compared. A ship NO database knows sorts after
+ *  every known one inside its class group under either order (the
+ *  '~'-segment sentinel, kept explicit here so the name-order branch
+ *  inherits the same determinism guarantee); a runtime-registered ship
+ *  sorts by its registered class/tier/name like any baked one. */
 export function gameTabRowCompare(
   a: TabSortVehicle,
   b: TabSortVehicle,
@@ -285,7 +304,7 @@ export function gameTabRowCompare(
   const nationA = nationSortRank(a.shipId);
   const nationB = nationSortRank(b.shipId);
   // Segment order mirrors the legacy key's structure: class first, then the
-  // unknown-DB tier sentinel INSIDE the class group (the legacy '~' tier
+  // no-database tier sentinel INSIDE the class group (the legacy '~' tier
   // segment sorts after every real digit WITHIN a class — an unknown ship
   // never jumps a class boundary), then tier. The nation's own unknown
   // marker needs no separate arm: it only breaks name ties, and an unknown

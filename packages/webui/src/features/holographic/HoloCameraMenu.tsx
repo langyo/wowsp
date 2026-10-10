@@ -109,7 +109,13 @@ export default defineComponent({
                       <span class="holo-map__cam-ship">{item.shipName}</span>
                       <span class="holo-map__cam-meta">
                         {item.tier ? tierToRoman(item.tier) : ""}
-                        {item.type ? ` ${i18nT(`replay.classes.${shipTypeClass(item.type)}`)}` : ""}
+                        {/* The label keys off shipTypeClass's atlas class —
+                            an unknown type has none, and a missing label
+                            beats interpolating the bare i18n key path. */}
+                        {(() => {
+                          const cls = item.type ? shipTypeClass(item.type) : "";
+                          return cls ? ` ${i18nT(`replay.classes.${cls}`)}` : "";
+                        })()}
                         {item.maxHp != null ? ` · ${Math.round(item.maxHp).toLocaleString()} HP` : ""}
                       </span>
                     </span>

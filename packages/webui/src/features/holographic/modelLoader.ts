@@ -33,6 +33,7 @@ import shipModelNames from "../../data/ship_models.json";
 import shipNamesDbRaw from "../../data/ship_names.json";
 import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
+import { runtimeShipEntry } from "@/utils/runtimeShipDb";
 import { isTauri } from "@/utils/platform";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -316,12 +317,30 @@ interface ShipNameEntry {
 const shipNameMap =
   (shipNamesDbRaw as Record<string, ShipNameEntry>) ?? {};
 
-/** Full offline DB entry for a shipId, if present. */
+/** Full offline DB entry for a shipId, if present. The baked DB is consulted
+ *  first; ships it predates (new releases / collaboration clones) fall
+ *  through to the runtime GameParams registrations
+ *  (`utils/runtimeShipDb`, fed by features/replay/runtimeShipIdentity),
+ *  wrapped into this file's `ShipNameEntry` shape so callers need no second
+ *  code path. Runtime entries carry no bake-grade fields (hp, the WG
+ *  language catalog) — those stay null/empty and the consumers already
+ *  tolerate that. */
 export function shipOfflineEntry(
   shipId: number | string | undefined,
 ): ShipNameEntry | null {
   if (shipId == null) return null;
-  return shipNameMap[String(shipId)] ?? null;
+  const baked = shipNameMap[String(shipId)];
+  if (baked) return baked;
+  const rt = runtimeShipEntry(shipId);
+  if (!rt) return null;
+  return {
+    index: rt.index ?? "",
+    tier: rt.tier ?? null,
+    type: rt.type ?? null,
+    nation: rt.nation ?? null,
+    hp: null,
+    names: rt.names ?? {},
+  };
 }
 
 /** Localized ship name from the complete offline DB. `lang` is the WG
