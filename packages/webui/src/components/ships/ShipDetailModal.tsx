@@ -27,6 +27,8 @@ import { resolveShipParts } from "./shipParts";
 import ShipStage, { type FocusZone, type ArmorZone, type PlaneModelOption } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
+import { authoritativeEvent } from "@/utils/shipEventData";
+import { eventLabel, eventTooltip } from "@/utils/shipEvents";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import { tierToRoman } from "@wowsp/holo";
 import planeTypesDb from "@/data/plane_types.json";
@@ -453,6 +455,13 @@ export default defineComponent({
       const ship = viewShip.value;
       return ship ? shipRarity(ship) : "common";
     });
+    // Event ships: the rarity slot shows the event tag ("活动·<official
+    // name>") instead of a band label, with the first-appearance as the
+    // tooltip.
+    const eventId = computed(() => {
+      const ship = viewShip.value;
+      return ship ? authoritativeEvent(ship.shipId) : null;
+    });
     const typeShort = computed(() => {
       const ship = viewShip.value;
       return ship ? SHIP_TYPE_SHORT[ship.type] ?? "?" : "?";
@@ -499,9 +508,17 @@ export default defineComponent({
                 size="md"
                 showLabel
               />
-              <HkTag variant={RARITY_VARIANT[rarity.value]}>
-                {t(`ships.rarity.${rarity.value}`)}
-              </HkTag>
+              {eventId.value ? (
+                <span class="ship-detail__event-tag" title={eventTooltip(eventId.value)}>
+                  <HkTag variant={RARITY_VARIANT[rarity.value]}>
+                    {eventLabel(eventId.value)}
+                  </HkTag>
+                </span>
+              ) : (
+                <HkTag variant={RARITY_VARIANT[rarity.value]}>
+                  {t(`ships.rarity.${rarity.value}`)}
+                </HkTag>
+              )}
             </div>
 
             {viewShip.value.description ? (
