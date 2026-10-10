@@ -78,25 +78,38 @@ export function useLiveSessionGuard() {
   // and a transient poll failure (an offline blip) recovers with the same
   // PID and clears nothing. On multi-client machines the pid follows the
   // PREFERRED instance (the gameStatus store's derived process), so the
-  // same rule covers the preferred slot changing hands: the roster's
-  // writer exiting while another client takes over reads as "a different
-  // client is live now".
+  // preferred slot changes hands whenever the client-version selection
+  // moves — an ENDED battle's roster must survive that: it is the recent
+  // post-battle review, kept until the app closes (or a new battle's
+  // roster replaces it), not a live session to invalidate. Only a roster
+  // from a battle that was still going (ended flag down) reads as "a
+  // different client is live now" and clears.
   watch(
-    () => [gameStatus.process.running, gameStatus.process.pid ?? null] as const,
-    ([running, pid]) => {
+    () =>
+      [
+        gameStatus.process.running,
+        gameStatus.process.pid ?? null,
+        overlay.battleEnded,
+      ] as const,
+    ([running, pid, ended]) => {
       if (running && pid != null) lastRunningPid = pid;
       if (!running || overlay.arenaInfo == null || rosterPid === undefined) return;
-      if (rosterPid !== pid) clearLiveContent();
+      if (rosterPid !== pid && !ended) clearLiveContent();
     },
   );
 
   // Account switch on the same process: the hub re-identifies the player
   // from a new roster — two different consecutive identities invalidate
-  // the content even though the PID signal never moved.
+  // the content even though the PID signal never moved. Same ended-battle
+  // carve-out as above: a re-identification after the battle ended (the
+  // other client started playing) must not wipe the review; the new
+  // battle's own roster replaces it when it lands.
   watch(
     () => playingKey(session.snapshot?.playing ?? null),
     (key, prev) => {
-      if (key != null && prev != null && key !== prev) clearLiveContent();
+      if (key != null && prev != null && key !== prev && !overlay.battleEnded) {
+        clearLiveContent();
+      }
     },
   );
 }

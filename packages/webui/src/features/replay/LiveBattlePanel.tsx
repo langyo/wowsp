@@ -94,6 +94,7 @@ import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot"
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { realmUsesShipNameOrder } from "@/utils/realms";
 import { sameGamePath } from "@/utils/gamePath";
+import { kindLabel } from "@/utils/installLabel";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
 import {
   battlesColor,
@@ -1280,6 +1281,29 @@ export default defineComponent({
                 data-hint={t("replay.live.battleRealmHint")}
               >
                 {realmLabelOf(realm.value)}
+              </span>
+            ) : null}
+            {/* The game window this panel's recognition serves (识别窗口):
+                which running client the TAB ordering / alive-sets come
+                from — the client-version selection's running match. On a
+                multi-client machine this is how the user confirms WHICH
+                window a Tab hold is being read from; single-client boxes
+                see it without needing to think about it. */}
+            {gameStatus.process.running && gameStatus.process.pid != null ? (
+              <span
+                class="live-battle__pill live-battle__pill--focus"
+                data-hint={t("replay.live.tabFocusHint")}
+              >
+                {[
+                  kindLabel(gameStatus.process.kind),
+                  gameStatus.process.realm?.toUpperCase(),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                {" · "}
+                <span class="live-battle__focus-pid">
+                  {t("common.game.pid")} {gameStatus.process.pid}
+                </span>
               </span>
             ) : null}
             {modePill}

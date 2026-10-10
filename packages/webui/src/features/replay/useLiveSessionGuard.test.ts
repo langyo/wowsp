@@ -137,6 +137,33 @@ describe("useLiveSessionGuard", () => {
     expect(liveSelf.model).toBeNull();
   });
 
+  it("keeps an ENDED battle's roster when the preferred instance changes hands", async () => {
+    const { game, overlay, liveSelf } = await rig();
+    await setProcess(game, { running: true, pid: 100 });
+    overlay.arenaInfo = fakeArena("2026-01-01 10:00:00");
+    await seedSelfContent(liveSelf);
+    // The battle ENDED (the game deleted the arena file — the roster is
+    // the post-battle review now). Switching the client-version selection
+    // hands the preferred slot to the other client: the review must NOT
+    // be wiped, and switching back must find it still on screen.
+    overlay.battleEnded = true;
+    await setProcess(game, { running: true, pid: 200 });
+    expect(overlay.arenaInfo).not.toBeNull();
+    expect(liveSelf.model).not.toBeNull();
+    await setProcess(game, { running: true, pid: 100 });
+    expect(overlay.arenaInfo).not.toBeNull();
+  });
+
+  it("keeps an ended battle when the hub re-identifies the other client's player", async () => {
+    const { game, overlay, liveSelf, session } = await rig();
+    await setProcess(game, { running: true, pid: 100 });
+    overlay.arenaInfo = fakeArena("2026-01-01 10:00:00");
+    await seedSelfContent(liveSelf);
+    overlay.battleEnded = true;
+    await setPlaying(session, { realm: "ru", nickname: "Other", accountId: 9, source: "arena" });
+    expect(overlay.arenaInfo).not.toBeNull();
+  });
+
   it("clears when the hub re-identifies a different player on the same process", async () => {
     const { game, overlay, liveSelf, session } = await rig();
     await setProcess(game, { running: true, pid: 100 });

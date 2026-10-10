@@ -130,6 +130,20 @@
     color: rgb(var(--color-text) / 75%);
   }
 
+  /* The game window the panel's recognition serves (识别窗口) — same
+     data-label voice as the realm pill, with the PID tail in the mono
+     face so the number reads as an identifier, not prose. */
+  &__pill--focus {
+    border-color: rgb(var(--color-primary) / 40%);
+    background: rgb(var(--color-primary) / 10%);
+    color: rgb(var(--color-text) / 75%);
+  }
+
+  &__focus-pid {
+    font-family: var(--font-mono);
+    color: rgb(var(--color-primary));
+  }
+
   &__clock {
     display: inline-flex;
     align-items: baseline;
