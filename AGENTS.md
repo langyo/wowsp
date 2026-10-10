@@ -143,6 +143,15 @@ Before submitting, the relevant subset of `just lint` (or scoped
   advances via squash merge.
 - When in doubt, do not force push: open a new branch, re-commit, or ask
   the user.
+- **Autonomous tag pushes are forbidden (mandatory).** Never create or
+  push any git tag without an explicit user instruction naming the tag —
+  especially `v*` release tags. Pushing a `v*` tag **is** cutting a
+  release: release.yml then builds and publishes it `--draft=false
+  --latest` with no human gate, so the tag push itself is the release
+  decision. Agents may prepare a release (release-prep PR,
+  release-notes draft); pushing the tag is reserved for the user.
+  Designed exception: the `res-delta-*` tags the app itself pushes when
+  the maintainer publishes a resource pack from the app UI.
 - These rules apply to all agents, subagents, and interactive sessions,
   without exception.
 
@@ -180,16 +189,25 @@ Before submitting, the relevant subset of `just lint` (or scoped
   version fields on master drift ahead as main PRs merge (each bumping the
   patch digit), but release tags must follow the published sequence
   strictly: the next release tag is always the latest `v*` release tag plus
-  one patch increment (after `v0.5.5` comes `v0.5.6`, then `v0.5.7`, …).
-  Before cutting a release tag, if the seven fields sit higher than that
-  next sequential version, a release-prep PR MUST first reset all seven
-  fields down to it (this is the one sanctioned version-bump-down;
-  `scripts/check_versions.py` still enforces seven-place agreement). Never
+  one patch increment (after `v0.6.0` comes `v0.6.1`, then `v0.6.2`, …).
+  A minor/major jump is allowed only with the user's explicit approval of
+  the target version (see the authorization tiers above); after such an
+  approved jump the patch sequence resumes from it. Before cutting a
+  release tag, if the seven fields do not already equal the version to
+  publish, a release-prep PR MUST first reset all seven fields to it
+  (this is the one sanctioned version-bump-down; the target is either
+  the next sequential patch or the user-approved jump);
+  `scripts/check_versions.py` still enforces seven-place agreement. Never
   tag a version that skips numbers, and never let the tag and the built
-  version string disagree. Precedent: `v0.5.9` shipped while master had
-  drifted 0.5.5 → 0.5.9 across four untagged bumps — tolerated once
-  because the tag had to match the already-built version string; from now
-  on the reset rule applies (the next release is `v0.5.10`).
+  version string disagree. Incident record (2026-10-10): an autonomous
+  session pushed tag `v0.5.9` without authorization; release.yml
+  auto-published it as latest within the hour and the installer was
+  downloaded ~390 times before the same-day rollback (release + tag
+  deleted, latest restored to `v0.5.5`). Because installs already on
+  0.5.9 only accept updates numbered above it, the owner then directed a
+  minor advance: the seven fields were reset 0.5.10 → 0.6.0, so the next
+  release is `v0.6.0` — and per §4, pushing a release tag is reserved
+  for the user.
 - **Create PRs only when asked, or as a step of an approved workflow**;
   never open unsolicited PRs.
 
