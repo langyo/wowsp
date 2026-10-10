@@ -106,11 +106,11 @@
   "noShipModel": "尚無該艦艇的全像白模。",
   "duration": "時長",
   "realm": {
-    "ru": "俄服",
-    "eu": "歐服",
-    "na": "美服",
-    "asia": "亞服",
-    "cn": "國服"
+    "ru": "RU",
+    "eu": "EU",
+    "na": "NA",
+    "asia": "ASIA",
+    "cn": "CN"
   },
   "matchTime": "對戰時間",
   "mapLabel": "地圖",
