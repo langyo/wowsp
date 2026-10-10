@@ -54,6 +54,12 @@ export const SPECIAL_THANKS: SpecialThanksEntry[] = [
     name: "BestNaomi",
     uid: 77660417,
   },
+  {
+    id: "thanks-ape",
+    name: "猪猪子zy",
+    uid: 7120685,
+    roleKey: "aperadarAuthorRole",
+  },
 ];
 
 /** Upstream projects the app builds on. */

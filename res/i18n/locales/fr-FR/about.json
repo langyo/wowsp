@@ -28,6 +28,7 @@
     "wallpaperRole": "Artiste des fonds d'écran",
     "wallpaperNote": "L'œuvre du fond d'écran reste la propriété de son auteur.",
     "aperadarRole": "Source principale de la logique de requête et des conventions de notation",
+    "aperadarAuthorRole": "Auteur d'ApeRadar (海猴雷达)",
     "wowsunpackRole": "Extraction des données du jeu (vendored)",
     "wowscoreRole": "Modèle de données du jeu (vendored)",
     "hikariRole": "Bibliothèque de composants UI",

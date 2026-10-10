@@ -28,6 +28,7 @@
     "wallpaperRole": "Художник обоев",
     "wallpaperNote": "Права на обои принадлежат автору.",
     "aperadarRole": "Основной источник логики запросов и принципов оценки",
+    "aperadarAuthorRole": "Автор ApeRadar (海猴雷达)",
     "wowsunpackRole": "Распаковка игровых данных (vendored)",
     "wowscoreRole": "Модель игровых данных (vendored)",
     "hikariRole": "Библиотека UI-компонентов",
