@@ -140,3 +140,21 @@ MidBack/MidFront hull parts — length-exact output, wrong bytes, meshopt
 stream CRC-exact. `lesta_extract.py` now prefers unoodle and falls back to
 ooz; build it with `cargo build --release --features cli` and drop
 `unoodle.exe` into `target/release/`.
+
+## Phase 4 addendum (2026-10-10, later): the format map above was partly corruption
+
+Re-extracting assets.bin with **unoodle** (the working decoder, see the
+phase-3 addendum) and re-running the probe shows the outer container is
+**entirely WG-compatible**: zero tombstone prefix (all 707,106 path
+entries name cleanly), the r2p extension map lands exactly on the blob
+record counts (visual→1/2, model→3, mfm→0 — the WG `(record<<8)|blob*4`
+decoding), and every database header count parses. The phase-1/2
+"divergences" (tombstone journal markers, byte-offset r2p theory,
+recursive cell serialization) were **artifacts of ooz's silent
+mis-decodes**. The visual record header at a WG-computed address
+(blob1+16+rec*0x70) also starts WG-shaped for the Zuiho root (nodes_count
++ five in-range node-array relptrs, identity matrices at the targets) —
+export-ship still trips deeper in (the tail layout past +0x30 differs),
+so the full-fidelity Rust port remains future work, but anyone resuming
+it should start from the UNOODLE-decoded file and distrust every
+conclusion above that was drawn from ooz output.

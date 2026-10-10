@@ -320,6 +320,7 @@ def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> None:
         "--mo", str(mo),
         "--mo-lang", "ru-RU",
         "--curated", str(HERE / "lesta_names_curated.json"),
+        "--curated-descr", str(HERE / "lesta_descriptions_curated.json"),
         "--lesta-tree", str(TECHTREE_LESTA_JSON),
         "--wg-tree", str(TECHTREE_JSON),
         "--version", version_stamp,

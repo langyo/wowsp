@@ -185,6 +185,11 @@ def main() -> None:
     ap.add_argument("--mo", type=Path, help="gettext .mo alternative to --texts (one language)")
     ap.add_argument("--mo-lang", default="ru-RU", help="lang-loc tag for --mo (default ru-RU)")
     ap.add_argument("--curated", help="{ index: { langLoc: name } } curated translations")
+    ap.add_argument(
+        "--curated-descr",
+        help="{ index: { langLoc: text } } curated descriptions "
+        "(scripts/extract/lesta_descriptions_curated.json) — zh translations of the ru texts",
+    )
     ap.add_argument("--lesta-tree", required=True, help="tech_tree_lesta.json (scope source)")
     ap.add_argument("--wg-tree", required=True, help="tech_tree.json (WG indexes to exclude)")
     ap.add_argument("--version", default="lesta", help="version stamp for gameVersion")
@@ -208,6 +213,9 @@ def main() -> None:
         raise SystemExit("need --texts or --mo for the Lesta ship names")
     curated: dict[str, dict[str, str]] = (
         json.loads(Path(args.curated).read_text(encoding="utf-8")) if args.curated else {}
+    )
+    curated_descr: dict[str, dict[str, str]] = (
+        json.loads(Path(args.curated_descr).read_text(encoding="utf-8")) if args.curated_descr else {}
     )
     lesta_tree = json.loads(Path(args.lesta_tree).read_text(encoding="utf-8"))
     wg_tree = json.loads(Path(args.wg_tree).read_text(encoding="utf-8"))
@@ -243,6 +251,12 @@ def main() -> None:
             descr = cat.get(f"IDS_{idx}_DESCR", "").strip()
             if descr:
                 descriptions[lang] = descr
+        # zh-SG shares the zh-CN text (same script).
+        for lang, text in curated_descr.get(idx, {}).items():
+            if text:
+                descriptions[lang] = text
+        if "zh-CN" in descriptions:
+            descriptions.setdefault("zh-SG", descriptions["zh-CN"])
 
         hulls = _hull_components(entry)
         hp = None
