@@ -66,6 +66,17 @@ pub fn run() {
     // settings' 问题反馈 section ships (see src/logging.rs).
     logging::init();
 
+    // Elevated hardware-snapshot helper (commands::hardware_info): when the
+    // feedback export needs administrator-only rows, the app relaunches
+    // ITSELF with the `runas` verb plus `--wowsp-collect-hardware <json>`.
+    // The interception MUST run before the single-instance plugin below —
+    // the helper is the same exe, and the guard would otherwise refocus the
+    // main instance and exit this child before it collects anything.
+    if let Some(out_path) = commands::hardware_info::elevated_request_from_args() {
+        let code = commands::hardware_info::run_elevated_child(&out_path);
+        std::process::exit(code);
+    }
+
     // Android swaps reqwest onto rustls (see the manifest's android target
     // table): `rustls-no-provider` compiles no default crypto provider, so
     // install ring as the process default before any HTTPS client is built.

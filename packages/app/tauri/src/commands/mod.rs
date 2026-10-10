@@ -19,6 +19,9 @@ pub mod game_detect;
 pub mod game_maps;
 pub mod gameparams;
 pub mod github_mirror;
+// Consent-gated hardware & environment report for the feedback bundle
+// (see the module docs for the privacy flow + elevated self-relaunch).
+pub mod hardware_info;
 pub mod mod_tags;
 // The 游戏内展示 bridge: answers the in-game plugin's request.json with
 // stats rows (desktop only — no game client runs on the phone build).
