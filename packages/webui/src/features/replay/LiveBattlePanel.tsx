@@ -65,6 +65,7 @@ import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import BattleIcon from "@/components/base/BattleIcon";
 import { useAccountStore } from "@/stores/account";
+import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -92,6 +93,7 @@ import {
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { realmUsesShipNameOrder } from "@/utils/realms";
+import { sameGamePath } from "@/utils/gamePath";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
 import {
   battlesColor,
@@ -176,6 +178,7 @@ export default defineComponent({
     // closes over this store — a later declaration would be a TDZ throw
     // that unmounts the whole panel.
     const plugin = useIngamePluginStore();
+    const gameStatus = useGameStatusStore();
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
     );
@@ -371,7 +374,23 @@ export default defineComponent({
       // luma solver, and its sets REPLACE the inferred ones. Events while
       // the mode is off are ignored so the inference chain stays the sole
       // owner there.
-      unlistenTelemetry = (await api.listenIngameTelemetry((payload) => {
+      //
+      // The WATCHED stream carries EVERY running install's frames, each
+      // tagged with its `root` — on multi-client machines only the frames
+      // from the install this app serves (the client-version selection's
+      // running match) may steer this roster; the other clients' battles
+      // would poison identities and alive-sets. Frames without a root
+      // (older shell) describe the preferred install and pass unfiltered,
+      // matching the old single-stream behavior.
+      unlistenTelemetry = (await api.listenIngameTelemetryWatched((payload) => {
+        const servingRoot = gameStatus.process.matchedInstall?.path ?? null;
+        if (
+          payload.root &&
+          servingRoot &&
+          !sameGamePath(payload.root, servingRoot)
+        ) {
+          return;
+        }
         // Ground truth first, in every roster mode: the probe's identity
         // block (per-name realms + the local player's cluster) steers
         // stats routing even when alive-sets come from another source.
