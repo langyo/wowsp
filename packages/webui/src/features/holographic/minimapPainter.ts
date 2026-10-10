@@ -668,7 +668,7 @@ export function drawMinimap(ctx: MapInternals) {
           // genuinely interpolating pose (a fresh object) extends it.
           const tail = sampleAt(tr, t);
           const prevDrawn = n >= 2 ? tr.samples[n - 2] : undefined;
-          if (tail !== tr.samples[n - 1] && tail !== prevDrawn) {
+          if (tail && tail !== tr.samples[n - 1] && tail !== prevDrawn) {
             zctx.lineTo(zwx(tail.x), zwz(-tail.z));
           }
           zctx.stroke();

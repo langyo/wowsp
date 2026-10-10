@@ -33,12 +33,18 @@ export function samplesUpTo(samples: { time: number }[], t: number): number {
   return lo;
 }
 
-/** Interpolate a sample at time t (linear between neighbors). */
+/** Interpolate a sample at time t (linear between neighbors). A trajectory
+ *  with NO samples answers undefined — decoders can emit entity timelines
+ *  that never received a position packet (un-spotted spawns, later-format
+ *  fortifications), and every former `samples[0].time` read on those
+ *  crashed the whole map render (TypeError: reading 'time'). Callers treat
+ *  it like an un-spotted ship: no pose to draw. */
 export function sampleAt(
   traj: { samples: { time: number; x: number; z: number; yaw: number }[] },
   t: number,
-) {
+): { time: number; x: number; z: number; yaw: number } | undefined {
   const ss = traj.samples;
+  if (ss.length === 0) return undefined;
   if (t <= ss[0].time) return ss[0];
   if (t >= ss[ss.length - 1].time) return ss[ss.length - 1];
   // Binary search: called per frame from the capture simulation and the

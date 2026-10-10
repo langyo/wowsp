@@ -61,7 +61,10 @@ export function formationOffsets(groupCount: number, groupSize: number): { ox: n
  *  count is the number of flight groups. */
 export function inferGrouping(
   entries: { trail: { id: number; samples: SquadronPlane[] } }[],
-  sampleAtFn: (tr: { samples: SquadronPlane[] }, t: number) => { x: number; z: number } | null,
+  sampleAtFn: (
+    tr: { samples: SquadronPlane[] },
+    t: number,
+  ) => { x: number; z: number } | null | undefined,
 ): { groupSize: number; groupCount: number } {
   const t0 = Math.min(...entries.map((e) => e.trail.samples[0]?.time ?? 0));
   const pts: { x: number; z: number }[] = [];
