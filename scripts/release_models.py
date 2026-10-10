@@ -267,12 +267,18 @@ def release_exists(tag: str) -> bool:
 def ensure_release(tag: str, name: str, body: str):
     if release_exists(tag):
         return
+    # make_latest=false keeps releases/latest pinned to the app's v*
+    # channel — the endpoint the in-app updater (update.rs) and the
+    # website download page follow. GitHub defaults make_latest to
+    # true, so an unpinned publish silently displaces the newest v*
+    # release (a res-delta publish did exactly that on 2026-10-10).
     payload = json.dumps({
         "tag_name": tag,
         "name": name,
         "body": body,
         "draft": False,
         "prerelease": False,
+        "make_latest": "false",
     })
     gh_api(f"repos/{REPO}/releases", method="POST", stdin=payload)
 
