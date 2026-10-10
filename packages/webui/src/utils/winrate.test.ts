@@ -8,6 +8,7 @@ import {
   RAT_CLAN_WINRATE_MAX,
   careerStamp,
   compositionStamps,
+  isMergedStamp,
   prTier,
   prTierLabel,
   resolveStamps,
@@ -227,15 +228,47 @@ describe("resolveStamps", () => {
     expect(resolveStamps(null, { air: true, sub: true })).toEqual(["air", "sub"]);
   });
 
-  it("keeps non-miracle verdicts coexisting with the comp tags", () => {
-    expect(resolveStamps("ape", { air: true, sub: true })).toEqual(["ape", "air", "sub"]);
-    expect(resolveStamps("maggot", { air: false, sub: true })).toEqual(["maggot", "sub"]);
+  it("merges ape + sub into 水下小猴 alone (consumes both constituents)", () => {
+    expect(resolveStamps("ape", { air: false, sub: true })).toEqual(["subApe"]);
+  });
+
+  it("merges ape + air into 空中小猴 alone", () => {
+    expect(resolveStamps("ape", { air: true, sub: false })).toEqual(["airApe"]);
+  });
+
+  it("renders exactly both ape merges, sub first, when everything fires", () => {
+    expect(resolveStamps("ape", { air: true, sub: true })).toEqual(["subApe", "airApe"]);
+  });
+
+  it("keeps a lone ape verdict as plain 猴", () => {
+    expect(resolveStamps("ape", null)).toEqual(["ape"]);
+    expect(resolveStamps("ape", { air: false, sub: false })).toEqual(["ape"]);
+  });
+
+  it("suppresses composition entirely for the maggot verdict (no merged seal)", () => {
+    expect(resolveStamps("maggot", { air: true, sub: false })).toEqual(["maggot"]);
+    expect(resolveStamps("maggot", { air: false, sub: true })).toEqual(["maggot"]);
+    expect(resolveStamps("maggot", { air: true, sub: true })).toEqual(["maggot"]);
+    expect(resolveStamps("maggot", null)).toEqual(["maggot"]);
+  });
+
+  it("keeps the rat verdict coexisting with the comp tags (legacy order)", () => {
     expect(resolveStamps("rat", { air: true, sub: true })).toEqual(["rat", "air", "sub"]);
+    expect(resolveStamps("rat", { air: false, sub: true })).toEqual(["rat", "sub"]);
   });
 
   it("returns nothing for absent inputs", () => {
     expect(resolveStamps(null, null)).toEqual([]);
     expect(resolveStamps(null, undefined)).toEqual([]);
     expect(resolveStamps(null, { air: false, sub: false })).toEqual([]);
+  });
+
+  it("flags every merged kind through isMergedStamp, and only those", () => {
+    for (const kind of ["airMiracle", "subMiracle", "airApe", "subApe"] as const) {
+      expect(isMergedStamp(kind)).toBe(true);
+    }
+    for (const kind of ["miracle", "ape", "maggot", "rat", "air", "sub"] as const) {
+      expect(isMergedStamp(kind)).toBe(false);
+    }
   });
 });

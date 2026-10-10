@@ -6,12 +6,14 @@ import { statsPrefsState } from "@/stores/statsPrefs";
 import { stampOverrideUrl } from "@/stores/stampOverrides";
 import type { StampKind } from "@/utils/winrate";
 import stampAir from "../../res/stamps/stamp-air.png";
+import stampAirApe from "../../res/stamps/stamp-air-ape.png";
 import stampAirMiracle from "../../res/stamps/stamp-air-miracle.png";
 import stampApe from "../../res/stamps/stamp-ape.png";
 import stampMaggot from "../../res/stamps/stamp-maggot.png";
 import stampMiracle from "../../res/stamps/stamp-miracle.png";
 import stampRat from "../../res/stamps/stamp-rat.png";
 import stampSub from "../../res/stamps/stamp-sub.png";
+import stampSubApe from "../../res/stamps/stamp-sub-ape.png";
 import stampSubMiracle from "../../res/stamps/stamp-sub-miracle.png";
 import "./RatingStamp.scss";
 
@@ -32,10 +34,12 @@ let stampSeq = 0;
  *   - "rat" (过街老鼠): hidden profile — no stats to grade, hiding is the tell
  *   - "air" (空中小人) / "sub" (水下小人): composition tags for CV / submarine
  *     mains (career share > 20% over 200+ battles)
- *   - "airMiracle" (空中神人) / "subMiracle" (水下神人): MERGED seals —
- *     composition tag + 神了 earned together; each replaces (consumes) both
- *     of its constituents (see utils/winrate resolveStamps). Glyphs use the
- *     鲁迅行书 font like the other composition / verdict tags, not 毛体.
+ *   - "airMiracle" (空中神人) / "subMiracle" (水下神人) / "airApe" (空中小猴)
+ *     / "subApe" (水下小猴): MERGED seals — composition tag + 神了 (resp. 猴)
+ *     earned together; each replaces (consumes) both of its constituents,
+ *     and 蛆 suppresses the composition tags entirely (see utils/winrate
+ *     resolveStamps). Glyphs use the 鲁迅行书 font like the other
+ *     composition / verdict tags, not 毛体.
  *
  *  A user-imported custom picture (settings' seal customizer →
  *  commands::stamps) replaces the whole seal face — the procedural frame is
@@ -61,6 +65,8 @@ const STAMP_GLYPHS: Record<StampKind, string> = {
   sub: stampSub,
   airMiracle: stampAirMiracle,
   subMiracle: stampSubMiracle,
+  airApe: stampAirApe,
+  subApe: stampSubApe,
 };
 const STAMP_TEXT: Record<StampKind, string> = {
   miracle: "神了",
@@ -71,6 +77,8 @@ const STAMP_TEXT: Record<StampKind, string> = {
   sub: "水下小人",
   airMiracle: "空中神人",
   subMiracle: "水下神人",
+  airApe: "空中小猴",
+  subApe: "水下小猴",
 };
 /** Award-criteria tooltip keys (stats.json) — shared with the seal
  *  customizer rows; hover copy explains why a seal was earned. */
@@ -83,6 +91,8 @@ const STAMP_DESC_KEYS: Record<StampKind, string> = {
   sub: "stats.sealSubDesc",
   airMiracle: "stats.sealAirMiracleDesc",
   subMiracle: "stats.sealSubMiracleDesc",
+  airApe: "stats.sealAirApeDesc",
+  subApe: "stats.sealSubApeDesc",
 };
 const STAMP_SEED: Record<StampKind, number> = {
   miracle: 7,
@@ -93,6 +103,8 @@ const STAMP_SEED: Record<StampKind, number> = {
   sub: 5,
   airMiracle: 26,
   subMiracle: 39,
+  airApe: 11,
+  subApe: 33,
 };
 
 export default defineComponent({

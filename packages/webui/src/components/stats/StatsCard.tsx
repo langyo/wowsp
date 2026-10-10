@@ -62,10 +62,11 @@ export default defineComponent({
       () => props.stats.realm,
     );
     // The hero's seal cluster, through the shared merge rule (the same one
-    // the share shots and the Tab overlay chips use): miracle + composition
-    // tags collapse into the merged 空中神人 / 水下神人 seals, which replace
-    // (consume) their constituents; verdicts like 猴 keep coexisting with
-    // the comp tags as before.
+    // the share shots and the Tab overlay chips use): 神了/猴 verdicts
+    // alongside comp tags collapse into the merged 空中神人 / 水下神人 /
+    // 空中小猴 / 水下小猴 seals, which replace (consume) their constituents;
+    // 蛆 suppresses the comp tags entirely, and 过街老鼠 keeps coexisting
+    // with them as before.
     const stamps = computed(() => resolveStamps(stamp.value, composition.value));
     // The seals render nothing outside zh locales (RatingStamp's own rule),
     // while the PR rating is off (the seals toggle is the master switch's
