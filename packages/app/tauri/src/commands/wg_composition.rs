@@ -1,4 +1,5 @@
-//! Composition stamps ("空中小人 / 水下小人") for the Tab overlay roster.
+//! Composition stamps ("空中小人 / 水下小人", upgraded to the veteran 老人
+//! tier past a 50% class share) for the Tab overlay roster.
 //!
 //! The overlay batch lookup (`wg_api::lookup_players_stats_batch`) is
 //! deliberately a fast path — it never pulls per-ship rows (see the comment
@@ -42,11 +43,13 @@ use super::wg_realm;
 const BATCH_CONCURRENCY: usize = 4;
 
 /// Career battles a player must EXCEED before any seal can show — and the
-/// class share must EXCEED 20%. Both bounds strictly greater; the values and
+/// class share must EXCEED 20% for the minor tag, EXCEED 50% for the veteran
+/// (老人) tier that replaces it. All bounds strictly greater; the values and
 /// the strictness mirror the frontend `compositionStamps()` defaults
-/// (`minBattles = 200`, `minShare = 0.2`) exactly.
+/// (`minBattles = 200`, `minShare = 0.2`, `minVeteranShare = 0.5`) exactly.
 const MIN_CAREER_BATTLES: i64 = 200;
 const MIN_CLASS_SHARE_PERCENT: i64 = 20;
+const MIN_VETERAN_SHARE_PERCENT: i64 = 50;
 
 /// WG `encyclopedia/ships/` accepts at most 100 `ship_id` values per request
 /// (same cap the docs put on the parameter).
@@ -483,10 +486,12 @@ pub(crate) fn composition_from_rows(
 
 /// The threshold rule, shared shape with the frontend `compositionStamps()`
 /// (packages/webui/src/utils/winrate.ts): `career <= 200` → no seal, else
-/// `air / career > 0.2` / `sub / career > 0.2` — strictly greater on both
-/// bounds. The percent cross-multiplication is the exact integer form of the
-/// frontend's float division (battle counts are integers well below 2^53, so
-/// `air * 100 > 20 * career` and `air / career > 0.2` can never disagree).
+/// `air / career > 0.2` / `sub / career > 0.2` for the minor tag and
+/// `> 0.5` for the veteran (老人) tier that replaces it — strictly greater
+/// on every bound. The percent cross-multiplication is the exact integer
+/// form of the frontend's float division (battle counts are integers well
+/// below 2^53, so `air * 100 > 20 * career` and `air / career > 0.2` can
+/// never disagree; likewise `> 50` against `> 0.5`).
 pub(crate) fn composition_verdict(
     career_battles: i64,
     air_battles: i64,
@@ -498,6 +503,8 @@ pub(crate) fn composition_verdict(
     PlayerComposition {
         air: air_battles * 100 > MIN_CLASS_SHARE_PERCENT * career_battles,
         sub: sub_battles * 100 > MIN_CLASS_SHARE_PERCENT * career_battles,
+        air_veteran: air_battles * 100 > MIN_VETERAN_SHARE_PERCENT * career_battles,
+        sub_veteran: sub_battles * 100 > MIN_VETERAN_SHARE_PERCENT * career_battles,
     }
 }
 
@@ -525,7 +532,9 @@ mod tests {
             composition_verdict(200, 200, 200),
             PlayerComposition {
                 air: false,
-                sub: false
+                sub: false,
+                air_veteran: false,
+                sub_veteran: false
             }
         );
         assert_eq!(
@@ -546,7 +555,9 @@ mod tests {
             composition_verdict(1000, 200, 200),
             PlayerComposition {
                 air: false,
-                sub: false
+                sub: false,
+                air_veteran: false,
+                sub_veteran: false
             }
         );
         // 201/1000 crosses it.
@@ -554,6 +565,35 @@ mod tests {
         assert!(composition_verdict(1000, 0, 201).sub);
         // Just below: 40/201 ≈ 19.9% stays unsealed.
         assert!(!composition_verdict(201, 40, 40).air);
+    }
+
+    #[test]
+    fn verdict_grants_the_veteran_tier_only_above_50_percent() {
+        // Exactly 50% of 1000 = 500 — over the 20% minor bound but NOT the
+        // veteran bound (frontend: `air / career > minVeteranShare`;
+        // 500/1000 = 0.5 is not > 0.5).
+        assert_eq!(
+            composition_verdict(1000, 500, 500),
+            PlayerComposition {
+                air: true,
+                sub: true,
+                air_veteran: false,
+                sub_veteran: false
+            }
+        );
+        // 501/1000 = 50.1% crosses it; the veteran flag implies the minor
+        // flag by construction (0.5 > 0.2).
+        let v = composition_verdict(1000, 501, 0);
+        assert!(v.air_veteran);
+        assert!(v.air);
+        assert!(!v.sub_veteran);
+        assert!(!v.sub);
+        let v = composition_verdict(1000, 0, 501);
+        assert!(v.sub_veteran);
+        assert!(v.sub);
+        assert!(!v.air_veteran);
+        // The 200-battle career gate applies to the veteran tier too.
+        assert!(!composition_verdict(200, 200, 0).air_veteran);
     }
 
     #[test]
@@ -596,7 +636,9 @@ mod tests {
             v,
             PlayerComposition {
                 air: false,
-                sub: false
+                sub: false,
+                air_veteran: false,
+                sub_veteran: false
             }
         );
         // The unknown 300 alone can never produce a seal…
@@ -648,11 +690,27 @@ mod tests {
         let v = PlayerComposition {
             air: true,
             sub: false,
+            air_veteran: true,
+            sub_veteran: false,
         };
         let json = serde_json::to_value(&v).unwrap();
-        assert_eq!(json, serde_json::json!({ "air": true, "sub": false }));
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "air": true,
+                "sub": false,
+                "airVeteran": true,
+                "subVeteran": false
+            })
+        );
         let back: PlayerComposition = serde_json::from_value(json).unwrap();
         assert_eq!(back, v);
+        // An older payload without the veteran fields deserializes to the
+        // #[serde(default)] falses.
+        let old: PlayerComposition =
+            serde_json::from_value(serde_json::json!({ "air": true, "sub": true })).unwrap();
+        assert!(old.air && old.sub);
+        assert!(!old.air_veteran && !old.sub_veteran);
     }
 
     // ── name resolution guards (shared rule, local smoke check) ───────────

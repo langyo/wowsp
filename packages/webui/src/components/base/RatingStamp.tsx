@@ -8,6 +8,7 @@ import type { StampKind } from "@/utils/winrate";
 import stampAir from "../../res/stamps/stamp-air.png";
 import stampAirApe from "../../res/stamps/stamp-air-ape.png";
 import stampAirMiracle from "../../res/stamps/stamp-air-miracle.png";
+import stampAirVeteran from "../../res/stamps/stamp-air-veteran.png";
 import stampApe from "../../res/stamps/stamp-ape.png";
 import stampMaggot from "../../res/stamps/stamp-maggot.png";
 import stampMiracle from "../../res/stamps/stamp-miracle.png";
@@ -15,6 +16,7 @@ import stampRat from "../../res/stamps/stamp-rat.png";
 import stampSub from "../../res/stamps/stamp-sub.png";
 import stampSubApe from "../../res/stamps/stamp-sub-ape.png";
 import stampSubMiracle from "../../res/stamps/stamp-sub-miracle.png";
+import stampSubVeteran from "../../res/stamps/stamp-sub-veteran.png";
 import "./RatingStamp.scss";
 
 let stampSeq = 0;
@@ -34,12 +36,15 @@ let stampSeq = 0;
  *   - "rat" (过街老鼠): hidden profile — no stats to grade, hiding is the tell
  *   - "air" (空中小人) / "sub" (水下小人): composition tags for CV / submarine
  *     mains (career share > 20% over 200+ battles)
+ *   - "airVeteran" (空中老人) / "subVeteran" (水下老人): the veteran
+ *     composition tier for a class share > 50% — replaces the minor (小人)
+ *     seal for that class and never merges with career verdicts
  *   - "airMiracle" (空中神人) / "subMiracle" (水下神人) / "airApe" (空中小猴)
  *     / "subApe" (水下小猴): MERGED seals — composition tag + 神了 (resp. 猴)
  *     earned together; each replaces (consumes) both of its constituents,
- *     and 蛆 suppresses the composition tags entirely (see utils/winrate
- *     resolveStamps). Glyphs use the 鲁迅行书 font like the other
- *     composition / verdict tags, not 毛体.
+ *     and 蛆 / 过街老鼠 suppress the composition tags entirely (see
+ *     utils/winrate resolveStamps). Glyphs use the 鲁迅行书 font like the
+ *     other composition / verdict tags, not 毛体.
  *
  *  A user-imported custom picture (settings' seal customizer →
  *  commands::stamps) replaces the whole seal face — the procedural frame is
@@ -63,6 +68,8 @@ const STAMP_GLYPHS: Record<StampKind, string> = {
   rat: stampRat,
   air: stampAir,
   sub: stampSub,
+  airVeteran: stampAirVeteran,
+  subVeteran: stampSubVeteran,
   airMiracle: stampAirMiracle,
   subMiracle: stampSubMiracle,
   airApe: stampAirApe,
@@ -75,6 +82,8 @@ const STAMP_TEXT: Record<StampKind, string> = {
   rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
+  airVeteran: "空中老人",
+  subVeteran: "水下老人",
   airMiracle: "空中神人",
   subMiracle: "水下神人",
   airApe: "空中小猴",
@@ -89,6 +98,8 @@ const STAMP_DESC_KEYS: Record<StampKind, string> = {
   rat: "stats.sealRatDesc",
   air: "stats.sealAirDesc",
   sub: "stats.sealSubDesc",
+  airVeteran: "stats.sealAirVeteranDesc",
+  subVeteran: "stats.sealSubVeteranDesc",
   airMiracle: "stats.sealAirMiracleDesc",
   subMiracle: "stats.sealSubMiracleDesc",
   airApe: "stats.sealAirApeDesc",
@@ -101,6 +112,8 @@ const STAMP_SEED: Record<StampKind, number> = {
   rat: 44,
   air: 21,
   sub: 5,
+  airVeteran: 17,
+  subVeteran: 41,
   airMiracle: 26,
   subMiracle: 39,
   airApe: 11,

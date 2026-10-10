@@ -290,18 +290,22 @@ export async function renderStatsShot(
   // Seals ride the hero's free middle: the shared merge rule (resolveStamps)
   // collapses 神了/猴 verdicts alongside comp tags into the merged 空中神人 /
   // 水下神人 / 空中小猴 / 水下小猴 seals — which replace (consume) their
-  // constituents — while 蛆 suppresses the comp tags entirely and 过街老鼠
-  // keeps coexisting with air/sub. Sizing: legacy seals keep today's scale
-  // (career verdicts big, comp tags small); a merged seal is hero-sized only
-  // when it is the cluster's ONLY member — two merged seals render small so
-  // the hero band never overflows. The cluster ends `heroRight`-aligned,
-  // clear of the PR block.
+  // constituents — while 蛆 and 过街老鼠 each suppress the comp tags
+  // entirely. Sizing: career verdicts keep today's hero scale; the comp
+  // faces render small — the minor tags and the veteran (老人) tiers alike,
+  // the veterans being composition seals too (and, unlike the minor tags,
+  // never merging). A merged seal is hero-sized only when it is the
+  // cluster's ONLY member — two merged seals render small so the hero band
+  // never overflows. The cluster ends `heroRight`-aligned, clear of the PR
+  // block.
   const resolved = resolveStamps(model.stamp ?? null, model.airSub);
   const sealSize = (kind: StampKind): number => {
     if (isMergedStamp(kind)) {
       return resolved.length === 1 ? SEAL_SIZE : SEAL_SMALL;
     }
-    return kind === "air" || kind === "sub" ? SEAL_SMALL : SEAL_SIZE;
+    return kind === "air" || kind === "sub" || kind === "airVeteran" || kind === "subVeteran"
+      ? SEAL_SMALL
+      : SEAL_SIZE;
   };
   const sealKinds = resolved.map((kind) => ({ kind, size: sealSize(kind) }));
   const sealImages = new Map<string, HTMLImageElement | null>();
