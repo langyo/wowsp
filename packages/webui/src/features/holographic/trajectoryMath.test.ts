@@ -44,6 +44,10 @@ describe("sampleAt", () => {
     { time: 4, x: 100, z: 200, yaw: 1 },
   ]);
 
+  it("answers undefined for a trajectory with no samples (no crash)", () => {
+    expect(sampleAt(traj([]), 5)).toBeUndefined();
+  });
+
   it("clamps to the first sample before the span", () => {
     expect(sampleAt(two, -5)).toBe(two.samples[0]);
   });
@@ -54,9 +58,9 @@ describe("sampleAt", () => {
 
   it("interpolates linearly between neighbours (yaw along the short way)", () => {
     const s = sampleAt(two, 2);
-    expect(s.x).toBeCloseTo(50);
-    expect(s.z).toBeCloseTo(100);
-    expect(s.yaw).toBeCloseTo(0.5);
+    expect(s?.x).toBeCloseTo(50);
+    expect(s?.z).toBeCloseTo(100);
+    expect(s?.yaw).toBeCloseTo(0.5);
   });
 
   it("freezes at the last known pose across an un-spotted gap", () => {
@@ -66,9 +70,9 @@ describe("sampleAt", () => {
       { time: 10, x: 110, z: 120, yaw: 1 },
     ]);
     const s = sampleAt(gapped, 5);
-    expect(s.x).toBe(10);
-    expect(s.z).toBe(20);
-    expect(s.yaw).toBe(0.25);
+    expect(s?.x).toBe(10);
+    expect(s?.z).toBe(20);
+    expect(s?.yaw).toBe(0.25);
   });
 
   it("still interpolates a gap of exactly the smooth-gap budget", () => {
@@ -76,7 +80,7 @@ describe("sampleAt", () => {
       { time: 0, x: 0, z: 0, yaw: 0 },
       { time: 4, x: 8, z: 0, yaw: 0 },
     ]);
-    expect(sampleAt(edge, 2).x).toBeCloseTo(4);
+    expect(sampleAt(edge, 2)?.x).toBeCloseTo(4);
   });
 });
 
