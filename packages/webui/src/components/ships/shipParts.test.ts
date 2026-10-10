@@ -157,6 +157,77 @@ describe("resolveShipParts", () => {
     expect(stock.artillery[0]).toBe(stockArt);
   });
 
+  it("does not double-count when an upgrade co-lists every hull's blocks", () => {
+    // North Carolina style: ONE stock artillery upgrade names BOTH hull
+    // variants' blocks; each hull entry names exactly the one it mounts.
+    const artA = blockWithMounts("AGM", 3, 3, 406);
+    const artB = blockWithMounts("AGM", 3, 3, 406);
+    const hullA = { health: 30000 };
+    const hullB = { health: 35400 };
+    const gp: Record<string, unknown> = {
+      A_Artillery: artA,
+      B_Artillery: artB,
+      A_Hull: hullA,
+      B_Hull: hullB,
+      ShipUpgradeInfo: {
+        "PAUA741_B8_ART_STOCK": {
+          ucType: "_Artillery", prev: "",
+          components: { artillery: ["A_Artillery", "B_Artillery"] },
+        },
+        "PAUH732_NC_1942": {
+          ucType: "_Hull", prev: "",
+          components: { hull: ["A_Hull"], artillery: ["A_Artillery"], torpedoes: [] },
+        },
+        "PAUH733_NC_1945": {
+          ucType: "_Hull", prev: "PAUH732_NC_1942",
+          components: { hull: ["B_Hull"], artillery: ["B_Artillery"], torpedoes: [] },
+        },
+      },
+    };
+    const main = summarizeWeapons(gp).filter((g) => g.kind === "mainGun");
+    expect(main).toEqual([{ kind: "mainGun", count: 3, barrels: 3, cal: 406 }]);
+    expect(resolveShipParts(gp, "stock").artillery).toEqual([artA]);
+    expect(resolveShipParts(gp, "top").artillery).toEqual([artB]);
+  });
+
+  it("dedupes slot keys shared by co-listed blocks of one role", () => {
+    // Residual event-ship shape: after hull intersection two blocks of one
+    // role still carry the same hardpoint — it mounts once.
+    const blockA = { HP_T_1: mount(4), HP_T_2: mount(4) };
+    const blockB = { HP_T_2: mount(4), HP_T_3: mount(4) };
+    const gp: Record<string, unknown> = {
+      A_Torpedoes: blockA,
+      B_Torpedoes: blockB,
+      A_Hull: { health: 1000 },
+      ShipUpgradeInfo: {
+        hull: {
+          ucType: "_Hull", prev: "",
+          components: { hull: ["A_Hull"], torpedoes: ["A_Torpedoes", "B_Torpedoes"] },
+        },
+      },
+    };
+    const torp = summarizeWeapons(gp).filter((g) => g.kind === "torpedo");
+    expect(torp).toEqual([{ kind: "torpedo", count: 3, barrels: 4, cal: 0 }]);
+  });
+
+  it("falls back to the canonical literal block when the hull omits a role", () => {
+    // Midway legacy hull: no ATBA chain, hull components without atba — the
+    // secondaries (and their far AA aura) live in a literal A_ATBA.
+    const atba = { HP_SGP_1: mount(2, 127), Far_1: { type: "far", areaDamage: 64 } };
+    const gp: Record<string, unknown> = {
+      A_ATBA: atba,
+      A_Hull: { health: 60000 },
+      ShipUpgradeInfo: {
+        hull: {
+          ucType: "_Hull", prev: "",
+          components: { hull: ["A_Hull"], artillery: [], torpedoes: [], atba: [] },
+        },
+      },
+    };
+    expect(resolveShipParts(gp, "top").atba).toEqual([atba]);
+    expect(resolveShipParts(gp, "stock").atba).toEqual([atba]);
+  });
+
   it("falls back to canonical literal keys without ShipUpgradeInfo", () => {
     const gp = {
       A_Artillery: blockWithMounts("AGM", 2, 3, 127),

@@ -153,6 +153,7 @@ function roleComponentNames(
   config: "stock" | "top",
 ): string[] {
   const key = role.toLowerCase();
+  const hullNames = componentsOf(hullEntry)[key] ?? [];
   // The role's own upgrade chain decides stock vs top when upgrades exist
   // (torpedo A1/A2/A3-style variants); otherwise the hull entry's list IS
   // the mounted configuration.
@@ -160,10 +161,33 @@ function roleComponentNames(
   if (chain) {
     const pick = config === "top" ? chain.end : chain.head;
     const names = componentsOf(info[pick])[key];
-    if (names && names.length > 0) return names;
+    if (names && names.length > 0) {
+      // An upgrade entry may co-list every hull variant's blocks (stock
+      // artillery upgrades name A_Artillery AND B_Artillery); the hull's
+      // own list names exactly what THAT hull mounts — intersect down to
+      // it, or the mounts double-count.
+      if (hullNames.length > 0) {
+        const hullSet = new Set(hullNames);
+        const mounted = names.filter((n) => hullSet.has(n));
+        if (mounted.length > 0) return mounted;
+      }
+      return names;
+    }
   }
-  return componentsOf(hullEntry)[key] ?? [];
+  return hullNames;
 }
+
+/** Canonical literal block keys, the fallback when resolution is silent. */
+const CANONICAL_KEYS: Record<ShipPartRole, string[]> = {
+  hull: ["A_Hull", "Hull"],
+  artillery: ["A_Artillery"],
+  atba: ["A_ATBA"],
+  torpedoes: ["A_Torpedoes"],
+  airDefense: ["A_AirDefense"],
+  airArmament: ["A_AirArmament"],
+  depthCharges: ["A_DepthCharge"],
+  airSupport: ["A_AirSupport"],
+};
 
 function blocksFor(gp: Gp, names: string[]): Gp[] {
   if (!isDict(gp)) return [];
@@ -200,15 +224,41 @@ export function resolveShipParts(gp: Gp, config: "stock" | "top" = "top"): ShipP
   const hullEntry = (hullName && info[hullName]) || null;
   if (!hullEntry) return canonicalParts(gp);
 
-  const parts: ShipParts = { ...EMPTY_PARTS, hull: null };
+  // Fresh arrays per call — the literal fallback below pushes into them.
+  const parts: ShipParts = {
+    hull: null,
+    artillery: [],
+    atba: [],
+    torpedoes: [],
+    airDefense: [],
+    airArmament: [],
+    depthCharges: [],
+    airSupport: [],
+  };
+  // Legacy fallback: entries whose hull omits a role (or unpacker dumps
+  // with stripped hulls) still mounted the canonical block — e.g. the
+  // Midway legacy hull carries its secondaries' far AA aura in a literal
+  // A_ATBA its ShipUpgradeInfo never names.
+  const literalBlock = (role: ShipPartRole): Gp => {
+    for (const key of CANONICAL_KEYS[role]) {
+      if (isDict(gp[key])) return gp[key];
+    }
+    return null;
+  };
+  {
+    const names = roleComponentNames(info, chains, hullEntry, "hull", config);
+    parts.hull = blocksFor(gp, names)[0] ?? literalBlock("hull");
+  }
   for (const role of SHIP_PART_ROLES) {
-    if (role === "hull") {
-      const names = roleComponentNames(info, chains, hullEntry, role, config);
-      parts.hull = blocksFor(gp, names)[0] ?? null;
+    if (role === "hull") continue;
+    const names = roleComponentNames(info, chains, hullEntry, role, config);
+    const blocks = blocksFor(gp, names);
+    if (blocks.length > 0) {
+      parts[role] = blocks;
       continue;
     }
-    const names = roleComponentNames(info, chains, hullEntry, role, config);
-    parts[role] = blocksFor(gp, names);
+    const literal = literalBlock(role);
+    if (literal) parts[role].push(literal);
   }
   return parts;
 }
@@ -241,7 +291,21 @@ export function hpSlots(block: Gp): [string, Record<string, any>][] {
   ) as [string, Record<string, any>][];
 }
 
-/** HP_* mount slots merged across every block of a role. */
+/**
+ * HP_* mount slots merged across every block of a role. Slot keys are
+ * unique per ship assembly — when several resolved blocks carry the same
+ * key (variant blocks co-listed by one upgrade entry), the first wins so
+ * mounts never double-count.
+ */
 export function roleHpSlots(blocks: Gp[]): [string, Record<string, any>][] {
-  return blocks.flatMap((b) => hpSlots(b));
+  const out: [string, Record<string, any>][] = [];
+  const seen = new Set<string>();
+  for (const block of blocks) {
+    for (const [k, v] of hpSlots(block)) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push([k, v]);
+    }
+  }
+  return out;
 }

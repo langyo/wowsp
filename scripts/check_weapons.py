@@ -89,7 +89,8 @@ def resolve_parts(gp: dict, config: str = "top") -> dict[str, Any]:
             names_by_kind.setdefault(kind, []).append(name)
     chains: dict[str, dict] = {}
     for kind, kind_names in names_by_kind.items():
-        referenced = {info[n].get("prev") for n in kind_names}
+        referenced = {info[n].get("prev") for n in kind_names
+                      if isinstance(info[n].get("prev"), str)}
         name_set = set(kind_names)
         ends = [n for n in kind_names if n not in referenced]
         heads = [n for n in kind_names
@@ -108,18 +109,41 @@ def resolve_parts(gp: dict, config: str = "top") -> dict[str, Any]:
     parts: dict[str, Any] = {}
     for role in ROLES:
         key = role.lower()
+        hull_names = hull_comps.get(key, [])
         names: list[str] = []
         chain = chains.get(key)
         if chain:
             pick = chain["end" if config == "top" else "head"]
             names = components_of(info[pick]).get(key, [])
+            if names:
+                # An upgrade entry may co-list every hull variant's blocks
+                # (stock artillery upgrades name A_Artillery AND
+                # B_Artillery); the hull's own list names exactly what THAT
+                # hull mounts — intersect down to it.
+                if hull_names:
+                    hull_set = set(hull_names)
+                    mounted = [n for n in names if n in hull_set]
+                    if mounted:
+                        names = mounted
         if not names:
-            names = hull_comps.get(key, [])
+            names = hull_names
+        blocks: list[Any] = [gp[n] for n in names if isinstance(gp.get(n), dict)]
+        if not blocks:
+            # Legacy fallback: entries whose hull omits a role still mounted
+            # the canonical block (e.g. the Midway legacy hull keeps its
+            # secondaries' far AA aura in a literal A_ATBA).
+            canonical = {"hull": ("A_Hull", "Hull"), "artillery": ("A_Artillery",),
+                         "atba": ("A_ATBA",), "torpedoes": ("A_Torpedoes",),
+                         "airDefense": ("A_AirDefense",), "airArmament": ("A_AirArmament",),
+                         "depthCharges": ("A_DepthCharge",), "airSupport": ("A_AirSupport",)}[role]
+            for lit in canonical:
+                if isinstance(gp.get(lit), dict):
+                    blocks = [gp[lit]]
+                    break
         if role == "hull":
-            blocks = [gp[n] for n in names if isinstance(gp.get(n), dict)]
             parts[role] = blocks[0] if blocks else None
         else:
-            parts[role] = [gp[n] for n in names if isinstance(gp.get(n), dict)]
+            parts[role] = blocks
     return parts
 
 
@@ -145,10 +169,15 @@ def canonical_parts(gp: dict) -> dict[str, Any]:
 
 
 def hp_slots(blocks: list) -> list[tuple[str, dict]]:
-    out = []
+    # Slot keys are unique per ship assembly — when several resolved blocks
+    # carry the same key (variant blocks co-listed by one upgrade entry),
+    # the first wins so mounts never double-count.
+    out: list[tuple[str, dict]] = []
+    seen: set[str] = set()
     for block in blocks:
         for k, v in block.items():
-            if k.startswith("HP_") and isinstance(v, dict):
+            if k.startswith("HP_") and isinstance(v, dict) and k not in seen:
+                seen.add(k)
                 out.append((k, v))
     return out
 
@@ -170,11 +199,29 @@ def aura_band_map(blocks: list) -> dict[str, str]:
     return out
 
 
+def num_of(v: Any) -> float:
+    """JS Number()-style tolerant read (GameParams fields may be strings)."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def barrels_of(m: dict) -> int:
+    """JS `Number(m.numBarrels ?? 0) || 1`."""
+    return int(num_of(m.get("numBarrels"))) or 1
+
+
+def mm_of(m: dict) -> int:
+    """JS `Math.round(Number(m.barrelDiameter ?? 0) * 1000)` (half up)."""
+    return int(num_of(m.get("barrelDiameter")) * 1000 + 0.5)
+
+
 def groups_desc(slots: list[tuple[str, dict]]) -> list[dict]:
     groups: dict[tuple, dict] = {}
     for k, m in slots:
-        barrels = int(m.get("numBarrels") or 0) or 1
-        cal = round(float(m.get("barrelDiameter") or 0) * 1000)
+        barrels = barrels_of(m)
+        cal = mm_of(m)
         key = (barrels, cal)
         g = groups.get(key)
         if g:
@@ -215,7 +262,7 @@ def summarize_weapons(gp: dict) -> list[dict]:
     for k, m in atba_slots:
         if k in dp_slots or k in promoted:
             continue
-        key = (int(m.get("numBarrels") or 0) or 1, round(float(m.get("barrelDiameter") or 0) * 1000))
+        key = (barrels_of(m), mm_of(m))
         sec[key] = sec.get(key, 0) + 1
     for (barrels, cal), count in sec.items():
         out.append({"kind": "secondary", "count": count, "barrels": barrels, "cal": cal})
@@ -224,14 +271,14 @@ def summarize_weapons(gp: dict) -> list[dict]:
     for k, m in list(atba_slots) + list(aa_slots):
         if k not in dp_slots:
             continue
-        key = (int(m.get("numBarrels") or 0) or 1, round(float(m.get("barrelDiameter") or 0) * 1000))
+        key = (barrels_of(m), mm_of(m))
         dp[key] = dp.get(key, 0) + 1
     for (barrels, cal), count in dp.items():
         out.append({"kind": "dp", "count": count, "barrels": barrels, "cal": cal})
 
     torp: dict[int, int] = {}
     for _, t in hp_slots(parts["torpedoes"]):
-        n = int(t.get("numBarrels") or t.get("count") or 1) or 1
+        n = int(num_of(t.get("numBarrels") or t.get("count") or 1)) or 1
         torp[n] = torp.get(n, 0) + 1
     for tubes, count in torp.items():
         out.append({"kind": "torpedo", "count": count, "barrels": tubes, "cal": 0})
@@ -320,6 +367,7 @@ def main(argv: list[str]) -> int:
     weaponless: list[str] = []
     fallback_only: list[str] = []
     torpedo_inversions: list[tuple[str, str]] = []
+    dup_slot_ships: list[tuple[str, int]] = []
     live_missing_torp: list[str] = []
     live_extra_torp: list[str] = []
     kind_totals: dict[str, int] = {}
@@ -333,6 +381,22 @@ def main(argv: list[str]) -> int:
             bogus_torp_pre_fix += 1
 
         parts = resolve_parts(gp, "top")
+        # Drift watch: one upgrade entry co-listing several hull variants'
+        # blocks used to double-count mounts; the hull-list intersection
+        # must keep every slot key unique across a role's blocks.
+        dups = 0
+        for role in ("artillery", "atba", "torpedoes", "airDefense",
+                     "airArmament", "depthCharges"):
+            seen: set[str] = set()
+            for block in parts[role]:
+                for k in block:
+                    if k.startswith("HP_"):
+                        if k in seen:
+                            dups += 1
+                        else:
+                            seen.add(k)
+        if dups:
+            dup_slot_ships.append((ship_id, dups))
         via_fallback = not isinstance(gp.get("ShipUpgradeInfo"), dict)
         groups = summarize_weapons(gp)
         for g in groups:
@@ -360,6 +424,7 @@ def main(argv: list[str]) -> int:
     print(f"ships resolved via canonical fallback (no ShipUpgradeInfo): {len(fallback_only)}")
     print(f"ships with NO weapon group at all: {len(weaponless)}")
     print(f"torpedo groups not backed by torpedo blocks: {len(torpedo_inversions)} (must be 0)")
+    print(f"ships with duplicate slot keys across a role's blocks: {len(dup_slot_ships)} (drift watch)")
 
     if live:
         both = sum(1 for s in ships if s in live)
@@ -379,6 +444,8 @@ def main(argv: list[str]) -> int:
            [f"{s} {label_of(s, names)}" for s in fallback_only])
     report("Torpedo inversions",
            [f"{s} {label_of(s, names)}: {why}" for s, why in torpedo_inversions])
+    report("Ships with duplicate slot keys across a role's blocks",
+           [f"{s} {label_of(s, names)}: {n} dup(s)" for s, n in dup_slot_ships])
     report("Live stats says torpedoes, mounts say no",
            [f"{s} {label_of(s, names)}" for s in live_missing_torp])
     report("Mounts say torpedoes, live stats says no",
