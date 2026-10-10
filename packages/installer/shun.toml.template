@@ -1,5 +1,5 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.5 (install-time webview2 download + button notices).
+# Requires shun >= 0.6.6 (contained path field, first-page-only notice).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)
