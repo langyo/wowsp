@@ -132,15 +132,23 @@ pub(super) fn manual_row_centers(rect: &Rect, team_sizes: (usize, usize)) -> Vec
 /// Build the chip-layer anchor from a live manual anchor: the selection is
 /// treated exactly like a DETECTED roster rect (padded, re-based to the
 /// overlay window origin by the shared `overlay_detect::build_anchor`), with
-/// a 0.5 team split (two side-by-side columns). `row_alive` stays `None`
+/// a 0.5 team split (two side-by-side columns). `dpi_scale` is the game
+/// window's monitor scale — the same input the automatic path passes (see
+/// `window_dpi_scale`), so a hand-drawn box gets the same physical side pad
+/// a detected table would. `row_alive` stays `None`
 /// ON PURPOSE: the luma pass is not run on a hand-drawn box — the per-row
 /// player count comes from the roster and need not match the drawn rows.
 /// The overlay page names the rows itself from the
 /// verified sort rule (the drawn grid mirrors the roster's team sizes, the
 /// same closed-set contract the automatic flow deduces from).
-pub(super) fn build_manual_anchor(m: &ManualAnchor, game_screen: Rect) -> OverlayAnchor {
+pub(super) fn build_manual_anchor(
+    m: &ManualAnchor,
+    game_screen: Rect,
+    dpi_scale: f32,
+) -> OverlayAnchor {
     let rows = manual_row_centers(&m.rect, m.team_sizes);
-    let (_, anchor) = overlay_detect::build_anchor(&game_screen, &m.rect, rows, 0.5, true);
+    let (_, anchor) =
+        overlay_detect::build_anchor(&game_screen, &m.rect, rows, 0.5, true, dpi_scale);
     anchor
 }
 

@@ -255,6 +255,7 @@ pub use capture::{
 use capture::{compute_anchor, encode_png};
 use game_window::{
     GameWindow, capture_game_rgba, capture_game_rgba_cached, find_game_window, rect_from_win32,
+    window_dpi_scale,
 };
 pub use manual::{
     __cmd__cancel_manual_locate, __cmd__clear_manual_roster_rect, __cmd__manual_locate_context,

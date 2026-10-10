@@ -490,7 +490,8 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     if let Some((m, manual_game)) = manual_active {
         // Place ONCE per manual hold, not every 30 ms tick.
         if !fsm.overlay_shown || !fsm.manual_shown {
-            let anchor = build_manual_anchor(&m, manual_game);
+            let dpi_scale = game.map_or(1.0, |g| window_dpi_scale(g.hwnd));
+            let anchor = build_manual_anchor(&m, manual_game, dpi_scale);
             place_and_show(app, &anchor);
             report_status(
                 app,

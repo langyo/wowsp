@@ -40,6 +40,18 @@ pub(super) fn rect_from_win32(r: windows::Win32::Foundation::RECT) -> Rect {
     }
 }
 
+/// The window's monitor DPI scale (1.0 = 96 DPI). The chip layer sizes its
+/// fonts in CSS px while every anchor rect is physical, so the overlay's
+/// side-pad reserve converts through this (see
+/// `overlay_detect::overlay_padding_x`). A failed query (a window already
+/// gone) falls back to 1.0 — the unscaled behavior the pads carried before
+/// the reserve went DPI-aware.
+#[cfg(target_os = "windows")]
+pub(super) fn window_dpi_scale(hwnd: windows::Win32::Foundation::HWND) -> f32 {
+    let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
+    if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
+}
+
 /// Collect the game's main window: PID via the ToolHelp snapshot (reusing
 /// `appdata::find_game_pid`), then the largest visible top-level window of
 /// that process. Title-agnostic — Lesta/CN clients localize their titles.

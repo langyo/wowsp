@@ -25,7 +25,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.5.9"
+version = "0.5.10"
 edition = "2024"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
@@ -138,6 +138,9 @@ windows = { version = "^0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
+    # GetDpiForWindow: the overlay's side-pad reserve converts the chip
+    # layer's CSS px through the game window's monitor scale.
+    "Win32_UI_HiDpi",
     # ShellExecuteW: open_external hands http(s) URLs to the default browser.
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",

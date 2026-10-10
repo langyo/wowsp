@@ -1004,12 +1004,12 @@ fn build_anchor_sizes_window_to_the_table_area() {
         height: 250,
     };
     let rows: Vec<i32> = (0..5).map(|i| 300 + 40 * i + 20).collect();
-    let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5, false);
+    let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5, false, 1.0);
     assert!(!anchor.table_detected);
     // The overlay window covers ONLY the inflated table area — wider on
     // the sides (chips render OUTSIDE the table) than above/below.
     let pad = overlay_padding(&roster);
-    let padx = overlay_padding_x(&roster);
+    let padx = overlay_padding_x(&roster, 1.0);
     assert!(padx > pad, "side padding must exceed vertical padding");
     assert_eq!(overlay.width, roster.width + 2 * padx);
     assert_eq!(overlay.height, roster.height + 2 * pad);
@@ -1026,6 +1026,75 @@ fn build_anchor_sizes_window_to_the_table_area() {
         // Re-based by dy = roster.y − pad (no clamping in this geometry).
         assert_eq!(*got, want - (roster.y - pad));
     }
+}
+
+#[test]
+fn side_pad_tracks_the_monitor_scale() {
+    // A ~1477-px-wide two-column table (the measured 3072×1920 client):
+    // the width ratio alone reserves 369 physical px, which on a 150%
+    // monitor is ~246 CSS px — well under the ~300 CSS px a loaded chip
+    // measures, so every number chip overflowed its side pad and chipFit's
+    // clamp pinned them to the window edge (the lost right-alignment on
+    // both the random-battle table and the story/PvE single-column one).
+    // The DPI-aware reserve must carry the SAME CSS room at any scale.
+    let roster = Rect {
+        x: 800,
+        y: 400,
+        width: 1477,
+        height: 600,
+    };
+    let at = |scale: f32| overlay_padding_x(&roster, scale);
+    // At DPR 1 the old quarter-width ratio (369) already granted the room,
+    // so it keeps winning over the 350 CSS reserve.
+    assert_eq!(at(1.0), 369);
+    // 150% / 200% monitors: the CSS reserve scales into physical px and
+    // outgrows the ratio.
+    assert_eq!(at(1.5), 525);
+    assert_eq!(at(2.0), 700);
+    // The scale never shrinks the reserve below the DPR-1 reserve, and a
+    // path that could not query the DPI passes 1.0 (the fallback).
+    assert!(at(1.0) >= overlay_padding_x(&roster, 0.5));
+    // A wide-enough table still outgrows the reserve on its own (the old
+    // quarter-width ratio stays as the growth term)…
+    let wide = Rect {
+        x: 0,
+        y: 0,
+        width: 2400,
+        height: 600,
+    };
+    assert_eq!(overlay_padding_x(&wide, 1.0), 600);
+    // …and the cap keeps a degenerate DPI from swallowing the screen.
+    assert_eq!(overlay_padding_x(&roster, 8.0), 1024);
+}
+
+#[test]
+fn build_anchor_side_pad_scales_with_dpi() {
+    // Same table at DPR 1 vs DPR 2: the window's side reserves double in
+    // physical px so the chips keep the same CSS room (game window sized
+    // to hold both without the game-window clamp kicking in).
+    let game = Rect {
+        x: 0,
+        y: 0,
+        width: 4000,
+        height: 1440,
+    };
+    let roster = Rect {
+        x: 900,
+        y: 300,
+        width: 1200,
+        height: 250,
+    };
+    let rows: Vec<i32> = (0..5).map(|i| 300 + 40 * i + 20).collect();
+    let padx1 = overlay_padding_x(&roster, 1.0);
+    let padx2 = overlay_padding_x(&roster, 2.0);
+    let (overlay1, anchor1) = build_anchor(&game, &roster, rows.clone(), 0.5, true, 1.0);
+    let (overlay2, anchor2) = build_anchor(&game, &roster, rows, 0.5, true, 2.0);
+    assert_eq!(overlay1.width, roster.width + 2 * padx1);
+    assert_eq!(overlay2.width, roster.width + 2 * padx2);
+    assert_eq!(overlay2.x, roster.x - padx2);
+    // The re-based roster coordinates track the window they describe.
+    assert_eq!(anchor2.roster_rect.x, padx2);
+    assert_eq!(anchor1.roster_rect.x, padx1);
 }
 
 #[test]

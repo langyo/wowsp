@@ -332,7 +332,7 @@ fn build_manual_anchor_rebases_to_the_overlay_origin() {
         },
         team_sizes: (5, 5),
     };
-    let anchor = build_manual_anchor(&m, game);
+    let anchor = build_manual_anchor(&m, game, 1.0);
     // A manual anchor is always a CONFIRMED table.
     assert!(anchor.table_detected);
     // row_alive stays None on purpose — no luma read on a hand-drawn box.
@@ -343,7 +343,7 @@ fn build_manual_anchor_rebases_to_the_overlay_origin() {
     // (same contract as the auto detector's anchor): game-relative
     // centers 325..525 (pitch 250/5 = 50) shift up by dy = rect.y - pad.
     let pad = overlay_detect::overlay_padding(&m.rect);
-    let padx = overlay_detect::overlay_padding_x(&m.rect);
+    let padx = overlay_detect::overlay_padding_x(&m.rect, 1.0);
     let dy = m.rect.y - pad; // 300 - 31 = 269
     assert_eq!(anchor.row_centers[0], 325 - dy);
     assert_eq!(anchor.row_centers[4], 525 - dy);

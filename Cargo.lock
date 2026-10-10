@@ -6882,7 +6882,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6930,7 +6930,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri_shared"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "chrono",
  "serde",
