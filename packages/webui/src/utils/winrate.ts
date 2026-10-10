@@ -88,35 +88,51 @@ export type CareerStamp = "miracle" | "ape" | "maggot" | "rat";
  *  both a career stamp and a composition stamp. */
 export type CompositionStamp = "air" | "sub";
 
-/** Merged seals (合并勋章): 空中神人 / 水下神人 fire when a player qualifies
- *  for BOTH a composition tag AND 神了. The merge CONSUMES its constituents —
- *  the merged seal replaces (and suppresses) both the composition tag and
- *  神了 — while the non-miracle verdicts (猴/蛆/过街老鼠) keep coexisting
- *  with air/sub exactly as before. */
-export type MergedStamp = "airMiracle" | "subMiracle";
+/** Merged seals (合并勋章): 空中神人 / 水下神人 (神了 merges) and 空中小猴 /
+ *  水下小猴 (猴 merges) fire when a player qualifies for BOTH a composition
+ *  tag AND that career verdict. The merge CONSUMES its constituents — the
+ *  merged seal replaces (and suppresses) both the composition tag and the
+ *  career verdict — while 过街老鼠 keeps coexisting with air/sub exactly as
+ *  before, and 蛆 suppresses the composition tags entirely (no merged maggot
+ *  seal exists: the worst verdict stands alone). */
+export type MergedStamp = "airMiracle" | "subMiracle" | "airApe" | "subApe";
 
 export type StampKind = CareerStamp | CompositionStamp | MergedStamp;
+
+/** Whether `kind` is one of the merged composition+career seals. Consumers
+ *  with merged-kind-specific behavior (the share shots' seal sizing, and
+ *  anything else that used to hardcode the miracle equalities) route through
+ *  this guard so a new merge can never be missed. */
+export function isMergedStamp(kind: StampKind): boolean {
+  return (
+    kind === "airMiracle" || kind === "subMiracle" || kind === "airApe" || kind === "subApe"
+  );
+}
 
 /** The one merge rule, shared by every seal surface (account StatsCard,
  *  share shots, the Tab overlay chips — all route through here so the
  *  merge can never disagree between surfaces):
- *   - miracle + sub → 水下神人; miracle + air → 空中神人 (both orders
- *     normalized subMiracle before airMiracle).
+ *   - miracle + sub → 水下神人; miracle + air → 空中神人; ape likewise
+ *     merges into 水下小猴 / 空中小猴 (both orders normalized sub-first).
  *   - Any merged kind CONSUMES its constituents: the return carries ONLY
- *     the merged kinds — standalone 神了 and both composition tags are
- *     suppressed. Both merges at once → exactly [subMiracle, airMiracle].
- *   - Otherwise the legacy order [career?, air?, sub?] stands, so 猴/蛆/
- *     过街老鼠 keep today's coexistence with the composition tags.
+ *     the merged kinds — the standalone verdict and both composition tags
+ *     are suppressed. Both merges at once → exactly [subX, airX].
+ *   - maggot SUPPRESSES composition entirely: air and/or sub reduce the
+ *     return to just [maggot] (no merged maggot seal exists).
+ *   - Otherwise the legacy order [career?, air?, sub?] stands, so 过街老鼠
+ *     keeps today's coexistence with the composition tags.
  *  `career` null and `comp` null/undefined degrade to the legacy pass-through
  *  with nothing to add. */
 export function resolveStamps(
   career: CareerStamp | null,
   comp: CompositionStamps | null | undefined,
 ): StampKind[] {
+  // 蛆 is the floor verdict — it never merges and nothing rides beside it.
+  if (career === "maggot") return ["maggot"];
   const merged: MergedStamp[] = [];
-  if (career === "miracle") {
-    if (comp?.sub) merged.push("subMiracle");
-    if (comp?.air) merged.push("airMiracle");
+  if (career === "miracle" || career === "ape") {
+    if (comp?.sub) merged.push(career === "miracle" ? "subMiracle" : "subApe");
+    if (comp?.air) merged.push(career === "miracle" ? "airMiracle" : "airApe");
   }
   if (merged.length > 0) return merged;
   return [career, comp?.air ? "air" : null, comp?.sub ? "sub" : null].filter(

@@ -132,7 +132,8 @@ export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
 
 /** The canonical seal kinds — mirrored here (type-only import above) so
  *  parsePrefs can drop junk keys from a hand-edited blob. The merged kinds
- *  (空中神人 / 水下神人) are first-class switches like the rest. */
+ *  (空中神人 / 水下神人 / 空中小猴 / 水下小猴) are first-class switches
+ *  like the rest. */
 const STAMP_KINDS = [
   "miracle",
   "ape",
@@ -142,6 +143,8 @@ const STAMP_KINDS = [
   "sub",
   "airMiracle",
   "subMiracle",
+  "airApe",
+  "subApe",
 ] as const;
 
 export const DEFAULT_STATS_PREFS: StatsPrefs = {

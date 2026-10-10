@@ -349,6 +349,8 @@ const STAMP_TEXT: Record<StampKind, string> = {
   sub: "水下小人",
   airMiracle: "空中神人",
   subMiracle: "水下神人",
+  airApe: "空中小猴",
+  subApe: "水下小猴",
 };
 
 // Custom seal pictures (settings' seal customizer → commands::stamps):
@@ -621,10 +623,11 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
   // LEFT of the numbers, enemies to the RIGHT — no more splitting career
   // verdict and composition tags across the chip, which read as two
   // different players' data at tab-glance distance. The cluster rides the
-  // shared merge rule (resolveStamps): a 神了 verdict alongside comp tags
-  // collapses into the merged 空中神人 / 水下神人 seals, which replace
-  // (consume) their constituents; other verdicts keep the career-leads-
-  // then-air-then-sub order. A name without stats yet shows no seal at
+  // shared merge rule (resolveStamps): a 神了 or 猴 verdict alongside comp
+  // tags collapses into the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴
+  // seals, which replace (consume) their constituents; 蛆 suppresses the
+  // comp tags entirely, and 过街老鼠 keeps the career-leads-then-air-then-sub
+  // order. A name without stats yet shows no seal at
   // all — the verdicts are derived from data the stats/composition
   // batches bring. Hidden profiles with a clan additionally HOLD their
   // seal until the clan verdict lands (absent map entry): a strong clan
