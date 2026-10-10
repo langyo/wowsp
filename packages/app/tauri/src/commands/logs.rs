@@ -153,8 +153,26 @@ pub fn logs_read_tail(lines: Option<usize>) -> Result<String, String> {
 /// Exported bundles stay in the folder until the user deletes them (the
 /// roller never touches them — its prune scan matches only its own
 /// naming, and so does the overview listing).
+///
+/// `include_hardware` adds `hardware-info.txt` — the consented hardware &
+/// environment report (see `commands::hardware_info` for the privacy flow:
+/// the webui only sets this after an explicit consent dialog, and the
+/// collection may raise a UAC prompt via a self-relaunched helper).
+/// Collection takes seconds (WMI sweep + optional UAC), so the command is
+/// async and the heavy work runs on the blocking pool.
 #[tauri::command]
-pub fn logs_export_bundle(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn logs_export_bundle(
+    app: tauri::AppHandle,
+    include_hardware: Option<bool>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        export_bundle_sync(&app, include_hardware.unwrap_or(false))
+    })
+    .await
+    .map_err(|e| format!("bundle task failed: {e}"))?
+}
+
+fn export_bundle_sync(app: &tauri::AppHandle, include_hardware: bool) -> Result<String, String> {
     use tauri_plugin_opener::OpenerExt;
 
     let dir = logging::ensure_log_dir()?;
@@ -191,6 +209,18 @@ pub fn logs_export_bundle(app: tauri::AppHandle) -> Result<String, String> {
         return Err("no log files to bundle".to_string());
     }
 
+    // Hardware & environment report — only when the webui's consent dialog
+    // said yes. The elevated self-relaunch (UAC) is part of this call; a
+    // declined or failed elevation degrades to the user-level snapshot
+    // inside the report, never to a failed export. Collected BEFORE the
+    // bundle file is created: the UAC wait can stretch to minutes, and a
+    // quit mid-prompt must not strand an empty zip in the logs dir.
+    let hardware = if include_hardware {
+        Some(super::hardware_info::collect_for_bundle(true))
+    } else {
+        None
+    };
+
     let file = std::fs::File::create(&bundle_path)
         .map_err(|e| format!("create {}: {e}", bundle_path.display()))?;
     let mut zip = zip::ZipWriter::new(file);
@@ -199,8 +229,15 @@ pub fn logs_export_bundle(app: tauri::AppHandle) -> Result<String, String> {
 
     zip.start_file("feedback-info.txt", opts)
         .map_err(|e| format!("bundle header: {e}"))?;
-    zip.write_all(&feedback_info(&dir, &sources))
+    zip.write_all(&feedback_info(&dir, &sources, hardware.as_ref()))
         .map_err(|e| format!("bundle header: {e}"))?;
+
+    if let Some(report) = &hardware {
+        zip.start_file("hardware-info.txt", opts)
+            .map_err(|e| format!("bundle hardware report: {e}"))?;
+        zip.write_all(&report.render_bom())
+            .map_err(|e| format!("bundle hardware report: {e}"))?;
+    }
 
     for (name, path, cap) in &sources {
         let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
@@ -223,6 +260,7 @@ pub fn logs_export_bundle(app: tauri::AppHandle) -> Result<String, String> {
     tracing::info!(
         ?bundle_path,
         files = sources.len(),
+        hardware = hardware.is_some(),
         "feedback bundle exported"
     );
     let _ = app
@@ -234,8 +272,14 @@ pub fn logs_export_bundle(app: tauri::AppHandle) -> Result<String, String> {
 
 /// The bundle's manifest header. Written with a UTF-8 BOM so legacy
 /// Windows editors (the GBK-default crowd) auto-detect instead of
-/// mojibake-ing the CJK paths inside.
-fn feedback_info(dir: &std::path::Path, sources: &[(String, PathBuf, u64)]) -> Vec<u8> {
+/// mojibake-ing the CJK paths inside. When a hardware report rides along,
+/// its one-line summary (OS / CPU / board / GPU + the elevation status)
+/// goes here too, so a bundle can be triaged without opening the report.
+fn feedback_info(
+    dir: &std::path::Path,
+    sources: &[(String, PathBuf, u64)],
+    hardware: Option<&super::hardware_info::HardwareReport>,
+) -> Vec<u8> {
     let mut manifest = String::new();
     manifest.push_str("WoWSP feedback bundle\n");
     manifest.push_str("encoding: UTF-8\n");
@@ -255,6 +299,40 @@ fn feedback_info(dir: &std::path::Path, sources: &[(String, PathBuf, u64)]) -> V
         }
     ));
     manifest.push_str(&format!("portable: {}\n", crate::paths::portable_mode()));
+    match hardware {
+        Some(report) => {
+            manifest.push_str(&format!(
+                "hardware-info: hardware-info.txt (elevation: {})\n",
+                report.elevation.label()
+            ));
+            // One-line identity summary — full details live in the report.
+            // Multi-socket/multi-GPU rows are labeled `cpu 1` / `adapter 1`,
+            // so an exact-key miss falls back to the section's first row.
+            let summary = |section: &str, key: &str| {
+                report.line(section, key).or_else(|| {
+                    report
+                        .section(section)
+                        .and_then(|s| s.lines.first().map(|(_, v)| v.as_str()))
+                })
+            };
+            if let Some(v) = summary("os", "caption").or_else(|| summary("os", "edition")) {
+                manifest.push_str(&format!("hw-os: {v}\n"));
+            }
+            if let Some(v) = report.line("os", "build") {
+                manifest.push_str(&format!("hw-os-build: {v}\n"));
+            }
+            if let Some(v) = summary("cpu", "model") {
+                manifest.push_str(&format!("hw-cpu: {v}\n"));
+            }
+            if let Some(v) = summary("motherboard", "board") {
+                manifest.push_str(&format!("hw-board: {v}\n"));
+            }
+            if let Some(v) = summary("gpu", "adapter") {
+                manifest.push_str(&format!("hw-gpu: {v}\n"));
+            }
+        },
+        None => manifest.push_str("hardware-info: skipped (logs-only export)\n"),
+    }
     manifest.push_str(&format!("log-dir: {}\n", dir.display()));
     manifest.push_str("log-files (newest first, UTF-8 text):\n");
     for (name, path, cap) in sources {
@@ -269,6 +347,7 @@ fn feedback_info(dir: &std::path::Path, sources: &[(String, PathBuf, u64)]) -> V
     }
     manifest.push_str("\nnote: 日志文件为 UTF-8 编码，每行一条事件。\n");
     manifest.push_str("note: log files are UTF-8 text, one event per line.\n");
+    manifest.push_str("note: hardware-info.txt 在应用内弹窗确认后收集，仅用于问题分析。\n");
 
     let mut bytes = Vec::with_capacity(manifest.len() + 3);
     bytes.extend_from_slice("\u{feff}".as_bytes());
@@ -320,12 +399,82 @@ mod tests {
             dir.join("wowsp.2026-09-29.log"),
             1024u64,
         )];
-        let bytes = feedback_info(&dir, &sources);
+        let bytes = feedback_info(&dir, &sources, None);
         assert_eq!(&bytes[..3], "\u{feff}".as_bytes());
         let text = String::from_utf8(bytes).expect("manifest is UTF-8");
         assert!(text.contains("encoding: UTF-8"));
         assert!(text.contains("wowsp.2026-09-29.log"));
         assert!(!text.contains("tail"), "uncapped entry must not be marked");
+        assert!(
+            text.contains("hardware-info: skipped"),
+            "logs-only export must say so"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn feedback_info_summarizes_the_hardware_report() {
+        use crate::commands::hardware_info::{ElevationStatus, HardwareReport};
+
+        let dir = temp_dir("info-hw");
+        let sources = vec![(
+            "wowsp.2026-10-10.log".to_string(),
+            dir.join("wowsp.2026-10-10.log"),
+            1024u64,
+        )];
+        let mut report = HardwareReport::default();
+        report.elevation = ElevationStatus::Elevated;
+        report.push_lines(
+            "os",
+            "t",
+            vec![
+                ("caption".into(), "Windows 11 专业版".into()),
+                ("build".into(), "26100.1742".into()),
+            ],
+        );
+        report.push_lines("cpu", "t", vec![("model".into(), "i7-12700K".into())]);
+        report.push_lines(
+            "gpu",
+            "t",
+            vec![("adapter".into(), "RTX 4070 — driver 32.0.15.6094".into())],
+        );
+        let bytes = feedback_info(&dir, &sources, Some(&report));
+        let text = String::from_utf8(bytes).expect("manifest is UTF-8");
+        assert!(text.contains("hardware-info: hardware-info.txt (elevation: elevated"));
+        assert!(text.contains("hw-os: Windows 11 专业版"));
+        assert!(text.contains("hw-os-build: 26100.1742"));
+        assert!(text.contains("hw-cpu: i7-12700K"));
+        assert!(text.contains("hw-gpu: RTX 4070"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn feedback_info_hardware_summary_falls_back_to_first_row() {
+        use crate::commands::hardware_info::HardwareReport;
+
+        let dir = temp_dir("info-hw-multi");
+        let sources = vec![(
+            "wowsp.2026-10-10.log".to_string(),
+            dir.join("wowsp.2026-10-10.log"),
+            1024u64,
+        )];
+        // Dual-GPU machines label their rows `adapter 0` / `adapter 1` —
+        // the exact-key lookup misses, the first row must carry the
+        // summary instead of silently dropping `hw-gpu:`.
+        let mut report = HardwareReport::default();
+        report.push_lines(
+            "gpu",
+            "t",
+            vec![
+                ("adapter 0".into(), "Arc 130T — driver 32.0.101".into()),
+                ("adapter 1".into(), "RTX 4070 — driver 32.0.15".into()),
+            ],
+        );
+        let bytes = feedback_info(&dir, &sources, Some(&report));
+        let text = String::from_utf8(bytes).expect("manifest is UTF-8");
+        assert!(text.contains("hw-gpu: Arc 130T — driver 32.0.101"));
 
         std::fs::remove_dir_all(&dir).ok();
     }

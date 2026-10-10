@@ -150,6 +150,9 @@ reqwest = { version = "^0.13", default-features = false, features = [
 [target.'cfg(windows)'.dependencies]
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg.workspace = true
+# WMI queries for the feedback bundle's consented hardware report
+# (commands/hardware_info.rs).
+wmi.workspace = true
 # Windows screen capture for overlay roster positioning
 windows.workspace = true
 

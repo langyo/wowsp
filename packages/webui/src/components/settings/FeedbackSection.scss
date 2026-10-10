@@ -93,3 +93,59 @@
     margin-top: var(--hi-space-12, 12px);
   }
 }
+
+// Hardware-consent dialog (the export flow's disclosure step): warning
+// lead + the collected-categories list + the privacy / UAC notes. Same
+// token-driven styling as the pane above so both themes read correctly.
+.feedback-hw {
+  &__lead {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: var(--hi-color-warning, #eed677);
+    background: color-mix(in srgb, var(--hi-color-warning, #eed677) 12%, transparent);
+  }
+
+  &__desc {
+    margin: 0;
+    color: var(--hi-color-text-primary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    line-height: 1.6;
+  }
+
+  &__items {
+    margin: var(--hi-space-12, 12px) 0 0;
+    padding: 0 0 0 var(--hi-space-16, 16px);
+    color: var(--hi-color-text-primary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    line-height: 1.6;
+
+    li + li {
+      margin-top: var(--hi-space-4, 4px);
+    }
+  }
+
+  &__note,
+  &__uac {
+    margin: var(--hi-space-12, 12px) 0 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    line-height: 1.6;
+  }
+
+  &__uac {
+    padding: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
+    border: 1px solid var(--hi-color-border);
+    border-radius: var(--hi-radius-sm, 4px);
+  }
+}

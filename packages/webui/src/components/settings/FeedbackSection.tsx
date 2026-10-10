@@ -1,10 +1,11 @@
 import { computed, defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { Copy, ExternalLink, FolderSearch, History, PackageOpen } from "@lucide/vue";
+import { Copy, ExternalLink, FolderSearch, History, PackageOpen, ShieldAlert } from "@lucide/vue";
 
 import {
   HkButton,
   HkIconButton,
+  HkModal,
   HkSettingsGroup,
   HkSettingsHint,
   HkSpinner,
@@ -161,10 +162,17 @@ export default defineComponent({
       }
     }
 
-    async function exportBundle() {
+    /** The hardware-consent dialog. The full export sweeps the machine's
+     *  identifying hardware data (disk serials, every NIC's MAC, …), so it
+     *  ONLY runs after this explicit disclosure — the log-only export stays
+     *  one click away, and cancel keeps everything local. */
+    const exportArmed = ref(false);
+
+    async function exportBundle(includeHardware: boolean) {
+      exportArmed.value = false;
       exporting.value = true;
       try {
-        const path = await api.logsExportBundle();
+        const path = await api.logsExportBundle(includeHardware);
         toast.success(`${t("settings.feedbackExported")}\n${path}`);
       } catch (e) {
         toast.error(`${t("settings.feedbackExport")}\n${(e as Error).message || e}`);
@@ -274,7 +282,7 @@ export default defineComponent({
             size="sm"
             loading={exporting.value}
             disabled={exporting.value || !latest.value}
-            onClick={() => void exportBundle()}
+            onClick={() => (exportArmed.value = true)}
           >
             <PackageOpen size={14} />
             {t("settings.feedbackExport")}
@@ -302,6 +310,46 @@ export default defineComponent({
             {t("settings.feedbackQqGroup")}
           </HkButton>
         </div>
+
+        <HkModal
+          modelValue={exportArmed.value}
+          onUpdate:modelValue={(v: boolean) => {
+            if (!v) exportArmed.value = false;
+          }}
+          title={t("settings.feedbackHwTitle")}
+          width="34rem"
+          footerActions={[
+            {
+              label: t("settings.feedbackHwExportLogs"),
+              variant: "secondary",
+              disabled: exporting.value,
+              onClick: () => void exportBundle(false),
+            },
+            {
+              label: t("settings.feedbackHwExportFull"),
+              variant: "primary",
+              loading: exporting.value,
+              onClick: () => void exportBundle(true),
+            },
+          ]}
+        >
+          <div class="feedback-hw">
+            <div class="feedback-hw__lead">
+              <span class="feedback-hw__icon">
+                <ShieldAlert size={16} />
+              </span>
+              <p class="feedback-hw__desc">{t("settings.feedbackHwDesc")}</p>
+            </div>
+            <ul class="feedback-hw__items">
+              <li>{t("settings.feedbackHwItemModels")}</li>
+              <li>{t("settings.feedbackHwItemSerial")}</li>
+              <li>{t("settings.feedbackHwItemEnv")}</li>
+              <li>{t("settings.feedbackHwItemDriver")}</li>
+            </ul>
+            <p class="feedback-hw__note">{t("settings.feedbackHwPrivacy")}</p>
+            <p class="feedback-hw__uac">{t("settings.feedbackHwUac")}</p>
+          </div>
+        </HkModal>
       </HkSettingsGroup>
       </>
     );

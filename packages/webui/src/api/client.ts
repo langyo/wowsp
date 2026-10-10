@@ -2189,8 +2189,14 @@ export const api = {
   logsReadTail: (lines?: number) =>
     transport.invoke<string>(RPC.logs_read_tail, { lines: lines ?? null }),
   /** Write the feedback zip bundle (logs + UTF-8 manifest) into the logs
-   *  folder, reveal it in the file manager, and return its path. */
-  logsExportBundle: () => transport.invoke<string>(RPC.logs_export_bundle),
+   *  folder, reveal it in the file manager, and return its path.
+   *  `includeHardware` (only ever set after the consent dialog) also sweeps
+   *  the machine's hardware/environment report into the bundle and may
+   *  raise a UAC prompt via the app's elevated helper relaunch. */
+  logsExportBundle: (includeHardware?: boolean) =>
+    transport.invoke<string>(RPC.logs_export_bundle, {
+      includeHardware: includeHardware ?? null,
+    }),
   installOverlayMod: (gameRoot: string) =>
     transport.invoke<string>(RPC.install_overlay_mod, { gameRoot }),
   uninstallOverlayMod: (gameRoot: string) =>
