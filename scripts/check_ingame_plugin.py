@@ -25,9 +25,32 @@ companion app consumes:
     (the double-encoded string shape and the guessed-projection shape —
     the app's Lesta roster synthesizer parses both),
   - telemetry.json: per-name alive flags + the self identity + the
-    client sort-key map (empty in the harness, present in battles),
+    client sort-key map (EMPTY in the ship-less passes — the withheld
+    shape — and the full planted client table in the ship passes, see
+    SHIP_KEYS),
   - heartbeat.json / request.json written with the roster count,
   - the scheduler survives tick-over-tick (no swallowed exception text).
+
+The GAME-TRUE sort-key path (sort_key_probe: the 'ship' collection walk
+plus the avatar ship-slot pairing) is what the ship passes exist for —
+until 2026-10-10 every pass planted no ship entities and could only
+assert the empty-map degradation, while the Lesta sandbox's behavior
+toward the 'ship' collection stays unverified in a real battle (the
+design doc's open item). The passes now pin, OFFLINE:
+  - the WG shape (ship components carrying sortKey, avatar `.ship` slot
+    references whose `.ref.id` matches a ship entry id): the exact key
+    table lands in telemetry AND the panel fold sorts its alive block by
+    key + bare name — the concatenation the client's own Tab sort
+    compares; avatar-entity names carry clan tags (the real client's
+    shape), so the bare-name keying of the map is asserted too;
+  - the LESTA shape (UiComponents raising): the key table still lands —
+    the path duck-types the components and must never need constants;
+  - a partial-coverage shape (one avatar's reference resolves to no ship
+    entry): the key map stays partial AND that side's panel fold keeps
+    the walk order (game-true and walk-order rows never interleave),
+    while the fully covered side still sorts;
+  - the 15.9 encoder quirk: the key table survives the hand-rolled
+    serializer when the client's own encoder rejects the payload.
 
 Anything the plugin does beyond that set must sit behind a bare `except:`
 so it degrades instead of dying — the harness proves the core paths never
@@ -180,11 +203,16 @@ class StubUi(object):
 
 
 class StubDataHub(object):
-    def __init__(self, entities=None):
-        self.entities = entities or []
+    """The injected dataHub: collections served BY NAME, like the real
+    ModAPI hub ('avatar' and 'ship' are both on its SYNCED whitelist;
+    anything else comes back empty — unknown kinds were previously fed
+    the avatars, which the real hub never does)."""
+
+    def __init__(self, avatars=None, ships=None):
+        self.collections = {"avatar": avatars or [], "ship": ships or []}
 
     def getEntityCollections(self, kind):
-        return self.entities
+        return self.collections.get(kind, [])
 
 
 class FakeComponent(object):
@@ -194,22 +222,61 @@ class FakeComponent(object):
 
 class FakeAvatarEntity(object):
     """One dataHub avatar entity: component subscripts + `in` membership
-    (the walk's contract)."""
+    (the entity walk's contract) AND the raw `.components` mapping (the
+    sort-key probe's contract — it duck-types components without
+    UiComponents). `ship_slot` models the avatar component's `.ship`
+    reference; None = an avatar that pairs with no ship entry."""
 
     def __init__(self, component_class, name, relation, alive=True,
-                 hp=24400.0, hp_max=24400.0):
+                 hp=24400.0, hp_max=24400.0, ship_slot=None):
+        avatar = FakeComponent(name=name, ship=ship_slot)
+        health = FakeComponent(value=hp, max=hp_max, isAlive=alive)
+        relation_comp = FakeComponent(value=relation)
         self._map = {
-            component_class.avatar: FakeComponent(name=name),
-            component_class.health: FakeComponent(value=hp, max=hp_max,
-                                                  isAlive=alive),
-            component_class.relation: FakeComponent(value=relation),
+            component_class.avatar: avatar,
+            component_class.health: health,
+            component_class.relation: relation_comp,
         }
+        self.components = {"avatar": avatar, "health": health,
+                           "relation": relation_comp}
 
     def __getitem__(self, key):
         return self._map[key]
 
     def __contains__(self, key):
         return key in self._map
+
+
+class FakeEntityRef(object):
+    """An entity reference: `.id` names the entity (a ship collection
+    entry's own `id`, reached through the slot chain below)."""
+
+    def __init__(self, entity_id):
+        self.id = entity_id
+
+
+class FakeShipSlot(object):
+    """The avatar component's `.ship` slot: a wrapper whose `.ref.id`
+    names the ship collection entry — the exact pairing chain
+    sort_key_probe reads (`comp.ship.ref.id`)."""
+
+    def __init__(self, entity_id):
+        self.ref = FakeEntityRef(entity_id)
+
+
+class FakeShipEntity(object):
+    """One dataHub SHIP entity: `id` plus a components mapping whose
+    Ship component carries the client's own Tab sortKey (ShipSystem.add's
+    class+tier+nation+shortName string). `sort_key=None` models an entity
+    whose components carry no key at all — the probe must skip it
+    silently (a per-entity degrade, never a death)."""
+
+    def __init__(self, entity_id, sort_key):
+        self.id = entity_id
+        if sort_key is None:
+            self.components = {"position": FakeComponent(value=(1.0, 2.0, 3.0))}
+        else:
+            self.components = {"ship": FakeComponent(sortKey=sort_key)}
 
 
 class RaisingConstants(object):
@@ -256,6 +323,44 @@ def build_roster(self_name="langyo"):
     return players
 
 
+# The planted client sort keys — ShipSystem.add's own concatenation
+# (class rank + str(100 - tier) + nation rank + shortName; nation ranks
+# follow the client's NATION.SORT_ORDER: japan 0, usa 1, russia 2,
+# germany 3, uk 4, france 5, pan_asia 7). Deliberately chosen so the
+# game-true sort (key + bare name, plain string compare) is OBSERVABLE:
+# it differs from the entity-walk order on both sides, so the assertions
+# below prove the panel fold really sorted rather than kept insertion
+# order. The co-op bot carries one too — on the real client bots are
+# ordinary ship entities.
+SHIP_KEYS = {
+    "langyo": "2971St. Louis",      # cruiser T3 usa
+    "Ally01": "2972Bogatyr",        # cruiser T3 russia
+    "Ally02": "3967Chengan",        # destroyer T4 pan_asia
+    "Ally03": "1970Kawachi",        # battleship T3 japan
+    "Ally04": "1974Bellerophon",    # battleship T3 uk
+    "Ally05": "1905Bourgogne",      # battleship T10 france
+    "Foe00": "0900Hakuryu",         # carrier T10 japan
+    "Foe01": "0901Midway",          # carrier T10 usa
+    "Foe02": "2962Novik",           # cruiser T4 russia
+    "Foe03": "3900Shimakaze",       # destroyer T10 japan
+    "Foe04": "1903Preussen",        # battleship T10 germany
+    "Foe05": "2964Fiji",            # cruiser T4 uk
+    BOT_NAME: "3982Derzki",         # destroyer T2 russia (the bot)
+}
+# What merge_order's alive-block sort (key + bare name ascending) must
+# produce from SHIP_KEYS on each side.
+SHIP_KEY_ORDERS = {
+    "ally": ["Ally05", "Ally03", "Ally04", "langyo", "Ally01", "Ally02"],
+    "enemy": ["Foe00", "Foe01", "Foe04", "Foe02", "Foe05", "Foe03", BOT_NAME],
+}
+# Ship entity ids derive from the roster record keys below; the two named
+# outliers model the shapes the probe must tolerate. No roster record
+# uses either id.
+SHIP_ENTITY_BASE = 500
+UNPAIRED_SHIP_ID = 5555  # partial pass: langyo's slot resolves to nothing
+NOISE_SHIP_ID = 4999     # full pass: a ship entity with no sortKey comp
+
+
 def crippled_builtins():
     import builtins as host
     table = {}
@@ -265,28 +370,55 @@ def crippled_builtins():
 
 
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
-               raising_constants, fail_plain, failures):
-    label = "encode=%s manifest=%s ui=%s cc=%s plain=%s" % (
+             raising_constants, fail_plain, ships, failures):
+    label = "encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s" % (
         "records" if encode_records else "projection",
         "yes" if with_manifest else "missing",
         "yes" if with_ui else "absent",
         "raising" if raising_constants else "ok",
-        "reject" if fail_plain else "ok")
+        "reject" if fail_plain else "ok",
+        ships)
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle()
     events = StubEvents()
     callbacks = StubCallbacks()
     cc = StubConstants.UiComponents
-    entities = [
-        FakeAvatarEntity(cc, name=rec["name"],
-                         relation=(StubConstants.PlayerRelation.SELF
-                                   if rec["name"] == "langyo"
-                                   else (StubConstants.PlayerRelation.ALLY
-                                         if rec["teamId"] == 1
-                                         else StubConstants.PlayerRelation.ENEMY)),
-                         alive=True)
-        for rec in build_roster().values()
-    ]
+    # The entity collections, built per the pass's ship mode:
+    #   "none"    — no ship entities at all (the withheld shape; every
+    #               avatar pairs with nothing);
+    #   "full"    — every avatar (bot included) pairs with a ship entity
+    #               carrying its planted sortKey, plus one keyless noise
+    #               entity nobody references;
+    #   "partial" — langyo's slot resolves to a nonexistent ship id, so
+    #               the key map comes back one short of the roster.
+    roster = build_roster()
+    dh_avatars = []
+    dh_ships = []
+    # Iteration follows build_roster's insertion order (the py3.7+ dict
+    # guarantee) — the walk-order expectations below are coupled to it.
+    for slot, rec in roster.items():
+        name = rec["name"]
+        # Avatar-entity names carry a clan tag on the real client while
+        # roster/telemetry keys stay BARE (bare_name strips it) — plant
+        # the tagged shape so every keying assertion covers the strip
+        # (bots' names carry no tag).
+        entity_name = name if name.startswith(":") else "[RUQL]" + name
+        relation = (StubConstants.PlayerRelation.SELF if name == "langyo"
+                    else (StubConstants.PlayerRelation.ALLY
+                          if rec["teamId"] == 1
+                          else StubConstants.PlayerRelation.ENEMY))
+        ship_id = SHIP_ENTITY_BASE + slot if ships != "none" else None
+        if ships == "partial" and name == "langyo":
+            ship_id = UNPAIRED_SHIP_ID
+        dh_avatars.append(
+            FakeAvatarEntity(cc, name=entity_name, relation=relation,
+                             alive=True,
+                             ship_slot=(FakeShipSlot(ship_id)
+                                        if ship_id is not None else None)))
+        if ship_id is not None and ship_id != UNPAIRED_SHIP_ID:
+            dh_ships.append(FakeShipEntity(ship_id, SHIP_KEYS[name]))
+    if ships == "full":
+        dh_ships.append(FakeShipEntity(NOISE_SHIP_ID, None))
     env = {
         "__builtins__": crippled_builtins(),
         "__name__": "__sandbox__",
@@ -294,7 +426,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         "battle": battle,
         "events": events,
         "callbacks": callbacks,
-        "dataHub": StubDataHub(entities),
+        "dataHub": StubDataHub(dh_avatars, dh_ships),
         "constants": (RaisingConstants() if raising_constants
                       else StubConstants()),
     }
@@ -416,14 +548,21 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if type(tele.get("t")) is not int:
             failures.append("[%s] telemetry t is %s (must be int)"
                             % (label, type(tele.get("t")).__name__))
-        # The game-true sort-key map: the harness carries no ship
-        # entities, so the probe must degrade to an EMPTY mapping here —
-        # but the FIELD itself must be present (its absence is exactly
-        # what keys the app's offline-inference fallback), and it must
-        # survive even a raising client encoder (the fail_plain passes).
-        if tele.get("sortKeys") != {}:
-            failures.append("[%s] telemetry sortKeys unexpected: %r"
-                            % (label, tele.get("sortKeys")))
+        # The game-true sort-key map. The ship-less passes pin the
+        # WITHHELD shape (a sandbox that serves no ship entities — Lesta
+        # until a live battle proves otherwise): the probe must degrade
+        # to an EMPTY mapping, but the FIELD itself must be present (its
+        # absence is exactly what keys the app's offline-inference
+        # fallback). The ship passes pin the game-true path: the exact
+        # planted table lands (the fail_plain variant proves the
+        # hand-rolled serializer carries it too), short exactly the
+        # unpaired avatar on the partial pass.
+        expected_keys = {} if ships == "none" else dict(SHIP_KEYS)
+        if ships == "partial":
+            del expected_keys["langyo"]
+        if tele.get("sortKeys") != expected_keys:
+            failures.append("[%s] telemetry sortKeys mismatch (ships=%s): %r"
+                            % (label, ships, tele.get("sortKeys")))
 
         # Bots must SURVIVE into roster_raw.json: the app's synthesizer
         # keeps ':Name:' rows because they hold co-op table rows and team
@@ -492,6 +631,27 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if probe is not None and probe.last_error:
             failures.append("[%s] probe recorded a soft error: %r"
                             % (label, probe.last_error))
+        # The in-game panel's row order (merge_order's fold of the walk).
+        # With FULL key coverage the alive block sorts by key + bare name
+        # — the exact concatenation the client's own Tab sort compares;
+        # with a gap (the partial pass: langyo unpaired) that side keeps
+        # the WALK order (game-true and walk-order rows never interleave)
+        # while the still-covered side sorts. The raising-cc (Lesta)
+        # passes stand the entity WALK down — it is the walk that
+        # resolves UiComponents (the fold only folds what the walk
+        # produced, and sort_key_probe needs no constants at all) — so
+        # those passes assert the key table above and skip this block.
+        if ships != "none" and not raising_constants and probe is not None:
+            expected_order = {
+                "ally": (["langyo"] + ["Ally%02d" % i for i in range(1, 6)]
+                         if ships == "partial" else SHIP_KEY_ORDERS["ally"]),
+                "enemy": SHIP_KEY_ORDERS["enemy"],
+            }
+            for side in ("ally", "enemy"):
+                if probe.order.get(side) != expected_order[side]:
+                    failures.append(
+                        "[%s] panel %s order wrong (ships=%s): %r"
+                        % (label, side, ships, probe.order.get(side)))
         if "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
@@ -505,29 +665,44 @@ def main(argv):
         plugin_src = fh.read()
 
     failures = []
-    # Two encodings with the manifest present (the config path proves it is
-    # READ), one no-manifest pass proving the fallback path — and the
-    # handler-type evaluation on it — stays sandbox-safe, one ui-present
-    # pass (Lesta injects no `ui`; the WG-family clients do, and the panel
-    # path must still work there), one raising-constants pass (Lesta's
+    # Six ship-less passes (the historical matrix: two encodings with the
+    # manifest present — the config path proves it is READ —, one
+    # no-manifest pass proving the fallback path — and the handler-type
+    # evaluation on it — stays sandbox-safe, one ui-present pass (Lesta
+    # injects no `ui`; the WG-family clients do, and the panel path must
+    # still work there), one raising-constants pass (Lesta's
     # UiComponents attribute), and one 15.9-quirk pass where the client's
     # own jsonEncode REJECTS plain dict payloads (live WG 2026-10-09 —
     # telemetry.json froze at its quit-clear) and every bridge file must
-    # still flow through the hand-rolled serializer.
-    for encode_records, with_manifest, with_ui, raising_constants, fail_plain in (
-            (True, True, False, False, False), (False, True, False, False, False),
-            (True, False, False, False, False), (True, True, True, False, False),
-            (True, True, False, True, False), (True, True, False, False, True)):
+    # still flow through the hand-rolled serializer) — then four ship
+    # passes pinning the game-true sort-key path itself (see the module
+    # docstring): the WG shape, the Lesta shape (raising UiComponents —
+    # the walk must not need it), the encoder quirk (the key table must
+    # survive the hand-rolled serializer), and partial coverage (an
+    # unpaired avatar keeps that side on the walk order, keys stay one
+    # short).
+    for (encode_records, with_manifest, with_ui, raising_constants,
+         fail_plain, ships) in (
+            (True, True, False, False, False, "none"),
+            (False, True, False, False, False, "none"),
+            (True, False, False, False, False, "none"),
+            (True, True, True, False, False, "none"),
+            (True, True, False, True, False, "none"),
+            (True, True, False, False, True, "none"),
+            (True, True, False, False, False, "full"),
+            (True, True, False, True, False, "full"),
+            (True, True, False, False, True, "full"),
+            (True, True, False, False, False, "partial")):
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
             run_once(plugin_src, workdir, encode_records, with_manifest,
-                     with_ui, raising_constants, fail_plain, failures)
+                     with_ui, raising_constants, fail_plain, ships, failures)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
-    print("SANDBOX CONFORMANCE: PASS (6 passes, %s, crippled builtins: %s)"
+    print("SANDBOX CONFORMANCE: PASS (10 passes, %s, crippled builtins: %s)"
           % (os.path.basename(os.path.normpath(plugin)), ", ".join(SAFE_BUILTINS)))
     return 0
 

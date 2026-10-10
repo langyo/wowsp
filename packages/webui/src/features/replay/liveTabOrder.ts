@@ -73,8 +73,6 @@ export interface PredictedOrderOptions {
  *
  * @param list the side's roster entries (allies: relation ≤ 1 / enemies:
  *        relation > 1), in arena-file order.
- * @param rows that side's recognized Tab rows in on-screen order, when a
- *        trusted recognition pass exists for this battle (null otherwise).
  * @param options the predicted order's key inputs (locale, clan tags).
  */
 export function orderForTab(

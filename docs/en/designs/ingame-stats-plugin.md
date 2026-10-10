@@ -110,11 +110,19 @@ The /live panel sorts the roster by key + '[TAG]nickname' — the exact
 concatenation `__sortKeyAlive` compares — and grades the pill EXACT when
 the map covers the live roster, on every realm (CN included: its
 view-layer re-sort, if any, starts from these same keys; the in-game
-panel's alive block sorts by them too). Open items: the Lesta sandbox's
-behavior toward the 'ship' collection is unverified until a real battle
-(every read is guarded; a gap degrades that battle to the per-realm
-inference), and a partial-coverage battle keeps the calibrated fallback —
-game-true and inferred rows never interleave.
+panel's alive block sorts by them too). Offline conformance for this
+path landed 2026-10-10 (`scripts/check_ingame_plugin.py`'s ship passes):
+planted ship entities pin the WG shape (the exact key table in telemetry
+AND the panel fold sorting its alive block by key + name), the Lesta
+shape (UiComponents raising — the path duck-types the components and
+needs no constants), partial coverage (an unpaired avatar keeps that
+side's walk order — game-true and walk-order rows never interleave —
+while the still-covered side sorts), and the encoder quirk (the key
+table survives the hand-rolled serializer). Open items: the Lesta
+sandbox's behavior toward the 'ship' collection is unverified until a
+real battle (every read is guarded; a gap degrades that battle to the
+per-realm inference), and a partial-coverage battle keeps the calibrated
+fallback — game-true and inferred rows never interleave.
 
 **Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
 own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
@@ -277,8 +285,15 @@ Bridge files (protocol v1, all in the mod directory):
   Background: Lesta's builtin whitelist omits the class/reflection
   machinery (`Exception`, `object` and more each killed the mod at
   import across 2026-10-08), so the core paths are written to need no
-  builtin names at all; the harness is the regression net. Also keep
-  `python -m py_compile` green.
+  builtin names at all; the harness is the regression net. Since
+  2026-10-10 four SHIP passes additionally drive the game-true sort-key
+  path with planted ship entities (the WG shape asserting the exact key
+  table and the panel fold's key + name sort, the Lesta shape with
+  raising UiComponents, a partial-coverage shape whose unpaired side
+  keeps the walk order, and the 15.9 encoder quirk the key table must
+  survive) — the one thing they cannot do is answer what the real Lesta
+  sandbox serves for the 'ship' collection; that stays a live-battle
+  check. Also keep `python -m py_compile` green.
 - **Port-only smoke test** (no battle): launch the game, sit in port
   ~15 s, exit; assert `injected names=[…]`, `api[load] dh=True`, and a
   fresh heartbeat in `python.log`. This is the cheap protocol that kept
