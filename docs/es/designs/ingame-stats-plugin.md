@@ -112,7 +112,17 @@ nombre → clave). El panel /live ordena el roster por clave +
 `__sortKeyAlive` — y califica la píldora como EXACTA cuando el mapa cubre
 el roster en vivo, en todos los reinos (CN incluido: su reordenación en la
 capa de vista, si la hay, parte de estas mismas claves; el bloque de vivos
-del panel dentro del juego también ordena por ellas). Pendientes: el
+del panel dentro del juego también ordena por ellas). La conformidad fuera
+de línea de esta ruta llegó el 2026-10-10 (los pases de barco de
+`scripts/check_ingame_plugin.py`): entidades de barco plantadas fijan la
+forma WG (la tabla exacta de claves en la telemetría Y el pliegue del panel
+ordenando su bloque de vivos por clave + nombre), la forma Lesta
+(UiComponents lanza una excepción — la ruta hace duck-typing sobre los
+componentes y no necesita constantes), la cobertura parcial (un avatar sin
+pareja conserva el orden de recorrido de ese lado — las filas verdaderas
+del juego y las del orden de recorrido nunca se intercalan — mientras el
+lado aún cubierto sí se ordena) y la peculiaridad del codificador (la tabla
+de claves sobrevive al serializador hecho a mano). Pendientes: el
 comportamiento del sandbox de Lesta ante la colección 'ship' queda sin
 verificar hasta una batalla real (cada lectura está protegida; un hueco
 degrada esa batalla a la inferencia por reino), y una batalla con cobertura
@@ -252,8 +262,17 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
 
 - **Conformidad con el sandbox**: cada cambio de `Main.py` que se envíe se
   valida contra la lista de restricciones (análisis sintáctico en py2.7, sin
-  builtins bloqueados, sin aperturas en modo append, callbacks protegidos)
-  más `python -m py_compile`.
+  builtins bloqueados, sin aperturas en modo append, callbacks protegidos).
+  Desde el 2026-10-10 cuatro pases de barco ejercitan además la ruta de
+  claves de ordenación verdaderas del juego con entidades de barco plantadas
+  (la forma WG afirmando la tabla exacta de claves y el orden clave + nombre
+  del pliegue del panel, la forma Lesta con UiComponents lanzando una
+  excepción, una forma de cobertura parcial cuyo lado sin pareja conserva el
+  orden de recorrido, y la peculiaridad del codificador 15.9 que la tabla de
+  claves debe sobrevivir) — lo único que no pueden hacer es responder qué
+  sirve el sandbox real de Lesta para la colección 'ship'; eso sigue siendo
+  una comprobación de batalla real. Siga manteniendo en verde `python -m
+  py_compile`.
 - **Prueba de humo solo en puerto** (sin batalla): lance el juego, permanezca
   en el puerto ~15 s, salga; verifique `injected names=[…]`,
   `api[load] dh=True` y un heartbeat reciente en `python.log`. Este es el

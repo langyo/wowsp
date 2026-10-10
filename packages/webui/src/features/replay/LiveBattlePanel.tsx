@@ -534,11 +534,12 @@ export default defineComponent({
       }
     }
 
-    // Column ordering mirrors the in-game Tab table: the recognized row
-    // order (when a Tab recognition pass exists for THIS battle) wins
-    // verbatim — sunk-ship regrouping included, with sunk players dimmed —
-    // and without one a predicted class-grouped order approximates the
-    // game's layout far better than tempArenaInfo.json's join order.
+    // Column ordering mirrors the in-game Tab table: telemetry's
+    // game-true client keys win whenever they cover that side's rows
+    // (the exact concatenated string the client's own sort compares),
+    // and without them the predicted per-realm key approximates the
+    // game's layout — sunk players regrouped to their side's tail and
+    // dimmed — far better than tempArenaInfo.json's join order.
     // The panel RENDERS one allies column for every operation-labeled
     // battle (the mode pill says 行动) — wider than `operation` above: the
     // new-account escort op keeps two-team relation semantics for the sink

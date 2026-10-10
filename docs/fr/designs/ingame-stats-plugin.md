@@ -110,12 +110,22 @@ Le panneau /live trie le roster par clé + `'[TAG]nickname'` — la
 concaténation exacte que compare `__sortKeyAlive` — et note la pastille
 EXACT quand la carte couvre le roster en direct, sur tous les realms (CN
 compris : son re-tri en couche vue, s'il existe, part de ces mêmes clés ;
-le bloc des vivants du panneau en jeu trie aussi par elles). Reste ouvert :
-le comportement du bac à sable Lesta face à la collection 'ship' reste
-invérifié jusqu'à une vraie bataille (chaque lecture est gardée ; un manque
-dégrade cette bataille vers l'inférence par realm), et une bataille à
-couverture partielle garde le repli calibré — les lignes vraies du jeu et
-les lignes déduites ne s'entremêlent jamais.
+le bloc des vivants du panneau en jeu trie aussi par elles). La conformité
+hors ligne de ce chemin est arrivée le 2026-10-10 (les passes ship de
+`scripts/check_ingame_plugin.py`) : des entités de navire plantées épinglent
+la forme WG (la table de clés exacte dans la télémétrie ET le pli du panneau
+triant son bloc des vivants par clé + nom), la forme Lesta (UiComponents
+lève une exception — le chemin duck-type les composants et n'a besoin
+d'aucune constante), la couverture partielle (un avatar non apparié conserve
+l'ordre de parcours de son côté — les lignes vraies du jeu et les lignes
+d'ordre de parcours ne s'entremêlent jamais — pendant que le côté encore
+couvert, lui, se trie) et la bizarrerie de l'encodeur (la table de clés
+survit au sérialiseur fait main). Reste ouvert : le comportement du bac à
+sable Lesta face à la collection 'ship' reste invérifié jusqu'à une vraie
+bataille (chaque lecture est gardée ; un manque dégrade cette bataille vers
+l'inférence par realm), et une bataille à couverture partielle garde le
+repli calibré — les lignes vraies du jeu et les lignes déduites ne
+s'entremêlent jamais.
 
 ## Contraintes du bac à sable (durement acquises, à conserver dans le guide de style du mod)
 
@@ -257,8 +267,17 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
 
 - **Conformité au bac à sable** : chaque changement livré de `Main.py`
   est validé contre la liste de contraintes (analyse en py2.7, pas de
-  builtins bloqués, pas d'ouverture en mode append, callbacks protégés)
-  plus `python -m py_compile`.
+  builtins bloqués, pas d'ouverture en mode append, callbacks protégés).
+  Depuis le 2026-10-10, quatre passes ship conduisent en plus le chemin des
+  clés de tri vraies du jeu avec des entités de navire plantées (la forme WG
+  affirmant la table de clés exacte et le tri clé + nom du pli du panneau,
+  la forme Lesta avec un UiComponents levant une exception, une forme à
+  couverture partielle dont le côté non apparié garde l'ordre de parcours,
+  et la bizarrerie de l'encodeur 15.9 que la table de clés doit survivre) —
+  la seule chose qu'elles ne peuvent pas faire, c'est répondre à ce que le
+  vrai bac à sable Lesta sert pour la collection 'ship' ; cela reste une
+  vérification en vraie bataille. Gardez aussi `python -m py_compile` au
+  vert.
 - **Test de fumée au port uniquement** (sans bataille) : lancer le jeu,
   rester au port ~15 s, quitter ; vérifier `injected names=[…]`,
   `api[load] dh=True` et un heartbeat frais dans `python.log`. C'est le

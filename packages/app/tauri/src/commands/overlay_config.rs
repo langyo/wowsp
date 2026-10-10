@@ -11,15 +11,16 @@
 //!   `watch_tab_tick`) and the `ingame_bridge` answers the plugin's
 //!   request.json instead; `"off"` disables the whole Tab overlay (no
 //!   window, no watcher shows, no bridge).
-//! - `roster` — roster attribution. `"inferred"` (default) derives the
-//!   row→name mapping from the decompiled client's full Tab sort key (alive,
-//!   class, tier, nation, ship name, '[tag]nickname) over the roster plus the luma probe's
-//!   alive flags — no OCR at all; `"ocr"` keeps the Windows OCR row→name
-//!   pipeline (exact, but unavailable on systems without an OCR language
-//!   pack); `"off"` skips attribution entirely — the anchor carries no
-//!   `row_players` payload, the overlay page falls back to the historical
-//!   roster/index order, and no "recognizing roster" pending badge is ever
-//!   reported.
+//! - `roster` — roster attribution. `"plugin"` (default) treats the
+//!   in-game plugin's telemetry as the primary detector: authoritative
+//!   alive flags, the TAB screen's own tabModeIn/Out marks and the
+//!   game-true per-player Tab sort keys (telemetry `sortKeys`, read off
+//!   the ship entities each avatar references — the offline per-realm
+//!   key ordering stays the fallback for battles without them); a
+//!   missing, outdated or stale plugin degrades that battle to the
+//!   passive pipeline. `"passive"` keeps the capture-only pipeline
+//!   (row strip detection + luma sink solver) and ignores the plugin
+//!   even when installed.
 //!
 //! The values are deliberately parsed as plain enums with a per-field safe
 //! default, so a future option can be added to the schema without breaking
