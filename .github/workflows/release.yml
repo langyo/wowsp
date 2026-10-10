@@ -16,7 +16,7 @@ env:
   # The shun tag the installers build from (checked out into `shun/`
   # by the release job). v0.6.3 is the minimum: the shell statically
   # links the CRT there (no VC++ Redistributable needed).
-  SHUN_TAG: v0.6.7
+  SHUN_TAG: v0.6.8
 
 # One release flow per ref, never cancelled mid-flight: a cancelled run can
 # leave a half-uploaded draft; a re-push of the same tag queues behind this
