@@ -248,6 +248,7 @@
       "noData": "No hay especificaciones para este buque"
     },
     "tier": "Nivel",
+    "unknownShip": "Buque desconocido",
     "pluginPromptTitle": "Instalar el complemento dentro del juego",
     "pluginPromptDesc": "El juego activo no tiene el complemento de WoWSP. Instalarlo da a las batallas en directo señales de detección más fiables — estados de hundimiento directamente desde el juego; no muestra nada dentro del juego y se puede desinstalar en cualquier momento.",
     "pluginPromptLater": "Por ahora no",

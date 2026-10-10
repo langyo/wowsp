@@ -248,6 +248,7 @@
       "noData": "Aucune caractéristique pour ce navire"
     },
     "tier": "Palier",
+    "unknownShip": "Navire inconnu",
     "pluginPromptTitle": "Installer le plugin en jeu",
     "pluginPromptDesc": "Le jeu actif n'a pas le plugin WoWSP en jeu. L'installer donne aux batailles en direct des signaux de détection plus fiables — états de coulé directement depuis le jeu ; rien n'est affiché en jeu et la désinstallation reste possible à tout moment.",
     "pluginPromptLater": "Plus tard",

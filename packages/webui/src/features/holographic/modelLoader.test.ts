@@ -6,12 +6,15 @@
  *  runtime pack is fully populated. */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { registerRuntimeShipEntry, resetRuntimeShipEntries } from "@/utils/runtimeShipDb";
 import {
   fetchModelResource,
   initModelPack,
   resolveShipModelByShipId,
   resolvePropModelUrl,
   shipDescriptionFromOfflineDb,
+  shipNameFromOfflineDb,
+  shipOfflineEntry,
   shipModelStemCandidates,
 } from "./modelLoader";
 
@@ -68,6 +71,48 @@ describe("shipDescriptionFromOfflineDb", () => {
     expect(shipDescriptionFromOfflineDb("999999999", "zh-CN")).toBeNull();
     expect(shipDescriptionFromOfflineDb(YAMATO_ID, "xx-XX")).toBeNull();
     expect(shipDescriptionFromOfflineDb(undefined, "zh-CN")).toBeNull();
+  });
+});
+
+// ── Runtime registrations in the offline readers ──────────────────────────
+// shipOfflineEntry/shipNameFromOfflineDb are the live panel's identity
+// chain: a ship the bake predates must flow through them once the App side
+// registered its GameParams identity — while a baked entry is never
+// overridden by a registration.
+describe("offline readers over runtime registrations", () => {
+  const RT_ID = "999888777"; // absent from the baked DB
+
+  afterEach(() => resetRuntimeShipEntries());
+
+  it("wraps a runtime registration into the offline entry shape", () => {
+    expect(shipOfflineEntry(RT_ID)).toBeNull();
+    expect(shipNameFromOfflineDb(RT_ID, "zh-CN")).toBeNull();
+    registerRuntimeShipEntry(RT_ID, {
+      index: "PJSB719",
+      tier: 9,
+      type: "Battleship",
+      nation: "japan",
+      names: { en: "Hotaka 1944" },
+    });
+    expect(shipOfflineEntry(RT_ID)).toEqual({
+      index: "PJSB719",
+      tier: 9,
+      type: "Battleship",
+      nation: "japan",
+      hp: null,
+      names: { en: "Hotaka 1944" },
+    });
+    // The reader's lang → "en" → first-value fallback serves the runtime
+    // name to every requested locale.
+    expect(shipNameFromOfflineDb(RT_ID, "zh-CN")).toBe("Hotaka 1944");
+    expect(shipNameFromOfflineDb(RT_ID)).toBe("Hotaka 1944");
+  });
+
+  it("keeps a baked entry ahead of a registration for the same id", () => {
+    // Yamato's baked id (declared inside the shipDescriptionFromOfflineDb
+    // describe above): registering over it must change nothing.
+    registerRuntimeShipEntry("4276041424", { names: { en: "Fake" } });
+    expect(shipNameFromOfflineDb("4276041424", "en-US")).toBe("Yamato");
   });
 });
 
