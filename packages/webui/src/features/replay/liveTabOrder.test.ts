@@ -99,11 +99,12 @@ describe("orderForTab", () => {
     expect(names(orderForTab(list, { locale: "zh-CN" }))).toEqual(["Saipan", "Konigsberg"]);
   });
 
-  it("keeps the WG [alive] ++ [sunk] regroup under the Lesta name order", () => {
-    // Lesta (realm 'ru') takes the ship-name permutation — 博加特里(bó)
-    // leads the 圣路易斯(shèng) pair, the 2026-10-09 capture's order —
-    // but, unlike CN, still re-sorts the table as ships sink: the sunk
-    // 圣路易斯 drops to the tail instead of dimming in place.
+  it("keeps the WG [alive] ++ [sunk] regroup under the name-order permutation", () => {
+    // The CN ship-name permutation without the static layout (the replay
+    // viewer's CN path): 博加特里(bó) leads the 圣路易斯(shèng) pair, and
+    // the table still re-sorts as ships sink — the sunk 圣路易斯 drops
+    // to the tail instead of dimming in place. (Lesta left this
+    // permutation on 2026-10-10: it renders its own sort-key order.)
     const list = [
       vehicle("Fisher", SHIPS.stLouis),
       vehicle("langyo", SHIPS.stLouis),
@@ -164,7 +165,6 @@ describe("orderForTab", () => {
       names(
         orderForTab(list, {
           locale: "zh-CN",
-          shipNameOrder: true,
           sortKeyOf: (v) => keys[v.name],
         }),
       ),
@@ -181,6 +181,45 @@ describe("orderForTab", () => {
         }),
       ),
     ).toEqual(["zed", "amy"]);
+    // The Lesta tie rule (live 2026-10-10): equal keys keep the ROSTER's
+    // own order — the list order langyo→Fisher survives, against the
+    // display-name compare above.
+    expect(
+      names(
+        orderForTab(list, {
+          locale: "zh-CN",
+          tieByRosterOrder: true,
+          sortKeyOf: (v) => keys[v.name],
+        }),
+      ),
+    ).toEqual(["langyo", "Fisher", "BILTEMA8"]);
+  });
+
+  it("stands the sort-key override down under the ship-name order", () => {
+    // A ship-name-order client (CN) never renders the key order — its HUD
+    // re-sorts by the localized name — so even a COVERING key map must
+    // not take the sort over there (the 2026-10-10 Lesta lesson applied
+    // to the one realm that still re-sorts): the name permutation keeps
+    // the rows, 博加特里(bó) first.
+    const list = [
+      vehicle("BILTEMA8", SHIPS.bogatyr),
+      vehicle("langyo", SHIPS.stLouis),
+      vehicle("Fisher", SHIPS.stLouis),
+    ];
+    const keys: Record<string, string> = {
+      Fisher: "2981St. Louis",
+      langyo: "2981St. Louis",
+      BILTEMA8: "2982Bogatyr",
+    };
+    expect(
+      names(
+        orderForTab(list, {
+          locale: "zh-CN",
+          shipNameOrder: true,
+          sortKeyOf: (v) => keys[v.name],
+        }),
+      ),
+    ).toEqual(["BILTEMA8", "Fisher", "langyo"]);
   });
 
   it("ignores the sort-key override unless it covers the whole list", () => {

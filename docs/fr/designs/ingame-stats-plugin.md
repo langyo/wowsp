@@ -4,9 +4,10 @@
 > Document compagnon de l'overlay : la couche d'affichage reste la fenêtre
 > transparente ; ce plugin est la source de données en jeu qui garde les
 > états vivant/coulé de l'overlay exacts sur toute configuration, plein écran
-> exclusif compris. L'ORDRE des lignes TAB reste une inférence calibrée par
-> client jusqu'à ce que la sonde puisse lire l'ordre propre du jeu dans le
-> moteur — voir la règle d'ordonnancement ci-dessous.
+> exclusif compris. L'ORDRE des lignes TAB est resté une inférence calibrée
+> par client jusqu'à ce que la sonde puisse lire l'ordre propre du jeu dans
+> le moteur — elle le peut désormais (voir la fin du chemin ci-dessous) ; la
+> règle d'ordonnancement qui suit demeure le repli et le récit de CN.
 
 ## Contexte et objectifs
 
@@ -83,10 +84,16 @@ depuis les installations de cette machine (wowsdeob, `ShipSystem.add` /
   l'ordre par nom de navire localisé (capture du 2026-10-07, 9/9 pinyin) —
   la divergence vit dans la couche HUD/vue. La décompilation de scripts ne
   peut donc JAMAIS trancher ce client ; seules les captures rendues comptent.
-- **Lesta** (ru) : rend lui aussi l'ordre par nom de navire localisé
-  (capture du 2026-10-09 : le Bogatyr devançait deux lignes de St. Louis à
-  rebours de `usa < russia`) ; son build actuel (8867689) embarque un
-  conteneur `.pyc` modifié que le décompilateur ne sait pas encore ouvrir.
+- **Lesta** (ru) : rend SON PROPRE ordre de clés de tri — tranché par la
+  bataille en direct du 2026-10-10 (les clés pontées par la sonde ont
+  reproduit la table ligne pour ligne, 6/6 alliés). La lecture du 2026-10-09
+  « ordre par nom de navire, comme CN » était une mauvaise lecture : la
+  table des nations propre à Lesta classe russia EN PREMIER et le segment
+  de nom de la clé est un code interne (« 2970PRSC103 »), donc le Bogatyr
+  devançant deux lignes de St. Louis était le rang de nation, pas une
+  collation de noms — et le conteneur `.pyc` inouvrable a cessé d'importer
+  (les clés SONT l'ordre). Les clés égales y conservent l'ordre propre du
+  roster (pas le départage « + nom » qu'ajoute la décompilation WG).
 
 L'app encode cela en gardes par realm sur la clé de tri hors ligne (le
 `realmUsesShipNameOrder` de utils/realms ; utils/shipClass porte la clé
@@ -106,26 +113,34 @@ dont le `sortKey` est la PROPRE clé de Tab du client
 (`str(SORT_ORDER.index(subtype)) + str(100 - level) +
 str(NATION.SORT_ORDER.index(nation)) + shortName` — `ShipSystem.add`,
 build 13357625) et l'emporte dans la télémétrie (`sortKeys`, nom → clé).
-Le panneau /live trie le roster par clé + `'[TAG]nickname'` — la
-concaténation exacte que compare `__sortKeyAlive` — et note la pastille
-EXACT quand la carte couvre le roster en direct, sur tous les realms (CN
-compris : son re-tri en couche vue, s'il existe, part de ces mêmes clés ;
-le bloc des vivants du panneau en jeu trie aussi par elles). La conformité
-hors ligne de ce chemin est arrivée le 2026-10-10 (les passes ship de
-`scripts/check_ingame_plugin.py`) : des entités de navire plantées épinglent
-la forme WG (la table de clés exacte dans la télémétrie ET le pli du panneau
-triant son bloc des vivants par clé + nom), la forme Lesta (UiComponents
-lève une exception — le chemin duck-type les composants et n'a besoin
-d'aucune constante), la couverture partielle (un avatar non apparié conserve
-l'ordre de parcours de son côté — les lignes vraies du jeu et les lignes
-d'ordre de parcours ne s'entremêlent jamais — pendant que le côté encore
-couvert, lui, se trie) et la bizarrerie de l'encodeur (la table de clés
-survit au sérialiseur fait main). Reste ouvert : le comportement du bac à
-sable Lesta face à la collection 'ship' reste invérifié jusqu'à une vraie
-bataille (chaque lecture est gardée ; un manque dégrade cette bataille vers
-l'inférence par realm), et une bataille à couverture partielle garde le
-repli calibré — les lignes vraies du jeu et les lignes déduites ne
-s'entremêlent jamais.
+Le panneau /live trie le roster par la comparaison propre du client et
+note la pastille EXACT quand la carte couvre le roster en direct — la
+famille WG par clé + `'[TAG]nickname'` (la concaténation exacte que compare
+`__sortKeyAlive`), Lesta par les clés SEULES, les clés égales conservant
+l'ordre propre du roster (en direct le 2026-10-10 : deux lignes Turenne de
+même clé, un humain et un ':bot:', rendues dans l'ordre des enregistrements
+contre le départage « ':' d'abord » de la comparaison simple). Un client à
+ordre par nom de navire (CN) ne rend jamais l'ordre des clés que ses
+propres scripts calculent, donc là l'override s'efface et la pastille ne
+peut pas être exacte. La conformité hors ligne de ce chemin est arrivée le
+2026-10-10 (les passes ship de `scripts/check_ingame_plugin.py`) : des
+entités de navire plantées épinglent la forme WG (la table de clés exacte
+dans la télémétrie ET le pli du panneau triant son bloc des vivants par
+les clés, stable — la paire de clés égales du fixture conserve l'ordre de
+parcours), la forme Lesta (UiComponents lève une exception — le chemin
+duck-type les composants et n'a besoin d'aucune constante), la couverture
+partielle (un avatar non apparié conserve l'ordre de parcours de son côté
+— les lignes vraies du jeu et les lignes d'ordre de parcours ne
+s'entremêlent jamais — pendant que le côté encore couvert, lui, se trie)
+et la bizarrerie de l'encodeur (la table de clés survit au sérialiseur
+fait main). L'ancien point ouvert est FERMÉ le jour même, en direct : une
+vraie bataille coop de Lesta a servi la collection 'ship' en entier (11/11
+clés bots compris) et a fixé le modèle ci-dessus — `realmUsesShipNameOrder`
+est désormais CN-seul (le repli hors ligne de ru est la clé de la famille
+WG : juste sur classe/tier, sciemment fausse sur le rang russia-en-premier
+— les clés pontées sont la vérité du jeu), et une bataille à couverture
+partielle garde le repli calibré — les lignes vraies du jeu et les lignes
+déduites ne s'entremêlent jamais.
 
 ## Contraintes du bac à sable (durement acquises, à conserver dans le guide de style du mod)
 
@@ -270,13 +285,14 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
   builtins bloqués, pas d'ouverture en mode append, callbacks protégés).
   Depuis le 2026-10-10, quatre passes ship conduisent en plus le chemin des
   clés de tri vraies du jeu avec des entités de navire plantées (la forme WG
-  affirmant la table de clés exacte et le tri clé + nom du pli du panneau,
+  affirmant la table de clés exacte et le tri stable par clés du pli du panneau,
   la forme Lesta avec un UiComponents levant une exception, une forme à
   couverture partielle dont le côté non apparié garde l'ordre de parcours,
   et la bizarrerie de l'encodeur 15.9 que la table de clés doit survivre) —
-  la seule chose qu'elles ne peuvent pas faire, c'est répondre à ce que le
-  vrai bac à sable Lesta sert pour la collection 'ship' ; cela reste une
-  vérification en vraie bataille. Gardez aussi `python -m py_compile` au
+  et la question de vraie bataille à laquelle elles ne pouvaient pas
+  répondre (ce que le vrai bac à sable Lesta sert pour la collection
+  'ship') a été tranchée le jour même, 2026-10-10 : la table de clés
+  complète, 11/11 bots compris. Gardez aussi `python -m py_compile` au
   vert.
 - **Test de fumée au port uniquement** (sans bataille) : lancer le jeu,
   rester au port ~15 s, quitter ; vérifier `injected names=[…]`,

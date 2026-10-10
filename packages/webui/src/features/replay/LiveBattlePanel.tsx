@@ -94,7 +94,6 @@ import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot"
 import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
 import { realmUsesShipNameOrder } from "@/utils/realms";
 import { sameGamePath } from "@/utils/gamePath";
-import { kindLabel } from "@/utils/installLabel";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
 import {
   battlesColor,
@@ -277,17 +276,21 @@ export default defineComponent({
     const predictedOptionsFor = (side: "ally" | "enemy") => {
       void sinkEpoch.value;
       void sortKeyEpoch.value;
-      // CN and Lesta clients follow the localized-ship-name row order
-      // (utils/shipClass's module docs) instead of the decompiled WG rule;
-      // only the CN client never re-sorts the table mid-battle, so the
-      // static layout stays CN-gated. All of it is superseded per battle
-      // when the telemetry's sort-key map covers the roster (sortKeyOf).
+      // The CN client follows the localized-ship-name row order
+      // (utils/shipClass's module docs) instead of the decompiled WG rule
+      // and never re-sorts the table mid-battle, so the static layout is
+      // CN-gated too; the Lesta client renders its own sort-key order
+      // (live 2026-10-10) with equal keys keeping the roster order. The
+      // offline permutation is superseded per battle when the telemetry's
+      // sort-key map covers the roster (sortKeyOf) — except on CN, whose
+      // HUD re-sorts by name and never renders the key order.
       const cn = realm.value === "cn";
       return {
         locale: dataLanguage.value,
         clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
         sunk: sunk.sunkNames(side),
         shipNameOrder: realmUsesShipNameOrder(realm.value),
+        tieByRosterOrder: realm.value === "ru",
         staticOrder: cn,
         sortKeyOf: telemetrySortKeys ? (v: VehicleEntry) => telemetrySortKeys![v.name] : undefined,
       };
@@ -338,6 +341,11 @@ export default defineComponent({
     const telemetryExactOrder = (): boolean => {
       void sortKeyEpoch.value;
       if (!telemetrySortKeys) return false;
+      // A ship-name-order client (CN) never renders the key order — its
+      // HUD re-sorts by the localized name — so even a covering map
+      // cannot grade exact there (the 2026-10-10 Lesta lesson, applied to
+      // the one realm that still re-sorts).
+      if (realmUsesShipNameOrder(realm.value)) return false;
       const sides = liveSides.value;
       if (sides.allies.length + sides.enemies.length === 0) return false;
       for (const v of [...sides.allies, ...sides.enemies]) {
@@ -1284,33 +1292,12 @@ export default defineComponent({
                 {realmLabelOf(realm.value)}
               </span>
             ) : null}
-            {/* The game window this panel's recognition serves (识别窗口):
-                which running client the TAB ordering / alive-sets come
-                from — the client-version selection's running match. On a
-                multi-client machine this is how the user confirms WHICH
-                window a Tab hold is being read from; single-client boxes
-                see it without needing to think about it. */}
-            {gameStatus.process.running && gameStatus.process.pid != null
-              ? (() => {
-                  const label = [
-                    kindLabel(gameStatus.process.kind),
-                    gameStatus.process.realm?.toUpperCase(),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
-                  return (
-                    <span
-                      class="live-battle__pill live-battle__pill--focus"
-                      data-hint={t("replay.live.tabFocusHint")}
-                    >
-                      {label ? label + " · " : ""}
-                      <span class="live-battle__focus-pid">
-                        {t("common.game.pid")} {gameStatus.process.pid}
-                      </span>
-                    </span>
-                  );
-                })()
-              : null}
+            {/* The serving game window used to repeat here as its own pill
+                (kind · realm · PID) — dropped 2026-10-10: the realm pill
+                above already names the battle's server and the bottom-left
+                running-clients card already carries the window identity
+                (kind, realm, PID) for the multi-client question the pill
+                answered. */}
             {modePill}
             {!props.ended && clockLabel.value ? (
               <span class="live-battle__clock">{clockLabel.value}</span>

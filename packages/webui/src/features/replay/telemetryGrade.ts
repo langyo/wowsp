@@ -6,7 +6,10 @@
  * Tab sort keys for every roster row (`sortKeys`, read off the avatars'
  * ship components — ShipSystem writes str(classRank) + str(100 - level)
  * + str(NATION.SORT_ORDER.index(nation)) + shortName onto each), so the
- * row order IS the client's, not an inference. The grade is per-battle:
+ * row order IS the client's, not an inference — except on a
+ * ship-name-order client (CN), whose HUD renders an order the keys
+ * cannot express, so that realm never grades exact (the caller's
+ * coverage check applies the same gate). The grade is per-battle:
  * a battle whose sort-key map covers the whole live roster grades exact;
  * anything less falls back through "partial" (connected: alive/sunk
  * states authoritative, row order the offline per-realm inference —

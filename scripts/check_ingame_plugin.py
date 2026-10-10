@@ -40,9 +40,11 @@ design doc's open item). The passes now pin, OFFLINE:
   - the WG shape (ship components carrying sortKey, avatar `.ship` slot
     references whose `.ref.id` matches a ship entry id): the exact key
     table lands in telemetry AND the panel fold sorts its alive block by
-    key + bare name — the concatenation the client's own Tab sort
-    compares; avatar-entity names carry clan tags (the real client's
-    shape), so the bare-name keying of the map is asserted too;
+    the keys alone, stable — equal keys keep the roster's own order
+    (live 2026-10-10: the client rendered two same-key rows in record
+    order against the key + name concatenation's ':'-first tie);
+    avatar-entity names carry clan tags (the real client's shape), so
+    the bare-name keying of the map is asserted too;
   - the LESTA shape (UiComponents raising): the key table still lands —
     the path duck-types the components and must never need constants;
   - a partial-coverage shape (one avatar's reference resolves to no ship
@@ -327,16 +329,20 @@ def build_roster(self_name="langyo"):
 # (class rank + str(100 - tier) + nation rank + shortName; nation ranks
 # follow the client's NATION.SORT_ORDER: japan 0, usa 1, russia 2,
 # germany 3, uk 4, france 5, pan_asia 7). Deliberately chosen so the
-# game-true sort (key + bare name, plain string compare) is OBSERVABLE:
-# it differs from the entity-walk order on both sides, so the assertions
-# below prove the panel fold really sorted rather than kept insertion
-# order. The co-op bot carries one too — on the real client bots are
-# ordinary ship entities.
+# game-true sort (the keys alone, a STABLE sort per the live 2026-10-10
+# Lesta capture) is OBSERVABLE: it differs from the entity-walk order on
+# both sides, so the assertions below prove the panel fold really sorted
+# rather than kept insertion order. The co-op bot carries one too — on
+# the real client bots are ordinary ship entities.
 SHIP_KEYS = {
-    "langyo": "2971St. Louis",      # cruiser T3 usa
+    "langyo": "1970Kawachi",        # battleship T3 japan — SAME ship/key as
+                                    # Ally03: the equal-key TIE pair (live
+                                    # 2026-10-10: the client keeps the
+                                    # roster's own order on equal keys, NOT
+                                    # the key + name concatenation)
     "Ally01": "2972Bogatyr",        # cruiser T3 russia
     "Ally02": "3967Chengan",        # destroyer T4 pan_asia
-    "Ally03": "1970Kawachi",        # battleship T3 japan
+    "Ally03": "1970Kawachi",        # battleship T3 japan (the tie pair)
     "Ally04": "1974Bellerophon",    # battleship T3 uk
     "Ally05": "1905Bourgogne",      # battleship T10 france
     "Foe00": "0900Hakuryu",         # carrier T10 japan
@@ -347,10 +353,14 @@ SHIP_KEYS = {
     "Foe05": "2964Fiji",            # cruiser T4 uk
     BOT_NAME: "3982Derzki",         # destroyer T2 russia (the bot)
 }
-# What merge_order's alive-block sort (key + bare name ascending) must
-# produce from SHIP_KEYS on each side.
+# What merge_order's alive-block sort must produce on each side: a
+# STABLE sort by the key alone over the walk order — distinct keys land
+# by key ascending, and the equal-key pair keeps the walk order (langyo
+# walks first). The retired key + name rule would flip the pair
+# ("1970KawachiAlly03" < "1970Kawachilangyo"), so this literal pins the
+# live-observed tie behavior.
 SHIP_KEY_ORDERS = {
-    "ally": ["Ally05", "Ally03", "Ally04", "langyo", "Ally01", "Ally02"],
+    "ally": ["Ally05", "langyo", "Ally03", "Ally04", "Ally01", "Ally02"],
     "enemy": ["Foe00", "Foe01", "Foe04", "Foe02", "Foe05", "Foe03", BOT_NAME],
 }
 # Ship entity ids derive from the roster record keys below; the two named
@@ -632,8 +642,9 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             failures.append("[%s] probe recorded a soft error: %r"
                             % (label, probe.last_error))
         # The in-game panel's row order (merge_order's fold of the walk).
-        # With FULL key coverage the alive block sorts by key + bare name
-        # — the exact concatenation the client's own Tab sort compares;
+        # With FULL key coverage the alive block sorts by the keys alone,
+        # stable — the live-observed client rule (equal keys keep the
+        # roster's own order);
         # with a gap (the partial pass: langyo unpaired) that side keeps
         # the WALK order (game-true and walk-order rows never interleave)
         # while the still-covered side sorts. The raising-cc (Lesta)

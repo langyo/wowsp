@@ -12,9 +12,9 @@
  *     + localized ship name + '[TAG]nickname'
  *
  * — compared ascending. At battle start that is the table's exact order
- * ON THE VERIFIED WG-FAMILY CLIENTS (the per-client permutations — CN and
- * Lesta render a different order — are the caller's `shipNameOrder` flag;
- * see utils/shipClass's module docs for the unstable matrix): every row
+ * ON THE VERIFIED WG-FAMILY CLIENTS (the per-client permutation — the CN
+ * client renders a different order — is the caller's `shipNameOrder`
+ * flag; see utils/shipClass's module docs for the unstable matrix): every row
  * maps to one player (the former "tie group" residue is decided
  * by nation → ship name → clan-tag-prefixed display name, all derivable
  * from the offline ship DB plus the WG batch's clan tags). Verified
@@ -63,12 +63,14 @@
  * a bot's name under the wrong order). The callers keep using the per-row
  * alive flags for the sunk chip styling.
  *
- * The Lesta client (realm 'ru') shares the row ORDER (observed 2026-10-09:
- * one Bogatyr row led two St. Louis rows in a tier-III cruiser group,
- * against the usa < russia nation rank) but NOT the static layout — no
- * Lesta capture has diverged from the WG [alive] ++ [sunk] regroup, so
- * the callers pass `shipNameOrder` alone there and the full blockwise
- * machinery below stays live for it.
+ * The Lesta client (realm 'ru') renders its OWN sort-key order — the
+ * 2026-10-10 live capture settled it (its nation table ranks russia
+ * first; the earlier "shares the CN row order" reading of the 2026-10-09
+ * capture was a misread) — so its callers pass neither flag: the offline
+ * key below approximates (nation rank and name segment alike — see
+ * utils/shipClass), the bridged
+ * `sortKeys` are the game-truth, and equal keys keep the roster order
+ * (`tieByRosterOrder`).
  */
 import type { RosterSides } from "@/utils/rosterSides";
 import {
@@ -93,10 +95,17 @@ export interface InferredOrderOptions {
    *  absent entries compare as bare nicknames and re-derive when the WG
    *  batch lands the tag (the caller re-renders on stats arrival). */
   clanTagOf?: (name: string) => string | null | undefined;
-  /** CN/Lesta client row order (localized ship name, pinyin-collated —
-   *  see utils/shipClass's module docs). Absent keeps the decompiled
+  /** CN client row order (localized ship name, pinyin-collated — see
+   *  utils/shipClass's module docs). Absent keeps the decompiled
    *  nation-rank order verified on WG clients. */
   shipNameOrder?: boolean;
+  /** Lesta clients break EQUAL client keys by the roster's own order,
+   *  not the '[TAG]nickname' concatenation the WG decompile appends
+   *  (live 2026-10-10, realm ru: two same-key Turenne rows rendered in
+   *  roster-record order; the plain compare puts the bot's ':'
+   *  first and swaps them). `true` compares the keys alone so equal
+   *  keys keep the incoming list order. */
+  tieByRosterOrder?: boolean;
   /** CN clients never re-sort the table mid-battle: sunk rows dim IN
    *  PLACE at their battle-start positions (observed 2026-10-07 — a 5-dead
    *  ally block still interleaved alive rows). `true` maps every row of a
@@ -114,20 +123,23 @@ export interface InferredOrderOptions {
    *  avatars' ship components — the client's own ShipSystem key string).
    *  When EVERY entry of a side's list yields a non-empty key, the sort
    *  switches to the CLIENT's own comparison — key + '[TAG]nickname'
-   *  ascending, exactly __sortKeyAlive's concatenated string — on every
-   *  realm, and the offline per-realm inference is not consulted at all.
-   *  Any entry missing a key disables the override wholesale (game-true
-   *  and inferred rows must never interleave). */
+   *  ascending, exactly __sortKeyAlive's concatenated string — except
+   *  under `shipNameOrder` (that client's HUD re-sorts by the localized
+   *  name, an order the keys cannot express, so the override stands
+   *  down) and with `tieByRosterOrder` equal keys keeping the roster
+   *  order (Lesta). Any entry missing a key disables the override
+   *  wholesale (game-true and inferred rows must never interleave). */
   sortKeyOf?: (name: string) => string | undefined;
 }
 
 /** One side's believed full-key order — the rows as the game drew them at
  *  battle start. Sorting goes through {@link gameTabRowCompare} so the
- *  ship-name permutation (CN/Lesta clients; pinyin collation — plain
+ *  ship-name permutation (the CN client; pinyin collation — plain
  *  string comparison cannot express it) and the decompiled nation order
  *  share one code path — unless the game's own sort keys cover the list,
- *  in which case the client's exact key + display-name comparison takes
- *  over entirely. */
+ *  in which case the client's exact comparison takes over (standing down
+ *  under `shipNameOrder`, and comparing the keys alone under
+ *  `tieByRosterOrder`). */
 function sideFullOrder<T extends InferredVehicle>(
   list: T[],
   options: InferredOrderOptions,
@@ -142,19 +154,25 @@ function sideFullOrder<T extends InferredVehicle>(
   };
   // Game-true sort keys: only a FULLY covered list switches the sort to
   // the client's own comparison (plain code-unit compare matches the
-  // client's Python str ordering); anything less keeps the offline
-  // inference for the WHOLE side — no interleaving.
+  // client's Python str ordering) — never under shipNameOrder (that
+  // client renders an order the keys cannot express); anything less
+  // keeps the offline inference for the WHOLE side — no interleaving.
   const keyOf = options.sortKeyOf;
   const clientKeys =
     keyOf && list.length > 0
       ? list.map((v) => keyOf(v.name))
       : null;
   const useClientKeys =
-    clientKeys != null && clientKeys.every((k) => typeof k === "string" && k.length > 0);
+    clientKeys != null &&
+    !options.shipNameOrder &&
+    clientKeys.every((k) => typeof k === "string" && k.length > 0);
   const clientKeyOf = useClientKeys
     ? (v: T) => {
-        const key = keyOf!(v.name);
-        return key + tabDisplayName(v.name, options.clanTagOf?.(v.name) ?? null);
+        // useClientKeys verified every key is a non-empty string.
+        const key = keyOf!(v.name) as string;
+        return options.tieByRosterOrder
+          ? key
+          : key + tabDisplayName(v.name, options.clanTagOf?.(v.name) ?? null);
       }
     : null;
   return list

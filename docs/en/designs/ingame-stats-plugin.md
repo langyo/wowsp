@@ -4,9 +4,10 @@
 > Companion doc for the overlay: the display layer stays the transparent
 > window; this plugin is the in-game data source that keeps the overlay's
 > alive/sunk states exact on every setup, including exclusive fullscreen.
-> The TAB row ORDER stays a per-client calibrated inference until the
-> probe can read the game's own order in-engine — see the ordering rule
-> below.
+> The TAB row ORDER stayed a per-client calibrated inference until the
+> probe could read the game's own order in-engine — it can now (see the
+> endgame below); the ordering rule that follows remains the fallback
+> and the CN story.
 >
 > **Update (2026-10-01)**: a second view mode landed — 游戏内展示 renders
 > the stats INSIDE the game through this plugin's unbound view
@@ -84,10 +85,15 @@ decompilation as corroborating evidence only — never as proof. The
   localized-ship-name order (2026-10-07 capture, 9/9 pinyin) — the
   divergence lives in the HUD/view layer. Script decompilation therefore
   can NEVER settle this client; only rendered captures count.
-- **Lesta** (ru): renders the localized-ship-name order too (2026-10-09
-  capture: Bogatyr led two St. Louis rows against `usa < russia`); its
-  current build (8867689) ships a changed `.pyc` container the
-  decompiler cannot open (yet).
+- **Lesta** (ru): renders its OWN sort-key order — SETTLED by the
+  2026-10-10 live battle (the probe's bridged keys reproduced the table
+  row for row, 6/6 allies). The 2026-10-09 "ship-name order, like CN"
+  reading was a misread: Lesta's own nation table ranks russia FIRST and
+  the key's name segment is an internal code ("2970PRSC103"), so
+  Bogatyr leading two St. Louis rows was the nation rank, not a name
+  collation — and the un-openable `.pyc` container stopped mattering
+  (the keys ARE the order). Equal keys keep the roster's own order
+  there (not the '+ name' tie the WG decompile appends).
 
 The app encodes this as per-realm gates over the offline sort key
 (utils/realms's `realmUsesShipNameOrder`; utils/shipClass carries the
@@ -106,23 +112,31 @@ slot to each player's Ship component, whose `sortKey` is the client's OWN
 Tab key (`str(SORT_ORDER.index(subtype)) + str(100 - level) +
 str(NATION.SORT_ORDER.index(nation)) + shortName` — `ShipSystem.add`,
 build 13357625) and carries it in telemetry (`sortKeys`, name → key).
-The /live panel sorts the roster by key + '[TAG]nickname' — the exact
-concatenation `__sortKeyAlive` compares — and grades the pill EXACT when
-the map covers the live roster, on every realm (CN included: its
-view-layer re-sort, if any, starts from these same keys; the in-game
-panel's alive block sorts by them too). Offline conformance for this
+The /live panel sorts the roster by the client's own comparison and
+grades the pill EXACT when the map covers the live roster — the WG
+family by key + '[TAG]nickname' (the exact concatenation
+`__sortKeyAlive` compares), Lesta by the keys ALONE with equal keys
+keeping the roster's own order (live 2026-10-10: two same-key Turenne
+rows, a human and a ':bot:', rendered in record order against the plain
+compare's ':'-first tie). A ship-name-order client (CN) never renders
+the key order its own scripts compute, so there the override stands
+down and the pill cannot grade exact. Offline conformance for this
 path landed 2026-10-10 (`scripts/check_ingame_plugin.py`'s ship passes):
 planted ship entities pin the WG shape (the exact key table in telemetry
-AND the panel fold sorting its alive block by key + name), the Lesta
-shape (UiComponents raising — the path duck-types the components and
-needs no constants), partial coverage (an unpaired avatar keeps that
-side's walk order — game-true and walk-order rows never interleave —
-while the still-covered side sorts), and the encoder quirk (the key
-table survives the hand-rolled serializer). Open items: the Lesta
-sandbox's behavior toward the 'ship' collection is unverified until a
-real battle (every read is guarded; a gap degrades that battle to the
-per-realm inference), and a partial-coverage battle keeps the calibrated
-fallback — game-true and inferred rows never interleave.
+AND the panel fold sorting its alive block by the keys, stable — the
+fixture's equal-key pair keeps the walk order), the Lesta shape
+(UiComponents raising — the path duck-types the components and needs no
+constants), partial coverage (an unpaired avatar keeps that side's walk
+order — game-true and walk-order rows never interleave — while the
+still-covered side sorts), and the encoder quirk (the key table survives
+the hand-rolled serializer). The former open item CLOSED the same day,
+live: a real Lesta co-op battle served the 'ship' collection in full
+(11/11 keys including bots) and settled the model above —
+`realmUsesShipNameOrder` is CN-only now (the ru offline fallback is the
+WG-family key: right on class/tier, knowingly wrong on the
+russia-first rank, the bridged keys being the game-truth), and a
+partial-coverage battle keeps the calibrated fallback — game-true and
+inferred rows never interleave.
 
 **Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
 own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
@@ -288,12 +302,13 @@ Bridge files (protocol v1, all in the mod directory):
   builtin names at all; the harness is the regression net. Since
   2026-10-10 four SHIP passes additionally drive the game-true sort-key
   path with planted ship entities (the WG shape asserting the exact key
-  table and the panel fold's key + name sort, the Lesta shape with
+  table and the panel fold's stable key sort, the Lesta shape with
   raising UiComponents, a partial-coverage shape whose unpaired side
   keeps the walk order, and the 15.9 encoder quirk the key table must
-  survive) — the one thing they cannot do is answer what the real Lesta
-  sandbox serves for the 'ship' collection; that stays a live-battle
-  check. Also keep `python -m py_compile` green.
+  survive) — and the live-battle question they could not answer (what
+  the real Lesta sandbox serves for the 'ship' collection) was settled
+  the same day, 2026-10-10: the full key table, 11/11 including bots.
+  Also keep `python -m py_compile` green.
 - **Port-only smoke test** (no battle): launch the game, sit in port
   ~15 s, exit; assert `injected names=[…]`, `api[load] dh=True`, and a
   fresh heartbeat in `python.log`. This is the cheap protocol that kept

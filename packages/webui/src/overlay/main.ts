@@ -256,14 +256,18 @@ const locale = new URLSearchParams(window.location.search).get("locale") || "en-
 // The realm can also be unlocked later by the probe's ground-truth self
 // realm, so derive the flag per render.
 const cnLayout = () => realm === "cn";
-// The row-ORDER half (localized ship name, never the nation rank) is
-// shared with the Lesta client (realm 'ru' — 2026-10-09 co-op capture: one
-// 博加特里/Bogatyr row led two 圣路易斯/St. Louis rows against the
-// usa < russia nation rank; see utils/realms's realmUsesShipNameOrder).
-// The never-re-sorts half stays CN-only: no Lesta capture has diverged
-// from the WG [alive] ++ [sunk] regroup, so its row mapping keeps the
-// blockwise alive-vector machinery.
+// The row-ORDER half (localized ship name, never the nation rank) is the
+// CN build's alone now: the 2026-10-10 Lesta live capture showed that
+// client rendering its OWN sort-key order (the probe's keys reproduced
+// the table row for row), retiring the "shared with Lesta" reading of
+// the 2026-10-09 capture (Bogatyr leading two St. Louis rows was
+// Lesta's own nation rank putting russia first — see
+// utils/realms's realmUsesShipNameOrder). The never-re-sorts half stays
+// CN-only as well.
 const nameOrderLayout = () => realmUsesShipNameOrder(realm);
+// The Lesta realm breaks EQUAL client keys by the roster's own order
+// (live 2026-10-10), so the exact-key sorts compare the keys alone there.
+const tieByRosterOrder = () => realm === "ru";
 
 // ── Display prefs (chips / stats source / intel / team averages / seals) ─
 // One tolerant read of the statsPrefs blob the main window's store owns
@@ -866,11 +870,13 @@ function liveRosterSides(): RosterSides<Vehicle> {
 
 /** The roster's believed full-key order for one side — the same ordering
  *  inferredRowMapping applies (see utils/shipClass for the decompiled
- *  rule and its ship-name permutation, CN/Lesta clients) over the live
- *  side split above. When this battle's telemetry sort-key map covers the
- *  side's roster, the client's OWN key + '[TAG]nickname' comparison takes
- *  over entirely (the exact string __sortKeyAlive compares — no
- *  inference). */
+ *  rule and its CN ship-name permutation) over the live side split
+ *  above. When this battle's telemetry sort-key map covers the side's
+ *  roster, the client's OWN comparison takes over entirely (the exact
+ *  string __sortKeyAlive compares — no inference; the Lesta realm
+ *  compares the keys alone so equal keys keep the roster order, live
+ *  2026-10-10). A ship-name-order client (CN) never renders the key
+ *  order, so there the override stands down. */
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
@@ -880,17 +886,23 @@ function sideFullOrder(side: SunkSide): string[] {
     shipNameOrder: nameOrderLayout(),
   };
   // Game-true sort keys: only a FULLY covered list switches the sort
-  // (game-true and inferred rows must never interleave).
+  // (game-true and inferred rows must never interleave), and never on a
+  // ship-name-order client (its HUD renders an order the keys cannot
+  // express).
   const keyOf = telemetrySortKeys
     ? (v: (typeof list)[number]) => telemetrySortKeys![v.name]
     : undefined;
   const clientKeys = keyOf && list.length > 0 ? list.map((v) => keyOf(v)) : null;
   const useClientKeys =
-    clientKeys != null && clientKeys.every((k) => typeof k === "string" && k.length > 0);
+    clientKeys != null &&
+    !nameOrderLayout() &&
+    clientKeys.every((k) => typeof k === "string" && k.length > 0);
   const clientKeyOf = useClientKeys
     ? (v: (typeof list)[number]) => {
-        const key = keyOf!(v);
-        return key + tabDisplayName(v.name, stats.get(cacheKey(v.name))?.clanTag ?? null);
+        const key = keyOf!(v) as string;
+        return tieByRosterOrder()
+          ? key
+          : key + tabDisplayName(v.name, stats.get(cacheKey(v.name))?.clanTag ?? null);
       }
     : null;
   return list
@@ -1000,8 +1012,10 @@ function render() {
     // battle-start confidence; the exact misattribution this page shipped
     // to fix). The per-row sunk chip styling below already reads the alive
     // vector row by row, which is the only thing the CN layout needs. The
-    // row-order permutation itself also covers Lesta (nameOrderLayout),
-    // but there the blockwise machinery stays live — the WG regroup holds.
+    // row-order permutation (nameOrderLayout) is the CN build's alone
+    // now — Lesta renders its own sort-key order (2026-10-10 live
+    // capture) and keeps the blockwise machinery live under the WG
+    // regroup.
     const staticLayout = cnLayout();
     // The mapping replicates the client's own Tab sort key (decompiled —
     // see inferredOrder.ts), so battle-start rows arrive as EXACT names.
@@ -1046,6 +1060,7 @@ function render() {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
         shipNameOrder: nameOrderLayout(),
+        tieByRosterOrder: tieByRosterOrder(),
         staticLayout,
         sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
       });
@@ -1054,6 +1069,7 @@ function render() {
         locale,
         clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
         shipNameOrder: nameOrderLayout(),
+        tieByRosterOrder: tieByRosterOrder(),
         staticLayout,
         sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
         sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
