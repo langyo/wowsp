@@ -11,6 +11,17 @@
   padding: 1rem 0 0 1rem;
   color: rgb(var(--color-text));
 
+  /* Query container for the head's width budget (the tiers at the bottom
+     of this sheet). The head's real budget is THIS panel's width — the
+     shell's sidebar is the layout's business, not the head's — so the
+     tiers read the panel instead of the viewport and hold no matter what
+     the app shell puts beside it. Inline-size containment is safe here:
+     every popup riding this panel (the ship cards', the map tag's, the
+     mode chip's popover, the locate overlay) teleports to <body>, so the
+     forced layout containment re-anchors nothing; the panel's own width
+     is decided by the shell grid, never by its contents. */
+  container-type: inline-size;
+
   /* Waiting for the battle to start (radar scope + copy). No head row here,
      so this variant keeps the old self-scrolling full-padding behavior. */
   &--empty {
@@ -47,12 +58,20 @@
      same flex line. Text-baseline alignment looked right for plain text
      pills but sat crooked for icon/spinner-led ones (their baseline is the
      icon's bottom edge, not the text's), which is exactly how buttons in
-     this head ended up tilted against their neighbors. */
+     this head ended up tilted against their neighbors.
+
+     The line is also WRAP-FREE: the locate button's state texts grow the
+     moment a Tab pass anchors the roster (已定位 · n 行), and a wrapping
+     head let that last widget drop onto a second line of its own. The
+     right action cluster shares the title's line, right-aligned by the
+     copy-shot button's auto margin, at every width the head can hold it —
+     the panel-width tiers at the bottom of this sheet reclaim the width
+     below that, and only re-enable wrapping past the last resort. */
   &__head {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     /* Fixed above the roster: never squeezed by it, and it carries the
        right inset the container gave up (the matrix's scrollbar owns that
        edge so it can keep hugging the window). */
@@ -64,6 +83,10 @@
     margin: 0;
     font-size: var(--text-lg);
     font-weight: 700;
+    /* CJK breaks between any two glyphs — under flex pressure the four
+       glyphs would wrap inside the h1 and grow the head a second line
+       anyway. The pills and buttons already carry nowrap of their own. */
+    white-space: nowrap;
   }
 
   &__pill {
@@ -700,6 +723,77 @@
     background: rgb(
       var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.08)
     );
+  }
+
+  /* ── The head's one-line width budget (panel-width tiers) ─────────────
+     The nowrap head (__head above) at its widest honest state — the
+     telemetry pill (插件（精确行序）) beside the manual button's anchored
+     text (已手动定位 · 12 行) — measures ~885px of panel content width
+     (measured against the built stylesheet, headless Chromium, the app's
+     own font stack). When the panel can no longer hold a state, info
+     gives up before actions, least-valuable pill first — the map tag
+     (its minimap preview and tactics jump stay reachable on wider
+     panels), then the clock; the right-aligned action cluster never
+     moves. The thresholds are panel-content px (the query reads this
+     panel's own box), tuned to the measured widest need of the tier
+     below plus a pixel or two:
+       ≤886px — tighter head gap and pill paddings, map tag hidden
+                (widest state then needs ~805px)
+       ≤807px — the clock hidden too (needs ~755px)
+       ≤757px — no single line fits any state: wrapping returns as the
+                honest fallback (flex-end keeps every overflow line
+                parked on the right, under the cluster).
+     A container query, not @media, on purpose: the head's budget is
+     THIS panel's width — how the shell splits the window (its sidebar,
+     insets) is the layout's business, and the tiers would drift the
+     moment that changed. Inline-size containment is safe here: every
+     popup riding this panel (the ship cards', the map tag's, the mode
+     chip's popover, the locate overlay) teleports to <body>, so the
+     forced layout containment re-anchors nothing; the panel's own width
+     is decided by the shell grid, never by its contents. */
+  @container (max-width: 886.98px) {
+    &__head {
+      gap: 0.4rem;
+
+      /* The stats-source chip wears the same pill voice from its own
+         sheet (LiveStatsModeChip.scss) and gets the same narrow-width
+         padding — head-descendant scope on purpose: the chip also rides
+         the post-battle share bar (postBattleShare.tsx), a different
+         host with its own width budget this rule must not reach. */
+      .live-battle__mode-btn {
+        padding-inline: 0.45rem;
+      }
+    }
+
+    &__pill,
+    &__clock,
+    &__shot-btn,
+    &__mask-btn,
+    &__density-btn,
+    &__manual-btn {
+      padding-inline: 0.45rem;
+    }
+
+    &__map {
+      display: none;
+    }
+  }
+
+  @container (max-width: 806.98px) {
+    &__clock {
+      display: none;
+    }
+  }
+
+  @container (max-width: 756.98px) {
+    &__head {
+      flex-wrap: wrap;
+      /* The auto margin only right-aligns the cluster on ITS line — a
+         wrapped tail would otherwise start the second row from the left
+         edge. flex-end parks every overflow line on the right, under the
+         cluster's normal position. */
+      justify-content: flex-end;
+    }
   }
 }
 
