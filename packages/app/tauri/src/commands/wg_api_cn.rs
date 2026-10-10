@@ -71,11 +71,9 @@ pub(crate) fn vortex_client() -> Result<reqwest::Client, String> {
 /// GET one JSON document from the CN vortex/clans hosts. Non-2xx is an error
 /// (the clan endpoint's meaningful 404 is tolerated by its own caller).
 async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value, String> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("CN vortex request: {e}"))?;
+    let host = super::upstream_health::host_of_url(url);
+    let resp =
+        super::upstream_health::recorded_get(client, host, "CN vortex", url.to_string()).await?;
     let status = resp.status();
     if !status.is_success() {
         return Err(format!("CN vortex: HTTP {status}"));
@@ -338,11 +336,11 @@ async fn account_info(
 ) -> Result<Option<serde_json::Value>, String> {
     let host = wg_realm::vortex_host("cn")?;
     let url = format!("https://{host}/api/accounts/{account_id}/");
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("CN vortex request: {e}"))?;
+    let sent = client.get(&url).send().await;
+    // 404 = unknown account (business semantics, see record_transport) —
+    // a served answer still proves the host alive.
+    super::upstream_health::record_transport(host, &sent);
+    let resp = sent.map_err(|e| format!("CN vortex request: {e}"))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -398,11 +396,13 @@ async fn clan_for_account(
     account_id: i64,
 ) -> Option<(String, Option<i64>)> {
     let host = wg_realm::vortex_host("cn").ok()?;
-    let resp = client
+    let sent = client
         .get(format!("https://{host}/api/accounts/{account_id}/clans/"))
         .send()
-        .await
-        .ok()?;
+        .await;
+    // 404 = clanless (business semantics — transport-only recording).
+    super::upstream_health::record_transport(host, &sent);
+    let resp = sent.ok()?;
     if !resp.status().is_success() {
         return None;
     }
@@ -720,11 +720,11 @@ async fn clan_info_node(
 ) -> Result<Option<serde_json::Value>, String> {
     let host = wg_realm::cn_clans_host();
     let url = format!("https://{host}/api/clanbase/{clan_id}/claninfo/");
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("CN clans request: {e}"))?;
+    let sent = client.get(&url).send().await;
+    // Unknown clans answer 200-with-nulls (occasionally a bare 404) —
+    // business semantics, so the status stays out of the registry.
+    super::upstream_health::record_transport(host, &sent);
+    let resp = sent.map_err(|e| format!("CN clans request: {e}"))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }

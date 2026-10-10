@@ -77,6 +77,7 @@ export const RPC = {
   get_ship_encyclopedia: "get_ship_encyclopedia",
   lookup_player_ship_stats: "lookup_player_ship_stats",
   read_ship_stats_history: "read_ship_stats_history",
+  upstream_health: "upstream_health",
   snapshot_player_stats: "snapshot_player_stats",
   get_ship_gameparams: "get_ship_gameparams",
   get_upgrade_prices: "get_upgrade_prices",

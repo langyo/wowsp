@@ -1104,6 +1104,33 @@ export interface StatsSnapshot {
   pr?: number | null;
 }
 
+/** One catalogue row of the disclosed upstream host table — mirrors
+ *  `commands::upstream_health::CatalogueEntry`. `purpose` is an i18n key
+ *  suffix under `upstream.purpose.*`; `kind: "stats"` rows are the ones
+ *  whose transport outcomes get recorded. */
+export interface UpstreamHostEntry {
+  id: string;
+  host: string;
+  purpose: string;
+  realms: string[];
+  kind: string;
+}
+
+/** Per-host rolling transport outcome — mirrors
+ *  `commands::upstream_health::HostHealth`. */
+export interface UpstreamHostHealth {
+  consecutiveFailures: number;
+  lastSuccessTs?: number | null;
+  lastFailureTs?: number | null;
+  lastError?: string | null;
+}
+
+/** Mirrors `commands::upstream_health::UpstreamHostReport` (catalogue +
+ *  health joined). */
+export interface UpstreamHostReport extends UpstreamHostEntry, UpstreamHostHealth {
+  recorded: boolean;
+}
+
 /** Mirrors `wowsp_tauri_shared::TrendBucket`. */
 export interface TrendBucket {
   version: string;
@@ -2089,6 +2116,10 @@ export const api = {
   /** Per-ship history points — baselines for "recent N days" deltas. */
   readShipStatsHistory: (accountId: number, realm: string) =>
     transport.invoke<ShipStatsHistoryPoint[]>(RPC.read_ship_stats_history, { accountId, realm }),
+  /** Catalogue + rolling health of the upstream hosts — the data behind
+   *  the title bar's fault chip. Stateless; the frontend renders the
+   *  verdict (streak threshold, staleness). */
+  upstreamHealth: () => transport.invoke<UpstreamHostReport[]>(RPC.upstream_health),
   snapshotPlayerStats: (
     accountId: number,
     realm: string,

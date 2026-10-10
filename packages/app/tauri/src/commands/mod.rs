@@ -134,6 +134,8 @@ pub mod tray_panel;
 pub mod trends;
 #[cfg(windows)]
 pub mod update;
+// Per-host upstream health registry behind the title bar's fault chip.
+pub mod upstream_health;
 pub mod wallpaper;
 pub mod wg_api;
 pub mod wg_api_cn;

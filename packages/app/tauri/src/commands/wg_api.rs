@@ -162,11 +162,7 @@ pub async fn lookup_player_stats(
              statistics.rank_solo,statistics.rank_div2,statistics.rank_div3",
             entry.account_id
         );
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("account/info request: {e}"))?;
+        let resp = super::upstream_health::recorded_get(&client, host, "account/info", url).await?;
         resp.json::<WgResponse<serde_json::Value>>()
             .await
             .map_err(|e| format!("account/info parse: {e}"))
@@ -174,14 +170,13 @@ pub async fn lookup_player_stats(
     let clan_fut =
         async { fetch_clan_info_for_accounts(&client, &app_id, host, &[entry.account_id]).await };
     let dog_tag_fut = async {
-        let resp = client
-            .get(format!(
-                "https://{vortex_host}/api/accounts/{}",
-                entry.account_id
-            ))
-            .send()
-            .await
-            .ok()?;
+        let resp = super::upstream_health::best_effort_get(
+            &client,
+            vortex_host,
+            "vortex dog tag",
+            format!("https://{vortex_host}/api/accounts/{}", entry.account_id),
+        )
+        .await?;
         let vortex: Option<serde_json::Value> = resp.json().await.ok();
         vortex
             .as_ref()
@@ -717,11 +712,9 @@ async fn resolve_names_on_realm(
                     encode_query(&name)
                 );
                 async move {
-                    let resp = client_ref
-                        .get(&url)
-                        .send()
-                        .await
-                        .map_err(|e| format!("account/list request: {e}"))?;
+                    let resp =
+                        super::upstream_health::recorded_get(client_ref, host, "account/list", url)
+                            .await?;
                     let list = resp
                         .json::<WgResponse<Vec<AccountListEntry>>>()
                         .await
@@ -866,15 +859,17 @@ async fn fetch_account_info_chunked(
             .map(|i| i.to_string())
             .collect::<Vec<_>>()
             .join(",");
-        let resp = client
-            .get(format!(
+        let resp = super::upstream_health::recorded_get(
+            client,
+            host,
+            "account/info",
+            format!(
                 "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
                  &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3,\
                  statistics.rank_solo,statistics.rank_div2,statistics.rank_div3"
-            ))
-            .send()
-            .await
-            .map_err(|e| format!("account/info request: {e}"))?;
+            ),
+        )
+        .await?;
         let parsed = resp
             .json::<WgResponse<serde_json::Value>>()
             .await
@@ -1001,12 +996,15 @@ async fn fetch_clan_info_for_accounts(
         .map(|i| i.to_string())
         .collect::<Vec<_>>()
         .join(",");
-    let Ok(resp) = client
-        .get(format!(
+    let Some(resp) = super::upstream_health::best_effort_get(
+        client,
+        host,
+        "clans/accountinfo",
+        format!(
             "https://{host}/wows/clans/accountinfo/?application_id={app_id}&account_id={id_list}&extra=clan"
-        ))
-        .send()
-        .await
+        ),
+    )
+    .await
     else {
         return HashMap::new();
     };
@@ -1113,17 +1111,19 @@ pub(crate) async fn account_list_one(
     host: &str,
     name: &str,
 ) -> Result<Option<AccountListEntry>, LookupError> {
-    let list: WgResponse<Vec<AccountListEntry>> = client
-        .get(format!(
+    let list: WgResponse<Vec<AccountListEntry>> = super::upstream_health::recorded_get(
+        client,
+        host,
+        "account/list",
+        format!(
             "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
             encode_query(name)
-        ))
-        .send()
-        .await
-        .map_err(|e| format!("account/list request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("account/list parse: {e}"))?;
+        ),
+    )
+    .await?
+    .json()
+    .await
+    .map_err(|e| format!("account/list parse: {e}"))?;
     if list.status != "ok" {
         let msg = list.error.message.clone().unwrap_or_default();
         return Err(LookupError::api_with_detail(
@@ -1144,13 +1144,15 @@ async fn account_nickname_by_id(
     host: &str,
     account_id: i64,
 ) -> Result<Option<String>, String> {
-    let resp = client
-        .get(format!(
+    let resp = super::upstream_health::recorded_get(
+        client,
+        host,
+        "account/info",
+        format!(
             "https://{host}/wows/account/info/?application_id={app_id}&account_id={account_id}"
-        ))
-        .send()
-        .await
-        .map_err(|e| format!("account/info request: {e}"))?;
+        ),
+    )
+    .await?;
     let parsed: WgResponse<serde_json::Value> = resp
         .json()
         .await
@@ -1210,17 +1212,19 @@ pub async fn suggest_players(
     if q.chars().count() < MIN_SEARCH_CHARS {
         return Ok(Vec::new());
     }
-    let resp = client
-        .get(format!(
+    let resp = super::upstream_health::recorded_get(
+        &client,
+        host,
+        "account/list",
+        format!(
             "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
             encode_query(&q)
-        ))
-        .send()
-        .await
-        .map_err(|e| format!("account/list request: {e}"))?
-        .json::<WgResponse<Vec<AccountListEntry>>>()
-        .await
-        .map_err(|e| format!("account/list parse: {e}"))?;
+        ),
+    )
+    .await?
+    .json::<WgResponse<Vec<AccountListEntry>>>()
+    .await
+    .map_err(|e| format!("account/list parse: {e}"))?;
     if resp.status != "ok" {
         return Err(format!(
             "account/list: {}",
@@ -1268,17 +1272,19 @@ pub async fn suggest_clans(search: String, realm: String) -> Result<Vec<ClanSugg
     if q.chars().count() < MIN_SEARCH_CHARS {
         return Ok(Vec::new());
     }
-    let resp = client
-        .get(format!(
+    let resp = super::upstream_health::recorded_get(
+        &client,
+        host,
+        "clans/list",
+        format!(
             "https://{host}/wows/clans/list/?application_id={app_id}&search={}&limit=10",
             encode_query(&q)
-        ))
-        .send()
-        .await
-        .map_err(|e| format!("clans/list request: {e}"))?
-        .json::<WgResponse<Vec<ClanListEntry>>>()
-        .await
-        .map_err(|e| format!("clans/list parse: {e}"))?;
+        ),
+    )
+    .await?
+    .json::<WgResponse<Vec<ClanListEntry>>>()
+    .await
+    .map_err(|e| format!("clans/list parse: {e}"))?;
     if resp.status != "ok" {
         return Err(format!(
             "clans/list: {}",
@@ -1307,13 +1313,15 @@ async fn fetch_clan_node(
     clan_id: i64,
 ) -> Result<Option<serde_json::Value>, String> {
     let cid = clan_id.to_string();
-    let resp = client
-        .get(format!(
+    let resp = super::upstream_health::recorded_get(
+        client,
+        host,
+        "clans/info",
+        format!(
             "https://{host}/wows/clans/info/?application_id={app_id}&clan_id={cid}&extra=members"
-        ))
-        .send()
-        .await
-        .map_err(|e| format!("clans/info request: {e}"))?;
+        ),
+    )
+    .await?;
     let parsed: WgResponse<serde_json::Value> = resp
         .json()
         .await
@@ -1393,14 +1401,16 @@ pub async fn lookup_clan_info(
         // Same extra-gated division splits as the single/batch lookups;
         // without them roster PR degrades to the overall-WR fallback and
         // disagrees with the player card for the same account.
-        let resp = client
-            .get(format!(
+        let resp = super::upstream_health::recorded_get(
+            &client,
+            host,
+            "account/info",
+            format!(
                 "https://{host}/wows/account/info/?application_id={app_id}&account_id={id_list}\
                  &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3"
-            ))
-            .send()
-            .await
-            .map_err(|e| format!("account/info request: {e}"))?;
+            ),
+        )
+        .await?;
         let parsed: WgResponse<serde_json::Value> = resp
             .json()
             .await

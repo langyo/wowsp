@@ -105,14 +105,12 @@ pub async fn get_ranked_stats(
 
     // 1. Get season IDs (sorted descending = most recent first).
     let seasons_url = format!("https://{host}/wows/seasons/info/?application_id={app_id}");
-    let seasons_resp: WgResponse<HashMap<i64, serde_json::Value>> = client
-        .get(&seasons_url)
-        .send()
-        .await
-        .map_err(|e| format!("seasons/info request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("seasons/info parse: {e}"))?;
+    let seasons_resp: WgResponse<HashMap<i64, serde_json::Value>> =
+        super::upstream_health::recorded_get(&client, host, "seasons/info", seasons_url)
+            .await?
+            .json()
+            .await
+            .map_err(|e| format!("seasons/info parse: {e}"))?;
     if seasons_resp.status != "ok" {
         return Err(format!(
             "seasons/info: {}",
@@ -142,14 +140,12 @@ pub async fn get_ranked_stats(
         "https://{host}/wows/seasons/accountinfo/?application_id={app_id}&account_id={account_id}&season_id={}",
         id_str.join(",")
     );
-    let stats_resp: WgResponse<serde_json::Value> = client
-        .get(&stats_url)
-        .send()
-        .await
-        .map_err(|e| format!("seasons/accountinfo request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("seasons/accountinfo parse: {e}"))?;
+    let stats_resp: WgResponse<serde_json::Value> =
+        super::upstream_health::recorded_get(&client, host, "seasons/accountinfo", stats_url)
+            .await?
+            .json()
+            .await
+            .map_err(|e| format!("seasons/accountinfo parse: {e}"))?;
     if stats_resp.status != "ok" {
         return Err(format!(
             "seasons/accountinfo: {}",

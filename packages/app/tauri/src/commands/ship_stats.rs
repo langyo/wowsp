@@ -656,11 +656,7 @@ async fn fetch_vortex_ships_mode(
     mode: &'static str,
 ) -> Result<serde_json::Value, String> {
     let url = format!("https://{host}/api/accounts/{account_id}/ships/{mode}/");
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("vortex ships request: {e}"))?;
+    let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url).await?;
     if !resp.status().is_success() {
         return Err(format!("vortex ships: HTTP {}", resp.status()));
     }
