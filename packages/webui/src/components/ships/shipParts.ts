@@ -203,6 +203,33 @@ function blocksFor(gp: Gp, names: string[]): Gp[] {
     .filter((b): b is Record<string, any> => isDict(b));
 }
 
+/**
+ * Collapse co-listed weapon VARIANTS of one role. Blocks occupying the same
+ * HP_* hardpoints are mutually exclusive loadouts, not simultaneous mounts
+ * (the Halloween hulls list three switchable armament sets — A1/A2/A3 —
+ * under one role; upgrade entries may co-list variants too). The LAST
+ * listed variant wins, the same "top configuration" convention as the
+ * upgrade-chain pick. Blocks with disjoint hardpoints mount together and
+ * are all kept; HP-less blocks (aura-only carriers) never overlap.
+ */
+function collapseVariants(blocks: Gp[]): Gp[] {
+  const kept: { keys: Set<string>; block: Gp }[] = [];
+  for (const block of blocks) {
+    if (block == null) continue;
+    const keys = new Set(Object.keys(block).filter((k) => k.startsWith("HP_")));
+    for (let i = kept.length - 1; i >= 0; i--) {
+      for (const key of kept[i]!.keys) {
+        if (keys.has(key)) {
+          kept.splice(i, 1);
+          break;
+        }
+      }
+    }
+    kept.push({ keys, block });
+  }
+  return kept.map((k) => k.block);
+}
+
 const EMPTY_PARTS: ShipParts = {
   hull: null,
   artillery: [],
@@ -260,7 +287,7 @@ export function resolveShipParts(gp: Gp, config: "stock" | "top" = "top"): ShipP
   for (const role of SHIP_PART_ROLES) {
     if (role === "hull") continue;
     const { names, explicitEmpty } = roleComponentNames(info, chains, hullEntry, role, config);
-    const blocks = blocksFor(gp, names);
+    const blocks = collapseVariants(blocksFor(gp, names));
     // An explicit [] in the hull's components is the game saying "none
     // mounted" — the literal block (a leftover of another config) must
     // NOT resurrect (Gearing_H2019 used to double-count through it).

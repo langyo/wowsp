@@ -25,6 +25,12 @@ Sources, in order of authority per field:
   * `maxEquippedFlags` (signal-flag capacity),
   * `ShipUpgradeInfo` (the ship's researchable module kinds),
   * and a fallback for the fields the encyclopedia is missing (newer ships).
+* a full GameParams dump (`--ammo-source`, the orchestrator cache by
+  default) — torpedo PROJECTILES only: a mount references its ammo by name
+  (`ammoList`) and the range lives on that entity (`maxDist`), which never
+  enters the per-ship slices. Feeds the torpedo-range fallback for the
+  event/collab ships the encyclopedia has no entry for; skipped (with a
+  note) when the dump is absent.
 
 Everything here is ship-data (GameParams / WG encyclopedia) — no per-player
 information exists in either source, which is why the panel can only ever show
@@ -39,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from collections import Counter, defaultdict
@@ -46,11 +53,22 @@ from pathlib import Path
 from typing import Any, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_weapons import resolve_parts  # noqa: E402
 
 DEFAULT_BASICS = REPO_ROOT / "packages/webui/src/res/data/ships_basics.json"
 DEFAULT_NAMES = REPO_ROOT / "packages/webui/src/data/ship_names.json"
 DEFAULT_GAMEPARAMS = REPO_ROOT / "packages/webui/src/res/data/gameparams"
 DEFAULT_OUT = REPO_ROOT / "packages/webui/src/data/ship_live_stats.json"
+DEFAULT_AMMO_SOURCE = (
+    Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
+    / "WoWSP-extract"
+    / "GameParams.json"
+)
+
+# Projectile `maxDist` is stored in thirtieths of a meter (see
+# load_ammo_ranges); the baked `torp` field the panel shows is km.
+PROJECTILE_DIST_UNIT = 30.0
 
 # ---------------------------------------------------------------------------
 # GameParams extraction
@@ -222,7 +240,68 @@ def collect_upgrades(gp: dict[str, Any]) -> list[str]:
     return [code for code in order if len(options.get(code, ())) > 1]
 
 
-def collect_gameparams_fallback(gp: dict[str, Any]) -> dict[str, Any]:
+def load_ammo_ranges(path: Path) -> dict[str, float]:
+    """Torpedo projectile name → max range (meters) off a full GameParams dump.
+
+    Only entities typed `species: Torpedo` matter — the mounts' `ammoList`
+    names point at those. Projectile `maxDist` is NOT meters: the game
+    stores it in thirtieths of a meter (every encyclopedia-covered ship's
+    ratio measures exactly 30.0 — e.g. Torped_M1947_mod1 maxDist 500 =
+    15.0 km), so the unit conversion happens here. Heavy (the dump is the
+    full ~350 MB unpack), so callers skip it entirely when no ship needs
+    the fallback — and the enc cross-check (`checked_torp`) is the guard
+    that this ratio stays right across game builds.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    root = raw.get("", raw) if isinstance(raw, dict) else raw
+    out: dict[str, float] = {}
+    if not isinstance(root, dict):
+        return out
+    for name, ent in root.items():
+        if not isinstance(ent, dict):
+            continue
+        if (ent.get("typeinfo") or {}).get("species") != "Torpedo":
+            continue
+        dist = num(ent.get("maxDist"))
+        if dist is not None and dist > 0:
+            out[str(name)] = dist * PROJECTILE_DIST_UNIT
+    return out
+
+
+def collect_torp_range(
+    gp: dict[str, Any], ammo_ranges: dict[str, float]
+) -> float | None:
+    """Torpedo range in km off the resolved torpedo mounts, widest across
+    both hull configurations. A mount references its projectile by name
+    (`ammoList`); the range lives on the ammo entity, never in the slice.
+    Returns None without an ammo table (no dump) or when the ship carries
+    no torpedoes."""
+    if not ammo_ranges:
+        return None
+    best = 0.0
+    for config in ("stock", "top"):
+        parts = resolve_parts(gp, config)
+        for block in parts["torpedoes"]:
+            for key, slot in block.items():
+                # Mount slots only — blocks may carry non-mount payload (the
+                # event hulls park ammo under keys like `Gun_1` while having
+                # no torpedo mounts at all), and range must never outrun
+                # mounts.
+                if not key.startswith("HP_") or not isinstance(slot, dict):
+                    continue
+                for ammo in slot.get("ammoList") or []:
+                    dist = ammo_ranges.get(ammo)
+                    if dist is not None and dist > best:
+                        best = dist
+    if best <= 0:
+        return None
+    # The ammo table already carries meters (load_ammo_ranges converted).
+    return round(best / 1000.0, 1)
+
+
+def collect_gameparams_fallback(
+    gp: dict[str, Any], ammo_ranges: dict[str, float]
+) -> dict[str, Any]:
     """Fields the encyclopedia is missing, read straight off GameParams.
 
     Only the stock/top hull blocks are considered, and every value is the
@@ -239,6 +318,10 @@ def collect_gameparams_fallback(gp: dict[str, Any]) -> dict[str, Any]:
             main = dist
     if main > 0:
         out["main"] = round(main / 1000.0, 1)
+
+    torp = collect_torp_range(gp, ammo_ranges)
+    if torp is not None:
+        out["torp"] = torp
 
     sec = 0.0
     for key, block in gp.items():
@@ -321,6 +404,9 @@ def main(argv: Iterable[str]) -> int:
     ap.add_argument("--names", type=Path, default=DEFAULT_NAMES)
     ap.add_argument("--gameparams", type=Path, default=DEFAULT_GAMEPARAMS)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--ammo-source", type=Path, default=DEFAULT_AMMO_SOURCE,
+                    help="full GameParams.json for the torpedo-ammo ranges "
+                         "the per-ship slices cannot carry; skipped when absent")
     args = ap.parse_args(list(argv))
 
     if not args.gameparams.is_dir():
@@ -344,6 +430,17 @@ def main(argv: Iterable[str]) -> int:
     families: Counter[str] = Counter()
     upgrade_kinds: Counter[str] = Counter()
 
+    if args.ammo_source.exists():
+        ammo_ranges = load_ammo_ranges(args.ammo_source)
+        stats["ammo_entities"] = len(ammo_ranges)
+    else:
+        ammo_ranges = {}
+        print(
+            f"note: no full GameParams dump at {args.ammo_source} — the "
+            "torpedo-range fallback is skipped (pass --ammo-source)",
+            file=sys.stderr,
+        )
+
     slice_paths = sorted(args.gameparams.glob("*.json"))
     for idx, path in enumerate(slice_paths):
         ship_id = path.stem
@@ -360,7 +457,7 @@ def main(argv: Iterable[str]) -> int:
 
         record: dict[str, Any] = {}
         enc = from_encyclopedia(basics_ships.get(ship_id) or {})
-        fb = collect_gameparams_fallback(gp)
+        fb = collect_gameparams_fallback(gp, ammo_ranges)
         for key, val in enc.items():
             record[key] = val
             stats[f"enc_{key}"] += 1
@@ -415,7 +512,12 @@ def main(argv: Iterable[str]) -> int:
     )
 
     named = sum(1 for sid in ordered if sid in names)
-    print(f"wrote {args.out.relative_to(REPO_ROOT)} — {len(ordered)} ships "
+    out_path = args.out.absolute()
+    try:
+        shown = out_path.relative_to(REPO_ROOT)
+    except ValueError:
+        shown = out_path
+    print(f"wrote {shown} — {len(ordered)} ships "
           f"({named} with a localized name), {args.out.stat().st_size / 1024:.0f} KiB")
     for key in sorted(stats):
         print(f"  {key}: {stats[key]}")

@@ -190,24 +190,37 @@ describe("resolveShipParts", () => {
     expect(resolveShipParts(gp, "top").artillery).toEqual([artB]);
   });
 
-  it("dedupes slot keys shared by co-listed blocks of one role", () => {
-    // Residual event-ship shape: after hull intersection two blocks of one
-    // role still carry the same hardpoint — it mounts once.
-    const blockA = { HP_T_1: mount(4), HP_T_2: mount(4) };
-    const blockB = { HP_T_2: mount(4), HP_T_3: mount(4) };
+  it("collapses co-listed loadout variants to the last, keeps disjoint mounts", () => {
+    // Halloween-hull shape: one hull lists three switchable armament sets
+    // over the SAME hardpoints (Smolensk_H2020 C1/C2/C3) — the last listed
+    // wins (top-configuration convention). A disjoint block mounts
+    // alongside instead of collapsing.
+    const laser = { HP_XGS_1: mount(8), HP_XGS_2: mount(8) };
+    const longLaser = { HP_XGS_1: mount(4), HP_XGS_2: mount(4) };
+    const spare = { HP_XGS_9: mount(4) };
     const gp: Record<string, unknown> = {
-      A_Torpedoes: blockA,
-      B_Torpedoes: blockB,
+      C1_ATBA: laser,
+      C2_ATBA: longLaser,
+      C3_ATBA: spare,
       A_Hull: { health: 1000 },
       ShipUpgradeInfo: {
         hull: {
           ucType: "_Hull", prev: "",
-          components: { hull: ["A_Hull"], torpedoes: ["A_Torpedoes", "B_Torpedoes"] },
+          components: {
+            hull: ["A_Hull"],
+            artillery: [],
+            torpedoes: [],
+            atba: ["C1_ATBA", "C2_ATBA", "C3_ATBA"],
+          },
         },
       },
     };
-    const torp = summarizeWeapons(gp).filter((g) => g.kind === "torpedo");
-    expect(torp).toEqual([{ kind: "torpedo", count: 3, barrels: 4, cal: 0 }]);
+    // longLaser overlaps laser → replaced; spare is disjoint → mounts
+    // alongside. ATBA promotion then renders all three mounts as main guns.
+    expect(summarizeWeapons(gp).filter((g) => g.kind === "mainGun")).toEqual([
+      { kind: "mainGun", count: 3, barrels: 4, cal: 0 },
+    ]);
+    expect(resolveShipParts(gp, "top").atba).toEqual([longLaser, spare]);
   });
 
   it("falls back to the canonical literal block when the hull omits a role", () => {
