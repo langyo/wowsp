@@ -6,40 +6,64 @@ pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
     (roster.height / 8).clamp(24, 96)
 }
 
+/// The chip layer's worst-case side reserve in CSS px. The chips anchor at
+/// the table's edge and grow OUTWARD with `white-space: nowrap`; the widest
+/// steady-state face (four dot-joined numbers with their localized battle
+/// unit, plus a four-character career seal and its gap) measures ~20 font
+/// heights ≈ 300 CSS px at the chip font cap (15 CSS px), and the pad must
+/// also carry the anchor gap plus the fit pass's overhang tolerance. 350 is
+/// that worst case with headroom; candidate-RANGE chips (several players'
+/// numbers slash-joined) deliberately exceed it — chipFit trims their seals
+/// and clamps them last, which is the designed degradation for a row that
+/// has no right to a fixed pad.
+const SIDE_PAD_CSS_PX: f32 = 350.0;
+
 /// Horizontal padding (physical px): WIDER than vertical because the stat
 /// chips render OUTSIDE the table's left/right edges (inside they cover the
 /// ship names) — the window must reserve a full chip width per side. The
-/// four-char seals recut onto one line (3:1 faces) roughly tripled each
-/// wide seal's footprint versus the old 2x2 face, so the floor rides up
-/// with them: at 150 px a hidden-profile 过街老鼠 chip (or any chip with a
-/// career + air + sub set) lost its outer seal flank. A worst-case chip
-/// (four-char seal + four dot-joined numbers) measures ~20 font heights —
-/// up to ~300 CSS px — and font sizes are CSS px while this pad is
-/// physical, so the reserve needed on the SAME physical layout grows with
-/// the monitor's DPR: the floor covers that chip at DPR 1 and the cap
-/// through ~DPR 2. Past the covered reserve chipFit trims seals first and
-/// only then slides the chip back over the table's outer column, so an
-/// under-padded window degrades visibly (lost seals) before it degrades
-/// badly. The ratio stays a quarter of the table width so the pad still
-/// grows with the layout, and the window's own game-window clamp keeps the
-/// wider request from overreaching the screen.
-pub(crate) fn overlay_padding_x(roster: &Rect) -> i32 {
-    (roster.width / 4).clamp(320, 560)
+/// reserve is DPI-AWARE: chip fonts are CSS px (the overlay page sizes them
+/// off the row pitch, capped at 15) while every rect here is physical, so
+/// the same visual chip occupies `scale ×` more physical pixels on a
+/// scaled monitor and a pad picked in raw physical px silently starves the
+/// chips there. It did exactly that: the old `width / 4` heuristic with a
+/// fixed 320–560 physical envelope left 246 CSS px of room on a 150%
+/// monitor's random-battle table (1477 physical px wide → 369 physical pad
+/// → 246 CSS) against a ~300 CSS px chip — every loaded number chip
+/// overflowed its side pad and chipFit's last-resort clamp pinned them to
+/// the window edge, each at its own width, so the chip column lost the
+/// table-edge alignment outright (both on the two-column table and on the
+/// story/PvE single-column one, where the narrow table drove the pad onto
+/// its 320 floor). The reserve is therefore `SIDE_PAD_CSS_PX × scale`,
+/// still grown by a quarter of the table width when the layout is wide
+/// enough to afford more, and the window's own game-window clamp keeps the
+/// wider request from overreaching the screen. Past the covered reserve
+/// chipFit trims seals first and only then slides the chip back over the
+/// table's outer column, so an under-padded window degrades visibly (lost
+/// seals) before it degrades badly.
+pub(crate) fn overlay_padding_x(roster: &Rect, dpi_scale: f32) -> i32 {
+    ((SIDE_PAD_CSS_PX * dpi_scale.max(1.0)).round() as i32)
+        .max(roster.width / 4)
+        .min(1024)
 }
 
 /// Build the overlay-window anchor from a detection relative to the game
 /// window: the overlay covers ONLY the table area (inflated by padding), and
-/// every coordinate is re-based to the overlay window's origin. Returns the
-/// anchor plus the overlay rect in SCREEN coordinates for window placement.
+/// every coordinate is re-based to the overlay window's origin. `dpi_scale`
+/// is the game window's monitor scale (1.0 = 96 DPI — read off the game
+/// HWND by `window_dpi_scale` in `commands::overlay::game_window`); the
+/// side pad converts the chip layer's CSS reserve into this rect's physical
+/// pixels with it. Returns the anchor plus the overlay rect in SCREEN
+/// coordinates for window placement.
 pub(crate) fn build_anchor(
     game_screen: &Rect,
     roster_rel: &Rect,
     mut row_centers: Vec<i32>,
     team_split: f32,
     table_detected: bool,
+    dpi_scale: f32,
 ) -> (Rect, wowsp_tauri_shared::OverlayAnchor) {
     let pad = overlay_padding(roster_rel);
-    let padx = overlay_padding_x(roster_rel);
+    let padx = overlay_padding_x(roster_rel, dpi_scale);
     // Overlay rect in screen px: the table area inflated by the padding,
     // clamped to stay inside the game window (multi-monitor safe — the game
     // rect is already monitor-clamped).

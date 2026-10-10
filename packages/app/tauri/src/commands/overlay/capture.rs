@@ -207,8 +207,14 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
             &profile,
         ))
     };
-    let (overlay, mut anchor) =
-        overlay_detect::build_anchor(&game_rect, &roster_rel, rows, split, detected);
+    let (overlay, mut anchor) = overlay_detect::build_anchor(
+        &game_rect,
+        &roster_rel,
+        rows,
+        split,
+        detected,
+        window_dpi_scale(game.hwnd),
+    );
     anchor.row_alive = alive;
     tracing::info!(
         detected,
@@ -276,6 +282,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                                 d.row_centers,
                                 d.team_split,
                                 true,
+                                window_dpi_scale(game.hwnd),
                             )
                             .1,
                         ),
@@ -292,6 +299,7 @@ pub async fn capture_game_window() -> Result<CaptureResult, String> {
                                     rows,
                                     0.5,
                                     false,
+                                    window_dpi_scale(game.hwnd),
                                 )
                                 .1,
                             )
