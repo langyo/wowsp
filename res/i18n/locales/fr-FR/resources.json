@@ -19,11 +19,6 @@
   "warnings": "Remarques",
   "installedOk": "« {name} » installé — {count} fichiers écrits dans bin/{version}.",
   "mirroredBins": "Également synchronisé avec la version préliminaire bin/{version}.",
-  "kind.voice": "Pack vocal",
-  "kind.skin": "Skin de navire (PnF)",
-  "kind.textures": "Remplacement de textures",
-  "kind.gui": "Icônes d'interface",
-  "kind.patch": "Correctif de configuration",
   "kind": {
     "voice": "Pack vocal",
     "skin": "Skin de navire (PnF)",

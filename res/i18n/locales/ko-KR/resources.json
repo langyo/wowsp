@@ -19,11 +19,6 @@
   "warnings": "참고",
   "installedOk": "\"{name}\" 설치 완료 — bin/{version}에 파일 {count}개가 기록되었습니다.",
   "mirroredBins": "사전 릴리스 빌드 bin/{version}에도 동기화했습니다.",
-  "kind.voice": "음성 팩",
-  "kind.skin": "함선 스킨 (PnF)",
-  "kind.textures": "텍스처 교체",
-  "kind.gui": "HUD 아이콘",
-  "kind.patch": "설정 패치",
   "kind": {
     "voice": "음성 팩",
     "skin": "함선 스킨 (PnF)",

@@ -19,11 +19,6 @@
   "warnings": "Примечания",
   "installedOk": "«{name}» установлен — в bin/{version} записано файлов: {count}.",
   "mirroredBins": "Также синхронизировано с предварительной сборкой bin/{version}.",
-  "kind.voice": "Озвучка",
-  "kind.skin": "Камуфляж корабля (PnF)",
-  "kind.textures": "Замена текстур",
-  "kind.gui": "Иконки интерфейса",
-  "kind.patch": "Патч конфигурации",
   "kind": {
     "voice": "Озвучка",
     "skin": "Камуфляж корабля (PnF)",

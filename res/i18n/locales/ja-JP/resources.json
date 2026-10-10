@@ -19,11 +19,6 @@
   "warnings": "注意事項",
   "installedOk": "「{name}」をインストールしました — {count} 個のファイルを bin/{version} に書き込みました。",
   "mirroredBins": "リリース前ビルド bin/{version} にも同期しました。",
-  "kind.voice": "音声パック",
-  "kind.skin": "艦艇スキン（PnF）",
-  "kind.textures": "テクスチャ上書き",
-  "kind.gui": "HUD アイコン",
-  "kind.patch": "設定パッチ",
   "kind": {
     "voice": "音声パック",
     "skin": "艦艇スキン（PnF）",
