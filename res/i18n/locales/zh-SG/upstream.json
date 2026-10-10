@@ -1,0 +1,26 @@
+{
+  "fault": {
+    "short": "上游服务故障",
+    "tooltipTitle": "上游服务正在故障",
+    "lastFail": "最近失败：{time}",
+    "hint": "可能是游戏厂商服务波动，通常会自动恢复；期间 wowsp 将继续使用已缓存的战绩数据。"
+  },
+  "time": {
+    "justNow": "刚刚",
+    "minAgo": "{m} 分钟前",
+    "hourAgo": "{h} 小时前"
+  },
+  "purpose": {
+    "statsApi": "战绩 API",
+    "statsVortex": "战绩查询",
+    "clans": "军团数据",
+    "encyclopedia": "游戏百科",
+    "pr": "PR 期望值",
+    "update": "更新与资源下载",
+    "mirror": "GitHub 镜像",
+    "avatar": "支持者头像",
+    "avatarCdn": "头像图床",
+    "shipImages": "舰船图片",
+    "relay": "手机配对中继"
+  }
+}

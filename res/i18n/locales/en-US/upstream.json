@@ -1,0 +1,26 @@
+{
+  "fault": {
+    "short": "Upstream service fault",
+    "tooltipTitle": "Upstream services are failing",
+    "lastFail": "Last failure: {time}",
+    "hint": "This is likely a game-vendor service hiccup and usually recovers on its own; wowsp keeps serving cached stats meanwhile."
+  },
+  "time": {
+    "justNow": "just now",
+    "minAgo": "{m} min ago",
+    "hourAgo": "{h} h ago"
+  },
+  "purpose": {
+    "statsApi": "Stats API",
+    "statsVortex": "Stats lookups",
+    "clans": "Clan data",
+    "encyclopedia": "Game encyclopedia",
+    "pr": "PR expected values",
+    "update": "Updates & resources",
+    "mirror": "GitHub mirrors",
+    "avatar": "Supporter avatars",
+    "avatarCdn": "Avatar CDN",
+    "shipImages": "Ship images",
+    "relay": "Pairing relay"
+  }
+}

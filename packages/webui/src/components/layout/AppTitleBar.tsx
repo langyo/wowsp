@@ -17,6 +17,7 @@ import { useNavUiStore } from "@/stores/navUi";
 import { useShipsUiStore, type ShipsViewMode } from "@/stores/shipsUi";
 import { useLiveUiStore, type LiveViewMode } from "@/stores/liveUi";
 import TitlebarLoading from "@/components/layout/TitlebarLoading";
+import TitlebarUpstreamFault from "@/components/layout/TitlebarUpstreamFault";
 import { watchChromeInsets } from "@/composables/popupChrome";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
@@ -286,13 +287,20 @@ export default defineComponent({
                 ) : null}
               </>
             ),
-            // The loading chip rides HkTitleBar's `actions` slot, which
-            // renders ahead of `customActions` — i.e. right-aligned,
-            // immediately left of the settings gear. It replaces the
-            // persistent loading toasts that used to squat the top-right
-            // toast corner for the whole load (TitlebarLoading +
-            // useLoadingTasksStore).
-            actions: () => <TitlebarLoading />,
+            // The loading chip AND the upstream-fault chip ride HkTitleBar's
+            // `actions` slot, which renders ahead of `customActions` — i.e.
+            // right-aligned, immediately left of the settings gear. The
+            // loading chip replaced the persistent loading toasts that used
+            // to squat the top-right toast corner (TitlebarLoading +
+            // useLoadingTasksStore); the fault chip (TitlebarUpstreamFault)
+            // squeezes in beside it while an upstream host is failing and
+            // never replaces the loading chip.
+            actions: () => (
+              <>
+                <TitlebarUpstreamFault />
+                <TitlebarLoading />
+              </>
+            ),
           }}
         />
       </div>

@@ -1,0 +1,26 @@
+{
+  "fault": {
+    "short": "Panne du service amont",
+    "tooltipTitle": "Les services amont sont en panne",
+    "lastFail": "Dernier échec : {time}",
+    "hint": "Probable perturbation côté éditeur du jeu ; un rétablissement automatique est habituel. wowsp continue d'afficher les statistiques en cache."
+  },
+  "time": {
+    "justNow": "à l'instant",
+    "minAgo": "il y a {m} min",
+    "hourAgo": "il y a {h} h"
+  },
+  "purpose": {
+    "statsApi": "API de statistiques",
+    "statsVortex": "Consultation des stats",
+    "clans": "Données de clan",
+    "encyclopedia": "Encyclopédie",
+    "pr": "Valeurs attendues PR",
+    "update": "Mises à jour et ressources",
+    "mirror": "Miroirs GitHub",
+    "avatar": "Avatars des supporters",
+    "avatarCdn": "CDN d'avatars",
+    "shipImages": "Images de navires",
+    "relay": "Relais d'appairage"
+  }
+}

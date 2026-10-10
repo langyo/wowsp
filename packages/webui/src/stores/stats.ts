@@ -5,6 +5,7 @@ import { api, type PlayerStats } from "@/api";
 import { LookupError, type LookupErrorPayload } from "@/transport/types";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
 import { useStatsQueryStore, type StatsQueryMessage } from "@/stores/statsQuery";
+import { useUpstreamHealthStore } from "@/stores/upstreamHealth";
 
 /** Persisted-cache envelope for one player's stats (AppData). Old caches
  *  written before this envelope existed are plain PlayerStats JSON — the
@@ -299,6 +300,9 @@ export const useStatsStore = defineStore("stats", () => {
       throw e;
     } finally {
       if (--activeCalls === 0) loading.value = false;
+      // Settled lookups feed the upstream-fault chip: the health table
+      // records the transport outcome either way (never a probe).
+      useUpstreamHealthStore().scheduleRefresh();
     }
   }
 

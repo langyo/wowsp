@@ -1,0 +1,26 @@
+{
+  "fault": {
+    "short": "上流サービス障害",
+    "tooltipTitle": "上流サービスが障害中です",
+    "lastFail": "最終失敗：{time}",
+    "hint": "ゲームメーカー側のサービス障害の可能性があります。通常は自動的に回復します。その間、wowsp はキャッシュされた戦績データを表示します。"
+  },
+  "time": {
+    "justNow": "たった今",
+    "minAgo": "{m} 分前",
+    "hourAgo": "{h} 時間前"
+  },
+  "purpose": {
+    "statsApi": "戦績 API",
+    "statsVortex": "戦績照会",
+    "clans": "クランデータ",
+    "encyclopedia": "ゲーム百科",
+    "pr": "PR 期待値",
+    "update": "更新とリソース",
+    "mirror": "GitHub ミラー",
+    "avatar": "サポーターアバター",
+    "avatarCdn": "アバター CDN",
+    "shipImages": "艦艇画像",
+    "relay": "ペアリング中継"
+  }
+}

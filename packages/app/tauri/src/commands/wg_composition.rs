@@ -360,11 +360,8 @@ async fn fetch_ship_types_online(realm: &str, ids: &[i64]) -> Result<HashMap<i64
         "https://{host}/wows/encyclopedia/ships/?application_id={app_id}\
          &ship_id={id_list}&language=en&fields=ship_id,type"
     );
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("encyclopedia/ships request: {e}"))?;
+    let resp =
+        super::upstream_health::recorded_get(&client, host, "encyclopedia/ships", url).await?;
     let parsed: WgResponse = resp
         .json()
         .await

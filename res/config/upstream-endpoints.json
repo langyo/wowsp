@@ -1,0 +1,26 @@
+{
+  "entries": [
+    { "id": "api-ru", "host": "api.korabli.su", "purpose": "statsApi", "realms": ["ru"], "kind": "stats" },
+    { "id": "api-eu", "host": "api.worldofwarships.eu", "purpose": "statsApi", "realms": ["eu"], "kind": "stats" },
+    { "id": "api-na", "host": "api.worldofwarships.com", "purpose": "statsApi", "realms": ["na"], "kind": "stats" },
+    { "id": "api-asia", "host": "api.worldofwarships.asia", "purpose": "statsApi", "realms": ["asia"], "kind": "stats" },
+    { "id": "vortex-ru", "host": "vortex.korabli.su", "purpose": "statsVortex", "realms": ["ru"], "kind": "stats" },
+    { "id": "vortex-eu", "host": "vortex.worldofwarships.eu", "purpose": "statsVortex", "realms": ["eu"], "kind": "stats" },
+    { "id": "vortex-na", "host": "vortex.worldofwarships.com", "purpose": "statsVortex", "realms": ["na"], "kind": "stats" },
+    { "id": "vortex-asia", "host": "vortex.worldofwarships.asia", "purpose": "statsVortex", "realms": ["asia"], "kind": "stats" },
+    { "id": "vortex-cn", "host": "vortex.wowsgame.cn", "purpose": "statsVortex", "realms": ["cn"], "kind": "stats" },
+    { "id": "clans-cn", "host": "clans.wowsgame.cn", "purpose": "clans", "realms": ["cn"], "kind": "stats" },
+    { "id": "encyclopedia", "host": "api.worldofwarships.asia", "purpose": "encyclopedia", "realms": ["ru", "eu", "na", "asia", "cn"], "kind": "stats" },
+    { "id": "pr-expected", "host": "api.wows-numbers.com", "purpose": "pr", "realms": ["ru", "eu", "na", "asia", "cn"], "kind": "stats" },
+    { "id": "github-api", "host": "api.github.com", "purpose": "update", "realms": [], "kind": "content" },
+    { "id": "github", "host": "github.com", "purpose": "update", "realms": [], "kind": "content" },
+    { "id": "mirror-ghp-ci", "host": "ghp.ci", "purpose": "mirror", "realms": [], "kind": "content" },
+    { "id": "mirror-gh-proxy", "host": "gh-proxy.com", "purpose": "mirror", "realms": [], "kind": "content" },
+    { "id": "mirror-ghfast", "host": "ghfast.top", "purpose": "mirror", "realms": [], "kind": "content" },
+    { "id": "mirror-ghproxy", "host": "ghproxy.net", "purpose": "mirror", "realms": [], "kind": "content" },
+    { "id": "bilibili-api", "host": "api.bilibili.com", "purpose": "avatar", "realms": [], "kind": "content" },
+    { "id": "bilibili-cdn", "host": "*.hdslb.com", "purpose": "avatarCdn", "realms": [], "kind": "content" },
+    { "id": "wg-cdn", "host": "*.wgcdn.co", "purpose": "shipImages", "realms": [], "kind": "content" },
+    { "id": "pairing-relay", "host": "wowsp.langyo.xyz", "purpose": "relay", "realms": [], "kind": "content" }
+  ]
+}

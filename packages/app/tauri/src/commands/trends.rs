@@ -211,17 +211,19 @@ async fn fetch_and_cache_expected_values() -> Result<String, String> {
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
-    let bytes = client
-        .get(EXPECTED_VALUES_URL)
-        .send()
-        .await
-        .map_err(|e| format!("expected-values request: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("expected-values status: {e}"))?
-        .bytes()
-        .await
-        .map_err(|e| format!("expected-values body: {e}"))?
-        .to_vec();
+    let bytes = super::upstream_health::recorded_get(
+        &client,
+        "api.wows-numbers.com",
+        "expected-values",
+        EXPECTED_VALUES_URL.to_string(),
+    )
+    .await?
+    .error_for_status()
+    .map_err(|e| format!("expected-values status: {e}"))?
+    .bytes()
+    .await
+    .map_err(|e| format!("expected-values body: {e}"))?
+    .to_vec();
     let raw = String::from_utf8(bytes).map_err(|_| "expected-values: non-UTF8 body".to_string())?;
     validate_expected_values(&raw)?;
     let _ = write_appdata_json(EXPECTED_VALUES_FILE, &raw);

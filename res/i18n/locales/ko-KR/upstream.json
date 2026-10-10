@@ -1,0 +1,26 @@
+{
+  "fault": {
+    "short": "상위 서비스 장애",
+    "tooltipTitle": "상위 서비스에 장애가 발생했습니다",
+    "lastFail": "마지막 실패: {time}",
+    "hint": "게임 제공사 서비스 문제일 가능성이 높으며 보통 자동으로 복구됩니다. 그동안 wowsp는 캐시된 전적 데이터를 사용합니다."
+  },
+  "time": {
+    "justNow": "방금 전",
+    "minAgo": "{m}분 전",
+    "hourAgo": "{h}시간 전"
+  },
+  "purpose": {
+    "statsApi": "전적 API",
+    "statsVortex": "전적 조회",
+    "clans": "클랜 데이터",
+    "encyclopedia": "게임 백과사전",
+    "pr": "PR 기댓값",
+    "update": "업데이트 및 리소스",
+    "mirror": "GitHub 미러",
+    "avatar": "서포터 아바타",
+    "avatarCdn": "아바타 CDN",
+    "shipImages": "함선 이미지",
+    "relay": "페어링 릴레이"
+  }
+}

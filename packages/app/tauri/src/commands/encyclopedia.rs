@@ -37,14 +37,16 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
     let url = format!(
         "https://api.worldofwarships.asia/wows/encyclopedia/info/?application_id={app_id}&language=en"
     );
-    let resp: WgResponse<serde_json::Value> = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("encyclopedia/info request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("encyclopedia/info parse: {e}"))?;
+    let resp: WgResponse<serde_json::Value> = super::upstream_health::recorded_get(
+        &client,
+        "api.worldofwarships.asia",
+        "encyclopedia/info",
+        url,
+    )
+    .await?
+    .json()
+    .await
+    .map_err(|e| format!("encyclopedia/info parse: {e}"))?;
     if resp.status != "ok" {
         return Err(format!(
             "encyclopedia/info: {}",
@@ -119,14 +121,12 @@ pub async fn get_ship_encyclopedia(
 
     // Fetch page 1 first to get page_total, then fetch remaining pages in parallel.
     let page1_url = format!("{base_url}&page_no=1");
-    let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
-        .get(&page1_url)
-        .send()
-        .await
-        .map_err(|e| format!("encyclopedia/ships page 1 request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("encyclopedia/ships page 1 parse: {e}"))?;
+    let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
+        super::upstream_health::recorded_get(&client, host, "encyclopedia/ships page 1", page1_url)
+            .await?
+            .json()
+            .await
+            .map_err(|e| format!("encyclopedia/ships page 1 parse: {e}"))?;
     if page1_resp.status != "ok" {
         return Err(format!(
             "encyclopedia/ships: {}",
@@ -146,8 +146,12 @@ pub async fn get_ship_encyclopedia(
         let url = format!("{base_url}&page_no={pn}");
         let c = client.clone();
         handles.push(tokio::spawn(async move {
-            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
-                c.get(&url).send().await?.json().await?;
+            // Driven by hand (not recorded_get) so the raw reqwest::Error
+            // flows into this anyhow context exactly as it did before the
+            // health registry existed — only the outcome is recorded.
+            let sent = c.get(&url).send().await;
+            super::upstream_health::record_response(host, &sent);
+            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = sent?.json().await?;
             if resp.status != "ok" {
                 anyhow::bail!("{}", resp.error.message.unwrap_or_default());
             }
