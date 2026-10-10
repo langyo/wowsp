@@ -11,6 +11,7 @@ import {
   nationTree,
   techTreeNode,
   treeNextShipIds,
+  type TechTreeRealm,
 } from "./techTreeData";
 
 /** The 13 nation codes the encyclopedia rail passes down (WG API spelling). */
@@ -112,6 +113,28 @@ describe("nationTree per realm (wg bridge vs lesta gameparams)", () => {
 
   it("keeps the unknown realm on the WG default", () => {
     expect(techTreeNode(4276041040, "wg")).toEqual(techTreeNode(4276041040));
+  });
+});
+
+describe("nationTree section order", () => {
+  it("lays sections out as BB, CA, DD, SS, CV", () => {
+    // Carriers sit farthest right: their cross-type edges leave the DD
+    // section at tier IV, sailing over the SS section's empty upper rows
+    // (sub lines start at tier VI); submarines sit next to the DD section
+    // their lines come from. Locks the swap from the DD|CV|SS order that
+    // ran DD→SS runs behind the CV section's tier-VI cards.
+    const full = ["Battleship", "Cruiser", "Destroyer", "Submarine", "AirCarrier"];
+    const order = (nation: string, realm: TechTreeRealm = "wg"): string[] => {
+      const present = new Set(nationNodes(nation, realm).map((n) => n.type));
+      return nationTree(nation, realm)
+        .map((g) => g.type)
+        .filter((t) => present.has(t));
+    };
+    // Some nations have no submarine line at all (pan_asia) — the assertion
+    // is on the relative order of whatever sections the nation carries.
+    for (const nation of ["japan", "usa", "germany", "uk", "pan_asia"]) {
+      expect(order(nation), nation).toEqual(full.filter((t) => order(nation).includes(t)));
+    }
   });
 });
 

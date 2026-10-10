@@ -116,8 +116,15 @@ export function nationTree(nation: string, realm: TechTreeRealm = "wg"): NationT
     for (const r of roots) walk(r, [r.shipId]);
     out.push({ type, branches });
   }
-  // Stable type order: Battleship, Cruiser, Destroyer, AirCarrier, Submarine.
-  const TYPE_ORDER = ["Battleship", "Cruiser", "Destroyer", "AirCarrier", "Submarine"];
+  // Stable type order: Battleship, Cruiser, Destroyer, Submarine,
+  // AirCarrier — carriers sit farthest right because their cross-type
+  // research edges leave the destroyer section high (tier IV), sailing
+  // over the submarine section's EMPTY upper rows (sub lines start at
+  // tier VI); submarines sit next to destroyers because their cross-type
+  // edges leave at tier VI. Both orderings (this and the pre-swap
+  // DD|CV|SS) avoid edge occlusion for DD→CV/DD→SS, but this one also
+  // keeps every DD→SS hand-off adjacency, matching the in-game layout.
+  const TYPE_ORDER = ["Battleship", "Cruiser", "Destroyer", "Submarine", "AirCarrier"];
   out.sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
   return out;
 }
