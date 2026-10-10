@@ -14,10 +14,20 @@ use std::sync::Mutex;
 
 use crate::paths;
 
-/// The seal kinds RatingStamp knows, in canonical order. A custom picture
-/// is stored as `<kind>.<ext>`; any other file name in the folder is
+/// The seal kinds RatingStamp knows, in canonical order (career verdicts,
+/// composition tags, then the merged 空中神人 / 水下神人 seals). A custom
+/// picture is stored as `<kind>.<ext>`; any other file name in the folder is
 /// ignored.
-const STAMP_KINDS: [&str; 6] = ["miracle", "ape", "maggot", "rat", "air", "sub"];
+const STAMP_KINDS: [&str; 8] = [
+    "miracle",
+    "ape",
+    "maggot",
+    "rat",
+    "air",
+    "sub",
+    "airMiracle",
+    "subMiracle",
+];
 const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"];
 
 // All windows share the same folder. Keep its one-file-per-kind state
@@ -563,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn seal_kinds_are_the_canonical_six() {
+    fn seal_kinds_are_the_canonical_eight() {
         for kind in STAMP_KINDS {
             assert!(is_valid_kind(kind));
         }

@@ -88,7 +88,41 @@ export type CareerStamp = "miracle" | "ape" | "maggot" | "rat";
  *  both a career stamp and a composition stamp. */
 export type CompositionStamp = "air" | "sub";
 
-export type StampKind = CareerStamp | CompositionStamp;
+/** Merged seals (合并勋章): 空中神人 / 水下神人 fire when a player qualifies
+ *  for BOTH a composition tag AND 神了. The merge CONSUMES its constituents —
+ *  the merged seal replaces (and suppresses) both the composition tag and
+ *  神了 — while the non-miracle verdicts (猴/蛆/过街老鼠) keep coexisting
+ *  with air/sub exactly as before. */
+export type MergedStamp = "airMiracle" | "subMiracle";
+
+export type StampKind = CareerStamp | CompositionStamp | MergedStamp;
+
+/** The one merge rule, shared by every seal surface (account StatsCard,
+ *  share shots, the Tab overlay chips — all route through here so the
+ *  merge can never disagree between surfaces):
+ *   - miracle + sub → 水下神人; miracle + air → 空中神人 (both orders
+ *     normalized subMiracle before airMiracle).
+ *   - Any merged kind CONSUMES its constituents: the return carries ONLY
+ *     the merged kinds — standalone 神了 and both composition tags are
+ *     suppressed. Both merges at once → exactly [subMiracle, airMiracle].
+ *   - Otherwise the legacy order [career?, air?, sub?] stands, so 猴/蛆/
+ *     过街老鼠 keep today's coexistence with the composition tags.
+ *  `career` null and `comp` null/undefined degrade to the legacy pass-through
+ *  with nothing to add. */
+export function resolveStamps(
+  career: CareerStamp | null,
+  comp: CompositionStamps | null | undefined,
+): StampKind[] {
+  const merged: MergedStamp[] = [];
+  if (career === "miracle") {
+    if (comp?.sub) merged.push("subMiracle");
+    if (comp?.air) merged.push("airMiracle");
+  }
+  if (merged.length > 0) return merged;
+  return [career, comp?.air ? "air" : null, comp?.sub ? "sub" : null].filter(
+    (k): k is StampKind => k != null,
+  );
+}
 
 /** Career verdict stamps: a red-tier career earns the 猴 mark — or the 蛆
  *  mark when the winrate is also sub-40% (a red-tier red-WR career is a

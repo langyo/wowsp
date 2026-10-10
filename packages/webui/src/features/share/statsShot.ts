@@ -15,6 +15,7 @@
  */
 import { shipIconUrl } from "@/features/holographic/shipIcons";
 import type { CareerStamp, CompositionStamps, StampKind } from "@/utils/winrate";
+import { resolveStamps } from "@/utils/winrate";
 import {
   FOOT_H,
   LOGO_URL,
@@ -286,13 +287,22 @@ export async function renderStatsShot(
   }
   ctx.textAlign = "left";
 
-  // Seals ride the hero's free middle: career first, then air/sub, ending
-  // `heroRight`-aligned so the cluster keeps clear of the PR block.
-  const sealKinds = [
-    model.stamp ? { kind: model.stamp, size: SEAL_SIZE } : null,
-    model.airSub?.air ? { kind: "air" as const, size: SEAL_SMALL } : null,
-    model.airSub?.sub ? { kind: "sub" as const, size: SEAL_SMALL } : null,
-  ].filter((s): s is { kind: StampKind; size: number } => !!s);
+  // Seals ride the hero's free middle: the shared merge rule (resolveStamps)
+  // collapses miracle + composition tags into the merged 空中神人 / 水下神人
+  // seals — which replace (consume) their constituents — while 猴-style
+  // verdicts keep coexisting with air/sub. Sizing: legacy seals keep
+  // today's scale (career verdicts big, comp tags small); a merged seal is
+  // hero-sized only when it is the cluster's ONLY member — two merged
+  // seals render small so the hero band never overflows. The cluster ends
+  // `heroRight`-aligned, clear of the PR block.
+  const resolved = resolveStamps(model.stamp ?? null, model.airSub);
+  const sealSize = (kind: StampKind): number => {
+    if (kind === "airMiracle" || kind === "subMiracle") {
+      return resolved.length === 1 ? SEAL_SIZE : SEAL_SMALL;
+    }
+    return kind === "air" || kind === "sub" ? SEAL_SMALL : SEAL_SIZE;
+  };
+  const sealKinds = resolved.map((kind) => ({ kind, size: sealSize(kind) }));
   const sealImages = new Map<string, HTMLImageElement | null>();
   if (sealKinds.length > 0) {
     await Promise.all(

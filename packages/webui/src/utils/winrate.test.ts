@@ -10,6 +10,7 @@ import {
   compositionStamps,
   prTier,
   prTierLabel,
+  resolveStamps,
 } from "./winrate";
 
 // prTierLabel resolves through vue-i18n; locale messages load lazily now,
@@ -198,5 +199,43 @@ describe("compositionStamps", () => {
     // A career of only untyped ships can never earn the marks.
     const st = compositionStamps(rows([9, 500]), () => undefined);
     expect(st).toEqual({ air: false, sub: false });
+  });
+});
+
+describe("resolveStamps", () => {
+  it("merges miracle + sub into 水下神人 alone (consumes both constituents)", () => {
+    expect(resolveStamps("miracle", { air: false, sub: true })).toEqual(["subMiracle"]);
+  });
+
+  it("merges miracle + air into 空中神人 alone", () => {
+    expect(resolveStamps("miracle", { air: true, sub: false })).toEqual(["airMiracle"]);
+  });
+
+  it("renders exactly both merged seals, sub first, when everything fires", () => {
+    expect(resolveStamps("miracle", { air: true, sub: true })).toEqual([
+      "subMiracle",
+      "airMiracle",
+    ]);
+  });
+
+  it("keeps the legacy order when no merge fires", () => {
+    expect(resolveStamps("miracle", null)).toEqual(["miracle"]);
+    expect(resolveStamps("miracle", { air: false, sub: false })).toEqual(["miracle"]);
+    expect(resolveStamps("miracle", undefined)).toEqual(["miracle"]);
+    expect(resolveStamps(null, { air: true, sub: false })).toEqual(["air"]);
+    expect(resolveStamps(null, { air: false, sub: true })).toEqual(["sub"]);
+    expect(resolveStamps(null, { air: true, sub: true })).toEqual(["air", "sub"]);
+  });
+
+  it("keeps non-miracle verdicts coexisting with the comp tags", () => {
+    expect(resolveStamps("ape", { air: true, sub: true })).toEqual(["ape", "air", "sub"]);
+    expect(resolveStamps("maggot", { air: false, sub: true })).toEqual(["maggot", "sub"]);
+    expect(resolveStamps("rat", { air: true, sub: true })).toEqual(["rat", "air", "sub"]);
+  });
+
+  it("returns nothing for absent inputs", () => {
+    expect(resolveStamps(null, null)).toEqual([]);
+    expect(resolveStamps(null, undefined)).toEqual([]);
+    expect(resolveStamps(null, { air: false, sub: false })).toEqual([]);
   });
 });

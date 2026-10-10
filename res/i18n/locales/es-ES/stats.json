@@ -33,6 +33,8 @@
   "sealRatDesc": "Se concede cuando las estadísticas están ocultas y la tasa de victorias del clan es del 53 % o menos, o cuando no hay clan.",
   "sealAirDesc": "Se concede cuando las batallas en portaaviones superan el 20 % de una carrera de más de 200 batallas.",
   "sealSubDesc": "Se concede cuando las batallas en submarinos superan el 20 % de una carrera de más de 200 batallas.",
+  "sealAirMiracleDesc": "Se concede cuando las batallas en portaaviones superan el 20 % de una carrera de más de 200 batallas y también se obtiene el sello milagro: sustituye a ambos sellos.",
+  "sealSubMiracleDesc": "Se concede cuando las batallas en submarinos superan el 20 % de una carrera de más de 200 batallas y también se obtiene el sello milagro: sustituye a ambos sellos.",
   "dist": {
     "battleship": "BB",
     "aircarrier": "CV",

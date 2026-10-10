@@ -33,6 +33,8 @@
   "sealRatDesc": "Attribué lorsque les statistiques sont masquées et que le taux de victoire du clan est au plus 53 % — ou en l'absence de clan.",
   "sealAirDesc": "Attribué lorsque les batailles en porte-avions dépassent 20 % d'une carrière comptant plus de 200 batailles.",
   "sealSubDesc": "Attribué lorsque les batailles en sous-marin dépassent 20 % d'une carrière comptant plus de 200 batailles.",
+  "sealAirMiracleDesc": "Attribué lorsque les batailles en porte-avions dépassent 20 % d'une carrière comptant plus de 200 batailles et que le sceau miracle est également obtenu — il remplace les deux sceaux.",
+  "sealSubMiracleDesc": "Attribué lorsque les batailles en sous-marin dépassent 20 % d'une carrière comptant plus de 200 batailles et que le sceau miracle est également obtenu — il remplace les deux sceaux.",
   "dist": {
     "battleship": "BB",
     "aircarrier": "CV",

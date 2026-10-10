@@ -96,8 +96,18 @@ export interface OverlayDisplayPrefs {
   prOn: boolean;
 }
 
-/** Known seal kinds — junk keys in the kill-switch map are dropped. */
-const STAMP_KINDS: readonly StampKind[] = ["miracle", "ape", "maggot", "rat", "air", "sub"];
+/** Known seal kinds — junk keys in the kill-switch map are dropped. The
+ *  merged kinds (空中神人 / 水下神人) participate like every other seal. */
+const STAMP_KINDS: readonly StampKind[] = [
+  "miracle",
+  "ape",
+  "maggot",
+  "rat",
+  "air",
+  "sub",
+  "airMiracle",
+  "subMiracle",
+];
 
 function readBlob(): Record<string, unknown> | null {
   try {
