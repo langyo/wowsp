@@ -21,6 +21,7 @@ import {
   careerStamp,
   damageColor,
   prTier,
+  resolveStamps,
   winrateColor,
   type StampKind,
 } from "@/utils/winrate";
@@ -346,6 +347,8 @@ const STAMP_TEXT: Record<StampKind, string> = {
   rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
+  airMiracle: "空中神人",
+  subMiracle: "水下神人",
 };
 
 // Custom seal pictures (settings' seal customizer → commands::stamps):
@@ -617,9 +620,12 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
   // Every seal of a side sits on ONE flank: allies carry theirs to the
   // LEFT of the numbers, enemies to the RIGHT — no more splitting career
   // verdict and composition tags across the chip, which read as two
-  // different players' data at tab-glance distance. Career verdict leads
-  // the group, then air, then sub. A name without stats yet shows no seal
-  // at all — the verdicts are derived from data the stats/composition
+  // different players' data at tab-glance distance. The cluster rides the
+  // shared merge rule (resolveStamps): a 神了 verdict alongside comp tags
+  // collapses into the merged 空中神人 / 水下神人 seals, which replace
+  // (consume) their constituents; other verdicts keep the career-leads-
+  // then-air-then-sub order. A name without stats yet shows no seal at
+  // all — the verdicts are derived from data the stats/composition
   // batches bring. Hidden profiles with a clan additionally HOLD their
   // seal until the clan verdict lands (absent map entry): a strong clan
   // (beating the 53% gate) excuses them, and a stamp that flashes first
@@ -642,10 +648,7 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
     }
   }
   const comp = compositions.get(cacheKey(name)) ?? null;
-  const seals =
-    (career ? stampNode(career) : "") +
-    (comp?.air ? stampNode("air") : "") +
-    (comp?.sub ? stampNode("sub") : "");
+  const seals = resolveStamps(career, comp).map(stampNode).join("");
   return side === "ally" ? seals + core : core + seals;
 }
 

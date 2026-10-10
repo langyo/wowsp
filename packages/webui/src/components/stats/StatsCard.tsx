@@ -10,6 +10,7 @@ import {
   damageColor,
   prTier,
   prTierLabel,
+  resolveStamps,
   winrateColor,
   winrateTier,
 } from "@/utils/winrate";
@@ -60,6 +61,12 @@ export default defineComponent({
       () => props.stats.accountId,
       () => props.stats.realm,
     );
+    // The hero's seal cluster, through the shared merge rule (the same one
+    // the share shots and the Tab overlay chips use): miracle + composition
+    // tags collapse into the merged 空中神人 / 水下神人 seals, which replace
+    // (consume) their constituents; verdicts like 猴 keep coexisting with
+    // the comp tags as before.
+    const stamps = computed(() => resolveStamps(stamp.value, composition.value));
     // The seals render nothing outside zh locales (RatingStamp's own rule),
     // while the PR rating is off (the seals toggle is the master switch's
     // sub-control in settings — off master, no seals), nor when the user
@@ -209,18 +216,11 @@ export default defineComponent({
               {props.stats.battles != null ? `${props.stats.battles.toLocaleString()} ${t("stats.battles")}` : "—"}
             </span>
           </div>
-          {sealsVisible.value &&
-          (stamp.value || composition.value.air || composition.value.sub) ? (
+          {sealsVisible.value && stamps.value.length > 0 ? (
             <div class="stats-card__stamps">
-              {stamp.value ? (
-                <RatingStamp class="stats-card__stamp" kind={stamp.value} size={70} />
-              ) : null}
-              {composition.value.air ? (
-                <RatingStamp class="stats-card__stamp" kind="air" size={70} />
-              ) : null}
-              {composition.value.sub ? (
-                <RatingStamp class="stats-card__stamp" kind="sub" size={70} />
-              ) : null}
+              {stamps.value.map((kind) => (
+                <RatingStamp class="stats-card__stamp" kind={kind} size={70} />
+              ))}
             </div>
           ) : null}
           {/* PR block — hidden entirely while the rating is off (opt-out

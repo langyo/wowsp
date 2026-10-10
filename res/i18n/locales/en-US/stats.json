@@ -33,6 +33,8 @@
   "sealRatDesc": "Awarded when the stats are hidden and the player's clan winrate is 53% or lower — or when they are in no clan.",
   "sealAirDesc": "Awarded when carrier battles exceed 20% of a career totalling more than 200 battles.",
   "sealSubDesc": "Awarded when submarine battles exceed 20% of a career totalling more than 200 battles.",
+  "sealAirMiracleDesc": "Awarded when carrier battles exceed 20% of a career totalling more than 200 battles and the miracle seal is also earned — it replaces both seals.",
+  "sealSubMiracleDesc": "Awarded when submarine battles exceed 20% of a career totalling more than 200 battles and the miracle seal is also earned — it replaces both seals.",
   "dist": {
     "battleship": "BB",
     "aircarrier": "CV",

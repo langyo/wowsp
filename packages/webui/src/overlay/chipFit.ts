@@ -21,7 +21,13 @@
  *  the hairline itself. */
 const FIT_TOLERANCE_PX = 1;
 
-/** The composition seals — the first to go when a chip must shrink. */
+/** The composition seals — the first to go when a chip must shrink.
+ *  The MERGED seals (airMiracle / subMiracle, 空中神人 / 水下神人) are
+ *  deliberately ABSENT: they are the loudest verdict a chip can carry (a
+ *  composition tag AND 神了 at once) and must drop last, after the pure
+ *  comp tags and alongside/after the career verdicts below — the bare
+ *  string here would make a shrinking chip shed its strongest answer
+ *  first. */
 const COMP_STAMP_KINDS = new Set(["air", "sub"]);
 
 /** Pull every overflowing chip back inside the viewport width. Reads each

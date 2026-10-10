@@ -21,11 +21,13 @@
 import { t } from "@/i18n";
 import type { StampKind } from "@/utils/winrate";
 import stampAir from "../../res/stamps/stamp-air.png";
+import stampAirMiracle from "../../res/stamps/stamp-air-miracle.png";
 import stampApe from "../../res/stamps/stamp-ape.png";
 import stampMaggot from "../../res/stamps/stamp-maggot.png";
 import stampMiracle from "../../res/stamps/stamp-miracle.png";
 import stampRat from "../../res/stamps/stamp-rat.png";
 import stampSub from "../../res/stamps/stamp-sub.png";
+import stampSubMiracle from "../../res/stamps/stamp-sub-miracle.png";
 
 /** App palette snapshot: CSS var triplets ("R G B") resolved at render time. */
 export interface ShotPalette {
@@ -247,6 +249,8 @@ export const STAMP_URL: Record<StampKind, string> = {
   rat: stampRat,
   air: stampAir,
   sub: stampSub,
+  airMiracle: stampAirMiracle,
+  subMiracle: stampSubMiracle,
 };
 
 /** RatingStamp's face redrawn in canvas — double rounded frame in cinnabar
