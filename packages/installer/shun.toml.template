@@ -1,5 +1,5 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.4 (callout-styled flow-end degrade notices).
+# Requires shun >= 0.6.5 (install-time webview2 download + button notices).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)
@@ -28,9 +28,17 @@ payload = "payload-lite"
 # the shell silently runs it (silent-install, default on) and, failing
 # that, degrades to its egui face with the missing-runtime warnings and
 # Microsoft's official download link (warn-missing, default on). The lite
-# flavor carries nothing — discovery no-ops, the egui degrade covers it.
+# flavor carries nothing — with download-url set (requires shun >= 0.6.5)
+# its install step instead fetches the Evergreen bootstrapper from this
+# permanent permalink and silently installs the runtime, so a lite
+# install upgrades the machine over the network; the same silent-install
+# knob gates carried and downloaded alike, and the banner announces it.
 [webview2]
 type = "evergreen-installer"
+# Microsoft's Evergreen Bootstrapper (WebView2, evergreen lane): a few
+# MB, always redirects to the latest runtime, and /silent /install is
+# its documented contract.
+download-url = "https://go.microsoft.com/fwlink/?linkid=2124701"
 
 [install]
 local = true
