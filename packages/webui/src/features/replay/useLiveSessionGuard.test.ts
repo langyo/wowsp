@@ -4,7 +4,9 @@
  *  which is also the earliest observable sign of an account switch, in
  *  port before any new roster) or the hub re-identifying a different
  *  player. A bare exit (client closed, nothing relaunched) keeps the
- *  review content. */
+ *  review content, and so does an already-ENDED battle: its roster is the
+ *  kept review, surviving preferred-instance handovers until the app
+ *  closes or a new battle's roster replaces it. */
 import { createPinia, setActivePinia } from "pinia";
 import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -159,9 +161,14 @@ describe("useLiveSessionGuard", () => {
     await setProcess(game, { running: true, pid: 100 });
     overlay.arenaInfo = fakeArena("2026-01-01 10:00:00");
     await seedSelfContent(liveSelf);
+    // First identity (the battle's own player), THEN the battle ends, THEN
+    // the hub re-identifies the OTHER client's player: the carve-out must
+    // hold even though two consecutive identities really did differ.
+    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 1, source: "arena" });
     overlay.battleEnded = true;
     await setPlaying(session, { realm: "ru", nickname: "Other", accountId: 9, source: "arena" });
     expect(overlay.arenaInfo).not.toBeNull();
+    expect(liveSelf.model).not.toBeNull();
   });
 
   it("clears when the hub re-identifies a different player on the same process", async () => {

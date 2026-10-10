@@ -18,6 +18,12 @@
  *  - the session hub's playing identity moved between two DIFFERENT
  *    players (a re-observed login on the same process).
  *
+ * One carve-out: a battle that already ENDED (the game deleted the arena
+ * file — the roster is the post-battle review now) survives BOTH signals.
+ * It is kept until the app closes or a new battle's roster replaces it,
+ * across preferred-instance handovers and re-identifications alike; a
+ * roster whose battle was still going clears exactly as before.
+ *
  * A bare exit (client closed, nothing relaunched) intentionally clears
  * nothing — the review feature keeps the last battle on screen.
  */

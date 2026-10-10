@@ -1289,23 +1289,27 @@ export default defineComponent({
                 multi-client machine this is how the user confirms WHICH
                 window a Tab hold is being read from; single-client boxes
                 see it without needing to think about it. */}
-            {gameStatus.process.running && gameStatus.process.pid != null ? (
-              <span
-                class="live-battle__pill live-battle__pill--focus"
-                data-hint={t("replay.live.tabFocusHint")}
-              >
-                {[
-                  kindLabel(gameStatus.process.kind),
-                  gameStatus.process.realm?.toUpperCase(),
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-                {" · "}
-                <span class="live-battle__focus-pid">
-                  {t("common.game.pid")} {gameStatus.process.pid}
-                </span>
-              </span>
-            ) : null}
+            {gameStatus.process.running && gameStatus.process.pid != null
+              ? (() => {
+                  const label = [
+                    kindLabel(gameStatus.process.kind),
+                    gameStatus.process.realm?.toUpperCase(),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <span
+                      class="live-battle__pill live-battle__pill--focus"
+                      data-hint={t("replay.live.tabFocusHint")}
+                    >
+                      {label ? label + " · " : ""}
+                      <span class="live-battle__focus-pid">
+                        {t("common.game.pid")} {gameStatus.process.pid}
+                      </span>
+                    </span>
+                  );
+                })()
+              : null}
             {modePill}
             {!props.ended && clockLabel.value ? (
               <span class="live-battle__clock">{clockLabel.value}</span>

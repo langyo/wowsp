@@ -87,18 +87,23 @@ export default defineComponent({
       );
     });
 
-    /** The realm to query live-roster stats against. Prefer the probe's
-     *  ground truth while its telemetry stream is fresh (the local
-     *  player's cluster straight off the game's roster records — beats
-     *  every install/log inference), then the RUNNING client's detected
-     *  realm (the roster belongs to it), then the selection fallback
-     *  above. */
-    const realm = computed(
-      () =>
+    /** The realm to query live-roster stats against. An ENDED battle's
+     *  roster is pinned to its latched battle realm first: the retained
+     *  review survives preferred-instance handovers (the session guard's
+     *  ended carve-out), and without this pin the next client's realm —
+     *  probe or process tier — would re-route the whole roster there and
+     *  overwrite correct rows with foreign-cluster answers (#926's bug
+     *  class, via the retention this guard carve-out enables). Otherwise:
+     *  the probe's ground truth while fresh, then the running client, then
+     *  the selection fallback above. */
+    const realm = computed(() => {
+      if (overlay.battleEnded && overlay.battleRealm) return overlay.battleRealm;
+      return (
         plugin.liveSelfRealm ||
         gameStatus.process.matchedInstall?.realm ||
-        selectionRealm.value,
-    );
+        selectionRealm.value
+      );
+    });
 
     /** Live battle clock (from tempArenaInfo's dateTime) — feeds the
      *  battle-duration cap below; the visible clock rides the panel. */
