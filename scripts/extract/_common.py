@@ -53,6 +53,18 @@ def find_game_path(explicit: str | None = None) -> str | None:
     return None
 
 
+def _lesta_exe_present(game_dir: str | Path) -> bool:
+    """Whether a directory looks like the Lesta client's root.
+
+    The 26.x client renamed its entrypoint to Korabli.exe (the app's own
+    game_detect.rs made the same adjustment); installs from before the
+    rename still carry WorldOfWarships.exe — accept both.
+    """
+    return Path(game_dir, "Korabli.exe").is_file() or Path(
+        game_dir, "WorldOfWarships.exe"
+    ).is_file()
+
+
 def find_lesta_game_path(explicit: str | None = None) -> str | None:
     """Return the Lesta client (Мир кораблей) install directory, or None.
 
@@ -65,10 +77,10 @@ def find_lesta_game_path(explicit: str | None = None) -> str | None:
     GameParams).
     """
     env_or_arg = explicit or os.environ.get("WOWSP_GAME_PATH_LESTA")
-    if env_or_arg and Path(env_or_arg, "WorldOfWarships.exe").is_file():
+    if env_or_arg and _lesta_exe_present(env_or_arg):
         return env_or_arg
     for path, publisher in _registry_scan():
-        if "lesta" in publisher and Path(path, "WorldOfWarships.exe").is_file():
+        if "lesta" in publisher and _lesta_exe_present(path):
             return path
     return None
 
