@@ -21,14 +21,17 @@
  *  the hairline itself. */
 const FIT_TOLERANCE_PX = 1;
 
-/** The composition seals — the first to go when a chip must shrink.
- *  The MERGED seals (airMiracle / subMiracle / airApe / subApe — 空中神人 /
- *  水下神人 / 空中小猴 / 水下小猴) are deliberately ABSENT: they are the
- *  loudest verdict a chip can carry (a composition tag AND a career verdict
- *  at once) and must drop last, after the pure comp tags and
- *  alongside/after the career verdicts below — the bare string here would
- *  make a shrinking chip shed its strongest answer first. */
-const COMP_STAMP_KINDS = new Set(["air", "sub"]);
+/** The composition seals — the first to go when a chip must shrink. The
+ *  veteran tiers (airVeteran / subVeteran — 空中老人 / 水下老人) belong here
+ *  with the minor tags: they are composition seals too (a >50% share face
+ *  that replaces the minor one), so they trim FIRST. The MERGED seals
+ *  (airMiracle / subMiracle / airApe / subApe — 空中神人 / 水下神人 /
+ *  空中小猴 / 水下小猴) are deliberately ABSENT: they are the loudest
+ *  verdict a chip can carry (a composition tag AND a career verdict at
+ *  once) and must drop last, after the pure comp tags and alongside/after
+ *  the career verdicts below — the bare string here would make a shrinking
+ *  chip shed its strongest answer first. */
+const COMP_STAMP_KINDS = new Set(["air", "sub", "airVeteran", "subVeteran"]);
 
 /** Pull every overflowing chip back inside the viewport width. Reads each
  *  chip's laid-out box (call after the chips are in the DOM) and mutates

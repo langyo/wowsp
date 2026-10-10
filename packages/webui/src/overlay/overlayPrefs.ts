@@ -97,8 +97,8 @@ export interface OverlayDisplayPrefs {
 }
 
 /** Known seal kinds — junk keys in the kill-switch map are dropped. The
- *  merged kinds (空中神人 / 水下神人 / 空中小猴 / 水下小猴) participate
- *  like every other seal. */
+ *  veteran tiers (空中老人 / 水下老人) and the merged kinds (空中神人 /
+ *  水下神人 / 空中小猴 / 水下小猴) participate like every other seal. */
 const STAMP_KINDS: readonly StampKind[] = [
   "miracle",
   "ape",
@@ -106,6 +106,8 @@ const STAMP_KINDS: readonly StampKind[] = [
   "rat",
   "air",
   "sub",
+  "airVeteran",
+  "subVeteran",
   "airMiracle",
   "subMiracle",
   "airApe",

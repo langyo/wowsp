@@ -176,12 +176,17 @@ describe("compositionStamps", () => {
     const st = compositionStamps(rows([1, 100], [3, 250]), type);
     expect(st.air).toBe(true);
     expect(st.sub).toBe(false);
+    expect(st.airVeteran).toBe(false);
+    expect(st.subVeteran).toBe(false);
   });
 
   it("marks sub mains independently", () => {
+    // 250 total battles, 150 in subs (60% — already the veteran tier), no CVs.
     const st = compositionStamps(rows([2, 150], [3, 100]), type);
     expect(st.air).toBe(false);
     expect(st.sub).toBe(true);
+    expect(st.airVeteran).toBe(false);
+    expect(st.subVeteran).toBe(true);
   });
 
   it("requires strictly more than the 20% share", () => {
@@ -190,30 +195,67 @@ describe("compositionStamps", () => {
     expect(st.air).toBe(false);
   });
 
+  it("upgrades to the veteran seal past 50% share, strictly", () => {
+    // 500/1000 = exactly 50% → the minor tag, NOT the veteran tier.
+    const st = compositionStamps(rows([1, 500], [3, 500]), type);
+    expect(st.air).toBe(true);
+    expect(st.airVeteran).toBe(false);
+    // 501/1000 crosses the line; the veteran tier implies the base flag.
+    const up = compositionStamps(rows([1, 501], [3, 499]), type);
+    expect(up.air).toBe(true);
+    expect(up.airVeteran).toBe(true);
+    // Same bound on the submarine side, judged independently.
+    const subUp = compositionStamps(rows([2, 501], [3, 499]), type);
+    expect(subUp.sub).toBe(true);
+    expect(subUp.subVeteran).toBe(true);
+    expect(subUp.air).toBe(false);
+    expect(subUp.airVeteran).toBe(false);
+  });
+
   it("never marks careers at or below the 200-battle gate", () => {
-    expect(compositionStamps(rows([1, 150], [3, 50]), type)).toEqual({ air: false, sub: false });
+    expect(compositionStamps(rows([1, 150], [3, 50]), type)).toEqual({
+      air: false,
+      sub: false,
+      airVeteran: false,
+      subVeteran: false,
+    });
     expect(compositionStamps(rows([1, 200]), type).air).toBe(false);
+    expect(compositionStamps(rows([1, 200]), type).airVeteran).toBe(false);
   });
 
   it("handles empty rosters and unknown ship types", () => {
-    expect(compositionStamps([], type)).toEqual({ air: false, sub: false });
+    expect(compositionStamps([], type)).toEqual({
+      air: false,
+      sub: false,
+      airVeteran: false,
+      subVeteran: false,
+    });
     // A career of only untyped ships can never earn the marks.
     const st = compositionStamps(rows([9, 500]), () => undefined);
-    expect(st).toEqual({ air: false, sub: false });
+    expect(st).toEqual({ air: false, sub: false, airVeteran: false, subVeteran: false });
   });
 });
 
 describe("resolveStamps", () => {
+  // The minor-tier composition shape, spelled out — the veteran fields ride
+  // along false in every non-veteran row below.
+  const comp = (air: boolean, sub: boolean) => ({
+    air,
+    sub,
+    airVeteran: false,
+    subVeteran: false,
+  });
+
   it("merges miracle + sub into 水下神人 alone (consumes both constituents)", () => {
-    expect(resolveStamps("miracle", { air: false, sub: true })).toEqual(["subMiracle"]);
+    expect(resolveStamps("miracle", comp(false, true))).toEqual(["subMiracle"]);
   });
 
   it("merges miracle + air into 空中神人 alone", () => {
-    expect(resolveStamps("miracle", { air: true, sub: false })).toEqual(["airMiracle"]);
+    expect(resolveStamps("miracle", comp(true, false))).toEqual(["airMiracle"]);
   });
 
   it("renders exactly both merged seals, sub first, when everything fires", () => {
-    expect(resolveStamps("miracle", { air: true, sub: true })).toEqual([
+    expect(resolveStamps("miracle", comp(true, true))).toEqual([
       "subMiracle",
       "airMiracle",
     ]);
@@ -221,53 +263,97 @@ describe("resolveStamps", () => {
 
   it("keeps the legacy order when no merge fires", () => {
     expect(resolveStamps("miracle", null)).toEqual(["miracle"]);
-    expect(resolveStamps("miracle", { air: false, sub: false })).toEqual(["miracle"]);
+    expect(resolveStamps("miracle", comp(false, false))).toEqual(["miracle"]);
     expect(resolveStamps("miracle", undefined)).toEqual(["miracle"]);
-    expect(resolveStamps(null, { air: true, sub: false })).toEqual(["air"]);
-    expect(resolveStamps(null, { air: false, sub: true })).toEqual(["sub"]);
-    expect(resolveStamps(null, { air: true, sub: true })).toEqual(["air", "sub"]);
+    expect(resolveStamps(null, comp(true, false))).toEqual(["air"]);
+    expect(resolveStamps(null, comp(false, true))).toEqual(["sub"]);
+    expect(resolveStamps(null, comp(true, true))).toEqual(["air", "sub"]);
   });
 
   it("merges ape + sub into 水下小猴 alone (consumes both constituents)", () => {
-    expect(resolveStamps("ape", { air: false, sub: true })).toEqual(["subApe"]);
+    expect(resolveStamps("ape", comp(false, true))).toEqual(["subApe"]);
   });
 
   it("merges ape + air into 空中小猴 alone", () => {
-    expect(resolveStamps("ape", { air: true, sub: false })).toEqual(["airApe"]);
+    expect(resolveStamps("ape", comp(true, false))).toEqual(["airApe"]);
   });
 
   it("renders exactly both ape merges, sub first, when everything fires", () => {
-    expect(resolveStamps("ape", { air: true, sub: true })).toEqual(["subApe", "airApe"]);
+    expect(resolveStamps("ape", comp(true, true))).toEqual(["subApe", "airApe"]);
   });
 
   it("keeps a lone ape verdict as plain 猴", () => {
     expect(resolveStamps("ape", null)).toEqual(["ape"]);
-    expect(resolveStamps("ape", { air: false, sub: false })).toEqual(["ape"]);
+    expect(resolveStamps("ape", comp(false, false))).toEqual(["ape"]);
   });
 
   it("suppresses composition entirely for the maggot verdict (no merged seal)", () => {
-    expect(resolveStamps("maggot", { air: true, sub: false })).toEqual(["maggot"]);
-    expect(resolveStamps("maggot", { air: false, sub: true })).toEqual(["maggot"]);
-    expect(resolveStamps("maggot", { air: true, sub: true })).toEqual(["maggot"]);
+    expect(resolveStamps("maggot", { air: true, sub: false, airVeteran: false, subVeteran: false })).toEqual(["maggot"]);
+    expect(resolveStamps("maggot", { air: false, sub: true, airVeteran: false, subVeteran: false })).toEqual(["maggot"]);
+    expect(resolveStamps("maggot", { air: true, sub: true, airVeteran: true, subVeteran: true })).toEqual(["maggot"]);
     expect(resolveStamps("maggot", null)).toEqual(["maggot"]);
   });
 
-  it("keeps the rat verdict coexisting with the comp tags (legacy order)", () => {
-    expect(resolveStamps("rat", { air: true, sub: true })).toEqual(["rat", "air", "sub"]);
-    expect(resolveStamps("rat", { air: false, sub: true })).toEqual(["rat", "sub"]);
+  it("suppresses composition entirely for the rat verdict too", () => {
+    // A hidden profile's stats are invisible — no evaluation possible, so
+    // the rat verdict stands alone at the same floor shape as 蛆.
+    expect(resolveStamps("rat", { air: true, sub: false, airVeteran: false, subVeteran: false })).toEqual(["rat"]);
+    expect(resolveStamps("rat", { air: false, sub: true, airVeteran: false, subVeteran: true })).toEqual(["rat"]);
+    expect(resolveStamps("rat", { air: true, sub: true, airVeteran: true, subVeteran: true })).toEqual(["rat"]);
+    expect(resolveStamps("rat", null)).toEqual(["rat"]);
+  });
+
+  it("emits the veteran seal in place of the minor tag per class", () => {
+    // Null career: air leads, sub follows, each at its own tier.
+    expect(
+      resolveStamps(null, { air: true, sub: true, airVeteran: false, subVeteran: true }),
+    ).toEqual(["air", "subVeteran"]);
+    expect(
+      resolveStamps(null, { air: true, sub: false, airVeteran: true, subVeteran: false }),
+    ).toEqual(["airVeteran"]);
+    expect(
+      resolveStamps(null, { air: false, sub: true, airVeteran: false, subVeteran: true }),
+    ).toEqual(["subVeteran"]);
+    // A visible career without a merge rides the same tiered pass-through.
+    expect(
+      resolveStamps(null, { air: true, sub: true, airVeteran: true, subVeteran: false }),
+    ).toEqual(["airVeteran", "sub"]);
+  });
+
+  it("merges veterans into the plain merged face (tier not distinguished)", () => {
+    // 照常合并: the merged seal consumes the veteran tier — no 水下神人·老人
+    // exists, the merge fires on the class tag alone.
+    expect(
+      resolveStamps("miracle", { air: false, sub: true, airVeteran: false, subVeteran: true }),
+    ).toEqual(["subMiracle"]);
+    expect(
+      resolveStamps("miracle", { air: true, sub: true, airVeteran: true, subVeteran: true }),
+    ).toEqual(["subMiracle", "airMiracle"]);
+    expect(
+      resolveStamps("ape", { air: true, sub: false, airVeteran: true, subVeteran: false }),
+    ).toEqual(["airApe"]);
   });
 
   it("returns nothing for absent inputs", () => {
     expect(resolveStamps(null, null)).toEqual([]);
     expect(resolveStamps(null, undefined)).toEqual([]);
-    expect(resolveStamps(null, { air: false, sub: false })).toEqual([]);
+    expect(resolveStamps(null, { air: false, sub: false, airVeteran: false, subVeteran: false })).toEqual([]);
   });
 
   it("flags every merged kind through isMergedStamp, and only those", () => {
     for (const kind of ["airMiracle", "subMiracle", "airApe", "subApe"] as const) {
       expect(isMergedStamp(kind)).toBe(true);
     }
-    for (const kind of ["miracle", "ape", "maggot", "rat", "air", "sub"] as const) {
+    for (const kind of [
+      "miracle",
+      "ape",
+      "maggot",
+      "rat",
+      "air",
+      "sub",
+      "airVeteran",
+      "subVeteran",
+    ] as const) {
       expect(isMergedStamp(kind)).toBe(false);
     }
   });

@@ -218,12 +218,15 @@ interface BatchStat {
 }
 
 /** Composition-seal verdict from `lookup_players_composition` (mirrors
- *  `wowsp_tauri_shared::PlayerComposition`; the >200 battles / >20% share
- *  thresholds are enforced backend-side). null = no data / hidden profile /
+ *  `wowsp_tauri_shared::PlayerComposition`; the >200 battles gate, the >20%
+ *  minor share and the >50% veteran tier are enforced backend-side — a
+ *  veteran flag implies its base flag). null = no data / hidden profile /
  *  that player's lookup failed. */
 interface PlayerComposition {
   air: boolean;
   sub: boolean;
+  airVeteran: boolean;
+  subVeteran: boolean;
 }
 
 // main.ts declares Window.__TAURI__ as `unknown` for the whole project —
@@ -347,6 +350,8 @@ const STAMP_TEXT: Record<StampKind, string> = {
   rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
+  airVeteran: "空中老人",
+  subVeteran: "水下老人",
   airMiracle: "空中神人",
   subMiracle: "水下神人",
   airApe: "空中小猴",
@@ -625,8 +630,9 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
   // different players' data at tab-glance distance. The cluster rides the
   // shared merge rule (resolveStamps): a 神了 or 猴 verdict alongside comp
   // tags collapses into the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴
-  // seals, which replace (consume) their constituents; 蛆 suppresses the
-  // comp tags entirely, and 过街老鼠 keeps the career-leads-then-air-then-sub
+  // seals, which replace (consume) their constituents; 蛆 and 过街老鼠 each
+  // suppress the comp tags entirely, and a >50% class share upgrades the
+  // minor tag to the veteran 老人 seal in the career-leads-then-air-then-sub
   // order. A name without stats yet shows no seal at
   // all — the verdicts are derived from data the stats/composition
   // batches bring. Hidden profiles with a clan additionally HOLD their

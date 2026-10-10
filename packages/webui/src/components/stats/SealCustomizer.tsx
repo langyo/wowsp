@@ -11,11 +11,12 @@ import type { StampKind } from "@/utils/winrate";
 import "./SealCustomizer.scss";
 
 /** The customizer's rows, in RatingStamp's canonical kind order (career
- *  verdicts, composition tags, then the merged 空中神人 / 水下神人 /
- *  空中小猴 / 水下小猴 seals — the same order commands::stamps lists);
- *  each row renders its award-criteria description (stats.json
- *  `stats.seal*Desc` keys) — the stamps already carry their own name glyph,
- *  and the same copy serves as RatingStamp's hover tooltip. */
+ *  verdicts, then the composition tags with their 老人 veteran tiers, then
+ *  the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴 seals — the same
+ *  order commands::stamps lists); each row renders its award-criteria
+ *  description (stats.json `stats.seal*Desc` keys) — the stamps already
+ *  carry their own name glyph, and the same copy serves as RatingStamp's
+ *  hover tooltip. */
 const SEALS: Array<{ kind: StampKind; descKey: string }> = [
   { kind: "miracle", descKey: "sealMiracleDesc" },
   { kind: "ape", descKey: "sealApeDesc" },
@@ -23,6 +24,8 @@ const SEALS: Array<{ kind: StampKind; descKey: string }> = [
   { kind: "rat", descKey: "sealRatDesc" },
   { kind: "air", descKey: "sealAirDesc" },
   { kind: "sub", descKey: "sealSubDesc" },
+  { kind: "airVeteran", descKey: "sealAirVeteranDesc" },
+  { kind: "subVeteran", descKey: "sealSubVeteranDesc" },
   { kind: "airMiracle", descKey: "sealAirMiracleDesc" },
   { kind: "subMiracle", descKey: "sealSubMiracleDesc" },
   { kind: "airApe", descKey: "sealAirApeDesc" },
