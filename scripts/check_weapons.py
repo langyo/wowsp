@@ -1,136 +1,391 @@
 """
-Simulate buildWeapons logic against all ships in GameParams to verify
-weapon data is correctly extracted. Reports ships missing main guns.
+Fleet-wide weapon audit over per-ship GameParams entries.
+
+Mirrors the frontend resolution exactly (webui
+src/components/ships/shipParts.ts + shipWeapons.ts):
+  - role → component blocks resolve through ShipUpgradeInfo (top = the
+    upgrade-chain end, stock = the head); entries without a parsable
+    ShipUpgradeInfo fall back to canonical literal keys (A_Artillery,
+    A_Torpedoes, ...);
+  - weapon groups group mount HP_* slots per role: artillery → main
+    (ATBA fallback promotes only the largest caliber group), ATBA/AirDefense
+    gun-id intersection → dual-purpose, torpedoes → torpedo role ONLY
+    (AirArmament is aircraft catapults), AirDefense mounts bucket by aura
+    band, DepthCharges → ASW, AirArmament catapults → aircraft.
+
+Historical context this audit guards: the frontend used to read torpedoes
+from A_AirArmament (catapults — the X Worcester "2×1 torpedo" bug) and every
+ship whose components keep historical codes (~half the fleet: A1_610-style
+names) showed no weapon badges at all.
+
+Checks reported per ship class:
+  - torpedo groups sourced from anything but the torpedo role (must stay 0);
+  - ships with weapon groups ONLY via the canonical fallback (data drift
+    watch: new builds renaming components away from canonical);
+  - ships with no weapon group at all (surface combatants are suspicious —
+    harbour/event ships may be legitimate);
+  - cross-check against ship_live_stats.json (extract_ship_live_stats.py):
+    torpedo range known but no torpedo mounts found, and the reverse, among
+    ships present in both datasets.
+
+Inputs (auto-picked by --gameparams):
+  - a directory of per-ship <shipId>.json slices (the bundled Android pack
+    at packages/webui/src/res/data/gameparams, or the desktop AppData cache);
+  - a single unpacked GameParams.json (ship entries filtered by
+    typeinfo.type == "Ship").
 """
+
+from __future__ import annotations
+
+import argparse
 import json
+import sys
+from pathlib import Path
+from typing import Any
 
-GAMEPARAMS = r"C:\Users\langy\AppData\Local\WoWSP-extract\GameParams.json"
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_PACK = ROOT / "packages/webui/src/res/data/gameparams"
+DEFAULT_LIVE = ROOT / "packages/webui/src/data/ship_live_stats.json"
+DEFAULT_NAMES = ROOT / "packages/webui/src/data/ship_names.json"
 
-data = json.load(open(GAMEPARAMS, "r", encoding="utf-8"))
+ROLES = (
+    "hull",
+    "artillery",
+    "atba",
+    "torpedoes",
+    "airDefense",
+    "airArmament",
+    "depthCharges",
+    "airSupport",
+)
 
-def hp_slots(obj):
-    if not isinstance(obj, dict):
-        return []
-    return [(k, v) for k, v in obj.items() if k.startswith("HP_") and isinstance(v, dict)]
 
-def gun_ids(block):
-    ids = set()
-    if not isinstance(block, dict):
-        return ids
-    for k, v in hp_slots(block):
-        n = v.get("name") or v.get("id") or ""
-        if n:
-            ids.add(str(n))
-    return ids
+def resolve_parts(gp: dict, config: str = "top") -> dict[str, Any]:
+    """Python mirror of resolveShipParts() — role → component block dicts."""
+    info = gp.get("ShipUpgradeInfo")
+    if not isinstance(info, dict) or not info:
+        return canonical_parts(gp)
+    info = {k: v for k, v in info.items() if isinstance(v, dict)}
+    if not info:
+        return canonical_parts(gp)
 
-def build_weapons(gp):
-    """Mirrors the frontend buildWeapons function."""
-    out = []
-    if not isinstance(gp, dict):
+    def uc_kind(uc_type: Any) -> str:
+        return str(uc_type or "").lstrip("_").lower()
+
+    def components_of(entry: dict) -> dict[str, list[str]]:
+        comps = entry.get("components")
+        if not isinstance(comps, dict):
+            return {}
+        out: dict[str, list[str]] = {}
+        for role, names in comps.items():
+            if isinstance(names, list):
+                out[str(role).lower()] = [n for n in names if isinstance(n, str)]
         return out
 
-    art = gp.get("A_Artillery")
-    atba = gp.get("A_ATBA")
-    aa = gp.get("A_AirDefense")
-    torp = gp.get("A_AirArmament") or (gp.get("Hull") or {}).get("torpedoes")
+    names_by_kind: dict[str, list[str]] = {}
+    for name, ent in info.items():
+        kind = uc_kind(ent.get("ucType"))
+        if kind:
+            names_by_kind.setdefault(kind, []).append(name)
+    chains: dict[str, dict] = {}
+    for kind, kind_names in names_by_kind.items():
+        referenced = {info[n].get("prev") for n in kind_names}
+        name_set = set(kind_names)
+        ends = [n for n in kind_names if n not in referenced]
+        heads = [n for n in kind_names
+                 if not (isinstance(info[n].get("prev"), str) and info[n]["prev"] in name_set)]
+        chains[kind] = {
+            "head": heads[0] if heads else kind_names[0],
+            "end": ends[0] if ends else kind_names[-1],
+        }
 
-    # Main guns
-    if isinstance(art, dict):
-        groups = {}
-        for k, m in hp_slots(art):
-            barrels = int(m.get("numBarrels", 0) or 0) or 1
-            cal = round((float(m.get("barrelDiameter", 0) or 0)) * 1000)
-            key = f"{barrels}_{cal}"
-            if key in groups:
-                groups[key]["count"] += 1
-            else:
-                groups[key] = {"barrels": barrels, "cal": cal, "count": 1}
-        for g in groups.values():
-            out.append(f"Main: {g['count']}x{g['barrels']} {g['cal']}mm")
+    hull_chain = chains.get("hull")
+    hull_entry = info.get(hull_chain["end" if config == "top" else "head"]) if hull_chain else None
+    if hull_entry is None:
+        return canonical_parts(gp)
+    hull_comps = components_of(hull_entry)
 
-    # Secondary
-    if isinstance(atba, dict):
-        groups = {}
-        for k, m in hp_slots(atba):
-            barrels = int(m.get("numBarrels", 0) or 0) or 1
-            cal = round((float(m.get("barrelDiameter", 0) or 0)) * 1000)
-            key = f"{barrels}_{cal}"
-            if key in groups:
-                groups[key]["count"] += 1
-            else:
-                groups[key] = {"barrels": barrels, "cal": cal, "count": 1}
-        for g in groups.values():
-            out.append(f"Secondary: {g['count']}x{g['barrels']} {g['cal']}mm")
+    parts: dict[str, Any] = {}
+    for role in ROLES:
+        key = role.lower()
+        names: list[str] = []
+        chain = chains.get(key)
+        if chain:
+            pick = chain["end" if config == "top" else "head"]
+            names = components_of(info[pick]).get(key, [])
+        if not names:
+            names = hull_comps.get(key, [])
+        if role == "hull":
+            blocks = [gp[n] for n in names if isinstance(gp.get(n), dict)]
+            parts[role] = blocks[0] if blocks else None
+        else:
+            parts[role] = [gp[n] for n in names if isinstance(gp.get(n), dict)]
+    return parts
 
-    # Torpedoes
-    if isinstance(torp, dict):
-        slots = hp_slots(torp)
-        if slots:
-            counts = {}
-            for k, t in slots:
-                n = int(t.get("numBarrels", t.get("count", 1)) or 0) or 1
-                counts[n] = counts.get(n, 0) + 1
-            for tubes, count in counts.items():
-                out.append(f"Torpedo: {count}x{tubes}")
 
-    # AA
-    if isinstance(aa, dict):
-        tiers = {"long": 0, "mid": 0, "short": 0}
-        for k, a in hp_slots(aa):
-            dist = float(a.get("maxDistance", 0) or 0)
-            if dist > 5:
-                tiers["long"] += 1
-            elif dist > 2.5:
-                tiers["mid"] += 1
-            else:
-                tiers["short"] += 1
-        for tier, count in tiers.items():
-            if count > 0:
-                out.append(f"AA({tier}): {count}")
+def canonical_parts(gp: dict) -> dict[str, Any]:
+    def one(key: str) -> Any:
+        v = gp.get(key)
+        return v if isinstance(v, dict) else None
 
+    def lst(key: str) -> list:
+        v = gp.get(key)
+        return [v] if isinstance(v, dict) else []
+
+    return {
+        "hull": one("A_Hull") or one("Hull"),
+        "artillery": lst("A_Artillery"),
+        "atba": lst("A_ATBA"),
+        "torpedoes": lst("A_Torpedoes"),
+        "airDefense": lst("A_AirDefense"),
+        "airArmament": lst("A_AirArmament"),
+        "depthCharges": lst("A_DepthCharge"),
+        "airSupport": lst("A_AirSupport"),
+    }
+
+
+def hp_slots(blocks: list) -> list[tuple[str, dict]]:
+    out = []
+    for block in blocks:
+        for k, v in block.items():
+            if k.startswith("HP_") and isinstance(v, dict):
+                out.append((k, v))
     return out
 
 
-# Test all ships
-ships = [(k, v) for k, v in data.items() if isinstance(v, dict) and v.get("typeinfo", {}).get("type") == "Ship"]
-print(f"Total ships: {len(ships)}")
+def aura_band_map(blocks: list) -> dict[str, str]:
+    priority = {"near": 0, "medium": 1, "far": 2}
+    out: dict[str, str] = {}
+    for block in blocks:
+        for v in block.values():
+            if not isinstance(v, dict) or v.get("type") not in priority:
+                continue
+            if "areaDamage" not in v and "bubbleDamage" not in v:
+                continue
+            for g in v.get("guns") or []:
+                if isinstance(g, str) and (
+                    g not in out or priority[v["type"]] > priority[out[g]]
+                ):
+                    out[g] = v["type"]
+    return out
 
-no_guns = []
-aa_only = []
-for name, entry in ships:
-    weapons = build_weapons(entry)
-    has_main = any(w.startswith("Main:") for w in weapons)
-    has_secondary = any(w.startswith("Secondary:") for w in weapons)
-    has_torp = any(w.startswith("Torpedo:") for w in weapons)
-    has_aa = any(w.startswith("AA") for w in weapons)
 
-    if not has_main and not has_secondary and not has_torp:
-        if has_aa:
-            aa_only.append(name)
+def groups_desc(slots: list[tuple[str, dict]]) -> list[dict]:
+    groups: dict[tuple, dict] = {}
+    for k, m in slots:
+        barrels = int(m.get("numBarrels") or 0) or 1
+        cal = round(float(m.get("barrelDiameter") or 0) * 1000)
+        key = (barrels, cal)
+        g = groups.get(key)
+        if g:
+            g["count"] += 1
+            g["slots"].append(k)
         else:
-            no_guns.append(name)
+            groups[key] = {"count": 1, "slots": [k], "barrels": barrels, "cal": cal}
+    return sorted(groups.values(), key=lambda g: g["cal"], reverse=True)
 
-print(f"Ships with main guns (from A_Artillery): {sum(1 for k, v in ships if 'A_Artillery' in v and hp_slots(v['A_Artillery']))}")
-print(f"Ships with secondaries (from A_ATBA): {sum(1 for k, v in ships if 'A_ATBA' in v and hp_slots(v['A_ATBA']))}")
-print(f"Ships with ONLY AA (no guns/torps): {len(aa_only)}")
-print(f"Ships with NOTHING: {len(no_guns)}")
 
-if aa_only:
-    print(f"\nAA-only ships (first 10): {aa_only[:10]}")
+def summarize_weapons(gp: dict) -> list[dict]:
+    """Python mirror of summarizeWeapons() (top configuration)."""
+    parts = resolve_parts(gp, "top")
+    out: list[dict] = []
+    atba_slots = hp_slots(parts["atba"])
+    aa_slots = hp_slots(parts["airDefense"])
+    art_slots = hp_slots(parts["artillery"])
 
-# Now simulate the Rust fallback: for ships in aa_only, find sibling entries with same prefix that DO have A_Artillery
-print("\n=== Simulating Rust prefix fallback ===")
-fixed = 0
-for name in aa_only:
-    prefix = "".join(c for c in name if c.isupper())[:4]  # e.g. PASB
-    for key, entry in data.items():
-        if key.startswith(prefix) and isinstance(entry, dict) and "A_Artillery" in entry:
-            if hp_slots(entry["A_Artillery"]):
-                weapons = build_weapons(entry)
-                has_main = any(w.startswith("Main:") for w in weapons)
-                if has_main:
-                    fixed += 1
-                    break
+    promoted: set[str] = set()
+    main_from_atba = not art_slots
+    main_groups = groups_desc(atba_slots) if main_from_atba else groups_desc(art_slots)
+    for i, g in enumerate(main_groups):
+        if main_from_atba:
+            if i > 0:
+                break
+            promoted.update(g["slots"])
+        out.append({"kind": "mainGun", "count": g["count"], "barrels": g["barrels"], "cal": g["cal"]})
 
-print(f"AA-only ships fixable by prefix fallback: {fixed}")
-print(f"Still unfixable: {len(aa_only) - fixed}")
+    def mount_id(m: dict) -> str:
+        return str(m.get("name") or m.get("id") or "")
+
+    atba_ids = {mount_id(m) for _, m in atba_slots} - {""}
+    aa_ids = {mount_id(m) for _, m in aa_slots} - {""}
+    dp_slots = {k for k, m in atba_slots if mount_id(m) in aa_ids}
+    dp_slots |= {k for k, m in aa_slots if mount_id(m) in atba_ids}
+
+    sec: dict[tuple, int] = {}
+    for k, m in atba_slots:
+        if k in dp_slots or k in promoted:
+            continue
+        key = (int(m.get("numBarrels") or 0) or 1, round(float(m.get("barrelDiameter") or 0) * 1000))
+        sec[key] = sec.get(key, 0) + 1
+    for (barrels, cal), count in sec.items():
+        out.append({"kind": "secondary", "count": count, "barrels": barrels, "cal": cal})
+
+    dp: dict[tuple, int] = {}
+    for k, m in list(atba_slots) + list(aa_slots):
+        if k not in dp_slots:
+            continue
+        key = (int(m.get("numBarrels") or 0) or 1, round(float(m.get("barrelDiameter") or 0) * 1000))
+        dp[key] = dp.get(key, 0) + 1
+    for (barrels, cal), count in dp.items():
+        out.append({"kind": "dp", "count": count, "barrels": barrels, "cal": cal})
+
+    torp: dict[int, int] = {}
+    for _, t in hp_slots(parts["torpedoes"]):
+        n = int(t.get("numBarrels") or t.get("count") or 1) or 1
+        torp[n] = torp.get(n, 0) + 1
+    for tubes, count in torp.items():
+        out.append({"kind": "torpedo", "count": count, "barrels": tubes, "cal": 0})
+
+    if aa_slots:
+        band_of = aura_band_map(parts["airDefense"] + parts["atba"] + parts["artillery"])
+        tiers = {"long": 0, "mid": 0, "short": 0}
+        for k, _ in aa_slots:
+            if k in dp_slots:
+                continue
+            band = band_of.get(k, "near")
+            tiers["long" if band == "far" else "mid" if band == "medium" else "short"] += 1
+        for band, n in tiers.items():
+            if n > 0:
+                out.append({"kind": "aa", "count": n, "barrels": 0, "cal": 0, "band": band})
+
+    dc = len(hp_slots(parts["depthCharges"]))
+    if not dc:
+        strike = parts["airSupport"][0] if parts["airSupport"] else None
+        if isinstance(strike, dict) and float(strike.get("chargesNum") or 0) > 0 \
+                and float(strike.get("maxDist") or 0) > 0:
+            dc = int(strike["chargesNum"])
+    if dc:
+        out.append({"kind": "asw", "count": dc, "barrels": 0, "cal": 0})
+    ac = len(hp_slots(parts["airArmament"]))
+    if ac:
+        out.append({"kind": "aircraft", "count": ac, "barrels": 0, "cal": 0})
+    return out
+
+
+def load_ships(path: Path) -> dict[str, dict]:
+    """Per-ship slices keyed by ship id, from a slice dir or a full JSON."""
+    if path.is_dir():
+        ships: dict[str, dict] = {}
+        for f in sorted(path.glob("*.json")):
+            if f.name in ("upgrade-prices.json", "build.txt"):
+                continue
+            try:
+                entry = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                print(f"warn: skip unreadable slice {f.name}: {exc}", file=sys.stderr)
+                continue
+            if isinstance(entry, dict):
+                ships[f.stem] = entry
+        return ships
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw, dict) and isinstance(raw.get("ships"), list):
+        raw = {str(s.get("id")): s for s in raw["ships"] if isinstance(s, dict) and s.get("id")}
+    if isinstance(raw, list):
+        raw = {str(s.get("id")): s for s in raw if isinstance(s, dict) and s.get("id")}
+    return {
+        k: v for k, v in raw.items()
+        if isinstance(v, dict) and isinstance(v.get("typeinfo"), dict)
+        and v["typeinfo"].get("type") == "Ship"
+    }
+
+
+def label_of(ship_id: str, names: dict | None) -> str:
+    if not names:
+        return ship_id
+    ent = names.get(ship_id) or {}
+    return f"{ent.get('names', {}).get('zh-CN') or ent.get('names', {}).get('en-US') or ent.get('index') or ship_id}"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--gameparams", type=Path, default=DEFAULT_PACK,
+                    help="per-ship slice dir or a full GameParams.json")
+    ap.add_argument("--live-stats", type=Path, default=DEFAULT_LIVE)
+    ap.add_argument("--names", type=Path, default=DEFAULT_NAMES)
+    ap.add_argument("--limit", type=int, default=15,
+                    help="anomalies listed per class")
+    args = ap.parse_args(argv)
+
+    if not args.gameparams.exists():
+        print(f"error: gameparams not found: {args.gameparams}", file=sys.stderr)
+        print("hint: the bundled pack is generated by scripts/extract_gameparams.py "
+              "(gitignored); point --gameparams at a checkout or AppData cache that has it.",
+              file=sys.stderr)
+        return 1
+    ships = load_ships(args.gameparams)
+    names = json.loads(args.names.read_text(encoding="utf-8")) if args.names.exists() else None
+    live = json.loads(args.live_stats.read_text(encoding="utf-8")) if args.live_stats.exists() else {}
+
+    weaponless: list[str] = []
+    fallback_only: list[str] = []
+    torpedo_inversions: list[tuple[str, str]] = []
+    live_missing_torp: list[str] = []
+    live_extra_torp: list[str] = []
+    kind_totals: dict[str, int] = {}
+    bogus_torp_pre_fix = 0
+
+    for ship_id, gp in ships.items():
+        # Pre-fix behaviour for reference: AirArmament mounts read as torpedoes.
+        pre = gp.get("A_AirArmament")
+        pre_has_mounts = isinstance(pre, dict) and any(k.startswith("HP_") for k in pre)
+        if pre_has_mounts:
+            bogus_torp_pre_fix += 1
+
+        parts = resolve_parts(gp, "top")
+        via_fallback = not isinstance(gp.get("ShipUpgradeInfo"), dict)
+        groups = summarize_weapons(gp)
+        for g in groups:
+            kind_totals[g["kind"]] = kind_totals.get(g["kind"], 0) + g["count"]
+        kinds = {g["kind"] for g in groups}
+        if not kinds:
+            weaponless.append(ship_id)
+        if via_fallback and kinds:
+            fallback_only.append(ship_id)
+        if "torpedo" in kinds and not parts["torpedoes"]:
+            torpedo_inversions.append((ship_id, "torpedo group without torpedo blocks"))
+
+        live_ent = live.get(ship_id) or {}
+        if ship_id in live:
+            has_torp_mounts = "torpedo" in kinds
+            if "torp" in live_ent and not has_torp_mounts:
+                live_missing_torp.append(ship_id)
+            if has_torp_mounts and "torp" not in live_ent:
+                live_extra_torp.append(ship_id)
+
+    print(f"ships audited: {len(ships)}  ({args.gameparams})")
+    print("weapon groups by kind (mount totals): " +
+          ", ".join(f"{k}={v}" for k, v in sorted(kind_totals.items())))
+    print(f"pre-fix bogus torpedo sources (AirArmament mounts): {bogus_torp_pre_fix} ships")
+    print(f"ships resolved via canonical fallback (no ShipUpgradeInfo): {len(fallback_only)}")
+    print(f"ships with NO weapon group at all: {len(weaponless)}")
+    print(f"torpedo groups not backed by torpedo blocks: {len(torpedo_inversions)} (must be 0)")
+
+    if live:
+        both = sum(1 for s in ships if s in live)
+        print(f"live-stats cross-check: torpedo range known but no mounts: {len(live_missing_torp)}; "
+              f"mounts but no range: {len(live_extra_torp)} (of {both} ships in both)")
+
+    def report(title: str, items: list) -> None:
+        if not items:
+            return
+        print(f"\n{title}:")
+        for item in items[: args.limit]:
+            print(f"  - {item}")
+
+    report("Ships with no weapon group (review: event/harbour ships are legitimate)",
+           [f"{s} {label_of(s, names)}" for s in weaponless])
+    report("Canonical-fallback ships",
+           [f"{s} {label_of(s, names)}" for s in fallback_only])
+    report("Torpedo inversions",
+           [f"{s} {label_of(s, names)}: {why}" for s, why in torpedo_inversions])
+    report("Live stats says torpedoes, mounts say no",
+           [f"{s} {label_of(s, names)}" for s in live_missing_torp])
+    report("Mounts say torpedoes, live stats says no",
+           [f"{s} {label_of(s, names)}" for s in live_extra_torp])
+
+    return 0 if not torpedo_inversions else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -5,13 +5,14 @@
  * `anti_aircraft.defense` rating — its per-slot DPS/range fields are always
  * null/-1, so no per-aura numbers can be sourced from the API. The real AA
  * data lives in the raw GameParams entry the modal already unpacks via
- * `api.getShipGameparams`: aura dicts inside the `A_AirDefense`, `A_ATBA`
- * and `A_Artillery` blocks. The A_* blocks are the STOCK hull configuration,
- * which is exactly what WG's default_profile describes (verified: Seattle's
- * WG hull HP equals GameParams A_Hull), so B_/AB_/C_/Default blocks are
+ * `api.getShipGameparams`: aura dicts inside the stock-hull `AirDefense`,
+ * `ATBA` and `Artillery` blocks — resolved from ShipUpgradeInfo by
+ * shipParts.resolveShipParts. Only the STOCK hull configuration is read
+ * here, which is exactly what WG's default_profile describes (verified:
+ * Seattle's WG hull HP equals GameParams A_Hull); top-hull variants are
  * deliberately NOT read. Dual-purpose main-battery ships (PASC209 Seattle)
- * keep their far aura in `A_Artillery.Far_1/Far_1_Bubbles`, not in
- * A_AirDefense — hence the three-block scan.
+ * keep their far aura in the stock Artillery block's `Far_1/Far_1_Bubbles`,
+ * not in AirDefense — hence the three-block scan.
  *
  * An aura dict is recognized structurally: `type` ∈ near/medium/far plus an
  * `areaDamage` or `bubbleDamage` key. That skips the AimedFire /
@@ -26,6 +27,7 @@
  * here so the spec component stays declarative (same philosophy as
  * shipSpecs.ts).
  */
+import { resolveShipParts } from "./shipParts";
 import type { SpecRow } from "./shipSpecs";
 
 type Gp = Record<string, any> | null | undefined;
@@ -66,18 +68,30 @@ function isAura(v: unknown): v is Record<string, any> {
   return bandKeyOf(o.type) != null && ("areaDamage" in o || "bubbleDamage" in o);
 }
 
-/** All aura dicts across the three stock-hull blocks. */
-function aurasOf(gp: Gp): Array<{ band: AaBandKey; aura: Record<string, any> }> {
+/** All aura dicts across the given component blocks. */
+export function aurasOfBlocks(
+  blocks: Gp[],
+): Array<{ band: AaBandKey; aura: Record<string, any> }> {
   const out: Array<{ band: AaBandKey; aura: Record<string, any> }> = [];
-  if (!gp || typeof gp !== "object") return out;
-  for (const blockKey of ["A_AirDefense", "A_ATBA", "A_Artillery"] as const) {
-    const block = gp[blockKey];
+  for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
     for (const v of Object.values(block)) {
       if (isAura(v)) out.push({ band: bandKeyOf(v.type)!, aura: v });
     }
   }
   return out;
+}
+
+/** Stock-hull AA carrier blocks (AirDefense + ATBA + Artillery, see module
+ *  docstring), resolved through ShipUpgradeInfo. */
+function stockAaBlocks(gp: Gp): Gp[] {
+  const parts = resolveShipParts(gp, "stock");
+  return [...parts.airDefense, ...parts.atba, ...parts.artillery];
+}
+
+/** All aura dicts across the stock-hull AA carrier blocks. */
+function aurasOf(gp: Gp): Array<{ band: AaBandKey; aura: Record<string, any> }> {
+  return aurasOfBlocks(stockAaBlocks(gp));
 }
 
 /**
@@ -123,12 +137,14 @@ export function collectAaBands(gp: unknown): AaBand[] {
  * Map every AA mount slot key ("HP_JGA_1") to the aura band its aura lists
  * it under — the reliable way to bucket mounts by range (mount dicts carry
  * only antiAirAuraDistance in a non-meter scale). A slot listed in several
- * bands resolves to the outermost one (far > medium > near).
+ * bands resolves to the outermost one (far > medium > near). Block-level
+ * variant for callers that already hold resolved blocks (the weapon bar
+ * buckets the TOP configuration's mounts).
  */
-export function gunBandMap(gp: unknown): Map<string, AaBandKey> {
+export function auraBandMap(blocks: Gp[]): Map<string, AaBandKey> {
   const priority: Record<AaBandKey, number> = { near: 0, medium: 1, far: 2 };
   const out = new Map<string, AaBandKey>();
-  for (const { band, aura } of aurasOf(gp as Gp)) {
+  for (const { band, aura } of aurasOfBlocks(blocks)) {
     const guns = aura.guns;
     if (!Array.isArray(guns)) continue;
     for (const g of guns) {
@@ -138,6 +154,10 @@ export function gunBandMap(gp: unknown): Map<string, AaBandKey> {
     }
   }
   return out;
+}
+
+export function gunBandMap(gp: unknown): Map<string, AaBandKey> {
+  return auraBandMap(stockAaBlocks(gp as Gp));
 }
 
 function fmtNum(v: number, digits = 0): string {
