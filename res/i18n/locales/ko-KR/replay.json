@@ -216,6 +216,7 @@
     "detectedRows": "위치 확인됨 · {n}행",
     "searching": "위치 확인 중",
     "refreshStats": "전적 새로 고침",
+    "tabFocusHint": "Tab을 누르는 동안의 전적 인식은 이 게임 창에서 읽습니다 (좌하단 클라이언트 버전으로 변경)",
     "battleRealmHint": "이 전투가 진행된 서버: 명단 전적 조회는 이 서버에 고정되며, 좌하단 클라이언트/계정 전환의 영향을 받지 않습니다",
     "refreshStatsHint": "캐시를 지우고 전체 명단 전적을 다시 요청합니다. 성공할 때까지 기존 데이터가 유지됩니다",
     "statsSourceTitle": "전적 필터",
