@@ -2,7 +2,9 @@ import { defineComponent, computed, type PropType } from "vue";
 import { Crosshair, Target, Wind, Rocket, Anchor } from "@lucide/vue";
 
 import { t } from "@/i18n";
-import { gunBandMap } from "./antiAir";
+import { resolveShipParts, type ShipParts } from "./shipParts";
+import { summarizeWeapons, type WeaponGroup } from "./shipWeapons";
+import { auraBandMap, type AaBandKey } from "./antiAir";
 import type { FocusZone } from "./ShipStage";
 import "./WeaponBar.scss";
 
@@ -17,197 +19,84 @@ interface WeaponCard {
   count: number;
 }
 
-function hpSlots(obj: Record<string, any>): [string, Record<string, any>][] {
-  return Object.entries(obj).filter(
-    ([k, v]) => k.startsWith("HP_") && v && typeof v === "object",
-  ) as [string, Record<string, any>][];
-}
-
-/** Collect the set of gun model names/ids from an A_* block. */
-function gunIds(block: Record<string, any> | undefined): Set<string> {
-  const ids = new Set<string>();
-  if (!block || typeof block !== "object") return ids;
-  for (const [, m] of hpSlots(block)) {
-    const n = m.name ?? m.id ?? "";
-    if (n) ids.add(String(n));
-  }
-  return ids;
-}
-
-function buildWeapons(gp: Gp): WeaponCard[] {
-  if (!gp || typeof gp !== "object") return [];
+function cardsOf(groups: WeaponGroup[]): WeaponCard[] {
   const out: WeaponCard[] = [];
-
-  const atbaIds = gunIds(gp.A_ATBA);
-  const aaIds = gunIds(gp.A_AirDefense);
-
-  // ── Main battery ── A_Artillery.HP_* (fall back to A_ATBA for DDs)
-  const art = gp.A_Artillery ?? gp.Hull?.artillery;
-  const mainSource = (art && typeof art === "object" && hpSlots(art).length > 0) ? art : gp.A_ATBA;
-  // Track which ATBA slots are "promoted" to main battery so they aren't
-  // listed again under secondaries.
-  const promotedAtba = new Set<string>();
-  if (mainSource && typeof mainSource === "object") {
-    const groups = new Map<string, { barrels: number; cal: number; count: number; slots: string[] }>();
-    for (const [k, m] of hpSlots(mainSource)) {
-      const barrels = Number(m.numBarrels ?? 0) || 1;
-      const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
-      const key = `${barrels}_${cal}`;
-      const g = groups.get(key);
-      if (g) { g.count++; g.slots.push(k); } else { groups.set(key, { barrels, cal, count: 1, slots: [k] }); }
-    }
-    // If mainSource is A_ATBA (not true A_Artillery), only promote the
-    // LARGEST caliber group to main battery — keep rest as secondaries.
-    const entries = [...groups.values()].sort((a, b) => b.cal - a.cal);
-    const promoteAll = mainSource === art; // true A_Artillery → all groups are main battery
-    for (const g of entries) {
-      if (!promoteAll && g !== entries[0]) break; // only top group from ATBA
-      for (const s of g.slots) promotedAtba.add(s);
-      out.push({
-        key: `mainGun_${g.cal}_${g.barrels}`,
-        icon: Crosshair,
-        label: t("ships.detail.weapon.mainGun"),
-        detail: `${g.count}×${g.barrels} ${g.cal}mm`,
-        zone: "bow",
-        count: g.count,
-      });
-    }
-  }
-
-  // ── Dual-purpose (high-angle) guns ──
-  // Detect guns that appear in both A_ATBA (secondary) AND A_AirDefense (AA).
-  // These are DP mounts — show once with a combined label.
-  const atbaSlots = hpSlots(gp.A_ATBA ?? {});
-  const aaSlots = hpSlots(gp.A_AirDefense ?? {});
-  const dpSlots = new Set<string>();
-  for (const [k, m] of atbaSlots) {
-    const id = String(m.name ?? m.id ?? "");
-    if (id && aaIds.has(id)) dpSlots.add(k);
-  }
-  for (const [k, m] of aaSlots) {
-    const id = String(m.name ?? m.id ?? "");
-    if (id && atbaIds.has(id)) dpSlots.add(k);
-  }
-
-  // ── Secondary battery (excluding DP guns + slots promoted to main) ──
-  if (gp.A_ATBA && typeof gp.A_ATBA === "object") {
-    const groups = new Map<string, { barrels: number; cal: number; count: number }>();
-    for (const [k, m] of atbaSlots) {
-      if (dpSlots.has(k) || promotedAtba.has(k)) continue;
-      const barrels = Number(m.numBarrels ?? 0) || 1;
-      const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
-      const key = `${barrels}_${cal}`;
-      const g = groups.get(key);
-      if (g) { g.count++; } else { groups.set(key, { barrels, cal, count: 1 }); }
-    }
-    for (const [, g] of groups) {
-      out.push({
-        key: `secondary_${g.cal}`,
-        icon: Rocket,
-        label: t("ships.detail.weapon.secondary"),
-        detail: `${g.count}×${g.barrels} ${g.cal}mm`,
-        zone: "midship",
-        count: g.count,
-      });
-    }
-  }
-
-  // ── Dual-purpose guns (combined DP + AA slots) ──
-  if (dpSlots.size > 0) {
-    const groups = new Map<string, { barrels: number; cal: number; count: number }>();
-    for (const [k, m] of [...atbaSlots, ...aaSlots]) {
-      if (!dpSlots.has(k)) continue;
-      const barrels = Number(m.numBarrels ?? 0) || 1;
-      const cal = Math.round((Number(m.barrelDiameter ?? 0)) * 1000);
-      const key = `${barrels}_${cal}`;
-      const g = groups.get(key);
-      if (g) { g.count++; } else { groups.set(key, { barrels, cal, count: 1 }); }
-    }
-    for (const [, g] of groups) {
-      out.push({
-        key: `dp_${g.cal}`,
-        icon: Crosshair,
-        label: t("ships.detail.weapon.dp"),
-        detail: `${g.count}×${g.barrels} ${g.cal}mm`,
-        zone: "midship",
-        count: g.count,
-      });
+  for (const g of groups) {
+    switch (g.kind) {
+      case "mainGun":
+        out.push({
+          key: `mainGun_${g.cal}_${g.barrels}`,
+          icon: Crosshair,
+          label: t("ships.detail.weapon.mainGun"),
+          detail: `${g.count}×${g.barrels} ${g.cal}mm`,
+          zone: "bow",
+          count: g.count,
+        });
+        break;
+      case "secondary":
+        out.push({
+          key: `secondary_${g.cal}`,
+          icon: Rocket,
+          label: t("ships.detail.weapon.secondary"),
+          detail: `${g.count}×${g.barrels} ${g.cal}mm`,
+          zone: "midship",
+          count: g.count,
+        });
+        break;
+      case "dp":
+        out.push({
+          key: `dp_${g.cal}`,
+          icon: Crosshair,
+          label: t("ships.detail.weapon.dp"),
+          detail: `${g.count}×${g.barrels} ${g.cal}mm`,
+          zone: "midship",
+          count: g.count,
+        });
+        break;
+      case "torpedo":
+        out.push({
+          key: `torpedo_${g.barrels}`,
+          icon: Target,
+          label: t("ships.detail.weapon.torpedo"),
+          detail: `${g.count}×${g.barrels}`,
+          zone: "midship",
+          count: g.count,
+        });
+        break;
+      case "aa":
+        out.push({
+          key: `aa_${g.band}`,
+          icon: Wind,
+          label: `${t("ships.detail.weapon.aaGun")} ${t(
+            `ships.detail.weapon.${g.band === "long" ? "aaLong" : g.band === "mid" ? "aaMid" : "aaShort"}`,
+          )}`,
+          detail: `${g.count} ${t("ships.detail.weapon.auras")}`,
+          zone: "deck",
+          count: g.count,
+        });
+        break;
+      case "asw":
+        out.push({
+          key: "asw",
+          icon: Anchor,
+          label: t("ships.detail.weapon.asw"),
+          detail: `${g.count} ${t("ships.detail.weapon.launchers")}`,
+          zone: "stern",
+          count: g.count,
+        });
+        break;
+      case "aircraft":
+        out.push({
+          key: "aircraft",
+          icon: PlaneIcon,
+          label: t("ships.detail.weapon.aircraft"),
+          detail: `${g.count} ${t("ships.detail.weapon.launchers")}`,
+          zone: "stern",
+          count: g.count,
+        });
+        break;
     }
   }
-
-  // ── Torpedoes — group by tube count ──
-  const torp = gp.A_AirArmament ?? gp.Hull?.torpedoes;
-  if (torp && typeof torp === "object") {
-    const groups = new Map<number, number>();
-    for (const [, t] of hpSlots(torp)) {
-      const n = Number(t.numBarrels ?? t.count ?? 1) || 1;
-      groups.set(n, (groups.get(n) ?? 0) + 1);
-    }
-    for (const [tubes, count] of groups) {
-      out.push({
-        key: `torpedo_${tubes}`,
-        icon: Target,
-        label: t("ships.detail.weapon.torpedo"),
-        detail: `${count}×${tubes}`,
-        zone: "midship",
-        count,
-      });
-    }
-  }
-
-  // ── AA (non-DP only) — collapse by aura band ──
-  // Mount dicts have no maxDistance (their antiAirAuraDistance rides a
-  // non-meter scale), so the old distance read dumped everything into
-  // "short". Bucket by aura membership instead: the band whose `guns` list
-  // names the slot; mounts no aura claims default to near.
-  const aa = gp.A_AirDefense;
-  if (aa && typeof aa === "object") {
-    const bandOf = gunBandMap(gp);
-    const tiers: Record<string, number> = { long: 0, mid: 0, short: 0 };
-    for (const [k] of aaSlots) {
-      if (dpSlots.has(k)) continue;
-      const band = bandOf.get(k) ?? "near";
-      if (band === "far") tiers.long++;
-      else if (band === "medium") tiers.mid++;
-      else tiers.short++;
-    }
-    if (tiers.long > 0) out.push({
-      key: "aa_long", icon: Wind,
-      label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaLong")}`,
-      detail: `${tiers.long} ${t("ships.detail.weapon.auras")}`, zone: "deck", count: tiers.long,
-    });
-    if (tiers.mid > 0) out.push({
-      key: "aa_mid", icon: Wind,
-      label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaMid")}`,
-      detail: `${tiers.mid} ${t("ships.detail.weapon.auras")}`, zone: "deck", count: tiers.mid,
-    });
-    if (tiers.short > 0) out.push({
-      key: "aa_short", icon: Wind,
-      label: `${t("ships.detail.weapon.aaGun")} ${t("ships.detail.weapon.aaShort")}`,
-      detail: `${tiers.short} ${t("ships.detail.weapon.auras")}`, zone: "deck", count: tiers.short,
-    });
-  }
-
-  // ── ASW ──
-  const dc = gp.A_DepthCharge;
-  if (dc && typeof dc === "object") {
-    const n = Object.keys(dc).filter((k) => k.startsWith("HP_")).length;
-    if (n > 0) out.push({
-      key: "asw", icon: Anchor, label: t("ships.detail.weapon.asw"),
-      detail: `${n} ${t("ships.detail.weapon.launchers")}`, zone: "stern", count: n,
-    });
-  }
-
-  // ── Aircraft ──
-  const ac = gp.A_Airplane;
-  if (ac && typeof ac === "object") {
-    const n = Object.keys(ac).filter((k) => k.startsWith("HP_")).length;
-    if (n > 0) out.push({
-      key: "aircraft", icon: PlaneIcon, label: t("ships.detail.weapon.aircraft"),
-      detail: `${n} ${t("ships.detail.weapon.squadrons")}`, zone: "stern", count: n,
-    });
-  }
-
   return out;
 }
 
@@ -225,7 +114,20 @@ export default defineComponent({
   props: { gameparams: { type: Object as PropType<Gp>, default: null } },
   emits: { focus: (_zone: FocusZone, _count?: number) => true },
   setup(props, { emit }) {
-    const weapons = computed(() => buildWeapons(props.gameparams));
+    const weapons = computed(() => {
+      const gp = props.gameparams;
+      if (!gp || typeof gp !== "object") return [] as WeaponCard[];
+      // Weapon groups read the TOP configuration (fully upgraded — the same
+      // convention as the spec panel's numbers); AA mount bands come from
+      // the same resolved blocks so slot keys line up.
+      const parts: ShipParts = resolveShipParts(gp, "top");
+      const bandOf: Map<string, AaBandKey> = auraBandMap([
+        ...parts.airDefense,
+        ...parts.atba,
+        ...parts.artillery,
+      ]);
+      return cardsOf(summarizeWeapons(gp, { parts, bandOf }));
+    });
     return () => {
       if (weapons.value.length === 0) return null;
       return (

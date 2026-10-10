@@ -23,6 +23,7 @@ import BuildPlanner from "./BuildPlanner";
 import ShipMyStatsPanel from "./ShipMyStatsPanel";
 import ServerTrendPanel from "./ServerTrendPanel";
 import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
+import { resolveShipParts } from "./shipParts";
 import ShipStage, { type FocusZone, type ArmorZone, type PlaneModelOption } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
@@ -299,7 +300,8 @@ export default defineComponent({
         }
         // Probe several possible GameParams layouts (varies by unpacker).
         const armor = (gp.ShipArmor ?? gp.Armor ?? gp.HullArmor ?? {}) as Record<string, unknown>;
-        const citadel = (armor.Citadel ?? gp.Citadel ?? (gp.A_Hull as any)?.Citadel) as Record<string, unknown> | undefined;
+        const gpHull = resolveShipParts(gp, "stock").hull as Record<string, unknown> | null;
+        const citadel = (armor.Citadel ?? gp.Citadel ?? gpHull?.Citadel) as Record<string, unknown> | undefined;
         const zones: ArmorZone[] = [];
         const add = (name: string, mm: number | undefined) => {
           if (mm != null && mm > 0) zones.push({ name, thickness: mm });
@@ -317,11 +319,11 @@ export default defineComponent({
         // Torpedo belt — reduction % converted to a representative value.
         const tb = (armor?.TorpedoBelt ?? armor?.TorpedoProtection) as Record<string,unknown> | undefined;
         if (tb?.factor != null) add("torpedoBelt", Math.round((1 - Number(tb.factor)) * 100));
-        // Fallback: read the flat per-part armour dict (A_Hull.armor).
+        // Fallback: read the flat per-part armour dict (stock hull.armor).
         // Use DISTINCT sorted thicknesses for zone assignment so each
         // zone gets a visibly different colour.
         if (zones.length === 0) {
-          const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
+          const hull = (gpHull ?? {}) as Record<string, unknown>;
           const dict = (hull.armor ?? hull.Armor ?? null) as Record<string, number> | null;
           if (dict) {
             const vals = [...new Set(Object.values(dict).filter((v: number) => v > 0))]
@@ -352,7 +354,7 @@ export default defineComponent({
         const n = typeof v === "number" ? v : Number(v);
         return Number.isFinite(n) && n > 0 ? n : null;
       }
-      const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
+      const hull = (resolveShipParts(gp, "stock").hull ?? {}) as Record<string, unknown>;
       return num(hull.draft) ?? num(hull.maxDraft) ?? num(hull.Draft) ?? num(hull.MaxDraft) ?? null;
     });
 
