@@ -282,9 +282,18 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
     """Player-facing 4-tier skill tree per class with tier + column positions.
 
     Surface classes use the WoWSFT in-game layout (tier + column); Submarine
-    is absent there, so its layout derives from the Crew table's per-class
-    `tier` field (learnable skills only), columns assigned in the crew
-    table's own ordering.
+    is absent there, so its layout is the curated SS_LAYOUT table below —
+    the live sub tree is the one 4-tier × 5-column grid (every other class
+    has six columns). Its cell placement is cross-checked against the live
+    client three ways: the crew table's per-skill `tier.Submarine` agrees
+    with every row, the client's own recommended sub builds
+    (CrewSkillRecomendationPresets — see crew_presets.json) teach
+    TorpedoFloodingProbability / DefenseCritProbability / DetectionAiming,
+    and the wiki's submarine tree (Ship:List_of_Commander_Skills) matches
+    cell for cell. Note the crew table alone cannot derive the tree: it
+    over-offers Submarine-tiered skills the live sub UI does not carry
+    (Combat Maneuver Specialist, Basics of Survivability, Radio Location,
+    Fire Prevention Expert, Fearless Brawler, Concealment Expert).
     """
     crew = None
     for _name, e in entries_of(txt, '"CrewPersonality"',
@@ -320,21 +329,44 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
                 flat.append(named(s["name"], s["tier"], s["column"]))
         out[cls] = flat
 
-    # Submarine: WoWSFT predates subs, so derive the layout from the crew
-    # table — every sub-exclusive skill (no surface class offers it) plus a
-    # short curated list of surface skills the live sub tree also carries.
-    surface_codes = {s["name"] for gp, rows in wowsft.items() for tier in rows for s in tier}
-    sub_exclusive = [code for code, tiers in sorted(gp_tiers.items()) if "SS" in tiers and code not in surface_codes]
-    sub_shared = [
-        "DetectionDirection",        # Priority Target
-        "DefenceFireProbability",    # Incoming Fire Alert
-        "TriggerGmReload",           # Adrenaline Rush
-        "ConsumablesAdditional",     # Superintendent
-        "DefenceCritFireFlooding",   # Fire Prevention
-        "DetectionVisibilityRange",  # Concealment Expert
-    ]
-    ss_codes = sub_exclusive + [c for c in sub_shared if c in gp_tiers and "SS" in gp_tiers[c]]
-    out["SS"] = [named(code, gp_tiers[code]["SS"], i) for i, code in enumerate(ss_codes)]
+    # Submarine: the live tree as a full 4-tier × 5-column grid (tier,
+    # column) — see the docstring for how the placement is corroborated.
+    # Tiers still come from the crew table; a layout row that disagrees with
+    # it is reported and skipped rather than emitted with the stale tier.
+    SS_LAYOUT: dict[str, tuple[int, int]] = {
+        "TriggerPingerReloadBuff":      (1, 0),  # Enhanced Sonar
+        "TorpedoFloodingProbability":   (1, 1),  # Liquidator
+        "TriggerConsRudderTimeCoeff":   (1, 2),  # Helmsman
+        "DetectionAiming":              (1, 3),  # Priority Target
+        "DetectionAlert":               (1, 4),  # Incoming Fire Alert
+        "SubmarineBatteryCapacity":     (2, 0),  # Improved Battery Capacity
+        "TriggerSeenTorpedoReload":     (2, 1),  # Torpedo Crew Training
+        "SubmarineConsumablesDuration": (2, 2),  # Consumables Enhancements
+        "DefenseCritProbability":       (2, 3),  # Preventive Maintenance
+        "Maneuverability":              (2, 4),  # Last Stand
+        "TriggerPingerSpeedBuff":       (3, 0),  # Enhanced Impulse Generator
+        "SubmarineHoldSectors":         (3, 1),  # Sonarman
+        "SubmarineConsumablesReload":   (3, 2),  # Consumables Specialist
+        "SubmarineDangerAlert":         (3, 3),  # Watchful
+        "ConsumablesAdditional":        (3, 4),  # Superintendent
+        "ArmamentReloadSubmarine":      (4, 0),  # Adrenaline Rush
+        "SubmarineTorpedoPingDamage":   (4, 1),  # Torpedo Aiming Master
+        "TriggerConsSonarTimeCoeff":    (4, 2),  # Sonarman Expert
+        "SubmarineBatteryBurnDown":     (4, 3),  # Improved Battery Efficiency
+        "SubmarineSpeed":               (4, 4),  # Enlarged Propeller Shaft
+    }
+    out["SS"] = []
+    for code, (tier, column) in SS_LAYOUT.items():
+        ss_tier = (gp_tiers.get(code) or {}).get("SS")
+        if ss_tier is None:
+            print(f"!! skilltree: SS layout code {code} is not learnable by "
+                  "Submarine in the crew table — skipped", file=sys.stderr)
+            continue
+        if ss_tier != tier:
+            print(f"!! skilltree: SS layout tier for {code} ({tier}) disagrees "
+                  f"with the crew table ({ss_tier}) — skipped", file=sys.stderr)
+            continue
+        out["SS"].append(named(code, tier, column))
     for rows in out.values():
         rows.sort(key=lambda r: (r["tier"], r["column"], r["code"]))
     return out

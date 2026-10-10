@@ -266,8 +266,9 @@ export default defineComponent({
     });
 
     /** Column count of this class's tree = max(column) + 1 (BB/CA/DD/CV → 6,
-     *  SS → 15). Fixed per class — not per tier — so tier rows stay aligned
-     *  even where a tier has fewer skills (gaps render as placeholders). */
+     *  SS → 5, the only five-column tree). Fixed per class — not per tier —
+     *  so tier rows stay aligned even where a tier has fewer skills (gaps
+     *  render as placeholders). */
     const skillColumns = computed(() => {
       let n = 0;
       for (const s of tree.value) n = Math.max(n, s.column + 1);
@@ -674,8 +675,8 @@ export default defineComponent({
       const tierRows = [1, 2, 3, 4].map((tier) => {
         const unlocked = tierUnlocked(tier);
         const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
-        // Dense column map — sparse tiers (DD tier-4, the SS tree) carry
-        // intentional gaps that must hold their column position.
+        // Dense column map — a sparse tier (CV tier-2) carries intentional
+        // gaps that must hold their column position.
         const byColumn = new Map(tiers.value[tier].map((s) => [s.column, s]));
         const cells = [];
         for (let col = 0; col < columns; col++) {
