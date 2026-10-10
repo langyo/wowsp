@@ -1069,9 +1069,10 @@ const ChatLogPanel = defineComponent({
      *  line (the global tooltip popup doesn't preserve newlines). */
     function senderHint(r: ChatRow): string {
       const bits: string[] = [r.shipName || "—"];
-      const cls = r.shipType
-        ? t(`replay.classes.${shipTypeClass(r.shipType)}`)
-        : "";
+      // The label keys off shipTypeClass's atlas class — an unknown type has
+      // none, and a missing label beats interpolating the bare i18n key path.
+      const clsKind = r.shipType ? shipTypeClass(r.shipType) : "";
+      const cls = clsKind ? t(`replay.classes.${clsKind}`) : "";
       const label = [r.tier ? tierToRoman(r.tier) : "", cls].filter(Boolean).join(" ");
       if (label) bits.push(label);
       if (r.hp != null) {

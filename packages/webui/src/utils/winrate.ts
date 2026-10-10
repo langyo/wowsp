@@ -88,40 +88,75 @@ export type CareerStamp = "miracle" | "ape" | "maggot" | "rat";
  *  both a career stamp and a composition stamp. */
 export type CompositionStamp = "air" | "sub";
 
-/** Merged seals (合并勋章): 空中神人 / 水下神人 fire when a player qualifies
- *  for BOTH a composition tag AND 神了. The merge CONSUMES its constituents —
- *  the merged seal replaces (and suppresses) both the composition tag and
- *  神了 — while the non-miracle verdicts (猴/蛆/过街老鼠) keep coexisting
- *  with air/sub exactly as before. */
-export type MergedStamp = "airMiracle" | "subMiracle";
+/** Veteran composition stamps (老人章): a class share over 50% upgrades the
+ *  tag to 空中老人 / 水下老人, which REPLACES the minor (小人) seal for that
+ *  class — the veteran implies the >20% tag, so only the stronger face shows.
+ *  Still composition seals (they render at comp size); unlike the minor tags
+ *  they never merge with career verdicts. */
+export type VeteranStamp = "airVeteran" | "subVeteran";
 
-export type StampKind = CareerStamp | CompositionStamp | MergedStamp;
+/** Merged seals (合并勋章): 空中神人 / 水下神人 (神了 merges) and 空中小猴 /
+ *  水下小猴 (猴 merges) fire when a player qualifies for BOTH a composition
+ *  tag AND that career verdict. The merge CONSUMES its constituents — the
+ *  merged seal replaces (and suppresses) both the composition tag (veteran
+ *  tier included; the merged face is not tier-distinguished) and the career
+ *  verdict — while 蛆 and 过街老鼠 each suppress the composition tags
+ *  entirely (no merged maggot or rat seal exists: a hidden profile's stats
+ *  are invisible, so a rat holder's composition cannot be graded either). */
+export type MergedStamp = "airMiracle" | "subMiracle" | "airApe" | "subApe";
+
+export type StampKind = CareerStamp | CompositionStamp | MergedStamp | VeteranStamp;
+
+/** Whether `kind` is one of the merged composition+career seals. Consumers
+ *  with merged-kind-specific behavior (the share shots' seal sizing, and
+ *  anything else that used to hardcode the miracle equalities) route through
+ *  this guard so a new merge can never be missed. */
+export function isMergedStamp(kind: StampKind): boolean {
+  return (
+    kind === "airMiracle" || kind === "subMiracle" || kind === "airApe" || kind === "subApe"
+  );
+}
 
 /** The one merge rule, shared by every seal surface (account StatsCard,
  *  share shots, the Tab overlay chips — all route through here so the
  *  merge can never disagree between surfaces):
- *   - miracle + sub → 水下神人; miracle + air → 空中神人 (both orders
- *     normalized subMiracle before airMiracle).
+ *   - miracle + sub → 水下神人; miracle + air → 空中神人; ape likewise
+ *     merges into 水下小猴 / 空中小猴 (both orders normalized sub-first).
  *   - Any merged kind CONSUMES its constituents: the return carries ONLY
- *     the merged kinds — standalone 神了 and both composition tags are
- *     suppressed. Both merges at once → exactly [subMiracle, airMiracle].
- *   - Otherwise the legacy order [career?, air?, sub?] stands, so 猴/蛆/
- *     过街老鼠 keep today's coexistence with the composition tags.
+ *     the merged kinds — the standalone verdict and both composition tags
+ *     (minor or veteran tier alike; the merged face is not tier-distin-
+ *     guished, per the user-confirmed 照常合并) are suppressed. Both merges
+ *     at once → exactly [subX, airX].
+ *   - maggot SUPPRESSES composition entirely: air and/or sub reduce the
+ *     return to just [maggot] (no merged maggot seal exists).
+ *   - rat likewise returns [rat] alone — a hidden profile's stats are
+ *     invisible, so its composition tags carry nothing gradeable; the rat
+ *     suppression has the same shape as the maggot floor.
+ *   - Otherwise the legacy order [career?, air-tier?, sub-tier?] stands:
+ *     each class shows its stronger face, the veteran seal (老人) when the
+ *     share is over 50%, the minor seal (小人) when only over 20%.
  *  `career` null and `comp` null/undefined degrade to the legacy pass-through
  *  with nothing to add. */
 export function resolveStamps(
   career: CareerStamp | null,
   comp: CompositionStamps | null | undefined,
 ): StampKind[] {
+  // 蛆 is the floor verdict — it never merges and nothing rides beside it.
+  if (career === "maggot") return ["maggot"];
+  // 过街老鼠 is a second floor of the same shape: hiding the stats makes the
+  // composition unknowable, so the rat verdict stands alone too.
+  if (career === "rat") return ["rat"];
   const merged: MergedStamp[] = [];
-  if (career === "miracle") {
-    if (comp?.sub) merged.push("subMiracle");
-    if (comp?.air) merged.push("airMiracle");
+  if (career === "miracle" || career === "ape") {
+    if (comp?.sub) merged.push(career === "miracle" ? "subMiracle" : "subApe");
+    if (comp?.air) merged.push(career === "miracle" ? "airMiracle" : "airApe");
   }
   if (merged.length > 0) return merged;
-  return [career, comp?.air ? "air" : null, comp?.sub ? "sub" : null].filter(
-    (k): k is StampKind => k != null,
-  );
+  return [
+    career,
+    comp?.air ? (comp.airVeteran ? "airVeteran" : "air") : null,
+    comp?.sub ? (comp.subVeteran ? "subVeteran" : "sub") : null,
+  ].filter((k): k is StampKind => k != null);
 }
 
 /** Career verdict stamps: a red-tier career earns the 猴 mark — or the 蛆
@@ -161,19 +196,26 @@ export function careerStamp(
 export interface CompositionStamps {
   air: boolean;
   sub: boolean;
+  /** >50% career share tiers (老人章) — each implies its base flag above by
+   *  construction (0.5 > 0.2), so only the stronger face ever shows. */
+  airVeteran: boolean;
+  subVeteran: boolean;
 }
 
 /** 空中小人 / 水下小人 criteria (user-defined): CV (resp. SS) battles must
  *  exceed 20% of the player's career battles, with a career total above 200
- *  battles so a fresh account's first CV foray doesn't earn the mark.
- *  `ships` is the player's full per-ship stat list; `typeOf` resolves the
- *  ship type (encyclopedia first, offline DB fallback). Career-level tags:
- *  they render on the account card only, never on a single ship's page. */
+ *  battles so a fresh account's first CV foray doesn't earn the mark; over
+ *  50% the tag upgrades to the veteran seal (空中老人 / 水下老人), which
+ *  replaces the minor (小人) face for that class. `ships` is the player's
+ *  full per-ship stat list; `typeOf` resolves the ship type (encyclopedia
+ *  first, offline DB fallback). Career-level tags: they render on the
+ *  account card only, never on a single ship's page. */
 export function compositionStamps(
   ships: { shipId: number; battles: number }[],
   typeOf: (shipId: number) => string | null | undefined,
   minBattles = 200,
   minShare = 0.2,
+  minVeteranShare = 0.5,
 ): CompositionStamps {
   let career = 0;
   let air = 0;
@@ -184,8 +226,15 @@ export function compositionStamps(
     if (t === "AirCarrier") air += s.battles;
     else if (t === "Submarine") sub += s.battles;
   }
-  if (career <= minBattles) return { air: false, sub: false };
-  return { air: air / career > minShare, sub: sub / career > minShare };
+  if (career <= minBattles) {
+    return { air: false, sub: false, airVeteran: false, subVeteran: false };
+  }
+  return {
+    air: air / career > minShare,
+    sub: sub / career > minShare,
+    airVeteran: air / career > minVeteranShare,
+    subVeteran: sub / career > minVeteranShare,
+  };
 }
 
 /** Average-damage color tiers — rough absolute buckets for overall account

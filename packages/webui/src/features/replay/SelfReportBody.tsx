@@ -21,6 +21,7 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { damageColor } from "@/utils/winrate";
 import type { SelfCombatRow, SelfStatsModel } from "./liveSelfStats";
+import { runtimeShipEpoch } from "./runtimeShipIdentity";
 import {
   foldAchievementsOf,
   fmtClock,
@@ -117,6 +118,12 @@ export default defineComponent({
       if (!m) return null;
       const lang = dataLanguage.value;
       const maskOf = props.maskOf;
+
+      // Runtime GameParams registrations landing mid-battle (an unknown
+      // ship resolved off the install) must re-render the identity card
+      // and ledger rows at once — the model's own poll would otherwise
+      // delay the name by up to one sync cycle.
+      void runtimeShipEpoch.value;
 
       const selfShipName =
         m.selfShipId != null ? (shipNameFromOfflineDb(m.selfShipId, lang) ?? "") : "";

@@ -3,10 +3,25 @@
  *  gameTabRowKey) and the ship-name order (localized name collated by
  *  pinyin — the permutation the CN 360 client renders and the Lesta
  *  client shares, which plain code-unit comparison gets backwards for
- *  hanzi). */
-import { describe, expect, it } from "vitest";
+ *  hanzi). Plus the runtime-registered ships: ids the baked DB misses but
+ *  the App side resolved against the client's GameParams must sort by their
+ *  real class/tier instead of the unknown sentinel. */
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { gameTabRowCompare, gameTabRowKey } from "./shipClass";
+import { registerRuntimeShipEntry, resetRuntimeShipEntries } from "./runtimeShipDb";
+import {
+  gameTabRowCompare,
+  gameTabRowKey,
+  shipClassRank,
+  shipNameOf,
+  shipTierWeight,
+} from "./shipClass";
+
+// The runtime registrations are module state — every test starts and ends
+// with an empty store, so the unknown-sentinel cases below stay hermetic
+// regardless of file order.
+beforeEach(() => resetRuntimeShipEntries());
+afterEach(() => resetRuntimeShipEntries());
 
 // Real offline-DB ship ids — the T2 cruiser group of the observed CN
 // co-op battle (2026-10-07) plus its tier-III cruiser, and the Lesta
@@ -143,6 +158,45 @@ describe("gameTabRowCompare", () => {
     ];
     const sorted = [...group].sort((a, b) => gameTabRowCompare(a, b, opts(true)));
     expect(sorted.map((v) => v.name)).toEqual(["knownCA", "mystery"]);
+  });
+
+  it("sorts a runtime-registered ship inside its real class group", () => {
+    // A post-bake collaboration clone (no baked entry): once the App side
+    // registered its GameParams identity, class/tier/nation/name all flow
+    // into the sort machinery — BB group (rank 1), T9 weight, registered
+    // name — instead of the unknown sentinels. The name is registered in
+    // the resolver's PRODUCTION shape ({ en } only): a zh-CN key request
+    // must fall through to it (the en link in shipNameOf) — this is the
+    // regression guard for the missing-link bug where the ship-name segment
+    // came out empty and the ship sorted ahead of every named peer.
+    const azurId = 987654321; // absent from the baked DB
+    registerRuntimeShipEntry(azurId, {
+      tier: 9,
+      type: "Battleship",
+      nation: "japan",
+      names: { en: "Test" },
+    });
+    expect(shipClassRank(azurId)).toBe(1);
+    expect(shipTierWeight(azurId)).toBe(9);
+    expect(shipNameOf(azurId, "zh-CN")).toBe("Test");
+    expect(shipNameOf(azurId, "en-US")).toBe("Test");
+    // Inside the BB group the T9 runtime ship leads the baked T3 Nassau
+    // (higher tier first), and the still-unknown id keeps the sentinel seat
+    // at the very end.
+    const roster = [
+      { name: "unknown", shipId: 1122334455 },
+      { name: "nassau", shipId: SHIPS.nassau },
+      { name: "azur", shipId: azurId },
+    ];
+    const sorted = [...roster].sort((a, b) => gameTabRowCompare(a, b, opts(false)));
+    expect(sorted.map((v) => v.name)).toEqual(["azur", "nassau", "unknown"]);
+    // Both order paths carry the registered name in their ship-name segment
+    // (the WG compare IS the concatenated key; the CN/name-order compare
+    // reads shipNameOf directly) — and no '~' sentinel anymore.
+    expect(gameTabRowKey(roster[2], true, "zh-CN")).toContain("Test");
+    expect(gameTabRowKey(roster[2], true, "zh-CN")).not.toContain("~");
+    const nameOrdered = [...roster].sort((a, b) => gameTabRowCompare(a, b, opts(true)));
+    expect(nameOrdered.map((v) => v.name)).toEqual(["azur", "nassau", "unknown"]);
   });
 
   it("collates the display-name tiebreak too under the CN order", () => {

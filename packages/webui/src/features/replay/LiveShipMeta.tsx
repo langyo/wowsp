@@ -17,8 +17,11 @@
  * (neither GameParams nor the WG API exposes them), and a speculative
  * "could have" list reads as filler.
  *
- * Renders nothing when the ship is missing from the offline DBs (event ships
- * outside both sources).
+ * Renders nothing when no database knows the ship: the baked offline DBs
+ * first, then the runtime GameParams registrations — a runtime entry
+ * restores the identity strip (tier / class icon / nation flag) but carries
+ * no bake-grade live stats, so the parameter chips stay empty for it
+ * (event ships outside both sources still render nothing at all).
  */
 import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, type CSSProperties } from "vue";
 import { Flag, Wrench } from "@lucide/vue";
@@ -31,6 +34,7 @@ import {
   nationNameFromDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
+import { runtimeShipEpoch } from "./runtimeShipIdentity";
 import {
   formatShipParams,
   formatShipSpecGroups,
@@ -69,7 +73,13 @@ export default defineComponent({
   setup(props) {
     const { dataLanguage } = useLanguage();
 
-    const entry = computed(() => shipOfflineEntry(props.shipId));
+    // shipOfflineEntry reads plain (non-reactive) module state, so the
+    // runtime registrations that land after mount are invisible to the
+    // computed unless the epoch bump is tracked as a dependency here.
+    const entry = computed(() => {
+      void runtimeShipEpoch.value;
+      return shipOfflineEntry(props.shipId);
+    });
     const stats = computed(() => shipLiveStats(props.shipId));
     const tier = computed(() => tierRoman(entry.value?.tier ?? null));
     const typeShort = computed(() => shipTypeShort(entry.value?.type ?? null));

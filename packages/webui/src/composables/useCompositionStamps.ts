@@ -19,7 +19,9 @@ export function useCompositionStamps(
   return computed(() => {
     const id = toValue(accountId);
     const realmKey = toValue(realm);
-    if (id == null || !realmKey) return { air: false, sub: false };
+    if (id == null || !realmKey) {
+      return { air: false, sub: false, airVeteran: false, subVeteran: false };
+    }
     const ships = shipStats.cache.get(`${realmKey}_${id}`) ?? [];
     /** Ship type: encyclopedia first, offline DB fallback. */
     const typeOf = (shipId: number) =>

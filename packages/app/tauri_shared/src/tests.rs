@@ -1648,8 +1648,10 @@ fn player_suggestion_and_composition_rename_account_id() {
     let v = round_trips(PlayerComposition {
         air: true,
         sub: false,
+        air_veteran: true,
+        sub_veteran: false,
     });
-    assert_exact_keys(&v, &["air", "sub"]);
+    assert_exact_keys(&v, &["air", "sub", "airVeteran", "subVeteran"]);
 }
 
 #[test]

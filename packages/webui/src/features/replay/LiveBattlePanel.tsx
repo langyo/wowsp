@@ -33,6 +33,13 @@
  * roster painted onto a watermarked PNG, same pipeline as the post-battle
  * panels) and a hide-all-nicknames toggle. Masking is ephemeral share-time
  * state, not a pref — masked nicks never reach the copied image either.
+ *
+ * Ships the offline bake predates (new releases / collaboration clones) are
+ * backfilled at runtime: every roster refresh resolves unknown shipIds
+ * against the player's own client GameParams (resolveRuntimeShips) and the
+ * registrations re-sort and re-render the rows through the epoch trigger —
+ * real tier/class/name in place of the unknown sentinel. A ship no database
+ * ever answers shows the localized placeholder instead of a blank name.
  */
 import {
   computed,
@@ -65,6 +72,7 @@ import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import BattleIcon from "@/components/base/BattleIcon";
 import { useAccountStore } from "@/stores/account";
+import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
@@ -118,6 +126,7 @@ import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
 import { HkSpinner } from "@celestia-island/hikari";
+import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
 import "./LiveBattlePanel.scss";
 
 /** Stable refusal codes from `start_manual_locate` → the replay.live.*
@@ -179,6 +188,29 @@ export default defineComponent({
     // that unmounts the whole panel.
     const plugin = useIngamePluginStore();
     const gameStatus = useGameStatusStore();
+    const config = useConfigStore();
+    // Armor/GameParams root for the runtime ship-identity backfill — the
+    // configured install, falling back to the running process's matched
+    // install (same unification as useShipDetail).
+    const gameRoot = computed(
+      () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
+    );
+    // Backfill ships the offline bake predates: on every roster (or game
+    // root) change, probe the unknown shipIds against the client's own
+    // GameParams. Fire-and-forget — the resolver dedupes, attempts once per
+    // (root, shipId) and registers whatever resolves; the epoch bump below
+    // then re-sorts and re-renders the affected rows.
+    watch(
+      [() => props.arena, gameRoot],
+      ([arena, root]) => {
+        if (!arena) return;
+        resolveRuntimeShips(
+          arena.vehicles.map((v) => v.shipId),
+          root,
+        );
+      },
+      { immediate: true },
+    );
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
     );
@@ -276,6 +308,10 @@ export default defineComponent({
     const predictedOptionsFor = (side: "ally" | "enemy") => {
       void sinkEpoch.value;
       void sortKeyEpoch.value;
+      // Runtime GameParams registrations land after the first render — the
+      // bump re-derives the order once an unknown ship gains a real
+      // class/tier/name (until then it sits on the unknown sentinel).
+      void runtimeShipEpoch.value;
       // The CN client follows the localized-ship-name row order
       // (utils/shipClass's module docs) instead of the decompiled WG rule
       // and never re-sorts the table mid-battle, so the static layout is
@@ -749,7 +785,9 @@ export default defineComponent({
               nick: masking.maskOf(v.name),
               clanTag: stats.get(v.id)?.clanTag ?? null,
               shipName:
-                shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "",
+                shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
+                  v.shipName ??
+                  t("replay.live.unknownShip"),
               bot: isAiName(v.name),
               dim: entry.sunk,
               shipType:
@@ -1033,7 +1071,9 @@ export default defineComponent({
         const ai = isAiName(v.name);
         const st = ai ? null : stats.get(v.id);
         const shipName =
-          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
+          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
+            v.shipName ??
+            t("replay.live.unknownShip");
         // Career seal — the full card's guard chain (verdict-pending hidden
         // profiles hold their stamp).
         const stamp =
@@ -1129,7 +1169,9 @@ export default defineComponent({
         if (compact.value) return compactCell(entry);
         const v = entry.vehicle;
         const shipName =
-          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
+          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
+            v.shipName ??
+            t("replay.live.unknownShip");
         const clickable = !isAiName(v.name);
         // The career seal is a card-level element pinned to the card's right
         // edge (same "pressed onto the card" look as the account card), so it

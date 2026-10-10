@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Render the eight career-stamp glyph bitmaps (packages/webui/src/res/stamps/).
+"""Render the twelve career-stamp glyph bitmaps (packages/webui/src/res/stamps/).
 
 The seal glyphs use calligraphy fonts that are NOT redistributable (毛体 has
 unclear terms; 方正鲁迅行书 is a commercial FounderType font), so the repo
@@ -13,7 +13,9 @@ files. Re-run locally when a glyph or style changes:
 Output: 400x400 transparent PNGs (2x the 100-unit SVG box), centered cinnabar
 ink with an outline stroke. Single-glyph verdicts (神 / 猴 / 蛆) dominate the face;
 four-char seals stack two lines into the classic 2x2 face (空中 over 小人,
-过街 over 老鼠, 空中 over 神人, 水下 over 神人). Requires Pillow."""
+过街 over 老鼠, 空中 over 神人, 水下 over 神人, 空中 over 小猴, 水下 over 小猴,
+空中 over 老人, 水下 over 老人).
+Requires Pillow."""
 import argparse
 import os
 
@@ -35,6 +37,10 @@ JOBS = [
     ("stamp-sub.png", ["水下", "小人"], "luxun", 165),
     ("stamp-air-miracle.png", ["空中", "神人"], "luxun", 165),
     ("stamp-sub-miracle.png", ["水下", "神人"], "luxun", 165),
+    ("stamp-air-ape.png", ["空中", "小猴"], "luxun", 165),
+    ("stamp-sub-ape.png", ["水下", "小猴"], "luxun", 165),
+    ("stamp-air-veteran.png", ["空中", "老人"], "luxun", 165),
+    ("stamp-sub-veteran.png", ["水下", "老人"], "luxun", 165),
 ]
 
 
