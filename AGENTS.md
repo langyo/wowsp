@@ -176,6 +176,20 @@ Before submitting, the relevant subset of `just lint` (or scoped
   agent may autonomously advance **at most the patch digit**. minor / major
   bumps must never be advanced unilaterally — first get the user's explicit
   approval of the target version, then bump all seven places in the same PR.
+- **Release versioning — no skipped versions (mandatory)**. The seven
+  version fields on master drift ahead as main PRs merge (each bumping the
+  patch digit), but release tags must follow the published sequence
+  strictly: the next release tag is always the latest `v*` release tag plus
+  one patch increment (after `v0.5.5` comes `v0.5.6`, then `v0.5.7`, …).
+  Before cutting a release tag, if the seven fields sit higher than that
+  next sequential version, a release-prep PR MUST first reset all seven
+  fields down to it (this is the one sanctioned version-bump-down;
+  `scripts/check_versions.py` still enforces seven-place agreement). Never
+  tag a version that skips numbers, and never let the tag and the built
+  version string disagree. Precedent: `v0.5.9` shipped while master had
+  drifted 0.5.5 → 0.5.9 across four untagged bumps — tolerated once
+  because the tag had to match the already-built version string; from now
+  on the reset rule applies (the next release is `v0.5.10`).
 - **Create PRs only when asked, or as a step of an approved workflow**;
   never open unsolicited PRs.
 
