@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classSkills,
   SKILL_BUDGET,
   skillAffordable,
   skillCost,
@@ -86,5 +87,33 @@ describe("skillPointsBelow", () => {
     expect(skillPointsBelow(pick("Three"), TREE, 4)).toBeGreaterThanOrEqual(TIER_UNLOCK[4]);
     expect(skillPointsBelow(pick("One", "Two"), TREE, 4)).toBeGreaterThanOrEqual(TIER_UNLOCK[4]);
     expect(skillPointsBelow(pick("One", "OneB"), TREE, 4)).toBeLessThan(TIER_UNLOCK[4]);
+  });
+});
+
+describe("classSkills data", () => {
+  const CLASSES = ["BB", "CA", "DD", "CV", "SS"] as const;
+  const cell = (s: Skill) => `${s.tier}:${s.column}`;
+
+  it("fits every class in a 6-column grid — the submarine tree in 5", () => {
+    for (const cls of CLASSES) {
+      const width = Math.max(...classSkills(cls).map((s) => s.column)) + 1;
+      expect(width === 6 || width === 5).toBe(true);
+      expect(width).toBe(cls === "SS" ? 5 : 6);
+    }
+  });
+
+  it("never stacks two skills in one tier cell", () => {
+    for (const cls of CLASSES) {
+      const cells = classSkills(cls).map(cell);
+      expect(new Set(cells).size).toBe(cells.length);
+    }
+  });
+
+  it("mirrors the live 20-cell submarine tree (4 tiers × 5 full columns)", () => {
+    // The sub tree is the one class tree without a sixth column — a full
+    // 5×4 grid, matching the in-game layout cell for cell.
+    const ss = classSkills("SS");
+    expect(ss).toHaveLength(20);
+    expect(new Set(ss.map(cell)).size).toBe(20);
   });
 });
