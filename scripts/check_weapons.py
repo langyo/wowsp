@@ -147,8 +147,19 @@ def resolve_parts(gp: dict, config: str = "top") -> dict[str, Any]:
                     break
         if role == "hull":
             parts[role] = blocks[0] if blocks else None
-        else:
-            parts[role] = blocks
+            continue
+        # Collapse co-listed weapon VARIANTS of one role: blocks occupying
+        # the same HP_* hardpoints are mutually exclusive loadouts (the
+        # Halloween hulls list three switchable armament sets under one
+        # role). The LAST listed variant wins — the same "top
+        # configuration" convention as the upgrade-chain pick; blocks with
+        # disjoint hardpoints mount together and are all kept.
+        kept: list[tuple[set[str], dict]] = []
+        for block in blocks:
+            keys = {k for k in block if k.startswith("HP_")}
+            kept = [e for e in kept if not (keys & e[0])]
+            kept.append((keys, block))
+        parts[role] = [b for _, b in kept]
     return parts
 
 
