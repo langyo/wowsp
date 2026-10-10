@@ -1,5 +1,5 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.11 (elevated runtime install retry, bar walk, baseline fix).
+# Requires shun >= 0.6.12 (measured font baseline calibration, real exit codes).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)
