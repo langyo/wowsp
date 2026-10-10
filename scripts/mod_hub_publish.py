@@ -505,7 +505,11 @@ def release(cache: Path) -> None:
     out = subprocess.run(["gh", "release", "view", RELEASE_TAG, "--repo", REPO], capture_output=True, text=True)
     if out.returncode != 0:
         subprocess.run(
+            # --latest=false: the mod-hub release must never claim
+            # releases/latest — that slot belongs to the app's v* tags
+            # (the in-app updater and the website download page follow it).
             ["gh", "release", "create", RELEASE_TAG, "--repo", REPO, "--title", RELEASE_TITLE,
+             "--latest=false",
              "--notes", "Mod Hub package store. Assets are re-hosted copies of third-party mods "
                         "ingested from Aslain's WoWs Modpack; see the linked Discussions threads "
                         "for hashes, sources and attribution."],
