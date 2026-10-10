@@ -19,11 +19,6 @@
   "warnings": "Notes",
   "installedOk": "Installed \"{name}\" — {count} files written to bin/{version}.",
   "mirroredBins": "Also synced to the pre-release build bin/{version}.",
-  "kind.voice": "Voice pack",
-  "kind.skin": "Ship skin (PnF)",
-  "kind.textures": "Texture override",
-  "kind.gui": "HUD icons",
-  "kind.patch": "Config patch",
   "kind": {
     "voice": "Voice pack",
     "skin": "Ship skin (PnF)",

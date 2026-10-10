@@ -19,11 +19,6 @@
   "warnings": "提示",
   "installedOk": "「{name}」安裝完成 —— 已寫入 {count} 個檔案到 bin/{version}。",
   "mirroredBins": "已同步到預載版本 bin/{version}。",
-  "kind.voice": "語音包",
-  "kind.skin": "艦船塗裝（PnF）",
-  "kind.textures": "貼圖覆蓋",
-  "kind.gui": "介面圖示",
-  "kind.patch": "設定補丁",
   "kind": {
     "voice": "語音包",
     "skin": "艦船塗裝（PnF）",

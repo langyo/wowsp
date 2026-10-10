@@ -12,13 +12,22 @@ they are required only in the en-US baseline — other locales may omit them
 (every locale falls back to en-US at runtime) but must copy the baseline
 value verbatim when present.
 
-Exit codes: 0 = parity, 1 = missing keys / placeholder drift (unless --no-fail).
+Dotted keys (a JSON key containing `.` at any level, e.g. `"kind.gui"`) are
+rejected outright: the webui loads these files as vue-i18n namespaces WITHOUT
+`flatJson`, so `t("a.b.c")` walks nested objects only — a dotted key can
+never resolve, and flatten() makes it parity-invisible against the nested
+spelling of the same path (exactly how the dead `resources.json` `kind.*`
+duplicates sat unnoticed). Write nested objects instead.
+
+Exit codes: 0 = parity, 1 = missing keys / placeholder drift (unless
+--no-fail); dotted keys ALWAYS exit 1 — --no-fail does not cover them, or
+the fence could be talked out of failing on exactly the bug it exists for.
 
 Usage:
     python scripts/check_i18n.py             # full report
     python scripts/check_i18n.py --quiet     # only failures
     python scripts/check_i18n.py --json      # machine-readable
-    python scripts/check_i18n.py --no-fail   # always exit 0
+    python scripts/check_i18n.py --no-fail   # exit 0 except dotted keys
 """
 from __future__ import annotations
 
@@ -71,6 +80,33 @@ def discover_langs() -> list[str]:
     return sorted(d.name for d in LOCALES_DIR.iterdir() if d.is_dir())
 
 
+def dotted_key_paths(lang: str) -> list[str]:
+    """`<namespace>.json: <path>` for every JSON key carrying a `.` — see
+    the module docstring for why these can never resolve."""
+    out: list[str] = []
+    lang_dir = LOCALES_DIR / lang
+    if not lang_dir.is_dir():
+        return out
+    for p in sorted(lang_dir.glob("*.json")):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue  # parse failures are reported by the parity loader
+        ns = p.stem
+
+        def walk(node: object, prefix: str) -> None:
+            if not isinstance(node, dict):
+                return
+            for k, v in node.items():
+                path = f"{prefix}{k}"
+                if "." in k:
+                    out.append(f"{ns}.json: {path}")
+                walk(v, f"{path}.")
+
+        walk(data, "")
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate WoWSP i18n key parity")
     parser.add_argument("--quiet", action="store_true")
@@ -86,6 +122,15 @@ def main() -> int:
     values = {lang: load_namespace_values(lang) for lang in langs}
     baseline = values[BASELINE_LANG]
     baseline_keys = set(baseline)
+
+    # Dotted keys first — they break resolution itself, so parity below is
+    # moot for them (and flatten() would happily compare the unresolvable
+    # spelling against the nested one).
+    dotted: dict[str, list[str]] = {}
+    for lang in langs:
+        paths = dotted_key_paths(lang)
+        if paths:
+            dotted[lang] = paths
 
     problems: dict[str, list[str]] = {}
     for lang in langs:
@@ -119,12 +164,24 @@ def main() -> int:
     if args.json:
         print(
             json.dumps(
-                {"langs": langs, "parity": not problems, "problems": problems},
+                {
+                    "langs": langs,
+                    # Machine consumers get one boolean: dotted keys count
+                    # as failures here even though --no-fail softens the
+                    # parity exit (see the exit-code contract above).
+                    "parity": not problems and not dotted,
+                    "problems": problems,
+                    "dottedKeys": dotted,
+                },
                 indent=2,
                 ensure_ascii=False,
             )
         )
-    elif problems:
+    elif dotted or problems:
+        for lang, paths in dotted.items():
+            print(f"[{lang}] {len(paths)} dotted key(s) — unresolvable without flatJson:")
+            for it in paths:
+                print(f"  {it}")
         for lang, items in problems.items():
             print(f"[{lang}] {len(items)} key differences:")
             for it in items:
@@ -132,7 +189,8 @@ def main() -> int:
     elif not args.quiet:
         print(f"i18n OK: {len(baseline_keys)} keys across {tuple(langs)}")
 
-    return 0 if (not problems or args.no_fail) else 1
+    ok = not dotted and (not problems or args.no_fail)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
