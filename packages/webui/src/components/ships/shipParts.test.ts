@@ -211,8 +211,9 @@ describe("resolveShipParts", () => {
   });
 
   it("falls back to the canonical literal block when the hull omits a role", () => {
-    // Midway legacy hull: no ATBA chain, hull components without atba — the
-    // secondaries (and their far AA aura) live in a literal A_ATBA.
+    // Midway legacy hull: no ATBA chain, hull components without an atba
+    // key — the secondaries (and their far AA aura) live in a literal
+    // A_ATBA the ShipUpgradeInfo never names.
     const atba = { HP_SGP_1: mount(2, 127), Far_1: { type: "far", areaDamage: 64 } };
     const gp: Record<string, unknown> = {
       A_ATBA: atba,
@@ -220,12 +221,48 @@ describe("resolveShipParts", () => {
       ShipUpgradeInfo: {
         hull: {
           ucType: "_Hull", prev: "",
-          components: { hull: ["A_Hull"], artillery: [], torpedoes: [], atba: [] },
+          components: { hull: ["A_Hull"], artillery: [], torpedoes: [] },
         },
       },
     };
     expect(resolveShipParts(gp, "top").atba).toEqual([atba]);
     expect(resolveShipParts(gp, "stock").atba).toEqual([atba]);
+  });
+
+  it("respects an explicit empty hull list over the literal fallback", () => {
+    // Gearing_H2019 style: the hull says atba is NOT mounted — the leftover
+    // literal block must not resurrect (it double-counted through it).
+    const atba = { HP_SGP_1: mount(2, 127) };
+    const gp: Record<string, unknown> = {
+      A_ATBA: atba,
+      A_Hull: { health: 17900 },
+      ShipUpgradeInfo: {
+        hull: {
+          ucType: "_Hull", prev: "",
+          components: { hull: ["A_Hull"], artillery: [], torpedoes: [], atba: [] },
+        },
+      },
+    };
+    expect(resolveShipParts(gp, "top").atba).toEqual([]);
+  });
+
+  it("lets an explicit empty hull list win over the role upgrade chain", () => {
+    // Stock hull of a two-hull ship: torpedoes explicitly [] while the
+    // torpedo upgrade chain names the top hull's mounts — stock mounts none.
+    const torp = blockWithMounts("JGT", 2, 4);
+    const gp: Record<string, unknown> = {
+      A_Torpedoes: torp,
+      A_Hull: { health: 10000 },
+      ShipUpgradeInfo: {
+        hull: {
+          ucType: "_Hull", prev: "",
+          components: { hull: ["A_Hull"], artillery: [], torpedoes: [] },
+        },
+        torpUp: { ucType: "_Torpedoes", prev: "", components: { torpedoes: ["A_Torpedoes"] } },
+      },
+    };
+    expect(resolveShipParts(gp, "stock").torpedoes).toEqual([]);
+    expect(resolveShipParts(gp, "top").torpedoes).toEqual([]);
   });
 
   it("falls back to canonical literal keys without ShipUpgradeInfo", () => {

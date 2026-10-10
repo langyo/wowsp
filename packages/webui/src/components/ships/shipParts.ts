@@ -151,9 +151,16 @@ function roleComponentNames(
   hullEntry: Record<string, any>,
   role: ShipPartRole,
   config: "stock" | "top",
-): string[] {
+): { names: string[]; explicitEmpty: boolean } {
   const key = role.toLowerCase();
-  const hullNames = componentsOf(hullEntry)[key] ?? [];
+  // An explicitly EMPTY hull list means "not mounted on this hull" — it
+  // wins over the chain pick and the literal fallback alike (a stock hull
+  // of a two-hull ship lists torpedoes: [] while the torpedo upgrade chain
+  // names the top hull's mounts); an OMITTED key is fair game for both.
+  const hullNames = componentsOf(hullEntry)[key];
+  if (hullNames != null && hullNames.length === 0) {
+    return { names: [], explicitEmpty: true };
+  }
   // The role's own upgrade chain decides stock vs top when upgrades exist
   // (torpedo A1/A2/A3-style variants); otherwise the hull entry's list IS
   // the mounted configuration.
@@ -166,15 +173,15 @@ function roleComponentNames(
       // artillery upgrades name A_Artillery AND B_Artillery); the hull's
       // own list names exactly what THAT hull mounts — intersect down to
       // it, or the mounts double-count.
-      if (hullNames.length > 0) {
+      if (hullNames != null && hullNames.length > 0) {
         const hullSet = new Set(hullNames);
         const mounted = names.filter((n) => hullSet.has(n));
-        if (mounted.length > 0) return mounted;
+        if (mounted.length > 0) return { names: mounted, explicitEmpty: false };
       }
-      return names;
+      return { names, explicitEmpty: false };
     }
   }
-  return hullNames;
+  return { names: hullNames ?? [], explicitEmpty: false };
 }
 
 /** Canonical literal block keys, the fallback when resolution is silent. */
@@ -246,19 +253,23 @@ export function resolveShipParts(gp: Gp, config: "stock" | "top" = "top"): ShipP
     return null;
   };
   {
-    const names = roleComponentNames(info, chains, hullEntry, "hull", config);
-    parts.hull = blocksFor(gp, names)[0] ?? literalBlock("hull");
+    const { names, explicitEmpty } = roleComponentNames(info, chains, hullEntry, "hull", config);
+    const resolved = blocksFor(gp, names)[0] ?? null;
+    parts.hull = resolved ?? (explicitEmpty ? null : literalBlock("hull"));
   }
   for (const role of SHIP_PART_ROLES) {
     if (role === "hull") continue;
-    const names = roleComponentNames(info, chains, hullEntry, role, config);
+    const { names, explicitEmpty } = roleComponentNames(info, chains, hullEntry, role, config);
     const blocks = blocksFor(gp, names);
-    if (blocks.length > 0) {
-      parts[role] = blocks;
+    // An explicit [] in the hull's components is the game saying "none
+    // mounted" — the literal block (a leftover of another config) must
+    // NOT resurrect (Gearing_H2019 used to double-count through it).
+    if (blocks.length === 0 && !explicitEmpty) {
+      const literal = literalBlock(role);
+      if (literal) parts[role].push(literal);
       continue;
     }
-    const literal = literalBlock(role);
-    if (literal) parts[role].push(literal);
+    parts[role] = blocks;
   }
   return parts;
 }

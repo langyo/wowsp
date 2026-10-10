@@ -109,26 +109,31 @@ def resolve_parts(gp: dict, config: str = "top") -> dict[str, Any]:
     parts: dict[str, Any] = {}
     for role in ROLES:
         key = role.lower()
-        hull_names = hull_comps.get(key, [])
+        hull_names = hull_comps.get(key)
+        # An explicitly EMPTY hull list means "not mounted on this hull" and
+        # must win over the chain pick and the literal fallback; an OMITTED
+        # key is fair game for both.
+        explicit_empty = hull_names is not None and len(hull_names) == 0
         names: list[str] = []
-        chain = chains.get(key)
-        if chain:
-            pick = chain["end" if config == "top" else "head"]
-            names = components_of(info[pick]).get(key, [])
-            if names:
-                # An upgrade entry may co-list every hull variant's blocks
-                # (stock artillery upgrades name A_Artillery AND
-                # B_Artillery); the hull's own list names exactly what THAT
-                # hull mounts — intersect down to it.
-                if hull_names:
-                    hull_set = set(hull_names)
-                    mounted = [n for n in names if n in hull_set]
-                    if mounted:
-                        names = mounted
-        if not names:
-            names = hull_names
+        if not explicit_empty:
+            chain = chains.get(key)
+            if chain:
+                pick = chain["end" if config == "top" else "head"]
+                names = components_of(info[pick]).get(key, [])
+                if names:
+                    # An upgrade entry may co-list every hull variant's
+                    # blocks (stock artillery upgrades name A_Artillery AND
+                    # B_Artillery); the hull's own list names exactly what
+                    # THAT hull mounts — intersect down to it.
+                    if hull_names:
+                        hull_set = set(hull_names)
+                        mounted = [n for n in names if n in hull_set]
+                        if mounted:
+                            names = mounted
+            if not names:
+                names = hull_names or []
         blocks: list[Any] = [gp[n] for n in names if isinstance(gp.get(n), dict)]
-        if not blocks:
+        if not blocks and not explicit_empty:
             # Legacy fallback: entries whose hull omits a role still mounted
             # the canonical block (e.g. the Midway legacy hull keeps its
             # secondaries' far AA aura in a literal A_ATBA).
