@@ -1,5 +1,5 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.13 (localized startup splash with abort, carried-install retry).
+# Requires shun >= 0.6.14 (splash chrome: themed title bar, centered, rounded).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)
