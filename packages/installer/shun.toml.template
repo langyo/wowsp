@@ -1,5 +1,5 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.15 (splash phase shares the wizard loop, native fatal boxes).
+# Requires shun >= 0.6.16 (cross-family baseline alignment, per-run setup log file).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)
