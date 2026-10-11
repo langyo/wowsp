@@ -1,11 +1,17 @@
 //! Live `tempArenaInfo.json` polling for overlay mode (milestone M7).
 //!
-//! When a battle loads, the game writes `<game_path>/replays/tempArenaInfo.json`
-//! with the full roster for that match. In overlay mode WoWSP watches that file
-//! and emits a `wowsp://arena-info` Tauri event whenever a fresh battle starts
-//! — same mechanic as ApeRadar's `FileUtils.GetLatestTempArenaInfoFile(
-//! requireFileToBeNewer=true)`, but event-driven via the `notify` crate instead
-//! of a 1-second poll, so idle cost is near zero.
+//! When a battle loads, the game writes `tempArenaInfo.json` with the full
+//! roster for that match. The WG-family clients put it in
+//! `<game_path>/replays/`; the 360 CN client puts it in the GAME ROOT, next
+//! to the executable, and deletes it when the battle ends (its `replays/`
+//! copy — when it has one at all — is not the live one; 2026-10-11 国服 log:
+//! a months-old `replays/` leftover shadowed every live battle, so holding
+//! Tab never satisfied the battle gate). In overlay mode WoWSP watches both
+//! locations and emits a `wowsp://arena-info` Tauri event whenever a fresh
+//! battle starts — same mechanic as ApeRadar's
+//! `FileUtils.GetLatestTempArenaInfoFile(requireFileToBeNewer=true)`, but
+//! event-driven via the `notify` crate instead of a 1-second poll, so idle
+//! cost is near zero.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -51,7 +57,27 @@ fn unix_secs(t: SystemTime) -> i64 {
 /// the tutorial-family scripted battles field their units as real team
 /// rows. The frontend mirrors this exact rule
 /// (utils/rosterSides.ts `splitLiveRosterSides`).
+///
+/// The record only moves FORWARD: a file OLDER than the battle already
+/// recorded must not shadow it. The 360 CN client deletes its root-level
+/// arena file when the battle ends, and the next scan would fall back to a
+/// months-old `replays/` leftover — without this guard that ghost would
+/// instantly age the Tab gate out (`arena_seen_within`) and clobber the
+/// live battle's team sizes until the next battle rewrote the file.
+///
+/// Guard and stores sit under one mutex: a poll thread reading the ghost
+/// must not interleave with the notify watcher recording the new battle —
+/// the older stores landing last would pin the stamp backward with no
+/// later event to correct it for the rest of that battle.
 fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime) {
+    static RECORD_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = RECORD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let stamp = unix_secs(file_mtime);
+    if LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed) > stamp {
+        return;
+    }
     let operation = replay::is_operation_battle(
         info.match_group.as_deref(),
         info.scenario.as_deref(),
@@ -75,7 +101,7 @@ fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime)
         (allies << 16) | enemies,
         std::sync::atomic::Ordering::Relaxed,
     );
-    LAST_ARENA_MTIME.store(unix_secs(file_mtime), std::sync::atomic::Ordering::Relaxed);
+    LAST_ARENA_MTIME.store(stamp, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Latest known per-team player counts (allies, enemies) — (0, 0) before
@@ -129,6 +155,10 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
         return false;
     };
     let Some(path) = find_latest_arena_info(&dir) else {
+        tracing::debug!(
+            dir = %dir.display(),
+            "battle-state refresh: no tempArenaInfo.json in the replay dir or the game root"
+        );
         return false;
     };
     let Ok(meta) = path.metadata() else {
@@ -144,6 +174,12 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
     let roster_pending = at > 0 && last_known_team_sizes() == (0, 0);
     if at > 0 && unix_secs(mtime) <= at && !roster_pending {
         // Nothing newer than what we already recorded.
+        tracing::debug!(
+            file = %path.display(),
+            mtime = unix_secs(mtime),
+            recorded = at,
+            "battle-state refresh: arena file not newer than the recorded battle"
+        );
         return arena_seen_within(1);
     }
     match read_arena_file(&path) {
@@ -396,6 +432,12 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
     });
     let app_for_cb = app.clone();
     let watch_root = target_dir.clone();
+    // The 360 CN client's live arena file sits in the GAME ROOT, one level
+    // above the replays dir (see the module docs) — watch that level too,
+    // NON-recursively (a recursive watch would see the whole bin/ tree churn
+    // for nothing). A failure here only costs promptness: the 3 s polls and
+    // the Tab-held refresh still find the root-level file.
+    let root_watch = target_dir.parent().map(std::path::Path::to_path_buf);
 
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<notify::Event, notify::Error>| {
@@ -410,6 +452,11 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
     watcher
         .watch(&watch_root, RecursiveMode::Recursive)
         .map_err(|e| format!("watch {watch_root:?}: {e}"))?;
+    if let Some(root) = root_watch {
+        if let Err(e) = watcher.watch(&root, RecursiveMode::NonRecursive) {
+            tracing::warn!(root = %root.display(), error = %e, "watch the game root for the arena file failed");
+        }
+    }
     Ok(watcher)
 }
 
@@ -577,13 +624,35 @@ fn find_latest_arena_info(dir: &PathBuf) -> Option<PathBuf> {
     // Fast path: the game writes the file directly into <replays>/ — only
     // fall back to the recursive walk (versioned subfolders) when it is not
     // there. The walk stats every file in the tree and runs on a 3 s poll.
+    let mut best: Option<(PathBuf, SystemTime)> = None;
     let direct = dir.join("tempArenaInfo.json");
     if direct.is_file() {
-        return Some(direct);
+        consider_arena_candidate(&mut best, direct);
+    } else {
+        walk_for_arena(dir, &mut best);
     }
-    let mut best: Option<(PathBuf, SystemTime)> = None;
-    walk_for_arena(dir, &mut best);
+    // The 360 CN client's live arena file sits in the GAME ROOT, one level
+    // above replays/ (see the module docs) — whichever location carries the
+    // NEWEST stamp is the live battle. A root drive (an env-pinned replay
+    // dir with no parent) simply has no root-level candidate.
+    if let Some(root_file) = dir.parent().map(|p| p.join("tempArenaInfo.json")) {
+        consider_arena_candidate(&mut best, root_file);
+    }
     best.map(|(p, _)| p)
+}
+
+/// Track the newest tempArenaInfo.json candidate by mtime. Ties keep the
+/// first-seen candidate (the replays-dir file — the WG-family location).
+fn consider_arena_candidate(best: &mut Option<(PathBuf, SystemTime)>, path: PathBuf) {
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return;
+    };
+    let Ok(mtime) = meta.modified() else {
+        return;
+    };
+    if best.as_ref().is_none_or(|(_, t)| mtime > *t) {
+        *best = Some((path, mtime));
+    }
 }
 
 fn walk_for_arena(dir: &PathBuf, best: &mut Option<(PathBuf, SystemTime)>) {
@@ -621,6 +690,10 @@ pub(crate) fn current_match_group(root: &std::path::Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Serializes the tests that touch the process-global arena state —
+    /// cargo runs test functions on parallel threads.
+    static GLOBALS_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     /// Write a fake tempArenaInfo.json into a temp dir, confirm it parses.
     #[test]
     fn parses_synthetic_arena_info() {
@@ -654,6 +727,9 @@ mod tests {
     ///   blocks aligned with the rows the game actually draws.
     #[test]
     fn team_sizes_follow_the_games_tab_rendering() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let vehicle = |id: i64, name: &str, relation: i64| wowsp_tauri_shared::VehicleEntry {
             id,
             name: name.to_string(),
@@ -772,5 +848,152 @@ mod tests {
         let found = find_latest_arena_info(&root).expect("must find");
         assert!(found.ends_with("tempArenaInfo.json"));
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Pin a file's mtime so candidate ordering is deterministic.
+    fn set_mtime(path: &std::path::Path, stamp: SystemTime) {
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_times(std::fs::FileTimes::new().set_modified(stamp))
+            .unwrap();
+    }
+
+    fn arena_test_tree(name: &str) -> std::path::PathBuf {
+        let game_root = std::env::temp_dir().join(name);
+        let replays = game_root.join("replays");
+        std::fs::create_dir_all(&replays).unwrap();
+        game_root
+    }
+
+    /// The 360 CN shape: the live arena file sits in the game root while
+    /// replays/ holds nothing (the client deletes the root file after the
+    /// battle, and a months-old replays leftover may not even exist).
+    #[test]
+    fn finds_the_root_level_arena_file() {
+        let game_root = arena_test_tree("wowsp_arena_root_only_test");
+        let replays = game_root.join("replays");
+        let root_file = game_root.join("tempArenaInfo.json");
+        std::fs::write(&root_file, b"{}").unwrap();
+        let found = find_latest_arena_info(&replays).expect("root file must be found");
+        assert_eq!(found, root_file);
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// Whichever location carries the NEWEST stamp is the live battle: a
+    /// fresh root file beats a stale replays leftover (the 国服 case), and a
+    /// fresh replays file beats a stale root leftover (the WG case after a
+    /// copied/moved install). Ties keep the replays-dir file.
+    #[test]
+    fn newest_arena_candidate_wins_across_locations() {
+        let older = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000);
+        let newer = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2_000);
+        let game_root = arena_test_tree("wowsp_arena_newest_test");
+        let replays = game_root.join("replays");
+        let replays_file = replays.join("tempArenaInfo.json");
+        let root_file = game_root.join("tempArenaInfo.json");
+        std::fs::write(&replays_file, b"{}").unwrap();
+        std::fs::write(&root_file, b"{}").unwrap();
+
+        set_mtime(&replays_file, older);
+        set_mtime(&root_file, newer);
+        assert_eq!(
+            find_latest_arena_info(&replays).as_ref(),
+            Some(&root_file),
+            "the fresh root file is the live battle"
+        );
+
+        set_mtime(&replays_file, newer);
+        set_mtime(&root_file, older);
+        assert_eq!(
+            find_latest_arena_info(&replays).as_ref(),
+            Some(&replays_file),
+            "the fresh replays file is the live battle"
+        );
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// A versioned-subfolder file (the walk path) still loses to a fresher
+    /// root-level file.
+    #[test]
+    fn fresher_root_file_beats_the_subdir_walk() {
+        let older = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000);
+        let newer = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2_000);
+        let game_root = arena_test_tree("wowsp_arena_walk_vs_root_test");
+        let replays = game_root.join("replays");
+        let sub = replays.join("13357822");
+        std::fs::create_dir_all(&sub).unwrap();
+        let sub_file = sub.join("tempArenaInfo.json");
+        let root_file = game_root.join("tempArenaInfo.json");
+        std::fs::write(&sub_file, b"{}").unwrap();
+        std::fs::write(&root_file, b"{}").unwrap();
+        set_mtime(&sub_file, older);
+        set_mtime(&root_file, newer);
+        assert_eq!(
+            find_latest_arena_info(&replays).as_ref(),
+            Some(&root_file),
+            "the fresh root file beats the stale versioned-subfolder file"
+        );
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// note_arena_seen only moves forward: after the 360 CN client deletes
+    /// its root file post-battle, the next poll falls back to a months-old
+    /// replays leftover, which must NOT age the recorded battle out of the
+    /// Tab gate nor clobber its team sizes (the pre-fix behavior would have
+    /// both). A same-stamp re-read still records (it is the same battle).
+    #[test]
+    fn older_arena_file_never_shadows_the_recorded_battle() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
+
+        let mk_info = |allies: usize, enemies: usize| wowsp_tauri_shared::ArenaInfo {
+            match_group: Some("pvp".into()),
+            date_time: None,
+            map_name: None,
+            scenario: None,
+            event_type: None,
+            bot_count: 0,
+            scripted_unit_count: 0,
+            vehicles: (0..allies + enemies)
+                .map(|i| wowsp_tauri_shared::VehicleEntry {
+                    id: i as i64,
+                    name: format!("p{i}"),
+                    relation: if i < allies { 0 } else { 2 },
+                    ship_id: 4_180_000_000 + i as i64,
+                    ship_name: None,
+                })
+                .collect(),
+            raw: serde_json::Value::Null,
+        };
+        let t = |secs: u64| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+
+        note_arena_seen(&mk_info(2, 1), t(2_000));
+        assert_eq!(last_known_team_sizes(), (2, 1));
+        assert_eq!(last_arena_stamp(), 2_000);
+
+        // The ghost: an OLDER file re-read after the battle's file vanished.
+        note_arena_seen(&mk_info(9, 9), t(1_000));
+        assert_eq!(last_arena_stamp(), 2_000, "the stamp never moves backward");
+        assert_eq!(
+            last_known_team_sizes(),
+            (2, 1),
+            "the ghost roster must not clobber the live battle's team sizes"
+        );
+
+        // Same stamp (the same battle re-read) is not a backward move.
+        note_arena_seen(&mk_info(2, 1), t(2_000));
+        assert_eq!(last_arena_stamp(), 2_000);
+        assert_eq!(last_known_team_sizes(), (2, 1));
+
+        // The next battle (a NEWER file) advances the record normally.
+        note_arena_seen(&mk_info(7, 7), t(3_000));
+        assert_eq!(last_arena_stamp(), 3_000);
+        assert_eq!(last_known_team_sizes(), (7, 7));
+
+        // Restore the process-globals the sink solver keys on.
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }

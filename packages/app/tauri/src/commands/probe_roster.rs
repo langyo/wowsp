@@ -75,9 +75,10 @@ pub(crate) fn synthesize_for_arena_since(
     let ctx =
         super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning)?;
     // Same-install guard: the arena file must live under the resolved
-    // root's replays dir (both sides resolve PreferRunning in production;
-    // an env pin pointing elsewhere reads another install's battles).
-    if !arena_path.starts_with(super::game_context::replays_dir(&ctx.root)) {
+    // root's replays dir or at the root itself — the 360 CN client's live
+    // arena file (both sides resolve PreferRunning in production; an env
+    // pin pointing elsewhere reads another install's battles).
+    if !arena_path_belongs_to_root(arena_path, &ctx.root) {
         return None;
     }
     let res_mods = super::game_context::res_mods_dir(&ctx.root).ok()?;
@@ -103,6 +104,21 @@ pub(crate) fn synthesize_for_arena_since(
     let bytes = std::fs::read(&roster_path).ok()?;
     let raw: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     parse_roster_raw(&raw, player_name)
+}
+
+/// Same-install guard: the arena file's home is the root's `replays/` tree
+/// (the WG-family location, matched by the same path spelling that produced
+/// it) or the game root itself (`tempArenaInfo.json` next to the executable
+/// — the 360 CN client's live location, matched by the install scan's
+/// normalization so an exe-derived root and an install-scan spelling of one
+/// folder agree).
+fn arena_path_belongs_to_root(arena_path: &Path, root: &Path) -> bool {
+    if arena_path.starts_with(super::game_context::replays_dir(root)) {
+        return true;
+    }
+    let root_level = root.join("tempArenaInfo.json");
+    super::game_detect::install_path_key(&arena_path.to_string_lossy())
+        == super::game_detect::install_path_key(&root_level.to_string_lossy())
 }
 
 /// Pure core: map one `roster_raw.json` document onto `vehicles`.
@@ -425,6 +441,47 @@ mod tests {
         assert!(roster_is_fresh(
             now - std::time::Duration::from_secs(4),
             now
+        ));
+    }
+
+    /// The same-install guard accepts the root-level arena file (the 360 CN
+    /// client's live location) with any path spelling, the replays tree as
+    /// before, and nothing else.
+    #[test]
+    fn arena_guard_accepts_both_arena_file_homes() {
+        use std::path::Path;
+        let root = Path::new(r"E:\WOW\wow\World_of_Warships_CN360");
+        assert!(arena_path_belongs_to_root(
+            &root.join("tempArenaInfo.json"),
+            root
+        ));
+        // Case/separator drift between the exe-derived root and the scan's
+        // spelling of the same folder.
+        let lower = Path::new(r"e:/wow/wow/world_of_warships_cn360");
+        assert!(arena_path_belongs_to_root(
+            Path::new(r"E:\WOW\wow\World_of_Warships_CN360\tempArenaInfo.json"),
+            lower
+        ));
+        assert!(arena_path_belongs_to_root(
+            &root.join("replays").join("tempArenaInfo.json"),
+            root
+        ));
+        assert!(arena_path_belongs_to_root(
+            &root
+                .join("replays")
+                .join("13357822")
+                .join("tempArenaInfo.json"),
+            root
+        ));
+        assert!(!arena_path_belongs_to_root(
+            Path::new(r"E:\OtherGame\tempArenaInfo.json"),
+            root
+        ));
+        // Under the root but neither the root-level file nor inside replays/
+        // — the exact-name compare (not a prefix) rejects it.
+        assert!(!arena_path_belongs_to_root(
+            &root.join("foo").join("tempArenaInfo.json"),
+            root
         ));
     }
 }
