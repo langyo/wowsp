@@ -11,7 +11,7 @@ import type { StampKind } from "@/utils/winrate";
 import "./SealCustomizer.scss";
 
 /** The customizer's rows, in RatingStamp's canonical kind order (career
- *  verdicts, then the composition tags with their 老人 veteran tiers, then
+ *  verdicts, then the composition tags with their 奶龙 / 奶蛙 veteran tiers, then
  *  the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴 seals — the same
  *  order commands::stamps lists); each row renders its award-criteria
  *  description (stats.json `stats.seal*Desc` keys) — the stamps already

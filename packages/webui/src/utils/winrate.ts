@@ -88,8 +88,8 @@ export type CareerStamp = "miracle" | "ape" | "maggot" | "rat";
  *  both a career stamp and a composition stamp. */
 export type CompositionStamp = "air" | "sub";
 
-/** Veteran composition stamps (老人章): a class share over 50% upgrades the
- *  tag to 空中老人 / 水下老人, which REPLACES the minor (小人) seal for that
+/** Veteran composition stamps (奶龙 / 奶蛙章): a class share over 50% upgrades the
+ *  tag to 空中奶龙 / 水下奶蛙, which REPLACES the minor (小人) seal for that
  *  class — the veteran implies the >20% tag, so only the stronger face shows.
  *  Still composition seals (they render at comp size); unlike the minor tags
  *  they never merge with career verdicts. */
@@ -133,7 +133,7 @@ export function isMergedStamp(kind: StampKind): boolean {
  *     invisible, so its composition tags carry nothing gradeable; the rat
  *     suppression has the same shape as the maggot floor.
  *   - Otherwise the legacy order [career?, air-tier?, sub-tier?] stands:
- *     each class shows its stronger face, the veteran seal (老人) when the
+ *     each class shows its stronger face, the veteran seal (奶龙 / 奶蛙) when the
  *     share is over 50%, the minor seal (小人) when only over 20%.
  *  `career` null and `comp` null/undefined degrade to the legacy pass-through
  *  with nothing to add. */
@@ -196,7 +196,7 @@ export function careerStamp(
 export interface CompositionStamps {
   air: boolean;
   sub: boolean;
-  /** >50% career share tiers (老人章) — each implies its base flag above by
+  /** >50% career share tiers (奶龙 / 奶蛙章) — each implies its base flag above by
    *  construction (0.5 > 0.2), so only the stronger face ever shows. */
   airVeteran: boolean;
   subVeteran: boolean;
@@ -205,7 +205,7 @@ export interface CompositionStamps {
 /** 空中小人 / 水下小人 criteria (user-defined): CV (resp. SS) battles must
  *  exceed 20% of the player's career battles, with a career total above 200
  *  battles so a fresh account's first CV foray doesn't earn the mark; over
- *  50% the tag upgrades to the veteran seal (空中老人 / 水下老人), which
+ *  50% the tag upgrades to the veteran seal (空中奶龙 / 水下奶蛙), which
  *  replaces the minor (小人) face for that class. `ships` is the player's
  *  full per-ship stat list; `typeOf` resolves the ship type (encyclopedia
  *  first, offline DB fallback). Career-level tags: they render on the

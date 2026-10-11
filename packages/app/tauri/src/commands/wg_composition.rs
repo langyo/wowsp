@@ -1,4 +1,4 @@
-//! Composition stamps ("空中小人 / 水下小人", upgraded to the veteran 老人
+//! Composition stamps ("空中小人 / 水下小人", upgraded to the veteran 奶龙 / 奶蛙
 //! tier past a 50% class share) for the Tab overlay roster.
 //!
 //! The overlay batch lookup (`wg_api::lookup_players_stats_batch`) is
@@ -44,7 +44,7 @@ const BATCH_CONCURRENCY: usize = 4;
 
 /// Career battles a player must EXCEED before any seal can show — and the
 /// class share must EXCEED 20% for the minor tag, EXCEED 50% for the veteran
-/// (老人) tier that replaces it. All bounds strictly greater; the values and
+/// (奶龙 / 奶蛙) tier that replaces it. All bounds strictly greater; the values and
 /// the strictness mirror the frontend `compositionStamps()` defaults
 /// (`minBattles = 200`, `minShare = 0.2`, `minVeteranShare = 0.5`) exactly.
 const MIN_CAREER_BATTLES: i64 = 200;
@@ -487,7 +487,7 @@ pub(crate) fn composition_from_rows(
 /// The threshold rule, shared shape with the frontend `compositionStamps()`
 /// (packages/webui/src/utils/winrate.ts): `career <= 200` → no seal, else
 /// `air / career > 0.2` / `sub / career > 0.2` for the minor tag and
-/// `> 0.5` for the veteran (老人) tier that replaces it — strictly greater
+/// `> 0.5` for the veteran (奶龙 / 奶蛙) tier that replaces it — strictly greater
 /// on every bound. The percent cross-multiplication is the exact integer
 /// form of the frontend's float division (battle counts are integers well
 /// below 2^53, so `air * 100 > 20 * career` and `air / career > 0.2` can

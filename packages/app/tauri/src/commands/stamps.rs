@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use crate::paths;
 
 /// The seal kinds RatingStamp knows, in canonical order (career verdicts,
-/// then the composition tags with their 老人 veteran tiers, then the merged
+/// then the composition tags with their 奶龙 / 奶蛙 veteran tiers, then the merged
 /// 空中神人 / 水下神人 / 空中小猴 / 水下小猴 seals). A custom picture is
 /// stored as `<kind>.<ext>`; any other file name in the folder is ignored.
 const STAMP_KINDS: [&str; 12] = [

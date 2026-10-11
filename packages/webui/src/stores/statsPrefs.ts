@@ -132,7 +132,7 @@ export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
 
 /** The canonical seal kinds — mirrored here (type-only import above) so
  *  parsePrefs can drop junk keys from a hand-edited blob. The veteran
- *  tiers (空中老人 / 水下老人) and the merged kinds (空中神人 / 水下神人 /
+ *  tiers (空中奶龙 / 水下奶蛙) and the merged kinds (空中神人 / 水下神人 /
  *  空中小猴 / 水下小猴) are first-class switches like the rest. */
 const STAMP_KINDS = [
   "miracle",

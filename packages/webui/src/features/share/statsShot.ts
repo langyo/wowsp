@@ -292,7 +292,7 @@ export async function renderStatsShot(
   // 水下神人 / 空中小猴 / 水下小猴 seals — which replace (consume) their
   // constituents — while 蛆 and 过街老鼠 each suppress the comp tags
   // entirely. Sizing: career verdicts keep today's hero scale; the comp
-  // faces render small — the minor tags and the veteran (老人) tiers alike,
+  // faces render small — the minor tags and the veteran (奶龙 / 奶蛙) tiers alike,
   // the veterans being composition seals too (and, unlike the minor tags,
   // never merging). A merged seal is hero-sized only when it is the
   // cluster's ONLY member — two merged seals render small so the hero band

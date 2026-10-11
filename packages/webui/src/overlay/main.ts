@@ -354,8 +354,8 @@ const STAMP_TEXT: Record<StampKind, string> = {
   rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
-  airVeteran: "空中老人",
-  subVeteran: "水下老人",
+  airVeteran: "空中奶龙",
+  subVeteran: "水下奶蛙",
   airMiracle: "空中神人",
   subMiracle: "水下神人",
   airApe: "空中小猴",
@@ -636,7 +636,7 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
   // tags collapses into the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴
   // seals, which replace (consume) their constituents; 蛆 and 过街老鼠 each
   // suppress the comp tags entirely, and a >50% class share upgrades the
-  // minor tag to the veteran 老人 seal in the career-leads-then-air-then-sub
+  // minor tag to the veteran 奶龙 / 奶蛙 seal in the career-leads-then-air-then-sub
   // order. A name without stats yet shows no seal at
   // all — the verdicts are derived from data the stats/composition
   // batches bring. Hidden profiles with a clan additionally HOLD their

@@ -66,7 +66,7 @@ export default defineComponent({
     // alongside comp tags collapse into the merged 空中神人 / 水下神人 /
     // 空中小猴 / 水下小猴 seals, which replace (consume) their constituents;
     // 蛆 and 过街老鼠 each suppress the comp tags entirely, and a >50% class
-    // share shows the veteran (老人) tier in place of the minor tag.
+    // share shows the veteran (奶龙 / 奶蛙) tier in place of the minor tag.
     const stamps = computed(() => resolveStamps(stamp.value, composition.value));
     // The seals render nothing outside zh locales (RatingStamp's own rule),
     // while the PR rating is off (the seals toggle is the master switch's

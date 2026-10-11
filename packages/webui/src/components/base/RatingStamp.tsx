@@ -36,7 +36,7 @@ let stampSeq = 0;
  *   - "rat" (过街老鼠): hidden profile — no stats to grade, hiding is the tell
  *   - "air" (空中小人) / "sub" (水下小人): composition tags for CV / submarine
  *     mains (career share > 20% over 200+ battles)
- *   - "airVeteran" (空中老人) / "subVeteran" (水下老人): the veteran
+ *   - "airVeteran" (空中奶龙) / "subVeteran" (水下奶蛙): the veteran
  *     composition tier for a class share > 50% — replaces the minor (小人)
  *     seal for that class and never merges with career verdicts
  *   - "airMiracle" (空中神人) / "subMiracle" (水下神人) / "airApe" (空中小猴)
@@ -82,8 +82,8 @@ const STAMP_TEXT: Record<StampKind, string> = {
   rat: "过街老鼠",
   air: "空中小人",
   sub: "水下小人",
-  airVeteran: "空中老人",
-  subVeteran: "水下老人",
+  airVeteran: "空中奶龙",
+  subVeteran: "水下奶蛙",
   airMiracle: "空中神人",
   subMiracle: "水下神人",
   airApe: "空中小猴",

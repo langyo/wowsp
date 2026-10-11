@@ -321,7 +321,7 @@ describe("resolveStamps", () => {
   });
 
   it("merges veterans into the plain merged face (tier not distinguished)", () => {
-    // 照常合并: the merged seal consumes the veteran tier — no 水下神人·老人
+    // 照常合并: the merged seal consumes the veteran tier — no 水下神人·奶蛙
     // exists, the merge fires on the class tag alone.
     expect(
       resolveStamps("miracle", { air: false, sub: true, airVeteran: false, subVeteran: true }),

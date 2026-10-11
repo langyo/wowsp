@@ -22,7 +22,7 @@
 const FIT_TOLERANCE_PX = 1;
 
 /** The composition seals — the first to go when a chip must shrink. The
- *  veteran tiers (airVeteran / subVeteran — 空中老人 / 水下老人) belong here
+ *  veteran tiers (airVeteran / subVeteran — 空中奶龙 / 水下奶蛙) belong here
  *  with the minor tags: they are composition seals too (a >50% share face
  *  that replaces the minor one), so they trim FIRST. The MERGED seals
  *  (airMiracle / subMiracle / airApe / subApe — 空中神人 / 水下神人 /
