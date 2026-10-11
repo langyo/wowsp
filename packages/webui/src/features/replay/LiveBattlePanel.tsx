@@ -285,12 +285,20 @@ export default defineComponent({
     // and on a stale stream (the same 30 s freshness gate as the alive
     // sets — a dead plugin must not keep pinning rows game-true).
     let telemetrySortKeys: Record<string, string> | null = null;
+    // The probe's roster-order bridge (the records' own sequence) and the
+    // records' localized ship names — same lifecycle as the sort-key map:
+    // dropped on battle change and on a stale stream, and they re-derive
+    // the orders through the same sortKeyEpoch bumps.
+    let telemetryRosterOrder: string[] | null = null;
+    let telemetryShipNames: Record<string, string> | null = null;
     watch(
       () => props.arena?.dateTime ?? null,
       (stamp) => {
         sunk.reset(stamp);
-        if (telemetrySortKeys) {
+        if (telemetrySortKeys || telemetryRosterOrder || telemetryShipNames) {
           telemetrySortKeys = null;
+          telemetryRosterOrder = null;
+          telemetryShipNames = null;
           sortKeyEpoch.value += 1;
         }
       },
@@ -321,6 +329,25 @@ export default defineComponent({
       // sort-key map covers the roster (sortKeyOf) — except on CN, whose
       // HUD re-sorts by name and never renders the key order.
       const cn = realm.value === "cn";
+      // The probe-bridged roster order (telemetry `rosterOrder`): the
+      // records' own sequence, pre-ordered so equal client keys (and
+      // equal offline segments) tie by the roster's own order.
+      const rankMap = telemetryRosterOrder
+        ? new Map(telemetryRosterOrder.map((n, i) => [n, i] as const))
+        : null;
+      // The client's own localized ship names, gated to FULL side
+      // coverage (a side mixing client names with DB names would
+      // misorder — the two sources collate differently): telemetry
+      // first, then the synthesized row's ship_name (the probe's record
+      // lift, present on the Lesta synthesis). Only the CN permutation
+      // consumes the segment.
+      const sideList =
+        side === "enemy" ? liveSides.value.enemies : liveSides.value.allies;
+      const clientShipName = (v: VehicleEntry): string | null =>
+        telemetryShipNames?.[v.name] ?? v.shipName ?? null;
+      const clientShipNameOf = sideList.every((v) => (clientShipName(v) ?? "") !== "")
+        ? clientShipName
+        : undefined;
       return {
         locale: dataLanguage.value,
         clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
@@ -329,6 +356,8 @@ export default defineComponent({
         tieByRosterOrder: realm.value === "ru",
         staticOrder: cn,
         sortKeyOf: telemetrySortKeys ? (v: VehicleEntry) => telemetrySortKeys![v.name] : undefined,
+        rosterRankOf: rankMap ? (name: string) => rankMap.get(name) : undefined,
+        clientShipNameOf,
       };
     };
     // True once plugin telemetry has replaced the inferred sets this
@@ -451,8 +480,10 @@ export default defineComponent({
           // sort-key map goes with it — a dead plugin must not keep
           // pinning rows game-true.
           telemetryAuthoritative = false;
-          if (telemetrySortKeys) {
+          if (telemetrySortKeys || telemetryRosterOrder || telemetryShipNames) {
             telemetrySortKeys = null;
+            telemetryRosterOrder = null;
+            telemetryShipNames = null;
             sortKeyEpoch.value += 1;
           }
           return;
@@ -481,6 +512,15 @@ export default defineComponent({
         // build that cannot read the ship components omits the field — the
         // map then stays null → the offline inference).
         telemetrySortKeys = payload.sortKeys ?? null;
+        // The ordering raw material rides the same freshness gate: the
+        // roster's own record sequence (the Lesta equal-key tie base) and
+        // the records' localized ship names (the CN name-order segment).
+        // Empty values read as "probe build predates the field".
+        telemetryRosterOrder = payload.rosterOrder?.length ? payload.rosterOrder : null;
+        telemetryShipNames =
+          payload.shipNames && Object.keys(payload.shipNames).length > 0
+            ? payload.shipNames
+            : null;
         sortKeyEpoch.value += 1;
         sinkEpoch.value += 1;
       })) as (() => void) | null;

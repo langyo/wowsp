@@ -130,6 +130,18 @@ export interface InferredOrderOptions {
    *  order (Lesta). Any entry missing a key disables the override
    *  wholesale (game-true and inferred rows must never interleave). */
   sortKeyOf?: (name: string) => string | undefined;
+  /** Rank in the probe-bridged roster order (telemetry `rosterOrder` —
+   *  the game's own records sequence). The side is pre-ordered by it
+   *  (stable; names without a rank keep their relative order after the
+   *  ranked ones), so every equal-key / equal-segment tie resolves to
+   *  the roster's OWN order — the Lesta rule (live 2026-10-10) — instead
+   *  of the arena-file array order. */
+  rosterRankOf?: (name: string) => number | undefined;
+  /** The client's own localized ship name per NAME (telemetry
+   *  `shipNames`), gated to full side coverage by the caller — the CN
+   *  name-order segment verbatim (see utils/shipClass's
+   *  `TabRowCompareOptions.clientShipNameOf`). */
+  clientShipNameOf?: (name: string) => string | null | undefined;
 }
 
 /** One side's believed full-key order — the rows as the game drew them at
@@ -151,6 +163,9 @@ function sideFullOrder<T extends InferredVehicle>(
     // stats cache is name-keyed); the comparator looks up per vehicle.
     clanTagOf: options.clanTagOf ? (v) => options.clanTagOf?.(v.name) : undefined,
     shipNameOrder: options.shipNameOrder,
+    clientShipNameOf: options.clientShipNameOf
+      ? (v) => options.clientShipNameOf?.(v.name)
+      : undefined,
   };
   // Game-true sort keys: only a FULLY covered list switches the sort to
   // the client's own comparison (plain code-unit compare matches the
@@ -175,7 +190,23 @@ function sideFullOrder<T extends InferredVehicle>(
           : key + tabDisplayName(v.name, options.clanTagOf?.(v.name) ?? null);
       }
     : null;
-  return list
+  // The probe-bridged roster order pre-orders the side (stable): every
+  // tie below — equal client keys under `tieByRosterOrder`, equal
+  // segments in the offline permutations — then resolves to the
+  // roster's own record order instead of the arena-file array order.
+  const tieRank = options.rosterRankOf;
+  const baseList =
+    tieRank && list.length > 1
+      ? list
+          .map((v, i) => ({ v, i }))
+          .sort(
+            (a, b) =>
+              (tieRank(a.v.name) ?? Number.MAX_SAFE_INTEGER) -
+              (tieRank(b.v.name) ?? Number.MAX_SAFE_INTEGER),
+          )
+          .map(({ v }) => v)
+      : list;
+  return baseList
     .map((v, i) => ({ v, i }))
     .sort((a, b) => {
       if (clientKeyOf) {

@@ -79,6 +79,18 @@ export interface PredictedOrderOptions {
    *  [alive] ++ [sunk] split would place rows where the CN table never
    *  moves them). */
   staticOrder?: boolean;
+  /** Rank in the probe-bridged roster order (telemetry `rosterOrder` —
+   *  the game's own records sequence). The list is pre-ordered by it
+   *  (stable; names without a rank keep their relative order after the
+   *  ranked ones), so every equal-key / equal-segment tie resolves to
+   *  the roster's OWN order — the Lesta rule (live 2026-10-10) — instead
+   *  of the arena-file array order. */
+  rosterRankOf?: (name: string) => number | undefined;
+  /** The client's own localized ship name per vehicle, gated to full
+   *  side coverage by the caller (see utils/shipClass's
+   *  `TabRowCompareOptions.clientShipNameOf` — the CN name-order
+   *  segment verbatim). */
+  clientShipNameOf?: (v: VehicleEntry) => string | null | undefined;
 }
 
 /**
@@ -134,8 +146,27 @@ export function orderForTab(
       ? (v) => options.clanTagOf?.(v as VehicleEntry) ?? null
       : undefined,
     shipNameOrder: options.shipNameOrder,
+    clientShipNameOf: options.clientShipNameOf
+      ? (v) => options.clientShipNameOf?.(v as VehicleEntry) ?? null
+      : undefined,
   };
-  const rest = list
+  // The probe-bridged roster order pre-orders the list (stable): every
+  // tie below — equal client keys under `tieByRosterOrder`, equal
+  // segments in the offline permutations — then resolves to the
+  // roster's own record order instead of the arena-file array order.
+  const tieRank = options.rosterRankOf;
+  const baseList =
+    tieRank && list.length > 1
+      ? list
+          .map((v, i) => ({ v, i }))
+          .sort(
+            (a, b) =>
+              (tieRank(a.v.name) ?? Number.MAX_SAFE_INTEGER) -
+              (tieRank(b.v.name) ?? Number.MAX_SAFE_INTEGER),
+          )
+          .map(({ v }) => v)
+      : list;
+  const rest = baseList
     .map((v, i) => ({ v, i }))
     .sort((a, b) => {
       if (clientKeyOf) {

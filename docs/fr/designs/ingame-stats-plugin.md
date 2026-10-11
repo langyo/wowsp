@@ -142,6 +142,58 @@ WG : juste sur classe/tier, sciemment fausse sur le rang russia-en-premier
 partielle garde le repli calibré — les lignes vraies du jeu et les lignes
 déduites ne s'entremêlent jamais.
 
+**Pont des matières premières d'ordonnancement (2026-10-12)** — avec la
+fin du chemin livrée, deux points restaient encore approximables
+uniquement hors ligne : le départage des clés égales de Lesta (l'« ordre
+propre du roster » n'est connu que du client, et la synthèse du roster
+Lesta de l'app triait autrefois par (name, id), le détruisant) et le
+segment de nom de navire de CN (les noms localisés de la DB hors ligne
+ne sont qu'une approximation : dérive de la langue de l'app, et les
+navires nouveaux que la DB ne connaît pas encore tombent sur une valeur
+sentinelle). La sonde emporte désormais ces deux matières premières
+dans la télémétrie : `rosterOrder` (la séquence d'itération de la
+propre table d'enregistrements de getPlayersInfo — l'ordre des
+dictionnaires py2 est déterministe pour un ensemble de clés donné, et
+la capture du 2026-10-10 a déjà prouvé que le client de ce realm rend
+les clés égales dans l'ordre des enregistrements) et `shipNames` (le
+champ shipName que portent les enregistrements eux-mêmes — la chaîne
+brute du nom de navire localisé que le client rend ; un build dont les
+enregistrements ne portent pas le champ produit une table vide, et le
+côté consommation retombe automatiquement sur le nom de la DB, comme
+avant). roster_raw.json porte un tableau `order` dans la même trame, et
+la synthèse Rust (probe_roster) émet les vehicles en préservant cet
+ordre (champ manquant ou entrée non nommée : repli vers (name, id)) tout
+en extrayant shipName vers le ship_name de chaque ligne. Les deux côtés
+du webui (le panneau /live et l'overlay) pré-trient par rosterOrder
+comme base de départage (les noms absents passent derniers, de façon
+stable), et la disposition CN remplace le segment de nom de la DB par
+le nom de navire du client quand un côté entier est couvert (mélanger
+les deux sources casserait l'ordre, d'où la garde par côté entier). La
+discipline de notation ne change pas : la pastille CN ne se note
+toujours pas exacte — la fonction de tri reste notre collation pinyin,
+seul le segment de nom devient la chaîne brute du client ; la présence
+réelle de shipName dans les enregistrements CN reste à vérifier sur une
+vraie installation (la conformité hors ligne a épinglé les deux formes,
+« ponter si présent, table vide si absent »).
+
+**Divergence CN** (360 build 13243917, capture du 2026-10-07) : le
+tableau TAB du client CN ne déplace NULLE PART les coulés — leurs
+lignes s'assombrissent SUR PLACE aux positions de début de bataille (un
+bloc allié de 5 morts restait entremêlé avec les lignes vivantes), et
+au sein de chaque groupe (classe, tier) l'ordre des lignes suit le NOM
+LOCALISÉ DU NAVIRE (collation pinyin), pas le rang de nation issu de la
+décompilation (voir utils/shipClass). Les surfaces EN DIRECT (le mapping
+de l'overlay transparent et l'ordre prédit du panneau /live) appliquent
+aux deux la garde `realm == "cn"` (la disposition statique
+d'overlay/inferredOrder + l'ordre par nom de navire) ; le visualiseur de
+replay et le roster holographique conservent DÉLIBÉRÉMENT la règle WG
+(aucune capture CN n'existe pour leurs contextes) et le panneau propre
+du plugin garde sa fusion selon la règle arène — une différence purement
+cosmétique. Depuis le 2026-10-12, la chaîne brute shipName des
+enregistrements de la sonde (télémétrie `shipNames`) remplace le segment
+de nom de la DB de cette disposition quand un côté entier est couvert
+(voir le « pont des matières premières d'ordonnancement » ci-dessus).
+
 ## Contraintes du bac à sable (durement acquises, à conserver dans le guide de style du mod)
 
 - Python est en **2.7** ; garder une syntaxe conservatrice (pas de

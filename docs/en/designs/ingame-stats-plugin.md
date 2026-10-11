@@ -138,6 +138,36 @@ russia-first rank, the bridged keys being the game-truth), and a
 partial-coverage battle keeps the calibrated fallback — game-true and
 inferred rows never interleave.
 
+**Ordering-raw-material bridge (2026-10-12)** — with the endgame
+shipped, two spots still admitted only offline approximation: Lesta's
+equal-key tie resolution (the "roster's own order" is known only to the
+client, and the app's Lesta roster synthesis used to sort by (name, id),
+destroying it) and the CN ship-name segment (the offline DB's localized
+names are only an approximation: app-language drift, and new ships the
+DB does not carry yet fall to a sentinel). The probe henceforth carries
+both raw materials out in telemetry: `rosterOrder` (the iteration order
+of the getPlayersInfo record mapping itself — py2 dict order is
+deterministic for a given key set, and the 2026-10-10 capture already
+proved that realm's client renders equal keys in record order) and
+`shipNames` (the shipName field the records carry themselves — the raw
+localized ship-name string the client renders; a build whose records
+lack the field outputs an empty table, and the consumer side falls back
+to the DB name automatically, behavior unchanged from before).
+roster_raw.json carries an `order` array in the same frame; the Rust
+synthesis (probe_roster) emits vehicles preserving that order (a missing
+field or an entry not named in it falls back to (name, id)) and squeezes
+shipName into each row's ship_name. Both webui sides (the /live panel
+and the overlay) pre-sort by rosterOrder as the tie base order (names
+missing from it land stably last), and the CN arrangement swaps the DB
+name segment for the client ship name once a whole side is covered
+(mixing the two sources would misorder, hence the whole-side gate). The
+grading discipline is unchanged: the CN pill still does not grade
+exact — the sort function is still our pinyin collator, only the name
+segment is now the client's raw string; whether shipName actually
+exists in CN records awaits verification on a real install (offline
+conformance has pinned both shapes, "bridge when present, empty table
+when missing").
+
 **Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
 own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
 plain dict payloads 15.8 accepted, freezing telemetry.json at its
@@ -157,7 +187,10 @@ nation rank (see utils/shipClass). The LIVE surfaces gate both on `realm == "cn"
 overlay/inferredOrder's static layout and ship-name order); the replay
 viewer and the holographic roster keep the WG rule DELIBERATELY (no CN
 capture exists for their contexts) and the plugin's own panel keeps its
-arena-rule merge, a cosmetic difference only.
+arena-rule merge, a cosmetic difference only. As of 2026-10-12, the raw
+shipName strings from the probe's records (telemetry `shipNames`)
+replace that arrangement's DB name segment whenever a whole side is
+covered (see "Ordering-raw-material bridge" above).
 
 ## Sandbox constraints (hard-won, keep in the mod's style guide)
 

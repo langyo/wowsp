@@ -47,6 +47,14 @@ export interface TelemetryPayload {
   battle: string;
   players: Record<string, boolean>;
   sortKeys?: Record<string, string>;
+  /** The roster's OWN record sequence (the probe's `roster_order`) —
+   *  the tie base for EQUAL client sort keys (the Lesta rule); empty on
+   *  a probe build that predates the field. */
+  rosterOrder?: string[];
+  /** The records' localized ship names — the CN name-order segment
+   *  verbatim off the game's own roster data; empty when the client's
+   *  records carry no such field. */
+  shipNames?: Record<string, string>;
   self?: { name?: string; realm?: string };
   identity?: Record<string, { account_id?: number; realm?: string }>;
   root?: string;

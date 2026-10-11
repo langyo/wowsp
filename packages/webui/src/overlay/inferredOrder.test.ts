@@ -513,4 +513,59 @@ describe("inferredRowMapping", () => {
       }),
     ).toEqual(["BILTEMA8", "Fisher", "langyo"]);
   });
+
+  it("ties equal client keys by the probe-bridged roster order", () => {
+    // The probe's rosterOrder bridge (telemetry `rosterOrder` — the
+    // game's own records sequence, pre-ordering the side): the equal-key
+    // St. Louis tie resolves to the ROSTER's record order against the
+    // arena-file list order (langyo leads the list, Fisher's record
+    // entered first).
+    const vehicles = [
+      veh("BILTEMA8", 4186879440, 1), // Bogatyr III russia CA 博加特里
+      veh("langyo", 4290689008, 0), // St. Louis III usa CA 圣路易斯 (self)
+      veh("Fisher", 4290689008, 1), // St. Louis III usa CA 圣路易斯
+    ];
+    const keys: Record<string, string> = {
+      BILTEMA8: "2970PRSC103",
+      langyo: "2971St. Louis",
+      Fisher: "2971St. Louis",
+    };
+    const ranks: Record<string, number> = { Fisher: 0, langyo: 1, BILTEMA8: 2 };
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        tieByRosterOrder: true,
+        sortKeyOf: (n) => keys[n],
+        rosterRankOf: (name) => ranks[name],
+      }),
+    ).toEqual(["BILTEMA8", "Fisher", "langyo"]);
+  });
+
+  it("replaces the DB name segment with the client's own names (CN)", () => {
+    // The probe's shipNames bridge (telemetry `shipNames` — the records'
+    // localized ship names): under the CN permutation the client's OWN
+    // strings replace the offline DB's as the name segment — here they
+    // rank the St. Louis pair AHEAD of Bogatyr (阿芙乐尔 ā < 基洛夫 jī),
+    // reversing the DB names' order (博加特里 bó < 圣路易斯 shèng) that the
+    // same fixtures pin without the bridge. The record's value is the
+    // string the HUD renders; the DB name is the approximation.
+    const vehicles = [
+      veh("BILTEMA8", 4186879440, 1), // Bogatyr III russia CA 博加特里
+      veh("langyo", 4290689008, 0), // St. Louis III usa CA 圣路易斯 (self)
+      veh("Fisher", 4290689008, 1), // St. Louis III usa CA 圣路易斯
+    ];
+    const clientNames: Record<string, string> = {
+      BILTEMA8: "基洛夫",
+      langyo: "阿芙乐尔",
+      Fisher: "阿芙乐尔",
+    };
+    expect(
+      inferredRowMapping(sidesOf(vehicles), null, {
+        locale: "zh-CN",
+        shipNameOrder: true,
+        staticLayout: true,
+        clientShipNameOf: (n) => clientNames[n] ?? null,
+      }),
+    ).toEqual(["Fisher", "langyo", "BILTEMA8"]);
+  });
 });

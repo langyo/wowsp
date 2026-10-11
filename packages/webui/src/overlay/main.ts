@@ -71,6 +71,7 @@ import {
   shipTierOf,
   tabDisplayName,
   type TabRowCompareOptions,
+  type TabSortVehicle,
 } from "@/utils/shipClass";
 import { isCoopBattle, isOperationBattle } from "@/utils/modeColors";
 // The live side split — scripted scenario NPCs filtered iff this is a real
@@ -271,6 +272,28 @@ const nameOrderLayout = () => realmUsesShipNameOrder(realm);
 // The Lesta realm breaks EQUAL client keys by the roster's own order
 // (live 2026-10-10), so the exact-key sorts compare the keys alone there.
 const tieByRosterOrder = () => realm === "ru";
+/** Rank lookup into the probe-bridged roster order for the row-mapping
+ *  options (inferredRowMapping/pluginRowMapping pre-order each side by
+ *  it — equal client keys tie by the roster's own record order). */
+const mappingRosterRankOf = () => {
+  if (!telemetryRosterOrder) return undefined;
+  const rank = new Map(telemetryRosterOrder.map((n, i) => [n, i] as const));
+  return (name: string) => rank.get(name);
+};
+/** The client's own localized ship names for the row-mapping options,
+ *  gated to FULL roster coverage (both sides share one gate here — the
+ *  comparator only consumes the segment under the CN permutation, whose
+ *  battles are single-realm): telemetry is this window's only client
+ *  name source (see the telemetryShipNames global). */
+const mappingClientShipNameOf = (
+  allies: { name: string }[],
+  enemies: { name: string }[],
+) => {
+  if (!telemetryShipNames) return undefined;
+  const nameOf = (name: string) => telemetryShipNames?.[name] ?? null;
+  const covered = [...allies, ...enemies].every((v) => (nameOf(v.name) ?? "") !== "");
+  return covered ? nameOf : undefined;
+};
 
 // ── Display prefs (chips / stats source / intel / team averages / seals) ─
 // One tolerant read of the statsPrefs blob the main window's store owns
@@ -419,6 +442,19 @@ let pluginSunkNames: Set<string> | null = null;
  *  alive sets on a stale stream (a dead plugin must not keep pinning rows
  *  game-true). */
 let telemetrySortKeys: Record<string, string> | null = null;
+/** The probe-bridged roster order (telemetry `rosterOrder` — the game's
+ *  own records sequence): the tie base for EQUAL client keys and equal
+ *  offline segments, pre-ordering each side's list. Dropped with the
+ *  sort keys on a stale stream. */
+let telemetryRosterOrder: string[] | null = null;
+/** The records' localized ship names (telemetry `shipNames`) — the CN
+ *  name-order segment verbatim off the game's own roster data; empty on
+ *  a build whose records carry no such field (the DB name then stays).
+ *  Same lifecycle as the sort keys. CN arena rows never carry a
+ *  synthesized ship_name (the synthesis only runs for the Lesta
+ *  vehicle-less arena shape), so the telemetry map is this window's
+ *  only client-name source. */
+let telemetryShipNames: Record<string, string> | null = null;
 // Latest `wowsp://overlay-status` detection state (mirrors OverlayState on
 // the wire; null before the first event). Picks the two-level hint copy:
 // only `fallback` is a tried-and-failed state, everything else still reads
@@ -889,11 +925,39 @@ function liveRosterSides(): RosterSides<Vehicle> {
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
+  // The client's own localized ship names, gated to FULL side coverage
+  // (a side mixing client names with DB names would misorder): only the
+  // CN permutation consumes the segment, and CN arena rows carry no
+  // synthesized ship_name — telemetry is the only source here.
+  const clientShipName = (v: TabSortVehicle): string | null =>
+    telemetryShipNames?.[v.name] ?? null;
+  const clientShipNameOf = list.every((v) => (clientShipName(v) ?? "") !== "")
+    ? clientShipName
+    : undefined;
   const compareOptions: TabRowCompareOptions = {
     locale,
     clanTagOf: (v) => stats.get(cacheKey(v.name))?.clanTag ?? null,
     shipNameOrder: nameOrderLayout(),
+    clientShipNameOf,
   };
+  // The probe-bridged roster order pre-orders the side (stable): every
+  // tie below — equal client keys, equal offline segments — resolves to
+  // the roster's own record order instead of the arena-file array order.
+  const rankMap = telemetryRosterOrder
+    ? new Map(telemetryRosterOrder.map((n, i) => [n, i] as const))
+    : null;
+  const tieRank = rankMap ? (name: string) => rankMap.get(name) : null;
+  const baseList =
+    tieRank && list.length > 1
+      ? list
+          .map((v, i) => ({ v, i }))
+          .sort(
+            (a, b) =>
+              (tieRank(a.v.name) ?? Number.MAX_SAFE_INTEGER) -
+              (tieRank(b.v.name) ?? Number.MAX_SAFE_INTEGER),
+          )
+          .map(({ v }) => v)
+      : list;
   // Game-true sort keys: only a FULLY covered list switches the sort
   // (game-true and inferred rows must never interleave), and never on a
   // ship-name-order client (its HUD renders an order the keys cannot
@@ -914,7 +978,7 @@ function sideFullOrder(side: SunkSide): string[] {
           : key + tabDisplayName(v.name, stats.get(cacheKey(v.name))?.clanTag ?? null);
       }
     : null;
-  return list
+  return baseList
     .map((v, i) => ({ v, i }))
     .sort((a, b) => {
       if (clientKeyOf) {
@@ -1072,6 +1136,8 @@ function render() {
         tieByRosterOrder: tieByRosterOrder(),
         staticLayout,
         sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
+        rosterRankOf: mappingRosterRankOf(),
+        clientShipNameOf: mappingClientShipNameOf(allies, enemies),
       });
     } else {
       players = inferredRowMapping({ allies, enemies }, aliveArr, {
@@ -1081,6 +1147,8 @@ function render() {
         tieByRosterOrder: tieByRosterOrder(),
         staticLayout,
         sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
+        rosterRankOf: mappingRosterRankOf(),
+        clientShipNameOf: mappingClientShipNameOf(allies, enemies),
         sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
       });
     }
@@ -1855,6 +1923,8 @@ async function start() {
       battle?: string;
       players?: Record<string, boolean>;
       sortKeys?: Record<string, string>;
+      rosterOrder?: string[];
+      shipNames?: Record<string, string>;
       self?: { name?: string; realm?: string };
       identity?: Record<string, { account_id?: number; realm?: string }>;
     } | null;
@@ -1892,6 +1962,8 @@ async function start() {
       telemetryAuthoritative = false;
       pluginSunkNames = null;
       telemetrySortKeys = null;
+      telemetryRosterOrder = null;
+      telemetryShipNames = null;
       render();
       return;
     }
@@ -1923,6 +1995,13 @@ async function start() {
     sunk.applyNamedSunk(bySide, rosterNames);
     pluginSunkNames = new Set([...bySide.ally!, ...bySide.enemy!]);
     telemetrySortKeys = payload.sortKeys ?? null;
+    // The ordering raw material rides the same freshness gate (see the
+    // globals above); empty values read as "probe build predates it".
+    telemetryRosterOrder = payload.rosterOrder?.length ? payload.rosterOrder : null;
+    telemetryShipNames =
+      payload.shipNames && Object.keys(payload.shipNames).length > 0
+        ? payload.shipNames
+        : null;
     render();
   });
   await listen("wowsp://overlay-anchor", async (e: { payload: unknown }) => {

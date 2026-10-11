@@ -27,7 +27,11 @@ companion app consumes:
   - telemetry.json: per-name alive flags + the self identity + the
     client sort-key map (EMPTY in the ship-less passes — the withheld
     shape — and the full planted client table in the ship passes, see
-    SHIP_KEYS),
+    SHIP_KEYS), plus the roster's OWN record sequence (rosterOrder — the
+    Lesta equal-key tie base) and the records' localized ship names
+    (shipNames — the CN name-order segment; EMPTY when the records carry
+    no such field), and roster_raw.json mirrors the sequence as `order`
+    for the Rust synthesizer's order preservation,
   - heartbeat.json / request.json written with the roster count,
   - the scheduler survives tick-over-tick (no swallowed exception text).
 
@@ -308,20 +312,64 @@ class StubConstants(object):
         relation = "cc.relation"
 
 
-def build_roster(self_name="langyo"):
+# The records' localized ship names (the CN HUD's name-order segment —
+# the field the client's roster data carries when it carries it at all).
+# Planted as zh strings so every pass proves the utf-8 round trip through
+# BOTH encoders; the ship-name-less pass plants no field at all and pins
+# the degrade shape (an EMPTY map, never an absent keying crash).
+SHIP_LOCALIZED = {
+    "langyo": "河内",        # Kawachi
+    "Ally01": "博加特里",    # Bogatyr
+    "Ally02": "长安",        # Chengan
+    "Ally03": "河内",        # Kawachi (the tie pair sails the same ship)
+    "Ally04": "柏勒罗丰",    # Bellerophon
+    "Ally05": "勃艮第",      # Bourgogne
+    "Foe00": "白龙",         # Hakuryu
+    "Foe01": "中途岛",       # Midway
+    "Foe02": "诺维克",       # Novik
+    "Foe03": "岛风",         # Shimakaze
+    "Foe04": "普鲁士",       # Preussen
+    "Foe05": "斐济",         # Fiji
+    BOT_NAME: "勇敢",        # Derzki (the bot)
+}
+
+# The records mapping's own iteration sequence — insertion order under the
+# harness's py3.7+ dicts, standing in for the py2 dict order the real
+# client's records iterate in (deterministic per key set). This is the
+# rosterOrder telemetry the companion consumes as the Lesta equal-key tie
+# base, and the `order` array roster_raw.json carries for the Rust
+# synthesizer's order preservation.
+def build_roster_order():
+    order = []
+    for i in range(ROSTER_SIZE - ENEMY_COUNT):
+        order.append("langyo" if i == 0 else "Ally%02d" % i)
+    for i in range(ENEMY_COUNT):
+        order.append("Foe%02d" % i)
+    order.append(BOT_NAME)
+    return order
+
+
+def build_roster(self_name="langyo", with_ship_names=True):
     players = {}
     for i in range(ROSTER_SIZE - ENEMY_COUNT):
         name = self_name if i == 0 else "Ally%02d" % i
         players[100 + i] = FakeRecord(name=name, accountDBID=310000000 + i,
                                       realm="ru", shipParamsId=418000000 + i,
-                                      isBot=False, teamId=1, isAlive=True)
+                                      isBot=False, teamId=1, isAlive=True,
+                                      **({"shipName": SHIP_LOCALIZED[name]}
+                                         if with_ship_names else {}))
     for i in range(ENEMY_COUNT):
-        players[200 + i] = FakeRecord(name="Foe%02d" % i, accountDBID=320000000 + i,
+        name = "Foe%02d" % i
+        players[200 + i] = FakeRecord(name=name, accountDBID=320000000 + i,
                                       realm="ru", shipParamsId=428000000 + i,
-                                      isBot=False, teamId=2, isAlive=True)
+                                      isBot=False, teamId=2, isAlive=True,
+                                      **({"shipName": SHIP_LOCALIZED[name]}
+                                         if with_ship_names else {}))
     players[300] = FakeRecord(name=BOT_NAME, accountDBID=0, realm="",
                               shipParamsId=438000000, isBot=True, teamId=2,
-                              isAlive=True)
+                              isAlive=True,
+                              **({"shipName": SHIP_LOCALIZED[BOT_NAME]}
+                                 if with_ship_names else {}))
     return players
 
 
@@ -380,14 +428,15 @@ def crippled_builtins():
 
 
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
-             raising_constants, fail_plain, ships, failures):
-    label = "encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s" % (
+             raising_constants, fail_plain, ships, with_ship_names, failures):
+    label = "encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s" % (
         "records" if encode_records else "projection",
         "yes" if with_manifest else "missing",
         "yes" if with_ui else "absent",
         "raising" if raising_constants else "ok",
         "reject" if fail_plain else "ok",
-        ships)
+        ships,
+        "yes" if with_ship_names else "withheld")
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle()
     events = StubEvents()
@@ -401,7 +450,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
     #               entity nobody references;
     #   "partial" — langyo's slot resolves to a nonexistent ship id, so
     #               the key map comes back one short of the roster.
-    roster = build_roster()
+    roster = build_roster(with_ship_names=with_ship_names)
     dh_avatars = []
     dh_ships = []
     # Iteration follows build_roster's insertion order (the py3.7+ dict
@@ -488,7 +537,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
 
         # Battle start: records become available, then drive the tick loop
         # (each tick re-schedules itself; call the latest pending callback).
-        battle.players = build_roster()
+        battle.players = build_roster(with_ship_names=with_ship_names)
         start = events.handlers.get("onBattleStart")
         if start is None:
             failures.append("[%s] onBattleStart was never registered" % label)
@@ -573,6 +622,29 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if tele.get("sortKeys") != expected_keys:
             failures.append("[%s] telemetry sortKeys mismatch (ships=%s): %r"
                             % (label, ships, tele.get("sortKeys")))
+
+        # The roster's OWN record sequence (rosterOrder): the companion
+        # consumes it as the Lesta equal-key tie base — it must carry the
+        # records' iteration order verbatim (bots included; they hold
+        # table rows too) through BOTH encoders, and as a LIST so no
+        # parser can reorder it.
+        if tele.get("rosterOrder") != build_roster_order():
+            failures.append("[%s] telemetry rosterOrder mismatch: %r"
+                            % (label, tele.get("rosterOrder")))
+        # The records' localized ship names (shipNames): the CN HUD's
+        # name-order segment, bridged verbatim (zh round trip included)
+        # when the records carry the field; a records shape WITHOUT it
+        # must degrade to an EMPTY map — the key stays present, the
+        # companion treats empty as "absent".
+        expected_localized = dict(SHIP_LOCALIZED) if with_ship_names else {}
+        if tele.get("shipNames") != expected_localized:
+            failures.append("[%s] telemetry shipNames mismatch: %r"
+                            % (label, tele.get("shipNames")))
+        # roster_raw.json carries the same sequence as its `order` array —
+        # the Rust synthesizer preserves it instead of sorting (name, id).
+        if raw.get("order") != build_roster_order():
+            failures.append("[%s] roster_raw order mismatch: %r"
+                            % (label, raw.get("order")))
 
         # Bots must SURVIVE into roster_raw.json: the app's synthesizer
         # keeps ':Name:' rows because they hold co-op table rows and team
@@ -666,6 +738,24 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
+        # Battle quit: the quit-clear telemetry must blank EVERY keyed
+        # field (players, sortKeys AND the ordering raw material —
+        # rosterOrder/shipNames), so a leftover file from a closed client
+        # can never keep pinning a consumer's tie base or name segment.
+        if probe is not None:
+            probe.quit()
+            try:
+                with open("telemetry.json") as fh:
+                    cleared = json.load(fh)
+            except Exception as e:
+                failures.append("[%s] quit telemetry.json unreadable: %r" % (label, e))
+            else:
+                if cleared.get("players") != {} or cleared.get("sortKeys") != {}:
+                    failures.append("[%s] quit telemetry did not clear the keyed maps: %r"
+                                    % (label, cleared))
+                if cleared.get("rosterOrder") != [] or cleared.get("shipNames") != {}:
+                    failures.append("[%s] quit telemetry did not clear the order bridge: %r"
+                                    % (label, cleared))
     finally:
         os.chdir(cwd)
 
@@ -691,30 +781,36 @@ def main(argv):
     # the walk must not need it), the encoder quirk (the key table must
     # survive the hand-rolled serializer), and partial coverage (an
     # unpaired avatar keeps that side on the walk order, keys stay one
-    # short).
+    # short) — plus one ship-name-withheld pass pinning the empty-map
+    # degrade of the new shipNames bridge (a records shape with no
+    # shipName field at all).
+    passes = [
+            (True, True, False, False, False, "none", True),
+            (False, True, False, False, False, "none", True),
+            (True, False, False, False, False, "none", True),
+            (True, True, True, False, False, "none", True),
+            (True, True, False, True, False, "none", True),
+            (True, True, False, False, True, "none", True),
+            (True, True, False, False, False, "full", True),
+            (True, True, False, True, False, "full", True),
+            (True, True, False, False, True, "full", True),
+            (True, True, False, False, False, "partial", True),
+            (True, True, False, False, False, "full", False)]
     for (encode_records, with_manifest, with_ui, raising_constants,
-         fail_plain, ships) in (
-            (True, True, False, False, False, "none"),
-            (False, True, False, False, False, "none"),
-            (True, False, False, False, False, "none"),
-            (True, True, True, False, False, "none"),
-            (True, True, False, True, False, "none"),
-            (True, True, False, False, True, "none"),
-            (True, True, False, False, False, "full"),
-            (True, True, False, True, False, "full"),
-            (True, True, False, False, True, "full"),
-            (True, True, False, False, False, "partial")):
+         fail_plain, ships, with_ship_names) in passes:
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
             run_once(plugin_src, workdir, encode_records, with_manifest,
-                     with_ui, raising_constants, fail_plain, ships, failures)
+                     with_ui, raising_constants, fail_plain, ships,
+                     with_ship_names, failures)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
-    print("SANDBOX CONFORMANCE: PASS (10 passes, %s, crippled builtins: %s)"
-          % (os.path.basename(os.path.normpath(plugin)), ", ".join(SAFE_BUILTINS)))
+    print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
+          % (len(passes), os.path.basename(os.path.normpath(plugin)),
+             ", ".join(SAFE_BUILTINS)))
     return 0
 
 

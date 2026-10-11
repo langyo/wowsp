@@ -127,6 +127,18 @@ fn arena_path_belongs_to_root(arena_path: &Path, root: &Path) -> bool {
 /// the WG-family arena file carries them too — they hold table rows and
 /// team sizes in co-op exactly like humans, and the consumers (grid hint,
 /// row mapping, bot-fold labels) already key on the `:…:` convention.
+///
+/// ROW ORDER: the document's `order` array (the probe's `roster_order` —
+/// the records mapping's own iteration sequence) is preserved verbatim;
+/// rows the array does not name (a probe build predating the field, or a
+/// roster still filling in) fall back to the (name, id) sort AFTER the
+/// ordered block. The order is load-bearing downstream: the Lesta client
+/// breaks EQUAL Tab sort keys by the roster's own record order (live
+/// 2026-10-10), so the webui's tie base is this array's sequence.
+///
+/// `shipName`: each record's localized ship name rides the row
+/// (`VehicleEntry.ship_name`) when the client's roster data carries it —
+/// the CN HUD's name-order segment, verbatim from the game's own records.
 pub(crate) fn parse_roster_raw(
     raw: &serde_json::Value,
     player_name: Option<&str>,
@@ -139,6 +151,7 @@ pub(crate) fn parse_roster_raw(
         ship_id: i64,
         team: Option<i64>,
         relation: Option<i64>,
+        ship_name: Option<String>,
     }
     let mut rows: Vec<Row> = Vec::new();
     for value in players.values() {
@@ -179,6 +192,12 @@ pub(crate) fn parse_roster_raw(
             ship_id: int_field(&record, &["shipParamsId", "shipId", "vehicleId"]).unwrap_or(0),
             team: int_field(&record, &["teamId"]),
             relation: int_field(&record, &["relation"]).filter(|r| (0..=2).contains(r)),
+            ship_name: record
+                .get("shipName")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
         });
     }
     if rows.len() < 2 {
@@ -214,10 +233,43 @@ pub(crate) fn parse_roster_raw(
             name: row.name,
             relation,
             ship_id: row.ship_id,
-            ship_name: None,
+            ship_name: row.ship_name,
         });
     }
-    out.sort_by(|a, b| (&a.name, a.id).cmp(&(&b.name, b.id)));
+    // The probe's own record sequence first (see the doc comment), the
+    // (name, id) sort as the fallback for rows it does not name. Names
+    // trim the same way the row names do above, so a padded record name
+    // still meets its row.
+    let order: Vec<String> = raw
+        .get("order")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    v.as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if order.is_empty() {
+        out.sort_by(|a, b| (&a.name, a.id).cmp(&(&b.name, b.id)));
+    } else {
+        let rank: std::collections::HashMap<&str, usize> = order
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| (name.as_str(), idx))
+            .collect();
+        let (mut ordered, mut rest): (Vec<VehicleEntry>, Vec<VehicleEntry>) = out
+            .into_iter()
+            .partition(|v| rank.contains_key(v.name.as_str()));
+        ordered.sort_by_key(|v| rank[v.name.as_str()]);
+        rest.sort_by(|a, b| (&a.name, a.id).cmp(&(&b.name, b.id)));
+        out = ordered;
+        out.extend(rest);
+    }
     Some(out)
 }
 
@@ -426,6 +478,101 @@ mod tests {
         assert!(parse_roster_raw(&doc(serde_json::json!({})), Some("x")).is_none());
         let one = doc(serde_json::json!({ "1": record_full("Solo", 1, 1, 1) }));
         assert!(parse_roster_raw(&one, Some("Solo")).is_none());
+    }
+
+    /// The probe's `order` array (the records' own sequence — the Lesta
+    /// equal-key tie base) is preserved verbatim; rows it does not name
+    /// keep the (name, id) fallback AFTER the ordered block.
+    #[test]
+    fn preserves_probe_record_order_when_present() {
+        let raw = serde_json::json!({
+            "t": 1,
+            "order": ["Zed", "langyo", "Foe"],
+            "players": {
+                "1": record_full("langyo", 310271049, 1, 418_000_001),
+                "2": record_full("AllyTail", 111, 1, 418_000_002),
+                "3": record_full("Foe", 222, 2, 418_000_003),
+                "4": record_full("Zed", 333, 1, 418_000_004),
+            },
+        });
+        let vehicles = parse_roster_raw(&raw, Some("langyo")).expect("ordered roster synthesizes");
+        let names: Vec<&str> = vehicles.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(names, ["Zed", "langyo", "Foe", "AllyTail"]);
+    }
+
+    /// No `order` (a probe build predating the field): the historical
+    /// (name, id) sort keeps holding the sequence alone.
+    #[test]
+    fn falls_back_to_name_sort_without_probe_order() {
+        // doc() plants no `order` — a probe build predating the field.
+        let raw = doc(serde_json::json!({
+            "1": record_full("langyo", 310271049, 1, 418_000_001),
+            "2": record_full("Zed", 333, 1, 418_000_004),
+        }));
+        let vehicles = parse_roster_raw(&raw, Some("langyo")).expect("fallback roster synthesizes");
+        let names: Vec<&str> = vehicles.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(names, ["Zed", "langyo"]);
+    }
+
+    /// The records' localized ship name rides the row (`ship_name`) in
+    /// both probe shapes — the CN HUD's name-order segment, verbatim.
+    #[test]
+    fn lifts_record_ship_name_in_both_shapes() {
+        let full = serde_json::json!({
+            "t": 1,
+            "players": {
+                "1": serde_json::json!({
+                    "name": "langyo", "accountDBID": 1, "teamId": 1,
+                    "shipParamsId": 9, "isBot": false, "shipName": "河内",
+                }),
+                "2": serde_json::json!({
+                    "name": "Foe", "accountDBID": 2, "teamId": 2,
+                    "shipParamsId": 10, "isBot": false,
+                }),
+            },
+        });
+        let vehicles = parse_roster_raw(&full, Some("langyo")).expect("full shape synthesizes");
+        assert_eq!(
+            vehicles
+                .iter()
+                .find(|v| v.name == "langyo")
+                .unwrap()
+                .ship_name,
+            Some("河内".to_string())
+        );
+        assert_eq!(
+            vehicles.iter().find(|v| v.name == "Foe").unwrap().ship_name,
+            None,
+            "a record without the field lifts nothing"
+        );
+        // The guessed projection stringifies every value.
+        let guess = serde_json::json!({
+            "t": 1,
+            "players": {
+                "1": serde_json::json!({
+                    "name": "Someone", "accountDBID": "1", "teamId": "1",
+                    "shipParamsId": "9", "isBot": "False", "shipName": "河内",
+                }),
+                "2": serde_json::json!({
+                    "name": "Foe", "accountDBID": "2", "teamId": "2",
+                    "shipParamsId": "10", "isBot": "False", "shipName": "  ",
+                }),
+            },
+        });
+        let vehicles = parse_roster_raw(&guess, Some("Someone")).expect("guess shape synthesizes");
+        assert_eq!(
+            vehicles
+                .iter()
+                .find(|v| v.name == "Someone")
+                .unwrap()
+                .ship_name,
+            Some("河内".to_string())
+        );
+        assert_eq!(
+            vehicles.iter().find(|v| v.name == "Foe").unwrap().ship_name,
+            None,
+            "a whitespace-only field is no name at all"
+        );
     }
 
     #[test]

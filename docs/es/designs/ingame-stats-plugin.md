@@ -145,6 +145,60 @@ el rango de russia-primero — las claves puenteadas son la verdad del
 juego), y una batalla con cobertura parcial conserva el fallback calibrado
 — las filas verdaderas del juego y las inferidas nunca se intercalan.
 
+**Puente de materias primas de ordenación (2026-10-12)** — con el final
+del camino entregado, seguían quedando dos puntos que solo podían
+aproximarse fuera de línea: el desempate de claves iguales de Lesta (el
+«orden propio del roster» solo lo conoce el cliente, y la síntesis del
+roster de Lesta de la app solía ordenar por (name, id), destruyéndolo) y
+el segmento de nombre de barco de CN (los nombres localizados de la DB
+fuera de línea son solo una aproximación: deriva del idioma de la app, y
+los barcos nuevos que la DB aún no recoge caen a un valor centinela).
+La sonda saca desde ahora ambas materias primas en la telemetría:
+`rosterOrder` (la secuencia de iteración del propio mapa de registros de
+getPlayersInfo — el orden de los diccionarios de py2 es determinista
+para un conjunto de claves dado, y la captura del 2026-10-10 ya probó
+que el cliente de ese reino renderiza las claves iguales en orden de
+registro) y `shipNames` (el campo shipName que llevan los propios
+registros — la cadena original del nombre de barco localizado que el
+cliente renderiza; una build cuyos registros no llevan el campo produce
+una tabla vacía, y el lado consumidor retrocede automáticamente al
+nombre de la DB, como siempre). roster_raw.json lleva un array `order`
+en la misma instantánea, y la síntesis en Rust (probe_roster) emite los
+vehicles conservando ese orden (un campo que falte o una entrada no
+nombrada retrocede a (name, id)) mientras exprime shipName en el
+ship_name de cada fila. Ambos lados del webui (el panel /live y la
+superposición) preordenan por rosterOrder como base de empates (los
+nombres ausentes quedan al final de forma estable), y la disposición de
+CN sustituye el segmento de nombre de la DB por el nombre de barco del
+cliente cuando se cubre un lado entero (mezclar las dos fuentes
+rompería el orden, de ahí la compuerta por lado entero). La disciplina
+de calificación no cambia: la píldora de CN sigue sin calificarse de
+exacta — la función de ordenación sigue siendo nuestro comparador
+pinyin, solo que el segmento de nombre pasa a ser la cadena original del
+cliente; que shipName exista de verdad en los registros de CN queda
+pendiente de verificar en una instalación real (la conformidad fuera de
+línea ha fijado ambas formas, «puentar si existe, tabla vacía si
+falta»).
+
+**Divergencia de CN** (360 build 13243917, captura del 2026-10-07): la
+tabla TAB del cliente de CN NO reordena a los hundidos — sus filas se
+atenúan EN EL SITIO en las posiciones del arranque de la batalla (un
+bloque aliado de 5 hundidos seguía intercalado con las filas vivas), y
+dentro de cada grupo (clase, tier) el orden de las filas sigue el NOMBRE
+LOCALIZADO DEL BARCO (colación pinyin), no el rango de nación salido de
+la descompilación (véase utils/shipClass). Las superficies EN VIVO (el
+mapeo de la superposición transparente y el orden predicho del panel
+/live) aplican a ambos la compuerta `realm == "cn"` (la disposición
+estática de overlay/inferredOrder + el orden por nombre de barco); el
+visor de repeticiones y el roster holográfico conservan la regla WG
+DELIBERADAMENTE (no existe captura de CN para sus contextos) y el panel
+propio del plugin sigue fusionando con la regla de arena — una
+diferencia puramente cosmética. Desde el 2026-10-12, la cadena original
+shipName de los registros de la sonda (telemetría `shipNames`) sustituye
+el segmento de nombre de la DB de esa disposición cuando se cubre un
+lado entero (véase el «puente de materias primas de ordenación» más
+arriba).
+
 ## Restricciones del sandbox (aprendidas por las malas; consérvelas en la guía de estilo del mod)
 
 - Python es **2.7**; mantenga una sintaxis conservadora (sin f-strings; la

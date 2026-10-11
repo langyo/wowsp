@@ -10,7 +10,10 @@ in-game display mode landed) renders:
     expected to read request.json and write response.json back,
   - live alive flags are bridged out as telemetry for the transparent
     overlay window (priority: mod telemetry > screen-capture inference >
-    static roster order),
+    static roster order), together with the game's own Tab sort keys
+    (sortKeys), the roster's record sequence (rosterOrder — the tie base
+    for equal client keys) and the records' localized ship names
+    (shipNames — the CN name-order segment verbatim),
   - when the companion answers response.json, the stats rows are rendered
     INSIDE the game: the unbound view (WoWSPProbe.unbound, installed to
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
@@ -493,6 +496,7 @@ class Probe:
         self.v_down = False
         self.last_raw = ''
         self.latest_raw = {}
+        self.last_order_cache = None
         self.raw_isalive_seen = False
         self.discovered = False
         self.journal = []
@@ -1046,7 +1050,10 @@ class Probe:
             stream = open(TELEMETRY_FILE, 'w')
             stream.write(json_encode_safe({'t': _to_int(time.time() * 1000),
                                            'battle': self.session or '',
-                                           'players': {}}) + '\n')
+                                           'players': {},
+                                           'sortKeys': {},
+                                           'rosterOrder': [],
+                                           'shipNames': {}}) + '\n')
             stream.close()
         except:
             self.soft('telemetry clear failed=' + _exc_text(120))
@@ -1066,6 +1073,7 @@ class Probe:
         self.sort_keys = {}
         self.dead_latch = {None} - {None}
         self.raw_isalive_seen = False
+        self.last_order_cache = None
         self.stats = {}
         self.labels = {}
         # The SELF latch rides the same reset story as the rest of the
@@ -1186,6 +1194,48 @@ class Probe:
             if value is not None:
                 log('discovery field ' + field + '=' + value)
 
+    def roster_order(self, records):
+        """The roster's OWN sequence plus per-player localized ship names,
+        straight off the game's records mapping.
+
+        The records mapping iterates in ONE deterministic sequence per key
+        set, and the live Lesta capture (2026-10-10) showed the client's
+        Tab breaks EQUAL sort keys by that roster-record order (two
+        same-key Turennes rendered in record order, not name order) — so
+        the sequence is order-bearing evidence the companion cannot
+        reconstruct offline (its Lesta roster synthesis sorts (name, id)).
+        `shipName` rides the same records when the client's roster data
+        carries it: the CN HUD orders rows by the LOCALIZED ship name, a
+        string the app's offline DB can only approximate — the record's
+        own value is the exact segment the client renders. A build whose
+        records lack the field yields an empty map and the companion
+        keeps its DB names; nothing here ever raises.
+
+        Returns (order, ship_names): order is the flat list of record
+        names (bots included — they hold table rows too), ship_names maps
+        name -> localized ship name for the records that carry one.
+        """
+        order = []
+        ship_names = {}
+        try:
+            for p in records.values():
+                try:
+                    nm = p['name']
+                except:
+                    continue
+                if not nm:
+                    continue
+                order.append(nm)
+                try:
+                    ship_name = p['shipName']
+                except:
+                    ship_name = None
+                if ship_name:
+                    ship_names[nm] = _fmt(ship_name)
+        except:
+            self.soft('roster order failed=' + _exc_text(120))
+        return order, ship_names
+
     def observe_raw(self, records):
         """Project roster records plus entity-component state; rewrite
         roster_raw.json on change and append every distinct state to the
@@ -1194,7 +1244,10 @@ class Probe:
             projection = {}
             for key, p in records.items():
                 projection[_fmt(key)] = self.project_record(p)
-            body = json_encode_safe({'players': projection, 'states': self.entity_states()})
+            order, _ = self.roster_order(records)
+            body = json_encode_safe({'players': projection,
+                                     'states': self.entity_states(),
+                                     'order': order})
             if body != self.last_raw:
                 first = self.last_raw == ''
                 self.last_raw = body
@@ -1421,7 +1474,16 @@ class Probe:
         `identity` (name → {account_id, realm}, so cross-server Clan
         Battles rows resolve on their own cluster with no guessing).
         Both stay in every battle write; consumers treat missing/empty
-        values as "probe build predates this" and fall back."""
+        values as "probe build predates this" and fall back.
+
+        The ordering raw material rides the same write: `rosterOrder`
+        (the records mapping's own sequence — the Lesta tie base for
+        EQUAL client keys, live 2026-10-10) and `shipNames` (each
+        record's localized ship name when the client's roster data
+        carries it — the CN HUD's name-order segment verbatim; see
+        roster_order). Both are order-preserving lists/maps that survive
+        either encoder, and both clear on quit.
+        """
         if not self.session:
             return
         try:
@@ -1524,6 +1586,23 @@ class Probe:
             # HUD renders an order the keys cannot express — the companion
             # stands the override down there).
             sort_keys = self.sort_keys
+            # The roster's own record sequence + the records' localized
+            # ship names (roster_order above): the Lesta tie base (equal
+            # client keys keep the roster order, live 2026-10-10) and the
+            # CN name-order segment's client-exact input. Empty list/map
+            # (an old probe build, or a records shape without shipName)
+            # reads as "absent" in the companion and changes nothing.
+            # A TRANSIENT empty getPlayersInfo (the local death screen
+            # blanks it for a second or two — see tick's empty_ticks)
+            # must not blank the order mid-battle: `players` survives it
+            # off the stable roster, so the raw-material fields hold the
+            # last non-empty derivation for the same one-two seconds
+            # instead of flapping the companion's tie base to null.
+            roster_order, ship_names = self.roster_order(self.latest_raw)
+            if roster_order:
+                self.last_order_cache = (roster_order, ship_names)
+            elif self.roster and self.last_order_cache is not None:
+                roster_order, ship_names = self.last_order_cache
             self_realm = ''
             for p in self.roster:
                 if p['name'] == self_name and p.get('realm'):
@@ -1533,6 +1612,8 @@ class Probe:
                                      'battle': self.session,
                                      'players': players,
                                      'sortKeys': sort_keys,
+                                     'rosterOrder': roster_order,
+                                     'shipNames': ship_names,
                                      'self': {'name': self_name, 'realm': self_realm},
                                      'identity': identity})
             stream = open(TELEMETRY_FILE, 'w')

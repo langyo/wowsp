@@ -239,4 +239,64 @@ describe("orderForTab", () => {
       ),
     ).toEqual(["langyo", "BILTEMA8"]);
   });
+
+  it("ties equal client keys by the probe-bridged roster order", () => {
+    // The probe's rosterOrder bridge (telemetry `rosterOrder` — the
+    // game's own records sequence): equal client keys (the same-ship
+    // St. Louis pair, the live 2026-10-10 Lesta tie) resolve to the
+    // ROSTER's own record order, and the bridged sequence outranks the
+    // incoming arena-file order — Fisher's record entered first, so he
+    // leads the pair against the list order.
+    const list = [
+      vehicle("langyo", SHIPS.stLouis),
+      vehicle("Fisher", SHIPS.stLouis),
+      vehicle("BILTEMA8", SHIPS.bogatyr),
+    ];
+    const keys: Record<string, string> = {
+      Fisher: "2981St. Louis",
+      langyo: "2981St. Louis",
+      BILTEMA8: "2982Bogatyr",
+    };
+    const ranks: Record<string, number> = { Fisher: 0, langyo: 1, BILTEMA8: 2 };
+    expect(
+      names(
+        orderForTab(list, {
+          locale: "zh-CN",
+          tieByRosterOrder: true,
+          sortKeyOf: (v) => keys[v.name],
+          rosterRankOf: (name) => ranks[name],
+        }),
+      ),
+    ).toEqual(["Fisher", "langyo", "BILTEMA8"]);
+  });
+
+  it("replaces the DB name segment with the client's own names (CN)", () => {
+    // The probe's shipNames bridge (telemetry `shipNames` — the records'
+    // localized ship names): under the CN permutation the client's OWN
+    // strings replace the offline DB's as the name segment — here they
+    // rank the St. Louis pair AHEAD of Bogatyr, reversing what the DB
+    // names order (博加特里 bó < 圣路易斯 shèng). This is the fidelity fix
+    // the bridge exists for: the DB name (app-locale drift, a release the
+    // bake predates) is an approximation; the record's value is the
+    // string the HUD actually renders and collates.
+    const list = [
+      vehicle("BILTEMA8", SHIPS.bogatyr),
+      vehicle("langyo", SHIPS.stLouis),
+      vehicle("Fisher", SHIPS.stLouis),
+    ];
+    const clientNames: Record<string, string> = {
+      BILTEMA8: "基洛夫",
+      langyo: "阿芙乐尔",
+      Fisher: "阿芙乐尔",
+    };
+    expect(
+      names(
+        orderForTab(list, {
+          locale: "zh-CN",
+          shipNameOrder: true,
+          clientShipNameOf: (v) => clientNames[v.name] ?? null,
+        }),
+      ),
+    ).toEqual(["Fisher", "langyo", "BILTEMA8"]);
+  });
 });

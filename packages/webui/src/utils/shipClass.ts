@@ -280,6 +280,15 @@ export interface TabRowCompareOptions {
    *  was moved off this permutation by the 2026-10-10 live capture).
    *  Absent/false keeps the decompiled nation-rank concatenation. */
   shipNameOrder?: boolean;
+  /** The client's OWN localized ship name per vehicle (telemetry
+   *  `shipNames`, or the synthesized row's `shipName` — straight off the
+   *  game's roster records). Under the ship-name order this REPLACES the
+   *  offline DB name as the name segment — the CN HUD's ordering string
+   *  verbatim instead of the DB's approximation (locale drift, new-ship
+   *  holes). A sort must not MIX client names with DB names (the two
+   *  sources collate differently), so callers gate this to full side
+   *  coverage and omit it otherwise. */
+  clientShipNameOf?: (v: TabSortVehicle) => string | null | undefined;
 }
 
 /** Compare two roster entries by the client's Tab row order. The nation
@@ -337,8 +346,10 @@ export function gameTabRowCompare(
   // code unit and diverge: 用户_… U+7528 before 神楽坂柚咲 U+795E, while
   // pinyin puts shén first). Each segment falls THROUGH on a collator tie
   // so the later segments still decide deterministically.
-  const nameA = shipNameOf(a.shipId, opts.locale);
-  const nameB = shipNameOf(b.shipId, opts.locale);
+  // Client-bridged names win when the caller gated full coverage (see
+  // clientShipNameOf); the DB name stays the fallback.
+  const nameA = opts.clientShipNameOf?.(a) || shipNameOf(a.shipId, opts.locale);
+  const nameB = opts.clientShipNameOf?.(b) || shipNameOf(b.shipId, opts.locale);
   if (nameA !== nameB) {
     const c = nameCollator().compare(nameA, nameB);
     if (c !== 0) return c;
