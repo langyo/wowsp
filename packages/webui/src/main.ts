@@ -40,6 +40,17 @@ const app = createApp(App);
 app.use(createPinia());
 app.use(router);
 app.use(i18n);
+// Last-resort error sink for render/watcher/computed errors. With a
+// configured handler Vue routes every scheduler/component error here and
+// CONTAINS it at the callWithErrorHandling boundary; without one the
+// failure cascade is unbounded (observed 2026-10: opening the live
+// in-progress recording crashed the map's deep watcher with "reading
+// 'time'", and from then on no navigation — reload included — would
+// leave the page again). The app must degrade to one logged broken view,
+// never a frozen shell.
+app.config.errorHandler = (err, _instance, info) => {
+  console.error(`[wowsp] unhandled error during ${info}:`, err);
+};
 // Gate first paint on the lazy locale bundles: the fallback (en-US), the
 // detected initial locale, and the persisted UI locale's messages must all
 // be registered before mounting, or the shell renders with vue-i18n's

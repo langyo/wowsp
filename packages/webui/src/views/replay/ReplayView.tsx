@@ -3,6 +3,7 @@ import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lu
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useReplayPositions } from "@/features/replay/useReplayPositions";
+import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
 import PairingWizard from "@/features/replay/PairingWizard";
@@ -1669,6 +1670,13 @@ export default defineComponent({
         duration.value = 0;
       },
       apply(stream, replay) {
+        // Boundary normalization FIRST: a live in-progress recording (the
+        // temp container opened while the battle runs) decodes entity
+        // timelines that never received a position packet, and any nullish
+        // or non-finite sample slipping through would crash the map render
+        // with the "reading 'time'" class (#956). One pass here lets every
+        // downstream consumer trust dense, finite timelines.
+        sanitizeReplayStream(stream);
         // Ships the stream never caught sinking — killed while un-spotted;
         // modern clients emit no EntityDestroy and the HP stream only
         // updates while observed, so they would keep sailing at their

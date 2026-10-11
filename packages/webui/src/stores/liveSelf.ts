@@ -4,6 +4,7 @@ import { ref, watch } from "vue";
 import { api, type ArenaInfo } from "@/api";
 import { useLanguage } from "@/i18n/useLanguage";
 import { buildSelfStats, type SelfStatsModel } from "@/features/replay/liveSelfStats";
+import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 
 /** Snapshot poll cadence while the mine tab is open. The decode itself is
  *  seconds-scale CPU work on late-battle streams, so the interval is
@@ -170,6 +171,11 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     const roster = arena.value;
     try {
       const stream = await api.readReplayPositions(path);
+      // Same boundary rule as the replay view's apply(): the settled parse
+      // of a just-finished container can still carry degenerate samples
+      // (the tail the game was flushing), and the stats model must never
+      // see them.
+      sanitizeReplayStream(stream);
       if (seq !== generation || settledPath !== path) return;
       const next = buildSelfStats({
         stream,
