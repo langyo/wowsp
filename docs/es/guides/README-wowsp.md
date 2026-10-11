@@ -65,7 +65,7 @@ WoWSP se distribuye bajo la **Synthetic Source License 1.0** ([texto completo](h
 
 ## Apoyar al autor
 
-WoWSP es y seguirá siendo gratuito. Si crees que se lo ha ganado y quieres ayudar, la página de afdian del autor es **[afdian.com/a/langyo](https://afdian.com/a/langyo)** — **cada donación se destina íntegramente a los costes de IA del desarrollo de WoWSP** (llamadas a modelos y herramientas de generación de código).
+WoWSP es y seguirá siendo gratuito. Si crees que se lo ha ganado y quieres ayudar, visita **[la página de afdian del autor](https://afdian.com/a/langyo)** — **cada donación se destina íntegramente a los costes de IA del desarrollo de WoWSP** (llamadas a modelos y herramientas de generación de código).
 
 Para que las responsabilidades queden claras:
 

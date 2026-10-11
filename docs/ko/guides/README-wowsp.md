@@ -65,7 +65,7 @@ WoWSP는 **Synthetic Source License 1.0**([전문](https://github.com/langyo/wow
 
 ## 후원
 
-WoWSP는 앞으로도 계속 무료다. 그 가치가 있다고 느껴 도움을 주고 싶다면 작성자의 afdian 페이지 **[afdian.com/a/langyo](https://afdian.com/a/langyo)**를 방문하기 바란다 — **모든 후원금은 WoWSP 개발에 필요한 AI 비용(모델 호출 및 코드 생성 도구)에 전액 사용된다.**
+WoWSP는 앞으로도 계속 무료다. 그 가치가 있다고 느껴 도움을 주고 싶다면 작성자의 **[afdian 페이지](https://afdian.com/a/langyo)**를 방문하기 바란다 — **모든 후원금은 WoWSP 개발에 필요한 AI 비용(모델 호출 및 코드 생성 도구)에 전액 사용된다.**
 
 책임 범위를 분명히 하기 위해:
 

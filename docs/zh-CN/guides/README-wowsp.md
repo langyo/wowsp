@@ -65,7 +65,7 @@ WoWSP 采用 **Synthetic Source License 1.0**（合成源码许可证）（[全�
 
 ## 支持作者
 
-WoWSP 保持免费。如果它对你有所帮助、你愿意支持，作者的爱发电主页是 **[afdian.com/a/langyo](https://afdian.com/a/langyo)** —— **所有赞助将全部用于开发 WoWSP 的 AI 开销**（模型调用与代码生成工具）。
+WoWSP 保持免费。如果它对你有所帮助、你愿意支持，欢迎访问作者的 **[爱发电主页](https://afdian.com/a/langyo)** —— **所有赞助将全部用于开发 WoWSP 的 AI 开销**（模型调用与代码生成工具）。
 
 为了把权责说清楚：
 

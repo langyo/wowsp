@@ -65,7 +65,7 @@ WoWSP is licensed under the **Synthetic Source License 1.0** ([full text](https:
 
 ## Support
 
-WoWSP is and stays free. If it has earned it and you want to help, the author's afdian page is **[afdian.com/a/langyo](https://afdian.com/a/langyo)** — **every donation goes entirely to the AI costs of developing WoWSP** (model calls and code-generation tooling).
+WoWSP is and stays free. If it has earned it and you want to help, visit **[the author's afdian page](https://afdian.com/a/langyo)** — **every donation goes entirely to the AI costs of developing WoWSP** (model calls and code-generation tooling).
 
 To keep the responsibilities clear:
 
