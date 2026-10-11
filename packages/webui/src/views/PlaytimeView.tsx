@@ -21,6 +21,7 @@ import { Check, ChevronDown, FolderOpen, FolderPlus, RefreshCw, X } from "@lucid
 import PlaytimeBreakdownPie from "@/components/playtime/PlaytimeBreakdownPie";
 import PlaytimeTrendChart from "@/components/playtime/PlaytimeTrendChart";
 import PlaytimeHeatmap from "@/components/playtime/PlaytimeHeatmap";
+import PrTrendSection from "@/components/playtime/PrTrendSection";
 import {
   bucketDaily,
   fmtDuration,
@@ -846,6 +847,14 @@ export default defineComponent({
               ) : null}
             </>
           )}
+
+          {/* ── PR trend (below the heatmap): skill over time from the
+              CACHED per-ship history + expected values — bound to the
+              active account, not the local ledger, so it renders even
+              while the playtime empty state holds (a fresh install with a
+              bound account still has water-meter history). The section
+              self-hides without an account or with PR display off. ── */}
+          <PrTrendSection />
         </div>
       </div>
     );

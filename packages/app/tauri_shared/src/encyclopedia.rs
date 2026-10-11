@@ -247,3 +247,20 @@ pub struct ShipServerStats {
     /// True when served from the on-disk cache without a network fetch.
     pub from_cache: bool,
 }
+
+/// One ship's row of the wows-numbers expected-values table, the flat form
+/// the frontend consumes to derive per-interval PR trend points from the
+/// cached per-ship history (interval deltas vs. these expected means — the
+/// same math `wg_api::expected_account_pr` applies server-side). Same
+/// source dataset as [`ShipServerStats`], minus the per-lookup framing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpectedPrEntry {
+    pub ship_id: i64,
+    /// Mean damage per battle across the server sample.
+    pub avg_damage: f64,
+    /// Mean frags per battle.
+    pub avg_frags: f64,
+    /// Mean win rate, in percent.
+    pub winrate: f64,
+}

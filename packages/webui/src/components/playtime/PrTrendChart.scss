@@ -1,0 +1,53 @@
+/* PR trend line chart — ink styled from theme variables so scheme flips
+   repaint with no re-render (same convention as PlaytimeTrendChart.scss).
+   Only the dots carry explicit fills (their prTier colors, set inline by
+   the component — the tier palette is fixed rgb by design, see
+   utils/winrate.ts). */
+.pr-trend {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pr-trend__grid {
+  stroke: rgb(var(--color-text) / 0.12);
+  stroke-width: 1;
+}
+
+.pr-trend__axis {
+  fill: rgb(var(--color-text) / 0.55);
+  font-size: 10px;
+  text-anchor: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-trend__guide {
+  stroke: rgb(var(--color-text) / 0.18);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.pr-trend__x {
+  fill: rgb(var(--color-text) / 0.55);
+  font-size: 10px;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-trend__line {
+  fill: none;
+  stroke: rgb(var(--color-primary) / 0.85);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pr-trend__dot {
+  stroke: rgb(var(--color-bg));
+  stroke-width: 1.5;
+  transition: r 0.16s ease;
+
+  &:hover {
+    r: 5;
+  }
+}

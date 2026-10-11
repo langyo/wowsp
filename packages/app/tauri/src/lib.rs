@@ -598,6 +598,7 @@ pub fn run() {
             commands::trends::get_patches,
             commands::trends::get_community_ship_trend,
             commands::trends::get_ship_server_stats,
+            commands::trends::get_expected_pr_table,
             commands::screenshot::capture_main_window,
             commands::exports::pick_export_path,
             commands::exports::write_export_bytes,

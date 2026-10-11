@@ -1096,6 +1096,19 @@ export interface ShipStatsHistoryPoint {
   ships: ShipCareerTotals[];
 }
 
+/** One ship's row of the wows-numbers expected-values table — the server
+ *  averages the PR trend derivation weighs the cached per-ship history's
+ *  interval deltas against. Mirrors `wowsp_tauri_shared::ExpectedPrEntry`. */
+export interface ExpectedPrEntry {
+  shipId: number;
+  /** Mean damage per battle across the server sample. */
+  avgDamage: number;
+  /** Mean frags per battle. */
+  avgFrags: number;
+  /** Mean win rate, in percent. */
+  winrate: number;
+}
+
 /** Streaming progress for one per-ship fetch source — mirrors
  *  `commands::ship_stats::ShipStatsProgress` (event
  *  `wowsp://ship-stats-progress`). `source` names the transport
@@ -2176,6 +2189,10 @@ export const api = {
    *  the ship has no server sample; throws when no data can be fetched. */
   getShipServerStats: (shipId: number) =>
     transport.invoke<ShipServerStats | null>(RPC.get_ship_server_stats, { shipId }),
+  /** The whole expected-values table as a flat list — the PR trend chart's
+   *  baseline. Empty when no data is available at all (offline and never
+   *  fetched); the chart then shows its unavailable note. */
+  getExpectedPrTable: () => transport.invoke<ExpectedPrEntry[]>(RPC.get_expected_pr_table),
   captureMainWindow: (path: string) =>
     transport.invoke<string>(RPC.capture_main_window, { path }),
   /** Native save dialog for tactical-board exports (screenshots/video).

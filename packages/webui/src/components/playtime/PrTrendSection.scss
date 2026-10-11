@@ -1,0 +1,16 @@
+/* PR trend section — the wrapper reuses the play-section classes from
+   PlaytimeView.scss (imported by the view); only the head's wrapping lives
+   here: the title and the filter-chip cluster + battles total share one
+   row while it fits and stack (chips wrapping among themselves) on a
+   narrow column, mirroring how the heatmap section's year tabs behave. */
+.pr-trend-section {
+  .play-section__head {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .play-section__controls {
+    justify-content: flex-end;
+    margin-inline-start: auto;
+  }
+}

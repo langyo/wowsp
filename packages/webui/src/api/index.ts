@@ -115,6 +115,7 @@ export type {
   ShipModeStats,
   ShipModeBreakdown,
   ShipServerStats,
+  ExpectedPrEntry,
   ShipCareerTotals,
   ShipStatsHistoryPoint,
   ShipStatsProgress,

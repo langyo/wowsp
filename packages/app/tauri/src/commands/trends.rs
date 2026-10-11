@@ -22,7 +22,8 @@
 use std::fs;
 
 use wowsp_tauri_shared::{
-    CommunityTrend, PatchNote, ShipServerStats, StatsSnapshot, TrendBucket, TrendResult,
+    CommunityTrend, ExpectedPrEntry, PatchNote, ShipServerStats, StatsSnapshot, TrendBucket,
+    TrendResult,
 };
 
 use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
@@ -86,6 +87,38 @@ const EXPECTED_VALUES_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 pub async fn get_ship_server_stats(ship_id: i64) -> Result<Option<ShipServerStats>, String> {
     let (raw, from_cache) = expected_values_document().await?;
     Ok(lookup_ship_server_stats(&raw, ship_id, from_cache))
+}
+
+/// The whole expected-values table as a flat entry list — the per-ship
+/// server averages the frontend needs to derive PR trend points from the
+/// cached per-ship history (actual interval deltas vs. these expected
+/// means, battle-weighted the same way `wg_api::expected_account_pr`
+/// aggregates). Empty when no table is available (offline and never
+/// fetched) — a rating concern must degrade to "no data", never fail the
+/// command.
+#[tauri::command]
+pub async fn get_expected_pr_table() -> Result<Vec<ExpectedPrEntry>, String> {
+    Ok(expected_pr_entries(
+        &load_expected_values().await.unwrap_or_default(),
+    ))
+}
+
+/// Table → wire entries, sorted by ship id so the payload (and its tests)
+/// stay deterministic regardless of the map's iteration order.
+fn expected_pr_entries(
+    table: &std::collections::HashMap<i64, ExpectedValues>,
+) -> Vec<ExpectedPrEntry> {
+    let mut entries: Vec<ExpectedPrEntry> = table
+        .iter()
+        .map(|(&ship_id, ev)| ExpectedPrEntry {
+            ship_id,
+            avg_damage: ev.average_damage_dealt,
+            avg_frags: ev.average_frags,
+            winrate: ev.win_rate,
+        })
+        .collect();
+    entries.sort_by_key(|e| e.ship_id);
+    entries
 }
 
 /// Resolve the expected-values document: the on-disk cache when fresh, else a
@@ -489,6 +522,44 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn expected_pr_entries_are_sorted_wire_rows() {
+        let map = parse_expected_values(&expected_values_doc()).unwrap();
+        let entries = expected_pr_entries(&map);
+        // `[]` (no sample) rows never reach the table, so they never reach
+        // the wire list either.
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].ship_id, 3374266064);
+        assert!((entries[0].avg_damage - 61228.37).abs() < 0.01);
+        assert!((entries[0].avg_frags - 0.769).abs() < 0.001);
+        assert!((entries[0].winrate - 50.77).abs() < 0.01);
+        // An empty table yields an empty list (the offline "no data" face).
+        assert!(expected_pr_entries(&std::collections::HashMap::new()).is_empty());
+        // Sorted by ship id regardless of map order.
+        let two = parse_expected_values(
+            &serde_json::json!({
+                "time": 1700000000_i64,
+                "data": {
+                    "4180000000": {
+                        "average_damage_dealt": 1.0, "average_frags": 2.0, "win_rate": 3.0
+                    },
+                    "3374266064": {
+                        "average_damage_dealt": 61228.37,
+                        "average_frags": 0.769,
+                        "win_rate": 50.77
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let ids: Vec<i64> = expected_pr_entries(&two)
+            .iter()
+            .map(|e| e.ship_id)
+            .collect();
+        assert_eq!(ids, vec![3374266064, 4180000000]);
     }
 
     #[test]
