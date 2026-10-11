@@ -6,7 +6,12 @@
  *  - `computeRecentDelta` picks the latest baseline at or before the cutoff,
  *    subtracts per-ship totals, derives winrate/avgDamage from the deltas,
  *    keeps first-seen ships whole, drops untouched ships, clamps negative
- *    totals, and reports null when no old-enough baseline exists.
+ *    totals, and reports null when no old-enough baseline exists. A finite
+ *    `endSec` bounds the window the same way — the latest snapshot at or
+ *    before it closes the window, so a past end day never leaks newer
+ *    battles in;
+ *  - `isoDayWindowSec` turns a picker ISO date pair into local-day Unix
+ *    seconds; `filterByDateWindow` is that window's career fallback.
  *
  *  The scenario behind these tests: an active player touches nearly every
  *  ship in a week, so filtering by lastBattleTime and summing career totals
@@ -18,7 +23,9 @@ import {
   computeRecentDelta,
   dateRangeCutoff,
   filterByDateRange,
+  filterByDateWindow,
   isPoisonedCareerRow,
+  isoDayWindowSec,
   shipRecentDelta,
 } from "./shipAggregation";
 
@@ -154,6 +161,103 @@ describe("computeRecentDelta", () => {
     expect(delta).not.toBeNull();
     expect(delta!.sinceTs).toBe(cutoff);
     expect(delta!.ships[0].battles).toBe(6);
+  });
+
+  it("closes a finite window at the latest snapshot at or before the end bound", () => {
+    // The user's `to` day lies in the past: battles fought AFTER it must not
+    // leak into the window, so the end reference is the snapshot, not the
+    // current rows. Window = [15 days ago, 10 days ago]; snapshots exist at
+    // 40 days and 10 days.
+    const current = [ship({ shipId: 1, battles: 4_100, wins: 2_090, damageCaused: 400_000_000, lastBattleTime: now - 100 })];
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 1, battles: 4_000, wins: 2_050, damageCaused: 390_000_000, frags: 5_900, survivedBattles: 1_180, lastBattleTime: 0 },
+      ]),
+      point(now - 10 * 86_400, [
+        { shipId: 1, battles: 4_040, wins: 2_070, damageCaused: 396_000_000, frags: 5_950, survivedBattles: 1_190, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, now - 15 * 86_400, now - 10 * 86_400)!;
+    expect(delta.sinceTs).toBe(now - 40 * 86_400);
+    expect(delta.endTs).toBe(now - 10 * 86_400);
+    // 4_040 (end snapshot) - 4_000 (baseline) — NOT 4_100 - 4_000.
+    expect(delta.ships[0].battles).toBe(40);
+    expect(delta.ships[0].wins).toBe(20);
+    expect(delta.ships[0].damageCaused).toBe(6_000_000);
+  });
+
+  it("drops ships absent from the end snapshot (unplayed at the window's close)", () => {
+    const current = [ship({ shipId: 1, battles: 100, wins: 50, damageCaused: 1_000_000 })];
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 1, battles: 80, wins: 40, damageCaused: 800_000, frags: 10, survivedBattles: 5, lastBattleTime: 0 },
+        { shipId: 2, battles: 1, wins: 1, damageCaused: 50_000, frags: 1, survivedBattles: 1, lastBattleTime: 0 },
+      ]),
+      // Ship 1 is missing here — its window delta would be ≤ 0.
+      point(now - 10 * 86_400, [
+        { shipId: 2, battles: 2, wins: 1, damageCaused: 60_000, frags: 1, survivedBattles: 1, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff, now - 10 * 86_400)!;
+    expect(delta.ships).toHaveLength(0);
+  });
+
+  it("closes at the newest snapshot when the end bound reaches past it", () => {
+    // `to` = today: the fetch that produced the current rows is itself the
+    // newest snapshot ≤ the bound, so the window closes there — effectively
+    // the current totals, never older.
+    const current = [ship({ shipId: 1, battles: 4_100, wins: 2_090, damageCaused: 400_000_000 })];
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 1, battles: 4_000, wins: 2_050, damageCaused: 390_000_000, frags: 5_900, survivedBattles: 1_180, lastBattleTime: 0 },
+      ]),
+      point(now - 86_400, [
+        { shipId: 1, battles: 4_080, wins: 2_084, damageCaused: 398_000_000, frags: 5_970, survivedBattles: 1_196, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff, now + 86_400)!;
+    expect(delta.endTs).toBe(now - 86_400);
+    expect(delta.ships[0].battles).toBe(80);
+    expect(delta.ships[0].wins).toBe(34);
+  });
+});
+
+describe("isoDayWindowSec (custom range days)", () => {
+  it("converts an ISO date pair to local-day Unix seconds", () => {
+    const w = isoDayWindowSec("2026-10-01", "2026-10-07")!;
+    const midnight = (iso: string) => {
+      const [y, m, d] = iso.split("-").map(Number);
+      return Math.floor(new Date(y, m - 1, d).getTime() / 1000);
+    };
+    expect(w.fromSec).toBe(midnight("2026-10-01"));
+    // The to bound is one second before the following day's midnight (not a
+    // flat +86399 — DST transitions can make a local day 23 or 25 hours).
+    expect(w.toSec).toBe(midnight("2026-10-08") - 1);
+  });
+
+  it("rejects malformed input and inverted pairs", () => {
+    expect(isoDayWindowSec("2026-10-07", "2026-10-01")).toBeNull();
+    expect(isoDayWindowSec("garbage", "2026-10-01")).toBeNull();
+    expect(isoDayWindowSec("2026-10-01", "")).toBeNull();
+    // Rollover dates normalize to the next month — not real calendar days.
+    expect(isoDayWindowSec("2026-02-31", "2026-03-05")).toBeNull();
+  });
+});
+
+describe("filterByDateWindow (career fallback)", () => {
+  it("keeps only ships whose last battle is inside the custom window", () => {
+    const now = 1_700_000_000;
+    const ships = [
+      ship({ shipId: 1, battles: 4_000, lastBattleTime: now - 2 * 86_400 }),
+      ship({ shipId: 2, battles: 50, lastBattleTime: now - 30 * 86_400 }),
+      ship({ shipId: 3, battles: 10, lastBattleTime: now }),
+    ];
+    const from = now - 10 * 86_400;
+    const to = now - 86_400;
+    const kept = filterByDateWindow(ships, from, to);
+    expect(kept.map((s) => s.shipId)).toEqual([1]);
+    // Same contract as filterByDateRange: the row keeps its career totals.
+    expect(kept[0].battles).toBe(4_000);
   });
 });
 

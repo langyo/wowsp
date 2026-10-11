@@ -253,6 +253,50 @@
   font-size: var(--text-xs);
 }
 
+/* ── Custom range popover (the 自定义 segment) ──
+   HkPopover paints the chrome (glass panel / phone sheet) but no inner
+   spacing — this styles the slot content, mirroring ShipFilterBar's popups
+   and the replay rail's cross-linked date pair. */
+.lookup-view__range-pop {
+  padding: 10px 12px 8px;
+}
+
+/* Anchored (non-sheet) panel: a fixed comfortable width for the two pickers
+   — max-content would collapse them to their placeholder floors. The phone
+   sheet sizes itself full-width and is excluded. */
+.hk-popover-panel:not(.hk-is-sheet) .lookup-view__range-pop {
+  width: 280px;
+}
+
+.lookup-view__range-pop-head {
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* The sheet chrome already carries the title, so the in-panel head is
+   desktop-only (same as ShipFilterBar's popup heads). */
+.hk-popover-panel.hk-is-sheet .lookup-view__range-pop-head {
+  display: none;
+}
+
+.lookup-view__range-pop-dates {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .hk-dp {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.lookup-view__range-pop-hint {
+  margin-top: 8px;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted) / 90%);
+}
+
 .lookup-view__controlrow {
   display: flex;
   gap: 6px;

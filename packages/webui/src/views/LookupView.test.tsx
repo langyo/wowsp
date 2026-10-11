@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enableAutoUnmount, flushPromises, shallowMount } from "@vue/test-utils";
-import { reactive } from "vue";
+import { enableAutoUnmount, flushPromises, mount, shallowMount } from "@vue/test-utils";
+import { h, reactive, type VNode } from "vue";
 import type { ClanInfo, PlayerStats } from "@/api";
 
 const mocks = vi.hoisted(() => ({
@@ -40,7 +40,55 @@ vi.mock("@/components/search/AsyncSearchCombo", () => ({ default: { name: "Async
 vi.mock("@/components/ships/ShipFilterBar", () => ({ default: { name: "ShipFilterBar", props: ["ships", "realm"], render: () => null } }));
 vi.mock("@/components/ships/ShipDetailModal", () => ({ default: { name: "ShipDetailModal", props: ["realm"], render: () => null } }));
 vi.mock("@/features/share/ShareShotButton", () => ({ default: { name: "ShareShotButton", render: () => null } }));
-vi.mock("@celestia-island/hikari", () => ({ HkTabs: { name: "HkTabs", render: () => null }, HkSpinner: { name: "HkSpinner", render: () => null } }));
+// HkTabs mirrors the real component's guard (no update emit for the
+// already-active key — HkTabs.tsx's `tab.key !== props.modelValue`) and its
+// segmented ARIA (role=radio + aria-checked), so the wrapper-click reopen
+// path is exercisable end-to-end. HkPopover renders its slot so the date
+// pickers mount under full `mount()` (shallowMount stubs slots away).
+vi.mock("@celestia-island/hikari", () => ({
+  HkTabs: {
+    name: "HkTabs",
+    props: ["modelValue", "tabs", "variant"],
+    emits: ["update:modelValue"],
+    setup(props: { modelValue: string; tabs: { key: string; label: string }[] }, { emit }: { emit: (ev: string, v: string) => void }) {
+      return () =>
+        h(
+          "div",
+          (props.tabs ?? []).map((tb) =>
+            h(
+              "button",
+              {
+                key: tb.key,
+                type: "button",
+                role: "radio",
+                "aria-checked": tb.key === props.modelValue ? "true" : "false",
+                onClick: () => {
+                  if (tb.key !== props.modelValue) emit("update:modelValue", tb.key);
+                },
+              },
+              tb.label,
+            ),
+          ),
+        );
+    },
+  },
+  HkSpinner: { name: "HkSpinner", render: () => null },
+  HkPopover: {
+    name: "HkPopover",
+    props: ["modelValue", "anchorRef", "placement", "title"],
+    emits: ["update:modelValue"],
+    setup(_: unknown, { slots }: { slots: { default?: () => VNode[] } }) {
+      return () => h("div", { class: "hk-popover-panel" }, slots.default?.() ?? []);
+    },
+  },
+  HkDatePicker: {
+    name: "HkDatePicker",
+    props: ["modelValue", "min", "max", "placeholder", "size"],
+    emits: ["update:modelValue"],
+    render: () => null,
+  },
+  useBreakpoint: () => ({ isMobile: { value: false } }),
+}));
 
 import LookupView from "./LookupView";
 
@@ -188,5 +236,115 @@ describe("lookup result ownership", () => {
     view.findComponent({ name: "ClanCard" }).vm.$emit("memberClick", { accountId: 101 });
     await flushPromises();
     expect(mocks.player).toHaveBeenCalledExactlyOnceWith("101", "asia", { force: true });
+  });
+});
+
+describe("custom date range", () => {
+  const DAY = 86_400;
+  /** ISO date string `offsetDays` from now (negative = past), local zone. */
+  const isoDaysAgo = (offsetDays: number) => {
+    const d = new Date(Date.now() + offsetDays * DAY * 1000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  /** Index 2 = the date-range tabs (realm picker and player/clan come first). */
+  const rangeTabs = (view: ReturnType<typeof mountLookupFull>) =>
+    view.findAllComponents({ name: "HkTabs" })[2];
+
+  /** Full mount (not the suite's shallowMount helper): the popover's slot
+   *  content and the tabs' radio buttons must actually render for these
+   *  tests to click and emit on them. */
+  function mountLookupFull(query: Record<string, string> = {}) {
+    mocks.route.query = query;
+    return mount(LookupView);
+  }
+
+  it("opens the popover on the custom segment and reopens after close on a re-click", async () => {
+    mocks.player.mockResolvedValue(player(101));
+    const view = mountLookupFull({ name: "Solo", realm: "asia" });
+    await flushPromises();
+    const popover = () => view.findComponent({ name: "HkPopover" });
+    expect(popover().props("modelValue")).toBe(false);
+
+    rangeTabs(view).vm.$emit("update:modelValue", "custom");
+    await flushPromises();
+    expect(popover().props("modelValue")).toBe(true);
+
+    // Escape / outside-press path.
+    popover().vm.$emit("update:modelValue", false);
+    await flushPromises();
+    expect(popover().props("modelValue")).toBe(false);
+
+    // Re-click the already-active segment: the (mocked-to-match) HkTabs
+    // suppresses the update emit for the active key, so only the wrapper's
+    // click test can reopen — regression guard for the dead-press bug.
+    const active = rangeTabs(view).find('[role="radio"][aria-checked="true"]');
+    expect(active.text()).toBe("dashboard.rangeCustom");
+    await active.trigger("click");
+    expect(popover().props("modelValue")).toBe(true);
+  });
+
+  it("stays unfiltered until the window completes, then applies the career fallback", async () => {
+    mocks.player.mockResolvedValue(player(101));
+    const view = mountLookupFull({ name: "Solo", realm: "asia" });
+    await flushPromises();
+    const bar = () => view.findComponent({ name: "ShipFilterBar" }).props("ships");
+    const allCount = bar().length;
+    expect(allCount).toBeGreaterThan(0);
+
+    rangeTabs(view).vm.$emit("update:modelValue", "custom");
+    await flushPromises();
+    // Unarmed (no dates) and half-armed (from only) keep the "all" view.
+    expect(bar().length).toBe(allCount);
+    const pickers = view.findAllComponents({ name: "HkDatePicker" });
+    pickers[0].vm.$emit("update:modelValue", isoDaysAgo(-12));
+    await flushPromises();
+    expect(bar().length).toBe(allCount);
+
+    // No local snapshots → career fallback keeps only ships whose last
+    // battle falls inside the window (the seeded row has none).
+    pickers[1].vm.$emit("update:modelValue", isoDaysAgo(-3));
+    await flushPromises();
+    expect(bar().length).toBe(0);
+  });
+
+  it("computes window deltas from the local snapshots once both ends are set", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const snap1 = now - 10 * DAY;
+    const snap2 = now - 5 * DAY;
+    const career = {
+      shipId: 1, battles: 20, wins: 11, damageCaused: 200_000, frags: 9, survivedBattles: 5,
+    };
+    mocks.player.mockResolvedValue(player(101));
+    // mocks.stores is Record<string, unknown> — narrow the slot for the
+    // per-property seeding below (the suite's own beforeEach only assigns
+    // the whole object, which needs no narrowing).
+    const shipsStore = mocks.stores.ships as { cache: unknown; history: unknown };
+    shipsStore.cache = new Map([
+      ["asia_101", [{ ...career, name: "", winrate: 55, avgDamage: 10_000, lastBattleTime: now }]],
+    ]);
+    shipsStore.history = new Map([
+      ["asia_101", [
+        { timestamp: snap1, ships: [{ ...career, battles: 10, wins: 5, damageCaused: 100_000, frags: 4, survivedBattles: 2, lastBattleTime: snap1 }] },
+        { timestamp: snap2, ships: [{ ...career, battles: 15, wins: 8, damageCaused: 150_000, frags: 6, survivedBattles: 3, lastBattleTime: snap2 }] },
+      ]],
+    ]);
+    const view = mountLookupFull({ name: "Solo", realm: "asia" });
+    await flushPromises();
+
+    rangeTabs(view).vm.$emit("update:modelValue", "custom");
+    const pickers = view.findAllComponents({ name: "HkDatePicker" });
+    pickers[0].vm.$emit("update:modelValue", isoDaysAgo(-9));
+    pickers[1].vm.$emit("update:modelValue", isoDaysAgo(-3));
+    await flushPromises();
+
+    // Window [9d ago, 3d ago]: the snapshot@10d predates the from bound's
+    // midnight (baselines must be at-or-before the window START), the
+    // snapshot@5d closes it — the 5 battles after the closer must NOT leak
+    // in from the current rows.
+    const ships = view.findComponent({ name: "ShipFilterBar" }).props("ships");
+    expect(ships).toHaveLength(1);
+    expect(ships[0].battles).toBe(5);
+    expect(ships[0].wins).toBe(3);
+    expect(ships[0].damageCaused).toBe(50_000);
   });
 });

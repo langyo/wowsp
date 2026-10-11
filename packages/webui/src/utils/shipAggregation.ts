@@ -11,8 +11,11 @@
  *  Date ranges: WG exposes only career totals per ship (no per-battle data),
  *  so a range view is computed as current totals minus the latest locally
  *  recorded history point at or before the range cutoff (see
- *  `computeRecentDelta`). The plain lastBattleTime filter is kept only as the
- *  labeled career fallback for when no old-enough baseline exists yet.
+ *  `computeRecentDelta`). A custom window additionally bounds the end the
+ *  same way — the latest history point at or before the window's last day
+ *  closes it instead of the current rows. The plain lastBattleTime filter is
+ *  kept only as the labeled career fallback for when no old-enough baseline
+ *  exists yet.
  *
  *  Baseline rows with impossible career counters (battles recorded, zero
  *  damage AND zero kills — artifacts of a partially broken upstream, such as
@@ -70,6 +73,52 @@ export function filterByDateRange(
   return ships.filter((s) => s.lastBattleTime >= dateRangeCutoff(range, nowSec));
 }
 
+/** A custom [from, to] day window in Unix seconds — from-day local midnight
+ *  through the to day's last second. Null when either ISO string is
+ *  malformed (including rollover dates like 2026-02-31) or the pair is
+ *  inverted (the pickers cross-link min/max so an inverted window can never
+ *  form; this is the belt-and-suspenders guard). */
+export function isoDayWindowSec(
+  fromIso: string,
+  toIso: string,
+): { fromSec: number; toSec: number } | null {
+  // Date-only ISO strings parse as UTC — build the dates explicitly in the
+  // local zone so the window tracks the user's calendar day.
+  const localDay = (iso: string): Date | null => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const date = new Date(y, mo - 1, d);
+    if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) {
+      return null;
+    }
+    return date;
+  };
+  const from = localDay(fromIso);
+  const to = localDay(toIso);
+  if (!from || !to) return null;
+  const fromSec = Math.floor(from.getTime() / 1000);
+  // The to bound is one second before the FOLLOWING day's midnight — a flat
+  // +86399 would run an hour past the to day across a spring-forward DST
+  // transition (23-hour local day).
+  const toSec = Math.floor(new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1).getTime() / 1000) - 1;
+  if (fromSec > toSec) return null;
+  return { fromSec, toSec };
+}
+
+/** Career fallback for a custom [fromSec, toSec] window — same labeled
+ *  CAREER FALLBACK ONLY semantics as `filterByDateRange`: rows keep career
+ *  totals and answer "which ships were played in the window". */
+export function filterByDateWindow(
+  ships: PlayerShipStats[],
+  fromSec: number,
+  toSec: number,
+): PlayerShipStats[] {
+  return ships.filter((s) => s.lastBattleTime >= fromSec && s.lastBattleTime <= toSec);
+}
+
 /** A real "recent N days" view: per-ship deltas since a baseline point. */
 export interface RecentDelta {
   /** Ships actually played in the covered window, with battles/wins/damage
@@ -80,6 +129,10 @@ export interface RecentDelta {
    *  its latest healthy earlier point, so an individual ship's window may
    *  reach further back than `sinceTs`. */
   sinceTs: number;
+  /** Window end actually used — the history point that closed a finite end
+   *  bound, or "now" (the current rows) for the classic [cutoff, now]
+   *  view. Views label the covered window from sinceTs..endTs. */
+  endTs: number;
 }
 
 /** Per-ship recent-window delta — the single-ship slice of `RecentDelta`
@@ -160,11 +213,18 @@ export function shipRecentDelta(
  *  totals are clamped at 0 to tolerate WG-side data corrections. Returns
  *  null when no baseline exists yet (first-ever lookup, or every recorded
  *  point is newer than the cutoff) — callers fall back to the labeled
- *  career view then. */
+ *  career view then.
+ *
+ *  A finite `endSec` bounds the window's end the same way (the custom
+ *  range's `to` day): the latest history point at or before it closes the
+ *  window instead of the current rows, so a past end day never leaks
+ *  newer battles in. Without a snapshot that old the window effectively
+ *  runs to now — the current rows close it, and `endTs` says so. */
 export function computeRecentDelta(
   current: PlayerShipStats[],
   history: ShipStatsHistoryPoint[],
   cutoffSec: number,
+  endSec: number = Number.POSITIVE_INFINITY,
 ): RecentDelta | null {
   let sinceTs = 0;
   const baseByShip = new Map<number, ShipCareerTotals>();
@@ -179,25 +239,51 @@ export function computeRecentDelta(
     }
   }
   if (sinceTs === 0) return null;
+  // End-of-window reference. Rows merge across every point at or before the
+  // bound with poisoned rows skipped — mirroring the baseline side, so one
+  // broken point cannot nuke the closing totals either. A ship absent from
+  // the merged rows was unplayed at the window's end and drops out via the
+  // battle-delta guard.
+  let endByShip: Map<number, ShipCareerTotals> | null = null;
+  let endTs = Math.floor(Date.now() / 1000);
+  if (Number.isFinite(endSec)) {
+    let ts = 0;
+    const merged = new Map<number, ShipCareerTotals>();
+    for (const point of history) {
+      if (point.timestamp > endSec) continue;
+      ts = point.timestamp;
+      for (const row of point.ships) {
+        if (isPoisonedCareerRow(row)) continue;
+        merged.set(row.shipId, row);
+      }
+    }
+    if (ts > 0) {
+      endByShip = merged;
+      endTs = ts;
+    }
+  }
   const ships: PlayerShipStats[] = [];
   for (const cur of current) {
     const prev = baseByShip.get(cur.shipId);
-    const battles = cur.battles - (prev?.battles ?? 0);
+    // endByShip === null (no finite bound / no snapshot that old) closes at
+    // the current rows — exactly the classic behavior.
+    const end = endByShip ? endByShip.get(cur.shipId) : cur;
+    const battles = (end?.battles ?? 0) - (prev?.battles ?? 0);
     if (battles <= 0) continue;
-    const wins = Math.max(0, cur.wins - (prev?.wins ?? 0));
-    const damageCaused = Math.max(0, cur.damageCaused - (prev?.damageCaused ?? 0));
+    const wins = Math.max(0, (end?.wins ?? 0) - (prev?.wins ?? 0));
+    const damageCaused = Math.max(0, (end?.damageCaused ?? 0) - (prev?.damageCaused ?? 0));
     ships.push({
       ...cur,
       battles,
       wins,
       damageCaused,
-      frags: Math.max(0, cur.frags - (prev?.frags ?? 0)),
-      survivedBattles: Math.max(0, cur.survivedBattles - (prev?.survivedBattles ?? 0)),
+      frags: Math.max(0, (end?.frags ?? 0) - (prev?.frags ?? 0)),
+      survivedBattles: Math.max(0, (end?.survivedBattles ?? 0) - (prev?.survivedBattles ?? 0)),
       winrate: (wins / battles) * 100,
       avgDamage: damageCaused / battles,
     });
   }
-  return { ships, sinceTs };
+  return { ships, sinceTs, endTs };
 }
 
 /** Aggregate PlayerShipStats by ship type (Battleship/Cruiser/...).

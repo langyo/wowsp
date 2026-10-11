@@ -1,4 +1,4 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, Transition } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, Transition, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
@@ -7,7 +7,7 @@ import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/Clan
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HkSpinner, HkTabs } from "@celestia-island/hikari";
+import { HkDatePicker, HkPopover, HkSpinner, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
@@ -35,6 +35,8 @@ import {
   computeRecentDelta,
   dateRangeCutoff,
   filterByDateRange,
+  filterByDateWindow,
+  isoDayWindowSec,
   type DateRange,
 } from "@/utils/shipAggregation";
 import { api, type ClanInfo, type ClanSuggestion, type PlayerShipStats, type PlayerSuggestion, type PlayerStats } from "@/api";
@@ -44,6 +46,11 @@ import "./LookupView.scss";
 
 /** Lookup target — the second sidebar row's segmented group. */
 type LookupKind = "player" | "clan";
+
+/** This view's date-range mode — the shared presets plus the picker-chosen
+ *  custom window (the 自定义 segment; see `customWindow`). DashboardView
+ *  keeps the plain preset-only DateRange. */
+type RangeMode = DateRange | "custom";
 
 interface HistoryEntry {
   kind: LookupKind;
@@ -236,24 +243,107 @@ export default defineComponent({
     /** Date range — same semantics as Dashboard's: real per-ship deltas
      *  against the latest locally recorded baseline at or before the range
      *  cutoff (WG has no per-battle data), with the labeled career
-     *  fallback while no old-enough baseline exists. */
-    const dateRange = ref<DateRange>("all");
+     *  fallback while no old-enough baseline exists. The "custom" mode adds
+     *  a picker-chosen [from, to] day window whose end bound also closes at
+     *  a local snapshot (see `computeRecentDelta`). */
+    const dateRange = ref<RangeMode>("all");
+    /** Custom window picker state (ISO YYYY-MM-DD, session-only like the
+     *  replay filter's pair). The pickers cross-link min/max so an
+     *  inverted pair can never form. */
+    const customFrom = ref<string | null>(null);
+    const customTo = ref<string | null>(null);
+    const customOpen = ref(false);
+    /** Armed once both ends are picked — while the pair is incomplete the
+     *  view stays unfiltered (the "all" semantics) instead of thrashing. */
+    const customWindow = computed(() =>
+      customFrom.value && customTo.value
+        ? isoDayWindowSec(customFrom.value, customTo.value)
+        : null,
+    );
     const recentDelta = computed(() => {
       if (dateRange.value === "all") return null;
       const acc = result.value;
       if (!acc) return null;
       const hist = shipStats.history.get(`${acc.realm}_${acc.accountId}`) ?? [];
+      if (dateRange.value === "custom") {
+        const w = customWindow.value;
+        return w ? computeRecentDelta(shipRows.value, hist, w.fromSec, w.toSec) : null;
+      }
       return computeRecentDelta(shipRows.value, hist, dateRangeCutoff(dateRange.value));
     });
-    const dateFiltered = computed(
-      () => recentDelta.value?.ships ?? filterByDateRange(shipRows.value, dateRange.value),
-    );
+    const dateFiltered = computed(() => {
+      if (dateRange.value === "custom") {
+        const w = customWindow.value;
+        if (!w) return shipRows.value;
+        return recentDelta.value?.ships ?? filterByDateWindow(shipRows.value, w.fromSec, w.toSec);
+      }
+      return recentDelta.value?.ships ?? filterByDateRange(shipRows.value, dateRange.value);
+    });
     const rangeOptions = [
       { value: "1d", label: t("dashboard.range1d") },
       { value: "7d", label: t("dashboard.range7d") },
       { value: "30d", label: t("dashboard.range30d") },
       { value: "all", label: t("dashboard.rangeAll") },
+      { value: "custom", label: t("dashboard.rangeCustom") },
     ];
+
+    // ── Custom range popover ──────────────────────────────────────────
+    // Selecting the 自定义 segment opens a small HkPopover anchored under
+    // the tabs; two hikari date pickers (the replay filter's cross-linked
+    // pair pattern) choose the window. Outside-close mirrors
+    // FilterCategoryChip's: the teleported panel and the pickers' own
+    // body-level calendar popups count as inside presses.
+    const { isMobile } = useBreakpoint();
+    const rangeTabsRef = ref<HTMLElement | null>(null);
+    const rangePanelRef = ref<HTMLElement | null>(null);
+
+    function closeCustomPop() {
+      customOpen.value = false;
+    }
+
+    function onRangeTabUpdate(v: string) {
+      dateRange.value = v as RangeMode;
+      customOpen.value = v === "custom";
+    }
+
+    /** HkTabs suppresses the update emit when the clicked segment is
+     *  already active, so after the popover closed while 自定义 stayed
+     *  selected, re-clicking that segment would be a dead press — yet it's
+     *  the natural "reopen" gesture. Catch it on the wrapper: while custom
+     *  is the active radio, a click on the checked segment is exactly that
+     *  re-click (a differing segment first flips the mode via the emit, so
+     *  the early return skips it). */
+    function onRangeTabsClick(e: MouseEvent) {
+      if (dateRange.value !== "custom") return;
+      const seg = (e.target as HTMLElement).closest?.("[role='radio']");
+      if (seg instanceof HTMLElement && seg.getAttribute("aria-checked") === "true") {
+        customOpen.value = true;
+      }
+    }
+
+    function onRangeDocPointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (rangeTabsRef.value?.contains(target)) return;
+      if (rangePanelRef.value?.contains(target)) return;
+      // The date pickers' calendars teleport to body level as
+      // .hk-popover-panel — presses there belong to this popover's own
+      // nested content (same reasoning as FilterCategoryChip's test).
+      for (const panel of document.querySelectorAll<HTMLElement>(".hk-popover-panel")) {
+        if (panel.contains(target)) return;
+      }
+      closeCustomPop();
+    }
+
+    watch(customOpen, (open) => {
+      if (open) {
+        document.addEventListener("pointerdown", onRangeDocPointerDown, true);
+      } else {
+        document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
+      }
+    });
+    onBeforeUnmount(() => {
+      document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
+    });
 
     /** Per-ship rows enriched with offline tier/type for grouping. */
     const shipRows = computed<PlayerShipStats[]>(() => {
@@ -442,14 +532,23 @@ export default defineComponent({
     function buildPlayerShotModel(): StatsShotModel {
       const s = result.value;
       if (!s) throw new Error("no player result for the share shot");
-      const rangeText = {
-        "1d": t("dashboard.range1d"),
-        "7d": t("dashboard.range7d"),
-        "30d": t("dashboard.range30d"),
-        all: t("dashboard.rangeAll"),
-      }[dateRange.value];
+      const rangeText =
+        dateRange.value === "custom"
+          ? customWindow.value
+            ? `${new Date(customWindow.value.fromSec * 1000).toLocaleDateString()} – ${new Date(customWindow.value.toSec * 1000).toLocaleDateString()}`
+            : // An incomplete pair leaves the view unfiltered — the shot
+              // must claim the coverage it actually shows, not the mode.
+              t("dashboard.rangeAll")
+          : {
+              "1d": t("dashboard.range1d"),
+              "7d": t("dashboard.range7d"),
+              "30d": t("dashboard.range30d"),
+              all: t("dashboard.rangeAll"),
+            }[dateRange.value];
+      // The custom window's own dates already say what it covers, so the
+      // baseline-date suffix stays a preset-range decoration.
       const rangeLabel =
-        dateRange.value !== "all" && recentDelta.value
+        dateRange.value !== "all" && dateRange.value !== "custom" && recentDelta.value
           ? `${rangeText} · ${new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString()}`
           : rangeText;
       const pr = prTier(s.pr);
@@ -804,12 +903,58 @@ export default defineComponent({
                   </div>
                 ) : null}
                 <div class="lookup-view__controls">
-                  <HkTabs
-                    variant="segmented"
-                    modelValue={dateRange.value}
-                    onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
-                    tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
-                  />
+                  {/* The wrapper anchors the custom-range popover and
+                      carries the reopen click test; the tabs inside remain
+                      a plain flex child of the row. */}
+                  <div class="lookup-view__range-tabs" ref={rangeTabsRef} onClick={onRangeTabsClick}>
+                    <HkTabs
+                      variant="segmented"
+                      modelValue={dateRange.value}
+                      onUpdate:modelValue={onRangeTabUpdate}
+                      tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
+                    />
+                  </div>
+                  {/* Desktop keeps closeOnBackdrop off — the document-level
+                      pointerdown test above is the outside-close and Escape
+                      rides closeOnEscape; phones dock as a bottom sheet
+                      whose scrim then closes (same contract as the filter
+                      chips' popups one row over). */}
+                  <HkPopover
+                    modelValue={customOpen.value}
+                    onUpdate:modelValue={(v: boolean) => {
+                      if (!v) closeCustomPop();
+                    }}
+                    anchorRef={rangeTabsRef.value}
+                    placement="bottom-end"
+                    closeOnBackdrop={isMobile.value}
+                    sheetOnMobile
+                    title={t("dashboard.rangeCustom")}
+                  >
+                    <div ref={rangePanelRef} class="lookup-view__range-pop">
+                      <div class="lookup-view__range-pop-head">
+                        <span>{t("dashboard.rangeCustom")}</span>
+                      </div>
+                      <div class="lookup-view__range-pop-dates">
+                        <HkDatePicker
+                          size="sm"
+                          modelValue={customFrom.value}
+                          onUpdate:modelValue={(v: string | null) => (customFrom.value = v)}
+                          placeholder={t("dashboard.rangeFrom")}
+                          max={customTo.value ?? undefined}
+                        />
+                        <HkDatePicker
+                          size="sm"
+                          modelValue={customTo.value}
+                          onUpdate:modelValue={(v: string | null) => (customTo.value = v)}
+                          placeholder={t("dashboard.rangeTo")}
+                          min={customFrom.value ?? undefined}
+                        />
+                      </div>
+                      <div class="lookup-view__range-pop-hint">
+                        {t("dashboard.rangeCustomHint")}
+                      </div>
+                    </div>
+                  </HkPopover>
                   {/* Filter chips share the date-range row's height */}
                   <ShipFilterBar
                     ships={dateFiltered.value}
@@ -818,14 +963,22 @@ export default defineComponent({
                   />
                 </div>
                 {/* What the selected range actually covers — WG only serves
-                    career totals, so deltas need a local baseline. */}
-                {dateRange.value !== "all" ? (
+                    career totals, so deltas need a local baseline. The
+                    custom window's note spans the baseline actually used
+                    through the snapshot that closed the end bound. */}
+                {dateRange.value !== "all" &&
+                (dateRange.value !== "custom" || customWindow.value) ? (
                   <p class="lookup-view__range-note">
-                    {recentDelta.value
-                      ? t("dashboard.rangeSince", {
-                          date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                    {dateRange.value === "custom" && recentDelta.value
+                      ? t("dashboard.rangeWindow", {
+                          from: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                          to: new Date(recentDelta.value.endTs * 1000).toLocaleDateString(),
                         })
-                      : t("dashboard.rangeNoHistory")}
+                      : recentDelta.value
+                        ? t("dashboard.rangeSince", {
+                            date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                          })
+                        : t("dashboard.rangeNoHistory")}
                   </p>
                 ) : null}
                 {/* Per-type summary cards */}
