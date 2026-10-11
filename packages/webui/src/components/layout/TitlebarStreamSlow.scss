@@ -1,0 +1,32 @@
+/* TitlebarStreamSlow — the degraded-loading chip's hover card. The chip
+   itself is hikari's HkPersistentToast (warning tone); only the card
+   layout lives here, mirroring TitlebarUpstreamFault's card geometry. */
+
+.titlebar-stream-slow {
+  margin-right: 4px;
+}
+
+/* Phone bar: no room for the label next to the caption buttons —
+   icon-only, same as the fault and loading chips. */
+@media (max-width: 767px) {
+  .titlebar-stream-slow .hk-persistent-toast__label {
+    display: none;
+  }
+
+  .titlebar-stream-slow .hk-persistent-toast {
+    padding: 2px 8px;
+  }
+}
+
+.titlebar-stream-slow__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 230px;
+  max-width: 320px;
+}
+
+.titlebar-stream-slow__text {
+  margin: 0;
+  color: rgb(var(--color-text) / 85%);
+}

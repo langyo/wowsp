@@ -5,6 +5,10 @@
     "lastFail": "Last failure: {time}",
     "hint": "This is likely a game-vendor service hiccup and usually recovers on its own; wowsp keeps serving cached stats meanwhile."
   },
+  "slow": {
+    "short": "Partial data downloaded, still loading",
+    "tooltip": "The upstream service is degraded. We are still loading — only partial data is shown for now."
+  },
   "time": {
     "justNow": "just now",
     "minAgo": "{m} min ago",

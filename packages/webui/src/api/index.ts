@@ -117,6 +117,7 @@ export type {
   ShipServerStats,
   ShipCareerTotals,
   ShipStatsHistoryPoint,
+  ShipStatsProgress,
   UpstreamHostEntry,
   UpstreamHostHealth,
   UpstreamHostReport,

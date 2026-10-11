@@ -37,6 +37,7 @@ use super::wg_api::{ExpectedPrRow, PrAlgo};
 /// detail panel relies on.
 #[tauri::command]
 pub async fn lookup_player_ship_stats(
+    app: tauri::AppHandle,
     account_id: i64,
     realm: String,
     pr_algo: Option<String>,
@@ -44,7 +45,6 @@ pub async fn lookup_player_ship_stats(
 ) -> Result<Vec<PlayerShipStats>, String> {
     let algo = PrAlgo::from_param(pr_algo.as_deref());
     let cache_file = format!("ship-stats/{realm}_{account_id}.json");
-    let name_map = load_ship_name_map();
     // Expected algorithm: load the wows-numbers table once for the whole
     // list (downloaded on cache miss, see `trends`). None when it can't be
     // loaded — every row then renders "--" instead of failing the lookup.
@@ -54,12 +54,18 @@ pub async fn lookup_player_ship_stats(
     } else {
         None
     };
-    let enrich = |raw: &RawShipStats| -> PlayerShipStats {
-        let mut p: PlayerShipStats = raw.into();
-        p.name = name_map.get(&raw.ship_id).cloned().unwrap_or_default();
-        apply_pr_algo(&mut p, algo, &expected_table);
-        p
-    };
+    // The streaming layer's enrichment capture: partial rows pushed while
+    // a slow document is still trickling in render through the same name
+    // map + PR transform as the final answer (see [`PartialContext`]).
+    let ctx = std::sync::Arc::new(PartialContext {
+        app: Some(app),
+        realm: realm.clone(),
+        account_id,
+        name_map: load_ship_name_map(),
+        algo,
+        expected: expected_table,
+    });
+    let enrich = |raw: &RawShipStats| -> PlayerShipStats { ctx.enrich(raw) };
 
     // Session read-through (roster surfaces): the raw counters are shared
     // verbatim; PR is a pure function of them and is re-derived per the
@@ -73,7 +79,7 @@ pub async fn lookup_player_ship_stats(
     // The shared single-writer fetch: concurrent callers (either window)
     // join the ONE in-flight request instead of stacking duplicate
     // hits; a success lands in the session cache before the round closes.
-    let result = raw_ship_stats_shared(&realm, account_id).await;
+    let result = raw_ship_stats_shared(&realm, account_id, Some(ctx.clone())).await;
     let stats = match result {
         Ok(s) => {
             // Persist cache.
@@ -95,7 +101,7 @@ pub async fn lookup_player_ship_stats(
             if let Ok(Some(raw)) = read_appdata_json(&cache_file) {
                 if let Ok(mut cached) = serde_json::from_str::<Vec<PlayerShipStats>>(&raw) {
                     for p in &mut cached {
-                        apply_pr_algo(p, algo, &expected_table);
+                        apply_pr_algo(p, ctx.algo, &ctx.expected);
                     }
                     return Ok(cached);
                 }
@@ -210,7 +216,17 @@ pub(crate) fn clear_ship_stats_session_cache() {
 /// serve from the session cache (inserted by the writer before the round
 /// closes, so no window exists where a newcomer re-fetches) or, for
 /// always-fresh callers, start a genuinely new round.
-async fn raw_ship_stats_shared(realm: &str, account_id: i64) -> Result<Vec<RawShipStats>, String> {
+///
+/// `ctx` is the writer's streaming context: waiters joining the round see
+/// the WRITER's partial events (a waiter with a different PR preference
+/// gets transient partials in the writer's caliber; the round's final
+/// answer re-derives every caller's PR as before, so only the mid-flight
+/// preview can differ).
+async fn raw_ship_stats_shared(
+    realm: &str,
+    account_id: i64,
+    ctx: Option<std::sync::Arc<PartialContext>>,
+) -> Result<Vec<RawShipStats>, String> {
     let key = (realm.to_string(), account_id);
     let round = {
         let mut map = SHIP_FETCH_INFLIGHT.lock().await;
@@ -231,7 +247,7 @@ async fn raw_ship_stats_shared(realm: &str, account_id: i64) -> Result<Vec<RawSh
     }
     // We are this round's single writer.
     let round_epoch = SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire);
-    let result = match fetch_ship_stats(account_id, realm, true).await {
+    let result = match fetch_ship_stats(account_id, realm, true, ctx.as_deref()).await {
         Ok(mut raw) => {
             // The vortex transport serves no per-ship last_battle_time (the
             // retired WG API did). Carry the previous disk-cache write's
@@ -327,7 +343,7 @@ pub(crate) async fn fetch_expected_pr_rows(
     account_id: i64,
     realm: &str,
 ) -> Result<Vec<ExpectedPrRow>, String> {
-    Ok(fetch_ship_stats(account_id, realm, false)
+    Ok(fetch_ship_stats(account_id, realm, false, None)
         .await?
         .iter()
         .map(|s| ExpectedPrRow {
@@ -551,23 +567,290 @@ pub(crate) fn read_snapshots(realm: &str, account_id: i64) -> Vec<StatsSnapshot>
         .unwrap_or_default()
 }
 
-// ── Vortex fetch (every realm) ──────────────────────────────────────────
+// ── Dual-path fetch: vortex primary, official racer ────────────────────
+//
+// Both arms ALWAYS fly together on non-CN realms:
+//
+//   - vortex per-mode bulk endpoints — the primary. The only source of the
+//     mode-split fields (ranked/solo/div/co-op buckets), but its per-ship
+//     documents run to hundreds of KB and the host crawls at ~12 KB/s with
+//     20–30s TTFB during the degradations observed since 2026-10-09.
+//   - the WG API `/wows/ships/stats/` — the racer. The endpoint stopped
+//     serving the mode-split fields (observed live 2026-10: `fields=…pvp_
+//     solo,pvp_div2,…` answers only `ship_id,last_battle_time,pvp` on every
+//     cluster), but the career-pvp table still answers, and on a small
+//     document that often completes first.
+//
+// Whichever arm finishes first fills the table (the racer's rows ship as a
+// partial-rows event); vortex keeps running for the splits and its answer
+// wins when it lands. A vortex failure falls back to the racer's rows, and
+// only both arms failing fails the fetch (then the caller's disk-cache
+// fallback applies). Both arms read through the same stall-tolerant body
+// reader, so "slow but flowing" streams keep going instead of dying at a
+// 15s whole-request timeout — see [`read_body_streamed`].
 
-/// Fetch a player's per-ship stats from the vortex per-battle-type bulk
-/// endpoints — the transport the official profile site lazy-loads. The WG
-/// API arm (`/wows/ships/stats/`) that used to serve the international
-/// realms stopped returning the mode-split fields (observed live 2026-10:
-/// `fields=…pvp_solo,pvp_div2,pvp_div3,pve,rank_solo,rank_div2,rank_div3`
-/// answers only `ship_id,last_battle_time,pvp` on every cluster — asia and
-/// Lesta alike), which silently emptied the per-ship ranked/solo/coop
-/// buckets behind the stats-source filter. Every cluster (WG, Lesta, CN)
-/// runs the same vortex service, so ONE arm serves all realms.
+/// Event carrying streaming progress for one per-ship fetch. The phases:
+/// `"partial"` — rows ready, the lookup table fills progressively;
+/// `"slow"` — the source crossed [`SHIP_STREAM_SLOW_SIGNAL`] while still
+/// flowing (the chrome's degraded-loading chip); `"done"` / `"aborted"` —
+/// the source settled, the chip stands down. `source` names the transport
+/// (`"vortex:pvp"`, `"vortex:rank_solo"`, `"official"`, …).
+pub(crate) const SHIP_STATS_PROGRESS_EVENT: &str = "wowsp://ship-stats-progress";
+
+/// Everything the streaming layer needs to push partial rows: a capture of
+/// the command's name map, PR algorithm and expected table, plus the app
+/// handle the progress events ride. Built once per
+/// `lookup_player_ship_stats`; internal callers (`fetch_expected_pr_rows`)
+/// pass `None` and the whole progress layer degrades to a no-op.
+struct PartialContext {
+    app: Option<tauri::AppHandle>,
+    realm: String,
+    account_id: i64,
+    name_map: std::collections::HashMap<i64, String>,
+    algo: PrAlgo,
+    expected: Option<std::collections::HashMap<i64, ExpectedValues>>,
+}
+
+/// Wire shape of the `wowsp://ship-stats-progress` payload. camelCase on
+/// the wire to match the frontend's `ShipStatsProgress` interface — see
+/// the serialization test pinning the field names.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShipStatsProgress {
+    realm: String,
+    account_id: i64,
+    phase: &'static str,
+    source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rows: Option<Vec<PlayerShipStats>>,
+}
+
+impl PartialContext {
+    /// The command's enrichment, verbatim — partial rows and the final
+    /// answer render through the same transform.
+    fn enrich(&self, raw: &RawShipStats) -> PlayerShipStats {
+        let mut p: PlayerShipStats = raw.into();
+        p.name = self.name_map.get(&raw.ship_id).cloned().unwrap_or_default();
+        apply_pr_algo(&mut p, self.algo, &self.expected);
+        p
+    }
+
+    fn emit_progress(&self, phase: &'static str, source: &str, rows: Option<Vec<PlayerShipStats>>) {
+        let Some(app) = &self.app else { return };
+        let payload = ShipStatsProgress {
+            realm: self.realm.clone(),
+            account_id: self.account_id,
+            phase,
+            source: source.to_string(),
+            rows,
+        };
+        use tauri::Emitter;
+        if let Err(e) = app.emit(SHIP_STATS_PROGRESS_EVENT, &payload) {
+            tracing::warn!(error = %e, "emit ship-stats progress failed");
+        }
+    }
+}
+
+/// A slow body stops being an error only while bytes keep arriving: this is
+/// the ceiling on one UNPRODUCTIVE read (no bytes for this long → abort),
+/// taking over from the old 15s whole-request timeout that killed every
+/// large document the moment a degradation began.
+const SHIP_STREAM_STALL: std::time::Duration = std::time::Duration::from_secs(15);
+/// Hard ceiling on one document's TOTAL download — a crawl that never
+/// stalls hard must still end, or a query lane leaks for good.
+const SHIP_STREAM_HARD_CAP: std::time::Duration = std::time::Duration::from_secs(180);
+/// How long a source may stream before the chrome flags it degraded —
+/// matches the historical 15s timeout: past this point still flowing is
+/// officially "slow but receiving".
+const SHIP_STREAM_SLOW_SIGNAL: std::time::Duration = std::time::Duration::from_secs(15);
+/// One partial-rows event per this many newly parsed ships (each event
+/// re-serializes every row so far, so the cadence stays flat as a document
+/// grows).
+const SHIP_PARTIAL_BATCH: usize = 25;
+
+/// Read one response body with stall-tolerant pacing: any [`SHIP_STREAM_-
+/// STALL`] gap without bytes aborts, but a body that keeps trickling may
+/// take up to [`SHIP_STREAM_HARD_CAP`] in total. Crossing
+/// [`SHIP_STREAM_SLOW_SIGNAL`] emits the `"slow"` phase once — including
+/// while the FIRST byte is still pending, so a 30s TTFB is flagged the
+/// moment it passes 15s, not only after data arrives. `on_chunk` sees every
+/// appended chunk together with the full buffer so far (the incremental
+/// scanners ride it). Terminal phases are the CALLER's business (see
+/// [`with_terminal_progress`]) so every exit path of a source emits exactly
+/// one.
+async fn read_body_streamed(
+    mut resp: reqwest::Response,
+    ctx: Option<&PartialContext>,
+    source: &str,
+    mut on_chunk: impl FnMut(&[u8]),
+) -> Result<Vec<u8>, String> {
+    let started = std::time::Instant::now();
+    let mut buffer: Vec<u8> = Vec::with_capacity(64 * 1024);
+    let mut slow_signalled = false;
+    let slow_deadline = tokio::time::Instant::from_std(started + SHIP_STREAM_SLOW_SIGNAL);
+    loop {
+        // Fuse a one-shot slow deadline into the read: it fires while the
+        // body is still pending (the TTFB case); once lit (here or on a
+        // chunk arrival below) the branch disables itself.
+        let await_slow = !slow_signalled;
+        let slow_timer = tokio::time::sleep_until(slow_deadline);
+        tokio::pin!(slow_timer);
+        let chunk = tokio::select! {
+            c = tokio::time::timeout(SHIP_STREAM_STALL, resp.chunk()) => c,
+            _ = &mut slow_timer, if await_slow => {
+                slow_signalled = true;
+                if let Some(ctx) = ctx {
+                    ctx.emit_progress("slow", source, None);
+                }
+                continue;
+            },
+        };
+        match chunk {
+            Ok(Ok(Some(bytes))) => {
+                if started.elapsed() > SHIP_STREAM_HARD_CAP {
+                    return Err(format!(
+                        "{source}: hard cap {}s exceeded",
+                        SHIP_STREAM_HARD_CAP.as_secs()
+                    ));
+                }
+                buffer.extend_from_slice(&bytes);
+                on_chunk(&buffer);
+                if !slow_signalled && started.elapsed() >= SHIP_STREAM_SLOW_SIGNAL {
+                    slow_signalled = true;
+                    if let Some(ctx) = ctx {
+                        ctx.emit_progress("slow", source, None);
+                    }
+                }
+            },
+            Ok(Ok(None)) => return Ok(buffer),
+            Ok(Err(e)) => return Err(format!("{source} body: {e}")),
+            Err(_) => {
+                return Err(format!(
+                    "{source} body: no bytes for {}s",
+                    SHIP_STREAM_STALL.as_secs()
+                ));
+            },
+        }
+    }
+}
+
+/// Wrap one source's whole fetch so it emits exactly one terminal progress
+/// phase (`"done"` / `"aborted"`) whatever the outcome — the chrome's chip
+/// keys off slow→terminal transitions and must never be left hanging.
+async fn with_terminal_progress<T>(
+    ctx: Option<&PartialContext>,
+    source: &str,
+    fut: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let result = fut.await;
+    if let Some(ctx) = ctx {
+        ctx.emit_progress(
+            if result.is_ok() { "done" } else { "aborted" },
+            source,
+            None,
+        );
+    }
+    result
+}
+
+/// The dual-path race, split out so the ordering semantics are testable
+/// without HTTP: both futures are polled concurrently;
+///   - vortex finishing Ok first is the healthy path — the racer's result
+///     is dropped unfinished, and `on_racer_abandoned` runs so its source
+///     still gets a terminal signal (it may already have crossed "slow";
+///     a source dropped mid-flight must not leave the chip hanging);
+///   - the racer finishing Ok first surfaces its rows via `on_racer_rows`,
+///     then vortex keeps running: its Ok wins (the splits), its Err falls
+///     back to the racer's rows;
+///   - vortex Err first still awaits the racer (it may rescue the fetch);
+///   - the racer Err first is ignored — vortex decides alone.
+///
+/// Only the future that did NOT settle at the select is ever awaited
+/// afterwards — re-polling a completed pinned future is undefined, so each
+/// branch consumes exactly the one result it owns.
+async fn race_dual_path(
+    racer: impl std::future::Future<Output = Result<Vec<RawShipStats>, String>>,
+    primary: impl std::future::Future<Output = Result<Vec<RawShipStats>, String>>,
+    mut on_racer_rows: impl FnMut(&[RawShipStats]),
+    mut on_racer_abandoned: impl FnMut(),
+) -> Result<Vec<RawShipStats>, String> {
+    /// Which arm settled first at the select — carries that arm's result
+    /// out; the OTHER arm stays pending for its branch to await.
+    enum Settled {
+        Racer(Result<Vec<RawShipStats>, String>),
+        Primary(Result<Vec<RawShipStats>, String>),
+    }
+    tokio::pin!(racer, primary);
+    let first = tokio::select! {
+        r = &mut racer => Settled::Racer(r),
+        p = &mut primary => Settled::Primary(p),
+    };
+    match first {
+        Settled::Primary(primary_result) => match primary_result {
+            // Vortex fast and healthy — the racer is dropped unfinished;
+            // give its source a terminal signal first.
+            Ok(rows) => {
+                on_racer_abandoned();
+                Ok(rows)
+            },
+            // Vortex failed; the still-running racer may rescue the fetch.
+            Err(primary_err) => match racer.await {
+                Ok(racer_rows) => Ok(racer_rows),
+                Err(_) => Err(primary_err),
+            },
+        },
+        Settled::Racer(racer_result) => match racer_result {
+            Ok(racer_rows) => {
+                on_racer_rows(&racer_rows);
+                // Vortex keeps running for the splits; its Err falls back
+                // to the racer's already-answered table.
+                match primary.await {
+                    Ok(primary_rows) => Ok(primary_rows),
+                    Err(_) => Ok(racer_rows),
+                }
+            },
+            // The racer failed early — vortex decides alone.
+            Err(_) => primary.await,
+        },
+    }
+}
+
+/// Fetch a player's per-ship stats: the vortex per-mode arms everywhere,
+/// plus the official WG-API racer on every realm that has one (CN never
+/// had a WG-style API — vortex only there). See the section header for the
+/// race semantics and [`read_body_streamed`] for the degraded-transport
+/// behavior.
 async fn fetch_ship_stats(
     account_id: i64,
     realm: &str,
     mode_splits: bool,
+    ctx: Option<&PartialContext>,
 ) -> Result<Vec<RawShipStats>, String> {
-    fetch_ship_stats_vortex(account_id, realm, mode_splits).await
+    let racer = async {
+        if realm == "cn" {
+            // No official arm exists on the CN cluster — park the racer on
+            // an error the race treats as "racer unavailable".
+            Err("official arm unavailable on cn".to_string())
+        } else {
+            fetch_ship_stats_official(account_id, realm, ctx).await
+        }
+    };
+    let primary = fetch_ship_stats_vortex(account_id, realm, mode_splits, ctx);
+    let on_racer_rows = |rows: &[RawShipStats]| {
+        if let Some(ctx) = ctx {
+            let enriched: Vec<PlayerShipStats> = rows.iter().map(|r| ctx.enrich(r)).collect();
+            ctx.emit_progress("partial", "official", Some(enriched));
+        }
+    };
+    // The healthy path drops the racer mid-flight; its source may already
+    // have crossed "slow", and a dropped source emits no terminal of its
+    // own — stand it down here so the chip cannot stick.
+    let on_racer_abandoned = || {
+        if let Some(ctx) = ctx {
+            ctx.emit_progress("done", "official", None);
+        }
+    };
+    race_dual_path(racer, primary, on_racer_rows, on_racer_abandoned).await
 }
 
 /// Vortex per-battle-type bulk endpoints
@@ -613,9 +896,13 @@ async fn fetch_ship_stats_vortex(
     account_id: i64,
     realm: &str,
     mode_splits: bool,
+    ctx: Option<&PartialContext>,
 ) -> Result<Vec<RawShipStats>, String> {
     let host = super::wg_realm::vortex_host(realm)?;
-    let client = super::wg_api_cn::vortex_client()?;
+    // The stream client: no whole-request timeout — the per-mode documents
+    // are the big ones a degraded host serves at a crawl, and
+    // [`read_body_streamed`] enforces the pacing instead.
+    let client = super::wg_api_cn::vortex_stream_client()?;
     let modes: Vec<&'static str> = if mode_splits {
         std::iter::once(SHIP_MODE_CORE)
             .chain(SHIP_MODE_SPLITS)
@@ -634,7 +921,7 @@ async fn fetch_ship_stats_vortex(
         tasks.push(async move {
             (
                 mode,
-                fetch_vortex_ships_mode(client, host, account_id, mode).await,
+                fetch_vortex_ships_mode(client, host, account_id, mode, ctx).await,
             )
         });
     }
@@ -648,27 +935,598 @@ async fn fetch_ship_stats_vortex(
 /// Fetch one cluster's per-mode ships document and validate its envelope.
 /// Takes the client owned (a cheap clone) and the host/mode as `'static`
 /// names so the spawned future is `Send` without higher-ranked lifetime
-/// proof over borrowed parameters.
+/// proof over borrowed parameters. The body rides the stall-tolerant
+/// reader; the `pvp` core additionally streams through the incremental
+/// scanner so partial rows surface while a slow document is mid-flight.
 async fn fetch_vortex_ships_mode(
     client: reqwest::Client,
     host: &'static str,
     account_id: i64,
     mode: &'static str,
+    ctx: Option<&PartialContext>,
 ) -> Result<serde_json::Value, String> {
-    let url = format!("https://{host}/api/accounts/{account_id}/ships/{mode}/");
-    let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url).await?;
-    if !resp.status().is_success() {
-        return Err(format!("vortex ships: HTTP {}", resp.status()));
+    let source = format!("vortex:{mode}");
+    let terminal_source = source.clone();
+    with_terminal_progress(ctx, &terminal_source, async move {
+        let url = format!("https://{host}/api/accounts/{account_id}/ships/{mode}/");
+        let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url).await?;
+        if !resp.status().is_success() {
+            return Err(format!("vortex ships: HTTP {}", resp.status()));
+        }
+        let body = if mode == SHIP_MODE_CORE {
+            match ctx {
+                Some(ctx) => read_body_scanned_vortex(ctx, &source, resp, account_id).await?,
+                None => read_body_streamed(resp, None, &source, |_| {}).await?,
+            }
+        } else {
+            read_body_streamed(resp, ctx, &source, |_| {}).await?
+        };
+        let v: serde_json::Value =
+            serde_json::from_slice(&body).map_err(|e| format!("vortex ships parse: {e}"))?;
+        if v.get("status").and_then(|s| s.as_str()) != Some("ok") {
+            let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
+            return Err(format!("vortex ships: {err}"));
+        }
+        Ok(v)
+    })
+    .await
+}
+
+/// The pvp core's body read with the incremental scanner attached: every
+/// complete ship entry the scanner yields is parsed (`from_vortex` over
+/// the entry's own node) and emitted in enriched batches, so the lookup
+/// table fills while the document crawls in. The caller's full-document
+/// parse afterwards stays authoritative — a scanner desync can only
+/// misshape the transient partials, never the merged answer.
+async fn read_body_scanned_vortex(
+    ctx: &PartialContext,
+    source: &str,
+    resp: reqwest::Response,
+    account_id: i64,
+) -> Result<Vec<u8>, String> {
+    let mut scanner = ContainerScanner::new(
+        ContainerKind::Map,
+        vec![
+            "data".to_string(),
+            account_id.to_string(),
+            "statistics".to_string(),
+        ],
+    );
+    let mut parsed: Vec<RawShipStats> = Vec::new();
+    let mut last_emitted = 0usize;
+    let body = read_body_streamed(resp, Some(ctx), source, |buf: &[u8]| {
+        for entry in scanner.feed(buf) {
+            let Some(id) = entry.key else { continue };
+            let Ok(node) =
+                serde_json::from_slice::<serde_json::Value>(&buf[entry.start..entry.end])
+            else {
+                continue;
+            };
+            // The statistics entry IS the battle-type node shape from_vortex
+            // consumes (`{"pvp": {...}, ...}`) — no re-wrapping (a second
+            // `pvp` layer hides the counters one depth too deep and parses
+            // every entry to None).
+            if let Some(raw) = RawShipStats::from_vortex(id, &node) {
+                parsed.push(raw);
+            }
+        }
+        if parsed.len() - last_emitted >= SHIP_PARTIAL_BATCH {
+            last_emitted = parsed.len();
+            let rows: Vec<PlayerShipStats> = parsed.iter().map(|r| ctx.enrich(r)).collect();
+            ctx.emit_progress("partial", source, Some(rows));
+        }
+    })
+    .await?;
+    // Flush the tail — a small account's last batch never crosses the
+    // threshold on its own.
+    if parsed.len() > last_emitted {
+        let rows: Vec<PlayerShipStats> = parsed.iter().map(|r| ctx.enrich(r)).collect();
+        ctx.emit_progress("partial", source, Some(rows));
     }
-    let v: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("vortex ships parse: {e}"))?;
-    if v.get("status").and_then(|s| s.as_str()) != Some("ok") {
-        let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
-        return Err(format!("vortex ships: {err}"));
+    Ok(body)
+}
+
+/// The official WG-API racer (`/wows/ships/stats/`): career pvp counters
+/// and `last_battle_time` per ship, no mode splits (the endpoint dropped
+/// them live 2026-10 — see the section header). Gets the same
+/// stall-tolerant streaming and incremental scan as the vortex arm, so a
+/// crawling response still fills the table progressively. Long lists
+/// paginate; pages beyond the first are fetched sequentially and appended
+/// (bounded — a runaway page_total must not loop the racer forever).
+async fn fetch_ship_stats_official(
+    account_id: i64,
+    realm: &str,
+    ctx: Option<&PartialContext>,
+) -> Result<Vec<RawShipStats>, String> {
+    with_terminal_progress(ctx, "official", async move {
+        let app_id = super::wg_realm::application_id(realm);
+        let host = super::wg_realm::api_host(realm)?;
+        let client = super::wg_api_cn::vortex_stream_client()?;
+        let fields = "ship_id,last_battle_time,pvp,pvp_solo,pvp_div2,pvp_div3,pve,\
+                      rank_solo,rank_div2,rank_div3";
+        const MAX_PAGES: usize = 8;
+        let mut out: Vec<RawShipStats> = Vec::new();
+        let mut partial_state = OfficialPartialState {
+            parsed: Vec::new(),
+            last_emitted: 0,
+        };
+        let mut page_total = 1usize;
+        // A while, not `for page in 1..=page_total`: the range would freeze
+        // page_total at its pre-loop value and never fetch page 2+.
+        let mut page = 1usize;
+        while page <= page_total {
+            let mut url = format!(
+                "https://{host}/wows/ships/stats/?application_id={app_id}\
+                 &account_id={account_id}&fields={fields}"
+            );
+            if page > 1 {
+                url.push_str(&format!("&page_no={page}"));
+            }
+            let resp =
+                super::upstream_health::recorded_get(&client, host, "ships/stats", url).await?;
+            if !resp.status().is_success() {
+                return Err(format!("ships/stats: HTTP {}", resp.status()));
+            }
+            let body =
+                read_body_scanned_official(ctx, resp, account_id, &mut partial_state).await?;
+            let v: serde_json::Value =
+                serde_json::from_slice(&body).map_err(|e| format!("ships/stats parse: {e}"))?;
+            if v.get("status").and_then(|s| s.as_str()) != Some("ok") {
+                let err = v
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown");
+                return Err(format!("ships/stats: {err}"));
+            }
+            if page == 1 {
+                page_total = v
+                    .get("meta")
+                    .and_then(|m| m.get("page_total"))
+                    .and_then(|p| p.as_u64())
+                    .unwrap_or(1)
+                    .min(MAX_PAGES as u64) as usize;
+            }
+            // data is { "<accountId>": [ { ship_id, pvp: {...}, ... }, ... ]
+            let arr = v
+                .get("data")
+                .and_then(|d| d.get(account_id.to_string()))
+                .and_then(|a| a.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for entry in arr {
+                if let Some(raw) = RawShipStats::from_wg(&entry) {
+                    out.push(raw);
+                }
+            }
+            page += 1;
+        }
+        Ok(out)
+    })
+    .await
+}
+
+/// Per-fetch (cross-page) partial state for the official arm's scanner:
+/// page 2's events must carry page 1's rows too, or the progressive table
+/// would shrink mid-pagination.
+struct OfficialPartialState {
+    parsed: Vec<RawShipStats>,
+    last_emitted: usize,
+}
+
+/// The racer's body read with the incremental scanner attached (mirror of
+/// [`read_body_scanned_vortex`] over the WG array shape). No progress
+/// context → plain buffered read with the same stall tolerance.
+async fn read_body_scanned_official(
+    ctx: Option<&PartialContext>,
+    resp: reqwest::Response,
+    account_id: i64,
+    state: &mut OfficialPartialState,
+) -> Result<Vec<u8>, String> {
+    let Some(ctx) = ctx else {
+        return read_body_streamed(resp, None, "official", |_| {}).await;
+    };
+    let mut scanner = ContainerScanner::new(
+        ContainerKind::Array,
+        vec!["data".to_string(), account_id.to_string()],
+    );
+    let OfficialPartialState {
+        parsed,
+        last_emitted,
+    } = state;
+    let body = read_body_streamed(resp, Some(ctx), "official", |buf: &[u8]| {
+        for entry in scanner.feed(buf) {
+            let Ok(node) =
+                serde_json::from_slice::<serde_json::Value>(&buf[entry.start..entry.end])
+            else {
+                continue;
+            };
+            if let Some(raw) = RawShipStats::from_wg(&node) {
+                parsed.push(raw);
+            }
+        }
+        if parsed.len() - *last_emitted >= SHIP_PARTIAL_BATCH {
+            *last_emitted = parsed.len();
+            let rows: Vec<PlayerShipStats> = parsed.iter().map(|r| ctx.enrich(r)).collect();
+            ctx.emit_progress("partial", "official", Some(rows));
+        }
+    })
+    .await?;
+    if parsed.len() > *last_emitted {
+        let rows: Vec<PlayerShipStats> = parsed.iter().map(|r| ctx.enrich(r)).collect();
+        ctx.emit_progress("partial", "official", Some(rows));
     }
-    Ok(v)
+    Ok(body)
+}
+
+// ── Incremental JSON container scanner ──────────────────────────────────
+
+/// The target container's shape for a [`ContainerScanner`].
+#[derive(Clone, Copy, PartialEq)]
+enum ContainerKind {
+    /// An object whose children are `"key": value` entries (vortex
+    /// `statistics`: ship-id-keyed nodes; the key IS the ship id).
+    Map,
+    /// An array whose children are bare values (WG `data.<account>`: one
+    /// object per ship).
+    Array,
+}
+
+impl ContainerKind {
+    /// The byte that opens this container.
+    fn open(self) -> u8 {
+        match self {
+            ContainerKind::Map => b'{',
+            ContainerKind::Array => b'[',
+        }
+    }
+}
+
+/// One complete child element a scanner yields: the VALUE's half-open byte
+/// range (stable while the buffer only ever grows) plus, for map children,
+/// the parsed integer key.
+struct ScanEntry {
+    key: Option<i64>,
+    start: usize,
+    end: usize,
+}
+
+/// Where the scanner sits between the target container's children.
+enum ChildState {
+    /// At a child boundary: a map key string, a value start, or the
+    /// container's closer.
+    Next,
+    /// A map child's key string was read; its ':' is the next token.
+    Key,
+    /// The ':' is consumed — the next token opens the value.
+    AwaitValue { key: Option<i64> },
+    /// Inside a child value. `own_depth` counts the value's open
+    /// containers (1 = the value's own opening brace), `start` is the
+    /// value's first byte, `key` carries the map child's key.
+    Value {
+        own_depth: usize,
+        start: usize,
+        key: Option<i64>,
+    },
+    /// A child value completed; ',' or the container's closer is next.
+    ValueDone,
+}
+
+/// Incremental scanner for ONE JSON container inside a growing byte
+/// buffer: locates the container at `path` (a chain of object keys from
+/// the document root) and yields each complete child element as it
+/// arrives. A pure byte state machine — feed it whatever arrived and drain
+/// the entries; any chunking of the same byte stream yields identical
+/// entries, because a token the buffer cannot yet complete leaves the
+/// cursor at that token's first byte. Malformed input parks the scanner
+/// permanently (it only ever fed transient partial rows — the caller's
+/// full-document parse stays authoritative).
+struct ContainerScanner {
+    kind: ContainerKind,
+    path: Vec<String>,
+    /// Next byte to examine.
+    pos: usize,
+    /// Open-container stack ('{' / '[') across the whole document.
+    stack: Vec<u8>,
+    /// Key-path of the open containers: `Some(key)` when the container is
+    /// the value of an object member, `None` for the root and for array
+    /// elements. The target matches when the named chain from the root
+    /// equals `path` exactly.
+    key_path: Vec<Option<String>>,
+    /// Depth (`stack.len()`) of the target container once found.
+    target_depth: Option<usize>,
+    /// Last completed string token outside the target — promoted to a
+    /// container key by the ':' (or '{'/'[') that follows it, cleared by
+    /// any other token.
+    last_string: Option<String>,
+    child: ChildState,
+    new_entries: Vec<ScanEntry>,
+    finished: bool,
+}
+
+/// Index of the quote closing the string that starts at `quote_pos`.
+/// None while the buffer has not reached it (escapes honored).
+fn find_string_end(buf: &[u8], quote_pos: usize) -> Option<usize> {
+    let mut i = quote_pos + 1;
+    let mut escaped = false;
+    while i < buf.len() {
+        let b = buf[i];
+        if escaped {
+            escaped = false;
+        } else if b == b'\\' {
+            escaped = true;
+        } else if b == b'"' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// End (exclusive) of a `true` / `false` / `null` literal. None while the
+/// buffer is too short to carry the whole word.
+fn find_literal_end(buf: &[u8], start: usize) -> Option<usize> {
+    const WORDS: [&[u8]; 3] = [b"true", b"false", b"null"];
+    for word in WORDS {
+        if buf.len() >= start + word.len() && &buf[start..start + word.len()] == word {
+            return Some(start + word.len());
+        } else if buf.len() < start + word.len() && word.starts_with(&buf[start..]) {
+            return None;
+        }
+    }
+    // Not a literal prefix at all — malformed for our purposes; treat as
+    // terminal desync by reporting a zero-length token the caller flags.
+    Some(start)
+}
+
+/// End (exclusive) of a JSON number. None while the buffer ends inside the
+/// digits (a trailing run with no delimiter yet could still grow).
+fn find_number_end(buf: &[u8], start: usize) -> Option<usize> {
+    let mut i = start + 1;
+    while i < buf.len() && matches!(buf[i], b'0'..=b'9' | b'.' | b'e' | b'E' | b'+' | b'-') {
+        i += 1;
+    }
+    if i == buf.len() { None } else { Some(i) }
+}
+
+impl ContainerScanner {
+    fn new(kind: ContainerKind, path: Vec<String>) -> Self {
+        Self {
+            kind,
+            path,
+            pos: 0,
+            stack: Vec::new(),
+            key_path: Vec::new(),
+            target_depth: None,
+            last_string: None,
+            child: ChildState::Next,
+            new_entries: Vec::new(),
+            finished: false,
+        }
+    }
+
+    /// Feed the buffer-so-far (any growth pattern) and drain the entries
+    /// completed since the last call.
+    fn feed(&mut self, buf: &[u8]) -> Vec<ScanEntry> {
+        self.new_entries.clear();
+        while !self.finished && self.pos < buf.len() {
+            let b = buf[self.pos];
+            match b {
+                b' ' | b'\t' | b'\n' | b'\r' => self.pos += 1,
+                b'"' => {
+                    let Some(end) = find_string_end(buf, self.pos) else {
+                        break;
+                    };
+                    let content = String::from_utf8_lossy(&buf[self.pos + 1..end]).into_owned();
+                    self.on_string(content, self.pos, end + 1);
+                    self.pos = end + 1;
+                },
+                b'{' | b'[' => {
+                    let open = b;
+                    self.on_open(open, self.pos);
+                    self.pos += 1;
+                },
+                b'}' | b']' => {
+                    let close = b;
+                    self.on_close(close, self.pos);
+                    self.pos += 1;
+                },
+                b':' => {
+                    self.on_colon();
+                    self.pos += 1;
+                },
+                b',' => {
+                    self.on_comma();
+                    self.pos += 1;
+                },
+                b't' | b'f' | b'n' => {
+                    let Some(end) = find_literal_end(buf, self.pos) else {
+                        break;
+                    };
+                    if end == self.pos {
+                        // Desync flagged by find_literal_end.
+                        self.finished = true;
+                        break;
+                    }
+                    self.on_value_token(self.pos, end);
+                    self.pos = end;
+                },
+                b'-' | b'0'..=b'9' => {
+                    let Some(end) = find_number_end(buf, self.pos) else {
+                        break;
+                    };
+                    self.on_value_token(self.pos, end);
+                    self.pos = end;
+                },
+                // Any other byte cannot occur in the JSON we fetch — park
+                // the scanner rather than resync blindly.
+                _ => self.finished = true,
+            }
+        }
+        std::mem::take(&mut self.new_entries)
+    }
+
+    /// Record a completed child value and move to the post-value state.
+    fn child_value_completed(&mut self, start: usize, end: usize, key: Option<i64>) {
+        self.new_entries.push(ScanEntry { key, start, end });
+        self.child = ChildState::ValueDone;
+    }
+
+    fn on_string(&mut self, content: String, start: usize, end: usize) {
+        match self.target_depth {
+            None => self.last_string = Some(content),
+            Some(_) => match &mut self.child {
+                ChildState::Next => {
+                    if self.kind == ContainerKind::Map {
+                        // A map child's key: hold it until the ':' arrives.
+                        self.last_string = Some(content);
+                        self.child = ChildState::Key;
+                    } else {
+                        // An array child that is a bare string — complete
+                        // on the spot (our arrays carry objects, tolerate).
+                        self.child_value_completed(start, end, None);
+                    }
+                },
+                // A string inside a child value — structure-neutral.
+                ChildState::Value { .. } => {},
+                // "key" "string" / value "string" without structure between.
+                ChildState::Key | ChildState::AwaitValue { .. } | ChildState::ValueDone => {
+                    self.finished = true;
+                },
+            },
+        }
+    }
+
+    fn on_value_token(&mut self, start: usize, end: usize) {
+        match self.target_depth {
+            None => self.last_string = None,
+            Some(_) => match &mut self.child {
+                ChildState::AwaitValue { key } => {
+                    let key = *key;
+                    self.child_value_completed(start, end, key);
+                },
+                // Numbers/literals inside a child value — neutral.
+                ChildState::Value { .. } => {},
+                ChildState::Next if self.kind == ContainerKind::Array => {
+                    self.child_value_completed(start, end, None);
+                },
+                ChildState::Key | ChildState::Next | ChildState::ValueDone => {
+                    self.finished = true;
+                },
+            },
+        }
+    }
+
+    fn on_open(&mut self, open: u8, pos: usize) {
+        match self.target_depth {
+            None => {
+                let key = self.last_string.take();
+                self.stack.push(open);
+                self.key_path.push(key);
+                // The named chain from the root must equal `path`
+                // exactly: unkeyed containers (root, array elements)
+                // contribute no name, and a wrong turn that named an extra
+                // ancestor disqualifies the subtree.
+                let named_matches = self
+                    .key_path
+                    .iter()
+                    .filter_map(|k| k.as_deref())
+                    .eq(self.path.iter().map(|p| p.as_str()));
+                if named_matches && open == self.kind.open() {
+                    self.target_depth = Some(self.stack.len());
+                    self.child = ChildState::Next;
+                }
+            },
+            Some(_) => match &mut self.child {
+                ChildState::Next if self.kind == ContainerKind::Array => {
+                    self.child = ChildState::Value {
+                        own_depth: 1,
+                        start: pos,
+                        key: None,
+                    };
+                },
+                ChildState::AwaitValue { key } => {
+                    let key = *key;
+                    self.child = ChildState::Value {
+                        own_depth: 1,
+                        start: pos,
+                        key,
+                    };
+                },
+                ChildState::Value { own_depth, .. } => *own_depth += 1,
+                // An object where a key/value/closer belongs.
+                ChildState::Key | ChildState::Next | ChildState::ValueDone => {
+                    self.finished = true;
+                },
+            },
+        }
+    }
+
+    fn on_close(&mut self, _close: u8, pos: usize) {
+        match self.target_depth {
+            None => {
+                self.stack.pop();
+                self.key_path.pop();
+                self.last_string = None;
+            },
+            Some(_) => match std::mem::replace(&mut self.child, ChildState::Next) {
+                ChildState::Value {
+                    mut own_depth,
+                    start,
+                    key,
+                } => {
+                    own_depth -= 1;
+                    if own_depth == 0 {
+                        // pos is the value's own closing brace.
+                        self.child_value_completed(start, pos + 1, key);
+                    } else {
+                        self.child = ChildState::Value {
+                            own_depth,
+                            start,
+                            key,
+                        };
+                    }
+                },
+                // The target container's own closer — done for good.
+                ChildState::Next | ChildState::ValueDone => {
+                    self.finished = true;
+                },
+                ChildState::Key | ChildState::AwaitValue { .. } => {
+                    self.finished = true;
+                },
+            },
+        }
+    }
+
+    fn on_colon(&mut self) {
+        match self.target_depth {
+            None => {},
+            Some(_) => match std::mem::replace(&mut self.child, ChildState::Next) {
+                ChildState::Key => {
+                    // The held key string becomes this child's id (ship
+                    // ids are the statistics map's keys; anything else
+                    // parses to None and the entry is skipped upstream).
+                    let key = self.last_string.take().and_then(|k| k.parse::<i64>().ok());
+                    self.child = ChildState::AwaitValue { key };
+                },
+                // A ':' inside a child value is neutral; anywhere else in
+                // the target container is a desync.
+                other => self.child = other,
+            },
+        }
+    }
+
+    fn on_comma(&mut self) {
+        match self.target_depth {
+            None => self.last_string = None,
+            Some(_) => match std::mem::replace(&mut self.child, ChildState::Next) {
+                ChildState::ValueDone => {},
+                // Commas inside a child value (between its own members)
+                // are neutral.
+                other => self.child = other,
+            },
+        }
+    }
 }
 
 /// Merge the per-mode statistics maps into per-ship battle-type nodes and
@@ -733,11 +1591,24 @@ struct RawShipStats {
     modes: Option<ShipModeBreakdown>,
 }
 
-/// Parse one battle-type node (vortex field names: `battles_count` /
-/// `survived`). None when the node is absent/null or carries no battles.
-fn mode_from_node(node: Option<&serde_json::Value>) -> Option<ShipModeStats> {
+/// How a battle-type node spells its counter fields.
+#[derive(Clone, Copy)]
+enum ModeDialect {
+    /// WG `/wows/ships/stats/`: `battles` / `survived_battles`.
+    Wg,
+    /// Vortex: `battles_count` / `survived`.
+    Vortex,
+}
+
+/// Parse one battle-type node in the given dialect. None when the node is
+/// absent/null or carries no battles.
+fn mode_from_node(node: Option<&serde_json::Value>, dialect: ModeDialect) -> Option<ShipModeStats> {
     let v = node.filter(|v| !v.is_null())?;
-    let battles = v.get("battles_count").and_then(|x| x.as_i64())?;
+    let (battles_key, survived_key) = match dialect {
+        ModeDialect::Wg => ("battles", "survived_battles"),
+        ModeDialect::Vortex => ("battles_count", "survived"),
+    };
+    let battles = v.get(battles_key).and_then(|x| x.as_i64())?;
     if battles <= 0 {
         return None;
     }
@@ -749,7 +1620,7 @@ fn mode_from_node(node: Option<&serde_json::Value>) -> Option<ShipModeStats> {
         wins,
         damage_caused: damage,
         frags: field("frags"),
-        survived_battles: field("survived"),
+        survived_battles: field(survived_key),
         winrate: 100.0 * wins as f32 / battles as f32,
         avg_damage: damage as f32 / battles as f32,
     })
@@ -801,14 +1672,14 @@ impl RawShipStats {
         let field = |node: &serde_json::Value, key: &str| {
             node.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
         };
-        let solo = mode_from_node(node.get("pvp_solo"));
-        let div2 = mode_from_node(node.get("pvp_div2"));
-        let div3 = mode_from_node(node.get("pvp_div3"));
-        let coop = mode_from_node(node.get("pve"));
+        let solo = mode_from_node(node.get("pvp_solo"), ModeDialect::Vortex);
+        let div2 = mode_from_node(node.get("pvp_div2"), ModeDialect::Vortex);
+        let div3 = mode_from_node(node.get("pvp_div3"), ModeDialect::Vortex);
+        let coop = mode_from_node(node.get("pve"), ModeDialect::Vortex);
         let ranked = combine_modes([
-            mode_from_node(node.get("rank_solo")),
-            mode_from_node(node.get("rank_div2")),
-            mode_from_node(node.get("rank_div3")),
+            mode_from_node(node.get("rank_solo"), ModeDialect::Vortex),
+            mode_from_node(node.get("rank_div2"), ModeDialect::Vortex),
+            mode_from_node(node.get("rank_div3"), ModeDialect::Vortex),
         ]);
         let any_mode = [
             solo.is_some(),
@@ -846,6 +1717,75 @@ impl RawShipStats {
             survived_battles: pvp.map(|p| field(p, "survived")).unwrap_or(0),
             last_battle_time: 0,
             xp,
+            modes: if any_mode {
+                Some(ShipModeBreakdown {
+                    solo,
+                    div2,
+                    div3,
+                    coop,
+                    ranked,
+                })
+            } else {
+                None
+            },
+        })
+    }
+
+    /// A `/wows/ships/stats/` array element: `ship_id` plus WG-dialect
+    /// battle nodes. The endpoint stopped serving the mode-split fields
+    /// live 2026-10, so the splits are usually absent — the career pvp
+    /// counters and `last_battle_time` it still serves are what the racer
+    /// arm lives for. Retention mirrors [`Self::from_vortex`]: zero-pvp
+    /// rows with other-mode battles keep their row for the ranked/co-op
+    /// scopes.
+    fn from_wg(entry: &serde_json::Value) -> Option<Self> {
+        let ship_id = entry.get("ship_id").and_then(|v| v.as_i64())?;
+        let pvp = entry.get("pvp").filter(|v| !v.is_null());
+        let battles = pvp
+            .and_then(|p| p.get("battles"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let solo = mode_from_node(entry.get("pvp_solo"), ModeDialect::Wg);
+        let div2 = mode_from_node(entry.get("pvp_div2"), ModeDialect::Wg);
+        let div3 = mode_from_node(entry.get("pvp_div3"), ModeDialect::Wg);
+        let coop = mode_from_node(entry.get("pve"), ModeDialect::Wg);
+        let ranked = combine_modes([
+            mode_from_node(entry.get("rank_solo"), ModeDialect::Wg),
+            mode_from_node(entry.get("rank_div2"), ModeDialect::Wg),
+            mode_from_node(entry.get("rank_div3"), ModeDialect::Wg),
+        ]);
+        let any_mode = [
+            solo.is_some(),
+            div2.is_some(),
+            div3.is_some(),
+            coop.is_some(),
+            ranked.is_some(),
+        ]
+        .iter()
+        .any(|&b| b);
+        if battles == 0 && !any_mode {
+            return None;
+        }
+        let field = |key: &str| {
+            pvp.and_then(|p| p.get(key))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+        };
+        Some(Self {
+            ship_id,
+            battles,
+            wins: field("wins"),
+            damage_caused: pvp
+                .and_then(|p| p.get("damage_dealt").or_else(|| p.get("damage_caused")))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
+            frags: field("frags"),
+            survived_battles: field("survived_battles"),
+            last_battle_time: entry
+                .get("last_battle_time")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
+            xp: field("xp"),
             modes: if any_mode {
                 Some(ShipModeBreakdown {
                     solo,
@@ -1832,5 +2772,424 @@ mod tests {
         // Cleanup.
         let path = appdata_dir_path().unwrap().join(&file);
         let _ = fs::remove_file(&path);
+    }
+
+    // ── Incremental container scanner ──────────────────────────────────
+
+    /// Drain a scanner over `doc` fed in `chunk`-sized pieces; returns the
+    /// (key, parsed value object) pairs in arrival order.
+    fn scan_in_chunks(
+        kind: ContainerKind,
+        path: Vec<&str>,
+        doc: &str,
+        chunk: usize,
+    ) -> Vec<(Option<i64>, serde_json::Value)> {
+        let path: Vec<String> = path.iter().map(|s| s.to_string()).collect();
+        let bytes = doc.as_bytes();
+        let mut scanner = ContainerScanner::new(kind, path);
+        let mut out = Vec::new();
+        let mut fed = 0;
+        while fed < bytes.len() {
+            fed = (fed + chunk).min(bytes.len());
+            for entry in scanner.feed(&bytes[..fed]) {
+                let value = serde_json::from_slice(&bytes[entry.start..entry.end]).unwrap();
+                out.push((entry.key, value));
+            }
+        }
+        out
+    }
+
+    const VORTEX_DOC: &str = r#"{"status": "ok", "data": {"7048296264": {"statistics": {
+        "4280203248": {"pvp": {"battles_count": 46, "wins": 21, "damage_dealt": 3000000, "frags": 30, "survived": 12, "original_exp": 50000}},
+        "3539908400": {"pvp": {"battles_count": 164, "wins": 79, "damage_dealt": 11510490, "frags": 70, "survived": 55, "original_exp": 180000}},
+        "3543054128": {"pvp": null}
+    }}}, "meta": {"count": 3}}"#;
+
+    #[test]
+    fn scanner_reads_vortex_map_in_one_piece() {
+        let entries = scan_in_chunks(
+            ContainerKind::Map,
+            vec!["data", "7048296264", "statistics"],
+            VORTEX_DOC,
+            VORTEX_DOC.len(),
+        );
+        assert_eq!(entries.len(), 3, "null pvp node still yields its entry");
+        assert_eq!(entries[0].0, Some(4280203248));
+        assert_eq!(
+            entries[0].1.get("pvp").and_then(|p| p.get("battles_count")),
+            Some(&serde_json::json!(46))
+        );
+        assert_eq!(entries[2].0, Some(3543054128));
+        assert!(entries[2].1.get("pvp").unwrap().is_null());
+    }
+
+    /// The property that matters most: EVERY chunking of the same byte
+    /// stream must yield the identical entry list — including splitting
+    /// mid-string, mid-escape, mid-number and mid-brace. The bounds
+    /// (1..=13 / 1..=11 below) straddle the docs' longest tokens, so every
+    /// token type sees splits inside itself.
+    #[test]
+    fn scanner_chunking_is_chunk_size_invariant() {
+        let reference = scan_in_chunks(
+            ContainerKind::Map,
+            vec!["data", "7048296264", "statistics"],
+            VORTEX_DOC,
+            VORTEX_DOC.len(),
+        );
+        for chunk in 1..=13 {
+            let entries = scan_in_chunks(
+                ContainerKind::Map,
+                vec!["data", "7048296264", "statistics"],
+                VORTEX_DOC,
+                chunk,
+            );
+            assert_eq!(entries.len(), reference.len(), "chunk size {chunk}");
+            for (a, b) in entries.iter().zip(&reference) {
+                assert_eq!(a.0, b.0, "chunk size {chunk}");
+                assert_eq!(a.1, b.1, "chunk size {chunk}");
+            }
+        }
+    }
+
+    #[test]
+    fn scanner_entries_parse_into_partial_rows() {
+        // The exact composition the streaming path uses: scanner entries
+        // fed STRAIGHT into from_vortex (the entry IS the battle-type
+        // node — re-wrapping it under another "pvp" hides the counters a
+        // depth too deep and parses every entry to None).
+        let entries = scan_in_chunks(
+            ContainerKind::Map,
+            vec!["data", "7048296264", "statistics"],
+            VORTEX_DOC,
+            3,
+        );
+        let rows: Vec<RawShipStats> = entries
+            .iter()
+            .filter_map(|(key, node)| RawShipStats::from_vortex(key.expect("ship ids parse"), node))
+            .collect();
+        assert_eq!(rows.len(), 2, "null-pvp entry parses to no row");
+        assert_eq!(rows[0].ship_id, 4280203248);
+        assert_eq!(rows[0].battles, 46);
+        assert_eq!(rows[0].wins, 21);
+        assert_eq!(rows[0].damage_caused, 3000000);
+        assert_eq!(rows[0].xp, 50000);
+        assert_eq!(rows[1].ship_id, 3539908400);
+        assert_eq!(rows[1].battles, 164);
+    }
+
+    /// A truncated stream must yield only the entries whose closing brace
+    /// already arrived — never a phantom or a mis-sliced one.
+    #[test]
+    fn scanner_truncation_yields_only_complete_entries() {
+        let doc = VORTEX_DOC;
+        for cut in 1..doc.len() {
+            let entries = scan_in_chunks(
+                ContainerKind::Map,
+                vec!["data", "7048296264", "statistics"],
+                &doc[..cut],
+                doc.len(),
+            );
+            let full = entries
+                .iter()
+                .filter(|(_, v)| v.get("pvp").is_some())
+                .count();
+            assert!(
+                entries.len() <= 3,
+                "cut {cut}: no more than the three real entries"
+            );
+            // Every yielded entry must parse to a node that carries the
+            // expected key set (i.e. slices landed on real boundaries).
+            for (key, value) in &entries {
+                assert!(key.is_some(), "cut {cut}: keys parse");
+                assert!(
+                    value.get("pvp").is_some(),
+                    "cut {cut}: entries carry the pvp subtree"
+                );
+            }
+            let _ = full;
+        }
+    }
+
+    /// Strings containing braces, quotes, escapes and the literal text of
+    /// the path keys must not confuse the structure walk.
+    #[test]
+    fn scanner_survives_hostile_strings() {
+        let doc = r#"{"status":"ok","data":{"42":{"statistics":{
+            "111":{"pvp":{"battles_count":5,"note":"has } brace and , comma and \" quote and statistics text"}},
+            "222":{"pvp":{"battles_count":7,"note":"backslash \\\\ escape"}}
+        },"other":1}},"meta":{}}"#;
+        let entries = scan_in_chunks(ContainerKind::Map, vec!["data", "42", "statistics"], doc, 7);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, Some(111));
+        // The JSON source carries four backslashes → two decoded.
+        assert_eq!(
+            entries[1].1.pointer("/pvp/note").and_then(|v| v.as_str()),
+            Some("backslash \\\\ escape")
+        );
+    }
+
+    /// An error envelope (or hidden profile) never contains the target
+    /// container — zero entries, scanner parked harmlessly.
+    #[test]
+    fn scanner_finds_nothing_in_error_or_hidden_docs() {
+        let error_doc = r#"{"status": "error", "error": {"code": 404, "message": "NOT_FOUND"}}"#;
+        assert!(
+            scan_in_chunks(
+                ContainerKind::Map,
+                vec!["data", "1", "statistics"],
+                error_doc,
+                3
+            )
+            .is_empty()
+        );
+
+        let hidden_doc = r#"{"status": "ok", "data": {"1": {"statistics": {}}}}"#;
+        assert!(
+            scan_in_chunks(
+                ContainerKind::Map,
+                vec!["data", "1", "statistics"],
+                hidden_doc,
+                5
+            )
+            .is_empty()
+        );
+    }
+
+    const WG_DOC: &str = r#"{"status":"ok","data":{"2020566935":[
+        {"ship_id":3765352144,"last_battle_time":1791700000,"pvp":{"battles":120,"wins":60,"damage_dealt":9000000,"frags":90,"survived_battles":40,"xp":150000}},
+        {"ship_id":3543054128,"last_battle_time":0,"pvp":null,"pve":{"battles":3,"wins":3,"damage_dealt":90000,"frags":1,"survived_battles":2}}
+    ]},"meta":{"page_total":1}}"#;
+
+    #[test]
+    fn scanner_reads_wg_array_and_parses_rows() {
+        let entries = scan_in_chunks(ContainerKind::Array, vec!["data", "2020566935"], WG_DOC, 5);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|(k, _)| k.is_none()));
+        let rows: Vec<RawShipStats> = entries
+            .iter()
+            .filter_map(|(_, v)| RawShipStats::from_wg(v))
+            .collect();
+        assert_eq!(rows.len(), 2, "zero-pvp pve row keeps its place");
+        assert_eq!(rows[0].ship_id, 3765352144);
+        assert_eq!(rows[0].battles, 120);
+        assert_eq!(rows[0].xp, 150000);
+        assert_eq!(rows[0].last_battle_time, 1791700000);
+        assert_eq!(rows[1].battles, 0);
+        assert_eq!(
+            rows[1]
+                .modes
+                .as_ref()
+                .unwrap()
+                .coop
+                .as_ref()
+                .unwrap()
+                .battles,
+            3
+        );
+    }
+
+    #[test]
+    fn scanner_wg_chunking_invariant() {
+        let reference = scan_in_chunks(
+            ContainerKind::Array,
+            vec!["data", "2020566935"],
+            WG_DOC,
+            WG_DOC.len(),
+        );
+        for chunk in 1..=11 {
+            let entries = scan_in_chunks(
+                ContainerKind::Array,
+                vec!["data", "2020566935"],
+                WG_DOC,
+                chunk,
+            );
+            assert_eq!(entries.len(), reference.len(), "chunk {chunk}");
+            for (a, b) in entries.iter().zip(&reference) {
+                assert_eq!(a.1, b.1, "chunk {chunk}");
+            }
+        }
+    }
+
+    // ── Dual-path race ─────────────────────────────────────────────────
+
+    /// The wire contract with the frontend's ShipStatsProgress interface:
+    /// camelCase field names (an un-renamed struct silently breaks every
+    /// consumer — `accountId` reads undefined and partial rows land on a
+    /// key nothing matches).
+    #[test]
+    fn progress_payload_serializes_camelcase() {
+        let payload = ShipStatsProgress {
+            realm: "asia".into(),
+            account_id: 42,
+            phase: "partial",
+            source: "vortex:pvp".into(),
+            rows: Some(Vec::new()),
+        };
+        let raw = serde_json::to_string(&payload).unwrap();
+        assert!(
+            raw.contains("\"accountId\""),
+            "camelCase on the wire: {raw}"
+        );
+        assert!(raw.contains("\"rows\""), "rows serialize on partial: {raw}");
+        let no_rows = serde_json::to_string(&ShipStatsProgress {
+            realm: "cn".into(),
+            account_id: 1,
+            phase: "slow",
+            source: "official".into(),
+            rows: None,
+        })
+        .unwrap();
+        assert!(
+            !no_rows.contains("\"rows\""),
+            "rows skipped when absent: {no_rows}"
+        );
+    }
+
+    #[tokio::test]
+    async fn race_prefers_a_fast_healthy_primary_and_signals_abandon() {
+        let abandoned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let a2 = abandoned.clone();
+        let out = race_dual_path(
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Ok(vec![RawShipStats {
+                    ship_id: 1,
+                    ..zero_raw()
+                }])
+            },
+            async {
+                Ok(vec![
+                    RawShipStats {
+                        ship_id: 2,
+                        ..zero_raw()
+                    },
+                    RawShipStats {
+                        ship_id: 3,
+                        ..zero_raw()
+                    },
+                ])
+            },
+            |_| panic!("racer rows must not surface when the primary wins"),
+            move || a2.store(true, std::sync::atomic::Ordering::Release),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [2, 3]);
+        // The dropped racer still gets its terminal signal.
+        assert!(abandoned.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn race_surfaces_racer_rows_and_prefers_late_primary() {
+        let surfaced = std::sync::Arc::new(std::sync::Mutex::new(Vec::<i64>::new()));
+        let s2 = surfaced.clone();
+        let out = race_dual_path(
+            async {
+                Ok(vec![RawShipStats {
+                    ship_id: 9,
+                    ..zero_raw()
+                }])
+            },
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Ok(vec![RawShipStats {
+                    ship_id: 10,
+                    ..zero_raw()
+                }])
+            },
+            move |rows| s2.lock().unwrap().extend(rows.iter().map(|r| r.ship_id)),
+            || panic!("the racer settled on its own — no abandonment here"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(*surfaced.lock().unwrap(), [9], "racer rows surfaced once");
+        assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [10]);
+    }
+
+    #[tokio::test]
+    async fn race_falls_back_to_racer_rows_when_primary_fails() {
+        let out = race_dual_path(
+            async {
+                Ok(vec![RawShipStats {
+                    ship_id: 9,
+                    ..zero_raw()
+                }])
+            },
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Err("primary died".to_string())
+            },
+            |_| {},
+            || panic!("the racer is awaited to completion here, not abandoned"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [9]);
+    }
+
+    #[tokio::test]
+    async fn race_racer_rescues_a_failed_primary() {
+        let out = race_dual_path(
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Ok(vec![RawShipStats {
+                    ship_id: 7,
+                    ..zero_raw()
+                }])
+            },
+            async { Err("primary died".to_string()) },
+            |_| {},
+            || panic!("the racer is awaited to completion here, not abandoned"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [7]);
+    }
+
+    #[tokio::test]
+    async fn race_fails_only_when_both_arms_fail() {
+        let err = race_dual_path(
+            async { Err::<Vec<RawShipStats>, _>("racer died".to_string()) },
+            async { Err("primary died".to_string()) },
+            |_| {},
+            || panic!("racer must not be abandoned when both arms fail"),
+        )
+        .await
+        .unwrap_err();
+        // Either error text is acceptable — the primary's shape is used.
+        assert!(!err.is_empty());
+    }
+
+    #[tokio::test]
+    async fn race_ignores_a_failed_racer() {
+        let out = race_dual_path(
+            async { Err::<Vec<RawShipStats>, _>("racer died".to_string()) },
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Ok(vec![RawShipStats {
+                    ship_id: 4,
+                    ..zero_raw()
+                }])
+            },
+            |_| {},
+            || panic!("racer settled on its own — no abandonment"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [4]);
+    }
+
+    fn zero_raw() -> RawShipStats {
+        RawShipStats {
+            ship_id: 0,
+            battles: 0,
+            wins: 0,
+            damage_caused: 0,
+            frags: 0,
+            survived_battles: 0,
+            last_battle_time: 0,
+            xp: 0,
+            modes: None,
+        }
     }
 }

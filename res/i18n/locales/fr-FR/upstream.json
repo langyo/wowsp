@@ -5,6 +5,10 @@
     "lastFail": "Dernier échec : {time}",
     "hint": "Probable perturbation côté éditeur du jeu ; un rétablissement automatique est habituel. wowsp continue d'afficher les statistiques en cache."
   },
+  "slow": {
+    "short": "Données partielles reçues, chargement en cours",
+    "tooltip": "Le service en amont est dégradé. Nous poursuivons le chargement — seules des données partielles sont affichées pour l'instant."
+  },
   "time": {
     "justNow": "à l'instant",
     "minAgo": "il y a {m} min",

@@ -5,6 +5,10 @@
     "lastFail": "Último fallo: {time}",
     "hint": "Probable incidencia del servicio del editor del juego; suele recuperarse sola. Mientras tanto, wowsp sigue usando los datos en caché."
   },
+  "slow": {
+    "short": "Datos parciales descargados, continuando",
+    "tooltip": "El servicio ascendente está degradado. Seguimos cargando; por ahora solo se muestran datos parciales."
+  },
   "time": {
     "justNow": "ahora mismo",
     "minAgo": "hace {m} min",

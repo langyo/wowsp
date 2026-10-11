@@ -68,6 +68,24 @@ pub(crate) fn vortex_client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("http client: {e}"))
 }
 
+/// The stall-tolerant sibling of [`vortex_client`] for the big per-ship
+/// documents: NO whole-request timeout (a degraded host serving hundreds
+/// of KB at a crawl must not die at a fixed deadline). The base builder's
+/// connect timeout bounds the handshake; this read timeout is a generous
+/// HANG guard over the response-header wait and any read gap reqwest sees
+/// before the body loop takes over — deliberately well above the observed
+/// 20-30s degraded TTFB (15s here would kill exactly the slow-but-flowing
+/// fetches this client exists for), while the body reader's own 15s
+/// no-bytes stall rule (`ship_stats::read_body_streamed`) governs the
+/// streamed chunks, and its 180s hard cap bounds the total.
+pub(crate) fn vortex_stream_client() -> Result<reqwest::Client, String> {
+    crate::commands::network::http_client_builder()?
+        .read_timeout(Duration::from_secs(60))
+        .user_agent(BROWSER_UA)
+        .build()
+        .map_err(|e| format!("http client: {e}"))
+}
+
 /// GET one JSON document from the CN vortex/clans hosts. Non-2xx is an error
 /// (the clan endpoint's meaningful 404 is tolerated by its own caller).
 async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value, String> {

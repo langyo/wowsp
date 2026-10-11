@@ -1096,6 +1096,19 @@ export interface ShipStatsHistoryPoint {
   ships: ShipCareerTotals[];
 }
 
+/** Streaming progress for one per-ship fetch source — mirrors
+ *  `commands::ship_stats::ShipStatsProgress` (event
+ *  `wowsp://ship-stats-progress`). `source` names the transport
+ *  (`"vortex:pvp"`, `"official"`, …); `rows` rides `phase: "partial"`
+ *  only. */
+export interface ShipStatsProgress {
+  realm: string;
+  accountId: number;
+  phase: "partial" | "slow" | "done" | "aborted";
+  source: string;
+  rows?: PlayerShipStats[] | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::StatsSnapshot`. */
 export interface StatsSnapshot {
   timestamp: number;
@@ -2119,6 +2132,13 @@ export const api = {
   /** Per-ship history points — baselines for "recent N days" deltas. */
   readShipStatsHistory: (accountId: number, realm: string) =>
     transport.invoke<ShipStatsHistoryPoint[]>(RPC.read_ship_stats_history, { accountId, realm }),
+  /** Streaming progress for per-ship fetches (commands/ship_stats.rs's
+   *  `wowsp://ship-stats-progress`): "slow" marks a source streaming past
+   *  15s still flowing — the degraded-loading chip; "partial" carries
+   *  enriched rows for the table to fill with mid-flight; "done"/"aborted"
+   *  stand a source down. */
+  listenShipStatsProgress: (handler: (progress: ShipStatsProgress) => void) =>
+    transport.listen?.<ShipStatsProgress>("wowsp://ship-stats-progress", handler),
   /** Catalogue + rolling health of the upstream hosts — the data behind
    *  the title bar's fault chip. Stateless; the frontend renders the
    *  verdict (streak threshold, staleness). */

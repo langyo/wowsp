@@ -18,6 +18,7 @@ import { useShipsUiStore, type ShipsViewMode } from "@/stores/shipsUi";
 import { useLiveUiStore, type LiveViewMode } from "@/stores/liveUi";
 import TitlebarLoading from "@/components/layout/TitlebarLoading";
 import TitlebarUpstreamFault from "@/components/layout/TitlebarUpstreamFault";
+import TitlebarStreamSlow from "@/components/layout/TitlebarStreamSlow";
 import { watchChromeInsets } from "@/composables/popupChrome";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
@@ -294,10 +295,13 @@ export default defineComponent({
             // to squat the top-right toast corner (TitlebarLoading +
             // useLoadingTasksStore); the fault chip (TitlebarUpstreamFault)
             // squeezes in beside it while an upstream host is failing and
-            // never replaces the loading chip.
+            // never replaces the loading chip; the yellow stream chip
+            // (TitlebarStreamSlow) does the same while a fetch is streaming
+            // past the slow threshold (degraded transport, partial data).
             actions: () => (
               <>
                 <TitlebarUpstreamFault />
+                <TitlebarStreamSlow />
                 <TitlebarLoading />
               </>
             ),
