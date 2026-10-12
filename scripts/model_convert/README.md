@@ -41,6 +41,8 @@ The game install is auto-detected the same way WoWSP's desktop shell does it
 | `convert_ship.py` | `export-ship` | `GLB` under `packages/webui/src/res/models/ships/` |
 | `convert_map.py` | `export-map` | `GLB` under `packages/webui/src/res/models/maps/` |
 | `bake_planes.py` | `export-model` | `GLB` under `packages/webui/src/res/models/planes/` + `props/` |
+| `extract_lesta_planes.py` | — (GameParams → tables) | rows in `src/data/plane_types.json` + `plane_models.json` |
+| `bake_lesta_planes.py` | `export-model` (staged Lesta) | `GLB` under `packages/webui/src/res/models/planes/` (Lesta airframes) |
 | `bake_missing_ships.py` | (wows-gltf-exporter) | backfills specific ship GLBs under `ships/` |
 
 ## Battle-effect models (planes / shells / torpedoes)
@@ -70,6 +72,32 @@ python scripts/model_convert/bake_planes.py --props-only
   stock `export-model` pairs vertex/index mappings positionally, which corrupts
   multi-buffer raw exports (most planes). The vendored patch pairs them by the
   mappings' shared `packed_texel_density` render-set hash instead.
+
+### Lesta (Мир кораблей) airplanes
+
+The Lesta client's pkgs are Oodle-compressed, so `bake_planes.py` cannot read
+its airframes off the pkg VFS. Two Lesta-only steps cover them — the plane
+tables first, then the staged bake:
+
+```bash
+# 1. Merge the Lesta-only carriers' airframes into the plane tables
+#    (plane_types.json rows gain "lesta": true; idempotent).
+python scripts/model_convert/extract_lesta_planes.py   # needs GameParams_lesta.json
+
+# 2. Bake those airframes: lesta_extract.py stages the .geometry (Oodle),
+#    export-model --no-vfs converts, bake_model --dedup-lods decimates.
+python scripts/model_convert/bake_lesta_planes.py \
+    --game-dir "D:/WoWS_Korabli" --stage "C:/lesta-work/stage"
+```
+
+`just extract techtree` normally runs step 1 for you (it rides the same Lesta
+client snapshot as the tech tree and the encyclopedia overlay); step 2 needs
+the Oodle decoder (unoodle/ooz) and runs by hand, like the Lesta hull bakes.
+The Lesta-only ships' **armor/ballistics** slices are a third piece of the
+same snapshot — `scripts/extract/build_lesta_shipdata.py` bundles them into
+the Rust tree (`packages/app/tauri/src/commands/lesta_ship_gameparams.json`,
+embedded via `include_str!` — see `commands/gameparams.rs`), so those ids
+never depend on a game install.
 
 ## Usage
 

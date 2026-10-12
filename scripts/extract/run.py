@@ -24,7 +24,12 @@ The techtree module also builds the Lesta tree from a Lesta client (Мир
 (or have one registered in the registry), or feed a pre-decoded Lesta
 GameParams.json via --lesta-gameparams (pullable without the client through
 OpenKorabli/lgc-download + `wowsunpack game-params`); without either the
-Lesta tree is skipped rather than faked from the WG client's dump.
+Lesta tree is skipped rather than faked from the WG client's dump. The same
+Lesta client snapshot feeds the app-carried ship data: the armor/ballistics
+slices bundled into the Rust tree (build_lesta_shipdata.py — read by
+commands/gameparams.rs so Lesta-only ids never touch an install) and the
+Lesta airplanes merged into the plane tables (model_convert's
+extract_lesta_planes.py; their GLBs bake via bake_lesta_planes.py).
 """
 from __future__ import annotations
 
@@ -259,7 +264,8 @@ def _run_techtree_lesta(
             _die(f"Lesta GameParams not found: {lesta_gp}")
         print(f"[extract] lesta gameparams: {lesta_gp}")
         _py(*_lesta_tree_cmd(lesta_gp))
-        _run_lesta_overlay(lesta_gp)
+        stamp = _run_lesta_overlay(lesta_gp)
+        _run_lesta_shipdata(Path(lesta_gp), stamp)
         return
     lesta = find_lesta_game_path(explicit_lesta_path)
     if not lesta:
@@ -278,10 +284,29 @@ def _run_techtree_lesta(
         if rc != 0:
             _die(f"wowsunpack game-params failed for the Lesta client (rc={rc}).")
     _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
-    _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
+    stamp = _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
+    _run_lesta_shipdata(GAMEPARAMS_LESTA_JSON, stamp)
 
 
-def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> None:
+def _run_lesta_shipdata(gameparams: Path, version_stamp: str | None) -> None:
+    """The app-carried Lesta ship data: GameParams slices + the plane tables.
+
+    `build_lesta_shipdata.py` cuts the Lesta-only ships' armor/ballistics
+    slices out of the dump into the Rust tree (include_str!'d by
+    commands/gameparams.rs), so those ids resolve without any game install;
+    `extract_lesta_planes.py` merges the carriers' airframes into
+    plane_types.json / plane_models.json (labels, roles, geometry paths).
+    Both are cut from the same client snapshot as the tree and the overlay.
+    The carriers' plane GLBs are baked separately (bake_lesta_planes.py —
+    needs the Oodle decoder)."""
+    cmd = ["build_lesta_shipdata.py", "--gameparams", str(gameparams)]
+    if version_stamp:
+        cmd += ["--version", version_stamp]
+    _py(*cmd)
+    _py_model_convert("extract_lesta_planes.py", "--input", str(gameparams))
+
+
+def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> str | None:
     """The encyclopedia overlay + offline-names merge for Lesta-only ships.
 
     Needs the client's ru gettext catalog next to the dump (a full install
@@ -290,6 +315,9 @@ def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> None:
     the plaque silhouettes are one-shot asset pulls off the same install —
     see lesta_extract.py's docstring (gui/ship_previews → images/ships,
     gui/ships_silhouettes → trace_silhouettes.py --merge-indexes).
+
+    Returns the version stamp the overlay was written under (None when the
+    overlay build was skipped) so the ship-data bundle shares it.
     """
     mo = None
     version_stamp = "lesta"
@@ -313,7 +341,7 @@ def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> None:
             "GameParams working names).",
             flush=True,
         )
-        return
+        return None
     _py(
         "build_lesta_overlay.py",
         "--gameparams", str(gameparams),
@@ -327,6 +355,7 @@ def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> None:
         "--out", str(SRC_DATA / "ships_lesta.json"),
         "--merge-names", str(SRC_DATA / "ship_names.json"),
     )
+    return version_stamp
 
 
 def _lesta_tree_cmd(gameparams: Path) -> list[str]:
@@ -394,6 +423,15 @@ def _py(script: str, *args: str) -> None:
     rc = subprocess.call(cmd)
     if rc != 0:
         _die(f"{script} failed (rc={rc}).")
+
+
+def _py_model_convert(script: str, *args: str) -> None:
+    """Run a sibling model_convert script (plane tables / bakes live there)."""
+    cmd = [sys.executable, str(HERE.parent / "model_convert" / script), *args]
+    print(f"\n[extract] $ {' '.join(cmd)}")
+    rc = subprocess.call(cmd)
+    if rc != 0:
+        _die(f"model_convert/{script} failed (rc={rc}).")
 
 
 def _die(msg: str) -> None:

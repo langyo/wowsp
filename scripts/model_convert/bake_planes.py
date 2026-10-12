@@ -141,9 +141,16 @@ def main() -> int:
     plane_types = json.loads((DATA_DIR / "plane_types.json").read_text(encoding="utf-8"))
     path_map = json.loads((DATA_DIR / "plane_models.json").read_text(encoding="utf-8"))
     index_of = {v["name"]: v["index"] for v in plane_types.values()}
+    # Lesta airframes ride the same tables but live in an Oodle-compressed
+    # client this pkg-VFS bake cannot read — bake_lesta_planes.py's staged
+    # route owns them, so --all (the WG sweep) leaves them out.
+    lesta_names = {v["name"] for v in plane_types.values() if v.get("lesta")}
 
     if args.all:
-        names = sorted(path_map.keys())
+        names = sorted(n for n in path_map if n not in lesta_names)
+        if lesta_names:
+            print(f"[planes] skipping {len(lesta_names)} Lesta airframes "
+                  "(bake with scripts/model_convert/bake_lesta_planes.py)")
     elif args.planes:
         names = args.planes
     elif args.from_dump:
