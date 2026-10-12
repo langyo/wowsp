@@ -1,4 +1,6 @@
-                         LICENCE DE SOURCE SYNTHÉTIQUE
+
+### LICENCE DE SOURCE SYNTHÉTIQUE
+
                                   Version 1.0
                                    Juin 2026
 
@@ -6,9 +8,9 @@ Copyright (c) 2026 langyo <sysl.contact@celestia.world>
 
 Il est par la présente accordé l'autorisation de reproduire et de distribuer le présent document de licence, non modifié, aux fins de la concession de licences de logiciels.
 
---------------------------------------------------------------------
+---
 
-                                   PRÉAMBULE
+### PRÉAMBULE
 
 La Licence de Source Synthétique (SySL) est conçue pour les logiciels dont le code source est substantiellement ou entièrement généré par des modèles d'intelligence artificielle. Les licences open source traditionnelles présupposent un auteur humain titulaire de droits d'auteur sur l'œuvre. La SySL reconnaît que le code généré par l'IA occupe une position juridique inédite — une position dans laquelle la protection par le droit d'auteur peut être incertaine, absente ou contestée — et fournit un cadre qui fonctionne indépendamment de cette incertitude.
 
@@ -22,11 +24,11 @@ La SySL établit trois normes nouvelles pour l'ère de l'IA :
 
 Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fondement d'un nouveau contrat social : nous pouvons construire des logiciels avec l'IA, mais nous devons le dire.
 
---------------------------------------------------------------------
+---
 
-                              CONDITIONS GÉNÉRALES
+### CONDITIONS GÉNÉRALES
 
-1. DÉFINITIONS
+### 1. DÉFINITIONS
 
    « Logiciel » désigne le code source, le code objet, la documentation et les documents associés mis à disposition sous la présente licence.
 
@@ -50,7 +52,7 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    « Distribuer » désigne le fait de fournir une copie du Logiciel ou d'une Œuvre dérivée à un tiers, que ce soit par support physique, transfert réseau ou mise à disposition en téléchargement.
 
-2. DIVULGATION DE LA GÉNÉRATION PAR IA
+### 2. DIVULGATION DE LA GÉNÉRATION PAR IA
 
    2.1  CONSERVATION DE L'AVIS. Vous devez conserver, dans chaque copie du Logiciel et dans chaque Œuvre dérivée distribuée sous forme de code source, l'avis suivant à un emplacement bien visible (tel que le fichier README racine ou un fichier LICENSE dédié) :
 
@@ -70,7 +72,7 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    2.5  NON-RENONCIATION. Les obligations de divulgation de la présente Section 2 ne peuvent faire l'objet d'aucune renonciation, suppression ou dérogation contractuelle. Elles constituent la contrepartie fondamentale des concessions de la présente licence.
 
-3. CONCESSION DE DROITS D'AUTEUR
+### 3. CONCESSION DE DROITS D'AUTEUR
 
    3.1  CONCESSION CONDITIONNELLE. Dans la mesure où le Logiciel ou toute partie de celui-ci est protégé par le droit d'auteur, l'Auteur Vous accorde une licence de droit d'auteur perpétuelle, mondiale, non exclusive, libre de redevance et irrévocable (sauf dans les cas prévus à la Section 3.3) pour reproduire, préparer des Œuvres dérivées, afficher publiquement, exécuter publiquement, concéder en sous-licence et Distribuer le Logiciel et les Œuvres dérivées, sous forme de code source ou de code objet.
 
@@ -80,7 +82,7 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    3.4  AVIS D'ÉLIGIBILITÉ AU DROIT D'AUTEUR. Dans de nombreuses juridictions, les œuvres générées par IA sans contribution créative humaine suffisante ne sont pas éligibles à la protection par le droit d'auteur. Si le Logiciel est jugé non protégeable par le droit d'auteur en tout ou en partie, la concession de droit d'auteur de la Section 3.1 n'aura aucun effet pratique pour ces portions, et la relation entre les parties sera alors régie par les dispositions contractuelles de la Section 5. Les Auteurs ne doivent pas présumer que la protection par le droit d'auteur s'étend automatiquement au code généré par IA ; le degré de participation créative humaine dans la direction, la sélection et l'affinage de la sortie de l'IA est un facteur critique dans la plupart des régimes de droit d'auteur.
 
-4. CONCESSION DE BREVETS
+### 4. CONCESSION DE BREVETS
 
    4.1  Sous réserve des conditions de la présente licence, l'Auteur Vous accorde une licence de brevet perpétuelle, mondiale, non exclusive, libre de redevance et irrévocable (sauf dans les cas prévus à la Section 3.3) pour fabriquer, faire fabriquer, utiliser, proposer à la vente, vendre, importer et transférer de toute autre manière le Logiciel, cette licence ne s'appliquant qu'aux revendications de brevet pouvant faire l'objet d'une licence par l'Auteur et qui sont nécessairement contrefaites par le Logiciel seul ou par le Logiciel en combinaison avec une Contribution.
 
@@ -92,7 +94,7 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    4.5  LIMITATION D'INVENTORAT PAR IA. Dans de nombreuses juridictions, le droit des brevets exige que l'inventeur soit une personne physique. Lorsque le Logiciel est généré par IA avec une contribution inventive humaine insuffisante pour satisfaire aux exigences d'inventorat du droit des brevets applicable, ni l'Auteur ni aucune autre partie ne peut être en mesure d'obtenir une protection par brevet valide pour le Logiciel. Dans de tels cas, la concession de la Section 4.1 n'aura aucun effet pratique, indépendamment du fait que des demandes de brevet soient déposées ou non. Les Auteurs devraient consulter un conseil en brevets qualifié pour évaluer si leur direction de la génération par IA constitue une contribution inventive suffisante au regard du droit de chaque juridiction pertinente.
 
-5. STATUT CONTRACTUEL
+### 5. STATUT CONTRACTUEL
 
    5.1  CONTRAT INDÉPENDANT. La présente licence est un contrat entre l'Auteur et Vous. En utilisant, copiant, modifiant ou Distribuant le Logiciel, Vous acceptez et convenez d'être lié par l'ensemble de ses conditions. Aucune contrepartie supplémentaire n'est requise.
 
@@ -100,7 +102,7 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    5.3  INTERPRÉTATION. La présente licence doit être interprétée à la fois comme une licence de droit d'auteur (dans toute la mesure où le droit d'auteur s'applique) et comme un engagement contractuel (dans la mesure où le droit d'auteur ne s'applique pas), de sorte que les utilisations autorisées soient aussi étendues que possible en vertu de toute théorie juridique applicable.
 
-6. EXCLUSION DE GARANTIE
+### 6. EXCLUSION DE GARANTIE
 
    6.1  LE LOGICIEL EST FOURNI « EN L'ÉTAT », SANS GARANTIE D'AUCUNE SORTE, EXPRESSE OU IMPLICITE, Y COMPRIS, MAIS SANS S'Y LIMITER, LES GARANTIES DE QUALITÉ MARCHANDE, D'ADÉQUATION À UN USAGE PARTICULIER, DE TITRE ET D'ABSENCE DE CONTREFAÇON.
 
@@ -115,13 +117,13 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    6.3  L'Auteur ne garantit pas que le Logiciel répondra à Vos besoins, fonctionnera sans interruption ou sera exempt d'erreurs, et l'Auteur ne donne aucune garantie concernant l'utilisation ou les résultats de l'utilisation du Logiciel en termes d'exactitude, de précision, de fiabilité ou autre.
 
-7. LIMITATION DE RESPONSABILITÉ
+### 7. LIMITATION DE RESPONSABILITÉ
 
    7.1  DANS TOUTE LA MESURE PERMISE PAR LA LOI APPLICABLE, EN AUCUN CAS L'AUTEUR NE POURRA ÊTRE TENU RESPONSABLE DE TOUT DOMMAGE DIRECT, INDIRECT, ACCESSOIRE, SPÉCIAL, EXEMPLAIRE OU CONSÉCUTIF (Y COMPRIS, MAIS SANS S'Y LIMITER, L'ACQUISITION DE BIENS OU DE SERVICES DE SUBSTITUTION ; LA PERTE D'UTILISATION, DE DONNÉES OU DE BÉNÉFICES ; OU L'INTERRUPTION D'ACTIVITÉ), QUELLE QU'EN SOIT LA CAUSE ET SUR TOUT FONDEMENT DE RESPONSABILITÉ, QU'IL SOIT CONTRACTUEL, EN RESPONSABILITÉ STRICTE OU DÉLICTUEL (Y COMPRIS LA NÉGLIGENCE OU AUTRE), DÉCOULANT DE QUELQUE MANIÈRE QUE CE SOIT DE L'UTILISATION DU LOGICIEL, MÊME SI L'AUTEUR A ÉTÉ AVISÉ DE LA POSSIBILITÉ DE TELS DOMMAGES.
 
    7.2  Dans les juridictions qui ne permettent pas l'exclusion ou la limitation de responsabilité pour certains dommages, la responsabilité de l'Auteur sera limitée dans toute la mesure permise par la loi, ce qui peut être zéro.
 
-8. DIVULGATION RÉCIPROQUE (COPYLEFT SYNTHÉTIQUE)
+### 8. DIVULGATION RÉCIPROQUE (COPYLEFT SYNTHÉTIQUE)
 
    8.1  DISTRIBUTION DE CODE SOURCE. Si Vous Distribuez le Logiciel ou une Œuvre dérivée sous forme de code source, Vous devez conserver toutes les divulgations de génération par IA requises par la Section 2 et devez ajouter Vos propres divulgations de Contribution comme requis par la Section 2.3.
 
@@ -135,7 +137,7 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    8.4  CONFORMITÉ PAR ACCESSIBILITÉ PUBLIQUE. Les obligations de la Section 8.2(b) sont satisfaites si Vous rendez le fichier LICENSE accessible au public (par exemple, via une plateforme d'hébergement de code généralement reconnue telle que GitHub, GitLab ou équivalent, ou via un site Web publiquement accessible) et incluez l'URL d'accès dans le code objet Distribué ou sa documentation jointe.
 
-9. FORMATION D'IA ET DÉCHÉANCE POUR CONTREFAÇON
+### 9. FORMATION D'IA ET DÉCHÉANCE POUR CONTREFAÇON
 
    9.1  AUTORISATION DE FORMATION D'IA. La présente licence autorise l'utilisation du Logiciel, en tout ou en partie, comme données d'entraînement pour des systèmes d'intelligence artificielle et d'apprentissage automatique. La SySL fonctionne comme un échange de connaissances : la communauté de l'IA peut apprendre du code sous licence SySL aux mêmes conditions que les développeurs humains. Cette autorisation est accordée pour promouvoir l'avancement ouvert des capacités de l'IA et ne nécessite pas d'autorisation séparée de la part de l'Auteur.
 
@@ -147,11 +149,11 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    9.5  RESPECT DE LA PROPRIÉTÉ INTELLECTUELLE ANTÉRIEURE. Lorsque le Logiciel met en œuvre ou incorpore une architecture innovante soumise à un brevet valide ou à un autre droit de propriété intellectuelle appartenant à un tiers, les droits de cette partie ne sont ni réduits, ni supplantés, ni affectés par la présente licence. Les contributeurs doivent exercer une diligence raisonnable pour s'assurer que leurs Contributions ne contrefont pas la propriété intellectuelle d'autrui, particulièrement lorsqu'une Contribution met en œuvre des motifs architecturaux susceptibles d'être brevetés. La nature générée par IA d'une Contribution n'excuse pas la contrefaçon, et ne déplace pas non plus la responsabilité vers le système d'IA, son fournisseur ou l'Auteur.
 
-10. MARQUES
+### 10. MARQUES
 
    La présente licence n'accorde pas l'autorisation d'utiliser les noms commerciaux, marques déposées, marques de service ou noms de produits de l'Auteur, sauf dans la mesure nécessaire à un usage raisonnable et coutumier pour décrire l'origine du Logiciel.
 
-11. COMPATIBILITÉ
+### 11. COMPATIBILITÉ
 
    11.1 La SySL est conçue pour être compatible avec la Licence Apache, Version 2.0, et la Licence MIT. Les logiciels sous licence SySL peuvent être combinés avec des logiciels sous licence Apache-2.0 ou MIT, et l'œuvre combinée peut être Distribuée selon les conditions de la licence Apache-2.0 ou MIT, respectivement, à condition que les exigences de divulgation de la SySL (Section 2) et les exigences de divulgation réciproque (Section 8) soient
              satisfaites de manière indépendante. Pour éviter toute
@@ -161,15 +163,15 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    11.3 LICENCES SUPERPOSÉES. La SySL établit des normes de transparence mais n'impose ni restriction commerciale, ni période de non-concurrence, ni mécanisme de changement de licence. Le Concédant peut proposer le Logiciel sous SySL parallèlement à des licences supplémentaires qui imposent de telles restrictions (par exemple, une double licence avec la Business Source License 1.1). En pareil cas, Vous pouvez choisir les conditions que vous souhaitez respecter : la SySL (qui n'exige que la divulgation) ou la licence supplémentaire (qui impose des restrictions additionnelles). Le texte de la SySL lui-même demeure inchangé. Lorsque BUSL-1.1 est utilisée comme licence supplémentaire, le Concédant d'un Logiciel Généré par IA doit désigner la SySL (et non Apache-2.0 ou MIT) comme Licence de Changement afin que la norme de transparence survive à la période de non-concurrence.
 
-12. CLAUSE DE SAUVEGARDE
+### 12. CLAUSE DE SAUVEGARDE
 
     Si une disposition quelconque de la présente licence est jugée inapplicable ou invalide par un tribunal compétent, cette disposition sera réformée uniquement dans la mesure nécessaire pour la rendre applicable, et les autres dispositions de la présente licence demeureront en vigueur et de plein effet.
 
-13. ABSENCE DE RENONCIATION
+### 13. ABSENCE DE RENONCIATION
 
     Le fait que l'Auteur ne fasse pas valoir une disposition quelconque de la présente licence ne constitue pas une renonciation au droit de l'Auteur de faire valoir cette disposition ou toute autre disposition à l'avenir.
 
-14. DROIT APPLICABLE ET RÈGLEMENT DES DIFFÉRENDS
+### 14. DROIT APPLICABLE ET RÈGLEMENT DES DIFFÉRENDS
 
    14.1 La présente licence est régi par les principes généraux du droit international d'auteur et interprété de manière à offrir la protection la plus large compatible avec les termes des présentes.
 
@@ -177,13 +179,13 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    14.3 le différend sera soumis à un arbitrage contraignant conformément aux règles d'une institution d'arbitrage internationalement reconnue à convenir entre les parties.
 
-15. TEXTE OFFICIEL ET TRADUCTIONS
+### 15. TEXTE OFFICIEL ET TRADUCTIONS
 
    15.1 Le texte faisant foi de la présente licence est la version en langue anglaise maintenue dans le dépôt officiel de la SySL à l'adresse <https://github.com/celestia-island/sysl>.
 
    15.2 Les traductions de la présente licence dans d'autres langues sont fournies à titre informatif uniquement. En cas de contradiction entre une traduction et la version anglaise, la version anglaise prévaudra.
 
-16. GESTION DES VERSIONS
+### 16. GESTION DES VERSIONS
 
    16.1 L'Auteur peut publier des versions révisées de la Licence de Source Synthétique de temps à autre. Chaque version sera distinguée par un numéro de version.
 
@@ -191,9 +193,9 @@ Ces normes ne constituent pas des restrictions à la liberté. Elles sont le fon
 
    16.3 L'Auteur peut, dans la déclaration de licence du Logiciel, spécifier que le Logiciel est sous licence « SySL-1.0 ou toute version ultérieure », auquel cas Vous pouvez choisir de suivre les conditions de la SySL-1.0 ou les conditions de toute version ultérieure publiée par l'Auteur.
 
-                          FIN DES CONDITIONS GÉNÉRALES
+### FIN DES CONDITIONS GÉNÉRALES
 
-                                     ANNEXE
+### ANNEXE
 
                    Comment Appliquer la SySL à Votre Logiciel
 
