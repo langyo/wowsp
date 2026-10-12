@@ -5,9 +5,9 @@
 //! rides tauri-plugin-opener (mobile-supported, same default-handler
 //! semantics on Windows). `explorer.exe <url>` — an even older shortcut —
 //! only worked by accident: explorer parses its argument as a path, so URLs
-//! with query strings (the QQ group join link) open a file-manager window
-//! instead of the browser. Only http(s) URLs are accepted so the command
-//! can't launch arbitrary handlers.
+//! with query strings open a file-manager window instead of the browser.
+//! Only http(s) URLs are accepted so the command can't launch arbitrary
+//! handlers.
 
 #[tauri::command]
 pub fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
