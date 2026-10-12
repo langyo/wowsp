@@ -614,7 +614,20 @@ def main() -> int:
     wv2 = ensure_payload() if "webview2" in variants else None
 
     # Stage the self-contained tree, then build each variant.
-    shutil.rmtree(STAGE, ignore_errors=True)
+    if STAGE.exists():
+        try:
+            shutil.rmtree(STAGE)
+        except OSError as exc:
+            # ignore_errors + a bare mkdir used to surface this as a
+            # cryptic FileExistsError; name the offending path and the
+            # fix instead (a running app or a parked shell routinely
+            # holds a subdirectory open).
+            sys.exit(
+                f"cannot clear {STAGE}: {exc}\n"
+                "A file inside it is held open — usually a running WoWSP "
+                "instance or a shell whose working directory sits in the "
+                "stage. Close it and retry."
+            )
     STAGE.mkdir(parents=True)
     stage_documents(STAGE, version)
 
