@@ -287,6 +287,18 @@ describe("prTrendLayout", () => {
     expect(single.xTicks).toHaveLength(1);
   });
 
+  it("renders an empty frame for an empty series (no 1970 ticks)", () => {
+    // The section keeps the chart frame standing when a filter matches
+    // nothing: the layout must degrade to gridlines only.
+    const l = prTrendLayout([]);
+    expect(l.vertices).toEqual([]);
+    expect(l.path).toBe("");
+    expect(l.yMin).toBe(0);
+    expect(l.yMax).toBe(1250);
+    expect(l.xTicks).toEqual([]);
+    expect(l.guides.map((g) => g.pr)).toEqual([750]);
+  });
+
   it("clamps the y floor at zero", () => {
     const l = prTrendLayout([
       { t: 0, pr: 100 },

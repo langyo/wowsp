@@ -220,13 +220,14 @@ describe("PrTrendSection gating", () => {
     expect(wrapper.find(".pr-trend-section").exists()).toBe(false);
   });
 
-  it("shows the no-expected-data note when the table came back empty", async () => {
+  it("shows the no-expected-data note over the preserved chart frame", async () => {
     historyFixture = [historyPoint(Math.floor(Date.now() / 1000) - DAY, [[1, 10, 5, 10000, 10]])];
     mocks.getExpectedPrTable.mockResolvedValue([]);
     const wrapper = mount(PrTrendSection);
     await flushPromises();
     expect(wrapper.text()).toContain("playtime.prTrendNoExpected");
-    expect(wrapper.find(".pr-trend-stub").exists()).toBe(false);
+    // The empty frame stands so the section never collapses.
+    expect(wrapper.find(".pr-trend-stub").exists()).toBe(true);
   });
 });
 
@@ -308,7 +309,8 @@ describe("PrTrendSection range + ship popup", () => {
     await customTab!.trigger("click");
     await nextTick();
     expect(wrapper.text()).toContain("playtime.prTrendRangeIncomplete");
-    expect(wrapper.find(".pr-trend-stub").exists()).toBe(false);
+    // The empty frame stands so the section never collapses.
+    expect(wrapper.find(".pr-trend-stub").exists()).toBe(true);
   });
 
   it("does not let a late read of the previous account settle the new one", async () => {

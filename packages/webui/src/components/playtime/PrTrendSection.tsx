@@ -411,23 +411,32 @@ export default defineComponent({
       let body: VNode | null = null;
       if (historyLoaded && (pts?.length ?? 0) === 0) {
         // No cached history at all — the point-accrual note is the most
-        // actionable face and needs no attempt at the expected table.
+        // actionable face and needs no attempt at the expected table (a
+        // fresh account never had a chart whose height to keep).
         body = <p class="playtime-view__note">{t("playtime.prTrendEmpty")}</p>;
       } else if (expected.value === null || !historyLoaded) {
         body = null; // still reading — the frame is already on screen
-      } else if (expected.value.length === 0) {
-        body = <p class="playtime-view__note">{t("playtime.prTrendNoExpected")}</p>;
-      } else if (rangeKey.value === "custom" && !customWindow.value) {
-        // An unfinished custom pick: name the cause instead of pretending
-        // the selection has no data.
-        body = <p class="playtime-view__note">{t("playtime.prTrendRangeIncomplete")}</p>;
-      } else if (series.value.length === 0) {
-        body = <p class="playtime-view__note">{t("playtime.prTrendNoData")}</p>;
       } else {
+        // Once loaded, the chart frame ALWAYS stands: an empty selection
+        // (no expected table / unfinished custom pick / no rated battles)
+        // renders the empty frame with its note below, so the section
+        // never collapses when a filter stops matching.
+        let note: string;
+        if (expected.value.length === 0) {
+          note = t("playtime.prTrendNoExpected");
+        } else if (rangeKey.value === "custom" && !customWindow.value) {
+          // An unfinished custom pick: name the cause instead of pretending
+          // the selection has no data.
+          note = t("playtime.prTrendRangeIncomplete");
+        } else if (series.value.length === 0) {
+          note = t("playtime.prTrendNoData");
+        } else {
+          note = t("playtime.prTrendHint");
+        }
         body = (
           <>
             <PrTrendChart points={series.value} fmtTick={fmtTick} hintOf={hintOf} />
-            <p class="playtime-view__note">{t("playtime.prTrendHint")}</p>
+            <p class="playtime-view__note">{note}</p>
           </>
         );
       }

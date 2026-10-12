@@ -23,9 +23,11 @@
 }
 
 /* Anchored (non-sheet) panel: a fixed width so the two pickers keep their
-   fields; the phone sheet sizes itself full-width and is excluded. */
+   fields — wide enough for a full zh date ("2024年1月18日" + calendar icon)
+   in both fields, which the LookupView twin's 280px truncates. The phone
+   sheet sizes itself full-width and is excluded. */
 .hk-popover-panel:not(.hk-is-sheet) .pr-trend-rangepop {
-  width: 280px;
+  width: 360px;
 }
 
 .pr-trend-rangepop__head {
@@ -71,6 +73,13 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+
+  /* The water-meter tracks are inline-flex shrink-to-fit; this popup's
+     flex-column would stretch them panel-wide instead — pin them to their
+     content (wrapping at the panel width, per the base track's wrap). */
+  .ship-filter-bar__opts {
+    align-self: flex-start;
+  }
 }
 
 /* Column captions aligned to the row grid — five tracks: checkbox, name
