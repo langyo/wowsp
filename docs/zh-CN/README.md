@@ -20,5 +20,7 @@ WoWSP 是面向《战舰世界》的新一代战况分析仪表盘。它有两�
 | 文档 | 说明 |
 |---|---|
 | [架构设计](./designs/architecture.md) | 架构设计文档 |
+| [Mod Hub 插件管理](./designs/mod-hub.md) | Mod Hub 插件管理设计 |
+| [游戏内战绩插件](./designs/ingame-stats-plugin.md) | 游戏内战绩插件设计 |
 
 完整目录见侧边栏。

@@ -27,7 +27,7 @@ target `wasm32-unknown-unknown`). Two crates:
 > This is a **hidden built-in service**, not something users configure. The
 > production deployment is reachable at **`wowsp.langyo.xyz`** and both
 > apps hardcode the host (desktop:
-> `BUILTIN_RELAY_ROOT_URL` in `packages/app/tauri/src/commands/pairing_relay.rs`,
+> `BUILTIN_RELAY_ROOT_URL` in `packages/app/tauri/src/commands/pairing_relay/`,
 > an `https://` root the v2 manifest and WebSocket base derive from; webui:
 > the `wss://` spelling in `stores/pairing.ts` `PAIRING_GATEWAY_WS`).
 > The only supported development override is the undocumented
@@ -317,7 +317,7 @@ pnpm --filter @wowsp/pairing-relay dev        # wrangler dev on :8787
 
 Point the desktop at it with the undocumented override
 (`WOWSP_RELAY_URL=ws://127.0.0.1:8787`, see
-`packages/app/tauri/src/commands/pairing_relay.rs`).
+`packages/app/tauri/src/commands/pairing_relay/`).
 
 Rust-side checks (no Cloudflare account needed):
 
@@ -425,7 +425,7 @@ free tier's WS support) similarly covers the phone's low request counts.
 - `just check-relay` (repo root) runs both the host tests and the
   wasm32 check.
 - The Rust clients (desktop bridge + phone transport) live in
-  `packages/app/tauri/src/commands/pairing_relay.rs`; their test suite
+  `packages/app/tauri/src/commands/pairing_relay/`; their test suite
   runs an in-process mock of this protocol.
 - No TypeScript sources remain in this package (the `typecheck` script is
   gone with them; `pnpm -r typecheck` skips this package naturally).

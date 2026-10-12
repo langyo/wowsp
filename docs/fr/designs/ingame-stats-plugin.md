@@ -323,7 +323,7 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
 | Préoccupation | Fichier (existant sauf mention contraire) | Modification |
 | --- | --- | --- |
 | Observateur des fichiers du pont | voisin de `commands/arena_info.rs` : nouveau `commands/ingame_bridge.rs` | surveiller le répertoire du mod avec `notify` ; analyser heartbeat/request/journal ; exposer les événements Tauri `wowsp://ingame-*` |
-| Moteur d'ordonnancement | nouveau module `overlay/order_source.rs` | réducteur « ordre arène + coulage des morts en fin de liste » alimenté par les événements du pont ; émet l'ordre final des lignes que l'overlay rend |
+| Moteur d'ordonnancement | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts` ; la synthèse du roster Lesta vit dans `commands/probe_roster.rs` | réducteur « ordre arène + coulage des morts en fin de liste » alimenté par les événements du pont ; émet l'ordre final des lignes que l'overlay rend |
 | Schéma de configuration | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` acquiert `"plugin"` (chaîne de priorité `plugin > inferred > ocr > off`) |
 | Déclenchement de l'overlay par la touche | `overlay/placement.rs` (`tab_key_down`) | quand le pont est vivant, piloter l'affichage/masquage depuis les marqueurs `input.tabModeIn/Out` au lieu de l'interrogation `GetAsyncKeyState` |
 | Installation / désinstallation | `commands/mod_install.rs` + `packages/ingame-plugin/` (nouveau sous-paquet) | le gabarit devient le `Main.py` du sous-paquet ; snapshot + rollback ; garde « jeu fermé » ; nettoyage de l'ancienne sonde |

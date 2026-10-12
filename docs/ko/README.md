@@ -20,5 +20,6 @@ WoWSP는 World of Warships를 위한 차세대 전투 분석 대시보드입니�
 | 문서 색인 | |
 |---|---|
 | [아키텍처 설계](./designs/architecture.md) | 아키텍처 설계 문서 |
+| [게임 내 전적 플러그인](./designs/ingame-stats-plugin.md) | 게임 내 전적 플러그인 설계 문서 |
 
 전체 목차는 사이드바를 참조하세요.

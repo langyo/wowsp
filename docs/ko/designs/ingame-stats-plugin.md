@@ -270,7 +270,7 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은 같은
 | 관심사 | 파일 (별도 표시 없으면 기존) | 변경 사항 |
 | --- | --- | --- |
 | 브리지 파일 감시자 | `commands/arena_info.rs`의 형제 파일: 신규 `commands/ingame_bridge.rs` | 모드 디렉터리를 `notify`로 감시; 하트비트/요청/저널 파싱; Tauri 이벤트 `wowsp://ingame-*` 노출 |
-| 정렬 엔진 | 신규 모듈 `overlay/order_source.rs` | 브리지 이벤트로 구동되는 arena 순서 + 사망 침몰 리듀서; 오버레이가 렌더링하는 최종 행 순서를 내보낸다 |
+| 정렬 엔진 | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`, Lesta 로스터 합성은 `commands/probe_roster.rs` | 브리지 이벤트로 구동되는 arena 순서 + 사망 침몰 리듀서; 오버레이가 렌더링하는 최종 행 순서를 내보낸다 |
 | 설정 스키마 | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster`에 `"plugin"` 추가(우선순위 체인 `plugin > inferred > ocr > off`) |
 | 오버레이 키 게이팅 | `overlay/placement.rs`(`tab_key_down`) | 브리지가 살아 있을 때는 `GetAsyncKeyState` 폴링 대신 `input.tabModeIn/Out` 표시로 보이기/숨기기를 구동한다 |
 | 설치 / 제거 | `commands/mod_install.rs` + `packages/ingame-plugin/`(신규 서브패키지) | 템플릿이 이 서브패키지의 `Main.py`가 된다; 스냅샷 + 롤백; 게임 종료 가드; 레거시 프로브 정리 |

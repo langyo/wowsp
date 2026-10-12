@@ -271,7 +271,7 @@ overlay/inferredOrder + ترتيب الاسم المترجم للسفينة)؛ �
 | الجانب | الملف (قائم ما لم يُذكر غير ذلك) | التغيير |
 | --- | --- | --- |
 | مراقب ملفات الجسر | نظير `commands/arena_info.rs`: جديد `commands/ingame_bridge.rs` | مراقبة دليل المود عبر `notify`؛ تحليل heartbeat/request/journal؛ عرض أحداث Tauri `wowsp://ingame-*` |
-| محرك الترتيب | وحدة جديدة `overlay/order_source.rs` | مُقلِّص «ترتيب الساحة + إغراق الساقطين» تتغذى على أحداث الجسر؛ يصدر ترتيب الصفوف النهائي الذي يرسمه التراكب |
+| محرك الترتيب | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts` + `commands/probe_roster.rs` | مُقلِّص «ترتيب الساحة + إغراق الساقطين» تتغذى على أحداث الجسر؛ يصدر ترتيب الصفوف النهائي الذي يرسمه التراكب |
 | مخطط الإعدادات | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | يكتسب `roster` القيمة `"plugin"` (سلسلة الأولوية `plugin > inferred > ocr > off`) |
 | بوابة مفاتيح التراكب | `overlay/placement.rs` (`tab_key_down`) | عندما يكون الجسر حيًا، دفع الإظهار/الإخفاء من علامات `input.tabModeIn/Out` بدلًا من استطلاع `GetAsyncKeyState` |
 | التثبيت / إزالة التثبيت | `commands/mod_install.rs` + `packages/ingame-plugin/` (حزمة فرعية جديدة) | يصبح القالب هو `Main.py` الخاص بالحزمة الفرعية؛ لقطة + تراجع؛ حارس إغلاق اللعبة؛ تنظيف المسبار القديم |

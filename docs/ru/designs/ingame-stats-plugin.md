@@ -296,7 +296,7 @@ shipName в записях CN в действительности, покаже�
 | Аспект | Файл (существующий, если не отмечено иное) | Изменение |
 | --- | --- | --- |
 | Наблюдатель файлов моста | рядом с `commands/arena_info.rs`: новый `commands/ingame_bridge.rs` | наблюдение за каталогом мода через `notify`; разбор heartbeat/request/journal; экспорт событий Tauri `wowsp://ingame-*` |
-| Механизм упорядочивания | новый модуль `overlay/order_source.rs` | редьюсер «порядок арены + сдвиг потопленных вниз», питаемый событиями моста; выдаёт итоговый порядок строк, который отрисовывает наложение |
+| Механизм упорядочивания | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`; синтез ростера Lesta — `commands/probe_roster.rs` | редьюсер «порядок арены + сдвиг потопленных вниз», питаемый событиями моста; выдаёт итоговый порядок строк, который отрисовывает наложение |
 | Схема конфигурации | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` получает `"plugin"` (цепочка приоритетов `plugin > inferred > ocr > off`) |
 | Гейтинг клавиши наложения | `overlay/placement.rs` (`tab_key_down`) | когда мост жив, управлять показом/скрытием по отметкам `input.tabModeIn/Out` вместо опроса `GetAsyncKeyState` |
 | Установка / удаление | `commands/mod_install.rs` + `packages/ingame-plugin/` (новый подпакет) | шаблон становится `Main.py` подпакета; снимок + откат; защита «игра закрыта»; очистка старого пробника |

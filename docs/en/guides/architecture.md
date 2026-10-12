@@ -26,16 +26,18 @@ from the detected game install (`just convert-map --name ...` /
 
 ### Mode 2 — In-game overlay
 
-A mod file in the game's `res_mods/` launches WoWSP when the game starts. A
-transparent always-on-top window overlays both teams' rosters, visible only
-while `Tab` is held.
+WoWSP runs alongside the game: while the game runs and the in-game overlay
+setting is on, a transparent always-on-top window overlays both teams'
+rosters, visible only while `Tab` is held. The first-party probe mod installed
+into `res_mods/` bridges live battle data to it (see
+`designs/ingame-stats-plugin.md`).
 
 ```mermaid
 flowchart TD
-    A["game starts"] --> B["mod launcher starts WoWSP transparent overlay window"]
+    A["game starts"] --> B["WoWSP creates the transparent overlay window while the game runs"]
     B --> C["Rust: poll &lt;game&gt;/replays/tempArenaInfo.json for live roster (commands/arena_info.rs)"]
     C --> D["user holds Tab"]
-    D --> E["Rust: capture game window + detect team-list region (commands/overlay.rs)"]
+    D --> E["Rust: capture game window + detect team-list region (commands/overlay/)"]
     E --> F["webui: re-anchor rendered roster to detected rect (features/overlay)"]
     F --> G["user releases Tab → overlay hides"]
 ```

@@ -21,14 +21,14 @@ flowchart TD
 
 ### 模式二 — 游戏内覆盖层
 
-游戏 `res_mods/` 里的一个 mod 文件会在游戏启动时拉起 WoWSP。一个透明、置顶的窗口覆盖显示双方阵容，仅在按住 `Tab` 时可见。
+WoWSP 与游戏并行运行：游戏运行且覆盖层设置开启时，一个透明、置顶的窗口覆盖显示双方阵容，仅在按住 `Tab` 时可见。安装到 `res_mods/` 的第一方探针 mod 为其桥接实时战斗数据（见 `designs/ingame-stats-plugin.md`）。
 
 ```mermaid
 flowchart TD
-    A["游戏启动"] --> B["mod 启动器拉起 WoWSP 透明覆盖窗口"]
+    A["游戏启动"] --> B["WoWSP 在游戏运行时创建透明覆盖窗口"]
     B --> C["Rust：轮询 &lt;game&gt;/replays/tempArenaInfo.json 获取实时阵容（commands/arena_info.rs）"]
     C --> D["用户按住 Tab"]
-    D --> E["Rust：截取游戏窗口 + 检测中央名单区域（commands/overlay.rs）"]
+    D --> E["Rust：截取游戏窗口 + 检测中央名单区域（commands/overlay/）"]
     E --> F["webui：将渲染的阵容重新锚定到检测到的矩形（features/overlay）"]
     F --> G["用户松开 Tab → 覆盖层隐藏"]
 ```

@@ -15,6 +15,7 @@
 # Проектирование
 
 - [Проектирование архитектуры](./designs/architecture.md)
+- [Плагин внутриигровой статистики](./designs/ingame-stats-plugin.md)
 
 # License
 

@@ -216,7 +216,7 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 | 关注点 | 文件（无标注即现有） | 变更 |
 | --- | --- | --- |
 | 桥文件监听 | `commands/arena_info.rs` 的姊妹篇：新增 `commands/ingame_bridge.rs` | `notify` 监听 mod 目录；解析心跳/请求/journal；发出 `wowsp://ingame-*` Tauri 事件 |
-| 排序引擎 | 新模块 `overlay/order_source.rs` | 桥事件驱动的"载具序 + 阵亡下沉"归约器；输出覆盖层渲染的最终行序 |
+| 排序引擎 | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`，Lesta 阵容合成在 `commands/probe_roster.rs` | 桥事件驱动的"载具序 + 阵亡下沉"归约器；输出覆盖层渲染的最终行序 |
 | 配置 schema | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` 新增 `"plugin"`（优先级 `plugin > inferred > ocr > off`） |
 | 覆盖层按键门控 | `overlay/placement.rs`（`tab_key_down`） | 桥存活时改用 `input.tabModeIn/Out` 标记驱动显示/隐藏，替代 `GetAsyncKeyState` 轮询 |
 | 安装/卸载 | `commands/mod_install.rs` + `packages/ingame-plugin/`（新子包） | 模板指向子包 `Main.py`；快照 + 回滚；游戏关闭守卫；旧探针清理 |

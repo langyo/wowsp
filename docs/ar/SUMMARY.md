@@ -15,6 +15,7 @@
 # التصميم
 
 - [تصميم البنية](./designs/architecture.md)
+- [إضافة إحصائيات داخل اللعبة](./designs/ingame-stats-plugin.md)
 
 # License
 

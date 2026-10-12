@@ -15,6 +15,7 @@
 # Conception
 
 - [Conception de l'architecture](./designs/architecture.md)
+- [Plugin de statistiques en jeu](./designs/ingame-stats-plugin.md)
 
 # License
 

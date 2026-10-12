@@ -1,6 +1,6 @@
 # Architecture
 
-> **Version**: 0.4.8 — M1–M9 complete; pre-release hardening.
+> **Version**: 0.6.0 — M1–M9 complete.
 
 ## Scope
 
@@ -27,7 +27,7 @@ flowchart TB
         shell --> Detect["game_detect.rs\nregistry + Steam"]
         shell --> Replay["replay.rs\n.wowsreplay header + JSON"]
         shell --> Arena["arena_info.rs\ntempArenaInfo.json poll"]
-        shell --> Overlay["overlay.rs\ncapture + window control"]
+        shell --> Overlay["overlay/\ncapture + window control"]
     end
 
     subgraph game["World of Warships"]

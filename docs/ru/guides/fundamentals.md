@@ -6,8 +6,9 @@
 
 WoWSP is one Tauri desktop app. The same executable runs in standalone review
 mode (open a replay, watch the holographic map) or in overlay mode (transparent
-window over the running game). The frontend selects the mode by route: `/replay`
-vs `/overlay`.
+window over the running game). The main shell is the Vue app; the overlay
+window loads a separate pre-rendered page (`overlay.html`) instead of a Vue
+view.
 
 ## Data sources
 

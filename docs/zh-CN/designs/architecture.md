@@ -1,6 +1,6 @@
 # 架构
 
-> **版本**：0.4.8 —— M1–M9 已完成，发布前打磨中。
+> **版本**：0.6.0 —— M1–M9 已完成。
 
 ## 范围
 
@@ -25,7 +25,7 @@ flowchart TB
         shell --> Detect["game_detect.rs\n注册表 + Steam"]
         shell --> Replay["replay.rs\n.wowsreplay 头 + JSON"]
         shell --> Arena["arena_info.rs\ntempArenaInfo.json 轮询"]
-        shell --> Overlay["overlay.rs\n截屏 + 窗口控制"]
+        shell --> Overlay["overlay/\n截屏 + 窗口控制"]
     end
 
     subgraph game["战舰世界"]

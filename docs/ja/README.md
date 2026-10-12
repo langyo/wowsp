@@ -20,5 +20,6 @@ WoWSP は『World of Warships』向けの次世代戦況分析ダッシュボー
 | ドキュメント索引 | |
 |---|---|
 | [アーキテクチャ設計](./designs/architecture.md) | アーキテクチャ設計書 |
+| [ゲーム内戦績プラグイン](./designs/ingame-stats-plugin.md) | ゲーム内戦績プラグイン設計書 |
 
 完全な目次はサイドバーを参照してください。

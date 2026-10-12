@@ -20,5 +20,6 @@ WoWSP 是面向《戰艦世界》的新一代戰況分析儀表板。它有兩�
 | 文件索引 | |
 |---|---|
 | [架構設計](./designs/architecture.md) | 架構設計文件 |
+| [遊戲內戰績插件](./designs/ingame-stats-plugin.md) | 遊戲內戰績插件設計文件 |
 
 完整目錄請見側邊欄。

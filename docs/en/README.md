@@ -20,5 +20,7 @@ WoWSP is a next-generation battle analysis dashboard for World of Warships. It r
 | Document | Description |
 |---|---|
 | [Architecture](./designs/architecture.md) | Architectural design |
+| [Mod Hub](./designs/mod-hub.md) | Mod hub design |
+| [In-Game Stats Plugin](./designs/ingame-stats-plugin.md) | In-game stats plugin design |
 
 See the sidebar for the complete documentation index.

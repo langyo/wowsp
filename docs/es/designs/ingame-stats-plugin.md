@@ -321,7 +321,7 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
 | Aspecto | Archivo (existente salvo indicación contraria) | Cambio |
 | --- | --- | --- |
 | Observador de archivos del puente | hermano de `commands/arena_info.rs`: nuevo `commands/ingame_bridge.rs` | vigilar con `notify` el directorio del mod; analizar heartbeat/request/journal; exponer eventos de Tauri `wowsp://ingame-*` |
-| Motor de ordenación | nuevo módulo `overlay/order_source.rs` | reductor de orden de arena + hundimiento de muertos alimentado por eventos del puente; emite el orden final de filas que la superposición renderiza |
+| Motor de ordenación | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`; la síntesis del roster de Lesta vive en `commands/probe_roster.rs` | reductor de orden de arena + hundimiento de muertos alimentado por eventos del puente; emite el orden final de filas que la superposición renderiza |
 | Esquema de configuración | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` incorpora `"plugin"` (cadena de prioridad `plugin > inferred > ocr > off`) |
 | Control de la tecla de la superposición | `overlay/placement.rs` (`tab_key_down`) | cuando el puente está activo, dirigir mostrar/ocultar con las marcas `input.tabModeIn/Out` en lugar del sondeo de `GetAsyncKeyState` |
 | Instalación / desinstalación | `commands/mod_install.rs` + `packages/ingame-plugin/` (nuevo subpaquete) | la plantilla pasa a ser el `Main.py` del subpaquete; instantánea + reversión; guardia de juego cerrado; limpieza de la sonda heredada |

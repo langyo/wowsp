@@ -15,6 +15,7 @@
 # 設計
 
 - [架構設計](./designs/architecture.md)
+- [遊戲內戰績插件](./designs/ingame-stats-plugin.md)
 
 # License
 

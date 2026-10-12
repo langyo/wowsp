@@ -27,7 +27,7 @@ badge.
 
 ## How these were generated
 
-Run `scripts/model_convert/extract_game_assets.py` against an unpacked game
+Run `scripts/extract/extract_game_assets.py` against an unpacked game
 install. It scans `gui_0001.pkg` for PNG blobs, matches them by size to the
 `wowsunpack metadata` path→size map, and converts to webp via Pillow. See that
 script's docstring. Source paths in the game: `/gui/nation_flag_tree/<Name>.png`.

@@ -303,7 +303,7 @@ Bridge files (protocol v1, all in the mod directory):
 | Concern | File (existing unless noted) | Change |
 | --- | --- | --- |
 | Bridge file watcher | `commands/arena_info.rs` sibling: new `commands/ingame_bridge.rs` | `notify`-watch the mod directory; parse heartbeat/request/journal; expose Tauri events `wowsp://ingame-*` |
-| Ordering engine | new module `overlay/order_source.rs` | arena order + dead-sinking reducer fed by bridge events; emits the final row order the overlay renders |
+| Ordering engine | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`, with Lesta roster synthesis in `commands/probe_roster.rs` | arena order + dead-sinking reducer fed by bridge events; emits the final row order the overlay renders |
 | Config schema | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` gains `"plugin"` (priority chain `plugin > inferred > ocr > off`) |
 | Overlay key gating | `overlay/placement.rs` (`tab_key_down`) | when the bridge is live, drive show/hide from `input.tabModeIn/Out` marks instead of `GetAsyncKeyState` polling |
 | Install / uninstall | `commands/mod_install.rs` + `packages/ingame-plugin/` (new subpackage) | template becomes the subpackage's `Main.py`; snapshot + rollback; game-closed guard; legacy probe cleanup |

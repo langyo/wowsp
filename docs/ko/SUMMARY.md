@@ -15,6 +15,7 @@
 # 설계
 
 - [아키텍처 설계](./designs/architecture.md)
+- [게임 내 전적 플러그인](./designs/ingame-stats-plugin.md)
 
 # License
 

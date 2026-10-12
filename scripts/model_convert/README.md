@@ -103,11 +103,11 @@ never depend on a game install.
 
 ```bash
 # Convert one ship by display name (fuzzy-matched) or model dir name
-just convert-model ship --name Montana --output ships/
-just convert-model ship --name USA001_Montana_1945 --hull B
+just convert-ship --name Montana --output ships/
+just convert-ship --name USA001_Montana_1945 --hull B
 
 # Convert one map/space by its internal id
-just convert-model map --name 15_NE_north --output maps/
+just convert-map --name 15_NE_north --output maps/
 
 # Or run directly
 python scripts/model_convert/convert_ship.py --name Montana
@@ -207,8 +207,9 @@ repo. Build it once:
 just build wowsunpack
 ```
 
-This clones the official repo into `packages/tools/wowsunpack-vendor/` (gitignored)
-and compiles `wowsunpack` as a workspace member into `target/release/wowsunpack.exe`.
+The vendor tree is tracked in-tree (synced from upstream by hand — never a
+nested clone inside this checkout) and the build compiles the `wowsunpack`
+workspace member into `target/release/wowsunpack.exe`.
 `convert_map_holo.py` auto-detects and uses it. The script gracefully
 degrades without `--keep-submerged` (trenches flattened, contours still work).
 

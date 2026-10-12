@@ -235,7 +235,7 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
 | 關注點 | 檔案（無標註即為現有） | 變更 |
 | --- | --- | --- |
 | 橋接檔案監看器 | `commands/arena_info.rs` 的姊妹檔：新增 `commands/ingame_bridge.rs` | 以 `notify` 監看 mod 目錄；解析 heartbeat/request/journal；發出 Tauri 事件 `wowsp://ingame-*` |
-| 排序引擎 | 新模組 `overlay/order_source.rs` | 由橋接事件餵入的「載具序 + 陣亡下沉」歸約器；輸出覆蓋層渲染的最終行序 |
+| 排序引擎 | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`，Lesta 陣容合成在 `commands/probe_roster.rs` | 由橋接事件餵入的「載具序 + 陣亡下沉」歸約器；輸出覆蓋層渲染的最終行序 |
 | 設定 schema | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` 新增 `"plugin"`（優先順序鏈 `plugin > inferred > ocr > off`） |
 | 覆蓋層按鍵門控 | `overlay/placement.rs`（`tab_key_down`） | 橋接存活時，改由 `input.tabModeIn/Out` 標記驅動顯示/隱藏，取代 `GetAsyncKeyState` 輪詢 |
 | 安裝/解除安裝 | `commands/mod_install.rs` + `packages/ingame-plugin/`（新子套件） | 模板改為該子套件的 `Main.py`；快照 + 回滾；遊戲關閉守衛；舊探針清理 |

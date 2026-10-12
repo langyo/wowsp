@@ -275,7 +275,7 @@ Before submitting, the relevant subset of `just lint` (or scoped
    - `ci.yml` — web (ubuntu: typecheck / lint / website build / i18n /
      pnpm audit), rust (windows: fmt / clippy / check / test), deny
      (cargo-deny native binary: advisories / licenses / sources), versions
-     (eight-version consistency via `scripts/check_versions.py`).
+     (seven-version consistency via `scripts/check_versions.py`).
    - `commit-msg-lint.yml` — PR title + every commit subject in the PR
      (via `scripts/commit_msg_lint.py`, bot authors exempt).
    - `release.yml` / `site.yml` — tag-driven build & release / site

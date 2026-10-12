@@ -280,7 +280,7 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
 | 関心事 | ファイル（注記なきものは既存） | 変更内容 |
 | --- | --- | --- |
 | ブリッジファイル監視 | `commands/arena_info.rs` の姉妹ファイル: 新規 `commands/ingame_bridge.rs` | mod ディレクトリを `notify` で監視。ハートビート/リクエスト/ジャーナルを解析。Tauri イベント `wowsp://ingame-*` を公開 |
-| 並び順エンジン | 新規モジュール `overlay/order_source.rs` | ブリッジイベントが駆動する「アリーナ順 + 撃沈沈降」リデューサー。オーバーレイが描画する最終行順序を出力 |
+| 並び順エンジン | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`、Lesta のロスター合成は `commands/probe_roster.rs` | ブリッジイベントが駆動する「アリーナ順 + 撃沈沈降」リデューサー。オーバーレイが描画する最終行順序を出力 |
 | 設定スキーマ | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` に `"plugin"` を追加（優先チェーン `plugin > inferred > ocr > off`） |
 | オーバーレイのキーゲーティング | `overlay/placement.rs`（`tab_key_down`） | ブリッジが稼働しているときは、`GetAsyncKeyState` ポーリングの代わりに `input.tabModeIn/Out` マークで表示/非表示を駆動する |
 | インストール / アンインストール | `commands/mod_install.rs` + `packages/ingame-plugin/`（新規サブパッケージ） | テンプレートをサブパッケージの `Main.py` にする。スナップショット + ロールバック。ゲームクローズガード。旧プローブのクリーンアップ |

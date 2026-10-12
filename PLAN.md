@@ -63,7 +63,7 @@ visible only while `Tab` is held.
 
 ## Feature milestones
 
-All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in pre-release hardening for the initial public release.
+All milestones (M1–M9) are complete and merged on `master`.
 
 - [x] M1 — Real game-detection (registry + Steam + Lesta + 360), cached to AppData
 - [x] M2 — Replay header parser (8-byte magic + JSON descriptor) end-to-end
@@ -91,7 +91,7 @@ All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in
 
 ### M10 — Mod Hub (plugin/mod management)
 
-Full design: `docs/<lang>/designs/mod-hub.md`. Skin & voice packs are the
+Full design: `docs/en/designs/mod-hub.md`. Skin & voice packs are the
 bulk of the ecosystem and are first-class citizens; auxiliary mods and
 official mini-patches (IME fix, fonts) are the foundation.
 
@@ -100,7 +100,7 @@ official mini-patches (IME fix, fonts) are the foundation.
 - [ ] M10.3 — Discussions indexer (scheduled Actions workflow → `mod-index.json` on `gh-pages`), shared by the website catalog and the in-app browser
 - [ ] M10.4 — Version-migration engine: game-update detection, classified auto-migration / community-confirmed / unverified flow, one-click rollback
 - [ ] M10.5 — Content browser: skin/voice categories with previews & audition, batch install, resumable downloads; CC0-only index
-- [ ] M10.6 — Aslain migration assistant: adopt Aslain-installed entries into the install record
+- [x] M10.6 — Aslain migration assistant: DONE via tiered pairing + register-and-reinstall takeover (install cuts the pack's manifest rows)
 
 > **WebView2 note:** the installers ARE shun-built now (the custom
 > installer shell is retired; `packages/installer/shun.toml.template` is

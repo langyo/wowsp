@@ -16,6 +16,7 @@
 
 - [架构设计](./designs/architecture.md)
 - [Mod Hub 插件管理](./designs/mod-hub.md)
+- [游戏内战绩插件](./designs/ingame-stats-plugin.md)
 
 # License
 
