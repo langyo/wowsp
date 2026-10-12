@@ -82,6 +82,15 @@ pub(super) fn walk_frames(
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
             },
+            // Lesta 26.10 renumbered this stream onto 0x2e (see the constant):
+            // the same 32-byte PlayerPosition layout, carrying the recorder's
+            // own ship, its avatar and the squadron transforms. WG containers
+            // never reach the arm — the id sits in their undefined tail gap.
+            PACKET_PLAYER_POSITION_LESTA if profile.lesta => {
+                if let Some(sample) = parse_player_position(payload, time) {
+                    positions.entry(sample.entity_id).or_default().push(sample);
+                }
+            },
             PACKET_ENTITY_CREATE => {
                 if let Some(created) = parse_entity_create(payload, time, profile.zone_entity_type)
                 {
@@ -442,13 +451,14 @@ pub(super) fn walk_frames(
         });
     }
     // The recorder's own ship entity: the local player's vehicle never
-    // emits Position (0x0a) packets (its transform rides the 0x2c stream
-    // instead), while EVERY other ship streams 0x0a continuously. Exactly
-    // one type-2 entity has no 0x0a samples — that is the recorder's ship,
-    // a client-invariant anchor no roster or arena state can contradict
-    // (live-verified on a Lesta 26.10 capture: the self ship carried zero
-    // 0x0a samples while its teammate mirrored its ship config, which had
-    // been breaking the config-id join).
+    // emits Position (0x0a) packets (its transform rides the self stream —
+    // 0x2c on WG and Lesta ≤26.9, 0x2e from Lesta 26.10 on), while EVERY
+    // other ship streams 0x0a continuously. Exactly one type-2 entity has
+    // no 0x0a samples — that is the recorder's ship, a client-invariant
+    // anchor no roster or arena state can contradict (live-verified on a
+    // Lesta 26.10 capture: the self ship carried zero 0x0a samples while
+    // its teammate mirrored its ship config, which had been breaking the
+    // config-id join).
     let recorder_ship = recorder_ship_of(&kinds, &position_a_counts, &positions);
     DecodedReplay {
         recorder_ship,
@@ -492,10 +502,11 @@ pub(super) fn walk_frames(
 /// The recorder's own ship entity, as an extracted production rule (the
 /// inline closure's contract, now testable): the unique type-2 entity that
 /// has streamed NO Position (0x0a) samples but IS present in the position
-/// map (its transform rides the 0x2c self stream) — the "present via 0x2c"
-/// half excludes created-but-never-sampled ships, so a torn prefix cannot
-/// mis-anchor on an enemy that simply has not streamed yet. Anything other
-/// than exactly one candidate yields None (the config-id join's fallback).
+/// map (its transform rides the 0x2c self stream, or 0x2e on Lesta 26.10+)
+/// — the "present via the self stream" half excludes created-but-never-
+/// sampled ships, so a torn prefix cannot mis-anchor on an enemy that
+/// simply has not streamed yet. Anything other than exactly one candidate
+/// yields None (the config-id join's fallback).
 pub(super) fn recorder_ship_of(
     kinds: &BTreeMap<i32, wowsp_tauri_shared::EntityKind>,
     position_a_counts: &BTreeMap<i32, usize>,

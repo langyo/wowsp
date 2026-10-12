@@ -32,6 +32,78 @@ fn parses_player_position_payload() {
     assert!(parse_player_position(&payload[..20], 0.0).is_none());
 }
 
+/// Build one wire frame `[u32 size][u32 type][f32 time][payload]`.
+fn wire_frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+    let mut f = Vec::with_capacity(12 + payload.len());
+    f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    f.extend_from_slice(&ptype.to_le_bytes());
+    f.extend_from_slice(&time.to_le_bytes());
+    f.extend_from_slice(payload);
+    f
+}
+
+/// A 32-byte PlayerPosition-layout payload, as the Lesta 26.10 0x2e stream
+/// carries it (entity 7, linked ship 8, at (-100, 0, 250) heading 1.25).
+fn lesta_self_position_payload() -> Vec<u8> {
+    let mut p = Vec::with_capacity(32);
+    p.extend_from_slice(&7i32.to_le_bytes());
+    p.extend_from_slice(&8i32.to_le_bytes());
+    p.extend_from_slice(&(-100.0f32).to_le_bytes());
+    p.extend_from_slice(&0.0f32.to_le_bytes());
+    p.extend_from_slice(&250.0f32.to_le_bytes());
+    p.extend_from_slice(&1.25f32.to_le_bytes());
+    p.extend_from_slice(&0.0f32.to_le_bytes());
+    p.extend_from_slice(&0.0f32.to_le_bytes());
+    p
+}
+
+fn profile_for(lesta: bool) -> LayoutProfile {
+    LayoutProfile {
+        methods: None,
+        zone_entity_type: 14,
+        ward_has_type: true,
+        shotkill_has_ballistics: true,
+        arena_state_method: None,
+        lesta,
+    }
+}
+
+/// Lesta 26.10's 0x2e self-position stream decodes into position samples
+/// only for Lesta-family containers — a WG replay must keep ignoring the
+/// id (it sits in WG's undefined tail gap), and a non-32-byte payload is
+/// never a position (the shape gate inside the parser).
+#[test]
+fn lesta_tail_position_stream_is_family_and_shape_gated() {
+    let empty: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let frames = wire_frame(0x2e, 12.5, &lesta_self_position_payload());
+    let lesta = super::frames::walk_frames(&frames, &empty, false, &profile_for(true), None);
+    let samples = lesta
+        .positions
+        .get(&7)
+        .expect("the 0x2e sample must decode on a Lesta container");
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].entity_id, 7);
+    assert_eq!(samples[0].vehicle_id, 8);
+    assert!((samples[0].x - -100.0).abs() < 0.01);
+    assert!((samples[0].z - 250.0).abs() < 0.01);
+    assert!((samples[0].yaw - 1.25).abs() < 0.001);
+
+    // Same wire bytes, WG family: the id stays in the ignored tail gap.
+    let wg = super::frames::walk_frames(&frames, &empty, false, &profile_for(false), None);
+    assert!(
+        wg.positions.is_empty(),
+        "WG containers must not decode 0x2e"
+    );
+
+    // Lesta family but a payload that is not the 32-byte layout: skipped.
+    let short = wire_frame(0x2e, 13.0, &[1, 2, 3, 4, 5, 6, 7, 8]);
+    let malformed = super::frames::walk_frames(&short, &empty, false, &profile_for(true), None);
+    assert!(
+        malformed.positions.is_empty(),
+        "shape gate must reject non-positions"
+    );
+}
+
 /// The state-stream scanner finds a roster shipId at an arbitrary offset
 /// and ignores everything else.
 #[test]

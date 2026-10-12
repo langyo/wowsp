@@ -622,30 +622,42 @@ fn synthesize_lesta_arena_players(
     // surface as bare "#entityId" gray rows (the 2026-10-09 co-op battle
     // left a Nassau and a Phoenix pair that way). The game spawns vehicle
     // entities team-blocked in player-list order — the joined entries
-    // themselves prove it (allied ids 158821-158827, enemy 158828-158833
-    // on that battle) — so a COMPLETE group (N unjoined entities, N
-    // unjoined roster entries, one shipId) pairs the k-th entity with the
-    // k-th candidate ordered by (relation, id). GUARD: the joined
-    // evidence must not contradict the team-block model (every joined
-    // team-0 entity below every joined team-1 entity); if they interleave,
-    // the order assumption is untrustworthy and the group stays skipped —
-    // a cross-team mis-pairing would paint an ally enemy-red, which is the
-    // exact confusion this join exists to prevent. (Joined evidence absent
-    // on both sides pairs on the model alone.)
-    let mut team0_max: Option<i32> = None;
-    let mut team1_min: Option<i32> = None;
-    for p in &players {
-        if p.team_id == 0 {
-            team0_max = Some(team0_max.map_or(p.entity_id, |m| m.max(p.entity_id)));
-        } else {
-            team1_min = Some(team1_min.map_or(p.entity_id, |m| m.min(p.entity_id)));
-        }
-    }
-    let blocks_monotone = match (team0_max, team1_min) {
-        (Some(max0), Some(min1)) => max0 < min1,
-        _ => true,
+    // themselves prove it — but in EITHER orientation: that co-op battle
+    // spawned allies first (ids 158821-158827 below enemies 158828-158833),
+    // while the 2026-10-13 53_Shoreside capture reversed it (enemy block
+    // 432156-432178 below the ally block 432180-432202, the recorder's own
+    // 432184 included). A COMPLETE group (N unjoined entities, N unjoined
+    // roster entries, one shipId) pairs the k-th entity with the k-th
+    // candidate ordered by (relation, id) under the orientation the joined
+    // evidence shows. GUARD: the joined evidence must not contradict the
+    // team-block model (one team's joined span strictly below the other's);
+    // if they interleave, the order assumption is untrustworthy and the
+    // group stays skipped — a cross-team mis-pairing would paint an ally
+    // enemy-red, which is the exact confusion this join exists to prevent.
+    // (Joined evidence absent for either side pairs on the allies-first
+    // model alone.)
+    let span = |team: i8| -> Option<(i32, i32)> {
+        players
+            .iter()
+            .filter(|p| p.team_id == team)
+            .map(|p| p.entity_id)
+            .fold(None, |acc, e| {
+                Some(match acc {
+                    Some((lo, hi)) => (lo.min(e), hi.max(e)),
+                    None => (e, e),
+                })
+            })
     };
-    if blocks_monotone {
+    let (span0, span1) = (span(0), span(1));
+    // Which team's joined block sits below the other's; exactly one
+    // orientation can hold when both sides carry evidence.
+    let block_orientation = match (span0, span1) {
+        (Some((_, max0)), Some((min1, _))) if max0 < min1 => Some(true),
+        (Some((min0, _)), Some((_, max1))) if max1 < min0 => Some(false),
+        (Some(_), Some(_)) => None, // interleaved — untrustworthy
+        _ => Some(true),            // one side has no joined evidence — model alone
+    };
+    if let Some(allies_first) = block_orientation {
         let joined_ids: std::collections::HashSet<i64> =
             players.iter().map(|p| p.player_id).collect();
         let mut joined_entities: std::collections::HashSet<i32> =
@@ -673,7 +685,18 @@ fn synthesize_lesta_arena_players(
             if candidates.len() != free_entities.len() {
                 continue;
             }
-            candidates.sort_by(|a, b| a.relation.cmp(&b.relation).then(a.id.cmp(&b.id)));
+            // Relation order follows the observed orientation: relation 1
+            // (own team) takes the lower ids only when allies spawned first.
+            candidates.sort_by(|a, b| {
+                let rel = |v: &VehicleEntry| {
+                    if allies_first {
+                        v.relation
+                    } else {
+                        -v.relation
+                    }
+                };
+                rel(a).cmp(&rel(b)).then(a.id.cmp(&b.id))
+            });
             // zip yields exactly the matched count (>= 2), so the tail pop
             // below always knows how many entries to undo.
             for (eid, v) in free_entities.iter().zip(candidates) {
@@ -693,21 +716,24 @@ fn synthesize_lesta_arena_players(
             let pushed = free_entities.len();
             // Post-pairing re-check: a mixed group's own insertions could
             // create the interleaved state the guard rejects (a paired
-            // ally landing above an existing enemy block) — the just-pushed
-            // entries are the vec tail, so pop them and leave the group
-            // unjoined rather than keep a layout the model says is wrong.
-            let t0 = players
+            // entry landing inside the other team's block) — the just-
+            // pushed entries are the vec tail, so pop them and leave the
+            // group unjoined rather than keep a layout the model says is
+            // wrong. The check mirrors the chosen orientation.
+            let lo_team = if allies_first { 0 } else { 1 };
+            let hi_team = 1 - lo_team;
+            let hi_of_lo = players
                 .iter()
-                .filter(|p| p.team_id == 0)
+                .filter(|p| p.team_id == lo_team)
                 .map(|p| p.entity_id)
                 .max();
-            let t1 = players
+            let lo_of_hi = players
                 .iter()
-                .filter(|p| p.team_id != 0)
+                .filter(|p| p.team_id == hi_team)
                 .map(|p| p.entity_id)
                 .min();
-            let monotone = match (t0, t1) {
-                (Some(max0), Some(min1)) => max0 < min1,
+            let monotone = match (hi_of_lo, lo_of_hi) {
+                (Some(hi), Some(lo)) => hi < lo,
                 _ => true,
             };
             if !monotone {
@@ -1928,9 +1954,12 @@ mod tests {
         let foe2 = arena.iter().find(|p| p.player_id == -4).unwrap();
         assert_eq!((foe2.entity_id, foe2.team_id), (40, 1));
 
-        // Guard counterfactual: with a joined enemy entity BELOW the joined
-        // ally block (team blocks interleaved) the spawn-order model is
-        // untrustworthy and the same group stays unjoined.
+        // Guard counterfactual: the unique-rule enemy (entity 5, ship 201)
+        // sits BELOW the anchored ally 10, so the joined evidence reads as
+        // an enemies-first layout — but the 200 group's entities (20, 30)
+        // both land ABOVE that enemy block while the roster needs one on
+        // each side, and the post-pairing orientation check rejects the
+        // layout: the group stays unjoined.
         kinds.insert(5, entity_kind_with_ship(201));
         kinds.remove(&40);
         let mut guarded = Vec::new();
@@ -1966,8 +1995,9 @@ mod tests {
         ];
         synthesize_lesta_arena_players(&mut guarded, &kinds, &roster_guard, Some(10));
         // Entity 5 (ship 201) is the only 201 carrier — the unique rule
-        // joins it on the enemy side at id 5 < the anchored ally 10, which
-        // trips the monotonicity guard: the 200 group stays out.
+        // joins it on the enemy side at id 5 < the anchored ally 10; the
+        // 200 group's entities cannot respect that block layout, so it
+        // stays out.
         assert_eq!(guarded.len(), 2);
         assert!(
             guarded
@@ -2172,6 +2202,69 @@ mod tests {
                 .iter()
                 .all(|p| p.entity_id == 10 || p.entity_id == 30)
         );
+    }
+
+    /// The reversed spawn orientation (the 2026-10-13 53_Shoreside capture):
+    /// the ENEMY block spawned below the ally block, with the anchored
+    /// recorder sitting high in the ally block and each mirrored config
+    /// straddling the boundary (one entity per block). The joined evidence
+    /// (anchored ally 90 above the unique-joined enemy 30) selects the
+    /// enemies-first orientation, so the group's lower entity takes the
+    /// ENEMY candidate — the allies-first reading would paint both pairs
+    /// in the wrong colors.
+    #[test]
+    fn lesta_arena_synthesis_pairs_mirror_groups_when_enemies_spawn_first() {
+        let kinds: std::collections::BTreeMap<_, wowsp_tauri_shared::EntityKind> = [
+            (20, entity_kind_with_ship(200)),
+            (30, entity_kind_with_ship(201)),
+            (80, entity_kind_with_ship(200)),
+            (90, entity_kind_with_ship(100)),
+        ]
+        .into();
+        let roster = vec![
+            VehicleEntry {
+                id: 1,
+                name: "me".into(),
+                relation: 0,
+                ship_id: 100,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -2,
+                name: ":AllyBot:".into(),
+                relation: 1,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -3,
+                name: ":FoeBot:".into(),
+                relation: 2,
+                ship_id: 200,
+                ship_name: None,
+            },
+            VehicleEntry {
+                id: -4,
+                name: ":Foe2:".into(),
+                relation: 2,
+                ship_id: 201,
+                ship_name: None,
+            },
+        ];
+        let mut arena = Vec::new();
+        synthesize_lesta_arena_players(&mut arena, &kinds, &roster, Some(90));
+        assert_eq!(arena.len(), 4);
+        let me = arena.iter().find(|p| p.is_self).unwrap();
+        assert_eq!((me.entity_id, me.team_id), (90, 0));
+        // The unique 201 joins the low enemy entity; the mirrored 200 group
+        // straddles the blocks — 20 (enemy block) takes :FoeBot:, 80 (ally
+        // block) takes :AllyBot:.
+        let foe = arena.iter().find(|p| p.player_id == -3).unwrap();
+        assert_eq!((foe.entity_id, foe.team_id), (20, 1));
+        let ally = arena.iter().find(|p| p.player_id == -2).unwrap();
+        assert_eq!((ally.entity_id, ally.team_id), (80, 0));
+        let foe2 = arena.iter().find(|p| p.player_id == -4).unwrap();
+        assert_eq!((foe2.entity_id, foe2.team_id), (30, 1));
     }
 
     #[test]
@@ -2819,22 +2912,11 @@ mod tests {
         assert_eq!(lite.own_ship_id, None);
     }
 
-    /// Ground-truth validation of the Lesta container crack against the
-    /// real replays on this machine: takes the newest
-    /// `D:\WoWS_Korabli\replays\*.korablireplay` and runs BOTH the
-    /// header-parse internals (roster synthesis from `playersPublicInfo`)
-    /// and the full packet-stream decode (Blowfish + zlib + frames — the
-    /// unmodified WG scheme). Skips when the Lesta client is not installed.
-    /// Run locally with `cargo test -p wowsp_tauri --lib -- --ignored lesta`.
-    #[test]
-    #[ignore = "needs the real Lesta replays on this machine"]
-    fn decodes_the_real_lesta_replays_on_this_machine() {
-        let dir = std::path::Path::new(r"D:\WoWS_Korabli\replays");
-        let Ok(rd) = fs::read_dir(dir) else {
-            return; // no Lesta client on this machine — skip
-        };
+    /// The newest finished `.korablireplay` under `dir` (`None` when the
+    /// directory is missing or holds no finished container).
+    fn newest_lesta_replay_in(dir: &str) -> Option<PathBuf> {
         let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
-        for ent in rd.flatten() {
+        for ent in fs::read_dir(dir).ok()?.flatten() {
             let path = ent.path();
             let is_container = path
                 .extension()
@@ -2850,8 +2932,27 @@ mod tests {
                 }
             }
         }
-        let Some((_, path)) = newest else {
-            return; // empty replays dir — skip
+        newest.map(|(_, path)| path)
+    }
+
+    /// Ground-truth validation of the Lesta container crack against the
+    /// real replays on this machine: takes the newest
+    /// `D:\WoWS_Korabli\replays\*.korablireplay` (or the file pinned by
+    /// `WOWSP_TEST_REPLAY`) and runs BOTH the header-parse internals
+    /// (roster synthesis from `playersPublicInfo`) and the full
+    /// packet-stream decode (Blowfish + zlib + frames — the unmodified WG
+    /// framing with the Lesta method/position tables). Skips when no Lesta
+    /// replay is found. Run locally with
+    /// `cargo test -p wowsp_tauri --lib -- --ignored lesta`.
+    #[test]
+    #[ignore = "needs the real Lesta replays on this machine"]
+    fn decodes_the_real_lesta_replays_on_this_machine() {
+        let Some(path) = std::env::var("WOWSP_TEST_REPLAY")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| newest_lesta_replay_in(r"D:\WoWS_Korabli\replays"))
+        else {
+            return; // no pinned file, no Lesta client or empty dir — skip
         };
         // Header internals (what read_replay_header runs).
         let bytes = fs::read(&path).unwrap();
@@ -2897,8 +2998,23 @@ mod tests {
             .raw
             .get("clientVersionFromExe")
             .and_then(|x| x.as_str());
-        let decoded = super::super::packets::decode_replay(stream, &candidates, version, false)
+        let decoded = super::super::packets::decode_replay(stream, &candidates, version, true)
             .expect("decode");
+        // The 26.10 regression this pins: the recorder's own ship rides the
+        // 0x2e self stream — when that arm is missing the own trajectory
+        // stays empty and the playback view shows no self ship ("看不到自己").
+        let own_eid = decoded.recorder_ship.expect("recorder ship must resolve");
+        let own_samples = decoded
+            .positions
+            .get(&own_eid)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        assert!(
+            own_samples > 0,
+            "recorder's own ship must carry position samples (roster shipId {})",
+            own.ship_id
+        );
+        eprintln!("[lesta] own ship entity {own_eid}: {own_samples} samples");
         let grouped = group_by_entity(decoded);
         assert!(
             !grouped.trajectories.is_empty(),

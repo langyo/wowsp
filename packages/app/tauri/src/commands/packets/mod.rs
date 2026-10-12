@@ -55,12 +55,25 @@ const PACKET_ENTITY_DESTROY: u32 = 0x06;
 /// in Monstrofil's `replays_unpack`). The recorder's own ship never emits
 /// Position (0x0a) packets — its transform arrives here instead. Layout:
 ///   i32 entity_id, i32 linked_entity_id, f32×3 position, f32 yaw/pitch/roll.
-/// Current clients (WoWS 12.6+) use 0x2c; older builds use 0x2b.
+/// Current WG clients (12.6+) and Lesta ≤26.9 use 0x2c; older builds use
+/// 0x2b; Lesta 26.10 moved the own-ship half of this stream to
+/// [`PACKET_PLAYER_POSITION_LESTA`].
 const PACKET_PLAYER_POSITION: u32 = 0x2c;
 /// Secondary position stream (0x2a) sharing the PlayerPosition 32-byte
 /// layout; carried by transient entities on current clients (the reference
 /// replay_unpack leaves it undecoded).
 const PACKET_POSITION_AUX: u32 = 0x2a;
+/// Lesta 26.10 moved the recorder's own-ship/squadron transform stream from
+/// 0x2c (which keeps only the avatar anchor) onto this previously-unused
+/// tail id, same 32-byte PlayerPosition layout. WG layouts leave the slot
+/// empty (the gap between PACKET_PLAYER_POSITION and PACKET_CAMERA_FREELOOK,
+/// 0x2d/0x2e undefined) and legacy ids are remapped before the match, so the
+/// stream is family-gated on `LayoutProfile::lesta` rather than version-gated:
+/// Lesta containers of any age either carry it (26.10+) or emit nothing
+/// there, while a WG replay can never reach the arm. Verified on the
+/// 26.10.0.8867689 Slava capture (2026-10-13): the own ship streamed 5792
+/// 32-byte 0x2e packets and zero 0x0a/0x2c ones.
+const PACKET_PLAYER_POSITION_LESTA: u32 = 0x2e;
 /// Packet type for the recorder's own-player entity creation ("CellPlayerCreate"
 /// in Monstrofil's `replays_unpack`). The avatar (the recorder's own player)
 /// is created with this packet rather than EntityCreate (0x05); same layout.
@@ -133,6 +146,10 @@ struct LayoutProfile {
     /// version's exposed id isn't pinned (>0); the arena player list then
     /// stays empty and consumers fall back to the shipId-join heuristics.
     arena_state_method: Option<i32>,
+    /// The container family picks more than the method table: Lesta 26.10
+    /// renumbered the tail position stream onto 0x2e
+    /// ([`PACKET_PLAYER_POSITION_LESTA`]), an id WG layouts never emit.
+    lesta: bool,
 }
 
 /// A single property change sample — one field of an entity updated at a
@@ -156,9 +173,9 @@ pub struct PropertyChange {
 /// per-entity property change timelines (health, etc.).
 pub struct DecodedReplay {
     /// The recorder's own SHIP entity id — the unique type-2 entity with
-    /// zero Position (0x0a) samples that still rides the 0x2c self stream
-    /// (see `frames::recorder_ship_of`). `None` when the capture is
-    /// ambiguous or carries no self stream.
+    /// zero Position (0x0a) samples that still rides the self stream (0x2c,
+    /// or 0x2e on Lesta 26.10+; see `frames::recorder_ship_of`). `None` when
+    /// the capture is ambiguous or carries no self stream.
     pub recorder_ship: Option<i32>,
     pub positions: BTreeMap<i32, Vec<PositionSample>>,
     pub kinds: BTreeMap<i32, EntityKind>,
@@ -395,6 +412,7 @@ fn decode_replay_with(
         arena_state_method: methods
             .map(|m| m.avatar_on_arena_state_received)
             .filter(|id| *id > 0),
+        lesta,
     };
     Ok(walk_frames(
         &inflated,
