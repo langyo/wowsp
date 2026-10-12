@@ -195,7 +195,13 @@ export async function renderStatsShot(
     height += 8 + SHIP_TITLE_H + SHIP_HEAD_H + shipCount * (ROW_H + 6);
     if (model.moreShips) height += 20;
   }
-  height += FOOT_H;
+  // Minimum air between the last block and the footer band. The +8 / +10
+  // gaps above are drawn as leading air, so only the ship rows' +6 and the
+  // more-ships note's +20 ever trail — the bottom air is whatever slack the
+  // LAST block happens to leave, which is zero once the KPI grid is last.
+  // That is exactly the 0-battle card (no divisions, chips or ships): its
+  // cards sat flush on the footer hairline. Hold the page's PAD there.
+  height += PAD + FOOT_H;
 
   const { canvas, ctx } = newShotCanvas(width, height, palette);
 
