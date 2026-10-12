@@ -6,8 +6,8 @@
 //! community tool `wowsunpack` (vendored under `packages/tools/`) unpacks it.
 //!
 //! Lookup order for one ship's subtree:
-//!   0. Bundled Lesta snapshot (`lesta_ship_gameparams.json.gz`, embedded
-//!      below): the encyclopedia's Lesta realm ids exist only in the Lesta
+//!   0. Bundled Lesta snapshot (`data/lesta_ship_gameparams.json.gz`,
+//!      embedded below): the encyclopedia's Lesta realm ids exist only in the Lesta
 //!      client's own GameParams, so they are answered straight from the
 //!      carried snapshot — no install (WG or Lesta) is consulted.
 //!   1. `gameparams/<shipId>.json` AppData cache (instant; pairing sync
@@ -67,7 +67,7 @@ use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
 /// exact cohort `build_lesta_overlay.py` lists in the encyclopedia), which
 /// pushed the raw JSON past 16 MB; the artifact is therefore committed
 /// gzip-compressed (~1.7 MB, deterministic mtime=0) and inflated here.
-const LESTA_BUNDLED_PACK_GZ: &[u8] = include_bytes!("lesta_ship_gameparams.json.gz");
+const LESTA_BUNDLED_PACK_GZ: &[u8] = include_bytes!("../../data/lesta_ship_gameparams.json.gz");
 
 /// Parsed lazily on the first ship lookup — one inflate + JSON decode per
 /// process, not per ship (WG ids pay it once too, then fall through).

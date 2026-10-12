@@ -12,7 +12,7 @@ WoWSP 是一个 Tauri 2 桌面应用，配一个前端（Vue 3 + three.js），�
 
 ```mermaid
 flowchart TD
-    A[".wowsreplay 文件"] --> B["Rust：解析 8 字节 magic + JSON 描述块（commands/replay.rs）"]
+    A[".wowsreplay 文件"] --> B["Rust：解析 8 字节 magic + JSON 描述块（commands/replay/）"]
     B --> C["Rust：解码数据包流 → 各实体事件时间线（commands/packets/）"]
     C --> D["webui：three.js 全息地图按时间线播放（features/holographic）"]
 ```
@@ -50,7 +50,7 @@ N 字节  json_block  = 对局描述（阵容、地图、对局类型）
 
 莱服（Мир кораблей）客户端把录像容器改名为 `.korablireplay` 并更换了二进制帧结构——这类文件会被列出与导入，但头部分析/数据包解码会明确报告“格式暂不支持”，直到新布局被逆向出来。实时战斗的竞技场描述文件 `tempArenaInfo.json` 保留原名与原格式。
 
-`commands/replay.rs` 实现 magic 校验 + JSON 块抽取；数据包流解码器位于 `commands/packets/`（帧 → 载荷 → 各实体事件，按版本查方法表），为全息地图提供可拖动的事件时间线。
+`commands/replay/` 实现 magic 校验 + JSON 块抽取；数据包流解码器位于 `commands/packets/`（帧 → 载荷 → 各实体事件，按版本查方法表），为全息地图提供可拖动的事件时间线。
 
 ## 技术栈
 

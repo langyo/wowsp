@@ -14,7 +14,7 @@ without launching the game.
 
 ```mermaid
 flowchart TD
-    A[".wowsreplay file"] --> B["Rust: parse 8-byte magic + JSON descriptor block (commands/replay.rs)"]
+    A[".wowsreplay file"] --> B["Rust: parse 8-byte magic + JSON descriptor block (commands/replay/)"]
     B --> C["Rust: decode packet stream → per-entity event timeline (commands/packets/)"]
     C --> D["webui: three.js holographic map scrubs the timeline (features/holographic)"]
 ```
@@ -72,7 +72,7 @@ but header/packet parsing reports an explicit unsupported-format error until
 the new layout is reverse-engineered. `tempArenaInfo.json`, the live-battle
 arena descriptor, keeps its WG name and format.
 
-`commands/replay.rs` implements the magic check + JSON block extraction; the
+`commands/replay/` implements the magic check + JSON block extraction; the
 packet-stream decoder lives in `commands/packets/` (frames → payloads →
 per-entity events, with per-version method tables) and feeds the event
 timeline the holographic map scrubs.

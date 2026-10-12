@@ -98,7 +98,9 @@ shallow-cloned and built automatically on first use
 `WOWSP_OODLE_NO_BUILD=1` or `--ooz` to opt out/supply your own).
 The Lesta-only ships' **armor/ballistics** slices are a third piece of the
 same snapshot — `scripts/extract/build_lesta_shipdata.py` bundles them into
-the Rust tree (`packages/app/tauri/src/commands/lesta_ship_gameparams.json.gz`,
+The Lesta-only ships' **armor/ballistics** slices are a third piece of the
+same snapshot — `scripts/extract/build_lesta_shipdata.py` bundles them into
+the Rust tree (`packages/app/tauri/data/lesta_ship_gameparams.json.gz`,
 embedded via `include_bytes!` and inflated once per process — see
 `commands/gameparams.rs`), so those ids never depend on a game install.
 

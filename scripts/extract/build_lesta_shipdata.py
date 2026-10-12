@@ -41,7 +41,7 @@ Sources:
   --overlay     committed overlay, read for the version stamp
                 (default: src/data/ships_lesta.json)
   --version     version stamp override (default: the overlay's gameVersion)
-  --out         bundle path (default: packages/app/tauri/src/commands/
+  --out         bundle path (default: packages/app/tauri/data/
                 lesta_ship_gameparams.json.gz — gzip-compressed: with the
                 premium/event fleet aboard the raw JSON crosses ~16 MB and
                 would re-blob wholesale into git on every regen, while the
@@ -79,7 +79,7 @@ from build_techtree import _params_root  # noqa: E402
 
 REPO_ROOT = SCRIPT_DIR.parent.parent
 SRC_DATA = REPO_ROOT / "packages" / "webui" / "src" / "data"
-OUT_DEFAULT = REPO_ROOT / "packages" / "app" / "tauri" / "src" / "commands" / "lesta_ship_gameparams.json.gz"
+OUT_DEFAULT = REPO_ROOT / "packages" / "app" / "tauri" / "data" / "lesta_ship_gameparams.json.gz"
 CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))) / "WoWSP-extract"
 WG_GAMEPARAMS_DEFAULT = CACHE_DIR / "GameParams.json"
 
