@@ -342,7 +342,7 @@ def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> str |
             flush=True,
         )
         return None
-    _py(
+    overlay_cmd = [
         "build_lesta_overlay.py",
         "--gameparams", str(gameparams),
         "--mo", str(mo),
@@ -354,7 +354,13 @@ def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> str |
         "--version", version_stamp,
         "--out", str(SRC_DATA / "ships_lesta.json"),
         "--merge-names", str(SRC_DATA / "ship_names.json"),
-    )
+    ]
+    # The non-tree port-fleet walk needs the WG dump's whole index set as
+    # its exclusion base (hundreds of WG premiums never appear as tree side
+    # leaves); the WG dump is a shared cache built earlier in the same run.
+    if GAMEPARAMS_JSON.exists():
+        overlay_cmd[1:1] = ["--wg-gameparams", str(GAMEPARAMS_JSON)]
+    _py(*overlay_cmd)
     return version_stamp
 
 

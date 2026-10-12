@@ -6,7 +6,7 @@
 //! community tool `wowsunpack` (vendored under `packages/tools/`) unpacks it.
 //!
 //! Lookup order for one ship's subtree:
-//!   0. Bundled Lesta snapshot (`lesta_ship_gameparams.json`, include_str!'d
+//!   0. Bundled Lesta snapshot (`lesta_ship_gameparams.json.gz`, embedded
 //!      below): the encyclopedia's Lesta realm ids exist only in the Lesta
 //!      client's own GameParams, so they are answered straight from the
 //!      carried snapshot — no install (WG or Lesta) is consulted.
@@ -61,21 +61,42 @@ use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
 /// whole Lesta tree. Answering these ids from the carried snapshot makes
 /// armor, ballistics, AA rows and the squadron blocks independent of what
 /// (if anything) the user has installed, on desktop and phones alike.
-const LESTA_BUNDLED_PACK: &str = include_str!("lesta_ship_gameparams.json");
+///
+/// Scope grew from the 59 tree ships to the tree plus the non-tree port
+/// fleet (Lesta-only premiums, the CLR clone series, event hulls — the
+/// exact cohort `build_lesta_overlay.py` lists in the encyclopedia), which
+/// pushed the raw JSON past 16 MB; the artifact is therefore committed
+/// gzip-compressed (~1.7 MB, deterministic mtime=0) and inflated here.
+const LESTA_BUNDLED_PACK_GZ: &[u8] = include_bytes!("lesta_ship_gameparams.json.gz");
 
-/// Parsed lazily on the first ship lookup — one 4 MB decode per process, not
-/// per ship (WG ids pay the decode once too, then fall through).
+/// Parsed lazily on the first ship lookup — one inflate + JSON decode per
+/// process, not per ship (WG ids pay it once too, then fall through).
 static LESTA_BUNDLED_SLICES: std::sync::OnceLock<serde_json::Map<String, serde_json::Value>> =
     std::sync::OnceLock::new();
 
 /// The parsed bundled snapshot (ship id → slice), decoded once per process.
+/// A malformed bundle is a regeneration defect, not a runtime condition —
+/// it logs and degrades to an empty map (every Lesta id then falls through
+/// to the install/cache chain below, exactly the pre-bundle behaviour).
 fn bundled_lesta_ships() -> &'static serde_json::Map<String, serde_json::Value> {
     LESTA_BUNDLED_SLICES.get_or_init(|| {
-        serde_json::from_str::<serde_json::Value>(LESTA_BUNDLED_PACK)
+        let raw = inflate_bundled_pack().unwrap_or_else(|e| {
+            tracing::error!("bundled Lesta pack failed to inflate: {e}");
+            Vec::new()
+        });
+        serde_json::from_slice::<serde_json::Value>(&raw)
             .ok()
             .and_then(|v| v.get("ships")?.as_object().cloned())
             .unwrap_or_default()
     })
+}
+
+/// Inflate the embedded gzip bundle to its JSON bytes.
+fn inflate_bundled_pack() -> Result<Vec<u8>, std::io::Error> {
+    use std::io::Read as _;
+    let mut out = Vec::new();
+    flate2::read::GzDecoder::new(LESTA_BUNDLED_PACK_GZ).read_to_end(&mut out)?;
+    Ok(out)
 }
 
 /// The bundled snapshot slice for `ship_id`, if it carries one. Owned clone:
@@ -944,14 +965,17 @@ mod tests {
 
     // ── bundled Lesta snapshot ────────────────────────────────────────────
 
-    /// The committed snapshot must parse and cover the Lesta-only tree
-    /// (`build_lesta_shipdata.py`'s output rides in via include_str!, so a
-    /// malformed or truncated regeneration would otherwise ship silently).
+    /// The committed snapshot must parse and cover the Lesta-only fleet
+    /// (`build_lesta_shipdata.py`'s output rides in via the embedded gzip
+    /// bundle — include_bytes! plus one inflate — so a malformed or
+    /// truncated regeneration would otherwise ship silently).
     #[test]
     fn bundled_lesta_pack_covers_the_snapshot_ships() {
         let ships = bundled_lesta_ships();
+        // Tree cohort (59) + the non-tree port fleet (premiums / CLR clones /
+        // event hulls) — the same population the encyclopedia overlay lists.
         assert!(
-            ships.len() >= 50,
+            ships.len() >= 200,
             "bundled Lesta pack carries only {} ships",
             ships.len()
         );
@@ -999,6 +1023,62 @@ mod tests {
 
     /// Lookups go through the id string: known ids hit, everything else
     /// declines so the install chain still answers WG ids.
+    /// The non-tree port fleet rides in the pack: the event hulls reported
+    /// broken (names OK from the name DB, but armor/ballistics answered
+    /// `ship_id not found`) and the premium/CLR cohort must resolve exactly
+    /// like the tree ships. The fairy-tale event hulls legitimately carry no
+    /// A_Artillery (Koschei fields secondaries + air armament only), so the
+    /// assert is on the hull block and id agreement instead.
+    #[test]
+    fn bundled_lesta_pack_carries_the_port_fleet() {
+        for (id, index, name) in [
+            (4273911056_i64, "PXSC020", "Koschei"),
+            (4272862480, "PXSC021", "Gorynych"),
+            (4271813904, "PXSC022", "Vodyanoi"),
+            (3257841488, "PFSC989", "Cruiser Lukodrager"),
+            (3257808336, "PRSD989", "Destroyer Lukodrager"),
+            (3644798160, "PZSB620", "Huangdi"),
+        ] {
+            let slice = bundled_lesta_slice(id).unwrap_or_else(|| {
+                panic!("event/premium ship {index} ({name}) missing from the pack")
+            });
+            assert_eq!(slice.get("id").and_then(|v| v.as_i64()), Some(id));
+            assert_eq!(
+                slice.get("index").and_then(|v| v.as_str()),
+                Some(index),
+                "{name}: wrong index — the pack resolved a different entity"
+            );
+            assert!(
+                slice.get("A_Hull").is_some(),
+                "{name}: slice carries no hull block"
+            );
+        }
+    }
+
+    /// No WG-tree ship id may ride in the pack: the bundle wins over every
+    /// install at lookup time, so a WG id in it would answer WG-realm armor
+    /// from the Lesta snapshot. (The single known Lesta/WG shared id —
+    /// 4178458416, a hidden WG demo entity vs Lesta's real Otto Weddigen —
+    /// is documented at the lookup site and unreachable from WG surfaces.)
+    #[test]
+    fn bundled_lesta_pack_stays_off_the_wg_tree() {
+        const WG_TREE: &str = include_str!("../../../../webui/src/data/tech_tree.json");
+        let tree: serde_json::Value = serde_json::from_str(WG_TREE).expect("tech_tree.json");
+        let wg_ids: std::collections::HashSet<String> = tree
+            .as_object()
+            .expect("tree object")
+            .values()
+            .filter_map(|n| n.get("shipId").and_then(|v| v.as_u64()))
+            .map(|id| id.to_string())
+            .collect();
+        for id in bundled_lesta_ships().keys() {
+            assert!(
+                !wg_ids.contains(id),
+                "pack id {id} collides with a WG-tree ship"
+            );
+        }
+    }
+
     #[test]
     fn bundled_lesta_slice_hits_known_ids_only() {
         let known = bundled_lesta_ships()

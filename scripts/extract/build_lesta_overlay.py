@@ -12,13 +12,19 @@ webui overlay consumes (see packages/webui/src/utils/shipsLesta.ts):
                                "descriptions": { ... },
                                "defaultProfile": { WG snake_case shape } } } }
 
-Scope: the Lesta tech tree's ships whose index is absent from the WG tree
-(premium/special side leaves are WG-tree-only, so nothing else needs an
-overlay entry). The default_profile is synthesized from the top hull's
-GameParams numbers — the same fields the ship cards and the build planner
-gate on (hull.health / mobility.max_speed / concealment detect distances,
-torpedo / AA / depth-charge presence) — NOT the WG API's full tree: sections
-the sources cannot derive are simply omitted and degrade to blank rows.
+Scope: the Lesta tech tree's ships whose index is absent from the WG tree,
+PLUS the non-tree port fleet — premiums/specials, the "ultimate" (CLR)
+clone series, event-mode hulls and premium demos whose indexes WG's client
+has never carried (Lesta grew its own premium and event roster after the
+split; the WG encyclopedia knows none of it, so without these entries the
+Lesta-realm encyclopedia shows no premium/event ship at all). Test/pve/
+unreleased hulls (groups disabled / pveOnly / coopOnly / demoWithoutStats /
+unavailable) stay out: they are not player-visible in the port. The
+default_profile is synthesized from the top hull's GameParams numbers — the
+same fields the ship cards and the build planner gate on (hull.health /
+mobility.max_speed / concealment detect distances, torpedo / AA /
+depth-charge presence) — NOT the WG API's full tree: sections the sources
+cannot derive are simply omitted and degrade to blank rows.
 
 Optionally (--merge-names) the SAME names merge into ship_names.json — but
 for EVERY Lesta ship absent from the WG roster (not just the tree set), so
@@ -52,6 +58,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_techtree import _params_root  # noqa: E402
+
+# Port-visible non-tree groups (GameParams `group`): premiums/specials, the
+# "ultimate" CLR clone series, event-mode hulls, premium demos and untradeable
+# specials. Ships in these groups that WG's client has never carried get
+# encyclopedia entries exactly like the tree ships. Test/pve/unreleased hulls
+# (disabled / pveOnly / coopOnly / demoWithoutStats / unavailable) are NOT
+# port-visible and stay out.
+PORT_GROUPS = {
+    "premium",
+    "special",
+    "specialUnsellable",
+    "ultimate",
+    "demoWithoutStatsPrem",
+    "event",
+    "clan",
+}
 
 
 def _nation_from_gameparams(nation: str) -> str:
@@ -192,6 +214,15 @@ def main() -> None:
     )
     ap.add_argument("--lesta-tree", required=True, help="tech_tree_lesta.json (scope source)")
     ap.add_argument("--wg-tree", required=True, help="tech_tree.json (WG indexes to exclude)")
+    ap.add_argument(
+        "--wg-gameparams",
+        help="decoded WG GameParams.json — the broader exclusion base for the "
+        "non-tree walk: a premium/event index the WG client carries (even "
+        "unreleased) belongs to the WG realm's id space and must not get a "
+        "Lesta overlay entry. Without it the WG tree's indexes stand in "
+        "(release-hidden WG hulls then ride along; the encyclopedia's id "
+        "dedupe drops the overlap anyway).",
+    )
     ap.add_argument("--version", default="lesta", help="version stamp for gameVersion")
     ap.add_argument("--out", required=True, help="ships_lesta.json output path")
     ap.add_argument(
@@ -270,8 +301,9 @@ def main() -> None:
             "tier": entry.get("level", 0),
             "type": (entry.get("typeinfo") or {}).get("species", ""),
             "nation": _nation_from_gameparams((entry.get("typeinfo") or {}).get("nation", "")),
-            "isPremium": entry.get("group") in {"premium", "ultimate"},
-            "isSpecial": entry.get("group") in {"special", "specialUnsellable", "clan"},
+            "isPremium": entry.get("group") in {"premium", "ultimate", "demoWithoutStatsPrem"},
+            "isSpecial": entry.get("group")
+            in {"special", "specialUnsellable", "clan", "event"},
             "names": names,
             "defaultProfile": _synthesize_profile(entry),
         }
@@ -300,6 +332,45 @@ def main() -> None:
         key, entry = found
         sid = entry.get("id")
         overlay[str(sid)], names_fragment[str(sid)] = build_entry(key, entry, idx)
+
+    # Non-tree port fleet: Lesta-only premiums, CLR clones and event hulls.
+    # Excluded by the WG GameParams indexes when supplied (the dump is the
+    # whole truth about WG's id space — release-hidden hulls included), else
+    # by the WG tree's; tree indexes already emitted above are skipped.
+    if args.wg_gameparams:
+        wg_gp = _params_root(json.loads(Path(args.wg_gameparams).read_text(encoding="utf-8")))
+        wg_known = {
+            e.get("index")
+            for e in wg_gp.values()
+            if isinstance(e, dict) and isinstance(e.get("index"), str)
+        }
+    else:
+        wg_known = wg_indexes
+        print(
+            "[lesta-overlay] note: no --wg-gameparams — excluding non-tree ships by the "
+            "WG tree only; WG release-hidden hulls may ride along (the encyclopedia's "
+            "id dedupe drops them).",
+            flush=True,
+        )
+    tree_indexes = {node["index"] for node in lesta_tree.values()}
+    added = 0
+    for idx, (key, entry) in sorted(by_index.items()):
+        group = entry.get("group")
+        if idx in tree_indexes or idx in wg_known or group not in PORT_GROUPS:
+            continue
+        sid = entry.get("id")
+        if not isinstance(sid, int):
+            continue
+        if str(sid) in overlay:
+            print(
+                f"[lesta-overlay] WARN {idx}: id {sid} already emitted — "
+                "index collision, keeping the tree entry",
+                flush=True,
+            )
+            continue
+        overlay[str(sid)], names_fragment[str(sid)] = build_entry(key, entry, idx)
+        added += 1
+    print(f"[lesta-overlay] added {added} non-tree port ships (premium/event fleet)")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

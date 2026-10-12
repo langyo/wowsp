@@ -75,6 +75,9 @@ PART_EXCLUDE = ("lod", "wire", "ports", "skinned")
 LESTA_GAMEPARAMS = Path(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))
 ) / "WoWSP-extract" / "GameParams_lesta.json"
+WG_GAMEPARAMS = Path(
+    os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))
+) / "WoWSP-extract" / "GameParams.json"
 
 
 # ── turret placement (GameParams artillery HP → .splash boxes) ─────────
@@ -408,13 +411,48 @@ def main() -> int:
         print(f"[bake-lesta] NOTE {args.gameparams} missing — hull-only bakes "
               "(no turret anchors).", flush=True)
 
-    # Scope: Lesta-only tree ships; model dirs from ship_models.json.
+    # Scope: the Lesta-only tree ships PLUS the non-tree port fleet
+    # (premiums / CLR clones / event hulls — the same PORT_GROUPS cohort the
+    # encyclopedia overlay and the gameparams bundle carry), so the reported
+    # event ships bake like any tree hull. Model dirs from ship_models.json.
     wg_idx = {n["index"] for n in json.loads(WG_TREE.read_text(encoding="utf-8")).values()}
     lesta = json.loads(LESTA_TREE.read_text(encoding="utf-8"))
     only = set(filter(None, (args.only or "").split(",")))
     indexes = sorted(
         {n["index"] for n in lesta.values() if n["index"] not in wg_idx and (not only or n["index"] in only)}
     )
+    from build_lesta_overlay import PORT_GROUPS  # noqa: E402
+
+    # The port-fleet walk needs the WG dump's whole index set, not the tree's:
+    # hundreds of WG premiums never appear as tree side leaves, and baking
+    # their hulls again under Lesta would duplicate the WG-side GLBs wholesale.
+    wg_gp_idx: set[str] | None = None
+    if WG_GAMEPARAMS.is_file():
+        from build_techtree import _params_root as _pr  # noqa: E402
+
+        wg_gp = _pr(json.loads(WG_GAMEPARAMS.read_text(encoding="utf-8")))
+        wg_gp_idx = {
+            e.get("index")
+            for e in wg_gp.values()
+            if isinstance(e, dict) and isinstance(e.get("index"), str)
+        }
+    else:
+        print(
+            "[bake-lesta] note: no WG GameParams dump — the port-fleet extension is "
+            "excluded by the WG tree only; shared premiums may bake as duplicates",
+            flush=True,
+        )
+    for idx, entry in sorted(entry_by_index.items()):
+        ti = entry.get("typeinfo")
+        if (
+            isinstance(ti, dict)
+            and ti.get("type") == "Ship"
+            and entry.get("group") in PORT_GROUPS
+            and idx not in indexes
+            and (wg_gp_idx is None or idx not in wg_gp_idx)
+            and (not only or idx in only)
+        ):
+            indexes.append(idx)
     models = json.loads(SHIP_MODELS.read_text(encoding="utf-8"))
     dir_by_index: dict[str, str] = {}
     for m in models.values():

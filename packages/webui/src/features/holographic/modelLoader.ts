@@ -352,8 +352,13 @@ export function shipNameFromOfflineDb(
   const entry = shipOfflineEntry(shipId);
   if (!entry) return null;
   if (lang && entry.names[lang]) return entry.names[lang];
+  // Cross-language fallback: en-US (the GLB-stem spelling and the only
+  // language every entry carries — the Lesta merge writes ru-RU + en-US,
+  // with zh/ja only where curated), then a bare "en", then any value. The
+  // first-value rung used to hand back ru-RU for every un-curated Lesta
+  // ship in a zh-CN UI — English is the lesser wrong.
   const values = Object.values(entry.names);
-  return entry.names["en"] ?? (values.length > 0 ? values[0] : null);
+  return entry.names["en-US"] ?? entry.names["en"] ?? (values.length > 0 ? values[0] : null);
 }
 
 // ── Offline ship-description DB (zh zoo/formal split) ───────────────────

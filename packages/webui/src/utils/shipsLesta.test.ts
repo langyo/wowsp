@@ -1,8 +1,9 @@
 /** Tests for the Lesta ship overlay against the generated data file: every
  *  Lesta-only tech-tree ship must carry a usable entry (name in every
  *  curated language, a WG-shaped profile with the numbers the cards and the
- *  planner gate on), and the overlay must stay a strict subset of the Lesta
- *  tree — no WG-covered ship, no id outside it. */
+ *  planner gate on), and the overlay must never cover a WG-tree ship — the
+ *  non-tree premium/event fleet (Lesta-only premiums, CLR clones, event
+ *  hulls) rides along beyond the tree on top of that. */
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -28,24 +29,45 @@ describe("generated overlay data", () => {
       if (wgIndexes.has(node.index)) continue;
       expect(overlayIds.has(node.shipId), `missing overlay entry for ${node.index}`).toBe(true);
     }
-    // And nothing beyond the tree's Lesta-only set.
-    const treeIds = new Set(
-      Object.values(lestaTree)
-        .filter((n) => !wgIndexes.has(n.index))
-        .map((n) => n.shipId),
-    );
+    // And no WG-tree ship ever rides in (the tree cohort is the Lesta-only
+    // subset; the non-tree premium/event fleet must also stay clear of the
+    // WG tree's ids — WG covers those).
+    const wgTreeIds = new Set(Object.values(wgTree).map((n) => n.shipId));
     for (const id of overlayIds) {
-      expect(treeIds.has(id), `overlay id ${id} is not a Lesta-only tree ship`).toBe(true);
+      expect(wgTreeIds.has(id), `overlay id ${id} collides with a WG-tree ship`).toBe(false);
+    }
+  });
+
+  it("carries the non-tree premium/event fleet beyond the tree set", async () => {
+    const overlay = await loadShipsLesta();
+    const lestaTree = allTechTreeNodes("lesta");
+    const treeIds = new Set(Object.values(lestaTree).map((n) => n.shipId));
+    const beyond = Object.entries(overlay.ships).filter(([id]) => !treeIds.has(Number(id)));
+    // The Lesta-only premiums, CLR clones and event hulls (Koschei, the
+    // Lukodrager pair, the ch_dragons family, …) — 100+ ships, not a rounding
+    // error of the tree walk.
+    expect(beyond.length).toBeGreaterThan(100);
+    for (const [id, entry] of beyond) {
+      expect(entry.tier, `${id} tier`).toBeGreaterThanOrEqual(1);
+      expect(entry.names["en-US"], `${id} en-US name`).toBeTruthy();
+      expect(entry.names["ru-RU"], `${id} ru-RU name`).toBeTruthy();
+      expect(entry.isPremium || entry.isSpecial, `${id} premium/special flag`).toBe(true);
     }
   });
 
   it("carries names, tiers and WG-shaped profiles", async () => {
     const overlay = await loadShipsLesta();
     expect(Object.keys(overlay.ships).length).toBeGreaterThan(0);
+    const lestaTree = allTechTreeNodes("lesta");
+    const treeIds = new Set(Object.values(lestaTree).map((n) => n.shipId));
     for (const [id, entry] of Object.entries(overlay.ships)) {
       expect(entry.names["en-US"], `${id} en-US name`).toBeTruthy();
       expect(entry.names["ru-RU"], `${id} ru-RU name`).toBeTruthy();
-      expect(entry.names["zh-CN"], `${id} zh-CN name`).toBeTruthy();
+      // The tree cohort is fully curated into Chinese; the premium/event
+      // fleet carries ru+en until curation catches up.
+      if (treeIds.has(Number(id))) {
+        expect(entry.names["zh-CN"], `${id} zh-CN name`).toBeTruthy();
+      }
       expect(entry.tier, `${id} tier`).toBeGreaterThanOrEqual(1);
       const dp = entry.defaultProfile as Record<string, any> | null;
       if (dp) {

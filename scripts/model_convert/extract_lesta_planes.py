@@ -120,6 +120,14 @@ def main() -> int:
     ap.add_argument("--input", type=Path, default=CACHE_DIR / "GameParams_lesta.json")
     ap.add_argument("--lesta-tree", type=Path, default=DATA_DIR / "tech_tree_lesta.json")
     ap.add_argument("--wg-tree", type=Path, default=DATA_DIR / "tech_tree.json")
+    ap.add_argument(
+        "--wg-gameparams",
+        type=Path,
+        default=CACHE_DIR / "GameParams.json",
+        help="decoded WG GameParams.json — broader exclusion base for the "
+        "non-tree port fleet (premium CVs embark airframes the tree walk "
+        "never sees; a WG-known index must not get a Lesta row)",
+    )
     ap.add_argument("--types", type=Path, default=DATA_DIR / "plane_types.json")
     ap.add_argument("--models", type=Path, default=DATA_DIR / "plane_models.json")
     args = ap.parse_args()
@@ -142,6 +150,39 @@ def main() -> int:
     for entry in root.values():
         if isinstance(entry, dict) and isinstance(entry.get("index"), str):
             by_index.setdefault(entry["index"], entry)
+
+    # The non-tree port fleet (premium CVs especially — their airframes are
+    # what the ship-detail plane picker reads) rides in on top of the tree,
+    # excluded by the WG dump's whole index set when it is available.
+    from build_lesta_overlay import PORT_GROUPS  # noqa: E402
+
+    if args.wg_gameparams and args.wg_gameparams.is_file():
+        wg_gp = _params_root(json.loads(args.wg_gameparams.read_text(encoding="utf-8")))
+        wg_known = {
+            e.get("index")
+            for e in wg_gp.values()
+            if isinstance(e, dict) and isinstance(e.get("index"), str)
+        }
+    else:
+        wg_known = wg_indexes
+        print(
+            "[lesta-planes] note: no WG GameParams dump — port-fleet scope excluded by "
+            "the WG tree only",
+            flush=True,
+        )
+    for index, ent in sorted(by_index.items()):
+        ti = ent.get("typeinfo")
+        if (
+            index in lesta_only
+            or not (
+                isinstance(ti, dict)
+                and ti.get("type") == "Ship"
+                and ent.get("group") in PORT_GROUPS
+                and index not in wg_known
+            )
+        ):
+            continue
+        lesta_only.add(index)
 
     wanted: set[str] = set()
     for index in sorted(lesta_only):
