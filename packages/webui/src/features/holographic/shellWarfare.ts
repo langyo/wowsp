@@ -196,6 +196,36 @@ export function buildShellStates(ctx: MapInternals): KillFor {
   return killFor;
 }
 
+/** Samples per arc. Finer than the old 28 so the moving head gradient (5% of
+ *  the path) crosses several segments instead of stretching one. Not aligned
+ *  to the head: the gradient is evaluated per vertex and interpolated across
+ *  the segment, so the peak lands on the last sample behind the shell
+ *  (≥ ~0.37 of the 0.5 head alpha) rather than exactly on it. */
+export const SHELL_TRACE_SAMPLES = 64;
+/** Trail base alpha — the whole trajectory rests at this ghost strength. */
+export const SHELL_TRAIL_BASE_ALPHA = 0.1;
+/** Alpha AT the shell's current position (the head of the drawn trail). */
+export const SHELL_TRAIL_HEAD_ALPHA = 0.5;
+/** Fraction of the path behind the shell that the head gradient spans. */
+export const SHELL_TRAIL_HEAD_SPAN = 0.05;
+
+/** Per-vertex alpha of the shell trail: `k` is the sample's fraction along
+ *  the path (0 = launch, 1 = impact), `p` the shell's CURRENT fraction. The
+ *  whole path rests at the 10% base so it reads as one faint arc, and the
+ *  `SHELL_TRAIL_HEAD_SPAN` right behind the shell ramps up to 50% at `p`
+ *  and decays to the base — the bright stretch tracks where the shell is
+ *  now, it does not paint the whole flight at full strength. */
+export function shellTrailAlpha(k: number, p: number): number {
+  const behind = p - k;
+  // behind < 0 = ahead of the shell (base ghost); behind == 0 is the shell
+  // itself — the peak of the gradient.
+  if (behind < 0 || behind >= SHELL_TRAIL_HEAD_SPAN) return SHELL_TRAIL_BASE_ALPHA;
+  return (
+    SHELL_TRAIL_HEAD_ALPHA -
+    (SHELL_TRAIL_HEAD_ALPHA - SHELL_TRAIL_BASE_ALPHA) * (behind / SHELL_TRAIL_HEAD_SPAN)
+  );
+}
+
 /** Fixed pool of trace GPU objects (see buildShellStates). */
 export function buildShellTracePool(ctx: MapInternals, scene: THREE.Scene) {
   // Fixed pool of trace GPU objects. Only a few dozen shells are airborne
@@ -207,7 +237,8 @@ export function buildShellTracePool(ctx: MapInternals, scene: THREE.Scene) {
   ctx.shellTraceSlots = [];
   if (ctx.shellStates.length > 0) {
     for (let i = 0; i < 220; i++) {
-      const curveArr = new Float32Array(28 * 3);
+      const curveArr = new Float32Array(SHELL_TRACE_SAMPLES * 3);
+      const tintArr = new Float32Array(SHELL_TRACE_SAMPLES * 4);
       // The arc positions are rewritten every frame, so the build-time
       // bounding sphere (computed over the zero-filled buffer) goes stale
       // immediately — a sphere at the origin radius 0 culled arcs whose
@@ -215,30 +246,18 @@ export function buildShellTracePool(ctx: MapInternals, scene: THREE.Scene) {
       // a per-frame recompute for a handful of visible slots.
       const lineGeo = new THREE.BufferGeometry();
       lineGeo.setAttribute("position", new THREE.BufferAttribute(curveArr, 3));
+      // 4-component vertex colors = per-vertex alpha (three's USE_COLOR_ALPHA):
+      // the base 10% ghost with the bright head stretch (see shellTrailAlpha).
+      lineGeo.setAttribute("color", new THREE.BufferAttribute(tintArr, 4));
       const lineMat = new THREE.LineBasicMaterial({
         transparent: true,
-        opacity: 0.9,
+        vertexColors: true,
         depthWrite: false,
       });
       const line = new THREE.Line(lineGeo, lineMat);
       line.frustumCulled = false;
       line.visible = false;
       scene.add(line);
-      // Same curve rendered as fixed-pixel points so the flight reads
-      // even at full-map zoom (a 1px line vanishes at that distance).
-      const dotGeo = new THREE.BufferGeometry();
-      dotGeo.setAttribute("position", new THREE.BufferAttribute(curveArr.slice(), 3));
-      const dotMat = new THREE.PointsMaterial({
-        size: 3.5,
-        sizeAttenuation: false,
-        transparent: true,
-        opacity: 0.95,
-        depthWrite: false,
-      });
-      const dots = new THREE.Points(dotGeo, dotMat);
-      dots.frustumCulled = false;
-      dots.visible = false;
-      scene.add(dots);
       // In-flight shell: a pointed cone sliding along the arc (swapped
       // for the real shell GLB once loaded; driven identically).
       const shell = new THREE.Mesh(
@@ -247,7 +266,7 @@ export function buildShellTracePool(ctx: MapInternals, scene: THREE.Scene) {
       );
       shell.visible = false;
       scene.add(shell);
-      ctx.shellTraceSlots.push({ line, lineMat, dots, dotMat, shell });
+      ctx.shellTraceSlots.push({ line, lineMat, shell });
       ctx.trajectoryLines.push(line);
     }
   }

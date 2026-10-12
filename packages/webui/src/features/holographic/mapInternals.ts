@@ -152,8 +152,6 @@ export interface ShellTraceState {
 export interface ShellTraceSlot {
   line: THREE.Line;
   lineMat: THREE.LineBasicMaterial;
-  dots: THREE.Points;
-  dotMat: THREE.PointsMaterial;
   shell: THREE.Object3D;
 }
 
@@ -581,9 +579,6 @@ export function clearActors(ctx: MapInternals) {
     scene.remove(slot.line);
     slot.line.geometry.dispose();
     slot.lineMat.dispose();
-    scene.remove(slot.dots);
-    slot.dots.geometry.dispose();
-    slot.dotMat.dispose();
     // slot.shell may be a primitive mesh or a wrapped GLB group (after the
     // model swap) — dispose generically.
     scene.remove(slot.shell);

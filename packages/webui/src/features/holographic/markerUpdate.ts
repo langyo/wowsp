@@ -14,6 +14,7 @@ import { t as i18nT } from "@/i18n";
 import achievementNamesRaw from "@/data/achievement_names.json";
 import { sampleAt, hpAtTime } from "./trajectoryMath";
 import { clampXZ } from "./sceneUtils";
+import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
 import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./modelLoader";
@@ -35,6 +36,10 @@ import type { MapInternals, ShellTraceSlot } from "./mapInternals";
  *  over the old kill-only limit of 4. */
 const FEED_CAP = 6;
 const FEED_TTL_MS = 4000;
+
+/** Scratch for the per-shell trail tint (ammo color → linear RGB written to
+ *  every arc vertex) — no per-slot per-frame Color allocation. */
+const trailTint = new THREE.Color();
 
 /** Achievement id → localized display name (GameParams-derived bundle; the
  *  same per-locale shape as ribbon_names.json). Falls back to the raw id. */
@@ -562,7 +567,6 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     !ctx.bounds || (x >= ctx.bounds.minX && x <= ctx.bounds.maxX && z >= ctx.bounds.minZ && z <= ctx.bounds.maxZ);
   const hideSlot = (slot: ShellTraceSlot) => {
     slot.line.visible = false;
-    slot.dots.visible = false;
     slot.shell.visible = false;
   };
   let slotIdx = 0;
@@ -597,45 +601,50 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const c = clampXZ(px, pz, mapRect);
       return { x: c.x, y: py, z: c.z };
     };
-    slot.lineMat.color.setHex(st.color);
-    slot.dotMat.color.setHex(st.color);
-    // Cone or swapped GLB — tint whatever material it now wears.
+    // Cone or swapped GLB — tint whatever material it now wears. The trail
+    // line is NOT tinted here: its color attribute carries both the ammo
+    // tint and the per-vertex alpha gradient written below.
     slot.shell.traverse((child) => {
       const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
       if (mat && mat.color) mat.color.setHex(st.color);
     });
     slot.line.visible = true;
-    slot.dots.visible = true;
     slot.shell.visible = true;
     {
-      const attr = slot.line.geometry.getAttribute("position") as THREE.BufferAttribute;
-      const arr = attr.array as Float32Array;
-      for (let i = 0; i < 28; i++) {
-        const p = arcPoint(i / 27);
-        arr[i * 3] = p.x;
-        arr[i * 3 + 1] = p.y;
-        arr[i * 3 + 2] = p.z;
-      }
-      attr.needsUpdate = true;
-      // The tracer dots share the arc's points — their buffer was never
-      // written (only flagged dirty), so all 28 points stacked at the
-      // world origin as a mysterious colored speck whenever any shell
-      // flew. Mirror the freshly written arc into the dots buffer.
-      const dotAttr = slot.dots.geometry.getAttribute("position") as THREE.BufferAttribute;
-      (dotAttr.array as Float32Array).set(arr);
-      dotAttr.needsUpdate = true;
-      // Shell position + orientation: interpolate k across the flight,
-      // tip pointing along the local tangent.
-      const k = Math.min(1, Math.max(0, (t - st.t0) / (st.t1 - st.t0)));
-      const p = arcPoint(k);
-      slot.shell.position.set(p.x, p.y, p.z);
+      // Shell position + orientation first — the trail's alpha gradient is
+      // anchored to the flight progress k. (t1 == t0 would be a 0/0 NaN on
+      // a zero-length flight; clamp to the launch point instead.)
+      const k = st.t1 > st.t0 ? Math.min(1, Math.max(0, (t - st.t0) / (st.t1 - st.t0))) : 0;
+      const head = arcPoint(k);
+      slot.shell.position.set(head.x, head.y, head.z);
       const p2 = arcPoint(Math.min(1, k + 0.03));
-      const tx = p2.x - p.x;
-      const ty = p2.y - p.y;
-      const tz = p2.z - p.z;
+      const tx = p2.x - head.x;
+      const ty = p2.y - head.y;
+      const tz = p2.z - head.z;
       const len = Math.hypot(tx, ty, tz) || 1;
       ctx._shellDir.set(tx / len, ty / len, tz / len);
       slot.shell.quaternion.setFromUnitVectors(ctx._shellUp, ctx._shellDir);
+      // Rewrite the arc: positions + per-vertex tint (RGB = ammo color,
+      // alpha = shellTrailAlpha: 10% ghost along the whole path, ramping to
+      // 50% at the shell's current position and back to 10% 5% behind it).
+      const attr = slot.line.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const arr = attr.array as Float32Array;
+      const tintAttr = slot.line.geometry.getAttribute("color") as THREE.BufferAttribute;
+      const tint = tintAttr.array as Float32Array;
+      const c = trailTint.setHex(st.color);
+      for (let i = 0; i < SHELL_TRACE_SAMPLES; i++) {
+        const s = i / (SHELL_TRACE_SAMPLES - 1);
+        const q = arcPoint(s);
+        arr[i * 3] = q.x;
+        arr[i * 3 + 1] = q.y;
+        arr[i * 3 + 2] = q.z;
+        tint[i * 4] = c.r;
+        tint[i * 4 + 1] = c.g;
+        tint[i * 4 + 2] = c.b;
+        tint[i * 4 + 3] = shellTrailAlpha(s, k);
+      }
+      attr.needsUpdate = true;
+      tintAttr.needsUpdate = true;
     }
   }
   for (; slotIdx < ctx.shellTraceSlots.length; slotIdx++) {
