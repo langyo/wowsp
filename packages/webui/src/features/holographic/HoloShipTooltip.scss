@@ -178,6 +178,12 @@
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
+
+    /* Dead ships stack two blocks (sunk-status + the pinned "0 / max"
+       readout) — keep the block seam on the same rhythm as the row gaps. */
+    & + & {
+      margin-top: 0.2rem;
+    }
   }
 
   &__row {

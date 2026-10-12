@@ -83,8 +83,12 @@ export default defineComponent({
     const icon = useImage(() => props.label.iconUrl ?? null);
     return () => {
       const l = props.label;
+      // A sunk ship stays at 0 HP from its death on — the chip keeps the
+      // full "0 / max" shape instead of collapsing into the dead tag, even
+      // when the HP stream never witnessed the killing blow.
+      const shownHp = l.dead ? 0 : (l.hp ?? 0);
       const pct =
-        l.hp != null && l.maxHp != null
+        !l.dead && l.hp != null && l.maxHp != null
           ? Math.max(0, Math.min(100, (l.hp / l.maxHp) * 100))
           : 0;
       return (
@@ -129,7 +133,7 @@ export default defineComponent({
               {l.shipName}
             </span>
           ) : null}
-          {l.hp != null && !l.ghostText && !l.dead ? (
+          {l.hp != null && !l.ghostText ? (
             <span class="holo-label__hp">
               {l.maxHp != null ? (
                 <span class="holo-label__hp-bar">
@@ -138,7 +142,7 @@ export default defineComponent({
                     style={{ width: `${pct}%`, background: ROLE_BAR[l.role] }}
                   />
                   <span class="holo-label__hp-text">
-                    {Math.round(l.hp).toLocaleString()}
+                    {Math.round(shownHp).toLocaleString()}
                     {l.maxHp != null ? ` / ${Math.round(l.maxHp).toLocaleString()}` : ""}
                   </span>
                 </span>
@@ -147,7 +151,11 @@ export default defineComponent({
           ) : l.ghostText ? (
             <span class="holo-label__ghost-time">{l.ghostText}</span>
           ) : null}
-          {l.dead ? <span class="holo-label__dead-tag">{props.deadText}</span> : null}
+          {/* Dead tag only when no HP chip is on screen to carry the "0 / max"
+              readout (hosts without HP data keep the textual SUNK marker). */}
+          {l.dead && (l.hp == null || l.maxHp == null || l.ghostText) ? (
+            <span class="holo-label__dead-tag">{props.deadText}</span>
+          ) : null}
         </div>
       );
     };

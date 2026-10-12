@@ -159,6 +159,9 @@ export default defineComponent({
     const hp = computed(() =>
       hpAtTime(props.state?.traj?.hpSamples, props.time),
     );
+    /** HP the card shows: sunk ships pin to 0 from their death on — the
+     *  hull never recovers, even if the HP stream missed the killing blow. */
+    const shownHp = computed(() => (dead.value ? 0 : hp.value));
     const maxHp = computed(() => props.state?.maxHp ?? null);
     /** Cumulative hull damage taken up to the playhead (sum of HP drops —
      *  heals don't refund it, mirroring the self-card's 承伤 readout). */
@@ -265,8 +268,8 @@ export default defineComponent({
     return () => {
       const v = view.value;
       const hpPct =
-        hp.value != null && maxHp.value
-          ? Math.max(0, Math.min(1, hp.value / maxHp.value))
+        shownHp.value != null && maxHp.value
+          ? Math.max(0, Math.min(1, shownHp.value / maxHp.value))
           : null;
       return (
         <Teleport to="body">
@@ -379,12 +382,15 @@ export default defineComponent({
                     </span>
                   </div>
                 </div>
-              ) : hpPct != null && maxHp.value ? (
+              ) : null}
+              {/* The HP readout survives a sink too — pinned at "0 / max"
+                  with an empty bar, so the state section never deflates. */}
+              {hpPct != null && maxHp.value ? (
                 <div class="holo-ship-tip__rows">
                   <div class="holo-ship-tip__row">
                     <span class="holo-ship-tip__row-label">{t("replay.hpRemaining")}</span>
                     <span class="holo-ship-tip__row-value">
-                      {Math.round(hp.value!).toLocaleString()} /{" "}
+                      {Math.round(shownHp.value!).toLocaleString()} /{" "}
                       {Math.round(maxHp.value).toLocaleString()}
                     </span>
                   </div>
@@ -417,9 +423,9 @@ export default defineComponent({
                     </div>
                   ) : null}
                 </div>
-              ) : (
+              ) : !dead.value ? (
                 <p class="holo-ship-tip__dim">{t("replay.tip.noTrajectory")}</p>
-              )}
+              ) : null}
             </div>
 
             {/* ── Standard loadout capability ── */}
