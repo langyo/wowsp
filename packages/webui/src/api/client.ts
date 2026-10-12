@@ -2460,7 +2460,7 @@ export const api = {
    *  to ~1 Hz by the backend). */
   listenPairingDiscovery: (handler: (s: DiscoverySnapshot) => void) =>
     transport.listen?.<DiscoverySnapshot>("wowsp://pairing-discovery", handler),
-  // ── Internet gateway config (commands/pairing_relay.rs) ────────────────
+  // ── Internet gateway config (commands/pairing_relay/) ──────────────────
   pairingGetRelayConfig: () => transport.invoke<RelayConfig>(RPC.pairing_get_relay_config),
   pairingSetRelay: (config: RelayConfig) =>
     transport.invoke<null>(RPC.pairing_set_relay, { config }),

@@ -35,7 +35,7 @@
 //!   local rail scans every detected client
 //!   (`list_replays_meta { all: true }`). While the server runs, the UDP
 //!   discovery broadcaster announces it and — unless disabled in the hidden
-//!   relay config — the gateway host bridge (commands/pairing_relay.rs)
+//!   relay config — the gateway host bridge (commands/pairing_relay/)
 //!   tunnels the same routes through the built-in Cloudflare gateway,
 //!   displaying the gateway-allocated pairing code.
 //!

@@ -2,8 +2,9 @@
 //!
 //! Overlay mode (Mode 2 in PLAN.md): a SEPARATE transparent, always-on-top,
 //! click-through, decoration-less window sits on top of the game. It loads
-//! the same index.html with `?window=overlay`, which makes main.ts mount
-//! OverlayApp (no router, no title bar, transparent background).
+//! the separate pre-rendered `overlay.html` page, bootstrapped by
+//! `src/overlay/main.ts` as bare DOM (no router, no title bar, transparent
+//! background).
 //!
 //! While the user holds `Tab` (with the game window in the foreground), a
 //! watcher thread on the Rust side:

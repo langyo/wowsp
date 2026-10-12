@@ -98,7 +98,7 @@ shun = { version = "^0.4.1", default-features = false }
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true
 
-# Pairing relay tunnels (commands/pairing_relay.rs): the desktop host bridge
+# Pairing relay tunnels (commands/pairing_relay/): the desktop host bridge
 # and the phone's HTTP-over-WebSocket client both ride tokio-tungstenite.
 # The wss:// legs use the rustls webpki-roots connector — the ring provider
 # must be the process default before the first connect (installed at startup

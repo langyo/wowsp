@@ -200,7 +200,7 @@ pub fn run() {
             // Windows 11 (DWM only squares them for windows with a real
             // caption), leaving a notch in each corner of the maximized
             // frame. Only the main window is a resizable frameless surface —
-            // the overlay pins DONOTROUND for good in overlay.rs.
+            // the overlay pins DONOTROUND for good in overlay/window.rs.
             #[cfg(target_os = "windows")]
             {
                 if let WindowEvent::Resized(_) = event {
@@ -672,7 +672,7 @@ pub fn run() {
 /// the desktop bleeds through. Push the corner preference explicitly instead:
 /// `DONOTROUND` while maximized, `DEFAULT` (honors the user's OS-wide corner
 /// setting) once restored. Overlay windows never pass through here — they pin
-/// `DONOTROUND` permanently in overlay.rs.
+/// `DONOTROUND` permanently in overlay/window.rs.
 #[cfg(target_os = "windows")]
 fn sync_window_corner_rounding(win: &tauri::Window, rounded: &std::sync::atomic::AtomicBool) {
     use std::sync::atomic::Ordering;

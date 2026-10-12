@@ -40,7 +40,7 @@ const PAIRING_HOSTS_FILE = "pairing-hosts.json";
 
 /**
  * The built-in internet-pairing gateway — ONE constant, same host as
- * `BUILTIN_RELAY_ROOT_URL` in commands/pairing_relay.rs (kept here in its
+ * `BUILTIN_RELAY_ROOT_URL` in commands/pairing_relay/ (kept here in its
  * wss spelling; the Rust side normalizes either form onto the https root it
  * resolves the v2 gateway manifest from). The owner binds the DNS for this
  * host at deploy time; there is no user-facing configuration anywhere.

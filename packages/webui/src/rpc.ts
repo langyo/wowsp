@@ -169,7 +169,7 @@ export const RPC = {
   pairing_discovery_start: "pairing_discovery_start",
   pairing_discovery_stop: "pairing_discovery_stop",
   // Internet relay configuration (hidden setting — see
-  // commands/pairing_relay.rs) + pairing-code regeneration.
+  // commands/pairing_relay/) + pairing-code regeneration.
   pairing_get_relay_config: "pairing_get_relay_config",
   pairing_set_relay: "pairing_set_relay",
   pairing_reallocate_code: "pairing_reallocate_code",

@@ -22,7 +22,7 @@
 # as a Workers Custom Domain: that captures the whole hostname and hides
 # the site (the worker 404s everything outside its routes). The apps
 # hardcode https://wowsp.langyo.xyz — see
-# packages/app/tauri/src/commands/pairing_relay.rs BUILTIN_RELAY_ROOT_URL.
+# packages/app/tauri/src/commands/pairing_relay/ BUILTIN_RELAY_ROOT_URL.
 # Development can override the endpoint with the WOWSP_RELAY_URL env var.
 
 name = "wowsp-pairing"

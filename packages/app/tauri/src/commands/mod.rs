@@ -44,7 +44,7 @@ pub mod open_external;
 pub mod overlay;
 #[cfg(mobile)]
 /// Mobile stand-ins for the overlay command surface. The desktop module
-/// (src/commands/overlay.rs) is a game-window capture stack — GDI BitBlt,
+/// (src/commands/overlay/) is a game-window capture stack — GDI BitBlt,
 /// Win32 styling, a second always-on-top webview — none of which exists on a
 /// phone. The registered commands stay available (the webui transport calls
 /// them unconditionally) but answer with the clean
