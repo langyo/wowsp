@@ -20,9 +20,12 @@ Outputs are untracked bake artifacts: the res pack publishes them
 (`just release-models`), and a checkout needs `just fetch-models` (or this
 bake) to carry them.
 
-Requirements: the Oodle decoder (unoodle, preferred —
-github.com/lvlvllvlvllvlvl/oozextract — or powzix/ooz) dropped in
-target/release/ or passed via --ooz / WOWSP_OOZ, same as the ship bakes.
+Requirements: none beyond the repo's usual toolchain — when no Oodle
+decoder is present, one (unoodle, from
+github.com/lvlvllvlvllvlvl/oozextract) is shallow-cloned and built
+automatically into target/release/ (see scripts/extract/fetch_oodle.py;
+WOWSP_OODLE_NO_BUILD=1 opts out, a manual binary still wins via --ooz /
+WOWSP_OOZ).
 
 Usage:
     python scripts/model_convert/bake_lesta_planes.py \

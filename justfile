@@ -74,6 +74,7 @@ dev target='tauri' *FLAGS='':
 #   just build package           → cargo tauri build (app only, no install bundles)
 #   just build installers [--flavors ...] → shun installers (webview2 / lite)
 #   just build wowsunpack        → compile the vendored wowsunpack
+#   just build unoodle           → fetch + build the Lesta Oodle decoder
 #   just build all               → webui + site + app
 
 _build-all *FLAGS='':
@@ -106,6 +107,13 @@ _build-wowsunpack:
     @# (landaire/wows-toolkit) — never by a pull from inside this checkout.
     @echo "Building vendored wowsunpack (landaire/wows-toolkit, tracked in-tree)..."
     cargo build --release -p wowsunpack
+
+_build-unoodle:
+    @# The Lesta Oodle decoder (github.com/lvlvllvlvllvlvl/oozextract, MIT):
+    @# shallow-clone + cargo build + install to target/release/. The Lesta
+    @# extraction routes also run this automatically when no decoder is
+    @# found (see scripts/extract/fetch_oodle.py).
+    python scripts/extract/fetch_oodle.py
 
 build target='app' *FLAGS='':
     @just _build-{{target}} {{FLAGS}}

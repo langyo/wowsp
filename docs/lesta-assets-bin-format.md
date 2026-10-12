@@ -139,7 +139,10 @@ MidBack/MidFront hull parts — length-exact output, wrong bytes, meshopt
 (github.com/lvlvllvlvllvlvl/oozextract, `unoodle`) decodes every such
 stream CRC-exact. `lesta_extract.py` now prefers unoodle and falls back to
 ooz; build it with `cargo build --release --features cli` and drop
-`unoodle.exe` into `target/release/`.
+`unoodle.exe` into `target/release/` — or let
+`scripts/extract/fetch_oodle.py` do exactly that (shallow `--depth 1`
+clone + build; `just build unoodle`, and the Lesta extraction/bake routes
+invoke it automatically when no decoder is found).
 
 ## Phase 4 addendum (2026-10-10, later): the format map above was partly corruption
 

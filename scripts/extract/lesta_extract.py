@@ -16,9 +16,11 @@ Entry formats (verified against client 26.10.0.0.8867689): stored entries
 size table, each chunk an independent Kraken stream (ooz expects the u64
 unpacked size prefixed). Everything is CRC32-verified against the idx.
 
-Requires the `ooz` decoder binary (github.com/powzix/ooz, built with a C++
-compiler; two missing includes in stdafx.h need adding). Point --ooz at it
-or export WOWSP_OOZ.
+Requires an Oodle decoder binary: unoodle (github.com/lvlvllvlvllvlvl/
+oozextract — preferred, CRC-exact on the 26.x streams) or powzix/ooz
+(fallback, silently mis-decodes some of them). When none is present one is
+shallow-cloned and built automatically (scripts/extract/fetch_oodle.py);
+point --ooz at your own or export WOWSP_OOZ to skip that.
 
 Usage:
     python scripts/extract/lesta_extract.py --game-dir "D:/WoWS_Korabli" \
@@ -38,6 +40,9 @@ import tempfile
 import zlib
 from collections import defaultdict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fetch_oodle import ensure_decoder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE_DIR = Path(
@@ -204,7 +209,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--game-dir", help="Lesta install root (default: WOWSP_GAME_PATH_LESTA / registry)")
     ap.add_argument("--out", required=True, help="output directory (the content/... tree is preserved)")
-    ap.add_argument("--ooz", help="ooz decoder binary (default: WOWSP_OOZ env)")
+    ap.add_argument("--ooz", help="ooz/unoodle decoder binary (default: WOWSP_OOZ / WOWSP_UNOODLE env)")
+    ap.add_argument(
+        "--fetch-decoder",
+        action=argparse.BooleanOptionalAction, default=True,
+        help="when no decoder is found, shallow-clone + build oozextract's "
+        "unoodle automatically (scripts/extract/fetch_oodle.py); disable "
+        "with --no-fetch-decoder or WOWSP_OODLE_NO_BUILD=1",
+    )
     ap.add_argument(
         "--wowsunpack",
         help="wowsunpack binary for the metadata pass (default: repo target/release)",
@@ -215,26 +227,14 @@ def main() -> int:
     game = find_game_dir(args.game_dir)
     # Decoder preference: unoodle (correct for the newer Oodle streams),
     # then ooz. --ooz / WOWSP_OOZ may point at EITHER binary (the mode is
-    # sniffed from the file name).
+    # sniffed from the file name). When nothing is found, fetch_oodle
+    # shallow-clones + builds oozextract's unoodle automatically (opt out
+    # with --no-fetch-decoder / WOWSP_OODLE_NO_BUILD=1). An explicit
+    # --ooz that does not exist is a typo — fail instead of bootstrapping.
     ooz_arg = args.ooz or os.environ.get("WOWSP_OOZ") or os.environ.get("WOWSP_UNOODLE")
-    cand_bin = Path(ooz_arg) if ooz_arg else None
-    if cand_bin is None or not cand_bin.is_file():
-        for cand in (
-            ROOT / "target/model-tools/unoodle.exe",
-            ROOT / "target/release/unoodle.exe",
-            ROOT / "target/model-tools/ooz.exe",
-            ROOT / "target/release/ooz.exe",
-        ):
-            if cand.is_file():
-                cand_bin = cand
-                break
-    if cand_bin is None or not cand_bin.is_file():
-        raise SystemExit(
-            "no Oodle decoder found — build github.com/lvlvllvlvllvlvl/"
-            "oozextract (unoodle, preferred) or powzix/ooz, pass --ooz or "
-            "set WOWSP_OOZ"
-        )
-    mode = "unoodle" if "unoodle" in cand_bin.name.lower() else "ooz"
+    if args.ooz and not Path(args.ooz).is_file():
+        raise SystemExit(f"decoder not found: {args.ooz}")
+    cand_bin, mode = ensure_decoder(ooz_arg, auto_build=args.fetch_decoder)
     decoder = OozDecoder(cand_bin, mode)
     print(f"[lesta-extract] oodle backend: {mode} ({cand_bin})")
 

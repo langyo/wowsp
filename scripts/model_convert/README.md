@@ -91,8 +91,11 @@ python scripts/model_convert/bake_lesta_planes.py \
 ```
 
 `just extract techtree` normally runs step 1 for you (it rides the same Lesta
-client snapshot as the tech tree and the encyclopedia overlay); step 2 needs
-the Oodle decoder (unoodle/ooz) and runs by hand, like the Lesta hull bakes.
+client snapshot as the tech tree and the encyclopedia overlay); step 2 runs
+by hand, like the Lesta hull bakes — the Oodle decoder (unoodle) it needs is
+shallow-cloned and built automatically on first use
+(`scripts/extract/fetch_oodle.py`, also `just build unoodle`;
+`WOWSP_OODLE_NO_BUILD=1` or `--ooz` to opt out/supply your own).
 The Lesta-only ships' **armor/ballistics** slices are a third piece of the
 same snapshot — `scripts/extract/build_lesta_shipdata.py` bundles them into
 the Rust tree (`packages/app/tauri/src/commands/lesta_ship_gameparams.json`,
