@@ -1,27 +1,20 @@
+# Aviso de direitos de autor do WoWSP
+
 WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
 
-AVISO: este software inclui código gerado por inteligência artificial. Os
-termos integrais da Licença de Código Sintético (incluindo os requisitos de
-divulgação de modelos) constam do ficheiro LICENSE anexo.
+Este software inclui código gerado por inteligência artificial (IA). Os modelos utilizados estão em «Divulgação de modelos» no fim deste documento; os termos completos estão no ficheiro LICENSE fornecido.
 
-Este software é licenciado ao abrigo da «Licença de Código Sintético»
-versão 1.0 (a «Licença»); não o pode utilizar salvo em conformidade com a
-Licença. Uma cópia da Licença está disponível em:
+O software é licenciado ao abrigo da «Licença de Código Sintético» versão 1.0 (doravante «a Licença»); usar este software significa concordar em cumprir a Licença. Leia-a antes de instalar ou usar:
 
-    https://github.com/celestia-island/sysl
+[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
 
-Salvo exigência da lei aplicável ou acordo escrito em contrário, o software
-distribuído ao abrigo desta Licença é distribuído «como está», sem qualquer
-garantia ou condição, expressa ou implícita. Os direitos e limitações
-aplicáveis constam do texto integral da Licença.
+Salvo exigência legal ou acordo escrito em contrário, este software é fornecido «tal como está», sem quaisquer garantias ou condições, expressas ou implícitas. O que pode e não pode fazer é definido pelo texto da Licença.
 
-====================================================================
+---
 
-              Divulgação de modelos (MODEL DISCLOSURE)
+### Divulgação de modelos (Model disclosure)
 
-Autor humano:
-  langyo <langyo.china@gmail.com>
-
-Principais modelos de IA utilizados:
-  GLM 5 / 5.1 / 5.2 / 5v Turbo — Zhipu AI — https://zhipu.ai
-  DeepSeek V4 Flash / Pro — DeepSeek — https://deepseek.ai
+- **Autor humano**: langyo <langyo.china@gmail.com>
+- **Principais modelos de IA utilizados**:
+- **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)

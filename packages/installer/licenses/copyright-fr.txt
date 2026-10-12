@@ -1,28 +1,20 @@
+# Avis de droit d'auteur WoWSP
+
 WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
 
-AVIS : ce logiciel inclut du code généré par intelligence artificielle.
-L'intégralité des termes de la Licence de Source Synthétique (y compris les
-exigences de divulgation des modèles) figure dans le fichier LICENSE joint.
+Ce logiciel contient du code généré par intelligence artificielle (IA). Les modèles utilisés sont listés dans « Divulgation des modèles » en fin de document ; les conditions complètes figurent dans le fichier LICENSE fourni.
 
-Ce logiciel est concédé sous licence selon la « Licence de Source
-Synthétique » version 1.0 (la « Licence ») ; vous ne pouvez l'utiliser
-qu'en conformité avec la Licence. Vous pouvez en obtenir une copie à
-l'adresse :
+Le logiciel est concédé sous licence « Licence de Source Synthétique » version 1.0 (ci-après « la Licence ») ; utiliser ce logiciel signifie accepter de respecter la Licence. Lisez-la avant toute installation ou utilisation :
 
-    https://github.com/celestia-island/sysl
+[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
 
-Sauf si le droit applicable l'exige ou en cas d'accord écrit distinct, le
-logiciel distribué sous cette Licence l'est « en l'état », sans aucune
-garantie ni condition, expresse ou implicite. Les droits et limites
-applicables sont définis dans le texte intégral de la Licence.
+Sauf obligation légale ou accord écrit contraire, ce logiciel est fourni « en l'état », sans aucune garantie ni condition, expresse ou implicite. Ce que vous pouvez faire — et ne pas faire — est défini par le texte de la Licence.
 
-====================================================================
+---
 
-                  Divulgation des modèles (MODEL DISCLOSURE)
+### Divulgation des modèles (Model disclosure)
 
-Auteur humain :
-  langyo <langyo.china@gmail.com>
-
-Principaux modèles d'IA utilisés :
-  GLM 5 / 5.1 / 5.2 / 5v Turbo — Zhipu AI — https://zhipu.ai
-  DeepSeek V4 Flash / Pro — DeepSeek — https://deepseek.ai
+- **Auteur humain** : langyo <langyo.china@gmail.com>
+- **Principaux modèles d'IA utilisés** :
+- **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)

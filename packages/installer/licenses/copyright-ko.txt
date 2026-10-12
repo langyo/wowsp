@@ -1,27 +1,20 @@
+# WoWSP 저작권 고지
+
 WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
 
-통지: 본 소프트웨어에는 인공지능이 생성한 코드가 포함되어 있습니다. 합성
-소스 라이선스의 전체 조항(모델 공개 요건 포함)은 동봉된 LICENSE 파일을
-참조하십시오.
+이 소프트웨어에는 인공지능(AI)이 생성한 코드가 포함되어 있습니다. 사용된 모델은 이 문서 끝의 "모델 공개"를, 전체 약관은 함께 제공되는 LICENSE 파일을 확인하세요.
 
-본 소프트웨어는 「합성 소스 라이선스」 버전 1.0(이하 "본 라이선스")에 따라
-라이선스됩니다. 본 라이선스를 준수하는 경우에만 본 소프트웨어를 사용할 수
-있습니다. 본 라이선스 사본은 아래에서 받을 수 있습니다.
+이 소프트웨어는 「합성 소스 라이선스」 버전 1.0(이하 "라이선스")에 따라 라이선스됩니다. 이 소프트웨어를 사용하면 라이선스를 준수하는 데 동의하는 것입니다. 설치하거나 사용하기 전에 라이선스 전문을 읽어 주세요:
 
-    https://github.com/celestia-island/sysl
+[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
 
-적용 법률이 별도로 요구하거나 서면으로 별도 합의된 경우를 제외하고, 본
-라이선스에 따라 배포되는 소프트웨어는 "있는 그대로" 배포되며, 명시적이든
-묵시적이든 어떠한 보증이나 조건도 제공되지 않습니다. 본 라이선스에 따른
-권리와 제한에 대해서는 본 라이선스 전문을 확인하십시오.
+법률이 요구하거나 서면으로 별도 합의한 경우를 제외하고, 이 소프트웨어는 "있는 그대로" 제공되며 명시적이든 묵시적이든 어떠한 보증도 동반하지 않습니다. 허용되고 제한되는 사항은 라이선스 전문으로 정해집니다.
 
-====================================================================
+---
 
-                        모델 공개 (MODEL DISCLOSURE)
+### 모델 공개(Model disclosure)
 
-인간 저자:
-  langyo <langyo.china@gmail.com>
-
-사용된 주요 AI 모델:
-  GLM 5 / 5.1 / 5.2 / 5v Turbo — Zhipu AI — https://zhipu.ai
-  DeepSeek V4 Flash / Pro — DeepSeek — https://deepseek.ai
+- **인간 저자**: langyo <langyo.china@gmail.com>
+- **주로 사용한 AI 모델**:
+- **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)

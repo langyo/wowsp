@@ -1,29 +1,20 @@
+# Urheberrechtshinweis von WoWSP
+
 WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
 
-HINWEIS: Diese Software enthält von künstlicher Intelligenz generierten
-Code. Die vollständigen Bedingungen der Synthetischen-Quellcode-Lizenz
-(einschließlich der Modelloffenlegungspflichten) finden Sie in der
-beiliegenden LICENSE-Datei.
+Diese Software enthält von künstlicher Intelligenz (KI) erzeugten Code. Die verwendeten Modelle sind in „Modelloffenlegung“ am Ende dieses Dokuments aufgeführt; die vollständigen Bedingungen stehen in der beiliegenden LICENSE-Datei.
 
-Diese Software wird unter der „Synthetischen-Quellcode-Lizenz“ in der
-Version 1.0 (die „Lizenz“) lizenziert; Sie dürfen sie nur gemäß der Lizenz
-nutzen. Eine Kopie der Lizenz erhalten Sie unter:
+Die Software steht unter der „Synthetische-Quellcode-Lizenz“ Version 1.0 (im Folgenden „die Lizenz“); wer diese Software nutzt, erklärt sich damit einverstanden, die Lizenz einzuhalten. Bitte vor Installation oder Nutzung vollständig lesen:
 
-    https://github.com/celestia-island/sysl
+[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
 
-Sofern nicht gesetzlich anders vorgeschrieben oder gesondert schriftlich
-vereinbart, wird die unter dieser Lizenz vertriebene Software „wie besehen“
-vertrieben — ohne jegliche ausdrückliche oder stillschweigende Gewährleistung
-oder Bedingung. Rechte und Beschränkungen ergeben sich aus dem vollständigen
-Lizenztext.
+Soweit nicht gesetzlich vorgeschrieben oder schriftlich anders vereinbart, wird diese Software „wie besehen“ bereitgestellt, ohne ausdrückliche oder stillschweigende Gewährleistungen jeglicher Art. Was erlaubt ist und was nicht, bestimmt der Lizenztext.
 
-====================================================================
+---
 
-              Modelloffenlegung (MODEL DISCLOSURE)
+### Modelloffenlegung (Model disclosure)
 
-Menschlicher Autor:
-  langyo <langyo.china@gmail.com>
-
-Primär eingesetzte KI-Modelle:
-  GLM 5 / 5.1 / 5.2 / 5v Turbo — Zhipu AI — https://zhipu.ai
-  DeepSeek V4 Flash / Pro — DeepSeek — https://deepseek.ai
+- **Menschlicher Autor**: langyo <langyo.china@gmail.com>
+- **Überwiegend verwendete KI-Modelle**:
+- **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
