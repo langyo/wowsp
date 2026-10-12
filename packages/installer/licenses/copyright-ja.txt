@@ -1,5 +1,3 @@
-# WoWSP 著作権表示
-
 WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
 
 本ソフトウェアには、人工知能（AI）が生成したコードが含まれています。使用したモデルは本文書末尾の「モデル開示」を、契約条件の全文は同梱の LICENSE ファイルをご覧ください。

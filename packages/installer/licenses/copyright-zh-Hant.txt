@@ -1,5 +1,3 @@
-# WoWSP 版權聲明
-
 WoWSP — 版權所有 (c) 2026 langyo <langyo.china@gmail.com>
 
 本軟體包含由人工智慧（AI）產生的程式碼。相關的模型揭露見本文檔末尾，完整條款見隨附的 LICENSE 檔案。

@@ -1,5 +1,3 @@
-# WoWSP 저작권 고지
-
 WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
 
 이 소프트웨어에는 인공지능(AI)이 생성한 코드가 포함되어 있습니다. 사용된 모델은 이 문서 끝의 "모델 공개"를, 전체 약관은 함께 제공되는 LICENSE 파일을 확인하세요.

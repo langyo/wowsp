@@ -1,5 +1,3 @@
-# Urheberrechtshinweis von WoWSP
-
 WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
 
 Diese Software enthält von künstlicher Intelligenz (KI) erzeugten Code. Die verwendeten Modelle sind in „Modelloffenlegung“ am Ende dieses Dokuments aufgeführt; die vollständigen Bedingungen stehen in der beiliegenden LICENSE-Datei.
