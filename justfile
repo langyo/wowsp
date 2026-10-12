@@ -92,6 +92,7 @@ _build-webui:
     {{PM}} --filter @wowsp/webui build
 
 _build-site:
+    @python scripts/check_docs.py
     @command -v lagrange >/dev/null 2>&1 || cargo install lagrange-library
     lagrange build --src docs --out dist
 

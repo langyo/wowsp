@@ -54,6 +54,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Docs lagrange-safety guard
+        # Fail in seconds instead of burning the runner: a markdown line
+        # starting with '#<digits>' sends lagrange's build into a runaway
+        # loop (the 2026-10-09..12 outage — every run died with a runner
+        # shutdown signal before this guard existed).
+        run: python scripts/check_docs.py
+
       - name: Install lagrange
         uses: dtolnay/rust-toolchain@stable
       - name: Build docs (lagrange)

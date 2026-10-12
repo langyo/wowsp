@@ -71,6 +71,13 @@ jobs:
         run: python scripts/check_rpc_parity.py
       - name: i18n parity
         run: python scripts/check_i18n.py
+      - name: Docs lagrange-safety
+        # A soft-wrapped markdown line starting with '#<digits>' (e.g. an
+        # issue reference) sends lagrange's build into a runaway loop —
+        # it took Deploy Site down for three days (2026-10-09..12, PR
+        # #931's wrap landed '#604).' on a line start). Catches it at PR
+        # time; site.yml guards the deploy itself.
+        run: python scripts/check_docs.py
       - name: In-game probe sandbox conformance
         # Execs the shipped plugin under a crippled builtins set (the
         # Lesta ModsAPI whitelist bit twice in the field) and drives a
