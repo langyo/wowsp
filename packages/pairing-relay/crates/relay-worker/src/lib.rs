@@ -5,8 +5,9 @@
 //! - [`relay_core`] carries every protocol/policy decision (pure, host
 //!   testable — `cargo test -p relay-core`).
 //! - this crate is routing + WebSocket glue only. The website's static
-//!   assets live on the GitHub Pages mirror; the `routes` entry sends
-//!   only `wowsp.langyo.xyz/api*` into this code:
+//!   assets live on the GitHub Pages site; the wrangler `routes` array
+//!   sends only the paths listed below into this code (see
+//!   `wrangler.toml`):
 //!   - `GET /api/health` — the merged liveness + discovery document
 //!     (server version + minimum client version + relay endpoints;
 //!     forwarding-station switch via the `GATEWAY_UPSTREAM` var,
@@ -15,6 +16,8 @@
 //!     `/api/relay/data/…` — forwarded to the two Durable Objects in
 //!     [`directory`] (the singleton code Directory) and [`room`]
 //!     (per-room rendezvous + byte pipes).
+//!   - `GET /feedback`, `GET /erp` — the two server-rendered pages
+//!     (the feedback form and the admin review console).
 
 pub mod directory;
 pub mod feedback;

@@ -10,15 +10,18 @@
 # (owner's manual step). Local dev: `pnpm --filter @wowsp/pairing-relay dev`
 # (= `wrangler dev`, builds the wasm via the [build] command below).
 #
-# The worker answers ONLY the pairing API under
-# https://wowsp.langyo.xyz/api* — the `routes` entry below. Workers
-# Routes take precedence over the GitHub Pages custom domain bound to
-# the same hostname, so the WEBSITE (HTML + all assets, including /docs)
-# is served by GitHub Pages at the same address and Cloudflare stays out
-# of the page/heavy-download path entirely. The DNS record for
-# wowsp.langyo.xyz is therefore the proxied CNAME to
-# `langyo.github.io` (GitHub Pages). The apps hardcode
-# https://wowsp.langyo.xyz — see
+# The worker answers ONLY the paths in the `routes` array below — the
+# pairing API plus the two server-rendered pages: /api* (health, relay,
+# feedback endpoints), /feedback and /erp. Workers Routes take precedence
+# over the GitHub Pages site bound to the same hostname, so everything
+# else (HTML + all assets, including /docs) is served by GitHub Pages at
+# the same address and Cloudflare stays out of the page/heavy-download
+# path entirely. The DNS record for wowsp.langyo.xyz is therefore the
+# proxied CNAME to `langyo.github.io` (GitHub Pages) — proxying is
+# required, routes only apply to proxied records. Never bind the hostname
+# as a Workers Custom Domain: that captures the whole hostname and hides
+# the site (the worker 404s everything outside its routes). The apps
+# hardcode https://wowsp.langyo.xyz — see
 # packages/app/tauri/src/commands/pairing_relay.rs BUILTIN_RELAY_ROOT_URL.
 # Development can override the endpoint with the WOWSP_RELAY_URL env var.
 
@@ -26,10 +29,13 @@ name = "wowsp-pairing"
 main = "crates/relay-worker/build/worker/shim.mjs"
 compatibility_date = "2026-01-15"
 
-# API route on the site's hostname (see the header comment). The zone's
-# DNS for this hostname must be the proxied GitHub Pages CNAME.
+# Worker routes on the site's hostname (see the header comment): the API
+# plus the two pages the worker renders itself. The zone's DNS for this
+# hostname must be the proxied GitHub Pages CNAME.
 routes = [
   { pattern = "wowsp.langyo.xyz/api*", zone_name = "langyo.xyz" },
+  { pattern = "wowsp.langyo.xyz/feedback*", zone_name = "langyo.xyz" },
+  { pattern = "wowsp.langyo.xyz/erp*", zone_name = "langyo.xyz" },
 ]
 
 [build]

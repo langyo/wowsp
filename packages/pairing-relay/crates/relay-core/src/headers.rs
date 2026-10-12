@@ -13,9 +13,10 @@
 //! - `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`
 //!   go on **every** worker response, `/api` included.
 //! - The static site shell (`/` and every SPA path) never reaches this
-//!   code — wrangler serves it from the `[assets]` layer, which carries
-//!   the same matrix via the bundled `_headers` file
-//!   (packages/website/src/res/_headers).
+//!   code — it is served by GitHub Pages. The same matrix is mirrored in
+//!   the shell's `_headers` copy (packages/website/src/res/_headers) and
+//!   a unit test below diffs the two, so the CSP below stays the single
+//!   source of truth.
 //!
 //! `'unsafe-inline'` in `script-src` is a known, documented residue: the
 //! site shell ships a build-time-injected inline fallback loader whose
@@ -213,10 +214,10 @@ mod tests {
     }
 
     /// The static shell's `_headers` file (packages/website/src/res —
-    /// the website build's publicDir, bundled into the worker's assets
-    /// dir) must carry the SAME CSP as [`CSP_HTML`] — one matrix, two
-    /// serving layers (the static shell never reaches this crate at
-    /// runtime). This test fails loudly on drift between the two.
+    /// the website build's publicDir) must carry the SAME CSP as
+    /// [`CSP_HTML`] — one matrix for both surfaces (the static shell is
+    /// served by GitHub Pages and never reaches this crate at runtime).
+    /// This test fails loudly on drift between the two.
     #[test]
     fn static_shell_headers_file_matches_the_worker_csp() {
         let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

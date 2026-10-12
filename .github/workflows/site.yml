@@ -1,14 +1,26 @@
 name: Deploy Site
 
-# GitHub Pages is the BACKUP mirror of the site AND the origin every
-# built asset of the live site loads from: the worker at
-# https://wowsp.langyo.xyz serves only the HTML shell + the pairing API
-# (/api), while JS/CSS/images/docs download from
-# https://langyo.github.io/wowsp/… (GitHub's CDN). Consequence: this
-# artifact must NOT carry a CNAME file — a CNAME (or a custom domain in
-# the repo Pages settings) makes langyo.github.io/wowsp 301 back to the
-# worker origin and the asset URLs circular. If the domain ever needs to
-# come back, re-add the CNAME step and flip the bases below.
+# Site artifact for GitHub Pages — the site host for wowsp.langyo.xyz,
+# with the pairing worker taking only /api*, /feedback and /erp through
+# its Cloudflare `routes` entry (see packages/pairing-relay/README.md ▶
+# Site hosting model).
+#
+# TRANSITIONAL: the artifact is still built for the Pages PROJECT URL
+# (https://langyo.github.io/wowsp/ — base `/wowsp/`, CNAME stripped). Do
+# NOT bind the wowsp.langyo.xyz custom domain before the flip below, and
+# never via the worker (a Workers Custom Domain captures the whole
+# hostname and hides this site).
+#
+# Flip checklist (binding the custom domain):
+#   1. drop WOWSP_SITE_BASE below (base `/`) and point lagrange's
+#      --site-url at https://wowsp.langyo.xyz/docs (update the adjacent
+#      comments too);
+#   2. set the custom domain in the repo's Pages settings (Settings ▶
+#      Pages ▶ Custom domain) — a CNAME file does nothing for
+#      Actions-based Pages, which is why this workflow only strips it;
+#   3. in the Cloudflare dashboard, remove the wowsp.langyo.xyz Workers
+#      Custom Domain that captures the whole hostname today, and keep
+#      the DNS as the proxied CNAME to langyo.github.io.
 
 on:
   push:
@@ -78,7 +90,11 @@ jobs:
           pnpm --filter @wowsp/website build
           cp -r dist/website/. _site/
 
-      - name: No CNAME (must serve at langyo.github.io/wowsp/)
+      # Transitional guard: while the artifact targets the project URL, a
+      # CNAME (or the Pages custom-domain setting) flips langyo.github.io/
+      # wowsp into a redirect and breaks the /wowsp/ asset paths. See the
+      # flip checklist in the banner comment.
+      - name: No CNAME (project-URL artifact — see the banner)
         run: rm -f _site/CNAME
 
       # SPA fallback: GitHub Pages serves 404.html for unknown paths, and the

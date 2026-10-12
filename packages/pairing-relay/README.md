@@ -1,13 +1,15 @@
 # wowsp-pairing-relay
 
-A Cloudflare Worker that is BOTH the WoWSP **website host** and the
-**internet pairing gateway** (a phone app pairs with a WoWSP desktop from
-outside the desktop's local network — cellular / another Wi-Fi). Static
-assets (website + docs) answer `/` via Workers Static Assets; the pairing
-API lives under `/api/*`. The gateway is a rendezvous + raw byte tunnel:
-both ends dial OUTBOUND, the worker never dials anything, and the tunneled
-traffic is the desktop pairing server's ordinary HTTP protocol,
-byte-for-byte.
+A Cloudflare Worker that is the WoWSP **internet pairing gateway** (a
+phone app pairs with a WoWSP desktop from outside the desktop's local
+network — cellular / another Wi-Fi), plus the site's two dynamic pages
+(`/feedback`, `/erp`). It serves the pairing API under `/api/*` and
+those two pages; the static website itself is hosted by GitHub Pages,
+with the worker attached to that hostname through Workers routes (see
+"Site hosting model" below). The gateway is a rendezvous + raw byte
+tunnel: both ends dial OUTBOUND, the worker never dials anything, and
+the tunneled traffic is the desktop pairing server's ordinary HTTP
+protocol, byte-for-byte.
 
 The worker is **Rust compiled to WebAssembly** (the
 [`workers-rs`](https://github.com/cloudflare/workers-rs) `worker` crate,
@@ -23,8 +25,8 @@ target `wasm32-unknown-unknown`). Two crates:
   relay-core.
 
 > This is a **hidden built-in service**, not something users configure. The
-> production deployment is bound to the custom domain
-> **`wowsp.langyo.xyz`** and both apps hardcode the host (desktop:
+> production deployment is reachable at **`wowsp.langyo.xyz`** and both
+> apps hardcode the host (desktop:
 > `BUILTIN_RELAY_ROOT_URL` in `packages/app/tauri/src/commands/pairing_relay.rs`,
 > an `https://` root the v2 manifest and WebSocket base derive from; webui:
 > the `wss://` spelling in `stores/pairing.ts` `PAIRING_GATEWAY_WS`).
@@ -97,7 +99,9 @@ phone ──wss control/data ──▶ WORKER (this package) ◀──wss── 
 
 | Route | Meaning |
 | --- | --- |
-| `/` and every non-`/api` path | the WEBSITE + docs (Workers Static Assets; SPA fallback to `index.html`) |
+| everything outside the rows below | the WEBSITE + docs — served by **GitHub Pages**, not this worker (see "Site hosting model") |
+| `GET /feedback` | the embedded feedback form (see the feedback section above) |
+| `GET /erp` | the embedded admin review console page |
 | `GET /api/health` | merged liveness + discovery document (see below), `cache-control: no-store` |
 | `WS /api/relay/control?room=<64hex>&role=host\|client` | presence + open-request signaling + code allocation |
 | `WS /api/relay/resolve?code=NNNNNN` | phone: code → room handshake (`{"type":"room",…}` / rate-limited error / 404) |
@@ -155,9 +159,10 @@ Ed25519 密钥按官方方案从 `QQBOT_SECRET` 直接派生（Secret 翻倍到
 `QQBOT_SECRET` 两项。
 
 
-The same worker also hosts WoWSP's self-service feedback flow. Everything
-is worker-first (`run_worker_first` in `wrangler.toml` routes `/feedback`
-and `/erp` past the static-asset layer):
+The same worker also hosts WoWSP's self-service feedback flow. `/feedback`
+and `/erp` are answered by this worker itself — they ride the `routes`
+array in `wrangler.toml` alongside `/api*`, so they are taken before the
+request can reach the Pages site:
 
 - **`GET /feedback`** — an embedded, dependency-free form localized in the
   same nine locales as the app's `res/i18n` files (language selector with
@@ -236,20 +241,22 @@ build tool:
 cargo install -t worker-build worker-build
 ```
 
-Then from the REPO ROOT (the worker also serves the website, so its
-assets must be bundled first):
+Then:
 
 ```sh
-pnpm install              # once, for the workspace (wrangler)
-just bundle-site          # website (+docs when lagrange is installed) → assets/
-npx wrangler login        # once, from packages/pairing-relay
-npx wrangler deploy       # from packages/pairing-relay
+pnpm install              # once, from the repo root (pins wrangler)
+cd packages/pairing-relay
+npx wrangler login        # once
+npx wrangler deploy
 ```
 
-`just bundle-site` rebuilds `packages/website` into
-`packages/pairing-relay/assets/` and, when the `lagrange` binary exists,
-also renders `docs/` into `assets/docs` (without lagrange the site ships
-and the docs stay on the GitHub Pages backup).
+The deploy ships the worker only — its `routes` array (`/api*`,
+`/feedback`, `/erp`) re-applies to the `langyo.xyz` zone on every
+upload. The static website is a separate artifact: it is built and
+published by the Deploy Site workflow (`.github/workflows/site.yml`) to
+GitHub Pages, which serves the hostname outside those routes. No
+`just bundle-site` and no website build are involved in the worker
+deploy.
 
 `[build] command = "worker-build --release crates/relay-worker"` in
 `wrangler.toml` compiles the Rust workspace to
@@ -274,16 +281,26 @@ npx wrangler deploy
 The env override is only consulted when set and resolvable; unset, it
 falls back to the normal download.
 
-Custom domain: bind `wowsp.langyo.xyz` to the `wowsp-pairing`
-worker in the Cloudflare dashboard (Workers → wowsp-pairing → Settings →
-Domains & Routes → Custom Domain). Until that record exists the apps
-report the gateway unreachable and fall back to LAN-only pairing —
-nothing breaks.
+Site hosting model: `wowsp.langyo.xyz` is served by **GitHub Pages**
+(the artifact from the Deploy Site workflow) with this worker attached
+through **zone Workers routes**. The DNS record for the hostname is the
+proxied CNAME to `langyo.github.io` — proxying is required, because
+Workers routes only apply to proxied records. Requests to the worker's
+paths (`/api*`, `/feedback`, `/erp`) are taken before they reach Pages;
+everything else (`/`, `/download`, `/docs`, hashed assets) resolves to
+the Pages artifact.
+
+Never bind `wowsp.langyo.xyz` as a **Workers Custom Domain** (Workers →
+wowsp-pairing → Settings → Domains & Routes): a custom domain captures
+the whole hostname and hides the Pages site — the worker would answer
+every path and return `not found` for everything outside its `routes`.
+If the hostname is currently captured by a Worker custom domain, removing
+it is part of completing the Pages migration — see the flip checklist in
+`.github/workflows/site.yml`.
 
 Smoke checks: `curl https://wowsp.langyo.xyz/api/health` (the JSON above)
-and `curl -I https://wowsp.langyo.xyz/` (the website's `index.html`).
-GitHub Pages remains a BACKUP mirror of the site; this worker is the
-primary host once the custom domain is bound.
+and `curl -I https://wowsp.langyo.xyz/` (the website's `index.html` —
+still a worker 404 until the flip is completed).
 
 **Migrations note** — the Durable Object classes are unchanged from the
 TypeScript deployment (`Room` v1 + `Directory` v2, both SQLite-backed),

@@ -197,16 +197,15 @@ check-relay: feedback-theme
     cd packages/pairing-relay && cargo test -p relay-core
     cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
 
-# Bundle the WEBSITE into the worker's static-asset dir — the deploy
-# precondition. The worker serves only the HTML shell + API; built
-# assets (JS/CSS/images) load from the GitHub Pages mirror via absolute
-# URLs (WOWSP_SITE_ASSET_BASE), and /docs redirects there too — Cloudflare
-# is kept out of the heavy-download path entirely.
+# LEGACY (pre-#529): bundles the website into packages/pairing-relay/assets
+# for the worker's former [assets] layer. The worker no longer serves the
+# site — GitHub Pages does, built by the Deploy Site workflow — so this
+# recipe is not part of any deploy anymore.
 bundle-site:
     #!/bin/sh
     set -e
-    # Both origins serve the SAME build: Pages at /wowsp/ (first resource
-    # candidate) and the worker's nested copy at /wowsp/** (fallback).
+    # Legacy two-origin layout (see the header): Pages at /wowsp/ (first
+    # resource candidate) and the worker's nested copy at /wowsp/** (fallback).
     # MSYS2_ENV_CONV_EXCL: Git Bash would otherwise rewrite the /wowsp/
     # env value into a Windows path on its way to node.
     MSYS2_ENV_CONV_EXCL="WOWSP_SITE_BASE" WOWSP_SITE_BASE=/wowsp/ pnpm --filter @wowsp/website build

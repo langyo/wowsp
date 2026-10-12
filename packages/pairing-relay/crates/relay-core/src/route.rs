@@ -1,8 +1,9 @@
 //! URL classification for the gateway's HTTP + WebSocket routes. The
-//! worker serves the WEBSITE statically at `/`; everything it answers
-//! itself lives under `/api` (no version segment — the health document
-//! carries the version instead) plus the two worker-first pages
-//! `/feedback` and `/erp` (see wrangler `run_worker_first`).
+//! worker answers a fixed list of paths and nothing else: the API under
+//! `/api` (no version segment — the health document carries the version
+//! instead) plus the two server-rendered pages `/feedback` and `/erp`.
+//! The wrangler `routes` array sends exactly these paths here; the rest
+//! of the hostname belongs to the GitHub Pages site.
 //!
 //!   GET  /api/health                     — merged health + discovery doc
 //!   WS   /api/relay/control?room=<64hex>&role=host|client
@@ -55,9 +56,9 @@ pub enum Route<'a> {
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
     FeedbackAttachment { file_token: Option<&'a str> },
-    /// Nothing we serve — the static-asset layer already answered every
-    /// non-API path, so in production this only happens on unknown
-    /// `/api/*` shapes.
+    /// Nothing we serve — the GitHub Pages site owns every path outside
+    /// the wrangler `routes`, so in production this only happens on
+    /// unknown `/api/*` shapes.
     NotFound,
 }
 
@@ -66,7 +67,7 @@ pub enum Route<'a> {
 fn trim_path(path: &str) -> &str {
     let p = path.trim_end_matches('/');
     // Keep "/" as-is (it is NotFound either way — the site's index.html
-    // comes from the asset layer, never the worker).
+    // is served by GitHub Pages, never the worker).
     if p.is_empty() { "/" } else { p }
 }
 
