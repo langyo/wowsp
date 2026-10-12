@@ -231,7 +231,7 @@ def gh(*args: str, input_text: str | None = None) -> str:
     cmd = ["gh", "api", *args]
     if input_text is not None:
         cmd += ["--input", "-"]
-    out = subprocess.run(cmd, capture_output=True, text=True)
+    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if out.returncode != 0:
         raise RuntimeError(f"gh api failed: {out.stderr.strip()[:500]}")
     return out.stdout
@@ -245,7 +245,7 @@ def gh_graphql(query: str, **fields) -> dict:
     for attempt in range(1, 4):
         out = subprocess.run(
             ["gh", "api", "graphql", "--input", "-"],
-            input=payload, capture_output=True, text=True, check=False,
+            input=payload, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
         )
         if out.returncode == 0:
             return json.loads(out.stdout)["data"]
@@ -468,7 +468,10 @@ _TOKEN: str | None = None
 def token() -> str:
     global _TOKEN
     if _TOKEN is None:
-        _TOKEN = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True).stdout.strip()
+        _TOKEN = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        ).stdout.strip()
     return _TOKEN
 
 
@@ -502,7 +505,10 @@ def previews(cache: Path) -> None:
 def release(cache: Path) -> None:
     state = downloaded_state(cache)
     # The release must exist before uploading; --clobber keeps re-runs cheap.
-    out = subprocess.run(["gh", "release", "view", RELEASE_TAG, "--repo", REPO], capture_output=True, text=True)
+    out = subprocess.run(
+        ["gh", "release", "view", RELEASE_TAG, "--repo", REPO],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
     if out.returncode != 0:
         subprocess.run(
             # --latest=false: the mod-hub release must never claim

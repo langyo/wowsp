@@ -473,7 +473,7 @@ def main() -> int:
              "--game-dir", args.game_dir, "--out", str(args.stage),
              "--wowsunpack", wowsunpack]
             + (["--ooz", args.ooz] if args.ooz else []) + keep + extra,
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if rc.returncode != 0:
             # lesta_extract reports per-file failures on stdout.
@@ -491,7 +491,7 @@ def main() -> int:
             if not out.is_file() or args.force:
                 r = subprocess.run(
                     [wowsunpack, "export-model", str(p), "--no-vfs", "-o", str(out)],
-                    capture_output=True, text=True,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
                 )
                 if r.returncode != 0 or not out.is_file():
                     continue
@@ -521,7 +521,7 @@ def main() -> int:
                 if not raw.is_file() or args.force:
                     r = subprocess.run(
                         [wowsunpack, "export-model", str(gun_src), "--no-vfs", "-o", str(raw)],
-                        capture_output=True, text=True,
+                        capture_output=True, text=True, encoding="utf-8", errors="replace",
                     )
                     if r.returncode != 0 or not raw.is_file():
                         print(f"[bake-lesta] WARN {idx}: turret {a['hp']} export failed",
@@ -546,7 +546,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(SCRIPT_DIR / "bake_model.py"), str(merged),
              "-o", str(target), "--triangles", str(args.triangles)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if rc.returncode != 0 or not target.is_file():
             print(f"[bake-lesta] bake failed for {idx}: {rc.stderr[-200:]}", flush=True)

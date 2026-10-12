@@ -102,7 +102,7 @@ def main() -> int:
              "--game-dir", args.game_dir, "--out", args.stage,
              "--wowsunpack", wowsunpack]
             + (["--ooz", args.ooz] if args.ooz else []) + [rel],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         staged = Path(args.stage) / rel
         if rc.returncode != 0 or not staged.is_file():
@@ -113,7 +113,7 @@ def main() -> int:
         raw = raw_dir / f"{index}__{name}.glb"
         r = subprocess.run(
             [wowsunpack, "export-model", str(staged), "--no-vfs", "-o", str(raw)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if r.returncode != 0 or not raw.is_file():
             print(f"[bake-lesta-planes] export failed for {index}: {(r.stderr or '')[-200:]}",
@@ -123,7 +123,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(SCRIPT_DIR / "bake_model.py"), str(raw),
              "-o", str(target), "--triangles", str(args.triangles), "--dedup-lods"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         raw.unlink(missing_ok=True)
         if rc.returncode != 0 or not target.is_file():

@@ -88,7 +88,7 @@ def gh_api(endpoint: str, method: str = "GET", stdin: str | None = None) -> str:
     if stdin is not None:
         args.extend(["--input", "-"])
     result = subprocess.run(
-        args, input=stdin, capture_output=True, text=True, cwd=str(REPO_ROOT),
+        args, input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT),
     )
     if result.returncode != 0:
         print(result.stderr, file=sys.stderr)
@@ -259,7 +259,7 @@ def package_ship_images(tmp: str) -> Path | None:
 def release_exists(tag: str) -> bool:
     r = subprocess.run(
         ["gh", "release", "view", tag, "--repo", REPO],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT),
     )
     return r.returncode == 0
 
@@ -292,7 +292,7 @@ def download_release_asset(tag: str, pattern: str, dest: Path) -> bool:
     r = subprocess.run(
         ["gh", "release", "download", tag, "--repo", REPO,
          "--pattern", pattern, "--output", str(dest)],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT),
     )
     if r.returncode != 0:
         print(f"  gh release download {tag}/{pattern} failed — {r.stderr.strip()[:200]}")
@@ -304,7 +304,7 @@ def delete_release_by_tag(tag: str) -> None:
     """Delete a GitHub Release and its Git tag, if they exist."""
     r = subprocess.run(
         ["gh", "api", f"repos/{REPO}/releases/tags/{tag}"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT),
     )
     if r.returncode != 0:
         print(f"  no release for tag {tag} — skip")

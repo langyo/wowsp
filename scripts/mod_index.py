@@ -280,7 +280,10 @@ def fetch(repo: str) -> list[dict]:
         args = ["gh", "api", "graphql", "-f", f"query={QUERY}", "-f", f"owner={owner}", "-f", f"name={name}"]
         if cursor:
             args += ["-f", f"cursor={cursor}"]
-        out = subprocess.run(args, capture_output=True, text=True, check=True).stdout
+        out = subprocess.run(
+            args, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", check=True,
+        ).stdout
         data = json.loads(out)["data"]["repository"]["discussions"]
         nodes.extend(data["nodes"])
         if not data["pageInfo"]["hasNextPage"]:

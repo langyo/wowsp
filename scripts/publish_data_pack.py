@@ -67,7 +67,7 @@ def gh(*args: str, check: bool = True) -> str:
 
 def release_exists() -> bool:
     proc = subprocess.run(
-        ["gh", "release", "view", TAG], capture_output=True, text=True
+        ["gh", "release", "view", TAG], capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
     return proc.returncode == 0
 

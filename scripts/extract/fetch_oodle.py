@@ -113,7 +113,7 @@ def _clone_source() -> Path:
         print(f"[oodle-fetch] cloning {UPSTREAM_REPO} (depth=1, attempt {attempt}) ...")
         r = subprocess.run(
             ["git", "clone", "--depth", "1", UPSTREAM_REPO, str(SOURCE_DIR)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if r.returncode == 0 and (SOURCE_DIR / "Cargo.toml").is_file():
             return SOURCE_DIR
@@ -139,7 +139,7 @@ def build_decoder() -> tuple[Path, str]:
     env = {**os.environ, "CARGO_TARGET_DIR": str(SOURCE_DIR / "target")}
     r = subprocess.run(
         ["cargo", "build", "--release", "--features", "cli"],
-        cwd=SOURCE_DIR, capture_output=True, text=True, env=env,
+        cwd=SOURCE_DIR, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
     )
     if r.returncode != 0:
         raise SystemExit(

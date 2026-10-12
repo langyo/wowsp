@@ -145,7 +145,7 @@ def release_asset_field(name: str, field: str) -> str:
         out = subprocess.run(
             ["gh", "api", RES_RELEASE_API,
              "--jq", f'[.assets[] | select(.name == "{name}") | .{field}] | first // ""'],
-            capture_output=True, text=True, check=True, timeout=60,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=True, timeout=60,
         )
         return out.stdout.strip()
     except Exception as exc:
@@ -161,7 +161,7 @@ def res_manifest() -> dict | None:
     r = subprocess.run(
         ["gh", "release", "download", "res-latest", "--repo", GH_REPO,
          "--pattern", RES_MANIFEST, "--output", str(out)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
     )
     if r.returncode != 0:
         print(f"[warn] res-latest {RES_MANIFEST} fetch failed — {r.stderr.strip()[:160]}")
