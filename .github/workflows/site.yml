@@ -112,11 +112,12 @@ jobs:
           pnpm --filter @wowsp/website build
           cp -r dist/website/. _site/
 
-      # Transitional guard: a CNAME in the artifact would flip
-      # langyo.github.io/wowsp into a redirect and break the /wowsp/
-      # asset paths the worker shell depends on.
+      # Guard: a CNAME in the artifact would flip langyo.github.io/wowsp
+      # into a redirect and break the /wowsp/ asset paths the worker
+      # shell depends on. lagrange writes one at docs/CNAME whenever
+      # --site-url names a custom host, so sweep the whole tree.
       - name: No CNAME (project-URL artifact)
-        run: rm -f _site/CNAME
+        run: find _site -name CNAME -delete
 
       # SPA fallback: GitHub Pages serves 404.html for unknown paths, and
       # the website router (createWebHistory) renders the right route from it.
