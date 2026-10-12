@@ -1,18 +1,16 @@
-WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
+**Ce logiciel est entièrement gratuit et open source**
 
-Ce logiciel contient du code généré par intelligence artificielle (IA). Les modèles utilisés sont listés dans « Divulgation des modèles » en fin de document ; les conditions complètes figurent dans le fichier LICENSE fourni.
-
-Le logiciel est concédé sous licence « Licence de Source Synthétique » version 1.0 (ci-après « la Licence ») ; utiliser ce logiciel signifie accepter de respecter la Licence. Lisez-la avant toute installation ou utilisation :
-
-[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
-
-Sauf obligation légale ou accord écrit contraire, ce logiciel est fourni « en l'état », sans aucune garantie ni condition, expresse ou implicite. Ce que vous pouvez faire — et ne pas faire — est défini par le texte de la Licence.
+WoWSP est un logiciel gratuit et open source, distribué uniquement via la page officielle GitHub Releases (github.com/langyo/wowsp). Quiconque le vend n'est pas l'auteur — ne payez pas ; si vous avez déjà payé, demandez un remboursement et signalez le vendeur dès que possible.
 
 ---
 
-### Divulgation des modèles (Model disclosure)
+### Divulgation des modèles
 
-- **Auteur humain** : langyo <langyo.china@gmail.com>
-- **Principaux modèles d'IA utilisés** :
+Les informations sur les modèles ci-dessous sont divulguées conformément à la « Licence de Source Synthétique » (SySL) ; le texte complet de la licence se trouve ici : [https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
+
 - **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
 - **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+
+### Confidentialité et télémétrie
+
+WoWSP collecte un minimum de télémétrie d'utilisation (langue de l'interface, pages ouvertes, région au niveau du pays), uniquement pour guider le développement. Aucune donnée personnelle, aucune donnée de replay ni de compte n'est collectée.

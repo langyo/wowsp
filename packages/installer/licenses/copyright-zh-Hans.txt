@@ -1,18 +1,16 @@
-WoWSP — 版权所有 (c) 2026 langyo <langyo.china@gmail.com>
+**本软件完全免费，且开源发布**
 
-本软件包含由人工智能（AI）生成的代码。相关的模型披露见本文档末尾，完整条款见随附的 LICENSE 文件。
-
-本软件依据《合成源码协议》第 1.0 版（下称“本协议”）授权；使用本软件即表示您同意遵守本协议。请在安装或使用前阅读协议全文：
-
-[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
-
-除非法律另有要求或双方另有书面约定，本软件按“现状”提供，不附带任何明示或默示的保证。您可以做什么、不可以做什么，以协议全文为准。
+WoWSP 完全免费、开源，仅通过官方 GitHub Releases（github.com/langyo/wowsp）分发。任何渠道收费出售均与作者无关——请勿付款；如已付费，请尽快申请退款并举报卖家。
 
 ---
 
-### 模型披露（Model disclosure）
+### 模型披露
 
-- **人类作者**：langyo <langyo.china@gmail.com>
-- **主要使用的 AI 模型**：
+以下模型信息基于《合成源码协议》（SySL）的要求披露，协议全文见：[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
+
 - **GLM 5.3 / 5.3 Flash** — 智谱 AI — [zhipu.ai](https://zhipu.ai)
 - **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+
+### 隐私与遥测
+
+WoWSP 会收集极少量使用量遥测（界面语言、打开的页面、国家级地区），仅用于指导开发；绝不收集任何个人数据、回放或账号数据。

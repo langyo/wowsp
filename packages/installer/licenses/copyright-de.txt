@@ -1,18 +1,16 @@
-WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
+**Diese Software ist völlig kostenlos und Open Source**
 
-Diese Software enthält von künstlicher Intelligenz (KI) erzeugten Code. Die verwendeten Modelle sind in „Modelloffenlegung“ am Ende dieses Dokuments aufgeführt; die vollständigen Bedingungen stehen in der beiliegenden LICENSE-Datei.
-
-Die Software steht unter der „Synthetische-Quellcode-Lizenz“ Version 1.0 (im Folgenden „die Lizenz“); wer diese Software nutzt, erklärt sich damit einverstanden, die Lizenz einzuhalten. Bitte vor Installation oder Nutzung vollständig lesen:
-
-[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
-
-Soweit nicht gesetzlich vorgeschrieben oder schriftlich anders vereinbart, wird diese Software „wie besehen“ bereitgestellt, ohne ausdrückliche oder stillschweigende Gewährleistungen jeglicher Art. Was erlaubt ist und was nicht, bestimmt der Lizenztext.
+WoWSP ist kostenlose Open-Source-Software und wird ausschließlich über die offiziellen GitHub Releases (github.com/langyo/wowsp) vertrieben. Wer sie verkauft, ist NICHT der Autor — zahlen Sie nicht; falls schon geschehen, fordern Sie so bald wie möglich eine Rückerstattung und melden Sie den Verkäufer.
 
 ---
 
-### Modelloffenlegung (Model disclosure)
+### Modelloffenlegung
 
-- **Menschlicher Autor**: langyo <langyo.china@gmail.com>
-- **Überwiegend verwendete KI-Modelle**:
+Die unten stehenden Modellinformationen werden offengelegt, wie es die „Synthetische-Quellcode-Lizenz“ (SySL) verlangt; der vollständige Lizenztext steht hier: [https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
+
 - **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
 - **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+
+### Datenschutz und Telemetrie
+
+WoWSP erfasst minimale Nutzungstelemetrie (Oberflächensprache, geöffnete Seiten, Region auf Länderebene), ausschließlich zur Orientierung für die Entwicklung. Persönliche Daten sowie Replay- oder Kontodaten werden niemals erfasst.

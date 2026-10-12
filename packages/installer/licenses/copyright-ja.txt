@@ -1,18 +1,16 @@
-WoWSP — Copyright (c) 2026 langyo <langyo.china@gmail.com>
+**本ソフトウェアは完全に無料で、オープンソースとして公開されています**
 
-本ソフトウェアには、人工知能（AI）が生成したコードが含まれています。使用したモデルは本文書末尾の「モデル開示」を、契約条件の全文は同梱の LICENSE ファイルをご覧ください。
-
-本ソフトウェアは「合成ソースライセンス」バージョン 1.0（以下「本ライセンス」）に基づいて許諾されます。本ソフトウェアを使用することは、本ライセンスに従うことに同意することを意味します。インストールまたは使用の前に、ライセンス全文をお読みください：
-
-[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
-
-法律で義務付けられている場合、または書面で別途合意した場合を除き、本ソフトウェアは「現状のまま」提供され、明示・黙示を問わずいかなる保証も伴いません。許可されること・されないことはライセンス全文によって定められます。
+WoWSP は無料のオープンソースソフトウェアであり、公式の GitHub Releases（github.com/langyo/wowsp）でのみ配布されています。これを販売する者は作者ではありません——支払わないでください。すでに支払った場合は、できるだけ早く返金を申請し、販売者を通報してください。
 
 ---
 
-### モデル開示（Model disclosure）
+### モデル開示
 
-- **人間の作者**：langyo <langyo.china@gmail.com>
-- **主に使用した AI モデル**：
+以下のモデル情報は「合成ソースライセンス」（SySL）の開示要求に基づくものです。ライセンス全文はこちら： [https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
+
 - **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
 - **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+
+### プライバシーとテレメトリー
+
+WoWSP は最小限の使用状況テレメトリー（インターフェースの言語、開いたページ、国レベルの地域）を収集し、開発の指針にのみ利用します。個人データ、リプレイデータ、アカウントデータは一切収集しません。
