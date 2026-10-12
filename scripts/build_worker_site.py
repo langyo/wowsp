@@ -3,12 +3,15 @@
 CANDIDATE CHAIN: every built asset is tried from the GitHub Pages
 mirror first (fast for most visitors) and falls back to THIS worker's
 own /wowsp/** copy (same build, same hashes) when the mirror is
-unreachable — Cloudflare then only ever carries the small HTML shell,
-never the heavy downloads, unless GitHub is down.
+unreachable — the worker always CARRIES the full copy but normally
+SERVES only the small HTML shell, the public files and the docs;
+the heavy app bundle leaves Cloudflare only when GitHub is down.
 
-Usage: python scripts/build_worker_site.py <dist/website-dir> <out-dir>
+Usage: python scripts/build_worker_site.py <site-dir> <out-dir>
 The build itself must use WOWSP_SITE_BASE=/wowsp/ so both origins
-serve identical file paths. Out layout:
+serve identical file paths. CI (the Deploy Site workflow) passes the
+MERGED artifact (docs + website, `_site`); `just bundle-site` passes
+`dist/website` (website-only local bundle). Out layout:
   <out>/wowsp/**      the full build (fallback candidate base)
   <out>/*(public)     root-level public files (worker-root mode)
   <out>/index.html    the built index.html with the loader injected
@@ -114,9 +117,10 @@ def main() -> int:
     shutil.copytree(src_dir, out_dir, dirs_exist_ok=True)
     shutil.rmtree(out_dir / "assets", ignore_errors=True)
     (out_dir / "404.html").unlink(missing_ok=True)
-    # _headers is honored ONLY at the assets root (see the [assets]
-    # comment in packages/pairing-relay/wrangler.toml); the nested
-    # wowsp/ copy would ship as a stray static file — drop it.
+    # _headers is honored ONLY at the assets root (tracked source:
+    # packages/website/src/res/_headers — the website build's publicDir
+    # carries it into the site dir); the nested wowsp/ copy would ship
+    # as a stray static file — drop it.
     (out_dir / "wowsp" / "_headers").unlink(missing_ok=True)
     # The JS swapped only the FIRST </body> (regex without /g) — keep that.
     (out_dir / "index.html").write_text(

@@ -1,9 +1,9 @@
 //! Internet pairing gateway (v2): a Cloudflare Worker rendezvous
 //! (`packages/pairing-relay`, deployed by the owner at
 //! `wowsp.langyo.xyz`, where the worker takes the API and its two pages
-//! — the website itself is served by GitHub Pages) lets the phone pair
-//! from OUTSIDE the desktop's LAN by tunneling the exact same pairing
-//! HTTP protocol the LAN server speaks.
+//! and hosts the static site through its assets layer) lets the phone
+//! pair from OUTSIDE the desktop's LAN by tunneling the exact same
+//! pairing HTTP protocol the LAN server speaks.
 //! The gateway is a HIDDEN built-in service — nothing is user-configured;
 //! development points it elsewhere via the undocumented `WOWSP_RELAY_URL`
 //! environment variable.
@@ -109,8 +109,8 @@ use super::pairing::{self, GAMEDATA_SENTINEL, emit_progress, http_error};
 
 /// The built-in internet-pairing gateway ROOT, in its https spelling — the
 /// merged health document is fetched from `<root>/api/health` and the
-/// WebSocket base is derived from it. The hostname's website is served by
-/// GitHub Pages, with the worker attached via Workers routes (see
+/// WebSocket base is derived from it. The hostname's site is served by
+/// the same worker's static-assets layer (see
 /// packages/pairing-relay/README.md ▶ Site hosting model); the webui keeps
 /// the same host in its `wss://` spelling (`stores/pairing.ts`
 /// PAIRING_GATEWAY_WS) — both normalize to this root.

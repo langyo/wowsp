@@ -4,10 +4,9 @@
 //! Structure:
 //! - [`relay_core`] carries every protocol/policy decision (pure, host
 //!   testable — `cargo test -p relay-core`).
-//! - this crate is routing + WebSocket glue only. The website's static
-//!   assets live on the GitHub Pages site; the wrangler `routes` array
-//!   sends only the paths listed below into this code (see
-//!   `wrangler.toml`):
+//! - this crate is routing + WebSocket glue only. The static site rides
+//!   the worker's `[assets]` layer; `run_worker_first` in
+//!   `wrangler.toml` sends only the paths listed below into this code:
 //!   - `GET /api/health` — the merged liveness + discovery document
 //!     (server version + minimum client version + relay endpoints;
 //!     forwarding-station switch via the `GATEWAY_UPSTREAM` var,

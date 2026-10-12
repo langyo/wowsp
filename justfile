@@ -206,17 +206,20 @@ check-relay: feedback-theme
     cd packages/pairing-relay && cargo test -p relay-core
     cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
 
-# LEGACY (pre-#529): bundles the website into packages/pairing-relay/assets
-# for the worker's former [assets] layer. The worker no longer serves the
-# site — GitHub Pages does, built by the Deploy Site workflow — so this
-# recipe is not part of any deploy anymore.
+# Bundles the WEBSITE-ONLY site into packages/pairing-relay/assets —
+# the worker's [assets] layer (worker-primary hosting; see
+# packages/pairing-relay/README.md ▶ Site hosting model). The full
+# deploy bundle is built by the Deploy Site workflow from the merged
+# docs+website artifact; this is the quick local path for `wrangler
+# dev` or a site-only manual `wrangler deploy`.
 bundle-site:
     #!/bin/sh
     set -e
-    # Legacy two-origin layout (see the header): Pages at /wowsp/ (first
-    # resource candidate) and the worker's nested copy at /wowsp/** (fallback).
-    # MSYS2_ENV_CONV_EXCL: Git Bash would otherwise rewrite the /wowsp/
-    # env value into a Windows path on its way to node.
+    # Two-origin layout (see the script's docstring): Pages at /wowsp/
+    # (first resource candidate) and the worker's nested copy at
+    # /wowsp/** (fallback). MSYS2_ENV_CONV_EXCL: Git Bash would
+    # otherwise rewrite the /wowsp/ env value into a Windows path on
+    # its way to node.
     MSYS2_ENV_CONV_EXCL="WOWSP_SITE_BASE" WOWSP_SITE_BASE=/wowsp/ pnpm --filter @wowsp/website build
     python scripts/build_worker_site.py dist/website packages/pairing-relay/assets
 # ── android ───────────────────────────────────────────────────────────

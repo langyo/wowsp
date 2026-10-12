@@ -75,10 +75,12 @@ export default defineConfig({
     },
   },
   publicDir: resolve(pkgDir, "src/res"),
-  // The deploy workflow sets WOWSP_SITE_BASE for GitHub Pages project-site
-  // serving (`/wowsp/`); the custom domain wowsp.langyo.xyz serves from the
-  // root and should use `/` (the default). vue-router reads the same base
-  // via import.meta.env.BASE_URL.
+  // The deploy workflow sets WOWSP_SITE_BASE=/wowsp/ for BOTH hosts:
+  // GitHub Pages serves the project URL at /wowsp/, and the worker
+  // serves the shell at / referencing its own /wowsp/** copy (same
+  // build, same hashes — see scripts/build_worker_site.py). The default
+  // `/` is local dev only. vue-router reads the same base via
+  // import.meta.env.BASE_URL.
   base: process.env.WOWSP_SITE_BASE || "/",
   server: {
     port: 5174,
@@ -92,14 +94,16 @@ export default defineConfig({
 
 // WOWSP_SITE_ASSET_BASE (absolute URL, e.g. the GitHub Pages mirror
 // langyo.github.io/wowsp) rewrites every STATIC FILE reference in the
-// built HTML (entry JS/CSS, favicon, manifest, …) to that origin: the
-// worker at wowsp.langyo.xyz then serves only the HTML shell + /api
-// while the heavy downloads come from GitHub. Chunk-to-chunk imports are
-// relative to the entry URL and follow automatically; navigation links
-// (no file extension) stay on the worker so routing keeps working.
-// Runs in closeBundle so it sees the FINAL html — after Vite injects the
-// entry tags. (Vite 8/rolldown ignores experimental.renderBuiltUrl,
-// hence the manual rewrite.)
+// built HTML (entry JS/CSS, favicon, manifest, …) to that origin.
+// NOT used by current deploys — the runtime candidate-chain loader
+// injected by scripts/build_worker_site.py supersedes this build-time
+// rewrite — but the knob stays for a future absolute-asset-origin
+// build. Chunk-to-chunk imports are relative to the entry URL and
+// follow automatically; navigation links (no file extension) stay on
+// the worker so routing keeps working. Runs in closeBundle so it sees
+// the FINAL html — after Vite injects the entry tags. (Vite
+// 8/rolldown ignores experimental.renderBuiltUrl, hence the manual
+// rewrite.)
 function htmlAssetBase(): Plugin {
   const origin = process.env.WOWSP_SITE_ASSET_BASE;
   return {

@@ -2,8 +2,9 @@
 //! worker answers a fixed list of paths and nothing else: the API under
 //! `/api` (no version segment — the health document carries the version
 //! instead) plus the two server-rendered pages `/feedback` and `/erp`.
-//! The wrangler `routes` array sends exactly these paths here; the rest
-//! of the hostname belongs to the GitHub Pages site.
+//! The `run_worker_first` list in `wrangler.toml` sends exactly these
+//! paths here; the rest of the hostname is served by the worker's
+//! static-assets layer.
 //!
 //!   GET  /api/health                     — merged health + discovery doc
 //!   WS   /api/relay/control?room=<64hex>&role=host|client
@@ -56,9 +57,11 @@ pub enum Route<'a> {
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
     FeedbackAttachment { file_token: Option<&'a str> },
-    /// Nothing we serve — the GitHub Pages site owns every path outside
-    /// the wrangler `routes`, so in production this only happens on
-    /// unknown `/api/*` shapes.
+    /// Nothing we serve — the static-assets layer answers every path
+    /// outside `run_worker_first`, so in production this only happens on
+    /// unknown shapes under `/api*`, `/feedback*` and `/erp*`, plus
+    /// non-navigation requests for files the assets layer does not have
+    /// (missing chunks get this clean 404, not the SPA shell).
     NotFound,
 }
 
@@ -67,7 +70,7 @@ pub enum Route<'a> {
 fn trim_path(path: &str) -> &str {
     let p = path.trim_end_matches('/');
     // Keep "/" as-is (it is NotFound either way — the site's index.html
-    // is served by GitHub Pages, never the worker).
+    // comes from the static-assets layer, never this code).
     if p.is_empty() { "/" } else { p }
 }
 

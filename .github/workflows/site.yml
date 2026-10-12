@@ -1,26 +1,30 @@
 name: Deploy Site
 
-# Site artifact for GitHub Pages — the site host for wowsp.langyo.xyz,
-# with the pairing worker taking only /api*, /feedback and /erp through
-# its Cloudflare `routes` entry (see packages/pairing-relay/README.md ▶
-# Site hosting model).
+# WoWSP's site artifact — ONE build, TWO hosts (see
+# packages/pairing-relay/README.md ▶ Site hosting model):
 #
-# TRANSITIONAL: the artifact is still built for the Pages PROJECT URL
-# (https://langyo.github.io/wowsp/ — base `/wowsp/`, CNAME stripped). Do
-# NOT bind the wowsp.langyo.xyz custom domain before the flip below, and
-# never via the worker (a Workers Custom Domain captures the whole
-# hostname and hides this site).
+#   PRIMARY  the wowsp-pairing Cloudflare Worker: the hostname that
+#            serves /api*, /feedback and /erp also serves the static
+#            site through Workers static assets ([assets] in
+#            packages/pairing-relay/wrangler.toml). The deploy-worker
+#            job ships it (`wrangler deploy` — site assets + wasm
+#            together).
+#   BACKUP   GitHub Pages at https://langyo.github.io/wowsp/ — kept
+#            deployed from the SAME artifact. The worker shell's
+#            resource candidate chain pulls the heavy entry JS/CSS from
+#            this mirror first and falls back to the worker's own
+#            /wowsp/** copy, so the two artifacts must come from one
+#            build (identical hashes) — which is why both deploys live
+#            in this workflow.
 #
-# Flip checklist (binding the custom domain):
-#   1. drop WOWSP_SITE_BASE below (base `/`) and point lagrange's
-#      --site-url at https://wowsp.langyo.xyz/docs (update the adjacent
-#      comments too);
-#   2. set the custom domain in the repo's Pages settings (Settings ▶
-#      Pages ▶ Custom domain) — a CNAME file does nothing for
-#      Actions-based Pages, which is why this workflow only strips it;
-#   3. in the Cloudflare dashboard, remove the wowsp.langyo.xyz Workers
-#      Custom Domain that captures the whole hostname today, and keep
-#      the DNS as the proxied CNAME to langyo.github.io.
+# Both hosts use base /wowsp/ (WOWSP_SITE_BASE below): identical file
+# paths on both origins, and the worker serves the shell at / plus the
+# full copy under /wowsp/**.
+#
+# deploy-worker is OPT-IN: it stays skipped until the repo has the
+# CLOUDFLARE_API_TOKEN secret and the DEPLOY_CF_WORKER=true variable
+# (setup in packages/pairing-relay/README.md ▶ Deploy); until then the
+# owner's manual `wrangler deploy` keeps the worker current.
 
 on:
   push:
@@ -31,6 +35,10 @@ on:
       # The website consumes @wowsp/holo — a holo-only change must
       # redeploy the site.
       - 'packages/holo/**'
+      # The worker hosts the site now — worker-side changes (routes,
+      # assets config, relay code) redeploy it too.
+      - 'packages/pairing-relay/**'
+      - 'scripts/build_worker_site.py'
       - '.github/workflows/site.yml'
   workflow_dispatch:
 
@@ -39,9 +47,10 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy per ref, never cancelled mid-flight: cancelling an in-progress
-# Pages deploy loses it (GitHub's guidance is to let it finish; the next
-# push simply queues behind this group).
+# One deploy per target, never cancelled mid-flight: cancelling an
+# in-progress Pages deploy loses it (GitHub's guidance is to let it
+# finish; the next push simply queues behind this group), and a
+# half-uploaded worker deploy would briefly serve mismatched assets.
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -66,7 +75,10 @@ jobs:
       - name: Build docs (lagrange)
         run: |
           cargo install lagrange-library --locked || cargo install --git https://github.com/celestia-island/lagrange --branch dev lagrange-library
-          lagrange build --src docs --out _site/docs --site-url https://langyo.github.io/wowsp/docs
+          # Canonical URLs follow the PRIMARY host (the worker); the
+          # Pages backup deliberately carries the worker-host canonicals
+          # so the two origins never compete for SEO.
+          lagrange build --src docs --out _site/docs --site-url https://wowsp.langyo.xyz/docs
           # lagrange drops language-directory static assets, so the
           # per-language screenshot folders are copied in by hand (the
           # language dirs themselves don't exist in its output either —
@@ -89,25 +101,34 @@ jobs:
 
       - name: Build website
         env:
-          # Pages serves this artifact as a PROJECT site at
-          # /wowsp/ — the base must match or every route 404s.
+          # BOTH hosts serve this artifact under /wowsp/ paths: Pages as
+          # a project site, the worker as its nested /wowsp/** copy (the
+          # root shell the worker serves at / references into it — see
+          # scripts/build_worker_site.py). The base must match or every
+          # route 404s.
           WOWSP_SITE_BASE: /wowsp/
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @wowsp/website build
           cp -r dist/website/. _site/
 
-      # Transitional guard: while the artifact targets the project URL, a
-      # CNAME (or the Pages custom-domain setting) flips langyo.github.io/
-      # wowsp into a redirect and breaks the /wowsp/ asset paths. See the
-      # flip checklist in the banner comment.
-      - name: No CNAME (project-URL artifact — see the banner)
+      # Transitional guard: a CNAME in the artifact would flip
+      # langyo.github.io/wowsp into a redirect and break the /wowsp/
+      # asset paths the worker shell depends on.
+      - name: No CNAME (project-URL artifact)
         run: rm -f _site/CNAME
 
-      # SPA fallback: GitHub Pages serves 404.html for unknown paths, and the
-      # website router (createWebHistory) renders the right route from it.
+      # SPA fallback: GitHub Pages serves 404.html for unknown paths, and
+      # the website router (createWebHistory) renders the right route from it.
       - name: SPA fallback (404.html)
         run: cp _site/index.html _site/404.html
+
+      - name: Bundle the worker site copy
+        # packages/pairing-relay/assets — the worker's [assets] layer:
+        # the full build nested at /wowsp/** (the loader's fallback
+        # origin), the public files + the loader-injected shell at the
+        # root. See the script's docstring.
+        run: python scripts/build_worker_site.py _site packages/pairing-relay/assets
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
@@ -117,8 +138,16 @@ jobs:
         with:
           path: _site
 
+      - name: Upload worker-site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-site
+          path: packages/pairing-relay/assets
+          retention-days: 7
+          if-no-files-found: error
+
   deploy:
-    name: Deploy
+    name: Deploy to GitHub Pages (backup)
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -129,3 +158,59 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+  deploy-worker:
+    name: Deploy to Cloudflare (primary)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Opt-in (see the banner): skipped until the repo carries the
+    # CLOUDFLARE_API_TOKEN secret + DEPLOY_CF_WORKER=true variable.
+    # github.ref guard: workflow_dispatch from a branch must never ship
+    # that branch's worker to production.
+    if: vars.DEPLOY_CF_WORKER == 'true' && github.ref == 'refs/heads/master'
+    concurrency:
+      group: "deploy-worker"
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # The worker is Rust→wasm: the [build] command in wrangler.toml
+      # (worker-build) runs as part of `wrangler deploy`, so the toolchain
+      # must be on the runner (mirrors the ci.yml relay job).
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Install worker-build
+        run: cargo install worker-build
+
+      - uses: pnpm/action-setup@v6
+        # Version comes from the "packageManager" field in package.json.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deps
+        # wrangler for the deploy + the webui's sass for the feedback
+        # theme exporter below.
+        run: pnpm install --frozen-lockfile
+
+      - name: Export feedback theme
+        # relay-core embeds the /feedback token sheet via include_str! —
+        # a gitignored artifact the wasm build needs on disk first.
+        run: python scripts/export_feedback_theme.py
+
+      - name: Fetch the site bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: worker-site
+          path: packages/pairing-relay/assets
+
+      - name: Deploy worker (site assets + API)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 22a3fe6f5cc50a9fd661e091ce65422b
+        working-directory: packages/pairing-relay
+        run: npx wrangler deploy

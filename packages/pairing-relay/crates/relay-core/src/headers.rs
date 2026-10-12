@@ -13,8 +13,9 @@
 //! - `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`
 //!   go on **every** worker response, `/api` included.
 //! - The static site shell (`/` and every SPA path) never reaches this
-//!   code — it is served by GitHub Pages. The same matrix is mirrored in
-//!   the shell's `_headers` copy (packages/website/src/res/_headers) and
+//!   code — it is served by the worker's static-assets layer. The same
+//!   matrix is mirrored in the shell's `_headers` copy
+//!   (packages/website/src/res/_headers) and
 //!   a unit test below diffs the two, so the CSP below stays the single
 //!   source of truth.
 //!
@@ -43,7 +44,7 @@
 ///   and the shell's fallback loader are inline by design today.
 pub const CSP_HTML: &str = "default-src 'self'; \
 script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'; \
-style-src 'self' 'unsafe-inline'; \
+style-src 'self' https://langyo.github.io 'unsafe-inline'; \
 img-src 'self' data: https://langyo.github.io; \
 connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com; \
 frame-src https://challenges.cloudflare.com; \
@@ -147,7 +148,7 @@ mod tests {
         for directive in [
             "default-src 'self'",
             "script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
+            "style-src 'self' https://langyo.github.io 'unsafe-inline'",
             "img-src 'self' data: https://langyo.github.io",
             "connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com",
             "frame-src https://challenges.cloudflare.com",
@@ -216,7 +217,8 @@ mod tests {
     /// The static shell's `_headers` file (packages/website/src/res —
     /// the website build's publicDir) must carry the SAME CSP as
     /// [`CSP_HTML`] — one matrix for both surfaces (the static shell is
-    /// served by GitHub Pages and never reaches this crate at runtime).
+    /// served by the assets layer and never reaches this crate at
+    /// runtime).
     /// This test fails loudly on drift between the two.
     #[test]
     fn static_shell_headers_file_matches_the_worker_csp() {
