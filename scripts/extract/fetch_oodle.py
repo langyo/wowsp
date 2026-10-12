@@ -183,8 +183,17 @@ def main() -> int:
         "--no-build", action="store_true",
         help="report/locate only — never clone or build",
     )
+    ap.add_argument(
+        "--build", action="store_true",
+        help="always clone + build + install into target/release/, even when a "
+        "decoder is already discoverable (e.g. replacing a broken build — the "
+        "crates.io 0.5.5 unoodle exits 0 without output on the 26.x streams)",
+    )
     args = ap.parse_args()
-    path, mode = ensure_decoder(args.ooz, auto_build=not args.no_build)
+    if args.build:
+        path, mode = build_decoder()
+    else:
+        path, mode = ensure_decoder(args.ooz, auto_build=not args.no_build)
     print(f"[oodle-fetch] {mode}: {path}")
     return 0
 

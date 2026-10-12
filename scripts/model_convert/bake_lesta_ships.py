@@ -476,7 +476,9 @@ def main() -> int:
             capture_output=True, text=True,
         )
         if rc.returncode != 0:
-            print(f"[bake-lesta] extract failed for {idx}: {rc.stderr[-200:]}", flush=True)
+            # lesta_extract reports per-file failures on stdout.
+            print(f"[bake-lesta] extract failed for {idx}: "
+                  f"{(rc.stderr or rc.stdout or '')[-300:]}", flush=True)
             failed += 1
             continue
         parts: list[tuple[str, Path]] = []

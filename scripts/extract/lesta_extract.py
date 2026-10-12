@@ -175,6 +175,15 @@ class OozDecoder:
             raise RuntimeError(
                 f"{self.mode} chunk failed: " + r.stderr.decode("utf-8", "replace")[:120]
             )
+        if not Path(dst).is_file():
+            # A decoder that exits 0 without writing is worse than one that
+            # errors — the crates.io 0.5.5 unoodle does exactly this on the
+            # 26.x streams. Name it so the victim can swap binaries.
+            raise RuntimeError(
+                f"{self.mode} wrote no output (decoder {self.exe} is not a "
+                "working build — reinstall a verified one with "
+                "`python scripts/extract/fetch_oodle.py --build` or pass --ooz)"
+            )
         return Path(dst).read_bytes()
 
     def decompress(self, raw: bytes) -> bytes:
