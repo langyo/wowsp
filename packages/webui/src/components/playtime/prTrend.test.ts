@@ -5,10 +5,12 @@ import type { ExpectedPrEntry, ShipStatsHistoryPoint } from "@/api";
 import {
   expectedPrFromTotals,
   expectedPrMap,
+  filterIntervalsByRange,
   prOfInterval,
   prTrendIntervals,
   prTrendLayout,
   prTrendShipCatalog,
+  prTrendTierMatches,
 } from "./prTrend";
 
 function point(
@@ -184,8 +186,59 @@ describe("prTrendShipCatalog", () => {
     expect(catalog.map((s) => s.shipId)).toEqual([1, 2]);
     expect(catalog[0].battles).toBe(10);
     expect(catalog[1].battles).toBe(8);
+    // Aggregate row stats for the popup: ship 2 spans both intervals
+    // (5+3 battles, 2+2 wins, 50k+40k damage — deltas, not totals).
+    expect(catalog[1].wins).toBe(4);
+    expect(catalog[1].damage).toBe(90_000);
     expect(catalog[0].type).toBeTruthy();
     expect(Number.isInteger(catalog[0].tier) || catalog[0].tier === null).toBe(true);
+  });
+});
+
+describe("filterIntervalsByRange", () => {
+  const DAY = 86_400;
+  // now = day 30; points at days 1, 10, 26, 29.
+  const NOW = 30 * DAY;
+  function mk(ts: number[]) {
+    return prTrendIntervals(ts.map((t) => point(t, [[1, 1, 1, 1000, 1]])));
+  }
+
+  it("all is the identity", () => {
+    const ivs = mk([DAY, 10 * DAY, 29 * DAY]);
+    expect(filterIntervalsByRange(ivs, { key: "all" }, NOW)).toBe(ivs);
+  });
+
+  it("presets keep intervals observed within N days of now (boundary inclusive)", () => {
+    const ivs = mk([DAY, 10 * DAY, 26 * DAY, 29 * DAY]);
+    expect(filterIntervalsByRange(ivs, { key: "7d" }, NOW).map((i) => i.t)).toEqual([
+      26 * DAY,
+      29 * DAY,
+    ]);
+    // t == exactly now − 7d sits on the inclusive boundary.
+    const edge = mk([23 * DAY, 10 * DAY]);
+    expect(filterIntervalsByRange(edge, { key: "7d" }, NOW).map((i) => i.t)).toEqual([23 * DAY]);
+    expect(filterIntervalsByRange(ivs, { key: "30d" }, NOW)).toHaveLength(4);
+  });
+
+  it("custom keeps the inclusive window and returns empty while incomplete", () => {
+    const ivs = mk([DAY, 10 * DAY, 26 * DAY]);
+    const w = { key: "custom" as const, fromSec: 9 * DAY, toSec: 26 * DAY };
+    expect(filterIntervalsByRange(ivs, w, NOW).map((i) => i.t)).toEqual([10 * DAY, 26 * DAY]);
+    // Both bounds required — an unfinished pick answers an empty series
+    // rather than an unfiltered one.
+    expect(filterIntervalsByRange(ivs, { key: "custom", fromSec: 9 * DAY, toSec: null }, NOW)).toEqual([]);
+  });
+});
+
+describe("prTrendTierMatches", () => {
+  it("mirrors the water-meter brackets; unknown tiers match nothing", () => {
+    expect(prTrendTierMatches(3, "I-V")).toBe(true);
+    expect(prTrendTierMatches(7, "VI-VII")).toBe(true);
+    expect(prTrendTierMatches(9, "VIII-IX")).toBe(true);
+    expect(prTrendTierMatches(10, "X-star")).toBe(true);
+    expect(prTrendTierMatches(11, "X-star")).toBe(true);
+    expect(prTrendTierMatches(6, "I-V")).toBe(false);
+    expect(prTrendTierMatches(null, "I-V")).toBe(false);
   });
 });
 

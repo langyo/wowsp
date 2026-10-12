@@ -1,8 +1,10 @@
 /* PR trend section — the wrapper reuses the play-section classes from
-   PlaytimeView.scss (imported by the view); only the head's wrapping lives
-   here: the title and the filter-chip cluster + battles total share one
-   row while it fits and stack (chips wrapping among themselves) on a
-   narrow column, mirroring how the heatmap section's year tabs behave. */
+   PlaytimeView.scss (imported by the view) and the popup reuses the
+   water-meter bar's flat classes from ShipFilterBar.scss (imported by the
+   component — same lazy-chunk rationale as FilterCategoryChip's). Only the
+   rework-specific pieces live here: the controls row's wrapping, the
+   custom-range popover, and the ship popup's pinned-groups / scrolling-
+   list / pinned-select-all layout. */
 .pr-trend-section {
   .play-section__head {
     flex-wrap: wrap;
@@ -13,4 +15,140 @@
     justify-content: flex-end;
     margin-inline-start: auto;
   }
+}
+
+/* ── Custom-range popover (the LookupView range-pop's twin) ───────────── */
+.pr-trend-rangepop {
+  padding: 10px 12px 8px;
+}
+
+/* Anchored (non-sheet) panel: a fixed width so the two pickers keep their
+   fields; the phone sheet sizes itself full-width and is excluded. */
+.hk-popover-panel:not(.hk-is-sheet) .pr-trend-rangepop {
+  width: 280px;
+}
+
+.pr-trend-rangepop__head {
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.hk-popover-panel.hk-is-sheet .pr-trend-rangepop__head {
+  display: none;
+}
+
+.pr-trend-rangepop__dates {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .hk-dp {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.pr-trend-rangepop__hint {
+  margin-top: 8px;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted) / 90%);
+}
+
+/* ── The ship popup: flex column — head, two button groups, column captions
+   and select-all stay pinned while only the list scrolls. ─────────────── */
+.pr-trend-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hk-popover-panel:not(.hk-is-sheet) .pr-trend-pop {
+  width: 460px;
+}
+
+.pr-trend-pop__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Column captions aligned to the row grid — five tracks: checkbox, name
+   (takes the slack), then the three fixed-width numeric columns. The
+   caption row leads with an empty cell to stay aligned. */
+.pr-trend-pop__cols,
+.pr-trend-pop__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 52px 56px 72px;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.pr-trend-pop__cols {
+  padding: 0 10px 2px;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted) / 90%);
+
+  span:not(:first-child) {
+    text-align: right;
+  }
+}
+
+.pr-trend-pop__list {
+  max-height: 264px;
+  min-height: 64px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-block: 1px solid rgb(var(--color-text) / 8%);
+  padding: 2px 0;
+}
+
+.pr-trend-pop__row {
+  padding: 3px 10px;
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(var(--color-text) / 5%);
+  }
+
+  .pr-trend-pop__name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: var(--text-xs);
+  }
+
+  .pr-trend-pop__num {
+    text-align: right;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-text) / 75%);
+  }
+}
+
+.pr-trend-pop__empty {
+  margin: 0;
+  padding: 12px 10px;
+  font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+}
+
+.pr-trend-pop__all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 0;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The phone sheet relaxes the fixed width and lets the list grow with the
+   sheet (the sheet chrome caps the panel itself). */
+.hk-popover-panel.hk-is-sheet .pr-trend-pop {
+  width: auto;
+}
+
+.hk-popover-panel.hk-is-sheet .pr-trend-pop__list {
+  max-height: 40vh;
 }

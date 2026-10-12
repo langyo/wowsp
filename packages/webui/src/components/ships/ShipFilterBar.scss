@@ -198,12 +198,31 @@
    directly instead of the sliding pill. */
 .ship-filter-bar__opts {
   display: inline-flex;
+  /* Wrap instead of overflow: with the type silhouettes the EN type row
+     rides the panel's 640px cap, and a capped inline-flex would let the
+     last option poke past the border. The pannable strips override back
+     to nowrap (--scroll). */
+  flex-wrap: wrap;
   gap: 0;
   padding: 2px;
   border-radius: var(--radius-sm);
   border: 1px solid rgb(var(--color-border) / 25%);
   background: rgb(var(--color-surface) / 60%);
   background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
+}
+
+/* The white battle-HUD ship-type silhouette preceding a type option's
+   label (the PR trend popup's type row shares the class): the white art is
+   the ally set's leftward facing, flipped to the enemy row's rightward —
+   the game's own minimap convention. A replaced element like the nation
+   flags: flex-shrink stays off via the option's rule, so give it a fixed
+   box. */
+.ship-filter-bar__type-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  object-fit: contain;
+  transform: scaleX(-1);
 }
 
 .ship-filter-bar__opt {

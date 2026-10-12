@@ -196,37 +196,102 @@ export function prOfInterval(
   return { t: interval.t, pr, battles, winrate: battles > 0 ? (aWins / battles) * 100 : 0 };
 }
 
+// ── Time-range window ─────────────────────────────────────────────────────
+
+/** The chart's time-range presets (the segmented tabs). */
+export type PrTrendRangeKey = "7d" | "30d" | "90d" | "all" | "custom";
+
+const DAY_SECONDS = 86_400;
+
+/** Keep the intervals whose observation time (`t`, the LATER point of each
+ *  pair) falls inside the window: presets cut N days back from `nowSec`;
+ *  `custom` keeps the inclusive `[fromSec, toSec]` local-day window (the
+ *  shape `isoDayWindowSec` returns); `all` is the identity. Intervals are
+ *  timestamp-sorted already, but the filter stays a plain scan — the
+ *  boundary inclusivity is the contract the tests pin. */
+export function filterIntervalsByRange(
+  intervals: PrTrendInterval[],
+  range: {
+    key: PrTrendRangeKey;
+    fromSec?: number | null;
+    toSec?: number | null;
+  },
+  nowSec: number,
+): PrTrendInterval[] {
+  if (range.key === "all") return intervals;
+  let fromSec: number;
+  let toSec = Number.POSITIVE_INFINITY;
+  if (range.key === "custom") {
+    if (range.fromSec == null || range.toSec == null) return [];
+    fromSec = range.fromSec;
+    toSec = range.toSec;
+  } else {
+    const days = range.key === "7d" ? 7 : range.key === "30d" ? 30 : 90;
+    fromSec = nowSec - days * DAY_SECONDS;
+  }
+  return intervals.filter((iv) => iv.t >= fromSec && iv.t <= toSec);
+}
+
 // ── Filter catalog ────────────────────────────────────────────────────────
 
-/** One ship offered by the chart's filters. */
+/** One ship offered by the chart's filters, aggregated over the selected
+ *  range: the popup row shows the battles / winrate / average damage these
+ *  deltas carry. */
 export interface PrTrendShip {
   shipId: number;
-  /** Total delta battles over the history window (the chip's sort key). */
+  /** Total delta battles over the history window (the row's sort key). */
   battles: number;
+  wins: number;
+  damage: number;
   /** Resolved type key ("Battleship" / … / "unknown"). */
   type: string;
   tier: number | null;
 }
 
-/** The ships worth offering in the chart's filter chips: every ship with
+/** The ships worth offering in the chart's filter list: every ship with
  *  battles in at least one interval, most-played first (ties by ship id,
- *  keeping the option order stable as selections toggle). */
+ *  keeping the row order stable as selections toggle). */
 export function prTrendShipCatalog(intervals: PrTrendInterval[]): PrTrendShip[] {
-  const battles = new Map<number, number>();
+  const agg = new Map<number, { battles: number; wins: number; damage: number }>();
   for (const iv of intervals) {
     for (const d of iv.deltas) {
-      battles.set(d.shipId, (battles.get(d.shipId) ?? 0) + d.battles);
+      const a = agg.get(d.shipId) ?? { battles: 0, wins: 0, damage: 0 };
+      a.battles += d.battles;
+      a.wins += d.wins;
+      a.damage += d.damage;
+      agg.set(d.shipId, a);
     }
   }
-  return [...battles.entries()]
-    .filter(([, n]) => n > 0)
-    .map(([shipId, n]) => ({
+  return [...agg.entries()]
+    .filter(([, a]) => a.battles > 0)
+    .map(([shipId, a]) => ({
       shipId,
-      battles: n,
+      battles: a.battles,
+      wins: a.wins,
+      damage: a.damage,
       type: prTrendShipType(shipId),
       tier: prTrendShipTier(shipId),
     }))
     .sort((a, b) => b.battles - a.battles || a.shipId - b.shipId);
+}
+
+/** The tier brackets the ship popup's second button group offers — the
+ *  water-meter bar's own grouping (ShipFilterBar's TIER_FILTERS), kept in
+ *  lockstep so both popups read the same. Ships outside every bracket
+ *  (tier unknown / ★-less curios) never match a concrete pick. */
+export const PR_TREND_TIER_BRACKETS: { key: string; label: string; tiers: number[] }[] = [
+  { key: "I-V", label: "I – V", tiers: [1, 2, 3, 4, 5] },
+  { key: "VI-VII", label: "VI – VII", tiers: [6, 7] },
+  { key: "VIII-IX", label: "VIII – IX", tiers: [8, 9] },
+  { key: "X-star", label: "X – ★", tiers: [10, 11] },
+];
+
+/** Whether a ship's tier falls in the bracket (null tiers match nothing —
+ *  the same face an unclassifiable ship had before brackets existed). */
+export function prTrendTierMatches(tier: number | null, bracketKey: string): boolean {
+  if (tier == null) return false;
+  const b = PR_TREND_TIER_BRACKETS.find((x) => x.key === bracketKey);
+  return b != null && b.tiers.includes(tier);
 }
 
 // ── Chart geometry ────────────────────────────────────────────────────────

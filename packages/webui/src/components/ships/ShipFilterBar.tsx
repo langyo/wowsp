@@ -54,6 +54,7 @@ import { HkPopover, HkSearchInput, useBreakpoint } from "@celestia-island/hikari
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry, nationNameFromDb } from "@/features/holographic/modelLoader";
+import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { canonicalNation } from "@/utils/nationFlags";
 import NationFlag from "@/components/base/NationFlag";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -804,6 +805,18 @@ export default defineComponent({
                           >
                             {key === "nation" && !isAll ? (
                               <NationFlag nation={o.value} label={o.label} variant="flag" size="sm" />
+                            ) : null}
+                            {/* Type options lead with the game's white
+                                battle-HUD silhouette (flipped to the
+                                enemy row's rightward facing — the same
+                                icon the PR trend popup's type row uses). */}
+                            {key === "type" && !isAll ? (
+                              <img
+                                class="ship-filter-bar__type-icon"
+                                src={shipIconUrl(o.value, "white") ?? undefined}
+                                alt=""
+                                draggable={false}
+                              />
                             ) : null}
                             <span>{o.label}</span>
                             {(isAll ? cur.allSort : on && !isPureCat(key)) ? dirIcon(cur.dir) : null}
