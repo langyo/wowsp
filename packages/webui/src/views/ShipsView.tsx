@@ -8,6 +8,7 @@ import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
 import TechTreeView from "@/components/ships/TechTreeView";
 import ShipCompareView from "@/components/ships/ShipCompareView";
+import { nationNodes } from "@/utils/techTreeData";
 import { resolveShipImage } from "@/utils/shipImages";
 import { recordShipImageFailure, shouldShowImageBanner } from "@/utils/shipImageFailures";
 import { useAccountStore } from "@/stores/account";
@@ -156,6 +157,22 @@ export default defineComponent({
         selectedTiers.value.size > 0 ||
         selectedRarities.value.size > 0,
     );
+
+    /** Nations the current realm's tree actually carries lines for — the
+     *  tree rail must not offer a nation whose whole branch set belongs to
+     *  the other client (the Commonwealth lines are WG-only, so Lesta mode
+     *  shows no tree there at all). The grid's nation filter chips keep the
+     *  full list: premium strays of either client stay listed there. */
+    const treeNations = computed(() =>
+      encyclopedia.nations.filter((n) => nationNodes(n, shipsUi.treeRealm).length > 0),
+    );
+
+    // A realm switch can retire the selected nation from the rail (selecting
+    // the Commonwealth, then flipping to Lesta) — fall back to the first
+    // nation the new realm grows instead of rendering its empty-tree state.
+    watch(treeNations, (list) => {
+      if (list.length > 0 && !list.includes(treeNation.value)) treeNation.value = list[0];
+    });
 
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
@@ -452,7 +469,7 @@ export default defineComponent({
             <div class="ships-view__tree-body" key="tree">
               {/* nation rail — vertical list of faction crests */}
               <aside class="ships-view__nation-rail">
-                {encyclopedia.nations.map((n) => (
+                {treeNations.value.map((n) => (
                   <button
                     class={[
                       "ships-view__nation-btn",

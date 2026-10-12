@@ -195,14 +195,22 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   /** Localize + apply the Lesta overlay to a fresh WG-sourced list and adopt
    *  it. Returns false when a newer load took over mid-await (caller skips
    *  its bookkeeping); remembers the pre-overlay list for the treeRealm
-   *  watcher's local re-derivation. */
+   *  watcher's local re-derivation. A WG/Lesta flip racing the overlay's
+   *  await would otherwise commit a list for the realm that just stopped
+   *  being selected (the watcher ran against the OLD base, or had no base
+   *  yet) — so the overlay is redone with the now-current realm until the
+   *  selection holds still across one await. */
   async function finalize(fresh: ShipInfo[], lang: string, seq: number): Promise<boolean> {
-    const overlaid = await withLestaOverlay(fresh, lang);
-    if (seq !== loadSeq) return false;
-    baseShips = fresh;
-    baseLang = lang;
-    ships.value = localizeShips(overlaid, lang);
-    return true;
+    for (;;) {
+      const realmAtStart = useShipsUiStore().treeRealm;
+      const overlaid = await withLestaOverlay(fresh, lang);
+      if (seq !== loadSeq) return false;
+      if (useShipsUiStore().treeRealm !== realmAtStart) continue;
+      baseShips = fresh;
+      baseLang = lang;
+      ships.value = localizeShips(overlaid, lang);
+      return true;
+    }
   }
 
   /** Offline fallback: build the roster from the bundled ship-basics asset
@@ -245,15 +253,17 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   // network round-trip. (Until a first load lands there is nothing to
   // re-derive; the mounting view's load() covers it.) The identity re-check
   // after the await drops derivations made stale by a newer load finalizing
-  // while the overlay chunk was still importing.
+  // while the overlay chunk was still importing; the realm re-check drops
+  // ones made stale by a further flip, whose own watcher run commits the
+  // newer realm's list.
   watch(
     () => useShipsUiStore().treeRealm,
-    async () => {
+    async (realm) => {
       const base = baseShips;
       const lang = baseLang;
       if (!base || !lang) return;
       const overlaid = await withLestaOverlay(base, lang);
-      if (baseShips === base && baseLang === lang) {
+      if (baseShips === base && baseLang === lang && useShipsUiStore().treeRealm === realm) {
         ships.value = localizeShips(overlaid, lang);
       }
     },

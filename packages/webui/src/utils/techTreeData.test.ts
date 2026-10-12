@@ -11,6 +11,7 @@ import {
   nationTree,
   techTreeNode,
   treeNextShipIds,
+  WG_EXCLUSIVE_TREE_SHIP_IDS,
   type TechTreeRealm,
 } from "./techTreeData";
 
@@ -113,6 +114,38 @@ describe("nationTree per realm (wg bridge vs lesta gameparams)", () => {
 
   it("keeps the unknown realm on the WG default", () => {
     expect(techTreeNode(4276041040, "wg")).toEqual(techTreeNode(4276041040));
+  });
+});
+
+describe("WG_EXCLUSIVE_TREE_SHIP_IDS (realm-exclusive branches)", () => {
+  it("flags whole WG-only lines, e.g. the Commonwealth cruisers", () => {
+    // The Lesta client never grew the Commonwealth tree — every one of its
+    // nodes must hide from the Lesta-mode list.
+    const cw = nationNodes("commonwealth", "wg");
+    expect(cw.length).toBeGreaterThan(0);
+    for (const n of cw) expect(WG_EXCLUSIVE_TREE_SHIP_IDS.has(n.shipId), n.index).toBe(true);
+  });
+
+  it("holds only researchable WG nodes the Lesta tree has no node for", () => {
+    // Contract pin for the encyclopedia filter: every id must resolve to a
+    // WG-tree node, that node must be researchable (premium/special side
+    // leaves are exempt — their Lesta availability is unknowable), and the
+    // Lesta tree must not carry it.
+    const lestaTree = allTechTreeNodes("lesta");
+    expect(WG_EXCLUSIVE_TREE_SHIP_IDS.size).toBeGreaterThan(0);
+    for (const id of WG_EXCLUSIVE_TREE_SHIP_IDS) {
+      const node = techTreeNode(id, "wg");
+      expect(node, String(id)).not.toBeNull();
+      expect(node!.isPremium || node!.isSpecial, node!.index).toBe(false);
+      expect(lestaTree[String(id)], node!.index).toBeUndefined();
+    }
+  });
+
+  it("never flags ships both clients share", () => {
+    // 河内 (PJSB001) is a shared low-tier hull present in both trees.
+    const kawachi = Object.values(allTechTreeNodes("wg")).find((n) => n.index === "PJSB001")!;
+    expect(kawachi).toBeDefined();
+    expect(WG_EXCLUSIVE_TREE_SHIP_IDS.has(kawachi.shipId)).toBe(false);
   });
 });
 

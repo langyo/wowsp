@@ -7,6 +7,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
 import { AssetImage } from "@/components/base/AssetImage";
 import { techTreeNode } from "@/utils/techTreeData";
+import { useShipsUiStore } from "@/stores/shipsUi";
 import type { ShipInfo } from "@/api";
 import {
   classSkills,
@@ -236,9 +237,18 @@ export default defineComponent({
   },
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
+    const shipsUi = useShipsUiStore();
     const section = ref<Section>("skills");
 
     const dataLangKey = computed(() => DATA_KEY_BY_LANG[dataLanguage.value] ?? "en");
+
+    /** Tree node of the planned ship in the selected branch source — a
+     *  Lesta-only hull must resolve against the Lesta tree, not the WG
+     *  default, or its index (consumables gate, recommended skills, unique
+     *  upgrades) reads as null in Lesta mode. */
+    function treeIndexOf(shipId: number): string | null {
+      return techTreeNode(shipId, shipsUi.treeRealm)?.index ?? null;
+    }
 
     function setBuild(patch: Partial<PlannerBuild>): void {
       emit("update:build", { ...props.build, ...patch });
@@ -279,7 +289,7 @@ export default defineComponent({
      *  index; null when the hull is missing from ship_consumables.json —
      *  the consumable-skill gate then never bans (conservative). */
     const consumableFamilies = computed<ReadonlySet<string> | null>(() => {
-      const idx = techTreeNode(props.ship.shipId)?.index;
+      const idx = treeIndexOf(props.ship.shipId);
       const fams = idx ? SHIP_CONSUMABLES[idx] : undefined;
       return fams ? new Set(fams) : null;
     });
@@ -372,7 +382,7 @@ export default defineComponent({
      *  most specific of exact ship / group / class) — the amber corner
      *  ribbon. */
     const recommended = computed(() =>
-      recommendedSkills(techTreeNode(props.ship.shipId)?.index ?? null, props.ship.type),
+      recommendedSkills(treeIndexOf(props.ship.shipId), props.ship.type),
     );
     /** Numeric key:value pairs of one modifier dict, with plain keys hidden
      *  when their *UI twin is present, internal enums and activation
@@ -569,7 +579,7 @@ export default defineComponent({
      *  them on exactly those hybrid-art carriers). */
     function shipMatches(m: ModernizationEntry): boolean {
       if (!m.ships?.length) return true;
-      const index = techTreeNode(props.ship.shipId)?.index ?? null;
+      const index = treeIndexOf(props.ship.shipId);
       const hit = index != null && m.ships.some((s) => s.split("_")[0] === index);
       const whitelist =
         m.tags?.includes("unique") ||

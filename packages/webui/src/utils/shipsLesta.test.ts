@@ -77,9 +77,26 @@ describe("withLestaOverlay merge", () => {
     expect(merged.filter((s) => s.shipId === Number(firstId))).toHaveLength(1);
   });
 
+  it("drops the WG-only research lines while the realm is lesta", async () => {
+    // The Commonwealth line exists only in the WG tree; 河内 (PJSB001) is a
+    // hull both clients share — the Lesta-mode list keeps the shared hull
+    // and hides the WG-exclusive one.
+    const wgTree = Object.values(allTechTreeNodes("wg"));
+    const cw = wgTree.find((n) => n.nation === "commonwealth")!;
+    const shared = wgTree.find((n) => n.index === "PJSB001")!;
+    const list: ShipInfo[] = [
+      { shipId: cw.shipId, name: cw.name } as ShipInfo,
+      { shipId: shared.shipId, name: shared.name } as ShipInfo,
+    ];
+    const merged = await withLestaOverlay(list, "en-US");
+    expect(merged.some((s) => s.shipId === cw.shipId)).toBe(false);
+    expect(merged.some((s) => s.shipId === shared.shipId)).toBe(true);
+  });
+
   it("returns the WG list untouched outside the Lesta realm", async () => {
     useShipsUiStore().setTreeRealm("wg");
-    const list: ShipInfo[] = [{ shipId: 1, name: "WG ship" } as ShipInfo];
+    const cw = Object.values(allTechTreeNodes("wg")).find((n) => n.nation === "commonwealth")!;
+    const list: ShipInfo[] = [{ shipId: 1, name: "WG ship" } as ShipInfo, { shipId: cw.shipId, name: cw.name } as ShipInfo];
     expect(await withLestaOverlay(list, "zh-CN")).toBe(list);
   });
 });

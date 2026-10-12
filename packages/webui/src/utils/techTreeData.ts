@@ -47,6 +47,22 @@ export function techTreeNode(shipId: number, realm: TechTreeRealm = "wg"): TechT
   return TREES[realm][String(shipId)] ?? null;
 }
 
+/** The researchable WG-tree ships the Lesta tree carries no node for — the
+ *  branches only WG ever grew (the Commonwealth cruisers, the Pan-America
+ *  battleships, the Pan-Europe battleships, …). The two realms' trees also
+ *  hold 59 ships only Lesta grew; that direction ships as the overlay data
+ *  file (ships_lesta.json) instead. While the branch source is Lesta the
+ *  encyclopedia list hides these ids, mirroring how the overlay hides the
+ *  Lesta-only ships while it is WG — so each mode lists only its own
+ *  client's lines. Premium/special side leaves are deliberately exempt:
+ *  the Lesta tree records no side leaves, so their Lesta availability is
+ *  unknowable from tree data and they stay listed in both modes. */
+export const WG_EXCLUSIVE_TREE_SHIP_IDS: ReadonlySet<number> = new Set(
+  Object.values(TREES.wg)
+    .filter((n) => !n.isPremium && !n.isSpecial && !(String(n.shipId) in TREES.lesta))
+    .map((n) => n.shipId),
+);
+
 /**
  * Aliases resolving to the tree files' nation keys. WG's encyclopedia API
  * says "europe" while the game files say "pan_europe"; ship_names.json keeps

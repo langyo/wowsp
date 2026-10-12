@@ -21,9 +21,10 @@ import "./ShipCompareView.scss";
  * via the segmented tab strip — across the top.
  *
  * Ships are added through ShipPickerModal; the list dedupes and grows
- * unbounded. Ids the encyclopedia can no longer resolve (realm switch,
- * retired ships) are dropped on the next persist. Stat groups a hull can
- * never carry (no tubes, no ASW, no aircraft) collapse into one gray
+ * unbounded. Ids the current branch source cannot resolve (the other
+ * client's exclusive ships, retired hulls) persist but hide from the
+ * table until they resolve again. Stat groups a hull can never carry
+ * (no tubes, no ASW, no aircraft) collapse into one gray
  * "not applicable" cell instead of bare "—" gaps.
  */
 export default defineComponent({
@@ -59,14 +60,17 @@ export default defineComponent({
     }
     loadPersisted();
 
-    // Persist on every change, dropping ids the encyclopedia no longer
-    // resolves; a realm switch swaps in that realm's own list.
+    // Persist the full id list verbatim. Ids the current branch source
+    // cannot resolve — the other client's exclusive ships while its side
+    // of the WG/Lesta switch is off, retired hulls — only hide from the
+    // table (the `ships` computed drops unresolvable ids at render), so
+    // flipping the source back re-lights them instead of losing the
+    // picks; a data realm switch swaps in that realm's own list.
     watch(
       () => [...shipIds.value],
       () => {
-        const resolvable = shipIds.value.filter((id) => encyclopedia.byId.has(id));
         try {
-          localStorage.setItem(storageKey(), JSON.stringify(resolvable));
+          localStorage.setItem(storageKey(), JSON.stringify(shipIds.value));
         } catch {
           // Storage full/blocked — compare keeps working in-memory.
         }

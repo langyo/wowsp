@@ -13,6 +13,12 @@
  * for any WG ship. Switching the branch source back to WG drops them again;
  * the merge never touches the WG API cache.
  *
+ * The inverse gap is closed in the same merge: WG grew research lines the
+ * Lesta client never carried (the Commonwealth cruisers, the Pan-America
+ * battleships, …), and while the source is Lesta those ids
+ * (WG_EXCLUSIVE_TREE_SHIP_IDS, derived from the two bundled trees) are
+ * dropped from the list — each mode shows only its own side's lines.
+ *
  * Names: ru-RU from the Lesta client texts, en-US the GameParams working
  * name, the CJK trio (plus ja where established) hand-curated in
  * scripts/extract/lesta_names_curated.json — and the same ships also merge
@@ -23,6 +29,7 @@
  * essentials).
  */
 import type { ShipInfo } from "@/api";
+import { WG_EXCLUSIVE_TREE_SHIP_IDS } from "@/utils/techTreeData";
 import { useShipsUiStore } from "@/stores/shipsUi";
 
 export interface LestaShipEntry {
@@ -84,23 +91,28 @@ export function lestaToShipInfo(
   };
 }
 
-/** Append the Lesta-only ships to an encyclopedia list when the ships view's
- *  branch source is Lesta; the WG-sourced list is returned untouched
- *  otherwise (and when the overlay module fails to load). */
+/** Adapt a WG-sourced encyclopedia list to the branch source: while it is
+ *  Lesta, drop the researchable ships only the WG tree carries (the lines
+ *  the Lesta client never grew) and append the Lesta-only overlay ships,
+ *  so the list matches the Lesta client's roster. The WG-sourced list is
+ *  returned untouched otherwise. The removal is derived from the bundled
+ *  tree files, not the overlay module, so it still applies when that
+ *  module fails to load — only the append degrades then. */
 export async function withLestaOverlay(list: ShipInfo[], lang: string): Promise<ShipInfo[]> {
   if (useShipsUiStore().treeRealm !== "lesta") return list;
+  const kept = list.filter((s) => !WG_EXCLUSIVE_TREE_SHIP_IDS.has(s.shipId));
   let overlay: ShipsLestaOverlay;
   try {
     overlay = await loadShipsLesta();
   } catch {
-    return list;
+    return kept;
   }
-  const have = new Set(list.map((s) => s.shipId));
+  const have = new Set(kept.map((s) => s.shipId));
   const extra: ShipInfo[] = [];
   for (const [id, entry] of Object.entries(overlay.ships)) {
     const shipId = Number(id);
     if (!Number.isFinite(shipId) || have.has(shipId)) continue;
     extra.push(lestaToShipInfo(shipId, overlay, entry, lang));
   }
-  return extra.length ? [...list, ...extra] : list;
+  return extra.length ? [...kept, ...extra] : kept;
 }
