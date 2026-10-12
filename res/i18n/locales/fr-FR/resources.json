@@ -235,5 +235,14 @@
       "sensor": "Capteurs",
       "misc": "Divers"
     }
+  },
+  "disclaimer": {
+    "title": "Avertissement sur les opérations de mods",
+    "intro": "Les mods sont des logiciels tiers. Toute installation, mise à jour, activation, désactivation ou désinstallation réécrit des fichiers du dossier du jeu, et des mods peuvent entrer en conflit entre eux ou avec la version actuelle du jeu.",
+    "advice": "Fortement recommandé : après N'IMPORTE QUELLE opération sur un mod, jouez d'abord une bataille en salle d'entraînement pour vérifier que le jeu se lance et tourne normalement — ne vous lancez pas directement en bataille aléatoire, classée ou autre. Un plantage causé par un conflit de mods gâche le match à vos coéquipiers autant qu'à vous.",
+    "note": "Cet avertissement n'apparaît qu'une seule fois : après confirmation, il ne s'affichera plus. Annuler interrompt l'opération en cours — rien n'a encore été modifié.",
+    "cancel": "Annuler",
+    "ack": "Confirmer et continuer",
+    "ackCountdown": "J'ai lu et compris ({n} s)"
   }
 }

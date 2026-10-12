@@ -235,5 +235,14 @@
       "sensor": "Sensores",
       "misc": "Varios"
     }
+  },
+  "disclaimer": {
+    "title": "Aviso sobre operaciones con mods",
+    "intro": "Los mods son software de terceros. Cualquier instalación, actualización, activación, desactivación o desinstalación reescribe archivos de la carpeta del juego, y los mods pueden entrar en conflicto entre sí o con la versión actual del juego.",
+    "advice": "Muy recomendable: tras CUALQUIER operación con mods, juega primero una batalla en la sala de entrenamiento para confirmar que el juego arranca y funciona con normalidad; no entres directamente en batallas aleatorias, clasificatorias u otras. Un cuelgue provocado por un conflicto de mods arruina la partida a tus compañeros tanto como a ti.",
+    "note": "Este aviso se muestra una sola vez: tras confirmarlo no volverá a aparecer. Cancelar interrumpe la operación actual; hasta ese momento no se ha cambiado nada.",
+    "cancel": "Cancelar",
+    "ack": "Confirmar y continuar",
+    "ackCountdown": "He leído y entendido ({n} s)"
   }
 }

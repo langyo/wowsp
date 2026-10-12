@@ -235,5 +235,14 @@
       "sensor": "Sensors",
       "misc": "Misc"
     }
+  },
+  "disclaimer": {
+    "title": "Mod operation disclaimer",
+    "intro": "Mods are third-party software. Every install, update, enable, disable or uninstall rewrites files inside the game folder, and mods can conflict with each other or with the current game version.",
+    "advice": "Strongly recommended: after ANY mod operation, take a Training Room battle first to confirm the game still launches and runs normally — do not jump straight into Random, Ranked or other live battles. A crash caused by a conflicting mod ruins the match for your teammates just as much as for you.",
+    "note": "This notice shows once — after confirming, it will not appear again. Cancelling aborts the current operation; nothing has been changed yet.",
+    "cancel": "Cancel",
+    "ack": "Continue",
+    "ackCountdown": "I have read and understood ({n}s)"
   }
 }

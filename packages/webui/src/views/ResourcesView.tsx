@@ -63,6 +63,7 @@ import {
 } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
 import AssetPreview from "@/features/modhub/AssetPreview";
+import ModOpDisclaimer, { requestModOpDisclaimer } from "@/features/modhub/ModOpDisclaimer";
 import { resolveIdentity } from "@/features/modhub/migrateIdentity";
 import {
   ignoreAll,
@@ -437,6 +438,7 @@ export default defineComponent({
       if (!gameRoot.value || busy.value.has(entry.id) || gameRunning() || safeModeBlocked()) {
         return;
       }
+      if (!(await requestModOpDisclaimer())) return;
       // Captured before the RPC: installing over a foreign (Aslain) copy
       // is a REGISTRATION — the backend cuts the foreign installer's
       // manifest rows, the follow-up toast says ownership moved.
@@ -470,6 +472,7 @@ export default defineComponent({
         return;
       }
       confirmTarget.value = null;
+      if (!(await requestModOpDisclaimer())) return;
       try {
         const r = await pluginUpdates.runModUninstall(entry.id, gameRoot.value);
         toast.success(
@@ -498,6 +501,7 @@ export default defineComponent({
       ) {
         return;
       }
+      if (!(await requestModOpDisclaimer())) return;
       unitBusy.value.set(unitKey(mod), "toggle");
       try {
         await api.modHubSetUnitEnabled(mod.relPath, gameRoot.value, enabled);
@@ -522,6 +526,7 @@ export default defineComponent({
         return;
       }
       unitTarget.value = null;
+      if (!(await requestModOpDisclaimer())) return;
       unitBusy.value.set(unitKey(mod), "uninstall");
       try {
         const r = await api.modHubUninstallUnit(mod.relPath, gameRoot.value);
@@ -554,6 +559,7 @@ export default defineComponent({
         return;
       }
       foreignTarget.value = null;
+      if (!(await requestModOpDisclaimer())) return;
       try {
         await api.modHubUninstallModstationUnit(gameRoot.value, unit.key);
         toast.success(t("resources.modstationUninstalled", { name: unit.name }));
@@ -747,6 +753,7 @@ export default defineComponent({
     async function startMigrate() {
       if (!gameRoot.value || !migPlan.value || migrating.value) return;
       if (gameRunning() || safeModeBlocked()) return;
+      if (!(await requestModOpDisclaimer())) return;
       const generation = rootGeneration;
       migrating.value = true;
       migStep.value = "executing";
@@ -801,6 +808,7 @@ export default defineComponent({
       const dir = safeModeAsk.value;
       safeModeAsk.value = null;
       if (!dir || !gameRoot.value || safeModeBusy.value || gameRunning()) return;
+      if (!(await requestModOpDisclaimer())) return;
       safeModeBusy.value = true;
       try {
         const active = await api.modHubSetSafeMode(gameRoot.value, dir === "on");
@@ -832,6 +840,7 @@ export default defineComponent({
 
     async function restoreLoaderMarker() {
       if (!gameRoot.value || restoringLoader.value || gameRunning() || safeModeBlocked()) return;
+      if (!(await requestModOpDisclaimer())) return;
       restoringLoader.value = true;
       try {
         const wrote = await api.modHubRestorePnfLoaderMarker(gameRoot.value);
@@ -846,6 +855,7 @@ export default defineComponent({
 
     async function confirmInstall() {
       if (!plan.value || installing.value || gameRunning() || safeModeBlocked()) return;
+      if (!(await requestModOpDisclaimer())) return;
       installing.value = true;
       try {
         const r = await api.modHubInstall(sourcePath.value.trim(), gameRoot.value, plan.value);
@@ -2918,6 +2928,10 @@ export default defineComponent({
               if (!v) foreignTarget.value = null;
             }}
           />
+
+          {/* One-time disclaimer gate — raised by the first mutating
+              operation (see requestModOpDisclaimer), never again after. */}
+          <ModOpDisclaimer />
         </div>
       );
     };

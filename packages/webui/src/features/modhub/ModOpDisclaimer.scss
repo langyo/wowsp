@@ -1,0 +1,30 @@
+// One-time mod operation disclaimer — plain reading copy inside the
+// shared modal shell. The advice paragraph carries the emphasis (a
+// primary-tinted left rule) because that sentence is what the forced
+// ten-second wait is for.
+
+.mod-disclaimer {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.25rem 0.1rem 0.4rem;
+
+  &__text {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: rgb(var(--color-text) / 88%);
+  }
+
+  &__text--advice {
+    padding-left: 0.7rem;
+    border-left: 2px solid rgb(var(--color-primary) / 55%);
+    color: rgb(var(--color-text));
+  }
+
+  &__note {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    color: rgb(var(--color-muted));
+  }
+}
