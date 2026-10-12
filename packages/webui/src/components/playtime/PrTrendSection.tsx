@@ -66,16 +66,34 @@ export default defineComponent({
     const openChip = ref<"type" | "ship" | null>(null);
 
     const activeAccount = computed(() => account.activeAccount);
+    // Whether the (local-file) history read has settled for the CURRENT
+    // account — a read that fails or finds no file must fall through to the
+    // empty note instead of hiding the whole section forever.
+    const historySettled = ref(false);
     watch(
       activeAccount,
       (acc, prev) => {
-        if (acc) void shipStats.loadHistory(acc.accountId, acc.realm);
+        historySettled.value = false;
         // A different account's ship ids mean nothing here — stale picks
         // would silently filter the new history down to nothing.
         if (prev) {
           typeSel.value = [];
           shipSel.value = [];
         }
+        if (!acc) return;
+        const key = `${acc.realm}_${acc.accountId}`;
+        // A cached entry needs no settle: the computed answers it directly
+        // (historyLoaded is true whenever the map holds the key). The read
+        // still fires to refresh it from disk, and its settle covers the
+        // map-stays-empty case — a read that fails must fall through to the
+        // empty note, never hide the frame forever.
+        void shipStats
+          .loadHistory(acc.accountId, acc.realm)
+          .catch(() => undefined)
+          .finally(() => {
+            const now = activeAccount.value;
+            if (now && `${now.realm}_${now.accountId}` === key) historySettled.value = true;
+          });
       },
       { immediate: true },
     );
@@ -179,14 +197,23 @@ export default defineComponent({
       // No bound account (or PR display off) → not this section's business.
       const acc = activeAccount.value;
       if (!acc || !statsPrefsState.value.prEnabled) return null;
-      // Still loading either side — avoid an empty-state flash.
-      if (!expectedMap.value || historyPts.value == null) return null;
 
-      let body: VNode;
-      if (expected.value?.length === 0) {
-        body = <p class="playtime-view__note">{t("playtime.prTrendNoExpected")}</p>;
-      } else if (historyPts.value.length === 0) {
+      // The frame (title + chips) renders as soon as the account is known;
+      // the body fills in as the cached reads settle. Gating the WHOLE
+      // section on those reads made "still fetching" (the expected-values
+      // refresh can take seconds on a cold or stale table) read as "the
+      // section does not exist".
+      const pts = historyPts.value;
+      const historyLoaded = pts !== null || historySettled.value;
+      let body: VNode | null = null;
+      if (historyLoaded && (pts?.length ?? 0) === 0) {
+        // No cached history at all — the point-accrual note is the most
+        // actionable face and needs no attempt at the expected table.
         body = <p class="playtime-view__note">{t("playtime.prTrendEmpty")}</p>;
+      } else if (expected.value === null || !historyLoaded) {
+        body = null; // still reading — the frame is already on screen
+      } else if (expected.value.length === 0) {
+        body = <p class="playtime-view__note">{t("playtime.prTrendNoExpected")}</p>;
       } else if (series.value.length === 0) {
         body = <p class="playtime-view__note">{t("playtime.prTrendNoData")}</p>;
       } else {
