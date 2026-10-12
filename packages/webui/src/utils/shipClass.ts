@@ -35,8 +35,9 @@
  * jié < qiè < wéi pinyin order — and the nation rank DOES NOT apply
  * (the decompiled order predicts 切斯特→韦茅斯→海尔德兰→杰克逊港 for that
  * same group, contradicted 4/4). The group also never re-sorts mid-battle
- * on that client: sunk rows dim IN PLACE (see overlay/inferredOrder's
- * static CN layout). {@link gameTabRowCompare} carries the
+ * on that client: sunk rows dim IN PLACE (see overlay/main.ts's cnLayout —
+ * the row list keeps its order and only flags the sunk members).
+ * {@link gameTabRowCompare} carries the
  * ship-name-order variant, gated per surface on the detected realm.
  *
  * The Lesta client renders its OWN sort-key order — settled by the
@@ -54,7 +55,7 @@
  * localized names, not the internal codes) — the plugin's sortKeys are
  * the game-truth there, and the exact-grade sort breaks equal keys by
  * the roster order, not the '[TAG]name' concatenation (see
- * liveTabOrder/inferredOrder's tieByRosterOrder).
+ * liveTabOrder's tieByRosterOrder).
  *
  * The ship-name order's segment reads the app locale like the rest of
  * the key (the pre-existing caveat above — the game's OWN locale is not

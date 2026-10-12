@@ -3,15 +3,24 @@
  *
  * The Rust Tab watcher shows this window only after the battle-HUD probe
  * passes, and this page must paint instantly, so it is bare DOM: a tiny
- * listener renders per-player chips from two Tauri events:
+ * listener renders per-player rows from two Tauri events:
  *
  *   - `wowsp://arena-info`  → roster snapshot (names, teams) → schedules ONE
  *     batched WG stats lookup (same backend command the main window uses);
  *   - `wowsp://sink-attrib` → one sink transition's solved victims (row
  *     indices into each side's pre-sink alive order) → the sunk tracker
- *     keeps the row→name mapping EXACT mid-battle (utils/sunkTracker);
- *   - `wowsp://overlay-anchor` → table geometry (rows, team split) → chips
- *     are positioned at each row.
+ *     keeps each side's sunk SET exact mid-battle (utils/sunkTracker),
+ *     which the row list below re-sorts and flags by;
+ *   - `wowsp://overlay-anchor` → table geometry (rows, team split) → the
+ *     side's rows hang off each grid row.
+ *
+ * Each side renders as its OWN single-line rows — the player's number
+ * block on a stat column against the table's edge, the player's display
+ * name in a column beside it, seals on the outermost flank (see rowFace).
+ * The list is built from the believed client Tab order over the roster
+ * (sideFullOrder), split [alive] ++ [sunk] by the trusted set — NEVER from
+ * per-row attribution: every line IS one known player, so no row can
+ * misattribute and no row has to speak for a set of candidates.
  *
  * Coordinates arrive in physical px relative to the overlay window's own
  * origin; CSS px = physical / devicePixelRatio.
@@ -31,15 +40,13 @@ import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 // Team aggregates for the per-side summary cards (same helper the live
 // panel's column titles use).
 import { aggregateTeamStats } from "@/utils/teamAggregate";
-// Inferred roster mode: the row→name mapping derived from the verified Tab
-// sort rule over the roster + the anchor's alive flags (no OCR) — see
-// inferredOrder.ts.
-import { inferredRowMapping } from "./inferredOrder";
-// Bot folding for candidate-range chips (see candidates.ts).
-import { collapseCandidateBots } from "./candidates";
-// Post-layout pass keeping chips inside the overlay window — a chip wider
-// than the reserved side pad would otherwise clip flat at the window edge.
-import { fitChips, refitWhenSealsSettle } from "./chipFit";
+// The per-side row list (believed Tab order, [alive] ++ [sunk] by the
+// trusted set) — see rowList.ts.
+import { splitRowsBySunk, type RosterRow } from "./rowList";
+// Post-layout passes keeping the row columns aligned and the rows inside
+// the overlay window — a row wider than the reserved side pad would
+// otherwise clip flat at the window edge.
+import { alignStatColumns, fitChips, refitWhenSealsSettle } from "./chipFit";
 // Two-sided team consumable intel (radar/hydro/smoke estimate counts +
 // longest radar range) from the baked capability asset, overlaid by the
 // runtime-downloaded copy when the shell has one cached.
@@ -65,7 +72,6 @@ import {
 } from "./overlayPrefs";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { isKnownRealm, realmUsesShipNameOrder } from "@/utils/realms";
-import { pluginRowMapping } from "./inferredOrder";
 import {
   gameTabRowCompare,
   shipTierOf,
@@ -77,8 +83,8 @@ import { isCoopBattle, isOperationBattle } from "@/utils/modeColors";
 // The live side split — scripted scenario NPCs filtered iff this is a real
 // operation (行动), exactly the rows the game's own Tab table renders. The
 // Rust sink solver keys its ally block on the same rule (arena_info's
-// note_arena_seen), so the chip blocks, the row mapping and the solver's
-// indices stay aligned.
+// note_arena_seen), so the row blocks and the solver's indices stay
+// aligned.
 import { splitLiveRosterSides, type RosterSides } from "@/utils/rosterSides";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
@@ -93,20 +99,19 @@ interface OverlayMessages {
   /** Locating copy: detection is on, the table just isn't pinned yet. */
   locatingHint: string;
   /** Badge while the batched stats lookup is still working and at least
-   *  one mapped chip has no numbers yet. */
+   *  one rendered row has no numbers yet. */
   queryingBadge: string;
-  /** The muted badge for folded AI rows (`:Name:` co-op fills): per-row
-   *  faces in chipContent and the bot suffix of a mixed candidate range
-   *  (candidatesChip). Count-less by design — every folded face IS a bot,
-   *  and the game's own table marks its bot rows anyway. */
+  /** The muted badge for AI rows (`:Name:` co-op fills), rendered in a
+   *  bot row's stat cell (rowFace/statFace). Count-less by design — the
+   *  face IS a bot, and the game's own table marks its bot rows anyway. */
   botLabel: string;
-  /** The per-row battle-count face (chipNumbers / candidatesChip) as a
-   *  pattern carrying the count in `{n}`: the copy owns the unit word AND
-   *  its placement, which is what lets one pattern serve all nine locales
-   *  (the Chinese measure word hugs the number, Korean's noun reads
-   *  before it). `{n}` is mandatory — scripts/check_i18n.py enforces
-   *  placeholder parity. The unit is fixed per locale — no count inflects
-   *  it, as these counts run to the thousands. */
+  /** The per-row battle-count face (chipNumbers) as a pattern carrying
+   *  the count in `{n}`: the copy owns the unit word AND its placement,
+   *  which is what lets one pattern serve all nine locales (the Chinese
+   *  measure word hugs the number, Korean's noun reads before it). `{n}`
+   *  is mandatory — scripts/check_i18n.py enforces placeholder parity.
+   *  The unit is fixed per locale — no count inflects it, as these counts
+   *  run to the thousands. */
   battlesCount: string;
   /** Team-intel card copy (the two-sided consumable summary): side
    *  labels, the three family names, and the longest-range prefix. */
@@ -175,12 +180,11 @@ interface OverlayAnchor {
    *  render dim gray in-game). Same length/order as rowCenters; true =
    *  alive; null/absent = unknown (treat every row as alive). */
   rowAlive?: boolean[] | null;
-  /** Roster attribution mode in force backend-side — "inferred" (the
-   *  default) | "off". "inferred" means this page derives the mapping
-   *  itself from the arena roster + rowAlive via the client's own Tab
-   *  sort key (see inferredOrder.ts), kept exact mid-battle by the
-   *  sink-attribution tracker. "off" or an absent field (older backend)
-   *  is the historical index mapping. */
+  /** Roster mode in force backend-side — "plugin" (the in-game probe
+   *  telemetry drives the sets/keys) | "passive". Gates the telemetry
+   *  listener (the authoritative sunk sets + the game-true sort keys) and
+   *  the reconcile pass; the row list itself always renders. An absent
+   *  field (older backend) behaves as passive. */
   rosterMode?: string;
 }
 
@@ -272,28 +276,6 @@ const nameOrderLayout = () => realmUsesShipNameOrder(realm);
 // The Lesta realm breaks EQUAL client keys by the roster's own order
 // (live 2026-10-10), so the exact-key sorts compare the keys alone there.
 const tieByRosterOrder = () => realm === "ru";
-/** Rank lookup into the probe-bridged roster order for the row-mapping
- *  options (inferredRowMapping/pluginRowMapping pre-order each side by
- *  it — equal client keys tie by the roster's own record order). */
-const mappingRosterRankOf = () => {
-  if (!telemetryRosterOrder) return undefined;
-  const rank = new Map(telemetryRosterOrder.map((n, i) => [n, i] as const));
-  return (name: string) => rank.get(name);
-};
-/** The client's own localized ship names for the row-mapping options,
- *  gated to FULL roster coverage (both sides share one gate here — the
- *  comparator only consumes the segment under the CN permutation, whose
- *  battles are single-realm): telemetry is this window's only client
- *  name source (see the telemetryShipNames global). */
-const mappingClientShipNameOf = (
-  allies: { name: string }[],
-  enemies: { name: string }[],
-) => {
-  if (!telemetryShipNames) return undefined;
-  const nameOf = (name: string) => telemetryShipNames?.[name] ?? null;
-  const covered = [...allies, ...enemies].every((v) => (nameOf(v.name) ?? "") !== "");
-  return covered ? nameOf : undefined;
-};
 
 // ── Display prefs (chips / stats source / intel / team averages / seals) ─
 // One tolerant read of the statsPrefs blob the main window's store owns
@@ -423,23 +405,23 @@ let arena: ArenaInfo | null = null;
 let anchor: OverlayAnchor | null = null;
 // Per-battle trusted sunk sets, fed by the `wowsp://sink-attrib` events
 // (the Rust sink solver names WHO sank by strip-fingerprint matching).
-// While a side stays exact, render() lays its rows out precisely instead
-// of showing candidate ranges — see utils/sunkTracker.ts.
+// While a side stays exact, render()'s row list re-sorts and flags by the
+// set (the game's own mid-battle regroup) — see utils/sunkTracker.ts.
 const sunk = new SunkTracker();
 // True while plugin telemetry is the authoritative sink source for the
 // current battle (a valid event applied under roster mode "plugin"): the
 // anchor's capture-derived alive vector then LAGS the plugin (it only
 // updates on Tab holds), so its reconcile must not degrade the sets.
 let telemetryAuthoritative = false;
-/** The plugin's trusted sunk names, flat — stamps and the authoritative
- *  mapping branch read this instead of the capture alive vector. */
+/** The plugin's trusted sunk names, flat — the authoritative dim/split
+ *  source read this instead of the capture alive vector. */
 let pluginSunkNames: Set<string> | null = null;
 /** The plugin's game-true TAB sort keys (telemetry `sortKeys`, read off
  *  the avatars' ship components — the client's own ShipSystem key string).
- *  When the map covers a side's roster, the row→name mapping sorts that
- *  side by key + '[TAG]nickname' — the exact string the game's Tab sort
- *  compares — instead of the offline per-realm inference. Dropped with the
- *  alive sets on a stale stream (a dead plugin must not keep pinning rows
+ *  When the map covers a side's roster, the row list's sort switches to
+ *  key + '[TAG]nickname' — the exact string the game's Tab sort compares —
+ *  instead of the offline per-realm inference. Dropped with the alive sets
+ *  on a stale stream (a dead plugin must not keep pinning rows
  *  game-true). */
 let telemetrySortKeys: Record<string, string> | null = null;
 /** The probe-bridged roster order (telemetry `rosterOrder` — the game's
@@ -621,67 +603,74 @@ function chipNumbers(v: RosterModeNumbers): string {
   return parts.join(`<span class="sep">·</span>`);
 }
 
-/** The face a stats-LESS chip wears: the player's bare nickname (the clan
- *  tag prefix stays off — the game's own table next to the chip already
- *  carries it; the chip only needs to identify the row). Escaped — roster
- *  names are game data.
- *
- *  This face is the overlay's entire failure VISIBILITY: the chip never
- *  renders the name when stats are present, so a "…" here was the ONLY
- *  content a broken lookup path (wrong realm baked into the window URL,
- *  unreachable API, lookups disabled) ever showed — on a Lesta client
- *  whose realm the main window had not detected that reads as "the
- *  overlay never appeared at all". Naming the row keeps the overlay
- *  informative through every such outage. */
-function chipFallbackName(name: string): string {
-  const bare = name.replace(/^\[[^\]]*\]/, "");
-  return (bare.length > 0 ? bare : name)
+/** HTML-escape one game-controlled string (roster names are game data). */
+function escapeHtml(value: string): string {
+  return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 }
 
-/** `storyLayout` = the single-team story/operation table — the layout gate
- *  EXCLUDING plain co-op (see render()): bot rows are aux noise on a
- *  script-driven roster, and the game's own table marks them anyway. */
-function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean): string {
-  if (AI_NAME.test(name)) {
-    return !storyLayout && ANY_CHIP_ON
-      ? `<span class="muted">${localized("botLabel")}</span>`
-      : "";
-  }
+/** The row's display name — the game's own '[TAG]nickname' string: the
+ *  roster name verbatim when it already carries its clan tag, the landed
+ *  stats' clan tag filling a bare one the moment the batch arrives (the
+ *  same reactive rule the sort keys follow). Escaped.
+ *
+ *  The name column is the row's IDENTITY and the overlay's whole failure
+ *  visibility: a stats outage (wrong realm baked into the window URL,
+ *  unreachable API, lookups disabled) can empty the numbers, never the
+ *  name — on a Lesta client whose realm the main window had not detected,
+ *  an anonymous face here used to read as "the overlay never appeared at
+ *  all". */
+function displayNameOf(name: string): string {
+  const tagged = name.startsWith("[") && name.includes("]");
+  const tag = tagged ? null : stats.get(cacheKey(name))?.clanTag;
+  return escapeHtml(tag ? `[${tag}]${name}` : name);
+}
+
+/** The stat column's face for one player: the configured number block, or
+ *  the one telling placeholder — a muted dash for a landed-but-empty
+ *  lookup, the red dot for a hidden profile, the "querying" ellipsis while
+ *  the ship-scoped list is still on its way, the muted bot label for AI
+ *  rows (they carry no lookup). Nothing at all with every number toggle
+ *  off (the row then carries seals/name only). A story-layout bot row
+ *  never reaches here — the render loop drops it. */
+function statFace(name: string): string {
+  if (!ANY_CHIP_ON) return "";
+  if (AI_NAME.test(name)) return `<span class="muted">${localized("botLabel")}</span>`;
   const st = stats.get(cacheKey(name));
-  // All chip toggles off → no numbers and none of their placeholder faces
-  // either; the seals below still render (they are their own switch).
-  let core: string;
-  if (!ANY_CHIP_ON) core = "";
-  else if (!st) core = `<span class="muted">${chipFallbackName(name)}</span>`;
-  else if (st.hidden) core = `<span class="hidden">●</span>`;
+  if (!st) return `<span class="muted">—</span>`;
+  if (st.hidden) return `<span class="hidden">●</span>`;
   // Ship-scoped source with the per-ship list still on its way: keep the
   // "querying" face instead of dashes — dashes read as "never played in
   // this scope", which the landed numbers would contradict a beat later.
-  else if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
-    core = `<span class="muted">…</span>`;
-  } else core = chipNumbers(scopedStatView(name));
-  if (!SEALS_SHOWN) return core;
-  // Every seal of a side sits on ONE flank: allies carry theirs to the
-  // LEFT of the numbers, enemies to the RIGHT — no more splitting career
-  // verdict and composition tags across the chip, which read as two
-  // different players' data at tab-glance distance. The cluster rides the
-  // shared merge rule (resolveStamps): a 神了 or 猴 verdict alongside comp
-  // tags collapses into the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴
-  // seals, which replace (consume) their constituents; 蛆 and 过街老鼠 each
-  // suppress the comp tags entirely, and a >50% class share upgrades the
-  // minor tag to the veteran 奶龙 / 奶蛙 seal in the career-leads-then-air-then-sub
-  // order. A name without stats yet shows no seal at
-  // all — the verdicts are derived from data the stats/composition
-  // batches bring. Hidden profiles with a clan additionally HOLD their
-  // seal until the clan verdict lands (absent map entry): a strong clan
-  // (beating the 53% gate) excuses them, and a stamp that flashes first
-  // and retracts a beat later would be worse than none. A failed verdict
-  // arrives as null and stamps fail-open, same as a clanless profile.
-  // Verdicts always grade the OVERALL career — even when the numbers
-  // beside them render the ranked source.
+  if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
+    return `<span class="muted">…</span>`;
+  }
+  return chipNumbers(scopedStatView(name));
+}
+
+/** The row's seal cluster (career verdict + composition tags through the
+ *  shared merge rule, resolveStamps). Every seal of a side sits on ONE
+ *  flank — the outermost one, past the name column — so the stats and name
+ *  columns stay clean for every row; the cluster rides the same merge
+ *  semantics as ever: a 神了 or 猴 verdict alongside comp tags collapses
+ *  into the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴 seals, which
+ *  replace (consume) their constituents; 蛆 and 过街老鼠 each suppress the
+ *  comp tags entirely, and a >50% class share upgrades the minor tag to
+ *  the veteran 奶龙 / 奶蛙 seal in the career-leads-then-air-then-sub order.
+ *  A name without stats yet shows no seal at all — the verdicts are
+ *  derived from data the stats/composition batches bring. Hidden profiles
+ *  with a clan additionally HOLD their seal until the clan verdict lands
+ *  (absent map entry): a strong clan (beating the 53% gate) excuses them,
+ *  and a stamp that flashes first and retracts a beat later would be worse
+ *  than none. A failed verdict arrives as null and stamps fail-open, same
+ *  as a clanless profile. Verdicts always grade the OVERALL career — even
+ *  when the numbers beside them render the ranked source. AI rows carry no
+ *  seals (they carry no account). */
+function sealNodes(name: string): string {
+  if (!SEALS_SHOWN || AI_NAME.test(name)) return "";
+  const st = stats.get(cacheKey(name));
   let career: StampKind | null = null;
   if (st) {
     // Non-null clanId on a hidden profile = gated: an absent verdict
@@ -697,64 +686,21 @@ function chipContent(name: string, side: "ally" | "enemy", storyLayout: boolean)
     }
   }
   const comp = compositions.get(cacheKey(name)) ?? null;
-  const seals = resolveStamps(career, comp).map(stampNode).join("");
-  return side === "ally" ? seals + core : core + seals;
+  return resolveStamps(career, comp).map(stampNode).join("");
 }
 
-/** A mid-battle candidate-RANGE row's chip (sinks made the alive subset
- *  unknowable — the range is contiguous in the Tab key order): every
- *  candidate's headline number side by side, joined by slashes — the first
- *  chip toggle that carries a value (winrate → damage → PR → battles).
- *  Seals are dropped ON PURPOSE — the row is a SET of players, so
- *  per-member seals would misattribute, and the chip must stay compact
- *  enough for a wide range to fit the reserved side pad. A member whose
- *  stats have not landed reads "…", a hidden one the red dot — the same
- *  per-member faces chipContent renders. The AI members fold into ONE
- *  muted badge (localized "botLabel") after the human faces: the game's
- *  own table already marks those rows, so a verbatim "bot / bot / bot"
- *  only stretched the chip over the left HUD, and the exact headcount of
- *  an ambiguous row's bots says nothing a Tab-glance acts on — "43.2% +
- *  bot" is the whole truth it needs. A pure-bot range collapses to the
- *  same single face. On the story layout (storyLayout) a pure-bot range
- *  collapses to NOTHING instead — same aux rule as chipContent — while a
- *  mixed range keeps its bot badge so one human's face is not read as
- *  the WHOLE row. */
-function candidatesChip(members: string[], storyLayout: boolean): string {
-  if (!ANY_CHIP_ON) return "";
-  const { humans, botCount } = collapseCandidateBots(members);
-  if (humans.length === 0) {
-    return storyLayout ? "" : `<span class="muted">${localized("botLabel")}</span>`;
-  }
-  const face = (m: string): string => {
-    const st = stats.get(cacheKey(m));
-    if (!st) return `<span class="muted">${chipFallbackName(m)}</span>`;
-    if (st.hidden) return `<span class="hidden">●</span>`;
-    // Same pending face as chipContent: dashes would read as "never
-    // played in this scope" a beat before the landed numbers arrive.
-    if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
-      return `<span class="muted">…</span>`;
-    }
-    const v = scopedStatView(m);
-    if (PREFS.chips.winrate && v.winrate != null) {
-      return `<b style="color:${winrateColor(v.winrate)}">${v.winrate.toFixed(1)}%</b>`;
-    }
-    if (PREFS.chips.damage && v.avgDamage != null) {
-      return `<b style="color:${damageColor(v.avgDamage)}">${fmtDamage(v.avgDamage)}</b>`;
-    }
-    if (PREFS.chips.pr && PREFS.prOn && v.pr != null) {
-      return `<b style="color:${prTier(v.pr).color}">${Math.round(v.pr)}</b>`;
-    }
-    if (PREFS.chips.battles && v.battles != null) {
-      const color = battlesColor(v.battles);
-      return `<b${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`;
-    }
-    return `<span class="muted">—</span>`;
-  };
-  const faces = humans.map(face).join(`<span class="sep">/</span>`);
-  if (botCount > 0) {
-    return `${faces}<span class="sep">+</span><span class="muted">${localized("botLabel")}</span>`;
-  }
-  return faces;
+/** One player's line face: the stat column, the name column and the seals,
+ *  arranged so the STATS column sits against the table's edge and the NAME
+ *  column outside it, seals on the outermost flank. The render loop's side
+ *  anchoring turns that into the aligned two-column layout: enemies read
+ *  [stats][name][seals] growing rightward (stats right-aligned against the
+ *  table, names left-aligned), allies mirror it [seals][name][stats]
+ *  growing leftward (stats left-aligned, names right-aligned). */
+function rowFace(name: string, side: "ally" | "enemy"): string {
+  const stat = `<span class="overlay-chip__stat">${statFace(name)}</span>`;
+  const label = `<span class="overlay-chip__name">${displayNameOf(name)}</span>`;
+  const seals = sealNodes(name);
+  return side === "ally" ? seals + label + stat : stat + label + seals;
 }
 
 /** One side's summary card, directly below that side's column. Line 1
@@ -896,10 +842,9 @@ function statusCard(text: string): HTMLDivElement {
  *  human rows while the roster carries 2 scripted allies); every other
  *  battle — the tutorial-family scripted layouts included — keeps the raw
  *  relation split, because there the game DOES field the scripted units as
- *  team rows. Every consumer on this page (the chip blocks, the row
- *  mapping, the sink-attribution orders) resolves against THIS split, and
- *  the Rust sink solver's ally-row count mirrors it (arena_info's
- *  note_arena_seen). */
+ *  team rows. Every consumer on this page (the row list, the
+ *  sink-attribution orders) resolves against THIS split, and the Rust sink
+ *  solver's ally-row count mirrors it (arena_info's note_arena_seen). */
 function liveRosterSides(): RosterSides<Vehicle> {
   if (!arena) return { allies: [], enemies: [] };
   return splitLiveRosterSides(
@@ -913,8 +858,8 @@ function liveRosterSides(): RosterSides<Vehicle> {
   );
 }
 
-/** The roster's believed full-key order for one side — the same ordering
- *  inferredRowMapping applies (see utils/shipClass for the decompiled
+/** The roster's believed full-key order for one side — the ordering the
+ *  row list below draws from (see utils/shipClass for the decompiled
  *  rule and its CN ship-name permutation) over the live side split
  *  above. When this battle's telemetry sort-key map covers the side's
  *  roster, the client's OWN comparison takes over entirely (the exact
@@ -1069,36 +1014,16 @@ function render() {
     arena.eventType,
     rosterNames,
   );
-  // Row → name attribution. Both modes name rows: this page derives the
-  // mapping itself from the arena roster + the anchor's alive vector via
-  // the client's own Tab sort key (inferredRowMapping). A missing/older
-  // backend field keeps the legacy index mapping.
-  let players: (string | string[] | null)[] | null = null;
-  let aliveArr: boolean[] | null = null;
+  // The anchor's per-row alive classification: the reconcile check below
+  // reads the sunk COUNT off it (never a name), and the CN static layout —
+  // the one client whose rows never move — also uses it as its sunk flag
+  // source (vector row i IS player i there).
+  const aliveArr: boolean[] | null = anchor.rowAlive ?? null;
+  // CN clients never re-sort the table (see cnLayout above): sunk rows dim
+  // IN PLACE, and the reconcile machinery below — whose blockwise alive-
+  // vector assumption is false there — must not run.
+  const staticLayout = cnLayout();
   if (anchor.rosterMode) {
-    aliveArr = anchor.rowAlive ?? null;
-    // CN clients never re-sort the table and never follow the nation-rank
-    // order (see cnLayout above): the mapping is the battle-start key order
-    // for the whole battle, and the reconcile/degrade machinery below —
-    // whose blockwise alive-vector assumption is false there — must not
-    // run (a degraded candidate range would pin a WRONG name with
-    // battle-start confidence; the exact misattribution this page shipped
-    // to fix). The per-row sunk chip styling below already reads the alive
-    // vector row by row, which is the only thing the CN layout needs. The
-    // row-order permutation (nameOrderLayout) is the CN build's alone
-    // now — Lesta renders its own sort-key order (2026-10-10 live
-    // capture) and keeps the blockwise machinery live under the WG
-    // regroup.
-    const staticLayout = cnLayout();
-    // The mapping replicates the client's own Tab sort key (decompiled —
-    // see inferredOrder.ts), so battle-start rows arrive as EXACT names.
-    // Mid-battle, the sink tracker holds the TRUSTED sunk sets (fed by the
-    // sink-attrib events) — a side whose set agrees with the anchor's
-    // alive count renders the exact [alive] ++ [sunk] layout, every row
-    // named; a degraded side (a sink the strip solver could not explain)
-    // falls back to provable CANDIDATE RANGES. Clan tags feed the key's
-    // display-name segment, and the mapping re-derives on every render —
-    // when the WG batch lands a tag, the next render re-sorts with it.
     const allyN = allies.length;
     const enemyN = enemies.length;
     const reconcileSide = (rel: "ally" | "enemy", n: number, off: number) => {
@@ -1114,50 +1039,44 @@ function render() {
     // The ally block always reconciles (its roster is complete). The ops
     // enemy block does not: its Tab rows grow mid-battle as waves spawn
     // past the roster tempArenaInfo captured, so a fixed-count reconcile
-    // would misattribute. Same for ANY single-table anchor — its grid
-    // carries NO enemy rows at all (green-only header, co-op included),
-    // so an empty slice would read "everyone alive" and wrongly degrade
-    // the side.
+    // would misfire. Same for ANY single-table anchor — its grid carries
+    // NO enemy rows at all (green-only header, co-op included), so an
+    // empty slice would read "everyone alive" and wrongly degrade the
+    // side.
     reconcileSide("ally", allyN, 0);
     if (!operation && !singleTable) reconcileSide("enemy", enemyN, allyN);
-    if (telemetryAuthoritative && pluginSunkNames) {
-      // Plugin-authoritative layout: split by set membership
-      // unconditionally — no alive-vector agreement check, no candidate
-      // ranges, stamps by membership. A sink the row detector missed
-      // leaves that row chipless in the positional zip below instead of
-      // misattributing a player onto it.
-      players = pluginRowMapping({ allies, enemies }, {
-        ally: sunk.sunkNames("ally"),
-        enemy: sunk.sunkNames("enemy"),
-      }, {
-        locale,
-        clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
-        shipNameOrder: nameOrderLayout(),
-        tieByRosterOrder: tieByRosterOrder(),
-        staticLayout,
-        sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
-        rosterRankOf: mappingRosterRankOf(),
-        clientShipNameOf: mappingClientShipNameOf(allies, enemies),
-      });
-    } else {
-      players = inferredRowMapping({ allies, enemies }, aliveArr, {
-        locale,
-        clanTagOf: (name) => stats.get(cacheKey(name))?.clanTag ?? null,
-        shipNameOrder: nameOrderLayout(),
-        tieByRosterOrder: tieByRosterOrder(),
-        staticLayout,
-        sortKeyOf: telemetrySortKeys ? (name) => telemetrySortKeys![name] : undefined,
-        rosterRankOf: mappingRosterRankOf(),
-        clientShipNameOf: mappingClientShipNameOf(allies, enemies),
-        sunk: { ally: sunk.sunkNames("ally"), enemy: sunk.sunkNames("enemy") },
-      });
-    }
   }
+  /** The side's display rows: EVERY roster player, one line each, in the
+   *  believed client Tab order (sideFullOrder — the game's own keys when
+   *  the telemetry carries them, the offline per-realm rule otherwise),
+   *  split [alive] ++ [sunk] by the side's trusted sunk set so the list
+   *  mirrors the game's own mid-battle regroup, and flagging the sunk
+   *  members for the dim pass. A side without a trusted set (the solver
+   *  degraded on a sink it could not explain) keeps the full order
+   *  un-flagged — the flag is a claim about a KNOWN sunk set, never a
+   *  guess. CN is the exception both ways: its table never re-sorts, so
+   *  the order stays battle-start and the flag rides membership first
+   *  (the authoritative plugin set when telemetry is live) and the
+   *  row-aligned luma vector otherwise. */
+  const sideRows = (side: "ally" | "enemy", blockOffset: number): RosterRow[] => {
+    const full = sideFullOrder(side);
+    const set = sunk.sunkNames(side);
+    if (staticLayout) {
+      return full.map((name, i) => ({
+        name,
+        sunk:
+          telemetryAuthoritative && pluginSunkNames
+            ? pluginSunkNames.has(name)
+            : aliveArr?.[blockOffset + i] === false,
+      }));
+    }
+    return splitRowsBySunk(full, set);
+  };
 
   const pitch = allyBlock.length >= 2 ? Math.abs(allyBlock[1] - allyBlock[0]) / dpr : 24;
   const fontSize = Math.min(15, Math.max(9, pitch * 0.42));
-  // Chips sit OUTSIDE the table — inside they cover the ship names (live
-  // report). Ally chips grow LEFT from the table's left edge; enemy chips
+  // Rows sit OUTSIDE the table — inside they cover the ship names (live
+  // report). Ally rows grow LEFT from the table's left edge; enemy rows
   // grow RIGHT from the right edge. The window reserves a side pad for this
   // (overlay_padding_x on the Rust side).
   const gap = Math.max(4, Math.round(pitch * 0.1));
@@ -1165,90 +1084,60 @@ function render() {
   const tableRight = (anchor.rosterRect.x + anchor.rosterRect.width) / dpr;
   const overlayW = anchor.overlayRect.width / dpr;
 
-  const sides: Array<[Vehicle[], "ally" | "enemy", number[], number]> = [
-    [allies, "ally", allyBlock, 0],
-    [enemies, "enemy", enemyBlock, allies.length],
+  const sides: Array<["ally" | "enemy", number[], number]> = [
+    ["ally", allyBlock, 0],
+    ["enemy", enemyBlock, allies.length],
   ];
-  // At least one chip below renders from a known name whose stats have not
+  // At least one row below renders a known name whose stats have not
   // landed yet — the face the "querying" badge (bottom of this function)
-  // is about. Tracked while the chips are built so it cannot drift from
+  // is about. Tracked while the rows are built so it cannot drift from
   // what is actually on screen.
   let chipsMissingStats = false;
-  for (const [list, side, block, blockOffset] of sides) {
-    list.forEach((v, i) => {
-      if (block[i] == null) return;
-      let html: string;
-      let sunk = false;
-      let multi = false;
-      let mappedName: string | null = null;
-      if (players) {
-        const mapped = players[blockOffset + i] ?? null;
-        if (typeof mapped === "string") {
-          // Recognized name — exactly a roster nickname, so the stats
-          // cache lookup works unchanged.
-          mappedName = mapped;
-          html = chipContent(mapped, side, storyLayout);
-          // Authoritative plugin sets stamp by MEMBERSHIP: the capture
-          // alive vector lags/misreads during sinking animations, and
-          // reading it here is what made rows flip sunk↔alive.
-          sunk = telemetryAuthoritative && pluginSunkNames
-            ? pluginSunkNames.has(mapped)
-            : aliveArr?.[blockOffset + i] === false;
-        } else if (Array.isArray(mapped)) {
-          // A mid-battle candidate RANGE (sinks made the alive subset
-          // unknowable — contiguous in the Tab key order): the chip lists
-          // every candidate's winrate instead of picking one. No seals
-          // here: a career stamp is a per-player verdict, and stamping an
-          // ambiguous row would misattribute it.
-          html = candidatesChip(mapped, storyLayout);
-          multi = true;
-          sunk = aliveArr?.[blockOffset + i] === false;
-          if (ANY_CHIP_ON && mapped.some((m) => !AI_NAME.test(m) && !stats.has(cacheKey(m)))) {
-            chipsMissingStats = true;
-          }
-        } else {
-          // This row's player was not recognized: stay silent rather
-          // than pinning stats by index guess.
-          html = ANY_CHIP_ON || SEALS_SHOWN ? `<span class="muted">…</span>` : "";
-        }
-      } else {
-        // No recognition payload — legacy index mapping.
-        mappedName = v.name;
-        html = chipContent(v.name, side, storyLayout);
-      }
+  for (const [side, block, blockOffset] of sides) {
+    sideRows(side, blockOffset).forEach((row, i) => {
+      // The player's own grid row — the anchor caps each block at the
+      // expected team size, so a row past the grid (a phantom grid row, a
+      // roster the detector counted short) gets no line rather than a
+      // guessed position.
+      const top = block[i];
+      if (top == null) return;
+      const { name, sunk: isSunk } = row;
+      // Bots: aux noise on a script-driven story table (the game's own
+      // table marks them anyway), and nothing to show with every number
+      // toggle off — their only face is the bot label.
+      if (AI_NAME.test(name) && (storyLayout || !ANY_CHIP_ON)) return;
+      // Every switch off = nothing this overlay could say.
+      if (!ANY_CHIP_ON && !SEALS_SHOWN) return;
       // The badge speaks about RENDERED content: with both the numbers and
       // the seals switched off nothing on this row can ever appear, so a
       // missing stat must not spin the "querying" card all battle.
-      if (
-        (ANY_CHIP_ON || SEALS_SHOWN) &&
-        mappedName != null &&
-        !AI_NAME.test(mappedName) &&
-        !stats.has(cacheKey(mappedName))
-      ) {
+      if (!AI_NAME.test(name) && !stats.has(cacheKey(name))) {
         chipsMissingStats = true;
       }
-      // Nothing to show for this row (avg stats off and no seal landed —
-      // or a candidate range with numbers off): the badge bookkeeping
-      // above still ran, but an empty chip must not take layout space.
-      if (html === "") return;
       const el = document.createElement("div");
-      el.innerHTML = html;
+      el.innerHTML = rowFace(name, side);
       el.className =
-        `overlay-chip overlay-chip--${side}` +
-        (multi ? " overlay-chip--multi" : "") +
-        (sunk ? " overlay-chip--sunk" : "");
-      el.style.top = `${block[i] / dpr}px`;
+        `overlay-chip overlay-chip--${side}` + (isSunk ? " overlay-chip--sunk" : "");
+      el.style.top = `${top / dpr}px`;
       el.style.fontSize = `${fontSize.toFixed(1)}px`;
       if (side === "ally") {
-        // Right edge of the chip just left of the table's left edge.
+        // Right edge of the row just left of the table's left edge — the
+        // stats column innermost (left-aligned against the table), the
+        // name column outside it (right-aligned), seals outermost.
         el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
       } else {
-        // Left edge of the chip just right of the table's right edge.
+        // Left edge of the row just right of the table's right edge — the
+        // stats column innermost (right-aligned against the table), the
+        // name column outside it (left-aligned), seals outermost.
         el.style.left = `${tableRight + gap}px`;
       }
       root.appendChild(el);
     });
   }
+  // One stat column width per side (the widest face among its rows): the
+  // numbers then sit on ONE alignment line and the name column starts at a
+  // fixed x — the two-column contract of the row layout.
+  alignStatColumns(root);
 
   // Two-sided summary cards — each side's consumable intel (radar/hydro/
   // smoke estimates plus its longest radar range) and/or team averages
@@ -1831,9 +1720,9 @@ async function start() {
   });
   await listen("wowsp://arena-info", (e: { payload: unknown }) => {
     const next = e.payload as ArenaInfo;
-    // A different battle's roster: drop the remembered row mapping (its
-    // row order belongs to the old battle) and reset the retry cadence —
-    // the new battle's lookups start fresh.
+    // A different battle's roster: drop the remembered sets (they belong
+    // to the old battle) and reset the retry cadence — the new battle's
+    // lookups start fresh.
     if (next?.dateTime !== arena?.dateTime) {
       sunk.reset(next?.dateTime ?? null);
       retryDelayMs = 2000;
@@ -1981,7 +1870,7 @@ async function start() {
     // and the Rust sink solver. A scripted unit a real operation dropped
     // never enters a side set here, so the sets stay size-consistent with
     // the drawn rows even after telemetry authority is lost (a stale-stream
-    // reconcile must not degrade the side to candidate ranges).
+    // reconcile must not degrade the side).
     for (const [list, side] of [
       [sides.allies, "ally"],
       [sides.enemies, "enemy"],

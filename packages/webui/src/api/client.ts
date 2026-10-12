@@ -354,8 +354,8 @@ export interface OverlayStatus {
  *  transition, the rows whose players just left the alive block — indices
  *  into the side's PRE-sink alive order (the Tab sort key keeps that order
  *  exact), solved by fingerprint-matching the table's name strips across
- *  the sink. An EMPTY side means "no attribution" — degrade that side to
- *  candidate ranges, never guess. */
+ *  the sink. An EMPTY side means "no attribution" — degrade that side
+ *  (keep its full order un-flagged), never guess. */
 export interface SinkAttribution {
   allyRows: number[];
   enemyRows: number[];

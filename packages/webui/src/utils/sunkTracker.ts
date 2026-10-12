@@ -17,8 +17,8 @@
  *   keeps it EXACT (the named players join the sunk set);
  * - anything the solver could not explain — an event with a row out of
  *   range, or an anchor whose alive-count disagrees with the set —
- *   DEGRADES the side for the rest of the battle: the renderer falls back
- *   to candidate ranges rather than guessing (a missed sink cannot be
+ *   DEGRADES the side for the rest of the battle: the renderers keep the
+ *   full order un-flagged rather than guessing (a missed sink cannot be
  *   recovered from, because later row indices are only meaningful against
  *   the layout the missed sink produced).
  *
@@ -104,8 +104,8 @@ export class SunkTracker {
     }
   }
 
-  /** The side's trusted sunk set, or NULL once degraded — callers render
-   *  candidate ranges instead of guessing. */
+  /** The side's trusted sunk set, or NULL once degraded — callers keep
+   *  the full order un-flagged instead of guessing. */
   sunkNames(side: SunkSide): Set<string> | null {
     return this.sides[side].exact ? this.sides[side].sunk : null;
   }

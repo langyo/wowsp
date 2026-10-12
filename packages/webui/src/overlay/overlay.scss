@@ -60,12 +60,48 @@ html.overlay-hidden body {
   filter: grayscale(0.9);
 }
 
-/* An ambiguous (class, tier) tie-group row: the chip lists EVERY member's
-   winrate slash-joined instead of pinning one player. The dashed border is
-   the "order unknown" tell — a solid-border chip always names exactly one
-   player, this one speaks for the group. */
-.overlay-chip--multi {
-  border-style: dashed;
+/* The per-row two-column face (overlay-chip--ally / --enemy): every player
+   is ONE line — a stats cell against the table's edge and a name cell
+   outside it, with the seals on the outermost flank. The stats cell's
+   width is pinned per side by the alignStatColumns pass (the widest face on
+   that side) so the numbers hold a single alignment line and the name
+   column's near edge — its start for enemies, its end for allies — holds a
+   fixed x: enemies read [stats right-aligned][name left-aligned], allies
+   mirror it [name right-aligned][stats left-aligned].
+   The name cell caps its width and ellipsizes — the game's own table
+   truncates long names the same way. */
+.overlay-chip__stat {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.overlay-chip--enemy .overlay-chip__stat {
+  text-align: right;
+}
+
+.overlay-chip--ally .overlay-chip__stat {
+  text-align: left;
+}
+
+.overlay-chip__name {
+  /* Never shrinks under pressure: the NAME is the row's identity, so a
+     tight side pad must shed SEALS (chipFit's trim) or clamp the row's free
+     edge before it truncates a nickname — the 13-em cap is the only
+     truncation, sized for the reserve. (A shrinkable cell would ellipsize
+     first and steal the trim pass's job.) */
+  flex: 0 0 auto;
+  max-width: 13em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlay-chip--enemy .overlay-chip__name {
+  text-align: left;
+}
+
+.overlay-chip--ally .overlay-chip__name {
+  text-align: right;
 }
 
 /* The ONE transient-status card — spinner + copy, centered over the table

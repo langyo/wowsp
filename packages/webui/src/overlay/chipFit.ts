@@ -1,20 +1,30 @@
-/** Keep the Tab overlay's stat chips inside the overlay window.
+/** Post-layout passes for the Tab overlay's chip layer.
  *
- *  Chips anchor at the roster table's edge and grow OUTWARD (ally chips
- *  right-anchored growing leftward, enemy chips left-anchored growing
- *  rightward) with `white-space: nowrap`, so a chip whose content is wider
- *  than the window's reserved side pad runs past the window edge — and the
- *  page's `overflow: hidden` clips it flat: the rounded cap vanishes and,
- *  at worst, the numbers go with it. That is exactly what a two-seal chip
- *  looks like when the roster table sits close to the game window's left
- *  edge and `build_anchor` could not reserve the full side pad.
+ *  KEEP EVERY ROW INSIDE THE WINDOW (fitChips): rows anchor at the roster
+ *  table's edge and grow OUTWARD (allies right-anchored growing leftward,
+ *  enemies left-anchored growing rightward) with `white-space: nowrap`, so
+ *  a row whose content is wider than the window's reserved side pad runs
+ *  past the window edge — and the page's `overflow: hidden` clips it flat:
+ *  the rounded cap vanishes and, at worst, the content goes with it. That
+ *  is exactly what a two-seal row looks like when the roster table sits
+ *  close to the game window's left edge and `build_anchor` could not
+ *  reserve the full side pad.
  *
  *  The fix trims before it clamps: seals drop first (composition seals
  *  before career verdicts — a comp seal repeats across the whole roster, a
  *  career verdict belongs to one player), and only when even the bare
- *  numbers cannot fit does the chip's free edge clamp to the window edge,
+ *  numbers cannot fit does the row's free edge clamp to the window edge,
  *  trading a slight reach back over the table's outer column for keeping
- *  the numbers whole (the webview would otherwise clip them away). */
+ *  the numbers whole (the webview would otherwise clip them away).
+ *
+ *  ALIGN THE STAT COLUMN (alignStatColumns): every row carries a stat cell
+ *  against the table edge and a name cell outside it; the cells must line
+ *  up across rows for the two-column read (enemies: numbers right-aligned,
+ *  names left-aligned; allies mirrored). Row elements are individually
+ *  anchored, so the columns align only when every stat cell shares ONE
+ *  width — measured here as the widest face on the side, which pins the
+ *  enemy name column's START and the ally name column's END to a fixed
+ *  x. */
 
 /** Sub-pixel overhang tolerance (CSS px): the anchor's physical→CSS
  *  division rounds, and costing a seal over a hairline clip is worse than
@@ -63,11 +73,11 @@ export function fitChips(root: ParentNode, viewportWidth: number): void {
         seal.remove();
       }
       if (overflow() <= FIT_TOLERANCE_PX) continue;
-      // Bare numbers still overflow (a wide candidates range, a table
-      // hugging the window edge): pin the chip's free edge to the window
-      // edge. The chip keeps its width, so its anchored edge slides back
-      // over the table's outer column by exactly the overflow amount —
-      // strictly better than the webview clipping the numbers flat.
+      // The bare row still overflows (a table hugging the window edge):
+      // pin the chip's free edge to the window edge. The chip keeps its
+      // anchored edge, so its free edge slides back over the table's outer
+      // column by exactly the overflow amount — strictly better than the
+      // webview clipping the content flat.
       if (side === "ally") {
         el.style.left = "0px";
         el.style.right = "auto";
@@ -76,6 +86,28 @@ export function fitChips(root: ParentNode, viewportWidth: number): void {
         el.style.right = "0px";
       }
     }
+  }
+}
+
+/** Pin each side's stat column to ONE width — the widest face among that
+ *  side's rows — so the numbers sit on a single alignment line and the
+ *  name column starts at a fixed x (the two-column contract of the row
+ *  layout in overlay/main.ts). Call after the rows are in the DOM (real
+ *  layout) and before {@link fitChips}, which measures the pinned widths.
+ *  Every cell joins the width even when its own face is empty (a row with
+ *  the numbers off must keep the column slot, or its name cell would slide
+ *  out of the column). Lays out as zero width under happy-dom, so a
+ *  test-environment measure (width 0 everywhere) skips the pass. */
+export function alignStatColumns(root: ParentNode): void {
+  for (const side of ["ally", "enemy"] as const) {
+    const cells = root.querySelectorAll<HTMLElement>(
+      `.overlay-chip--${side} .overlay-chip__stat`,
+    );
+    let widest = 0;
+    for (const cell of cells) widest = Math.max(widest, cell.getBoundingClientRect().width);
+    if (widest <= 0) continue;
+    const width = `${Math.ceil(widest)}px`;
+    for (const cell of cells) cell.style.width = width;
   }
 }
 

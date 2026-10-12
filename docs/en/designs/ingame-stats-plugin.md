@@ -184,7 +184,7 @@ interleaved with alive rows), and the within-(class, tier) row order
 follows the LOCALIZED SHIP NAME (pinyin collation), not the decompiled
 nation rank (see utils/shipClass). The LIVE surfaces gate both on `realm == "cn"`
 (the transparent overlay's mapping + the /live panel's predicted order —
-overlay/inferredOrder's static layout and ship-name order); the replay
+overlay/main.ts's static layout and ship-name order); the replay
 viewer and the holographic roster keep the WG rule DELIBERATELY (no CN
 capture exists for their contexts) and the plugin's own panel keeps its
 arena-rule merge, a cosmetic difference only. As of 2026-10-12, the raw

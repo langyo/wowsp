@@ -189,7 +189,7 @@ LOCALIZADO DEL BARCO (colación pinyin), no el rango de nación salido de
 la descompilación (véase utils/shipClass). Las superficies EN VIVO (el
 mapeo de la superposición transparente y el orden predicho del panel
 /live) aplican a ambos la compuerta `realm == "cn"` (la disposición
-estática de overlay/inferredOrder + el orden por nombre de barco); el
+estática de overlay/main.ts + el orden por nombre de barco); el
 visor de repeticiones y el roster holográfico conservan la regla WG
 DELIBERADAMENTE (no existe captura de CN para sus contextos) y el panel
 propio del plugin sigue fusionando con la regla de arena — una

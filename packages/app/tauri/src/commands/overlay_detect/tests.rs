@@ -1032,11 +1032,12 @@ fn build_anchor_sizes_window_to_the_table_area() {
 fn side_pad_tracks_the_monitor_scale() {
     // A ~1477-px-wide two-column table (the measured 3072×1920 client):
     // the width ratio alone reserves 369 physical px, which on a 150%
-    // monitor is ~246 CSS px — well under the ~300 CSS px a loaded chip
-    // measures, so every number chip overflowed its side pad and chipFit's
-    // clamp pinned them to the window edge (the lost right-alignment on
-    // both the random-battle table and the story/PvE single-column one).
-    // The DPI-aware reserve must carry the SAME CSS room at any scale.
+    // monitor is ~246 CSS px — far under what a loaded two-column row
+    // (stat cell + the name column at its cap) measures, so every wide row
+    // overflowed its side pad and chipFit's clamp pinned them to the window
+    // edge (the lost alignment on both the random-battle table and the
+    // story/PvE single-column one). The DPI-aware reserve must carry the
+    // SAME CSS room at any scale.
     let roster = Rect {
         x: 800,
         y: 400,
@@ -1044,13 +1045,11 @@ fn side_pad_tracks_the_monitor_scale() {
         height: 600,
     };
     let at = |scale: f32| overlay_padding_x(&roster, scale);
-    // At DPR 1 the old quarter-width ratio (369) already granted the room,
-    // so it keeps winning over the 350 CSS reserve.
-    assert_eq!(at(1.0), 369);
-    // 150% / 200% monitors: the CSS reserve scales into physical px and
-    // outgrows the ratio.
-    assert_eq!(at(1.5), 525);
-    assert_eq!(at(2.0), 700);
+    // The CSS reserve outgrows the quarter-width ratio at every scale.
+    assert_eq!(at(1.0), 480);
+    // 150% / 200% monitors: the CSS reserve scales into physical px.
+    assert_eq!(at(1.5), 720);
+    assert_eq!(at(2.0), 960);
     // The scale never shrinks the reserve below the DPR-1 reserve, and a
     // path that could not query the DPI passes 1.0 (the fallback).
     assert!(at(1.0) >= overlay_padding_x(&roster, 0.5));
@@ -1070,16 +1069,18 @@ fn side_pad_tracks_the_monitor_scale() {
 #[test]
 fn build_anchor_side_pad_scales_with_dpi() {
     // Same table at DPR 1 vs DPR 2: the window's side reserves double in
-    // physical px so the chips keep the same CSS room (game window sized
-    // to hold both without the game-window clamp kicking in).
+    // physical px so the rows keep the same CSS room (game window sized to
+    // hold both without the game-window clamp kicking in: the DPR-2 reserve
+    // alone is 2× the 480 CSS floor, so the table must sit at least that
+    // far from the game window's left edge).
     let game = Rect {
         x: 0,
         y: 0,
-        width: 4000,
+        width: 4600,
         height: 1440,
     };
     let roster = Rect {
-        x: 900,
+        x: 1200,
         y: 300,
         width: 1200,
         height: 250,

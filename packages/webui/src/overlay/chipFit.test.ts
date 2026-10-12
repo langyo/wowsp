@@ -12,7 +12,7 @@
  *  each removal shrink the chip exactly like a real bitmap seal would. */
 import { describe, expect, it } from "vitest";
 
-import { fitChips, refitWhenSealsSettle } from "./chipFit";
+import { alignStatColumns, fitChips, refitWhenSealsSettle } from "./chipFit";
 
 const VIEW_W = 1000;
 /** Numbers + chip padding (CSS px) — every chip carries at least this. */
@@ -112,7 +112,7 @@ describe("fitChips", () => {
     expect(el.style.right).toBe("auto");
   });
 
-  it("clamps a seal-less candidates chip straight to the window edge", () => {
+  it("clamps a seal-less wide row straight to the window edge", () => {
     const el = chip("ally", 50, [], 300);
     fitChips(mounted(el), VIEW_W);
     expect(el.style.left).toBe("0px");
@@ -163,4 +163,66 @@ describe("fitChips", () => {
       expect(el.style.left).toBe("");
     },
   );
+});
+
+/** A row fixture for the stat-column alignment pass: a chain of
+ *  overlay-chip rows, each carrying a stat cell with a stubbed width. */
+function row(side: "ally" | "enemy", statW: number, face = "44.5%"): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = `overlay-chip overlay-chip--${side}`;
+  const stat = document.createElement("span");
+  stat.className = "overlay-chip__stat";
+  stat.textContent = face;
+  stat.getBoundingClientRect = () =>
+    ({ width: statW, left: 0, right: statW, top: 0, bottom: 12, height: 12, x: 0, y: 0, toJSON: () => ({}) }) as unknown as DOMRect;
+  const name = document.createElement("span");
+  name.className = "overlay-chip__name";
+  name.textContent = "someone";
+  el.append(stat, name);
+  return el;
+}
+
+describe("alignStatColumns", () => {
+  it("pins every stat cell of a side to the widest face on that side", () => {
+    const a = row("enemy", 60, "44.5%");
+    const b = row("enemy", 132, "44.5% · 1234 · 12.3k");
+    const c = row("enemy", 48, "—");
+    alignStatColumns(mounted(a, b, c));
+    const widthOf = (el: HTMLDivElement) =>
+      (el.querySelector(".overlay-chip__stat") as HTMLElement).style.width;
+    expect(widthOf(a)).toBe("132px");
+    expect(widthOf(b)).toBe("132px");
+    expect(widthOf(c)).toBe("132px");
+  });
+
+  it("rounds the shared width up to whole pixels", () => {
+    const a = row("ally", 60.4);
+    const b = row("ally", 60.1);
+    alignStatColumns(mounted(a, b));
+    expect((a.querySelector(".overlay-chip__stat") as HTMLElement).style.width).toBe(
+      "61px",
+    );
+  });
+
+  it("keeps the two sides' columns independent", () => {
+    const ally = row("ally", 60);
+    const enemy = row("enemy", 132);
+    alignStatColumns(mounted(ally, enemy));
+    expect((ally.querySelector(".overlay-chip__stat") as HTMLElement).style.width).toBe(
+      "60px",
+    );
+    expect((enemy.querySelector(".overlay-chip__stat") as HTMLElement).style.width).toBe(
+      "132px",
+    );
+  });
+
+  it("skips zero-width measures (the happy-dom layout gap)", () => {
+    const a = row("enemy", 0);
+    alignStatColumns(mounted(a));
+    expect((a.querySelector(".overlay-chip__stat") as HTMLElement).style.width).toBe("");
+  });
+
+  it("does not fail on a side with no rows", () => {
+    expect(() => alignStatColumns(mounted())).not.toThrow();
+  });
 });

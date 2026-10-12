@@ -340,7 +340,7 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
         // the game's re-sorted layout always is, so a non-blockwise read
         // (a glare frame darkening one alive row mid-block) is NOT a sink
         // layout — attributing it would name the wrong victim. Skip: the
-        // consumer degrades to ranges on the count mismatch instead.
+        // consumer degrades the side on the count mismatch instead.
         let blockwise = !alive[range.clone()]
             .iter()
             .zip(alive[range.clone()].iter().skip(1))
@@ -359,7 +359,7 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
         // range.start back (the pre-fix code) made enemy rows absolute
         // full-grid indices, which both consumers resolve against their
         // enemy-only alive order: every enemy attribution missed the list
-        // and degraded the side to candidate ranges.
+        // and degraded the side.
         overlay_detect::sink_victims(&old_side, &new_side, was, now)
             .unwrap_or_default()
             .into_iter()

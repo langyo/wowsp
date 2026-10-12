@@ -55,7 +55,7 @@
 //!   the game re-sorts [alive by Tab key] ++ [sunk by Tab key], so each
 //!   victim's binarized strip reappears dimmed in the sunk block — and the
 //!   consumers (overlay page + live panel) keep their layouts exact
-//!   instead of falling back to candidate ranges.
+//!   instead of falling back to an un-flagged full order.
 //!
 //! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
 //! searching/fallback (acquiring without a confirmed pin, the fallback
@@ -142,7 +142,8 @@ pub const MANUAL_LOCATE_CLOSE_EVENT: &str = "wowsp://manual-locate-close";
 /// BEFORE the updated anchor of the same pass, so a consumer can resolve
 /// the indices against its pre-sink layout first and re-derive an exact
 /// one when the anchor lands. An unsolved side carries an empty vec — the
-/// consumer degrades that side to candidate ranges instead of guessing.
+/// consumer degrades that side (keeps its full order un-flagged) instead
+/// of guessing.
 pub const SINK_ATTRIB_EVENT: &str = "wowsp://sink-attrib";
 
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is

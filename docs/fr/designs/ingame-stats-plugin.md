@@ -185,7 +185,7 @@ LOCALISÉ DU NAVIRE (collation pinyin), pas le rang de nation issu de la
 décompilation (voir utils/shipClass). Les surfaces EN DIRECT (le mapping
 de l'overlay transparent et l'ordre prédit du panneau /live) appliquent
 aux deux la garde `realm == "cn"` (la disposition statique
-d'overlay/inferredOrder + l'ordre par nom de navire) ; le visualiseur de
+d'overlay/main.ts + l'ordre par nom de navire) ; le visualiseur de
 replay et le roster holographique conservent DÉLIBÉRÉMENT la règle WG
 (aucune capture CN n'existe pour leurs contextes) et le panneau propre
 du plugin garde sa fusion selon la règle arène — une différence purement

@@ -202,8 +202,8 @@ pub struct OverlayStatus {
 /// order — the consumer resolves them against its own layout (the decompiled
 /// Tab sort key keeps that layout exact), then adds the named players to its
 /// sunk set. An empty vec on a side means "no attribution for that side"
-/// (unreadable strips / an unexplained rewrite): the consumer must degrade
-/// that side to candidate ranges, never guess.
+/// (unreadable strips / an unexplained rewrite): the consumer degrades
+/// that side — it keeps the full order un-flagged — rather than guessing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SinkAttribution {

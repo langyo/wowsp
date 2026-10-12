@@ -6,38 +6,39 @@ pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
     (roster.height / 8).clamp(24, 96)
 }
 
-/// The chip layer's worst-case side reserve in CSS px. The chips anchor at
-/// the table's edge and grow OUTWARD with `white-space: nowrap`; the widest
-/// steady-state face (four dot-joined numbers with their localized battle
-/// unit, plus a four-character career seal and its gap) measures ~20 font
-/// heights ≈ 300 CSS px at the chip font cap (15 CSS px), and the pad must
-/// also carry the anchor gap plus the fit pass's overhang tolerance. 350 is
-/// that worst case with headroom; candidate-RANGE chips (several players'
-/// numbers slash-joined) deliberately exceed it — chipFit trims their seals
-/// and clamps them last, which is the designed degradation for a row that
-/// has no right to a fixed pad.
-const SIDE_PAD_CSS_PX: f32 = 350.0;
+/// The row layer's worst-case side reserve in CSS px. Rows anchor at the
+/// table's edge and grow OUTWARD with `white-space: nowrap`; at the 15 CSS
+/// px font cap the widest SEAL-LESS row measures (browser-measured):
+/// stat cell ~244 (four dot-joined numbers with their localized battle
+/// unit; ~253 when the unit runs past its max) + name cell at its 13-em
+/// cap 195 + one flex gap, padding and border ~24 ≈ 472, plus the anchor
+/// gap and the fit pass's overhang tolerance ≈ 480. Seals deliberately exceed
+/// this (one 4-char seal adds ~70, a second ~140): a seal-bearing row past
+/// the reserve takes chipFit's designed degradation — seals trim first,
+/// the free edge clamps last — so the reserve buys the whole
+/// stat+name line and lets the auxiliary verdicts yield.
+const SIDE_PAD_CSS_PX: f32 = 480.0;
 
-/// Horizontal padding (physical px): WIDER than vertical because the stat
-/// chips render OUTSIDE the table's left/right edges (inside they cover the
-/// ship names) — the window must reserve a full chip width per side. The
-/// reserve is DPI-AWARE: chip fonts are CSS px (the overlay page sizes them
+/// Horizontal padding (physical px): WIDER than vertical because the row
+/// layer renders OUTSIDE the table's left/right edges (inside it covers the
+/// ship names) — the window must reserve a full row width per side. The
+/// reserve is DPI-AWARE: row fonts are CSS px (the overlay page sizes them
 /// off the row pitch, capped at 15) while every rect here is physical, so
-/// the same visual chip occupies `scale ×` more physical pixels on a
+/// the same visual row occupies `scale ×` more physical pixels on a
 /// scaled monitor and a pad picked in raw physical px silently starves the
-/// chips there. It did exactly that: the old `width / 4` heuristic with a
+/// rows there. It did exactly that: the old `width / 4` heuristic with a
 /// fixed 320–560 physical envelope left 246 CSS px of room on a 150%
 /// monitor's random-battle table (1477 physical px wide → 369 physical pad
-/// → 246 CSS) against a ~300 CSS px chip — every loaded number chip
+/// → 246 CSS), far under what a loaded row measures — every wide row
 /// overflowed its side pad and chipFit's last-resort clamp pinned them to
-/// the window edge, each at its own width, so the chip column lost the
+/// the window edge, each at its own width, so the column lost the
 /// table-edge alignment outright (both on the two-column table and on the
 /// story/PvE single-column one, where the narrow table drove the pad onto
 /// its 320 floor). The reserve is therefore `SIDE_PAD_CSS_PX × scale`,
 /// still grown by a quarter of the table width when the layout is wide
 /// enough to afford more, and the window's own game-window clamp keeps the
 /// wider request from overreaching the screen. Past the covered reserve
-/// chipFit trims seals first and only then slides the chip back over the
+/// chipFit trims seals first and only then slides the row back over the
 /// table's outer column, so an under-padded window degrades visibly (lost
 /// seals) before it degrades badly.
 pub(crate) fn overlay_padding_x(roster: &Rect, dpi_scale: f32) -> i32 {
