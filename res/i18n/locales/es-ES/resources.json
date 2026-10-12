@@ -67,6 +67,7 @@
   "modstationUninstallConfirm": "¿Eliminar el mod de ModStation \"{name}\"? Se borrará su directorio completo en bin/<versión>/mods/.",
   "install": "Instalar",
   "reinstall": "Registrar y reinstalar",
+  "reinstallSame": "Reinstalar",
   "texCover": "Cubre {count} barco(s) · {ships}",
   "loadingAssets": "Escaneando recursos…",
   "noAssets": "No hay recursos previsualizables en esta unidad.",

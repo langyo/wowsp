@@ -67,6 +67,7 @@
   "modstationUninstallConfirm": "Supprimer le mod ModStation « {name} » ? Son dossier entier sous bin/<version>/mods/ sera effacé.",
   "install": "Installer",
   "reinstall": "Enregistrer et réinstaller",
+  "reinstallSame": "Réinstaller",
   "texCover": "Couvre {count} navire(s) · {ships}",
   "loadingAssets": "Analyse des ressources…",
   "noAssets": "Aucun aperçu disponible pour cette unité.",

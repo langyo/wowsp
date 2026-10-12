@@ -262,7 +262,9 @@ struct RawVersion {
     #[serde(default)]
     i18n: std::collections::HashMap<String, RawI18n>,
     /// First preview screenshot, a GitHub user-attachment URL. Rendered in
-    /// the catalog detail pane (the CSP allows the githubusercontent host).
+    /// the catalog detail pane through the `media` proxy (mirror ladder +
+    /// app proxy + disk cache) — the raw URL is neither inside the webview's
+    /// CSP `img-src` nor reliably reachable directly.
     #[serde(default)]
     preview: Option<String>,
     #[serde(default)]
@@ -506,6 +508,14 @@ pub async fn mod_catalog_install(
     // the entry's default package list (which mirrors the first preset).
     preset: Option<String>,
 ) -> Result<InstallReport, String> {
+    // Every failure of this command is otherwise log-invisible (its early
+    // guards return before any download or install line) — the entry line
+    // keeps "the user pressed install" distinguishable from "the UI never
+    // offered the button".
+    tracing::info!(id = %mod_id, preset = ?preset, "mod_catalog_install begin");
+    // Drop a stale cancel pressed while no job was registered (during the
+    // previous pass's unpack tail) — this attempt is user-initiated.
+    download_hub::clear_pending(kind::MOD_PACKAGE, &mod_id);
     let index = load_cached_index()
         .ok_or_else(|| "catalog not loaded yet — refresh the online list first".to_string())?;
     let entry = index
@@ -1198,7 +1208,7 @@ fn reconcile_core_with_grace(
     grace: std::time::Duration,
 ) -> ReconcileReport {
     let mut dropped = 0usize;
-    let mut ghosts: Vec<(String, String)> = Vec::new();
+    let mut ghosts: Vec<(String, String, bool)> = Vec::new();
     installs.retain(|r| {
         // Records stamped with a DIFFERENT game install are not ours to
         // judge — the ledger is global, and checking them against this
@@ -1213,16 +1223,65 @@ fn reconcile_core_with_grace(
         } else {
             dropped += 1;
             // The ghost's wowsp.toml row goes with it (removed after the
-            // ledger verdict settles).
-            ghosts.push((r.id.clone(), r.bin_version.clone()));
+            // ledger verdict settles); the third flag remembers whether
+            // it referenced the shared loader marker (see below).
+            ghosts.push((
+                r.id.clone(),
+                r.bin_version.clone(),
+                r.files.iter().any(|f| f == "PnFModsLoader.py"),
+            ));
             false
         }
     });
-    for (id, bin) in &ghosts {
+    for (id, bin, _) in &ghosts {
         manifest::hub_apply(manifest::ManifestOp::RemoveManaged {
             res_mods: manifest::res_mods_of(game_root, bin),
             id: id.clone(),
         });
+    }
+    // A dropped ghost may have been the last record referencing the shared
+    // loader marker — apply the same ref-count policy as a full uninstall
+    // (0-byte placeholder only, never while foreign PnF content survives)
+    // so the marker does not outlive every PnF mod it served.
+    let loader_referenced = || {
+        installs
+            .iter()
+            .any(|r| r.files.iter().any(|f| f == "PnFModsLoader.py"))
+    };
+    for (_, bin, owned_loader) in &ghosts {
+        if !owned_loader || loader_referenced() {
+            continue;
+        }
+        let res_mods = Path::new(game_root).join("bin").join(bin).join("res_mods");
+        if ingame_plugin::has_pnf_mods(&res_mods) {
+            continue;
+        }
+        let loader = res_mods.join("PnFModsLoader.py");
+        if loader.metadata().map(|m| m.len() == 0).unwrap_or(false)
+            && fs::remove_file(&loader).is_ok()
+        {
+            tracing::info!(bin = %bin, "reconcile removed the orphaned loader placeholder");
+        }
+    }
+    // Dust sweep of the LIVE bin, not ghost-gated: the loader-owning record
+    // may have left the placeholder behind when it was fully uninstalled
+    // while other PnF content still lived (`has_pnf_mods` correctly kept
+    // the marker then) — once that content is gone too, no record names the
+    // marker anymore, so no future ghost ever will either. Same guards:
+    // ours (0-byte) only, and never while PnF content survives.
+    if !loader_referenced() {
+        if let Some((_, ver_dir)) =
+            crate::commands::game_context::latest_bin_dir(Path::new(game_root))
+        {
+            let res_mods = ver_dir.join("res_mods");
+            let loader = res_mods.join("PnFModsLoader.py");
+            if !ingame_plugin::has_pnf_mods(&res_mods)
+                && loader.metadata().map(|m| m.len() == 0).unwrap_or(false)
+                && fs::remove_file(&loader).is_ok()
+            {
+                tracing::info!("reconcile swept the orphaned loader placeholder");
+            }
+        }
     }
     // Snapshot dirs are shared across installs: only collect orphans no
     // record ANYWHERE still references, and give fresh ones a grace
@@ -1265,6 +1324,12 @@ fn reconcile_core_with_grace(
 /// Does any file this record lists still exist? `@game/` entries resolve
 /// against the game root (bin-independent); the rest against the record's
 /// own `bin/<version>/res_mods`, falling back to its safe-mode twin.
+/// The shared `PnFModsLoader.py` marker never counts: no unit owns it, so
+/// unit uninstalls used to strand records trimmed down to just that file —
+/// and a record whose only surviving "file" is the shared marker describes
+/// no installed mod at all (it would keep badging the entry as installed
+/// and hide its install button). The marker itself is ref-counted by the
+/// uninstall path, not by record aliveness.
 fn record_alive(game_root: &str, record: &ModInstallRecord) -> bool {
     if record.files.is_empty() {
         return false;
@@ -1272,17 +1337,21 @@ fn record_alive(game_root: &str, record: &ModInstallRecord) -> bool {
     let base = Path::new(game_root).join("bin").join(&record.bin_version);
     let live = base.join("res_mods");
     let off = base.join(format!("res_mods{}", mod_hub::SAFE_MODE_SUFFIX));
-    record.files.iter().any(|f| match f.strip_prefix("@game/") {
-        Some(rest) => Path::new(game_root).join(rest).is_file(),
-        // A disabled mod's files live under `.bak` twins — they count
-        // too, or every toggled-off mod would reconcile away.
-        None => {
-            live.join(f).is_file()
-                || off.join(f).is_file()
-                || live.join(format!("{f}.bak")).is_file()
-                || off.join(format!("{f}.bak")).is_file()
-        },
-    })
+    record
+        .files
+        .iter()
+        .filter(|f| f.as_str() != "PnFModsLoader.py")
+        .any(|f| match f.strip_prefix("@game/") {
+            Some(rest) => Path::new(game_root).join(rest).is_file(),
+            // A disabled mod's files live under `.bak` twins — they count
+            // too, or every toggled-off mod would reconcile away.
+            None => {
+                live.join(f).is_file()
+                    || off.join(f).is_file()
+                    || live.join(format!("{f}.bak")).is_file()
+                    || off.join(format!("{f}.bak")).is_file()
+            },
+        })
 }
 
 #[cfg(test)]
@@ -1793,6 +1862,69 @@ mod tests {
         assert_eq!(
             ids,
             vec!["alive", "stale", "quarantined", "toggled-off", "foreign"]
+        );
+
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn reconcile_drops_loader_only_zombies_and_orphan_placeholders() {
+        // A unit uninstall under pre-fix builds trimmed the first PnF record
+        // down to just the shared loader marker. Such zombies must reconcile
+        // away (they keep badging the catalog entry as installed and hide
+        // its install button), and once no record references the marker any
+        // more, the orphaned 0-byte placeholder goes with them.
+        let tmp = std::env::temp_dir().join("wowsp_reconcile_loader_zombie");
+        let _ = fs::remove_dir_all(&tmp);
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        // The shared marker, still on disk — plus a live mod's payload.
+        fs::create_dir_all(&rm).unwrap();
+        fs::write(rm.join("PnFModsLoader.py"), b"").unwrap();
+        touch(&rm.join("PnFMods/Live/Main.py"));
+        let mk = |id: &str, files: &[&str]| ModInstallRecord {
+            id: id.into(),
+            name: id.into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| f.to_string()).collect(),
+            restore_dir: None,
+            game_root: String::new(),
+        };
+        let mut installs = vec![
+            mk("zombie", &["PnFModsLoader.py"]),
+            mk("live", &["PnFMods/Live/Main.py", "PnFModsLoader.py"]),
+        ];
+        let report = reconcile_core_with_grace(
+            &game.to_string_lossy(),
+            &mut installs,
+            std::time::Duration::ZERO,
+        );
+        assert_eq!(report.dropped_records, 1, "the loader-only zombie goes");
+        let ids: Vec<&str> = installs.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["live"]);
+        // The surviving record still references the marker → it stays.
+        assert!(rm.join("PnFModsLoader.py").is_file());
+
+        // Once the live record's payload vanishes too, the next reconcile
+        // drops it AND the orphaned placeholder (0-byte, no PnF content).
+        fs::remove_dir_all(rm.join("PnFMods/Live")).unwrap();
+        let report = reconcile_core_with_grace(
+            &game.to_string_lossy(),
+            &mut installs,
+            std::time::Duration::ZERO,
+        );
+        assert_eq!(report.dropped_records, 1);
+        assert!(installs.is_empty());
+        assert!(
+            !rm.join("PnFModsLoader.py").exists(),
+            "orphaned placeholder collected with its last record"
         );
 
         fs::remove_dir_all(&tmp).ok();

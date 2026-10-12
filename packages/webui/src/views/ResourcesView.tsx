@@ -76,6 +76,7 @@ import {
 } from "@/features/modhub/migrationDecide";
 import { useRoute, useRouter } from "vue-router";
 import { openExternal } from "@/utils/openExternal";
+import { mediaImageUrl } from "@/utils/media";
 import { sameGamePath } from "@/utils/gamePath";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -1494,9 +1495,13 @@ export default defineComponent({
             {(text.desc || entry.description) && (
               <p class="mod-detail__desc">{text.desc || entry.description}</p>
             )}
+            {/* Preview images route through the media proxy (proxy-aware
+             * client + mirror ladder + disk cache) — the raw GitHub URL is
+             * both outside the CSP's img-src and unreachable for many CN
+             * users when fetched by the webview directly. */}
             {entry.preview && (
               <HkImagePreview
-                src={entry.preview}
+                src={mediaImageUrl(entry.preview)}
                 alt={text.name || entry.title}
                 objectFit="contain"
               />
@@ -1556,7 +1561,12 @@ export default defineComponent({
                     {busyUninstall ? t("resources.uninstalling") : t("resources.uninstall")}
                   </button>
                 )}
-                {!upToDate && !entry.bundled && (
+                {/* The install action stays reachable even when the ledger
+                 * says "installed and current" — the backend rewinds the
+                 * same-id record and reinstalls over it, so this is also
+                 * the escape hatch for any residue that badges an entry
+                 * installed after its files are gone. */}
+                {!entry.bundled && (
                   <HkButton
                     size="sm"
                     variant="primary"
@@ -1574,7 +1584,9 @@ export default defineComponent({
                     {busyInstall
                       ? t("resources.installingMod")
                       : record
-                        ? t("resources.update")
+                        ? upToDate
+                          ? t("resources.reinstallSame")
+                          : t("resources.update")
                         : foreignCopy
                           ? t("resources.reinstall")
                           : t("resources.install")}

@@ -67,6 +67,7 @@
   "modstationUninstallConfirm": "Удалить мод ModStation «{name}»? Его каталог целиком в bin/<версия>/mods/ будет удалён.",
   "install": "Установить",
   "reinstall": "Зарегистрировать и переустановить",
+  "reinstallSame": "Переустановить",
   "texCover": "Затрагивает кораблей: {count} · {ships}",
   "loadingAssets": "Сканирование ресурсов…",
   "noAssets": "Нет ресурсов для предпросмотра.",

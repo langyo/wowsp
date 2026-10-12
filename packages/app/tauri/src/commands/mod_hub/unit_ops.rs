@@ -209,6 +209,20 @@ pub async fn mod_hub_uninstall_unit(
     Ok(report)
 }
 
+/// Ledger files no unit tree can ever cover: game-root payloads, and the
+/// shared PnF loader marker (deliberately not a unit — see
+/// `scan_installed::gather_candidates`). Without the marker exemption a
+/// record that owns it could never be "fully covered" by a unit uninstall:
+/// it would only be TRIMMED down to `files=["PnFModsLoader.py"]`, and that
+/// zombie record keeps badging the catalog entry as installed (hiding its
+/// install button) long after the mod itself is gone. Routing such records
+/// through the full uninstall is safe: it skips the marker in its plain
+/// removal loop and ref-counts the placeholder away once the last user is
+/// gone.
+fn unit_uninstall_exempt(f: &str) -> bool {
+    f.starts_with("@game/") || f == "PnFModsLoader.py"
+}
+
 /// Everything [`mod_hub_uninstall_unit`] does once the unit is resolved —
 /// split out so tests can drive it against an in-memory record list instead
 /// of the real ledger. Deletes the unit's files directly FIRST, then lets
@@ -283,7 +297,7 @@ pub(crate) fn uninstall_unit_core(
                 record
                     .files
                     .iter()
-                    .all(|f| f.starts_with("@game/") || unit_covers(&unit.paths, f)),
+                    .all(|f| unit_uninstall_exempt(f) || unit_covers(&unit.paths, f)),
                 record.id.clone(),
                 covered,
             )
@@ -353,7 +367,7 @@ fn preflight_unit_uninstall(
         if record
             .files
             .iter()
-            .all(|f| f.starts_with("@game/") || covered(f))
+            .all(|f| unit_uninstall_exempt(f) || covered(f))
         {
             let id = record.id.clone();
             super::mod_catalog::validate_uninstall_order(&projected, &id, game_root)?;

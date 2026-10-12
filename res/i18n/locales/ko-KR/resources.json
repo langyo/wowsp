@@ -67,6 +67,7 @@
   "modstationUninstallConfirm": "ModStation 모드 \"{name}\"을(를) 삭제할까요? bin/<버전>/mods/ 아래의 전체 디렉터리가 삭제됩니다.",
   "install": "설치",
   "reinstall": "등록 후 다시 설치",
+  "reinstallSame": "다시 설치",
   "texCover": "{count}척 함선 커버 · {ships}",
   "loadingAssets": "에셋 스캔 중…",
   "noAssets": "미리볼 수 있는 에셋이 없습니다.",

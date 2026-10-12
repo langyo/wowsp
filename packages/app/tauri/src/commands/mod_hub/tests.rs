@@ -203,6 +203,73 @@ fn uninstall_unit_removes_files_and_syncs_manifest() {
 }
 
 #[test]
+fn unit_uninstall_drops_loader_owning_record_not_a_zombie() {
+    // Regression (2026-10-12 report): uninstalling a mod's units one by one
+    // trimmed the FIRST-installed record — the one whose install had placed
+    // the shared loader marker — down to files=["PnFModsLoader.py"]. That
+    // zombie record kept the catalog entry badged as installed (hiding its
+    // install button) while no unit ever covered the marker, so it could
+    // never be reached again. The record must take the FULL uninstall: the
+    // marker is exempt from unit coverage and ref-counted by that path.
+    let tmp = std::env::temp_dir().join("wowsp_unit_uninstall_loader");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let rm = game.join("bin/1/res_mods");
+    let mk_record = || ModInstallRecord {
+        id: "smoke".into(),
+        name: "Smoke".into(),
+        version: "1".into(),
+        category: "battle".into(),
+        source: "mod-hub".into(),
+        discussion: None,
+        preset: None,
+        bin_version: "1".into(),
+        installed_at: String::new(),
+        files: vec![
+            "PnFMods/SmokeMarkerPy/Main.py".into(),
+            "PnFModsLoader.py".into(),
+        ],
+        restore_dir: None,
+        game_root: String::new(),
+    };
+
+    // Last PnF content in the tree: the record drops AND the 0-byte
+    // placeholder goes with its last referencing record.
+    touch(&rm.join("PnFMods/SmokeMarkerPy/Main.py"));
+    fs::write(rm.join("PnFModsLoader.py"), b"").unwrap();
+    let unit = classify_installed_root(&rm, None)
+        .into_iter()
+        .find(|m| m.rel_path == "PnFMods/SmokeMarkerPy")
+        .unwrap();
+    let mut installs = vec![mk_record()];
+    uninstall_unit_core(game.to_str().unwrap(), &rm, &unit, &mut installs).unwrap();
+    assert!(
+        installs.is_empty(),
+        "the loader-owning record must not survive as a zombie"
+    );
+    assert!(!rm.join("PnFModsLoader.py").exists(), "last user gone");
+
+    // Foreign PnF content still living in the tree keeps the shared marker
+    // alive even though the record is fully uninstalled.
+    touch(&rm.join("PnFMods/SmokeMarkerPy/Main.py"));
+    touch(&rm.join("PnFMods/Foreign/Main.py"));
+    fs::write(rm.join("PnFModsLoader.py"), b"").unwrap();
+    let unit = classify_installed_root(&rm, None)
+        .into_iter()
+        .find(|m| m.rel_path == "PnFMods/SmokeMarkerPy")
+        .unwrap();
+    let mut installs = vec![mk_record()];
+    uninstall_unit_core(game.to_str().unwrap(), &rm, &unit, &mut installs).unwrap();
+    assert!(installs.is_empty());
+    assert!(
+        rm.join("PnFModsLoader.py").is_file(),
+        "foreign PnF content keeps the placeholder marker"
+    );
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
 fn scans_mixed_res_mods_layout() {
     let tmp = std::env::temp_dir().join("wowsp_scan_test");
     let _ = fs::remove_dir_all(&tmp);

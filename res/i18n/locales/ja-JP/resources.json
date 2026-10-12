@@ -67,6 +67,7 @@
   "modstationUninstallConfirm": "ModStation のモッド「{name}」を削除しますか？bin/<バージョン>/mods/ 配下のディレクトリ全体が削除されます。",
   "install": "インストール",
   "reinstall": "登録して再インストール",
+  "reinstallSame": "再インストール",
   "texCover": "{count} 隻の艦をカバー · {ships}",
   "loadingAssets": "アセットをスキャン中…",
   "noAssets": "プレビュー可能なアセットはありません。",

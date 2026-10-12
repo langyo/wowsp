@@ -67,6 +67,7 @@
   "modstationUninstallConfirm": "Remove the ModStation mod \"{name}\"? Its entire directory under bin/<version>/mods/ will be deleted.",
   "install": "Install",
   "reinstall": "Register & reinstall",
+  "reinstallSame": "Reinstall",
   "texCover": "Covers {count} ship(s) · {ships}",
   "loadingAssets": "Scanning assets…",
   "noAssets": "No previewable assets under this unit.",

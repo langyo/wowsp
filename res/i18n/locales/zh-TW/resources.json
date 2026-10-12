@@ -67,6 +67,7 @@
   "modstationUninstallConfirm": "刪除 ModStation 模組「{name}」？其在 bin/<版本>/mods/ 下的整個資料夾將被移除。",
   "install": "安裝",
   "reinstall": "註冊並重新安裝",
+  "reinstallSame": "重新安裝",
   "texCover": "覆蓋 {count} 艘船 · {ships}",
   "loadingAssets": "正在掃描資源…",
   "noAssets": "該單元下沒有可預覽的資源。",
