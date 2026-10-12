@@ -57,11 +57,10 @@ pub enum Route<'a> {
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
     FeedbackAttachment { file_token: Option<&'a str> },
-    /// Nothing we serve — the static-assets layer answers every path
-    /// outside `run_worker_first`, so in production this only happens on
-    /// unknown shapes under `/api*`, `/feedback*` and `/erp*`, plus
-    /// non-navigation requests for files the assets layer does not have
-    /// (missing chunks get this clean 404, not the SPA shell).
+    /// Nothing we serve — every path outside `run_worker_first` is
+    /// answered by the static-assets layer (any miss gets the SPA
+    /// shell, navigation or not), so in production this only happens
+    /// on unknown shapes under `/api*`, `/feedback*` and `/erp*`.
     NotFound,
 }
 

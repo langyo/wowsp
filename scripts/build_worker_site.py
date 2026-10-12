@@ -37,7 +37,10 @@ SHELL_STRIPS = [
     re.compile(r'<link rel="stylesheet"[^>]*href="/wowsp/[^"]*">\n?'),
 ]
 
-CANDIDATES = ["https://langyo.github.io/wowsp", ""]
+# The ORIGIN only — entry/stylesheet paths already carry their /wowsp/
+# prefix from the base=/wowsp/ build, so candidate + path lands on
+# langyo.github.io/wowsp/** (mirror) or the same origin (worker copy).
+CANDIDATES = ["https://langyo.github.io", ""]
 
 # The loader body is literal JavaScript (braces everywhere, no bare `%`),
 # so %-style substitution keeps it readable. `json.dumps` with tight
@@ -86,8 +89,11 @@ def main() -> int:
     out_dir = Path(args[1]).resolve()
 
     # newline="" reads the HTML exactly as on disk; the write side pins
-    # LF so Windows never translates it behind our backs.
-    html = (src_dir / "index.html").read_text(encoding="utf-8", newline="")
+    # LF so Windows never translates it behind our backs. Plain open()
+    # (not Path.read_text/write_text): the newline= keyword only exists
+    # on those since Python 3.13 and CI's runners ship 3.12.
+    with open(src_dir / "index.html", encoding="utf-8", newline="") as f:
+        html = f.read()
 
     # Collect the module entry + stylesheets (all /wowsp/... paths after
     # the base=/wowsp/ build).
@@ -123,11 +129,8 @@ def main() -> int:
     # as a stray static file — drop it.
     (out_dir / "wowsp" / "_headers").unlink(missing_ok=True)
     # The JS swapped only the FIRST </body> (regex without /g) — keep that.
-    (out_dir / "index.html").write_text(
-        shell.replace("</body>", loader + "\n</body>", 1),
-        encoding="utf-8",
-        newline="\n",
-    )
+    with open(out_dir / "index.html", "w", encoding="utf-8", newline="\n") as f:
+        f.write(shell.replace("</body>", loader + "\n</body>", 1))
 
     candidates = " | ".join(c for c in CANDIDATES if c)
     print(

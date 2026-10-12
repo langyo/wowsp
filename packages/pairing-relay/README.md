@@ -335,8 +335,10 @@ a proxied CNAME) left the then-existing Workers Custom Domain
 capturing the hostname with no `[assets]` layer attached — the worker
 404'd everything outside its routes and the site was unreachable at
 `wowsp.langyo.xyz` from 2026-10-09 until this model landed. The three
-stale zone routes (`wowsp.langyo.xyz/{api,feedback,erp}*`) were
-removed once the Custom Domain + assets deploy was verified serving.
+stale zone routes (`wowsp.langyo.xyz/{api,feedback,erp}*`) are inert
+under the Custom Domain — they point at the same script — and can be
+deleted in the dashboard (zone `langyo.xyz` ▶ Workers Routes); the
+wrangler OAuth token carries no zone-routes delete scope.
 
 Smoke checks: `curl https://wowsp.langyo.xyz/api/health` (the JSON
 above) and `curl -I https://wowsp.langyo.xyz/` (the site's shell
