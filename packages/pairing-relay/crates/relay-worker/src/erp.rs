@@ -25,7 +25,7 @@ use relay_core::route::query_get;
 use serde_json::{Value, json};
 use worker::{Env, Headers, Method, Request, Response, ResponseBody, Result};
 
-use crate::feedback::{FEISHU, err, feishu_json, http_call, json_headers, ok};
+use crate::feedback::{FEISHU, err, http_call, json_headers, ok};
 
 /// 302 responses here are built from parts (`from_body(Empty)` +
 /// `Location`): `Response::redirect` wraps the JS static constructor,
@@ -122,17 +122,25 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
     };
 
     // Public profile only — the token itself never leaves the server.
-    let (_, ui) = match feishu_json(
+    // Called via http_call (not feishu_json) so a rejected profile read
+    // can surface the API's own numeric code in the failure reason.
+    let mut resp = match http_call(
         Method::Get,
         &format!("{FEISHU}/authen/v1/user_info"),
-        &uat,
-        Value::Null,
+        json_headers(Some(&uat))?,
+        None,
     )
     .await
     {
-        Ok(paired) => paired,
-        Err(_) => return login_failed(&origin, "profile"),
+        Ok(resp) => resp,
+        Err(_) => return login_failed(&origin, "profile-net"),
     };
+    let status = resp.status_code();
+    let ui: Value = resp.json().await.unwrap_or(Value::Null);
+    let api_code = ui.get("code").and_then(Value::as_i64).unwrap_or(-1);
+    if !(200..300).contains(&status) || api_code != 0 {
+        return login_failed(&origin, &format!("profile{api_code}"));
+    }
     // The documented shapes moved across endpoint generations: v1
     // nests the profile under data.user_info, some newer docs under
     // data.user, and the oldest shape is flat on data. Accept all
@@ -143,7 +151,6 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         .or_else(|| data.get("user"))
         .cloned()
         .unwrap_or(data);
-    let user = ui.pointer("/data/user").cloned().unwrap_or(Value::Null);
     let claims = SessionClaims {
         open_id: user
             .get("open_id")
@@ -163,7 +170,7 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         exp: now_secs() + SESSION_TTL_SECS,
     };
     if claims.open_id.is_empty() {
-        return login_failed(&origin, "profile");
+        return login_failed(&origin, "profile-shape");
     }
 
     let key = session_key(&app_secret);

@@ -347,9 +347,27 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
 .e-login-card h2 {{ margin: 0; font-size: var(--text-lg); font-weight: 700; }}
 .e-login-card p {{ margin: 0; font-size: var(--text-sm);
   color: rgb(var(--color-text) / 85%); }}
-.e-err {{ color: rgb(var(--color-error, 247 118 142));
-  font-size: var(--text-sm); }}
-.e-err[hidden] {{ display: none; }}
+/* ── toast (HkToast grammar: top-right stack, auto-dismiss) ─────── */
+.e-toasts {{ position: fixed; z-index: 3000;
+  top: calc(var(--space-16) + env(safe-area-inset-top, 0px));
+  right: calc(var(--space-16) + env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: var(--space-8);
+  width: min(92vw, 24rem); pointer-events: none; }}
+.e-toast {{ pointer-events: auto; display: flex; align-items: flex-start;
+  gap: var(--space-8); padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-inline-start: 3px solid rgb(var(--color-primary));
+  border-radius: var(--radius-md); background: rgb(var(--color-surface));
+  box-shadow: var(--shadow-dropdown); font-size: var(--text-sm);
+  animation: e-toast-in 0.25s var(--ease-out-expo) both; }}
+.e-toast[data-kind="error"] {{
+  border-inline-start-color: rgb(var(--color-error, 247 118 142)); }}
+.e-toast[data-kind="success"] {{ color: rgb(var(--color-text)); }}
+.e-toast.e-toast-out {{ opacity: 0; transform: translateX(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease; }}
+@keyframes e-toast-in {{ from {{ opacity: 0; transform: translateX(16px); }}
+  to {{ opacity: 1; transform: none; }} }}
+@media (prefers-reduced-motion: reduce) {{ .e-toast {{ animation: none; }} }}
 [hidden] {{ display: none !important; }}
 /* ── responsive: sidebar becomes a strip under 768px ───────────── */
 @media (max-width: 767px) {{
@@ -393,7 +411,6 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   <div class="e-content" id="app" hidden>
     <div class="e-head">
       <h2 class="e-title">反馈记录</h2>
-      <span id="hint" class="e-muted"></span>
       <button type="button" id="reload" class="e-btn e-spacer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>刷新</span></button>
     </div>
     <div class="e-table-scroll">
@@ -415,12 +432,12 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       <h2>WoWSP 反馈台</h2>
       <p>使用飞书账号登录后即可查看与处理反馈。</p>
       <a id="loginBtn" class="e-btn e-btn-primary e-btn-block" href="{base_url}/api/erp/login">使用飞书登录</a>
-      <p id="loginErr" class="e-err" hidden>登录失败，请重试。</p>
     </div>
   </div>
 </div>
 </div>
 </main>
+<div class="e-toasts" id="toasts"></div>
 <script>
 (function () {{
   // ── theme mode — mirrors hikari useTheme's data-mode attribute, fed
@@ -439,11 +456,23 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   var STATUSES = [{statuses_js}];
   var app = document.getElementById("app");
   var loginView = document.getElementById("loginView");
-  var hint = document.getElementById("hint");
   var lastItems = [];
   var pageToken = null, nextToken = null, prevStack = [];
 
   function $(id) {{ return document.getElementById(id); }}
+  // ── toasts — the one notification surface (HkToast grammar) ────────
+  function toast(msg, kind) {{
+    var host = document.getElementById("toasts");
+    var el = document.createElement("div");
+    el.className = "e-toast";
+    if (kind) el.setAttribute("data-kind", kind);
+    el.textContent = msg;
+    host.appendChild(el);
+    setTimeout(function () {{
+      el.classList.add("e-toast-out");
+      setTimeout(function () {{ el.remove(); }}, 250);
+    }}, kind === "error" ? 6000 : 3000);
+  }}
   function esc(s) {{
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {{
       return {{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}}[c];
@@ -456,13 +485,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   function showLogin(reason) {{
     app.hidden = true;
     loginView.hidden = false;
-    var errEl = $("loginErr");
-    if (reason) {{
-      errEl.textContent = "登录失败（" + reason + "），请重试。";
-      errEl.hidden = false;
-    }} else {{
-      errEl.hidden = true;
-    }}
+    if (reason) toast("登录失败（" + reason + "），请重试。", "error");
     $("who").hidden = true;
     $("logout").hidden = true;
   }}
@@ -529,8 +552,12 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
           body: JSON.stringify({{ record_id: rec, status: st, pr_link: pr }})
         }}).then(function (r) {{ return r.json(); }}).then(function (j) {{
           b.disabled = false;
-          hint.textContent = j.ok ? "已保存 " + rec : "保存失败: " + (j.error || "");
-        }}).catch(function () {{ b.disabled = false; }});
+          if (j.ok) {{ toast("已保存 " + rec, "success"); }}
+          else {{ toast("保存失败: " + (j.error || ""), "error"); }}
+        }}).catch(function () {{
+          b.disabled = false;
+          toast("保存失败：网络异常", "error");
+        }});
       }};
     }});
     var n = lastItems.filter(function (it) {{
@@ -554,10 +581,9 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
         pageToken = token || null;
         lastItems = j.items || [];
         render();
-        hint.textContent = "";
       }})
       .catch(function (e) {{
-        if (e.message !== "unauthorized") hint.textContent = e.message;
+        if (e.message !== "unauthorized") toast("加载失败：" + e.message, "error");
       }});
   }}
   // Only 下一页 grows the back-stack (loading BY prev/filter must not
@@ -731,12 +757,15 @@ mod tests {
             );
         }
         assert!(page.contains(r#"var STATUSES = ["#));
-        // Theme flip + login-error return path (the callback's reason
-        // code is surfaced in the hint).
+        // Theme flip + toast surface: login/save/load feedback all ride
+        // the top-right toast stack, no inline hint/err remnants.
         assert!(page.contains("data-mode"));
-        assert!(page.contains("params.get(\"login\")"));
-        assert!(page.contains("params.get(\"reason\")"));
+        assert!(page.contains(r#"class="e-toasts""#));
+        assert!(page.contains("function toast(msg, kind)"));
+        assert!(page.contains(r#"toast("已保存 ""#));
         assert!(page.contains("登录失败（"));
+        assert!(!page.contains("loginErr"));
+        assert!(!page.contains("e-err"));
         // The base URL is wired for API calls.
         assert!(page.contains("var BASE = \"https://wowsp.langyo.xyz\";"));
     }
