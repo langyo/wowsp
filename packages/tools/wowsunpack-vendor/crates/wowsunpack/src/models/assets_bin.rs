@@ -233,6 +233,17 @@ impl<'a> PrototypeDatabase<'a> {
     ///
     /// This is a linear scan — use for interactive/CLI lookups, not hot paths.
     pub fn find_path_by_suffix(&self, suffix: &str, self_id_index: &HashMap<u64, usize>) -> Option<(usize, String)> {
+        // Callers hand over game VFS paths ("/content/...") as often as bare
+        // prototype suffixes ("content/..."): export-model derives its .visual
+        // suffix from the geometry path it was given, and model lists and
+        // GameParams carry the leading slash. Reconstructed paths never have
+        // one, so normalize before the tail match — a leading-slash query
+        // otherwise misses every entry and export-model silently falls back
+        // to the raw geometry export (no node transforms, exploded parts).
+        let suffix = suffix.trim_start_matches('/');
+        if suffix.is_empty() {
+            return None;
+        }
         for (i, entry) in self.paths_storage.iter().enumerate() {
             // Quick filter: the leaf name must end with the suffix's last component.
             let suffix_leaf = suffix.rsplit('/').next().unwrap_or(suffix);

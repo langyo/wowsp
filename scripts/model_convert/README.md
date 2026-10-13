@@ -58,6 +58,9 @@ python scripts/model_convert/bake_planes.py --from-dump dump.json
 python scripts/model_convert/bake_planes.py --planes PJAF206_Ryujo_top
 python scripts/model_convert/bake_planes.py --all
 
+# Re-bake planes whose output GLB already exists:
+python scripts/model_convert/bake_planes.py --all --force
+
 # Just the shared shell + torpedo props:
 python scripts/model_convert/bake_planes.py --props-only
 ```
@@ -68,6 +71,14 @@ python scripts/model_convert/bake_planes.py --props-only
   GameParams entry's `model` field — regenerate after a game update.
 - Props are shared game models: `props/shell.glb` (all gun shells),
   `props/torpedo.glb`.
+- The bake only assembles correctly when `export-model` resolves the airframe's
+  `.visual` — its node transforms place the bone-local render sets (propeller,
+  antenna wire, …). The in-tree `assets_bin.rs` normalizes the leading slash of
+  VFS-style paths before its suffix match; without that normalization every
+  leading-slash query misses and the export silently falls back to raw
+  geometry, scattering the unplaced sets around the airframe. Seeing
+  `No matching .visual found; exporting raw geometry` for a WG-client airframe
+  in the bake log means that resolution broke again.
 - Requires the in-tree patched `wowsunpack` (`target/release/wowsunpack.exe`):
   stock `export-model` pairs vertex/index mappings positionally, which corrupts
   multi-buffer raw exports (most planes). The vendored patch pairs them by the

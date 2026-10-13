@@ -108,6 +108,8 @@ def main() -> int:
     ap.add_argument("--from-dump", type=Path, default=None, help="replay dump JSON to take the plane set from")
     ap.add_argument("--planes", nargs="*", default=None, help="explicit GP plane names")
     ap.add_argument("--all", action="store_true", help="bake every plane in plane_types.json")
+    ap.add_argument("--force", action="store_true",
+                    help="re-bake planes/props whose output GLB already exists")
     ap.add_argument("--props-only", action="store_true", help="only bake shell + torpedo props")
     ap.add_argument("--game-dir", default=None)
     args = ap.parse_args()
@@ -126,7 +128,7 @@ def main() -> int:
     # Props first — tiny.
     for name, vfs in PROPS.items():
         out = PROPS_OUT / f"{name}.glb"
-        if out.exists():
+        if out.exists() and not args.force:
             continue
         print(f"[props] {name} ...")
         if export_and_bake(wowsunpack, game, vfs, out, PROP_TRIS[name], name):
@@ -168,7 +170,7 @@ def main() -> int:
             failed.append(n)
             continue
         out = PLANES_OUT / f"{index}.glb"
-        if out.exists():
+        if out.exists() and not args.force:
             done += 1
             continue
         print(f"[planes] {index} ({n}) ...")
