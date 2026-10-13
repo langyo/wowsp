@@ -705,6 +705,9 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       if (j && j.ok) {{
         showApp(j);
         load();
+        if (j.debug && j.debug !== "refreshed") {{
+          toast("通讯录读取: " + j.debug, "error");
+        }}
       }} else {{
         var params = new URLSearchParams(location.search);
         showLogin(params.get("login") === "failed" ? params.get("reason") || "unknown" : "");
