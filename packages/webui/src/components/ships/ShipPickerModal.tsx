@@ -1,4 +1,4 @@
-import { computed, defineComponent, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, ref, watch, type PropType, type VNode } from "vue";
 
 import { HkButton, HkCheckbox, HkModal, HkSearchInput, HkTag } from "@celestia-island/hikari";
 
@@ -8,6 +8,7 @@ import { tierLabel } from "@/utils/shipCompare";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
+import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import "./ShipPickerModal.scss";
@@ -80,6 +81,24 @@ export default defineComponent({
 
     function typeLabel(code: string): string {
       return t(`ships.type.${code}`, {}) || code;
+    }
+
+    /** Option icons match the 水表 bar's popups: the white battle-HUD
+     *  silhouette for ship types, the nation flag for nations (NationFlag
+     *  swaps to a letter badge when the asset is missing). */
+    function typeOptionIcon(code: string): VNode {
+      return (
+        <img
+          class="ship-filter-bar__type-icon"
+          src={shipIconUrl(code, "white") ?? undefined}
+          alt=""
+          draggable={false}
+        />
+      );
+    }
+
+    function nationOptionIcon(code: string): VNode {
+      return <NationFlag nation={code} label={nationLabel(code)} variant="flag" size="sm" />;
     }
 
     // Chip option lists — derived from the store so a realm switch re-derives
@@ -165,8 +184,11 @@ export default defineComponent({
             <div class="ship-picker">
               {/* Filter toolbar mirrors the 水表查询 bar: collapsed category
                   chips (single-open, state owned here) + a stretching search
-                  on the same row. The last chip opens leftwards so its popup
-                  never escapes the modal edge. */}
+                  on the same row. Type options lead with the white silhouette
+                  and nation options with the flag, matching the 水表 popups;
+                  the nation strip pans one line, so its popup names the
+                  gesture like the 水表 nation popup does. The last chip opens
+                  leftwards so its popup never escapes the modal edge. */}
               <div class="ship-picker__toolbar">
                 <FilterCategoryChip
                   title={t("ships.filter.tierTitle")}
@@ -187,6 +209,7 @@ export default defineComponent({
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "type" : null)}
                   onToggle={(v: string) => (selectedTypes.value = toggleSet(selectedTypes.value, v))}
                   onAll={() => (selectedTypes.value = new Set())}
+                  renderOptionIcon={typeOptionIcon}
                 />
                 <FilterCategoryChip
                   title={t("ships.filter.nationTitle")}
@@ -197,8 +220,16 @@ export default defineComponent({
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "nation" : null)}
                   onToggle={(v: string) => (selectedNations.value = toggleSet(selectedNations.value, v))}
                   onAll={() => (selectedNations.value = new Set())}
+                  renderOptionIcon={nationOptionIcon}
                   edge
-                />
+                >
+                  {/* Scroll-hint line ahead of the default multi-select hint,
+                      same pair of lines as the 水表 nation popup (the phone
+                      sheet hides it via the shared SCSS). */}
+                  <div class="ship-filter-bar__pop-hint ship-filter-bar__scroll-hint">
+                    {t("ships.filter.nationScrollHint")}
+                  </div>
+                </FilterCategoryChip>
                 <HkSearchInput
                   class="ship-picker__search"
                   size="sm"

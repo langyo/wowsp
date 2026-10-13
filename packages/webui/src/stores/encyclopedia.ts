@@ -80,11 +80,20 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     return [...set].sort((a, b) => (NATION_ORDER[a] ?? 99) - (NATION_ORDER[b] ?? 99));
   });
 
-  /** Ships grouped by type → for the type filter (BB/CA/DD/CV/SS). */
+  /** In-game ship-type order (the 水表 bar's reading order) — every filter
+   *  surface fed by `types` reads its options in this order. */
+  const TYPE_ORDER: Record<string, number> = {
+    Battleship: 0, AirCarrier: 1, Cruiser: 2, Destroyer: 3, Submarine: 4,
+  };
+
+  /** Ships grouped by type → for the type filter (BB/CV/CA/DD/SS). */
   const types = computed(() => {
     const set = new Set<string>();
     for (const s of ships.value) if (s.type) set.add(s.type);
-    return [...set].sort();
+    // Code-point tiebreak (not localeCompare): deterministic across hosts.
+    return [...set].sort(
+      (a, b) => (TYPE_ORDER[a] ?? 99) - (TYPE_ORDER[b] ?? 99) || (a < b ? -1 : a > b ? 1 : 0),
+    );
   });
 
   /** Lookup map: shipId → ShipInfo (for back-filling names in stats).
