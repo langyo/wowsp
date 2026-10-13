@@ -8,8 +8,11 @@
 //! active install, and its page button deep-links the GitHub Discussions
 //! resource thread.
 
+use anyhow::anyhow;
 use serde::Serialize;
 use tauri::Emitter;
+
+use wowsp_tauri_shared::CommandResult;
 
 /// The plugin's resource thread on langyo/wowsp — the settings page builds
 /// `https://github.com/langyo/wowsp/discussions/<n>` from this.
@@ -57,7 +60,7 @@ pub struct IngamePluginStatus {
 /// Read-only — unlike the install commands it takes no mod-hub gate, so the
 /// settings page can poll it freely.
 #[tauri::command]
-pub fn ingame_plugin_status(game_root: String) -> Result<IngamePluginStatus, String> {
+pub fn ingame_plugin_status(game_root: String) -> CommandResult<IngamePluginStatus> {
     let dir = super::game_context::res_mods_dir(std::path::Path::new(&game_root))?;
     let entry = dir.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY);
     let installed = entry.is_file();
@@ -187,36 +190,36 @@ const LOADER_MARKER: &str = "PnFModsLoader.py";
 /// files are overwritten in place (a broken install can be reinstalled
 /// over), and the #694 layout's leftovers are removed.
 #[tauri::command]
-pub async fn ingame_plugin_install(game_root: String) -> Result<String, String> {
+pub async fn ingame_plugin_install(game_root: String) -> CommandResult<String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     super::mod_hub::ensure_game_closed(&game_root)?;
     super::mod_hub::ensure_res_mods_active(&game_root)?;
-    install_probe_files(&game_root)
+    Ok(install_probe_files(&game_root)?)
 }
 
 /// Install core, split from the command so the mod hub's stale-bin
 /// migration can reuse it mid-migration: the migrator already holds the
 /// mod-hub gate, verified the game is closed and res_mods is active — so
 /// this core takes none of those locks (re-taking the gate would deadlock).
-pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
+pub(crate) fn install_probe_files(game_root: &str) -> anyhow::Result<String> {
     let dir = super::game_context::res_mods_dir(std::path::Path::new(game_root))?;
     let mod_dir = dir.join("PnFMods").join(MOD_DIR);
-    std::fs::create_dir_all(&mod_dir).map_err(|e| format!("create {}: {e}", mod_dir.display()))?;
+    std::fs::create_dir_all(&mod_dir).map_err(|e| anyhow!("create {}: {e}", mod_dir.display()))?;
     // Dead session state must not survive the reinstall — these are the
     // plugin's own per-run rewrites (see [`RUNTIME_BRIDGE_FILES`]).
     for file in RUNTIME_BRIDGE_FILES {
         let _ = std::fs::remove_file(mod_dir.join(file));
     }
     let entry = mod_dir.join(MOD_ENTRY);
-    std::fs::write(&entry, PLUGIN_SOURCE).map_err(|e| format!("write {}: {e}", entry.display()))?;
+    std::fs::write(&entry, PLUGIN_SOURCE).map_err(|e| anyhow!("write {}: {e}", entry.display()))?;
     // The view lands under its own res_mods subtree — this install's own
     // first-party file, no shared paths.
     let view_dest = dir.join(VIEW_DEST);
     if let Some(parent) = view_dest.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(|e| anyhow!("create {}: {e}", parent.display()))?;
     }
     std::fs::write(&view_dest, PLUGIN_VIEW)
-        .map_err(|e| format!("write {}: {e}", view_dest.display()))?;
+        .map_err(|e| anyhow!("write {}: {e}", view_dest.display()))?;
     // The #694 layout's leftovers (installer-only mount manifest + an
     // unscanned view path) are this install's own files — remove them so
     // an update can't leave a stale half-layout behind.
@@ -228,7 +231,7 @@ pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
     }
     let loader = dir.join(LOADER_MARKER);
     if !loader.exists() {
-        std::fs::write(&loader, "").map_err(|e| format!("write {}: {e}", loader.display()))?;
+        std::fs::write(&loader, "").map_err(|e| anyhow!("write {}: {e}", loader.display()))?;
     }
     // The pre-release twins get the plugin too (see preload_mirror) — the
     // marker ride-along is what keeps twins scannable after the switch.
@@ -278,7 +281,7 @@ pub(crate) fn install_probe_files(game_root: &str) -> Result<String, String> {
 /// mod remains that would rely on it — a marker another modpack created
 /// (or needs) must survive.
 #[tauri::command]
-pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
+pub async fn ingame_plugin_uninstall(game_root: String) -> CommandResult<()> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     super::mod_hub::ensure_game_closed(&game_root)?;
     super::mod_hub::ensure_res_mods_active(&game_root)?;
@@ -286,7 +289,7 @@ pub async fn ingame_plugin_uninstall(game_root: String) -> Result<(), String> {
     let mod_dir = dir.join("PnFMods").join(MOD_DIR);
     if mod_dir.is_dir() {
         std::fs::remove_dir_all(&mod_dir)
-            .map_err(|e| format!("remove {}: {e}", mod_dir.display()))?;
+            .map_err(|e| anyhow!("remove {}: {e}", mod_dir.display()))?;
     }
     // The view is this layout's own file (plus the #694 leftovers) —
     // always removed with the mod, their `.bak` twins included (a foreign

@@ -31,6 +31,7 @@
 //! media image cache (latency-critical tiny fetches that must never
 //! queue behind a ~1.2 GB pack).
 
+use anyhow::{anyhow, bail};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -196,7 +197,7 @@ struct Job {
     /// Only the winner of QUEUED -> RUNNING may start a writer. A caller
     /// that wins QUEUED -> CANCELLED can return before the worker is free.
     state: Arc<AtomicU8>,
-    waiter: tokio::sync::oneshot::Sender<Result<TransferDone, String>>,
+    waiter: tokio::sync::oneshot::Sender<anyhow::Result<TransferDone>>,
     /// Registry key — distinct from `req.id` so repeated ids (mod
     /// packages) never collide in the cancel map.
     key: String,
@@ -206,11 +207,15 @@ struct Job {
 /// arrival order; [`cancel`] tears a queued or running job down
 /// cooperatively. `app` is `None` for headless callers (startup ensure
 /// paths): the transfer runs, the progress events are simply not emitted.
+/// PINNED to `Result<_, String>` while still-String callers remain (update
+/// `?`s this directly); the bridge renders the anyhow message verbatim.
 pub async fn transfer(
     app: Option<&AppHandle>,
     req: DownloadRequest,
 ) -> Result<TransferDone, String> {
-    transfer_on(hub(), app, req).await
+    transfer_on(hub(), app, req)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The same queue protocol with a caller-owned worker for isolated tests.
@@ -218,7 +223,7 @@ async fn transfer_on(
     hub: &Hub,
     app: Option<&AppHandle>,
     req: DownloadRequest,
-) -> Result<TransferDone, String> {
+) -> anyhow::Result<TransferDone> {
     let (waiter, mut done) = tokio::sync::oneshot::channel();
     let cancel = Arc::new(AtomicBool::new(false));
     let state = Arc::new(AtomicU8::new(JOB_QUEUED));
@@ -265,7 +270,7 @@ async fn transfer_on(
         if let Ok(mut map) = cancels().lock() {
             map.remove(&key);
         }
-        return Err("download hub worker is gone".to_string());
+        return Err(anyhow!("download hub worker is gone"));
     }
     let result = tokio::select! {
         result = &mut done => result,
@@ -281,7 +286,7 @@ async fn transfer_on(
                 if let Ok(mut map) = cancels().lock() {
                     map.remove(&key);
                 }
-                return Err(cancel_msg);
+                return Err(anyhow::Error::msg(cancel_msg));
             }
             // A writer already owns the part file. Do not release the
             // caller until that writer has stopped and dropped its file.
@@ -290,7 +295,7 @@ async fn transfer_on(
     };
     match result {
         Ok(result) => result,
-        Err(_) => Err("download job was dropped by the hub worker".to_string()),
+        Err(_) => Err(anyhow!("download job was dropped by the hub worker")),
     }
 }
 
@@ -355,7 +360,7 @@ async fn worker(mut rx: tokio::sync::mpsc::UnboundedReceiver<Job>) {
             if let Ok(mut map) = cancels().lock() {
                 map.remove(&job.key);
             }
-            let _ = job.waiter.send(Err(job.req.cancel_msg));
+            let _ = job.waiter.send(Err(anyhow::Error::msg(job.req.cancel_msg)));
             continue;
         }
         HUB_BUSY.store(true, Ordering::SeqCst);
@@ -369,7 +374,7 @@ async fn worker(mut rx: tokio::sync::mpsc::UnboundedReceiver<Job>) {
         .await;
         let result = match ran {
             Ok(r) => r,
-            Err(e) => Err(format!("download task panicked: {e}")),
+            Err(e) => Err(anyhow!("download task panicked: {e}")),
         };
         HUB_BUSY.store(false, Ordering::SeqCst);
         if let Ok(mut map) = cancels().lock() {
@@ -524,17 +529,18 @@ async fn run_transfer(
     app: Option<AppHandle>,
     req: DownloadRequest,
     cancel: Arc<AtomicBool>,
-) -> Result<TransferDone, String> {
+) -> anyhow::Result<TransferDone> {
     if cancel.load(Ordering::SeqCst) {
-        return Err(req.cancel_msg.clone());
+        return Err(anyhow::Error::msg(req.cancel_msg.clone()));
     }
-    let client = build_http_client()?;
+    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
+    let client = build_http_client().map_err(anyhow::Error::msg)?;
 
     if let Some(parent) = req.part.parent() {
         if !parent.as_os_str().is_empty() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+                .map_err(|e| anyhow!("create {}: {e}", parent.display()))?;
         }
     }
 
@@ -559,7 +565,7 @@ async fn run_transfer(
         Some(window) => {
             tokio::select! {
                 biased;
-                () = cancelled(&cancel) => return Err(req.cancel_msg.clone()),
+                () = cancelled(&cancel) => return Err(anyhow::Error::msg(req.cancel_msg.clone())),
                 sources = race_reorder(&client, &req.sources, committed, window, app.as_ref(), &req) => sources,
             }
         },
@@ -567,10 +573,10 @@ async fn run_transfer(
     };
 
     let mut tracker = SpeedTracker::new_seeded(committed);
-    let mut last_err = String::from("no mirror attempted");
+    let mut last_err = anyhow!("no mirror attempted");
     for url in &sources {
         if cancel.load(Ordering::SeqCst) {
-            return Err(req.cancel_msg.clone());
+            return Err(anyhow::Error::msg(req.cancel_msg.clone()));
         }
         let attempt_start = committed;
         let hasher_snapshot = hasher.clone();
@@ -596,7 +602,7 @@ async fn run_transfer(
                     // survive for the retry.
                     let got = hex::encode(hasher.clone().finalize());
                     if !got.eq_ignore_ascii_case(expected) {
-                        last_err = format!(
+                        last_err = anyhow!(
                             "sha256 mismatch (got {}, expected {expected}) — likely a truncated or corrupted mirror copy",
                             &got[..got.len().min(12)]
                         );
@@ -629,7 +635,7 @@ async fn run_transfer(
                     path: req.part.clone(),
                 });
             },
-            Err(e) if e == req.cancel_msg => {
+            Err(e) if e.to_string() == req.cancel_msg => {
                 // A cancelled attempt keeps its bytes — they are the
                 // resume base of the next try.
                 return Err(e);
@@ -658,7 +664,7 @@ async fn run_transfer(
             },
         }
     }
-    Err(format!("download {}: {last_err}", req.id))
+    bail!("download {}: {last_err}", req.id)
 }
 
 /// One mirror attempt: a ranged GET from `committed`, streamed to the
@@ -676,7 +682,7 @@ async fn attempt(
     hasher: &mut Sha256,
     tracker: &mut SpeedTracker,
     restarted: &mut bool,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let mut request = client.get(url);
     if *committed > 0 {
         request = request.header(reqwest::header::RANGE, format!("bytes={}-", *committed));
@@ -686,8 +692,8 @@ async fn attempt(
     }
     let mut response = tokio::select! {
         biased;
-        () = cancelled(cancel) => return Err(req.cancel_msg.clone()),
-        response = request.send() => response.map_err(|e| format!("{url}: {e}"))?,
+        () = cancelled(cancel) => return Err(anyhow::Error::msg(req.cancel_msg.clone())),
+        response = request.send() => response.map_err(|e| anyhow!("{url}: {e}"))?,
     };
     let status = response.status();
 
@@ -699,9 +705,9 @@ async fn attempt(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         let (start, total) = parse_content_range(header)
-            .ok_or_else(|| format!("{url}: unparseable Content-Range `{header}`"))?;
+            .ok_or_else(|| anyhow!("{url}: unparseable Content-Range `{header}`"))?;
         if start != *committed {
-            return Err(format!(
+            return Err(anyhow!(
                 "{url}: mirror resumed at byte {start}, expected {committed}"
             ));
         }
@@ -732,14 +738,14 @@ async fn attempt(
         {
             return Ok(());
         }
-        return Err(format!("{url}: HTTP 416 at offset {committed}"));
+        return Err(anyhow!("{url}: HTTP 416 at offset {committed}"));
     } else {
-        return Err(format!("{url}: HTTP {status}"));
+        return Err(anyhow!("{url}: HTTP {status}"));
     };
     if let Some(max) = req.max_bytes {
         if let Some(declared) = total {
             if declared > max {
-                return Err(format!(
+                return Err(anyhow!(
                     "{url}: {declared} bytes exceeds the {max}-byte cap"
                 ));
             }
@@ -768,20 +774,20 @@ async fn attempt(
         .create(true)
         .open(&req.part)
         .await
-        .map_err(|e| format!("open {}: {e}", req.part.display()))?;
+        .map_err(|e| anyhow!("open {}: {e}", req.part.display()))?;
 
     let mut last_emit = Instant::now();
     loop {
         if cancel.load(Ordering::SeqCst) {
             let _ = file.flush().await;
             drop(file);
-            return Err(req.cancel_msg.clone());
+            return Err(anyhow::Error::msg(req.cancel_msg.clone()));
         }
         let next_chunk = tokio::select! {
             biased;
             () = cancelled(cancel) => {
                 let _ = file.flush().await;
-                return Err(req.cancel_msg.clone());
+                return Err(anyhow::Error::msg(req.cancel_msg.clone()));
             },
             chunk = response.chunk() => chunk,
         };
@@ -789,12 +795,12 @@ async fn attempt(
             Ok(Some(chunk)) => {
                 if let Some(max) = req.max_bytes {
                     if *committed + chunk.len() as u64 > max {
-                        return Err(format!("{url}: body exceeds the {max}-byte cap"));
+                        return Err(anyhow!("{url}: body exceeds the {max}-byte cap"));
                     }
                 }
                 file.write_all(&chunk)
                     .await
-                    .map_err(|e| format!("write {}: {e}", req.part.display()))?;
+                    .map_err(|e| anyhow!("write {}: {e}", req.part.display()))?;
                 if req.expected_sha256.is_some() {
                     hasher.update(&chunk);
                 }
@@ -802,7 +808,7 @@ async fn attempt(
                 if server_total.is_some_and(|t| *committed > t) {
                     // More bytes than the mirror declared: a mixed/garbage
                     // body — fail the attempt before it corrupts further.
-                    return Err(format!("{url}: stream exceeded its declared size"));
+                    return Err(anyhow!("{url}: stream exceeded its declared size"));
                 }
                 if last_emit.elapsed() >= PROGRESS_TICK {
                     last_emit = Instant::now();
@@ -830,15 +836,16 @@ async fn attempt(
             Ok(None) => {
                 file.flush()
                     .await
-                    .map_err(|e| format!("flush {}: {e}", req.part.display()))?;
+                    .map_err(|e| anyhow!("flush {}: {e}", req.part.display()))?;
                 drop(file);
                 if let Some(t) = server_total.filter(|t| *committed != *t) {
-                    return Err(format!("{url}: short read — {committed} of {t} bytes"));
+                    return Err(anyhow!("{url}: short read — {committed} of {t} bytes"));
                 }
                 if *committed < req.min_bytes {
-                    return Err(format!(
+                    return Err(anyhow!(
                         "{url}: {} bytes is below the {}-byte floor — the mirror returned an error page, not the artifact",
-                        *committed, req.min_bytes
+                        *committed,
+                        req.min_bytes
                     ));
                 }
                 return Ok(());
@@ -846,7 +853,7 @@ async fn attempt(
             Err(e) => {
                 let _ = file.flush().await;
                 drop(file);
-                return Err(format!("{url}: {e}"));
+                return Err(anyhow!("{url}: {e}"));
             },
         }
     }
@@ -922,7 +929,7 @@ async fn race_reorder(
 // ── Disk helpers ──────────────────────────────────────────────────────────
 
 /// Cut the part file down to `len` bytes (a no-op when it already is).
-async fn truncate_part(part: &Path, len: u64) -> Result<(), String> {
+async fn truncate_part(part: &Path, len: u64) -> anyhow::Result<()> {
     let current = tokio::fs::metadata(part)
         .await
         .map(|m| m.len())
@@ -935,19 +942,19 @@ async fn truncate_part(part: &Path, len: u64) -> Result<(), String> {
     let file = std::fs::OpenOptions::new()
         .write(true)
         .open(part)
-        .map_err(|e| format!("open {}: {e}", part.display()))?;
+        .map_err(|e| anyhow!("open {}: {e}", part.display()))?;
     file.set_len(len)
-        .map_err(|e| format!("truncate {}: {e}", part.display()))?;
+        .map_err(|e| anyhow!("truncate {}: {e}", part.display()))?;
     Ok(())
 }
 
 /// Feed the first `len` bytes of an existing file into the hasher so a
 /// resumed transfer verifies the WHOLE file, prefix included.
-async fn hash_prefix(part: &Path, len: u64, hasher: &mut Sha256) -> Result<(), String> {
+async fn hash_prefix(part: &Path, len: u64, hasher: &mut Sha256) -> anyhow::Result<()> {
     use tokio::io::AsyncReadExt;
     let mut file = tokio::fs::File::open(part)
         .await
-        .map_err(|e| format!("open {}: {e}", part.display()))?;
+        .map_err(|e| anyhow!("open {}: {e}", part.display()))?;
     let mut remaining = len;
     let mut buf = vec![0u8; 256 * 1024];
     while remaining > 0 {
@@ -955,9 +962,9 @@ async fn hash_prefix(part: &Path, len: u64, hasher: &mut Sha256) -> Result<(), S
         let read = file
             .read(&mut buf[..want])
             .await
-            .map_err(|e| format!("read {}: {e}", part.display()))?;
+            .map_err(|e| anyhow!("read {}: {e}", part.display()))?;
         if read == 0 {
-            return Err(format!(
+            return Err(anyhow!(
                 "part {} shrank while hashing its resume prefix",
                 part.display()
             ));
@@ -1011,10 +1018,11 @@ mod tests {
         assert!(futures::poll!(transfer.as_mut()).is_pending());
         assert!(cancels().lock().unwrap().contains_key(&job.key));
         cancels().lock().unwrap().remove(&job.key);
-        job.waiter
-            .send(Err("writer has stopped".to_string()))
-            .unwrap();
-        assert_eq!(transfer.await.unwrap_err(), "writer has stopped");
+        job.waiter.send(Err(anyhow!("writer has stopped"))).unwrap();
+        assert_eq!(
+            transfer.await.unwrap_err().to_string(),
+            "writer has stopped"
+        );
     }
 
     #[tokio::test]
@@ -1083,7 +1091,7 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_secs(1), second)
             .await
             .expect("queued cancel must finish before the unrelated writer is released");
-        assert_eq!(result.unwrap_err(), "download cancelled");
+        assert_eq!(result.unwrap_err().to_string(), "download cancelled");
         assert!(!queued_part.exists());
         assert!(
             cancels()
@@ -1104,7 +1112,8 @@ mod tests {
             tokio::time::timeout(Duration::from_secs(1), retry)
                 .await
                 .unwrap()
-                .unwrap_err(),
+                .unwrap_err()
+                .to_string(),
             "download cancelled"
         );
         assert!(!queued_part.exists());
@@ -1117,7 +1126,8 @@ mod tests {
             tokio::time::timeout(Duration::from_secs(1), retry)
                 .await
                 .unwrap()
-                .unwrap_err(),
+                .unwrap_err()
+                .to_string(),
             "download cancelled"
         );
         assert!(!queued_part.exists());
@@ -1179,7 +1189,7 @@ mod tests {
         .await;
         server.abort();
         let (result, ()) = outcome.expect("cancellation must wake a stalled response body");
-        assert_eq!(result.unwrap_err(), "download cancelled");
+        assert_eq!(result.unwrap_err().to_string(), "download cancelled");
         assert_eq!(tokio::fs::read(&part).await.unwrap(), prefix);
         std::fs::remove_dir_all(dir).unwrap();
     }

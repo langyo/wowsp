@@ -1,3 +1,6 @@
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
+
 use super::texture_analysis::analyze_override_tree;
 use super::*;
 
@@ -7,7 +10,7 @@ pub(crate) const UNSUPPORTED_ARCHIVE: &str =
     "archive payloads need M10.2 unpack support — extract it to a folder first";
 
 #[tauri::command]
-pub fn mod_hub_classify_path(source_path: String) -> Result<PackagePlan, String> {
+pub fn mod_hub_classify_path(source_path: String) -> CommandResult<PackagePlan> {
     let src = Path::new(&source_path);
     // Archives are rejected up front with the unpack hint, whether or not the
     // file exists yet — the caller may be probing a path from a picker.
@@ -19,26 +22,28 @@ pub fn mod_hub_classify_path(source_path: String) -> Result<PackagePlan, String>
         .into_owned();
     if src.is_file() || matches!(ext.as_str(), "zip" | "7z") {
         return Err(match ext.as_str() {
-            "zip" | "7z" => UNSUPPORTED_ARCHIVE.to_string(),
-            _ => format!("unsupported package file: {}", src.display()),
-        });
+            "zip" | "7z" => anyhow::Error::msg(UNSUPPORTED_ARCHIVE),
+            _ => anyhow!("unsupported package file: {}", src.display()),
+        }
+        .into());
     }
     if !src.is_dir() {
-        return Err(format!("package not found: {}", src.display()));
+        return Err(anyhow!("package not found: {}", src.display()).into());
     }
 
     let plan = classify_package(src)?;
     if plan.entries.is_empty() {
-        return Err(format!(
+        return Err(anyhow!(
             "no recognizable mod structure in {} (see docs/designs/mod-formats.md)",
             src.display()
-        ));
+        )
+        .into());
     }
     Ok(plan)
 }
 
 /// Classify the contents of an unpacked package directory.
-pub(crate) fn classify_package(src: &Path) -> Result<PackagePlan, String> {
+pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
     let mut plan = classify_package_layout(src)?;
 
     // Real-world packs often ship behind a single naming-wrapper folder
@@ -93,9 +98,9 @@ fn single_wrapper_dir(src: &Path) -> Option<String> {
 }
 
 /// Signature-level classification of one directory layout (no wrapper peel).
-fn classify_package_layout(src: &Path) -> Result<PackagePlan, String> {
+fn classify_package_layout(src: &Path) -> anyhow::Result<PackagePlan> {
     let entries_raw: Vec<String> = fs::read_dir(src)
-        .map_err(|e| format!("read {}: {e}", src.display()))?
+        .map_err(|e| anyhow!("read {}: {e}", src.display()))?
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();

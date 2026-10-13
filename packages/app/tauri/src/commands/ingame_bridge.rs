@@ -34,7 +34,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
+
 use tokio::sync::watch;
+use wowsp_tauri_shared::CommandResult;
 
 use wowsp_tauri_shared::PlayerStats;
 
@@ -205,7 +207,7 @@ static WORKER: Mutex<Option<watch::Sender<bool>>> = Mutex::new(None);
 /// Start the bridge worker (idempotent). `locale` picks the response's
 /// column labels; a mid-battle plugin is poked to re-request.
 #[tauri::command]
-pub fn ingame_bridge_start(locale: Option<String>) -> Result<(), String> {
+pub fn ingame_bridge_start(locale: Option<String>) -> CommandResult<()> {
     let mut guard = WORKER
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -224,7 +226,7 @@ pub fn ingame_bridge_start(locale: Option<String>) -> Result<(), String> {
 
 /// Stop the bridge worker (idempotent when not running).
 #[tauri::command]
-pub fn ingame_bridge_stop() -> Result<(), String> {
+pub fn ingame_bridge_stop() -> CommandResult<()> {
     let mut guard = WORKER
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());

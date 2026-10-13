@@ -27,6 +27,7 @@
 //! images walk the standard mirror ladder (see
 //! [`crate::commands::github_mirror`]) instead of the Resource CDN rewrite.
 
+use anyhow::anyhow;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -144,9 +145,12 @@ fn cache_key(url: &str) -> String {
 }
 
 /// Resolve `<cache>/image-cache/<key>` for a URL, creating the directory.
-fn cache_path(url: &str) -> Result<PathBuf, String> {
-    let dir = paths::ensure_cache_dir()?.join(IMAGE_CACHE_DIR);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+fn cache_path(url: &str) -> anyhow::Result<PathBuf> {
+    // ensure_cache_dir stays String-typed (see paths.rs) — bridge verbatim.
+    let dir = paths::ensure_cache_dir()
+        .map_err(anyhow::Error::msg)?
+        .join(IMAGE_CACHE_DIR);
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir.join(cache_key(url)))
 }
 
@@ -204,15 +208,15 @@ fn extract_url_param(query: &str) -> Option<String> {
 /// per-request timeout matters for the mirror ladder: a connected-but-
 /// stalled candidate must not hold the ladder (up to ~6 serial tries)
 /// hostage — the shared client only bounds the CONNECT phase.
-async fn fetch_image(client: &reqwest::Client, url: &str) -> Result<(Vec<u8>, String), String> {
+async fn fetch_image(client: &reqwest::Client, url: &str) -> anyhow::Result<(Vec<u8>, String)> {
     let response = client
         .get(url)
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| format!("fetch {url}: {e}"))?;
+        .map_err(|e| anyhow!("fetch {url}: {e}"))?;
     if response.status() != reqwest::StatusCode::OK {
-        return Err(format!("fetch {url}: status {}", response.status()));
+        return Err(anyhow!("fetch {url}: status {}", response.status()));
     }
     let response_type = response
         .headers()
@@ -221,12 +225,12 @@ async fn fetch_image(client: &reqwest::Client, url: &str) -> Result<(Vec<u8>, St
         .unwrap_or("")
         .to_string();
     if !response_type.starts_with("image/") {
-        return Err(format!("fetch {url}: not an image ({response_type})"));
+        return Err(anyhow!("fetch {url}: not an image ({response_type})"));
     }
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| format!("read {url}: {e}"))?
+        .map_err(|e| anyhow!("read {url}: {e}"))?
         .to_vec();
 
     let content_type = match sniff_image_type(&bytes) {
@@ -255,7 +259,7 @@ fn cache_write(path: &Path, bytes: &[u8]) {
 /// `image/*` content type. Any failure (network, non-200, non-image) is an
 /// `Err` — the handler turns it into a 404 so the frontend's AssetImage
 /// placeholder flow kicks in.
-async fn load(url: &str) -> Result<(Vec<u8>, String), String> {
+async fn load(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
     // Cache hit: serve straight from disk.
     let path = cache_path(url)?;
     if let Ok(bytes) = std::fs::read(&path) {
@@ -264,7 +268,8 @@ async fn load(url: &str) -> Result<(Vec<u8>, String), String> {
     }
 
     // Miss: fetch through the proxy-aware client (Settings → Network applies).
-    let client = network::build_http_client()?;
+    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
+    let client = network::build_http_client().map_err(anyhow::Error::msg)?;
     let (bytes, content_type) = fetch_image(&client, url).await?;
     cache_write(&path, &bytes);
     Ok((bytes, content_type))
@@ -276,7 +281,7 @@ async fn load(url: &str) -> Result<(Vec<u8>, String), String> {
 /// unreachable from mainland China, and the webview fetching the raw URL
 /// also bypasses the app proxy. The cache stays keyed by the ORIGINAL url,
 /// so every candidate lands in one entry.
-async fn load_github(url: &str) -> Result<(Vec<u8>, String), String> {
+async fn load_github(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
     // Cache hit: serve straight from disk.
     let path = cache_path(url)?;
     if let Ok(bytes) = std::fs::read(&path) {
@@ -284,8 +289,9 @@ async fn load_github(url: &str) -> Result<(Vec<u8>, String), String> {
         return Ok((bytes, content_type));
     }
 
-    let client = network::build_http_client()?;
-    let mut last_err = String::from("no mirror candidates generated");
+    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
+    let client = network::build_http_client().map_err(anyhow::Error::msg)?;
+    let mut last_err = anyhow!("no mirror candidates generated");
     for candidate in crate::commands::github_mirror::candidates(url) {
         match fetch_image(&client, &candidate).await {
             Ok((bytes, content_type)) => {

@@ -23,6 +23,7 @@
 //! historical `WoWSP` folder name. The resolver handle is captured at startup
 //! by [`init`] (setup runs before anything asks for a path).
 
+use anyhow::anyhow;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -72,25 +73,25 @@ pub fn portable_mode() -> bool {
 /// - local:    `%APPDATA%\WoWSP`
 /// - android:  Tauri `app_data_dir()` (already `<pkg>/files`, no `WoWSP`
 ///   segment — the directory is app-private by construction)
-pub fn data_dir() -> Result<PathBuf, String> {
+pub fn data_dir() -> anyhow::Result<PathBuf> {
     if portable_mode() {
         return exe_dir()
             .map(|d| d.join("data"))
-            .ok_or_else(|| "cannot resolve executable directory".to_string());
+            .ok_or_else(|| anyhow!("cannot resolve executable directory"));
     }
     #[cfg(target_os = "android")]
     {
         let app = APP_HANDLE
             .get()
-            .ok_or_else(|| "app handle not captured (paths::init not run)".to_string())?;
+            .ok_or_else(|| anyhow!("app handle not captured (paths::init not run)"))?;
         return app
             .path()
             .app_data_dir()
-            .map_err(|e| format!("resolve app data dir: {e}"));
+            .map_err(|e| anyhow!("resolve app data dir: {e}"));
     }
     #[cfg(not(target_os = "android"))]
     {
-        let base = dirs_next::data_dir().ok_or_else(|| "cannot resolve AppData dir".to_string())?;
+        let base = dirs_next::data_dir().ok_or_else(|| anyhow!("cannot resolve AppData dir"))?;
         Ok(base.join("WoWSP"))
     }
 }
@@ -99,7 +100,7 @@ pub fn data_dir() -> Result<PathBuf, String> {
 /// - portable: `<exe_dir>/data/cache` (model packs, etc.)
 /// - local:    `%LOCALAPPDATA%\WoWSP`
 /// - android:  Tauri `app_cache_dir()` (`<pkg>/cache`, no `WoWSP` segment)
-pub fn cache_dir() -> Result<PathBuf, String> {
+pub fn cache_dir() -> anyhow::Result<PathBuf> {
     if portable_mode() {
         return data_dir().map(|d| d.join("cache"));
     }
@@ -107,30 +108,38 @@ pub fn cache_dir() -> Result<PathBuf, String> {
     {
         let app = APP_HANDLE
             .get()
-            .ok_or_else(|| "app handle not captured (paths::init not run)".to_string())?;
+            .ok_or_else(|| anyhow!("app handle not captured (paths::init not run)"))?;
         return app
             .path()
             .app_cache_dir()
-            .map_err(|e| format!("resolve app cache dir: {e}"));
+            .map_err(|e| anyhow!("resolve app cache dir: {e}"));
     }
     #[cfg(not(target_os = "android"))]
     {
-        let base =
-            dirs_next::cache_dir().ok_or_else(|| "cannot resolve LOCALAPPDATA".to_string())?;
+        let base = dirs_next::cache_dir().ok_or_else(|| anyhow!("cannot resolve LOCALAPPDATA"))?;
         Ok(base.join("WoWSP"))
     }
 }
 
 /// Resolve `<data root>/` (creating it if missing).
+///
+/// PINNED to `Result<_, String>` while still-String callers remain
+/// (overlay_config / screenshot / stamps / wallpaper expect a plain String
+/// error; hardware_info maps it into its own enum). The bridge below
+/// renders the anyhow message verbatim, so the wire text is unchanged.
 pub fn ensure_data_dir() -> Result<PathBuf, String> {
-    let dir = data_dir()?;
+    let dir = data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
     Ok(dir)
 }
 
 /// Resolve `<cache root>/` (creating it if missing).
+///
+/// PINNED to `Result<_, String>`: hardware_info maps this error straight
+/// into its `ElevateErr::Failed(String)` arm. The bridge renders the anyhow
+/// message verbatim, so the wire text is unchanged.
 pub fn ensure_cache_dir() -> Result<PathBuf, String> {
-    let dir = cache_dir()?;
+    let dir = cache_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
     Ok(dir)
 }

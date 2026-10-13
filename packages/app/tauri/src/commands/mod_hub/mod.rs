@@ -22,6 +22,7 @@
 //! Archives (.zip/.7z) land with M10.2's unpack step — this round accepts
 //! already-unpacked directories and returns a structured error for files.
 
+use anyhow::anyhow;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -99,9 +100,9 @@ pub(crate) fn find_pnf_main(dir: &Path) -> Option<PathBuf> {
 /// multi-install machine does not hold this tree open and must not block
 /// work on it (the unified game context resolves which folder each running
 /// process belongs to).
-pub(crate) fn ensure_game_closed(game_root: &str) -> Result<(), String> {
+pub(crate) fn ensure_game_closed(game_root: &str) -> anyhow::Result<()> {
     if let Some((pid, root)) = super::game_context::running_root_matching(game_root) {
-        return Err(format!(
+        return Err(anyhow!(
             "World of Warships is running from {root} (pid {pid}) — close that client before installing, uninstalling or toggling mods"
         ));
     }
@@ -153,33 +154,35 @@ fn quarantined_twins(game_root: &str) -> Vec<(String, PathBuf)> {
 
 /// Safe-mode core (split from the command so tests drive it directly).
 /// Returns the new active state.
-pub(crate) fn set_safe_mode_core(game_root: &str, enabled: bool) -> Result<bool, String> {
+pub(crate) fn set_safe_mode_core(game_root: &str, enabled: bool) -> anyhow::Result<bool> {
     let (_, ver_dir) = latest_bin_version(game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {game_root}/bin"))?;
     let live = ver_dir.join("res_mods");
     let off = disabled_res_mods(&ver_dir);
     if enabled {
         if off.is_dir() {
-            return Err("safe mode is already active".into());
+            return Err(anyhow!("safe mode is already active"));
         }
         if !live.is_dir() {
-            return Err("res_mods not found — there is nothing to quarantine".into());
+            return Err(anyhow!(
+                "res_mods not found — there is nothing to quarantine"
+            ));
         }
         fs::rename(&live, &off).map_err(|e| {
-            format!(
+            anyhow!(
                 "quarantine {}: {e} (is the game or antivirus holding files?)",
                 off.display()
             )
         })?;
     } else {
         if live.exists() && off.exists() {
-            return Err(format!(
+            return Err(anyhow!(
                 "both {} and its quarantined copy exist — move the newer one aside manually",
                 live.display()
             ));
         }
         if off.is_dir() {
-            fs::rename(&off, &live).map_err(|e| format!("restore {}: {e}", live.display()))?;
+            fs::rename(&off, &live).map_err(|e| anyhow!("restore {}: {e}", live.display()))?;
         }
         // A game update while safe mode was on strands the twin in the old
         // version dir — restore those too, or the quarantine would outlive
@@ -194,7 +197,7 @@ pub(crate) fn set_safe_mode_core(game_root: &str, enabled: bool) -> Result<bool,
                 );
                 continue;
             }
-            fs::rename(&twin, &live).map_err(|e| format!("restore {}: {e}", live.display()))?;
+            fs::rename(&twin, &live).map_err(|e| anyhow!("restore {}: {e}", live.display()))?;
         }
     }
     Ok(disabled_res_mods(&ver_dir).is_dir())
@@ -203,11 +206,11 @@ pub(crate) fn set_safe_mode_core(game_root: &str, enabled: bool) -> Result<bool,
 /// Mutating commands refuse while `res_mods` is quarantined: writes would
 /// land in a fresh `res_mods` and drift apart from the quarantined tree,
 /// and leaving safe mode would then fail on the rename.
-pub(crate) fn ensure_res_mods_active(game_root: &str) -> Result<(), String> {
+pub(crate) fn ensure_res_mods_active(game_root: &str) -> anyhow::Result<()> {
     if safe_mode_active(game_root) {
-        return Err(
-            "safe mode is active — turn mods back on before installing, uninstalling or toggling them".into(),
-        );
+        return Err(anyhow!(
+            "safe mode is active — turn mods back on before installing, uninstalling or toggling them"
+        ));
     }
     Ok(())
 }
@@ -248,7 +251,7 @@ struct InstallJournal {
 }
 
 impl InstallJournal {
-    fn place(&mut self, src: &Path, dest: &Path, place: Place) -> Result<(), String> {
+    fn place(&mut self, src: &Path, dest: &Path, place: Place) -> anyhow::Result<()> {
         // Duplicate destinations within one install (overlapping plan
         // entries): the first write already owns the file.
         if !self.placed.insert(dest.to_path_buf()) {
@@ -263,11 +266,11 @@ impl InstallJournal {
         if let Err(e) = fs::copy(src, &tmp) {
             // A partial temp copy must not linger in the game tree.
             let _ = fs::remove_file(&tmp);
-            return Err(format!("copy {}: {e}", src.display()));
+            return Err(anyhow!("copy {}: {e}", src.display()));
         }
         if let Err(e) = fs::rename(&tmp, dest) {
             let _ = fs::remove_file(&tmp);
-            return Err(format!("place {}: {e}", dest.display()));
+            return Err(anyhow!("place {}: {e}", dest.display()));
         }
         self.record(dest, place);
         self.actions.push(JournalAction {
@@ -279,15 +282,15 @@ impl InstallJournal {
 
     /// Create a brand-new empty file (the PnF loader marker) through the same
     /// temp+rename path, snapshotting whatever unexpectedly sits there.
-    fn place_empty(&mut self, dest: &Path, place: Place) -> Result<(), String> {
+    fn place_empty(&mut self, dest: &Path, place: Place) -> anyhow::Result<()> {
         if dest.is_file() || !self.placed.insert(dest.to_path_buf()) {
             return Ok(());
         }
         let tmp = sibling_with_suffix(dest, PART_SUFFIX);
-        fs::File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
+        fs::File::create(&tmp).map_err(|e| anyhow!("create {}: {e}", tmp.display()))?;
         if let Err(e) = fs::rename(&tmp, dest) {
             let _ = fs::remove_file(&tmp);
-            return Err(format!("place {}: {e}", dest.display()));
+            return Err(anyhow!("place {}: {e}", dest.display()));
         }
         self.record(dest, place);
         self.actions.push(JournalAction {
@@ -308,11 +311,11 @@ impl InstallJournal {
     /// Copy an existing target aside before it gets clobbered. Unlike the old
     /// best-effort behavior, a failure is fatal: overwriting a file we cannot
     /// restore would lose the user's original forever.
-    fn snapshot(&self, dest: &Path, place: Place) -> Result<PathBuf, String> {
+    fn snapshot(&self, dest: &Path, place: Place) -> anyhow::Result<PathBuf> {
         let (root, prefix) = self.place_roots(place);
         let rel = dest
             .strip_prefix(&root)
-            .map_err(|_| format!("{} is outside the game tree", dest.display()))?;
+            .map_err(|_| anyhow!("{} is outside the game tree", dest.display()))?;
         let rel = match prefix {
             Some(p) => Path::new(p).join(rel),
             None => rel.to_path_buf(),
@@ -321,10 +324,10 @@ impl InstallJournal {
         if !snap.is_file() {
             if let Some(parent) = snap.parent() {
                 fs::create_dir_all(parent)
-                    .map_err(|e| format!("create {}: {e}", parent.display()))?;
+                    .map_err(|e| anyhow!("create {}: {e}", parent.display()))?;
             }
             fs::copy(dest, &snap).map_err(|e| {
-                format!(
+                anyhow!(
                     "snapshot {}: {e} — refusing to overwrite without a backup",
                     dest.display()
                 )
@@ -349,7 +352,7 @@ impl InstallJournal {
     /// new files disappear. Keeps rewinding past individual failures and
     /// reports the first error; empty directories the install created are
     /// pruned afterwards.
-    fn rollback(mut self) -> Result<(), String> {
+    fn rollback(mut self) -> anyhow::Result<()> {
         let mut parents: Vec<PathBuf> = self
             .actions
             .iter()
@@ -357,7 +360,7 @@ impl InstallJournal {
             .collect();
         parents.sort();
         parents.dedup();
-        let mut first_err: Option<String> = None;
+        let mut first_err: Option<anyhow::Error> = None;
         for action in std::mem::take(&mut self.actions).into_iter().rev() {
             let outcome = match &action.snapshot {
                 Some(snap) if snap.is_file() => {
@@ -366,12 +369,12 @@ impl InstallJournal {
                     }
                     fs::copy(snap, &action.dest)
                         .map(|_| ())
-                        .map_err(|e| format!("restore {}: {e}", action.dest.display()))
+                        .map_err(|e| anyhow!("restore {}: {e}", action.dest.display()))
                 },
                 _ => match fs::remove_file(&action.dest) {
                     Ok(()) => Ok(()),
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                    Err(e) => Err(format!("remove {}: {e}", action.dest.display())),
+                    Err(e) => Err(anyhow!("remove {}: {e}", action.dest.display())),
                 },
             };
             if let Err(e) = outcome {
@@ -386,7 +389,7 @@ impl InstallJournal {
             }
         }
         match first_err {
-            Some(e) => Err(format!("rollback incomplete: {e}")),
+            Some(e) => Err(anyhow!("rollback incomplete: {e}")),
             None => Ok(()),
         }
     }
@@ -402,28 +405,28 @@ pub(crate) fn sibling_with_suffix(path: &Path, suffix: &str) -> PathBuf {
 }
 
 /// Copy a subtree (or a single mapped file) through the journal.
-fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> Result<usize, String> {
+fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Result<usize> {
     if !from.exists() {
-        return Err(format!("{} does not exist", from.display()));
+        return Err(anyhow!("{} does not exist", from.display()));
     }
     if from.is_file() {
         fs::create_dir_all(to.parent().unwrap_or(to))
-            .map_err(|e| format!("create {}: {e}", to.display()))?;
+            .map_err(|e| anyhow!("create {}: {e}", to.display()))?;
         journal.place(from, to, Place::ResMods)?;
         return Ok(1);
     }
-    fs::create_dir_all(to).map_err(|e| format!("create {}: {e}", to.display()))?;
+    fs::create_dir_all(to).map_err(|e| anyhow!("create {}: {e}", to.display()))?;
     let mut count = 0usize;
     let mut stack = vec![(from.to_path_buf(), to.to_path_buf())];
     while let Some((src, dst)) = stack.pop() {
         for ent in fs::read_dir(&src)
-            .map_err(|e| format!("read {}: {e}", src.display()))?
+            .map_err(|e| anyhow!("read {}: {e}", src.display()))?
             .flatten()
         {
             let s = ent.path();
             let d = dst.join(ent.file_name());
             if s.is_dir() {
-                fs::create_dir_all(&d).map_err(|e| format!("create {}: {e}", d.display()))?;
+                fs::create_dir_all(&d).map_err(|e| anyhow!("create {}: {e}", d.display()))?;
                 stack.push((s, d));
             } else {
                 journal.place(&s, &d, Place::ResMods)?;

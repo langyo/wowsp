@@ -7,6 +7,9 @@
 //! in-process (codebook set chosen by decode quality) and re-emitted as
 //! WAV — the browser never has to decode rebuilt Vorbis.
 
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
+
 use serde::Serialize;
 
 use super::*;
@@ -55,14 +58,14 @@ const THUMB_EDGE: u32 = 320;
 
 /// res_mods-relative path sanity: relative, no `..`, no drive letters, no
 /// backslashes (the same rules the install plan paths follow).
-pub(crate) fn safe_rel(rel: &str) -> Result<(), String> {
+pub(crate) fn safe_rel(rel: &str) -> anyhow::Result<()> {
     if rel.is_empty() || rel.contains('\\') || rel.contains(':') || Path::new(rel).is_absolute() {
-        return Err(format!("invalid asset path: {rel:?}"));
+        return Err(anyhow!("invalid asset path: {rel:?}"));
     }
     for comp in Path::new(rel).components() {
         match comp {
             std::path::Component::Normal(_) => {},
-            _ => return Err(format!("invalid asset path: {rel:?}")),
+            _ => return Err(anyhow!("invalid asset path: {rel:?}")),
         }
     }
     Ok(())
@@ -92,7 +95,7 @@ fn classify_ext(ext: &str) -> Option<(&'static str, bool)> {
 pub fn mod_hub_list_assets(
     game_root: String,
     rel_path: String,
-) -> Result<Vec<AssetFileInfo>, String> {
+) -> CommandResult<Vec<AssetFileInfo>> {
     let res_mods = super::scan_installed::scan_root(&game_root)?;
     safe_rel(&rel_path)?;
     let root = res_mods.join(&rel_path);
@@ -169,7 +172,7 @@ pub fn mod_hub_list_assets(
 /// audio streams as a data URL in its own mime. `.wem` and decode failures
 /// are errors the UI renders in place.
 #[tauri::command]
-pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPayload, String> {
+pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> CommandResult<AssetPayload> {
     let res_mods = super::scan_installed::scan_root(&game_root)?;
     safe_rel(&rel_path)?;
     let path = res_mods.join(&rel_path);
@@ -179,17 +182,15 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
         .unwrap_or_default();
 
     if classify_ext(&ext).is_none() {
-        return Err(format!("{rel_path}: not a previewable asset"));
+        return Err(anyhow!("{rel_path}: not a previewable asset").into());
     }
     if ext == "geometry" {
         // Listed for the 3D stage, but its payload is GLB parts from a
         // different command — bail before reading a multi-MB mesh nobody
         // will serve from here.
-        return Err(format!(
-            "{rel_path}: .geometry previews use mod_hub_read_model"
-        ));
+        return Err(anyhow!("{rel_path}: .geometry previews use mod_hub_read_model").into());
     }
-    let bytes = fs::read(&path).map_err(|e| format!("read {rel_path}: {e}"))?;
+    let bytes = fs::read(&path).map_err(|e| anyhow!("read {rel_path}: {e}"))?;
 
     if ext == AUDIO_WEM {
         // On-demand transcode, routed by what the file actually is:
@@ -207,7 +208,7 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
                 ),
             });
         }
-        let wav = transcode_wem(&bytes).map_err(|e| format!("{rel_path}: {e}"))?;
+        let wav = transcode_wem(&bytes).map_err(|e| anyhow!("{rel_path}: {e}"))?;
         return Ok(AssetPayload {
             data_url: format!(
                 "data:audio/wav;base64,{}",
@@ -232,15 +233,15 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> Result<AssetPa
         "bmp" => image::ImageFormat::Bmp,
         "tga" => image::ImageFormat::Tga,
         "dds" => image::ImageFormat::Dds,
-        _ => return Err(format!("{rel_path}: unsupported image format .{ext}")),
+        _ => return Err(anyhow!("{rel_path}: unsupported image format .{ext}").into()),
     };
     let decoded = image::load_from_memory_with_format(&bytes, format)
-        .map_err(|e| format!("{rel_path}: decode failed: {e}"))?;
+        .map_err(|e| anyhow!("{rel_path}: decode failed: {e}"))?;
     let thumb = decoded.thumbnail(THUMB_EDGE, THUMB_EDGE);
     let mut png = std::io::Cursor::new(Vec::new());
     thumb
         .write_to(&mut png, image::ImageFormat::Png)
-        .map_err(|e| format!("{rel_path}: re-encode failed: {e}"))?;
+        .map_err(|e| anyhow!("{rel_path}: re-encode failed: {e}"))?;
     Ok(AssetPayload {
         data_url: format!(
             "data:image/png;base64,{}",
@@ -330,7 +331,7 @@ fn wem_is_pcm(bytes: &[u8]) -> bool {
 /// codebook garbage decodes to clipped-to-death static) → WAV. A decoded
 /// but hot candidate is kept as a best effort; when nothing decodes the
 /// caller gets the last error, never noise.
-fn transcode_wem(bytes: &[u8]) -> Result<Vec<u8>, String> {
+fn transcode_wem(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut last_err = String::new();
     let mut fallback: Option<Vec<u8>> = None;
     for codebooks in [
@@ -368,7 +369,7 @@ fn transcode_wem(bytes: &[u8]) -> Result<Vec<u8>, String> {
     if let Some(wav) = fallback {
         return Ok(wav);
     }
-    Err(format!("Wwise transcode failed: {last_err}"))
+    Err(anyhow!("Wwise transcode failed: {last_err}"))
 }
 
 /// Above this fraction of samples pinned at i16::MIN/MAX a decode is
@@ -380,9 +381,9 @@ const HOT_CLIP_RATIO: f64 = 0.25;
 /// Fully decode an Ogg Vorbis stream to interleaved 16-bit PCM plus its
 /// channel count and sample rate — the one decoder whose verdict the
 /// served audio depends on.
-fn decode_ogg_pcm(ogg: &[u8]) -> Result<(Vec<i16>, u16, u32), String> {
+fn decode_ogg_pcm(ogg: &[u8]) -> anyhow::Result<(Vec<i16>, u16, u32)> {
     let mut reader = lewton::inside_ogg::OggStreamReader::new(std::io::Cursor::new(ogg))
-        .map_err(|e| format!("vorbis stream: {e}"))?;
+        .map_err(|e| anyhow!("vorbis stream: {e}"))?;
     // Vorbis identification header carries channels as u8; WAV wants u16.
     let channels = u16::from(reader.ident_hdr.audio_channels);
     let rate = reader.ident_hdr.audio_sample_rate;
@@ -391,11 +392,11 @@ fn decode_ogg_pcm(ogg: &[u8]) -> Result<(Vec<i16>, u16, u32), String> {
         match reader.read_dec_packet_itl() {
             Ok(Some(packet)) => samples.extend_from_slice(&packet),
             Ok(None) => break,
-            Err(e) => return Err(format!("vorbis decode: {e}")),
+            Err(e) => return Err(anyhow!("vorbis decode: {e}")),
         }
     }
     if samples.is_empty() {
-        return Err("no audio samples decoded".into());
+        return Err(anyhow!("no audio samples decoded"));
     }
     Ok((samples, channels, rate))
 }
@@ -667,7 +668,7 @@ mod tests {
         // Garbage bytes named .wem fail INSIDE the transcode path (no
         // valid Wwise RIFF); real files convert and play.
         let err = mod_hub_read_asset(root.clone(), "banks/mods/Bank/sfx.wem".into()).unwrap_err();
-        assert!(err.contains("transcode"), "{err}");
+        assert!(err.to_string().contains("transcode"), "{err}");
         assert!(mod_hub_read_asset(root.clone(), "../escape".into()).is_err());
 
         // Custom-model meshes: the hull base lists as a model row, its
@@ -691,7 +692,7 @@ mod tests {
         assert!(models[0].playable);
         let err =
             mod_hub_read_asset(root.clone(), "PnFMods/Pack/ship/Hull.geometry".into()).unwrap_err();
-        assert!(err.contains("mod_hub_read_model"), "{err}");
+        assert!(err.to_string().contains("mod_hub_read_model"), "{err}");
         fs::remove_dir_all(&tmp).ok();
     }
 }

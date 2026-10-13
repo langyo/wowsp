@@ -1,3 +1,5 @@
+use wowsp_tauri_shared::CommandResult;
+
 use super::*;
 
 // ── Safe mode ────────────────────────────────────────────────────────────────
@@ -5,7 +7,7 @@ use super::*;
 /// Is safe mode visible — the current `res_mods` quarantined, or a twin
 /// stranded in an old version dir by a game update?
 #[tauri::command]
-pub fn mod_hub_safe_mode(game_root: String) -> Result<bool, String> {
+pub fn mod_hub_safe_mode(game_root: String) -> CommandResult<bool> {
     Ok(safe_mode_active(&game_root))
 }
 
@@ -13,8 +15,8 @@ pub fn mod_hub_safe_mode(game_root: String) -> Result<bool, String> {
 /// rename — WG's "safe mode" support move: run the game fully vanilla
 /// without deleting anything, the fastest way to bisect a crash.
 #[tauri::command]
-pub async fn mod_hub_set_safe_mode(game_root: String, enabled: bool) -> Result<bool, String> {
+pub async fn mod_hub_set_safe_mode(game_root: String, enabled: bool) -> CommandResult<bool> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
-    set_safe_mode_core(&game_root, enabled)
+    Ok(set_safe_mode_core(&game_root, enabled)?)
 }

@@ -27,12 +27,15 @@
 //! payload is a few KB and every failure mode degrades to the bundled
 //! asset, so the refresh is fire-and-forget from the main window's boot.
 
+use anyhow::{anyhow, bail};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
 use sha2::{Digest, Sha256};
+
+use wowsp_tauri_shared::CommandResult;
 
 use super::appdata;
 use super::download_hub::{self, DownloadRequest};
@@ -117,7 +120,7 @@ fn data_url(asset: &str) -> String {
 /// old version into the check, and a 200-with-garbage answer — the
 /// ghproxy interstitial page — falls through to the next candidate
 /// instead of failing the pass).
-async fn fetch_manifest(client: &reqwest::Client) -> Result<DataManifest, String> {
+async fn fetch_manifest(client: &reqwest::Client) -> anyhow::Result<DataManifest> {
     let url = data_url(DATA_MANIFEST);
     let mut last_err = format!("no mirror attempted for {url}");
     for candidate in super::github_mirror::candidates(&url) {
@@ -140,16 +143,17 @@ async fn fetch_manifest(client: &reqwest::Client) -> Result<DataManifest, String
             Err(e) => last_err = format!("{candidate}: {e}"),
         }
     }
-    Err(last_err)
+    Err(anyhow::Error::msg(last_err))
 }
 
 /// The intact cached kit's sha. A matching sidecar alone cannot make a
 /// missing/corrupt body current, or refresh would never repair that cache.
-fn local_kit_sha() -> Result<Option<String>, String> {
-    local_kit_sha_in(&appdata::appdata_dir_path()?)
+fn local_kit_sha() -> anyhow::Result<Option<String>> {
+    // appdata_dir_path stays String-typed (see appdata.rs) — bridge verbatim.
+    local_kit_sha_in(&appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)
 }
 
-fn local_kit_sha_in(dir: &Path) -> Result<Option<String>, String> {
+fn local_kit_sha_in(dir: &Path) -> anyhow::Result<Option<String>> {
     Ok(verified_kit_meta_in(dir)?.map(|meta| meta.sha256))
 }
 
@@ -164,7 +168,7 @@ fn kit_is_current(local: Option<&str>, entry: &DatasetEntry) -> bool {
 /// bundled asset is serving). Shows the version string verbatim (an ISO
 /// timestamp today).
 #[tauri::command]
-pub fn data_pack_info() -> Result<Option<String>, String> {
+pub fn data_pack_info() -> CommandResult<Option<String>> {
     Ok(verified_kit_meta()?
         .filter(|m| !m.version.is_empty())
         .map(|m| m.version))
@@ -172,20 +176,20 @@ pub fn data_pack_info() -> Result<Option<String>, String> {
 
 /// The sidecar of an INTACT cached kit (sidecar present AND its sha
 /// matching the body) — `None` for no cache or a corrupt one.
-fn verified_kit_meta() -> Result<Option<KitMeta>, String> {
-    verified_kit_meta_in(&appdata::appdata_dir_path()?)
+fn verified_kit_meta() -> anyhow::Result<Option<KitMeta>> {
+    verified_kit_meta_in(&appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)
 }
 
 /// [`verified_kit_meta`] against an explicit directory (tests run the
 /// four cache states against a temp dir).
-fn verified_kit_meta_in(dir: &Path) -> Result<Option<KitMeta>, String> {
+fn verified_kit_meta_in(dir: &Path) -> anyhow::Result<Option<KitMeta>> {
     Ok(verified_kit_in(dir)?.map(|(meta, _)| meta))
 }
 
 /// Read the body once and return those exact verified bytes. A concurrent
 /// refresh may replace the on-disk file after verification; serving a second
 /// read could otherwise return a body that was never checked against its meta.
-fn verified_kit_in(dir: &Path) -> Result<Option<(KitMeta, String)>, String> {
+fn verified_kit_in(dir: &Path) -> anyhow::Result<Option<(KitMeta, String)>> {
     let body = match fs::read_to_string(appdata::data_file_path(dir, KIT_FILE)?) {
         Ok(body) => body,
         Err(e)
@@ -196,7 +200,7 @@ fn verified_kit_in(dir: &Path) -> Result<Option<(KitMeta, String)>, String> {
         {
             return Ok(None);
         },
-        Err(e) => return Err(format!("read {}: {e}", KIT_FILE)),
+        Err(e) => return Err(anyhow!("read {}: {e}", KIT_FILE)),
     };
     let meta = fs::read_to_string(appdata::data_file_path(dir, KIT_META)?)
         .ok()
@@ -211,11 +215,14 @@ fn verified_kit_in(dir: &Path) -> Result<Option<(KitMeta, String)>, String> {
 /// (never downloaded, or the cache failed verification), which the webui
 /// maps to the baked asset.
 #[tauri::command]
-pub fn get_ship_kit() -> Result<Option<String>, String> {
+pub fn get_ship_kit() -> CommandResult<Option<String>> {
     // Corrupt or tampered cache (or a missing sidecar): report absent
     // rather than serving data nobody vouched for; the next refresh
     // re-downloads over it (verification via [`verified_kit_meta`]).
-    Ok(verified_kit_in(&appdata::appdata_dir_path()?)?.map(|(_, body)| body))
+    Ok(
+        verified_kit_in(&appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)?
+            .map(|(_, body)| body),
+    )
 }
 
 /// One refresh pass for every dataset this shell knows: fetch the
@@ -223,9 +230,11 @@ pub fn get_ship_kit() -> Result<Option<String>, String> {
 /// changed. Returns whether anything changed. Single-flight — a second
 /// concurrent call is a no-op success, not an error.
 #[tauri::command]
-pub async fn refresh_data_pack() -> Result<bool, String> {
+pub async fn refresh_data_pack() -> CommandResult<bool> {
     {
-        let mut guard = REFRESH_ACTIVE.lock().map_err(|_| "lock poisoned")?;
+        let mut guard = REFRESH_ACTIVE
+            .lock()
+            .map_err(|_| anyhow!("lock poisoned"))?;
         if *guard {
             return Ok(false);
         }
@@ -235,11 +244,12 @@ pub async fn refresh_data_pack() -> Result<bool, String> {
     if let Ok(mut guard) = REFRESH_ACTIVE.lock() {
         *guard = false;
     }
-    result
+    result.map_err(Into::into)
 }
 
-async fn refresh_kit() -> Result<bool, String> {
-    let client = super::network::build_http_client()?;
+async fn refresh_kit() -> anyhow::Result<bool> {
+    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
+    let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
     let manifest = fetch_manifest(&client).await?;
     let entry = match manifest.datasets.get(KIT_DATASET) {
         Some(entry) => entry,
@@ -251,7 +261,9 @@ async fn refresh_kit() -> Result<bool, String> {
         return Ok(false);
     }
     let url = data_url(&entry.asset);
-    let part = appdata::appdata_dir_path()?.join(format!("{KIT_FILE}.part"));
+    let part = appdata::appdata_dir_path()
+        .map_err(anyhow::Error::msg)?
+        .join(format!("{KIT_FILE}.part"));
     // The tiny transfer goes through the unified download hub so the
     // data pack queues behind (never contends with) the big artifacts:
     // mirror ladder, streaming sha256 verification, the DATASET_MAX_BYTES
@@ -271,10 +283,11 @@ async fn refresh_kit() -> Result<bool, String> {
             )
         },
     )
-    .await?;
+    .await
+    .map_err(anyhow::Error::msg)?;
     let bytes = tokio::fs::read(&done.path)
         .await
-        .map_err(|e| format!("read {}: {e}", done.path.display()))?;
+        .map_err(|e| anyhow!("read {}: {e}", done.path.display()))?;
     let outcome = install_kit(&bytes, entry);
     let _ = tokio::fs::remove_file(&done.path).await;
     outcome
@@ -284,8 +297,8 @@ async fn refresh_kit() -> Result<bool, String> {
 /// the AppData cache. The sha check is the gate: a mirror that serves
 /// garbage (or an asset name collision) fails here and the cached /
 /// bundled copy keeps serving.
-fn install_kit(bytes: &[u8], entry: &DatasetEntry) -> Result<bool, String> {
-    let dir = appdata::appdata_dir_path()?;
+fn install_kit(bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
+    let dir = appdata::appdata_dir_path().map_err(anyhow::Error::msg)?;
     install_kit_in(&dir, bytes, entry)
 }
 
@@ -294,24 +307,25 @@ fn install_kit(bytes: &[u8], entry: &DatasetEntry) -> Result<bool, String> {
 /// the sidecar second, both atomically (appdata's tmp+rename), so a crash
 /// between the two leaves the cache reading as corrupt → absent, never
 /// as a new body with an old hash.
-fn install_kit_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> Result<bool, String> {
+fn install_kit_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
     let sha = sha256_hex(bytes);
     if !sha.eq_ignore_ascii_case(&entry.sha256) {
-        return Err(format!(
+        bail!(
             "asset sha mismatch: manifest {} vs downloaded {sha}",
             entry.sha256
-        ));
+        );
     }
     let body = std::str::from_utf8(bytes)
-        .map_err(|e| format!("dataset body is not UTF-8 JSON: {e}"))?
+        .map_err(|e| anyhow!("dataset body is not UTF-8 JSON: {e}"))?
         .to_string();
-    appdata::write_json_in(dir, KIT_FILE, &body)?;
+    // write_json_in stays String-typed (see appdata.rs) — bridge verbatim.
+    appdata::write_json_in(dir, KIT_FILE, &body).map_err(anyhow::Error::msg)?;
     let meta = serde_json::to_string(&KitMeta {
         sha256: sha.to_ascii_lowercase(),
         version: entry.version.clone(),
     })
-    .map_err(|e| format!("serialize kit meta: {e}"))?;
-    appdata::write_json_in(dir, KIT_META, &meta)?;
+    .map_err(|e| anyhow!("serialize kit meta: {e}"))?;
+    appdata::write_json_in(dir, KIT_META, &meta).map_err(anyhow::Error::msg)?;
     Ok(true)
 }
 
@@ -495,7 +509,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let sha = sha256_hex(body);
-        assert_eq!(install_kit_in(&dir, body, &entry(&sha)), Ok(true));
+        assert_eq!(install_kit_in(&dir, body, &entry(&sha)).unwrap(), true);
         let cached = std::fs::read_to_string(dir.join(KIT_FILE)).expect("body cached");
         assert_eq!(cached.as_bytes(), body);
         let meta: KitMeta = serde_json::from_str(

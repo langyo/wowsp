@@ -31,6 +31,7 @@
 //! replay monitoring, GameParams unpacking, map inventory and every mod
 //! installer all consume these helpers instead of re-deriving their own.
 
+use anyhow::anyhow;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -490,9 +491,9 @@ pub(crate) fn preload_bin_dirs(root: &Path) -> Vec<(u64, PathBuf)> {
 }
 
 /// The res_mods target under the newest usable build of an install.
-pub(crate) fn res_mods_dir(root: &Path) -> Result<PathBuf, String> {
+pub(crate) fn res_mods_dir(root: &Path) -> anyhow::Result<PathBuf> {
     let (_, ver_dir) = latest_bin_dir(root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {}\\bin", root.display()))?;
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {}\\bin", root.display()))?;
     Ok(ver_dir.join("res_mods"))
 }
 
@@ -1040,7 +1041,8 @@ mod tests {
         let err = res_mods_dir(std::path::Path::new(
             r"C:\definitely\not\a\game\wowsp-ctx-none",
         ))
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("bin"), "unexpected error text: {err}");
         std::fs::remove_dir_all(&tmp).ok();
     }

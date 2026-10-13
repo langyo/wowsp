@@ -13,6 +13,7 @@
 //! `wowsp://download-progress` with kind "mod-package"; the disk-side
 //! install stays serialized by the mod-hub gate below.
 
+use anyhow::anyhow;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -22,7 +23,7 @@ use tauri::{AppHandle, Emitter};
 
 use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{
-    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogPreset,
+    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogPreset, CommandResult,
     DOWNLOAD_PROGRESS_EVENT, DownloadProgress, InstallReport, ModInstallRecord,
 };
 
@@ -97,15 +98,16 @@ pub(crate) async fn mod_hub_gate() -> tokio::sync::MutexGuard<'static, ()> {
     MOD_HUB_GATE.lock().await
 }
 
-fn data_file(rel: &str) -> Result<PathBuf, String> {
-    let dir = paths::ensure_data_dir()?;
+fn data_file(rel: &str) -> anyhow::Result<PathBuf> {
+    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
+    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
     Ok(dir.join(rel))
 }
 
 // ── Index fetch / parse ─────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn mod_catalog_refresh(force: bool) -> Result<CatalogIndex, String> {
+pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
     let mut cached = if force { None } else { load_cached_index() };
     if let Some(index) = cached.as_ref() {
         // A cache written by an older app build can lack the i18n maps
@@ -128,10 +130,10 @@ pub async fn mod_catalog_refresh(force: bool) -> Result<CatalogIndex, String> {
         Ok(index) => {
             let path = data_file(INDEX_CACHE_FILE)?;
             let json =
-                serde_json::to_string(&index).map_err(|e| format!("serialize index: {e}"))?;
+                serde_json::to_string(&index).map_err(|e| anyhow!("serialize index: {e}"))?;
             let tmp = path.with_extension("json.tmp");
-            fs::write(&tmp, json).map_err(|e| format!("write cache: {e}"))?;
-            fs::rename(&tmp, &path).map_err(|e| format!("rename cache: {e}"))?;
+            fs::write(&tmp, json).map_err(|e| anyhow!("write cache: {e}"))?;
+            fs::rename(&tmp, &path).map_err(|e| anyhow!("rename cache: {e}"))?;
             Ok(index)
         },
         Err(e) => match cached {
@@ -139,7 +141,7 @@ pub async fn mod_catalog_refresh(force: bool) -> Result<CatalogIndex, String> {
                 tracing::warn!(error = %e, "catalog refresh failed — serving the stale cache");
                 Ok(index)
             },
-            None => Err(e),
+            None => Err(e.into()),
         },
     }
 }
@@ -158,8 +160,9 @@ pub(crate) fn load_cached_index() -> Option<CatalogIndex> {
     serde_json::from_str(&raw).ok()
 }
 
-async fn fetch_index() -> Result<CatalogIndex, String> {
-    let client = super::network::build_http_client()?;
+async fn fetch_index() -> anyhow::Result<CatalogIndex> {
+    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
+    let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
     let mut last_err = String::from("no index url attempted");
     for url in index_urls() {
         let resp = client
@@ -190,7 +193,7 @@ async fn fetch_index() -> Result<CatalogIndex, String> {
             Err(e) => last_err = format!("{url}: read: {e}"),
         }
     }
-    Err(format!("catalog index unreachable: {last_err}"))
+    Err(anyhow!("catalog index unreachable: {last_err}"))
 }
 
 #[derive(Deserialize)]
@@ -321,9 +324,9 @@ fn raw_packages(list: Vec<RawPackage>) -> Vec<CatalogPackage> {
 /// Tolerant `mod-index.json` → DTO: community-crawled indexes fill fewer
 /// fields than the publisher's; entries without packages are not installable
 /// and get dropped here so the UI only ever renders actionable rows.
-fn parse_index(raw: &serde_json::Value) -> Result<CatalogIndex, String> {
+fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogIndex> {
     let raw: RawIndex =
-        serde_json::from_value(raw.clone()).map_err(|e| format!("index shape: {e}"))?;
+        serde_json::from_value(raw.clone()).map_err(|e| anyhow!("index shape: {e}"))?;
     let mut mods = Vec::new();
     for (id, m) in raw.mods {
         let latest = match m.latest.clone() {
@@ -428,21 +431,21 @@ pub(crate) fn load_ledger() -> Ledger {
         .unwrap_or_default()
 }
 
-pub(crate) fn save_ledger(ledger: &Ledger) -> Result<(), String> {
+pub(crate) fn save_ledger(ledger: &Ledger) -> anyhow::Result<()> {
     let path = data_file(LEDGER_FILE)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create ledger dir: {e}"))?;
+        fs::create_dir_all(parent).map_err(|e| anyhow!("create ledger dir: {e}"))?;
     }
     let tmp = path.with_extension("json.tmp");
     let json =
-        serde_json::to_string_pretty(ledger).map_err(|e| format!("serialize ledger: {e}"))?;
-    fs::write(&tmp, json).map_err(|e| format!("write ledger: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename ledger: {e}"))?;
+        serde_json::to_string_pretty(ledger).map_err(|e| anyhow!("serialize ledger: {e}"))?;
+    fs::write(&tmp, json).map_err(|e| anyhow!("write ledger: {e}"))?;
+    fs::rename(&tmp, &path).map_err(|e| anyhow!("rename ledger: {e}"))?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn mod_hub_records() -> Result<Vec<ModInstallRecord>, String> {
+pub fn mod_hub_records() -> CommandResult<Vec<ModInstallRecord>> {
     Ok(load_ledger().installs)
 }
 
@@ -476,13 +479,13 @@ fn size_within_catalog(actual: usize, listed: u64) -> bool {
 struct WorkDir(PathBuf);
 
 impl WorkDir {
-    fn create(temp: &Path) -> Result<Self, String> {
+    fn create(temp: &Path) -> anyhow::Result<Self> {
         // Catalog identifiers are display data, never filesystem paths.
         // Create the directory exclusively before arming its cleanup guard.
         let mut nonce = [0u8; 16];
-        getrandom::fill(&mut nonce).map_err(|e| format!("create workdir name: {e}"))?;
+        getrandom::fill(&mut nonce).map_err(|e| anyhow!("create workdir name: {e}"))?;
         let path = temp.join(format!("wowsp-modhub-{}", hex::encode(nonce)));
-        fs::create_dir(&path).map_err(|e| format!("create workdir: {e}"))?;
+        fs::create_dir(&path).map_err(|e| anyhow!("create workdir: {e}"))?;
         Ok(Self(path))
     }
 }
@@ -507,7 +510,7 @@ pub async fn mod_catalog_install(
     // Named scheme to install (see CatalogPreset); None/empty resolves to
     // the entry's default package list (which mirrors the first preset).
     preset: Option<String>,
-) -> Result<InstallReport, String> {
+) -> CommandResult<InstallReport> {
     // Every failure of this command is otherwise log-invisible (its early
     // guards return before any download or install line) — the entry line
     // keeps "the user pressed install" distinguishable from "the UI never
@@ -517,17 +520,18 @@ pub async fn mod_catalog_install(
     // previous pass's unpack tail) — this attempt is user-initiated.
     download_hub::clear_pending(kind::MOD_PACKAGE, &mod_id);
     let index = load_cached_index()
-        .ok_or_else(|| "catalog not loaded yet — refresh the online list first".to_string())?;
+        .ok_or_else(|| anyhow!("catalog not loaded yet — refresh the online list first"))?;
     let entry = index
         .mods
         .iter()
         .find(|m| m.id == mod_id)
-        .ok_or_else(|| format!("{mod_id} is not in the cached catalog"))?
+        .ok_or_else(|| anyhow!("{mod_id} is not in the cached catalog"))?
         .clone();
     if entry.delisted {
-        return Err(format!(
+        return Err(anyhow!(
             "{mod_id} has been delisted from the catalog — its discussion thread is closed"
-        ));
+        )
+        .into());
     }
     // A scheme IS a different prebuilt payload, not an overlay: the chosen
     // preset's packages fully replace the default list for this install.
@@ -537,7 +541,7 @@ pub async fn mod_catalog_install(
             .iter()
             .find(|p| p.id == pid)
             .map(|p| p.packages.clone())
-            .ok_or_else(|| format!("{mod_id} has no preset `{pid}`"))?,
+            .ok_or_else(|| anyhow!("{mod_id} has no preset `{pid}`"))?,
         None => entry.packages.clone(),
     };
 
@@ -590,24 +594,25 @@ pub async fn mod_catalog_install(
         .await
         .map_err(|e| {
             if e.contains("sha256 mismatch") {
-                format!(
+                anyhow!(
                     "{} failed the SHA-256 check; refresh the catalog and retry — the cached index may be stale, or the package on the release is damaged ({e})",
                     pkg.name
                 )
             } else {
-                format!("download {}: {e}", pkg.name)
+                anyhow!("download {}: {e}", pkg.name)
             }
         })?;
         if !size_within_catalog(done.bytes as usize, pkg.size) {
-            return Err(format!(
+            return Err(anyhow!(
                 "{} downloaded {} bytes, outside the catalog's listed {} (KiB-rounded) — refresh the catalog and retry; the cached index may be stale",
                 pkg.name, done.bytes, pkg.size
-            ));
+            )
+            .into());
         }
         let dest = package_archive(&work.0, i);
         tokio::fs::rename(&done.path, &dest)
             .await
-            .map_err(|e| format!("assemble {}: {e}", dest.display()))?;
+            .map_err(|e| anyhow!("assemble {}: {e}", dest.display()))?;
         received_total += done.bytes;
         emit_progress(
             &app,
@@ -655,7 +660,7 @@ pub async fn mod_catalog_install(
         (outcome, ledger)
     })
     .await
-    .map_err(|e| format!("install task: {e}"))?;
+    .map_err(|e| anyhow!("install task: {e}"))?;
     let (report, written, restore_dir) = match outcome {
         Ok(done) => done,
         Err(e) => {
@@ -665,7 +670,7 @@ pub async fn mod_catalog_install(
             if let Err(se) = save_ledger(&ledger) {
                 tracing::warn!(error = %se, "ledger save failed after failed install");
             }
-            return Err(e);
+            return Err(e.into());
         },
     };
 
@@ -765,9 +770,9 @@ fn unpack_and_install(
     game_root: &str,
     packages: &[CatalogPackage],
     installs: &mut Vec<ModInstallRecord>,
-) -> Result<(InstallReport, Vec<String>, Option<PathBuf>), String> {
+) -> anyhow::Result<(InstallReport, Vec<String>, Option<PathBuf>)> {
     let extract_root = work.join("unpacked");
-    fs::create_dir_all(&extract_root).map_err(|e| format!("create unpack dir: {e}"))?;
+    fs::create_dir_all(&extract_root).map_err(|e| anyhow!("create unpack dir: {e}"))?;
     let mut files = Vec::new();
     for i in 0..packages.len() {
         let archive = package_archive(work, i);
@@ -776,7 +781,7 @@ fn unpack_and_install(
     // The unpacked tree must still look like a mod; reuse the same classifier
     // the local-folder flow uses so both paths agree on what is installable.
     if files.is_empty() {
-        return Err(format!(
+        return Err(anyhow!(
             "{mod_id}: the packages unpacked to nothing recognizable (archive layout drifted from the catalog)"
         ));
     }
@@ -814,10 +819,10 @@ fn unpack_and_install(
 /// Files sitting at the zip root next to `res_mods/` (game-root payloads).
 /// Only native payloads are carried over — readme/log noise at the zip root
 /// is ignored rather than dumped into the game directory.
-fn loose_root_files(extract_root: &Path) -> Result<Vec<String>, String> {
+fn loose_root_files(extract_root: &Path) -> anyhow::Result<Vec<String>> {
     let mut loose = Vec::new();
     for ent in fs::read_dir(extract_root)
-        .map_err(|e| format!("read {}: {e}", extract_root.display()))?
+        .map_err(|e| anyhow!("read {}: {e}", extract_root.display()))?
         .flatten()
     {
         let path = ent.path();
@@ -836,30 +841,30 @@ fn loose_root_files(extract_root: &Path) -> Result<Vec<String>, String> {
 }
 
 /// Zip-slip-safe extraction; visited paths are collected for diagnostics.
-fn extract_zip(archive: &Path, dest: &Path, visited: &mut Vec<String>) -> Result<(), String> {
-    let file = fs::File::open(archive).map_err(|e| format!("open {}: {e}", archive.display()))?;
+fn extract_zip(archive: &Path, dest: &Path, visited: &mut Vec<String>) -> anyhow::Result<()> {
+    let file = fs::File::open(archive).map_err(|e| anyhow!("open {}: {e}", archive.display()))?;
     let mut zip =
-        zip::ZipArchive::new(file).map_err(|e| format!("read {}: {e}", archive.display()))?;
+        zip::ZipArchive::new(file).map_err(|e| anyhow!("read {}: {e}", archive.display()))?;
     for i in 0..zip.len() {
         let mut entry = zip
             .by_index(i)
-            .map_err(|e| format!("entry {i} of {}: {e}", archive.display()))?;
+            .map_err(|e| anyhow!("entry {i} of {}: {e}", archive.display()))?;
         // enclosed_name rejects `..` and absolute components.
         let Some(rel) = entry.enclosed_name() else {
             continue;
         };
         let out = dest.join(rel);
         if entry.is_dir() {
-            fs::create_dir_all(&out).map_err(|e| format!("mkdir {}: {e}", out.display()))?;
+            fs::create_dir_all(&out).map_err(|e| anyhow!("mkdir {}: {e}", out.display()))?;
             continue;
         }
         if let Some(parent) = out.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|e| anyhow!("mkdir {}: {e}", parent.display()))?;
         }
         let mut fout =
-            fs::File::create(&out).map_err(|e| format!("create {}: {e}", out.display()))?;
+            fs::File::create(&out).map_err(|e| anyhow!("create {}: {e}", out.display()))?;
         std::io::copy(&mut entry, &mut fout)
-            .map_err(|e| format!("extract {}: {e}", out.display()))?;
+            .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
         if let Ok(rel) = out.strip_prefix(dest) {
             visited.push(rel.to_string_lossy().replace('\\', "/"));
         }
@@ -894,11 +899,11 @@ pub(crate) fn validate_uninstall_order(
     installs: &[ModInstallRecord],
     mod_id: &str,
     game_root: &str,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let record = installs
         .iter()
         .find(|r| r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root))
-        .ok_or_else(|| format!("{mod_id} has no install record"))?;
+        .ok_or_else(|| anyhow!("{mod_id} has no install record"))?;
     validate_file_removal_order(installs, mod_id, game_root, &record.files)
 }
 
@@ -909,11 +914,11 @@ pub(crate) fn validate_file_removal_order(
     mod_id: &str,
     game_root: &str,
     files: &[String],
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let position = installs
         .iter()
         .position(|r| r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root))
-        .ok_or_else(|| format!("{mod_id} has no install record"))?;
+        .ok_or_else(|| anyhow!("{mod_id} has no install record"))?;
     let record = &installs[position];
     // Uninstall also removes pre-release mirror copies. A newer record at
     // another bin can own those same physical paths, even though the plain
@@ -936,9 +941,11 @@ pub(crate) fn validate_file_removal_order(
                 continue;
             }
             if claimed.contains(&uninstall_path_key(rel)) {
-                return Err(format!(
+                return Err(anyhow!(
                     "\"{}\" shares {rel} with newer installed \"{}\" — uninstall \"{}\" first to preserve its files and restore snapshots",
-                    record.name, newer.name, newer.name
+                    record.name,
+                    newer.name,
+                    newer.name
                 ));
             }
         }
@@ -950,7 +957,7 @@ pub(crate) fn validate_file_removal_order(
 pub async fn mod_catalog_uninstall(
     mod_id: String,
     game_root: String,
-) -> Result<UninstallReport, String> {
+) -> CommandResult<UninstallReport> {
     let _gate = mod_hub_gate().await;
     mod_hub::ensure_game_closed(&game_root)?;
     mod_hub::ensure_res_mods_active(&game_root)?;
@@ -968,7 +975,7 @@ pub(crate) fn uninstall_from_ledger(
     installs: &mut Vec<ModInstallRecord>,
     mod_id: &str,
     game_root: &str,
-) -> Result<UninstallReport, String> {
+) -> anyhow::Result<UninstallReport> {
     validate_uninstall_order(installs, mod_id, game_root)?;
     // The ledger is global: the same catalog id can exist for several game
     // installs. Operate on THIS root's record (pre-field empty stamps
@@ -978,7 +985,7 @@ pub(crate) fn uninstall_from_ledger(
         .find(|r| r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root))
         .cloned()
     else {
-        return Err(format!("{mod_id} has no install record"));
+        return Err(anyhow!("{mod_id} has no install record"));
     };
 
     // The files may live under an older bin/<version> after a game update —
@@ -1001,14 +1008,14 @@ pub(crate) fn uninstall_from_ledger(
             None => res_mods.join(rel),
         };
         if path.is_file() {
-            fs::remove_file(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+            fs::remove_file(&path).map_err(|e| anyhow!("remove {}: {e}", path.display()))?;
             removed += 1;
         }
         // A disabled mod's files live under `.bak` twins — they must not
         // survive the uninstall as ghost payloads the next scan resurrects.
         let twin = mod_hub::sibling_with_suffix(&path, ".bak");
         if twin.is_file() {
-            fs::remove_file(&twin).map_err(|e| format!("remove {}: {e}", twin.display()))?;
+            fs::remove_file(&twin).map_err(|e| anyhow!("remove {}: {e}", twin.display()))?;
             removed += 1;
         }
     }
@@ -1106,7 +1113,7 @@ pub(crate) fn uninstall_from_ledger(
         let loader = res_mods.join("PnFModsLoader.py");
         let is_placeholder = loader.metadata().map(|m| m.len() == 0).unwrap_or(false);
         if is_placeholder {
-            fs::remove_file(&loader).map_err(|e| format!("remove {}: {e}", loader.display()))?;
+            fs::remove_file(&loader).map_err(|e| anyhow!("remove {}: {e}", loader.display()))?;
             removed += 1;
             tracing::info!("removed the shared PnFModsLoader.py placeholder");
         }
@@ -1121,12 +1128,12 @@ pub(crate) fn uninstall_from_ledger(
 
 /// Copy a snapshot tree back: entries under `@game/` land in the game root,
 /// everything else in res_mods. Returns the restored file count.
-fn restore_tree(from: &Path, res_mods: &Path, game_root: &Path) -> Result<usize, String> {
+fn restore_tree(from: &Path, res_mods: &Path, game_root: &Path) -> anyhow::Result<usize> {
     let mut count = 0usize;
     let mut stack = vec![from.to_path_buf()];
     while let Some(dir) = stack.pop() {
         for ent in fs::read_dir(&dir)
-            .map_err(|e| format!("read {}: {e}", dir.display()))?
+            .map_err(|e| anyhow!("read {}: {e}", dir.display()))?
             .flatten()
         {
             let src = ent.path();
@@ -1146,9 +1153,9 @@ fn restore_tree(from: &Path, res_mods: &Path, game_root: &Path) -> Result<usize,
             };
             if let Some(parent) = dest.parent() {
                 fs::create_dir_all(parent)
-                    .map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+                    .map_err(|e| anyhow!("mkdir {}: {e}", parent.display()))?;
             }
-            fs::copy(&src, &dest).map_err(|e| format!("restore {}: {e}", dest.display()))?;
+            fs::copy(&src, &dest).map_err(|e| anyhow!("restore {}: {e}", dest.display()))?;
             count += 1;
         }
     }
@@ -1178,7 +1185,7 @@ const ORPHAN_RESTORE_GRACE: std::time::Duration = std::time::Duration::from_secs
 /// collect restore dirs nothing references. Safe-mode aware: a quarantined
 /// `res_mods.wowsp-disabled` still counts as "the files exist".
 #[tauri::command]
-pub async fn mod_hub_reconcile(game_root: String) -> Result<ReconcileReport, String> {
+pub async fn mod_hub_reconcile(game_root: String) -> CommandResult<ReconcileReport> {
     let _gate = mod_hub_gate().await;
     let mut ledger = load_ledger();
     let report = reconcile_core(&game_root, &mut ledger.installs);

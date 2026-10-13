@@ -18,8 +18,11 @@
 //! script packs). There is no separate issue anchor, so update that document
 //! when the loader contract is confirmed.
 
+use anyhow::anyhow;
 use std::fs;
 use std::path::PathBuf;
+
+use wowsp_tauri_shared::CommandResult;
 
 /// Files WoWSP drops into res_mods to mark itself installed. The PnFMods.py
 /// loader is the conventional WoWS mod entrypoint; `WoWSP.py` is our payload.
@@ -39,7 +42,7 @@ const MOD_FILES: &[(&str, &str)] = &[
 /// The res_mods target of a game install — the unified game context's
 /// `bin/<version>` selection (idx-carrying build preferred, numeric
 /// fallback).
-fn res_mods_dir(game_root: &str) -> Result<PathBuf, String> {
+fn res_mods_dir(game_root: &str) -> anyhow::Result<PathBuf> {
     super::game_context::res_mods_dir(std::path::Path::new(game_root))
 }
 
@@ -48,15 +51,15 @@ fn res_mods_dir(game_root: &str) -> Result<PathBuf, String> {
 /// other res_mods mutation — an ungated write used to race install/rename
 /// sweeps from the mod hub.
 #[tauri::command]
-pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
+pub async fn install_overlay_mod(game_root: String) -> CommandResult<String> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     super::mod_hub::ensure_game_closed(&game_root)?;
     super::mod_hub::ensure_res_mods_active(&game_root)?;
     let dir = res_mods_dir(&game_root)?;
-    fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    fs::create_dir_all(&dir).map_err(|e| anyhow!("create {}: {e}", dir.display()))?;
     for (name, body) in MOD_FILES {
         let path = dir.join(name);
-        fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))?;
+        fs::write(&path, body).map_err(|e| anyhow!("write {}: {e}", path.display()))?;
     }
     // Pre-release twins receive the same stubs (see preload_mirror).
     let rels: Vec<String> = MOD_FILES
@@ -72,7 +75,7 @@ pub async fn install_overlay_mod(game_root: String) -> Result<String, String> {
 
 /// Remove the WoWSP overlay mod files. Idempotent — missing files are fine.
 #[tauri::command]
-pub async fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
+pub async fn uninstall_overlay_mod(game_root: String) -> CommandResult<()> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     super::mod_hub::ensure_game_closed(&game_root)?;
     super::mod_hub::ensure_res_mods_active(&game_root)?;
@@ -82,7 +85,7 @@ pub async fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
         match fs::remove_file(&path) {
             Ok(()) => {},
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
-            Err(e) => return Err(format!("remove {}: {e}", path.display())),
+            Err(e) => return Err(anyhow!("remove {}: {e}", path.display()).into()),
         }
     }
     // Twin copies go with the live ones (see preload_mirror).
@@ -96,7 +99,7 @@ pub async fn uninstall_overlay_mod(game_root: String) -> Result<(), String> {
 
 /// Report whether all WoWSP mod files are present in the game's res_mods.
 #[tauri::command]
-pub fn is_overlay_mod_installed(game_root: String) -> Result<bool, String> {
+pub fn is_overlay_mod_installed(game_root: String) -> CommandResult<bool> {
     let dir = res_mods_dir(&game_root)?;
     Ok(MOD_FILES.iter().all(|(name, _)| dir.join(name).is_file()))
 }

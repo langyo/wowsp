@@ -15,11 +15,14 @@
 //! recorded once nothing remains due, so a mid-migration crash retries the
 //! whole pass on the next boot instead of stranding actions.
 
+use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 
 use hifumi::app::AppMigrationStore;
 use hifumi::app_migrations;
 use tracing::warn;
+
+use wowsp_tauri_shared::CommandResult;
 
 use crate::paths;
 
@@ -40,12 +43,15 @@ mod registry {
 /// Ledger file under the data root (see `paths` for the layout modes).
 const APP_MIGRATIONS_FILE: &str = "app-migrations.json";
 
-fn store_path() -> Result<PathBuf, String> {
-    Ok(paths::ensure_data_dir()?.join(APP_MIGRATIONS_FILE))
+fn store_path() -> Result<PathBuf> {
+    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
+    Ok(paths::ensure_data_dir()
+        .map_err(anyhow::Error::msg)?
+        .join(APP_MIGRATIONS_FILE))
 }
 
-fn load_store(store_path: &Path) -> Result<AppMigrationStore, String> {
-    AppMigrationStore::load(store_path).map_err(|e| format!("load app migration ledger: {e}"))
+fn load_store(store_path: &Path) -> Result<AppMigrationStore> {
+    AppMigrationStore::load(store_path).map_err(|e| anyhow!("load app migration ledger: {e}"))
 }
 
 /// Record the current version only when nothing remains due — recording
@@ -61,7 +67,7 @@ fn settle(set: &hifumi::app::AppMigrationSet, store: &mut AppMigrationStore) {
 
 /// One boot pass: run the shell-side actions, then return the still-pending
 /// delegated ids.
-fn run_pass(store_path: &Path, previous_hint: Option<&str>) -> Result<Vec<String>, String> {
+fn run_pass(store_path: &Path, previous_hint: Option<&str>) -> Result<Vec<String>> {
     let mut store = load_store(store_path)?;
     if let Some(hint) = previous_hint.filter(|hint| !hint.is_empty()) {
         // Seeds only a fresh ledger (an upgrade in place); a no-op on every
@@ -70,7 +76,7 @@ fn run_pass(store_path: &Path, previous_hint: Option<&str>) -> Result<Vec<String
         if store.seed_last_run_version(hint) {
             store
                 .save()
-                .map_err(|e| format!("write app migration ledger: {e}"))?;
+                .map_err(|e| anyhow!("write app migration ledger: {e}"))?;
         }
     }
     let set = registry::registry();
@@ -88,12 +94,12 @@ fn run_pass(store_path: &Path, previous_hint: Option<&str>) -> Result<Vec<String
 
 /// Report a delegated action as completed by the WebView; `false` for ids
 /// the registry does not know (nothing is written).
-fn complete(store_path: &Path, id: &str) -> Result<bool, String> {
+fn complete(store_path: &Path, id: &str) -> Result<bool> {
     let mut store = load_store(store_path)?;
     let set = registry::registry();
     let known = set
         .mark_completed(&mut store, id)
-        .map_err(|e| format!("write app migration ledger: {e}"))?;
+        .map_err(|e| anyhow!("write app migration ledger: {e}"))?;
     if known {
         settle(&set, &mut store);
     }
@@ -104,14 +110,14 @@ fn complete(store_path: &Path, id: &str) -> Result<bool, String> {
 /// profile. `previous_hint` is the webui's `wowsp-last-run-version` slot,
 /// consumed once to seed a fresh ledger.
 #[tauri::command]
-pub fn app_migrations_pending(previous_hint: Option<String>) -> Result<Vec<String>, String> {
-    run_pass(&store_path()?, previous_hint.as_deref())
+pub fn app_migrations_pending(previous_hint: Option<String>) -> CommandResult<Vec<String>> {
+    Ok(run_pass(&store_path()?, previous_hint.as_deref())?)
 }
 
 /// Tauri command: the webui finished a delegated action.
 #[tauri::command]
-pub fn app_migration_completed(id: String) -> Result<bool, String> {
-    complete(&store_path()?, &id)
+pub fn app_migration_completed(id: String) -> CommandResult<bool> {
+    Ok(complete(&store_path()?, &id)?)
 }
 
 #[cfg(test)]

@@ -21,12 +21,13 @@
 //! field only (atomic tmp+rename means never a torn file — same policy as
 //! the playtime battle cache).
 
+use anyhow::anyhow;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use wowsp_tauri_shared::GameInstall;
+use wowsp_tauri_shared::{CommandResult, GameInstall};
 
 use crate::paths;
 use crate::settings_store::{self, SettingsSource};
@@ -85,8 +86,8 @@ fn sanitize_replay_dirs(dirs: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn canonical_toml(file: &GameConfigFile) -> Result<String, String> {
-    let body = toml::to_string(file).map_err(|e| format!("serialize game config: {e}"))?;
+fn canonical_toml(file: &GameConfigFile) -> anyhow::Result<String> {
+    let body = toml::to_string(file).map_err(|e| anyhow!("serialize game config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
 }
 
@@ -130,9 +131,10 @@ fn load_from(dir: &Path) -> GameConfigFile {
 
 /// Testable write core: canonical TOML → atomic write → retire the legacy
 /// JSON twin (only after the write succeeded).
-fn set_file_from(dir: &Path, file: &GameConfigFile) -> Result<(), String> {
+fn set_file_from(dir: &Path, file: &GameConfigFile) -> anyhow::Result<()> {
     let canonical = canonical_toml(file)?;
-    settings_store::store(dir, GAME_CONFIG_FILE, &canonical)?;
+    // store stays String-typed (see settings_store.rs) — bridge verbatim.
+    settings_store::store(dir, GAME_CONFIG_FILE, &canonical).map_err(anyhow::Error::msg)?;
     settings_store::retire_legacy_json(dir, LEGACY_GAME_CONFIG_FILE);
     Ok(())
 }
@@ -141,8 +143,9 @@ fn set_file_from(dir: &Path, file: &GameConfigFile) -> Result<(), String> {
 /// migration/heal pass on the way past, so an upgraded install's stale JSON
 /// is converted on the very first startup render.
 #[tauri::command]
-pub fn get_game_config() -> Result<GameConfigResponse, String> {
-    let dir = paths::ensure_data_dir()?;
+pub fn get_game_config() -> CommandResult<GameConfigResponse> {
+    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
+    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
     let file = load_from(&dir);
     Ok(GameConfigResponse {
         active_path: file.active_path,
@@ -155,10 +158,10 @@ pub fn get_game_config() -> Result<GameConfigResponse, String> {
 /// nothing. The pinned replay-folder list survives untouched (one field
 /// per command; see the module docs).
 #[tauri::command]
-pub fn set_game_config(active_path: Option<String>) -> Result<GameConfigResponse, String> {
+pub fn set_game_config(active_path: Option<String>) -> CommandResult<GameConfigResponse> {
     let active_path = sanitize_path(active_path);
     tracing::info!(?active_path, "active game install changed");
-    let dir = paths::ensure_data_dir()?;
+    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
     let mut file = load_from(&dir);
     file.active_path = active_path;
     set_file_from(&dir, &file)?;
@@ -180,22 +183,22 @@ fn add_replay_dir_in(
     dir: &Path,
     path: &str,
     roots: &[(PathBuf, Option<GameInstall>)],
-) -> Result<GameConfigResponse, String> {
+) -> anyhow::Result<GameConfigResponse> {
     let path = path.trim();
     if path.is_empty() {
-        return Err("空的录像目录路径".into());
+        return Err(anyhow!("空的录像目录路径"));
     }
     let candidate = PathBuf::from(path);
     let meta =
-        std::fs::metadata(&candidate).map_err(|e| format!("无法读取该路径（{e}）：{path}"))?;
+        std::fs::metadata(&candidate).map_err(|e| anyhow!("无法读取该路径（{e}）：{path}"))?;
     if !meta.is_dir() {
-        return Err(format!("所选路径不是文件夹：{path}"));
+        return Err(anyhow!("所选路径不是文件夹：{path}"));
     }
     if roots
         .iter()
         .any(|(r, _)| super::game_context::replay_roots_overlap(r, &candidate))
     {
-        return Err(format!(
+        return Err(anyhow!(
             "该目录已在扫描范围内（与现有客户端或已添加的目录重叠）：{path}"
         ));
     }
@@ -214,22 +217,22 @@ fn add_replay_dir_in(
 /// the scan. Async + spawn_blocking — the overlap validation needs today's
 /// scan roots (a registry/Steam walk) and a folder stat.
 #[tauri::command]
-pub async fn add_replay_dir(path: String) -> Result<GameConfigResponse, String> {
-    tokio::task::spawn_blocking(move || {
-        let dir = paths::ensure_data_dir()?;
+pub async fn add_replay_dir(path: String) -> CommandResult<GameConfigResponse> {
+    Ok(tokio::task::spawn_blocking(move || {
+        let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
         let roots = super::game_context::replay_roots();
         add_replay_dir_in(&dir, &path, &roots)
     })
     .await
-    .map_err(|e| format!("add replay dir task failed: {e}"))?
+    .map_err(|e| anyhow!("add replay dir task failed: {e}"))??)
 }
 
 /// Unpin a replay folder (exact list row, any spelling). The folder's
 /// already-counted battles stay in the ledger — removal stops future scans,
 /// it does not rewrite history (see `commands/playtime.rs`).
 #[tauri::command]
-pub fn remove_replay_dir(path: String) -> Result<GameConfigResponse, String> {
-    let dir = paths::ensure_data_dir()?;
+pub fn remove_replay_dir(path: String) -> CommandResult<GameConfigResponse> {
+    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
     let file = remove_replay_dir_in(&dir, &path)?;
     Ok(GameConfigResponse {
         active_path: file.active_path,
@@ -239,7 +242,7 @@ pub fn remove_replay_dir(path: String) -> Result<GameConfigResponse, String> {
 
 /// Removal core (hermetic to `dir`): drop the list row whose path identity
 /// (`install_path_key`) matches, write only when something actually left.
-fn remove_replay_dir_in(dir: &Path, path: &str) -> Result<GameConfigFile, String> {
+fn remove_replay_dir_in(dir: &Path, path: &str) -> anyhow::Result<GameConfigFile> {
     let key = super::game_detect::install_path_key(path.trim());
     let mut file = load_from(dir);
     let before = file.replay_dirs.len();

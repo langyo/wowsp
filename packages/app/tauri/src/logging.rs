@@ -20,6 +20,7 @@
 //! feedback bundle actually carries diagnosis signal — with its own
 //! `WOWSP_FILE_LOG` override for support sessions.
 
+use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -36,14 +37,14 @@ pub const LOG_DIR_NAME: &str = "logs";
 pub const MAX_LOG_FILES: usize = 14;
 
 /// Resolve `<data root>/logs` (no side effects).
-pub fn log_dir() -> Result<PathBuf, String> {
+pub fn log_dir() -> Result<PathBuf> {
     Ok(crate::paths::data_dir()?.join(LOG_DIR_NAME))
 }
 
 /// Resolve `<data root>/logs`, creating it if missing.
-pub fn ensure_log_dir() -> Result<PathBuf, String> {
+pub fn ensure_log_dir() -> Result<PathBuf> {
     let dir = log_dir()?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir)
 }
 

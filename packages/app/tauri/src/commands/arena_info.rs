@@ -13,13 +13,14 @@
 //! event-driven via the `notify` crate instead of a 1-second poll, so idle
 //! cost is near zero.
 
+use anyhow::anyhow;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher, event::EventKind};
 use tauri::{AppHandle, Emitter};
-use wowsp_tauri_shared::ArenaInfo;
+use wowsp_tauri_shared::{ArenaInfo, CommandResult};
 
 use crate::commands::replay;
 
@@ -223,7 +224,7 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
 pub async fn read_temp_arena_info(
     app: AppHandle,
     dir: Option<String>,
-) -> Result<Option<ArenaInfo>, String> {
+) -> CommandResult<Option<ArenaInfo>> {
     // Follow the running client: resolve once, re-point the background
     // watcher when the dir drifted (the user launched a different install
     // than the one being watched), then read from that same dir.
@@ -258,23 +259,23 @@ pub async fn read_temp_arena_info(
 /// thread; the watcher is killed when the app shuts down (malkuth drain). Safe
 /// to call repeatedly — a second call stops the previous watcher first.
 #[tauri::command]
-pub async fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> Result<(), String> {
+pub async fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> CommandResult<()> {
     // Replace any existing watcher handle.
     let target = resolve_arena_dir(dir)?;
     let watcher = spawn_watcher(app.clone(), target.clone())?;
     *ACTIVE_WATCHER
         .lock()
-        .map_err(|e| format!("watcher lock: {e}"))? = Some((target, watcher));
+        .map_err(|e| anyhow!("watcher lock: {e}"))? = Some((target, watcher));
     tracing::info!("arena watcher started");
     Ok(())
 }
 
 /// Stop the background arena watcher.
 #[tauri::command]
-pub async fn stop_arena_watcher() -> Result<(), String> {
+pub async fn stop_arena_watcher() -> CommandResult<()> {
     if let Some((_, w)) = ACTIVE_WATCHER
         .lock()
-        .map_err(|e| format!("watcher lock: {e}"))?
+        .map_err(|e| anyhow!("watcher lock: {e}"))?
         .take()
     {
         // Drop kills the watcher (RecommendedWatcher stops its thread on drop).
@@ -326,19 +327,19 @@ fn retarget_watcher_if_stale(app: &AppHandle, target: &Path) {
 }
 
 /// Read + parse one `tempArenaInfo.json` file into [`ArenaInfo`].
-fn read_arena_file(path: &PathBuf) -> Result<ArenaInfo, String> {
+fn read_arena_file(path: &PathBuf) -> anyhow::Result<ArenaInfo> {
     read_arena_file_with_raw(path).map(|(info, _)| info)
 }
 
 /// Read + parse one `tempArenaInfo.json`, returning the parsed [`ArenaInfo`]
 /// AND the raw descriptor JSON text exactly as extracted from the file (NOT
 /// re-serialized, so consumers keep the game's own bytes).
-fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+fn read_arena_file_with_raw(path: &PathBuf) -> anyhow::Result<(ArenaInfo, String)> {
+    let bytes = std::fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
     let json = replay::extract_descriptor_json_pub(&bytes)
-        .ok_or_else(|| "tempArenaInfo.json: malformed".to_string())?;
+        .ok_or_else(|| anyhow!("tempArenaInfo.json: malformed"))?;
     let raw: serde_json::Value =
-        serde_json::from_str(&json).map_err(|e| format!("parse arena JSON: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| anyhow!("parse arena JSON: {e}"))?;
     let meta = replay::meta_from_raw_pub(path.to_string_lossy().into_owned(), raw.clone());
     let mut vehicles = meta.vehicles;
     let mut bot_count = meta.bot_count;
@@ -420,7 +421,7 @@ pub(crate) fn newer_arena_local_player(since: i64) -> Option<(String, i64)> {
 /// and tracks the last-seen mtime so only *newer* files trigger (ApeRadar's
 /// `requireFileToBeNewer` semantic — the game rewrites the same path each
 /// battle, so without this every touch would fire).
-fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatcher, String> {
+fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> anyhow::Result<RecommendedWatcher> {
     // Snapshot the last-seen mtime BEFORE moving target_dir into the closure.
     let last_mtime = find_latest_arena_info(&target_dir)
         .and_then(|p| p.metadata().and_then(|m| m.modified()).ok())
@@ -445,13 +446,13 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
         },
         notify::Config::default(),
     )
-    .map_err(|e| format!("create watcher: {e}"))?;
+    .map_err(|e| anyhow!("create watcher: {e}"))?;
 
     // Watch the replay dir recursively — the file lives directly under it but
     // versioned subfolders can appear too.
     watcher
         .watch(&watch_root, RecursiveMode::Recursive)
-        .map_err(|e| format!("watch {watch_root:?}: {e}"))?;
+        .map_err(|e| anyhow!("watch {watch_root:?}: {e}"))?;
     if let Some(root) = root_watch {
         if let Err(e) = watcher.watch(&root, RecursiveMode::NonRecursive) {
             tracing::warn!(root = %root.display(), error = %e, "watch the game root for the arena file failed");
@@ -598,7 +599,7 @@ fn handle_watch_event(
     }
 }
 
-fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
+fn resolve_arena_dir(dir: Option<String>) -> anyhow::Result<PathBuf> {
     if let Some(d) = dir {
         return Ok(PathBuf::from(d));
     }
@@ -616,7 +617,9 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     // session poller, the overlay healer — and dir-less callers).
     match super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning) {
         Some(ctx) => Ok(super::game_context::replays_dir(&ctx.root)),
-        None => Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into()),
+        None => Err(anyhow!(
+            "no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH"
+        )),
     }
 }
 

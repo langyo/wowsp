@@ -6,9 +6,10 @@
 //! update. Cache TTL is one day; every failure falls back to the newest
 //! parseable copy (cached remote, then bundled).
 
+use anyhow::anyhow;
 use std::fs;
 
-use wowsp_tauri_shared::CatalogTagIndex;
+use wowsp_tauri_shared::{CatalogTagIndex, CommandResult};
 
 use crate::paths;
 
@@ -24,8 +25,11 @@ fn tag_urls() -> Vec<String> {
     )
 }
 
-fn cache_path() -> Result<std::path::PathBuf, String> {
-    Ok(paths::ensure_data_dir()?.join(CACHE_FILE))
+fn cache_path() -> anyhow::Result<std::path::PathBuf> {
+    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
+    Ok(paths::ensure_data_dir()
+        .map_err(anyhow::Error::msg)?
+        .join(CACHE_FILE))
 }
 
 fn parse(raw: &str) -> Option<CatalogTagIndex> {
@@ -83,7 +87,7 @@ async fn fetch_remote() -> Option<CatalogTagIndex> {
 /// cache → bundled. Read-only for callers; the refresh happens inline on
 /// the (rare) expired-cache path.
 #[tauri::command]
-pub async fn mod_tags() -> Result<CatalogTagIndex, String> {
+pub async fn mod_tags() -> CommandResult<CatalogTagIndex> {
     let path = cache_path()?;
     if let Some(idx) = cached_fresh(&path) {
         return Ok(idx);
@@ -98,7 +102,7 @@ pub async fn mod_tags() -> Result<CatalogTagIndex, String> {
             return Ok(idx);
         }
     }
-    parse(BUNDLED).ok_or_else(|| "bundled mod-tags registry is malformed".to_string())
+    Ok(parse(BUNDLED).ok_or_else(|| anyhow!("bundled mod-tags registry is malformed"))?)
 }
 
 #[cfg(test)]

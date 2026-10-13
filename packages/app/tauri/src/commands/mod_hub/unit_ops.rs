@@ -1,3 +1,6 @@
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
+
 use super::installed_units::{classify_installed_root, unit_covers, unit_files};
 use super::scan_installed::{parse_installed_manifest, scan_root};
 use super::*;
@@ -9,22 +12,22 @@ pub async fn mod_hub_set_unit_enabled(
     game_root: String,
     rel_path: String,
     enabled: bool,
-) -> Result<UnitToggleReport, String> {
+) -> CommandResult<UnitToggleReport> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
     let (bin_version, ver_dir) = latest_bin_version(&game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {game_root}/bin"))?;
     let res_mods = ver_dir.join("res_mods");
     if !res_mods.is_dir() {
-        return Err("res_mods directory not found".into());
+        return Err(anyhow!("res_mods directory not found").into());
     }
     let unit = classify_installed_root(&res_mods, None)
         .into_iter()
         .find(|u| u.rel_path == rel_path)
-        .ok_or_else(|| format!("no installed plugin at {rel_path}"))?;
+        .ok_or_else(|| anyhow!("no installed plugin at {rel_path}"))?;
     if unit.paths.is_empty() {
-        return Err(format!("{rel_path} has no files to toggle"));
+        return Err(anyhow!("{rel_path} has no files to toggle").into());
     }
     // Disabling a shared catch-all group (all of `content/`, every loose gui
     // file, …) that also carries files of a catalog-recorded mod living
@@ -43,10 +46,11 @@ pub async fn mod_hub_set_unit_enabled(
             .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
             .find(|r| half_disable_violation(r, &unit.paths))
         {
-            return Err(format!(
+            return Err(anyhow!(
                 "\"{}\" shares this group with \"{}\", which also installs files outside it — disabling the group would leave that mod half-active. Disable or uninstall \"{}\" from its own entry instead.",
                 unit.name, other.name, other.name
-            ));
+            )
+            .into());
         }
     }
     let renamed = set_paths_state(&res_mods, &unit.paths, enabled)?;
@@ -158,7 +162,7 @@ pub(crate) fn set_paths_state(
     res_mods: &Path,
     paths: &[String],
     enabled: bool,
-) -> Result<usize, String> {
+) -> anyhow::Result<usize> {
     let mut renamed = 0usize;
     for rel in paths {
         for file in unit_files(res_mods, rel) {
@@ -179,7 +183,7 @@ pub(crate) fn set_paths_state(
             if target.exists() {
                 continue;
             }
-            fs::rename(&file, &target).map_err(|e| format!("rename {}: {e}", file.display()))?;
+            fs::rename(&file, &target).map_err(|e| anyhow!("rename {}: {e}", file.display()))?;
             renamed += 1;
         }
     }
@@ -190,18 +194,18 @@ pub(crate) fn set_paths_state(
 pub async fn mod_hub_uninstall_unit(
     game_root: String,
     rel_path: String,
-) -> Result<super::mod_catalog::UninstallReport, String> {
+) -> CommandResult<super::mod_catalog::UninstallReport> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
     let res_mods = scan_root(&game_root)?;
     if !res_mods.is_dir() {
-        return Err("res_mods directory not found".into());
+        return Err(anyhow!("res_mods directory not found").into());
     }
     let unit = classify_installed_root(&res_mods, None)
         .into_iter()
         .find(|u| u.rel_path == rel_path)
-        .ok_or_else(|| format!("no installed plugin at {rel_path}"))?;
+        .ok_or_else(|| anyhow!("no installed plugin at {rel_path}"))?;
 
     let mut ledger = super::mod_catalog::load_ledger();
     let report = uninstall_unit_core(&game_root, &res_mods, &unit, &mut ledger.installs)?;
@@ -236,7 +240,7 @@ pub(crate) fn uninstall_unit_core(
     res_mods: &Path,
     unit: &InstalledMod,
     installs: &mut Vec<ModInstallRecord>,
-) -> Result<super::mod_catalog::UninstallReport, String> {
+) -> anyhow::Result<super::mod_catalog::UninstallReport> {
     preflight_unit_uninstall(installs, &unit.paths, game_root)?;
     let mut removed = 0usize;
     let mut restored = 0usize;
@@ -255,7 +259,7 @@ pub(crate) fn uninstall_unit_core(
             };
             if path.is_dir() {
                 removed += unit_files(res_mods, rel).len();
-                fs::remove_dir_all(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+                fs::remove_dir_all(&path).map_err(|e| anyhow!("remove {}: {e}", path.display()))?;
             } else if path.is_file() {
                 fs::remove_file(&path).ok();
                 removed += 1;
@@ -351,7 +355,7 @@ fn preflight_unit_uninstall(
     installs: &[ModInstallRecord],
     paths: &[String],
     game_root: &str,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let mut projected = installs.to_vec();
     let mut idx = projected.len();
     while idx > 0 {
@@ -419,7 +423,7 @@ fn trim_covered_files(
     record: &mut ModInstallRecord,
     covered: &[String],
     game_root: &str,
-) -> Result<(usize, usize), String> {
+) -> anyhow::Result<(usize, usize)> {
     let res_mods = Path::new(game_root)
         .join("bin")
         .join(&record.bin_version)
@@ -431,7 +435,7 @@ fn trim_covered_files(
     for rel in covered {
         for path in [res_mods.join(rel), res_mods.join(format!("{rel}.bak"))] {
             if path.is_file() {
-                fs::remove_file(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+                fs::remove_file(&path).map_err(|e| anyhow!("remove {}: {e}", path.display()))?;
                 removed += 1;
             }
         }
@@ -467,9 +471,9 @@ fn trim_covered_files(
                     let dest = res_mods.join(&rel);
                     if let Some(parent) = dest.parent() {
                         fs::create_dir_all(parent)
-                            .map_err(|e| format!("create {}: {e}", parent.display()))?;
+                            .map_err(|e| anyhow!("create {}: {e}", parent.display()))?;
                     }
-                    fs::copy(&p, &dest).map_err(|e| format!("restore {}: {e}", dest.display()))?;
+                    fs::copy(&p, &dest).map_err(|e| anyhow!("restore {}: {e}", dest.display()))?;
                     restored += 1;
                     restored_snaps.push(p);
                 }
@@ -554,14 +558,14 @@ pub(crate) fn remove_manifest_entries_for_entry(
 pub async fn mod_hub_uninstall_modstation_unit(
     game_root: String,
     key: String,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     let (_, ver_dir) = latest_bin_version(&game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {game_root}/bin"))?;
     let dir = super::foreign::modstation_dir_for_key(&ver_dir.join("mods"), &key)
-        .ok_or_else(|| format!("no ModStation unit keyed {key:?}"))?;
-    fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
+        .ok_or_else(|| anyhow!("no ModStation unit keyed {key:?}"))?;
+    fs::remove_dir_all(&dir).map_err(|e| anyhow!("remove {}: {e}", dir.display()))?;
     tracing::info!(dir = %dir.display(), "modstation unit uninstalled");
     Ok(())
 }

@@ -1,3 +1,6 @@
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
+
 use super::installed_units::{classify_installed_root, display_file_name, existing_with_bak};
 use super::texture_analysis::analyze_override_tree;
 use super::*;
@@ -5,7 +8,7 @@ use super::*;
 // ── Scan installed ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn mod_hub_scan_installed(game_root: String) -> Result<Vec<InstalledMod>, String> {
+pub fn mod_hub_scan_installed(game_root: String) -> CommandResult<Vec<InstalledMod>> {
     // One bin resolution feeds the classification AND the ModStation mods/
     // probe below — a game update mid-scan cannot mix versions.
     let res_mods = scan_root(&game_root)?;
@@ -53,7 +56,7 @@ fn refresh_foreign_with(
 #[tauri::command]
 pub fn mod_hub_foreign_units(
     game_root: String,
-) -> Result<Vec<wowsp_tauri_shared::ForeignModUnit>, String> {
+) -> CommandResult<Vec<wowsp_tauri_shared::ForeignModUnit>> {
     let res_mods = scan_root(&game_root)?;
     let ver_dir = res_mods
         .parent()
@@ -79,9 +82,9 @@ pub fn mod_hub_foreign_units(
 }
 
 /// Resolve `bin/<latest>/res_mods` for a game install.
-pub(crate) fn scan_root(game_root: &str) -> Result<PathBuf, String> {
+pub(crate) fn scan_root(game_root: &str) -> anyhow::Result<PathBuf> {
     let (_, ver_dir) = latest_bin_version(game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {game_root}/bin"))?;
     Ok(ver_dir.join("res_mods"))
 }
 
@@ -91,7 +94,7 @@ pub(crate) fn scan_root(game_root: &str) -> Result<PathBuf, String> {
 /// tree that looks installed but loads nothing (a broken migration or a
 /// foreign installer can leave exactly that behind).
 #[tauri::command]
-pub fn mod_hub_pnf_loader_status(game_root: String) -> Result<PnfLoaderStatus, String> {
+pub fn mod_hub_pnf_loader_status(game_root: String) -> CommandResult<PnfLoaderStatus> {
     let res_mods = scan_root(&game_root)?;
     Ok(PnfLoaderStatus {
         pnf_mods_present: super::super::ingame_plugin::has_pnf_mods(&res_mods),
@@ -103,16 +106,16 @@ pub fn mod_hub_pnf_loader_status(game_root: String) -> Result<PnfLoaderStatus, S
 /// the 0-byte marker back (gated like every res_mods mutation). A no-op
 /// when there is nothing to heal — returns whether the marker was created.
 #[tauri::command]
-pub async fn mod_hub_restore_pnf_loader_marker(game_root: String) -> Result<bool, String> {
+pub async fn mod_hub_restore_pnf_loader_marker(game_root: String) -> CommandResult<bool> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
-    restore_pnf_loader_marker_core(&game_root)
+    Ok(restore_pnf_loader_marker_core(&game_root)?)
 }
 
 /// The heal core, split from the command so tests drive it without the
 /// async gate.
-pub(crate) fn restore_pnf_loader_marker_core(game_root: &str) -> Result<bool, String> {
+pub(crate) fn restore_pnf_loader_marker_core(game_root: &str) -> anyhow::Result<bool> {
     let res_mods = scan_root(game_root)?;
     if !super::super::ingame_plugin::has_pnf_mods(&res_mods) {
         return Ok(false);
@@ -121,7 +124,7 @@ pub(crate) fn restore_pnf_loader_marker_core(game_root: &str) -> Result<bool, St
     if marker.is_file() {
         return Ok(false);
     }
-    fs::write(&marker, b"").map_err(|e| format!("write {}: {e}", marker.display()))?;
+    fs::write(&marker, b"").map_err(|e| anyhow!("write {}: {e}", marker.display()))?;
     // Twins carrying PnF content get their marker back too.
     super::preload_mirror::ensure_loader_markers(game_root);
     tracing::info!("restored the missing PnFModsLoader.py marker");

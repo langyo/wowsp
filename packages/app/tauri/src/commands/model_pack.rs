@@ -64,6 +64,7 @@
 //!   - `clear_res` deletes the cache, and the bundle takes over again —
 //!     clearing can never brick the app.
 
+use anyhow::anyhow;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -76,7 +77,9 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 use tauri::{AppHandle, Emitter};
 use wowsp_tauri_shared::download::{kind, phase};
-use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress, ResStatus, ResUpdate};
+use wowsp_tauri_shared::{
+    CommandResult, DOWNLOAD_PROGRESS_EVENT, DownloadProgress, ResStatus, ResUpdate,
+};
 
 use crate::commands::download_hub::{self, DownloadRequest};
 use crate::paths;
@@ -154,16 +157,19 @@ fn bundled_baseline() -> Option<BundledBaseline> {
 /// on desktop (stored, never consulted), so the same command shape serves
 /// both targets.
 #[tauri::command]
-pub fn res_report_bundled(tree_sha256: String, version: String) -> Result<(), String> {
+pub fn res_report_bundled(tree_sha256: String, version: String) -> CommandResult<()> {
     let is_hash = |s: &str| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit());
     if !is_hash(&tree_sha256) || version.trim().is_empty() {
-        return Err(format!(
+        return Err(anyhow!(
             "invalid bundled baseline (treeSha256 len {}, version {:?})",
             tree_sha256.len(),
             version
-        ));
+        )
+        .into());
     }
-    let mut guard = BUNDLED_BASELINE.lock().map_err(|_| "lock poisoned")?;
+    let mut guard = BUNDLED_BASELINE
+        .lock()
+        .map_err(|_| anyhow!("lock poisoned"))?;
     if guard.is_none() {
         *guard = Some(BundledBaseline {
             tree_sha256: tree_sha256.to_ascii_lowercase(),
@@ -208,7 +214,7 @@ fn effective_local_version(cache: &Path) -> LocalVersion {
 /// does). A populated but UNSTAMPED cache never serves on mobile — only
 /// `res_download` writes this cache, and it always stamps.
 #[cfg(mobile)]
-fn mobile_serving_root() -> Result<Option<String>, String> {
+fn mobile_serving_root() -> anyhow::Result<Option<String>> {
     let cache = cache_root()?;
     if !dir_populated(&cache.join("models")) {
         return Ok(None);
@@ -237,8 +243,9 @@ struct LocalVersion {
     version: Option<String>,
 }
 
-fn cache_root() -> Result<PathBuf, String> {
-    paths::ensure_cache_dir()
+fn cache_root() -> anyhow::Result<PathBuf> {
+    // ensure_cache_dir stays String-typed (see paths.rs) — bridge verbatim.
+    paths::ensure_cache_dir().map_err(anyhow::Error::msg)
 }
 
 fn read_local_version(cache: &Path) -> LocalVersion {
@@ -248,9 +255,9 @@ fn read_local_version(cache: &Path) -> LocalVersion {
         .unwrap_or_default()
 }
 
-fn write_local_version(cache: &Path, tree_sha256: &str, version: &str) -> Result<(), String> {
+fn write_local_version(cache: &Path, tree_sha256: &str, version: &str) -> anyhow::Result<()> {
     let raw = serde_json::json!({ "treeSha256": tree_sha256, "version": version }).to_string();
-    fs::write(cache.join(VERSION_FILE), raw).map_err(|e| format!("write version stamp: {e}"))
+    fs::write(cache.join(VERSION_FILE), raw).map_err(|e| anyhow!("write version stamp: {e}"))
 }
 
 /// Whether a LEGACY stamp exists without a hash stamp — the cache predates
@@ -301,7 +308,7 @@ fn release_download_url(asset: &str) -> String {
 /// Download the manifest asset (a small JSON file) across the mirror
 /// ladder. `Cache-Control: no-cache` keeps mirror-cached copies from
 /// pinning an old version into the check.
-async fn fetch_manifest(client: &Client) -> Result<ResManifest, String> {
+async fn fetch_manifest(client: &Client) -> anyhow::Result<ResManifest> {
     let url = release_download_url(RES_MANIFEST);
     let mut last_err = format!("no mirror attempted for {RES_MANIFEST}");
     for candidate in super::github_mirror::candidates(&url) {
@@ -324,7 +331,7 @@ async fn fetch_manifest(client: &Client) -> Result<ResManifest, String> {
             Err(e) => last_err = format!("{candidate}: {e}"),
         }
     }
-    Err(last_err)
+    Err(anyhow::Error::msg(last_err))
 }
 
 /// Split a `res-delta-<from>-<to>` tag into its two full tree hashes.
@@ -343,7 +350,7 @@ fn parse_delta_tag(tag: &str) -> Option<(String, String)> {
 /// Query the repo's release list and collect every delta edge whose patch
 /// asset exists. The list API is paged; one page of 100 comfortably holds
 /// the app releases plus the three retained deltas.
-async fn fetch_delta_edges(client: &Client) -> Result<Vec<DeltaEdge>, String> {
+async fn fetch_delta_edges(client: &Client) -> anyhow::Result<Vec<DeltaEdge>> {
     let api_url = format!("https://api.github.com/repos/{REPO}/releases?per_page=100");
     let mut last_err = String::from("no mirror attempted for release list");
     for candidate in super::github_mirror::candidates(&api_url) {
@@ -394,7 +401,7 @@ async fn fetch_delta_edges(client: &Client) -> Result<Vec<DeltaEdge>, String> {
         }
         return Ok(edges);
     }
-    Err(last_err)
+    Err(anyhow::Error::msg(last_err))
 }
 
 /// Walk the delta graph from `local` to `latest` and return the shortest
@@ -490,10 +497,10 @@ fn safe_rel_path(path: &str) -> bool {
 }
 
 /// sha256 of one file, streaming.
-fn file_sha256(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+fn file_sha256(path: &Path) -> anyhow::Result<String> {
+    let mut file = File::open(path).map_err(|e| anyhow!("open {}: {e}", path.display()))?;
     let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher).map_err(|e| format!("hash {}: {e}", path.display()))?;
+    std::io::copy(&mut file, &mut hasher).map_err(|e| anyhow!("hash {}: {e}", path.display()))?;
     Ok(hex::encode(hasher.finalize()))
 }
 
@@ -548,7 +555,8 @@ async fn download_archive(
     segments: u32,
     base_received: u64,
     base_total: u64,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
+    // transfer stays String-typed (see download_hub.rs) — bridge verbatim.
     download_hub::transfer(
         app,
         DownloadRequest {
@@ -569,6 +577,7 @@ async fn download_archive(
     )
     .await
     .map(|_| ())
+    .map_err(anyhow::Error::msg)
 }
 
 // ── Staging / publication ─────────────────────────────────────────────────
@@ -576,9 +585,9 @@ async fn download_archive(
 /// Clone regular pack files without removing the serving tree. Hard links
 /// avoid copying the whole pack when supported; delta writes must replace
 /// their destination rather than truncating a shared inode.
-fn clone_pack_tree(from: &Path, to: &Path) -> Result<(), String> {
+fn clone_pack_tree(from: &Path, to: &Path) -> anyhow::Result<()> {
     let meta =
-        fs::symlink_metadata(from).map_err(|e| format!("inspect {}: {e}", from.display()))?;
+        fs::symlink_metadata(from).map_err(|e| anyhow!("inspect {}: {e}", from.display()))?;
     let linked = meta.file_type().is_symlink();
     #[cfg(windows)]
     let linked = {
@@ -586,23 +595,23 @@ fn clone_pack_tree(from: &Path, to: &Path) -> Result<(), String> {
         linked || meta.file_attributes() & 0x400 != 0
     };
     if linked {
-        return Err(format!(
+        return Err(anyhow!(
             "resource pack contains a filesystem link: {}",
             from.display()
         ));
     }
     if meta.is_dir() {
-        fs::create_dir(to).map_err(|e| format!("create {}: {e}", to.display()))?;
-        for entry in fs::read_dir(from).map_err(|e| format!("read {}: {e}", from.display()))? {
-            let entry = entry.map_err(|e| format!("read directory entry: {e}"))?;
+        fs::create_dir(to).map_err(|e| anyhow!("create {}: {e}", to.display()))?;
+        for entry in fs::read_dir(from).map_err(|e| anyhow!("read {}: {e}", from.display()))? {
+            let entry = entry.map_err(|e| anyhow!("read directory entry: {e}"))?;
             clone_pack_tree(&entry.path(), &to.join(entry.file_name()))?;
         }
     } else if meta.is_file() {
         if fs::hard_link(from, to).is_err() {
-            fs::copy(from, to).map_err(|e| format!("copy {}: {e}", from.display()))?;
+            fs::copy(from, to).map_err(|e| anyhow!("copy {}: {e}", from.display()))?;
         }
     } else {
-        return Err(format!(
+        return Err(anyhow!(
             "resource pack contains a non-file entry: {}",
             from.display()
         ));
@@ -610,12 +619,12 @@ fn clone_pack_tree(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn stage_existing_pack(cache: &Path) -> Result<PathBuf, String> {
+fn stage_existing_pack(cache: &Path) -> anyhow::Result<PathBuf> {
     let staging = cache.join(STAGING_DIR);
     if staging.exists() {
-        fs::remove_dir_all(&staging).map_err(|e| format!("clean staging dir: {e}"))?;
+        fs::remove_dir_all(&staging).map_err(|e| anyhow!("clean staging dir: {e}"))?;
     }
-    fs::create_dir_all(&staging).map_err(|e| format!("create staging dir: {e}"))?;
+    fs::create_dir_all(&staging).map_err(|e| anyhow!("create staging dir: {e}"))?;
     for subdir in SUBDIRS {
         let from = cache.join(subdir);
         if !from.exists() {
@@ -632,30 +641,30 @@ fn stage_existing_pack(cache: &Path) -> Result<PathBuf, String> {
 /// Publish the directories and their stamp together, retaining originals
 /// until all renames succeed. The stamp is removed first and published last
 /// so an interrupted commit cannot advertise a complete new pack.
-fn swap_staging_in(cache: &Path, staging: &Path) -> Result<(), String> {
+fn swap_staging_in(cache: &Path, staging: &Path) -> anyhow::Result<()> {
     if !staging.join(VERSION_FILE).is_file() {
-        return Err("staged resource pack has no version stamp".into());
+        return Err(anyhow!("staged resource pack has no version stamp"));
     }
     let backup = cache.join(BACKUP_DIR);
     // The stamp is published last. Its presence means a previous commit
     // finished (or failed before touching the old tree), so a backup left
     // only by cleanup failure can now be retried safely.
     if backup.exists() && cache.join(VERSION_FILE).is_file() {
-        fs::remove_dir_all(&backup).map_err(|e| format!("clean committed resource backup: {e}"))?;
+        fs::remove_dir_all(&backup).map_err(|e| anyhow!("clean committed resource backup: {e}"))?;
     }
     // Never delete an earlier recovery copy to make room for a retry.
     fs::create_dir(&backup)
-        .map_err(|e| format!("create resource backup {}: {e}", backup.display()))?;
+        .map_err(|e| anyhow!("create resource backup {}: {e}", backup.display()))?;
     let mut saved = Vec::new();
     let mut published = Vec::new();
-    let outcome = (|| -> Result<(), String> {
+    let outcome = (|| -> anyhow::Result<()> {
         for name in [VERSION_FILE, SUBDIRS[0], SUBDIRS[1]] {
             let old = cache.join(name);
             if old
                 .try_exists()
-                .map_err(|e| format!("inspect {name}: {e}"))?
+                .map_err(|e| anyhow!("inspect {name}: {e}"))?
             {
-                fs::rename(&old, backup.join(name)).map_err(|e| format!("back up {name}: {e}"))?;
+                fs::rename(&old, backup.join(name)).map_err(|e| anyhow!("back up {name}: {e}"))?;
                 saved.push(name);
             }
         }
@@ -663,9 +672,9 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> Result<(), String> {
             let new = staging.join(name);
             if new
                 .try_exists()
-                .map_err(|e| format!("inspect staged {name}: {e}"))?
+                .map_err(|e| anyhow!("inspect staged {name}: {e}"))?
             {
-                fs::rename(&new, cache.join(name)).map_err(|e| format!("publish {name}: {e}"))?;
+                fs::rename(&new, cache.join(name)).map_err(|e| anyhow!("publish {name}: {e}"))?;
                 published.push(name);
             }
         }
@@ -692,7 +701,7 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> Result<(), String> {
             let _ = fs::remove_dir(&backup);
             return Err(error);
         }
-        return Err(format!(
+        return Err(anyhow!(
             "{error}; recovery retained in {}: {}",
             backup.display(),
             rollback_errors.join("; ")
@@ -709,15 +718,15 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> Result<(), String> {
 /// Unpack the full-pack tar.gz into `staging` (top-level `models/` +
 /// `dogtags/`). Runs on the blocking pool — a ~1.2 GB unpack must not
 /// stall the async runtime.
-fn unpack_full_blocking(archive: &Path, staging: &Path) -> Result<(), String> {
-    let file = File::open(archive).map_err(|e| format!("open archive: {e}"))?;
+fn unpack_full_blocking(archive: &Path, staging: &Path) -> anyhow::Result<()> {
+    let file = File::open(archive).map_err(|e| anyhow!("open archive: {e}"))?;
     let gz = GzDecoder::new(file);
     let mut tar = Archive::new(gz);
     tar.set_preserve_permissions(true);
     tar.unpack(staging)
-        .map_err(|e| format!("extract resource pack: {e}"))?;
+        .map_err(|e| anyhow!("extract resource pack: {e}"))?;
     if !staging.join("models").is_dir() {
-        return Err("archive layout: no top-level models/ directory".to_string());
+        return Err(anyhow!("archive layout: no top-level models/ directory"));
     }
     Ok(())
 }
@@ -751,71 +760,72 @@ fn apply_delta_blocking(
     staging: &Path,
     expect_from: &str,
     expect_to: &str,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let manifest_raw = fs::read_to_string(delta_dir.join(DELTA_MANIFEST_FILE))
-        .map_err(|e| format!("read {DELTA_MANIFEST_FILE}: {e}"))?;
+        .map_err(|e| anyhow!("read {DELTA_MANIFEST_FILE}: {e}"))?;
     let manifest: DeltaManifest = serde_json::from_str(&manifest_raw)
-        .map_err(|e| format!("parse {DELTA_MANIFEST_FILE}: {e}"))?;
+        .map_err(|e| anyhow!("parse {DELTA_MANIFEST_FILE}: {e}"))?;
     if manifest.from != expect_from || manifest.to != expect_to {
-        return Err(format!(
+        return Err(anyhow!(
             "delta mismatch: archive is {}→{} but the chain expects {expect_from}→{expect_to}",
-            manifest.from, manifest.to
+            manifest.from,
+            manifest.to
         ));
     }
     for entry in &manifest.changed {
         if !safe_rel_path(&entry.path) {
-            return Err(format!("unsafe path in delta: {}", entry.path));
+            return Err(anyhow!("unsafe path in delta: {}", entry.path));
         }
         let src = delta_dir.join(DELTA_FILES_PREFIX).join(&entry.path);
         if !src.is_file() {
-            return Err(format!("delta missing file: {}", entry.path));
+            return Err(anyhow!("delta missing file: {}", entry.path));
         }
         let got = file_sha256(&src)?;
         if !got.eq_ignore_ascii_case(&entry.sha256) {
-            return Err(format!("delta file hash mismatch: {}", entry.path));
+            return Err(anyhow!("delta file hash mismatch: {}", entry.path));
         }
         let dest = staging.join(&entry.path);
         if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|e| anyhow!("create {}: {e}", parent.display()))?;
         }
         // Staging may share this inode with the serving pack. Unlink only
         // our staged name before copying so a later failed link/cancel can
         // discard staging without having modified the original bytes.
         if dest.exists() {
-            fs::remove_file(&dest).map_err(|e| format!("replace staged {}: {e}", entry.path))?;
+            fs::remove_file(&dest).map_err(|e| anyhow!("replace staged {}: {e}", entry.path))?;
         }
-        fs::copy(&src, &dest).map_err(|e| format!("apply {}: {e}", entry.path))?;
+        fs::copy(&src, &dest).map_err(|e| anyhow!("apply {}: {e}", entry.path))?;
     }
     for path in &manifest.removed {
         if !safe_rel_path(path) {
-            return Err(format!("unsafe removal path in delta: {path}"));
+            return Err(anyhow!("unsafe removal path in delta: {path}"));
         }
         let target = staging.join(path);
         if target.is_file() {
-            fs::remove_file(&target).map_err(|e| format!("remove {path}: {e}"))?;
+            fs::remove_file(&target).map_err(|e| anyhow!("remove {path}: {e}"))?;
         }
     }
     Ok(())
 }
 
 /// Unpack a delta archive into a fresh directory and return it.
-fn unpack_delta_blocking(archive: &Path, dest: &Path) -> Result<(), String> {
+fn unpack_delta_blocking(archive: &Path, dest: &Path) -> anyhow::Result<()> {
     if dest.exists() {
-        fs::remove_dir_all(dest).map_err(|e| format!("clean delta staging: {e}"))?;
+        fs::remove_dir_all(dest).map_err(|e| anyhow!("clean delta staging: {e}"))?;
     }
-    fs::create_dir_all(dest).map_err(|e| format!("create delta staging: {e}"))?;
-    let file = File::open(archive).map_err(|e| format!("open delta archive: {e}"))?;
+    fs::create_dir_all(dest).map_err(|e| anyhow!("create delta staging: {e}"))?;
+    let file = File::open(archive).map_err(|e| anyhow!("open delta archive: {e}"))?;
     let gz = GzDecoder::new(file);
     let mut tar = Archive::new(gz);
     tar.set_preserve_permissions(true);
-    tar.unpack(dest).map_err(|e| format!("extract delta: {e}"))
+    tar.unpack(dest).map_err(|e| anyhow!("extract delta: {e}"))
 }
 
 // ── Install passes ────────────────────────────────────────────────────────
 
 /// Full download + install: fetch the archive (hash-verified), stage it,
 /// swap it in, stamp the version. Caller holds the single-flight guard.
-async fn full_install(manifest: &ResManifest, app: Option<&AppHandle>) -> Result<(), String> {
+async fn full_install(manifest: &ResManifest, app: Option<&AppHandle>) -> anyhow::Result<()> {
     let cache = cache_root()?;
     let tmp = cache.join(PACK_TMP);
     emit_progress(app, phase::DOWNLOAD, 0, manifest.asset_size, 1, 1, None);
@@ -844,24 +854,24 @@ async fn full_install(manifest: &ResManifest, app: Option<&AppHandle>) -> Result
     let staging = cache.join(STAGING_DIR);
     if staging.exists() {
         if let Err(e) = fs::remove_dir_all(&staging) {
-            return Err(format!("clean staging dir: {e}"));
+            return Err(anyhow!("clean staging dir: {e}"));
         }
     }
-    fs::create_dir_all(&staging).map_err(|e| format!("create staging dir: {e}"))?;
+    fs::create_dir_all(&staging).map_err(|e| anyhow!("create staging dir: {e}"))?;
     let archive = tmp.clone();
     let cache_for_task = cache.clone();
     let tree_sha256 = manifest.tree_sha256.clone();
     let version = manifest.version.clone();
     let outcome = tokio::task::spawn_blocking({
         let staging = staging.clone();
-        move || -> Result<(), String> {
+        move || -> anyhow::Result<()> {
             unpack_full_blocking(&archive, &staging)?;
             write_local_version(&staging, &tree_sha256, &version)?;
             swap_staging_in(&cache_for_task, &staging)
         }
     })
     .await
-    .map_err(|e| format!("extract task: {e}"))
+    .map_err(|e| anyhow!("extract task: {e}"))
     .and_then(|r| r);
     // Staging holds only new files. Originals remain in the serving cache
     // or, if rollback itself failed, in the separate recovery backup.
@@ -879,14 +889,14 @@ async fn delta_install(
     chain: &[DeltaEdge],
     manifest: &ResManifest,
     app: Option<&AppHandle>,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let cache = cache_root()?;
     let staging = tokio::task::spawn_blocking({
         let cache = cache.clone();
         move || stage_existing_pack(&cache)
     })
     .await
-    .map_err(|e| format!("stage resource pack: {e}"))??;
+    .map_err(|e| anyhow!("stage resource pack: {e}"))??;
 
     let result = async {
         let delta_tmp = cache.join(DELTA_TMP);
@@ -931,13 +941,13 @@ async fn delta_install(
                 let staging = staging.clone();
                 let from = edge.from.clone();
                 let to = edge.to.clone();
-                move || -> Result<(), String> {
+                move || -> anyhow::Result<()> {
                     unpack_delta_blocking(&delta_tmp, &delta_dir)?;
                     apply_delta_blocking(&delta_dir, &staging, &from, &to)
                 }
             })
             .await
-            .map_err(|e| format!("apply task: {e}"))
+            .map_err(|e| anyhow!("apply task: {e}"))
             .and_then(|r| r);
             outcome?;
             done_bytes += edge.size;
@@ -948,7 +958,7 @@ async fn delta_install(
         swap_staging_in(&cache, &staging)?;
         let _ = fs::remove_dir_all(&staging);
         emit_progress(app, phase::DONE, 0, 0, segments, segments, None);
-        Ok::<(), String>(())
+        Ok::<_, anyhow::Error>(())
     }
     .await;
 
@@ -970,7 +980,7 @@ async fn install_latest(
     app: Option<&AppHandle>,
     client: &Client,
     prefer_delta: bool,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let cache = cache_root()?;
     let manifest = fetch_manifest(client).await?;
     let local = effective_local_version(&cache);
@@ -1020,7 +1030,7 @@ async fn install_latest(
 /// are never silently re-pulled — the updates panel surfaces them. When no
 /// manifest is reachable, whatever is on disk still serves (offline
 /// machines fall back to the installer-shipped pack).
-async fn ensure_pack() -> Result<String, String> {
+async fn ensure_pack() -> anyhow::Result<String> {
     // Mobile: the APK bundle exists by construction — ensure NEVER pulls a
     // ~1.2 GB archive on first launch. Hand out the serving cache root when
     // a downloaded update is current enough to serve; otherwise answer with
@@ -1029,14 +1039,15 @@ async fn ensure_pack() -> Result<String, String> {
     {
         return match mobile_serving_root()? {
             Some(root) => Ok(root),
-            None => Err(MOBILE_BUNDLED_IN_USE.to_string()),
+            None => Err(anyhow!(MOBILE_BUNDLED_IN_USE)),
         };
     }
     // Desktop path continues below (compiled out on mobile).
     #[cfg(not(mobile))]
     {
         let cache = cache_root()?;
-        let client = crate::commands::network::build_http_client()?;
+        // build_http_client stays String-typed (see network.rs) — bridge verbatim.
+        let client = crate::commands::network::build_http_client().map_err(anyhow::Error::msg)?;
 
         // Route through the SAME single-flight guard the panel download uses.
         // While another download holds the guard, sleep and retry — once
@@ -1051,7 +1062,9 @@ async fn ensure_pack() -> Result<String, String> {
         let mut waited: u32 = 0;
         let installed = loop {
             let blocked = {
-                let mut guard = DOWNLOAD_ACTIVE.lock().map_err(|_| "lock poisoned")?;
+                let mut guard = DOWNLOAD_ACTIVE
+                    .lock()
+                    .map_err(|_| anyhow!("lock poisoned"))?;
                 if *guard {
                     true
                 } else {
@@ -1089,7 +1102,9 @@ async fn ensure_pack() -> Result<String, String> {
             }
             waited += 1;
             if waited >= WAIT_SLOTS {
-                break Err("a resource-pack download stayed in flight for too long".to_string());
+                break Err(anyhow!(
+                    "a resource-pack download stayed in flight for too long"
+                ));
             }
             tracing::info!("resource-pack download in flight, waiting");
             tokio::time::sleep(WAIT_SLOT).await;
@@ -1127,7 +1142,7 @@ async fn ensure_pack() -> Result<String, String> {
 /// stale cache is shadowed by the bundle). `present` counts the bundle,
 /// so a bundled-only install never reports a missing pack.
 #[tauri::command]
-pub async fn get_res_status() -> Result<ResStatus, String> {
+pub async fn get_res_status() -> CommandResult<ResStatus> {
     let cache = cache_root()?;
     let status = tokio::task::spawn_blocking(move || -> ResStatus {
         let local = read_local_version(&cache);
@@ -1170,7 +1185,7 @@ pub async fn get_res_status() -> Result<ResStatus, String> {
         }
     })
     .await
-    .map_err(|e| format!("status task: {e}"))?;
+    .map_err(|e| anyhow!("status task: {e}"))?;
     Ok(status)
 }
 
@@ -1184,9 +1199,10 @@ pub async fn get_res_status() -> Result<ResStatus, String> {
 /// chain base may be the read-only bundle), so the delta graph is never
 /// even queried.
 #[tauri::command]
-pub async fn check_res_update() -> Result<ResUpdate, String> {
+pub async fn check_res_update() -> CommandResult<ResUpdate> {
     let cache = cache_root()?;
-    let client = crate::commands::network::build_http_client()?;
+    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
+    let client = crate::commands::network::build_http_client().map_err(anyhow::Error::msg)?;
     let manifest = fetch_manifest(&client).await.ok();
     let local = read_local_version(&cache);
 
@@ -1269,14 +1285,16 @@ pub async fn check_res_update() -> Result<ResUpdate, String> {
 /// skips the chain entirely (full download only — see module docs).
 /// Single-flight: a second call while a pass is in flight is rejected.
 #[tauri::command]
-pub async fn res_download(app: AppHandle) -> Result<(), String> {
+pub async fn res_download(app: AppHandle) -> CommandResult<()> {
     // Build the client BEFORE taking the guard — an early error here must
     // not leak the single-flight slot.
-    let client = crate::commands::network::build_http_client()?;
+    let client = crate::commands::network::build_http_client().map_err(anyhow::Error::msg)?;
     {
-        let mut guard = DOWNLOAD_ACTIVE.lock().map_err(|_| "lock poisoned")?;
+        let mut guard = DOWNLOAD_ACTIVE
+            .lock()
+            .map_err(|_| anyhow!("lock poisoned"))?;
         if *guard {
-            return Err("a resource-pack download is already in flight".to_string());
+            return Err(anyhow!("a resource-pack download is already in flight").into());
         }
         *guard = true;
     }
@@ -1287,12 +1305,12 @@ pub async fn res_download(app: AppHandle) -> Result<(), String> {
     // cfg! keeps one code path; the mobile false is folded at compile time.
     let result = install_latest(Some(&app), &client, !cfg!(mobile)).await;
     if let Err(e) = &result {
-        emit_progress(Some(&app), phase::ERROR, 0, 0, 0, 0, Some(e.clone()));
+        emit_progress(Some(&app), phase::ERROR, 0, 0, 0, 0, Some(e.to_string()));
     }
     if let Ok(mut guard) = DOWNLOAD_ACTIVE.lock() {
         *guard = false;
     }
-    result
+    result.map_err(Into::into)
 }
 
 /// Cancel the in-flight pack pass (cooperative: the hub's streaming loop
@@ -1301,7 +1319,7 @@ pub async fn res_download(app: AppHandle) -> Result<(), String> {
 /// — the swap-based installer never leaves a partial pack, so aborting it
 /// locally would only discard completed work).
 #[tauri::command]
-pub fn res_cancel() -> Result<(), String> {
+pub fn res_cancel() -> CommandResult<()> {
     download_hub::cancel(kind::RES_PACK, JOB_ID);
     Ok(())
 }
@@ -1313,12 +1331,12 @@ pub fn res_cancel() -> Result<(), String> {
 /// over serving immediately afterwards, so clearing can never brick the
 /// app.
 #[tauri::command]
-pub async fn clear_res() -> Result<(), String> {
+pub async fn clear_res() -> CommandResult<()> {
     if is_downloading() {
-        return Err("resource pack is downloading — cancel it first".to_string());
+        return Err(anyhow!("resource pack is downloading — cancel it first").into());
     }
     let cache = cache_root()?;
-    tokio::task::spawn_blocking(move || -> Result<(), String> {
+    Ok(tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         for name in SUBDIRS
             .iter()
             .map(|s| s.to_string())
@@ -1326,7 +1344,7 @@ pub async fn clear_res() -> Result<(), String> {
         {
             let dir = cache.join(&name);
             if dir.exists() {
-                fs::remove_dir_all(&dir).map_err(|e| format!("remove {name}: {e}"))?;
+                fs::remove_dir_all(&dir).map_err(|e| anyhow!("remove {name}: {e}"))?;
             }
         }
         for file in [VERSION_FILE, PACK_TMP, DELTA_TMP] {
@@ -1338,7 +1356,7 @@ pub async fn clear_res() -> Result<(), String> {
         Ok(())
     })
     .await
-    .map_err(|e| format!("clear task: {e}"))?
+    .map_err(|e| anyhow!("clear task: {e}"))??)
 }
 
 // ── Auxiliary caches (Settings panel) ─────────────────────────────────────
@@ -1347,19 +1365,29 @@ pub async fn clear_res() -> Result<(), String> {
 /// re-downloadable derived data; `image-cache` (ship portraits) lives under
 /// the cache dir. User data (stats, ship history, accounts, mod ledger) is
 /// deliberately NOT listed.
-fn aux_cache_dir(scope: &str) -> Result<PathBuf, String> {
+fn aux_cache_dir(scope: &str) -> anyhow::Result<PathBuf> {
+    // ensure_cache_dir / ensure_data_dir stay String-typed (see paths.rs) —
+    // the bridges render the messages verbatim.
     match scope {
-        "image-cache" => Ok(paths::ensure_cache_dir()?.join("image-cache")),
-        "gameparams" => Ok(paths::ensure_data_dir()?.join("gameparams")),
-        "encyclopedia" => Ok(paths::ensure_data_dir()?.join("encyclopedia")),
-        "community" => Ok(paths::ensure_data_dir()?.join("community")),
-        other => Err(format!("unknown cache scope: {other}")),
+        "image-cache" => Ok(paths::ensure_cache_dir()
+            .map_err(anyhow::Error::msg)?
+            .join("image-cache")),
+        "gameparams" => Ok(paths::ensure_data_dir()
+            .map_err(anyhow::Error::msg)?
+            .join("gameparams")),
+        "encyclopedia" => Ok(paths::ensure_data_dir()
+            .map_err(anyhow::Error::msg)?
+            .join("encyclopedia")),
+        "community" => Ok(paths::ensure_data_dir()
+            .map_err(anyhow::Error::msg)?
+            .join("community")),
+        other => Err(anyhow!("unknown cache scope: {other}")),
     }
 }
 
 /// Sizes of every clearable auxiliary cache directory.
 #[tauri::command]
-pub async fn aux_cache_overview() -> Result<Vec<wowsp_tauri_shared::AuxCacheStatus>, String> {
+pub async fn aux_cache_overview() -> CommandResult<Vec<wowsp_tauri_shared::AuxCacheStatus>> {
     let scopes = tokio::task::spawn_blocking(|| -> Vec<wowsp_tauri_shared::AuxCacheStatus> {
         ["image-cache", "gameparams", "encyclopedia", "community"]
             .iter()
@@ -1373,7 +1401,7 @@ pub async fn aux_cache_overview() -> Result<Vec<wowsp_tauri_shared::AuxCacheStat
             .collect()
     })
     .await
-    .map_err(|e| format!("overview task: {e}"))?;
+    .map_err(|e| anyhow!("overview task: {e}"))?;
     Ok(scopes)
 }
 
@@ -1382,20 +1410,20 @@ pub async fn aux_cache_overview() -> Result<Vec<wowsp_tauri_shared::AuxCacheStat
 /// blocking pool: recursive removals can take seconds on Windows and a sync
 /// command would freeze the IPC thread.
 #[tauri::command]
-pub async fn clear_aux_cache(scope: String) -> Result<(), String> {
+pub async fn clear_aux_cache(scope: String) -> CommandResult<()> {
     let dir = aux_cache_dir(&scope)?;
     if !dir.exists() {
         return Ok(());
     }
-    tokio::task::spawn_blocking(move || -> Result<(), String> {
+    Ok(tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         let entries: Vec<PathBuf> = fs::read_dir(&dir)
-            .map_err(|e| format!("read {dir:?}: {e}"))?
+            .map_err(|e| anyhow!("read {dir:?}: {e}"))?
             .flatten()
             .map(|e| e.path())
             .collect();
         for entry in entries {
             if entry.is_dir() {
-                fs::remove_dir_all(&entry).map_err(|e| format!("remove {entry:?}: {e}"))?;
+                fs::remove_dir_all(&entry).map_err(|e| anyhow!("remove {entry:?}: {e}"))?;
             } else {
                 let _ = fs::remove_file(&entry);
             }
@@ -1403,15 +1431,15 @@ pub async fn clear_aux_cache(scope: String) -> Result<(), String> {
         Ok(())
     })
     .await
-    .map_err(|e| format!("clear task: {e}"))?
+    .map_err(|e| anyhow!("clear task: {e}"))??)
 }
 
 // ── Startup / on-demand ensure command ────────────────────────────────────
 
 /// The single resource pack (GLB models + dog-tag parts). See module docs.
 #[tauri::command]
-pub async fn ensure_res_pack() -> Result<String, String> {
-    ensure_pack().await
+pub async fn ensure_res_pack() -> CommandResult<String> {
+    Ok(ensure_pack().await?)
 }
 
 /// Local-only model-pack cache root: the cache dir once the pack is on
@@ -1423,7 +1451,7 @@ pub async fn ensure_res_pack() -> Result<String, String> {
 /// serve?" — a stale (older-than-bundle) or unstamped cache yields `None`
 /// and the webui keeps its same-origin bundled URLs.
 #[tauri::command]
-pub async fn res_cache_root() -> Result<Option<String>, String> {
+pub async fn res_cache_root() -> CommandResult<Option<String>> {
     #[cfg(mobile)]
     {
         return mobile_serving_root();

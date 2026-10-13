@@ -24,9 +24,10 @@
 //! [`dedupe_installs`]: one row per real folder, keyed on a
 //! case-insensitive normalized path ([`install_path_key`]).
 
+use anyhow::anyhow;
 use std::path::PathBuf;
 
-use wowsp_tauri_shared::{GameInstall, GameInstallKind};
+use wowsp_tauri_shared::{CommandResult, GameInstall, GameInstallKind};
 
 /// Publisher substring patterns mapped to the install kind they identify.
 /// Matched case-insensitively against the Windows Uninstall key's `Publisher`
@@ -181,12 +182,12 @@ pub async fn detect_game_install() -> Vec<GameInstall> {
 /// The manual-location entry: the first-launch prompt and the ship-detail
 /// error state both route here when auto-detection comes up empty.
 #[tauri::command]
-pub async fn pick_game_folder() -> Result<Option<GameInstall>, String> {
+pub async fn pick_game_folder() -> CommandResult<Option<GameInstall>> {
     // Mobile: no native folder picker (and no game install to point at) —
     // the first-launch flow uses a different entry on phones.
     #[cfg(mobile)]
     {
-        return Err(crate::mobile_unsupported::PICKER.into());
+        return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
     }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread.
@@ -198,13 +199,13 @@ pub async fn pick_game_folder() -> Result<Option<GameInstall>, String> {
                 .pick_folder()
         })
         .await
-        .map_err(|e| format!("文件夹选择器任务异常退出：{e}"))?;
+        .map_err(|e| anyhow!("文件夹选择器任务异常退出：{e}"))?;
 
         let Some(path) = picked else {
             return Ok(None);
         };
         let path = path.to_string_lossy().into_owned();
-        validate_manual_path(&path).map(Some)
+        Ok(Some(validate_manual_path(&path)?))
     }
 }
 
@@ -213,12 +214,12 @@ pub async fn pick_game_folder() -> Result<Option<GameInstall>, String> {
 /// an error). No game-install validation — any folder is pin-able; the
 /// overlap/existence validation happens in `game_config::add_replay_dir`.
 #[tauri::command]
-pub async fn pick_replay_dir() -> Result<Option<String>, String> {
+pub async fn pick_replay_dir() -> CommandResult<Option<String>> {
     // Mobile: no native folder picker — the managed replays dir is the
     // only replay source there anyway.
     #[cfg(mobile)]
     {
-        return Err(crate::mobile_unsupported::PICKER.into());
+        return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
     }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread.
@@ -230,7 +231,7 @@ pub async fn pick_replay_dir() -> Result<Option<String>, String> {
                 .pick_folder()
         })
         .await
-        .map_err(|e| format!("文件夹选择器任务异常退出：{e}"))?;
+        .map_err(|e| anyhow!("文件夹选择器任务异常退出：{e}"))?;
         Ok(picked.map(|p| p.to_string_lossy().into_owned()))
     }
 }
@@ -238,7 +239,7 @@ pub async fn pick_replay_dir() -> Result<Option<String>, String> {
 /// Pin a user-chosen path as the active install (no validation beyond the
 /// exe existing).
 #[tauri::command]
-pub async fn set_game_path(path: String) -> Result<GameInstall, String> {
+pub async fn set_game_path(path: String) -> CommandResult<GameInstall> {
     let install = validate_manual_path(&path)?;
     tracing::info!(path = %install.path, kind = ?install.kind, "game path pinned manually");
     Ok(install)
@@ -247,9 +248,9 @@ pub async fn set_game_path(path: String) -> Result<GameInstall, String> {
 /// Shared validation for the picker + manual-path command: the folder must
 /// contain a root stub exe ([`super::game_client::game_root_stubs`]); realm is read
 /// from clientrunner.log when available.
-fn validate_manual_path(path: &str) -> Result<GameInstall, String> {
+fn validate_manual_path(path: &str) -> anyhow::Result<GameInstall> {
     if !is_game_dir(path) {
-        return Err(format!(
+        return Err(anyhow!(
             "所选目录不像《战舰世界》安装目录（缺少 WorldOfWarships.exe，莱服客户端为 Korabli.exe）：{path}"
         ));
     }

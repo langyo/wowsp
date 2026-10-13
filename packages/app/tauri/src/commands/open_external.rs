@@ -9,15 +9,20 @@
 //! Only http(s) URLs are accepted so the command can't launch arbitrary
 //! handlers.
 
+use anyhow::anyhow;
+
+use wowsp_tauri_shared::CommandResult;
+
 #[tauri::command]
-pub fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+pub fn open_external(app: tauri::AppHandle, url: String) -> CommandResult<()> {
     use tauri_plugin_opener::OpenerExt;
 
     let url = url.trim();
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(format!("unsupported url: {url}"));
+        return Err(anyhow!("unsupported url: {url}").into());
     }
-    app.opener()
+    Ok(app
+        .opener()
         .open_url(url.to_string(), None::<&str>)
-        .map_err(|e| format!("open {url}: {e}"))
+        .map_err(|e| anyhow!("open {url}: {e}"))?)
 }

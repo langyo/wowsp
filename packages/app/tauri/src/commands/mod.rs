@@ -52,36 +52,40 @@ pub mod overlay;
 /// the feature. `create_overlay_window` is NOT mirrored: it is desktop-only
 /// in the invoke handler (no overlay window may exist on mobile).
 pub mod overlay {
+    use anyhow::anyhow;
+
+    use wowsp_tauri_shared::CommandResult;
+
     use crate::mobile_unsupported::OVERLAY;
 
     #[tauri::command]
-    pub async fn destroy_overlay_window() -> Result<(), String> {
-        Err(OVERLAY.into())
+    pub async fn destroy_overlay_window() -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
-    pub async fn set_overlay_visible(_visible: bool) -> Result<(), String> {
-        Err(OVERLAY.into())
+    pub async fn set_overlay_visible(_visible: bool) -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
-    pub async fn start_overlay_tab_watch() -> Result<(), String> {
-        Err(OVERLAY.into())
+    pub async fn start_overlay_tab_watch() -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
-    pub async fn stop_overlay_tab_watch() -> Result<(), String> {
-        Err(OVERLAY.into())
+    pub async fn stop_overlay_tab_watch() -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
-    pub async fn start_manual_locate() -> Result<(), String> {
-        Err(OVERLAY.into())
+    pub async fn start_manual_locate() -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
-    pub async fn cancel_manual_locate() -> Result<(), String> {
-        Err(OVERLAY.into())
+    pub async fn cancel_manual_locate() -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
@@ -90,18 +94,18 @@ pub mod overlay {
         _y: i32,
         _width: i32,
         _height: i32,
-    ) -> Result<(), String> {
-        Err(OVERLAY.into())
+    ) -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
-    pub async fn clear_manual_roster_rect() -> Result<(), String> {
-        Err(OVERLAY.into())
+    pub async fn clear_manual_roster_rect() -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
     }
 
     #[tauri::command]
-    pub async fn capture_game_window() -> Result<wowsp_tauri_shared::CaptureResult, String> {
-        Err(OVERLAY.into())
+    pub async fn capture_game_window() -> CommandResult<wowsp_tauri_shared::CaptureResult> {
+        Err(anyhow!(OVERLAY).into())
     }
 }
 pub mod overlay_config;

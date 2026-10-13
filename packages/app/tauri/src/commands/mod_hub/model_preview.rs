@@ -20,6 +20,9 @@
 //! pack never carries — the pack's recolored `.dds` textures surface through
 //! the regular image grid instead.
 
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
+
 use std::time::SystemTime;
 
 use serde::Serialize;
@@ -115,9 +118,9 @@ fn cache_stem(stem: &str) -> String {
 
 /// Build (or reuse) the cached GLB for one `.geometry` file. `rel` is
 /// res_mods-relative; returns the absolute cache path.
-fn export_part(res_mods: &Path, rel: &str, cache_dir: &Path) -> Result<(String, u64), String> {
+fn export_part(res_mods: &Path, rel: &str, cache_dir: &Path) -> anyhow::Result<(String, u64)> {
     let path = res_mods.join(rel);
-    let meta = fs::metadata(&path).map_err(|e| format!("stat {rel}: {e}"))?;
+    let meta = fs::metadata(&path).map_err(|e| anyhow!("stat {rel}: {e}"))?;
     let mtime = meta
         .modified()
         .or_else(|_| meta.created())
@@ -140,23 +143,23 @@ fn export_part(res_mods: &Path, rel: &str, cache_dir: &Path) -> Result<(String, 
     if let Ok(existing) = fs::metadata(&out) {
         return Ok((out.to_string_lossy().into_owned(), existing.len()));
     }
-    let bytes = fs::read(&path).map_err(|e| format!("read {rel}: {e}"))?;
+    let bytes = fs::read(&path).map_err(|e| anyhow!("read {rel}: {e}"))?;
     let geometry =
-        wowsunpack::models::geometry::parse_geometry(&bytes).map_err(|e| format!("{rel}: {e}"))?;
+        wowsunpack::models::geometry::parse_geometry(&bytes).map_err(|e| anyhow!("{rel}: {e}"))?;
     let mut glb = std::io::Cursor::new(Vec::new());
     wowsunpack::export::gltf_export::export_geometry_raw(&geometry, &mut glb)
-        .map_err(|e| format!("{rel}: {e}"))?;
+        .map_err(|e| anyhow!("{rel}: {e}"))?;
     // Write-then-rename so a concurrent request for the same part never
     // reads a half-written GLB. The tmp suffix is unique per invocation
     // (pid + counter): two in-flight exports of the same family must not
     // truncate each other's staging file.
     let tmp = cache_dir.join(format!(".tmp-{}-{}", hex_prefix(&digest), tmp_tag()));
-    fs::write(&tmp, glb.get_ref()).map_err(|e| format!("write cache: {e}"))?;
+    fs::write(&tmp, glb.get_ref()).map_err(|e| anyhow!("write cache: {e}"))?;
     if let Err(e) = fs::rename(&tmp, &out) {
         let _ = fs::remove_file(&tmp);
         // Lost the race to another writer — keep its copy.
         if !out.exists() {
-            return Err(format!("cache rename: {e}"));
+            return Err(anyhow!("cache rename: {e}"));
         }
     }
     let size = fs::metadata(&out)
@@ -233,9 +236,9 @@ fn prune_cache(dir: &Path) {
 pub fn mod_hub_read_model(
     game_root: String,
     rel_path: String,
-) -> Result<Vec<ModelPreviewPart>, String> {
+) -> CommandResult<Vec<ModelPreviewPart>> {
     if !rel_path.to_ascii_lowercase().ends_with(".geometry") {
-        return Err(format!("{rel_path}: not a .geometry model"));
+        return Err(anyhow!("{rel_path}: not a .geometry model").into());
     }
     let res_mods = super::scan_installed::scan_root(&game_root)?;
     super::assets::safe_rel(&rel_path)?;
@@ -244,12 +247,12 @@ pub fn mod_hub_read_model(
         &clicked_path
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
-            .ok_or_else(|| format!("invalid asset path: {rel_path:?}"))?,
+            .ok_or_else(|| anyhow!("invalid asset path: {rel_path:?}"))?,
     )
     .to_string();
     let dir = clicked_path
         .parent()
-        .ok_or_else(|| format!("invalid asset path: {rel_path:?}"))?;
+        .ok_or_else(|| anyhow!("invalid asset path: {rel_path:?}"))?;
 
     // Family membership: same directory, same family root, no side-geometry
     // suffix — all compared ASCII-case-insensitively, since Windows paths
@@ -298,12 +301,15 @@ pub fn mod_hub_read_model(
     members.dedup();
     members.truncate(FAMILY_CAP);
 
-    let cache_dir = crate::paths::ensure_cache_dir()?.join("model-previews");
-    fs::create_dir_all(&cache_dir).map_err(|e| format!("cache dir: {e}"))?;
+    // ensure_cache_dir stays String-typed (see paths.rs) — bridge verbatim.
+    let cache_dir = crate::paths::ensure_cache_dir()
+        .map_err(anyhow::Error::msg)?
+        .join("model-previews");
+    fs::create_dir_all(&cache_dir).map_err(|e| anyhow!("cache dir: {e}"))?;
 
     let mut parts: Vec<ModelPreviewPart> = Vec::new();
     let mut total_bytes: u64 = 0;
-    let mut last_err: Option<String> = None;
+    let mut last_err: Option<anyhow::Error> = None;
     for rel in &members {
         if let Ok(meta) = fs::metadata(res_mods.join(rel)) {
             total_bytes = total_bytes.saturating_add(meta.len());
@@ -319,7 +325,7 @@ pub fn mod_hub_read_model(
             }),
             // The clicked member must succeed; a broken sibling degrades to
             // a partial ship rather than a dead preview.
-            Err(e) if rel.to_ascii_lowercase() == clicked_lower => return Err(e),
+            Err(e) if rel.to_ascii_lowercase() == clicked_lower => return Err(e.into()),
             Err(e) => {
                 tracing::debug!("model part skipped: {e}");
                 last_err = Some(e);
@@ -327,7 +333,9 @@ pub fn mod_hub_read_model(
         }
     }
     if parts.is_empty() {
-        return Err(last_err.unwrap_or_else(|| format!("{rel_path}: no model parts exported")));
+        return Err(last_err
+            .unwrap_or_else(|| anyhow!("{rel_path}: no model parts exported"))
+            .into());
     }
     prune_cache(&cache_dir);
     Ok(parts)

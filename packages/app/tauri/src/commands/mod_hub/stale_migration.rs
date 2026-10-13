@@ -1,3 +1,6 @@
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
+
 use super::super::ingame_plugin;
 use super::installed_units::classify_installed_root;
 use super::*;
@@ -9,7 +12,7 @@ use super::*;
 /// vanish from the hub's installed list while staying on disk — surfacing
 /// them is the first step of the migration flow (mod-hub.md §4).
 #[tauri::command]
-pub fn mod_hub_stale_versions(game_root: String) -> Result<Vec<StaleBinInfo>, String> {
+pub fn mod_hub_stale_versions(game_root: String) -> CommandResult<Vec<StaleBinInfo>> {
     let Some((latest, _)) = latest_bin_version(&game_root) else {
         return Ok(Vec::new());
     };
@@ -19,7 +22,7 @@ pub fn mod_hub_stale_versions(game_root: String) -> Result<Vec<StaleBinInfo>, St
     let bin = Path::new(&game_root).join("bin");
     let mut out = Vec::new();
     for ent in fs::read_dir(&bin)
-        .map_err(|e| format!("read {}: {e}", bin.display()))?
+        .map_err(|e| anyhow!("read {}: {e}", bin.display()))?
         .flatten()
     {
         let name = ent.file_name().to_string_lossy().into_owned();
@@ -183,11 +186,11 @@ fn reinstall_stranded_probe(game_root: &str, dst: &Path, state: StrandedProbe) -
 pub async fn mod_hub_migrate_stale_bin(
     game_root: String,
     from_version: String,
-) -> Result<MigrateReport, String> {
+) -> CommandResult<MigrateReport> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
-    migrate_stale_bin_core(&game_root, &from_version)
+    Ok(migrate_stale_bin_core(&game_root, &from_version)?)
 }
 
 /// Migration wizard step 1 — classify the stale tree (read-only) so the
@@ -197,11 +200,11 @@ pub async fn mod_hub_migrate_stale_bin(
 pub async fn mod_hub_migration_plan(
     game_root: String,
     from_version: String,
-) -> Result<MigrationPlan, String> {
+) -> CommandResult<MigrationPlan> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
-    migration_plan_core(&game_root, &from_version)
+    Ok(migration_plan_core(&game_root, &from_version)?)
 }
 
 /// Migration wizard step 2 — apply the reviewed plan: `keep` lists the
@@ -214,11 +217,16 @@ pub async fn mod_hub_migration_execute(
     from_version: String,
     keep: Vec<String>,
     ignore: Vec<String>,
-) -> Result<MigrateReport, String> {
+) -> CommandResult<MigrateReport> {
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
-    migration_execute_core(&game_root, &from_version, &keep, &ignore)
+    Ok(migration_execute_core(
+        &game_root,
+        &from_version,
+        &keep,
+        &ignore,
+    )?)
 }
 
 /// Migration core (split from the command so tests drive it without the
@@ -226,7 +234,7 @@ pub async fn mod_hub_migration_execute(
 pub(crate) fn migrate_stale_bin_core(
     game_root: &str,
     from_version: &str,
-) -> Result<MigrateReport, String> {
+) -> anyhow::Result<MigrateReport> {
     let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
     // Captured before the sweep: the stale wowsp.toml is bookkeeping (the
     // merge below decides what survives), not a movable mod file.
@@ -243,7 +251,7 @@ pub(crate) fn migrate_stale_bin_core(
     // never downgraded to a bare marker.
     let stale_loader = fs::read(src.join("PnFModsLoader.py")).ok();
     let mut skipped = remove_probe_paths(&src);
-    fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
+    fs::create_dir_all(&dst).map_err(|e| anyhow!("create {}: {e}", dst.display()))?;
 
     let mut moved = 0usize;
     let mut moved_rels: Vec<String> = Vec::new();
@@ -295,14 +303,14 @@ pub(crate) fn migrate_stale_bin_core(
 fn stale_migration_pair(
     game_root: &str,
     from_version: &str,
-) -> Result<(String, PathBuf, PathBuf), String> {
+) -> anyhow::Result<(String, PathBuf, PathBuf)> {
     let from_num = from_version
         .parse::<u64>()
-        .map_err(|_| format!("{from_version:?} is not a numeric bin version"))?;
+        .map_err(|_| anyhow!("{from_version:?} is not a numeric bin version"))?;
     let (latest, ver_dir) = latest_bin_version(game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {game_root}/bin"))?;
     if from_num >= latest.parse::<u64>().unwrap_or(u64::MAX) {
-        return Err(format!(
+        return Err(anyhow!(
             "{from_version} is the current version — nothing to migrate"
         ));
     }
@@ -311,7 +319,7 @@ fn stale_migration_pair(
         .join(from_version)
         .join("res_mods");
     if !src.is_dir() {
-        return Err(format!("no res_mods under bin/{from_version}"));
+        return Err(anyhow!("no res_mods under bin/{from_version}"));
     }
     let dst = ver_dir.join("res_mods");
     Ok((latest, src, dst))
@@ -359,17 +367,17 @@ fn ensure_loader_marker(res_mods: &Path, preferred: Option<&[u8]>) {
 
 /// SHA-256 of a file's bytes — the content equality half of the duplicate
 /// probe (size is checked first because it is free).
-fn file_sha256(path: &Path) -> Result<[u8; 32], String> {
-    let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+fn file_sha256(path: &Path) -> anyhow::Result<[u8; 32]> {
+    let bytes = fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
     Ok(Sha256::digest(&bytes).into())
 }
 
 /// Every file under `root`, as forward-slash `root`-relative paths.
-fn collect_tree_files(root: &Path) -> Result<Vec<String>, String> {
+fn collect_tree_files(root: &Path) -> anyhow::Result<Vec<String>> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let entries = fs::read_dir(&dir).map_err(|e| format!("read {}: {e}", dir.display()))?;
+        let entries = fs::read_dir(&dir).map_err(|e| anyhow!("read {}: {e}", dir.display()))?;
         for ent in entries.flatten() {
             let p = ent.path();
             if p.is_dir() {
@@ -377,7 +385,7 @@ fn collect_tree_files(root: &Path) -> Result<Vec<String>, String> {
             } else {
                 let rel = p
                     .strip_prefix(root)
-                    .map_err(|e| format!("relativize {}: {e}", p.display()))?
+                    .map_err(|e| anyhow!("relativize {}: {e}", p.display()))?
                     .components()
                     .map(|c| c.as_os_str().to_string_lossy().into_owned())
                     .collect::<Vec<_>>()
@@ -398,7 +406,7 @@ fn collect_tree_files(root: &Path) -> Result<Vec<String>, String> {
 pub(crate) fn migration_plan_core(
     game_root: &str,
     from_version: &str,
-) -> Result<MigrationPlan, String> {
+) -> anyhow::Result<MigrationPlan> {
     let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
     let mut plan = MigrationPlan {
         from_version: from_version.to_string(),
@@ -429,7 +437,10 @@ pub(crate) fn migration_plan_core(
         let counterpart = dst.join(&rel);
         let bucket = if counterpart.is_file() {
             let same = fs::metadata(&counterpart).is_ok_and(|m| m.len() == size)
-                && file_sha256(&counterpart) == file_sha256(&src.join(&rel));
+                && matches!(
+                    (file_sha256(&counterpart), file_sha256(&src.join(&rel))),
+                    (Ok(a), Ok(b)) if a == b
+                );
             if same {
                 &mut plan.duplicate
             } else {
@@ -457,7 +468,7 @@ fn migrate_tree(
     moved: &mut usize,
     skipped: &mut usize,
     moved_rels: &mut Vec<String>,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let Ok(entries) = fs::read_dir(src) else {
         return Ok(());
     };
@@ -495,9 +506,9 @@ fn migrate_tree(
             continue;
         }
         if let Some(parent) = d.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|e| anyhow!("create {}: {e}", parent.display()))?;
         }
-        fs::rename(&s, &d).map_err(|e| format!("move {}: {e}", s.display()))?;
+        fs::rename(&s, &d).map_err(|e| anyhow!("move {}: {e}", s.display()))?;
         moved_rels.push(format!("{prefix}{name}"));
         *moved += 1;
     }
@@ -534,7 +545,7 @@ pub(crate) fn migration_execute_core(
     from_version: &str,
     keep: &[String],
     ignore: &[String],
-) -> Result<MigrateReport, String> {
+) -> anyhow::Result<MigrateReport> {
     let (latest, src, dst) = stale_migration_pair(game_root, from_version)?;
     // Captured before the sweep (see migrate_stale_bin_core): wowsp.toml is
     // bookkeeping here, its surviving content is merged after the move.
@@ -542,7 +553,7 @@ pub(crate) fn migration_execute_core(
     let probe = stranded_probe(&src);
     // Same transplant capture as the blind migration's.
     let stale_loader = fs::read(src.join("PnFModsLoader.py")).ok();
-    fs::create_dir_all(&dst).map_err(|e| format!("create {}: {e}", dst.display()))?;
+    fs::create_dir_all(&dst).map_err(|e| anyhow!("create {}: {e}", dst.display()))?;
     let keep: BTreeSet<String> = keep.iter().map(|k| k.replace('\\', "/")).collect();
     let ignore: BTreeSet<String> = ignore.iter().map(|k| k.replace('\\', "/")).collect();
 
@@ -591,9 +602,9 @@ pub(crate) fn migration_execute_core(
             continue;
         }
         if let Some(parent) = d.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|e| anyhow!("create {}: {e}", parent.display()))?;
         }
-        fs::rename(&s, &d).map_err(|e| format!("move {}: {e}", s.display()))?;
+        fs::rename(&s, &d).map_err(|e| anyhow!("move {}: {e}", s.display()))?;
         moved_rels.push(rel.clone());
         moved += 1;
     }

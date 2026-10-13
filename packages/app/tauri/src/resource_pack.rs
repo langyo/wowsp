@@ -7,6 +7,7 @@
 //! synchronously before the UI boots so the pack-aware views never race
 //! the relocation. A failed run logs and retries on the next launch.
 
+use anyhow::{Result, anyhow, bail};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -105,7 +106,7 @@ fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
 /// The stamp leaves first and is published last. On a normal I/O failure,
 /// restore every original tree before restoring its stamp. A failed rollback
 /// keeps its backup directory and leaves the cache unstamped for recovery.
-fn publish(cache: &Path, staged: &Path, backup: &Path) -> Result<(), String> {
+fn publish(cache: &Path, staged: &Path, backup: &Path) -> Result<()> {
     let mut saved = Vec::new();
     let mut installed = Vec::new();
     let result = (|| -> io::Result<()> {
@@ -139,21 +140,17 @@ fn publish(cache: &Path, staged: &Path, backup: &Path) -> Result<(), String> {
         }
     }
     if rollback_errors.is_empty() {
-        Err(format!("relocate resource pack: {error}"))
+        bail!("relocate resource pack: {error}")
     } else {
-        Err(format!(
+        bail!(
             "relocate resource pack: {error}; {}; original files retained at {}",
             rollback_errors.join("; "),
             backup.display()
-        ))
+        )
     }
 }
 
-pub(crate) fn relocate(
-    install_dir: &Path,
-    cache: &Path,
-    stamp: Option<&[u8]>,
-) -> Result<(), String> {
+pub(crate) fn relocate(install_dir: &Path, cache: &Path, stamp: Option<&[u8]>) -> Result<()> {
     let inspect = || -> io::Result<Vec<&str>> {
         let mut shipped = Vec::new();
         for name in TREES {
@@ -168,22 +165,19 @@ pub(crate) fn relocate(
         }
         Ok(shipped)
     };
-    let shipped = inspect().map_err(|e| e.to_string())?;
+    let shipped = inspect()?;
     if shipped.is_empty() {
         return Ok(());
     }
-    fs::create_dir_all(cache).map_err(|e| e.to_string())?;
-    let cache = fs::canonicalize(cache).map_err(|e| e.to_string())?;
-    let install_dir = fs::canonicalize(install_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(cache)?;
+    let cache = fs::canonicalize(cache)?;
+    let install_dir = fs::canonicalize(install_dir)?;
     let in_place = install_dir == cache;
     for name in TREES {
         let target = cache.join(name);
-        if let Some(meta) = metadata(&target).map_err(|e| e.to_string())? {
+        if let Some(meta) = metadata(&target)? {
             if !meta.is_dir() || is_link(&meta) {
-                return Err(format!(
-                    "invalid resource cache directory: {}",
-                    target.display()
-                ));
+                bail!("invalid resource cache directory: {}", target.display());
             }
         }
         // An unusual install directory inside a cache tree must not move the
@@ -191,24 +185,24 @@ pub(crate) fn relocate(
         if !in_place
             && (install_dir.starts_with(&target) || cache.starts_with(install_dir.join(name)))
         {
-            return Err("resource source and destination directories overlap".into());
+            bail!("resource source and destination directories overlap");
         }
     }
-    if let Some(meta) = metadata(&cache.join(STAMP)).map_err(|e| e.to_string())? {
+    if let Some(meta) = metadata(&cache.join(STAMP))? {
         if !meta.is_file() || is_link(&meta) {
-            return Err("invalid resource cache version file".into());
+            bail!("invalid resource cache version file");
         }
     }
-    let mut work = Workspace::create(&cache).map_err(|e| e.to_string())?;
+    let mut work = Workspace::create(&cache)?;
     let staged = work.path.join("new");
     let backup = work.path.join("old");
-    fs::create_dir(&staged).map_err(|e| e.to_string())?;
-    fs::create_dir(&backup).map_err(|e| e.to_string())?;
+    fs::create_dir(&staged)?;
+    fs::create_dir(&backup)?;
     for name in &shipped {
-        copy_tree(&install_dir.join(name), &staged.join(name)).map_err(|e| e.to_string())?;
+        copy_tree(&install_dir.join(name), &staged.join(name))?;
     }
     if let Some(stamp) = stamp {
-        fs::write(staged.join(STAMP), stamp).map_err(|e| e.to_string())?;
+        fs::write(staged.join(STAMP), stamp)?;
     }
     if let Err(e) = publish(&cache, &staged, &backup) {
         // Only unfinished rollback owns irreplaceable original data here.
@@ -234,11 +228,11 @@ pub(crate) fn relocate(
 /// subtree the -webview2 flavor carried. A no-op (one cheap metadata
 /// probe) when the payload shipped no pack — lite installs and every
 /// later launch pay nothing.
-pub fn relocate_shipped() -> Result<(), String> {
+pub fn relocate_shipped() -> Result<()> {
     let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("locate the running executable: {e}"))?
+        .map_err(|e| anyhow!("locate the running executable: {e}"))?
         .parent()
-        .ok_or("the executable has no parent directory")?
+        .ok_or_else(|| anyhow!("the executable has no parent directory"))?
         .to_path_buf();
     // An in-place layout (the app lives inside its own cache root) has
     // nothing to relocate: the trees ARE the cache. Relocating would

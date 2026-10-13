@@ -1,3 +1,6 @@
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
+
 use super::classify::sanitize_dir_name;
 use super::stale_migration::conflict_warnings;
 use super::*;
@@ -9,7 +12,7 @@ pub async fn mod_hub_install(
     source_root: String,
     game_root: String,
     plan: PackagePlan,
-) -> Result<InstallReport, String> {
+) -> CommandResult<InstallReport> {
     // Same gate as the catalog install: the plan's copy must not interleave
     // with another install's res_mods writes or a `.bak` rename sweep.
     let _gate = super::mod_catalog::mod_hub_gate().await;
@@ -20,7 +23,7 @@ pub async fn mod_hub_install(
     validate_plan(&plan)?;
     let src = PathBuf::from(&source_root);
     if !src.is_dir() {
-        return Err(format!("package not found: {}", src.display()));
+        return Err(anyhow!("package not found: {}", src.display()).into());
     }
     let mut ledger = super::mod_catalog::load_ledger();
     let (outcome, ledger) = tauri::async_runtime::spawn_blocking(move || {
@@ -90,7 +93,7 @@ pub async fn mod_hub_install(
         (outcome, ledger)
     })
     .await
-    .map_err(|e| format!("install task: {e}"))?;
+    .map_err(|e| anyhow!("install task: {e}"))?;
     let applied = match outcome {
         Ok(applied) => applied,
         Err(e) => {
@@ -100,7 +103,7 @@ pub async fn mod_hub_install(
             if let Err(se) = super::mod_catalog::save_ledger(&ledger) {
                 tracing::warn!(error = %se, "ledger save failed after failed install");
             }
-            return Err(e);
+            return Err(e.into());
         },
     };
     super::mod_catalog::save_ledger(&ledger)?;
@@ -155,7 +158,7 @@ pub(crate) fn install_plan(
     src: &Path,
     game_root: &str,
     plan: &PackagePlan,
-) -> Result<PlanApply, String> {
+) -> anyhow::Result<PlanApply> {
     install_plan_inner(src, game_root, plan, &[])
 }
 
@@ -167,7 +170,7 @@ pub(crate) fn install_plan_with_loose(
     game_root: &str,
     plan: &PackagePlan,
     loose: &[PathBuf],
-) -> Result<PlanApply, String> {
+) -> anyhow::Result<PlanApply> {
     install_plan_inner(src, game_root, plan, loose)
 }
 
@@ -176,13 +179,13 @@ fn install_plan_inner(
     game_root: &str,
     plan: &PackagePlan,
     loose: &[PathBuf],
-) -> Result<PlanApply, String> {
+) -> anyhow::Result<PlanApply> {
     validate_plan(plan)?;
     if !src.is_dir() {
-        return Err(format!("package not found: {}", src.display()));
+        return Err(anyhow!("package not found: {}", src.display()));
     }
     let (bin_version, ver_dir) = latest_bin_version(game_root)
-        .ok_or_else(|| format!("no numeric bin/<version> under {game_root}/bin"))?;
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {game_root}/bin"))?;
     let res_mods = ver_dir.join("res_mods");
 
     // Created up front: snapshots are mandatory before any overwrite, so the
@@ -195,7 +198,7 @@ fn install_plan_inner(
             .as_millis(),
         sanitize_dir_name(&plan.name)
     ));
-    fs::create_dir_all(&restore_dir).map_err(|e| format!("create restore dir: {e}"))?;
+    fs::create_dir_all(&restore_dir).map_err(|e| anyhow!("create restore dir: {e}"))?;
 
     let mut journal = InstallJournal {
         res_mods: res_mods.clone(),
@@ -209,7 +212,7 @@ fn install_plan_inner(
     let wrote = {
         let mut wrote = 0usize;
         let mut touched_pnf = false;
-        let outcome = (|| -> Result<(), String> {
+        let outcome = (|| -> anyhow::Result<()> {
             for entry in &plan.entries {
                 let from = if entry.from_rel == "." {
                     src.to_path_buf()
@@ -236,7 +239,7 @@ fn install_plan_inner(
             for path in loose {
                 let name = path
                     .file_name()
-                    .ok_or_else(|| format!("{} has no file name", path.display()))?;
+                    .ok_or_else(|| anyhow!("{} has no file name", path.display()))?;
                 journal.place(path, &Path::new(game_root).join(name), Place::GameRoot)?;
                 wrote += 1;
             }
@@ -251,7 +254,7 @@ fn install_plan_inner(
                         let _ = fs::remove_dir_all(&restore_dir);
                         Err(e)
                     },
-                    Err(rb) => Err(format!(
+                    Err(rb) => Err(anyhow!(
                         "{e} (rollback incomplete: {rb}; snapshots kept in {})",
                         restore_dir.display()
                     )),
@@ -306,9 +309,9 @@ fn install_plan_inner(
 /// letters, no backslashes. `from_rel` may be `.` (the bare-voice wrapper
 /// maps the package root itself); `to_rel` must name a concrete destination
 /// under res_mods.
-pub(crate) fn validate_plan(plan: &PackagePlan) -> Result<(), String> {
+pub(crate) fn validate_plan(plan: &PackagePlan) -> anyhow::Result<()> {
     if plan.entries.is_empty() {
-        return Err("plan has no entries".into());
+        return Err(anyhow!("plan has no entries"));
     }
     for entry in &plan.entries {
         check_plan_rel(&entry.from_rel, "fromRel", true)?;
@@ -317,16 +320,16 @@ pub(crate) fn validate_plan(plan: &PackagePlan) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn check_plan_rel(rel: &str, field: &str, allow_dot: bool) -> Result<(), String> {
+pub(crate) fn check_plan_rel(rel: &str, field: &str, allow_dot: bool) -> anyhow::Result<()> {
     use std::path::Component;
     if rel.is_empty() || rel.contains('\\') || rel.contains(':') || Path::new(rel).is_absolute() {
-        return Err(format!("invalid {field} in plan: {rel:?}"));
+        return Err(anyhow!("invalid {field} in plan: {rel:?}"));
     }
     for comp in Path::new(rel).components() {
         match comp {
             Component::Normal(_) => {},
             Component::CurDir if allow_dot => {},
-            _ => return Err(format!("invalid {field} in plan: {rel:?}")),
+            _ => return Err(anyhow!("invalid {field} in plan: {rel:?}")),
         }
     }
     Ok(())

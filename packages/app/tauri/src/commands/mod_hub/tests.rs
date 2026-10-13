@@ -541,7 +541,7 @@ fn install_copies_tree_and_creates_missing_loader() {
 #[test]
 fn zip_files_get_structured_error() {
     let err = mod_hub_classify_path("Z:/not/here/pack.zip".into()).unwrap_err();
-    assert_eq!(err, UNSUPPORTED_ARCHIVE);
+    assert_eq!(err.to_string(), UNSUPPORTED_ARCHIVE);
 }
 
 #[test]
@@ -569,7 +569,7 @@ fn install_rolls_back_completely_on_failure() {
         Ok(_) => panic!("sabotaged install must fail"),
         Err(e) => e,
     };
-    assert!(err.contains("place"), "{err}");
+    assert!(err.to_string().contains("place"), "{err}");
     let rm = game.join("bin/1/res_mods");
     assert_eq!(fs::read(rm.join("gui/old.png")).unwrap(), b"vanilla");
     assert!(!rm.join("gui/x").exists(), "new files must not survive");
@@ -604,7 +604,7 @@ fn snapshot_failure_refuses_to_overwrite() {
     let err = journal
         .snapshot(&rm.join("gui/old.png"), Place::ResMods)
         .unwrap_err();
-    assert!(err.contains("refusing to overwrite"), "{err}");
+    assert!(err.to_string().contains("refusing to overwrite"), "{err}");
     assert_eq!(fs::read(rm.join("gui/old.png")).unwrap(), b"original");
     fs::remove_dir_all(&tmp).ok();
 }
@@ -693,7 +693,7 @@ fn uninstall_refuses_an_older_owner_without_touching_files_or_snapshots() {
     let before = serde_json::to_value(&fixture.installs).unwrap();
     let err =
         mod_catalog::uninstall_from_ledger(&mut fixture.installs, "older", &root).unwrap_err();
-    assert!(err.contains("newer"), "{err}");
+    assert!(err.to_string().contains("newer"), "{err}");
     assert_eq!(
         fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
         b"newer mod"
@@ -768,7 +768,7 @@ fn unit_uninstall_preflights_a_partial_owner_that_keeps_a_game_root_payload() {
         &mut fixture.installs,
     )
     .unwrap_err();
-    assert!(err.contains("@game/shared.dll"), "{err}");
+    assert!(err.to_string().contains("@game/shared.dll"), "{err}");
     assert_eq!(
         fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
         b"newer mod"
@@ -846,7 +846,7 @@ fn stale_record_uninstall_preserves_newer_owned_preload_mirrors() {
         &fixture.game.to_string_lossy(),
     )
     .unwrap_err();
-    assert!(err.contains("newer"), "{err}");
+    assert!(err.to_string().contains("newer"), "{err}");
     assert_eq!(
         fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
         b"older mod"
@@ -886,7 +886,7 @@ fn unit_partial_uninstall_refuses_an_uncovered_newer_case_alias_before_deleting(
         &mut fixture.installs,
     )
     .unwrap_err();
-    assert!(err.contains("newer"), "{err}");
+    assert!(err.to_string().contains("newer"), "{err}");
     assert_eq!(
         fs::read(fixture.res_mods.join("content/shared.dds")).unwrap(),
         b"newer mod"
@@ -1050,10 +1050,10 @@ fn safe_mode_quarantines_and_restores_res_mods() {
     );
     // Mutations are refused while quarantined.
     let err = ensure_res_mods_active(&root).unwrap_err();
-    assert!(err.contains("safe mode"), "{err}");
+    assert!(err.to_string().contains("safe mode"), "{err}");
     // Re-enabling errors instead of silently merging a second tree.
     let err = set_safe_mode_core(&root, true).unwrap_err();
-    assert!(err.contains("already active"), "{err}");
+    assert!(err.to_string().contains("already active"), "{err}");
 
     assert!(!set_safe_mode_core(&root, false).unwrap());
     assert!(rm.join("PnFMods/Skin/Main.py").is_file());
@@ -1064,7 +1064,7 @@ fn safe_mode_quarantines_and_restores_res_mods() {
     // quarantine.
     let _ = fs::remove_dir_all(&rm);
     let err = set_safe_mode_core(&root, true).unwrap_err();
-    assert!(err.contains("nothing to quarantine"), "{err}");
+    assert!(err.to_string().contains("nothing to quarantine"), "{err}");
 
     fs::remove_dir_all(&tmp).ok();
 }
@@ -1282,7 +1282,7 @@ fn migrate_ledgerred(
     game: &Path,
     from: &str,
     installs: &mut Vec<ModInstallRecord>,
-) -> Result<MigrateReport, String> {
+) -> anyhow::Result<MigrateReport> {
     let report = migrate_stale_bin_core(&game.to_string_lossy(), from)?;
     for record in installs.iter_mut() {
         if record.bin_version == from {
@@ -1792,19 +1792,19 @@ fn migrate_rejects_current_version_and_unknown_bins() {
     touch(&tmp.join("bin/1/res_mods/x.xml"));
     let root = tmp.to_string_lossy().into_owned();
     let err = migrate_stale_bin_core(&root, "1").unwrap_err();
-    assert!(err.contains("current version"), "{err}");
+    assert!(err.to_string().contains("current version"), "{err}");
     // A version newer than (or equal to) the latest is rejected by the
     // numeric guard before any disk lookup.
     let err = migrate_stale_bin_core(&root, "2").unwrap_err();
-    assert!(err.contains("current version"), "{err}");
+    assert!(err.to_string().contains("current version"), "{err}");
     let err = migrate_stale_bin_core(&root, "notaversion").unwrap_err();
-    assert!(err.contains("not a numeric"), "{err}");
+    assert!(err.to_string().contains("not a numeric"), "{err}");
     // A leading-zero spelling of the current version must be rejected
     // numerically, not just by string equality.
     fs::create_dir_all(tmp.join("bin/01/res_mods/stray")).unwrap();
     fs::write(tmp.join("bin/01/res_mods/stray/x.xml"), b"x").unwrap();
     let err = migrate_stale_bin_core(&root, "01").unwrap_err();
-    assert!(err.contains("current version"), "{err}");
+    assert!(err.to_string().contains("current version"), "{err}");
     assert!(tmp.join("bin/01/res_mods/stray/x.xml").is_file());
     fs::remove_dir_all(&tmp).ok();
 }
@@ -1940,11 +1940,11 @@ fn mod_hub_real_samples_classify() {
                 // tools, raw asset dumps, wrapper dirs of zips) fail with
                 // "no recognizable structure" by design — log them, don't
                 // treat as harness failures.
-                if err == UNSUPPORTED_ARCHIVE {
+                if err.to_string() == UNSUPPORTED_ARCHIVE {
                     assert!(lower.ends_with(".zip") || lower.ends_with(".7z"));
                     println!("{name}: ARCHIVE (needs M10.2 unpack)");
                 } else {
-                    assert!(err.contains("no recognizable"), "{name}: {err}");
+                    assert!(err.to_string().contains("no recognizable"), "{name}: {err}");
                     println!("{name}: NOT-A-PACKAGE (rejected by design)");
                 }
             },

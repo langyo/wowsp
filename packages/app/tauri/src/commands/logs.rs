@@ -10,10 +10,13 @@
 //! All paths are backend-derived (never frontend-supplied), so nothing
 //! here can be aimed at arbitrary filesystem locations.
 
+use anyhow::anyhow;
 use std::io::Write as _;
 use std::path::PathBuf;
 
 use serde::Serialize;
+
+use wowsp_tauri_shared::CommandResult;
 
 use crate::logging::{self, LogFile};
 
@@ -71,7 +74,7 @@ fn to_info(f: &LogFile) -> LogFileInfo {
 /// Tauri command: list the diagnostics-log folder (newest first) plus the
 /// retention count, for the settings' 问题反馈 section.
 #[tauri::command]
-pub fn logs_overview() -> Result<LogsOverview, String> {
+pub fn logs_overview() -> CommandResult<LogsOverview> {
     let dir = logging::ensure_log_dir()?;
     let files = logging::list_log_files(&dir);
     let total_bytes = files.iter().map(|f| f.size_bytes).sum();
@@ -94,7 +97,7 @@ pub fn logs_overview() -> Result<LogsOverview, String> {
 /// file selected — the reveal target is backend-derived, never an
 /// argument.
 #[tauri::command]
-pub fn logs_reveal_latest(app: tauri::AppHandle) -> Result<(), String> {
+pub fn logs_reveal_latest(app: tauri::AppHandle) -> CommandResult<()> {
     use tauri_plugin_opener::OpenerExt;
 
     let dir = logging::ensure_log_dir()?;
@@ -102,11 +105,12 @@ pub fn logs_reveal_latest(app: tauri::AppHandle) -> Result<(), String> {
         .into_iter()
         .next()
         .map(|f| f.path)
-        .ok_or_else(|| "no log files yet".to_string())?;
+        .ok_or_else(|| anyhow!("no log files yet"))?;
     tracing::info!(?target, "revealing newest log file in file manager");
-    app.opener()
+    Ok(app
+        .opener()
         .reveal_item_in_dir(&target)
-        .map_err(|e| format!("reveal {}: {e}", target.display()))
+        .map_err(|e| anyhow!("reveal {}: {e}", target.display()))?)
 }
 
 /// Tauri command: read the last `lines` lines (default 120, max 1000) of
@@ -114,15 +118,15 @@ pub fn logs_reveal_latest(app: tauri::AppHandle) -> Result<(), String> {
 /// multibyte character at the window edge degrades to the replacement
 /// character on that one line only.
 #[tauri::command]
-pub fn logs_read_tail(lines: Option<usize>) -> Result<String, String> {
+pub fn logs_read_tail(lines: Option<usize>) -> CommandResult<String> {
     let dir = logging::ensure_log_dir()?;
     let target = logging::list_log_files(&dir)
         .into_iter()
         .next()
         .map(|f| f.path)
-        .ok_or_else(|| "no log files yet".to_string())?;
+        .ok_or_else(|| anyhow!("no log files yet"))?;
 
-    let bytes = std::fs::read(&target).map_err(|e| format!("read {}: {e}", target.display()))?;
+    let bytes = std::fs::read(&target).map_err(|e| anyhow!("read {}: {e}", target.display()))?;
     let keep = lines.unwrap_or(DEFAULT_TAIL_LINES).clamp(1, MAX_TAIL_LINES);
 
     // Slice from the end first (byte budget), decode once, then cut lines.
@@ -164,15 +168,15 @@ pub fn logs_read_tail(lines: Option<usize>) -> Result<String, String> {
 pub async fn logs_export_bundle(
     app: tauri::AppHandle,
     include_hardware: Option<bool>,
-) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> CommandResult<String> {
+    Ok(tauri::async_runtime::spawn_blocking(move || {
         export_bundle_sync(&app, include_hardware.unwrap_or(false))
     })
     .await
-    .map_err(|e| format!("bundle task failed: {e}"))?
+    .map_err(|e| anyhow!("bundle task failed: {e}"))??)
 }
 
-fn export_bundle_sync(app: &tauri::AppHandle, include_hardware: bool) -> Result<String, String> {
+fn export_bundle_sync(app: &tauri::AppHandle, include_hardware: bool) -> anyhow::Result<String> {
     use tauri_plugin_opener::OpenerExt;
 
     let dir = logging::ensure_log_dir()?;
@@ -206,7 +210,7 @@ fn export_bundle_sync(app: &tauri::AppHandle, include_hardware: bool) -> Result<
         ));
     }
     if sources.is_empty() {
-        return Err("no log files to bundle".to_string());
+        return Err(anyhow!("no log files to bundle"));
     }
 
     // Hardware & environment report — only when the webui's consent dialog
@@ -222,25 +226,25 @@ fn export_bundle_sync(app: &tauri::AppHandle, include_hardware: bool) -> Result<
     };
 
     let file = std::fs::File::create(&bundle_path)
-        .map_err(|e| format!("create {}: {e}", bundle_path.display()))?;
+        .map_err(|e| anyhow!("create {}: {e}", bundle_path.display()))?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
     zip.start_file("feedback-info.txt", opts)
-        .map_err(|e| format!("bundle header: {e}"))?;
+        .map_err(|e| anyhow!("bundle header: {e}"))?;
     zip.write_all(&feedback_info(&dir, &sources, hardware.as_ref()))
-        .map_err(|e| format!("bundle header: {e}"))?;
+        .map_err(|e| anyhow!("bundle header: {e}"))?;
 
     if let Some(report) = &hardware {
         zip.start_file("hardware-info.txt", opts)
-            .map_err(|e| format!("bundle hardware report: {e}"))?;
+            .map_err(|e| anyhow!("bundle hardware report: {e}"))?;
         zip.write_all(&report.render_bom())
-            .map_err(|e| format!("bundle hardware report: {e}"))?;
+            .map_err(|e| anyhow!("bundle hardware report: {e}"))?;
     }
 
     for (name, path, cap) in &sources {
-        let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let bytes = std::fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
         // A capped entry keeps its END: the newest events are the ones a
         // report is about. The slice may start mid-UTF8 character — one
         // mangled first line, noted in the manifest.
@@ -250,12 +254,12 @@ fn export_bundle_sync(app: &tauri::AppHandle, include_hardware: bool) -> Result<
             &bytes
         };
         zip.start_file(name.as_str(), opts)
-            .map_err(|e| format!("bundle {name}: {e}"))?;
+            .map_err(|e| anyhow!("bundle {name}: {e}"))?;
         zip.write_all(entry)
-            .map_err(|e| format!("bundle {name}: {e}"))?;
+            .map_err(|e| anyhow!("bundle {name}: {e}"))?;
     }
     zip.finish()
-        .map_err(|e| format!("finalize {}: {e}", bundle_path.display()))?;
+        .map_err(|e| anyhow!("finalize {}: {e}", bundle_path.display()))?;
 
     tracing::info!(
         ?bundle_path,

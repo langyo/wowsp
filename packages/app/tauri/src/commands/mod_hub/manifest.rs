@@ -35,6 +35,7 @@
 //! understands is never rewritten (mutations no-op with a warning) — a
 //! future schema must not be flattened by an older app.
 
+use anyhow::anyhow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -161,7 +162,7 @@ fn load(res_mods: &Path) -> Loaded {
 
 /// Preserve every damaged snapshot before replacing it. The traditional
 /// `.invalid` name is used first; an earlier recovery copy is never replaced.
-fn preserve_invalid(path: &Path) -> Result<(), String> {
+fn preserve_invalid(path: &Path) -> anyhow::Result<()> {
     let mut backup = path.with_file_name(INVALID_SUFFIX);
     let open = |path: &Path| {
         fs::OpenOptions::new()
@@ -173,11 +174,11 @@ fn preserve_invalid(path: &Path) -> Result<(), String> {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             let mut nonce = [0u8; 16];
-            getrandom::fill(&mut nonce).map_err(|e| format!("manifest recovery entropy: {e}"))?;
+            getrandom::fill(&mut nonce).map_err(|e| anyhow!("manifest recovery entropy: {e}"))?;
             backup = path.with_file_name(format!("{INVALID_SUFFIX}.{}", hex::encode(nonce)));
-            open(&backup).map_err(|e| format!("create {}: {e}", backup.display()))?
+            open(&backup).map_err(|e| anyhow!("create {}: {e}", backup.display()))?
         },
-        Err(e) => return Err(format!("create {}: {e}", backup.display())),
+        Err(e) => return Err(anyhow!("create {}: {e}", backup.display())),
     };
     drop(file);
     // Move into the exclusively reserved backup, as the original quarantine
@@ -185,7 +186,7 @@ fn preserve_invalid(path: &Path) -> Result<(), String> {
     // repeatedly create new backups of the same unchanged file.
     if let Err(e) = fs::rename(path, &backup) {
         let _ = fs::remove_file(&backup);
-        return Err(format!("preserve {}: {e}", backup.display()));
+        return Err(anyhow!("preserve {}: {e}", backup.display()));
     }
     Ok(())
 }
@@ -249,13 +250,13 @@ fn parse(raw: &str, quarantine: Option<&Path>) -> Loaded {
 /// Serialize atomically (tmp + rename). A manifest with nothing left to
 /// say (no managed entries, no tool configs) deletes the file instead of
 /// littering res_mods with an empty stub.
-fn store(res_mods: &Path, manifest: &WowspManifest) -> Result<(), String> {
+fn store(res_mods: &Path, manifest: &WowspManifest) -> anyhow::Result<()> {
     let path = manifest_path(res_mods);
     if manifest.managed.is_empty() && manifest.tools.is_empty() && manifest.foreign.is_empty() {
         return match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(format!("remove {}: {e}", path.display())),
+            Err(e) => Err(anyhow!("remove {}: {e}", path.display())),
         };
     }
     let mut out: WowspManifest = (*manifest).clone();
@@ -263,7 +264,7 @@ fn store(res_mods: &Path, manifest: &WowspManifest) -> Result<(), String> {
     let body = "# WoWSP managed-mod manifest — maintained by WoWSP, hand edits\n\
                 # may be overwritten. Tool configs under [tools.*] are yours.\n"
         .to_string()
-        + &toml::to_string_pretty(&out).map_err(|e| format!("serialize wowsp.toml: {e}"))?;
+        + &toml::to_string_pretty(&out).map_err(|e| anyhow!("serialize wowsp.toml: {e}"))?;
     crate::atomic_file::write(&path, &body)
 }
 
@@ -846,7 +847,7 @@ pub(crate) enum ManifestOp {
 }
 
 struct ManifestHub {
-    tx: std::sync::mpsc::Sender<(ManifestOp, std::sync::mpsc::Sender<Result<(), String>>)>,
+    tx: std::sync::mpsc::Sender<(ManifestOp, std::sync::mpsc::Sender<anyhow::Result<()>>)>,
 }
 
 static HUB: std::sync::LazyLock<ManifestHub> = std::sync::LazyLock::new(ManifestHub::new);
@@ -854,7 +855,7 @@ static HUB: std::sync::LazyLock<ManifestHub> = std::sync::LazyLock::new(Manifest
 impl ManifestHub {
     fn new() -> Self {
         let (tx, rx) =
-            std::sync::mpsc::channel::<(ManifestOp, std::sync::mpsc::Sender<Result<(), String>>)>();
+            std::sync::mpsc::channel::<(ManifestOp, std::sync::mpsc::Sender<anyhow::Result<()>>)>();
 
         std::thread::Builder::new()
             .name("wowsp-toml-writer".into())
@@ -868,7 +869,7 @@ impl ManifestHub {
         Self { tx }
     }
 
-    fn execute(op: ManifestOp) -> Result<(), String> {
+    fn execute(op: ManifestOp) -> anyhow::Result<()> {
         // Captured before the op is consumed: the tree this mutation
         // targets, for the pre-release twin sync below.
         let target = match &op {
@@ -897,7 +898,7 @@ impl ManifestHub {
         out
     }
 
-    fn apply_op(op: ManifestOp) -> Result<(), String> {
+    fn apply_op(op: ManifestOp) -> anyhow::Result<()> {
         match op {
             ManifestOp::UpsertManaged {
                 res_mods,
@@ -954,13 +955,13 @@ impl ManifestHub {
         }
     }
 
-    fn apply(&self, op: ManifestOp) -> Result<(), String> {
+    fn apply(&self, op: ManifestOp) -> anyhow::Result<()> {
         let (done, rx) = std::sync::mpsc::channel();
         self.tx
             .send((op, done))
-            .map_err(|_| "wowsp.toml writer is gone".to_string())?;
+            .map_err(|_| anyhow!("wowsp.toml writer is gone"))?;
         rx.recv()
-            .map_err(|_| "wowsp.toml writer dropped the job".to_string())?
+            .map_err(|_| anyhow!("wowsp.toml writer dropped the job"))?
     }
 }
 
