@@ -11,16 +11,24 @@ body {
   background: transparent;
   overflow: hidden;
   pointer-events: none;
-  /* The chips mix latin digits with CJK glyphs in ONE run — the 场/場 unit
-     inside every battles count, the intel/average labels, CJK nicknames
-     and seals — and the fallback order below used to let Segoe UI draw the
-     digits while Microsoft YaHei drew the CJK. Two fonts on one baseline
-     place their glyphs at visibly different heights (the digits floated
-     above the unit words, row after row), so the primary face here is the
-     CJK-complete font itself: one vertical rhythm for every glyph, every
-     locale. The latin faces remain as the fallback chain for hosts
-     without it. */
-  font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  /* Two font roles for the whole Tab overlay, both picked to keep every
+     glyph on ONE vertical rhythm:
+     - TEXT (names, labels, unit words, seals — every run containing CJK):
+       Microsoft YaHei first. The fallback order used to let Segoe UI draw
+       the latin digits while YaHei drew the CJK, and the two fonts' glyphs
+       sat at visibly different heights on the shared baseline — the
+       CJK-complete face first keeps text harmonized everywhere.
+     - NUMBERS (winrate/PR/battles/damage, the intel counts and team
+       averages — pure-ASCII runs): a monospaced stack, so every digit
+       holds one width and the columns read as aligned figures. Consolas
+       ships with every Windows back to Vista; the rest of the chain is
+       there for the exotic hosts. The battles-count CJK unit (场/場/戦)
+       deliberately drops back to the text face (.overlay-unit below) — a
+       smaller counter word beside the figures reads as a unit, not as a
+       mixed-font accident. */
+  --overlay-text-font: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --overlay-num-font: Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-family: var(--overlay-text-font);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -37,7 +45,9 @@ html.overlay-hidden body {
   position: absolute;
   display: inline-flex;
   align-items: baseline;
-  gap: 0.35em;
+  /* Tight on purpose: the stats and name columns read as ONE block leaning
+     against the table's edge, not two loosely coupled strips. */
+  gap: 0.25em;
   padding: 0.08em 0.55em;
   border-radius: 0.5em;
   background: rgb(10 14 20 / 62%);
@@ -111,6 +121,59 @@ html.overlay-hidden body {
 
 .overlay-chip--ally .overlay-chip__name {
   text-align: right;
+}
+
+/* The NUMBER faces ride the monospaced stack (--overlay-num-font): every
+   figure one width wide, so a column of winrates / PRs / counts reads as
+   aligned digits instead of a ragged strip. These runs are pure ASCII by
+   construction (battlesText splits the CJK unit off into .overlay-unit),
+   so the stack never falls back mid-value. The per-column dashes ride the
+   same face (they are <b> cells too, right-aligned in their column); the
+   dots loader and the whole-cell dash/bot faces keep the chip's own font
+   — placeholders, not figures. */
+.overlay-chip__stat b,
+.overlay-chip--intel b,
+.overlay-intel-num {
+  font-family: var(--overlay-num-font);
+}
+
+/* Each metric is its own COLUMN: a fixed-width, right-aligned cell sized
+   in ch on the mono face, so the column boundaries hold across rows no
+   matter how many digits a value has — winrate one column, PR one,
+   battles one, damage one, exactly like a table. A missing value renders
+   its dash in the same cell, keeping the column. Widths cover the worst
+   formatted case of each metric (100.0% / 9999 PR / 100.0k / 999.9k);
+   the localized battles unit hangs OUTSIDE the cell (battlesText), so it
+   never shifts the figures. */
+.overlay-chip__stat .overlay-num {
+  display: inline-block;
+  text-align: right;
+}
+
+.overlay-chip__stat .n-wr {
+  width: 6ch;
+}
+
+.overlay-chip__stat .n-pr {
+  width: 4ch;
+}
+
+.overlay-chip__stat .n-battles {
+  width: 6ch;
+}
+
+.overlay-chip__stat .n-dmg {
+  width: 6ch;
+}
+
+/* A battles-count unit word (场/場/battles/회 …) split out of its mono
+   value: it keeps the TEXT face and steps down a size, so the smaller
+   counter glyph beside the figures reads as a deliberate unit — the one
+   place a chip mixes the two fonts, on purpose. Color is inherited from
+   the value it tails (the thin-sample red keeps covering the pair). */
+.overlay-chip .overlay-unit {
+  font-family: var(--overlay-text-font);
+  font-size: 0.85em;
 }
 
 /* The ONE transient-status card — spinner + copy, centered over the table

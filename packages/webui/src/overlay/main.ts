@@ -535,14 +535,28 @@ function fmtBattles(n: number): string {
 }
 
 /** One battle count wearing its locale's unit ("1234 场" / "1234 battles")
- *  — the unit rides INSIDE the bold value so the whole face keeps one
- *  color (including the thin-sample red). Every battle-count chip face
- *  carries it: with all four chip toggles on, a bare number between the PR
- *  and the damage figures is exactly what a Tab-glance misreads. The count
- *  itself keeps fmtBattles' compaction — a unit must not widen the chip by
- *  digits the roster table already has no room for. */
+ *  — split around the {n} placeholder so the count itself stays a pure
+ *  ASCII run in its fixed-width column cell (.overlay-num n-battles — the
+ *  mono number face), while the unit word drops into .overlay-unit (the
+ *  text face, one size down) OUTSIDE that cell: the figures alone define
+ *  the column, the unit hangs beside it. Both halves sit INSIDE the bold
+ *  value, so the whole face keeps one color (including the thin-sample
+ *  red). Every battle-count chip face carries the unit: with all four chip
+ *  toggles on, a bare number between the PR and the damage figures is
+ *  exactly what a Tab-glance misreads. The count itself keeps fmtBattles'
+ *  compaction — a unit must not widen the chip by digits the roster table
+ *  already has no room for. */
 function battlesText(n: number): string {
-  return localized("battlesCount").replaceAll("{n}", fmtBattles(n));
+  const pattern = localized("battlesCount");
+  const at = pattern.indexOf("{n}");
+  const number = `<span class="overlay-num n-battles">${fmtBattles(n)}</span>`;
+  if (at < 0) return number;
+  // Empty slices (a pattern ending exactly in {n}) emit no unit box.
+  const unit = (text: string) =>
+    text ? `<span class="overlay-unit">${text}</span>` : "";
+  return (
+    (at > 0 ? unit(pattern.slice(0, at)) : "") + number + unit(pattern.slice(at + 3))
+  );
 }
 
 /** The chasing three-dot loading face: three beads whose brightness runs
@@ -605,42 +619,49 @@ function stampNode(kind: StampKind): string {
   return `<span class="overlay-stamp" data-stamp="${kind}" title="${label}">${label}</span>`;
 }
 
-/** The per-row number block, one part per enabled chip toggle (winrate /
- *  PR / battles / avg damage) in that order, joined by dots. The values
- *  come from the stats source in force (randoms / ranked / global); a
- *  player without ANY of the enabled numbers renders the single muted
- *  dash. */
+/** The per-row number block, one COLUMN per enabled chip toggle (winrate /
+ *  PR / battles / avg damage) in that order, joined by dots. Each figure
+ *  sits in a fixed-width right-aligned cell (.overlay-num + the n-* class,
+ *  widths in ch on the mono face), so every metric reads as its own aligned
+ *  column across rows — a 3-digit PR no longer drags the battles and
+ *  damage figures out of line. A metric with no value renders its dash in
+ *  the same cell, keeping the column. The values come from the stats
+ *  source in force (randoms / ranked / global). */
 function chipNumbers(v: RosterModeNumbers): string {
   const parts: string[] = [];
-  const muted = `<b class="muted">—</b>`;
+  const fig = (cls: string, text: string) =>
+    `<span class="overlay-num ${cls}">${text}</span>`;
   if (PREFS.chips.winrate) {
     parts.push(
       v.winrate != null
-        ? `<b style="color:${winrateColor(v.winrate)}">${v.winrate.toFixed(1)}%</b>`
-        : muted,
+        ? `<b style="color:${winrateColor(v.winrate)}">${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
+        : `<b class="muted">${fig("n-wr", "—")}</b>`,
     );
   }
   if (PREFS.chips.pr && PREFS.prOn) {
     parts.push(
-      v.pr != null ? `<b style="color:${prTier(v.pr).color}">${Math.round(v.pr)}</b>` : muted,
+      v.pr != null
+        ? `<b style="color:${prTier(v.pr).color}">${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
+        : `<b class="muted">${fig("n-pr", "—")}</b>`,
     );
   }
   if (PREFS.chips.battles) {
     // Red under 200 battles (thin-sample warning), plain above — same rule
     // as the roster panels' battles column (utils/winrate battlesColor).
-    // The count lands with its localized unit (battlesText).
+    // The count lands with its localized unit (battlesText) — the unit
+    // hangs OUTSIDE the fixed-width cell so the figures alone align.
     const color = battlesColor(v.battles);
     parts.push(
       v.battles != null
         ? `<b${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`
-        : muted,
+        : `<b class="muted">${fig("n-battles", "—")}</b>`,
     );
   }
   if (PREFS.chips.damage) {
     parts.push(
       v.avgDamage != null
-        ? `<b style="color:${damageColor(v.avgDamage)}">${fmtDamage(v.avgDamage)}</b>`
-        : muted,
+        ? `<b style="color:${damageColor(v.avgDamage)}">${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
+        : `<b class="muted">${fig("n-dmg", "—")}</b>`,
     );
   }
   return parts.join(`<span class="sep">·</span>`);
@@ -784,7 +805,7 @@ function teamSummaryCard(
   if (!storyLayout && PREFS.teamIntel && (PREFS.intel.radar || PREFS.intel.hydro || PREFS.intel.smoke)) {
     const range =
       PREFS.intel.radar && intel.radarMaxM != null && intel.radarMaxM > 0
-        ? `<span class="overlay-intel-range">${localized("intelRange")} ${formatIntelKm(intel.radarMaxM)}km</span>`
+        ? `<span class="overlay-intel-range">${localized("intelRange")} <span class="overlay-intel-num">${formatIntelKm(intel.radarMaxM)}km</span></span>`
         : "";
     const line1 =
       `<span class="overlay-intel-line">${sideLabel}` +
