@@ -929,9 +929,24 @@
 .holo-map__roster-board {
   display: flex;
   align-items: flex-start;
-  gap: 1.5rem;
+  gap: 2.25rem;
   width: 100%;
   max-width: 1040px;
+}
+
+/* Side-by-side only: a visible divider between the two team columns (the
+   gap alone reads as one merged table when both sides hold dead rows).
+   Stacked layout gets plain spacing instead — a left border there would
+   paint a stray vertical line along the panel edge. */
+@container (min-width: 900px) {
+  .holo-roster__team + .holo-roster__team {
+    border-left: 1px solid var(--holo-hud-border);
+    /* Half the gap on each side of the shifted edge centers the divider in
+       the flex gap; the negative margin + padding pair keeps column widths
+       and content positions unchanged. */
+    padding-left: calc(1.125rem - 1px);
+    margin-left: -1.125rem;
+  }
 }
 
 /* Narrow map pane: stack the two tables — 300px per table cannot hold the
