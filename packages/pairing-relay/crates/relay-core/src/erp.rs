@@ -292,29 +292,40 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
 .e-btn-primary:hover {{ color: rgb(var(--color-surface));
   filter: brightness(1.08); }}
 .e-btn-block {{ width: 100%; }}
-/* ── table ─────────────────────────────────────────────────────── */
-.e-table-scroll {{ overflow-x: auto; border: 1px solid var(--border-faint);
-  border-radius: var(--radius-md); background: rgb(var(--color-surface)); }}
-.e-table {{ width: 100%; border-collapse: collapse; }}
-.e-table th, .e-table td {{
-  padding: var(--space-8) var(--space-10);
-  border-bottom: 1px solid var(--border-faint); text-align: left;
-  vertical-align: top; overflow-wrap: anywhere;
-  font-size: var(--text-sm); }}
-.e-table th {{ position: sticky; top: 0; z-index: 1; white-space: nowrap;
-  background: color-mix(in srgb, rgb(var(--color-primary)) 8%,
-    rgb(var(--color-surface))); font-weight: 600; }}
-.e-table tbody tr:hover {{ background: color-mix(in srgb,
-  rgb(var(--color-primary)) 5%, transparent); }}
-.e-table td .e-muted {{ font-size: var(--text-xs); }}
-.e-table a {{ color: rgb(var(--color-primary)); }}
-.e-table select, .e-table input {{
+/* ── table (HkTable grammar: host ▸ wrapper ▸ table) ───────────── */
+.hk-table-host {{ position: relative; }}
+.hk-table-wrapper {{ width: 100%; overflow-x: auto;
+  border: 1px solid var(--hi-color-border, var(--border-faint));
+  border-radius: var(--radius-md);
+  background: rgb(var(--color-surface)); }}
+.hk-table {{ width: 100%; border-collapse: collapse;
+  font-size: var(--text-base, 0.875rem);
+  color: var(--hi-color-text-primary, rgb(var(--color-text))); }}
+.hk-table-header-row {{ border-bottom: 1px solid
+  var(--hi-color-border, var(--border-faint)); }}
+.hk-table-header-cell {{ padding: var(--space-8) var(--space-12);
+  text-align: start; font-size: var(--text-xs);
+  font-weight: 600; white-space: nowrap; user-select: none;
+  color: var(--hi-color-text-secondary, rgb(var(--color-muted)));
+  background: color-mix(in srgb, rgb(var(--color-primary)) 6%,
+    rgb(var(--color-surface))); }}
+.hk-table-body .hk-table-row {{ border-bottom: 1px solid
+  var(--hi-color-border, var(--border-faint)); }}
+.hk-table-hover .hk-table-row:hover {{ background:
+  var(--hi-color-bg-subtle,
+    color-mix(in srgb, rgb(var(--color-primary)) 5%, transparent)); }}
+.hk-table-cell {{ padding: var(--space-8) var(--space-12);
+  color: var(--hi-color-text-primary, rgb(var(--color-text)));
+  vertical-align: top; overflow-wrap: anywhere; }}
+.hk-table-cell .e-muted {{ font-size: var(--text-xs); }}
+.hk-table-cell a {{ color: rgb(var(--color-primary)); }}
+.hk-table-cell select, .hk-table-cell input {{
   font: inherit; font-size: var(--text-sm);
   padding: var(--space-4) var(--space-8); max-width: 100%;
   border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 14%, transparent);
   border-radius: var(--radius-sm); background: rgb(var(--color-surface));
   color: rgb(var(--color-text)); }}
-.e-table select:focus-visible, .e-table input:focus-visible {{
+.hk-table-cell select:focus-visible, .hk-table-cell input:focus-visible {{
   border-color: rgb(var(--color-focused-border));
   box-shadow: var(--shadow-focus); outline: none; }}
 .e-row-actions {{ display: flex; gap: var(--space-6); flex-wrap: wrap;
@@ -347,27 +358,57 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
 .e-login-card h2 {{ margin: 0; font-size: var(--text-lg); font-weight: 700; }}
 .e-login-card p {{ margin: 0; font-size: var(--text-sm);
   color: rgb(var(--color-text) / 85%); }}
-/* ── toast (HkToast grammar: top-right stack, auto-dismiss) ─────── */
-.e-toasts {{ position: fixed; z-index: 3000;
-  top: calc(var(--space-16) + env(safe-area-inset-top, 0px));
-  right: calc(var(--space-16) + env(safe-area-inset-right, 0px));
-  display: flex; flex-direction: column; gap: var(--space-8);
-  width: min(92vw, 24rem); pointer-events: none; }}
-.e-toast {{ pointer-events: auto; display: flex; align-items: flex-start;
-  gap: var(--space-8); padding: var(--space-10) var(--space-12);
-  border: 1px solid var(--border-subtle);
-  border-inline-start: 3px solid rgb(var(--color-primary));
-  border-radius: var(--radius-md); background: rgb(var(--color-surface));
-  box-shadow: var(--shadow-dropdown); font-size: var(--text-sm);
-  animation: e-toast-in 0.25s var(--ease-out-expo) both; }}
-.e-toast[data-kind="error"] {{
-  border-inline-start-color: rgb(var(--color-error, 247 118 142)); }}
-.e-toast[data-kind="success"] {{ color: rgb(var(--color-text)); }}
-.e-toast.e-toast-out {{ opacity: 0; transform: translateX(12px);
-  transition: opacity 0.2s ease, transform 0.2s ease; }}
-@keyframes e-toast-in {{ from {{ opacity: 0; transform: translateX(16px); }}
-  to {{ opacity: 1; transform: none; }} }}
-@media (prefers-reduced-motion: reduce) {{ .e-toast {{ animation: none; }} }}
+/* ── toast (verbatim HkToast.scss — solid channel colors, icon +
+   close, slide-in from the inline edge) ─────────────────────────── */
+.hk-toast-container {{ position: fixed; top: 4rem;
+  inset-inline-end: var(--viewport-gutter, 16px);
+  z-index: var(--hk-z-toast, 4000); max-width: 24rem;
+  pointer-events: none; }}
+.hk-toast-container > div {{ position: relative; display: flex;
+  flex-direction: column; gap: var(--space-12, 12px); }}
+.hk-toast-item {{ display: flex; align-items: center;
+  gap: var(--space-8, 8px);
+  padding: var(--space-12, 12px) var(--space-16, 16px);
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--text-base, 0.875rem); line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); pointer-events: auto;
+  backdrop-filter: blur(12px); user-select: none; }}
+.hk-toast-body {{ flex: 1; min-width: 0; display: flex;
+  flex-direction: column; gap: var(--space-4, 4px); }}
+.hk-toast-icon {{ display: flex; align-items: center;
+  width: 1.5rem; height: 1.5rem; flex-shrink: 0; }}
+.hk-toast-icon svg {{ width: 18px; height: 18px; }}
+.hk-toast-message {{ flex: 1; min-width: 0; overflow-wrap: anywhere;
+  white-space: normal; }}
+.hk-toast-error {{ background: var(--hi-color-danger,
+    var(--hi-color-error, #f85149));
+  color: var(--hi-color-text-on-solid, #ffffff); }}
+.hk-toast-success {{ background: var(--hi-color-success, #0eb840);
+  color: var(--hi-color-text-on-solid, #ffffff); }}
+.hk-toast-info {{ background: var(--hi-color-info, #6abed6);
+  color: var(--hi-color-text-on-solid, #ffffff); }}
+.hk-toast-close {{ display: flex; align-items: center;
+  justify-content: center; width: 1.5rem; height: 1.5rem;
+  flex-shrink: 0; border: none; background: transparent;
+  color: inherit; cursor: pointer; border-radius: var(--radius-sm, 4px);
+  opacity: 0.7; padding: 0;
+  transition: opacity var(--duration-fast, 0.15s) ease; }}
+.hk-toast-close svg {{ width: 18px; height: 18px; }}
+.hk-toast-close:hover {{ opacity: 1; }}
+.hk-toast-close:focus-visible {{ outline: 2px solid rgb(var(--color-primary));
+  outline-offset: 2px; }}
+.hk-toast-enter-active {{ transition-property: opacity, transform;
+  transition-duration: var(--duration-normal, 0.3s);
+  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1); }}
+.hk-toast-leave-active {{ transition-property: opacity, transform;
+  transition-duration: var(--duration-normal, 0.3s);
+  transition-timing-function: cubic-bezier(0.36, 0, 0.66, 1);
+  position: absolute; }}
+.hk-toast-enter-from, .hk-toast-leave-to {{ opacity: 0;
+  transform: translateX(1rem); }}
+@media (prefers-reduced-motion: reduce) {{
+  .hk-toast-enter-active, .hk-toast-leave-active {{ transition: none; }}
+}}
 [hidden] {{ display: none !important; }}
 /* ── responsive: sidebar becomes a strip under 768px ───────────── */
 @media (max-width: 767px) {{
@@ -413,12 +454,14 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       <h2 class="e-title">反馈记录</h2>
       <button type="button" id="reload" class="e-btn e-spacer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>刷新</span></button>
     </div>
-    <div class="e-table-scroll">
-    <table class="e-table"><thead><tr>
-      <th style="width:130px">提交时间</th><th>描述</th><th style="width:110px">联系</th>
-      <th style="width:90px">版本</th><th style="width:70px">渠道</th>
-      <th style="width:120px">状态</th><th style="width:170px">PR</th><th style="width:110px">附件</th>
-    </tr></thead><tbody id="rows"></tbody></table>
+    <div class="hk-table-host">
+    <div class="hk-table-wrapper">
+    <table class="hk-table hk-table-md hk-table-hover"><thead><tr class="hk-table-header-row">
+      <th class="hk-table-header-cell" style="width:130px">提交时间</th><th class="hk-table-header-cell">描述</th><th class="hk-table-header-cell" style="width:110px">联系</th>
+      <th class="hk-table-header-cell" style="width:90px">版本</th><th class="hk-table-header-cell" style="width:70px">渠道</th>
+      <th class="hk-table-header-cell" style="width:120px">状态</th><th class="hk-table-header-cell" style="width:170px">PR</th><th class="hk-table-header-cell" style="width:110px">附件</th>
+    </tr></thead><tbody class="hk-table-body" id="rows"></tbody></table>
+    </div>
     </div>
     <div class="e-pager">
       <button type="button" id="prev" class="e-btn">上一页</button>
@@ -437,7 +480,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
 </div>
 </div>
 </main>
-<div class="e-toasts" id="toasts"></div>
+<div class="hk-toast-container" id="toasts"><div></div></div>
 <script>
 (function () {{
   // ── theme mode — mirrors hikari useTheme's data-mode attribute, fed
@@ -460,18 +503,44 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   var pageToken = null, nextToken = null, prevStack = [];
 
   function $(id) {{ return document.getElementById(id); }}
-  // ── toasts — the one notification surface (HkToast grammar) ────────
+  // ── toasts — the one notification surface, speaking HkToast's own
+  // grammar (hk-toast-item on a solid channel color, lucide icon, close
+  // action, slide-in/out) ──────────────────────────────────────────────
+  var TOAST_ICONS = {{
+    error: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+    success: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'
+  }};
   function toast(msg, kind) {{
-    var host = document.getElementById("toasts");
-    var el = document.createElement("div");
-    el.className = "e-toast";
-    if (kind) el.setAttribute("data-kind", kind);
-    el.textContent = msg;
-    host.appendChild(el);
-    setTimeout(function () {{
-      el.classList.add("e-toast-out");
-      setTimeout(function () {{ el.remove(); }}, 250);
-    }}, kind === "error" ? 6000 : 3000);
+    kind = kind || "info";
+    var stack = $("toasts").firstElementChild;
+    var item = document.createElement("div");
+    item.className = "hk-toast-item hk-toast-" + kind;
+    item.setAttribute("role", kind === "error" ? "alert" : "status");
+    item.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
+    item.innerHTML =
+      '<span class="hk-toast-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      (TOAST_ICONS[kind] || TOAST_ICONS.info) + '</svg></span>' +
+      '<div class="hk-toast-body"><span class="hk-toast-message"></span></div>' +
+      '<button type="button" class="hk-toast-close" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>';
+    item.querySelector(".hk-toast-message").textContent = msg;
+    item.querySelector(".hk-toast-close").onclick = function () {{ dismiss(); }};
+    function enter() {{
+      item.classList.add("hk-toast-enter-active");
+      requestAnimationFrame(function () {{
+        requestAnimationFrame(function () {{ item.classList.remove("hk-toast-enter-from"); }});
+      }});
+    }}
+    function dismiss() {{
+      if (item.dataset.leaving) return;
+      item.dataset.leaving = "1";
+      item.classList.add("hk-toast-leave-active", "hk-toast-leave-to");
+      setTimeout(function () {{ item.remove(); }}, 320);
+    }}
+    item.classList.add("hk-toast-enter-from");
+    stack.appendChild(item);
+    enter();
+    setTimeout(dismiss, kind === "error" ? 6000 : 3000);
   }}
   function esc(s) {{
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {{
@@ -513,12 +582,13 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       return !filter || it.status === filter;
     }}).forEach(function (it) {{
       var tr = document.createElement("tr");
+      tr.className = "hk-table-row";
       var atts = (it.attachments || []).map(function (a) {{
         return '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer">' + esc(a.name) + '</a>';
       }}).join("<br>") || '<span class="e-muted">—</span>';
       tr.innerHTML =
-        "<td>" + esc(fmtTime(it.time)) + "</td>" +
-        "<td>" + esc(it.description) +
+        '<td class="hk-table-cell">' + esc(fmtTime(it.time)) + "</td>" +
+        '<td class="hk-table-cell">' + esc(it.description) +
           (it.sysinfo ? '<div class="e-muted">' + esc(it.sysinfo) + "</div>" : "") +
           ((it.server || it.game_id)
             ? '<div class="e-muted">' +
@@ -528,16 +598,16 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
               "</div>"
             : "") +
           (it.record_url ? '<div class="e-row-actions"><a href="' + esc(it.record_url) + '" target="_blank" rel="noreferrer">记录</a></div>' : "") + "</td>" +
-        "<td>" + esc(it.contact || "—") + "</td>" +
-        "<td>" + esc(it.version || "—") + "</td>" +
-        "<td>" + esc(it.channel || "—") + "</td>" +
-        '<td><select data-rec="' + esc(it.record_id) + '" class="st">' +
+        '<td class="hk-table-cell">' + esc(it.contact || "—") + "</td>" +
+        '<td class="hk-table-cell">' + esc(it.version || "—") + "</td>" +
+        '<td class="hk-table-cell">' + esc(it.channel || "—") + "</td>" +
+        '<td class="hk-table-cell"><select data-rec="' + esc(it.record_id) + '" class="st">' +
           STATUSES.map(function (s) {{
             return "<option" + (s === it.status ? " selected" : "") + ">" + s + "</option>";
           }}).join("") + "</select></td>" +
-        '<td><input class="pr" data-rec="' + esc(it.record_id) + '" value="' + esc(it.pr || "") + '" placeholder="PR URL">' +
+        '<td class="hk-table-cell"><input class="pr" data-rec="' + esc(it.record_id) + '" value="' + esc(it.pr || "") + '" placeholder="PR URL">' +
           '<div class="e-row-actions"><button type="button" class="e-btn save" data-rec="' + esc(it.record_id) + '">保存</button></div></td>' +
-        "<td>" + atts + "</td>";
+        '<td class="hk-table-cell">' + atts + "</td>";
       tb.appendChild(tr);
     }});
     tb.querySelectorAll("button.save").forEach(function (b) {{
@@ -757,15 +827,25 @@ mod tests {
             );
         }
         assert!(page.contains(r#"var STATUSES = ["#));
+        // The table speaks the standard HkTable grammar.
+        assert!(page.contains(r#"class="hk-table hk-table-md hk-table-hover""#));
+        assert!(page.contains(r#"class="hk-table-header-row""#));
+        assert!(page.contains(r#"tr.className = "hk-table-row";"#));
+        assert!(page.contains(r#"<td class="hk-table-cell">"#));
+        assert!(!page.contains("e-table"));
         // Theme flip + toast surface: login/save/load feedback all ride
-        // the top-right toast stack, no inline hint/err remnants.
+        // the standard HkToast stack (solid channel colors, lucide icon,
+        // close action), no inline hint/err remnants.
         assert!(page.contains("data-mode"));
-        assert!(page.contains(r#"class="e-toasts""#));
+        assert!(page.contains(r#"class="hk-toast-container""#));
+        assert!(page.contains("hk-toast-item hk-toast-"));
+        assert!(page.contains("hk-toast-enter-from"));
         assert!(page.contains("function toast(msg, kind)"));
         assert!(page.contains(r#"toast("已保存 ""#));
         assert!(page.contains("登录失败（"));
         assert!(!page.contains("loginErr"));
         assert!(!page.contains("e-err"));
+        assert!(!page.contains("e-toast"));
         // The base URL is wired for API calls.
         assert!(page.contains("var BASE = \"https://wowsp.langyo.xyz\";"));
     }

@@ -650,7 +650,7 @@ pub(crate) async fn feishu_json(
 /// Cache reads are best-effort: a malformed/legacy row is a MISS, never
 /// a failed request (KV values are ALWAYS written as plain JSON text —
 /// storing a `serde_json::Value` directly lands as "[object Object]").
-async fn feishu_token(env: &Env) -> Result<String> {
+pub(crate) async fn feishu_token(env: &Env) -> Result<String> {
     let kv = env.kv(KV)?;
     if let Some(cached) = kv.get(K_TOKEN).json::<TokenCache>().await.ok().flatten() {
         if cached.expire_at > now_ms() + 300_000 {

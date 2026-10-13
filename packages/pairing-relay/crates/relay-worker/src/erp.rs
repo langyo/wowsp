@@ -21,11 +21,12 @@ use relay_core::erp::{
     OAUTH_STATE_COOKIE, OAUTH_STATE_TTL_SECS, SESSION_COOKIE, SESSION_TTL_SECS, SessionClaims,
     authorize_url, cookie_get, ct_eq, mint_session, read_session, session_key,
 };
+use relay_core::feedback::urlencode;
 use relay_core::route::query_get;
 use serde_json::{Value, json};
 use worker::{Env, Headers, Method, Request, Response, ResponseBody, Result};
 
-use crate::feedback::{FEISHU, err, http_call, json_headers, ok};
+use crate::feedback::{FEISHU, err, feishu_json, feishu_token, http_call, json_headers, ok};
 
 /// 302 responses here are built from parts (`from_body(Empty)` +
 /// `Location`): `Response::redirect` wraps the JS static constructor,
@@ -171,6 +172,44 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
     };
     if claims.open_id.is_empty() {
         return login_failed(&origin, "profile-shape");
+    }
+
+    // Best-effort enrichment: user_info anonymizes the profile to
+    // 用户＋digits when the app lacks contact visibility, which reads as
+    // a placeholder in the console's user chip. The tenant-token contact
+    // read restores the real name + avatar once 权限 is granted; on any
+    // failure the anonymized values still log the maintainer in.
+    let mut claims = claims;
+    if let Ok(token) = feishu_token(&env).await {
+        if let Ok((_, cu)) = feishu_json(
+            Method::Get,
+            &format!(
+                "{FEISHU}/contact/v3/users/{}?user_id_type=open_id",
+                urlencode(&claims.open_id)
+            ),
+            &token,
+            Value::Null,
+        )
+        .await
+        {
+            let u = cu.pointer("/data/user").cloned().unwrap_or(Value::Null);
+            if let Some(n) = u
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                claims.name = n.to_string();
+            }
+            let avatar = u
+                .pointer("/avatar/avatar_240")
+                .or_else(|| u.pointer("/avatar/avatar_640"))
+                .or_else(|| u.pointer("/avatar/avatar_origin"))
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            if let Some(a) = avatar {
+                claims.avatar = a.to_string();
+            }
+        }
     }
 
     let key = session_key(&app_secret);
