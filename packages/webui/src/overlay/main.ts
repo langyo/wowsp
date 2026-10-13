@@ -545,6 +545,49 @@ function battlesText(n: number): string {
   return localized("battlesCount").replaceAll("{n}", fmtBattles(n));
 }
 
+/** The chasing three-dot loading face: three beads whose brightness runs
+ *  one after the other in an unbroken loop while a lookup is still owed.
+ *  render() rebuilds the whole DOM on every event, which would restart a
+ *  plain CSS loop on each anchor/telemetry pass — so every bead's
+ *  animation-delay comes in inline, phase-locked to the shared clock (a
+ *  negative delay starts the loop mid-cycle): each rebuild lands the chase
+ *  exactly where the previous tree left it and the run reads as one
+ *  unbroken marquee. The beats sit a third of the period apart, so exactly
+ *  one bead peaks at a time. */
+const DOTS_PERIOD_MS = 1200;
+
+function loadingDots(): string {
+  const phase = performance.now() % DOTS_PERIOD_MS;
+  const step = DOTS_PERIOD_MS / 3;
+  const beads = [0, 1, 2]
+    .map(
+      (i) =>
+        `<i style="animation-delay:${(
+          -((phase + i * step) % DOTS_PERIOD_MS) /
+          1000
+        ).toFixed(3)}s"></i>`,
+    )
+    .join("");
+  return `<span class="overlay-dots">${beads}</span>`;
+}
+
+/** Whether this roster name's stat answer is still OWED by the query
+ *  pipeline — queued, in flight, or under a live backoff / not-found
+ *  re-queue — the state the chasing dots render. A name outside these
+ *  states with no cached stat is a FINAL absence this battle (lookups
+ *  disabled — no detected realm — or the retry budgets spent) and keeps
+ *  the honest muted dash: dots that can never resolve would lie. */
+function statPending(name: string): boolean {
+  return (
+    realm !== "" &&
+    (pending.has(name) ||
+      inFlight ||
+      batchTimer != null ||
+      retryTimer != null ||
+      notFoundRetry.has(name))
+  );
+}
+
 /** The seal node beside the chip numbers: the verdict wording as PLAIN
  *  TEXT in cinnabar — the overlay deliberately skips the calligraphy
  *  bitmaps the in-app RatingStamp faces press (chips are too small for
@@ -629,23 +672,25 @@ function displayNameOf(name: string): string {
 }
 
 /** The stat column's face for one player: the configured number block, or
- *  the one telling placeholder — a muted dash for a landed-but-empty
- *  lookup, the red dot for a hidden profile, the "querying" ellipsis while
- *  the ship-scoped list is still on its way, the muted bot label for AI
- *  rows (they carry no lookup). Nothing at all with every number toggle
- *  off (the row then carries seals/name only). A story-layout bot row
- *  never reaches here — the render loop drops it. */
+ *  the loading/absence placeholders — the chasing three-dot marquee while
+ *  the batch (or, ship-scoped, the per-ship list) is still owed, a muted
+ *  dash for a landed-but-empty lookup, the red dot for a hidden profile,
+ *  the muted bot label for AI rows (they carry no lookup). Nothing at all
+ *  with every number toggle off (the row then carries seals/name only). A
+ *  story-layout bot row never reaches here — the render loop drops it. */
 function statFace(name: string): string {
   if (!ANY_CHIP_ON) return "";
   if (AI_NAME.test(name)) return `<span class="muted">${localized("botLabel")}</span>`;
   const st = stats.get(cacheKey(name));
-  if (!st) return `<span class="muted">—</span>`;
+  if (!st) return statPending(name) ? loadingDots() : `<span class="muted">—</span>`;
   if (st.hidden) return `<span class="hidden">●</span>`;
   // Ship-scoped source with the per-ship list still on its way: keep the
-  // "querying" face instead of dashes — dashes read as "never played in
-  // this scope", which the landed numbers would contradict a beat later.
+  // loading face instead of dashes — dashes read as "never played in this
+  // scope", which the landed numbers would contradict a beat later. The
+  // ship pipeline owes every undefined list an answer (a list or a null
+  // verdict), so undefined here is always the transient loading state.
   if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
-    return `<span class="muted">…</span>`;
+    return loadingDots();
   }
   return chipNumbers(scopedStatView(name));
 }
@@ -756,6 +801,19 @@ function teamSummaryCard(
       );
     }
   }
+  // The averages' loading state: any human on the side still owes the
+  // batch (or, ship-scoped, its per-ship list). A mean over the rows
+  // landed so far would read as a verdict and then shift as the rest
+  // arrives, so while the loading holds every enabled average renders the
+  // chasing dots; a side whose lookups are disabled or budget-spent
+  // (statPending false everywhere) keeps the partial mean with the honest
+  // dashes, exactly as before.
+  const avgLoading = vehicles.some((v) => {
+    if (AI_NAME.test(v.name)) return false;
+    const st = stats.get(cacheKey(v.name));
+    if (!st) return statPending(v.name);
+    return SHIP_SCOPE_ON && !st.hidden && st.accountId != null && st.ships === undefined;
+  });
   const agg =
     PREFS.teamAvg.winrate || PREFS.teamAvg.pr || PREFS.teamAvg.damage
       ? aggregateTeamStats(
@@ -787,18 +845,28 @@ function teamSummaryCard(
   if (agg != null) {
     const avgItem = (label: string, value: string) =>
       `<span class="overlay-intel-k">${label}</span><b>${value}</b>`;
+    // While the side's stats load, every enabled average shows the
+    // chasing dots (see avgLoading above); the branches below are the
+    // settled faces.
+    const value = (settled: string) => (avgLoading ? loadingDots() : settled);
     const items = [
       PREFS.teamAvg.winrate
         ? avgItem(
             localized("avgWinrate"),
-            agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—",
+            value(agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"),
           )
         : "",
       PREFS.teamAvg.pr && PREFS.prOn
-        ? avgItem(localized("avgPr"), agg.avgPr != null ? `${Math.round(agg.avgPr)}` : "—")
+        ? avgItem(
+            localized("avgPr"),
+            value(agg.avgPr != null ? `${Math.round(agg.avgPr)}` : "—"),
+          )
         : "",
       PREFS.teamAvg.damage
-        ? avgItem(localized("avgDmg"), agg.avgDamage != null ? fmtDamage(agg.avgDamage) : "—")
+        ? avgItem(
+            localized("avgDmg"),
+            value(agg.avgDamage != null ? fmtDamage(agg.avgDamage) : "—"),
+          )
         : "",
     ].filter(Boolean);
     if (items.length > 0) {
@@ -1237,7 +1305,7 @@ function render() {
  *  any error (WG rate limit, transient network — one flaky name in a CN
  *  vortex batch is enough) and tempArenaInfo.json never changes mid-battle
  *  — no arena-info event will ever re-queue the names. Without this retry
- *  the affected chips stay "…" for the entire battle even after the API
+ *  the affected chips stay on the loading faces for the entire battle even after the API
  *  recovers (the main window's roster pipeline has its own retry; this is
  *  the same contract for the overlay page). The ceiling stays low on
  *  purpose: a batch that keeps failing must keep re-filling within a
@@ -1247,7 +1315,7 @@ function render() {
  *  the main window's `retriesLeft` contract): a hard-down or rate-limited
  *  API must not be probed all battle long — an unbounded loop here kept the
  *  "querying" status card spinning forever. When the budget runs out the
- *  chips stay honestly "…" and the card goes away; a fresh anchor event
+ *  chips stay honestly on the dashes and the card goes away; a fresh anchor event
  *  (the user holding Tab again) still gets one prompt attempt through
  *  scheduleBatch, only the timed loop stops. */
 let inFlight = false;
@@ -1455,7 +1523,7 @@ function scheduleBatch() {
   scheduleCompBatch();
   scheduleClanGates();
   scheduleShipLists();
-  // No detected realm → no lookups; chips stay muted ("…") rather than
+  // No detected realm → no lookups; chips stay muted dashes rather than
   // showing numbers fetched from a guessed realm.
   if (!realm) return;
   // A failed batch owns the retry cadence (backoff below) — a fresh event
@@ -1619,7 +1687,7 @@ async function runBatch() {
     if (anyFailed && gen === statsGeneration) {
       // Transient WG hiccup: retry the same (still-uncached) names after a
       // capped, doubling pause — but only while the per-battle retry budget
-      // lasts (see RETRIES_PER_BATTLE). The chips honestly stay "…" until a
+      // lasts (see RETRIES_PER_BATTLE). The chips honestly stay on their loading dots until a
       // retry lands — never a silently wrong "no data". A batch the prefs
       // flip already discarded (statsGeneration moved under it) pays no
       // retry / not-found budget — its names re-queue through the
@@ -1903,11 +1971,11 @@ async function start() {
         const info = await invoke("read_temp_arena_info", { dir: null });
         if (info) arena = info as ArenaInfo;
       } catch {
-        // nothing to read — chips stay "…" until an arena event arrives
+        // nothing to read — chips stay on their loading dots until an arena event arrives
       }
     }
     // The user is LOOKING at the table right now — give any chip still on
-    // "…" a prompt fill round. The call is cheap when everything is cached
+    // its loading face a prompt fill round. The call is cheap when everything is cached
     // and stays behind the failed-batch backoff when one is running (no API
     // hammering); it exists for the window-lifecycle gaps where the roster
     // landed without a stats batch ever being scheduled.

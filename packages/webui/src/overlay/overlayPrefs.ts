@@ -62,9 +62,10 @@ export interface RawStat extends RosterStatViewSource {
    *  per-ship fetches must ride THIS realm, not the window's. null = not
    *  resolved (a landed answer always carries its realm string). */
   realm?: string | null;
-  /** undefined = not requested; null = requested but unavailable. The
-   *  overlay has no spinner face, so no separate loading flag: pending
-   *  rows render the muted "querying" ellipsis until the list lands. */
+  /** undefined = not requested; null = requested but unavailable. No
+   *  separate loading flag: a row whose list is still owed renders the
+   *  chasing three-dot loading face (overlay/main.ts statFace) until the
+   *  list lands. */
   ships?: readonly PlayerShipStats[] | null;
 }
 

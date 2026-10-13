@@ -11,7 +11,16 @@ body {
   background: transparent;
   overflow: hidden;
   pointer-events: none;
-  font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  /* The chips mix latin digits with CJK glyphs in ONE run — the 场/場 unit
+     inside every battles count, the intel/average labels, CJK nicknames
+     and seals — and the fallback order below used to let Segoe UI draw the
+     digits while Microsoft YaHei drew the CJK. Two fonts on one baseline
+     place their glyphs at visibly different heights (the digits floated
+     above the unit words, row after row), so the primary face here is the
+     CJK-complete font itself: one vertical rhythm for every glyph, every
+     locale. The latin faces remain as the fallback chain for hosts
+     without it. */
+  font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -162,6 +171,55 @@ html.overlay-hidden body {
   text-align: center;
   text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
   white-space: normal;
+}
+
+/* The chasing three-dot loading face (loadingDots in overlay/main.ts):
+   three beads whose brightness runs one after the other in an unbroken
+   loop while a stat lookup is still owed — a row's number block, or one
+   average value in the team summary card, renders this instead of a
+   settled dash. Beads take the surrounding text color (currentColor), so
+   the dots read as "these exact numbers are coming", and size in em like
+   everything else that scales with the row pitch. animation-delay arrives
+   INLINE per bead (phase-locked to the shared clock so render() rebuilds
+   never restart the chase — see loadingDots); this block only names the
+   animation. vertical-align: middle rides the text's visual center so the
+   beads sit centered against their neighbors instead of hanging on the
+   synthesized baseline. */
+.overlay-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24em;
+  height: 0.9em;
+  vertical-align: middle;
+}
+
+.overlay-dots i {
+  width: 0.3em;
+  height: 0.3em;
+  border-radius: 50%;
+  background: currentColor;
+  /* 1.2s = DOTS_PERIOD_MS in overlay/main.ts — the phase-lock math splits
+     the period into three beats; change the two together. */
+  animation: overlay-dots-chase 1.2s ease-in-out infinite;
+}
+
+@keyframes overlay-dots-chase {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion: the beads rest at mid brightness, still readable as a
+   loading mark (the same house pattern as the status spinner above). */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-dots i {
+    animation: none;
+    opacity: 0.55;
+  }
 }
 
 /* Seals flanking a chip's numbers (career verdict left, composition tags
