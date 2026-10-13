@@ -27,12 +27,14 @@
 //! class cache is keyed by ship id alone; the verdict cache is keyed by
 //! (realm, account id) because ids are only unique per cluster.
 
+use anyhow::{Result, anyhow};
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::time::Duration;
 
 use futures::stream::{self, StreamExt};
-use wowsp_tauri_shared::PlayerComposition;
+use wowsp_tauri_shared::{CommandResult, PlayerComposition};
 
 use super::wg_api::ExpectedPrRow;
 use super::wg_realm;
@@ -78,7 +80,7 @@ static SHIP_TYPE_CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<i64, Option
 pub async fn lookup_players_composition(
     names: Vec<String>,
     realm: String,
-) -> Result<Vec<Option<PlayerComposition>>, String> {
+) -> CommandResult<Vec<Option<PlayerComposition>>> {
     if names.is_empty() {
         return Ok(Vec::new());
     }
@@ -99,7 +101,7 @@ pub async fn lookup_players_composition(
     {
         let cache = COMPOSITION_CACHE
             .lock()
-            .map_err(|e| format!("composition cache lock: {e}"))?;
+            .map_err(|e| anyhow!("composition cache lock: {e}"))?;
         for (slot, id) in ids.iter().enumerate() {
             let Some(id) = id else { continue };
             match cache.get(&(realm.clone(), *id)) {
@@ -161,7 +163,7 @@ pub async fn lookup_players_composition(
     if !fresh.is_empty() {
         let mut cache = COMPOSITION_CACHE
             .lock()
-            .map_err(|e| format!("composition cache lock: {e}"))?;
+            .map_err(|e| anyhow!("composition cache lock: {e}"))?;
         cache.extend(fresh);
     }
     Ok(results)
@@ -182,7 +184,7 @@ static RESOLVED_IDS: std::sync::LazyLock<std::sync::Mutex<HashMap<(String, Strin
 /// tauri command wrapper rejects the borrowed-stream variant). Global
 /// failures (bad realm, client build) error the whole call; per-name
 /// failures answer `None`.
-async fn resolve_account_ids(realm: &str, names: Vec<String>) -> Result<Vec<Option<i64>>, String> {
+async fn resolve_account_ids(realm: &str, names: Vec<String>) -> Result<Vec<Option<i64>>> {
     // Cache pass: answer the hits on the spot, resolve only the misses
     // (slot-tracked so the response order keeps matching the input).
     let mut out: Vec<Option<i64>> = vec![None; names.len()];
@@ -190,7 +192,7 @@ async fn resolve_account_ids(realm: &str, names: Vec<String>) -> Result<Vec<Opti
     {
         let cache = RESOLVED_IDS
             .lock()
-            .map_err(|e| format!("composition id cache lock: {e}"))?;
+            .map_err(|e| anyhow!("composition id cache lock: {e}"))?;
         for (slot, name) in names.iter().enumerate() {
             match cache.get(&(realm.to_string(), name.clone())) {
                 Some(id) => out[slot] = Some(*id),
@@ -207,7 +209,7 @@ async fn resolve_account_ids(realm: &str, names: Vec<String>) -> Result<Vec<Opti
     {
         let mut cache = RESOLVED_IDS
             .lock()
-            .map_err(|e| format!("composition id cache lock: {e}"))?;
+            .map_err(|e| anyhow!("composition id cache lock: {e}"))?;
         for ((slot, name), id) in misses.iter().zip(resolved.iter()) {
             if let Some(id) = id {
                 cache.insert((realm.to_string(), name.clone()), *id);
@@ -222,10 +224,7 @@ async fn resolve_account_ids(realm: &str, names: Vec<String>) -> Result<Vec<Opti
 /// misses. Same transports as before: CN routes to the vortex search
 /// (browser-UA client, see `wg_api_cn`); every other realm to the WG
 /// account/list endpoint.
-async fn resolve_account_ids_uncached(
-    realm: &str,
-    names: Vec<String>,
-) -> Result<Vec<Option<i64>>, String> {
+async fn resolve_account_ids_uncached(realm: &str, names: Vec<String>) -> Result<Vec<Option<i64>>> {
     if realm == "cn" {
         let cn_client = super::wg_api_cn::vortex_client()?;
         let client_ref = &cn_client;
@@ -242,11 +241,14 @@ async fn resolve_account_ids_uncached(
             .await)
     } else {
         let app_id = wg_realm::application_id(realm);
-        let host = wg_realm::api_host(realm)?;
-        let client = crate::commands::network::http_client_builder()?
+        // `wg_realm`'s host table stays String-typed (pinned by the wave-1
+        // lookup arms) — adapt verbatim, same for the network builder.
+        let host = wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
+        let client = crate::commands::network::http_client_builder()
+            .map_err(anyhow::Error::msg)?
             .timeout(Duration::from_secs(15))
             .build()
-            .map_err(|e| format!("http client: {e}"))?;
+            .map_err(|e| anyhow!("http client: {e}"))?;
         // Shared references (Copy) — each future captures its own copy, so
         // the closure stays movable (an owned capture would move the first
         // future's state out of the closure).
@@ -278,7 +280,7 @@ async fn resolve_ship_types(realm: &str, ship_ids: &[i64]) -> HashMap<i64, Optio
     {
         let cache = SHIP_TYPE_CACHE
             .lock()
-            .map_err(|e| format!("ship type cache lock: {e}"));
+            .map_err(|e| anyhow!("ship type cache lock: {e}"));
         match cache {
             Ok(cache) => {
                 for &id in ship_ids {
@@ -347,33 +349,36 @@ async fn resolve_ship_types(realm: &str, ship_ids: &[i64]) -> HashMap<i64, Optio
 /// class field. Returns {ship_id → class} for the ids the response carried.
 /// The CN cluster has no encyclopedia endpoint — `encyclopedia_host` already
 /// serves it from the ASIA API (ids are cluster-wide identical).
-async fn fetch_ship_types_online(realm: &str, ids: &[i64]) -> Result<HashMap<i64, String>, String> {
+async fn fetch_ship_types_online(realm: &str, ids: &[i64]) -> Result<HashMap<i64, String>> {
     let app_id = wg_realm::application_id(realm);
-    let host = wg_realm::encyclopedia_host(realm)?;
+    // Same String-typed host table boundary as above.
+    let host = wg_realm::encyclopedia_host(realm).map_err(anyhow::Error::msg)?;
     let id_list = ids
         .iter()
         .map(|i| i.to_string())
         .collect::<Vec<_>>()
         .join(",");
-    let client = crate::commands::network::http_client_builder()?
+    let client = crate::commands::network::http_client_builder()
+        .map_err(anyhow::Error::msg)?
         .timeout(Duration::from_secs(15))
         .build()
-        .map_err(|e| format!("http client: {e}"))?;
+        .map_err(|e| anyhow!("http client: {e}"))?;
     let url = format!(
         "https://{host}/wows/encyclopedia/ships/?application_id={app_id}\
          &ship_id={id_list}&language=en&fields=ship_id,type"
     );
-    let resp =
-        super::upstream_health::recorded_get(&client, host, "encyclopedia/ships", url).await?;
+    let resp = super::upstream_health::recorded_get(&client, host, "encyclopedia/ships", url)
+        .await
+        .map_err(anyhow::Error::msg)?;
     let parsed: WgResponse = resp
         .json()
         .await
-        .map_err(|e| format!("encyclopedia/ships parse: {e}"))?;
+        .map_err(|e| anyhow!("encyclopedia/ships parse: {e}"))?;
     if parsed.status != "ok" {
-        return Err(format!(
+        anyhow::bail!(
             "encyclopedia/ships: {}",
             parsed.error.message.unwrap_or_default()
-        ));
+        );
     }
     Ok(parsed
         .data

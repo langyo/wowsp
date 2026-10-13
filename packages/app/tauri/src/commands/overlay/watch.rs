@@ -1,4 +1,6 @@
 use super::*;
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
 // ─────────────────────────────────────────────────────────────────────────
 // Tab watcher
 // ─────────────────────────────────────────────────────────────────────────
@@ -18,10 +20,10 @@ struct TabWatcher {
 /// foreground window, anchors + shows the overlay on Tab down and hides it on
 /// Tab up / focus loss.
 #[tauri::command]
-pub async fn start_overlay_tab_watch(app: AppHandle) -> Result<(), String> {
+pub async fn start_overlay_tab_watch(app: AppHandle) -> CommandResult<()> {
     let mut guard = TAB_WATCHER
         .lock()
-        .map_err(|e| format!("watcher lock: {e}"))?;
+        .map_err(|e| anyhow!("watcher lock: {e}"))?;
     if guard
         .as_ref()
         .is_some_and(|w| !w.stop.load(Ordering::Relaxed))
@@ -38,7 +40,7 @@ pub async fn start_overlay_tab_watch(app: AppHandle) -> Result<(), String> {
     let handle = std::thread::Builder::new()
         .name("overlay-tab-watch".into())
         .spawn(move || watch_tab_loop(app, thread_stop))
-        .map_err(|e| format!("spawn tab watcher: {e}"))?;
+        .map_err(|e| anyhow!("spawn tab watcher: {e}"))?;
     *guard = Some(TabWatcher { stop, handle });
     tracing::info!("overlay tab watcher started");
     Ok(())
@@ -46,10 +48,10 @@ pub async fn start_overlay_tab_watch(app: AppHandle) -> Result<(), String> {
 
 /// Stop the Tab watcher.
 #[tauri::command]
-pub async fn stop_overlay_tab_watch() -> Result<(), String> {
+pub async fn stop_overlay_tab_watch() -> CommandResult<()> {
     let mut guard = TAB_WATCHER
         .lock()
-        .map_err(|e| format!("watcher lock: {e}"))?;
+        .map_err(|e| anyhow!("watcher lock: {e}"))?;
     if let Some(w) = guard.take() {
         w.stop.store(true, Ordering::Relaxed);
         // Leave the thread to exit on its own next tick; joining here would

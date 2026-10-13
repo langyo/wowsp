@@ -1,4 +1,6 @@
 use super::*;
+use anyhow::anyhow;
+use wowsp_tauri_shared::CommandResult;
 // ─────────────────────────────────────────────────────────────────────────
 // Window management
 // ─────────────────────────────────────────────────────────────────────────
@@ -13,7 +15,7 @@ pub async fn create_overlay_window(
     app: AppHandle,
     realm: Option<String>,
     locale: Option<String>,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     if app.get_webview_window(OVERLAY_LABEL).is_none() {
         // The overlay window loads a PRE-RENDERED static page (bare HTML +
         // CSS + a tiny vanilla listener, built as a second Vite entry) —
@@ -41,7 +43,7 @@ pub async fn create_overlay_window(
             .visible(false) // start hidden; shown on first Tab press
             .inner_size(420.0, 320.0)
             .build()
-            .map_err(|e| format!("create overlay window: {e}"))?;
+            .map_err(|e| anyhow!("create overlay window: {e}"))?;
         post_create_window_setup(&win);
     }
     start_overlay_tab_watch(app).await
@@ -51,7 +53,7 @@ pub async fn create_overlay_window(
 /// Also stops the arena file watcher — it is owned by the overlay window's
 /// store, and closing the webview skips Vue teardown.
 #[tauri::command]
-pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
+pub async fn destroy_overlay_window(app: AppHandle) -> CommandResult<()> {
     // Manual-locate leftovers must not outlive overlay mode: the main
     // window's picker layer is force-closed here (flag + close event), and
     // the stored anchor lives in the watcher's FSM ([`WatchFsm::
@@ -66,7 +68,7 @@ pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
         // user-initiated close (and is subject to close interception),
         // while this is pure programmatic teardown that must always go
         // through.
-        win.destroy().map_err(|e| format!("destroy overlay: {e}"))?;
+        win.destroy().map_err(|e| anyhow!("destroy overlay: {e}"))?;
     }
     Ok(())
 }
@@ -75,9 +77,11 @@ pub async fn destroy_overlay_window(app: AppHandle) -> Result<(), String> {
 /// Tab watcher is the authoritative visibility driver in normal operation.
 /// NEVER focuses the overlay — focus must stay on the game while playing.
 #[tauri::command]
-pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> CommandResult<()> {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
-        return Err("overlay window not created — call create_overlay_window first".into());
+        return Err(
+            anyhow!("overlay window not created — call create_overlay_window first").into(),
+        );
     };
     if visible {
         if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, true) {
@@ -95,7 +99,7 @@ pub async fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), St
         if let Err(e) = app.emit(OVERLAY_VISIBILITY_EVENT, false) {
             tracing::warn!(error = %e, "emit overlay-visibility failed");
         }
-        win.hide().map_err(|e| format!("hide overlay: {e}"))?;
+        win.hide().map_err(|e| anyhow!("hide overlay: {e}"))?;
     }
     Ok(())
 }

@@ -53,11 +53,14 @@
 //! only ever emitted for a complete, verified file) and finally
 //! `{ phase: "install" }` right before the spawn.
 
+use anyhow::{Result, anyhow, bail};
+
 use futures::StreamExt;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+use wowsp_tauri_shared::CommandResult;
 use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress};
 
@@ -101,9 +104,9 @@ impl UpdatePass {
         true
     }
 
-    fn check_cancelled(&self) -> Result<(), String> {
+    fn check_cancelled(&self) -> Result<()> {
         if *self.stage.lock().unwrap_or_else(|e| e.into_inner()) == UpdateStage::Cancelled {
-            Err(CANCEL_MSG.to_string())
+            bail!("{}", CANCEL_MSG)
         } else {
             Ok(())
         }
@@ -121,13 +124,10 @@ impl UpdatePass {
 
     /// Only wrap cancellable reads here. In particular, dropping the hub's
     /// waiter would leave its writer alive and let a retry reuse its path.
-    async fn run<T>(
-        &self,
-        operation: impl std::future::Future<Output = Result<T, String>>,
-    ) -> Result<T, String> {
+    async fn run<T>(&self, operation: impl std::future::Future<Output = Result<T>>) -> Result<T> {
         tokio::select! {
             biased;
-            () = self.cancelled() => Err(CANCEL_MSG.to_string()),
+            () = self.cancelled() => bail!("{}", CANCEL_MSG),
             result = operation => {
                 self.check_cancelled()?;
                 result
@@ -137,10 +137,10 @@ impl UpdatePass {
 
     /// The last cancellable point. Serialize this transition with cancel:
     /// once handoff starts, a late click must not claim installation stopped.
-    fn begin_install(&self) -> Result<(), String> {
+    fn begin_install(&self) -> Result<()> {
         let mut stage = self.stage.lock().unwrap_or_else(|e| e.into_inner());
         if *stage == UpdateStage::Cancelled {
-            return Err(CANCEL_MSG.to_string());
+            bail!("{}", CANCEL_MSG);
         }
         *stage = UpdateStage::Installing;
         Ok(())
@@ -261,7 +261,7 @@ fn asset_sha256(release: &serde_json::Value, name: &str) -> Option<String> {
 
 /// Fetch the official sha256 of the installer for `version`. Any failure
 /// is an `Err`: an installer that cannot be verified is never spawned.
-async fn fetch_official_sha256(client: &reqwest::Client, version: &str) -> Result<String, String> {
+async fn fetch_official_sha256(client: &reqwest::Client, version: &str) -> Result<String> {
     let url = release_api_url(version);
     let name = artifact_name(version);
     let mut last_err = String::new();
@@ -291,11 +291,11 @@ async fn fetch_official_sha256(client: &reqwest::Client, version: &str) -> Resul
             },
         };
         return asset_sha256(&release, &name)
-            .ok_or_else(|| format!("release v{version} publishes no sha256 digest for {name}"));
+            .ok_or_else(|| anyhow!("release v{version} publishes no sha256 digest for {name}"));
     }
-    Err(format!(
+    bail!(
         "cannot verify the update (official digest unavailable: {last_err}); download it manually from GitHub Releases"
-    ))
+    )
 }
 
 /// The parsed update-watch config (mirrors `shun::config::UpdateWatchConfig`;
@@ -306,9 +306,9 @@ struct WatchConfig {
     files: Vec<String>,
 }
 
-fn watch_config() -> Result<WatchConfig, String> {
+fn watch_config() -> Result<WatchConfig> {
     serde_json::from_str::<WatchConfig>(SHUN_UPDATE_JSON)
-        .map_err(|e| format!("embedded shun-update.json: {e}"))
+        .map_err(|e| anyhow!("embedded shun-update.json: {e}"))
 }
 
 // ── Source race (resolution) ─────────────────────────────────────────────
@@ -340,31 +340,24 @@ fn version_from_redirect(url: &str) -> Option<String> {
 
 /// GET `{base}/{marker}` and return the trimmed body — the candidate
 /// version. 200 + non-empty text makes the source reachable.
-async fn probe_marker(
-    client: &reqwest::Client,
-    base: &str,
-    marker: &str,
-) -> Result<String, String> {
+async fn probe_marker(client: &reqwest::Client, base: &str, marker: &str) -> Result<String> {
     let url = format!("{}/{}", base.trim().trim_end_matches('/'), marker);
     let response = client
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("probe {url}: {e}"))?;
+        .map_err(|e| anyhow!("probe {url}: {e}"))?;
     if response.status() != reqwest::StatusCode::OK {
-        return Err(format!(
-            "probe {url}: unexpected status {}",
-            response.status()
-        ));
+        bail!("probe {url}: unexpected status {}", response.status());
     }
     let version = response
         .text()
         .await
-        .map_err(|e| format!("probe {url}: {e}"))?
+        .map_err(|e| anyhow!("probe {url}: {e}"))?
         .trim()
         .to_string();
     if version.is_empty() {
-        return Err(format!("`latest` marker at {url} is empty"));
+        bail!("`latest` marker at {url} is empty");
     }
     Ok(version)
 }
@@ -372,23 +365,20 @@ async fn probe_marker(
 /// Resolve the latest version by following the source's `releases/latest`
 /// redirect and reading the tag out of the final URL. The body is never
 /// read — the redirected URL is the payload, then the connection drops.
-async fn probe_tag(client: &reqwest::Client, base: &str) -> Result<String, String> {
+async fn probe_tag(client: &reqwest::Client, base: &str) -> Result<String> {
     let url = tag_url_from_source(base);
     let response = client
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("probe {url}: {e}"))?;
+        .map_err(|e| anyhow!("probe {url}: {e}"))?;
     if response.status() != reqwest::StatusCode::OK {
-        return Err(format!(
-            "probe {url}: unexpected status {}",
-            response.status()
-        ));
+        bail!("probe {url}: unexpected status {}", response.status());
     }
     let final_url = response.url().to_string();
     drop(response);
     version_from_redirect(&final_url)
-        .ok_or_else(|| format!("probe {url}: redirect landed on a non-tag URL: {final_url}"))
+        .ok_or_else(|| anyhow!("probe {url}: redirect landed on a non-tag URL: {final_url}"))
 }
 
 /// Resolve the latest version from one source. The tag redirect is the
@@ -396,16 +386,12 @@ async fn probe_tag(client: &reqwest::Client, base: &str) -> Result<String, Strin
 /// forgotten marker file can never hide a published release. The legacy
 /// `latest` marker file stays as the compatibility fallback for mirrors
 /// that proxy the download mount but mangle the tag-page redirect.
-async fn probe_source(
-    client: &reqwest::Client,
-    base: &str,
-    marker: &str,
-) -> Result<String, String> {
+async fn probe_source(client: &reqwest::Client, base: &str, marker: &str) -> Result<String> {
     match probe_tag(client, base).await {
         Ok(version) => Ok(version),
         Err(tag_err) => probe_marker(client, base, marker)
             .await
-            .map_err(|marker_err| format!("tag probe: {tag_err}; marker probe: {marker_err}")),
+            .map_err(|marker_err| anyhow!("tag probe: {tag_err}; marker probe: {marker_err}")),
     }
 }
 
@@ -426,13 +412,13 @@ async fn race_sources(
     sources: &[String],
     marker: &str,
     collect_all: bool,
-) -> Result<Vec<SourceCandidate>, String> {
+) -> Result<Vec<SourceCandidate>> {
     let mut probes: futures::stream::FuturesUnordered<_> = sources
         .iter()
         .map(|base| async move {
             let probe = tokio::time::timeout(PROBE_TIMEOUT, probe_source(client, base, marker))
                 .await
-                .map_err(|_| format!("probe {base}: timed out after {}s", PROBE_TIMEOUT.as_secs()));
+                .map_err(|_| anyhow!("probe {base}: timed out after {}s", PROBE_TIMEOUT.as_secs()));
             (base.clone(), probe)
         })
         .collect();
@@ -449,7 +435,7 @@ async fn race_sources(
     drop(probes); // cancels still-pending probes at their await points
 
     if candidates.is_empty() {
-        return Err("no update source reachable".to_string());
+        bail!("no update source reachable");
     }
     Ok(candidates)
 }
@@ -457,13 +443,15 @@ async fn race_sources(
 /// Resolves the fastest mirror (first version resolution to arrive),
 /// returning the latest version plus the installer artifact URL under the
 /// winning source.
-async fn resolve_latest() -> Result<(String, String), String> {
+async fn resolve_latest() -> Result<(String, String)> {
     let watch = watch_config()?;
     let marker = watch
         .files
         .first()
-        .ok_or_else(|| "no marker file declared in the update sources".to_string())?;
-    let client = build_http_client()?;
+        .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
+    // `network::build_http_client` still speaks String errors — bridge
+    // verbatim (same rendered message).
+    let client = build_http_client().map_err(anyhow::Error::msg)?;
     let candidates = race_sources(&client, &watch.sources, marker, false).await?;
     let winner = &candidates[0];
     Ok((
@@ -503,7 +491,7 @@ pub struct UpdateInfo {
 /// returned as `Err` — the webui store surfaces them silently (AboutModal
 /// only); the startup auto-check must never nag the user.
 #[tauri::command]
-pub async fn update_check() -> Result<UpdateInfo, String> {
+pub async fn update_check() -> CommandResult<UpdateInfo> {
     let (version, _artifact_url) = resolve_latest().await?;
     let available = is_newer(&version, APP_VERSION);
     tracing::info!(latest = %version, current = APP_VERSION, available, "update check complete");
@@ -567,7 +555,7 @@ async fn cleanup_part_files(keep: Option<&std::path::Path>) {
 /// relaunches the new build, so the webui treats the unresolved promise /
 /// app exit as success by design.
 #[tauri::command]
-pub async fn update_download(app: AppHandle) -> Result<(), String> {
+pub async fn update_download(app: AppHandle) -> CommandResult<()> {
     // Collapse double triggers (banner + About button) into one pass.
     let Some(guard) = UpdateGuard::begin(&UPDATE_PASS) else {
         return Ok(());
@@ -575,10 +563,10 @@ pub async fn update_download(app: AppHandle) -> Result<(), String> {
     let result = update_download_inner(&app, &guard.pass).await;
     // Cancellation wins over an API/rename error racing with the click.
     guard.pass.check_cancelled()?;
-    result
+    result.map_err(Into::into)
 }
 
-async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(), String> {
+async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()> {
     // Drop a stale cancel pressed while no pass was registered (e.g.
     // during the previous pass's installer spawn tail) - THIS attempt is
     // user-initiated and must not inherit it.
@@ -593,8 +581,8 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
     let marker = watch
         .files
         .first()
-        .ok_or_else(|| "no marker file declared in the update sources".to_string())?;
-    let client = build_http_client()?;
+        .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
+    let client = build_http_client().map_err(anyhow::Error::msg)?;
     emit_phase(app, phase::RACE);
     let candidates = pass
         .run(race_sources(&client, &watch.sources, marker, true))
@@ -628,6 +616,9 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
     pass.check_cancelled()?;
 
     // ── Phase 2: queued transfer through the unified download hub ─────
+    // The hub still speaks String errors — bridge verbatim. Cancellation
+    // still wins over a transfer error racing with the click (the
+    // check_cancelled below runs after the boundary).
     let transferred = download_hub::transfer(
         Some(app),
         DownloadRequest {
@@ -646,7 +637,8 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
             ..DownloadRequest::new(JOB_ID, kind::UPDATE, sources, part_path)
         },
     )
-    .await;
+    .await
+    .map_err(anyhow::Error::msg);
     pass.check_cancelled()?;
     let done = transferred?;
     tracing::info!(%version, bytes = done.bytes, "installer artifact ready");
@@ -666,7 +658,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
         .await?;
         renamed = tokio::fs::rename(&done.path, &installer_path).await;
     }
-    renamed.map_err(|e| format!("assemble {}: {e}", installer_path.display()))?;
+    renamed.map_err(|e| anyhow!("assemble {}: {e}", installer_path.display()))?;
     cleanup_part_files(None).await;
 
     // Install over the directory the running exe lives in; the hardened
@@ -677,9 +669,9 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
     // asked → checked), refreshing launchers in place — paths are
     // stable, so existing links stay valid.
     let install_dir = std::env::current_exe()
-        .map_err(|e| format!("resolve current exe: {e}"))?
+        .map_err(|e| anyhow!("resolve current exe: {e}"))?
         .parent()
-        .ok_or_else(|| "current exe has no parent directory".to_string())?
+        .ok_or_else(|| anyhow!("current exe has no parent directory"))?
         .to_path_buf();
     // Tell the webui the install phase started even though the spawned
     // installer may kill this app before the command's promise settles.
@@ -688,7 +680,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
     std::process::Command::new(&installer_path)
         .args(["--silent", &format!("--dir={}", install_dir.display())])
         .spawn()
-        .map_err(|e| format!("spawn installer {}: {e}", installer_path.display()))?;
+        .map_err(|e| anyhow!("spawn installer {}: {e}", installer_path.display()))?;
     // The last line the running build writes before the installer kills it —
     // when an update reports "nothing happened", this is the fork in the
     // trail: present here means the handoff succeeded.
@@ -702,7 +694,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<(),
 /// returns `Err("update cancelled")`, which the frontend treats as a clean
 /// reset. A no-op between passes or after installer handoff begins.
 #[tauri::command]
-pub fn update_cancel() -> Result<(), String> {
+pub fn update_cancel() -> CommandResult<()> {
     // Keep the registration locked until the hub sees the cancel, so the
     // previous pass cannot leave a pending cancel in a newly started pass.
     let active = UPDATE_PASS.lock().unwrap_or_else(|e| e.into_inner());
@@ -757,40 +749,40 @@ mod tests {
         server.abort();
         let (result, ()) =
             outcome.expect("cancel must not wait for the lookup's 20-second timeout");
-        assert_eq!(result, Err(CANCEL_MSG.to_string()));
+        assert_eq!(result.unwrap_err().to_string(), CANCEL_MSG);
     }
 
     #[tokio::test]
     async fn cancellation_wins_over_a_lookup_error_in_the_same_poll() {
         let pass = UpdatePass::default();
-        let result: Result<(), String> = pass
+        let result: Result<()> = pass
             .run(async {
                 assert!(pass.cancel());
-                Err("official digest unavailable".to_string())
+                Err(anyhow!("official digest unavailable"))
             })
             .await;
-        assert_eq!(result, Err(CANCEL_MSG.to_string()));
+        assert_eq!(result.unwrap_err().to_string(), CANCEL_MSG);
     }
 
     #[tokio::test]
     async fn cancellation_before_lookup_never_polls_the_request() {
         let pass = UpdatePass::default();
         assert!(pass.cancel());
-        let result: Result<(), String> = pass
+        let result: Result<()> = pass
             .run(async { panic!("a cancelled pass must not start another request") })
             .await;
-        assert_eq!(result, Err(CANCEL_MSG.to_string()));
+        assert_eq!(result.unwrap_err().to_string(), CANCEL_MSG);
     }
 
     #[tokio::test]
     async fn an_uncancelled_lookup_preserves_integrity_errors() {
         let pass = UpdatePass::default();
-        let result: Result<(), String> = pass
-            .run(async { Err("release publishes no sha256 digest".to_string()) })
+        let result: Result<()> = pass
+            .run(async { Err(anyhow!("release publishes no sha256 digest")) })
             .await;
         assert_eq!(
-            result,
-            Err("release publishes no sha256 digest".to_string())
+            result.unwrap_err().to_string(),
+            "release publishes no sha256 digest"
         );
     }
 
@@ -798,7 +790,7 @@ mod tests {
     fn cancelled_pass_cannot_hand_off_to_the_installer() {
         let pass = UpdatePass::default();
         assert!(pass.cancel());
-        assert_eq!(pass.begin_install(), Err(CANCEL_MSG.to_string()));
+        assert_eq!(pass.begin_install().unwrap_err().to_string(), CANCEL_MSG);
     }
 
     #[test]
@@ -806,7 +798,7 @@ mod tests {
         let pass = UpdatePass::default();
         pass.begin_install().unwrap();
         assert!(!pass.cancel());
-        assert_eq!(pass.check_cancelled(), Ok(()));
+        assert!(pass.check_cancelled().is_ok());
     }
 
     #[test]
@@ -819,7 +811,7 @@ mod tests {
         drop(first);
         let retry = UpdateGuard::begin(&registry).unwrap();
         previous.cancel();
-        assert_eq!(retry.pass.check_cancelled(), Ok(()));
+        assert!(retry.pass.check_cancelled().is_ok());
     }
 
     #[test]

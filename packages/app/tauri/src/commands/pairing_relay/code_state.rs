@@ -1,3 +1,5 @@
+use anyhow::{Result, bail};
+
 use super::*;
 // ── live pairing-code state (desktop) ────────────────────────────────────────
 
@@ -40,10 +42,7 @@ pub(super) fn store_code(code: Option<String>) {
 /// always fresh — the directory guarantees uniqueness among live codes), or
 /// time out. Used both for the first allocation at server start and for the
 /// regenerate button.
-pub(super) async fn wait_for_new_code(
-    prev: Option<&str>,
-    timeout: Duration,
-) -> Result<String, String> {
+pub(super) async fn wait_for_new_code(prev: Option<&str>, timeout: Duration) -> Result<String> {
     let mut rx = code_watch().subscribe();
     let deadline = std::time::Instant::now() + timeout;
     loop {
@@ -55,18 +54,18 @@ pub(super) async fn wait_for_new_code(
         }
         let now = std::time::Instant::now();
         if now >= deadline {
-            return Err("pairing code allocation timed out".to_string());
+            bail!("pairing code allocation timed out");
         }
         if tokio::time::timeout(deadline - now, rx.changed())
             .await
             .is_err()
         {
-            return Err("pairing code allocation timed out".to_string());
+            bail!("pairing code allocation timed out");
         }
     }
 }
 
 /// Bounded wait for the FIRST allocation of a fresh session.
-pub async fn wait_for_code(timeout: Duration) -> Result<String, String> {
+pub async fn wait_for_code(timeout: Duration) -> Result<String> {
     wait_for_new_code(None, timeout).await
 }

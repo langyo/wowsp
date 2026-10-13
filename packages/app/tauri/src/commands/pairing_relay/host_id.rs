@@ -1,3 +1,5 @@
+use anyhow::{Result, anyhow};
+
 use super::*;
 /// The persistent host identity file (32 hex chars, created on first use).
 pub(super) const HOST_ID_FILE: &str = "pairing-host-id.txt";
@@ -37,8 +39,8 @@ fn valid_host_id(s: &str) -> bool {
     s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-fn random_host_id() -> Result<String, String> {
+fn random_host_id() -> Result<String> {
     let mut buf = [0u8; 16];
-    getrandom::fill(&mut buf).map_err(|e| format!("os entropy: {e}"))?;
+    getrandom::fill(&mut buf).map_err(|e| anyhow!("os entropy: {e}"))?;
     Ok(hex::encode(buf))
 }

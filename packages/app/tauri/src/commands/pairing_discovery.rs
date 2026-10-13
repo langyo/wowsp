@@ -29,13 +29,15 @@
 //! Both directions share the pure core below ([`parse_broadcast`],
 //! [`DiscoveryTable`]) so the behavior is unit-testable without sockets.
 
+use anyhow::{Result, anyhow};
+
 use std::net::SocketAddr;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
-use wowsp_tauri_shared::{DiscoveredHost, DiscoverySnapshot};
+use wowsp_tauri_shared::{CommandResult, DiscoveredHost, DiscoverySnapshot};
 
 /// UDP port the broadcaster targets and the listener binds. Distinct from
 /// the pairing HTTP port (58041) so a desktop can run both roles at once.
@@ -233,21 +235,21 @@ fn broadcast_state() -> &'static Mutex<Option<BroadcastState>> {
 /// running broadcaster is left alone — the caller restarts it only through
 /// an explicit [`broadcast_stop`] first (server stop/start does exactly that).
 #[cfg(desktop)]
-pub fn broadcast_start(port: u16, relay_url: Option<String>) -> Result<(), String> {
+pub fn broadcast_start(port: u16, relay_url: Option<String>) -> Result<()> {
     let mut st = broadcast_state().lock().unwrap_or_else(|p| p.into_inner());
     if st.is_some() {
         return Ok(());
     }
     let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, 0))
-        .map_err(|e| format!("bind discovery broadcaster: {e}"))?;
+        .map_err(|e| anyhow!("bind discovery broadcaster: {e}"))?;
     socket
         .set_broadcast(true)
-        .map_err(|e| format!("discovery broadcast flag: {e}"))?;
+        .map_err(|e| anyhow!("discovery broadcast flag: {e}"))?;
     // Nonblocking is what tokio's from_std adoption requires; the socket
     // is only ever written to, so no read timeout applies.
     socket.set_nonblocking(true).ok();
     let socket = tokio::net::UdpSocket::from_std(socket)
-        .map_err(|e| format!("adopt discovery broadcaster: {e}"))?;
+        .map_err(|e| anyhow!("adopt discovery broadcaster: {e}"))?;
 
     let payload = BroadcastPayload {
         magic: DISCOVERY_MAGIC.to_string(),
@@ -320,7 +322,7 @@ fn listener_state() -> &'static Mutex<Option<ListenerState>> {
 /// snapshots land on [`DISCOVERY_EVENT`]; the caller (wizard) must call
 /// `pairing_discovery_stop` on close.
 #[tauri::command]
-pub fn pairing_discovery_start(app: AppHandle) -> Result<(), String> {
+pub fn pairing_discovery_start(app: AppHandle) -> CommandResult<()> {
     let mut st = listener_state().lock().unwrap_or_else(|p| p.into_inner());
     if st.is_some() {
         return Ok(());
@@ -328,18 +330,18 @@ pub fn pairing_discovery_start(app: AppHandle) -> Result<(), String> {
     let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, DISCOVERY_PORT))
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::AddrInUse {
-                format!("discovery port {DISCOVERY_PORT} is already in use")
+                anyhow!("discovery port {DISCOVERY_PORT} is already in use")
             } else {
-                format!("bind discovery listener: {e}")
+                anyhow!("bind discovery listener: {e}")
             }
         })?;
     // tokio's from_std adoption requires a nonblocking socket; recv_from
     // then parks on readiness, so no read timeout is involved.
     socket
         .set_nonblocking(true)
-        .map_err(|e| format!("discovery listener nonblocking: {e}"))?;
+        .map_err(|e| anyhow!("discovery listener nonblocking: {e}"))?;
     let socket = tokio::net::UdpSocket::from_std(socket)
-        .map_err(|e| format!("adopt discovery listener: {e}"))?;
+        .map_err(|e| anyhow!("adopt discovery listener: {e}"))?;
 
     let (tx, mut rx) = tokio::sync::watch::channel(false);
     let task = tokio::spawn(async move {
@@ -389,7 +391,7 @@ pub fn pairing_discovery_start(app: AppHandle) -> Result<(), String> {
 /// (the task parks on the shutdown watch between datagrams), with an
 /// abort fallback so a wedged loop can never pin the port.
 #[tauri::command]
-pub async fn pairing_discovery_stop() -> Result<(), String> {
+pub async fn pairing_discovery_stop() -> CommandResult<()> {
     let joined = listener_state()
         .lock()
         .unwrap_or_else(|p| p.into_inner())

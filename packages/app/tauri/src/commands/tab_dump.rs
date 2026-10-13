@@ -33,6 +33,8 @@
 //! panic the watcher thread nor disturb the overlay pipeline this hook sits
 //! inside.
 
+use anyhow::{Result, anyhow};
+
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -235,25 +237,25 @@ fn write_dump_files(
     frame_png: &[u8],
     arena_json: &str,
     anchor: &OverlayAnchor,
-) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+) -> Result<()> {
+    std::fs::create_dir_all(dir).map_err(|e| anyhow!("create {}: {e}", dir.display()))?;
     let anchor_json =
-        serde_json::to_string_pretty(anchor).map_err(|e| format!("serialize anchor: {e}"))?;
+        serde_json::to_string_pretty(anchor).map_err(|e| anyhow!("serialize anchor: {e}"))?;
     std::fs::write(
         dir.join(format!("tab-{stem}{variant}.frame.png")),
         frame_png,
     )
-    .map_err(|e| format!("write frame png: {e}"))?;
+    .map_err(|e| anyhow!("write frame png: {e}"))?;
     std::fs::write(
         dir.join(format!("tab-{stem}{variant}.arena.json")),
         arena_json,
     )
-    .map_err(|e| format!("write arena json: {e}"))?;
+    .map_err(|e| anyhow!("write arena json: {e}"))?;
     std::fs::write(
         dir.join(format!("tab-{stem}{variant}.anchor.json")),
         anchor_json,
     )
-    .map_err(|e| format!("write anchor json: {e}"))?;
+    .map_err(|e| anyhow!("write anchor json: {e}"))?;
     Ok(())
 }
 

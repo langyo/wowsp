@@ -31,12 +31,14 @@
 //! and the `sync_active_account` command lets the main window push its
 //! selection changes immediately instead of waiting for the file refresh.
 
+use anyhow::{Result, anyhow};
+
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use tauri::{AppHandle, Emitter};
 use wowsp_tauri_shared::{
-    AccountProfile, PlayingAccount, PlayingSource, SessionPlayer, SessionSnapshot,
+    AccountProfile, CommandResult, PlayingAccount, PlayingSource, SessionPlayer, SessionSnapshot,
 };
 
 /// Tauri event emitted to ALL windows whenever the resolved snapshot
@@ -582,7 +584,7 @@ pub fn sync_active_account(
     app: AppHandle,
     realm: Option<String>,
     account_id: Option<i64>,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     with_state(|state| {
         state.active = match (realm, account_id) {
             (Some(r), Some(id)) if !r.is_empty() => Some((r, id)),
@@ -606,7 +608,7 @@ pub fn sync_active_account(
 /// process. Never spawned on mobile — no tray panel, no game process and no
 /// arena file to feed it.
 #[cfg(desktop)]
-pub fn spawn_session_poller(app: AppHandle) -> Result<(), String> {
+pub fn spawn_session_poller(app: AppHandle) -> Result<()> {
     std::thread::Builder::new()
         .name("wowsp-session".into())
         .spawn(move || {
@@ -648,7 +650,7 @@ pub fn spawn_session_poller(app: AppHandle) -> Result<(), String> {
             }
         })
         .map(|_| ())
-        .map_err(|e| format!("failed to spawn the session poller thread: {e}"))
+        .map_err(|e| anyhow!("failed to spawn the session poller thread: {e}"))
 }
 
 // ── tests ───────────────────────────────────────────────────────────────────

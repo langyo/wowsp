@@ -6,17 +6,24 @@
 //! solid background lives on the webui side — this module only manages the
 //! imported files, so no metadata JSON is needed.
 
+use anyhow::{Result, anyhow};
+
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+
+use wowsp_tauri_shared::CommandResult;
 
 use crate::paths;
 
 /// The fixed wallpaper subdirectory of the app data root
 /// (`%APPDATA%/WoWSP/wallpapers/` locally, `<exe>/data/wallpapers/` in
 /// portable mode), created on first use.
-fn wallpapers_dir() -> Result<PathBuf, String> {
-    let dir = paths::ensure_data_dir()?.join("wallpapers");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {:?}: {e}", dir))?;
+fn wallpapers_dir() -> Result<PathBuf> {
+    // `paths` still speaks String errors — bridge verbatim.
+    let dir = paths::ensure_data_dir()
+        .map_err(anyhow::Error::msg)?
+        .join("wallpapers");
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {:?}: {e}", dir))?;
     Ok(dir)
 }
 
@@ -74,10 +81,10 @@ fn to_entry(path: PathBuf) -> Option<WallpaperFile> {
 
 /// List the imported wallpapers, sorted by file name for a stable order.
 #[tauri::command]
-pub fn wallpaper_list() -> Result<Vec<WallpaperFile>, String> {
+pub fn wallpaper_list() -> CommandResult<Vec<WallpaperFile>> {
     let dir = wallpapers_dir()?;
     let mut ids: Vec<String> = std::fs::read_dir(&dir)
-        .map_err(|e| format!("read {dir:?}: {e}"))?
+        .map_err(|e| anyhow!("read {dir:?}: {e}"))?
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| is_image_file(n))
@@ -94,12 +101,12 @@ pub fn wallpaper_list() -> Result<Vec<WallpaperFile>, String> {
 /// renames avoid collisions with same-named imports). Returns the new entry,
 /// or `None` when the dialog was cancelled.
 #[tauri::command]
-pub async fn wallpaper_import() -> Result<Option<WallpaperFile>, String> {
+pub async fn wallpaper_import() -> CommandResult<Option<WallpaperFile>> {
     // Mobile: no native image picker (rfd has no Android backend) — the
     // mobile UI uses the system photo picker in a later phase.
     #[cfg(mobile)]
     {
-        return Err(crate::mobile_unsupported::PICKER.into());
+        return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
     }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread (same rule as
@@ -116,7 +123,7 @@ pub async fn wallpaper_import() -> Result<Option<WallpaperFile>, String> {
                 .pick_file()
         })
         .await
-        .map_err(|e| format!("wallpaper picker task failed: {e}"))?;
+        .map_err(|e| anyhow!("wallpaper picker task failed: {e}"))?;
 
         let Some(src) = picked else {
             return Ok(None);
@@ -125,17 +132,17 @@ pub async fn wallpaper_import() -> Result<Option<WallpaperFile>, String> {
         // — reject anything the listing wouldn't accept instead of importing a
         // wallpaper that can never resolve.
         let Some(file_name) = src.file_name().and_then(|n| n.to_str()) else {
-            return Err("picked file has no usable name".into());
+            return Err(anyhow!("picked file has no usable name").into());
         };
         if !is_image_file(file_name) {
-            return Err(format!("unsupported wallpaper type: {file_name}"));
+            return Err(anyhow!("unsupported wallpaper type: {file_name}").into());
         }
         let ext = src
             .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_ascii_lowercase())
             .unwrap_or_else(|| "png".into());
-        import_image(&src, &ext).await.map(Some)
+        import_image(&src, &ext).await.map(Some).map_err(Into::into)
     }
 }
 
@@ -143,13 +150,13 @@ pub async fn wallpaper_import() -> Result<Option<WallpaperFile>, String> {
 /// `wallpaper-<nanos>.<ext>` name (user files keep their originals; renames
 /// avoid collisions with same-named imports). Shared tail of the import
 /// command so future mobile import paths (photo-picker bytes) reuse it.
-async fn import_image(src: &Path, ext: &str) -> Result<WallpaperFile, String> {
+async fn import_image(src: &Path, ext: &str) -> Result<WallpaperFile> {
     let dir = wallpapers_dir()?;
     let dest_name = format!(
         "wallpaper-{}.{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| format!("clock error: {e}"))?
+            .map_err(|e| anyhow!("clock error: {e}"))?
             .as_nanos(),
         ext
     );
@@ -162,29 +169,29 @@ async fn import_image(src: &Path, ext: &str) -> Result<WallpaperFile, String> {
         let result = std::fs::copy(&src, &part)
             .map(|_| ())
             .and_then(|()| std::fs::rename(&part, &dest))
-            .map_err(|e| format!("copy wallpaper: {e}"));
+            .map_err(|e| anyhow!("copy wallpaper: {e}"));
         if result.is_err() {
             let _ = std::fs::remove_file(&part);
         }
         result
     })
     .await
-    .map_err(|e| format!("wallpaper copy task failed: {e}"))??;
-    to_entry(dir.join(dest_name)).ok_or_else(|| "imported wallpaper missing after copy".into())
+    .map_err(|e| anyhow!("wallpaper copy task failed: {e}"))??;
+    to_entry(dir.join(dest_name)).ok_or_else(|| anyhow!("imported wallpaper missing after copy"))
 }
 
 /// Delete an imported wallpaper by id (bare file name inside the dir).
 /// Idempotent (missing file is OK).
 #[tauri::command]
-pub fn wallpaper_remove(id: String) -> Result<(), String> {
+pub fn wallpaper_remove(id: String) -> CommandResult<()> {
     if !is_valid_wallpaper_id(&id) {
-        return Err(format!("invalid wallpaper id {id:?}"));
+        return Err(anyhow!("invalid wallpaper id {id:?}").into());
     }
     let path = wallpapers_dir()?.join(&id);
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("remove {path:?}: {e}")),
+        Err(e) => Err(anyhow!("remove {path:?}: {e}").into()),
     }
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use wowsp_tauri_shared::CommandResult;
 // ─────────────────────────────────────────────────────────────────────────
 // Capture + anchor computation
 // ─────────────────────────────────────────────────────────────────────────
@@ -254,7 +255,7 @@ fn window_style_bits(hwnd: windows::Win32::Foundation::HWND) -> u64 {
 /// set — normal operation needs nothing but the anchor, and shipping a
 /// full-screen PNG on every Tab press would be wasteful.
 #[tauri::command]
-pub async fn capture_game_window() -> Result<CaptureResult, String> {
+pub async fn capture_game_window() -> CommandResult<CaptureResult> {
     #[cfg(target_os = "windows")]
     {
         let Some(game) = find_game_window() else {

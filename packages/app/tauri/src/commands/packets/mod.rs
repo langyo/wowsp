@@ -16,6 +16,8 @@
 //! Battle-effect arg layouts come from the per-version `alias.xml` type
 //! definitions: `SHOTS_PACK` / `TORPEDOES_PACK` / `receive_*MinimapSquadron`.
 
+use anyhow::{Result, anyhow, bail};
+
 use std::collections::BTreeMap;
 use std::io::Read;
 
@@ -334,7 +336,7 @@ pub fn decode_replay(
     ship_id_candidates: &std::collections::HashSet<u32>,
     client_version: Option<&str>,
     lesta: bool,
-) -> Result<DecodedReplay, String> {
+) -> Result<DecodedReplay> {
     decode_replay_with(
         packet_stream,
         ship_id_candidates,
@@ -359,7 +361,7 @@ pub fn decode_replay_partial(
     ship_id_candidates: &std::collections::HashSet<u32>,
     client_version: Option<&str>,
     lesta: bool,
-) -> Result<DecodedReplay, String> {
+) -> Result<DecodedReplay> {
     decode_replay_with(
         packet_stream,
         ship_id_candidates,
@@ -376,7 +378,7 @@ fn decode_replay_with(
     client_version: Option<&str>,
     lesta: bool,
     tolerate_truncation: bool,
-) -> Result<DecodedReplay, String> {
+) -> Result<DecodedReplay> {
     let decrypted = decrypt_stream(packet_stream)?;
     let inflated = if tolerate_truncation {
         inflate_zlib_partial(&decrypted)?
@@ -450,9 +452,9 @@ fn parse_version_key(v: &str) -> Option<(u32, u32, u32)> {
 /// Blowfish-ECB decrypt with the WoWS key + XOR chain. Skips the first 8-byte
 /// block (a replay-format marker the client writes). The XOR chain mixes each
 /// decrypted plaintext block with the previous plaintext block (NOT ciphertext).
-fn decrypt_stream(dirty: &[u8]) -> Result<Vec<u8>, String> {
+fn decrypt_stream(dirty: &[u8]) -> Result<Vec<u8>> {
     let cipher = WowsBlowfish::new_from_slice(&WOWS_BLOWFISH_KEY)
-        .map_err(|_| "invalid Blowfish key length".to_string())?;
+        .map_err(|_| anyhow!("invalid Blowfish key length"))?;
     let mut out = Vec::with_capacity(dirty.len());
     let mut prev_plain: Option<i64> = None;
     let mut blocks = dirty.chunks_exact(8);
@@ -486,7 +488,7 @@ pub(crate) const MAX_INFLATED_STREAM_BYTES: usize = 256 * 1024 * 1024;
 
 /// zlib-decompress the decrypted stream, bounded by
 /// [`MAX_INFLATED_STREAM_BYTES`].
-fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
+fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>> {
     inflate_zlib_with_cap(decrypted, MAX_INFLATED_STREAM_BYTES)
 }
 
@@ -496,16 +498,16 @@ fn inflate_zlib(decrypted: &[u8]) -> Result<Vec<u8>, String> {
 /// decompressed size strictly exceeds `cap` is rejected instead of being
 /// buffered whole — a decompression-bomb guard, not a fidelity trade-off
 /// (every real stream stays far under the cap).
-pub(crate) fn inflate_zlib_with_cap(decrypted: &[u8], cap: usize) -> Result<Vec<u8>, String> {
+pub(crate) fn inflate_zlib_with_cap(decrypted: &[u8], cap: usize) -> Result<Vec<u8>> {
     let mut dec = ZlibDecoder::new(decrypted).take(cap as u64 + 1);
     let mut out = Vec::new();
     dec.read_to_end(&mut out)
-        .map_err(|e| format!("zlib inflate: {e}"))?;
+        .map_err(|e| anyhow!("zlib inflate: {e}"))?;
     if out.len() > cap {
-        return Err(format!(
+        bail!(
             "zlib inflate: decompressed stream exceeds the {cap}-byte cap; \
              the replay may be corrupted or malicious"
-        ));
+        );
     }
     Ok(out)
 }
@@ -516,7 +518,7 @@ pub(crate) fn inflate_zlib_with_cap(decrypted: &[u8], cap: usize) -> Result<Vec<
 /// not an error here, but the signal to keep the bytes decompressed so far
 /// (the frame walk then stops at the last complete frame). Every other error
 /// kind (corrupt data, the size cap) still rejects the stream.
-fn inflate_zlib_partial(decrypted: &[u8]) -> Result<Vec<u8>, String> {
+fn inflate_zlib_partial(decrypted: &[u8]) -> Result<Vec<u8>> {
     let cap = MAX_INFLATED_STREAM_BYTES;
     let mut dec = ZlibDecoder::new(decrypted).take(cap as u64 + 1);
     let mut out = Vec::new();
@@ -542,15 +544,15 @@ fn inflate_zlib_partial(decrypted: &[u8]) -> Result<Vec<u8>, String> {
                 if !out.is_empty() {
                     break;
                 }
-                return Err(format!("zlib inflate: {e}"));
+                return Err(anyhow!("zlib inflate: {e}"));
             },
         }
     }
     if out.len() > cap {
-        return Err(format!(
+        bail!(
             "zlib inflate: decompressed stream exceeds the {cap}-byte cap; \
              the replay may be corrupted or malicious"
-        ));
+        );
     }
     Ok(out)
 }

@@ -1,3 +1,7 @@
+use anyhow::{Result, anyhow, bail};
+
+use wowsp_tauri_shared::CommandResult;
+
 use super::*;
 // ── desktop host bridge ──────────────────────────────────────────────────────
 
@@ -36,11 +40,7 @@ pub(super) fn session_present() -> bool {
 /// other resolution failure degrades to legacy direct mode. The room is the
 /// 64-hex random id minted by the pairing server for this run.
 #[cfg(desktop)]
-pub async fn host_session_start(
-    relay_root: &str,
-    local_port: u16,
-    room: &str,
-) -> Result<(), String> {
+pub async fn host_session_start(relay_root: &str, local_port: u16, room: &str) -> Result<()> {
     let _lifecycle = session_gate().lock().await;
     {
         let st = host_slot().lock().unwrap_or_else(|p| p.into_inner());
@@ -49,7 +49,7 @@ pub async fn host_session_start(
         }
     }
     if !valid_room(room) {
-        return Err("invalid relay room key".to_string());
+        bail!("invalid relay room key");
     }
     let resolution = resolve_gateway_cached(relay_root).await?;
     let info = gateway_info_of(&resolution);
@@ -93,18 +93,17 @@ pub async fn host_session_stop() {
 /// regenerate button): the worker replaces the room's old code (one active
 /// code per host) and the new one lands in the live state + status.
 #[cfg(desktop)]
-pub async fn host_reallocate() -> Result<String, String> {
+pub async fn host_reallocate() -> Result<String> {
     let alloc = host_slot()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .as_ref()
         .map(|s| s.alloc_req.clone());
     let Some(tx) = alloc else {
-        return Err("the internet relay session is not running".to_string());
+        bail!("the internet relay session is not running");
     };
     let prev = current_relay_code();
-    tx.send(())
-        .map_err(|_| "relay session stopped".to_string())?;
+    tx.send(()).map_err(|_| anyhow!("relay session stopped"))?;
     wait_for_new_code(prev.as_deref(), Duration::from_secs(15)).await
 }
 
@@ -112,10 +111,10 @@ pub async fn host_reallocate() -> Result<String, String> {
 /// fresh code over the live control WS and reports the new status (whose
 /// `pin` now carries the new code).
 #[tauri::command]
-pub async fn pairing_reallocate_code() -> Result<PairingStatus, String> {
+pub async fn pairing_reallocate_code() -> CommandResult<PairingStatus> {
     #[cfg(mobile)]
     {
-        return Err(crate::mobile_unsupported::PAIRING.to_string());
+        return Err(anyhow!(crate::mobile_unsupported::PAIRING).into());
     }
     #[cfg(desktop)]
     {

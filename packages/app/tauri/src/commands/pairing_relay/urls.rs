@@ -1,3 +1,5 @@
+use anyhow::{Result, anyhow};
+
 use super::*;
 // ── URL / key helpers (all targets, pure) ────────────────────────────────────
 
@@ -31,10 +33,10 @@ fn strip_scheme_ci<'a>(url: &'a str, scheme: &str) -> Option<&'a str> {
 /// `ws:`→`http:`, a bare host gets `https://`. A path prefix on the root is
 /// allowed (routed gateways). Returns Err on anything that cannot be a
 /// gateway origin.
-pub fn normalize_relay_root(raw: &str) -> Result<String, String> {
+pub fn normalize_relay_root(raw: &str) -> Result<String> {
     let url = raw.trim();
     if url.is_empty() {
-        return Err("relay URL is empty".to_string());
+        return Err(anyhow!("relay URL is empty"));
     }
     let out = if let Some(rest) = strip_scheme_ci(url, "https://") {
         format!("https://{}", rest.trim_end_matches('/'))
@@ -45,7 +47,7 @@ pub fn normalize_relay_root(raw: &str) -> Result<String, String> {
     } else if let Some(rest) = strip_scheme_ci(url, "ws://") {
         format!("http://{}", rest.trim_end_matches('/'))
     } else if url.contains("://") || url.starts_with('/') {
-        return Err(format!("unsupported relay URL scheme: {raw}"));
+        return Err(anyhow!("unsupported relay URL scheme: {raw}"));
     } else {
         format!("https://{}", url.trim_end_matches('/'))
     };
@@ -55,7 +57,7 @@ pub fn normalize_relay_root(raw: &str) -> Result<String, String> {
         || after_scheme.starts_with('/')
         || after_scheme.contains("://")
     {
-        return Err(format!("unsupported relay URL: {raw}"));
+        return Err(anyhow!("unsupported relay URL: {raw}"));
     }
     Ok(out)
 }
@@ -64,10 +66,10 @@ pub fn normalize_relay_root(raw: &str) -> Result<String, String> {
 /// trailing slash, and map the scheme (`https:` → `wss:`, `http:` → `ws:`;
 /// a bare host gets `wss:`). Returns Err on anything that cannot plausibly
 /// be a worker origin.
-pub fn normalize_relay_ws_url(raw: &str) -> Result<String, String> {
+pub fn normalize_relay_ws_url(raw: &str) -> Result<String> {
     let url = raw.trim().trim_end_matches('/');
     if url.is_empty() {
-        return Err("relay URL is empty".to_string());
+        return Err(anyhow!("relay URL is empty"));
     }
     let lowered = url.to_ascii_lowercase();
     let out = if let Some(rest) = lowered.strip_prefix("https://") {
@@ -77,7 +79,7 @@ pub fn normalize_relay_ws_url(raw: &str) -> Result<String, String> {
     } else if lowered.starts_with("wss://") || lowered.starts_with("ws://") {
         url.to_string()
     } else if lowered.contains("://") || lowered.starts_with('/') {
-        return Err(format!("unsupported relay URL scheme: {raw}"));
+        return Err(anyhow!("unsupported relay URL scheme: {raw}"));
     } else {
         format!("wss://{url}")
     };
@@ -85,7 +87,7 @@ pub fn normalize_relay_ws_url(raw: &str) -> Result<String, String> {
     // domain path) as long as it stays path-shaped.
     let after_scheme = out.split_once("://").map(|(_, r)| r).unwrap_or(&out);
     if after_scheme.is_empty() || after_scheme.starts_with('?') || after_scheme.contains("://") {
-        return Err(format!("unsupported relay URL: {raw}"));
+        return Err(anyhow!("unsupported relay URL: {raw}"));
     }
     Ok(out)
 }
@@ -109,10 +111,10 @@ pub(super) fn ws_base_of_root(root: &str) -> String {
 /// absolute URL must already be ws/wss (the tunneled protocol is
 /// WebSocket-only; `wss` in production, `ws` tolerated for local
 /// development against plain loopback gateways).
-pub(super) fn resolve_relay_endpoint(root: &str, relay: &str) -> Result<String, String> {
+pub(super) fn resolve_relay_endpoint(root: &str, relay: &str) -> Result<String> {
     let relay = relay.trim();
     if relay.is_empty() {
-        return Err("manifest has no relay endpoint".to_string());
+        return Err(anyhow!("manifest has no relay endpoint"));
     }
     if let Some(rest) = strip_scheme_ci(relay, "wss://") {
         return Ok(format!("wss://{rest}"));
@@ -121,14 +123,14 @@ pub(super) fn resolve_relay_endpoint(root: &str, relay: &str) -> Result<String, 
         return Ok(format!("ws://{rest}"));
     }
     if !relay.starts_with('/') {
-        return Err(format!(
+        return Err(anyhow!(
             "manifest relay endpoint must be a wss URL or a path: {relay}"
         ));
     }
     let after_scheme = root.split_once("://").map(|(_, r)| r).unwrap_or(root);
     let host = after_scheme.split('/').next().unwrap_or("");
     if host.is_empty() {
-        return Err(format!("malformed gateway root: {root}"));
+        return Err(anyhow!("malformed gateway root: {root}"));
     }
     let scheme = if root.starts_with("https://") {
         "wss"
@@ -140,9 +142,9 @@ pub(super) fn resolve_relay_endpoint(root: &str, relay: &str) -> Result<String, 
 
 /// Random 16-hex-char connection id (OS CSPRNG — getrandom is a direct dep
 /// on every target).
-pub(super) fn conn_id() -> Result<String, String> {
+pub(super) fn conn_id() -> Result<String> {
     let mut buf = [0u8; 8];
-    getrandom::fill(&mut buf).map_err(|e| format!("os entropy: {e}"))?;
+    getrandom::fill(&mut buf).map_err(|e| anyhow!("os entropy: {e}"))?;
     Ok(hex::encode(buf))
 }
 

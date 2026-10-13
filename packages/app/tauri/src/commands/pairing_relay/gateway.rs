@@ -1,3 +1,5 @@
+use anyhow::{Result, anyhow, bail};
+
 use super::*;
 // ── gateway resolution (protocol v2) ────────────────────────────────────────
 
@@ -147,17 +149,18 @@ pub(super) fn store_gateway_info(info: Option<GatewayInfo>) {
 /// One manifest fetch. `Ok(None)` = "no v2 manifest here" (transport error,
 /// non-200, oversize or foreign body) — the caller falls back to legacy
 /// direct mode; only a clean gateway manifest yields `Ok(Some(..))`.
-async fn fetch_manifest(url: &str) -> Result<Option<GatewayManifest>, String> {
+async fn fetch_manifest(url: &str) -> Result<Option<GatewayManifest>> {
     // The SAME shared HTTP client every other outbound request uses: the
-    // Android CA-bundle client there, SChannel on the desktop.
-    let client = super::network::build_http_client()?;
+    // Android CA-bundle client there, SChannel on the desktop. `network`
+    // still speaks String errors — bridge verbatim.
+    let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
     let resp = client
         .get(url)
         .header(reqwest::header::CACHE_CONTROL, "no-store")
         .timeout(MANIFEST_TIMEOUT)
         .send()
         .await
-        .map_err(|e| format!("manifest fetch failed ({e})"))?;
+        .map_err(|e| anyhow!("manifest fetch failed ({e})"))?;
     if !resp.status().is_success() {
         return Ok(None);
     }
@@ -189,7 +192,7 @@ fn legacy_resolution(root: &str) -> GatewayResolution {
 /// Resolve a gateway root (see the module docs for the algorithm). Errors
 /// ONLY on an unsupported final protocol — every other failure degrades to
 /// legacy direct mode.
-pub(super) async fn resolve_gateway(root_raw: &str) -> Result<GatewayResolution, String> {
+pub(super) async fn resolve_gateway(root_raw: &str) -> Result<GatewayResolution> {
     let initial = normalize_relay_root(root_raw)?;
     let mut current = initial.clone();
     let mut seen = vec![initial.clone()];
@@ -256,7 +259,7 @@ pub(super) fn finish_resolution(
     root: &str,
     manifest: GatewayManifest,
     via_upstream: bool,
-) -> Result<GatewayResolution, String> {
+) -> Result<GatewayResolution> {
     // The version gate runs FIRST: a too-old app must hear "update the
     // app", never a protocol/endpoint complaint it cannot act on.
     if let Some(min) = manifest
@@ -271,7 +274,7 @@ pub(super) fn finish_resolution(
                 minimum = min,
                 "the pairing gateway demands a newer client"
             );
-            return Err(CLIENT_TOO_OLD.to_string());
+            bail!("{}", CLIENT_TOO_OLD);
         }
     }
     if !manifest
@@ -283,7 +286,7 @@ pub(super) fn finish_resolution(
             protocol = ?manifest.protocol,
             "the resolved gateway speaks an unsupported pairing protocol"
         );
-        return Err(UNSUPPORTED_PROTOCOL.to_string());
+        bail!("{}", UNSUPPORTED_PROTOCOL);
     }
     match resolve_relay_endpoint(root, &manifest.endpoints.relay) {
         Ok(ws_base) => Ok(GatewayResolution {
@@ -313,7 +316,7 @@ fn resolution_cache() -> &'static Mutex<HashMap<String, CachedResolution>> {
 /// of a session dials the same resolved endpoint without re-fetching the
 /// manifest. Failures (unsupported protocol) are never cached — they must
 /// surface on every call.
-pub async fn resolve_gateway_cached(root: &str) -> Result<GatewayResolution, String> {
+pub async fn resolve_gateway_cached(root: &str) -> Result<GatewayResolution> {
     let key = normalize_relay_root(root)?;
     if let Ok(cache) = resolution_cache().lock() {
         if let Some(hit) = cache.get(&key) {

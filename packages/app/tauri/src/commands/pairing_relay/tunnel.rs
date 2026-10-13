@@ -1,3 +1,5 @@
+use anyhow::{Result, anyhow, bail};
+
 use super::*;
 // ── HTTP-over-tunnel framing ────────────────────────────────────────────────
 
@@ -25,21 +27,21 @@ impl ResponseHead {
 
 /// Parse `HTTP/1.1 200 OK\r\n…\r\n\r\n` from the front of `buf`; returns the
 /// head and the byte offset just past the blank line.
-pub(super) fn parse_response_head(buf: &[u8]) -> Result<(ResponseHead, usize), String> {
-    let text = std::str::from_utf8(buf).map_err(|_| "non-UTF-8 response head".to_string())?;
+pub(super) fn parse_response_head(buf: &[u8]) -> Result<(ResponseHead, usize)> {
+    let text = std::str::from_utf8(buf).map_err(|_| anyhow!("non-UTF-8 response head"))?;
     let (head, _rest) = text
         .split_once("\r\n\r\n")
-        .ok_or_else(|| "truncated response head".to_string())?;
+        .ok_or_else(|| anyhow!("truncated response head"))?;
     let mut lines = head.split("\r\n");
-    let status_line = lines.next().ok_or("empty response")?;
+    let status_line = lines.next().ok_or_else(|| anyhow!("empty response"))?;
     let mut parts = status_line.splitn(3, ' ');
     let version = parts.next().unwrap_or("");
     let status = parts
         .next()
         .and_then(|s| s.parse::<u16>().ok())
-        .ok_or_else(|| format!("malformed status line: {status_line}"))?;
+        .ok_or_else(|| anyhow!("malformed status line: {status_line}"))?;
     if !version.starts_with("HTTP/") {
-        return Err(format!("malformed status line: {status_line}"));
+        bail!("malformed status line: {status_line}");
     }
     let mut headers = Vec::new();
     for line in lines {
@@ -66,7 +68,7 @@ pub(super) struct TunnelBody {
 impl TunnelBody {
     /// Next body chunk, or None at the end of the response. Chunks arrive
     /// already sized by Content-Length accounting.
-    pub(super) async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+    pub(super) async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>> {
         loop {
             if self.remaining == Some(0) {
                 return Ok(None);
@@ -86,7 +88,7 @@ impl TunnelBody {
                 return if self.remaining == Some(0) || self.remaining.is_none() {
                     Ok(None)
                 } else {
-                    Err("tunnel closed mid-response".to_string())
+                    Err(anyhow!("tunnel closed mid-response"))
                 };
             }
             match self.stream.next().await {
@@ -99,19 +101,19 @@ impl TunnelBody {
                 Some(Ok(Message::Close(_))) | None => {
                     self.closed = true;
                 },
-                Some(Err(e)) => return Err(format!("tunnel read failed ({e})")),
+                Some(Err(e)) => return Err(anyhow!("tunnel read failed ({e})")),
                 Some(Ok(Message::Frame(_))) => {},
             }
         }
     }
 
     /// Read the WHOLE body (bounded — /pair and /api/replays only).
-    pub(super) async fn read_all(mut self, cap: usize) -> Result<Vec<u8>, String> {
+    pub(super) async fn read_all(mut self, cap: usize) -> Result<Vec<u8>> {
         let mut out = Vec::new();
         while let Some(chunk) = self.next_chunk().await? {
             out.extend_from_slice(&chunk);
             if out.len() > cap {
-                return Err("relay response too large".to_string());
+                return Err(anyhow!("relay response too large"));
             }
         }
         Ok(out)
@@ -131,7 +133,7 @@ pub(super) async fn tunnel_round_trip(
     mut data: Ws,
     request: &[u8],
     head_timeout: Duration,
-) -> Result<(ResponseHead, TunnelBody), String> {
+) -> Result<(ResponseHead, TunnelBody)> {
     send_binary_chunked(&mut data, request).await?;
     let (mut stream, ka) = park_keepalive(data);
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
@@ -141,22 +143,22 @@ pub(super) async fn tunnel_round_trip(
                 return parse_response_head(&buf[..pos + 4]).map(|(h, _)| (h, pos + 4));
             }
             if buf.len() > MAX_REQUEST_HEAD {
-                return Err("relay response head too large".to_string());
+                return Err(anyhow!("relay response head too large"));
             }
             match stream.next().await {
                 Some(Ok(Message::Binary(b))) => buf.extend_from_slice(&b),
                 Some(Ok(Message::Text(_))) => {},
                 Some(Ok(Message::Ping(_) | Message::Pong(_))) => {},
                 Some(Ok(Message::Close(_))) | None => {
-                    return Err("tunnel closed before a response".to_string());
+                    return Err(anyhow!("tunnel closed before a response"));
                 },
-                Some(Err(e)) => return Err(format!("tunnel read failed ({e})")),
+                Some(Err(e)) => return Err(anyhow!("tunnel read failed ({e})")),
                 Some(Ok(_)) => {},
             }
         }
     })
     .await
-    .map_err(|_| "no response within the tunnel deadline".to_string())??;
+    .map_err(|_| anyhow!("no response within the tunnel deadline"))??;
     let (head, consumed) = head;
     let body = TunnelBody {
         stream,
@@ -196,23 +198,23 @@ pub(super) struct Tunnel {
 /// Open a tunnel to `room`: control channel as client (hello/welcome with
 /// legacy tolerance, waiting for the host if needed), then `{type:"open"}`,
 /// then the data socket.
-pub(super) async fn open_tunnel(ws_base: &str, room: &str) -> Result<Tunnel, String> {
+pub(super) async fn open_tunnel(ws_base: &str, room: &str) -> Result<Tunnel> {
     if !valid_room(room) {
-        return Err("invalid relay room key".to_string());
+        return Err(anyhow!("invalid relay room key"));
     }
     let mut control = ws_connect(&control_url(ws_base, room, "client")).await?;
     let mut first: Option<ControlMsg> = None;
     match hello_handshake(&mut control).await {
         Ok(HelloOutcome::Welcome) | Ok(HelloOutcome::Silent) => {},
         Ok(HelloOutcome::First(m)) => first = Some(m),
-        Err(e) => return Err(format!("relay handshake failed ({e})")),
+        Err(e) => return Err(anyhow!("relay handshake failed ({e})")),
     }
     // Wait for the host (bounded): the bridge reconnects within seconds, so
     // "waiting" for longer than READY_TIMEOUT means it is not coming.
     let ready = async {
         if let Some(m) = first {
             if matches!(m, ControlMsg::Ready) {
-                return Ok::<(), String>(());
+                return Ok::<(), anyhow::Error>(());
             }
         }
         loop {
@@ -224,7 +226,7 @@ pub(super) async fn open_tunnel(ws_base: &str, room: &str) -> Result<Tunnel, Str
     };
     tokio::time::timeout(READY_TIMEOUT, ready)
         .await
-        .map_err(|_| "relay host never became ready".to_string())??;
+        .map_err(|_| anyhow!("relay host never became ready"))??;
 
     let conn = conn_id()?;
     control
@@ -232,7 +234,7 @@ pub(super) async fn open_tunnel(ws_base: &str, room: &str) -> Result<Tunnel, Str
             ControlMsg::Open { id: conn.clone() }.to_text().into(),
         ))
         .await
-        .map_err(|e| format!("relay open failed ({e})"))?;
+        .map_err(|e| anyhow!("relay open failed ({e})"))?;
     let data = ws_connect(&data_url(ws_base, room, &conn, "client")).await?;
     let (reader, ka) = park_keepalive(control);
     Ok(Tunnel {

@@ -45,11 +45,14 @@
 //! and every failure degrades to the defaults instead of blocking or
 //! panicking the watcher thread.
 
+use anyhow::{Result, anyhow};
+
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use wowsp_tauri_shared::CommandResult;
 
 use crate::paths;
 use crate::settings_store::{self, SettingsSource};
@@ -249,12 +252,12 @@ struct OverlayConfigTomlFile {
 }
 
 /// Serialize the canonical file text (header + flat TOML keys).
-fn canonical_toml(config: OverlayConfig) -> Result<String, String> {
+fn canonical_toml(config: OverlayConfig) -> Result<String> {
     let file = OverlayConfigTomlFile {
         table: config.table.as_str().to_string(),
         roster: config.roster.as_str().to_string(),
     };
-    let body = toml::to_string(&file).map_err(|e| format!("serialize overlay config: {e}"))?;
+    let body = toml::to_string(&file).map_err(|e| anyhow!("serialize overlay config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
 }
 
@@ -375,7 +378,7 @@ impl From<OverlayConfig> for OverlayConfigResponse {
 /// migration/heal pass a watcher read would, so the very first settings
 /// render after an upgrade already reflects (and persists) the fix.
 #[tauri::command]
-pub fn get_overlay_config() -> Result<OverlayConfigResponse, String> {
+pub fn get_overlay_config() -> CommandResult<OverlayConfigResponse> {
     Ok(current().into())
 }
 
@@ -384,15 +387,17 @@ pub fn get_overlay_config() -> Result<OverlayConfigResponse, String> {
 /// never poison the file — and the cache is refreshed so the watcher sees
 /// the change immediately instead of after the TTL.
 #[tauri::command]
-pub fn set_overlay_config(table: String, roster: String) -> Result<OverlayConfigResponse, String> {
+pub fn set_overlay_config(table: String, roster: String) -> CommandResult<OverlayConfigResponse> {
     let config = OverlayConfig {
         table: parse_table_field(&table),
         roster: parse_roster_field(&roster),
     };
-    let dir = paths::ensure_data_dir()?;
+    // `paths` / `settings_store` still speak String errors (the historical
+    // plain-string IPC contract) — bridge them into anyhow verbatim.
+    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
     let canonical = canonical_toml(config)?;
     tracing::info!(table = ?config.table, roster = ?config.roster, "overlay config saved");
-    settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical)?;
+    settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical).map_err(anyhow::Error::msg)?;
     settings_store::retire_legacy_json(&dir, LEGACY_OVERLAY_CONFIG_FILE);
     let mut cache = CACHE
         .lock()

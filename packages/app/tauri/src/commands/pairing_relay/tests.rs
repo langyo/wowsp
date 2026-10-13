@@ -222,7 +222,9 @@ fn finish_resolution_degrades_gracefully_on_a_bad_endpoint() {
     let v3: GatewayManifest =
         serde_json::from_str(r#"{"protocol":["v3"],"endpoints":{"relay":"/r"}}"#).unwrap();
     assert_eq!(
-        finish_resolution("https://gw.example.org", v3, false).unwrap_err(),
+        finish_resolution("https://gw.example.org", v3, false)
+            .unwrap_err()
+            .to_string(),
         UNSUPPORTED_PROTOCOL
     );
 }
@@ -1121,10 +1123,16 @@ async fn allocate_resolve_pair_and_pull_over_the_tunnel() {
 
     // An unknown-but-well-formed code resolves to the gateway-unreachable
     // marker (the phone's friendly error state), not a raw crash.
-    let err = relay_pair(&gateway.root, "000000").await.unwrap_err();
+    let err = relay_pair(&gateway.root, "000000")
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, GATEWAY_UNREACHABLE);
     // A malformed code is rejected before any network I/O.
-    let err = relay_pair(&gateway.root, "12a4").await.unwrap_err();
+    let err = relay_pair(&gateway.root, "12a4")
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, GATEWAY_UNREACHABLE);
 
     // 5. List through the tunnel using the stored room key (the same
@@ -1138,7 +1146,8 @@ async fn allocate_resolve_pair_and_pull_over_the_tunnel() {
     // Bad token → clean 401 string.
     let err = relay_list_remote(&gateway.root, &room, "nope")
         .await
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, "invalid or expired token");
 
     // 6. Pull the replay through the tunnel → exact bytes.
@@ -1161,7 +1170,10 @@ async fn allocate_resolve_pair_and_pull_over_the_tunnel() {
     let fresh = host_reallocate().await.unwrap();
     assert_ne!(fresh, code, "the gateway must mint a new code");
     assert_eq!(current_relay_code().as_deref(), Some(fresh.as_str()));
-    let err = relay_pair(&gateway.root, &code).await.unwrap_err();
+    let err = relay_pair(&gateway.root, &code)
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, GATEWAY_UNREACHABLE, "the replaced code is dead");
     let paired2 = relay_pair(&gateway.root, &fresh).await.unwrap();
     assert_eq!(paired2.room.as_deref(), Some(room.as_str()));
@@ -1402,21 +1414,31 @@ async fn unsupported_protocol_fails_resolution_distinctly() {
     .await;
 
     // Resolution errors with the distinct marker.
-    let err = resolve_gateway_cached(&gateway.root).await.unwrap_err();
+    let err = resolve_gateway_cached(&gateway.root)
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, UNSUPPORTED_PROTOCOL);
     // And it is NOT cached — every call re-surfaces it.
-    let err = resolve_gateway_cached(&gateway.root).await.unwrap_err();
+    let err = resolve_gateway_cached(&gateway.root)
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, UNSUPPORTED_PROTOCOL);
 
     // The phone's pair path propagates it verbatim.
-    let err = relay_pair(&gateway.root, "123456").await.unwrap_err();
+    let err = relay_pair(&gateway.root, "123456")
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, UNSUPPORTED_PROTOCOL);
     assert_ne!(err, GATEWAY_UNREACHABLE);
 
     // The desktop bridge refuses to start; the relay stays offline.
     let err = host_session_start(&gateway.root, 1, &"a".repeat(64))
         .await
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, UNSUPPORTED_PROTOCOL);
     assert!(!relay_online());
     assert_eq!(current_gateway_info().provider, None);
@@ -1462,25 +1484,35 @@ async fn min_client_version_gate_fails_distinctly() {
     })
     .await;
 
-    let err = resolve_gateway_cached(&gateway.root).await.unwrap_err();
+    let err = resolve_gateway_cached(&gateway.root)
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, CLIENT_TOO_OLD);
     assert_ne!(err, GATEWAY_UNREACHABLE);
     assert_ne!(err, UNSUPPORTED_PROTOCOL);
     // Not cached — every call re-surfaces it.
     assert_eq!(
-        resolve_gateway_cached(&gateway.root).await.unwrap_err(),
+        resolve_gateway_cached(&gateway.root)
+            .await
+            .unwrap_err()
+            .to_string(),
         CLIENT_TOO_OLD
     );
     // The phone's pair path propagates it verbatim.
     assert_eq!(
-        relay_pair(&gateway.root, "123456").await.unwrap_err(),
+        relay_pair(&gateway.root, "123456")
+            .await
+            .unwrap_err()
+            .to_string(),
         CLIENT_TOO_OLD
     );
     // The desktop bridge refuses to start.
     assert_eq!(
         host_session_start(&gateway.root, 1, &"a".repeat(64))
             .await
-            .unwrap_err(),
+            .unwrap_err()
+            .to_string(),
         CLIENT_TOO_OLD
     );
 
@@ -1516,7 +1548,10 @@ async fn rate_limited_resolve_errors_propagate_distinctly() {
     })
     .await;
 
-    let err = relay_pair(&gateway.root, "123456").await.unwrap_err();
+    let err = relay_pair(&gateway.root, "123456")
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(err, GATEWAY_RATE_LIMITED);
     assert_ne!(err, GATEWAY_UNREACHABLE);
 

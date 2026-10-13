@@ -8,9 +8,13 @@
 //! read the same listing, mirroring how commands::wallpaper works for
 //! backgrounds.
 
+use anyhow::{Result, anyhow, bail};
+
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+use wowsp_tauri_shared::CommandResult;
 
 use crate::paths;
 
@@ -42,9 +46,12 @@ static STAMP_FILES_GATE: Mutex<()> = Mutex::new(());
 /// The fixed stamp subdirectory of the app data root
 /// (`%APPDATA%/WoWSP/stamps/` locally, `<exe>/data/stamps/` in portable
 /// mode), created on first use.
-fn stamps_dir() -> Result<PathBuf, String> {
-    let dir = paths::ensure_data_dir()?.join("stamps");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+fn stamps_dir() -> Result<PathBuf> {
+    // `paths` still speaks String errors — bridge verbatim.
+    let dir = paths::ensure_data_dir()
+        .map_err(anyhow::Error::msg)?
+        .join("stamps");
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir)
 }
 
@@ -87,12 +94,12 @@ pub struct StampOverride {
 
 /// List the customized seals, in canonical kind order.
 #[tauri::command]
-pub fn stamp_list() -> Result<Vec<StampOverride>, String> {
+pub fn stamp_list() -> CommandResult<Vec<StampOverride>> {
     let dir = stamps_dir()?;
-    list_stamps_in(&dir)
+    list_stamps_in(&dir).map_err(Into::into)
 }
 
-fn list_stamps_in(dir: &Path) -> Result<Vec<StampOverride>, String> {
+fn list_stamps_in(dir: &Path) -> Result<Vec<StampOverride>> {
     let _gate = STAMP_FILES_GATE.lock().unwrap_or_else(|e| e.into_inner());
     Ok(STAMP_KINDS
         .iter()
@@ -117,23 +124,18 @@ struct StampFiles {
 }
 
 impl StampFiles {
-    fn new(parent: &Path) -> Result<Self, String> {
+    fn new(parent: &Path) -> Result<Self> {
         let mut nonce = [0; 16];
-        getrandom::fill(&mut nonce).map_err(|e| format!("stamp staging entropy: {e}"))?;
+        getrandom::fill(&mut nonce).map_err(|e| anyhow!("stamp staging entropy: {e}"))?;
         let dir = parent.join(format!(".stamp-{}", hex::encode(nonce)));
-        std::fs::create_dir(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+        std::fs::create_dir(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
         Ok(Self {
             dir,
             backups: Vec::new(),
         })
     }
 
-    fn stage_previous(
-        &mut self,
-        parent: &Path,
-        kind: &str,
-        keep: Option<&Path>,
-    ) -> Result<(), String> {
+    fn stage_previous(&mut self, parent: &Path, kind: &str, keep: Option<&Path>) -> Result<()> {
         for ext in IMAGE_EXTENSIONS {
             let original = parent.join(format!("{kind}.{ext}"));
             if keep == Some(original.as_path()) {
@@ -141,21 +143,21 @@ impl StampFiles {
             }
             match std::fs::symlink_metadata(&original) {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Err(format!("inspect {original:?}: {e}")),
+                Err(e) => return Err(anyhow!("inspect {original:?}: {e}")),
                 Ok(meta) if !meta.file_type().is_file() => {
-                    return Err(format!("stamp is not a regular file: {original:?}"));
+                    bail!("stamp is not a regular file: {original:?}");
                 },
                 Ok(_) => {},
             }
             let backup = self.dir.join(format!("{kind}.{ext}"));
             std::fs::rename(&original, &backup)
-                .map_err(|e| format!("preserve {original:?}: {e}"))?;
+                .map_err(|e| anyhow!("preserve {original:?}: {e}"))?;
             self.backups.push((original, backup));
         }
         Ok(())
     }
 
-    fn rollback(&mut self, error: String) -> String {
+    fn rollback(&mut self, error: anyhow::Error) -> anyhow::Error {
         let mut unrestored = Vec::new();
         let mut failures = Vec::new();
         for (original, backup) in self.backups.drain(..).rev() {
@@ -168,7 +170,7 @@ impl StampFiles {
         if failures.is_empty() {
             error
         } else {
-            format!(
+            anyhow!(
                 "{error}; {}; previous images preserved in {:?}",
                 failures.join("; "),
                 self.dir
@@ -195,18 +197,18 @@ fn import_stamp_with(
     src: &Path,
     ext: &str,
     publish: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
-) -> Result<StampOverride, String> {
+) -> Result<StampOverride> {
     let dest = dir.join(format!("{kind}.{ext}"));
     let mut work = StampFiles::new(dir)?;
     let part = work.dir.join("image.part");
-    std::fs::copy(src, &part).map_err(|e| format!("copy stamp image: {e}"))?;
+    std::fs::copy(src, &part).map_err(|e| anyhow!("copy stamp image: {e}"))?;
     let _gate = STAMP_FILES_GATE.lock().unwrap_or_else(|e| e.into_inner());
     // Keep the same-extension destination until atomic replacement. Other
     // extensions must be removable before publishing, or listing could
     // continue selecting the old image after a reported successful import.
     let result = work
         .stage_previous(dir, kind, Some(&dest))
-        .and_then(|()| publish(&part, &dest).map_err(|e| format!("publish stamp image: {e}")));
+        .and_then(|()| publish(&part, &dest).map_err(|e| anyhow!("publish stamp image: {e}")));
     if let Err(error) = result {
         return Err(work.rollback(error));
     }
@@ -222,15 +224,15 @@ fn import_stamp_with(
 /// and a successful one leaves exactly one file). Returns the entry, or `None`
 /// when the dialog was cancelled.
 #[tauri::command]
-pub async fn stamp_import(kind: String) -> Result<Option<StampOverride>, String> {
+pub async fn stamp_import(kind: String) -> CommandResult<Option<StampOverride>> {
     if !is_valid_kind(&kind) {
-        return Err(format!("invalid stamp kind {kind:?}"));
+        return Err(anyhow!("invalid stamp kind {kind:?}").into());
     }
     // Mobile: no native image picker (rfd has no Android backend) — the
     // seal customizer's photo-picker bytes ride a later mobile phase.
     #[cfg(mobile)]
     {
-        return Err(crate::mobile_unsupported::PICKER.into());
+        return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
     }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread (same rule as
@@ -247,7 +249,7 @@ pub async fn stamp_import(kind: String) -> Result<Option<StampOverride>, String>
                 .pick_file()
         })
         .await
-        .map_err(|e| format!("stamp picker task failed: {e}"))?;
+        .map_err(|e| anyhow!("stamp picker task failed: {e}"))?;
 
         let Some(src) = picked else {
             return Ok(None);
@@ -256,10 +258,10 @@ pub async fn stamp_import(kind: String) -> Result<Option<StampOverride>, String>
         // — reject anything the listing wouldn't accept instead of importing a
         // stamp that can never resolve.
         let Some(file_name) = src.file_name().and_then(|n| n.to_str()) else {
-            return Err("picked file has no usable name".into());
+            return Err(anyhow!("picked file has no usable name").into());
         };
         if !is_image_file(file_name) {
-            return Err(format!("unsupported stamp image type: {file_name}"));
+            return Err(anyhow!("unsupported stamp image type: {file_name}").into());
         }
         let ext = src
             .extension()
@@ -273,7 +275,7 @@ pub async fn stamp_import(kind: String) -> Result<Option<StampOverride>, String>
             })
         })
         .await
-        .map_err(|e| format!("stamp copy task failed: {e}"))??;
+        .map_err(|e| anyhow!("stamp copy task failed: {e}"))??;
         Ok(Some(entry))
     }
 }
@@ -281,15 +283,15 @@ pub async fn stamp_import(kind: String) -> Result<Option<StampOverride>, String>
 /// Delete the custom picture of `kind` — the seal falls back to the bundled
 /// glyph. Idempotent (missing file is OK).
 #[tauri::command]
-pub fn stamp_reset(kind: String) -> Result<(), String> {
+pub fn stamp_reset(kind: String) -> CommandResult<()> {
     if !is_valid_kind(&kind) {
-        return Err(format!("invalid stamp kind {kind:?}"));
+        return Err(anyhow!("invalid stamp kind {kind:?}").into());
     }
     let dir = stamps_dir()?;
-    reset_stamp_in(&dir, &kind)
+    reset_stamp_in(&dir, &kind).map_err(Into::into)
 }
 
-fn reset_stamp_in(dir: &Path, kind: &str) -> Result<(), String> {
+fn reset_stamp_in(dir: &Path, kind: &str) -> Result<()> {
     let mut work = StampFiles::new(dir)?;
     let _gate = STAMP_FILES_GATE.lock().unwrap_or_else(|e| e.into_inner());
     if let Err(error) = work.stage_previous(dir, kind, None) {
@@ -332,7 +334,7 @@ mod tests {
         }
     }
 
-    fn import(dir: &Path, src: &Path, ext: &str) -> Result<StampOverride, String> {
+    fn import(dir: &Path, src: &Path, ext: &str) -> Result<StampOverride> {
         import_stamp_with(dir, "rat", src, ext, |from, to| std::fs::rename(from, to))
     }
 
@@ -523,7 +525,7 @@ mod tests {
             },
         );
         drop(locked);
-        let error = result.err().unwrap();
+        let error = result.err().unwrap().to_string();
         let recovery = recovery.unwrap();
         assert!(error.contains("previous images preserved"));
         assert!(error.contains(recovery.file_name().unwrap().to_str().unwrap()));

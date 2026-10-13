@@ -1,3 +1,5 @@
+use anyhow::{Result, anyhow};
+
 use super::*;
 // ── WebSocket plumbing ───────────────────────────────────────────────────────
 
@@ -23,13 +25,13 @@ fn relay_ws_config() -> Option<WebSocketConfig> {
     )
 }
 
-pub(super) async fn ws_connect(url: &str) -> Result<Ws, String> {
+pub(super) async fn ws_connect(url: &str) -> Result<Ws> {
     ensure_ring_provider();
     let connect = connect_async_with_config(url, relay_ws_config(), false);
     let (ws, _resp) = tokio::time::timeout(WS_CONNECT_TIMEOUT, connect)
         .await
-        .map_err(|_| format!("relay connect failed (no handshake within {WS_CONNECT_TIMEOUT:?})"))?
-        .map_err(|e| format!("relay connect failed ({e})"))?;
+        .map_err(|_| anyhow!("relay connect failed (no handshake within {WS_CONNECT_TIMEOUT:?})"))?
+        .map_err(|e| anyhow!("relay connect failed ({e})"))?;
     Ok(ws)
 }
 
@@ -96,7 +98,7 @@ pub(super) fn frame_chunks(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     bytes.chunks(MAX_OUTGOING_FRAME)
 }
 
-pub(super) async fn send_binary_chunked<S>(ws: &mut S, bytes: &[u8]) -> Result<(), String>
+pub(super) async fn send_binary_chunked<S>(ws: &mut S, bytes: &[u8]) -> Result<()>
 where
     S: futures::Sink<Message> + Unpin,
     S::Error: std::fmt::Display,
@@ -104,7 +106,7 @@ where
     for chunk in frame_chunks(bytes) {
         ws.send(Message::Binary(chunk.to_vec().into()))
             .await
-            .map_err(|e| format!("tunnel send failed ({e})"))?;
+            .map_err(|e| anyhow!("tunnel send failed ({e})"))?;
     }
     Ok(())
 }
@@ -185,7 +187,7 @@ impl ControlMsg {
 }
 
 /// Pull the next TEXT control message (binary frames and pings are skipped).
-pub(super) async fn next_control<S>(ws: &mut WebSocketStream<S>) -> Result<ControlMsg, String>
+pub(super) async fn next_control<S>(ws: &mut WebSocketStream<S>) -> Result<ControlMsg>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -198,14 +200,14 @@ where
             },
             Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
             Some(Ok(Message::Close(f))) => {
-                return Err(format!(
+                return Err(anyhow!(
                     "relay control closed ({})",
                     f.as_ref().map(|f| f.code.to_string()).unwrap_or_default()
                 ));
             },
             Some(Ok(_)) => continue,
-            Some(Err(e)) => return Err(format!("relay control read failed ({e})")),
-            None => return Err("relay control closed".to_string()),
+            Some(Err(e)) => return Err(anyhow!("relay control read failed ({e})")),
+            None => return Err(anyhow!("relay control closed")),
         }
     }
 }
@@ -227,12 +229,12 @@ pub(super) enum HelloOutcome {
 /// send `hello` (protocol v1, persistent hostId) and await the welcome with
 /// legacy tolerance (see [`HelloOutcome`]). NOT used on data sockets —
 /// those are byte tunnels.
-pub(super) async fn hello_handshake(ws: &mut Ws) -> Result<HelloOutcome, String> {
+pub(super) async fn hello_handshake(ws: &mut Ws) -> Result<HelloOutcome> {
     let hello =
         json!({ "type": "hello", "protocol": "v1", "hostId": persistent_host_id() }).to_string();
     ws.send(Message::Text(hello.into()))
         .await
-        .map_err(|e| format!("relay hello failed ({e})"))?;
+        .map_err(|e| anyhow!("relay hello failed ({e})"))?;
     match tokio::time::timeout(HELLO_TIMEOUT, next_control(ws)).await {
         Ok(Ok(ControlMsg::Welcome)) => Ok(HelloOutcome::Welcome),
         Ok(Ok(other)) => Ok(HelloOutcome::First(other)),

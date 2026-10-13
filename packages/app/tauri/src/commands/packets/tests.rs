@@ -1151,7 +1151,9 @@ fn inflate_cap_rejects_decompression_bomb() {
         "the bomb's compressed form is tiny (got {} bytes)",
         bomb.len()
     );
-    let err = inflate_zlib_with_cap(&bomb, 64 * 1024).expect_err("must trip the cap");
+    let err = inflate_zlib_with_cap(&bomb, 64 * 1024)
+        .expect_err("must trip the cap")
+        .to_string();
     assert!(err.contains("65536"), "error names the cap: {err}");
     assert!(
         err.contains("malicious"),

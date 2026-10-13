@@ -26,6 +26,8 @@
 //! The ledger (`playtime.json`, AppData root) stays Rust-owned: the webui
 //! never reads or writes it directly, unlike `accounts.json`.
 
+use anyhow::{Result, anyhow, bail};
+
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -34,8 +36,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::{Datelike, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use wowsp_tauri_shared::{
-    GameInstall, PlaytimeBattle, PlaytimeBattles, PlaytimeDay, PlaytimeLaunch, PlaytimeOverview,
-    PlaytimeSource, ReplayMetaLite,
+    CommandResult, GameInstall, PlaytimeBattle, PlaytimeBattles, PlaytimeDay, PlaytimeLaunch,
+    PlaytimeOverview, PlaytimeSource, ReplayMetaLite,
 };
 
 /// The ledger file under the AppData root (atomic writes via the shared
@@ -139,8 +141,8 @@ fn with_state<R>(f: impl FnOnce(&mut PlaytimeState) -> R) -> Option<R> {
 
 fn loaded_state(
     slot: &mut Option<PlaytimeState>,
-    load: impl FnOnce() -> Result<PlaytimeStore, String>,
-) -> Result<&mut PlaytimeState, String> {
+    load: impl FnOnce() -> Result<PlaytimeStore>,
+) -> Result<&mut PlaytimeState> {
     if slot.is_none() {
         let store = load()?;
         *slot = Some(PlaytimeState {
@@ -158,14 +160,14 @@ fn loaded_state(
 /// Read the ledger, creating (and seeding) it on first run. The fresh file
 /// is written back immediately so the once-only import cannot repeat after
 /// a crash.
-fn load_store() -> Result<PlaytimeStore, String> {
-    load_store_in(&super::appdata::appdata_dir_path()?)
+fn load_store() -> Result<PlaytimeStore> {
+    load_store_in(&super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)
 }
 
-fn load_store_in(dir: &Path) -> Result<PlaytimeStore, String> {
-    match super::appdata::read_json_in(dir, PLAYTIME_FILE)? {
+fn load_store_in(dir: &Path) -> Result<PlaytimeStore> {
+    match super::appdata::read_json_in(dir, PLAYTIME_FILE).map_err(anyhow::Error::msg)? {
         Some(raw) => serde_json::from_str::<PlaytimeStore>(&raw)
-            .map_err(|e| format!("parse playtime ledger: {e}")),
+            .map_err(|e| anyhow!("parse playtime ledger: {e}")),
         None => {
             let store = PlaytimeStore::default();
             persist_store_in(dir, &store)?;
@@ -174,13 +176,16 @@ fn load_store_in(dir: &Path) -> Result<PlaytimeStore, String> {
     }
 }
 
-fn persist_store(store: &PlaytimeStore) -> Result<(), String> {
-    persist_store_in(&super::appdata::appdata_dir_path()?, store)
+fn persist_store(store: &PlaytimeStore) -> Result<()> {
+    persist_store_in(
+        &super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?,
+        store,
+    )
 }
 
-fn persist_store_in(dir: &Path, store: &PlaytimeStore) -> Result<(), String> {
-    let json = serde_json::to_string(store).map_err(|e| format!("serialize playtime: {e}"))?;
-    super::appdata::write_json_in(dir, PLAYTIME_FILE, &json)
+fn persist_store_in(dir: &Path, store: &PlaytimeStore) -> Result<()> {
+    let json = serde_json::to_string(store).map_err(|e| anyhow!("serialize playtime: {e}"))?;
+    super::appdata::write_json_in(dir, PLAYTIME_FILE, &json).map_err(anyhow::Error::msg)
 }
 
 // ── observation (fed by the session poller) ────────────────────────────────
@@ -611,39 +616,41 @@ impl Default for BattleCache {
 /// The v4 cache is permanent history, so read/parse failures must leave it
 /// untouched for a later retry. Only missing files and known pre-history
 /// schemas start empty; legacy payloads re-parse from their live replays.
-fn load_battle_cache_in(dir: &Path) -> Result<BattleCache, String> {
-    let Some(raw) = super::appdata::read_json_in(dir, BATTLES_CACHE_FILE)? else {
+fn load_battle_cache_in(dir: &Path) -> Result<BattleCache> {
+    let Some(raw) =
+        super::appdata::read_json_in(dir, BATTLES_CACHE_FILE).map_err(anyhow::Error::msg)?
+    else {
         return Ok(BattleCache::default());
     };
     let document: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|e| format!("parse battle history: {e}"))?;
+        serde_json::from_str(&raw).map_err(|e| anyhow!("parse battle history: {e}"))?;
     // Read the version before today's entry shape: v3 stored ReplayMetaLite,
     // and a future schema may also have entirely different rows.
     let version = document
         .get("version")
         .and_then(serde_json::Value::as_u64)
-        .ok_or("battle history has no valid schema version")?;
+        .ok_or_else(|| anyhow!("battle history has no valid schema version"))?;
     if (1..u64::from(BATTLES_CACHE_VERSION)).contains(&version) {
         tracing::info!(version, "playtime battle cache version stale — rescanning");
         return Ok(BattleCache::default());
     }
     if version != u64::from(BATTLES_CACHE_VERSION) {
-        return Err(format!("unsupported battle history schema {version}"));
+        bail!("unsupported battle history schema {version}");
     }
     if !document
         .get("entries")
         .is_some_and(serde_json::Value::is_object)
     {
-        return Err("battle history has no valid entries map".into());
+        bail!("battle history has no valid entries map");
     }
-    serde_json::from_value(document).map_err(|e| format!("parse battle history: {e}"))
+    serde_json::from_value(document).map_err(|e| anyhow!("parse battle history: {e}"))
 }
 
 /// Persist the cache atomically (tmp + rename via the shared appdata
 /// helper). The scan gate keeps each writer's input history current.
-fn save_battle_cache_in(dir: &Path, cache: &BattleCache) -> Result<(), String> {
-    let json = serde_json::to_string(cache).map_err(|e| format!("serialize battle cache: {e}"))?;
-    super::appdata::write_json_in(dir, BATTLES_CACHE_FILE, &json)
+fn save_battle_cache_in(dir: &Path, cache: &BattleCache) -> Result<()> {
+    let json = serde_json::to_string(cache).map_err(|e| anyhow!("serialize battle cache: {e}"))?;
+    super::appdata::write_json_in(dir, BATTLES_CACHE_FILE, &json).map_err(anyhow::Error::msg)
 }
 
 /// Stamp a battle row with the root's owning install — the exact
@@ -824,8 +831,8 @@ fn retain_own_battles(battles: Vec<PlaytimeBattle>) -> Vec<PlaytimeBattle> {
 
 /// The blocking core both ledger commands share: load the cache, scan the
 /// roots, answer the rows (and write the cache back only when it changed).
-fn scan_battles() -> Result<PlaytimeBattles, String> {
-    let dir = super::appdata::appdata_dir_path()?;
+fn scan_battles() -> Result<PlaytimeBattles> {
+    let dir = super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?;
     let battles = scan_battle_cache_in(&dir, |cache| {
         let roots = super::game_context::replay_roots();
         battles_from_roots(&roots, cache)
@@ -854,10 +861,11 @@ fn scan_battles() -> Result<PlaytimeBattles, String> {
 /// mobile has no installs to scan, so the managed replays dir is the
 /// ledger's only root.
 #[tauri::command]
-pub async fn playtime_battles() -> Result<PlaytimeBattles, String> {
+pub async fn playtime_battles() -> CommandResult<PlaytimeBattles> {
     tokio::task::spawn_blocking(scan_battles)
         .await
-        .map_err(|e| format!("playtime battles task failed: {e}"))?
+        .map_err(|e| anyhow!("playtime battles task failed: {e}"))?
+        .map_err(Into::into)
 }
 
 /// Drop the ledger's disk cache and answer the rows rebuilt from whatever
@@ -867,16 +875,17 @@ pub async fn playtime_battles() -> Result<PlaytimeBattles, String> {
 /// the command — the scan answers correct live rows either way; only the
 /// reset itself would retry next call.
 #[tauri::command]
-pub async fn playtime_battles_reset() -> Result<PlaytimeBattles, String> {
+pub async fn playtime_battles_reset() -> CommandResult<PlaytimeBattles> {
     tokio::task::spawn_blocking(|| {
-        let dir = super::appdata::appdata_dir_path()?;
+        let dir = super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?;
         if let Err(e) = save_battle_cache_in(&dir, &BattleCache::default()) {
             tracing::warn!(error = %e, "playtime battle cache reset failed");
         }
         scan_battles()
     })
     .await
-    .map_err(|e| format!("playtime battles reset task failed: {e}"))?
+    .map_err(|e| anyhow!("playtime battles reset task failed: {e}"))?
+    .map_err(Into::into)
 }
 
 /// Different scans can observe different roots/files. Keep the complete
@@ -887,17 +896,17 @@ static BATTLE_SCAN_GATE: Mutex<()> = Mutex::new(());
 fn scan_battle_cache_in(
     dir: &Path,
     scan: impl FnOnce(&mut BattleCache) -> Vec<PlaytimeBattle>,
-) -> Result<PlaytimeBattles, String> {
+) -> Result<PlaytimeBattles> {
     let _scan = BATTLE_SCAN_GATE.lock().unwrap_or_else(|p| p.into_inner());
     let mut cache = load_battle_cache_in(dir)?;
     // "Changed" = the cache serialization differs after the run — a
     // fresh parse upserted (a new or edited replay). An unchanged tree
     // writes nothing back; history entries never churn.
     let before =
-        serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
+        serde_json::to_string(&cache).map_err(|e| anyhow!("serialize battle cache: {e}"))?;
     let battles = scan(&mut cache);
     let after =
-        serde_json::to_string(&cache).map_err(|e| format!("serialize battle cache: {e}"))?;
+        serde_json::to_string(&cache).map_err(|e| anyhow!("serialize battle cache: {e}"))?;
     if before != after {
         // A replay may disappear before the next scan. Report failed
         // persistence instead of claiming its history was recorded.
@@ -1013,7 +1022,7 @@ mod tests {
         );
     }
 
-    fn scan_fixture_battles(dir: &Path, root: &Path) -> Result<PlaytimeBattles, String> {
+    fn scan_fixture_battles(dir: &Path, root: &Path) -> Result<PlaytimeBattles> {
         scan_battle_cache_in(dir, |cache| {
             battles_from_roots(&[(root.to_path_buf(), None)], cache)
         })

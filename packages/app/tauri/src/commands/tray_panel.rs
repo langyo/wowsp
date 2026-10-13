@@ -14,7 +14,10 @@
 //! handler — hides it again) and its buttons work. `WS_EX_TOOLWINDOW` keeps
 //! it out of Alt-Tab; `always_on_top` keeps it above the app it floats over.
 
+use anyhow::anyhow;
+
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+use wowsp_tauri_shared::CommandResult;
 
 /// Window label (must be listed in `capabilities/default.json`).
 pub const TRAY_PANEL_LABEL: &str = "tray-panel";
@@ -80,7 +83,7 @@ pub fn toggle_from_tray(app: &AppHandle, cursor: &PhysicalPosition<f64>, icon: &
 /// the same graceful drain the main window's close dialog does.
 #[cfg(desktop)]
 #[tauri::command]
-pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
+pub fn tray_panel_action(app: AppHandle, action: String) -> CommandResult<()> {
     match action.as_str() {
         "show" => {
             if let Some(w) = app.get_webview_window("main") {
@@ -110,7 +113,7 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
             app.exit(0);
             Ok(())
         },
-        other => Err(format!("unknown tray panel action: {other}")),
+        other => Err(anyhow!("unknown tray panel action: {other}").into()),
     }
 }
 

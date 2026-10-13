@@ -29,6 +29,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use wowsp_tauri_shared::CommandResult;
+
 /// The disclosed host catalogue (one row per external host the app can
 /// talk to — including the unrecorded content family, so the tooltip can
 /// answer "where do requests go" in full). The parity test below keeps
@@ -216,8 +218,15 @@ pub struct UpstreamHostReport {
 /// `#[tauri::command]`: the joined catalogue + health table. Stateless —
 /// the frontend polls it around its own lookup failures and renders the
 /// verdict (streak threshold, staleness) itself.
+///
+/// Note on the module's error plumbing: only the command is anyhow-migrated
+/// here; [`recorded_get`] deliberately keeps the historical
+/// `Result<_, String>` shape — the wave-1 lookup arms (wg_api's
+/// LookupError paths and the still-String encyclopedia module) consume it
+/// through their `From<String>` bridges / direct `?`, so flipping it to
+/// anyhow would break call sites outside this migration's file set.
 #[tauri::command]
-pub async fn upstream_health() -> Result<Vec<UpstreamHostReport>, String> {
+pub async fn upstream_health() -> CommandResult<Vec<UpstreamHostReport>> {
     let catalogue = host_catalogue();
     Ok(catalogue
         .into_iter()

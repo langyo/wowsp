@@ -9,17 +9,20 @@
 //! (callable from external Python). The core `capture_window_png` and
 //! `default_screenshot_path` helpers are `pub(crate)` so both reach them.
 
+use anyhow::{Result, anyhow};
+
 use std::path::PathBuf;
 
 use tauri::Manager;
+use wowsp_tauri_shared::CommandResult;
 
 /// Capture the main window's client area and save as PNG to `<path>` (or a
 /// temp file if `path` is empty). Returns the absolute path of the saved file.
 #[tauri::command]
-pub fn capture_main_window(app: tauri::AppHandle, path: String) -> Result<String, String> {
+pub fn capture_main_window(app: tauri::AppHandle, path: String) -> CommandResult<String> {
     let win = app
         .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
+        .ok_or_else(|| anyhow!("main window not found"))?;
 
     let out_path = if path.is_empty() {
         default_screenshot_path()?
@@ -35,12 +38,12 @@ pub fn capture_main_window(app: tauri::AppHandle, path: String) -> Result<String
 pub(crate) fn capture_window_png(
     win: &tauri::WebviewWindow,
     out_path: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<()> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::*;
     use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, SetForegroundWindow};
 
-    let hwnd_raw = win.hwnd().map_err(|e| format!("get hwnd: {e}"))?;
+    let hwnd_raw = win.hwnd().map_err(|e| anyhow!("get hwnd: {e}"))?;
     let hwnd = HWND(hwnd_raw.0);
 
     // Bring the window to the foreground so it's not occluded during capture.
@@ -82,20 +85,20 @@ pub(crate) fn capture_window_png(
     unsafe {
         let hdc_window = GetDC(Some(hwnd));
         if hdc_window.is_invalid() {
-            return Err("GetDC failed".into());
+            anyhow::bail!("GetDC failed");
         }
 
         let hdc_mem = CreateCompatibleDC(Some(hdc_window));
         if hdc_mem.is_invalid() {
             let _ = ReleaseDC(Some(hwnd), hdc_window);
-            return Err("CreateCompatibleDC failed".into());
+            anyhow::bail!("CreateCompatibleDC failed");
         }
 
         let hbmp = CreateCompatibleBitmap(hdc_window, width, height);
         if hbmp.is_invalid() {
             let _ = DeleteDC(hdc_mem);
             let _ = ReleaseDC(Some(hwnd), hdc_window);
-            return Err("CreateCompatibleBitmap failed".into());
+            anyhow::bail!("CreateCompatibleBitmap failed");
         }
 
         let old_bmp = SelectObject(hdc_mem, hbmp.into());
@@ -129,7 +132,7 @@ pub(crate) fn capture_window_png(
                 let _ = DeleteObject(hbmp.into());
                 let _ = DeleteDC(hdc_mem);
                 let _ = ReleaseDC(Some(hwnd), hdc_window);
-                return Err("PrintWindow + BitBlt both failed".into());
+                anyhow::bail!("PrintWindow + BitBlt both failed");
             }
         }
 
@@ -165,7 +168,7 @@ pub(crate) fn capture_window_png(
             let _ = DeleteObject(hbmp.into());
             let _ = DeleteDC(hdc_mem);
             let _ = ReleaseDC(Some(hwnd), hdc_window);
-            return Err("GetDIBits returned 0".into());
+            anyhow::bail!("GetDIBits returned 0");
         }
 
         let _ = SelectObject(hdc_mem, old_bmp);
@@ -181,8 +184,8 @@ pub(crate) fn capture_window_png(
     }
 
     let img = image::RgbaImage::from_raw(width as u32, height as u32, pixels)
-        .ok_or_else(|| "failed to create image buffer".to_string())?;
-    img.save(out_path).map_err(|e| format!("save PNG: {e}"))?;
+        .ok_or_else(|| anyhow!("failed to create image buffer"))?;
+    img.save(out_path).map_err(|e| anyhow!("save PNG: {e}"))?;
 
     tracing::info!(path = %out_path.display(), width, height, "screenshot saved");
     Ok(())
@@ -192,15 +195,15 @@ pub(crate) fn capture_window_png(
 pub(crate) fn capture_window_png(
     _win: &tauri::WebviewWindow,
     _out_path: &std::path::Path,
-) -> Result<(), String> {
-    Err("screenshot capture is Windows-only".into())
+) -> Result<()> {
+    anyhow::bail!("screenshot capture is Windows-only")
 }
 
-pub(crate) fn default_screenshot_path() -> Result<PathBuf, String> {
+pub(crate) fn default_screenshot_path() -> Result<PathBuf> {
     // paths::data_dir keeps this identical on Windows (%APPDATA%\WoWSP) and
     // resolves the app-private dir on Android, where raw dirs-next has no
     // HOME/XDG to read.
-    let wowsp_dir = crate::paths::ensure_data_dir()?;
+    let wowsp_dir = crate::paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())

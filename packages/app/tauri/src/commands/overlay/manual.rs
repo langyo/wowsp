@@ -1,4 +1,6 @@
 use super::*;
+use anyhow::{Result, anyhow};
+use wowsp_tauri_shared::CommandResult;
 // ─────────────────────────────────────────────────────────────────────────
 // Manual locate (screenshot-style drag box)
 // ─────────────────────────────────────────────────────────────────────────
@@ -93,19 +95,27 @@ pub(super) fn stored_manual_rows(stored: Option<&ManualAnchor>) -> Option<u32> {
 
 /// Pure: validate a picker submission (game-relative physical px) against
 /// the game rect.
-pub(super) fn validate_manual_selection(sel: &Rect, game: &Rect) -> Result<(), String> {
+pub(super) fn validate_manual_selection(sel: &Rect, game: &Rect) -> Result<()> {
     if sel.width <= MANUAL_MIN_SIZE || sel.height <= MANUAL_MIN_SIZE {
-        return Err(format!(
+        anyhow::bail!(
             "selection {}x{} too small (min {}x{} px per axis)",
-            sel.width, sel.height, MANUAL_MIN_SIZE, MANUAL_MIN_SIZE
-        ));
+            sel.width,
+            sel.height,
+            MANUAL_MIN_SIZE,
+            MANUAL_MIN_SIZE
+        );
     }
     if sel.x < 0 || sel.y < 0 || sel.x + sel.width > game.width || sel.y + sel.height > game.height
     {
-        return Err(format!(
+        anyhow::bail!(
             "selection ({},{})+{}x{} escapes the game window {}x{}",
-            sel.x, sel.y, sel.width, sel.height, game.width, game.height
-        ));
+            sel.x,
+            sel.y,
+            sel.width,
+            sel.height,
+            game.width,
+            game.height
+        );
     }
     Ok(())
 }
@@ -200,24 +210,24 @@ pub(super) fn force_close_manual_locate(app: &AppHandle) {
 /// Single-instance by construction: the layer is webui state, and a call
 /// while it is open just re-runs the gates and re-arms the flag.
 #[tauri::command]
-pub async fn start_manual_locate(app: AppHandle) -> Result<(), String> {
+pub async fn start_manual_locate(app: AppHandle) -> CommandResult<()> {
     let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
     if !battle_known {
         battle_known = super::arena_info::refresh_battle_state(&app);
     }
     if !battle_known {
         tracing::warn!("manual locate refused: no fresh battle roster");
-        return Err("no-battle".into());
+        return Err(anyhow!("no-battle").into());
     }
     #[cfg(target_os = "windows")]
     {
         let Some(game) = find_game_window() else {
             tracing::warn!("manual locate refused: game window not found");
-            return Err("no-game".into());
+            return Err(anyhow!("no-game").into());
         };
         if usable_picker_frame(&game).is_none() {
             tracing::warn!("manual locate refused: no usable cached frame");
-            return Err("no-frame".into());
+            return Err(anyhow!("no-frame").into());
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -225,7 +235,7 @@ pub async fn start_manual_locate(app: AppHandle) -> Result<(), String> {
         // No game window off-Windows (same answer the window gate would
         // give): the picker has nothing to anchor against.
         tracing::warn!("manual locate refused: game window not found (non-windows)");
-        return Err("no-game".into());
+        return Err(anyhow!("no-game").into());
     }
     PICKER_OPEN.store(true, Ordering::SeqCst);
     tracing::info!("manual-locate picker layer opened in the main window");
@@ -261,7 +271,7 @@ fn usable_picker_frame(game: &GameWindow) -> Option<(Vec<u8>, u32, u32, u64, Rec
 /// all-None fields and the layer shows its "no frame" state (retry /
 /// close). Desktop only (the picker layer never exists on mobile).
 #[tauri::command]
-pub async fn manual_locate_context() -> Result<ManualLocateContext, String> {
+pub async fn manual_locate_context() -> CommandResult<ManualLocateContext> {
     #[cfg(target_os = "windows")]
     {
         let Some(game) = find_game_window() else {
@@ -355,7 +365,7 @@ fn encode_picker_image(rgba: &[u8], w: u32, h: u32) -> (Option<String>, Option<u
 /// Cancel button / Esc): just clears the open flag — the main window
 /// unmounts the layer itself.
 #[tauri::command]
-pub async fn cancel_manual_locate() -> Result<(), String> {
+pub async fn cancel_manual_locate() -> CommandResult<()> {
     PICKER_OPEN.store(false, Ordering::SeqCst);
     Ok(())
 }
@@ -380,7 +390,7 @@ pub async fn set_manual_roster_rect(
     width: i32,
     height: i32,
     frame_game_rect: Option<Rect>,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     tracing::info!(sel = format!("{}x{} at ({},{})", width, height, x, y), frame_rect = ?frame_game_rect, "manual locate submit invoked");
     let sel = Rect {
         x,
@@ -395,19 +405,23 @@ pub async fn set_manual_roster_rect(
     }
     if !battle_known {
         tracing::warn!("manual locate refused: no fresh battle roster");
-        return Err("no fresh battle roster — manual locate unavailable".into());
+        return Err(anyhow!("no fresh battle roster — manual locate unavailable").into());
     }
     let team_sizes = super::arena_info::last_known_team_sizes();
     if team_sizes.0.max(team_sizes.1) == 0 {
         tracing::warn!("manual locate refused: team sizes unknown");
-        return Err("battle roster team sizes unknown — cannot derive rows".into());
+        return Err(anyhow!("battle roster team sizes unknown — cannot derive rows").into());
     }
     // Prefer the frame's captured rect; fall back to the live window rect
     // (a NON-minimized live rect is equally valid for in-place usage).
     #[cfg(target_os = "windows")]
     let game_rect: Rect = match frame_game_rect {
         Some(r) => r,
-        None => rect_from_win32(find_game_window().ok_or("game window not found")?.rect),
+        None => rect_from_win32(
+            find_game_window()
+                .ok_or_else(|| anyhow!("game window not found"))?
+                .rect,
+        ),
     };
     #[cfg(not(target_os = "windows"))]
     let game_rect: Rect = match frame_game_rect {
@@ -421,7 +435,7 @@ pub async fn set_manual_roster_rect(
     };
     if let Err(e) = validate_manual_selection(&sel, &game_rect) {
         tracing::warn!(error = %e, "manual locate refused: validation");
-        return Err(e);
+        return Err(e.into());
     }
     let battle = super::arena_info::last_arena_stamp();
     // No direct status emit here (the old immediate Manual report): the
@@ -457,7 +471,7 @@ pub async fn set_manual_roster_rect(
 /// nothing would ever demote the badge afterwards. Also closes the picker
 /// layer if one is somehow still open.
 #[tauri::command]
-pub async fn clear_manual_roster_rect(app: AppHandle) -> Result<(), String> {
+pub async fn clear_manual_roster_rect(app: AppHandle) -> CommandResult<()> {
     push_watch_command(WatchCommand::ManualAnchorCleared);
     force_close_manual_locate(&app);
     Ok(())

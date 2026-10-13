@@ -19,11 +19,13 @@
 //!    version-bucket cache for the "server average WR over versions" chart
 //!    WG's public API can't provide (they don't aggregate across players).
 
+use anyhow::{Result, anyhow};
+
 use std::fs;
 
 use wowsp_tauri_shared::{
-    CommunityTrend, ExpectedPrEntry, PatchNote, ShipServerStats, StatsSnapshot, TrendBucket,
-    TrendResult,
+    CommandResult, CommunityTrend, ExpectedPrEntry, PatchNote, ShipServerStats, StatsSnapshot,
+    TrendBucket, TrendResult,
 };
 
 use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
@@ -31,7 +33,7 @@ use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
 /// Compute the per-version trend for a player. Reads snapshots from
 /// `ship-stats`'s persisted history and overlays any applicable patch notes.
 #[tauri::command]
-pub fn get_player_trend(account_id: i64, realm: String) -> Result<TrendResult, String> {
+pub fn get_player_trend(account_id: i64, realm: String) -> CommandResult<TrendResult> {
     let snapshots = crate::commands::ship_stats::read_snapshots(&realm, account_id);
     let buckets = bucket_by_version(&snapshots);
     let patches = read_patch_index().unwrap_or_default();
@@ -84,7 +86,7 @@ const EXPECTED_VALUES_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 /// Server-wide averages for one ship, or None when the ship isn't in the
 /// dataset. `Err` means no usable data at all (network down and no cache).
 #[tauri::command]
-pub async fn get_ship_server_stats(ship_id: i64) -> Result<Option<ShipServerStats>, String> {
+pub async fn get_ship_server_stats(ship_id: i64) -> CommandResult<Option<ShipServerStats>> {
     let (raw, from_cache) = expected_values_document().await?;
     Ok(lookup_ship_server_stats(&raw, ship_id, from_cache))
 }
@@ -97,7 +99,7 @@ pub async fn get_ship_server_stats(ship_id: i64) -> Result<Option<ShipServerStat
 /// fetched) — a rating concern must degrade to "no data", never fail the
 /// command.
 #[tauri::command]
-pub async fn get_expected_pr_table() -> Result<Vec<ExpectedPrEntry>, String> {
+pub async fn get_expected_pr_table() -> CommandResult<Vec<ExpectedPrEntry>> {
     Ok(expected_pr_entries(
         &load_expected_values().await.unwrap_or_default(),
     ))
@@ -126,7 +128,7 @@ fn expected_pr_entries(
 /// when offline. Returns the raw document and whether it was served from the
 /// cache. Shared by `get_ship_server_stats` and the expected PR algorithm in
 /// `wg_api` (`load_expected_values`) so both see the same 7-day cadence.
-async fn expected_values_document() -> Result<(String, bool), String> {
+async fn expected_values_document() -> Result<(String, bool)> {
     if let Some(raw) = read_expected_values().filter(|_| expected_values_fresh()) {
         return Ok((raw, true));
     }
@@ -194,8 +196,10 @@ pub(crate) async fn load_expected_values() -> Option<std::collections::HashMap<i
     parse_expected_values(&raw)
 }
 
-fn expected_values_path() -> Result<std::path::PathBuf, String> {
-    Ok(appdata_dir_path()?.join(EXPECTED_VALUES_FILE))
+fn expected_values_path() -> Result<std::path::PathBuf> {
+    Ok(appdata_dir_path()
+        .map_err(anyhow::Error::msg)?
+        .join(EXPECTED_VALUES_FILE))
 }
 
 /// The cached expected-values document, any age. None when never fetched.
@@ -223,41 +227,43 @@ fn expected_values_fresh() -> bool {
 /// Validate a downloaded expected-values payload BEFORE it may overwrite good
 /// cached data — wows-numbers downtime has served HTML error pages with a 200
 /// status. The document must parse and its `data` object must be non-empty.
-fn validate_expected_values(raw: &str) -> Result<(), String> {
+fn validate_expected_values(raw: &str) -> Result<()> {
     let v: serde_json::Value =
-        serde_json::from_str(raw).map_err(|e| format!("expected-values JSON: {e}"))?;
+        serde_json::from_str(raw).map_err(|e| anyhow!("expected-values JSON: {e}"))?;
     let empty = v
         .get("data")
         .and_then(|d| d.as_object())
         .map(|o| o.is_empty())
         .unwrap_or(true);
     if empty {
-        return Err("expected-values response contained no ship data".to_string());
+        anyhow::bail!("expected-values response contained no ship data");
     }
     Ok(())
 }
 
 /// Fetch the expected-values document, validate it, and cache it to disk.
 /// Returns the raw document on success.
-async fn fetch_and_cache_expected_values() -> Result<String, String> {
-    let client = crate::commands::network::http_client_builder()?
+async fn fetch_and_cache_expected_values() -> Result<String> {
+    let client = crate::commands::network::http_client_builder()
+        .map_err(anyhow::Error::msg)?
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("http client: {e}"))?;
+        .map_err(|e| anyhow!("http client: {e}"))?;
     let bytes = super::upstream_health::recorded_get(
         &client,
         "api.wows-numbers.com",
         "expected-values",
         EXPECTED_VALUES_URL.to_string(),
     )
-    .await?
+    .await
+    .map_err(anyhow::Error::msg)?
     .error_for_status()
-    .map_err(|e| format!("expected-values status: {e}"))?
+    .map_err(|e| anyhow!("expected-values status: {e}"))?
     .bytes()
     .await
-    .map_err(|e| format!("expected-values body: {e}"))?
+    .map_err(|e| anyhow!("expected-values body: {e}"))?
     .to_vec();
-    let raw = String::from_utf8(bytes).map_err(|_| "expected-values: non-UTF8 body".to_string())?;
+    let raw = String::from_utf8(bytes).map_err(|_| anyhow!("expected-values: non-UTF8 body"))?;
     validate_expected_values(&raw)?;
     let _ = write_appdata_json(EXPECTED_VALUES_FILE, &raw);
     Ok(raw)
@@ -345,8 +351,8 @@ fn mean(xs: &[f32]) -> f32 {
 
 /// Read `patches/index.json`. Returns an empty vec if absent (the default
 /// state — no patches curated yet).
-fn read_patch_index() -> Result<Vec<PatchNote>, String> {
-    match read_appdata_json("patches/index.json")? {
+fn read_patch_index() -> Result<Vec<PatchNote>> {
+    match read_appdata_json("patches/index.json").map_err(anyhow::Error::msg)? {
         Some(raw) => Ok(serde_json::from_str(&raw).unwrap_or_default()),
         None => Ok(Vec::new()),
     }

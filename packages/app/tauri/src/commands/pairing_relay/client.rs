@@ -1,33 +1,35 @@
+use anyhow::{Result, anyhow, bail};
+
 use super::*;
 // ── client operations (all targets) — one per pairing route ─────────────────
 
 /// Resolve a 6-digit pairing code to its room key via the gateway's
 /// `/resolve` handshake (WS answered with a single `{"type":"room"}` frame;
 /// the v2 hello/welcome runs first with legacy tolerance).
-async fn resolve_room(ws_base: &str, code: &str) -> Result<String, String> {
+async fn resolve_room(ws_base: &str, code: &str) -> Result<String> {
     if !valid_code(code) {
-        return Err(GATEWAY_UNREACHABLE.to_string());
+        bail!("{}", GATEWAY_UNREACHABLE);
     }
     let mut ws = ws_connect(&format!("{ws_base}/resolve?code={code}"))
         .await
-        .map_err(|e| format!("resolve failed: {e}"))?;
+        .map_err(|e| anyhow!("resolve failed: {e}"))?;
     let mut first: Option<ControlMsg> = None;
     match hello_handshake(&mut ws).await {
         Ok(HelloOutcome::Welcome) | Ok(HelloOutcome::Silent) => {},
         Ok(HelloOutcome::First(m)) => first = Some(m),
-        Err(e) => return Err(format!("resolve failed: {e}")),
+        Err(e) => return Err(anyhow!("resolve failed: {e}")),
     }
     let msg = match first {
         Some(m) => m,
         None => tokio::time::timeout(RESOLVE_TIMEOUT, next_control(&mut ws))
             .await
-            .map_err(|_| "resolve timed out".to_string())??,
+            .map_err(|_| anyhow!("resolve timed out"))??,
     };
     let _ = ws.close(None).await;
     match msg {
         ControlMsg::Room { room } => {
             if !valid_room(&room) {
-                return Err("gateway resolved a malformed room key".to_string());
+                bail!("gateway resolved a malformed room key");
             }
             Ok(room)
         },
@@ -36,14 +38,14 @@ async fn resolve_room(ws_base: &str, code: &str) -> Result<String, String> {
                 .as_deref()
                 .is_some_and(|r| r.eq_ignore_ascii_case("rate_limited"))
             {
-                Err(GATEWAY_RATE_LIMITED.to_string())
+                bail!("{}", GATEWAY_RATE_LIMITED);
             } else {
                 // Unknown/expired code — same friendly state as an offline
                 // gateway.
-                Err(GATEWAY_UNREACHABLE.to_string())
+                bail!("{}", GATEWAY_UNREACHABLE);
             }
         },
-        other => Err(format!("unexpected resolve reply ({other:?})")),
+        other => bail!("unexpected resolve reply ({other:?})"),
     }
 }
 
@@ -66,11 +68,15 @@ pub(super) fn gateway_error(err: String) -> String {
 /// room key rides back in the result so the session's later tunnels are
 /// addressed without asking the gateway again. `gateway` is the ROOT the
 /// session resolves (any spelling — https/wss/http/ws host[:port]).
-pub async fn relay_pair(gateway: &str, code: &str) -> Result<PairingToken, String> {
+pub async fn relay_pair(gateway: &str, code: &str) -> Result<PairingToken> {
     let code = code.trim();
     let ws_base = resolve_gateway_cached(gateway).await?.ws_base;
-    let room = resolve_room(&ws_base, code).await.map_err(gateway_error)?;
-    let tunnel = open_tunnel(&ws_base, &room).await.map_err(gateway_error)?;
+    let room = resolve_room(&ws_base, code)
+        .await
+        .map_err(|e| anyhow::Error::msg(gateway_error(e.to_string())))?;
+    let tunnel = open_tunnel(&ws_base, &room)
+        .await
+        .map_err(|e| anyhow::Error::msg(gateway_error(e.to_string())))?;
     let body = json!({ "pin": code }).to_string();
     let req = tunnel_request("POST", "/pair", None, Some(body.as_bytes()));
     let (head, resp) = tunnel_round_trip(tunnel.data, &req, PAIR_TIMEOUT).await?;
@@ -78,12 +84,12 @@ pub async fn relay_pair(gateway: &str, code: &str) -> Result<PairingToken, Strin
     if status != 200 {
         resp.close().await;
         tunnel.control.close().await;
-        return Err(http_error_status(status));
+        return Err(anyhow::Error::msg(http_error_status(status)));
     }
     let bytes = resp.read_all(MAX_RESPONSE_BODY).await?;
     tunnel.control.close().await;
     let mut token: PairingToken =
-        serde_json::from_slice(&bytes).map_err(|e| format!("pairing response parse: {e}"))?;
+        serde_json::from_slice(&bytes).map_err(|e| anyhow!("pairing response parse: {e}"))?;
     // The room key the session's later tunnels are addressed by.
     token.room = Some(room);
     Ok(token)
@@ -94,7 +100,7 @@ pub async fn relay_list_remote(
     gateway: &str,
     room: &str,
     token: &str,
-) -> Result<Vec<ReplayMetaLite>, String> {
+) -> Result<Vec<ReplayMetaLite>> {
     let ws_base = resolve_gateway_cached(gateway).await?.ws_base;
     let tunnel = open_tunnel(&ws_base, room).await?;
     let req = tunnel_request("GET", "/api/replays", Some(token), None);
@@ -103,11 +109,11 @@ pub async fn relay_list_remote(
     if status != 200 {
         resp.close().await;
         tunnel.control.close().await;
-        return Err(http_error_status(status));
+        return Err(anyhow::Error::msg(http_error_status(status)));
     }
     let bytes = resp.read_all(MAX_RESPONSE_BODY).await?;
     tunnel.control.close().await;
-    serde_json::from_slice(&bytes).map_err(|e| format!("replay list parse: {e}"))
+    serde_json::from_slice(&bytes).map_err(|e| anyhow!("replay list parse: {e}"))
 }
 
 /// Local progress emit that tolerates "no AppHandle" (unit tests). Real
@@ -127,7 +133,7 @@ pub(crate) async fn relay_pull_replay(
     token: &str,
     remote_name: &str,
     dest: &std::path::Path,
-) -> Result<u64, String> {
+) -> Result<u64> {
     let ws_base = resolve_gateway_cached(gateway).await?.ws_base;
     let tunnel = open_tunnel(&ws_base, room).await?;
     let path = format!(
@@ -140,21 +146,21 @@ pub(crate) async fn relay_pull_replay(
     if status != 200 {
         body.close().await;
         tunnel.control.close().await;
-        return Err(http_error_status(status));
+        return Err(anyhow::Error::msg(http_error_status(status)));
     }
     let total = head.content_length().unwrap_or(0);
     use tokio::io::AsyncWriteExt as _;
     let mut file = tokio::fs::File::create(dest)
         .await
-        .map_err(|e| format!("create {}: {e}", dest.display()))?;
+        .map_err(|e| anyhow!("create {}: {e}", dest.display()))?;
     let mut received = 0u64;
     let mut since_emit = 0u64;
     let mut last_emit = std::time::Instant::now();
-    let result: Result<u64, String> = loop {
+    let result: Result<u64> = loop {
         match body.next_chunk().await {
             Ok(Some(chunk)) => {
                 if let Err(e) = file.write_all(&chunk).await {
-                    break Err(format!("write {}: {e}", dest.display()));
+                    break Err(anyhow!("write {}: {e}", dest.display()));
                 }
                 received += chunk.len() as u64;
                 since_emit += chunk.len() as u64;
@@ -196,7 +202,7 @@ pub(crate) async fn relay_pull_gamedata(
     room: &str,
     token: &str,
     dest: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<()> {
     const GAMEDATA_PREPARE_BUDGET: Duration = Duration::from_secs(120);
     const RETRY_FALLBACK_SECS: u64 = 2;
 
@@ -222,25 +228,25 @@ pub(crate) async fn relay_pull_gamedata(
     };
     let status = head.status;
     if status == 404 {
-        return Err("no game data available on the host".to_string());
+        return Err(anyhow!("no game data available on the host"));
     }
     if status != 200 {
         body.close().await;
-        return Err(http_error_status(status));
+        return Err(anyhow::Error::msg(http_error_status(status)));
     }
     let total = head.content_length().unwrap_or(0);
     use tokio::io::AsyncWriteExt as _;
     let mut file = tokio::fs::File::create(dest)
         .await
-        .map_err(|e| format!("create {}: {e}", dest.display()))?;
+        .map_err(|e| anyhow!("create {}: {e}", dest.display()))?;
     let mut received = 0u64;
     let mut since_emit = 0u64;
     let mut last_emit = std::time::Instant::now();
-    let result: Result<(), String> = loop {
+    let result: Result<()> = loop {
         match body.next_chunk().await {
             Ok(Some(chunk)) => {
                 if let Err(e) = file.write_all(&chunk).await {
-                    break Err(format!("write {}: {e}", dest.display()));
+                    break Err(anyhow!("write {}: {e}", dest.display()));
                 }
                 received += chunk.len() as u64;
                 since_emit += chunk.len() as u64;
