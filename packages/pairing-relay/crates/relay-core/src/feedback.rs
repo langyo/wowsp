@@ -829,7 +829,7 @@ textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opa
 .fb-modal[hidden] {{ display: none; }}
 .fb-modal .scrim {{ position: absolute; inset: 0; background: rgb(0 0 0 / 45%);
   backdrop-filter: blur(3px); }}
-.fb-modal .card {{ position: relative; width: min(92vw, 26rem);
+.fb-modal .fb-card {{ position: relative; width: min(92vw, 26rem);
   max-height: min(86vh, 40rem); overflow-y: auto;
   background: color-mix(in srgb, rgb(var(--color-surface)) 92%, transparent);
   border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 12%, transparent);
@@ -837,7 +837,7 @@ textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opa
   padding: var(--space-20); animation: wiz-in 0.3s var(--ease-out-expo) both; }}
 @keyframes wiz-in {{ from {{ opacity: 0; transform: translateY(5%) scale(.97); }}
   to {{ opacity: 1; transform: none; }} }}
-@media (prefers-reduced-motion: reduce) {{ .fb-modal .card {{ animation: none; }} }}
+@media (prefers-reduced-motion: reduce) {{ .fb-modal .fb-card {{ animation: none; }} }}
 .fb-modal h3 {{ margin: 0 0 var(--space-12); font-size: var(--text-md);
   font-weight: 600; }}
 .fb-modal p {{ margin: 0 0 var(--space-10); font-size: var(--text-sm);
@@ -1110,7 +1110,7 @@ a {{ color: rgb(var(--color-primary)); }}
 </main>
 <div id="qqHelpModal" class="fb-modal" hidden role="dialog" aria-modal="true">
   <div class="scrim"></div>
-  <div class="card">
+  <div class="fb-card">
     <h3 data-i18n="qqHelpTitle"></h3>
     <p data-i18n="qqHelpGroup"></p>
     <p class="help-join"><a id="helpJoin" target="_blank" rel="noreferrer"
@@ -2300,6 +2300,11 @@ mod tests {
         // ? 按钮弹窗只给加群建议与私聊跟进提示。
         assert!(page.contains(r#"id="qqHelp" class="contact-help" hidden"#));
         assert!(page.contains(r#"id="qqHelpModal" class="fb-modal" hidden"#));
+        // 弹窗卡片必须是专属 fb-card：复用外壳 .card 会连横排 flex 与
+        // height:100% 一起继承，把标题挤成竖排、按钮拉成满高竖条。
+        assert!(page.contains(r#"<div class="fb-card">"#));
+        assert!(page.contains(r#".fb-modal .fb-card { position: relative;"#));
+        assert!(!page.contains(r#".fb-modal .card "#));
         assert!(page.contains(r#"id="helpJoin""#));
         assert!(page.contains(r#"id="helpDone" data-i18n="qqHelpDone""#));
         assert!(page.contains("hk-scrollbar-track\";"));
