@@ -181,6 +181,8 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
     // failure the anonymized values still log the maintainer in.
     let claims = refresh_profile(&env, claims.clone())
         .await
+        .ok()
+        .flatten()
         .unwrap_or(claims);
 
     let key = session_key(&app_secret);
@@ -220,9 +222,14 @@ pub async fn handle_session(req: Request, env: Env) -> Result<Response> {
     if !relay_core::erp::profile_needs_refresh(&c.name, &c.avatar) {
         return ok(json!({ "ok": true, "name": c.name, "avatar": c.avatar }));
     }
+    // The profile read is attempted live on every probe while the stored
+    // claims are the placeholder; the contact failure code rides back to
+    // the console (session-gated) so a stuck 权限 grant self-reports.
     match refresh_profile(&env, c.clone()).await {
-        Some(fresh) => {
-            let mut resp = ok(json!({ "ok": true, "name": fresh.name, "avatar": fresh.avatar }))?;
+        Ok(Some(fresh)) => {
+            let mut resp = ok(json!({
+                "ok": true, "name": fresh.name, "avatar": fresh.avatar, "debug": "refreshed"
+            }))?;
             if let Some(app_secret) = env.secret("FEISHU_APP_SECRET").ok().map(|s| s.to_string()) {
                 let value = mint_session(&session_key(&app_secret), &fresh);
                 resp.headers_mut().set(
@@ -235,8 +242,13 @@ pub async fn handle_session(req: Request, env: Env) -> Result<Response> {
             Ok(resp)
         },
         // The contact read failed again (权限 still missing) — serve the
-        // stored claims and try again on the next load.
-        None => ok(json!({ "ok": true, "name": c.name, "avatar": c.avatar })),
+        // stored claims and report WHY to the session holder.
+        Ok(None) => ok(json!({
+            "ok": true, "name": c.name, "avatar": c.avatar, "debug": "unchanged"
+        })),
+        Err(d) => ok(json!({
+            "ok": true, "name": c.name, "avatar": c.avatar, "debug": d
+        })),
     }
 }
 
@@ -273,13 +285,16 @@ fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionCl
 }
 
 /// Re-read the profile from the contact API with the tenant token.
-/// Returns `None` when the call fails (权限 still missing / unreachable)
-/// or nothing changed — callers keep the stored claims in both cases.
+/// `Err` carries a short failure code (contact-net / contact<api_code>)
+/// for the session probe's debug field; `Ok(None)` means the read
+/// succeeded but nothing changed. Both keep the caller's stored claims.
 async fn refresh_profile(
     env: &Env,
     claims: relay_core::erp::SessionClaims,
-) -> Option<relay_core::erp::SessionClaims> {
-    let token = feishu_token(env).await.ok()?;
+) -> Result<Option<relay_core::erp::SessionClaims>, String> {
+    let token = feishu_token(env)
+        .await
+        .map_err(|_| "contact-net".to_string())?;
     let (_, cu) = feishu_json(
         Method::Get,
         &format!(
@@ -290,7 +305,7 @@ async fn refresh_profile(
         Value::Null,
     )
     .await
-    .ok()?;
+    .map_err(|e| format!("contact{}", e))?;
     let u = cu.pointer("/data/user").cloned().unwrap_or(Value::Null);
     let mut fresh = claims.clone();
     if let Some(n) = u
@@ -309,7 +324,7 @@ async fn refresh_profile(
     if let Some(a) = avatar {
         fresh.avatar = a.to_string();
     }
-    (fresh.name != claims.name || fresh.avatar != claims.avatar).then_some(fresh)
+    Ok((fresh.name != claims.name || fresh.avatar != claims.avatar).then_some(fresh))
 }
 
 fn login_failed(origin: &str, reason: &str) -> Result<Response> {
