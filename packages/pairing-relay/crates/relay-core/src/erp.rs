@@ -453,10 +453,16 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
     if (!v) return "";
     return new Date(v).toLocaleString("zh-CN", {{ hour12: false }});
   }}
-  function showLogin(failed) {{
+  function showLogin(reason) {{
     app.hidden = true;
     loginView.hidden = false;
-    $("loginErr").hidden = !failed;
+    var errEl = $("loginErr");
+    if (reason) {{
+      errEl.textContent = "登录失败（" + reason + "），请重试。";
+      errEl.hidden = false;
+    }} else {{
+      errEl.hidden = true;
+    }}
     $("who").hidden = true;
     $("logout").hidden = true;
   }}
@@ -538,7 +544,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
     fetch(url)
       .then(function (r) {{
         if (r.status === 401 || r.status === 403) {{
-          showLogin(false);
+          showLogin("");
           throw new Error("unauthorized");
         }}
         return r.json();
@@ -574,7 +580,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   document.getElementById("logout").onclick = function () {{
     fetch(BASE + "/api/erp/logout", {{ method: "POST" }}).then(function () {{
       lastItems = [];
-      showLogin(false);
+      showLogin("");
     }});
   }};
   // The avatar <img> is inside the hidden-by-default shell; [hidden]
@@ -589,10 +595,11 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
         showApp(j);
         load();
       }} else {{
-        showLogin(new URLSearchParams(location.search).get("login") === "failed");
+        var params = new URLSearchParams(location.search);
+        showLogin(params.get("login") === "failed" ? params.get("reason") || "unknown" : "");
       }}
     }})
-    .catch(function () {{ showLogin(false); }});
+    .catch(function () {{ showLogin(""); }});
 }})();
 </script>
 </body>
@@ -724,9 +731,12 @@ mod tests {
             );
         }
         assert!(page.contains(r#"var STATUSES = ["#));
-        // Theme flip + login-error return path.
+        // Theme flip + login-error return path (the callback's reason
+        // code is surfaced in the hint).
         assert!(page.contains("data-mode"));
-        assert!(page.contains("login=failed") || page.contains("\"login\""));
+        assert!(page.contains("params.get(\"login\")"));
+        assert!(page.contains("params.get(\"reason\")"));
+        assert!(page.contains("登录失败（"));
         // The base URL is wired for API calls.
         assert!(page.contains("var BASE = \"https://wowsp.langyo.xyz\";"));
     }

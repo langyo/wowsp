@@ -81,16 +81,16 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         .unwrap_or_default();
     let expected = cookie_get(&cookie, OAUTH_STATE_COOKIE).unwrap_or_default();
     if state.len() != 32 || !ct_eq(&state, &expected) {
-        return login_failed(&origin);
+        return login_failed(&origin, "state");
     }
     let Some(app_secret) = env.secret("FEISHU_APP_SECRET").ok().map(|s| s.to_string()) else {
-        return login_failed(&origin);
+        return login_failed(&origin, "config");
     };
 
     // Exchange the code (v2 token endpoint; errors use a different shape
     // than the v1 APIs, so parse it by hand instead of via feishu_json).
     let Some(code) = query_get(&query, "code").filter(|c| !c.is_empty() && c.len() <= 128) else {
-        return login_failed(&origin);
+        return login_failed(&origin, "code");
     };
     let mut resp = http_call(
         Method::Post,
@@ -118,7 +118,7 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         .filter(|_| (200..300).contains(&status))
         .map(str::to_string);
     let Some(uat) = uat else {
-        return login_failed(&origin);
+        return login_failed(&origin, "token");
     };
 
     // Public profile only — the token itself never leaves the server.
@@ -131,8 +131,18 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
     .await
     {
         Ok(paired) => paired,
-        Err(_) => return login_failed(&origin),
+        Err(_) => return login_failed(&origin, "profile"),
     };
+    // The documented shapes moved across endpoint generations: v1
+    // nests the profile under data.user_info, some newer docs under
+    // data.user, and the oldest shape is flat on data. Accept all
+    // three rather than guessing wrong again.
+    let data = ui.pointer("/data").cloned().unwrap_or(Value::Null);
+    let user = data
+        .get("user_info")
+        .or_else(|| data.get("user"))
+        .cloned()
+        .unwrap_or(data);
     let user = ui.pointer("/data/user").cloned().unwrap_or(Value::Null);
     let claims = SessionClaims {
         open_id: user
@@ -153,7 +163,7 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         exp: now_secs() + SESSION_TTL_SECS,
     };
     if claims.open_id.is_empty() {
-        return login_failed(&origin);
+        return login_failed(&origin, "profile");
     }
 
     let key = session_key(&app_secret);
@@ -221,11 +231,15 @@ fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionCl
     read_session(&session_key(&app_secret), &value, now_secs())
 }
 
-fn login_failed(origin: &str) -> Result<Response> {
+fn login_failed(origin: &str, reason: &str) -> Result<Response> {
     // A failed round trip also drops the state cookie so no stale nonce
-    // lingers past its purpose.
+    // lingers past its purpose. The short reason code rides the URL so
+    // the console (and the maintainer) can see WHERE the trip broke.
     let headers = Headers::new();
-    headers.set("Location", &format!("{origin}/erp?login=failed"))?;
+    headers.set(
+        "Location",
+        &format!("{origin}/erp?login=failed&reason={reason}"),
+    )?;
     headers.set(
         "Set-Cookie",
         &format!("{OAUTH_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"),
