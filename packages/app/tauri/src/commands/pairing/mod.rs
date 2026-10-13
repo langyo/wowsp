@@ -94,7 +94,7 @@ pub(crate) use super::{exports, network, replay};
 use self::gamedata::GamedataWorkspace;
 
 use tauri::{AppHandle, Emitter};
-use wowsp_tauri_shared::{PairingProgress, PairingStatus};
+use wowsp_tauri_shared::{CommandResult, PairingProgress, PairingStatus};
 
 /// Progress event channel. Pairing transfers deliberately keep their own
 /// multiplexed stream (they pull from a paired device over LAN/relay, not
@@ -132,27 +132,27 @@ use crate::mobile_unsupported::PAIRING as PAIRING_SERVER_UNSUPPORTED;
 /// Start the desktop pairing server. Mobile answers with the unsupported
 /// marker (the settings section that calls this is desktop-only anyway).
 #[tauri::command]
-pub async fn pairing_start() -> Result<PairingStatus, String> {
+pub async fn pairing_start() -> CommandResult<PairingStatus> {
     #[cfg(mobile)]
     {
-        return Err(PAIRING_SERVER_UNSUPPORTED.to_string());
+        return Err(anyhow::anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
     }
     #[cfg(desktop)]
     {
-        server::pairing_start().await
+        Ok(server::pairing_start().await?)
     }
 }
 
 /// Stop the desktop pairing server.
 #[tauri::command]
-pub async fn pairing_stop() -> Result<(), String> {
+pub async fn pairing_stop() -> CommandResult<()> {
     #[cfg(mobile)]
     {
-        return Err(PAIRING_SERVER_UNSUPPORTED.to_string());
+        return Err(anyhow::anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
     }
     #[cfg(desktop)]
     {
-        server::pairing_stop().await
+        Ok(server::pairing_stop().await?)
     }
 }
 

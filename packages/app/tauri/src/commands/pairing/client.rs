@@ -2,11 +2,13 @@
 //! pull, plus the LAN/relay target helpers and download plumbing they share.
 //! Split from the former single-file `commands/pairing.rs`.
 
+use anyhow::{Result, anyhow, bail};
+
 use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 use wowsp_tauri_shared::{
-    PairingPathResult, PairingProgress, PairingTarget, PairingToken, ReplayMetaLite,
+    CommandResult, PairingPathResult, PairingProgress, PairingTarget, PairingToken, ReplayMetaLite,
 };
 
 use super::emit_progress;
@@ -35,19 +37,19 @@ pub(super) async fn stream_to_file(
     resp: &mut reqwest::Response,
     dest: &Path,
     remote_name: &str,
-) -> Result<u64, String> {
+) -> Result<u64> {
     let total = resp.content_length().unwrap_or(0);
     let mut file = tokio::fs::File::create(dest)
         .await
-        .map_err(|e| format!("create {}: {e}", dest.display()))?;
+        .map_err(|e| anyhow!("create {}: {e}", dest.display()))?;
     use tokio::io::AsyncWriteExt;
     let mut received = 0u64;
     let mut since_emit = 0u64;
     let mut last_emit = std::time::Instant::now();
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("download: {e}"))? {
+    while let Some(chunk) = resp.chunk().await.map_err(|e| anyhow!("download: {e}"))? {
         file.write_all(&chunk)
             .await
-            .map_err(|e| format!("write {}: {e}", dest.display()))?;
+            .map_err(|e| anyhow!("write {}: {e}", dest.display()))?;
         received += chunk.len() as u64;
         since_emit += chunk.len() as u64;
         if since_emit >= 262_144
@@ -67,7 +69,7 @@ pub(super) async fn stream_to_file(
             );
         }
     }
-    file.flush().await.map_err(|e| format!("flush: {e}"))?;
+    file.flush().await.map_err(|e| anyhow!("flush: {e}"))?;
     Ok(received)
 }
 
@@ -100,31 +102,32 @@ pub(crate) fn http_error(status: reqwest::StatusCode) -> String {
 // ── target helpers (LAN vs relay dispatch) ───────────────────────────────────
 
 /// `(host, port)` of a LAN target.
-pub(super) fn lan_parts(target: &PairingTarget) -> Result<(String, u16), String> {
+pub(super) fn lan_parts(target: &PairingTarget) -> Result<(String, u16)> {
     match target {
         PairingTarget::Lan { host, port } => {
             let host = clean_host(host);
             if host.is_empty() {
-                return Err("empty host".to_string());
+                bail!("empty host");
             }
             Ok((host, *port))
         },
-        PairingTarget::Relay { .. } => Err("this call needs a LAN target".to_string()),
+        PairingTarget::Relay { .. } => bail!("this call needs a LAN target"),
     }
 }
 
 /// `(ws base, room)` of a relay target — the room key is REQUIRED here (only
 /// `pairing_pair` may derive it, from the pin it is handed).
-pub(super) fn relay_parts(target: &PairingTarget) -> Result<(String, String), String> {
+pub(super) fn relay_parts(target: &PairingTarget) -> Result<(String, String)> {
     match target {
-        PairingTarget::Lan { .. } => Err("this call needs a relay target".to_string()),
+        PairingTarget::Lan { .. } => bail!("this call needs a relay target"),
         PairingTarget::Relay { url, room } => {
             let room = room
                 .clone()
                 .filter(|r| !r.is_empty())
-                .ok_or_else(|| "relay session missing its room key".to_string())?;
+                .ok_or_else(|| anyhow!("relay session missing its room key"))?;
             Ok((
-                crate::commands::pairing_relay::normalize_relay_ws_url(url)?,
+                crate::commands::pairing_relay::normalize_relay_ws_url(url)
+                    .map_err(anyhow::Error::msg)?,
                 room,
             ))
         },
@@ -137,11 +140,11 @@ pub(super) fn relay_parts(target: &PairingTarget) -> Result<(String, String), St
 /// derives the room key from the pin and hands it back in the result so the
 /// session's later tunnels can be addressed without re-asking for the pin.
 #[tauri::command]
-pub async fn pairing_pair(target: PairingTarget, pin: String) -> Result<PairingToken, String> {
+pub async fn pairing_pair(target: PairingTarget, pin: String) -> CommandResult<PairingToken> {
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client()?;
+            let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
             let url = format!("http://{host}:{port}/pair");
             let resp = client
                 .post(&url)
@@ -149,20 +152,25 @@ pub async fn pairing_pair(target: PairingTarget, pin: String) -> Result<PairingT
                 .timeout(std::time::Duration::from_secs(15))
                 .send()
                 .await
-                .map_err(|e| format!("cannot reach {host}:{port} ({e})"))?;
+                .map_err(|e| anyhow!("cannot reach {host}:{port} ({e})"))?;
             if !resp.status().is_success() {
-                return Err(http_error(resp.status()));
+                return Err(anyhow!("{}", http_error(resp.status())).into());
             }
             let mut token = resp
                 .json::<PairingToken>()
                 .await
-                .map_err(|e| format!("pairing response parse: {e}"))?;
+                .map_err(|e| anyhow!("pairing response parse: {e}"))?;
             token.room = None;
             Ok(token)
         },
         PairingTarget::Relay { url, .. } => {
-            let ws_base = crate::commands::pairing_relay::normalize_relay_ws_url(url)?;
-            crate::commands::pairing_relay::relay_pair(&ws_base, pin.trim()).await
+            let ws_base = crate::commands::pairing_relay::normalize_relay_ws_url(url)
+                .map_err(anyhow::Error::msg)?;
+            Ok(
+                crate::commands::pairing_relay::relay_pair(&ws_base, pin.trim())
+                    .await
+                    .map_err(anyhow::Error::msg)?,
+            )
         },
     }
 }
@@ -174,28 +182,33 @@ pub async fn pairing_pair(target: PairingTarget, pin: String) -> Result<PairingT
 pub async fn pairing_list_remote(
     target: PairingTarget,
     token: String,
-) -> Result<Vec<ReplayMetaLite>, String> {
+) -> CommandResult<Vec<ReplayMetaLite>> {
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client()?;
+            let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
             let resp = client
                 .get(format!("http://{host}:{port}/api/replays"))
                 .bearer_auth(&token)
                 .timeout(std::time::Duration::from_secs(30))
                 .send()
                 .await
-                .map_err(|e| format!("cannot reach {host}:{port} ({e})"))?;
+                .map_err(|e| anyhow!("cannot reach {host}:{port} ({e})"))?;
             if !resp.status().is_success() {
-                return Err(http_error(resp.status()));
+                return Err(anyhow!("{}", http_error(resp.status())).into());
             }
-            resp.json::<Vec<ReplayMetaLite>>()
+            Ok(resp
+                .json::<Vec<ReplayMetaLite>>()
                 .await
-                .map_err(|e| format!("replay list parse: {e}"))
+                .map_err(|e| anyhow!("replay list parse: {e}"))?)
         },
         PairingTarget::Relay { .. } => {
             let (ws_base, room) = relay_parts(&target)?;
-            crate::commands::pairing_relay::relay_list_remote(&ws_base, &room, &token).await
+            Ok(
+                crate::commands::pairing_relay::relay_list_remote(&ws_base, &room, &token)
+                    .await
+                    .map_err(anyhow::Error::msg)?,
+            )
         },
     }
 }
@@ -217,9 +230,9 @@ pub async fn pairing_pull_replay(
     target: PairingTarget,
     token: String,
     remote_name: String,
-) -> Result<PairingPathResult, String> {
+) -> CommandResult<PairingPathResult> {
     if remote_name.is_empty() {
-        return Err("empty remote name".to_string());
+        return Err(anyhow!("empty remote name").into());
     }
     let local_name = sanitize_replay_name(&remote_name)?;
     let dir = managed_replays_dir()?;
@@ -236,7 +249,7 @@ pub async fn pairing_pull_replay(
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client()?;
+            let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
             let resp = client
                 .get(format!(
                     "http://{host}:{port}/api/replay/{}",
@@ -246,9 +259,9 @@ pub async fn pairing_pull_replay(
                 .timeout(std::time::Duration::from_secs(3600))
                 .send()
                 .await
-                .map_err(|e| format!("cannot reach {host}:{port} ({e})"))?;
+                .map_err(|e| anyhow!("cannot reach {host}:{port} ({e})"))?;
             if !resp.status().is_success() {
-                return Err(http_error(resp.status()));
+                return Err(anyhow!("{}", http_error(resp.status())).into());
             }
             let mut resp = resp;
             let received = stream_to_file(&app, &mut resp, &part, &remote_name).await;
@@ -264,7 +277,8 @@ pub async fn pairing_pull_replay(
                 &remote_name,
                 &part,
             )
-            .await;
+            .await
+            .map_err(anyhow::Error::msg);
             finish_replay_pull(app, received, part, final_path, remote_name).await
         },
     }
@@ -273,14 +287,16 @@ pub async fn pairing_pull_replay(
 /// Copy a completed download into a newly reserved file. Both files live in
 /// the replay directory, but a no-replace hard link is not available on every
 /// supported filesystem (for example removable game drives).
-pub(super) fn finalize_replay_part(part: &Path, proposed_path: &Path) -> Result<PathBuf, String> {
-    let dir = proposed_path.parent().ok_or("missing replay directory")?;
+pub(super) fn finalize_replay_part(part: &Path, proposed_path: &Path) -> Result<PathBuf> {
+    let dir = proposed_path
+        .parent()
+        .ok_or_else(|| anyhow!("missing replay directory"))?;
     let name = proposed_path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or("invalid replay file name")?;
+        .ok_or_else(|| anyhow!("invalid replay file name"))?;
     let mut source =
-        std::fs::File::open(part).map_err(|e| format!("read {}: {e}", part.display()))?;
+        std::fs::File::open(part).map_err(|e| anyhow!("read {}: {e}", part.display()))?;
     let result = write_replay_file(dir, name, |dest| {
         std::io::copy(&mut source, dest).map(|_| ())
     });
@@ -295,17 +311,17 @@ pub(super) fn finalize_replay_part(part: &Path, proposed_path: &Path) -> Result<
 /// terminal progress event, clean up on failure (including finalization).
 async fn finish_replay_pull(
     app: AppHandle,
-    received: Result<u64, String>,
+    received: Result<u64>,
     part: PathBuf,
     final_path: PathBuf,
     remote_name: String,
-) -> Result<PairingPathResult, String> {
+) -> CommandResult<PairingPathResult> {
     let result = match received {
         Ok(n) => {
             let source = part.clone();
             tokio::task::spawn_blocking(move || finalize_replay_part(&source, &final_path))
                 .await
-                .map_err(|e| format!("replay finalization task failed: {e}"))
+                .map_err(|e| anyhow!("replay finalization task failed: {e}"))
                 .and_then(|result| result)
                 .map(|path| (n, path))
         },
@@ -337,10 +353,13 @@ async fn finish_replay_pull(
                     phase: "error".into(),
                     received: 0,
                     total: 0,
-                    error: Some(e.clone()),
+                    // The event payload needs an owned String and anyhow
+                    // errors are not Clone — the Display text (identical to
+                    // the historical message) is what the UI toasts.
+                    error: Some(e.to_string()),
                 },
             );
-            Err(e)
+            Err(e.into())
         },
     }
 }

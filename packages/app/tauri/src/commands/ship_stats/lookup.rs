@@ -3,7 +3,9 @@
 //! in-flight single-flight, the disk-cache fallback and the PR re-derivation.
 //! Split from the former single-file `commands/ship_stats.rs`.
 
-use wowsp_tauri_shared::PlayerShipStats;
+use anyhow::{Result, anyhow};
+
+use wowsp_tauri_shared::{CommandResult, PlayerShipStats};
 
 use super::appdata::{read_appdata_json, write_appdata_json};
 use super::history::append_ship_history;
@@ -34,7 +36,7 @@ pub async fn lookup_player_ship_stats(
     realm: String,
     pr_algo: Option<String>,
     session_cache: Option<bool>,
-) -> Result<Vec<PlayerShipStats>, String> {
+) -> CommandResult<Vec<PlayerShipStats>> {
     let algo = PrAlgo::from_param(pr_algo.as_deref());
     let cache_file = format!("ship-stats/{realm}_{account_id}.json");
     // Expected algorithm: load the wows-numbers table once for the whole
@@ -98,7 +100,7 @@ pub async fn lookup_player_ship_stats(
                     return Ok(cached);
                 }
             }
-            return Err(e);
+            return Err(e.into());
         },
     };
     Ok(stats)
@@ -146,7 +148,7 @@ pub(super) const SHIP_STATS_SESSION_MAX: usize = 1000;
 /// One in-flight raw-fetch round: `Some` once the round's writer finished;
 /// waiters read the shared answer (success OR failure) after the lock.
 type ShipFetchRound =
-    std::sync::Arc<tokio::sync::Mutex<Option<std::sync::Arc<Result<Vec<RawShipStats>, String>>>>>;
+    std::sync::Arc<tokio::sync::Mutex<Option<std::sync::Arc<anyhow::Result<Vec<RawShipStats>>>>>>;
 static SHIP_FETCH_INFLIGHT: std::sync::LazyLock<
     tokio::sync::Mutex<std::collections::HashMap<(String, i64), ShipFetchRound>>,
 > = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
@@ -224,7 +226,7 @@ async fn raw_ship_stats_shared(
     realm: &str,
     account_id: i64,
     ctx: Option<std::sync::Arc<PartialContext>>,
-) -> Result<Vec<RawShipStats>, String> {
+) -> Result<Vec<RawShipStats>> {
     let key = (realm.to_string(), account_id);
     let round = {
         let mut map = SHIP_FETCH_INFLIGHT.lock().await;
@@ -238,15 +240,13 @@ async fn raw_ship_stats_shared(
         // always-fresh callers would keep joining the stale answer).
         drop(guard);
         remove_live_round(&key, &round).await;
-        return match shared.as_ref() {
-            Ok(raw) => Ok(raw.clone()),
-            Err(e) => Err(e.clone()),
-        };
+        return clone_round_result(&shared);
     }
     // We are this round's single writer.
     let round_epoch = SHIP_SESSION_EPOCH.load(std::sync::atomic::Ordering::Acquire);
-    let result = match fetch_ship_stats(account_id, realm, true, ctx.as_deref()).await {
-        Ok(mut raw) => {
+    let result = fetch_ship_stats(account_id, realm, true, ctx.as_deref())
+        .await
+        .map(|mut raw| {
             // The vortex transport serves no per-ship last_battle_time (the
             // retired WG API did). Carry the previous disk-cache write's
             // stamps forward BEFORE the session insert, so every serving
@@ -258,20 +258,30 @@ async fn raw_ship_stats_shared(
                 let prev = read_prev_ship_stats(realm, account_id);
                 carry_last_battle_times(&mut raw, &prev);
             }
-            Ok(raw)
-        },
-        Err(e) => Err(e),
-    };
+            raw
+        });
     if let Ok(raw) = &result {
         ship_stats_session_insert(realm, account_id, raw, round_epoch);
     }
-    *guard = Some(std::sync::Arc::new(result.clone()));
+    *guard = Some(std::sync::Arc::new(clone_round_result(&result)));
     drop(guard);
     // Remove only OUR round: an unconditional delete could drop a NEWER
     // round's entry (installed after a waiter cleaned ours or a clear
     // drained the map) and would briefly allow a duplicate concurrent fetch.
     remove_live_round(&key, &round).await;
     result
+}
+
+/// Clone a round's shared answer out of its `Arc`: the rows clone, but
+/// anyhow errors do not, so the error is rebuilt from its Display —
+/// byte-identical to what the writer stored (a flat message, no chain).
+fn clone_round_result(
+    result: &anyhow::Result<Vec<RawShipStats>>,
+) -> anyhow::Result<Vec<RawShipStats>> {
+    match result {
+        Ok(raw) => Ok(raw.clone()),
+        Err(e) => Err(anyhow!("{e}")),
+    }
 }
 
 /// The previous disk-cache write for one player, if any (unreadable =
@@ -340,7 +350,7 @@ pub(super) fn apply_pr_algo(
 pub(crate) async fn fetch_expected_pr_rows(
     account_id: i64,
     realm: &str,
-) -> Result<Vec<ExpectedPrRow>, String> {
+) -> Result<Vec<ExpectedPrRow>> {
     Ok(fetch_ship_stats(account_id, realm, false, None)
         .await?
         .iter()

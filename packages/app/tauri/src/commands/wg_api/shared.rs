@@ -3,6 +3,8 @@
 //! helpers, WG rich-text/dog-tag parsing and the wire DTOs. Split from the
 //! former single-file `commands/wg_api.rs`.
 
+use anyhow::{Result, anyhow, bail};
+
 use serde::Deserialize;
 
 use super::lookup_error::LookupError;
@@ -116,7 +118,7 @@ pub(super) async fn account_nickname_by_id(
     app_id: &str,
     host: &str,
     account_id: i64,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>> {
     let resp = super::upstream_health::recorded_get(
         client,
         host,
@@ -125,16 +127,14 @@ pub(super) async fn account_nickname_by_id(
             "https://{host}/wows/account/info/?application_id={app_id}&account_id={account_id}"
         ),
     )
-    .await?;
+    .await
+    .map_err(anyhow::Error::msg)?;
     let parsed: WgResponse<serde_json::Value> = resp
         .json()
         .await
-        .map_err(|e| format!("account/info parse: {e}"))?;
+        .map_err(|e| anyhow!("account/info parse: {e}"))?;
     if parsed.status != "ok" {
-        return Err(format!(
-            "account/info: {}",
-            parsed.error.message.unwrap_or_default()
-        ));
+        bail!("account/info: {}", parsed.error.message.unwrap_or_default());
     }
     Ok(parsed
         .data

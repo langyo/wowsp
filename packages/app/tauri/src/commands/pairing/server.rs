@@ -3,6 +3,8 @@
 //! `commands/pairing.rs` — everything here is `#[cfg(desktop)]` via the module
 //! declaration in `mod.rs`.
 
+use anyhow::{Result, anyhow, bail};
+
 use std::net::Ipv4Addr;
 #[cfg(test)]
 use std::net::TcpListener as StdListener;
@@ -149,7 +151,10 @@ struct Shared {
     shutdown: watch::Receiver<bool>,
 }
 
-/// One-shot state of the background game-data zip build.
+/// One-shot state of the background game-data zip build. The slot's error
+/// stays a plain `String`: `GamedataState` must be `Clone` for the watch
+/// channel (anyhow errors are not) and the error rides the 500 JSON body,
+/// which needs a serializable plain string anyway.
 #[derive(Clone)]
 enum GamedataState {
     Building,
@@ -212,11 +217,11 @@ impl ServerHandle {
 
 // ── start / stop ────────────────────────────────────────────────────────
 
-async fn prepare_server() -> Result<ServerState, String> {
+async fn prepare_server() -> Result<ServerState> {
     let listener = bind_listener().await?;
     let port = listener
         .local_addr()
-        .map_err(|e| format!("pairing port: {e}"))?
+        .map_err(|e| anyhow!("pairing port: {e}"))?
         .port();
     let host = lan_ipv4();
     let pin = random_digits(6)?;
@@ -234,7 +239,7 @@ async fn prepare_server() -> Result<ServerState, String> {
     // answers 503 + Retry-After until the zip lands.
     let (gd_tx, gd_rx) = watch::channel(GamedataState::Building);
     let workspace = Arc::new(super::GamedataWorkspace::create(
-        &paths::ensure_cache_dir()?
+        &paths::ensure_cache_dir().map_err(anyhow::Error::msg)?,
     )?);
     let build_workspace = workspace.clone();
     tokio::spawn(async move {
@@ -248,7 +253,9 @@ async fn prepare_server() -> Result<ServerState, String> {
             },
             Err(e) => tracing::warn!(error = %e, "pairing gamedata zip build failed"),
         }
-        let _ = gd_tx.send(GamedataState::Ready(res));
+        // GamedataState keeps a plain String (see its docs): the anyhow
+        // error crosses through its Display, byte-identical to the wire.
+        let _ = gd_tx.send(GamedataState::Ready(res.map_err(|e| e.to_string())));
     });
     let (tx, rx) = watch::channel(false);
     let shared = Arc::new(Shared {
@@ -280,9 +287,9 @@ async fn start_with<P, S, F>(
     gate: &Mutex<()>,
     prepare: P,
     start_sidecars: S,
-) -> Result<bool, String>
+) -> Result<bool>
 where
-    P: std::future::Future<Output = Result<ServerState, String>>,
+    P: std::future::Future<Output = Result<ServerState>>,
     S: FnOnce(u16, String) -> F,
     F: std::future::Future<Output = ()>,
 {
@@ -316,7 +323,7 @@ async fn start_sidecars(port: u16, room: String) {
     }
 }
 
-pub async fn pairing_start() -> Result<PairingStatus, String> {
+pub async fn pairing_start() -> Result<PairingStatus> {
     let started = start_with(state(), lifecycle_gate(), prepare_server(), start_sidecars).await?;
     if started && crate::commands::pairing_relay::load_relay_config().enabled {
         // Waiting for a code does not mutate lifecycle state; let stop run
@@ -371,7 +378,7 @@ async fn stop_with(
     stop_sidecars.await;
 }
 
-pub async fn pairing_stop() -> Result<(), String> {
+pub async fn pairing_stop() -> Result<()> {
     stop_with(state(), lifecycle_gate(), async {
         crate::commands::pairing_discovery::broadcast_stop().await;
         crate::commands::pairing_relay::host_session_stop().await;
@@ -382,12 +389,12 @@ pub async fn pairing_stop() -> Result<(), String> {
 }
 
 /// Preferred port first, ephemeral fallback.
-async fn bind_listener() -> Result<TcpListener, String> {
+async fn bind_listener() -> Result<TcpListener> {
     match TcpListener::bind(("0.0.0.0", PREFERRED_PORT)).await {
         Ok(l) => Ok(l),
         Err(_) => TcpListener::bind(("0.0.0.0", 0))
             .await
-            .map_err(|e| format!("bind pairing server: {e}")),
+            .map_err(|e| anyhow!("bind pairing server: {e}")),
     }
 }
 
@@ -414,9 +421,9 @@ fn lan_ipv4() -> String {
 /// those are guessable to within nanoseconds by an observer on the same
 /// machine). The u64-modulo bias for n=6 is ~5e-14 relative — noise
 /// next to the 10^6 keyspace a throttle already guards.
-pub(super) fn random_digits(n: usize) -> Result<String, String> {
+pub(super) fn random_digits(n: usize) -> Result<String> {
     let mut buf = [0u8; 8];
-    getrandom::fill(&mut buf).map_err(|e| format!("os entropy: {e}"))?;
+    getrandom::fill(&mut buf).map_err(|e| anyhow!("os entropy: {e}"))?;
     let v = u64::from_be_bytes(buf);
     let modulus = 10u64.pow(n as u32);
     Ok(format!("{:0width$}", v % modulus, width = n))
@@ -424,9 +431,9 @@ pub(super) fn random_digits(n: usize) -> Result<String, String> {
 
 /// 256-bit bearer token / room id from OS entropy, hex-encoded (64
 /// chars). `pub(crate)`: the relay module's tests mint room ids with it.
-pub(crate) fn random_token() -> Result<String, String> {
+pub(crate) fn random_token() -> Result<String> {
     let mut buf = [0u8; 32];
-    getrandom::fill(&mut buf).map_err(|e| format!("os entropy: {e}"))?;
+    getrandom::fill(&mut buf).map_err(|e| anyhow!("os entropy: {e}"))?;
     Ok(hex::encode(buf))
 }
 
@@ -436,10 +443,8 @@ pub(crate) fn random_token() -> Result<String, String> {
 /// "no game data" toast. Runs on the blocking pool; a few hundred MB of
 /// per-ship JSON deflate in seconds there without stalling the runtime.
 /// Outcome logging lives in the spawn wrapper in [`pairing_start`].
-async fn build_gamedata_zip(
-    workspace: Arc<super::GamedataWorkspace>,
-) -> Result<Option<PathBuf>, String> {
-    let data = paths::ensure_data_dir()?;
+async fn build_gamedata_zip(workspace: Arc<super::GamedataWorkspace>) -> Result<Option<PathBuf>> {
+    let data = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
     let sources = vec![data.join("gameparams"), data.join("encyclopedia")];
     let existing: Vec<PathBuf> = sources.into_iter().filter(|d| d.is_dir()).collect();
     if existing.is_empty() {
@@ -449,7 +454,7 @@ async fn build_gamedata_zip(
     let out = {
         tokio::task::spawn_blocking(move || write_gamedata_zip(&existing, &workspace.archive()))
             .await
-            .map_err(|e| format!("gamedata zip task failed: {e}"))?
+            .map_err(|e| anyhow!("gamedata zip task failed: {e}"))?
     };
     match out {
         Ok(0) => Ok(None), // dirs existed but were empty — same as missing
@@ -461,9 +466,9 @@ async fn build_gamedata_zip(
 /// Zip every file under `sources` with its dir name as the zip root
 /// (`gameparams/…`, `encyclopedia/…`) so extraction merges cleanly into
 /// the phone's data dir. Returns the file count.
-pub(super) fn write_gamedata_zip(sources: &[PathBuf], dest: &Path) -> Result<usize, String> {
+pub(super) fn write_gamedata_zip(sources: &[PathBuf], dest: &Path) -> Result<usize> {
     let tmp = dest.with_extension("zip.part");
-    let file = std::fs::File::create(&tmp).map_err(|e| format!("create {}: {e}", tmp.display()))?;
+    let file = std::fs::File::create(&tmp).map_err(|e| anyhow!("create {}: {e}", tmp.display()))?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
@@ -494,16 +499,16 @@ pub(super) fn write_gamedata_zip(sources: &[PathBuf], dest: &Path) -> Result<usi
                 // dir's name — matches the extractor's merge layout.
                 let name = format!("{root_name}/{}", rel.to_string_lossy().replace('\\', "/"));
                 zip.start_file(name.as_str(), opts)
-                    .map_err(|e| format!("zip add {name}: {e}"))?;
-                let mut f = std::fs::File::open(&path).map_err(|e| format!("open: {e}"))?;
-                std::io::copy(&mut f, &mut zip).map_err(|e| format!("zip write: {e}"))?;
+                    .map_err(|e| anyhow!("zip add {name}: {e}"))?;
+                let mut f = std::fs::File::open(&path).map_err(|e| anyhow!("open: {e}"))?;
+                std::io::copy(&mut f, &mut zip).map_err(|e| anyhow!("zip write: {e}"))?;
                 count += 1;
             }
         }
     }
     zip.finish()
-        .map_err(|e| format!("finalize gamedata zip: {e}"))?;
-    std::fs::rename(&tmp, dest).map_err(|e| format!("finalize {}: {e}", dest.display()))?;
+        .map_err(|e| anyhow!("finalize gamedata zip: {e}"))?;
+    std::fs::rename(&tmp, dest).map_err(|e| anyhow!("finalize {}: {e}", dest.display()))?;
     Ok(count)
 }
 
@@ -519,15 +524,15 @@ pub async fn spawn_on(
     gamedata_zip: Option<PathBuf>,
     pin: &str,
     room: &str,
-) -> Result<ServerHandle, String> {
+) -> Result<ServerHandle> {
     // Adopting a std listener into tokio REQUIRES non-blocking mode —
     // a blocking socket makes accept() park the runtime thread
     // synchronously (on a current-thread test runtime that deadlocks
     // everything; on the multi-thread app runtime it stalls a worker).
     listener
         .set_nonblocking(true)
-        .map_err(|e| format!("listener nonblocking: {e}"))?;
-    let listener = TcpListener::from_std(listener).map_err(|e| format!("adopt listener: {e}"))?;
+        .map_err(|e| anyhow!("listener nonblocking: {e}"))?;
+    let listener = TcpListener::from_std(listener).map_err(|e| anyhow!("adopt listener: {e}"))?;
     let token = random_token()?;
     // The test surface serves an ALREADY-BUILT zip (or none at all) —
     // the Building/503 path belongs to the command start, which spawns
@@ -645,13 +650,13 @@ impl Request {
 pub(super) async fn read_request(
     stream: &mut TcpStream,
     deadline: std::time::Duration,
-) -> Result<(Request, Vec<u8>), String> {
+) -> Result<(Request, Vec<u8>)> {
     tokio::time::timeout(deadline, read_request_inner(stream))
         .await
-        .map_err(|_| format!("request not fully received within {deadline:?}"))?
+        .map_err(|_| anyhow!("request not fully received within {deadline:?}"))?
 }
 
-async fn read_request_inner(stream: &mut TcpStream) -> Result<(Request, Vec<u8>), String> {
+async fn read_request_inner(stream: &mut TcpStream) -> Result<(Request, Vec<u8>)> {
     let mut buf: Vec<u8> = Vec::with_capacity(512);
     let mut chunk = [0u8; 4096];
     let (req, mut leftover) = loop {
@@ -661,14 +666,14 @@ async fn read_request_inner(stream: &mut TcpStream) -> Result<(Request, Vec<u8>)
             break (req, leftover);
         }
         if buf.len() > MAX_HEAD {
-            return Err("request head too large".to_string());
+            bail!("request head too large");
         }
         let n = stream
             .read(&mut chunk)
             .await
-            .map_err(|e| format!("read request: {e}"))?;
+            .map_err(|e| anyhow!("read request: {e}"))?;
         if n == 0 {
-            return Err("connection closed mid-request".to_string());
+            bail!("connection closed mid-request");
         }
         buf.extend_from_slice(&chunk[..n]);
     };
@@ -684,7 +689,7 @@ async fn read_request_inner(stream: &mut TcpStream) -> Result<(Request, Vec<u8>)
             stream
                 .read_exact(&mut rest)
                 .await
-                .map_err(|e| format!("read pair body: {e}"))?;
+                .map_err(|e| anyhow!("read pair body: {e}"))?;
             body.extend_from_slice(&rest);
         }
     }
@@ -694,31 +699,39 @@ async fn read_request_inner(stream: &mut TcpStream) -> Result<(Request, Vec<u8>)
 }
 
 /// Parse the head block (everything before CRLFCRLF) into a [`Request`].
-pub(super) fn parse_head(head: &[u8]) -> Result<Request, String> {
-    let text = std::str::from_utf8(head).map_err(|_| "non-UTF-8 request".to_string())?;
+pub(super) fn parse_head(head: &[u8]) -> Result<Request> {
+    let text = std::str::from_utf8(head).map_err(|_| anyhow!("non-UTF-8 request"))?;
     let mut lines = text.split("\r\n");
-    let request_line = lines.next().ok_or("empty request")?;
+    let request_line = lines.next().ok_or_else(|| anyhow!("empty request"))?;
     let mut parts = request_line.split(' ');
     let method = parts.next().unwrap_or("").to_ascii_uppercase();
-    let target = parts.next().ok_or("missing request target")?;
+    let target = parts
+        .next()
+        .ok_or_else(|| anyhow!("missing request target"))?;
     if method.is_empty() || parts.next().is_none() {
-        return Err("malformed request line".to_string());
+        bail!("malformed request line");
     }
     // Split query off the target, percent-decode the path.
     let (raw_path, raw_query) = match target.split_once('?') {
         Some((p, q)) => (p, Some(q)),
         None => (target, None),
     };
-    let path = percent_decode(raw_path)?;
+    let path = percent_decode(raw_path).map_err(anyhow::Error::msg)?;
     let query = raw_query
         .unwrap_or("")
         .split('&')
         .filter(|s| !s.is_empty())
         .map(|pair| match pair.split_once('=') {
-            Some((k, v)) => Ok((percent_decode(k)?, percent_decode(v)?)),
-            None => Ok((percent_decode(pair)?, String::new())),
+            Some((k, v)) => Ok((
+                percent_decode(k).map_err(anyhow::Error::msg)?,
+                percent_decode(v).map_err(anyhow::Error::msg)?,
+            )),
+            None => Ok((
+                percent_decode(pair).map_err(anyhow::Error::msg)?,
+                String::new(),
+            )),
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Result<Vec<_>>>()?;
     let mut headers = Vec::new();
     let mut content_length = 0usize;
     for line in lines {
@@ -731,9 +744,7 @@ pub(super) fn parse_head(head: &[u8]) -> Result<Request, String> {
         let key = k.trim().to_ascii_lowercase();
         let value = v.trim().to_string();
         if key == "content-length" {
-            content_length = value
-                .parse()
-                .map_err(|_| "bad content-length".to_string())?;
+            content_length = value.parse().map_err(|_| anyhow!("bad content-length"))?;
         }
         headers.push((key, value));
     }
@@ -768,7 +779,7 @@ pub(super) fn token_eq(a: &str, b: &str) -> bool {
 /// regardless of token state (the route set is public knowledge; hiding
 /// it behind a 401 buys nothing on a LAN toy and muddies client error
 /// mapping).
-async fn handle_conn(mut stream: TcpStream, shared: &Shared) -> Result<(), String> {
+async fn handle_conn(mut stream: TcpStream, shared: &Shared) -> Result<()> {
     let (req, body) = read_request(&mut stream, REQUEST_TIMEOUT).await?;
     let authed = req
         .bearer_token()
@@ -784,7 +795,7 @@ async fn handle_conn(mut stream: TcpStream, shared: &Shared) -> Result<(), Strin
     if method == "GET" && path == "/api/ping" {
         return respond_json(&mut stream, 200, "OK", &serde_json::json!({ "ok": true }))
             .await
-            .map_err(|e| e.to_string());
+            .map_err(anyhow::Error::from);
     }
 
     let replay_name = if method == "GET" && path.starts_with("/api/replay/") {
@@ -803,7 +814,7 @@ async fn handle_conn(mut stream: TcpStream, shared: &Shared) -> Result<(), Strin
             &serde_json::json!({ "error": "not found" }),
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(anyhow::Error::from);
     }
     if !authed {
         return respond_json(
@@ -813,7 +824,7 @@ async fn handle_conn(mut stream: TcpStream, shared: &Shared) -> Result<(), Strin
             &serde_json::json!({ "error": "invalid or expired token" }),
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(anyhow::Error::from);
     }
     if method == "GET" && path == "/api/replays" {
         return handle_replays(&mut stream, shared).await;
@@ -829,7 +840,7 @@ async fn handle_pair(
     shared: &Shared,
     req: &Request,
     body: Vec<u8>,
-) -> Result<(), String> {
+) -> Result<()> {
     if req.content_length > MAX_BODY {
         return respond_json(
             stream,
@@ -838,7 +849,7 @@ async fn handle_pair(
             &serde_json::json!({ "error": "pair body too large" }),
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(anyhow::Error::from);
     }
     let pin = serde_json::from_slice::<serde_json::Value>(&body)
         .ok()
@@ -862,7 +873,7 @@ async fn handle_pair(
             &serde_json::json!({ "error": "too many PIN attempts" }),
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(anyhow::Error::from);
     }
     // Relay v2: the gateway-allocated pairing code is an accepted secret
     // alongside the local PIN — a same-network phone types whatever the
@@ -881,7 +892,7 @@ async fn handle_pair(
             &serde_json::json!({ "error": "invalid PIN" }),
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(anyhow::Error::from);
     }
     shared_throttle(shared).record_success();
     // The room id rides along: relay phones address their later tunnels
@@ -893,7 +904,7 @@ async fn handle_pair(
         &serde_json::json!({ "token": shared.token, "room": shared.room }),
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(anyhow::Error::from)
 }
 
 /// Lock the PIN throttle, treating a poisoned lock as recoverable (the
@@ -927,14 +938,14 @@ fn remote_name(root: &Path, path: &str) -> String {
 /// `spawn_blocking`; the hand-rolled server has to do it itself).
 async fn scan_remote(
     replay_root: PathBuf,
-) -> Result<(PathBuf, Vec<wowsp_tauri_shared::ReplayMetaLite>), String> {
+) -> Result<(PathBuf, Vec<wowsp_tauri_shared::ReplayMetaLite>)> {
     let dir = replay_root.to_string_lossy().into_owned();
     tokio::task::spawn_blocking(move || replay::scan_replays_meta(Some(dir), None))
         .await
-        .map_err(|e| format!("replay scan task failed: {e}"))?
+        .map_err(|e| anyhow!("replay scan task failed: {e}"))?
 }
 
-async fn handle_replays(stream: &mut TcpStream, shared: &Shared) -> Result<(), String> {
+async fn handle_replays(stream: &mut TcpStream, shared: &Shared) -> Result<()> {
     let (root, entries) = scan_remote(shared.replay_root.clone()).await?;
     let projected: Vec<serde_json::Value> = entries
         .iter()
@@ -951,7 +962,7 @@ async fn handle_replays(stream: &mut TcpStream, shared: &Shared) -> Result<(), S
         .collect();
     respond_json(stream, 200, "OK", &serde_json::Value::Array(projected))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(anyhow::Error::from)
 }
 
 /// Serve one replay file. `name` must match an entry of the CURRENT
@@ -959,11 +970,7 @@ async fn handle_replays(stream: &mut TcpStream, shared: &Shared) -> Result<(), S
 /// the filesystem by user-supplied spelling, so traversal cannot reach
 /// anything the listing itself doesn't already show. Belt-and-braces the
 /// obvious junk anyway.
-async fn handle_replay_file(
-    stream: &mut TcpStream,
-    shared: &Shared,
-    name: &str,
-) -> Result<(), String> {
+async fn handle_replay_file(stream: &mut TcpStream, shared: &Shared, name: &str) -> Result<()> {
     if name.is_empty()
         || name.contains("..")
         || name.contains('\\')
@@ -977,7 +984,7 @@ async fn handle_replay_file(
             &serde_json::json!({ "error": "replay not found" }),
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(anyhow::Error::from);
     }
     let (root, entries) = scan_remote(shared.replay_root.clone()).await?;
     let Some(entry) = entries
@@ -992,7 +999,7 @@ async fn handle_replay_file(
             &serde_json::json!({ "error": "replay not found" }),
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(anyhow::Error::from);
     };
     serve_file(stream, &entry, "application/octet-stream").await
 }
@@ -1002,7 +1009,7 @@ async fn handle_replay_file(
 /// a bounded [`GAMEDATA_BUILD_WAIT`] for completion (a near-miss gets
 /// served instead of bounced) and then answers 503 + Retry-After so the
 /// phone can nap and come back.
-async fn handle_gamedata(stream: &mut TcpStream, shared: &Shared) -> Result<(), String> {
+async fn handle_gamedata(stream: &mut TcpStream, shared: &Shared) -> Result<()> {
     handle_gamedata_with_wait(stream, shared, GAMEDATA_BUILD_WAIT).await
 }
 
@@ -1011,7 +1018,7 @@ async fn handle_gamedata_with_wait(
     stream: &mut TcpStream,
     shared: &Shared,
     wait: std::time::Duration,
-) -> Result<(), String> {
+) -> Result<()> {
     let mut rx = shared.gamedata.clone();
     let current = rx.borrow().clone();
     let state = match current {
@@ -1036,7 +1043,7 @@ async fn handle_gamedata_with_wait(
             &serde_json::json!({ "error": "game data zip is still being prepared" }),
         )
         .await
-        .map_err(|e| e.to_string()),
+        .map_err(anyhow::Error::from),
         GamedataState::Ready(Err(e)) => respond_json(
             stream,
             500,
@@ -1044,7 +1051,7 @@ async fn handle_gamedata_with_wait(
             &serde_json::json!({ "error": e }),
         )
         .await
-        .map_err(|e| e.to_string()),
+        .map_err(anyhow::Error::from),
         GamedataState::Ready(Ok(None)) => respond_json(
             stream,
             404,
@@ -1052,7 +1059,7 @@ async fn handle_gamedata_with_wait(
             &serde_json::json!({ "error": "no game data available" }),
         )
         .await
-        .map_err(|e| e.to_string()),
+        .map_err(anyhow::Error::from),
         GamedataState::Ready(Ok(Some(zip))) if zip.is_file() => {
             serve_file(stream, &zip, "application/zip").await
         },
@@ -1064,14 +1071,14 @@ async fn handle_gamedata_with_wait(
             &serde_json::json!({ "error": "no game data available" }),
         )
         .await
-        .map_err(|e| e.to_string()),
+        .map_err(anyhow::Error::from),
     }
 }
 
 /// Stream a file with Content-Length + Connection: close.
-async fn serve_file(stream: &mut TcpStream, path: &Path, content_type: &str) -> Result<(), String> {
+async fn serve_file(stream: &mut TcpStream, path: &Path, content_type: &str) -> Result<()> {
     let len = std::fs::metadata(path)
-        .map_err(|e| format!("stat {}: {e}", path.display()))?
+        .map_err(|e| anyhow!("stat {}: {e}", path.display()))?
         .len();
     let head = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n"
@@ -1079,14 +1086,14 @@ async fn serve_file(stream: &mut TcpStream, path: &Path, content_type: &str) -> 
     stream
         .write_all(head.as_bytes())
         .await
-        .map_err(|e| format!("write head: {e}"))?;
+        .map_err(|e| anyhow!("write head: {e}"))?;
     let mut file = tokio::fs::File::open(path)
         .await
-        .map_err(|e| format!("open {}: {e}", path.display()))?;
+        .map_err(|e| anyhow!("open {}: {e}", path.display()))?;
     tokio::io::copy(&mut file, stream)
         .await
-        .map_err(|e| format!("stream {}: {e}", path.display()))?;
-    stream.flush().await.map_err(|e| format!("flush: {e}"))?;
+        .map_err(|e| anyhow!("stream {}: {e}", path.display()))?;
+    stream.flush().await.map_err(|e| anyhow!("flush: {e}"))?;
     let _ = stream.shutdown().await;
     Ok(())
 }

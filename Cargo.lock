@@ -6948,6 +6948,7 @@ dependencies = [
 name = "wowsp_tauri_shared"
 version = "0.6.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "serde",
  "serde_json",
@@ -7409,7 +7410,7 @@ version = "0.2.1"
 
 [[patch.unused]]
 name = "plana-celestia-config"
-version = "0.1.29"
+version = "0.1.51"
 
 [[patch.unused]]
 name = "plana-rpc-client"

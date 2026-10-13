@@ -3,9 +3,10 @@
 //! [`ReplayMeta`]/[`ReplayMetaLite`], and the nickname classifiers the arena
 //! surfaces share. Split from the former single-file `commands/replay.rs`.
 
+use anyhow::anyhow;
 use std::fs;
 
-use wowsp_tauri_shared::{ReplayMeta, ReplayMetaLite, VehicleEntry};
+use wowsp_tauri_shared::{CommandResult, ReplayMeta, ReplayMetaLite, VehicleEntry};
 
 /// Replay magic — first 4 bytes of every `.wowsreplay`.
 pub(super) const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
@@ -21,18 +22,18 @@ pub(super) const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
 /// UI thread (Tauri 2 synchronous commands do) — same rule as
 /// [`pick_replay_files`].
 #[tauri::command]
-pub async fn read_replay_header(path: String) -> Result<ReplayMeta, String> {
+pub async fn read_replay_header(path: String) -> CommandResult<ReplayMeta> {
     tokio::task::spawn_blocking(move || {
-        let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+        let bytes = fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
         let json = extract_descriptor_json(&bytes).ok_or_else(|| {
-            format!("{path}: not a valid wowsreplay (magic mismatch or truncated)")
+            anyhow!("{path}: not a valid wowsreplay (magic mismatch or truncated)")
         })?;
         let raw: serde_json::Value =
-            serde_json::from_str(&json).map_err(|e| format!("parse descriptor JSON: {e}"))?;
+            serde_json::from_str(&json).map_err(|e| anyhow!("parse descriptor JSON: {e}"))?;
         Ok(meta_from_raw(path, raw))
     })
     .await
-    .map_err(|e| format!("replay header task failed: {e}"))?
+    .map_err(|e| anyhow!("replay header task failed: {e}"))?
 }
 /// Generous upper bound on any one metadata block: real descriptors run a
 /// few hundred KB (roster-heavy), so a length prefix beyond this is a corrupt

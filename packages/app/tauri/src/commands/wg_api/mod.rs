@@ -27,9 +27,10 @@
 //! The two INTERACTIVE commands (`lookup_player_stats` / `lookup_clan_info`)
 //! reject with the structured [`super::lookup_error::LookupError`] payload —
 //! the lookup UI localizes "not found" per kind and surfaces the official
-//! error message — while the batch/suggest commands keep plain `String`
-//! errors (their consumers render "no data", never a reason). `From<String>`
-//! bridges the shared plumbing into the structured type.
+//! error message — while the batch/suggest commands reject with anyhow-based
+//! plain-string IPC errors (their consumers render "no data", never a
+//! reason; the message strings are unchanged). `From<String>` bridges the
+//! shared plumbing into the structured type.
 
 // ── module layout ───────────────────────────────────────────────────────────
 // `roster`      — player stats lookups + the live-roster batch (session cache,

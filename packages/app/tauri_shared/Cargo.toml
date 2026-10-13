@@ -9,6 +9,7 @@ publish = false  # desktop app crate, never published (also marks it private for
 description = "Shared DTOs between the WoWSP Tauri shell and the frontend"
 
 [dependencies]
+anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

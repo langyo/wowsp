@@ -2,11 +2,12 @@
 //! metadata-rich), the native file picker, and the replay-dir resolution the
 //! pairing flows share. Split from the former single-file `commands/replay.rs`.
 
+use anyhow::{Result, anyhow};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use wowsp_tauri_shared::{GameInstall, ReplayMetaLite};
+use wowsp_tauri_shared::{CommandResult, GameInstall, ReplayMetaLite};
 
 use super::meta::lite_from_path;
 
@@ -22,12 +23,12 @@ use super::game_client::is_replay_extension;
 /// [`read_replay_header`] / [`read_replay_positions`] commands as regular
 /// replays — both accept arbitrary paths.
 #[tauri::command]
-pub async fn pick_replay_files() -> Result<Vec<String>, String> {
+pub async fn pick_replay_files() -> CommandResult<Vec<String>> {
     // Mobile: replays arrive through the pairing / document-picker flow (a
     // later mobile phase), not a desktop-style multi-select dialog.
     #[cfg(mobile)]
     {
-        return Err(crate::mobile_unsupported::PICKER.into());
+        return Err(anyhow::anyhow!(crate::mobile_unsupported::PICKER).into());
     }
     // rfd pumps its own message loop — run it on a blocking thread, never
     // the async runtime workers or the app's UI thread.
@@ -41,7 +42,7 @@ pub async fn pick_replay_files() -> Result<Vec<String>, String> {
                 .pick_files()
         })
         .await
-        .map_err(|e| format!("replay file picker task failed: {e}"))?;
+        .map_err(|e| anyhow!("replay file picker task failed: {e}"))?;
         Ok(picked
             .unwrap_or_default()
             .into_iter()
@@ -63,11 +64,8 @@ pub async fn pick_replay_files() -> Result<Vec<String>, String> {
 /// UI thread (Tauri 2 synchronous commands do) — same rule as
 /// [`read_replay_header`].
 #[tauri::command]
-pub async fn list_replays(
-    dir: Option<String>,
-    limit: Option<usize>,
-) -> Result<Vec<String>, String> {
-    tokio::task::spawn_blocking(move || {
+pub async fn list_replays(dir: Option<String>, limit: Option<usize>) -> CommandResult<Vec<String>> {
+    Ok(tokio::task::spawn_blocking(move || {
         let dir = resolve_replay_dir(dir)?;
         let mut entries: Vec<WalkedReplay> = Vec::new();
         walk_replays(&dir, &mut entries);
@@ -77,14 +75,16 @@ pub async fn list_replays(
         // truncates, so version-archive subfolders are never silently
         // dropped once a tree grows past any fixed default.
         let limit = limit.unwrap_or(usize::MAX);
-        Ok(entries
-            .into_iter()
-            .take(limit)
-            .map(|e| e.path.to_string_lossy().into_owned())
-            .collect())
+        Ok::<_, anyhow::Error>(
+            entries
+                .into_iter()
+                .take(limit)
+                .map(|e| e.path.to_string_lossy().into_owned())
+                .collect(),
+        )
     })
     .await
-    .map_err(|e| format!("replay listing task failed: {e}"))?
+    .map_err(|e| anyhow!("replay listing task failed: {e}"))??)
 }
 
 /// List replays with their parsed descriptor metadata — same walk as
@@ -110,9 +110,9 @@ pub async fn list_replays_meta(
     dir: Option<String>,
     limit: Option<usize>,
     all: Option<bool>,
-) -> Result<Vec<ReplayMetaLite>, String> {
+) -> CommandResult<Vec<ReplayMetaLite>> {
     let all = all.unwrap_or(false);
-    tokio::task::spawn_blocking(move || {
+    Ok(tokio::task::spawn_blocking(move || {
         if all {
             Ok(scan_all_replays_meta(limit))
         } else {
@@ -120,7 +120,7 @@ pub async fn list_replays_meta(
         }
     })
     .await
-    .map_err(|e| format!("replay listing task failed: {e}"))?
+    .map_err(|e| anyhow!("replay listing task failed: {e}"))??)
 }
 
 /// The all-clients enumeration core behind `list_replays_meta { all: true }`:
@@ -187,7 +187,7 @@ pub(super) fn scan_roots_meta(
 pub(crate) fn scan_replays_meta(
     dir: Option<String>,
     limit: Option<usize>,
-) -> Result<(PathBuf, Vec<ReplayMetaLite>), String> {
+) -> Result<(PathBuf, Vec<ReplayMetaLite>)> {
     let dir = resolve_replay_dir(dir)?;
     let mut entries: Vec<WalkedReplay> = Vec::new();
     walk_replays(&dir, &mut entries);
@@ -216,23 +216,25 @@ pub(crate) fn scan_replays_meta(
 /// managed dir (`<app_data>/replays`), filled by the pairing / import flow —
 /// there is no game install to auto-detect on a phone.
 #[cfg(desktop)]
-fn default_replay_dir() -> Result<PathBuf, String> {
+fn default_replay_dir() -> Result<PathBuf> {
     super::game_context::resolve_root(super::game_context::RootPreference::PreferActive)
         .map(|ctx| super::game_context::replays_dir(&ctx.root))
         .ok_or_else(|| {
-            "no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into()
+            anyhow!("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH")
         })
 }
 
 #[cfg(mobile)]
-fn default_replay_dir() -> Result<PathBuf, String> {
-    crate::paths::ensure_data_dir().map(|d| d.join("replays"))
+fn default_replay_dir() -> Result<PathBuf> {
+    crate::paths::ensure_data_dir()
+        .map(|d| d.join("replays"))
+        .map_err(anyhow::Error::msg)
 }
 
 /// Resolve the replay dir the caller asked for (explicit → env override →
 /// platform default). Shared with the pairing module, which writes imports /
 /// pulls into the same dir the local listing reads.
-pub(crate) fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf, String> {
+pub(crate) fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf> {
     if let Some(d) = dir {
         return Ok(PathBuf::from(d));
     }

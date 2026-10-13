@@ -9,6 +9,7 @@
 mod arena;
 pub mod download;
 mod encyclopedia;
+pub mod error;
 mod game;
 mod mod_hub;
 mod overlay;
@@ -23,6 +24,7 @@ mod supporters;
 pub use arena::*;
 pub use download::*;
 pub use encyclopedia::*;
+pub use error::{CommandError, CommandResult};
 pub use game::*;
 pub use mod_hub::*;
 pub use overlay::*;

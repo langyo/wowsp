@@ -3,11 +3,13 @@
 //! Clan-Battles probes) and the `PlayerStats` assembly. Split from the former
 //! single-file `commands/wg_api.rs`.
 
+use anyhow::{Result, anyhow};
+
 use std::collections::HashMap;
 use std::time::Duration;
 
 use futures::stream::{self, StreamExt};
-use wowsp_tauri_shared::PlayerStats;
+use wowsp_tauri_shared::{CommandResult, PlayerStats};
 
 use super::clans::{ClanTagInfo, fetch_clan_info_for_accounts};
 use super::lookup_error::LookupError;
@@ -59,7 +61,7 @@ pub(crate) fn roster_cache_get(realm: &str, name: &str) -> Option<Option<PlayerS
 /// share — see ship_stats.rs) rides along, so a forced refresh stays
 /// forced there too.
 #[tauri::command]
-pub fn clear_roster_stats_cache() -> Result<(), String> {
+pub fn clear_roster_stats_cache() -> CommandResult<()> {
     if let Ok(mut cache) = ROSTER_STATS_CACHE.lock() {
         cache.clear();
     }
@@ -106,15 +108,23 @@ pub async fn lookup_player_stats(
     //    guard below has nothing to add.
     let mut resolved_by_uid = false;
     let entry = match name.trim().parse::<i64>() {
-        Ok(uid) if uid > 0 => match account_nickname_by_id(&client, &app_id, host, uid).await? {
-            Some(nickname) => {
-                resolved_by_uid = true;
-                Some(AccountListEntry {
-                    account_id: uid,
-                    nickname,
-                })
-            },
-            None => account_list_one(&client, &app_id, host, &name).await?,
+        // anyhow→LookupError boundary: the structured rejection keeps its
+        // `From<String>` bridge, so the anyhow error renders through its
+        // Display (the historical message) on the way in.
+        Ok(uid) if uid > 0 => {
+            match account_nickname_by_id(&client, &app_id, host, uid)
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                Some(nickname) => {
+                    resolved_by_uid = true;
+                    Some(AccountListEntry {
+                        account_id: uid,
+                        nickname,
+                    })
+                },
+                None => account_list_one(&client, &app_id, host, &name).await?,
+            }
         },
         _ => account_list_one(&client, &app_id, host, &name).await?,
     }
@@ -249,15 +259,17 @@ pub async fn lookup_players_stats_batch(
     realm: String,
     pr_algo: Option<String>,
     cross_realm: Option<bool>,
-) -> Result<Vec<Option<PlayerStats>>, String> {
+) -> CommandResult<Vec<Option<PlayerStats>>> {
     let algo = PrAlgo::from_param(pr_algo.as_deref());
     if names.is_empty() {
         return Ok(Vec::new());
     }
     if realm == "cn" {
-        return super::wg_api_cn::lookup_players_stats_batch(names, algo).await;
+        return Ok(super::wg_api_cn::lookup_players_stats_batch(names, algo)
+            .await
+            .map_err(anyhow::Error::msg)?);
     }
-    lookup_roster(names, Vec::new(), realm, cross_realm.unwrap_or(false), algo).await
+    Ok(lookup_roster(names, Vec::new(), realm, cross_realm.unwrap_or(false), algo).await?)
 }
 
 /// The WG clusters that can interleave rosters in cross-server Clan
@@ -309,20 +321,23 @@ pub(crate) async fn lookup_roster(
     realm: String,
     cross_realm: bool,
     algo: PrAlgo,
-) -> Result<Vec<Option<PlayerStats>>, String> {
+) -> Result<Vec<Option<PlayerStats>>> {
     // CN runs its own API surface (`wg_api_cn`, vortex + clanbase) with no
     // id-based path — ids and the cross-server pass are WG-cluster
     // concepts. The command above routes here after its own CN check, so
     // this guard exists for the in-game bridge, which calls in directly.
     if realm == "cn" {
-        return super::wg_api_cn::lookup_players_stats_batch(names, algo).await;
+        return super::wg_api_cn::lookup_players_stats_batch(names, algo)
+            .await
+            .map_err(anyhow::Error::msg);
     }
     // Per-request timeout so one hung connection can't stall the roster all
     // battle long.
-    let client = crate::commands::network::http_client_builder()?
+    let client = crate::commands::network::http_client_builder()
+        .map_err(anyhow::Error::msg)?
         .timeout(Duration::from_secs(15))
         .build()
-        .map_err(|e| format!("http client: {e}"))?;
+        .map_err(|e| anyhow!("http client: {e}"))?;
 
     // The slot's exact account id, when the caller has one (> 0).
     let slot_id =
@@ -663,9 +678,9 @@ async fn resolve_names_on_realm(
     client: &reqwest::Client,
     realm: &str,
     names: &[String],
-) -> Result<Vec<Option<PlayerStats>>, String> {
+) -> Result<Vec<Option<PlayerStats>>> {
     let app_id = super::wg_realm::application_id(realm);
-    let host = super::wg_realm::api_host(realm)?;
+    let host = super::wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
 
     // 1. name → account, bounded-parallel. Every exact-prefix hit is kept
     //    (capped — see [`EXACT_HIT_CANDIDATES`]): the first hit is not
@@ -673,7 +688,7 @@ async fn resolve_names_on_realm(
     //    alternatives to pick from. A rate-limited / failed list response
     //    fails the whole batch — it must not degrade into "not found" (the
     //    frontend would cache that).
-    let results: Vec<Result<Vec<AccountListEntry>, String>> = {
+    let results: Vec<Result<Vec<AccountListEntry>>> = {
         let client_ref = client;
         stream::iter(names.iter().cloned())
             .map(|name| {
@@ -684,16 +699,14 @@ async fn resolve_names_on_realm(
                 async move {
                     let resp =
                         super::upstream_health::recorded_get(client_ref, host, "account/list", url)
-                            .await?;
+                            .await
+                            .map_err(anyhow::Error::msg)?;
                     let list = resp
                         .json::<WgResponse<Vec<AccountListEntry>>>()
                         .await
-                        .map_err(|e| format!("account/list parse: {e}"))?;
+                        .map_err(|e| anyhow!("account/list parse: {e}"))?;
                     if list.status != "ok" {
-                        return Err(format!(
-                            "account/list: {}",
-                            list.error.message.unwrap_or_default()
-                        ));
+                        anyhow::bail!("account/list: {}", list.error.message.unwrap_or_default());
                     }
                     // Same exact-match guard as account_list_one: only the
                     // queried account's name qualifies — a lookalike's
@@ -713,8 +726,10 @@ async fn resolve_names_on_realm(
             .collect()
             .await
     };
-    if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
-        return Err(e.clone());
+    // anyhow errors are not Clone, so the first failure is MOVED out of the
+    // collected vec (Display-identical to the historical cloned String).
+    if results.iter().any(Result::is_err) {
+        return Err(results.into_iter().find_map(Result::err).unwrap());
     }
     let candidates: Vec<Vec<AccountListEntry>> =
         results.into_iter().map(|r| r.unwrap_or_default()).collect();
@@ -768,13 +783,13 @@ async fn resolve_ids_on_realm(
     client: &reqwest::Client,
     realm: &str,
     entries: &[(usize, String, i64)],
-) -> Result<HashMap<usize, PlayerStats>, String> {
+) -> Result<HashMap<usize, PlayerStats>> {
     let mut out: HashMap<usize, PlayerStats> = HashMap::new();
     if entries.is_empty() {
         return Ok(out);
     }
     let app_id = super::wg_realm::application_id(realm);
-    let host = super::wg_realm::api_host(realm)?;
+    let host = super::wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
     let ids: Vec<i64> = entries.iter().map(|(_, _, id)| *id).collect();
     let info_fut = async { fetch_account_info_chunked(client, &app_id, host, &ids).await };
     let clan_fut = async { fetch_clan_info_for_accounts(client, &app_id, host, &ids).await };
@@ -819,7 +834,7 @@ async fn fetch_account_info_chunked(
     app_id: &str,
     host: &str,
     ids: &[i64],
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>> {
     // Same extra-gated division splits as the single lookup; the
     // per-chunk results merge into one id-keyed map.
     let mut roster = serde_json::Map::new();
@@ -839,16 +854,14 @@ async fn fetch_account_info_chunked(
                  statistics.rank_solo,statistics.rank_div2,statistics.rank_div3"
             ),
         )
-        .await?;
+        .await
+        .map_err(anyhow::Error::msg)?;
         let parsed = resp
             .json::<WgResponse<serde_json::Value>>()
             .await
-            .map_err(|e| format!("account/info parse: {e}"))?;
+            .map_err(|e| anyhow!("account/info parse: {e}"))?;
         if parsed.status != "ok" {
-            return Err(format!(
-                "account/info: {}",
-                parsed.error.message.unwrap_or_default()
-            ));
+            anyhow::bail!("account/info: {}", parsed.error.message.unwrap_or_default());
         }
         if let Some(data) = parsed.data.and_then(|d| d.as_object().cloned()) {
             roster.extend(data);

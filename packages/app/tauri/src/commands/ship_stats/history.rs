@@ -2,8 +2,11 @@
 //! read-modify-write helper both files share. Split from the former
 //! single-file `commands/ship_stats.rs`.
 
+use anyhow::{Result, anyhow};
+
 use wowsp_tauri_shared::{
-    GameVersionInfo, PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint, StatsSnapshot,
+    CommandResult, GameVersionInfo, PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint,
+    StatsSnapshot,
 };
 
 use super::appdata::{appdata_dir_path, read_appdata_json};
@@ -38,6 +41,7 @@ pub(super) fn append_ship_history(
     timestamp: i64,
 ) {
     let result = appdata_dir_path()
+        .map_err(anyhow::Error::msg)
         .and_then(|dir| append_ship_history_in(&dir, realm, account_id, stats, timestamp));
     if let Err(error) = result {
         tracing::warn!(%error, "could not append per-ship history");
@@ -50,7 +54,7 @@ pub(super) fn append_ship_history_in(
     account_id: i64,
     stats: &[PlayerShipStats],
     timestamp: i64,
-) -> Result<(), String> {
+) -> Result<()> {
     if stats.is_empty() {
         return Ok(());
     }
@@ -110,20 +114,20 @@ pub(super) fn update_history_in<T: serde::de::DeserializeOwned + serde::Serializ
     dir: &std::path::Path,
     file: &str,
     update: impl FnOnce(&mut Vec<T>),
-) -> Result<(), String> {
+) -> Result<()> {
     let _writer = HISTORY_WRITE_GATE.lock().unwrap_or_else(|p| p.into_inner());
     // Only a missing file starts fresh. A read/parse failure must preserve
     // the existing history, including a temporarily locked Windows file.
-    let mut history = match super::appdata::read_json_in(dir, file)? {
+    let mut history = match super::appdata::read_json_in(dir, file).map_err(anyhow::Error::msg)? {
         Some(raw) => {
-            serde_json::from_str(&raw).map_err(|error| format!("parse history {file}: {error}"))?
+            serde_json::from_str(&raw).map_err(|error| anyhow!("parse history {file}: {error}"))?
         },
         None => Vec::new(),
     };
     update(&mut history);
     let raw = serde_json::to_string(&history)
-        .map_err(|error| format!("serialize history {file}: {error}"))?;
-    super::appdata::write_json_in(dir, file, &raw)
+        .map_err(|error| anyhow!("serialize history {file}: {error}"))?;
+    super::appdata::write_json_in(dir, file, &raw).map_err(anyhow::Error::msg)
 }
 
 /// A career row with battles recorded but zero damage AND zero kills cannot
@@ -157,7 +161,7 @@ fn career_totals(s: &PlayerShipStats) -> ShipCareerTotals {
 pub async fn read_ship_stats_history(
     account_id: i64,
     realm: String,
-) -> Result<Vec<ShipStatsHistoryPoint>, String> {
+) -> CommandResult<Vec<ShipStatsHistoryPoint>> {
     let file = format!("ship-history/{realm}_{account_id}.json");
     Ok(read_appdata_json(&file)
         .ok()
@@ -179,7 +183,7 @@ pub async fn snapshot_player_stats(
     winrate: Option<f32>,
     avg_damage: Option<f32>,
     pr: Option<i64>,
-) -> Result<StatsSnapshot, String> {
+) -> CommandResult<StatsSnapshot> {
     let version = match get_game_version_cached().await {
         Ok(v) => v.game_version,
         Err(_) => "unknown".to_string(),
@@ -194,7 +198,12 @@ pub async fn snapshot_player_stats(
         pr,
     };
 
-    append_snapshot_in(&appdata_dir_path()?, &realm, account_id, snap.clone())?;
+    append_snapshot_in(
+        &appdata_dir_path().map_err(anyhow::Error::msg)?,
+        &realm,
+        account_id,
+        snap.clone(),
+    )?;
     Ok(snap)
 }
 
@@ -203,7 +212,7 @@ pub(super) fn append_snapshot_in(
     realm: &str,
     account_id: i64,
     snap: StatsSnapshot,
-) -> Result<(), String> {
+) -> Result<()> {
     let file = format!("snapshots/{realm}_{account_id}.json");
     update_history_in(dir, &file, |history: &mut Vec<StatsSnapshot>| {
         history.push(snap);
@@ -224,7 +233,7 @@ pub(crate) fn read_snapshots(realm: &str, account_id: i64) -> Vec<StatsSnapshot>
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default()
 }
-async fn get_game_version_cached() -> Result<GameVersionInfo, String> {
+async fn get_game_version_cached() -> Result<GameVersionInfo> {
     // Delegate to the encyclopedia module's command logic by calling the
     // cache path directly first, then the live API.
     if let Ok(Some(raw)) = read_appdata_json("encyclopedia/info.json") {
@@ -233,5 +242,7 @@ async fn get_game_version_cached() -> Result<GameVersionInfo, String> {
         }
     }
     // Fall back to a live fetch via the encyclopedia command's path.
-    crate::commands::encyclopedia::get_game_version_pub().await
+    crate::commands::encyclopedia::get_game_version_pub()
+        .await
+        .map_err(anyhow::Error::msg)
 }

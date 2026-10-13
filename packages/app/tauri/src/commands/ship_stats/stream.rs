@@ -2,6 +2,8 @@
 //! racer), the stall-tolerant streaming body reader and the partial-row
 //! progress events. Split from the former single-file `commands/ship_stats.rs`.
 
+use anyhow::{Result, anyhow, bail};
+
 use futures::stream::{self, StreamExt};
 use wowsp_tauri_shared::PlayerShipStats;
 
@@ -127,7 +129,7 @@ async fn read_body_streamed(
     ctx: Option<&PartialContext>,
     source: &str,
     mut on_chunk: impl FnMut(&[u8]),
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>> {
     let started = std::time::Instant::now();
     let mut buffer: Vec<u8> = Vec::with_capacity(64 * 1024);
     let mut slow_signalled = false;
@@ -152,10 +154,10 @@ async fn read_body_streamed(
         match chunk {
             Ok(Ok(Some(bytes))) => {
                 if started.elapsed() > SHIP_STREAM_HARD_CAP {
-                    return Err(format!(
+                    bail!(
                         "{source}: hard cap {}s exceeded",
                         SHIP_STREAM_HARD_CAP.as_secs()
-                    ));
+                    );
                 }
                 buffer.extend_from_slice(&bytes);
                 on_chunk(&buffer);
@@ -167,12 +169,12 @@ async fn read_body_streamed(
                 }
             },
             Ok(Ok(None)) => return Ok(buffer),
-            Ok(Err(e)) => return Err(format!("{source} body: {e}")),
+            Ok(Err(e)) => bail!("{source} body: {e}"),
             Err(_) => {
-                return Err(format!(
+                bail!(
                     "{source} body: no bytes for {}s",
                     SHIP_STREAM_STALL.as_secs()
-                ));
+                )
             },
         }
     }
@@ -184,8 +186,8 @@ async fn read_body_streamed(
 async fn with_terminal_progress<T>(
     ctx: Option<&PartialContext>,
     source: &str,
-    fut: impl std::future::Future<Output = Result<T, String>>,
-) -> Result<T, String> {
+    fut: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
     let result = fut.await;
     if let Some(ctx) = ctx {
         ctx.emit_progress(
@@ -213,16 +215,16 @@ async fn with_terminal_progress<T>(
 /// afterwards — re-polling a completed pinned future is undefined, so each
 /// branch consumes exactly the one result it owns.
 pub(super) async fn race_dual_path(
-    racer: impl std::future::Future<Output = Result<Vec<RawShipStats>, String>>,
-    primary: impl std::future::Future<Output = Result<Vec<RawShipStats>, String>>,
+    racer: impl std::future::Future<Output = Result<Vec<RawShipStats>>>,
+    primary: impl std::future::Future<Output = Result<Vec<RawShipStats>>>,
     mut on_racer_rows: impl FnMut(&[RawShipStats]),
     mut on_racer_abandoned: impl FnMut(),
-) -> Result<Vec<RawShipStats>, String> {
+) -> Result<Vec<RawShipStats>> {
     /// Which arm settled first at the select — carries that arm's result
     /// out; the OTHER arm stays pending for its branch to await.
     enum Settled {
-        Racer(Result<Vec<RawShipStats>, String>),
-        Primary(Result<Vec<RawShipStats>, String>),
+        Racer(Result<Vec<RawShipStats>>),
+        Primary(Result<Vec<RawShipStats>>),
     }
     tokio::pin!(racer, primary);
     let first = tokio::select! {
@@ -269,12 +271,12 @@ pub(super) async fn fetch_ship_stats(
     realm: &str,
     mode_splits: bool,
     ctx: Option<&PartialContext>,
-) -> Result<Vec<RawShipStats>, String> {
+) -> Result<Vec<RawShipStats>> {
     let racer = async {
         if realm == "cn" {
             // No official arm exists on the CN cluster — park the racer on
             // an error the race treats as "racer unavailable".
-            Err("official arm unavailable on cn".to_string())
+            Err(anyhow!("official arm unavailable on cn"))
         } else {
             fetch_ship_stats_official(account_id, realm, ctx).await
         }
@@ -341,12 +343,12 @@ async fn fetch_ship_stats_vortex(
     realm: &str,
     mode_splits: bool,
     ctx: Option<&PartialContext>,
-) -> Result<Vec<RawShipStats>, String> {
-    let host = super::wg_realm::vortex_host(realm)?;
+) -> Result<Vec<RawShipStats>> {
+    let host = super::wg_realm::vortex_host(realm).map_err(anyhow::Error::msg)?;
     // The stream client: no whole-request timeout — the per-mode documents
     // are the big ones a degraded host serves at a crawl, and
     // [`read_body_streamed`] enforces the pacing instead.
-    let client = super::wg_api_cn::vortex_stream_client()?;
+    let client = super::wg_api_cn::vortex_stream_client().map_err(anyhow::Error::msg)?;
     let modes: Vec<&'static str> = if mode_splits {
         std::iter::once(SHIP_MODE_CORE)
             .chain(SHIP_MODE_SPLITS)
@@ -369,7 +371,7 @@ async fn fetch_ship_stats_vortex(
             )
         });
     }
-    let results: Vec<(&str, Result<serde_json::Value, String>)> = stream::iter(tasks)
+    let results: Vec<(&str, Result<serde_json::Value>)> = stream::iter(tasks)
         .buffered(SHIP_MODE_CONCURRENCY)
         .collect()
         .await;
@@ -388,14 +390,16 @@ async fn fetch_vortex_ships_mode(
     account_id: i64,
     mode: &'static str,
     ctx: Option<&PartialContext>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value> {
     let source = format!("vortex:{mode}");
     let terminal_source = source.clone();
     with_terminal_progress(ctx, &terminal_source, async move {
         let url = format!("https://{host}/api/accounts/{account_id}/ships/{mode}/");
-        let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url).await?;
+        let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url)
+            .await
+            .map_err(anyhow::Error::msg)?;
         if !resp.status().is_success() {
-            return Err(format!("vortex ships: HTTP {}", resp.status()));
+            bail!("vortex ships: HTTP {}", resp.status());
         }
         let body = if mode == SHIP_MODE_CORE {
             match ctx {
@@ -406,10 +410,10 @@ async fn fetch_vortex_ships_mode(
             read_body_streamed(resp, ctx, &source, |_| {}).await?
         };
         let v: serde_json::Value =
-            serde_json::from_slice(&body).map_err(|e| format!("vortex ships parse: {e}"))?;
+            serde_json::from_slice(&body).map_err(|e| anyhow!("vortex ships parse: {e}"))?;
         if v.get("status").and_then(|s| s.as_str()) != Some("ok") {
             let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
-            return Err(format!("vortex ships: {err}"));
+            bail!("vortex ships: {err}");
         }
         Ok(v)
     })
@@ -427,7 +431,7 @@ async fn read_body_scanned_vortex(
     source: &str,
     resp: reqwest::Response,
     account_id: i64,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>> {
     let mut scanner = ContainerScanner::new(
         ContainerKind::Map,
         vec![
@@ -481,11 +485,11 @@ async fn fetch_ship_stats_official(
     account_id: i64,
     realm: &str,
     ctx: Option<&PartialContext>,
-) -> Result<Vec<RawShipStats>, String> {
+) -> Result<Vec<RawShipStats>> {
     with_terminal_progress(ctx, "official", async move {
         let app_id = super::wg_realm::application_id(realm);
-        let host = super::wg_realm::api_host(realm)?;
-        let client = super::wg_api_cn::vortex_stream_client()?;
+        let host = super::wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
+        let client = super::wg_api_cn::vortex_stream_client().map_err(anyhow::Error::msg)?;
         let fields = "ship_id,last_battle_time,pvp,pvp_solo,pvp_div2,pvp_div3,pve,\
                       rank_solo,rank_div2,rank_div3";
         const MAX_PAGES: usize = 8;
@@ -506,22 +510,23 @@ async fn fetch_ship_stats_official(
             if page > 1 {
                 url.push_str(&format!("&page_no={page}"));
             }
-            let resp =
-                super::upstream_health::recorded_get(&client, host, "ships/stats", url).await?;
+            let resp = super::upstream_health::recorded_get(&client, host, "ships/stats", url)
+                .await
+                .map_err(anyhow::Error::msg)?;
             if !resp.status().is_success() {
-                return Err(format!("ships/stats: HTTP {}", resp.status()));
+                bail!("ships/stats: HTTP {}", resp.status());
             }
             let body =
                 read_body_scanned_official(ctx, resp, account_id, &mut partial_state).await?;
             let v: serde_json::Value =
-                serde_json::from_slice(&body).map_err(|e| format!("ships/stats parse: {e}"))?;
+                serde_json::from_slice(&body).map_err(|e| anyhow!("ships/stats parse: {e}"))?;
             if v.get("status").and_then(|s| s.as_str()) != Some("ok") {
                 let err = v
                     .get("error")
                     .and_then(|e| e.get("message"))
                     .and_then(|m| m.as_str())
                     .unwrap_or("unknown");
-                return Err(format!("ships/stats: {err}"));
+                bail!("ships/stats: {err}");
             }
             if page == 1 {
                 page_total = v
@@ -566,7 +571,7 @@ async fn read_body_scanned_official(
     resp: reqwest::Response,
     account_id: i64,
     state: &mut OfficialPartialState,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>> {
     let Some(ctx) = ctx else {
         return read_body_streamed(resp, None, "official", |_| {}).await;
     };
@@ -608,8 +613,8 @@ async fn read_body_scanned_official(
 /// out of the BTreeMap, keeping cache writes and history diffs stable.
 pub(super) fn merge_vortex_mode_maps(
     account_id: i64,
-    results: Vec<(&str, Result<serde_json::Value, String>)>,
-) -> Result<Vec<RawShipStats>, String> {
+    results: Vec<(&str, Result<serde_json::Value>)>,
+) -> Result<Vec<RawShipStats>> {
     let mut merged: std::collections::BTreeMap<i64, serde_json::Map<String, serde_json::Value>> =
         std::collections::BTreeMap::new();
     for (mode, result) in results {

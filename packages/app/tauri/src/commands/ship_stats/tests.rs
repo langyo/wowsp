@@ -1,3 +1,5 @@
+use anyhow::anyhow;
+
 use std::fs;
 
 use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
@@ -408,7 +410,7 @@ fn merge_vortex_mode_maps_rebuilds_per_ship_nodes() {
             ("pvp", Ok(pvp)),
             (
                 "pvp_div2",
-                Err::<serde_json::Value, String>("vortex ships: HTTP 503".to_string()),
+                Err::<serde_json::Value, _>(anyhow!("vortex ships: HTTP 503")),
             ),
             ("rank_solo", Ok(rank_solo)),
         ],
@@ -445,11 +447,11 @@ fn merge_vortex_mode_maps_requires_pvp_core_but_tolerates_hidden() {
         1,
         vec![(
             "pvp",
-            Err::<serde_json::Value, String>("vortex ships: HTTP 500".to_string()),
+            Err::<serde_json::Value, _>(anyhow!("vortex ships: HTTP 500")),
         )],
     )
     .expect_err("pvp failure must surface");
-    assert!(err.contains("vortex ships"));
+    assert!(err.to_string().contains("vortex ships"));
     let hidden = serde_json::json!({
         "status": "ok",
         "data": { "1": { "name": "ghost", "hidden_profile": true } }
@@ -1221,7 +1223,7 @@ async fn race_falls_back_to_racer_rows_when_primary_fails() {
         },
         async {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            Err("primary died".to_string())
+            Err(anyhow!("primary died"))
         },
         |_| {},
         || panic!("the racer is awaited to completion here, not abandoned"),
@@ -1241,7 +1243,7 @@ async fn race_racer_rescues_a_failed_primary() {
                 ..zero_raw()
             }])
         },
-        async { Err("primary died".to_string()) },
+        async { Err(anyhow!("primary died")) },
         |_| {},
         || panic!("the racer is awaited to completion here, not abandoned"),
     )
@@ -1253,21 +1255,21 @@ async fn race_racer_rescues_a_failed_primary() {
 #[tokio::test]
 async fn race_fails_only_when_both_arms_fail() {
     let err = race_dual_path(
-        async { Err::<Vec<RawShipStats>, _>("racer died".to_string()) },
-        async { Err("primary died".to_string()) },
+        async { Err::<Vec<RawShipStats>, _>(anyhow!("racer died")) },
+        async { Err(anyhow!("primary died")) },
         |_| {},
         || panic!("racer must not be abandoned when both arms fail"),
     )
     .await
     .unwrap_err();
     // Either error text is acceptable — the primary's shape is used.
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 #[tokio::test]
 async fn race_ignores_a_failed_racer() {
     let out = race_dual_path(
-        async { Err::<Vec<RawShipStats>, _>("racer died".to_string()) },
+        async { Err::<Vec<RawShipStats>, _>(anyhow!("racer died")) },
         async {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             Ok(vec![RawShipStats {

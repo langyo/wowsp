@@ -2,9 +2,11 @@
 //! and the webui's raw-body import command. Split from the former single-file
 //! `commands/pairing.rs`.
 
+use anyhow::{Result, anyhow, bail};
+
 use std::path::{Path, PathBuf};
 
-use wowsp_tauri_shared::PairingPathResult;
+use wowsp_tauri_shared::{CommandResult, PairingPathResult};
 
 // ── managed replays dir + filename handling (all targets) ───────────────────
 
@@ -14,9 +16,9 @@ use wowsp_tauri_shared::PairingPathResult;
 ///   unified game context's user-scoped order: persisted active install →
 ///   running client → first detected install);
 /// - mobile: `<app_data>/replays` (there is no game install on a phone).
-pub(crate) fn managed_replays_dir() -> Result<PathBuf, String> {
+pub(crate) fn managed_replays_dir() -> Result<PathBuf> {
     let dir = super::replay::resolve_replay_dir(None)?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {}: {e}", dir.display()))?;
     Ok(dir)
 }
 
@@ -28,7 +30,7 @@ pub(crate) fn managed_replays_dir() -> Result<PathBuf, String> {
 /// pipeline parses both containers natively, and the extension is what the
 /// listing and mode classifiers key off). Rejects
 /// empty names, dotfiles and pure dot-junk.
-pub fn sanitize_replay_name(raw: &str) -> Result<String, String> {
+pub fn sanitize_replay_name(raw: &str) -> Result<String> {
     let base = raw
         .rsplit(['/', '\\'])
         .next()
@@ -36,7 +38,7 @@ pub fn sanitize_replay_name(raw: &str) -> Result<String, String> {
         .trim()
         .to_string();
     if base.is_empty() || base.starts_with('.') || base.chars().all(|c| c == '.') {
-        return Err("invalid replay file name".to_string());
+        bail!("invalid replay file name");
     }
     let mut cleaned: String = base
         .chars()
@@ -96,7 +98,7 @@ pub fn dedupe_path(dir: &Path, name: &str) -> PathBuf {
 /// Atomically claim a free name. A name selected before a download (or an
 /// import on another blocking thread) is only a hint, never permission to
 /// replace a file that appeared in the meantime.
-fn reserve_replay_file(dir: &Path, name: &str) -> Result<(PathBuf, std::fs::File), String> {
+fn reserve_replay_file(dir: &Path, name: &str) -> Result<(PathBuf, std::fs::File)> {
     for _ in 0..1000 {
         let path = dedupe_path(dir, name);
         match std::fs::OpenOptions::new()
@@ -106,33 +108,29 @@ fn reserve_replay_file(dir: &Path, name: &str) -> Result<(PathBuf, std::fs::File
         {
             Ok(file) => return Ok((path, file)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("create {}: {e}", path.display())),
+            Err(e) => bail!("create {}: {e}", path.display()),
         }
     }
-    Err("could not reserve a unique replay file name".into())
+    bail!("could not reserve a unique replay file name")
 }
 
 pub(super) fn write_replay_file(
     dir: &Path,
     name: &str,
     write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf> {
     let (path, mut file) = reserve_replay_file(dir, name)?;
     let result = write(&mut file);
     drop(file);
     if let Err(e) = result {
         let _ = std::fs::remove_file(&path);
-        return Err(format!("write {}: {e}", path.display()));
+        bail!("write {}: {e}", path.display());
     }
     Ok(path)
 }
 
 /// Write replay bytes into a newly reserved file in the managed dir.
-pub(super) fn store_replay_bytes(
-    dir: &Path,
-    raw_name: &str,
-    bytes: &[u8],
-) -> Result<String, String> {
+pub(super) fn store_replay_bytes(dir: &Path, raw_name: &str, bytes: &[u8]) -> Result<String> {
     let name = sanitize_replay_name(raw_name)?;
     let path = write_replay_file(dir, &name, |file| std::io::Write::write_all(file, bytes))?;
     Ok(path.to_string_lossy().into_owned())
@@ -148,16 +146,16 @@ pub(super) fn store_replay_bytes(
 #[tauri::command]
 pub async fn import_replay_file(
     request: tauri::ipc::Request<'_>,
-) -> Result<PairingPathResult, String> {
+) -> CommandResult<PairingPathResult> {
     let encoded = request
         .headers()
         .get("x-replay-name")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| "missing x-replay-name header".to_string())?;
-    let name = super::exports::percent_decode(encoded)?;
+        .ok_or_else(|| anyhow!("missing x-replay-name header"))?;
+    let name = super::exports::percent_decode(encoded).map_err(anyhow::Error::msg)?;
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
-        _ => return Err("expected raw body (pass a Uint8Array to invokeRaw)".into()),
+        _ => return Err(anyhow!("expected raw body (pass a Uint8Array to invokeRaw)").into()),
     };
     tokio::task::spawn_blocking(move || {
         let dir = managed_replays_dir()?;
@@ -167,5 +165,5 @@ pub async fn import_replay_file(
         Ok(PairingPathResult { path })
     })
     .await
-    .map_err(|e| format!("replay import task failed: {e}"))?
+    .map_err(|e| anyhow!("replay import task failed: {e}"))?
 }

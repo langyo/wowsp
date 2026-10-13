@@ -415,7 +415,9 @@ async fn bridge_cycle(
                 // keeps their stats — a far-away API being down must not
                 // blank the whole in-game panel.
                 if group_realm == realm {
-                    failure = Some(e);
+                    // anyhow→String boundary: the response error field keeps
+                    // the historical plain string (Display-identical).
+                    failure = Some(e.to_string());
                     break;
                 }
                 tracing::warn!(

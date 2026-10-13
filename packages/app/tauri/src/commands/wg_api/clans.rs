@@ -3,11 +3,15 @@
 //! behind `lookup_clan_info`. Split from the former single-file
 //! `commands/wg_api.rs`.
 
+use anyhow::{Result, anyhow, bail};
+
 use std::collections::HashMap;
 use std::time::Duration;
 
 use serde::Deserialize;
-use wowsp_tauri_shared::{ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerSuggestion};
+use wowsp_tauri_shared::{
+    ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, CommandResult, PlayerSuggestion,
+};
 
 use super::lookup_error::LookupError;
 use super::shared::{
@@ -85,20 +89,23 @@ pub(super) async fn fetch_clan_info_for_accounts(
 pub async fn suggest_players(
     search: String,
     realm: String,
-) -> Result<Vec<PlayerSuggestion>, String> {
+) -> CommandResult<Vec<PlayerSuggestion>> {
     if realm == "cn" {
-        return super::wg_api_cn::suggest_players(search).await;
+        return Ok(super::wg_api_cn::suggest_players(search)
+            .await
+            .map_err(anyhow::Error::msg)?);
     }
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
     }
     let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm)?;
-    let client = crate::commands::network::http_client_builder()?
+    let host = super::wg_realm::api_host(&realm).map_err(anyhow::Error::msg)?;
+    let client = crate::commands::network::http_client_builder()
+        .map_err(anyhow::Error::msg)?
         .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| format!("http client: {e}"))?;
+        .map_err(|e| anyhow!("http client: {e}"))?;
 
     // UID fast path: resolve the id directly; a numeric string that is NOT a
     // valid id falls back to the substring search below. Non-positive ids
@@ -125,15 +132,13 @@ pub async fn suggest_players(
             encode_query(&q)
         ),
     )
-    .await?
+    .await
+    .map_err(anyhow::Error::msg)?
     .json::<WgResponse<Vec<AccountListEntry>>>()
     .await
-    .map_err(|e| format!("account/list parse: {e}"))?;
+    .map_err(|e| anyhow!("account/list parse: {e}"))?;
     if resp.status != "ok" {
-        return Err(format!(
-            "account/list: {}",
-            resp.error.message.unwrap_or_default()
-        ));
+        return Err(anyhow!("account/list: {}", resp.error.message.unwrap_or_default()).into());
     }
     Ok(resp
         .data
@@ -149,20 +154,23 @@ pub async fn suggest_players(
 /// Live clan autocomplete: WG clans/list matches by tag/name substring. A
 /// purely numeric query is a clan id resolved directly via clans/info.
 #[tauri::command]
-pub async fn suggest_clans(search: String, realm: String) -> Result<Vec<ClanSuggestion>, String> {
+pub async fn suggest_clans(search: String, realm: String) -> CommandResult<Vec<ClanSuggestion>> {
     if realm == "cn" {
-        return super::wg_api_cn::suggest_clans(search).await;
+        return Ok(super::wg_api_cn::suggest_clans(search)
+            .await
+            .map_err(anyhow::Error::msg)?);
     }
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
     }
     let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm)?;
-    let client = crate::commands::network::http_client_builder()?
+    let host = super::wg_realm::api_host(&realm).map_err(anyhow::Error::msg)?;
+    let client = crate::commands::network::http_client_builder()
+        .map_err(anyhow::Error::msg)?
         .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| format!("http client: {e}"))?;
+        .map_err(|e| anyhow!("http client: {e}"))?;
 
     // Numeric query = clan id (non-positive ids skip the fast path — WG
     // would answer a raw 407 error otherwise).
@@ -185,15 +193,13 @@ pub async fn suggest_clans(search: String, realm: String) -> Result<Vec<ClanSugg
             encode_query(&q)
         ),
     )
-    .await?
+    .await
+    .map_err(anyhow::Error::msg)?
     .json::<WgResponse<Vec<ClanListEntry>>>()
     .await
-    .map_err(|e| format!("clans/list parse: {e}"))?;
+    .map_err(|e| anyhow!("clans/list parse: {e}"))?;
     if resp.status != "ok" {
-        return Err(format!(
-            "clans/list: {}",
-            resp.error.message.unwrap_or_default()
-        ));
+        return Err(anyhow!("clans/list: {}", resp.error.message.unwrap_or_default()).into());
     }
     Ok(resp
         .data
@@ -215,7 +221,7 @@ async fn fetch_clan_node(
     app_id: &str,
     host: &str,
     clan_id: i64,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>> {
     let cid = clan_id.to_string();
     let resp = super::upstream_health::recorded_get(
         client,
@@ -225,16 +231,14 @@ async fn fetch_clan_node(
             "https://{host}/wows/clans/info/?application_id={app_id}&clan_id={cid}&extra=members"
         ),
     )
-    .await?;
+    .await
+    .map_err(anyhow::Error::msg)?;
     let parsed: WgResponse<serde_json::Value> = resp
         .json()
         .await
-        .map_err(|e| format!("clans/info parse: {e}"))?;
+        .map_err(|e| anyhow!("clans/info parse: {e}"))?;
     if parsed.status != "ok" {
-        return Err(format!(
-            "clans/info: {}",
-            parsed.error.message.unwrap_or_default()
-        ));
+        bail!("clans/info: {}", parsed.error.message.unwrap_or_default());
     }
     Ok(parsed
         .data
@@ -285,8 +289,12 @@ pub async fn lookup_clan_info(
         .build()
         .map_err(|e| format!("http client: {e}"))?;
 
+    // anyhow→LookupError boundary: the structured rejection keeps its
+    // `From<String>` bridge, so the anyhow error renders through its
+    // Display (the historical message) on the way in.
     let node = fetch_clan_node(&client, &app_id, host, clan_id)
-        .await?
+        .await
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| LookupError::not_found_clan(clan_id.to_string(), realm.clone()))?;
 
     // Roster stats in ≤ ceil(n/100) batched account/info calls.

@@ -2,9 +2,10 @@
 //! temp-container snapshots, HP detection/anchoring and the Lesta arena
 //! synthesis. Split from the former single-file `commands/replay.rs`.
 
+use anyhow::anyhow;
 use std::fs;
 
-use wowsp_tauri_shared::VehicleEntry;
+use wowsp_tauri_shared::{CommandResult, VehicleEntry};
 
 use super::meta::{REPLAY_MAGIC, extract_descriptor_json, roster_from_raw};
 
@@ -20,11 +21,11 @@ use super::meta::{REPLAY_MAGIC, extract_descriptor_json, roster_from_raw};
 #[tauri::command]
 pub async fn read_replay_positions(
     path: String,
-) -> Result<wowsp_tauri_shared::ReplayStream, String> {
-    tokio::task::spawn_blocking(move || {
-        let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+) -> CommandResult<wowsp_tauri_shared::ReplayStream> {
+    Ok(tokio::task::spawn_blocking(move || {
+        let bytes = fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
         let stream = packet_stream_after_blocks(&bytes)
-            .ok_or_else(|| format!("{path}: not a valid wowsreplay (no packet stream)"))?;
+            .ok_or_else(|| anyhow!("{path}: not a valid wowsreplay (no packet stream)"))?;
         // The container's family picks the entity-method id table (Lesta's
         // version keys sit above every WG table — version-keyed lookup would
         // cross-wire the method-gated streams; see method_tables_lesta).
@@ -59,7 +60,8 @@ pub async fn read_replay_positions(
             }
         }
         let mut decoded =
-            super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
+            super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)
+                .map_err(anyhow::Error::msg)?;
         if lesta {
             // BEFORE grouping: the synthesis fills `arena_players` with the
             // state-recovered starting health, so the HP anchoring and the
@@ -72,10 +74,10 @@ pub async fn read_replay_positions(
                 decoded.recorder_ship,
             );
         }
-        Ok(group_by_entity(decoded))
+        Ok::<_, anyhow::Error>(group_by_entity(decoded))
     })
     .await
-    .map_err(|e| format!("replay positions task failed: {e}"))?
+    .map_err(|e| anyhow!("replay positions task failed: {e}"))??)
 }
 
 /// The running client's in-progress replay container (`temp.wowsreplay` /
@@ -95,12 +97,12 @@ pub struct LiveTempReplay {
 /// returns the most recently modified hit. `None` when no game root resolves
 /// or no temp container exists (no battle in progress).
 #[tauri::command]
-pub async fn live_temp_replay() -> Result<Option<LiveTempReplay>, String> {
-    tokio::task::spawn_blocking(|| {
+pub async fn live_temp_replay() -> CommandResult<Option<LiveTempReplay>> {
+    Ok(tokio::task::spawn_blocking(|| {
         let Some(root) =
             super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning)
         else {
-            return Ok(None);
+            return Ok::<_, anyhow::Error>(None);
         };
         let dir = super::game_context::replays_dir(&root.root);
         let mut best: Option<(std::time::SystemTime, LiveTempReplay)> = None;
@@ -126,7 +128,7 @@ pub async fn live_temp_replay() -> Result<Option<LiveTempReplay>, String> {
         Ok(best.map(|(_, live)| live))
     })
     .await
-    .map_err(|e| format!("live temp replay task failed: {e}"))?
+    .map_err(|e| anyhow!("live temp replay task failed: {e}"))??)
 }
 
 /// Decode the CURRENTLY WRITING `temp.wowsreplay` into the same
@@ -142,13 +144,13 @@ pub async fn live_temp_replay() -> Result<Option<LiveTempReplay>, String> {
 #[tauri::command]
 pub async fn read_live_replay_snapshot(
     path: String,
-) -> Result<wowsp_tauri_shared::LiveSelfStream, String> {
-    tokio::task::spawn_blocking(move || {
-        let bytes = fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
-        Ok(live_snapshot_from_bytes(&path, &bytes))
+) -> CommandResult<wowsp_tauri_shared::LiveSelfStream> {
+    Ok(tokio::task::spawn_blocking(move || {
+        let bytes = fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
+        Ok::<_, anyhow::Error>(live_snapshot_from_bytes(&path, &bytes))
     })
     .await
-    .map_err(|e| format!("live replay snapshot task failed: {e}"))?
+    .map_err(|e| anyhow!("live replay snapshot task failed: {e}"))??)
 }
 /// Byte length of the last live-temp read that failed to decode — the
 /// downgrade below warns once per growth step instead of once per 5 s poll.

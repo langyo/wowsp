@@ -39,10 +39,13 @@
 //! Modernization entities' credit prices — the build planner's cost panel
 //! sums the selected build's shopping list from them.
 
+use anyhow::{Result, anyhow, bail};
 use std::fs;
 #[cfg(desktop)]
 use std::io::Read;
 use std::path::Path;
+
+use wowsp_tauri_shared::CommandResult;
 
 use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
 
@@ -114,7 +117,7 @@ pub async fn get_ship_gameparams(
     app: tauri::AppHandle,
     ship_id: i64,
     game_root: String,
-) -> Result<serde_json::Value, String> {
+) -> CommandResult<serde_json::Value> {
     let cache_file = format!("gameparams/{ship_id}.json");
 
     // 0. Bundled Lesta snapshot first: these ids belong to the Lesta client
@@ -163,12 +166,15 @@ pub async fn get_ship_gameparams(
     //    one. Exactly one of the two returns compiles per target — the
     //    desktop flow below is untouched, cfg-gated into a helper.
     #[cfg(mobile)]
-    return bundled_asset_json(&app, &format!("data/gameparams/{ship_id}.json"));
+    return Ok(bundled_asset_json(
+        &app,
+        &format!("data/gameparams/{ship_id}.json"),
+    )?);
     #[cfg(desktop)]
     {
         // The handle only serves the mobile branch; keep desktop silent.
         let _ = &app;
-        ship_from_install_or_loose(&game_root, ship_id, cache_file).await
+        Ok(ship_from_install_or_loose(&game_root, ship_id, cache_file).await?)
     }
 }
 
@@ -179,7 +185,7 @@ async fn ship_from_install_or_loose(
     game_root: &str,
     ship_id: i64,
     cache_file: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value> {
     // In-app unpack from the install's pkg store — the player path, and
     // always fresher than any loose pre-unpacked JSON. Heavy (reads +
     // decodes the full GameParams pickle) — keep it off the async runtime
@@ -189,7 +195,7 @@ async fn ship_from_install_or_loose(
     let unpacked =
         tokio::task::spawn_blocking(move || unpack_ship_from_install(&game_root2, ship_id))
             .await
-            .map_err(|e| format!("GameParams 解包任务异常退出：{e}"));
+            .map_err(|e| anyhow!("GameParams 解包任务异常退出：{e}"));
 
     // Fallback: a pre-unpacked GameParams.json (dev flow: wowsunpack CLI
     // output at the game root, or the extract script's LOCALAPPDATA cache
@@ -215,7 +221,7 @@ async fn ship_from_install_or_loose(
         local_cache,
     ];
     if let Some(path) = json_candidates.iter().find(|p| p.exists()) {
-        let raw = fs::read_to_string(path).map_err(|e| format!("read GameParams.json: {e}"))?;
+        let raw = fs::read_to_string(path).map_err(|e| anyhow!("read GameParams.json: {e}"))?;
         let slice = extract_ship_slice(&raw, ship_id)?;
         let serialized = serde_json::to_string(&slice).unwrap_or_default();
         let _ = write_appdata_json(&cache_file, &serialized);
@@ -233,29 +239,27 @@ async fn ship_from_install_or_loose(
 /// `content/GameParams.data`, decode, pick the ship, serialize just that
 /// entry.
 #[cfg(desktop)]
-fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json::Value, String> {
+fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json::Value> {
     let root = Path::new(game_root);
     if !root.join("bin").is_dir() {
-        return Err(format!(
-            "游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。"
-        ));
+        bail!("游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。");
     }
 
     // Resolve the build carrying the idx/ index files.
     let build = latest_build_with_idx(root).ok_or_else(|| {
-        format!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
+        anyhow!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
     })?;
 
     let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
-        .map_err(|e| format!("读取游戏资源索引失败（build {build}）：{e}"))?;
+        .map_err(|e| anyhow!("读取游戏资源索引失败（build {build}）：{e}"))?;
 
     let bytes = read_game_params_bytes(&vfs)?;
 
     let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
-        .map_err(|e| format!("解析 GameParams.data 失败：{e}"))?;
+        .map_err(|e| anyhow!("解析 GameParams.data 失败：{e}"))?;
 
     ship_slice_from_pickle(&pickle, ship_id)
-        .ok_or_else(|| format!("ship_id {ship_id} not found in GameParams"))
+        .ok_or_else(|| anyhow!("ship_id {ship_id} not found in GameParams"))
 }
 
 /// `content/GameParams.data` bytes out of the mounted install VFS. WG ships
@@ -267,7 +271,7 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
 /// is skipped silently; candidates that exist but fail to read are all
 /// reported.
 #[cfg(desktop)]
-fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>, String> {
+fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>> {
     let candidates = super::game_client::game_params_candidates();
     let mut read_errors: Vec<String> = Vec::new();
     for path in &candidates {
@@ -295,10 +299,10 @@ fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>, Str
     } else {
         read_errors.join("；")
     };
-    Err(format!(
+    bail!(
         "GameParams 读取失败（按优先级尝试：{}）：{detail}",
         candidates.join("、")
-    ))
+    )
 }
 
 /// The `bin/<build>/` the client actually runs from (the preferences.xml
@@ -375,7 +379,7 @@ fn params_root(pickle: &pickled::Value) -> Option<pickled::Value> {
 pub async fn get_upgrade_prices(
     app: tauri::AppHandle,
     game_root: String,
-) -> Result<serde_json::Value, String> {
+) -> CommandResult<serde_json::Value> {
     // Build-keyed cache, same lifecycle as the per-ship slices (the
     // mobile bundle-vs-sync freshness gate applies here too).
     #[cfg(mobile)]
@@ -393,7 +397,10 @@ pub async fn get_upgrade_prices(
     // synced cache wins, bundled data beats the install error below.
     // Exactly one branch compiles per target.
     #[cfg(mobile)]
-    return bundled_asset_json(&app, "data/gameparams/upgrade-prices.json");
+    return Ok(bundled_asset_json(
+        &app,
+        "data/gameparams/upgrade-prices.json",
+    )?);
     #[cfg(desktop)]
     {
         // The handle only serves the mobile branch; keep desktop silent.
@@ -401,7 +408,7 @@ pub async fn get_upgrade_prices(
         let game_root2 = game_root.clone();
         let prices = tokio::task::spawn_blocking(move || upgrade_prices_from_install(&game_root2))
             .await
-            .map_err(|e| format!("配件价格解包任务异常退出：{e}"))??;
+            .map_err(|e| anyhow!("配件价格解包任务异常退出：{e}"))??;
 
         let _ = write_appdata_json(
             "gameparams/upgrade-prices.json",
@@ -412,25 +419,23 @@ pub async fn get_upgrade_prices(
 }
 
 #[cfg(desktop)]
-fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value, String> {
+fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value> {
     let root = Path::new(game_root);
     if !root.join("bin").is_dir() {
-        return Err(format!(
-            "游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。"
-        ));
+        bail!("游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。");
     }
     let build = latest_build_with_idx(root).ok_or_else(|| {
-        format!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
+        anyhow!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
     })?;
     let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
-        .map_err(|e| format!("读取游戏资源索引失败（build {build}）：{e}"))?;
+        .map_err(|e| anyhow!("读取游戏资源索引失败（build {build}）：{e}"))?;
     let bytes = read_game_params_bytes(&vfs)?;
     let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
-        .map_err(|e| format!("解析 GameParams.data 失败：{e}"))?;
+        .map_err(|e| anyhow!("解析 GameParams.data 失败：{e}"))?;
 
-    let params = params_root(&pickle).ok_or("GameParams 根结构无法识别")?;
+    let params = params_root(&pickle).ok_or_else(|| anyhow!("GameParams 根结构无法识别"))?;
     let mut out = serde_json::Map::new();
-    let entries = dict_entries(&params).ok_or("GameParams 根不是字典")?;
+    let entries = dict_entries(&params).ok_or_else(|| anyhow!("GameParams 根不是字典"))?;
     for (k, v) in entries {
         let pickled::HashableValue::String(key) = &k else {
             continue;
@@ -601,9 +606,9 @@ fn pickled_as_i64(v: &pickled::Value) -> Option<i64> {
 /// The per-ship AppData cache makes subsequent calls instant regardless of
 /// file size.
 #[cfg(desktop)]
-pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::Value, String> {
+pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::Value> {
     let parsed: serde_json::Value =
-        serde_json::from_str(raw).map_err(|e| format!("parse GameParams.json: {e}"))?;
+        serde_json::from_str(raw).map_err(|e| anyhow!("parse GameParams.json: {e}"))?;
 
     let mut candidates: Vec<serde_json::Value> = Vec::new();
 
@@ -633,7 +638,7 @@ pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::
     }
 
     if candidates.is_empty() {
-        return Err(format!("ship_id {ship_id} not found in GameParams"));
+        bail!("ship_id {ship_id} not found in GameParams");
     }
 
     // Prefer an entry that actually has weapon keys.
@@ -790,13 +795,11 @@ fn invalidate_synced_cache_behind_bundle(app: &tauri::AppHandle) {
 /// error instead of falling through to the install-unpack paths that can
 /// never succeed on a phone.
 #[cfg(mobile)]
-fn bundled_asset_json(app: &tauri::AppHandle, rel: &str) -> Result<serde_json::Value, String> {
+fn bundled_asset_json(app: &tauri::AppHandle, rel: &str) -> Result<serde_json::Value> {
     let Some(asset) = app.asset_resolver().get(rel.to_string()) else {
-        return Err(format!(
-            "离线舰船数据包缺少 {rel}——安装包不完整。请用 `just build android` 重新打包。"
-        ));
+        bail!("离线舰船数据包缺少 {rel}——安装包不完整。请用 `just build android` 重新打包。");
     };
-    serde_json::from_slice(&asset.bytes).map_err(|e| format!("离线数据包文件损坏（{rel}）：{e}"))
+    serde_json::from_slice(&asset.bytes).map_err(|e| anyhow!("离线数据包文件损坏（{rel}）：{e}"))
 }
 
 #[cfg(test)]
@@ -922,7 +925,7 @@ mod tests {
     fn missing_ship_returns_error() {
         let raw = serde_json::json!([{ "id": 1, "name": "A" }]).to_string();
         let err = extract_ship_slice(&raw, 999).unwrap_err();
-        assert!(err.contains("not found"));
+        assert!(err.to_string().contains("not found"));
     }
 
     /// The real wowsunpack `game-params` output is keyed by internal ship

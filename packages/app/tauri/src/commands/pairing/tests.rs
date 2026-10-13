@@ -143,7 +143,12 @@ fn replay_write_failure_removes_only_its_reserved_file() {
         std::io::Write::write_all(file, b"incomplete")?;
         Err(std::io::Error::other("simulated storage failure"))
     });
-    assert!(result.unwrap_err().contains("simulated storage failure"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("simulated storage failure")
+    );
     assert_eq!(std::fs::read(&existing).unwrap(), b"existing replay");
     assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 1);
     let _ = std::fs::remove_dir_all(&tmp);
@@ -370,7 +375,7 @@ fn gamedata_rejects_archive_symlinks() {
     writer.finish().unwrap();
     let dest = tmp.join("dest");
     let error = extract_gamedata_zip(&archive, &dest).unwrap_err();
-    assert!(error.contains("symbolic link"), "{error}");
+    assert!(error.to_string().contains("symbolic link"), "{error}");
     assert!(!dest.join("gameparams/link").exists());
     std::fs::remove_dir_all(tmp).unwrap();
 }
