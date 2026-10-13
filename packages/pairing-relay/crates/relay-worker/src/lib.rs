@@ -16,9 +16,11 @@
 //!     [`directory`] (the singleton code Directory) and [`room`]
 //!     (per-room rendezvous + byte pipes).
 //!   - `GET /feedback`, `GET /erp` — the two server-rendered pages
+//!     (the erp console logs in via Feishu OAuth — see src/erp.rs)
 //!     (the feedback form and the admin review console).
 
 pub mod directory;
+pub mod erp;
 pub mod feedback;
 pub mod qqbot;
 pub mod room;
@@ -85,6 +87,12 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,
         Route::QqBotCallback => qqbot::handle_callback(req, &env).await,
         Route::FeedbackAttachment { file_token: _ } => feedback::handle_attachment(req, env).await,
+
+        // ── erp console auth (see src/erp.rs) ────────────────────────────
+        Route::ErpLogin => erp::handle_login(req, env).await,
+        Route::ErpCallback => erp::handle_callback(req, env).await,
+        Route::ErpSession => erp::handle_session(req, env).await,
+        Route::ErpLogout => erp::handle_logout(req, env).await,
 
         Route::Control { room, role } => {
             let Some(room) = room.filter(|r| valid_room(r)) else {

@@ -11,11 +11,15 @@
 //!   WS   /api/relay/resolve?code=NNNNNN
 //!   WS   /api/relay/data/<room>/<connId>[?role=host|client]
 //!   GET  /feedback                       — feedback form page (Turnstile)
-//!   GET  /erp                            — admin review console page
+//!   GET  /erp                            — review console page (Feishu login)
 //!   POST /api/feedback/submit            — form target (multipart)
-//!   GET  /api/feedback/list              — records JSON (admin key)
-//!   POST /api/feedback/update            — status/PR-link write (admin)
+//!   GET  /api/feedback/list              — records JSON (erp session)
+//!   POST /api/feedback/update            — status/PR-link write (erp session)
 //!   GET  /api/feedback/attachment?file_token=… — 302 to a Feishu tmp url
+//!   GET  /api/erp/login                  — 302 to the Feishu authorize page
+//!   GET  /api/erp/callback?code=…&state=… — OAuth return, mints session
+//!   GET  /api/erp/session                — console whoami probe
+//!   POST /api/erp/logout                 — clear the session cookie
 
 use crate::room::Side;
 
@@ -41,8 +45,17 @@ pub enum Route<'a> {
     },
     /// GET /feedback — the embedded feedback form page.
     FeedbackPage,
-    /// GET /erp — the embedded admin review console page.
+    /// GET /erp — the embedded review console page.
     ErpPage,
+    /// GET /api/erp/login — 302 into the Feishu OAuth authorize page.
+    ErpLogin,
+    /// GET /api/erp/callback?code=…&state=… — OAuth return (the handler
+    /// re-parses code/state plus the origin, so nothing is carried here).
+    ErpCallback,
+    /// GET /api/erp/session — the console shell's whoami probe.
+    ErpSession,
+    /// POST /api/erp/logout — clear the session cookie.
+    ErpLogout,
     /// POST /api/feedback/submit — multipart form target.
     FeedbackSubmit,
     /// GET /api/feedback/list — records JSON for the console / agents.
@@ -90,6 +103,10 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         },
         "/api/feedback/update" => return Route::FeedbackUpdate,
         "/api/qqbot/callback" => return Route::QqBotCallback,
+        "/api/erp/login" => return Route::ErpLogin,
+        "/api/erp/callback" => return Route::ErpCallback,
+        "/api/erp/session" => return Route::ErpSession,
+        "/api/erp/logout" => return Route::ErpLogout,
         "/api/feedback/attachment" => {
             return Route::FeedbackAttachment {
                 file_token: query_get(query, "file_token"),
@@ -164,6 +181,16 @@ mod tests {
         assert_eq!(classify("/feedback", ""), Route::FeedbackPage);
         assert_eq!(classify("/erp", ""), Route::ErpPage);
         assert_eq!(classify("/erp/", ""), Route::ErpPage);
+        assert_eq!(classify("/api/erp/login", ""), Route::ErpLogin);
+        assert_eq!(
+            classify("/api/erp/callback", "code=c1&state=s1"),
+            Route::ErpCallback
+        );
+        assert_eq!(classify("/api/erp/callback", ""), Route::ErpCallback);
+        assert_eq!(classify("/api/erp/session", ""), Route::ErpSession);
+        assert_eq!(classify("/api/erp/logout", ""), Route::ErpLogout);
+        // Unknown erp subpaths stay NotFound.
+        assert_eq!(classify("/api/erp/other", ""), Route::NotFound);
         assert_eq!(classify("/api/feedback/submit", ""), Route::FeedbackSubmit);
         assert_eq!(classify("/api/feedback/list", ""), Route::FeedbackList);
         assert_eq!(

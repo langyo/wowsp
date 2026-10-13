@@ -445,7 +445,7 @@ fn feedback_locales_json() -> &'static str {
 /// crate (`just feedback-theme`, run automatically by `just check-relay`;
 /// needs `pnpm install`), or the missing `include_str!` file fails the
 /// compile.
-const FEEDBACK_HIKARI_CSS: &str = include_str!("../.generated/feedback-hikari.css");
+pub(crate) const FEEDBACK_HIKARI_CSS: &str = include_str!("../.generated/feedback-hikari.css");
 
 /// Minimal HTML escaping for request-derived text (the User-Agent
 /// inference) before it lands in the page template or an attribute.
@@ -1769,166 +1769,6 @@ a {{ color: rgb(var(--color-primary)); }}
     )
 }
 
-/// The /erp review console (admin-key gated; Chinese — it is the
-/// maintainer's tool).
-pub fn erp_page(base_url: &str) -> String {
-    format!(
-        r#"<!doctype html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WoWSP 反馈台</title>
-<style>
-:root {{ color-scheme: light dark; }}
-* {{ box-sizing: border-box; }}
-body {{ margin: 0; font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
-  background: #f6f7f9; color: #1f2328; padding: 20px 12px; }}
-@media (prefers-color-scheme: dark) {{ body {{ background: #0d1117; color: #e6edf3; }} }}
-main {{ max-width: 1100px; margin: 0 auto; }}
-h1 {{ font-size: 1.2rem; margin: 0 0 14px; }}
-table {{ width: 100%; border-collapse: collapse; background: transparent; }}
-th, td {{ padding: 8px 10px; border: 1px solid #d0d7de; text-align: left; vertical-align: top;
-  overflow-wrap: anywhere; font-size: .85rem; }}
-th {{ background: rgb(110 118 129 / 15%); }}
-input, select, button {{ font: inherit; padding: 4px 8px; border: 1px solid #d0d7de;
-  border-radius: 6px; background: transparent; color: inherit; }}
-button {{ cursor: pointer; }}
-#gate {{ display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }}
-#gate input {{ flex: 1; min-width: 220px; }}
-.muted {{ color: #6b7280; }}
-a {{ color: #2563eb; }}
-.row-actions {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }}
-.bar {{ display: flex; gap: 10px; align-items: center; margin: 12px 0; flex-wrap: wrap; }}
-</style>
-</head>
-<body>
-<main>
-<h1>WoWSP 反馈台</h1>
-<div id="gate">
-  <input type="password" id="key" placeholder="管理密钥 (FEEDBACK_ADMIN_KEY)">
-  <button id="saveKey">记住密钥</button>
-  <button id="reload">刷新</button>
-  <select id="statusFilter">
-    <option value="">全部状态</option>
-    <option>待审查</option><option>已确认</option><option>已开PR</option>
-    <option>无需修复</option><option>需补充</option>
-  </select>
-  <span id="hint" class="muted"></span>
-</div>
-<table><thead><tr>
-  <th style="width:130px">提交时间</th><th>描述</th><th style="width:110px">联系</th>
-  <th style="width:90px">版本</th><th style="width:70px">渠道</th>
-  <th style="width:120px">状态</th><th style="width:170px">PR</th><th style="width:110px">附件</th>
-</tr></thead><tbody id="rows"></tbody></table>
-<div class="bar">
-  <button id="prev">上一页</button> <button id="next">下一页</button>
-  <span id="pageInfo" class="muted"></span>
-</div>
-</main>
-<script>
-(function () {{
-  var BASE = "{base_url}";
-  var key = localStorage.getItem("wowsp_erp_key") || "";
-  document.getElementById("key").value = key;
-  document.getElementById("saveKey").onclick = function () {{
-    key = document.getElementById("key").value.trim();
-    localStorage.setItem("wowsp_erp_key", key);
-    load();
-  }};
-  document.getElementById("reload").onclick = function () {{ load(); }};
-  var pageToken = null, nextToken = null, prevStack = [];
-  function esc(s) {{
-    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {{
-      return {{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}}[c];
-    }});
-  }}
-  function fmtTime(v) {{
-    if (!v) return "";
-    return new Date(v).toLocaleString("zh-CN", {{ hour12: false }});
-  }}
-  function render(items) {{
-    var filter = document.getElementById("statusFilter").value;
-    var tb = document.getElementById("rows");
-    tb.innerHTML = "";
-    items.filter(function (it) {{ return !filter || it.status === filter; }}).forEach(function (it) {{
-      var tr = document.createElement("tr");
-      var atts = (it.attachments || []).map(function (a) {{
-        return '<a href="' + esc(a.url) + '" target="_blank">' + esc(a.name) + '</a>';
-      }}).join("<br>") || '<span class="muted">—</span>';
-      tr.innerHTML =
-        "<td>" + esc(fmtTime(it.time)) + "</td>" +
-        "<td>" + esc(it.description) +
-          (it.sysinfo ? '<div class="muted">' + esc(it.sysinfo) + "</div>" : "") +
-          ((it.server || it.game_id)
-            ? '<div class="muted">' +
-              (it.server ? "🌐 " + esc(it.server.toUpperCase()) : "") +
-              (it.server && it.game_id ? " · " : "") +
-              (it.game_id ? "🆔 " + esc(it.game_id) : "") +
-              "</div>"
-            : "") +
-          (it.record_url ? '<div class="row-actions"><a href="' + esc(it.record_url) + '" target="_blank">记录</a></div>' : "") + "</td>" +
-        "<td>" + esc(it.contact || "—") + "</td>" +
-        "<td>" + esc(it.version || "—") + "</td>" +
-        "<td>" + esc(it.channel || "—") + "</td>" +
-        '<td><select data-rec="' + esc(it.record_id) + '" class="st">' +
-          ["待审查","已确认","已开PR","无需修复","需补充"].map(function (s) {{
-            return "<option" + (s === it.status ? " selected" : "") + ">" + s + "</option>";
-          }}).join("") + "</select></td>" +
-        '<td><input class="pr" data-rec="' + esc(it.record_id) + '" value="' + esc(it.pr || "") + '" placeholder="PR URL">' +
-          '<div class="row-actions"><button class="save" data-rec="' + esc(it.record_id) + '">保存</button></div></td>' +
-        "<td>" + atts + "</td>";
-      tb.appendChild(tr);
-    }});
-    tb.querySelectorAll("button.save").forEach(function (b) {{
-      b.onclick = function () {{
-        var rec = b.getAttribute("data-rec");
-        var st = tb.querySelector('select.st[data-rec="' + rec + '"]').value;
-        var pr = tb.querySelector('input.pr[data-rec="' + rec + '"]').value.trim();
-        fetch(BASE + "/api/feedback/update", {{
-          method: "POST",
-          headers: {{ "X-Admin-Key": key, "Content-Type": "application/json" }},
-          body: JSON.stringify({{ record_id: rec, status: st, pr_link: pr }})
-        }}).then(function (r) {{ return r.json(); }}).then(function (j) {{
-          document.getElementById("hint").textContent = j.ok ? "已保存 " + rec : "保存失败: " + (j.error || "");
-        }});
-      }};
-    }});
-  }}
-  function load(token) {{
-    if (!key) {{ document.getElementById("hint").textContent = "请先填入管理密钥"; return; }}
-    var url = BASE + "/api/feedback/list?page_size=50" + (token ? "&page_token=" + encodeURIComponent(token) : "");
-    fetch(url, {{ headers: {{ "X-Admin-Key": key }} }})
-      .then(function (r) {{
-        if (r.status === 401) throw new Error("密钥无效");
-        return r.json();
-      }})
-      .then(function (j) {{
-        nextToken = j.next_page_token || null;
-        pageToken = token || null;
-        render(j.items || []);
-        document.getElementById("pageInfo").textContent = (j.items || []).length + " 条" + (nextToken ? " · 有下一页" : "");
-        document.getElementById("hint").textContent = "";
-      }})
-      .catch(function (e) {{ document.getElementById("hint").textContent = e.message; }});
-  }}
-  // Only 下一页 grows the back-stack (loading BY prev/filter must not
-  // push, or back would oscillate).
-  document.getElementById("next").onclick = function () {{
-    if (nextToken) {{ prevStack.push(pageToken); load(nextToken); }}
-  }};
-  document.getElementById("prev").onclick = function () {{ var t = prevStack.pop() || null; load(t); }};
-  document.getElementById("statusFilter").onchange = function () {{
-    load(pageToken);
-  }};
-  if (key) load();
-}})();
-</script>
-</body>
-</html>"#
-    )
-}
-
 #[cfg(test)]
 mod tests {
     const TEST_VER: &str = "0.4.11";
@@ -2371,13 +2211,5 @@ mod tests {
         for stale in ["#2563eb", "#d0d7de", "#0d1117", "#f6f7f9", "#6b7280"] {
             assert!(!page.contains(stale), "hand-rolled color {stale} survived");
         }
-    }
-
-    #[test]
-    fn erp_page_references_the_admin_apis() {
-        let page = erp_page("https://wowsp.langyo.xyz");
-        assert!(page.contains("/api/feedback/list"));
-        assert!(page.contains("/api/feedback/update"));
-        assert!(page.contains("X-Admin-Key"));
     }
 }

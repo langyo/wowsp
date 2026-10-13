@@ -189,12 +189,15 @@ and `/erp` are answered by this worker itself — they sit in
   飞书多维表「WoWSP 反馈」(created/bootstrapped on
   first use; see below) → optional log-bundle upload via
   `drive/v1/medias/upload_all` attached to the record's 日志包 field.
-- **`GET /erp`** — the maintainer's review console (admin-key gated):
-  lists records, flips 处理状态, writes PR links, downloads attachments
-  through `/api/feedback/attachment` (302 to a Feishu temporary URL).
+- **`GET /erp`** — the maintainer's review console (Feishu-OAuth
+  gated): lists records, flips 处理状态, writes PR links, downloads
+  attachments through `/api/feedback/attachment` (302 to a Feishu
+  temporary URL). Login is the app's own Feishu OAuth — the callback
+  mints an HMAC-signed session cookie (7 days) and any authenticated
+  app user gets console access.
 - **`GET /api/feedback/list` / `POST /api/feedback/update`** — the JSON
-  surface behind the console, also what fix-agents consume (header
-  `X-Admin-Key`).
+  surface behind the console, also what fix-agents consume (the same
+  session cookie; the old `X-Admin-Key` header gate is retired).
 
 Anti-abuse is layered: Turnstile (human check) → KV counters (speed) →
 every record starts as 待审查 and only matters once a human flips it.
@@ -205,7 +208,9 @@ every record starts as 待审查 and only matters once a human flips it.
 npx wrangler secret put FEISHU_APP_ID        # 飞书自建应用 app_id (cli_…)
 npx wrangler secret put FEISHU_APP_SECRET    # … its app_secret
 npx wrangler secret put TURNSTILE_SECRET     # Turnstile widget secret key
-npx wrangler secret put FEEDBACK_ADMIN_KEY   # the /erp + admin API key
+# FEEDBACK_ADMIN_KEY is retired — /erp now logs in via Feishu OAuth.
+# The app's 开放平台 安全设置 must list <origin>/api/erp/callback as a
+# 重定向 URL for the login round trip to land.
 # dashboard ▶ Settings ▶ Variables (plaintext vars):
 #   TURNSTILE_SITEKEY        — Turnstile sitekey (public; form shows a
 #                              maintenance notice until it is set)

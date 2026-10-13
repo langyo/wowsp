@@ -8,8 +8,10 @@
 //! - `TURNSTILE_SITEKEY` (var) + `TURNSTILE_SECRET` (secret) — the form's
 //!   human check. Without the sitekey the form renders a maintenance
 //!   notice instead of a submittable widget.
-//! - `FEEDBACK_ADMIN_KEY` (secret) — gates `/erp`, `/api/feedback/list`,
-//!   `/api/feedback/update` and the attachment redirect.
+//! - `FEISHU_APP_ID` (secret) + `FEISHU_APP_SECRET` (secret) — the
+//!   feedback Bitable's tenant token AND the /erp console's Feishu-OAuth
+//!   login (see src/erp.rs; the console APIs gate on the signed session
+//!   cookie, the old `FEEDBACK_ADMIN_KEY` header gate is retired).
 //! - `FEEDBACK_ADMIN_OPEN_ID` (var, optional) — granted `full_access` on
 //!   the bootstrap-created Bitable so a human can open it in Feishu.
 //! - `FEEDBACK_BITABLE_APP_TOKEN` / `FEEDBACK_BITABLE_TABLE_ID` (vars,
@@ -32,7 +34,7 @@ use worker::{
 
 /// KV binding name (wrangler.toml `kv_namespaces`).
 const KV: &str = "FEEDBACK_KV";
-const FEISHU: &str = "https://open.feishu.cn/open-apis";
+pub(crate) const FEISHU: &str = "https://open.feishu.cn/open-apis";
 
 /// KV keys: tenant-token cache + bootstrap base ids.
 const K_TOKEN: &str = "fb:token";
@@ -70,7 +72,7 @@ pub fn page_feedback(origin: &str, env: &Env, user_agent: Option<&str>) -> Resul
 
 /// GET /erp — the embedded review console.
 pub fn page_erp(origin: &str) -> Result<Response> {
-    html(relay_core::feedback::erp_page(origin))
+    html(relay_core::erp::erp_page(origin))
 }
 
 fn html(body: String) -> Result<Response> {
@@ -288,7 +290,7 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !admin_ok(&req, &env) {
+    if !crate::erp::session_ok(&req, &env) {
         return err(401, "unauthorized");
     }
     let query = req.url()?.query().unwrap_or("").to_string();
@@ -475,7 +477,7 @@ pub async fn handle_update(mut req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
     }
-    if !admin_ok(&req, &env) {
+    if !crate::erp::session_ok(&req, &env) {
         return err(401, "unauthorized");
     }
     let body: Value = req.json().await.unwrap_or(Value::Null);
@@ -556,7 +558,7 @@ pub async fn handle_attachment(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !admin_ok(&req, &env) {
+    if !crate::erp::session_ok(&req, &env) {
         return err(401, "unauthorized");
     }
     let query = req.url()?.query().unwrap_or("").to_string();
@@ -578,16 +580,6 @@ pub async fn handle_attachment(req: Request, env: Env) -> Result<Response> {
         .and_then(Value::as_str)
         .ok_or("tmp url missing")?;
     Response::redirect(Url::parse(tmp)?)
-}
-
-fn admin_ok(req: &Request, env: &Env) -> bool {
-    let Ok(expect) = env.secret("FEEDBACK_ADMIN_KEY").map(|s| s.to_string()) else {
-        return false;
-    };
-    match req.headers().get("X-Admin-Key") {
-        Ok(Some(k)) => ct_eq(&k, &expect),
-        _ => false,
-    }
 }
 
 /// Length-checking constant-time-ish compare — network jitter already
@@ -625,7 +617,12 @@ fn record_url(ids: &BitableIds, record_id: &str) -> String {
 /// JSON GET/POST/PUT against the Feishu OpenAPI with a bearer token.
 /// Errors when the HTTP call itself fails; API-level failures are
 /// returned as `Err` with a short code so handlers map them to 502s.
-async fn feishu_json(method: Method, url: &str, token: &str, body: Value) -> Result<(u16, Value)> {
+pub(crate) async fn feishu_json(
+    method: Method,
+    url: &str,
+    token: &str,
+    body: Value,
+) -> Result<(u16, Value)> {
     let headers = json_headers(Some(token))?;
     let payload = if body.is_null() {
         None
@@ -877,13 +874,13 @@ fn urlencode(s: &str) -> String {
     relay_core::feedback::urlencode(s)
 }
 
-fn ok(v: Value) -> Result<Response> {
+pub(crate) fn ok(v: Value) -> Result<Response> {
     let mut resp = Response::from_json(&v)?;
     resp.headers_mut().set("Cache-Control", "no-store")?;
     Ok(resp)
 }
 
-fn err(status: u16, code: &str) -> Result<Response> {
+pub(crate) fn err(status: u16, code: &str) -> Result<Response> {
     let mut resp = Response::from_json(&json!({ "ok": false, "error": code }))?;
     resp.headers_mut().set("Cache-Control", "no-store")?;
     Ok(resp.with_status(status))
