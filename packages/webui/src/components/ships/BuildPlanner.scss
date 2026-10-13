@@ -258,12 +258,29 @@
   &__row {
     /* Fixed 56px tracks with one track per class-tree column — the template
        is set inline by BuildPlanner (auto-fill let short rows drift out of
-       alignment with the tier above). */
+       alignment with the tier above). No flex-grow: the empty tail of the
+       row stays free for the missing-pick warning (margin-left: auto). */
     display: grid;
     justify-content: start;
     gap: 0.45rem 0.35rem;
     align-content: start;
-    flex: 1;
+  }
+
+  /* The game refuses a build that skips a tier row while a higher row is
+     picked; this planner's looser point-based unlocking can produce one,
+     so the offending row carries an amber note in its empty tail. */
+  &__warn {
+    margin-left: auto;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding-right: 0.35rem;
+    max-width: 240px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.35;
+    color: rgb(var(--color-warning));
   }
 }
 

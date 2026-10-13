@@ -1,5 +1,5 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
-import { Ban, Coins, Lock, RotateCcw, X } from "@lucide/vue";
+import { AlertTriangle, Ban, Coins, Lock, RotateCcw, X } from "@lucide/vue";
 
 import { HkButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -19,6 +19,7 @@ import {
   skillIconUrl,
   skillPointsBelow,
   skillPointsSpent,
+  skillTierGaps,
   skillUnavailable,
   TIER_UNLOCK,
   type Skill,
@@ -274,6 +275,10 @@ export default defineComponent({
       for (const list of Object.values(out)) list.sort((a, b) => a.column - b.column);
       return out;
     });
+
+    /** Rows the in-game builder refuses: no pick here while a higher row
+     *  carries one — the game forces ≥1 skill per tier. */
+    const tierGaps = computed(() => skillTierGaps(props.build.skills, tree.value));
 
     /** Column count of this class's tree = max(column) + 1 (BB/CA/DD/CV → 6,
      *  SS → 5, the only five-column tree). Fixed per class — not per tier —
@@ -781,6 +786,12 @@ export default defineComponent({
             >
               {cells}
             </div>
+            {tierGaps.value.has(tier) ? (
+              <span class="skill-tier-v__warn">
+                <AlertTriangle size={12} />
+                {t("ships.skills.tierEmptyWarning")}
+              </span>
+            ) : null}
           </div>
         );
       });

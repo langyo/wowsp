@@ -317,6 +317,7 @@
     "reset": "Reset",
     "tier": "Tier {n}",
     "locked": "Locked — needs {n} points in lower tiers",
+    "tierEmptyWarning": "The game requires at least one skill in this tier",
     "notApplicable": "Not available on this ship",
     "noPoints": "Not enough points left — this skill costs {n}",
     "maxed": "Max",

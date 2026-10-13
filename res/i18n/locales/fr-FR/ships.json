@@ -317,6 +317,7 @@
     "reset": "Réinitialiser",
     "tier": "Palier {n}",
     "locked": "Verrouillé — nécessite {n} points dans les paliers inférieurs",
+    "tierEmptyWarning": "Le jeu impose de sélectionner au moins une compétence dans ce palier",
     "notApplicable": "Indisponible sur ce navire",
     "noPoints": "Pas assez de points — cette compétence coûte {n} points",
     "maxed": "Max",

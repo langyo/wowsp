@@ -11,6 +11,7 @@ import {
   skillCost,
   skillPointsBelow,
   skillPointsSpent,
+  skillTierGaps,
   TIER_UNLOCK,
   type Skill,
 } from "./skillTree";
@@ -87,6 +88,35 @@ describe("skillPointsBelow", () => {
     expect(skillPointsBelow(pick("Three"), TREE, 4)).toBeGreaterThanOrEqual(TIER_UNLOCK[4]);
     expect(skillPointsBelow(pick("One", "Two"), TREE, 4)).toBeGreaterThanOrEqual(TIER_UNLOCK[4]);
     expect(skillPointsBelow(pick("One", "OneB"), TREE, 4)).toBeLessThan(TIER_UNLOCK[4]);
+  });
+});
+
+describe("skillTierGaps", () => {
+  it("flags no row on an empty selection", () => {
+    expect(skillTierGaps({}, TREE)).toEqual(new Set());
+  });
+
+  it("flags rows left empty below the highest picked row", () => {
+    // Two tier-1 skills open tier 3 with tier 2 untouched — the exact
+    // configuration the in-game builder refuses.
+    expect(skillTierGaps(pick("One", "OneB", "Three"), TREE)).toEqual(new Set([2]));
+    expect(skillTierGaps(pick("One", "Four"), TREE)).toEqual(new Set([2, 3]));
+  });
+
+  it("accepts every row filled up to the highest pick, and above it", () => {
+    expect(skillTierGaps(pick("One", "Two", "Three"), TREE)).toEqual(new Set());
+    // Tiers above the highest pick may stay empty.
+    expect(skillTierGaps(pick("One", "TwoB"), TREE)).toEqual(new Set());
+  });
+
+  it("flags every row below a lone high pick, tier 1 included", () => {
+    // Reachable only via a restored cross-class build (the planner's own
+    // toggle can never pass a lower row without a tier-1 pick).
+    expect(skillTierGaps(pick("Four"), TREE)).toEqual(new Set([1, 2, 3]));
+  });
+
+  it("ignores codes outside the class tree", () => {
+    expect(skillTierGaps(pick("FromAnotherClass", "One"), TREE)).toEqual(new Set());
   });
 });
 

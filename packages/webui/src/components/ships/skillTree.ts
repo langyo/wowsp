@@ -102,6 +102,28 @@ export function skillPointsBelow(
   return spent;
 }
 
+/** Tier rows the in-game builder would refuse: no pick in the row while
+ *  some higher row carries at least one — the game forces every tier below
+ *  the highest pick to own a skill. This planner's point-based unlock is
+ *  looser (two tier-1 skills open tier 3 with tier 2 left empty), so such
+ *  builds get a per-row warning instead. */
+export function skillTierGaps(
+  picked: Readonly<Record<string, 1>>,
+  tree: readonly Skill[],
+): Set<number> {
+  const pickedByTier = new Map<number, boolean>();
+  for (const s of tree) {
+    pickedByTier.set(s.tier, (pickedByTier.get(s.tier) ?? false) || !!picked[s.code]);
+  }
+  const gaps = new Set<number>();
+  let anyHigher = false;
+  for (const tier of [...pickedByTier.keys()].sort((a, b) => b - a)) {
+    if (anyHigher && !pickedByTier.get(tier)) gaps.add(tier);
+    if (pickedByTier.get(tier)) anyHigher = true;
+  }
+  return gaps;
+}
+
 // ── In-game recommended builds (yellow corner ribbon) ─────────────────────
 // `crew_presets.json` mirrors the client's CrewSkillRecomendationPresets
 // table: ordered build steps keyed by exact GameParams ship name, ship-group

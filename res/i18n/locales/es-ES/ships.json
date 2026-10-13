@@ -317,6 +317,7 @@
     "reset": "Restablecer",
     "tier": "Nivel {n}",
     "locked": "Bloqueado — requiere {n} puntos en niveles inferiores",
+    "tierEmptyWarning": "El juego obliga a seleccionar al menos una habilidad en este nivel",
     "notApplicable": "No disponible en este buque",
     "noPoints": "Puntos insuficientes — esta habilidad cuesta {n} puntos",
     "maxed": "Máx.",
