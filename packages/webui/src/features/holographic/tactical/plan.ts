@@ -180,7 +180,14 @@ export function planTracks(elements: TacticalElement[]): PlanTrack[] {
           id: el.id,
           t: el.t0,
           kind: el.action ?? "move",
-          ...(end ? { tweenEndT: end.t } : {}),
+          ...(end
+            ? { tweenEndT: end.t }
+            : // A scripted action (an RTS order's planned route) spans its
+              // own travel time on the timeline — the arrow the author
+              // scrubbed toward when they committed the order.
+              isScripted(el)
+              ? { tweenEndT: el.t0 + (el.moveDur ?? 0) }
+              : {}),
           // A scripted action travels its own route — no "jump" connector.
           ...(next != null && !isScripted(el) ? { nextT: next } : {}),
         };

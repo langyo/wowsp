@@ -1,5 +1,6 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
+import { HkContextMenuProvider } from "@celestia-island/hikari";
 import { Settings } from "@lucide/vue";
 
 import AppTitleBar from "@/components/layout/AppTitleBar";
@@ -42,7 +43,10 @@ export default defineComponent({
     });
 
     return () => (
-      <>
+      // HkContextMenuProvider: the app-wide context-menu host — every
+      // right-click / long-press / menu-key surface (the tactical board's
+      // unit menus today) opens through this one hikari menu machinery.
+      <HkContextMenuProvider>
         <AppTitleBar
           icon="/logo.webp"
           title="WoWSP"
@@ -53,7 +57,7 @@ export default defineComponent({
           onAction={() => ui.show()}
         />
         <AppShell />
-      </>
+      </HkContextMenuProvider>
     );
   },
 });

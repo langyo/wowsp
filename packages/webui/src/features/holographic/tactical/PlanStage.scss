@@ -57,8 +57,11 @@
     display: none;
   }
 
-  /* Overview card (hikari HMinimap): full-map art + view box + zoom bar,
-     floating in the board's bottom-right corner above the canvases. */
+  /* Overview card (hikari HMinimap): full-map art + view box + zoom bar.
+     Default: floating in the board's bottom-right corner above the
+     canvases; when the host teleports it into its side panel
+     (minimap-teleport), the panel's own rules re-base it (static, full
+     width — see TacticsView.scss .tac-workspace__side). */
   &__minimap {
     position: absolute;
     right: 0.75rem;

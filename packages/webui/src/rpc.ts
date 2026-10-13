@@ -51,6 +51,10 @@ export const RPC = {
   pick_replay_files: "pick_replay_files",
   pick_export_path: "pick_export_path",
   write_export_bytes: "write_export_bytes",
+  // Plan-profile archive (commands/tactics_profile.rs): the tactics page's
+  // shareable 档案 — a zip of profile.toml + per-branch plan JSON.
+  tactics_profile_save: "tactics_profile_save",
+  tactics_profile_open: "tactics_profile_open",
   copy_image_to_clipboard: "copy_image_to_clipboard",
   read_temp_arena_info: "read_temp_arena_info",
   start_arena_watcher: "start_arena_watcher",

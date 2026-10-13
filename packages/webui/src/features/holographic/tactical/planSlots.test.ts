@@ -139,4 +139,30 @@ describe("plan bundles", () => {
     // the old third slot's key is gone — no orphaned plan resurrects later
     expect(window.localStorage.getItem(docStorageKey("tactics:s#2"))).toBeNull();
   });
+
+  it("branch trees survive a bundle round trip by ENTRY-INDEX parents", () => {
+    window.localStorage.clear();
+    // An inventory whose ids are NOT its indices (a middle slot was deleted
+    // earlier): the tree must still import with parents on the right slots.
+    saveSlots("s", [
+      { id: "0", name: "root" },
+      { id: "2", name: "forkA", parent: "0", branchT: 183 },
+      { id: "5", name: "forkB", parent: "0", branchT: 240 },
+    ]);
+    const bundle = parseBundle(JSON.stringify(exportBundle("s")));
+    expect(bundle).not.toBeNull();
+    // Export resolves the pointer to the parent's ENTRY INDEX.
+    expect(bundle!.slots[1].parent).toBe(0);
+    expect(bundle!.slots[2].parent).toBe(0);
+    importBundle("s2", bundle!);
+    const imported = loadSlots("s2");
+    expect(imported.map((s) => s.id)).toEqual(["0", "1", "2"]);
+    // Import lands the renumbered parent: entry 1 forked from entry 0.
+    expect(imported[1]).toEqual({ id: "1", name: "forkA", parent: "0", branchT: 183 });
+    expect(imported[2]).toEqual({ id: "2", name: "forkB", parent: "0", branchT: 240 });
+    // A dangling fork pointer (parent deleted before export) drops cleanly.
+    saveSlots("s3", [{ id: "0", name: "solo" }, { id: "3", name: "lost", parent: "9" }]);
+    const dangling = parseBundle(JSON.stringify(exportBundle("s3")))!;
+    expect(dangling.slots[1].parent).toBeUndefined();
+  });
 });

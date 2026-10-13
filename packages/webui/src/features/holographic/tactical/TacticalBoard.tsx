@@ -16,7 +16,13 @@ import {
   watch,
   type PropType,
 } from "vue";
-import { useToast } from "@celestia-island/hikari";
+import {
+  bindContextMenu,
+  useContextMenu,
+  useToast,
+  type ContextMenuRequest,
+  type HkMenuItem,
+} from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import type { EntityTrajectory } from "@/api/client";
 import type { MapBounds } from "../modelLoader";
@@ -26,6 +32,22 @@ import { viewSummaryLabel } from "./timelineModel";
 import { useTactical } from "./useTactical";
 import type { ShipAction } from "./actions";
 import { planTracks as planTracksOf, type PlanTrack } from "./plan";
+import type { CapSpec } from "./modes";
+import {
+  TEAM_COLOR,
+  mirrorHeading,
+  mirrorPoint,
+  zoneSourceOf,
+  type PlanUnit,
+} from "./lineup";
+import { kinematicsOf, planLeg, type Pose } from "./kinematics";
+import {
+  zoneEndedAt,
+  zoneParamsOf,
+  type ZoneParams,
+  type ZoneType,
+} from "./zones";
+import { newElementId } from "./model";
 import {
   makeProjection,
   markerHandlePx,
@@ -56,8 +78,9 @@ import type {
   TacticalActionKind,
   TacticalElement,
   Vec2,
+  ZoneElement,
 } from "./types";
-import { TACTICAL_MAX_SCALE } from "./geometry";
+import { TACTICAL_MAX_SCALE, pointAlongPolyline, smoothPolyline } from "./geometry";
 import {
   canvasToBlob,
   composeExportCanvas,
@@ -166,6 +189,30 @@ export default defineComponent({
      *  markers carry action kinds and the timeline switches to accordion unit
      *  rows with tween arrows. */
     planMode: { type: Boolean, default: false },
+    /** Fleet-planner units (lineup.ts PlanUnit[]): present and non-empty the
+     *  board runs in unit mode — units come from the lineup (no free marker
+     *  stamping), left-click orders the selected hull to the point via the
+     *  kinematics estimator, and the right-click menu offers stops / zone
+     *  launches through hikari's app-wide context menu. */
+    planUnits: {
+      type: Array as PropType<PlanUnit[]>,
+      default: () => [],
+    },
+    /** Auto-mirror: every committed order/zone also lands on the unit's
+     *  paired hull of the opposite side (PlanUnit.mateKey). */
+    mirror: { type: Boolean, default: false },
+    /** Ask the host to flip the mirror toggle (the toolbar's button). */
+    onToggleMirror: {
+      type: Function as PropType<() => void>,
+      default: undefined,
+    },
+    /** Ask the host to open the lineup editor (the context menu's item). */
+    onEditLineup: {
+      type: Function as PropType<() => void>,
+      default: undefined,
+    },
+    /** Capture points of the plan's battle mode (rendered + time-gated). */
+    caps: { type: Array as PropType<CapSpec[]>, default: () => [] },
     /** Anchor the teleported toolbar/timeline dock. The replay host docks the
      *  board into the playback bar's tall form; a plan host docks its own. */
     dockSelector: { type: String, default: "#holo-map-tac-dock" },
@@ -184,6 +231,31 @@ export default defineComponent({
     });
 
     const drag = ref<Drag | null>(null);
+    /** Unit mode is active on a plan board with a lineup behind it. */
+    const lineupActive = computed(
+      () => props.planMode && props.planUnits.length > 0,
+    );
+    /** Pending zone launch (the right-click calculator): aims with the
+     *  pointer, commits on the next left click. */
+    const aiming = ref<{
+      pu: PlanUnit;
+      type: ZoneType;
+      heading: number;
+      params: ZoneParams;
+    } | null>(null);
+    /** RTS order preview under the cursor (kinematics plan for the selected
+     *  unit toward the pointer) — recomputed on pointermove, drawn by the
+     *  render loop as a dashed path + arrival chip. */
+    const hoverLeg = ref<{ path: Vec2[]; durS: number; to: Vec2 } | null>(null);
+    const ctxMenu = useContextMenu();
+    // The order preview belongs to a selected hull: losing the selection
+    // (Escape, Delete, doc swap) must drop it even without pointer motion.
+    watch(
+      () => store.selectedId.value,
+      () => {
+        hoverLeg.value = null;
+      },
+    );
     /** Heading shown for the marker being Shift-spun. The element adopts the
      *  new heading live (one undo step per gesture), but a marker mid-tween
      *  is DRAWN along its leg's tangent — this override keeps the glyph
@@ -199,6 +271,9 @@ export default defineComponent({
     }
     /** Waiting for the user to drag the export-crop rectangle. */
     const regionMode = ref(false);
+    /** Cap layer visibility (the toolbar's toggle; on by default when the
+     *  mode provides any points). */
+    const capsVisible = ref(true);
     /** Finished crop rectangle, kept highlighted until exported/cancelled. */
     const pendingRegion = ref<LogicalRect | null>(null);
     const textEdit = ref<{ at: Vec2; value: string; id: string | null } | null>(null);
@@ -257,6 +332,16 @@ export default defineComponent({
             kind: "path",
             solid: props.planMode,
           });
+        } else if (el.kind === "zone") {
+          out.push({
+            id: el.id,
+            t0: el.t0,
+            color: el.team ? TEAM_COLOR[el.team] : "#94a3b8",
+            label: `${el.unit} · ${i18nT(`tactics.zone.${el.zoneType}`)}`,
+            kind: el.zoneType,
+            solid: true,
+            endT: zoneEndedAt(el),
+          });
         } else if (el.kind === "marker" && (el.action == null || !props.planMode)) {
           // Action markers belong to the accordion tracks on a plan board —
           // but a plan document opened on the REPLAY board has no tracks, so
@@ -284,13 +369,16 @@ export default defineComponent({
 
     /** Timeline unit rename: relabels EVERY keyframe of the track's chain —
      *  the label is the unit's identity, so renaming one marker alone would
-     *  split the chain into two accordion rows. Empty = back to "Unit N". */
+     *  split the chain into two accordion rows. Empty = back to "Unit N".
+     *  Lineup units refuse: their identity comes from the lineup (edit the
+     *  label there; the chain follows — syncPlanUnits adopts + relabels). */
     function renameUnit(track: PlanTrack, name: string): void {
       const value = name.trim();
       const ids = new Set(track.ids);
       const owned = store.elements.value.filter(
         (el): el is MarkerElement => ids.has(el.id) && el.kind === "marker",
       );
+      if (owned.some((el) => el.shipId != null)) return;
       if (!owned.some((el) => el.label !== value)) return;
       store.pushHistory();
       for (const el of owned) store.replaceElement(el.id, { ...el, label: value });
@@ -329,6 +417,343 @@ export default defineComponent({
       store.replaceElement(id, { ...el, t0, action });
     }
 
+    // ── Unit mode (lineup-driven plan board) ─────────────────────────────
+    /** The plan unit a marker belongs to (markers chain by label). */
+    function planUnitByKey(key: string): PlanUnit | null {
+      return props.planUnits.find((u) => u.key === key) ?? null;
+    }
+
+    /** World point + projection from CLIENT pixels (shared by pointer events
+     *  and the context-menu trigger, which reports client coords). */
+    function clientWorld(
+      clientX: number,
+      clientY: number,
+    ): { p: Vec2; lx: number; ly: number; p2: TacticalProjection } | null {
+      const pr = proj();
+      const cvs = canvasRef.value;
+      if (!pr || !cvs) return null;
+      const rect = cvs.getBoundingClientRect();
+      if (rect.width === 0) return null;
+      const raw = unrotate(
+        ((clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        ((clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      );
+      return { p: pr.toWorld(raw.lx, raw.ly), lx: raw.lx, ly: raw.ly, p2: pr };
+    }
+
+    /** The marker that currently owns a unit at the playhead: the latest
+     *  keyframe at/before t, else the unit's first (a scrub before its spawn
+     *  still orders the spawn pose). Null when the unit has no markers. */
+    function owningMarkerOf(key: string): MarkerElement | null {
+      const t = props.getTime();
+      const chain = store.elements.value.filter(
+        (el): el is MarkerElement => el.kind === "marker" && el.label === key,
+      );
+      if (chain.length === 0) return null;
+      const sorted = [...chain].sort((a, b) => a.t0 - b.t0);
+      return sorted.reduceRight((acc, el) => acc ?? (el.t0 <= t ? el : null), null as MarkerElement | null) ?? sorted[0];
+    }
+
+    /** A unit's live pose at the playhead (route/tween aware). */
+    function unitPoseOf(el: MarkerElement): Pose {
+      const tween = planTweensOf(store.elements.value).get(el.id) ?? null;
+      const pose = markerPoseAt(el, props.getTime(), tween);
+      return { at: pose.at, heading: pose.heading };
+    }
+
+    /** RTS order: plan the leg with the kinematics estimator, commit it as
+     *  a scripted route marker (the animation/timeline machinery comes free)
+     *  and advance the clock to the arrival — the next order then chains
+     *  from where this one lands, exactly like an RTS. */
+    function commitOrder(
+      pu: PlanUnit,
+      target: Vec2,
+      opts: { arriveHeading?: number | null; stop?: boolean; mirrorChain?: boolean; seek?: boolean } = {},
+    ): void {
+      const owner = owningMarkerOf(pu.key);
+      if (!owner) return;
+      const pose = unitPoseOf(owner);
+      const kin = kinematicsOf(pu.unit.topSpeedKn, pu.unit.shipType);
+      const plan = planLeg({
+        from: pose,
+        to: target,
+        kin,
+        arriveHeading: opts.arriveHeading ?? null,
+        stop: opts.stop,
+      });
+      if (plan.path.length < 2) return;
+      const durS = Math.round(plan.durS * 10) / 10;
+      store.commit({
+        ...commitMarker(pose.at, pose.heading, "ship", TEAM_COLOR[pu.side], props.getTime(), pu.key, "move"),
+        route: plan.path,
+        moveDur: durS,
+        shipId: pu.unit.entry.shipId,
+        team: pu.side,
+        ...(opts.stop ? { stop: true } : {}),
+      });
+      if (opts.seek !== false) {
+        props.seekTo(Math.min(props.getDuration(), props.getTime() + durS));
+      }
+      // Auto-mirror: the paired hull receives the mirrored order (position
+      // and heading flip across the midline; the same stop semantics).
+      if (opts.mirrorChain !== false && props.mirror && pu.mateKey) {
+        const mate = planUnitByKey(pu.mateKey);
+        const full = props.getFullBounds?.();
+        if (mate && full) {
+          commitOrder(mate, mirrorPoint(target, full), {
+            arriveHeading: opts.arriveHeading != null ? mirrorHeading(opts.arriveHeading) : null,
+            stop: opts.stop,
+            mirrorChain: false,
+            seek: false,
+          });
+        }
+      }
+    }
+
+    /** Commit a zone (torpedo spread aimed / consumable ring) anchored at
+     *  the unit's pose NOW — the element bakes its own parameters so later
+     *  lineup edits never rewrite history. */
+    function commitZoneAt(pu: PlanUnit, type: ZoneType, heading: number, mirrorChain = true): void {
+      const params = zoneParamsOf(type, zoneSourceOf(pu.unit));
+      const owner = owningMarkerOf(pu.key);
+      if (!params || !owner) return;
+      const pose = unitPoseOf(owner);
+      const zone: ZoneElement = {
+        id: newElementId(),
+        kind: "zone",
+        t0: props.getTime(),
+        zoneType: type,
+        at: pose.at,
+        heading,
+        radius: params.radius,
+        halfAngle: params.halfAngle,
+        speed: params.speed,
+        durS: params.durS,
+        unit: pu.key,
+        team: pu.side,
+      };
+      store.commit(zone);
+      if (mirrorChain && props.mirror && pu.mateKey) {
+        const mate = planUnitByKey(pu.mateKey);
+        const full = props.getFullBounds?.();
+        if (mate && full) {
+          const mirrored = { ...zone };
+          mirrored.id = newElementId();
+          mirrored.at = mirrorPoint(zone.at, full);
+          mirrored.heading = mirrorHeading(zone.heading);
+          mirrored.team = mate.side;
+          mirrored.unit = mate.key;
+          store.commit(mirrored);
+        }
+      }
+    }
+
+    /** Begin aiming a zone launch (the menu's calculator items): the sector
+     *  rides the pointer around the unit until the next left click commits
+     *  (Escape / right click cancels). */
+    function startAiming(pu: PlanUnit, type: ZoneType, heading: number): void {
+      const params = zoneParamsOf(type, zoneSourceOf(pu.unit));
+      if (!params) return;
+      aiming.value = { pu, type, heading, params };
+    }
+
+    function commitAim(): void {
+      const aim = aiming.value;
+      if (!aim) return;
+      aiming.value = null;
+      commitZoneAt(aim.pu, aim.type, aim.heading);
+    }
+
+    /** Delete a unit's keyframes strictly after the playhead (the context
+     *  menu's "drop the rest of this unit's plan") — keeps the pose the
+     *  clock is parked on. */
+    function pruneUnitAfter(pu: PlanUnit): void {
+      const t = props.getTime();
+      const doomed = store.elements.value.filter(
+        (el) => el.kind === "marker" && el.label === pu.key && el.t0 > t,
+      );
+      if (doomed.length === 0) return;
+      store.pushHistory();
+      const ids = new Set(doomed.map((el) => el.id));
+      store.applyDoc({
+        elements: store.elements.value.filter((el) => !ids.has(el.id)),
+        steps: store.steps.value,
+      });
+    }
+
+    /** Keep the board's units in step with the lineup: spawn markers for
+     *  hulls that have none, drop the chains of hulls that left. Runs once
+     *  per lineup change; a no-op lineup (unit mode off) is ignored. */
+    function syncPlanUnits(): void {
+      if (!lineupActive.value) return;
+      // Unit mode drives units by orders — a stray marker tool would stamp
+      // ghost hulls that chain into nothing. Back to select.
+      if (store.tool.value === "markerShip" || store.tool.value === "markerPlane") {
+        store.tool.value = "select";
+      }
+      const chains = new Map<string, MarkerElement[]>();
+      for (const el of store.elements.value) {
+        if (el.kind === "marker" && el.shipId != null) {
+          const list = chains.get(el.label);
+          if (list) list.push(el);
+          else chains.set(el.label, [el]);
+        }
+      }
+      // Match units to chains: by key first, then — for a unit whose label
+      // changed (lineup editor rename) — by hull+side ADOPTION, relabeling
+      // the chain to the new key so the plan the author already drew
+      // survives the rename instead of being orphaned and respawned.
+      // Known ambiguity: TWO identical hulls (same ship, same side) where
+      // one is renamed and the other removed in the same edit may adopt the
+      // removed one's chain — the chains are indistinguishable, and both
+      // keep a valid plan either way.
+      const remaining = new Map(chains);
+      const missing: PlanUnit[] = [];
+      const relabels: { from: string; to: string }[] = [];
+      for (const u of props.planUnits) {
+        let list = remaining.get(u.key);
+        if (list) {
+          remaining.delete(u.key);
+          continue;
+        }
+        let adoptedKey: string | null = null;
+        for (const [k, l] of remaining) {
+          if (l[0].shipId === u.unit.entry.shipId && l[0].team === u.side) {
+            adoptedKey = k;
+            list = l;
+            break;
+          }
+        }
+        if (list && adoptedKey != null) {
+          remaining.delete(adoptedKey);
+          relabels.push({ from: adoptedKey, to: u.key });
+        } else {
+          missing.push(u);
+        }
+      }
+      const orphanKeys = [...remaining.keys()];
+      if (missing.length === 0 && orphanKeys.length === 0 && relabels.length === 0) return;
+      store.pushHistory();
+      let elements = [...store.elements.value];
+      for (const u of missing) {
+        elements.push({
+          ...commitMarker(u.spawn.at, u.spawn.heading, "ship", TEAM_COLOR[u.side], 0, u.key, "move"),
+          shipId: u.unit.entry.shipId,
+          team: u.side,
+        });
+      }
+      if (orphanKeys.length > 0) {
+        const orphans = new Set(orphanKeys);
+        elements = elements.filter(
+          (el) => !(el.kind === "marker" && el.shipId != null && orphans.has(el.label)),
+        );
+      }
+      for (const r of relabels) {
+        elements = elements.map((el) =>
+          el.kind === "marker" && el.shipId != null && el.label === r.from
+            ? { ...el, label: r.to }
+            : el,
+        );
+      }
+      store.applyDoc({ elements, steps: store.steps.value });
+    }
+    watch(
+      () => props.planUnits,
+      () => syncPlanUnits(),
+      { deep: true },
+    );
+    onMounted(() => void syncPlanUnits());
+
+    // ── App-wide context menu (hikari HkContextMenuProvider) ─────────────
+    /** The unit-mode right-click menu: on a unit — its zone launches and a
+     *  prune; on empty water with a unit selected — orders to that point;
+     *  otherwise a shortcut into the lineup editor. Non-unit-mode boards
+     *  return null and keep the platform menu suppressed as before. */
+    function buildContextMenu(x: number, y: number): ContextMenuRequest | null {
+      if (!lineupActive.value) return null;
+      const hit = clientWorld(x, y);
+      if (!hit) return null;
+      const target = hitTest(hit.p, hit.p2);
+      const unitOfMarker = (el: TacticalElement | null): PlanUnit | null =>
+        el != null && el.kind === "marker" && el.shipId != null ? planUnitByKey(el.label) : null;
+      const zoneItem = (type: ZoneType, key: string, labelKey: string, pu: PlanUnit): HkMenuItem | null =>
+        zoneParamsOf(type, zoneSourceOf(pu.unit)) ? { key, label: i18nT(labelKey) } : null;
+      const tu = unitOfMarker(target);
+      if (tu) {
+        const items: HkMenuItem[] = [];
+        const zi = zoneItem("torpedo", "aim:torpedo", "tactics.ctx.torp", tu);
+        if (zi) items.push(zi);
+        for (const [type, labelKey] of [
+          ["radar", "tactics.ctx.radar"],
+          ["hydro", "tactics.ctx.hydro"],
+          ["smoke", "tactics.ctx.smoke"],
+        ] as const) {
+          const item = zoneItem(type, `zone:${type}`, labelKey, tu);
+          if (item) items.push(item);
+        }
+        items.push({
+          key: "prune",
+          label: i18nT("tactics.ctx.prune", { name: tu.key }),
+          danger: true,
+        });
+        const owner = owningMarkerOf(tu.key);
+        const pose = owner ? unitPoseOf(owner) : null;
+        return {
+          x,
+          y,
+          title: tu.key,
+          items,
+          onSelect: (key: string) => {
+            if (key === "aim:torpedo" && pose) startAiming(tu, "torpedo", pose.heading);
+            else if (key.startsWith("zone:") && pose) {
+              commitZoneAt(tu, key.slice(5) as ZoneType, pose.heading);
+            } else if (key === "prune") pruneUnitAfter(tu);
+          },
+        };
+      }
+      const su = unitOfMarker(store.selected.value);
+      if (su) {
+        const owner = owningMarkerOf(su.key);
+        if (!owner) return null;
+        const pose = unitPoseOf(owner);
+        const bearing = Math.atan2(hit.p.x - pose.at.x, hit.p.z - pose.at.z);
+        const items: HkMenuItem[] = [
+          { key: "move", label: i18nT("tactics.ctx.move") },
+          { key: "stop", label: i18nT("tactics.ctx.stop") },
+        ];
+        const zi = zoneItem("torpedo", "aimAt:torpedo", "tactics.ctx.torpAt", su);
+        if (zi) items.push(zi);
+        for (const [type, labelKey] of [
+          ["radar", "tactics.ctx.radar"],
+          ["hydro", "tactics.ctx.hydro"],
+          ["smoke", "tactics.ctx.smoke"],
+        ] as const) {
+          const item = zoneItem(type, `zoneAt:${type}`, labelKey, su);
+          if (item) items.push(item);
+        }
+        return {
+          x,
+          y,
+          title: su.key,
+          items,
+          onSelect: (key: string) => {
+            if (key === "move") commitOrder(su, hit.p);
+            else if (key === "stop") commitOrder(su, hit.p, { arriveHeading: bearing, stop: true });
+            else if (key === "aimAt:torpedo") startAiming(su, "torpedo", bearing);
+            else if (key.startsWith("zoneAt:")) {
+              commitZoneAt(su, key.slice(7) as ZoneType, bearing);
+            }
+          },
+        };
+      }
+      return {
+        x,
+        y,
+        items: [{ key: "lineup", label: i18nT("tactics.ctx.editLineup") }],
+        onSelect: () => props.onEditLineup?.(),
+      };
+    }
+
     function proj(): TacticalProjection | null {
       const b = props.getBounds();
       return b ? makeProjection(b) : null;
@@ -336,16 +761,7 @@ export default defineComponent({
 
     /** Pointer event → world coords (null when the projection isn't ready). */
     function eventWorld(e: MouseEvent): { p: Vec2; lx: number; ly: number; p2: TacticalProjection } | null {
-      const pr = proj();
-      const cvs = canvasRef.value;
-      if (!pr || !cvs) return null;
-      const rect = cvs.getBoundingClientRect();
-      if (rect.width === 0) return null;
-      const raw = unrotate(
-        ((e.clientX - rect.left) / rect.width) * TACTICAL_SIZE,
-        ((e.clientY - rect.top) / rect.height) * TACTICAL_SIZE,
-      );
-      return { p: pr.toWorld(raw.lx, raw.ly), lx: raw.lx, ly: raw.ly, p2: pr };
+      return clientWorld(e.clientX, e.clientY);
     }
 
     const rotRad = computed(() => (props.rotationDeg * Math.PI) / 180);
@@ -477,6 +893,13 @@ export default defineComponent({
         regionRect,
         showGhostFuture: store.showGhostFuture.value,
         headingOverrides: rotateOverride.value ?? undefined,
+        // The route-end arrival knob only exists for ordered unit hulls —
+        // a hand-drawn route marker (replay board) sails its own path with
+        // no terminal heading to steer.
+        scriptedHandles: lineupActive.value,
+        caps: lineupActive.value && capsVisible.value ? props.caps : [],
+        legPreview: hoverLeg.value,
+        aimPreview: aimPreview.value,
         // Over a replay the virtual units are PLANS drawn hollow, so they
         // never read as observed contacts; a plan board has no contacts of
         // its own, so its units own the solid glyph.
@@ -625,6 +1048,12 @@ export default defineComponent({
       if (e.button !== 0) return;
       const hit = eventWorld(e);
       if (!hit) return;
+      // A pending zone launch commits on the next left click — everything
+      // else (pan, select, orders) waits until the aim resolves.
+      if (aiming.value) {
+        commitAim();
+        return;
+      }
       // View-only mode still pans/zooms the camera (annotations are read).
       // Edit mode pans via the hand tool or while Space is held.
       const wantPan = !props.editMode || spacePanning.value || store.tool.value === "hand";
@@ -642,21 +1071,51 @@ export default defineComponent({
       }
       // Spin-handle grab: when a spinnable marker is selected, its heading
       // knob outranks ordinary hit-testing so the knob is always grabbable
-      // even when it sits over another element.
+      // even when it sits over another element. Scripted (RTS-ordered)
+      // markers only offer their arrival knob in unit mode — on a replay
+      // host they sail a hand-drawn route with no terminal constraint.
       if (tool === "select" && store.selectedId.value) {
         const sel = store.elements.value.find((x) => x.id === store.selectedId.value);
         if (sel) {
-          const handle = markerHandlePx(
-            sel,
-            store.elements.value,
-            hit.p2,
-            props.getTime(),
-            rotateOverride.value ?? undefined,
-          );
-          if (handle && Math.hypot(handle.at.x - hit.lx, handle.at.y - hit.ly) <= 9) {
-            drag.value = { kind: "rotate", id: sel.id, pushed: false };
-            return;
+          const scripted =
+            sel.kind === "marker" && sel.route != null && sel.route.length >= 2 && !!sel.moveDur;
+          const knobOK = !scripted || (lineupActive.value && sel.kind === "marker" && sel.shipId != null);
+          if (knobOK) {
+            const handle = markerHandlePx(
+              sel,
+              store.elements.value,
+              hit.p2,
+              props.getTime(),
+              rotateOverride.value ?? undefined,
+            );
+            if (handle && Math.hypot(handle.at.x - hit.lx, handle.at.y - hit.ly) <= 9) {
+              drag.value = { kind: "rotate", id: sel.id, pushed: false };
+              return;
+            }
           }
+        }
+      }
+      // Unit mode: left-clicking open water with a hull selected ORDERS it
+      // there (the RTS click). A click on a unit selects that unit instead;
+      // annotation elements keep their ordinary select behaviour.
+      if (lineupActive.value && tool === "select") {
+        const target = hitTest(hit.p, hit.p2);
+        if (target == null) {
+          const sel = store.selected.value;
+          if (sel && sel.kind === "marker" && sel.shipId != null) {
+            const pu = planUnitByKey(sel.label);
+            if (pu) {
+              commitOrder(pu, hit.p);
+              return;
+            }
+          }
+        } else if (
+          target.kind === "marker" &&
+          target.shipId != null &&
+          target.id !== store.selectedId.value
+        ) {
+          store.selectedId.value = target.id;
+          return;
         }
       }
       switch (tool) {
@@ -705,7 +1164,14 @@ export default defineComponent({
             !(target.route != null && target.route.length >= 2 && !!target.moveDur && target.moveDur > 0);
           if (target && spinnable && e.shiftKey) {
             drag.value = { kind: "rotate", id: target.id, pushed: false };
-          } else if (target && target.kind !== "replayPath") {
+          } else if (
+            target &&
+            target.kind !== "replayPath" &&
+            // An ordered (scripted) unit marker sits at the START of its
+            // planned route — dragging it would desync hull from route, so
+            // unit-mode hulls move by orders only.
+            !(lineupActive.value && target.kind === "marker" && target.route != null)
+          ) {
             drag.value = { kind: "move", id: target.id, grab: hit.p, last: hit.p, pushed: false };
           }
           break;
@@ -740,6 +1206,65 @@ export default defineComponent({
       return handover == null || t < handover;
     }
 
+    /** A pending launch rendered as the dashed envelope: pivots on the
+     *  unit's live pose, radius/half-angle from the baked launch params. */
+    const aimPreview = computed(() => {
+      const aim = aiming.value;
+      if (!aim) return null;
+      const owner = owningMarkerOf(aim.pu.key);
+      const pose = owner
+        ? unitPoseOf(owner)
+        : { at: aim.pu.spawn.at, heading: aim.pu.spawn.heading };
+      return {
+        at: pose.at,
+        heading: aim.heading,
+        radius: aim.params.radius,
+        halfAngle: aim.params.halfAngle,
+        type: aim.type,
+      };
+    });
+
+    /** Cursor-time unit feedback: the RTS order preview for the selected
+     *  hull toward the pointer. */
+    function updateHoverLeg(e: MouseEvent): void {
+      if (!lineupActive.value || aiming.value) {
+        hoverLeg.value = null;
+        return;
+      }
+      const sel = store.selected.value;
+      if (!sel || sel.kind !== "marker" || sel.shipId == null) {
+        hoverLeg.value = null;
+        return;
+      }
+      const pu = planUnitByKey(sel.label);
+      const owner = pu ? owningMarkerOf(pu.key) : null;
+      if (!pu || !owner) {
+        hoverLeg.value = null;
+        return;
+      }
+      const hit = eventWorld(e);
+      if (!hit) return;
+      const pose = unitPoseOf(owner);
+      const plan = planLeg({
+        from: pose,
+        to: hit.p,
+        kin: kinematicsOf(pu.unit.topSpeedKn, pu.unit.shipType),
+      });
+      hoverLeg.value = { path: plan.path, durS: plan.durS, to: hit.p };
+    }
+
+    /** A pending launch aims at the pointer: the sector pivots on its unit. */
+    function updateAiming(e: MouseEvent): void {
+      const aim = aiming.value;
+      if (!aim) return;
+      const owner = owningMarkerOf(aim.pu.key);
+      if (!owner) return;
+      const hit = eventWorld(e);
+      if (!hit) return;
+      const pose = unitPoseOf(owner);
+      aim.heading = Math.atan2(hit.p.x - pose.at.x, hit.p.z - pose.at.z);
+    }
+
     function onPointerMove(e: PointerEvent): void {
       if (touchPts.has(e.pointerId)) {
         const q = canvasLogical(e);
@@ -750,7 +1275,11 @@ export default defineComponent({
           return;
         }
       }
-      if (!drag.value) return;
+      if (!drag.value) {
+        if (aiming.value) updateAiming(e);
+        else updateHoverLeg(e);
+        return;
+      }
       e.stopPropagation();
       const hit = eventWorld(e);
       if (!hit) return;
@@ -801,6 +1330,40 @@ export default defineComponent({
         case "rotate": {
           const el = store.elements.value.find((x) => x.id === d.id);
           if (el && el.kind === "marker") {
+            // An ordered unit's knob re-plans the leg's TERMINAL heading
+            // (stop orders): drag the knob, the arrival turn + minimum time
+            // recompute around the same route endpoints.
+            const scripted =
+              el.route != null && el.route.length >= 2 && !!el.moveDur && el.shipId != null;
+            if (scripted && lineupActive.value) {
+              const pu = planUnitByKey(el.label);
+              if (pu) {
+                const routeEnd = pointAlongPolyline(smoothPolyline(el.route!), 1);
+                const dx = hit.p.x - routeEnd.at.x;
+                const dz = hit.p.z - routeEnd.at.z;
+                if (Math.hypot(dx, dz) > hit.p2.worldPerPx * 2) {
+                  if (!d.pushed) {
+                    store.pushHistory();
+                    d.pushed = true;
+                  }
+                  const heading = Math.atan2(dx, dz);
+                  const plan = planLeg({
+                    from: { at: el.at, heading: el.heading },
+                    to: routeEnd.at,
+                    kin: kinematicsOf(pu.unit.topSpeedKn, pu.unit.shipType),
+                    arriveHeading: heading,
+                    stop: el.stop === true,
+                  });
+                  store.replaceElement(el.id, {
+                    ...el,
+                    route: plan.path,
+                    moveDur: Math.round(plan.durS * 10) / 10,
+                  });
+                  rotateOverride.value = new Map([[d.id, heading]]);
+                }
+                break;
+              }
+            }
             // Spin about the glyph the user can see right now (a scripted or
             // mid-tween marker is drawn somewhere along its leg, not at its
             // authored `at`).
@@ -916,8 +1479,9 @@ export default defineComponent({
           );
           // Plan flow: jump the clock past the mark just placed so the next
           // drop of the same unit lands after it (two actions on one second
-          // would stack instead of chaining a tween leg).
-          if (props.planMode) {
+          // would stack instead of chaining a tween leg). Unit mode has no
+          // stamping (orders carry their own arrival clock), so it stays.
+          if (props.planMode && !lineupActive.value) {
             props.seekTo(Math.min(props.getDuration(), props.getTime() + PLAN_KEYFRAME_STEP_S));
           }
           break;
@@ -959,6 +1523,10 @@ export default defineComponent({
       if (!hit) return;
       const target = hitTest(hit.p, hit.p2);
       if (!target) return;
+      // Lineup hulls refuse in-place label edits (the timeline rename does
+      // too): the label is the chain key, and a split keyframe chain gets
+      // pruned at the next lineup sync. Rename those in the lineup editor.
+      if (target.kind === "marker" && target.shipId != null) return;
       if (target.kind === "text") openTextEditor(target.at, target.id);
       else if (target.kind === "marker") {
         // Anchor at the marker's pose right now: a scripted one may be
@@ -1062,6 +1630,10 @@ export default defineComponent({
       // cancel the selection while merely closing a rename.
       if (typing && (e.key === "Escape" || e.key === "Enter")) return;
       if (e.key === "Escape") {
+        if (aiming.value) {
+          aiming.value = null;
+          return;
+        }
         if (drag.value) {
           cancelDrag();
           return;
@@ -1449,13 +2021,23 @@ export default defineComponent({
         .catch(() => toast.error(i18nT("replay.tactical.toast.importBad")));
     }
 
+    // The app-wide context menu (HkContextMenuProvider at the app root):
+    // right-click / long-press / menu-key all funnel through the same
+    // hikari menu machinery the rest of the app will adopt.
+    let unbindCtx: (() => void) | null = null;
     onMounted(() => {
       raf = requestAnimationFrame(frame);
       window.addEventListener("keydown", onKeydown, true);
       window.addEventListener("keyup", onKeyUp, true);
+      if (canvasRef.value) {
+        unbindCtx = bindContextMenu(canvasRef.value, ctxMenu, (point) =>
+          buildContextMenu(point.x, point.y),
+        );
+      }
     });
     onBeforeUnmount(() => {
       cancelAnimationFrame(raf);
+      unbindCtx?.();
       window.removeEventListener("keydown", onKeydown, true);
       window.removeEventListener("keyup", onKeyUp, true);
       exitPresentMode();
@@ -1475,6 +2057,7 @@ export default defineComponent({
     }
 
     const cursorClass = computed(() => {
+      if (aiming.value) return "tac-layer__canvas--cross";
       if (drag.value?.kind === "pan" || spacePanning.value || !props.editMode) {
         return "tac-layer__canvas--grab";
       }
@@ -1521,6 +2104,7 @@ export default defineComponent({
             onPointerleave={(e: PointerEvent) => {
               touchPts.delete(e.pointerId);
               pinch = null;
+              hoverLeg.value = null;
               if (drag.value && e.buttons === 0) {
                 cancelDrag();
                 e.stopPropagation();
@@ -1528,7 +2112,16 @@ export default defineComponent({
             }}
             onClick={(e: MouseEvent) => e.stopPropagation()}
             onDblclick={onDoubleClick}
-            onContextmenu={(e: MouseEvent) => e.stopPropagation()}
+            onContextmenu={(e: MouseEvent) => {
+              e.stopPropagation();
+              // While aiming a launch, the right button cancels it (the
+              // context menu stays closed — buildContextMenu sees the aim
+              // as no-man's-land only after this clears it).
+              if (aiming.value) {
+                e.preventDefault();
+                aiming.value = null;
+              }
+            }}
           />
           {textEdit.value ? (
             <input
@@ -1575,6 +2168,11 @@ export default defineComponent({
               <TacticalToolbar
                 store={store}
                 plan={props.planMode}
+                lineupMode={lineupActive.value}
+                mirror={props.mirror}
+                onToggleMirror={props.onToggleMirror}
+                showCaps={capsVisible.value}
+                onToggleCaps={() => (capsVisible.value = !capsVisible.value)}
                 regionActive={regionMode.value}
                 pendingRegion={pendingRegion.value != null}
                 recording={recording.value}

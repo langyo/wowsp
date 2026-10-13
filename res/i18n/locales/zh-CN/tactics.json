@@ -1,7 +1,5 @@
 {
   "title": "战术分析",
-  "devWarning": "该功能正在开发中，暂时不可用",
-  "count": "{n} 张地图",
   "filter": {
     "all": "全部",
     "random": "随机",
@@ -15,13 +13,9 @@
     "legacyTip": "已被「{name}」取代",
     "current": "新版本"
   },
-  "warning": {
-    "message": "该地图（剧情 / 特殊玩法）在战术分析中的支持尚不完整：地形与标注数据可能缺失，仅供预览。"
-  },
   "list": {
     "filterEmpty": "该模式下暂无地图——打过对应模式的对局后会出现在这里。"
   },
-  "select": "选择一张地图开始分析",
   "plan": {
     "noBounds": "该地图没有世界范围数据，无法在其上建立战术标图。"
   },
@@ -29,6 +23,7 @@
     "slotN": "方案 {n}",
     "add": "新建方案",
     "duplicate": "复制当前方案",
+    "branch": "从当前时间点分叉",
     "remove": "删除当前方案",
     "removeConfirm": "再次点击确认删除",
     "rename": "重命名方案",
@@ -38,5 +33,80 @@
     "imported": "已导入 {n} 个方案",
     "importBad": "不是有效的方案集文件",
     "mapMismatch": "方案集来自其它地图（{map}），位置可能错位"
+  },
+  "setup": {
+    "title": "选择地图与模式",
+    "stepMap": "选择地图",
+    "stepMode": "选择模式",
+    "cancel": "取消",
+    "back": "上一步",
+    "confirm": "开始规划",
+    "capCount": "{n} 个占点",
+    "capNone": "无占点",
+    "duration": "对局时长 {m} 分钟"
+  },
+  "mode": {
+    "dom4": "随机 · 四点",
+    "dom4Desc": "标准四点占领：双方各一个基地点，两个争夺点。",
+    "dom3": "随机 · 三点",
+    "dom3Desc": "三点占领：中心一个争夺点，两侧各有归属。",
+    "dom2": "随机 · 两点",
+    "dom2Desc": "两点对称布局。",
+    "dom1": "随机 · 单点",
+    "dom1Desc": "单一中心目标。",
+    "encounter": "随机 · 遭遇战",
+    "encounterDesc": "无占点，标准战役。",
+    "ranked": "排位",
+    "rankedDesc": "排位赛布局，随赛季变化。",
+    "clan": "军团战",
+    "clanDesc": "军团战 7v7 标准布局。",
+    "operation": "剧情 · 行动",
+    "operationDesc": "行动模式：部分点位在条件达成后出现；摧毁观测站后可占领，观测站回满血点位会再次消失。"
+  },
+  "zone": {
+    "torpedo": "鱼雷",
+    "radar": "雷达",
+    "hydro": "水听",
+    "smoke": "烟幕"
+  },
+  "ctx": {
+    "torp": "发射鱼雷计算",
+    "torpAt": "朝此处发射鱼雷",
+    "radar": "启用雷达",
+    "hydro": "启用水听",
+    "smoke": "拉烟",
+    "move": "移动至此",
+    "stop": "在此处停船",
+    "prune": "删除「{name}」此时刻之后的动作",
+    "editLineup": "编辑阵容"
+  },
+  "toolbar": {
+    "mirror": "自动镜像（双方同步编辑）",
+    "caps": "显示 / 隐藏占点"
+  },
+  "lineup": {
+    "title": "编辑阵容",
+    "ally": "我方",
+    "enemy": "敌方",
+    "add": "添加舰船",
+    "added": "已添加 {n} 艘舰船",
+    "remove": "移除舰船",
+    "rename": "重命名单位",
+    "clear": "清空本方",
+    "copyTo": "复制到{side}",
+    "torpedo": "鱼雷",
+    "torpKm": "{km} 公里",
+    "apply": "完成",
+    "hint": "先声明双方的阵容（对称或非对称均可），棋盘会用它生成单位；选船弹窗与科技树/对比页共用同一套筛选。"
+  },
+  "profile": {
+    "name": "档案名称",
+    "namePlaceholder": "档案名（默认按地图命名）",
+    "save": "保存档案",
+    "open": "打开档案",
+    "saved": "档案已保存到 {path}",
+    "opened": "已载入 {n} 个方案",
+    "openBad": "档案打开失败：{detail}",
+    "unknownMap": "档案指向的地图（{map}）本机不可用"
   }
 }

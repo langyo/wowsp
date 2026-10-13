@@ -1,42 +1,112 @@
 {
   "title": "Tactics",
-  "devWarning": "This feature is under development and not available yet.",
-  "count": "{n} maps",
   "filter": {
     "all": "All",
     "random": "Random",
     "ranked": "Ranked",
     "clan": "Clan",
-    "pve": "Scenario"
+    "pve": "Operations"
   },
   "badge": {
     "limited": "Limited support",
-    "legacy": "Old version",
-    "legacyTip": "Superseded by {name}",
-    "current": "New version"
-  },
-  "warning": {
-    "message": "Support for this map (scenario / special mode) in tactics analysis is incomplete: terrain and overlay data may be missing. For preview only."
+    "legacy": "Legacy",
+    "legacyTip": "Superseded by “{name}”",
+    "current": "Current"
   },
   "list": {
-    "filterEmpty": "No maps match this mode yet — play some battles and they will show up here."
+    "filterEmpty": "No maps in this mode yet — they appear once you have replays of it."
   },
-  "select": "Select a map to start analysing",
   "plan": {
-    "noBounds": "This map ships no world-bounds data, so a tactical plan cannot be pinned to it."
+    "noBounds": "This map has no world-bounds data — a plan board cannot be built on it."
   },
   "slots": {
     "slotN": "Plan {n}",
     "add": "New plan",
     "duplicate": "Duplicate current plan",
+    "branch": "Branch from the playhead",
     "remove": "Delete current plan",
-    "removeConfirm": "Click again to delete",
+    "removeConfirm": "Click again to confirm",
     "rename": "Rename plan",
     "exportBundle": "Export all plans",
-    "importBundle": "Import plans",
-    "exported": "Plans exported",
+    "importBundle": "Import plan bundle",
+    "exported": "Plan bundle exported",
     "imported": "Imported {n} plans",
-    "importBad": "Not a tactics plans file",
-    "mapMismatch": "Bundle came from another map ({map}) — positions may not line up"
+    "importBad": "Not a valid plan bundle file",
+    "mapMismatch": "Bundle came from another map ({map}) — positions may be offset"
+  },
+  "setup": {
+    "title": "Choose map & mode",
+    "stepMap": "Map",
+    "stepMode": "Mode",
+    "cancel": "Cancel",
+    "back": "Back",
+    "confirm": "Start planning",
+    "capCount": "{n} capture points",
+    "capNone": "No capture points",
+    "duration": "{m}-minute battle"
+  },
+  "mode": {
+    "dom4": "Random · 4 caps",
+    "dom4Desc": "Standard four-cap domination: one home cap per side, two contested.",
+    "dom3": "Random · 3 caps",
+    "dom3Desc": "Three-cap domination: one centre objective with a cap per flank.",
+    "dom2": "Random · 2 caps",
+    "dom2Desc": "Two symmetric caps.",
+    "dom1": "Random · 1 cap",
+    "dom1Desc": "A single centre objective.",
+    "encounter": "Random · Encounter",
+    "encounterDesc": "No capture points — standard battle.",
+    "ranked": "Ranked",
+    "rankedDesc": "Ranked layouts, varying by season.",
+    "clan": "Clan battles",
+    "clanDesc": "The clan-battle 7v7 standard layout.",
+    "operation": "Operation",
+    "operationDesc": "Operations: some points appear only once conditions are met — destroy the observation station to make its point capturable; if the station regens to full, the point hides again."
+  },
+  "zone": {
+    "torpedo": "Torpedoes",
+    "radar": "Radar",
+    "hydro": "Hydro",
+    "smoke": "Smoke"
+  },
+  "ctx": {
+    "torp": "Torpedo spread calculator",
+    "torpAt": "Launch torpedoes this way",
+    "radar": "Pop radar",
+    "hydro": "Pop hydro",
+    "smoke": "Lay smoke",
+    "move": "Move here",
+    "stop": "Stop here",
+    "prune": "Drop “{name}” actions after this moment",
+    "editLineup": "Edit lineup"
+  },
+  "toolbar": {
+    "mirror": "Auto-mirror (edit both sides)",
+    "caps": "Show / hide capture points"
+  },
+  "lineup": {
+    "title": "Edit lineup",
+    "ally": "Our side",
+    "enemy": "Their side",
+    "add": "Add ships",
+    "added": "Added {n} ships",
+    "remove": "Remove ship",
+    "rename": "Rename unit",
+    "clear": "Clear this side",
+    "copyTo": "Copy to {side}",
+    "torpedo": "Torpedoes",
+    "torpKm": "{km} km",
+    "apply": "Done",
+    "hint": "Declare both teams first (symmetric or not) — the board spawns the units from it. The picker is the same component the ship comparison uses."
+  },
+  "profile": {
+    "name": "Profile name",
+    "namePlaceholder": "Profile name (defaults to the map)",
+    "save": "Save profile",
+    "open": "Open profile",
+    "saved": "Profile saved to {path}",
+    "opened": "Loaded {n} plans",
+    "openBad": "Could not open profile: {detail}",
+    "unknownMap": "The profile's map ({map}) is not available here"
   }
 }

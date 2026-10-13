@@ -1,7 +1,5 @@
 {
   "title": "戰術分析",
-  "devWarning": "該功能正在開發中，暫時不可用",
-  "count": "{n} 張地圖",
   "filter": {
     "all": "全部",
     "random": "隨機",
@@ -15,13 +13,9 @@
     "legacyTip": "已被「{name}」取代",
     "current": "新版本"
   },
-  "warning": {
-    "message": "該地圖（劇情 / 特殊玩法）在戰術分析中的支援尚不完整：地形與標註資料可能缺失，僅供預覽。"
-  },
   "list": {
     "filterEmpty": "該模式下暫無地圖——打過對應模式的對局後會出現在這裡。"
   },
-  "select": "選擇一張地圖開始分析",
   "plan": {
     "noBounds": "該地圖沒有世界範圍資料，無法在其上建立戰術標圖。"
   },
@@ -29,6 +23,7 @@
     "slotN": "方案 {n}",
     "add": "新增方案",
     "duplicate": "複製目前方案",
+    "branch": "從目前時間點分叉",
     "remove": "刪除目前方案",
     "removeConfirm": "再次點擊確認刪除",
     "rename": "重新命名方案",
@@ -38,5 +33,80 @@
     "imported": "已匯入 {n} 個方案",
     "importBad": "不是有效的方案集檔案",
     "mapMismatch": "方案集來自其它地圖（{map}），位置可能錯位"
+  },
+  "setup": {
+    "title": "選擇地圖與模式",
+    "stepMap": "選擇地圖",
+    "stepMode": "選擇模式",
+    "cancel": "取消",
+    "back": "上一步",
+    "confirm": "開始規劃",
+    "capCount": "{n} 個佔點",
+    "capNone": "無佔點",
+    "duration": "對局時長 {m} 分鐘"
+  },
+  "mode": {
+    "dom4": "隨機 · 四點",
+    "dom4Desc": "標準四點佔領：雙方各一個基地點，兩個爭奪點。",
+    "dom3": "隨機 · 三點",
+    "dom3Desc": "三點佔領：中央一個爭奪點，兩側各有歸屬。",
+    "dom2": "隨機 · 兩點",
+    "dom2Desc": "兩點對稱佈局。",
+    "dom1": "隨機 · 單點",
+    "dom1Desc": "單一中央目標。",
+    "encounter": "隨機 · 遭遇戰",
+    "encounterDesc": "無佔點，標準戰役。",
+    "ranked": "排位",
+    "rankedDesc": "排位賽佈局，隨賽季變化。",
+    "clan": "軍團戰",
+    "clanDesc": "軍團戰 7v7 標準佈局。",
+    "operation": "劇情 · 行動",
+    "operationDesc": "行動模式：部分點位在條件達成後出現；摧毀觀測站後可佔領，觀測站回滿血點位會再次消失。"
+  },
+  "zone": {
+    "torpedo": "魚雷",
+    "radar": "雷達",
+    "hydro": "水聽",
+    "smoke": "煙幕"
+  },
+  "ctx": {
+    "torp": "魚雷發射計算",
+    "torpAt": "朝此處發射魚雷",
+    "radar": "啟用雷達",
+    "hydro": "啟用水聽",
+    "smoke": "拉煙",
+    "move": "移動至此",
+    "stop": "在此處停船",
+    "prune": "刪除「{name}」此時刻之後的動作",
+    "editLineup": "編輯陣容"
+  },
+  "toolbar": {
+    "mirror": "自動鏡像（雙方同步編輯）",
+    "caps": "顯示 / 隱藏佔點"
+  },
+  "lineup": {
+    "title": "編輯陣容",
+    "ally": "我方",
+    "enemy": "敵方",
+    "add": "新增艦艇",
+    "added": "已新增 {n} 艘艦艇",
+    "remove": "移除艦艇",
+    "rename": "重新命名單位",
+    "clear": "清空本方",
+    "copyTo": "複製到{side}",
+    "torpedo": "魚雷",
+    "torpKm": "{km} 公里",
+    "apply": "完成",
+    "hint": "先宣告雙方的陣容（對稱或非對稱均可），棋盤會用它生成單位；選船視窗與科技樹/對比頁共用同一套篩選。"
+  },
+  "profile": {
+    "name": "檔案名稱",
+    "namePlaceholder": "檔案名（預設按地圖命名）",
+    "save": "儲存檔案",
+    "open": "開啟檔案",
+    "saved": "檔案已儲存到 {path}",
+    "opened": "已載入 {n} 個方案",
+    "openBad": "檔案開啟失敗：{detail}",
+    "unknownMap": "檔案指向的地圖（{map}）本機不可用"
   }
 }

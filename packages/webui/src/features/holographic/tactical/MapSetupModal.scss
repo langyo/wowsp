@@ -1,0 +1,218 @@
+/* Map-setup wizard body: the map browser / mode list on the left, the
+   square preview on the right. Shares the app's surface tokens; the art
+   preview keeps the dark backdrop the minimap art expects. */
+.map-setup {
+  display: flex;
+  gap: 1rem;
+  min-height: 0;
+
+  &__browser {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__list {
+    flex: 1;
+    min-height: 18rem;
+    max-height: 24rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding-right: 0.2rem;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 16%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-text));
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 45%);
+    }
+
+    &--on {
+      border-color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 9%);
+    }
+  }
+
+  &__item-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__item-id {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    font-family: var(--font-mono, ui-monospace, monospace);
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 1rem 0.5rem;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-sm);
+  }
+
+  /* Step 2: the mode preset cards. */
+  &__modes {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    max-height: 24rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  &__mode {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.55rem 0.7rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 16%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-text));
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 45%);
+    }
+
+    &--on {
+      border-color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 9%);
+    }
+  }
+
+  &__mode-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+
+    strong {
+      font-size: var(--text-sm);
+    }
+  }
+
+  &__mode-desc {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    line-height: 1.5;
+  }
+
+  /* The square preview: map art, meta under it, cap dots over it (step 2). */
+  &__preview {
+    width: 22rem;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__art-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-border) / 20%);
+  }
+
+  &__art {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: var(--radius-md);
+    border: 1px solid rgb(var(--color-border) / 20%);
+    background: rgb(4 8 16 / 90%);
+
+    &--empty {
+      background: rgb(4 8 16 / 90%);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+
+    strong {
+      font-size: var(--text-sm);
+      color: rgb(var(--color-text));
+    }
+  }
+
+  &__meta-note {
+    color: rgb(var(--color-warning));
+  }
+
+  /* Cap template dots over the preview (percent-positioned by the modal). */
+  &__cap {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1.5px solid rgb(226 232 240 / 85%);
+    border-radius: 999px;
+    background: rgb(8 14 26 / 62%);
+    color: rgb(226 232 240 / 95%);
+    font-size: 11px;
+    font-weight: 700;
+    pointer-events: none;
+
+    &--ally {
+      border-color: rgb(74 222 128 / 90%);
+      color: rgb(134 239 172);
+    }
+
+    &--enemy {
+      border-color: rgb(244 63 94 / 90%);
+      color: rgb(253 164 175);
+    }
+  }
+
+  /* Phone: the preview drops under the browser, capped height. */
+  @media (max-width: 767px) {
+    flex-direction: column;
+
+    &__preview {
+      width: 100%;
+    }
+
+    &__art-wrap &__cap {
+      width: 16px;
+      height: 16px;
+      font-size: 10px;
+    }
+  }
+}

@@ -1,42 +1,112 @@
 {
   "title": "Analyse tactique",
-  "devWarning": "Cette fonctionnalité est en cours de développement et n'est pas encore disponible.",
-  "count": "{n} cartes",
   "filter": {
     "all": "Tout",
     "random": "Aléatoire",
     "ranked": "Classée",
     "clan": "Clan",
-    "pve": "Scénario"
+    "pve": "Opérations"
   },
   "badge": {
     "limited": "Prise en charge limitée",
     "legacy": "Ancienne version",
-    "legacyTip": "Remplacée par {name}",
+    "legacyTip": "Remplacée par « {name} »",
     "current": "Nouvelle version"
   },
-  "warning": {
-    "message": "La prise en charge de cette carte (scénario / mode spécial) dans l'analyse tactique est incomplète : les données de terrain et de superposition peuvent manquer. Aperçu uniquement."
-  },
   "list": {
-    "filterEmpty": "Aucune carte pour ce mode pour l'instant — jouez des batailles et elles apparaîtront ici."
+    "filterEmpty": "Aucune carte pour ce mode pour l'instant — elles apparaîtront dès que vous aurez des rediffusions de ce mode."
   },
-  "select": "Sélectionnez une carte pour commencer l'analyse",
   "plan": {
-    "noBounds": "Cette carte n'a pas de données d'étendue, impossible d'y tracer un plan tactique."
+    "noBounds": "Cette carte n'a pas de données d'étendue du monde — impossible d'y construire un plateau de plan."
   },
   "slots": {
     "slotN": "Plan {n}",
     "add": "Nouveau plan",
     "duplicate": "Dupliquer le plan actuel",
+    "branch": "Créer une branche au point de lecture actuel",
     "remove": "Supprimer le plan actuel",
     "removeConfirm": "Cliquez à nouveau pour supprimer",
     "rename": "Renommer le plan",
     "exportBundle": "Exporter tous les plans",
-    "importBundle": "Importer des plans",
-    "exported": "Plans exportés",
+    "importBundle": "Importer un lot de plans",
+    "exported": "Lot de plans exporté",
     "imported": "{n} plans importés",
     "importBad": "Fichier de plans invalide",
-    "mapMismatch": "Plans d'une autre carte ({map}) — les positions peuvent être décalées"
+    "mapMismatch": "Les plans viennent d'une autre carte ({map}) — les positions peuvent être décalées"
+  },
+  "setup": {
+    "title": "Choisir la carte et le mode",
+    "stepMap": "Carte",
+    "stepMode": "Mode",
+    "cancel": "Annuler",
+    "back": "Retour",
+    "confirm": "Commencer la planification",
+    "capCount": "{n} points de capture",
+    "capNone": "Aucun point de capture",
+    "duration": "Bataille de {m} minutes"
+  },
+  "mode": {
+    "dom4": "Aléatoire · 4 points",
+    "dom4Desc": "Domination standard à quatre points : une base par camp et deux points disputés.",
+    "dom3": "Aléatoire · 3 points",
+    "dom3Desc": "Domination à trois points : un objectif central et un point par flanc.",
+    "dom2": "Aléatoire · 2 points",
+    "dom2Desc": "Deux points symétriques.",
+    "dom1": "Aléatoire · 1 point",
+    "dom1Desc": "Un objectif central unique.",
+    "encounter": "Aléatoire · Rencontre",
+    "encounterDesc": "Aucun point de capture — bataille standard.",
+    "ranked": "Classée",
+    "rankedDesc": "Dispositions des batailles classées, variables selon la saison.",
+    "clan": "Batailles de clan",
+    "clanDesc": "La disposition standard 7v7 des batailles de clan.",
+    "operation": "Opération",
+    "operationDesc": "Opérations : certains points n'apparaissent qu'une fois les conditions remplies — détruisez la station d'observation pour rendre son point capturable. Si la station se régénère entièrement, le point disparaît à nouveau."
+  },
+  "zone": {
+    "torpedo": "Torpilles",
+    "radar": "Radar",
+    "hydro": "Hydroacoustique",
+    "smoke": "Fumigène"
+  },
+  "ctx": {
+    "torp": "Calculateur de tir de torpilles",
+    "torpAt": "Lancer les torpilles dans cette direction",
+    "radar": "Activer le radar",
+    "hydro": "Activer l'hydroacoustique",
+    "smoke": "Poser un écran de fumée",
+    "move": "Se déplacer ici",
+    "stop": "S'arrêter ici",
+    "prune": "Abandonner les actions de « {name} » après cet instant",
+    "editLineup": "Modifier la formation"
+  },
+  "toolbar": {
+    "mirror": "Miroir automatique (modifier les deux camps)",
+    "caps": "Afficher / masquer les points de capture"
+  },
+  "lineup": {
+    "title": "Modifier la formation",
+    "ally": "Notre camp",
+    "enemy": "Camp adverse",
+    "add": "Ajouter des navires",
+    "added": "{n} navires ajoutés",
+    "remove": "Retirer un navire",
+    "rename": "Renommer l'unité",
+    "clear": "Vider ce camp",
+    "copyTo": "Copier vers {side}",
+    "torpedo": "Torpilles",
+    "torpKm": "{km} km",
+    "apply": "Terminé",
+    "hint": "Déclarez d'abord la formation des deux équipes (symétrique ou non) : le plateau génère les unités à partir d'elle. Le sélecteur est le même composant que celui de la comparaison de navires."
+  },
+  "profile": {
+    "name": "Nom du profil",
+    "namePlaceholder": "Nom du profil (par défaut, la carte)",
+    "save": "Enregistrer le profil",
+    "open": "Ouvrir le profil",
+    "saved": "Profil enregistré dans {path}",
+    "opened": "{n} plans chargés",
+    "openBad": "Impossible d'ouvrir le profil : {detail}",
+    "unknownMap": "La carte du profil ({map}) n'est pas disponible ici"
   }
 }

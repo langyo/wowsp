@@ -1,42 +1,112 @@
 {
   "title": "Análisis táctico",
-  "devWarning": "Esta función está en desarrollo y todavía no está disponible.",
-  "count": "{n} mapas",
   "filter": {
     "all": "Todas",
     "random": "Aleatorio",
     "ranked": "Clasificatoria",
     "clan": "Clan",
-    "pve": "Escenario"
+    "pve": "Operaciones"
   },
   "badge": {
     "limited": "Soporte limitado",
     "legacy": "Versión antigua",
-    "legacyTip": "Sustituida por {name}",
+    "legacyTip": "Sustituida por «{name}»",
     "current": "Versión nueva"
   },
-  "warning": {
-    "message": "La compatibilidad de este mapa (escenario / modo especial) en el análisis táctico es incompleta: pueden faltar los datos de terreno y superposición. Solo como vista previa."
-  },
   "list": {
-    "filterEmpty": "Aún no hay mapas para este modo: juega algunas batallas y aparecerán aquí."
+    "filterEmpty": "Aún no hay mapas para este modo: aparecerán aquí cuando tengas repeticiones de él."
   },
-  "select": "Selecciona un mapa para empezar el análisis",
   "plan": {
-    "noBounds": "Este mapa no tiene datos de extensión, así que no se puede trazar un plan táctico sobre él."
+    "noBounds": "Este mapa no tiene datos de extensión del mundo, así que no se puede construir un tablero de planes sobre él."
   },
   "slots": {
     "slotN": "Plan {n}",
     "add": "Nuevo plan",
     "duplicate": "Duplicar el plan actual",
+    "branch": "Ramificar desde el momento actual",
     "remove": "Eliminar el plan actual",
     "removeConfirm": "Haz clic de nuevo para eliminar",
     "rename": "Renombrar el plan",
     "exportBundle": "Exportar todos los planes",
-    "importBundle": "Importar planes",
-    "exported": "Planes exportados",
+    "importBundle": "Importar conjunto de planes",
+    "exported": "Conjunto de planes exportado",
     "imported": "{n} planes importados",
     "importBad": "No es un archivo de planes válido",
-    "mapMismatch": "Los planes son de otro mapa ({map}); las posiciones pueden no coincidir"
+    "mapMismatch": "El conjunto de planes es de otro mapa ({map}); las posiciones pueden no coincidir"
+  },
+  "setup": {
+    "title": "Elegir mapa y modo",
+    "stepMap": "Mapa",
+    "stepMode": "Modo",
+    "cancel": "Cancelar",
+    "back": "Atrás",
+    "confirm": "Empezar a planificar",
+    "capCount": "{n} puntos de captura",
+    "capNone": "Sin puntos de captura",
+    "duration": "Batalla de {m} minutos"
+  },
+  "mode": {
+    "dom4": "Aleatorio · 4 puntos",
+    "dom4Desc": "Dominación estándar de cuatro puntos: una base por bando y dos puntos disputados.",
+    "dom3": "Aleatorio · 3 puntos",
+    "dom3Desc": "Dominación de tres puntos: un objetivo central y un punto por flanco.",
+    "dom2": "Aleatorio · 2 puntos",
+    "dom2Desc": "Dos puntos simétricos.",
+    "dom1": "Aleatorio · 1 punto",
+    "dom1Desc": "Un único objetivo central.",
+    "encounter": "Aleatorio · Encuentro",
+    "encounterDesc": "Sin puntos de captura: batalla estándar.",
+    "ranked": "Clasificatoria",
+    "rankedDesc": "Disposiciones de las batallas clasificatorias, varían según la temporada.",
+    "clan": "Batallas de clan",
+    "clanDesc": "La disposición estándar 7v7 de las batallas de clan.",
+    "operation": "Operación",
+    "operationDesc": "Operaciones: algunos puntos aparecen solo al cumplirse ciertas condiciones — destruye la estación de observación para que su punto se pueda capturar; si la estación se regenera por completo, el punto vuelve a ocultarse."
+  },
+  "zone": {
+    "torpedo": "Torpedos",
+    "radar": "Radar",
+    "hydro": "Hidroacústica",
+    "smoke": "Humo"
+  },
+  "ctx": {
+    "torp": "Calculadora de lanzamiento de torpedos",
+    "torpAt": "Lanzar torpedos hacia aquí",
+    "radar": "Activar radar",
+    "hydro": "Activar hidroacústica",
+    "smoke": "Tender cortina de humo",
+    "move": "Mover aquí",
+    "stop": "Detenerse aquí",
+    "prune": "Descartar las acciones de «{name}» después de este momento",
+    "editLineup": "Editar alineación"
+  },
+  "toolbar": {
+    "mirror": "Espejo automático (editar ambos bandos)",
+    "caps": "Mostrar / ocultar puntos de captura"
+  },
+  "lineup": {
+    "title": "Editar alineación",
+    "ally": "Nuestro bando",
+    "enemy": "Bando enemigo",
+    "add": "Añadir buques",
+    "added": "{n} buques añadidos",
+    "remove": "Quitar buque",
+    "rename": "Renombrar unidad",
+    "clear": "Vaciar este bando",
+    "copyTo": "Copiar a {side}",
+    "torpedo": "Torpedos",
+    "torpKm": "{km} km",
+    "apply": "Hecho",
+    "hint": "Declara primero las alineaciones de ambos equipos (simétricas o no): el tablero genera las unidades a partir de ellas. El selector es el mismo componente que usa la comparación de buques."
+  },
+  "profile": {
+    "name": "Nombre del perfil",
+    "namePlaceholder": "Nombre del perfil (por defecto, el mapa)",
+    "save": "Guardar perfil",
+    "open": "Abrir perfil",
+    "saved": "Perfil guardado en {path}",
+    "opened": "{n} planes cargados",
+    "openBad": "No se pudo abrir el perfil: {detail}",
+    "unknownMap": "El mapa del perfil ({map}) no está disponible aquí"
   }
 }

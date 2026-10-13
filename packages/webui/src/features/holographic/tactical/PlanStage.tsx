@@ -19,7 +19,9 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  Teleport,
   watch,
+  type PropType,
 } from "vue";
 import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoader";
 import { HMinimap } from "@celestia-island/hikari";
@@ -31,6 +33,7 @@ import {
   DEFAULT_SLOT_ID,
   deleteSlotDoc,
   duplicateSlotDoc,
+  duplicateSlotDocAt,
   exportBundle,
   importBundle,
   loadSlots,
@@ -40,6 +43,8 @@ import {
   slotDocPath,
   type PlanSlot,
 } from "./planSlots";
+import type { CapSpec } from "./modes";
+import type { PlanUnit } from "./lineup";
 import { saveExportBlob } from "./exporters";
 import { TACTICAL_SIZE, viewWindow, type TacticalView } from "./render";
 import { MAP_GRID_COLUMNS, gridEdgeLabels } from "./mapGrid";
@@ -61,8 +66,22 @@ export default defineComponent({
     /** Display name, used for export filenames. */
     mapName: { type: String, default: "" },
     durationS: { type: Number, default: PLAN_DURATION_S },
+    /** Fleet-planner units (lineup.ts) — the board's unit mode + spawns. */
+    planUnits: { type: Array as () => PlanUnit[], default: () => [] },
+    mirror: { type: Boolean, default: false },
+    onToggleMirror: { type: Function as PropType<(() => void) | undefined>, default: undefined },
+    /** Open the lineup editor (the board's context-menu item). */
+    onEditLineup: { type: Function as PropType<(() => void) | undefined>, default: undefined },
+    /** Capture points of the selected battle mode (modes.ts, world coords). */
+    caps: { type: Array as () => CapSpec[], default: () => [] },
+    /** CSS selector the plan-slot tree teleports into (the tactics page's
+     *  left branch panel); absent keeps the chips row above the stage. */
+    slotsTeleport: { type: String, default: undefined },
+    /** CSS selector the overview minimap teleports into (the tactics page's
+     *  right side panel); absent keeps the in-stage corner card. */
+    minimapTeleport: { type: String, default: undefined },
   },
-  setup(props) {
+  setup(props, { expose }) {
     const artCanvas = ref<HTMLCanvasElement | null>(null);
     const stageRef = ref<HTMLDivElement | null>(null);
     /** Live stage width (ResizeObserver) — sizes the overview card. */
@@ -70,6 +89,26 @@ export default defineComponent({
     /** Typed by the exposed surface only (defineExpose types don't
      *  propagate through InstanceType in TSX). */
     const boardRef = ref<{ flushDoc: () => void; reloadDoc: () => void } | null>(null);
+
+    /** Host-facing surface for the profile actions (the page's save/open
+     *  read and write this stage's documents): flush the board's debounced
+     *  save, re-read the current document, and re-read the whole slot
+     *  inventory (an imported profile rewrote every key underneath us). */
+    function reloadSlots(): void {
+      boardRef.value?.flushDoc?.();
+      slots.value = loadSlots(props.spaceId);
+      activeSlot.value = DEFAULT_SLOT_ID;
+      // The replayPath watch reloads the board when the slot CHANGES; when
+      // the default slot was already active it stays silent — drive it.
+      boardRef.value?.reloadDoc?.();
+      time.value = 0;
+      playing.value = false;
+    }
+    expose({
+      flushDoc: () => boardRef.value?.flushDoc?.(),
+      reloadDoc: () => boardRef.value?.reloadDoc?.(),
+      reloadSlots,
+    });
 
     // ── Map art + world bounds ───────────────────────────────────────────
     let artImage: HTMLImageElement | null = null;
@@ -529,6 +568,21 @@ export default defineComponent({
       saveSlots(props.spaceId, slots.value);
       selectSlot(id);
     }
+
+    /** Fork the current plan AT THE PLAYHEAD: the copy keeps everything up
+     *  to the playhead second and records the fork point, so the branch
+     *  panel can show "方案二 · T+03:00" — the tree's whole point. */
+    function addBranch(): void {
+      const id = nextSlotId(slots.value);
+      boardRef.value?.flushDoc?.();
+      duplicateSlotDocAt(props.spaceId, activeSlot.value, id, time.value);
+      slots.value = [
+        ...slots.value,
+        { id, name: "", parent: activeSlot.value, branchT: Math.round(time.value) },
+      ];
+      saveSlots(props.spaceId, slots.value);
+      selectSlot(id);
+    }
     function renameSlot(id: string, name: string): void {
       const value = name.trim();
       if (slots.value.some((s) => s.id === id && s.name === value)) return;
@@ -542,7 +596,13 @@ export default defineComponent({
       // Switch AWAY first: the board's debounced save then flushes under the
       // departing key before the next tick removes it (watch flush is async).
       selectSlot(fallback.id);
-      slots.value = slots.value.filter((s) => s.id !== id);
+      // The tree survives a node's death: children re-parent onto the
+      // removed node's parent (a root child becomes a root itself).
+      const doomed = slots.value.find((s) => s.id === id);
+      const grand = doomed?.parent;
+      slots.value = slots.value
+        .filter((s) => s.id !== id)
+        .map((s) => (s.parent === id ? { ...s, parent: grand } : s));
       saveSlots(props.spaceId, slots.value);
       void nextTick(() => deleteSlotDoc(props.spaceId, id));
     }
@@ -609,18 +669,22 @@ export default defineComponent({
           <div class="plan-stage__notice">{i18nT("tactics.plan.noBounds")}</div>
         ) : (
           <>
-            <PlanSlotsBar
-              slots={slots.value}
-              names={slotNames.value}
-              activeId={activeSlot.value}
-              onSelect={selectSlot}
-              onAdd={() => addSlot(false)}
-              onDuplicate={() => addSlot(true)}
-              onRename={renameSlot}
-              onRemove={removeSlot}
-              onExport={() => void exportPlansBundle()}
-              onImport={() => bundleInput.value?.click()}
-            />
+            <Teleport defer to={props.slotsTeleport ?? "body"} disabled={!props.slotsTeleport}>
+              <PlanSlotsBar
+                slots={slots.value}
+                names={slotNames.value}
+                activeId={activeSlot.value}
+                onSelect={selectSlot}
+                onAdd={() => addSlot(false)}
+                onDuplicate={() => addSlot(true)}
+                onBranch={addBranch}
+                layout={props.slotsTeleport ? "tree" : "chips"}
+                onRename={renameSlot}
+                onRemove={removeSlot}
+                onExport={() => void exportPlansBundle()}
+                onImport={() => bundleInput.value?.click()}
+              />
+            </Teleport>
             <div class="plan-stage__viewport">
               <div ref={stageRef} class="plan-stage__stage">
                 <canvas ref={artCanvas} class="plan-stage__art" />
@@ -630,6 +694,11 @@ export default defineComponent({
                   mapTag={props.mapName || props.spaceId}
                   editMode
                   planMode
+                  planUnits={props.planUnits}
+                  mirror={props.mirror}
+                  onToggleMirror={props.onToggleMirror}
+                  onEditLineup={props.onEditLineup}
+                  caps={props.caps}
                   dockSelector={`#${PLAN_DOCK_ID}`}
                   getBounds={tacticalBounds}
                   getFullBounds={() => fullBounds.value}
@@ -649,9 +718,14 @@ export default defineComponent({
                   overlayCanvas={() => overviewCanvas}
                 />
                 {minimap.value && (
+                  <Teleport defer to={props.minimapTeleport ?? "body"} disabled={!props.minimapTeleport}>
                   <HMinimap
                     class="plan-stage__minimap"
-                    style={{ transform: `scale(${minimapScale.value})`, transformOrigin: "bottom right" }}
+                    style={
+                      props.minimapTeleport
+                        ? undefined
+                        : { transform: `scale(${minimapScale.value})`, transformOrigin: "bottom right" }
+                    }
                     imageSrc={minimap.value.imageSrc}
                     imageBounds={{ x: 0, y: 0, w: 1, h: 1 }}
                     contentBounds={{ x: 0, y: 0, w: 1, h: 1 }}
@@ -671,6 +745,7 @@ export default defineComponent({
                     onReset={() => viewApi.reset()}
                     onPanDelta={panFromMinimap}
                   />
+                  </Teleport>
                 )}
               </div>
             </div>

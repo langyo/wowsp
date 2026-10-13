@@ -14,7 +14,15 @@ import type {
   TacticalStep,
   TextElement,
   Vec2,
+  ZoneElement,
 } from "./types";
+import {
+  ZONE_TYPES,
+  zoneHitTest,
+  zoneRadiusAt,
+  zoneSectorPoints,
+  type ZoneLike,
+} from "./zones";
 import { TACTICAL_DOC_VERSION } from "./types";
 import {
   TACTICAL_MAX_SCALE,
@@ -198,7 +206,7 @@ export function visibleAt(el: TacticalElement, t: number): boolean {
 
 /** Element reveal progress at time t: 0 → 1 over its draw-in window. */
 export function elementProgress(el: TacticalElement, t: number): number {
-  if (el.kind === "text" || el.kind === "marker") {
+  if (el.kind === "text" || el.kind === "marker" || el.kind === "zone") {
     return Math.max(0, Math.min(1, (t - el.t0) / 0.35));
   }
   if (el.kind === "replayPath") return t >= el.t0 ? 1 : 0;
@@ -256,9 +264,20 @@ export function elementPoints(
       }
       return [pose.at];
     }
+    case "zone":
+      return zoneSectorPointsOf(el, t);
     case "replayPath":
       return [];
   }
+}
+
+/** World points a zone occupies at time t (selection outline): the sector
+ *  triangle/arc at its current sweep radius, or the ring's centre. */
+function zoneSectorPointsOf(el: ZoneElement, t: number): Vec2[] {
+  if (el.halfAngle > 0) {
+    return zoneSectorPoints(el as unknown as ZoneLike, zoneRadiusAt(el as unknown as ZoneLike, t));
+  }
+  return [el.at];
 }
 
 /** Hit-test an element at world point p with `padWorld` slack (top-most
@@ -297,6 +316,8 @@ export function hitTestElement(
       }
       return false;
     }
+    case "zone":
+      return zoneHitTest(el as unknown as ZoneLike, p, t, padWorld);
     case "replayPath":
       return false; // not directly selectable in wave 1
   }
@@ -320,6 +341,8 @@ export function moveElement<T extends TacticalElement>(el: T, dx: number, dz: nu
         at: { x: el.at.x + dx, z: el.at.z + dz },
         route: el.route?.map((p) => ({ x: p.x + dx, z: p.z + dz })),
       };
+    case "zone":
+      return { ...el, at: { x: el.at.x + dx, z: el.at.z + dz } };
     case "replayPath":
       return el;
   }
@@ -395,6 +418,7 @@ const ELEMENT_KINDS = new Set([
   "text",
   "marker",
   "replayPath",
+  "zone",
 ]);
 const DASH_KINDS = new Set(["solid", "dashed", "dotted"]);
 
@@ -475,6 +499,11 @@ function normalizeElement(el: unknown): TacticalElement[] {
           size: fin(e.size, 40),
           ...(route.length >= 2 && moveDur > 0 ? { route, moveDur } : {}),
           ...(action ? { action } : {}),
+          ...(typeof e.shipId === "number" && Number.isFinite(e.shipId)
+            ? { shipId: e.shipId }
+            : {}),
+          ...(e.team === "ally" || e.team === "enemy" ? { team: e.team } : {}),
+          ...(e.stop === true ? { stop: true } : {}),
         },
       ];
     }
@@ -495,6 +524,26 @@ function normalizeElement(el: unknown): TacticalElement[] {
           color: str(e.color, "#4ade80"),
           width: fin(e.width, 4),
           dash: normDash(e.dash),
+        },
+      ];
+    }
+    case "zone": {
+      if (!isFiniteVec(e.at)) return [];
+      const zoneType = ZONE_TYPES.find((z) => z === e.zoneType);
+      if (!zoneType) return [];
+      return [
+        {
+          ...base,
+          kind: "zone",
+          zoneType,
+          at: e.at,
+          heading: fin(e.heading, 0),
+          radius: Math.max(1, fin(e.radius, 100)),
+          halfAngle: Math.max(0, fin(e.halfAngle, 0)),
+          speed: Math.max(0, fin(e.speed, 0)),
+          durS: Math.max(0, fin(e.durS, 0)),
+          unit: typeof e.unit === "string" ? e.unit : "",
+          ...(e.team === "ally" || e.team === "enemy" ? { team: e.team } : {}),
         },
       ];
     }

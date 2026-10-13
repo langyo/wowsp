@@ -176,9 +176,11 @@ describe("planNextActionT", () => {
     };
     const after = frame(40, p(90, 0), "move", "Charlie");
     expect(planNextActionT([routed, after]).get(routed.id)).toBe(10);
-    // The timeline shows no "jump" connector for a travelling route.
+    // A travelling route has no "jump" connector — but it DOES span its own
+    // sail time on the timeline (an arrow from t0 to t0 + moveDur), so an
+    // RTS order reads as the travel it is.
     const [track] = planTracks([routed, after]);
-    expect(track.actions[0]).toEqual({ id: routed.id, t: 0, kind: "move" });
+    expect(track.actions[0]).toEqual({ id: routed.id, t: 0, kind: "move", tweenEndT: 10 });
   });
 
   it("only chains within a unit", () => {

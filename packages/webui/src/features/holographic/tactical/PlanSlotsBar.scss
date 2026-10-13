@@ -72,3 +72,102 @@
     color: rgb(248 113 113);
   }
 }
+
+/* ── Tree layout (the tactics page's left branch panel) ───────────────────
+   The bar becomes a vertical, left-aligned tree: roots at the top, forks
+   indented under their parent with a connector stub, the fork's battle
+   clock riding the chip. Sits OUTSIDE .plan-stage when teleported, so the
+   --holo-hud-* tokens must not be assumed — the tree variant re-bases on
+   the app surface tokens instead. */
+.plan-slots--tree {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.plan-slots--tree .plan-slots__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgb(var(--color-border) / 18%);
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-text));
+  border-radius: var(--radius-sm);
+  text-align: left;
+  max-width: 100%;
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 45%);
+  }
+
+  &--on {
+    border-color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 10%);
+  }
+}
+
+.plan-slots--tree .plan-slots__rename {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-text));
+}
+
+.plan-slots__node {
+  display: flex;
+  min-width: 0;
+}
+
+.plan-slots__node-branch {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 10px;
+  margin-left: -10px;
+  border-left: 1px solid rgb(var(--color-border) / 35%);
+  border-bottom: 1px solid rgb(var(--color-border) / 35%);
+  border-bottom-left-radius: 8px;
+}
+
+.plan-slots__fork {
+  flex-shrink: 0;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: rgb(var(--color-muted) / 14%);
+  color: rgb(var(--color-muted));
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.plan-slots--tree .plan-slots__actions--col {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0;
+  margin-top: 0.4rem;
+  gap: 2px;
+}
+
+.plan-slots--tree .plan-slots__btn {
+  width: 100%;
+  height: 24px;
+  color: rgb(var(--color-muted));
+
+  &:hover {
+    background: rgb(var(--color-primary) / 12%);
+    color: rgb(var(--color-primary));
+  }
+
+  &--danger:hover {
+    background: rgb(204 51 51 / 18%);
+    color: rgb(248 113 113);
+  }
+
+  &--branch {
+    border: 1px dashed rgb(var(--color-primary) / 45%);
+    color: rgb(var(--color-primary));
+  }
+}

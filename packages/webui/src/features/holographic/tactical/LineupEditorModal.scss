@@ -1,0 +1,221 @@
+/* Fleet-lineup editor body: two team columns split by a VS divider, each
+   with hull rows (label + config) and its own action set. The teleported
+   tree variant of the slot bar (plan-slots--tree) also styles from here —
+   no, it stays in PlanSlotsBar.scss; this file is the modal only. */
+.lineup {
+  display: flex;
+  gap: 0.75rem;
+  min-height: 16rem;
+
+  &__hint {
+    margin: 0 0 0.75rem;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    line-height: 1.5;
+  }
+
+  &__vs {
+    align-self: center;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background: rgb(var(--color-muted) / 14%);
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
+  &__side {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.6rem;
+    border: 1px solid rgb(var(--color-border) / 18%);
+    border-radius: var(--radius-md);
+    background: rgb(var(--color-surface) / 60%);
+
+    &--ally {
+      border-color: rgb(34 211 238 / 35%);
+    }
+
+    &--enemy {
+      border-color: rgb(244 114 182 / 35%);
+    }
+  }
+
+  &__side-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+
+    strong {
+      font-size: var(--text-sm);
+    }
+  }
+
+  &__side-count {
+    padding: 0.05rem 0.5rem;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-muted) / 16%);
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+  }
+
+  &__rows {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: 22rem;
+  }
+
+  &__row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid rgb(var(--color-border) / 14%);
+    border-radius: var(--radius-md);
+  }
+
+  &__row-main {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__row-ico {
+    flex-shrink: 0;
+    color: rgb(var(--color-muted));
+  }
+
+  &__label {
+    flex: 1;
+    min-width: 0;
+    padding: 0.2rem 0.5rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 16%);
+    border-radius: var(--radius-sm);
+    color: rgb(var(--color-text));
+    font-size: var(--text-xs);
+    font-family: inherit;
+    outline: none;
+
+    &:focus {
+      border-color: rgb(var(--color-primary) / 60%);
+    }
+  }
+
+  &__row-config {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  &__field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__select {
+    padding: 0.15rem 0.4rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 16%);
+    border-radius: var(--radius-sm);
+    color: rgb(var(--color-text));
+    font-size: var(--text-xs);
+    font-family: inherit;
+    outline: none;
+  }
+
+  &__chips {
+    display: inline-flex;
+    gap: 0.25rem;
+  }
+
+  &__chip {
+    padding: 0.12rem 0.55rem;
+    border: 1px solid rgb(var(--color-border) / 22%);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-family: inherit;
+    cursor: pointer;
+
+    &--on {
+      border-color: rgb(var(--color-primary) / 70%);
+      background: rgb(var(--color-primary) / 14%);
+      color: rgb(var(--color-primary));
+      font-weight: 600;
+    }
+  }
+
+  &__add {
+    padding: 0.4rem 0.6rem;
+    border: 1px dashed rgb(var(--color-border) / 35%);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    font-family: inherit;
+    cursor: pointer;
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 50%);
+      color: rgb(var(--color-primary));
+    }
+  }
+
+  &__icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: rgb(var(--color-primary) / 12%);
+      color: rgb(var(--color-primary));
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    &--danger {
+      &:hover:not(:disabled) {
+        background: rgb(204 51 51 / 18%);
+        color: rgb(248 113 113);
+      }
+    }
+  }
+
+  @media (max-width: 767px) {
+    flex-direction: column;
+
+    &__vs {
+      align-self: center;
+    }
+  }
+}

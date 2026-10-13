@@ -21,7 +21,9 @@ import {
   Eraser,
   Eye,
   FastForward,
+  FlipHorizontal,
   Hand,
+  MapPin,
   MousePointer2,
   Maximize2,
   Minus,
@@ -159,6 +161,15 @@ export default defineComponent({
     /** Plan board: markers are keyframes, so the marker menu gains the action
      *  kind picker and loses the replay-only path pin. */
     plan: { type: Boolean, default: false },
+    /** Unit mode (a lineup drives the board): free hull stamping is OFF —
+     *  units arrive from the lineup editor — and the bar gains the
+     *  auto-mirror toggle (orders replicate to the paired hull) and the
+     *  capture-point layer toggle. */
+    lineupMode: { type: Boolean, default: false },
+    mirror: { type: Boolean, default: false },
+    onToggleMirror: { type: Function as PropType<() => void>, default: undefined },
+    showCaps: { type: Boolean, default: true },
+    onToggleCaps: { type: Function as PropType<() => void>, default: undefined },
   },
   setup(props) {
     const tool = computed(() => props.store.tool.value);
@@ -253,7 +264,9 @@ export default defineComponent({
           ) : null}
         </span>
 
-        {/* Unit markers + path pin */}
+        {/* Unit markers + path pin (unit mode: the lineup owns units, the
+            group hides entirely) */}
+        {!props.lineupMode ? (
         <span class={["tac-bar__anchor", isMarkerTool.value ? "tac-bar__anchor--on" : ""]}>
           <HkTooltip text={i18nT("replay.tactical.menu.markers")} placement="top">
             <HkIconButton
@@ -295,6 +308,7 @@ export default defineComponent({
             </div>
           ) : null}
         </span>
+        ) : null}
 
         {/* Style: colour swatch (opens palette + width + dash) */}
         <span class="tac-bar__anchor">
@@ -351,6 +365,33 @@ export default defineComponent({
             </div>
           ) : null}
         </span>
+
+        {props.lineupMode ? (
+          <>
+            {props.onToggleMirror ? (
+              <HkTooltip text={i18nT("tactics.toolbar.mirror")} placement="top">
+                <HkIconButton
+                  size={32}
+                  variant={props.mirror ? "primary" : "ghost"}
+                  onClick={() => props.onToggleMirror!()}
+                >
+                  <FlipHorizontal size={14} />
+                </HkIconButton>
+              </HkTooltip>
+            ) : null}
+            {props.onToggleCaps ? (
+              <HkTooltip text={i18nT("tactics.toolbar.caps")} placement="top">
+                <HkIconButton
+                  size={32}
+                  variant={props.showCaps ? "primary" : "ghost"}
+                  onClick={() => props.onToggleCaps!()}
+                >
+                  <MapPin size={14} />
+                </HkIconButton>
+              </HkTooltip>
+            ) : null}
+          </>
+        ) : null}
 
         <span class="tac-bar__sep" />
 

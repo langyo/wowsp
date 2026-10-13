@@ -142,6 +142,22 @@ export const shellApi = {
       filterName,
       filterExts,
     }),
+  /** Write a tactics plan-profile archive (profile.toml + plan JSONs) to a
+   *  user-picked path; null = cancelled. Throws outside the Tauri shell. */
+  saveTacticsProfile: (
+    meta: unknown,
+    plans: { name: string; json: string; parent?: string; branchT?: number }[],
+  ) =>
+    transport.invoke<string | null>(RPC.tactics_profile_save, {
+      meta,
+      plans,
+    }),
+  /** Open + read a tactics plan-profile archive; null = cancelled. Throws
+   *  on a malformed archive. */
+  openTacticsProfile: () =>
+    transport.invoke<{ meta: unknown; plans: { name: string; json: string; parent?: string; branchT?: number }[] } | null>(
+      RPC.tactics_profile_open,
+    ),
   /** Write export bytes (PNG/WebP image, MP4/WebM video) to an absolute path
    *  from `pickExportPath` via a raw IPC body. Rejects outside the Tauri
    *  shell — callers fall back to a browser download. */

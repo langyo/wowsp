@@ -10,12 +10,24 @@
 import { drawShipGlyph } from "@wowsp/holo";
 import type { EntityTrajectory } from "@/api/client";
 import type { MapBounds } from "../modelLoader";
+import { RING_COLOR } from "../rangeRings";
 import type {
   DashStyle,
   LogicalRect,
   TacticalElement,
   Vec2,
+  ZoneElement,
 } from "./types";
+import type { CapSpec } from "./modes";
+import {
+  zoneAlphaAt,
+  zoneEndedAt,
+  zoneRadiusAt,
+  zoneSectorPoints,
+  zoneIsSector,
+  type ZoneLike,
+  type ZoneType,
+} from "./zones";
 import {
   elementPoints,
   elementProgress,
@@ -70,6 +82,23 @@ export function makeProjection(bounds: MapBounds, size = TACTICAL_SIZE): Tactica
 // re-exported here because HolographicMap already imports from this module.
 export { viewWindow, TACTICAL_MAX_SCALE } from "./geometry";
 export type { TacticalView } from "./geometry";
+
+/** Stroke colour per zone type — the replay rings' shared palette, so a
+ *  plan radar reads exactly like a replay radar (smoke has no replay ring;
+ *  it borrows the neutral slate). */
+const ZONE_COLOR: Record<ZoneType, string> = {
+  torpedo: RING_COLOR.torpedo,
+  radar: RING_COLOR.radar,
+  hydro: RING_COLOR.hydro,
+  smoke: "#94a3b8",
+};
+
+/** Cap-ring colours by ownership (the plan board's cap layer). */
+export const CAP_TEAM_COLOR: Record<string, string> = {
+  ally: "#4ade80",
+  enemy: "#f43f5e",
+  neutral: "rgba(226, 232, 240, 0.9)",
+};
 
 function applyDash(ctx: CanvasRenderingContext2D, dash: DashStyle, width: number): void {
   const w = Math.max(1, width);
@@ -188,6 +217,24 @@ export interface RenderOptions {
    *  the glyph turns with the pointer even while the element's own pose —
    *  a tweening plan action — would point it along its leg. */
   headingOverrides?: Map<string, number>;
+  /** Capture points of the plan's battle mode (modes.ts) — drawn beneath
+   *  the annotations but above the art, with appearance-time gating. */
+  caps?: CapSpec[];
+  /** RTS order preview under the cursor: the planned path + arrival time
+   *  (kinematics.planLeg output for the selected unit). */
+  legPreview?: { path: Vec2[]; durS: number; to: Vec2 } | null;
+  /** Zone aiming preview (the context menu's launch calculator): the full
+   *  sector/ring the pending launch would cover, at full reach. */
+  aimPreview?: {
+    at: Vec2;
+    heading: number;
+    radius: number;
+    halfAngle: number;
+    type: ZoneType;
+  } | null;
+  /** Offer scripted-route markers' arrival knob (unit-mode boards only —
+   *  a hand-drawn route has no terminal heading to steer). */
+  scriptedHandles?: boolean;
 }
 
 export function renderTactical(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
@@ -196,11 +243,14 @@ export function renderTactical(ctx: CanvasRenderingContext2D, opts: RenderOption
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
+  drawCaps(ctx, opts);
   for (const el of opts.elements) {
     const future = !visibleAt(el, opts.time);
     if (future && !opts.showGhostFuture) continue;
     drawElement(ctx, el, opts, future ? "ghost" : "normal");
   }
+  if (opts.legPreview) drawLegPreview(ctx, opts);
+  if (opts.aimPreview) drawAimPreview(ctx, opts);
   if (opts.preview) drawElement(ctx, opts.preview, opts, "preview");
   if (opts.selectedId) {
     const sel = opts.elements.find((e) => e.id === opts.selectedId);
@@ -474,6 +524,209 @@ function drawElement(
       for (const poly of polys) strokePolylineWorld(ctx, poly, proj);
       break;
     }
+    case "zone": {
+      drawZone(ctx, el, opts, mode);
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+/** One zone at battle time t: torpedo sectors sweep outward at run speed,
+ *  consumable rings hold their radius for the (estimated) duration then
+ *  fade. Ghost mode (scrubbed before launch) outlines the FULL shape so the
+ *  author can see what is coming. */
+function drawZone(
+  ctx: CanvasRenderingContext2D,
+  el: ZoneElement,
+  opts: RenderOptions,
+  mode: DrawMode,
+): void {
+  const z = el as unknown as ZoneLike;
+  const t = opts.time;
+  let radius: number;
+  let alpha: number;
+  if (mode === "ghost") {
+    radius = el.radius;
+    alpha = 0.22;
+  } else {
+    radius = zoneRadiusAt(z, t);
+    alpha = zoneAlphaAt(z, t);
+    if (radius < 0.5 || alpha <= 0.02) return;
+  }
+  if (mode === "preview") alpha = Math.max(alpha, 0.8);
+  const color = ZONE_COLOR[el.zoneType];
+  const { proj } = opts;
+  const c = proj.toPx(el.at);
+  const rPx = el.radius / proj.worldPerPx;
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+  if (zoneIsSector(el.zoneType) && el.halfAngle > 0) {
+    // Sector: two flanks at the CURRENT sweep, an arc between them, plus a
+    // faint full-reach outline so the max envelope stays readable.
+    const pts = zoneSectorPoints(z, radius);
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const p = proj.toPx(pts[i]);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha * 0.14;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+    ctx.setLineDash([4, 5]);
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, rPx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // km tag riding the sweep's arc.
+    const mid = proj.toPx({
+      x: el.at.x + Math.sin(el.heading) * radius,
+      z: el.at.z + Math.cos(el.heading) * radius,
+    });
+    ctx.globalAlpha = alpha;
+    drawLabelChip(ctx, zoneTag(el), mid.x + 6, mid.y - 8, color);
+  } else {
+    // Static ring: dashed circle (the replay ranges-mod look) + km tag.
+    ctx.setLineDash([9, 7]);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, rPx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    drawLabelChip(ctx, zoneTag(el), c.x + 6, c.y - rPx - 12, color);
+    // A live zone shows its remaining seconds beside the tag.
+    if (mode === "normal" && el.durS > 0) {
+      const end = zoneEndedAt(z);
+      const remain = Math.max(0, end - t);
+      if (remain > 0) {
+        ctx.globalAlpha = alpha * 0.85;
+        drawLabelChip(ctx, `${Math.ceil(remain)}s`, c.x + 6, c.y - rPx + 2, color);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Compact range label for a zone chip ("20km" / "9.5km"). */
+function zoneTag(el: ZoneElement): string {
+  const km = (el.radius * 30) / 1000;
+  return `${km >= 10 ? km.toFixed(0) : km.toFixed(1)}km`;
+}
+
+/** Cap layer: one ring per capture point, letters like the live minimap,
+ *  ownership colours, and station-gated points as dashed ghosts until the
+ *  battle clock reaches their appearance second. */
+function drawCaps(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
+  const caps = opts.caps;
+  if (!caps || caps.length === 0) return;
+  const { proj, time } = opts;
+  ctx.save();
+  for (const cap of caps) {
+    const future = (cap.appearT ?? 0) > time;
+    if (future && !opts.showGhostFuture) continue;
+    const c = proj.toPx(cap.at);
+    const rPx = cap.radius / proj.worldPerPx;
+    if (rPx < 2) continue;
+    const color =
+      cap.team === "ally"
+        ? CAP_TEAM_COLOR.ally
+        : cap.team === "enemy"
+          ? CAP_TEAM_COLOR.enemy
+          : CAP_TEAM_COLOR.neutral;
+    ctx.globalAlpha = future ? 0.25 : 0.85;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash(future || cap.station ? [5, 4] : []);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, rPx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Letter chip at the centre (the minimap's A/B/C language).
+    ctx.font = "700 12px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.fillText(cap.letter, c.x, c.y);
+    if (cap.station) {
+      // Station-gated point: the marker the operations flow speaks with.
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, rPx * 0.18, 0, Math.PI * 2);
+      ctx.globalAlpha = future ? 0.25 : 0.6;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** RTS order preview: the planned path dashed, an arrowhead at the target,
+ *  and an arrival chip (duration + absolute clock) next to the cursor. */
+function drawLegPreview(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
+  const pv = opts.legPreview;
+  if (!pv || pv.path.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(0, 195, 255, 0.9)";
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([7, 5]);
+  strokePolylineWorld(ctx, pv.path, opts.proj);
+  ctx.setLineDash([]);
+  const from = opts.proj.toPx(pv.path[0]);
+  const to = opts.proj.toPx(pv.to);
+  drawArrowHead(ctx, from, to, 1.8, "rgba(0, 195, 255, 0.95)");
+  const m = Math.floor(pv.durS / 60);
+  const sec = Math.round(pv.durS % 60);
+  const eta = `${m}:${String(sec).padStart(2, "0")}`;
+  const arrive = opts.time + pv.durS;
+  const am = Math.floor(arrive / 60);
+  const as = Math.round(arrive % 60);
+  drawLabelChip(
+    ctx,
+    `${eta} · T+${am}:${String(as).padStart(2, "0")}`,
+    to.x + 10,
+    to.y - 10,
+    "rgba(0, 195, 255, 0.95)",
+  );
+  ctx.restore();
+}
+
+/** Aiming preview for a pending zone launch: the full envelope the order
+ *  would cover — clearly provisional (dashed, no fill). */
+function drawAimPreview(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
+  const aim = opts.aimPreview;
+  if (!aim) return;
+  const { proj } = opts;
+  const c = proj.toPx(aim.at);
+  const rPx = aim.radius / proj.worldPerPx;
+  ctx.save();
+  ctx.globalAlpha = 0.75;
+  const color = ZONE_COLOR[aim.type];
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.8;
+  if (aim.halfAngle > 0) {
+    // Screen angles: heading 0 = north = −90° canvas; clockwise positive.
+    const a0 = aim.heading - aim.halfAngle - Math.PI / 2;
+    const a1 = aim.heading + aim.halfAngle - Math.PI / 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(c.x + Math.cos(a0) * rPx, c.y + Math.sin(a0) * rPx);
+    ctx.arc(c.x, c.y, rPx, a0, a1);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = color;
+    ctx.fill();
+  } else {
+    ctx.setLineDash([9, 7]);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, rPx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
@@ -492,7 +745,21 @@ export function markerHandlePx(
   headingOverrides?: Map<string, number>,
 ): { from: { x: number; y: number }; at: { x: number; y: number } } | null {
   if (el.kind !== "marker") return null;
-  if (el.route != null && el.route.length >= 2 && !!el.moveDur && el.moveDur > 0) return null;
+  // A scripted route marker's knob sits at the ROUTE END on the arrival
+  // heading: dragging it re-plans the leg's terminal turn (the "stop here,
+  // facing this way" affordance), not a spin in place.
+  if (el.route != null && el.route.length >= 2 && !!el.moveDur && el.moveDur > 0) {
+    const route = cachedSmooth(el, el.route, () => smoothPolyline(el.route!));
+    const end = pointAlongPolyline(route, 1);
+    const c = proj.toPx(end.at);
+    const dx = Math.sin(end.heading);
+    const dy = -Math.cos(end.heading);
+    const knobR = el.size * 0.75 + 14;
+    return {
+      from: { x: c.x, y: c.y },
+      at: { x: c.x + dx * knobR, y: c.y + dy * knobR },
+    };
+  }
   const tween = planTweensOf(elements).get(el.id) ?? null;
   const pose = markerPoseAt(el, time, tween);
   const heading = headingOverrides?.get(el.id) ?? pose.heading;
@@ -530,7 +797,14 @@ function drawSelection(ctx: CanvasRenderingContext2D, el: TacticalElement, opts:
   ctx.strokeRect(minX - padPx, minY - padPx, maxX - minX + padPx * 2, maxY - minY + padPx * 2);
   ctx.restore();
   // Spin handle: a knob on the heading ray — drag it to turn the marker.
-  const handle = markerHandlePx(el, opts.elements, opts.proj, opts.time, opts.headingOverrides);
+  // Scripted (route) markers' knob is the arrival-heading re-plan affordance
+  // and only shows where the board can act on it (unit mode).
+  const scripted =
+    el.kind === "marker" && el.route != null && el.route.length >= 2 && !!el.moveDur;
+  const handle =
+    scripted && opts.scriptedHandles !== true
+      ? null
+      : markerHandlePx(el, opts.elements, opts.proj, opts.time, opts.headingOverrides);
   if (handle) {
     ctx.save();
     ctx.strokeStyle = "rgba(0, 195, 255, 0.9)";

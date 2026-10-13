@@ -59,16 +59,20 @@ import {
 } from "./timelineIcons";
 import "./Timeline.scss";
 
-/** A user-authored marker on the timeline (virtual ship / pinned path). */
+/** A user-authored marker on the timeline (virtual ship / pinned path /
+ *  a placed zone — torpedo spread or consumable ring). */
 export interface TimelineUserMarker {
   id: string;
   /** Battle seconds the marker appears at (element t0). */
   t0: number;
   color: string;
   label: string;
-  kind: "marker" | "path";
+  kind: "marker" | "path" | "torpedo" | "radar" | "hydro" | "smoke";
   /** Standalone boards place solid markers; over a replay they are hollow. */
   solid: boolean;
+  /** Zone kinds: the battle second the effect is over (torpedoes reaching
+   *  max range / a ring's duration lapsing) — drawn as a span bar. */
+  endT?: number;
 }
 
 const RULER_H = 20;
@@ -98,6 +102,47 @@ interface RowGeometry {
   headerH: number;
   bodyH: number;
   collapsed: boolean;
+}
+
+/** Small zone glyph for the timeline: a ring (consumables) or a chevron
+ *  pointing right (a torpedo spread running out). Local to the timeline —
+ *  the map draws the real geometry (render.ts drawZone). */
+function drawZoneIcon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+  kind: "torpedo" | "radar" | "hydro" | "smoke",
+): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+  if (kind === "torpedo") {
+    ctx.beginPath();
+    ctx.moveTo(x - 5, y - 4);
+    ctx.lineTo(x + 4, y);
+    ctx.lineTo(x - 5, y + 4);
+    ctx.closePath();
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(x, y, 4.2, 0, Math.PI * 2);
+    ctx.stroke();
+    // Radar/hydro differ by a centre dot; smoke by a dashed ring.
+    if (kind === "radar" || kind === "hydro") {
+      ctx.beginPath();
+      ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    } else {
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  ctx.restore();
 }
 
 export default defineComponent({
@@ -373,10 +418,33 @@ export default defineComponent({
       }
       // User markers always render as icons — even in density mode they are
       // few, and they are the author's own edits (right-click to remove).
+      // Zone markers additionally span their effect window with a bar.
       for (const um of laidUsers.value) {
         const m = um.marker;
-        if (m.kind === "path") drawUserPin(ctx, um.x, rowY(um.row), m.color);
-        else drawUserShip(ctx, um.x, rowY(um.row), m.color, m.solid);
+        if (m.kind === "path") {
+          drawUserPin(ctx, um.x, rowY(um.row), m.color);
+        } else if (m.kind === "torpedo" || m.kind === "radar" || m.kind === "hydro" || m.kind === "smoke") {
+          const x1 = m.endT != null ? timeToX(m.endT) : null;
+          if (x1 != null && x1 > um.x + 2) {
+            ctx.save();
+            ctx.strokeStyle = m.color;
+            ctx.globalAlpha = 0.4;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(um.x + 4, rowY(um.row));
+            ctx.lineTo(x1 - 2, rowY(um.row));
+            ctx.stroke();
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(x1, rowY(um.row), 2, 0, Math.PI * 2);
+            ctx.fillStyle = m.color;
+            ctx.fill();
+            ctx.restore();
+          }
+          drawZoneIcon(ctx, um.x, rowY(um.row), m.color, m.kind);
+        } else {
+          drawUserShip(ctx, um.x, rowY(um.row), m.color, m.solid);
+        }
       }
 
       drawOverview(ctx, W);
@@ -578,7 +646,14 @@ export default defineComponent({
             x: um.x,
             y: rowY(um.row),
             lines: [
-              m.label || i18nT(m.kind === "path" ? "replay.tactical.timeline.act.path" : "replay.tactical.timeline.act.marker"),
+              m.label ||
+                i18nT(
+                  m.kind === "path"
+                    ? "replay.tactical.timeline.act.path"
+                    : m.kind === "marker"
+                      ? "replay.tactical.timeline.act.marker"
+                      : `tactics.zone.${m.kind}`,
+                ),
               `T+${fmtClock(m.t0)}`,
             ],
           };

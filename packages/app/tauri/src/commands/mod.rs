@@ -19,6 +19,7 @@ pub mod game_detect;
 pub mod game_maps;
 pub mod gameparams;
 pub mod github_mirror;
+pub mod tactics_profile;
 // Consent-gated hardware & environment report for the feedback bundle
 // (see the module docs for the privacy flow + elevated self-relaunch).
 pub mod hardware_info;

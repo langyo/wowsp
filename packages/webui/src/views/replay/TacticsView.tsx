@@ -1,117 +1,319 @@
 /**
- * Tactics-analysis page (/tactics): a two-pane explorer over the app's
- * bundled BATTLE map catalog. The rail lists the analysable spaces — catalog
- * entries that are battle maps (`battleMapIds`: not a harbor) AND carry
- * bundled minimap art (`resolveMapMinimapUrl`, the same resource pool the
- * replay-review map canvas paints). A map without a minimap cannot be
- * analysed at all, so it is not offered, and the count matches exactly what
- * is listed.
+ * Tactics page (/tactics) — the plan board's full-bleed host.
  *
- * Every card carries at least one badge. Mode pills come from the replay
- * history observed on the active install, falling back to the same "random"
- * bucket the mode filter itself assumes for a map with no history yet; the
- * version pills (旧版 / 新版) come from the curated succession table
- * (utils/legacyMaps) that marks a superseded map version and its successor.
+ * Layout: a top bar carrying the map/mode button (the two-step setup
+ * wizard), the lineup editor button and the profile controls (name, save,
+ * share), then the workspace — the branch tree on the LEFT (plan forks),
+ * the square plan stage in the middle (the removed second map-list drawer
+ * freed this whole column), and the overview minimap on the RIGHT (lifted
+ * out of the stage's bottom-right corner; the two flanks collapse under a
+ * narrow window and the widgets fall back to their in-stage spots).
  *
- * The right pane is a full tactical PLAN board (TacticalPlanStage): the same
- * toolbar, marker facilities, timeline and export/record paths replay review
- * uses, hosted over the bare map with a fixed 20-minute planning clock and
- * accordion unit tracks that tween a unit between its marked actions.
- * Scenario / special-mode maps (isPveSpace) keep their "incomplete support"
- * warning.
+ * Per-map session state (mode, capture layout, lineup, mirror, profile
+ * name) lives in localStorage (tactical/session.ts); plan documents and the
+ * branch tree stay where they were (tactical/planSlots.ts). Mode buckets
+ * from the replay history feed the wizard's categorised map list, exactly
+ * as the old rail computed them.
  */
-import { computed, defineComponent, nextTick, onMounted, ref, watch, type DefineComponent } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { getVersion } from "@tauri-apps/api/app";
 
-import { HkAlert, HkTabs } from "@celestia-island/hikari";
+import { HkIconButton, HkTooltip, useToast } from "@celestia-island/hikari";
+import { FolderOpen, Map as MapIcon, Save, Users } from "@lucide/vue";
 
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { loadMapBounds, type MapBounds } from "@/features/holographic/modelLoader";
 import TacticalPlanStage from "@/features/holographic/tactical/PlanStage";
+import MapSetupModal from "@/features/holographic/tactical/MapSetupModal";
+import LineupEditorModal from "@/features/holographic/tactical/LineupEditorModal";
+import {
+  instantiateCaps,
+  modePresetOf,
+  MODE_PRESETS,
+} from "@/features/holographic/tactical/modes";
+import {
+  resolveUnit,
+  spawnPoses,
+  type Lineup,
+  type PlanUnit,
+  type TeamSide,
+} from "@/features/holographic/tactical/lineup";
+import {
+  emptySession,
+  loadSession,
+  saveSession,
+  sessionFromProfileMeta,
+  type TacticalSession,
+} from "@/features/holographic/tactical/session";
+import {
+  applyProfilePayload,
+  buildProfilePayload,
+  openTacticsProfile,
+  profileMetaOk,
+  saveTacticsProfile,
+} from "@/features/holographic/tactical/profile";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import { ANALYSABLE_SPACE_IDS, isAnalysableSpace } from "@/utils/tacticsMaps";
 import { bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
-import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
 import { modeKey } from "@/utils/modeColors";
 import "./TacticsView.scss";
-
-/** hikari's HkAlert types `message` as required, but its runtime prefers
- *  the default slot whenever one is given (`slots.default ?
- *  slots.default() : props.message`) — passing both silently drops the
- *  message, and passing a never-rendered string is worse. Retype locally
- *  so the slot-only form needs no dead prop. */
-const SlotHAlert = HkAlert as unknown as DefineComponent<{
-  variant?: "warning" | "error" | "info" | "success";
-  size?: "sm" | "md" | "lg";
-  title?: string;
-}>;
-
-type FilterKey = "all" | "random" | "ranked" | "clan";
-const FILTERS: { key: FilterKey; labelKey: string }[] = [
-  { key: "all", labelKey: "tactics.filter.all" },
-  { key: "random", labelKey: "tactics.filter.random" },
-  { key: "ranked", labelKey: "tactics.filter.ranked" },
-  { key: "clan", labelKey: "tactics.filter.clan" },
-];
-
-/** Pill order inside a card's badge row. */
-const BUCKET_ORDER: MapModeBucket[] = ["random", "ranked", "clan", "pve"];
 
 export default defineComponent({
   name: "TacticsView",
   setup() {
-    // Phones get the full board: the map catalog is bundled and the board is
-    // touch-driven. Only the replay-history enrichment (mode pills) needs a
-    // local install — without one it silently falls back to "random".
     const gd = useGameDetect();
+    const encyclopedia = useEncyclopediaStore();
+    const toast = useToast();
     const { dataLanguage } = useLanguage();
+    const route = useRoute();
+    const router = useRouter();
 
     const activePath = computed(() => gd.config.activeInstall?.path ?? "");
 
-    /** Per space id: mode buckets actually observed in the local replay
-     *  history (see loadHistory). A failed/unreadable history just leaves
-     *  maps unclassified — never blocks the map list itself. */
-    const observed = ref<Map<string, Set<MapModeBucket>>>(new Map());
-    const filter = ref<FilterKey>("all");
-    const selected = ref<string | null>(null);
+    // ── Selection + session ─────────────────────────────────────────────
+    const selected = ref<string>(
+      typeof route.query.map === "string" && isAnalysableSpace(route.query.map)
+        ? route.query.map
+        : (ANALYSABLE_SPACE_IDS[0] ?? ""),
+    );
+    const session = ref<TacticalSession>(emptySession());
 
-    const route = useRoute();
-    const router = useRouter();
-    /** The rail's scroll container — the reveal pass below scrolls a
-     *  query-driven selection into view inside it. */
-    const listEl = ref<HTMLElement | null>(null);
+    function loadFor(spaceId: string): void {
+      session.value = loadSession(spaceId);
+    }
+    loadFor(selected.value);
 
-    /** Deep link (?map=<spaceId>): the live/replay map tags land here.
-     *  Only an analysable id selects; anything else leaves the rail as it
-     *  is rather than guessing a neighbor. */
-    function selectFromQuery(): void {
-      const q = route.query.map;
-      if (typeof q === "string" && isAnalysableSpace(q)) {
-        selected.value = q;
-        void revealSelection(q);
+    function persist(): void {
+      saveSession(selected.value, session.value);
+    }
+
+    // ── World bounds (cap instantiation, spawn poses, mirroring) ────────
+    const allBounds = ref<Map<string, MapBounds> | null>(null);
+    const bounds = computed<MapBounds | null>(() => {
+      const all = allBounds.value;
+      if (!all) return null;
+      const key = selected.value.replace(/^spaces\//, "");
+      return (
+        all.get(key) ??
+        all.get(key.toLowerCase()) ??
+        [...all.entries()].find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1] ??
+        null
+      );
+    });
+    onMounted(() => {
+      void loadMapBounds().then((all) => {
+        allBounds.value = all;
+      });
+    });
+    // A wizard finished before the bounds JSON landed leaves a mode with an
+    // empty cap set — complete the instantiation the moment bounds arrive
+    // (only when nothing was ever placed: never clobber author-moved caps).
+    watch(bounds, (b) => {
+      if (!b || session.value.caps.length > 0 || session.value.modeId == null) return;
+      const preset = modePresetOf(session.value.modeId);
+      if (!preset) return;
+      session.value = { ...session.value, caps: instantiateCaps(preset, b) };
+      persist();
+    });
+
+    // ── Deep link (?map=) both ways ─────────────────────────────────────
+    watch(
+      () => route.query.map,
+      (q) => {
+        if (typeof q === "string" && isAnalysableSpace(q) && q !== selected.value) {
+          selected.value = q;
+        }
+      },
+    );
+    watch(selected, (id) => {
+      loadFor(id);
+      if (route.query.map !== id) {
+        void router.replace({ query: { ...route.query, map: id } });
+      }
+    });
+
+    // ── Setup wizard (map + mode) ───────────────────────────────────────
+    const setupOpen = ref(false);
+    /** Wizard result waiting for its map to become the selection (a map
+     *  switch reloads the session; the mode lands right after). */
+    let pendingMode: { mapId: string; modeId: string } | null = null;
+
+    function onSetupConfirm(mapId: string, modeId: string): void {
+      if (mapId !== selected.value) {
+        pendingMode = { mapId, modeId };
+        selected.value = mapId;
+      } else {
+        applyMode(modeId);
+      }
+    }
+    watch(selected, (id) => {
+      if (pendingMode && pendingMode.mapId === id) {
+        const { modeId } = pendingMode;
+        pendingMode = null;
+        applyMode(modeId);
+      }
+    });
+
+    /** Switch the session's battle mode: re-instantiate the capture layout
+     *  from the preset template over this map's playable rect. */
+    function applyMode(modeId: string): void {
+      const preset = modePresetOf(modeId);
+      const b = bounds.value;
+      if (!preset) return;
+      session.value = {
+        ...session.value,
+        modeId,
+        caps: b ? instantiateCaps(preset, b) : [],
+      };
+      persist();
+    }
+
+    const durationS = computed(
+      () => modePresetOf(session.value.modeId)?.durationS ?? 20 * 60,
+    );
+    const modeLabel = computed(
+      () =>
+        (modePresetOf(session.value.modeId) ?? MODE_PRESETS.find((m) => m.id === "random-4"))!
+          .labelKey,
+    );
+
+    // ── Lineup ──────────────────────────────────────────────────────────
+    const lineupOpen = ref(false);
+
+    function onLineupApply(lineup: Lineup): void {
+      session.value = { ...session.value, lineup };
+      persist();
+    }
+
+    /** Board units derived from the session's lineup: one per hull, keyed
+     *  by its display name, spawned along its side's edge, mirror pairs by
+     *  list index (lineup.ts). Keys are deduped ACROSS both sides — a
+     *  mirrored matchup's twin hulls must never share a chain key — so the
+     *  second side's duplicate carries a " 2" suffix (the team colours keep
+     *  the board readable; the suffix is what keeps the plans apart). */
+    const planUnits = computed<PlanUnit[]>(() => {
+      const b = bounds.value;
+      if (!b) return [];
+      const byId = encyclopedia.byId;
+      const seen = new Map<string, number>();
+      const build = (side: TeamSide, entries: Lineup[TeamSide]): PlanUnit[] => {
+        const spawns = spawnPoses(b, side, entries.length);
+        return entries.map((entry, i) => {
+          const unit = resolveUnit(entry, byId);
+          const n = (seen.get(unit.name) ?? 0) + 1;
+          seen.set(unit.name, n);
+          return {
+            key: n > 1 ? `${unit.name} ${n}` : unit.name,
+            side,
+            unit,
+            spawn: spawns[i],
+          };
+        });
+      };
+      const ally = build("ally", session.value.lineup.ally);
+      const enemy = build("enemy", session.value.lineup.enemy);
+      for (let i = 0; i < ally.length; i++) {
+        if (i < enemy.length) {
+          ally[i].mateKey = enemy[i].key;
+          enemy[i].mateKey = ally[i].key;
+        }
+      }
+      return [...ally, ...enemy];
+    });
+
+    function toggleMirror(): void {
+      session.value = { ...session.value, mirror: !session.value.mirror };
+      persist();
+    }
+
+    // ── Profile (档案) ───────────────────────────────────────────────────
+    const appVersion = ref("");
+    /** The game build the plan targets (the WG encyclopedia's version —
+     *  null without a network/app context; the archive records what it
+     *  knows and never blocks the save on it). */
+    const gameVersion = ref<string | null>(null);
+    onMounted(() => {
+      void getVersion()
+        .then((v) => {
+          appVersion.value = v;
+        })
+        .catch(() => {
+          // browser dev host — the archive just records an empty version
+        });
+      void api
+        .getGameVersion()
+        .then((v) => {
+          if (v?.gameVersion) gameVersion.value = v.gameVersion;
+        })
+        .catch(() => {
+          // no WG context — the archive ships a null game version
+        });
+    });
+
+    function setProfileName(name: string): void {
+      session.value = { ...session.value, profileName: name };
+      persist();
+    }
+
+    async function saveProfile(): Promise<void> {
+      try {
+        // Flush the board's debounced save first, or the archive misses the
+        // last ≤400 ms of edits (the slot duplicator's rule).
+        stageRef.value?.flushDoc?.();
+        const saved = await saveTacticsProfile(
+          buildProfilePayload(selected.value, displayMapName(selected.value, dataLanguage.value), session.value, {
+            appVersion: appVersion.value,
+            gameVersion: gameVersion.value,
+          }),
+        );
+        if (saved) toast.info(t("tactics.profile.saved", { path: saved }));
+      } catch (e) {
+        toast.error(String((e as Error)?.message ?? e));
       }
     }
 
-    /** Bring a query-driven selection into view (a deep link can name a
-     *  map far down the rail). Local card clicks don't need this — the
-     *  clicked card is already on screen. */
-    async function revealSelection(id: string): Promise<void> {
-      await nextTick();
-      listEl.value
-        ?.querySelector<HTMLElement>(`[data-space-id="${CSS.escape(id)}"]`)
-        ?.scrollIntoView({ block: "nearest" });
+    async function openProfile(): Promise<void> {
+      try {
+        const payload = await openTacticsProfile();
+        if (!payload || !profileMetaOk(payload.meta)) return;
+        // Flush the CURRENT board before the import rewrites its keys — a
+        // pending debounced save would otherwise land after the import and
+        // overwrite the plan the profile just installed.
+        stageRef.value?.flushDoc?.();
+        const spaceId = applyProfilePayload(payload);
+        if (!isAnalysableSpace(spaceId)) {
+          toast.error(t("tactics.profile.unknownMap", { map: payload.meta.mapName || spaceId }));
+          return;
+        }
+        // The archive carries the whole session, not just the plans: mode,
+        // caps, lineup, mirror and the profile name land with it.
+        const restored = sessionFromProfileMeta(payload.meta);
+        saveSession(spaceId, restored);
+        if (spaceId !== selected.value) {
+          // Switch first; the selected watcher loads the freshly written
+          // session and a fresh stage (key remount) reads the new slots.
+          selected.value = spaceId;
+        } else {
+          // Same map: the stage did NOT remount — make it re-read the
+          // freshly imported slots + document (flush already ran above).
+          stageRef.value?.reloadSlots?.();
+          session.value = restored;
+        }
+        toast.info(t("tactics.profile.opened", { n: payload.plans.length }));
+      } catch (e) {
+        toast.error(t("tactics.profile.openBad", { detail: String((e as Error)?.message ?? e) }));
+      }
     }
 
-    /** Generation token for loadHistory: switching installs mid-scan lets
-     *  the slower previous scan resolve last — without this it would
-     *  clobber `observed` with the old install's stale buckets. */
+    // ── Mode buckets from the replay history (the wizard's categories) ──
+    const observed = ref<Map<string, Set<MapModeBucket>>>(new Map());
     let historySeq = 0;
-
-    /** Replay-history aggregation: one bucket per battle via
-     *  modeKey+bucketOf, keyed by the replay's map (space) name. */
-    async function loadHistory() {
+    async function loadHistory(): Promise<void> {
       const seq = ++historySeq;
       const acc = new Map<string, Set<MapModeBucket>>();
       if (activePath.value) {
@@ -136,54 +338,21 @@ export default defineComponent({
           // history is enrichment only — empty buckets are fine
         }
       }
-      if (seq !== historySeq) return; // a newer install's scan superseded us
+      if (seq !== historySeq) return;
       observed.value = acc;
     }
-
-    onMounted(async () => {
-      // Deep link first (?map=): the catalog it reads is bundled, so the
-      // selection needs no install detection to land.
-      selectFromQuery();
-      // Snapshot BEFORE detect(): the watcher below owns the "" → path
-      // transition — including the one detect() itself causes — so reading
-      // the history here as well would scan the replays dir twice on cold
-      // start. Only an install that was already active before the rescan
-      // needs an explicit read (the rescan keeps its path, the watcher stays
-      // silent). The map list itself needs none of this — it renders from
-      // the bundled catalog immediately.
-      const wasActive = !!activePath.value;
-      await gd.detect();
-      if (wasActive) {
-        await loadHistory();
-      }
+    onMounted(() => {
+      void gd.detect().then(() => {
+        if (activePath.value) void loadHistory();
+      });
     });
-    // Follow the URL both ways: a query change (a map tag's jump or a
-    // pasted link) selects the named map; a local card click writes the
-    // selection back with replace — the rail is UI state, not a history
-    // step. An invalid ?map stays in the URL untouched rather than being
-    // silently scrubbed, and only ever selects nothing.
-    watch(
-      () => route.query.map,
-      () => selectFromQuery(),
-    );
-    watch(selected, (id) => {
-      if (id != null && route.query.map !== id) {
-        void router.replace({ query: { ...route.query, map: id } });
-      }
-    });
-    // Follow the sidebar's client switch: the catalog list (and with it the
-    // selection) is install-independent; only the replay-history enrichment
-    // is re-read for the new install's replays dir.
     watch(activePath, (p, prev) => {
-      if (p && p !== prev) {
-        void loadHistory();
-      }
+      if (p && p !== prev) void loadHistory();
     });
 
-    /** Buckets a map counts as for the mode filter: observed history plus
-     *  the static PVE fingerprint, defaulting to the filter's own "random"
-     *  baseline so a map with no history is still reachable. */
-    function modeBuckets(spaceId: string): Set<MapModeBucket> {
+    /** Buckets a map counts as: observed history plus the static PVE
+     *  fingerprint, defaulting to "random" so every map stays reachable. */
+    function bucketsOf(spaceId: string): Set<MapModeBucket> {
       const set = new Set<MapModeBucket>();
       if (isPveSpace(spaceId)) set.add("pve");
       const obs = observed.value.get(spaceId);
@@ -192,178 +361,111 @@ export default defineComponent({
       return set;
     }
 
-    /** "Incomplete support" map: a scenario / special-mode space, or one
-     *  whose observed replay history is exclusively PvE. */
-    function isIncomplete(spaceId: string): boolean {
-      if (isPveSpace(spaceId)) return true;
-      const obs = observed.value.get(spaceId);
-      if (!obs || obs.size === 0) return false;
-      for (const b of obs) if (b !== "pve") return false;
-      return true;
-    }
+    /** The plan stage's document handles (flush / reload) for the profile
+     *  actions — same contract the slot bar's import already uses. */
+    const stageRef = ref<{
+      flushDoc: () => void;
+      reloadDoc: () => void;
+      reloadSlots: () => void;
+    } | null>(null);
 
-    const filtered = computed(() => {
-      const f = filter.value;
-      // The rail's inventory: the shared analysable-space list (battle
-      // spaces of the bundled catalog whose minimap art ships with the
-      // app — synchronous, no game install required).
-      return ANALYSABLE_SPACE_IDS.filter((id) => f === "all" || modeBuckets(id).has(f));
-    });
-
-    /** Selected incomplete map first, then incomplete/PVE maps, then the
-     *  rest — within each group by localized display name (space id as the
-     *  tie-break) — so picking a PVE map immediately jumps it to position
-     *  #1 and the list reads naturally in any UI language. */
-    const sorted = computed(() => {
-      const lang = dataLanguage.value;
-      const sel = selected.value;
-      const rank = (id: string) =>
-        sel != null && id === sel && isIncomplete(id) ? 0 : isIncomplete(id) ? 1 : 2;
-      return [...filtered.value]
-        .map((id) => ({ id, name: displayMapName(id, lang) }))
-        .sort((a, b) => {
-          const r = rank(a.id) - rank(b.id);
-          if (r !== 0) return r;
-          const byName = a.name.localeCompare(b.name, lang);
-          return byName !== 0 ? byName : a.id.localeCompare(b.id);
-        })
-        .map((e) => e.id);
-    });
-
-    /** Badge pills for a complete (PVP) card, in rail order. */
-    function badgeBuckets(spaceId: string): MapModeBucket[] {
-      const set = modeBuckets(spaceId);
-      return BUCKET_ORDER.filter((b) => set.has(b));
-    }
+    // ── Flanking panels: only on wide windows. The stage's teleported
+    //    widgets (branch tree / minimap) fall back to their in-stage spots
+    //    when the docks are absent (Teleport disabled). ─────────────────
+    const wide = ref(window.matchMedia("(min-width: 1180px)").matches);
+    const mq = window.matchMedia("(min-width: 1180px)");
+    const onMq = (): void => {
+      wide.value = mq.matches;
+    };
+    onMounted(() => mq.addEventListener("change", onMq));
+    onBeforeUnmount(() => mq.removeEventListener("change", onMq));
 
     return () => {
-      const list = sorted.value;
       const sel = selected.value;
+      const mapLabel = displayMapName(sel, dataLanguage.value);
       return (
-        <div class="tactics-page">
-          {/* The plan board is still mid-development — say so up front
-              (hikari's ready-made alert, slim variant, not dismissible:
-              the page has nothing else to offer yet). */}
-          <SlotHAlert variant="warning" size="sm">
-            {t("tactics.devWarning")}
-          </SlotHAlert>
-          <main class="tactics-view">
-          <aside class="tactics-view__list">
-            <div class="tactics-view__list-head">
-              <div class="tactics-view__list-head-row">
-                <h2 class="tactics-view__list-title">{t("nav.tactics")}</h2>
-                <span class="tactics-view__count">{t("tactics.count", { n: list.length })}</span>
-              </div>
-              <HkTabs
-                variant="segmented"
-                block
-                modelValue={filter.value}
-                onUpdate:modelValue={(v: string) => (filter.value = v as FilterKey)}
-                tabs={FILTERS.map((f) => ({ key: f.key, label: t(f.labelKey) }))}
-              />
-            </div>
-            <div class="tactics-view__list-scroll" ref={listEl}>
-              {list.length === 0 ? (
-                <p class="tactics-view__empty">{t("tactics.list.filterEmpty")}</p>
-              ) : (
-                <ul class="tactics-view__items">
-                  {list.map((id) => {
-                    const inc = isIncomplete(id);
-                    const lineage = mapLineage(id);
-                    const legacy = legacyMapOf(id);
-                    return (
-                      <li key={id} class="tactics-view__item" data-space-id={id}>
-                        <button
-                          type="button"
-                          class={["tactics-card", sel === id ? "tactics-card--active" : ""]}
-                          onClick={() => (selected.value = id)}
-                        >
-                          <span class="tactics-card__name">{displayMapName(id, dataLanguage.value)}</span>
-                          <span class="tactics-card__id">{id}</span>
-                          <span class="tactics-card__badges">
-                            {inc ? (
-                              <span class="tactics-card__badge tactics-card__badge--limited">
-                                {t("tactics.badge.limited")}
-                              </span>
-                            ) : (
-                              badgeBuckets(id).map((b) => (
-                                <span key={b} class="tactics-card__badge">
-                                  {t(`tactics.filter.${b}`)}
-                                </span>
-                              ))
-                            )}
-                            {/* Version pills: the superseded map names its
-                                successor, the successor is marked as the one
-                                a plan should target. */}
-                            {lineage === "legacy" ? (
-                              <span
-                                class="tactics-card__badge tactics-card__badge--legacy"
-                                title={
-                                  legacy
-                                    ? t("tactics.badge.legacyTip", {
-                                        // Both generations share a display name,
-                                        // so the id is what tells them apart.
-                                        name: `${displayMapName(legacy.replacedBy, dataLanguage.value)} · ${legacy.replacedBy}`,
-                                      })
-                                    : undefined
-                                }
-                              >
-                                {t("tactics.badge.legacy")}
-                              </span>
-                            ) : null}
-                            {lineage === "current" ? (
-                              <span class="tactics-card__badge tactics-card__badge--current">
-                                {t("tactics.badge.current")}
-                              </span>
-                            ) : null}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </aside>
+        <div class="tac-page">
+          <header class="tac-topbar">
+            <HkTooltip text={t("tactics.setup.title")} placement="bottom">
+              <button
+                type="button"
+                class="tac-topbar__map"
+                onClick={() => (setupOpen.value = true)}
+              >
+                <MapIcon size={14} />
+                <span class="tac-topbar__map-name">{mapLabel || t("tactics.setup.title")}</span>
+                <span class="tac-topbar__map-mode">{t(`tactics.mode.${modeLabel.value}`)}</span>
+              </button>
+            </HkTooltip>
 
-          <section class="tactics-view__main">
-            {!sel ? (
-              <div class="tactics-view__placeholder">{t("tactics.select")}</div>
-            ) : (
-              <div class="tactics-view__detail">
-                <header class="tactics-view__detail-head">
-                  <strong class="tactics-view__detail-name">
-                    {displayMapName(sel, dataLanguage.value)}
-                  </strong>
-                  <span class="tactics-view__detail-id">{sel}</span>
-                  {mapLineage(sel) === "legacy" ? (
-                    <span class="tactics-view__detail-note">{t("tactics.badge.legacy")}</span>
-                  ) : null}
-                </header>
-                {/* hikari's HkAlert renders `slots.default ?
-                    slots.default() : props.message` — a default slot
-                    shadows the message prop, so the body text must live
-                    inside the slot itself. */}
-                {isIncomplete(sel) ? (
-                  <SlotHAlert
-                    variant="warning"
-                    size="md"
-                    title={displayMapName(sel, dataLanguage.value)}
-                  >
-                    <p class="tactics-view__warning-text">{t("tactics.warning.message")}</p>
-                  </SlotHAlert>
-                ) : null}
-                {/* A fresh board per map: the plan document, viewport, clock
-                    and collapsed rows all belong to the selected map. */}
-                <TacticalPlanStage
-                  key={sel}
-                  spaceId={sel}
-                  mapName={displayMapName(sel, dataLanguage.value)}
-                />
-              </div>
-            )}
-          </section>
-        </main>
+            <HkTooltip text={t("tactics.lineup.title")} placement="bottom">
+              <HkIconButton size={28} onClick={() => (lineupOpen.value = true)}>
+                <Users size={14} />
+              </HkIconButton>
+            </HkTooltip>
+
+            <span class="tac-topbar__spacer" />
+
+            <input
+              class="tac-topbar__profile-name"
+              value={session.value.profileName}
+              placeholder={t("tactics.profile.namePlaceholder")}
+              title={t("tactics.profile.name")}
+              onInput={(e: Event) => setProfileName((e.target as HTMLInputElement).value)}
+            />
+            <HkTooltip text={t("tactics.profile.save")} placement="bottom">
+              <HkIconButton size={28} onClick={() => void saveProfile()}>
+                <Save size={14} />
+              </HkIconButton>
+            </HkTooltip>
+            <HkTooltip text={t("tactics.profile.open")} placement="bottom">
+              <HkIconButton size={28} onClick={() => void openProfile()}>
+                <FolderOpen size={14} />
+              </HkIconButton>
+            </HkTooltip>
+          </header>
+
+          <main class="tac-workspace">
+            {wide.value ? (
+              <aside class="tac-workspace__branch" id="tactics-branch-dock" />
+            ) : null}
+            <section class="tac-workspace__stage">
+              <TacticalPlanStage
+                ref={stageRef}
+                key={sel}
+                spaceId={sel}
+                mapName={mapLabel}
+                durationS={durationS.value}
+                planUnits={planUnits.value}
+                mirror={session.value.mirror}
+                onToggleMirror={toggleMirror}
+                onEditLineup={() => (lineupOpen.value = true)}
+                caps={session.value.caps}
+                slotsTeleport={wide.value ? "#tactics-branch-dock" : undefined}
+                minimapTeleport={wide.value ? "#tactics-minimap-dock" : undefined}
+              />
+            </section>
+            {wide.value ? (
+              <aside class="tac-workspace__side" id="tactics-minimap-dock" />
+            ) : null}
+          </main>
+
+          <MapSetupModal
+            modelValue={setupOpen.value}
+            onUpdate:modelValue={(v: boolean) => (setupOpen.value = v)}
+            currentMapId={sel}
+            currentModeId={session.value.modeId}
+            spaceIds={[...ANALYSABLE_SPACE_IDS]}
+            bucketsOf={bucketsOf}
+            onConfirm={onSetupConfirm}
+          />
+          <LineupEditorModal
+            modelValue={lineupOpen.value}
+            onUpdate:modelValue={(v: boolean) => (lineupOpen.value = v)}
+            lineup={session.value.lineup}
+            mapName={mapLabel}
+            onApply={onLineupApply}
+          />
         </div>
       );
     };

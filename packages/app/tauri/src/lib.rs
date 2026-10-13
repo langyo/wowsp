@@ -601,6 +601,10 @@ pub fn run() {
             commands::trends::get_expected_pr_table,
             commands::screenshot::capture_main_window,
             commands::exports::pick_export_path,
+            // Tactics plan-profile archives (commands/tactics_profile.rs):
+            // the tactics page's save/share 档案 (profile.toml + plan JSONs).
+            commands::tactics_profile::tactics_profile_save,
+            commands::tactics_profile::tactics_profile_open,
             commands::exports::write_export_bytes,
             commands::exports::copy_image_to_clipboard,
             commands::mod_hub::mod_hub_foreign_units,
