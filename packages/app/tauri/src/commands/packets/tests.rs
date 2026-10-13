@@ -104,6 +104,51 @@ fn lesta_tail_position_stream_is_family_and_shape_gated() {
     );
 }
 
+/// A 60-byte camera payload in the Lesta 26.10 0x26 layout: the WG camera
+/// prefix (identity quaternion, position, fov) followed by 28 bytes of
+/// auxiliary floats the decoder ignores.
+fn lesta_camera_payload() -> Vec<u8> {
+    let mut p = vec![0u8; 60];
+    p[12..16].copy_from_slice(&1.0f32.to_le_bytes()); // quat.w
+    p[16..20].copy_from_slice(&(-100.5f32).to_le_bytes()); // pos.x
+    p[20..24].copy_from_slice(&7.0f32.to_le_bytes()); // pos.y
+    p[24..28].copy_from_slice(&250.5f32.to_le_bytes()); // pos.z
+    p[28..32].copy_from_slice(&0.8727f32.to_le_bytes()); // fov
+    p
+}
+
+/// Lesta 26.10's 0x26 camera stream decodes into camera samples only for
+/// Lesta-family containers — WG uses the id for the tiny
+/// BasePlayerCreateStub, which the parser's ≥56-byte gate also rejects.
+#[test]
+fn lesta_camera_stream_is_family_and_shape_gated() {
+    let empty: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let frames = wire_frame(0x26, 42.0, &lesta_camera_payload());
+    let lesta = super::frames::walk_frames(&frames, &empty, false, &profile_for(true), None);
+    let [sample] = lesta.camera.as_slice() else {
+        panic!("the 0x26 camera sample must decode on a Lesta container");
+    };
+    assert!((sample.time - 42.0).abs() < 0.001);
+    assert!((sample.rot_w - 1.0).abs() < 0.001);
+    assert!((sample.x - -100.5).abs() < 0.01);
+    assert!((sample.y - 7.0).abs() < 0.01);
+    assert!((sample.z - 250.5).abs() < 0.01);
+    assert!((sample.fov - 0.8727).abs() < 0.001);
+
+    // Same wire bytes, WG family: 0x26 is the BasePlayerCreateStub slot and
+    // must never feed the camera timeline.
+    let wg = super::frames::walk_frames(&frames, &empty, false, &profile_for(false), None);
+    assert!(wg.camera.is_empty(), "WG containers must not decode 0x26");
+
+    // Lesta family but a payload below the 56-byte camera layout: skipped.
+    let short = wire_frame(0x26, 43.0, &lesta_camera_payload()[..40]);
+    let malformed = super::frames::walk_frames(&short, &empty, false, &profile_for(true), None);
+    assert!(
+        malformed.camera.is_empty(),
+        "shape gate must reject non-camera payloads"
+    );
+}
+
 /// The state-stream scanner finds a roster shipId at an arbitrary offset
 /// and ignores everything else.
 #[test]

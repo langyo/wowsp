@@ -169,6 +169,20 @@ pub(super) fn walk_frames(
                     camera.push(s);
                 }
             },
+            // Lesta 26.10 moved the camera stream onto 0x26 (see the
+            // constant): the WG camera layout in the first 32 bytes, so the
+            // existing parser reads it whole; the family gate keeps a WG
+            // container's BasePlayerCreateStub traffic (that family's 0x26)
+            // out of the camera timeline. Placement above the stub arm
+            // commits every Lesta 0x26 packet here — including sub-56-byte
+            // payloads the parser rejects — so the diagnostics'
+            // create_stubs count no longer covers Lesta 0x26 traffic
+            // (nothing consumes that counter).
+            PACKET_CAMERA_LESTA if profile.lesta => {
+                if let Some(s) = parse_camera(payload, time) {
+                    camera.push(s);
+                }
+            },
             PACKET_NET_STATS => {
                 if let Some(s) = parse_net_stats(payload, time) {
                     net_stats.push(s);

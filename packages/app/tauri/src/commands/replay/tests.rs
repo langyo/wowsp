@@ -1315,6 +1315,41 @@ fn decodes_the_real_lesta_replays_on_this_machine() {
         own.ship_id
     );
     eprintln!("[lesta] own ship entity {own_eid}: {own_samples} samples");
+    // The 26.10 camera regression this pins: the recorder's camera stream
+    // rides 0x26 (the WG camera layout in its head) — without that arm the
+    // original-view playback mode has no camera timeline at all.
+    assert!(
+        !decoded.camera.is_empty(),
+        "the recorder's camera timeline must decode"
+    );
+    let quat_norm = |c: &wowsp_tauri_shared::CameraSample| {
+        (c.rot_x * c.rot_x + c.rot_y * c.rot_y + c.rot_z * c.rot_z + c.rot_w * c.rot_w).sqrt()
+    };
+    let unit: usize = decoded
+        .camera
+        .iter()
+        .filter(|c| (quat_norm(c) - 1.0).abs() < 0.01)
+        .count();
+    assert!(
+        unit * 100 >= decoded.camera.len() * 99,
+        "essentially every camera quaternion must be unit-norm ({} of {})",
+        unit,
+        decoded.camera.len()
+    );
+    let fov_max = decoded
+        .camera
+        .iter()
+        .map(|c| c.fov)
+        .fold(f32::MIN, f32::max);
+    assert!(
+        (0.05..1.6).contains(&fov_max),
+        "camera fov must stay in the physical zoom band, max {fov_max}"
+    );
+    eprintln!(
+        "[lesta] camera: {} samples, {:.1}% unit quats, fov max {fov_max:.3}",
+        decoded.camera.len(),
+        100.0 * unit as f32 / decoded.camera.len() as f32
+    );
     let grouped = group_by_entity(decoded);
     assert!(
         !grouped.trajectories.is_empty(),

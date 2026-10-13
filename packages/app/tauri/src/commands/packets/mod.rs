@@ -95,6 +95,17 @@ const PACKET_BATTLE_RESULTS: u32 = 0x22;
 const PACKET_VERSION: u32 = 0x16;
 /// Camera (0x25): recorder camera pose every tick (quat + pos + fov + dir).
 const PACKET_CAMERA: u32 = 0x25;
+/// Lesta 26.10 moved the camera stream one slot up onto 0x26 (WG uses that
+/// id for the tiny BasePlayerCreateStub — parse_camera's ≥56-byte gate
+/// rejects those, so the arm is family-gated rather than version-gated and
+/// stays safe on both Lesta ≤26.9 and any WG container). The 60-byte
+/// payload's first 32 bytes keep the WG camera layout exactly — quaternion
+/// (x,y,z,w), position (x,y,z), fov — followed by 28 bytes of auxiliary
+/// floats we do not decode. Verified on the 26.10.0.8867689 Slava capture
+/// (2026-10-13): 7795 packets at ~9.4 Hz, every quaternion unit-norm, fov
+/// sweeping 0.078..0.873 rad (the same zoom band WG cameras show), the
+/// position tracking the recorder's ship (median offset 21 m).
+const PACKET_CAMERA_LESTA: u32 = 0x26;
 /// PlayerNetStats (0x1d): packed u32 (fps 8b | ping 16b | isLagging 1b).
 const PACKET_NET_STATS: u32 = 0x1d;
 /// Map (0x28): arena + map-name packet (carries the map's internal name).
