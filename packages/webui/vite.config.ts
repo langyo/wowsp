@@ -193,6 +193,26 @@ export default defineConfig({
       : [pruneBakedGlb(resolve(pkgDir, '../../dist/webui')), pruneGameparams(resolve(pkgDir, '../../dist/webui'))]),
     vueSfc(),
     vueJsx(),
+    // @vitejs/plugin-vue-jsx (rolldown-vite mode) injects
+    // optimizeDeps.rolldownOptions.transform.jsx = "preserve" so the
+    // dep-scanner keeps JSX in its transform output. The scanner's
+    // import.meta.glob rewriter matches that string as a SUBSTRING of the
+    // code, so any module merely mentioning it (even in a comment) takes
+    // the rewriter path, which emits the preserved-JSX code tagged as
+    // plain js — and the scan parser then dies with "JSX syntax is
+    // disabled", silently skipping dependency pre-bundling on cold dev
+    // starts. Override the scanner transform to compile JSX with vue's
+    // import source so its output stays parseable; the real dev/build
+    // transform (babel via vueJsx above) is unaffected.
+    {
+      name: "wowsp:scan-jsx-compile",
+      config(config) {
+        const optimizeDeps = (config.optimizeDeps ??= {});
+        const rolldownOptions = (optimizeDeps.rolldownOptions ??= {});
+        const transform = (rolldownOptions.transform ??= {});
+        transform.jsx = { runtime: "automatic", importSource: "vue" };
+      },
+    },
     UnoCSS(),
   ],
   resolve: {
