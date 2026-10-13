@@ -3,14 +3,20 @@
  *  curated language, a WG-shaped profile with the numbers the cards and the
  *  planner gate on), and the overlay must never cover a WG-tree ship — the
  *  non-tree premium/event fleet (Lesta-only premiums, CLR clones, event
- *  hulls) rides along beyond the tree on top of that. */
+ *  hulls) rides along beyond the tree on top of that.
+ *
+ *  The WG-only roster artifact (ships_wg_only.json) is pinned here too: it
+ *  must partition the split with the overlay (disjoint from it and from the
+ *  Lesta tree), carry the WG-only research lines and premiums, and spare
+ *  the hulls the Lesta client hosts in non-tree groups. */
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useShipsUiStore } from "@/stores/shipsUi";
 import { allTechTreeNodes } from "@/utils/techTreeData";
-import { lestaToShipInfo, loadShipsLesta, withLestaOverlay } from "./shipsLesta";
+import { lestaToShipInfo, loadShipsLesta, withLestaOverlay, type WgOnlyRoster } from "./shipsLesta";
 import type { ShipInfo } from "@/api";
+import wgOnlyRoster from "@/data/ships_wg_only.json";
 
 beforeEach(() => {
   setActivePinia(createPinia());
@@ -88,6 +94,55 @@ describe("generated overlay data", () => {
   });
 });
 
+describe("generated WG-only roster data", () => {
+  const roster = wgOnlyRoster as WgOnlyRoster;
+  const rosterIds = () => new Set(Object.keys(roster.ships).map(Number));
+  const wgTree = () => Object.values(allTechTreeNodes("wg"));
+
+  it("is a sizeable roster with well-formed entries", () => {
+    const ids = rosterIds();
+    // Full-dump diff of two diverged clients — hundreds of hulls, not a
+    // tree-scale rounding error (the artifact also carries premiums and
+    // collabs no tree records).
+    expect(ids.size).toBeGreaterThan(200);
+    for (const [id, entry] of Object.entries(roster.ships)) {
+      expect(Number.isFinite(Number(id)), `${id} key`).toBe(true);
+      expect(entry.index, `${id} index`).toMatch(/^P[A-Z]{3}\d+$/);
+    }
+  });
+
+  it("never flags a ship the Lesta side has", async () => {
+    const ids = rosterIds();
+    // Disjoint from the Lesta overlay ids (Lesta-only ships) and from the
+    // Lesta tree's ids — the artifact and the overlay partition the split.
+    const overlay = await loadShipsLesta();
+    for (const id of Object.keys(overlay.ships)) {
+      expect(ids.has(Number(id)), `overlay id ${id} leaked into the WG-only roster`).toBe(false);
+    }
+    for (const node of Object.values(allTechTreeNodes("lesta"))) {
+      expect(ids.has(node.shipId), `Lesta-tree id ${node.index} leaked`).toBe(false);
+    }
+  });
+
+  it("carries the WG-only research lines but not hulls Lesta hosts anyway", () => {
+    const ids = rosterIds();
+    // The whole Commonwealth line hides (Lesta never grew it)...
+    for (const n of wgTree().filter((n) => n.nation === "commonwealth")) {
+      expect(ids.has(n.shipId), n.index).toBe(true);
+    }
+    // ...while Piemonte (PISC111) stays out: its index IS in the Lesta
+    // client's dump, hosted as the ultimate-group clone — same for the
+    // Pr.30 special (PRSD208). Only the tree-derived fallback set, which
+    // cannot see non-tree groups, treats those two as WG-only.
+    const piemonte = wgTree().find((n) => n.index === "PISC111")!;
+    const pr30 = wgTree().find((n) => n.index === "PRSD208")!;
+    expect(piemonte).toBeDefined();
+    expect(pr30).toBeDefined();
+    expect(ids.has(piemonte.shipId)).toBe(false);
+    expect(ids.has(pr30.shipId)).toBe(false);
+  });
+});
+
 describe("withLestaOverlay merge", () => {
   it("appends only missing ships while the realm is lesta", async () => {
     const overlay = await loadShipsLesta();
@@ -113,6 +168,62 @@ describe("withLestaOverlay merge", () => {
     const merged = await withLestaOverlay(list, "en-US");
     expect(merged.some((s) => s.shipId === cw.shipId)).toBe(false);
     expect(merged.some((s) => s.shipId === shared.shipId)).toBe(true);
+  });
+
+  it("drops WG-only premiums no tree records, via the roster artifact", async () => {
+    // The roster diff sees what the trees cannot: WG premiums and collabs
+    // absent from both trees hide too. Pick any roster id the WG tree does
+    // not carry to prove the filter works beyond the tree-derived set.
+    const wgTreeIds = new Set(Object.values(allTechTreeNodes("wg")).map((n) => n.shipId));
+    const premium = Object.keys((wgOnlyRoster as WgOnlyRoster).ships)
+      .map(Number)
+      .find((id) => !wgTreeIds.has(id))!;
+    expect(premium).toBeDefined();
+    const list: ShipInfo[] = [{ shipId: premium, name: "WG-only premium" } as ShipInfo];
+    const merged = await withLestaOverlay(list, "en-US");
+    expect(merged.some((s) => s.shipId === premium)).toBe(false);
+  });
+
+  it("keeps hulls the Lesta client hosts in non-tree groups", async () => {
+    // Piemonte (PISC111): a WG-tree researchable node, but Lesta's dump
+    // hosts the index as its ultimate-group clone — the roster artifact
+    // (unlike the tree-derived fallback set) keeps it listed in Lesta mode.
+    const piemonte = Object.values(allTechTreeNodes("wg")).find((n) => n.index === "PISC111")!;
+    expect(piemonte).toBeDefined();
+    const list: ShipInfo[] = [{ shipId: piemonte.shipId, name: piemonte.name } as ShipInfo];
+    const merged = await withLestaOverlay(list, "en-US");
+    expect(merged.some((s) => s.shipId === piemonte.shipId)).toBe(true);
+  });
+
+  it("falls back to the tree-derived set when the roster chunk fails to load", async () => {
+    // Degraded build (roster module missing): the tree-derived set stands
+    // in — it still hides the WG-only research lines, but is blind to
+    // non-tree groups, so Piemonte hides too. That is the fallback's
+    // documented trade-off; the roster artifact refines it when present.
+    vi.resetModules();
+    vi.doMock("@/data/ships_wg_only.json", () => Promise.reject(new Error("chunk missing")));
+    try {
+      const { withLestaOverlay: fallbackOverlay } = await import("./shipsLesta");
+      const { createPinia: mkPinia, setActivePinia: setActive } = await import("pinia");
+      const { useShipsUiStore: useShipsUi } = await import("@/stores/shipsUi");
+      setActive(mkPinia());
+      useShipsUi().setTreeRealm("lesta");
+
+      const wgTree = Object.values(allTechTreeNodes("wg"));
+      const cw = wgTree.find((n) => n.nation === "commonwealth")!;
+      const piemonte = wgTree.find((n) => n.index === "PISC111")!;
+      const shared = wgTree.find((n) => n.index === "PJSB001")!;
+      const merged = await fallbackOverlay(
+        [cw, piemonte, shared].map((n) => ({ shipId: n.shipId, name: n.name }) as ShipInfo),
+        "en-US",
+      );
+      expect(merged.some((s) => s.shipId === cw.shipId)).toBe(false);
+      expect(merged.some((s) => s.shipId === piemonte.shipId)).toBe(false);
+      expect(merged.some((s) => s.shipId === shared.shipId)).toBe(true);
+    } finally {
+      vi.doUnmock("@/data/ships_wg_only.json");
+      vi.resetModules();
+    }
   });
 
   it("returns the WG list untouched outside the Lesta realm", async () => {

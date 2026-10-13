@@ -50,13 +50,16 @@ export function techTreeNode(shipId: number, realm: TechTreeRealm = "wg"): TechT
 /** The researchable WG-tree ships the Lesta tree carries no node for — the
  *  branches only WG ever grew (the Commonwealth cruisers, the Pan-America
  *  battleships, the Pan-Europe battleships, …). The two realms' trees also
- *  hold 59 ships only Lesta grew; that direction ships as the overlay data
- *  file (ships_lesta.json) instead. While the branch source is Lesta the
- *  encyclopedia list hides these ids, mirroring how the overlay hides the
- *  Lesta-only ships while it is WG — so each mode lists only its own
- *  client's lines. Premium/special side leaves are deliberately exempt:
- *  the Lesta tree records no side leaves, so their Lesta availability is
- *  unknowable from tree data and they stay listed in both modes. */
+ *  hold ships only Lesta grew; that direction ships as the overlay data
+ *  file (ships_lesta.json) instead.
+ *
+ *  This set is the DEGRADED fallback for hiding WG-only ships from the
+ *  Lesta-mode encyclopedia list: the authoritative filter is the full-dump
+ *  roster diff (ships_wg_only.json via shipsLesta.ts), which also covers
+ *  the WG-only premiums and keeps hulls Lesta carries in non-tree groups
+ *  (the Piemonte ultimate) listed. Premium/special side leaves are exempt
+ *  here for the same reason — their Lesta availability is unknowable from
+ *  tree data alone. */
 export const WG_EXCLUSIVE_TREE_SHIP_IDS: ReadonlySet<number> = new Set(
   Object.values(TREES.wg)
     .filter((n) => !n.isPremium && !n.isSpecial && !(String(n.shipId) in TREES.lesta))

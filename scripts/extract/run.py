@@ -265,6 +265,7 @@ def _run_techtree_lesta(
         print(f"[extract] lesta gameparams: {lesta_gp}")
         _py(*_lesta_tree_cmd(lesta_gp))
         stamp = _run_lesta_overlay(lesta_gp)
+        _run_wg_only_roster(Path(lesta_gp))
         _run_lesta_shipdata(Path(lesta_gp), stamp)
         return
     lesta = find_lesta_game_path(explicit_lesta_path)
@@ -285,7 +286,34 @@ def _run_techtree_lesta(
             _die(f"wowsunpack game-params failed for the Lesta client (rc={rc}).")
     _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
     stamp = _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
+    _run_wg_only_roster(GAMEPARAMS_LESTA_JSON)
     _run_lesta_shipdata(GAMEPARAMS_LESTA_JSON, stamp)
+
+
+def _run_wg_only_roster(lesta_gameparams: Path) -> None:
+    """The WG-only roster artifact (ships_wg_only.json): every WG client
+    ship whose index the Lesta client has never carried. The encyclopedia
+    list in Lesta mode hides these ids — the tree-derived
+    WG_EXCLUSIVE_TREE_SHIP_IDS covers researchable hulls only, while this
+    set-difference of the two full dumps also classifies the WG-only
+    premiums, collabs and event hulls no tree records. Needs the WG dump
+    (a shared cache built earlier in the same run); without it the step
+    skips and the bundled artifact stays untouched."""
+    if not GAMEPARAMS_JSON.exists():
+        print(
+            "[techtree] WARNING: no WG GameParams — skipping the "
+            "ships_wg_only.json roster build (the webui falls back to the "
+            "tree-derived WG-exclusive set).",
+            flush=True,
+        )
+        return
+    _py(
+        "build_wg_only_roster.py",
+        "--gameparams", str(GAMEPARAMS_JSON),
+        "--lesta-gameparams", str(lesta_gameparams),
+        "--version", "wg",
+        "--out", str(SRC_DATA / "ships_wg_only.json"),
+    )
 
 
 def _run_lesta_shipdata(gameparams: Path, version_stamp: str | None) -> None:
