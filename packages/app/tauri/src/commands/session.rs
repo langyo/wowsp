@@ -324,36 +324,19 @@ pub(crate) fn note_playing_from_arena(
     // Attribute the roster. Three cases:
     // * dir given and a running process OWNS it (same-folder compare after
     //   stripping the trailing `replays` segment) → attribute to THAT
-    //   process. The validated chain answers first (the rule
-    //   `running_root_matching` established); a raw-root fallback finds
-    //   stub-less installs the validated chain deliberately hides (the note
-    //   can still be refused downstream — record_arena_player keeps the
-    //   poller's own running view as its final gate).
+    //   process (see [`arena_dir_owner_pid`]).
     // * dir given and UNCLAIMED → drop the note entirely: attributing a
     //   foreign dir's roster to the preferred process would pin another
     //   client's account to the wrong cluster — exactly what this lookup
     //   exists to prevent.
     // * no dir (the backend-preferred poll path) → the preferred-process
     //   fallback below, exactly as before.
-    let dir_owner = match arena_dir.map(arena_game_root) {
-        Some(Some(root)) => {
-            let procs = super::game_context::running_processes();
-            let pid = procs
-                .iter()
-                .find(|p| {
-                    p.validated_root
-                        .as_deref()
-                        .is_some_and(|r| super::game_context::same_folder(r, &root))
-                })
-                .or_else(|| {
-                    procs.iter().find(|p| {
-                        p.raw_root
-                            .as_deref()
-                            .is_some_and(|r| super::game_context::same_folder(r, &root))
-                    })
-                })
-                .map(|p| p.pid);
-            match pid {
+    let dir_owner = match arena_dir {
+        Some(dir) => {
+            let Some(root) = arena_game_root(dir) else {
+                return; // not a `<root>/replays` shape — unattributable
+            };
+            match arena_dir_owner_pid(dir) {
                 Some(pid) => Some((pid, root)),
                 None => {
                     tracing::debug!(
@@ -364,7 +347,6 @@ pub(crate) fn note_playing_from_arena(
                 },
             }
         },
-        Some(None) => return, // not a `<root>/replays` shape — unattributable
         None => None,
     };
     let (realm, gate_pid, observed_generation) = match dir_owner {
@@ -436,6 +418,34 @@ fn arena_game_root(dir: &std::path::Path) -> Option<String> {
     }
     let root = root.trim_end_matches(['/', '\\']);
     (!root.is_empty()).then(|| root.to_string())
+}
+
+/// The running client that OWNS an arena/replays directory: the live
+/// process whose validated root matches the dir's game root (the rule
+/// `running_root_matching` established), with the raw-root fallback
+/// finding stub-less installs the validated chain deliberately hides.
+/// `None` when no live process claims the folder — the caller decides
+/// whether that drops the observation (the identity note) or only skips
+/// the process-start freshness gate (the arena read). Walks the process
+/// list, so it belongs on the poll paths' cadence, not a hot loop.
+pub(crate) fn arena_dir_owner_pid(arena_dir: &std::path::Path) -> Option<u32> {
+    let root = arena_game_root(arena_dir)?;
+    let procs = super::game_context::running_processes();
+    procs
+        .iter()
+        .find(|p| {
+            p.validated_root
+                .as_deref()
+                .is_some_and(|r| super::game_context::same_folder(r, &root))
+        })
+        .or_else(|| {
+            procs.iter().find(|p| {
+                p.raw_root
+                    .as_deref()
+                    .is_some_and(|r| super::game_context::same_folder(r, &root))
+            })
+        })
+        .map(|p| p.pid)
 }
 
 fn record_arena_player(

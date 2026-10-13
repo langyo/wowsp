@@ -12,6 +12,11 @@
 //! `FileUtils.GetLatestTempArenaInfoFile(requireFileToBeNewer=true)`, but
 //! event-driven via the `notify` crate instead of a 1-second poll, so idle
 //! cost is near zero.
+//!
+//! Serving is GATED: a leftover that predates the dir's owning client (or
+//! this dir's freshest already-served battle, or — with no client running
+//! — more than a day) reads as "no battle" instead of rendering as the
+//! live one (see [`arena_read_served`]).
 
 use anyhow::anyhow;
 use std::path::{Path, PathBuf};
@@ -37,6 +42,83 @@ static LAST_TEAM_SIZES: std::sync::atomic::AtomicUsize = std::sync::atomic::Atom
 /// the read time: the file is re-read every few seconds by polling, so only
 /// its modification stamp says when the battle actually started.
 static LAST_ARENA_MTIME: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// mtime (unix secs) of the freshest roster `read_temp_arena_info` ever
+/// SERVED, per replays dir (normalized install-path key) — the read gate's
+/// regression rule. Per-DIR, not the global [`LAST_ARENA_MTIME`]: the /live
+/// page follows ONE install on multi-client machines, and a fresher battle
+/// on ANOTHER client must not suppress this dir's own (slightly older)
+/// live roster. Bounded by the install count — a handful of keys.
+static SERVED_ARENA_MTIME: std::sync::LazyLock<Mutex<std::collections::HashMap<String, i64>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Clock skew absorbed when comparing the arena file's mtime against the
+/// owning client's process creation time (different clocks/file systems
+/// round differently — mirrors the session hub's
+/// `ARENA_FRESHNESS_SKEW_SECS`).
+const ARENA_READ_SKEW_SECS: i64 = 5;
+
+/// How long a lone arena file may outlive its battle with NO client
+/// running before reads stop serving it as the live roster: today's crash
+/// leftover still renders (the ended-battle UX keeps the last roster), a
+/// months-old ghost never again does.
+const ARENA_ORPHAN_CAP_SECS: i64 = 24 * 60 * 60;
+
+/// Serve decision for one polled arena read — the ghost gate. A leftover
+/// `tempArenaInfo.json` that no live battle wrote must never render as the
+/// CURRENT battle (the 2026-10-13 国服 report: a months-old `replays/`
+/// leftover parsed fine on every 3 s poll, so the /live page showed
+/// January's roster as a live battle while the client sat in port — and
+/// after a real battle ended, the CN360 client deletes its root-level live
+/// file and the poll fell straight back to that ghost). Three rules:
+///
+/// * older than the freshest roster this DIR already served → drop (the
+///   poll must never regress to a battle the page has moved past);
+/// * the dir's owning client started AFTER the file's mtime → drop (the
+///   roster predates this client session — the same freshness rule the
+///   session hub's identity gate enforces);
+/// * no client running → drop once the file outlives its battle by more
+///   than [`ARENA_ORPHAN_CAP_SECS`].
+fn arena_read_served(mtime: i64, served_before: i64, owner_start: Option<i64>, now: i64) -> bool {
+    if served_before > 0 && mtime < served_before {
+        return false;
+    }
+    match owner_start {
+        Some(start) => mtime + ARENA_READ_SKEW_SECS >= start,
+        None => now - mtime <= ARENA_ORPHAN_CAP_SECS,
+    }
+}
+
+/// [`arena_read_served`] over the real world: this dir's last-served stamp
+/// plus the owning client's process start. The regression rule decides
+/// without the process walk (the poll cadence's cheap path); every other
+/// case walks the process list to resolve the owning client.
+fn arena_read_allowed(dir: &Path, mtime: i64) -> bool {
+    let key = super::game_detect::install_path_key(&dir.to_string_lossy());
+    let served = SERVED_ARENA_MTIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&key)
+        .copied()
+        .unwrap_or(0);
+    if served > 0 && mtime < served {
+        return false;
+    }
+    let owner_start =
+        super::session::arena_dir_owner_pid(dir).and_then(super::appdata::query_process_start_unix);
+    arena_read_served(mtime, served, owner_start, unix_secs(SystemTime::now()))
+}
+
+/// Record this dir's freshest SERVED roster stamp (call only after a
+/// successful parse — a half-written file must not pin the regression
+/// gate before its good rewrite lands).
+fn note_arena_served(dir: &Path, mtime: i64) {
+    let key = super::game_detect::install_path_key(&dir.to_string_lossy());
+    SERVED_ARENA_MTIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(key, mtime);
+}
 
 fn unix_secs(t: SystemTime) -> i64 {
     t.duration_since(SystemTime::UNIX_EPOCH)
@@ -168,6 +250,22 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
     let Ok(mtime) = meta.modified() else {
         return false;
     };
+    // The same ghost gate as the poll path, BEFORE any parse: a leftover
+    // that predates the owning client (or this dir's freshest served
+    // battle) is no battle at all. Without this the healer was the one
+    // hole left open — a fresh app run's first held-Tab refresh would
+    // parse the months-old `replays/` ghost, record it, and EMIT it as
+    // the live battle (the 2026-10-13 国服 shape), and the roster-pending
+    // heal could emit a ghost in place of a Lesta battle that never
+    // delivered its roster.
+    if !arena_read_allowed(&dir, unix_secs(mtime)) {
+        tracing::debug!(
+            file = %path.display(),
+            mtime = unix_secs(mtime),
+            "battle-state refresh gated — stale leftover, no battle"
+        );
+        return false;
+    }
     let at = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
     // A recorded battle whose roster never arrived (Lesta's empty
     // vehicles, or a synthesized roster the probe had not written yet):
@@ -240,9 +338,24 @@ pub async fn read_temp_arena_info(
         return Ok(None);
     };
     let mtime = path.metadata().and_then(|m| m.modified()).ok();
+    // The ghost gate BEFORE parsing: a leftover that predates the owning
+    // client (or this dir's freshest served battle) must read as "no
+    // battle" — the /live page's absent-read branch then keeps its honest
+    // waiting/ended states instead of rendering the ghost as a live one.
+    if let Some(mtime) = mtime {
+        if !arena_read_allowed(&dir, unix_secs(mtime)) {
+            tracing::debug!(
+                file = %path.display(),
+                mtime = unix_secs(mtime),
+                "arena read gated — stale leftover served as no battle"
+            );
+            return Ok(None);
+        }
+    }
     let info = read_arena_file(&path)?;
     if let Some(mtime) = mtime {
         note_arena_seen(&info, mtime);
+        note_arena_served(&dir, unix_secs(mtime));
     }
     // Same identity feed as the watcher path above — the poll covers the
     // window where the notify watcher is not yet (re)targeted. The mtime
@@ -910,6 +1023,72 @@ mod tests {
             find_latest_arena_info(&replays).as_ref(),
             Some(&replays_file),
             "the fresh replays file is the live battle"
+        );
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// The ghost gate's pure core — the three drop rules and their passes
+    /// (see [`arena_read_served`]). Numbers are unix seconds; the 270-day
+    /// ghost is the 2026-10-13 国服 report's January leftover.
+    #[test]
+    fn arena_read_gate_rules() {
+        const NOW: i64 = 1_800_000_000;
+        // Fresh battle on a client that started before it: served.
+        assert!(arena_read_served(NOW - 60, 0, Some(NOW - 600), NOW));
+        // A months-old leftover predating the running client — dropped.
+        assert!(!arena_read_served(
+            NOW - 270 * 24 * 3600,
+            0,
+            Some(NOW - 600),
+            NOW
+        ));
+        // Same ghost with no client running at all: the orphan cap drops it.
+        assert!(!arena_read_served(NOW - 270 * 24 * 3600, 0, None, NOW));
+        // Today's crash leftover (game closed, battle hours ago): served.
+        assert!(arena_read_served(NOW - 3 * 3600, 0, None, NOW));
+        // The CN360 battle-end shape: this dir already served today's
+        // battle; the older ghost must not resurrect once the live file
+        // is deleted — regardless of any client still running.
+        assert!(!arena_read_served(
+            NOW - 270 * 24 * 3600,
+            NOW - 600,
+            Some(NOW - 600),
+            NOW
+        ));
+        // A client up for DAYS may still serve its own day-old battle (the
+        // file predates nothing this client session did).
+        assert!(arena_read_served(
+            NOW - 26 * 3600,
+            0,
+            Some(NOW - 3 * 24 * 3600),
+            NOW
+        ));
+        // The skew window: a battle written a hair before the OS reported
+        // the client's start still counts as this client's battle.
+        assert!(arena_read_served(NOW - 604, 0, Some(NOW - 600), NOW));
+        assert!(!arena_read_served(NOW - 606, 0, Some(NOW - 600), NOW));
+    }
+
+    /// The served-stamp regression rule keys by DIR (any spelling of the
+    /// same folder), and gates only candidates older than what that dir
+    /// already served. No process claims a temp tree, so the owner branch
+    /// stays out of the way.
+    #[test]
+    fn served_stamp_regression_is_per_dir() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let game_root = arena_test_tree("wowsp_arena_served_map_test");
+        let replays = game_root.join("replays");
+        let now = unix_secs(SystemTime::now());
+        note_arena_served(&replays, now - 60);
+        assert!(
+            !arena_read_allowed(&replays, now - 120),
+            "older than the served battle — a regression must gate"
+        );
+        assert!(
+            arena_read_allowed(&game_root.join(r"Replays\"), now - 60),
+            "the same battle re-serves under another spelling of the dir"
         );
         std::fs::remove_dir_all(&game_root).ok();
     }

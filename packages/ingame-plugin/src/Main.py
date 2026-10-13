@@ -482,6 +482,12 @@ class Probe:
         self.previous = None
         self.stable = 0
         self.busy = False
+        # The game's own battle-start event fired (onBattleStart) and the
+        # matching quit has not — drives the heartbeat's phase INDEPENDENT
+        # of roster stabilization, so a build whose getPlayersInfo drifts
+        # (2026-10-11 CN360: session never set) still reports battle and
+        # the companion's telemetry-absent WARN can fire.
+        self.in_battle = False
         self.last_request = 0.0
         self.revision = -1
         self.manual_stamp = ''
@@ -612,6 +618,9 @@ class Probe:
 
     def start(self, *args):
         self.last_error = ''
+        # Before anything else: the heartbeat must report battle from the
+        # game's own event, not from roster stabilization (see __init__).
+        self.in_battle = True
         self.explore_shell('battleStart')
         self.api_probe('battleStart')
         log('battle start')
@@ -1062,6 +1071,11 @@ class Probe:
     def details_reset(self):
         self.revision = -1
         self.v_down = False
+        # Per-battle latches: the roster skip latch (players) re-arms so the
+        # next battle re-documents a still-drifting schema once, and the
+        # battle phase latch stands down (quit lands here too).
+        self.skipped_records = {}
+        self.in_battle = False
         # Panel memory too: the entity itself goes away with clear_players,
         # so the change gate must reopen or the next battle's first body
         # (identical text) would be swallowed as "unchanged". The death
@@ -1101,11 +1115,28 @@ class Probe:
             return {}
 
     def players(self, records):
+        """Roster rows off the raw records, per-record fault-tolerant: one
+        drifted record (a build renaming or dropping a field) skips THAT
+        row, never the whole roster. The old single-try loop returned []
+        on the first missing key, so a schema drift on one client build
+        silenced every battle it played (2026-10-11 CN360: two battles,
+        quit-clears only, the roster never stabilized). `isBot` missing
+        reads as human — the ':' prefix below still filters the game's
+        scripted names, and one wrongly-kept row is recoverable while a
+        dead roster channel is not. A skipped record logs once per battle
+        (the skip latch; a plain log() here would repeat every 2 s tick).
+        """
         result = []
-        try:
-            for key, p in records.items():
-                if p['isBot'] or not p['name'] or p['name'].startswith(':'):
+        for key, p in records.items():
+            try:
+                name = p['name']
+                if not name or name.startswith(':'):
                     continue
+                try:
+                    if p['isBot']:
+                        continue
+                except:
+                    pass
                 try:
                     aid = _to_int(p['accountDBID'])
                 except:
@@ -1120,16 +1151,29 @@ class Probe:
                     realm = _fmt(p['realm'] or '')
                 except:
                     realm = ''
-                result.append({'name': p['name'], 'account_id': (aid if aid > 0 else 0),
+                result.append({'name': name, 'account_id': (aid if aid > 0 else 0),
                                'avatar_id': _to_int(key), 'ship_id': _to_int(p['shipParamsId']),
                                'realm': realm})
-        except:
-            self.soft('players error=' + _exc_text(120))
-            return []
+            except:
+                self.note_skipped_record(key)
+                continue
         # list.sort is a bound method (no builtin-name lookup) and py2.7
         # supports the key argument — the same order sorted() produced.
         result.sort(key=lambda p: p['name'])
         return result[:64]
+
+    def note_skipped_record(self, key):
+        """One python.log line per drifted record per battle (dict-as-set —
+        the sandbox withholds the set() builtin; see the __init__ census).
+        Evidence for exactly the CN360 schema-drift class: which record
+        key failed, once, without flooding the 2 s tick loop."""
+        skipped = self.__dict__.get('skipped_records')
+        if skipped is None:
+            skipped = {}
+            self.skipped_records = skipped
+        if key not in skipped:
+            skipped[key] = 1
+            log('roster record skipped key=' + _fmt(key))
 
     def journal_mark(self, kind):
         self.journal.append('{"t":' + _fmt(_to_int(time.time() * 1000)) + ',"ev":' + json_encode_safe(kind) + '}')
@@ -1434,7 +1478,7 @@ class Probe:
             self.empty_ticks = 0
         try:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': _to_int(time.time() * 1000),
-                                             'phase': 'battle' if self.session else 'port',
+                                             'phase': 'battle' if self.session or self.in_battle else 'port',
                                              'players': len(self.roster), 'revision': self.revision})
         except:
             self.soft('heartbeat failed=' + _exc_text(120))

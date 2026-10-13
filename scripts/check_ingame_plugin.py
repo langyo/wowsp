@@ -349,15 +349,26 @@ def build_roster_order():
     return order
 
 
-def build_roster(self_name="langyo", with_ship_names=True):
+def build_roster(self_name="langyo", with_ship_names=True, drift_records=False):
     players = {}
     for i in range(ROSTER_SIZE - ENEMY_COUNT):
         name = self_name if i == 0 else "Ally%02d" % i
-        players[100 + i] = FakeRecord(name=name, accountDBID=310000000 + i,
-                                      realm="ru", shipParamsId=418000000 + i,
-                                      isBot=False, teamId=1, isAlive=True,
-                                      **({"shipName": SHIP_LOCALIZED[name]}
-                                         if with_ship_names else {}))
+        fields = {"name": name, "accountDBID": 310000000 + i,
+                  "realm": "ru", "shipParamsId": 418000000 + i,
+                  "isBot": False, "teamId": 1, "isAlive": True}
+        if with_ship_names:
+            fields["shipName"] = SHIP_LOCALIZED[name]
+        if drift_records and name == "Ally02":
+            # The drifted shape (the 2026-10-11 CN360 failure class): the
+            # record carries no `isBot` at all. The probe must treat it as
+            # human — the ':' name marker still filters scripted rows.
+            del fields["isBot"]
+        if drift_records and name == "Ally04":
+            # A record without a `name` has no row to key — the probe must
+            # skip THIS record, never the whole roster (the old single-try
+            # loop returned [] and the battle never stabilized).
+            del fields["name"]
+        players[100 + i] = FakeRecord(**fields)
     for i in range(ENEMY_COUNT):
         name = "Foe%02d" % i
         players[200 + i] = FakeRecord(name=name, accountDBID=320000000 + i,
@@ -428,15 +439,17 @@ def crippled_builtins():
 
 
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
-             raising_constants, fail_plain, ships, with_ship_names, failures):
-    label = "encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s" % (
-        "records" if encode_records else "projection",
-        "yes" if with_manifest else "missing",
-        "yes" if with_ui else "absent",
-        "raising" if raising_constants else "ok",
-        "reject" if fail_plain else "ok",
-        ships,
-        "yes" if with_ship_names else "withheld")
+             raising_constants, fail_plain, ships, with_ship_names,
+             drift_records, failures):
+    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s"
+             % ("records" if encode_records else "projection",
+                "yes" if with_manifest else "missing",
+                "yes" if with_ui else "absent",
+                "raising" if raising_constants else "ok",
+                "reject" if fail_plain else "ok",
+                ships,
+                "yes" if with_ship_names else "withheld",
+                "yes" if drift_records else "no"))
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle()
     events = StubEvents()
@@ -450,13 +463,19 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
     #               entity nobody references;
     #   "partial" — langyo's slot resolves to a nonexistent ship id, so
     #               the key map comes back one short of the roster.
-    roster = build_roster(with_ship_names=with_ship_names)
+    roster = build_roster(with_ship_names=with_ship_names,
+                          drift_records=drift_records)
     dh_avatars = []
     dh_ships = []
     # Iteration follows build_roster's insertion order (the py3.7+ dict
     # guarantee) — the walk-order expectations below are coupled to it.
     for slot, rec in roster.items():
-        name = rec["name"]
+        try:
+            name = rec["name"]
+        except KeyError:
+            # The drift pass's nameless record has no avatar to key —
+            # exactly the shape the entity walk meets on the real client.
+            continue
         # Avatar-entity names carry a clan tag on the real client while
         # roster/telemetry keys stay BARE (bare_name strips it) — plant
         # the tagged shape so every keying assertion covers the strip
@@ -537,13 +556,38 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
 
         # Battle start: records become available, then drive the tick loop
         # (each tick re-schedules itself; call the latest pending callback).
-        battle.players = build_roster(with_ship_names=with_ship_names)
+        battle.players = build_roster(with_ship_names=with_ship_names,
+                                      drift_records=drift_records)
         start = events.handlers.get("onBattleStart")
         if start is None:
             failures.append("[%s] onBattleStart was never registered" % label)
             return
         start()
-        for _ in range(5):
+        # Drive the FIRST tick alone and pin the heartbeat's phase: one
+        # tick cannot have stabilized a roster yet (stability needs three
+        # sightings), so only the game's own battleStart latch can make
+        # the phase read 'battle' here. That latch is the CN360 drift
+        # class's lifeline — a build whose getPlayersInfo never stabilizes
+        # still reports battle, and the companion's telemetry-absent WARN
+        # can fire off it.
+        first_tick = callbacks.pending
+        callbacks.pending = None
+        if first_tick is None:
+            failures.append("[%s] scheduler stopped re-arming" % label)
+            return
+        first_tick()
+        try:
+            with open("heartbeat.json") as fh:
+                hb_first = json.load(fh)
+            if hb_first.get("phase") != "battle":
+                failures.append(
+                    "[%s] heartbeat phase=%r one tick after battleStart "
+                    "(expected battle via the battleStart latch)"
+                    % (label, hb_first.get("phase")))
+        except Exception as e:
+            failures.append("[%s] heartbeat.json unreadable after the first "
+                            "tick: %r" % (label, e))
+        for _ in range(4):
             fn = callbacks.pending
             callbacks.pending = None
             if fn is None:
@@ -552,11 +596,23 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             fn()
 
         # ── artifact assertions ──────────────────────────────────────────
+        # The expected rows mirror the probe's drift contract: a record
+        # without `isBot` still rows (the ':' marker filters scripted
+        # names), a record without `name` has no row at all.
         expected_names = set()
         for rec in battle.players.values():
-            if rec["isBot"] or rec["name"].startswith(":"):
+            try:
+                if rec["isBot"]:
+                    continue
+            except KeyError:
+                pass
+            try:
+                name = rec["name"]
+            except KeyError:
                 continue
-            expected_names.add(rec["name"])
+            if not name or name.startswith(":"):
+                continue
+            expected_names.add(name)
 
         try:
             with open("roster_raw.json") as fh:
@@ -619,6 +675,9 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         expected_keys = {} if ships == "none" else dict(SHIP_KEYS)
         if ships == "partial":
             del expected_keys["langyo"]
+        if drift_records and ships != "none":
+            # The nameless drifted record has no avatar, so no sort key.
+            del expected_keys["Ally04"]
         if tele.get("sortKeys") != expected_keys:
             failures.append("[%s] telemetry sortKeys mismatch (ships=%s): %r"
                             % (label, ships, tele.get("sortKeys")))
@@ -627,8 +686,12 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # consumes it as the Lesta equal-key tie base — it must carry the
         # records' iteration order verbatim (bots included; they hold
         # table rows too) through BOTH encoders, and as a LIST so no
-        # parser can reorder it.
-        if tele.get("rosterOrder") != build_roster_order():
+        # parser can reorder it. The drift pass's nameless record drops
+        # out (there is no name to sequence).
+        expected_sequence = ([n for n in build_roster_order()
+                              if n != "Ally04"] if drift_records
+                             else build_roster_order())
+        if tele.get("rosterOrder") != expected_sequence:
             failures.append("[%s] telemetry rosterOrder mismatch: %r"
                             % (label, tele.get("rosterOrder")))
         # The records' localized ship names (shipNames): the CN HUD's
@@ -637,12 +700,14 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # must degrade to an EMPTY map — the key stays present, the
         # companion treats empty as "absent".
         expected_localized = dict(SHIP_LOCALIZED) if with_ship_names else {}
+        if drift_records and with_ship_names:
+            del expected_localized["Ally04"]
         if tele.get("shipNames") != expected_localized:
             failures.append("[%s] telemetry shipNames mismatch: %r"
                             % (label, tele.get("shipNames")))
         # roster_raw.json carries the same sequence as its `order` array —
         # the Rust synthesizer preserves it instead of sorting (name, id).
-        if raw.get("order") != build_roster_order():
+        if raw.get("order") != expected_sequence:
             failures.append("[%s] roster_raw order mismatch: %r"
                             % (label, raw.get("order")))
 
@@ -658,6 +723,12 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if hb.get("players") != len(expected_names):
             failures.append("[%s] heartbeat players=%r (expected %d)"
                             % (label, hb.get("players"), len(expected_names)))
+        if hb.get("phase") != "battle":
+            # The battle phase must hold from the game's own battleStart
+            # event even when the roster never stabilizes (the CN360 drift
+            # class) — pin it on the stabilized path here.
+            failures.append("[%s] heartbeat phase=%r (expected battle)"
+                            % (label, hb.get("phase")))
 
         with open("request.json") as fh:
             req = json.load(fh)
@@ -730,6 +801,11 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                          if ships == "partial" else SHIP_KEY_ORDERS["ally"]),
                 "enemy": SHIP_KEY_ORDERS["enemy"],
             }
+            if drift_records:
+                # The nameless drifted record walks no avatar — its row is
+                # simply absent from the fold's ally side.
+                expected_order["ally"] = [n for n in expected_order["ally"]
+                                          if n != "Ally04"]
             for side in ("ally", "enemy"):
                 if probe.order.get(side) != expected_order[side]:
                     failures.append(
@@ -783,25 +859,30 @@ def main(argv):
     # unpaired avatar keeps that side on the walk order, keys stay one
     # short) — plus one ship-name-withheld pass pinning the empty-map
     # degrade of the new shipNames bridge (a records shape with no
-    # shipName field at all).
+    # shipName field at all), and one DRIFT pass planting schema-drifted
+    # records (one without `isBot`, one without `name` — the 2026-10-11
+    # CN360 failure class where a single missing field used to silence
+    # the whole roster): the isBot-less row must stay, the nameless row
+    # must drop, and the battle must still stabilize.
     passes = [
-            (True, True, False, False, False, "none", True),
-            (False, True, False, False, False, "none", True),
-            (True, False, False, False, False, "none", True),
-            (True, True, True, False, False, "none", True),
-            (True, True, False, True, False, "none", True),
-            (True, True, False, False, True, "none", True),
-            (True, True, False, False, False, "full", True),
-            (True, True, False, True, False, "full", True),
-            (True, True, False, False, True, "full", True),
-            (True, True, False, False, False, "partial", True),
-            (True, True, False, False, False, "full", False)]
+            (True, True, False, False, False, "none", True, False),
+            (False, True, False, False, False, "none", True, False),
+            (True, False, False, False, False, "none", True, False),
+            (True, True, True, False, False, "none", True, False),
+            (True, True, False, True, False, "none", True, False),
+            (True, True, False, False, True, "none", True, False),
+            (True, True, False, False, False, "full", True, False),
+            (True, True, False, True, False, "full", True, False),
+            (True, True, False, False, True, "full", True, False),
+            (True, True, False, False, False, "partial", True, False),
+            (True, True, False, False, False, "full", False, False),
+            (True, True, False, False, False, "full", True, True)]
     for (encode_records, with_manifest, with_ui, raising_constants,
-         fail_plain, ships, with_ship_names) in passes:
+         fail_plain, ships, with_ship_names, drift_records) in passes:
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
             run_once(plugin_src, workdir, encode_records, with_manifest,
                      with_ui, raising_constants, fail_plain, ships,
-                     with_ship_names, failures)
+                     with_ship_names, drift_records, failures)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))

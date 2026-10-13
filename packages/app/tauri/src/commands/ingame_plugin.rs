@@ -353,6 +353,163 @@ pub(crate) fn telemetry_file(game_root: &std::path::Path) -> Option<std::path::P
     Some(dir.join("PnFMods").join(MOD_DIR).join("telemetry.json"))
 }
 
+/// The plugin's liveness file for a game root — written at load and on
+/// every scheduler tick (port included), so it answers "is the probe even
+/// loaded in this client" independently of any battle. `None` when the
+/// root has no versioned `bin/` layout to hang `res_mods` off.
+fn heartbeat_file(game_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = super::game_context::res_mods_dir(game_root).ok()?;
+    Some(dir.join("PnFMods").join(MOD_DIR).join("heartbeat.json"))
+}
+
+/// One parsed `heartbeat.json` frame (the plugin rewrites it whole every
+/// tick; see its Main.py `tick`).
+struct HeartbeatFrame {
+    /// `'load'` / `'port'` / `'battle'` — the probe's own phase report.
+    phase: String,
+    /// The heartbeat's freshness against the poll's clock (same cap as the
+    /// telemetry payloads).
+    fresh: bool,
+}
+
+/// Parse one heartbeat frame. Missing `phase`/`t`, or an unparseable file,
+/// reads as "no heartbeat" — the health state treats that as gone/stale.
+fn parse_heartbeat(raw: &str, now_ms: i64) -> Option<HeartbeatFrame> {
+    let value: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
+    let phase = value.get("phase")?.as_str()?.to_string();
+    let t = payload_epoch_ms(&value)?;
+    Some(HeartbeatFrame {
+        phase,
+        fresh: now_ms - t <= TELEMETRY_STALE_MS,
+    })
+}
+
+/// One probe-health transition worth a log line — the poller's
+/// diagnosability layer over `heartbeat.json`. The heartbeat is the ONLY
+/// channel that distinguishes "the probe never loaded" (no file at all)
+/// from "loaded, healthy, in port" (`phase=port`, fresh) from "in a
+/// battle but the roster bridge is failing" (`phase=battle` while
+/// telemetry.json never appears) — exactly the states the 2026-10-11 CN360
+/// report left indistinguishable in the app log. `phase=battle` rides the
+/// game's own battleStart event in the probe bytes this app ships (older
+/// probe builds required roster stabilization, so a schema-drifted client
+/// kept reporting port through its battles and the WARN below could not
+/// fire).
+#[derive(Debug, PartialEq, Eq)]
+enum ProbeHealthEvent {
+    /// Fresh heartbeat seen for the first time (or regained after a loss).
+    HeartbeatGained(String),
+    /// Fresh heartbeat changed phase (port ↔ battle).
+    HeartbeatPhase(String, String),
+    /// Heartbeat went absent or stale while its client still runs.
+    HeartbeatLost,
+    /// The probe reports a battle but telemetry.json never appeared
+    /// ([`BATTLE_TELEMETRY_GRACE_POLLS`] consecutive polls) — the roster
+    /// path is failing on this build.
+    BattleWithoutTelemetry,
+}
+
+/// How many consecutive battle-heartbeat polls with no readable telemetry
+/// file arm the [`ProbeHealthEvent::BattleWithoutTelemetry`] WARN (the
+/// poller's 2 s cadence makes this a ~30 s grace). A healthy battle's
+/// first telemetry lands within a few seconds of battleStart (the probe
+/// stabilizes its roster over three 1–2 s ticks); only a genuinely dead
+/// roster bridge outlasts the grace, so loading screens never trip it.
+const BATTLE_TELEMETRY_GRACE_POLLS: u8 = 15;
+
+/// Per-root probe-health bookkeeping: what was last announced, so each
+/// transition logs once instead of on every 2 s tick.
+#[derive(Default)]
+struct ProbeHealthState {
+    phase: Option<String>,
+    alive: bool,
+    /// Consecutive fresh-`battle` polls with no telemetry file. Armed only
+    /// at [`BATTLE_TELEMETRY_GRACE_POLLS`] — the grace swallows both the
+    /// write-order race (the plugin writes the heartbeat before the
+    /// telemetry of the same tick) and the loading-screen window between
+    /// battleStart and the first stabilized roster write.
+    battle_gaps: u8,
+    warned_battle_without_telemetry: bool,
+}
+
+impl ProbeHealthState {
+    /// Fold one poll's observation into the transition list. `hb` is the
+    /// fresh heartbeat frame when one parsed (absent/stale files fold to
+    /// `None`); `telemetry_readable` is whether this poll could read the
+    /// telemetry file at all.
+    fn observe(
+        &mut self,
+        hb: Option<(&str, bool)>,
+        telemetry_readable: bool,
+    ) -> Vec<ProbeHealthEvent> {
+        let mut events = Vec::new();
+        let Some((phase, true)) = hb else {
+            if self.alive {
+                self.alive = false;
+                self.phase = None;
+                self.battle_gaps = 0;
+                self.warned_battle_without_telemetry = false;
+                events.push(ProbeHealthEvent::HeartbeatLost);
+            }
+            return events;
+        };
+        let phase = phase.to_string();
+        if !self.alive {
+            self.alive = true;
+            self.phase = Some(phase.clone());
+            events.push(ProbeHealthEvent::HeartbeatGained(phase.clone()));
+        } else if self.phase.as_deref() != Some(phase.as_str()) {
+            let from = self.phase.take().unwrap_or_default();
+            self.phase = Some(phase.clone());
+            events.push(ProbeHealthEvent::HeartbeatPhase(from, phase.clone()));
+        }
+        if phase == "battle" {
+            if telemetry_readable {
+                self.battle_gaps = 0;
+            } else {
+                self.battle_gaps = self.battle_gaps.saturating_add(1);
+                if self.battle_gaps >= BATTLE_TELEMETRY_GRACE_POLLS
+                    && !self.warned_battle_without_telemetry
+                {
+                    self.warned_battle_without_telemetry = true;
+                    events.push(ProbeHealthEvent::BattleWithoutTelemetry);
+                }
+            }
+        } else {
+            self.battle_gaps = 0;
+            self.warned_battle_without_telemetry = false;
+        }
+        events
+    }
+}
+
+/// Log one probe-health transition (the poller's only consumer of
+/// [`ProbeHealthState`] — lines land in the app log where a support bundle
+/// finds them).
+fn log_probe_health(event: &ProbeHealthEvent, root: &std::path::Path) {
+    match event {
+        ProbeHealthEvent::HeartbeatGained(phase) => tracing::info!(
+            root = %root.display(),
+            phase,
+            "ingame probe heartbeat acquired"
+        ),
+        ProbeHealthEvent::HeartbeatPhase(from, to) => tracing::info!(
+            root = %root.display(),
+            from,
+            to,
+            "ingame probe heartbeat phase changed"
+        ),
+        ProbeHealthEvent::HeartbeatLost => tracing::info!(
+            root = %root.display(),
+            "ingame probe heartbeat lost (stale or gone)"
+        ),
+        ProbeHealthEvent::BattleWithoutTelemetry => tracing::warn!(
+            root = %root.display(),
+            "probe heartbeat reports a battle but telemetry is absent — the roster path is failing on this client build"
+        ),
+    }
+}
+
 /// Age cap for emitting a telemetry payload — the same freshness the
 /// overlay consumer enforces on `wowsp://ingame-telemetry` (older payloads
 /// are dropped there). The poller skips them at the source: the file's
@@ -406,13 +563,22 @@ pub(crate) const TELEMETRY_WATCHED_EVENT: &str = "wowsp://ingame-telemetry-watch
 /// The poller is otherwise a best-effort publisher, but the CHAIN has been
 /// hard to diagnose from the field (a silent gap anywhere looks identical
 /// to "the feature is broken"), so state transitions log: file acquired /
-/// lost, and every emit at DEBUG with the alive count.
+/// lost, every emit at DEBUG with the alive count, and the probe-health
+/// layer over `heartbeat.json` ([`ProbeHealthState`]) — acquired / phase
+/// change / lost, plus a WARN when the probe reports a battle whose
+/// telemetry never appears.
 pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
+    /// Per-root poller bookkeeping: the telemetry stream's dedupe/liveness
+    /// pair plus the probe-health transition state.
+    #[derive(Default)]
+    struct RootWatch {
+        telemetry: (Option<String>, bool),
+        health: ProbeHealthState,
+    }
     let _ = std::thread::Builder::new()
         .name("ingame-telemetry-poll".into())
         .spawn(move || {
-            // Per-root dedupe/bookkeeping: (last raw content, had file).
-            let mut states: std::collections::HashMap<String, (Option<String>, bool)> =
+            let mut states: std::collections::HashMap<String, RootWatch> =
                 std::collections::HashMap::new();
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(2));
@@ -437,10 +603,10 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                 // exit races the 2 s tick and a missed frame would pin the
                 // battle's final sunk sets until the next battle.
                 let mut evicted: Vec<String> = Vec::new();
-                states.retain(|root, (_, had_file)| {
+                states.retain(|root, watch| {
                     let alive = roots.iter().any(|r| r == std::path::Path::new(root));
                     if !alive {
-                        if *had_file {
+                        if watch.telemetry.1 {
                             tracing::info!(
                                 root,
                                 "ingame telemetry stream lost (client exited) — resuming inference"
@@ -452,20 +618,38 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     true
                 });
                 for root in evicted {
-                    if let Some(mut st) = states.remove(&root) {
-                        emit_once(&app, &root, Some(&mut st), &preferred_root, now_unix_ms());
+                    if let Some(mut watch) = states.remove(&root) {
+                        emit_once(
+                            &app,
+                            &root,
+                            Some(&mut watch.telemetry),
+                            &preferred_root,
+                            now_unix_ms(),
+                        );
                     }
                 }
                 for root in roots {
                     let Some(path) = telemetry_file(&root) else {
                         continue;
                     };
-                    let state = states
-                        .entry(root.display().to_string())
-                        .or_insert((None, false));
-                    let Ok(raw) = std::fs::read_to_string(&path) else {
-                        if state.1 {
-                            state.1 = false;
+                    // The heartbeat read is independent of the telemetry
+                    // file: a probe that never enters a battle still
+                    // heartbeats from load, and that distinction is what
+                    // the health layer exists to log.
+                    let heartbeat = heartbeat_file(&root)
+                        .and_then(|p| std::fs::read_to_string(p).ok())
+                        .and_then(|raw| parse_heartbeat(&raw, now_unix_ms()));
+                    let raw = std::fs::read_to_string(&path).ok();
+                    let watch = states.entry(root.display().to_string()).or_default();
+                    for event in watch.health.observe(
+                        heartbeat.as_ref().map(|h| (h.phase.as_str(), h.fresh)),
+                        raw.is_some(),
+                    ) {
+                        log_probe_health(&event, &root);
+                    }
+                    let Some(raw) = raw else {
+                        if watch.telemetry.1 {
+                            watch.telemetry.1 = false;
                             tracing::info!(
                                 root = %root.display(),
                                 "ingame telemetry stream lost (file gone) — resuming inference"
@@ -473,12 +657,14 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                         }
                         continue;
                     };
-                    if !state.1 {
-                        state.1 = true;
+                    if !watch.telemetry.1 {
+                        watch.telemetry.1 = true;
                         tracing::info!(path = %path.display(), "ingame telemetry stream acquired");
                     }
                     let root = root.display().to_string();
-                    if let Some(value) = parse_fresh_frame(&raw, state, &root, now_unix_ms()) {
+                    if let Some(value) =
+                        parse_fresh_frame(&raw, &mut watch.telemetry, &root, now_unix_ms())
+                    {
                         emit_frame(&app, &root, value, &preferred_root);
                     }
                 }
@@ -711,5 +897,118 @@ mod tests {
         assert!(payload_fresh(&float_t, now), "float stamps parse");
         assert_eq!(payload_epoch_ms(&float_t), Some(now - 500));
         assert!(!payload_fresh(&no_stamp, now), "no t — stale by definition");
+    }
+
+    /// The heartbeat parser answers the probe's own phase + freshness;
+    /// everything else (missing keys, junk) reads as "no heartbeat".
+    #[test]
+    fn heartbeat_parses_phase_and_freshness() {
+        // A frame written at t=1000 polled at t=2000: fresh.
+        let port = parse_heartbeat(
+            r#"{"v":"0.1.0","t":1000,"phase":"port","players":0,"revision":-1}"#,
+            2_000,
+        )
+        .map(|h| (h.phase, h.fresh));
+        assert_eq!(port, Some(("port".to_string(), true)));
+        // The same frame polled eons later: stale.
+        let battle = parse_heartbeat(
+            r#"{"v":"0.1.0","t":1000,"phase":"battle","players":12,"revision":3}"#,
+            1_800_000_000_000,
+        )
+        .map(|h| (h.phase, h.fresh));
+        assert_eq!(battle, Some(("battle".to_string(), false)));
+        assert!(
+            parse_heartbeat(r#"{"t":1000}"#, 2_000).is_none(),
+            "no phase"
+        );
+        assert!(
+            parse_heartbeat(r#"{"phase":"port"}"#, 2_000).is_none(),
+            "no t"
+        );
+        assert!(parse_heartbeat("", 2_000).is_none());
+        assert!(parse_heartbeat("not json", 2_000).is_none());
+    }
+
+    /// The probe-health transitions: gained → phase change → lost, with the
+    /// battle-without-telemetry WARN confirmed over two polls (the plugin
+    /// writes the heartbeat of a tick before its telemetry — a one-poll gap
+    /// is that write order, two is a failing roster path) and re-armed when
+    /// the phase leaves battle.
+    #[test]
+    fn probe_health_transitions() {
+        let mut health = ProbeHealthState::default();
+        // Silence before the first frame: nothing to announce.
+        assert!(health.observe(None, false).is_empty());
+        // First fresh heartbeat (port): announced once.
+        assert_eq!(
+            health.observe(Some(("port", true)), false),
+            vec![ProbeHealthEvent::HeartbeatGained("port".into())]
+        );
+        assert!(health.observe(Some(("port", true)), false).is_empty());
+        // Battle begins, telemetry flowing: just the phase change.
+        assert_eq!(
+            health.observe(Some(("battle", true)), true),
+            vec![ProbeHealthEvent::HeartbeatPhase(
+                "port".into(),
+                "battle".into()
+            )]
+        );
+        assert!(health.observe(Some(("battle", true)), true).is_empty());
+        // The CN360 failure shape: battle heartbeat, no telemetry file.
+        // The grace window (write-order race + the loading screen between
+        // battleStart and the first stabilized write) stays silent; the
+        // WARN arms once the gap outlasts it, exactly once per battle.
+        for _ in 0..(BATTLE_TELEMETRY_GRACE_POLLS - 1) {
+            assert!(
+                health.observe(Some(("battle", true)), false).is_empty(),
+                "inside the grace window the gap stays silent"
+            );
+        }
+        assert_eq!(
+            health.observe(Some(("battle", true)), false),
+            vec![ProbeHealthEvent::BattleWithoutTelemetry]
+        );
+        assert!(
+            health.observe(Some(("battle", true)), false).is_empty(),
+            "the WARN latches once per battle"
+        );
+        // Back to port re-arms the warning for the next battle.
+        assert_eq!(
+            health.observe(Some(("port", true)), true),
+            vec![ProbeHealthEvent::HeartbeatPhase(
+                "battle".into(),
+                "port".into()
+            )]
+        );
+        assert_eq!(
+            health.observe(Some(("battle", true)), false),
+            vec![ProbeHealthEvent::HeartbeatPhase(
+                "port".into(),
+                "battle".into()
+            )]
+        );
+        for _ in 0..(BATTLE_TELEMETRY_GRACE_POLLS - 2) {
+            assert!(health.observe(Some(("battle", true)), false).is_empty());
+        }
+        assert_eq!(
+            health.observe(Some(("battle", true)), false),
+            vec![ProbeHealthEvent::BattleWithoutTelemetry]
+        );
+        // A stale/absent heartbeat while the client still runs: lost once,
+        // and the next fresh frame announces as gained again.
+        assert_eq!(
+            health.observe(None, false),
+            vec![ProbeHealthEvent::HeartbeatLost]
+        );
+        assert!(health.observe(None, false).is_empty());
+        assert_eq!(
+            health.observe(Some(("port", false)), false),
+            Vec::<ProbeHealthEvent>::new(),
+            "a stale frame is no heartbeat at all"
+        );
+        assert_eq!(
+            health.observe(Some(("port", true)), false),
+            vec![ProbeHealthEvent::HeartbeatGained("port".into())]
+        );
     }
 }
