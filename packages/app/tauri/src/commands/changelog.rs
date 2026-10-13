@@ -10,8 +10,11 @@
 //! just the proxy-aware HTTP client, so the phone app build serves the
 //! same feed.
 
+use anyhow::Error;
 use serde::Serialize;
 use std::time::Duration;
+
+use wowsp_tauri_shared::CommandResult;
 
 use crate::commands::github_mirror;
 use crate::commands::network::build_http_client;
@@ -69,7 +72,7 @@ fn parse_releases(payload: &serde_json::Value) -> Vec<ChangelogRelease> {
 /// Fetch the release list through the mirror ladder. Errors reach the
 /// webui store verbatim — the section renders its retry state on them.
 #[tauri::command]
-pub async fn changelog_list() -> Result<Vec<ChangelogRelease>, String> {
+pub async fn changelog_list() -> CommandResult<Vec<ChangelogRelease>> {
     let client = build_http_client()?;
     let mut last_err = String::from("no mirror attempted for the changelog");
     for candidate in github_mirror::candidates(RELEASES_URL) {
@@ -106,7 +109,9 @@ pub async fn changelog_list() -> Result<Vec<ChangelogRelease>, String> {
             },
         }
     }
-    Err(last_err)
+    // The ladder's accumulated failure text is a plain String here — the
+    // msg bridge renders it byte-identically through CommandError.
+    Err(Error::msg(last_err).into())
 }
 
 #[cfg(test)]

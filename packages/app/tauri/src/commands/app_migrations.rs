@@ -44,10 +44,7 @@ mod registry {
 const APP_MIGRATIONS_FILE: &str = "app-migrations.json";
 
 fn store_path() -> Result<PathBuf> {
-    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
-    Ok(paths::ensure_data_dir()
-        .map_err(anyhow::Error::msg)?
-        .join(APP_MIGRATIONS_FILE))
+    Ok(paths::ensure_data_dir()?.join(APP_MIGRATIONS_FILE))
 }
 
 fn load_store(store_path: &Path) -> Result<AppMigrationStore> {

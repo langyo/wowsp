@@ -126,8 +126,7 @@ pub(super) fn relay_parts(target: &PairingTarget) -> Result<(String, String)> {
                 .filter(|r| !r.is_empty())
                 .ok_or_else(|| anyhow!("relay session missing its room key"))?;
             Ok((
-                crate::commands::pairing_relay::normalize_relay_ws_url(url)
-                    .map_err(anyhow::Error::msg)?,
+                crate::commands::pairing_relay::normalize_relay_ws_url(url)?,
                 room,
             ))
         },
@@ -144,7 +143,7 @@ pub async fn pairing_pair(target: PairingTarget, pin: String) -> CommandResult<P
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
+            let client = super::network::build_http_client()?;
             let url = format!("http://{host}:{port}/pair");
             let resp = client
                 .post(&url)
@@ -164,13 +163,8 @@ pub async fn pairing_pair(target: PairingTarget, pin: String) -> CommandResult<P
             Ok(token)
         },
         PairingTarget::Relay { url, .. } => {
-            let ws_base = crate::commands::pairing_relay::normalize_relay_ws_url(url)
-                .map_err(anyhow::Error::msg)?;
-            Ok(
-                crate::commands::pairing_relay::relay_pair(&ws_base, pin.trim())
-                    .await
-                    .map_err(anyhow::Error::msg)?,
-            )
+            let ws_base = crate::commands::pairing_relay::normalize_relay_ws_url(url)?;
+            Ok(crate::commands::pairing_relay::relay_pair(&ws_base, pin.trim()).await?)
         },
     }
 }
@@ -186,7 +180,7 @@ pub async fn pairing_list_remote(
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
+            let client = super::network::build_http_client()?;
             let resp = client
                 .get(format!("http://{host}:{port}/api/replays"))
                 .bearer_auth(&token)
@@ -204,11 +198,7 @@ pub async fn pairing_list_remote(
         },
         PairingTarget::Relay { .. } => {
             let (ws_base, room) = relay_parts(&target)?;
-            Ok(
-                crate::commands::pairing_relay::relay_list_remote(&ws_base, &room, &token)
-                    .await
-                    .map_err(anyhow::Error::msg)?,
-            )
+            Ok(crate::commands::pairing_relay::relay_list_remote(&ws_base, &room, &token).await?)
         },
     }
 }
@@ -249,7 +239,7 @@ pub async fn pairing_pull_replay(
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
+            let client = super::network::build_http_client()?;
             let resp = client
                 .get(format!(
                     "http://{host}:{port}/api/replay/{}",
@@ -277,8 +267,7 @@ pub async fn pairing_pull_replay(
                 &remote_name,
                 &part,
             )
-            .await
-            .map_err(anyhow::Error::msg);
+            .await;
             finish_replay_pull(app, received, part, final_path, remote_name).await
         },
     }

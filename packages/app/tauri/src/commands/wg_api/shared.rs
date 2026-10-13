@@ -95,7 +95,8 @@ pub(crate) async fn account_list_one(
             encode_query(name)
         ),
     )
-    .await?
+    .await
+    .map_err(|e| LookupError::from(e.to_string()))?
     .json()
     .await
     .map_err(|e| format!("account/list parse: {e}"))?;
@@ -127,8 +128,7 @@ pub(super) async fn account_nickname_by_id(
             "https://{host}/wows/account/info/?application_id={app_id}&account_id={account_id}"
         ),
     )
-    .await
-    .map_err(anyhow::Error::msg)?;
+    .await?;
     let parsed: WgResponse<serde_json::Value> = resp
         .json()
         .await

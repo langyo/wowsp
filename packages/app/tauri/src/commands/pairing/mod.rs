@@ -82,6 +82,11 @@ pub(crate) mod server;
 #[cfg(test)]
 pub(crate) mod tests;
 
+// The mobile stand-ins below bail with the marker — cfg-scoped so the
+// desktop build (which never names the macro) carries no unused import.
+#[cfg(mobile)]
+use anyhow::anyhow;
+
 // Sibling command modules reached by this module's children through their
 // unchanged `super::<name>::...` paths (this facade re-exports the names one
 // level down, so every call site kept its original text).
@@ -135,7 +140,7 @@ use crate::mobile_unsupported::PAIRING as PAIRING_SERVER_UNSUPPORTED;
 pub async fn pairing_start() -> CommandResult<PairingStatus> {
     #[cfg(mobile)]
     {
-        return Err(anyhow::anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
+        return Err(anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
     }
     #[cfg(desktop)]
     {
@@ -148,7 +153,7 @@ pub async fn pairing_start() -> CommandResult<PairingStatus> {
 pub async fn pairing_stop() -> CommandResult<()> {
     #[cfg(mobile)]
     {
-        return Err(anyhow::anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
+        return Err(anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
     }
     #[cfg(desktop)]
     {

@@ -60,8 +60,7 @@ pub async fn read_replay_positions(
             }
         }
         let mut decoded =
-            super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)
-                .map_err(anyhow::Error::msg)?;
+            super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
         if lesta {
             // BEFORE grouping: the synthesis fills `arena_players` with the
             // state-recovered starting health, so the HP anchoring and the

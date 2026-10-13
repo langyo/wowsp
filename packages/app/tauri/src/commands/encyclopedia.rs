@@ -58,16 +58,13 @@ pub async fn get_game_version_pub() -> anyhow::Result<GameVersionInfo> {
     let url = format!(
         "https://api.worldofwarships.asia/wows/encyclopedia/info/?application_id={app_id}&language=en"
     );
-    // recorded_get stays String-typed (it feeds LookupError's From<String>
-    // arms) — the bridge renders the message verbatim.
     let resp: WgResponse<serde_json::Value> = super::upstream_health::recorded_get(
         &client,
         "api.worldofwarships.asia",
         "encyclopedia/info",
         url,
     )
-    .await
-    .map_err(anyhow::Error::msg)?
+    .await?
     .json()
     .await
     .map_err(|e| anyhow!("encyclopedia/info parse: {e}"))?;
@@ -137,9 +134,7 @@ pub async fn get_ship_encyclopedia(
     // cluster-wide identical, so realm "cn" is served from the ASIA API (the
     // compound cache key still keeps CN-named entries apart).
     let app_id = super::wg_realm::application_id(&realm);
-    // encyclopedia_host stays String-typed (it feeds LookupError's
-    // From<String> arms) — the bridge renders the message verbatim.
-    let host = super::wg_realm::encyclopedia_host(&realm).map_err(anyhow::Error::msg)?;
+    let host = super::wg_realm::encyclopedia_host(&realm)?;
     let client = std::sync::Arc::new(wg_client()?);
     let base_url = format!(
         "https://{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
@@ -149,8 +144,7 @@ pub async fn get_ship_encyclopedia(
     let page1_url = format!("{base_url}&page_no=1");
     let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
         super::upstream_health::recorded_get(&client, host, "encyclopedia/ships page 1", page1_url)
-            .await
-            .map_err(anyhow::Error::msg)?
+            .await?
             .json()
             .await
             .map_err(|e| anyhow!("encyclopedia/ships page 1 parse: {e}"))?;
@@ -310,8 +304,7 @@ fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
 
 fn wg_client() -> anyhow::Result<reqwest::Client> {
-    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-    crate::commands::network::build_http_client().map_err(anyhow::Error::msg)
+    crate::commands::network::build_http_client()
 }
 
 fn now_ts() -> i64 {

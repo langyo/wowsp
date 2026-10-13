@@ -47,10 +47,7 @@ static STAMP_FILES_GATE: Mutex<()> = Mutex::new(());
 /// (`%APPDATA%/WoWSP/stamps/` locally, `<exe>/data/stamps/` in portable
 /// mode), created on first use.
 fn stamps_dir() -> Result<PathBuf> {
-    // `paths` still speaks String errors — bridge verbatim.
-    let dir = paths::ensure_data_dir()
-        .map_err(anyhow::Error::msg)?
-        .join("stamps");
+    let dir = paths::ensure_data_dir()?.join("stamps");
     std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir)
 }

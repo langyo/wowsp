@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use super::*;
 
 fn touch(path: &Path) {
@@ -1282,7 +1284,7 @@ fn migrate_ledgerred(
     game: &Path,
     from: &str,
     installs: &mut Vec<ModInstallRecord>,
-) -> anyhow::Result<MigrateReport> {
+) -> Result<MigrateReport> {
     let report = migrate_stale_bin_core(&game.to_string_lossy(), from)?;
     for record in installs.iter_mut() {
         if record.bin_version == from {

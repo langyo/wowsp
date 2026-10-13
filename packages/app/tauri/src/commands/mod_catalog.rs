@@ -99,8 +99,7 @@ pub(crate) async fn mod_hub_gate() -> tokio::sync::MutexGuard<'static, ()> {
 }
 
 fn data_file(rel: &str) -> anyhow::Result<PathBuf> {
-    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
-    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let dir = paths::ensure_data_dir()?;
     Ok(dir.join(rel))
 }
 
@@ -161,8 +160,7 @@ pub(crate) fn load_cached_index() -> Option<CatalogIndex> {
 }
 
 async fn fetch_index() -> anyhow::Result<CatalogIndex> {
-    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-    let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
+    let client = super::network::build_http_client()?;
     let mut last_err = String::from("no index url attempted");
     for url in index_urls() {
         let resp = client
@@ -593,6 +591,9 @@ pub async fn mod_catalog_install(
         )
         .await
         .map_err(|e| {
+            // The hub's anyhow error crosses through its Display (the
+            // historical message) — same text the String arm produced.
+            let e = e.to_string();
             if e.contains("sha256 mismatch") {
                 anyhow!(
                     "{} failed the SHA-256 check; refresh the catalog and retry — the cached index may be stale, or the package on the release is damaged ({e})",

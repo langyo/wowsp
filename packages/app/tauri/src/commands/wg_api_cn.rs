@@ -63,8 +63,7 @@ const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 /// Shared CN vortex HTTP client (browser UA + the global proxy policy).
 /// Also used by `ship_stats` for its per-ship endpoint.
 pub(crate) fn vortex_client() -> Result<reqwest::Client> {
-    crate::commands::network::http_client_builder()
-        .map_err(anyhow::Error::msg)?
+    crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(15))
         .user_agent(BROWSER_UA)
         .build()
@@ -82,8 +81,7 @@ pub(crate) fn vortex_client() -> Result<reqwest::Client> {
 /// no-bytes stall rule (`ship_stats::read_body_streamed`) governs the
 /// streamed chunks, and its 180s hard cap bounds the total.
 pub(crate) fn vortex_stream_client() -> Result<reqwest::Client> {
-    crate::commands::network::http_client_builder()
-        .map_err(anyhow::Error::msg)?
+    crate::commands::network::http_client_builder()?
         .read_timeout(Duration::from_secs(60))
         .user_agent(BROWSER_UA)
         .build()
@@ -94,11 +92,8 @@ pub(crate) fn vortex_stream_client() -> Result<reqwest::Client> {
 /// (the clan endpoint's meaningful 404 is tolerated by its own caller).
 async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value> {
     let host = super::upstream_health::host_of_url(url);
-    // `recorded_get` still speaks String errors (the wave-1 lookup arms pin
-    // it) — bridge verbatim.
-    let resp = super::upstream_health::recorded_get(client, host, "CN vortex", url.to_string())
-        .await
-        .map_err(anyhow::Error::msg)?;
+    let resp =
+        super::upstream_health::recorded_get(client, host, "CN vortex", url.to_string()).await?;
     let status = resp.status();
     if !status.is_success() {
         anyhow::bail!("CN vortex: HTTP {status}");
@@ -308,9 +303,7 @@ pub(crate) async fn account_list_one(
     client: &reqwest::Client,
     name: &str,
 ) -> Result<Option<CnAccountRef>> {
-    // `wg_realm`'s host table stays String-typed (the wave-1 lookup arms
-    // call it through their `From<String>` bridge) — adapt verbatim.
-    let host = wg_realm::vortex_host("cn").map_err(anyhow::Error::msg)?;
+    let host = wg_realm::vortex_host("cn")?;
     let url = format!(
         "https://{host}/api/accounts/search/{}/?limit=10",
         encode_query(name)
@@ -361,7 +354,7 @@ async fn account_info(
     client: &reqwest::Client,
     account_id: i64,
 ) -> Result<Option<serde_json::Value>> {
-    let host = wg_realm::vortex_host("cn").map_err(anyhow::Error::msg)?;
+    let host = wg_realm::vortex_host("cn")?;
     let url = format!("https://{host}/api/accounts/{account_id}/");
     let sent = client.get(&url).send().await;
     // 404 = unknown account (business semantics, see record_transport) —
@@ -664,7 +657,7 @@ pub(crate) async fn suggest_players(search: String) -> Result<Vec<PlayerSuggesti
     if q.chars().count() < MIN_SEARCH_CHARS {
         return Ok(Vec::new());
     }
-    let host = wg_realm::vortex_host("cn").map_err(anyhow::Error::msg)?;
+    let host = wg_realm::vortex_host("cn")?;
     let url = format!(
         "https://{host}/api/accounts/search/autocomplete/{}/",
         encode_query(&q)

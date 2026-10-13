@@ -151,14 +151,15 @@ struct Shared {
     shutdown: watch::Receiver<bool>,
 }
 
-/// One-shot state of the background game-data zip build. The slot's error
-/// stays a plain `String`: `GamedataState` must be `Clone` for the watch
-/// channel (anyhow errors are not) and the error rides the 500 JSON body,
-/// which needs a serializable plain string anyway.
+/// One-shot state of the background game-data zip build. The failure text
+/// is a plain `String` (not an anyhow error): `GamedataState` must be
+/// `Clone` for the watch channel (anyhow errors are not) and it rides the
+/// 500 JSON body, which needs a serializable plain string anyway.
 #[derive(Clone)]
 enum GamedataState {
     Building,
-    Ready(Result<Option<PathBuf>, String>),
+    Ready(Option<PathBuf>),
+    Failed(String),
 }
 
 /// PIN brute-force throttle, dependency-free and pure so the behavior is
@@ -239,7 +240,7 @@ async fn prepare_server() -> Result<ServerState> {
     // answers 503 + Retry-After until the zip lands.
     let (gd_tx, gd_rx) = watch::channel(GamedataState::Building);
     let workspace = Arc::new(super::GamedataWorkspace::create(
-        &paths::ensure_cache_dir().map_err(anyhow::Error::msg)?,
+        &paths::ensure_cache_dir()?
     )?);
     let build_workspace = workspace.clone();
     tokio::spawn(async move {
@@ -255,7 +256,10 @@ async fn prepare_server() -> Result<ServerState> {
         }
         // GamedataState keeps a plain String (see its docs): the anyhow
         // error crosses through its Display, byte-identical to the wire.
-        let _ = gd_tx.send(GamedataState::Ready(res.map_err(|e| e.to_string())));
+        let _ = gd_tx.send(match res {
+            Ok(zip) => GamedataState::Ready(zip),
+            Err(e) => GamedataState::Failed(e.to_string()),
+        });
     });
     let (tx, rx) = watch::channel(false);
     let shared = Arc::new(Shared {
@@ -444,7 +448,7 @@ pub(crate) fn random_token() -> Result<String> {
 /// per-ship JSON deflate in seconds there without stalling the runtime.
 /// Outcome logging lives in the spawn wrapper in [`pairing_start`].
 async fn build_gamedata_zip(workspace: Arc<super::GamedataWorkspace>) -> Result<Option<PathBuf>> {
-    let data = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let data = paths::ensure_data_dir()?;
     let sources = vec![data.join("gameparams"), data.join("encyclopedia")];
     let existing: Vec<PathBuf> = sources.into_iter().filter(|d| d.is_dir()).collect();
     if existing.is_empty() {
@@ -537,7 +541,7 @@ pub async fn spawn_on(
     // The test surface serves an ALREADY-BUILT zip (or none at all) —
     // the Building/503 path belongs to the command start, which spawns
     // the real background build.
-    let (gd_tx, gd_rx) = watch::channel(GamedataState::Ready(Ok(gamedata_zip)));
+    let (gd_tx, gd_rx) = watch::channel(GamedataState::Ready(gamedata_zip));
     drop(gd_tx); // state is terminal; nothing more to signal
     let (tx, rx) = watch::channel(false);
     let shared = Arc::new(Shared {
@@ -716,20 +720,14 @@ pub(super) fn parse_head(head: &[u8]) -> Result<Request> {
         Some((p, q)) => (p, Some(q)),
         None => (target, None),
     };
-    let path = percent_decode(raw_path).map_err(anyhow::Error::msg)?;
+    let path = percent_decode(raw_path)?;
     let query = raw_query
         .unwrap_or("")
         .split('&')
         .filter(|s| !s.is_empty())
         .map(|pair| match pair.split_once('=') {
-            Some((k, v)) => Ok((
-                percent_decode(k).map_err(anyhow::Error::msg)?,
-                percent_decode(v).map_err(anyhow::Error::msg)?,
-            )),
-            None => Ok((
-                percent_decode(pair).map_err(anyhow::Error::msg)?,
-                String::new(),
-            )),
+            Some((k, v)) => Ok((percent_decode(k)?, percent_decode(v)?)),
+            None => Ok((percent_decode(pair)?, String::new())),
         })
         .collect::<Result<Vec<_>>>()?;
     let mut headers = Vec::new();
@@ -1027,7 +1025,7 @@ async fn handle_gamedata_with_wait(
                 // Build finished inside the bound — serve the outcome.
                 Ok(Ok(())) => rx.borrow().clone(),
                 // Build task died without reporting — surface as 500.
-                Ok(Err(_)) => GamedataState::Ready(Err("game-data build task died".to_string())),
+                Ok(Err(_)) => GamedataState::Failed("game-data build task died".to_string()),
                 // Still building after the bound — tell the phone to nap.
                 Err(_) => GamedataState::Building,
             }
@@ -1044,7 +1042,7 @@ async fn handle_gamedata_with_wait(
         )
         .await
         .map_err(anyhow::Error::from),
-        GamedataState::Ready(Err(e)) => respond_json(
+        GamedataState::Failed(e) => respond_json(
             stream,
             500,
             "Internal Server Error",
@@ -1052,7 +1050,7 @@ async fn handle_gamedata_with_wait(
         )
         .await
         .map_err(anyhow::Error::from),
-        GamedataState::Ready(Ok(None)) => respond_json(
+        GamedataState::Ready(None) => respond_json(
             stream,
             404,
             "Not Found",
@@ -1060,11 +1058,11 @@ async fn handle_gamedata_with_wait(
         )
         .await
         .map_err(anyhow::Error::from),
-        GamedataState::Ready(Ok(Some(zip))) if zip.is_file() => {
+        GamedataState::Ready(Some(zip)) if zip.is_file() => {
             serve_file(stream, &zip, "application/zip").await
         },
         // Zip vanished under us (cache wiped mid-run) — same clean 404.
-        GamedataState::Ready(Ok(Some(_))) => respond_json(
+        GamedataState::Ready(Some(_)) => respond_json(
             stream,
             404,
             "Not Found",
@@ -1344,7 +1342,7 @@ mod tests {
     async fn stopping_server_revokes_an_already_accepted_pair_request() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
-        let (_gd_tx, gd_rx) = watch::channel(GamedataState::Ready(Ok(None)));
+        let (_gd_tx, gd_rx) = watch::channel(GamedataState::Ready(None));
         let (shutdown, stopped) = watch::channel(false);
         let mut shared = test_shared(gd_rx);
         Arc::get_mut(&mut shared).unwrap().shutdown = stopped;
@@ -1448,7 +1446,7 @@ mod tests {
             handle_gamedata_with_wait(&mut server, &shared, std::time::Duration::from_secs(5)).await
         });
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        tx.send(GamedataState::Ready(Ok(Some(zip_path.clone()))))
+        tx.send(GamedataState::Ready(Some(zip_path.clone())))
             .unwrap();
         handler.await.unwrap().unwrap();
 

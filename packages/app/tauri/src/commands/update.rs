@@ -449,9 +449,7 @@ async fn resolve_latest() -> Result<(String, String)> {
         .files
         .first()
         .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
-    // `network::build_http_client` still speaks String errors — bridge
-    // verbatim (same rendered message).
-    let client = build_http_client().map_err(anyhow::Error::msg)?;
+    let client = build_http_client()?;
     let candidates = race_sources(&client, &watch.sources, marker, false).await?;
     let winner = &candidates[0];
     Ok((
@@ -582,7 +580,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
         .files
         .first()
         .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
-    let client = build_http_client().map_err(anyhow::Error::msg)?;
+    let client = build_http_client()?;
     emit_phase(app, phase::RACE);
     let candidates = pass
         .run(race_sources(&client, &watch.sources, marker, true))
@@ -616,9 +614,8 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     pass.check_cancelled()?;
 
     // ── Phase 2: queued transfer through the unified download hub ─────
-    // The hub still speaks String errors — bridge verbatim. Cancellation
-    // still wins over a transfer error racing with the click (the
-    // check_cancelled below runs after the boundary).
+    // Cancellation still wins over a transfer error racing with the click
+    // (the check_cancelled below runs after the boundary).
     let transferred = download_hub::transfer(
         Some(app),
         DownloadRequest {
@@ -637,8 +634,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
             ..DownloadRequest::new(JOB_ID, kind::UPDATE, sources, part_path)
         },
     )
-    .await
-    .map_err(anyhow::Error::msg);
+    .await;
     pass.check_cancelled()?;
     let done = transferred?;
     tracing::info!(%version, bytes = done.bytes, "installer artifact ready");

@@ -104,11 +104,13 @@ pub async fn lookup_player_stats(
         return super::wg_api_cn::lookup_player_stats(name, algo).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm)?;
-    let vortex_host = super::wg_realm::vortex_host(&realm)?;
+    let host = super::wg_realm::api_host(&realm).map_err(|e| LookupError::from(e.to_string()))?;
+    let vortex_host =
+        super::wg_realm::vortex_host(&realm).map_err(|e| LookupError::from(e.to_string()))?;
     // Per-request timeout — a hung connection must not block a UI lookup
     // indefinitely.
-    let client = crate::commands::network::http_client_builder()?
+    let client = crate::commands::network::http_client_builder()
+        .map_err(|e| LookupError::from(e.to_string()))?
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
@@ -155,7 +157,9 @@ pub async fn lookup_player_stats(
              statistics.rank_solo,statistics.rank_div2,statistics.rank_div3",
             entry.account_id
         );
-        let resp = super::upstream_health::recorded_get(&client, host, "account/info", url).await?;
+        let resp = super::upstream_health::recorded_get(&client, host, "account/info", url)
+            .await
+            .map_err(|e| e.to_string())?;
         resp.json::<WgResponse<serde_json::Value>>()
             .await
             .map_err(|e| format!("account/info parse: {e}"))
@@ -285,9 +289,7 @@ pub async fn lookup_players_stats_batch(
         return Ok(Vec::new());
     }
     if realm == "cn" {
-        return Ok(super::wg_api_cn::lookup_players_stats_batch(names, algo)
-            .await
-            .map_err(anyhow::Error::msg)?);
+        return Ok(super::wg_api_cn::lookup_players_stats_batch(names, algo).await?);
     }
     Ok(lookup_roster(names, Vec::new(), realm, cross_realm.unwrap_or(false), algo).await?)
 }
@@ -347,14 +349,11 @@ pub(crate) async fn lookup_roster(
     // concepts. The command above routes here after its own CN check, so
     // this guard exists for the in-game bridge, which calls in directly.
     if realm == "cn" {
-        return super::wg_api_cn::lookup_players_stats_batch(names, algo)
-            .await
-            .map_err(anyhow::Error::msg);
+        return super::wg_api_cn::lookup_players_stats_batch(names, algo).await;
     }
     // Per-request timeout so one hung connection can't stall the roster all
     // battle long.
-    let client = crate::commands::network::http_client_builder()
-        .map_err(anyhow::Error::msg)?
+    let client = crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| anyhow!("http client: {e}"))?;
@@ -700,7 +699,7 @@ async fn resolve_names_on_realm(
     names: &[String],
 ) -> Result<Vec<Option<PlayerStats>>> {
     let app_id = super::wg_realm::application_id(realm);
-    let host = super::wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
+    let host = super::wg_realm::api_host(realm)?;
 
     // 1. name → account, bounded-parallel. Every exact-prefix hit is kept
     //    (capped — see [`EXACT_HIT_CANDIDATES`]): the first hit is not
@@ -719,8 +718,7 @@ async fn resolve_names_on_realm(
                 async move {
                     let resp =
                         super::upstream_health::recorded_get(client_ref, host, "account/list", url)
-                            .await
-                            .map_err(anyhow::Error::msg)?;
+                            .await?;
                     let list = resp
                         .json::<WgResponse<Vec<AccountListEntry>>>()
                         .await
@@ -809,7 +807,7 @@ async fn resolve_ids_on_realm(
         return Ok(out);
     }
     let app_id = super::wg_realm::application_id(realm);
-    let host = super::wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
+    let host = super::wg_realm::api_host(realm)?;
     let ids: Vec<i64> = entries.iter().map(|(_, _, id)| *id).collect();
     let info_fut = async { fetch_account_info_chunked(client, &app_id, host, &ids).await };
     let clan_fut = async { fetch_clan_info_for_accounts(client, &app_id, host, &ids).await };
@@ -874,8 +872,7 @@ async fn fetch_account_info_chunked(
                  statistics.rank_solo,statistics.rank_div2,statistics.rank_div3"
             ),
         )
-        .await
-        .map_err(anyhow::Error::msg)?;
+        .await?;
         let parsed = resp
             .json::<WgResponse<serde_json::Value>>()
             .await

@@ -28,6 +28,7 @@
 //! The self-relaunch handoff only writes one JSON file to a path the parent
 //! chose under the app's own cache dir; the child accepts no other verbs.
 
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -456,6 +457,7 @@ fn av_state_label(state: u32) -> &'static str {
 
 #[cfg(windows)]
 mod win {
+    use super::anyhow;
     use super::{
         ELEVATED_FLAG, ElevationStatus, HardwareReport, HardwareSection, av_state_label,
         dmtf_display, drive_type_name, fmt_bps, fmt_gib, memory_type_name, uptime_since,
@@ -569,9 +571,9 @@ mod win {
         }
     }
 
-    fn rows(con: &WMIConnection, sql: &str) -> Result<Vec<Row>, String> {
+    fn rows(con: &WMIConnection, sql: &str) -> anyhow::Result<Vec<Row>> {
         con.raw_query::<Row>(sql)
-            .map_err(|e| format!("WMI `{sql}`: {e}"))
+            .map_err(|e| anyhow!("WMI `{sql}`: {e}"))
     }
 
     fn section_title(id: &str) -> &'static str {
@@ -956,7 +958,7 @@ mod win {
                     sweep.push("os", lines);
                 },
                 Ok(_) => sweep.err("Win32_OperatingSystem returned no rows"),
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -990,7 +992,7 @@ mod win {
                     }
                     sweep.push("cpu", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1036,7 +1038,7 @@ mod win {
                     }
                     sweep.push("memory", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1064,7 +1066,7 @@ mod win {
                     sweep.push("motherboard", lines);
                 },
                 Ok(_) => sweep.err("Win32_BaseBoard returned no rows"),
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1086,7 +1088,7 @@ mod win {
                     }
                 },
                 Ok(_) => sweep.err("Win32_ComputerSystem returned no rows"),
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1115,7 +1117,7 @@ mod win {
                     sweep.push("motherboard", lines);
                 },
                 Ok(_) => sweep.err("Win32_BIOS returned no rows"),
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1151,7 +1153,7 @@ mod win {
                     }
                     sweep.push("gpu", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1193,7 +1195,7 @@ mod win {
                     }
                     sweep.push("disks", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1236,7 +1238,7 @@ mod win {
                     }
                     sweep.push("volumes", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(
@@ -1275,7 +1277,7 @@ mod win {
                     }
                     sweep.push("network", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
 
             match rows(con, "SELECT Name, Manufacturer FROM Win32_SoundDevice") {
@@ -1298,7 +1300,7 @@ mod win {
                     }
                     sweep.push("sound", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             }
         }
 
@@ -1335,7 +1337,7 @@ mod win {
                     }
                     sweep.push("monitors", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             },
             Err(e) => sweep.err(format!("connect root\\wmi: {e}")),
         }
@@ -1363,7 +1365,7 @@ mod win {
                     }
                     sweep.push("antivirus", lines);
                 },
-                Err(e) => sweep.err(e),
+                Err(e) => sweep.err(e.to_string()),
             },
             Err(e) => sweep.err(format!(
                 "connect root\\SecurityCenter2 (server SKU or WSC off): {e}"
@@ -1454,7 +1456,7 @@ mod win {
         use windows::core::{PCWSTR, w};
 
         let dir = crate::paths::ensure_cache_dir()
-            .map_err(ElevateErr::Failed)?
+            .map_err(|e| ElevateErr::Failed(e.to_string()))?
             .join("feedback-hw");
         std::fs::create_dir_all(&dir)
             .map_err(|e| ElevateErr::Failed(format!("create {}: {e}", dir.display())))?;

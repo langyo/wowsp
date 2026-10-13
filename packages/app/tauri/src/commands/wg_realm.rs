@@ -13,6 +13,8 @@
 //! modules route realm "cn" through `wg_api_cn` instead; only the vortex and
 //! clans hosts exist for it here.
 
+use anyhow::anyhow;
+
 /// Public WG application id (from ApeRadar's open source — rate-limited per
 /// IP, not secret). Override with the `WOWSP_WG_APPLICATION_ID` env var.
 pub const WG_APP_ID: &str = "447ec579e994976e39dec0e7d0bac644";
@@ -24,14 +26,14 @@ pub const LESTA_APP_ID: &str = "c984faa7dc529f4cb0139505d5e8043c";
 
 /// Full API host for one realm. Callers build request URLs as
 /// `https://{host}/wows/<method>/`.
-pub fn api_host(realm: &str) -> Result<&'static str, String> {
+pub fn api_host(realm: &str) -> anyhow::Result<&'static str> {
     Ok(match realm {
         "ru" => "api.korabli.su",
         "eu" => "api.worldofwarships.eu",
         "na" => "api.worldofwarships.com",
         "asia" => "api.worldofwarships.asia",
         other => {
-            return Err(format!(
+            return Err(anyhow!(
                 "unsupported realm '{other}' (cn has no WG public API and is served by the vortex endpoints; expected one of ru/eu/na/asia/cn)"
             ));
         },
@@ -43,7 +45,7 @@ pub fn api_host(realm: &str) -> Result<&'static str, String> {
 /// reqwest follows by default. The CN cluster only exposes vortex (see the
 /// module docs) — its host backs profile.wowsgame.cn and is consumed by
 /// `wg_api_cn`.
-pub fn vortex_host(realm: &str) -> Result<&'static str, String> {
+pub fn vortex_host(realm: &str) -> anyhow::Result<&'static str> {
     Ok(match realm {
         "ru" => "vortex.korabli.su",
         "eu" => "vortex.worldofwarships.eu",
@@ -51,7 +53,7 @@ pub fn vortex_host(realm: &str) -> Result<&'static str, String> {
         "asia" => "vortex.worldofwarships.asia",
         "cn" => "vortex.wowsgame.cn",
         other => {
-            return Err(format!(
+            return Err(anyhow!(
                 "unsupported realm '{other}' (expected one of ru/eu/na/asia/cn)"
             ));
         },
@@ -69,7 +71,7 @@ pub fn cn_clans_host() -> &'static str {
 /// payloads are identical cluster-wide, but the CN cluster has no
 /// `/wows/encyclopedia/**` endpoint, so its queries are served from the ASIA
 /// API (same convention `get_game_version` already hardcodes).
-pub fn encyclopedia_host(realm: &str) -> Result<&'static str, String> {
+pub fn encyclopedia_host(realm: &str) -> anyhow::Result<&'static str> {
     api_host(if realm == "cn" { "asia" } else { realm })
 }
 

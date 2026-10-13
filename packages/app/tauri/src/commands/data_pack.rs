@@ -149,8 +149,7 @@ async fn fetch_manifest(client: &reqwest::Client) -> anyhow::Result<DataManifest
 /// The intact cached kit's sha. A matching sidecar alone cannot make a
 /// missing/corrupt body current, or refresh would never repair that cache.
 fn local_kit_sha() -> anyhow::Result<Option<String>> {
-    // appdata_dir_path stays String-typed (see appdata.rs) — bridge verbatim.
-    local_kit_sha_in(&appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)
+    local_kit_sha_in(&appdata::appdata_dir_path()?)
 }
 
 fn local_kit_sha_in(dir: &Path) -> anyhow::Result<Option<String>> {
@@ -177,7 +176,7 @@ pub fn data_pack_info() -> CommandResult<Option<String>> {
 /// The sidecar of an INTACT cached kit (sidecar present AND its sha
 /// matching the body) — `None` for no cache or a corrupt one.
 fn verified_kit_meta() -> anyhow::Result<Option<KitMeta>> {
-    verified_kit_meta_in(&appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)
+    verified_kit_meta_in(&appdata::appdata_dir_path()?)
 }
 
 /// [`verified_kit_meta`] against an explicit directory (tests run the
@@ -219,10 +218,7 @@ pub fn get_ship_kit() -> CommandResult<Option<String>> {
     // Corrupt or tampered cache (or a missing sidecar): report absent
     // rather than serving data nobody vouched for; the next refresh
     // re-downloads over it (verification via [`verified_kit_meta`]).
-    Ok(
-        verified_kit_in(&appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)?
-            .map(|(_, body)| body),
-    )
+    Ok(verified_kit_in(&appdata::appdata_dir_path()?)?.map(|(_, body)| body))
 }
 
 /// One refresh pass for every dataset this shell knows: fetch the
@@ -248,8 +244,7 @@ pub async fn refresh_data_pack() -> CommandResult<bool> {
 }
 
 async fn refresh_kit() -> anyhow::Result<bool> {
-    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-    let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
+    let client = super::network::build_http_client()?;
     let manifest = fetch_manifest(&client).await?;
     let entry = match manifest.datasets.get(KIT_DATASET) {
         Some(entry) => entry,
@@ -261,9 +256,7 @@ async fn refresh_kit() -> anyhow::Result<bool> {
         return Ok(false);
     }
     let url = data_url(&entry.asset);
-    let part = appdata::appdata_dir_path()
-        .map_err(anyhow::Error::msg)?
-        .join(format!("{KIT_FILE}.part"));
+    let part = appdata::appdata_dir_path()?.join(format!("{KIT_FILE}.part"));
     // The tiny transfer goes through the unified download hub so the
     // data pack queues behind (never contends with) the big artifacts:
     // mirror ladder, streaming sha256 verification, the DATASET_MAX_BYTES
@@ -283,8 +276,7 @@ async fn refresh_kit() -> anyhow::Result<bool> {
             )
         },
     )
-    .await
-    .map_err(anyhow::Error::msg)?;
+    .await?;
     let bytes = tokio::fs::read(&done.path)
         .await
         .map_err(|e| anyhow!("read {}: {e}", done.path.display()))?;
@@ -298,7 +290,7 @@ async fn refresh_kit() -> anyhow::Result<bool> {
 /// garbage (or an asset name collision) fails here and the cached /
 /// bundled copy keeps serving.
 fn install_kit(bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
-    let dir = appdata::appdata_dir_path().map_err(anyhow::Error::msg)?;
+    let dir = appdata::appdata_dir_path()?;
     install_kit_in(&dir, bytes, entry)
 }
 
@@ -318,14 +310,13 @@ fn install_kit_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> anyhow::Res
     let body = std::str::from_utf8(bytes)
         .map_err(|e| anyhow!("dataset body is not UTF-8 JSON: {e}"))?
         .to_string();
-    // write_json_in stays String-typed (see appdata.rs) — bridge verbatim.
-    appdata::write_json_in(dir, KIT_FILE, &body).map_err(anyhow::Error::msg)?;
+    appdata::write_json_in(dir, KIT_FILE, &body)?;
     let meta = serde_json::to_string(&KitMeta {
         sha256: sha.to_ascii_lowercase(),
         version: entry.version.clone(),
     })
     .map_err(|e| anyhow!("serialize kit meta: {e}"))?;
-    appdata::write_json_in(dir, KIT_META, &meta).map_err(anyhow::Error::msg)?;
+    appdata::write_json_in(dir, KIT_META, &meta)?;
     Ok(true)
 }
 

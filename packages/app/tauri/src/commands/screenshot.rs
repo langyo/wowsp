@@ -203,7 +203,7 @@ pub(crate) fn default_screenshot_path() -> Result<PathBuf> {
     // paths::data_dir keeps this identical on Windows (%APPDATA%\WoWSP) and
     // resolves the app-private dir on Android, where raw dirs-next has no
     // HOME/XDG to read.
-    let wowsp_dir = crate::paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let wowsp_dir = crate::paths::ensure_data_dir()?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())

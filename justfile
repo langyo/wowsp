@@ -138,7 +138,8 @@ test target='unit' *FLAGS='':
     @just _test-{{target}} {{FLAGS}}
 
 # ── lint ──────────────────────────────────────────────────────────────
-#   just lint           → full: fmt-check + clippy + pnpm lint + i18n
+#   just lint           → full: fmt-check + clippy + anyhow policy +
+#                         pnpm lint + i18n
 #   just lint rust      → fmt-check + clippy
 #   just lint webui     → pnpm lint
 #   just lint i18n      → i18n parity check
@@ -151,6 +152,7 @@ test target='unit' *FLAGS='':
 _lint-full:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
     cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+    @python scripts/check_anyhow.py
     {{PM}} -r lint
     @python scripts/check_i18n.py
 

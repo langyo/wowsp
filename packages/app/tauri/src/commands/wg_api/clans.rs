@@ -91,18 +91,15 @@ pub async fn suggest_players(
     realm: String,
 ) -> CommandResult<Vec<PlayerSuggestion>> {
     if realm == "cn" {
-        return Ok(super::wg_api_cn::suggest_players(search)
-            .await
-            .map_err(anyhow::Error::msg)?);
+        return Ok(super::wg_api_cn::suggest_players(search).await?);
     }
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
     }
     let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm).map_err(anyhow::Error::msg)?;
-    let client = crate::commands::network::http_client_builder()
-        .map_err(anyhow::Error::msg)?
+    let host = super::wg_realm::api_host(&realm)?;
+    let client = crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| anyhow!("http client: {e}"))?;
@@ -132,8 +129,7 @@ pub async fn suggest_players(
             encode_query(&q)
         ),
     )
-    .await
-    .map_err(anyhow::Error::msg)?
+    .await?
     .json::<WgResponse<Vec<AccountListEntry>>>()
     .await
     .map_err(|e| anyhow!("account/list parse: {e}"))?;
@@ -156,18 +152,15 @@ pub async fn suggest_players(
 #[tauri::command]
 pub async fn suggest_clans(search: String, realm: String) -> CommandResult<Vec<ClanSuggestion>> {
     if realm == "cn" {
-        return Ok(super::wg_api_cn::suggest_clans(search)
-            .await
-            .map_err(anyhow::Error::msg)?);
+        return Ok(super::wg_api_cn::suggest_clans(search).await?);
     }
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
     }
     let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm).map_err(anyhow::Error::msg)?;
-    let client = crate::commands::network::http_client_builder()
-        .map_err(anyhow::Error::msg)?
+    let host = super::wg_realm::api_host(&realm)?;
+    let client = crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| anyhow!("http client: {e}"))?;
@@ -193,8 +186,7 @@ pub async fn suggest_clans(search: String, realm: String) -> CommandResult<Vec<C
             encode_query(&q)
         ),
     )
-    .await
-    .map_err(anyhow::Error::msg)?
+    .await?
     .json::<WgResponse<Vec<ClanListEntry>>>()
     .await
     .map_err(|e| anyhow!("clans/list parse: {e}"))?;
@@ -231,8 +223,7 @@ async fn fetch_clan_node(
             "https://{host}/wows/clans/info/?application_id={app_id}&clan_id={cid}&extra=members"
         ),
     )
-    .await
-    .map_err(anyhow::Error::msg)?;
+    .await?;
     let parsed: WgResponse<serde_json::Value> = resp
         .json()
         .await
@@ -283,8 +274,9 @@ pub async fn lookup_clan_info(
         return super::wg_api_cn::lookup_clan_info(clan_id, algo).await;
     }
     let app_id = super::wg_realm::application_id(&realm);
-    let host = super::wg_realm::api_host(&realm)?;
-    let client = crate::commands::network::http_client_builder()?
+    let host = super::wg_realm::api_host(&realm).map_err(|e| LookupError::from(e.to_string()))?;
+    let client = crate::commands::network::http_client_builder()
+        .map_err(|e| LookupError::from(e.to_string()))?
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
@@ -322,7 +314,8 @@ pub async fn lookup_clan_info(
                  &extra=statistics.pvp_solo,statistics.pvp_div2,statistics.pvp_div3"
             ),
         )
-        .await?;
+        .await
+        .map_err(|e| LookupError::from(e.to_string()))?;
         let parsed: WgResponse<serde_json::Value> = resp
             .json()
             .await

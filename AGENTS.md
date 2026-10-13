@@ -230,6 +230,16 @@ Before submitting, the relevant subset of `just lint` (or scoped
   `styles/admin-tokens.scss`, never the `styles` aggregate entry, which
   escapes the package), malkuth from its crates.io release, and
   `wowsunpack` / `wows-core` stay vendored.
+- **Error policy (mandatory)**: app-crate error flow is anyhow end-to-end —
+  helpers return `anyhow::Result`, Tauri commands return
+  `wowsp_tauri_shared::CommandResult` (the `CommandError(anyhow::Error)` IPC
+  shim whose `Serialize` emits the Display string, preserving the webui's
+  plain-string rejection contract). Never add `Result<_, String>` signatures
+  or new custom error types in the app crates (`scripts/check_anyhow.py`
+  enforces; the pre-existing structured wire errors `LookupError` /
+  `ElevateErr` are the only exceptions). Files importing anyhow put its
+  `use` statement first. `.context()` changes the frontend-visible message —
+  weigh it deliberately.
 
 ## 7. Sensitive Information Red Lines (mandatory; violations are incidents)
 

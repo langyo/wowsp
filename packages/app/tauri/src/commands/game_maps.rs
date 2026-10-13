@@ -16,9 +16,12 @@
 //! when a space ships in several volumes. Pure extraction/dedupe/sort lives
 //! in [`collect_map_entries`] so unit tests cover it without an install.
 
+use anyhow::anyhow;
 use std::path::Path;
 
 use serde::Serialize;
+
+use wowsp_tauri_shared::CommandResult;
 
 /// One playable map found in the install's VFS. Mirrors the frontend
 /// `GameMapEntry` interface in `packages/webui/src/api/client.ts`.
@@ -41,30 +44,32 @@ pub struct GameMapEntry {
 /// directory containing `bin/`, as detected by `detect_game_install`).
 /// Desktop only — a phone has no game install.
 #[tauri::command]
-pub async fn list_game_maps(game_root: String) -> Result<Vec<GameMapEntry>, String> {
+pub async fn list_game_maps(game_root: String) -> CommandResult<Vec<GameMapEntry>> {
     // A phone has no install to inventory; answer with a clean error instead
     // of the misleading "no bin/ version dir" one. Exactly one of the two
     // bodies compiles per target — same structure as gameparams.rs.
     #[cfg(mobile)]
     {
         let _ = game_root;
-        return Err("战术分析需要本地游戏客户端。".into());
+        return Err(anyhow!("战术分析需要本地游戏客户端。").into());
     }
     #[cfg(desktop)]
     {
         // Mounting the VFS walks a few hundred MB of idx structures — keep
         // it off the async runtime threads (same as gameparams.rs).
         let root = game_root.clone();
-        tokio::task::spawn_blocking(move || list_game_maps_from_install(&root))
-            .await
-            .map_err(|e| format!("地图清点任务异常退出：{e}"))?
+        Ok(
+            tokio::task::spawn_blocking(move || list_game_maps_from_install(&root))
+                .await
+                .map_err(|e| anyhow!("地图清点任务异常退出：{e}"))??,
+        )
     }
 }
 
 /// Synchronous core of [`list_game_maps`]: mount the install's VFS and
 /// resolve every `spaces/<id>/minimap.png` marker to its backing volume.
 #[cfg(desktop)]
-fn list_game_maps_from_install(game_root: &str) -> Result<Vec<GameMapEntry>, String> {
+fn list_game_maps_from_install(game_root: &str) -> anyhow::Result<Vec<GameMapEntry>> {
     use std::fs;
 
     use wowsunpack::data::idx;
@@ -73,7 +78,7 @@ fn list_game_maps_from_install(game_root: &str) -> Result<Vec<GameMapEntry>, Str
 
     let root = Path::new(game_root);
     if !root.join("bin").is_dir() {
-        return Err(format!(
+        return Err(anyhow!(
             "游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。"
         ));
     }
@@ -81,7 +86,7 @@ fn list_game_maps_from_install(game_root: &str) -> Result<Vec<GameMapEntry>, Str
     // The newest build actually carrying idx/ index files (same rule the
     // GameParams unpacker uses — Steam installs keep several builds around).
     let build = super::gameparams::latest_build_with_idx(root).ok_or_else(|| {
-        format!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
+        anyhow!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
     })?;
 
     // Load every idx of the build, tolerating individual parse failures (a
@@ -92,7 +97,7 @@ fn list_game_maps_from_install(game_root: &str) -> Result<Vec<GameMapEntry>, Str
     let mut idx_files = Vec::new();
     let mut idx_errors: Vec<(String, String)> = Vec::new();
     let dir_entries =
-        fs::read_dir(&idx_dir).map_err(|e| format!("读取 idx 目录失败（{idx_dir:?}）：{e}"))?;
+        fs::read_dir(&idx_dir).map_err(|e| anyhow!("读取 idx 目录失败（{idx_dir:?}）：{e}"))?;
     for entry in dir_entries.flatten() {
         if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             continue;
@@ -112,12 +117,12 @@ fn list_game_maps_from_install(game_root: &str) -> Result<Vec<GameMapEntry>, Str
             .map(|(n, e)| format!("{n}: {e}"))
             .collect::<Vec<_>>()
             .join("；");
-        return Err(format!("build {build} 的 idx 文件全部解析失败：{detail}"));
+        return Err(anyhow!("build {build} 的 idx 文件全部解析失败：{detail}"));
     }
 
     let pkgs_dir = root.join("res_packages");
     if !pkgs_dir.exists() {
-        return Err(format!(
+        return Err(anyhow!(
             "res_packages 目录缺失：{}（游戏安装不完整或正在更新）。请稍后重试或重新指定安装路径。",
             pkgs_dir.display()
         ));

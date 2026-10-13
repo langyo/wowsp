@@ -18,11 +18,7 @@ use crate::paths;
 /// directly (encyclopedia / gameparams / ship_stats / trends) so they
 /// always resolve the same root as the `appdata_*` commands below —
 /// never `dirs_next` on its own.
-///
-/// PINNED to `Result<_, String>` while still-String callers remain
-/// (playtime / trends `?` this directly); anyhow callers bridge via
-/// `map_err(anyhow::Error::msg)`, which renders the message verbatim.
-pub(crate) fn appdata_dir_path() -> Result<PathBuf, String> {
+pub(crate) fn appdata_dir_path() -> anyhow::Result<PathBuf> {
     paths::ensure_data_dir()
 }
 
@@ -75,22 +71,16 @@ pub(crate) fn data_file_path(dir: &Path, file: &str) -> anyhow::Result<PathBuf> 
 
 /// Read a file from the AppData root. Returns `None` when the file doesn't
 /// exist yet (the "no cache yet" state every consumer treats as empty).
-///
-/// PINNED to `Result<_, String>` while still-String callers remain
-/// (trends `?`s this directly); anyhow callers bridge via
-/// `map_err(anyhow::Error::msg)`, which renders the message verbatim.
-pub(crate) fn read_appdata_json(file: &str) -> Result<Option<String>, String> {
+pub(crate) fn read_appdata_json(file: &str) -> anyhow::Result<Option<String>> {
     read_json_in(&appdata_dir_path()?, file)
 }
 
-/// PINNED to `Result<_, String>` (playtime `?`s this directly); anyhow
-/// callers bridge via `map_err(anyhow::Error::msg)`.
-pub(crate) fn read_json_in(dir: &Path, file: &str) -> Result<Option<String>, String> {
-    let path = data_file_path(dir, file).map_err(|e| e.to_string())?;
+pub(crate) fn read_json_in(dir: &Path, file: &str) -> anyhow::Result<Option<String>> {
+    let path = data_file_path(dir, file)?;
     match fs::read_to_string(&path) {
         Ok(content) => Ok(Some(content)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("read {path:?}: {e}")),
+        Err(e) => Err(anyhow!("read {path:?}: {e}")),
     }
 }
 
@@ -98,39 +88,25 @@ pub(crate) fn read_json_in(dir: &Path, file: &str) -> Result<Option<String>, Str
 /// rename). Creates intermediate subdirectories (e.g. `stats-cache/x.json`)
 /// as needed.
 pub(crate) fn write_appdata_json(file: &str, content: &str) -> anyhow::Result<()> {
-    // appdata_dir_path / write_json_in stay String-typed (see above);
-    // the bridges render their messages verbatim.
-    write_json_in(
-        &appdata_dir_path().map_err(anyhow::Error::msg)?,
-        file,
-        content,
-    )
-    .map_err(anyhow::Error::msg)
+    write_json_in(&appdata_dir_path()?, file, content)
 }
 
 /// [`write_appdata_json`] against an explicit directory — the injectable
 /// form tests (and other command modules' install paths) run against a
 /// temp dir instead of the real AppData root. Same atomicity contract:
 /// tmp + rename, parent subdirectories created on demand.
-///
-/// PINNED to `Result<_, String>` (playtime returns it directly); anyhow
-/// callers bridge via `map_err(anyhow::Error::msg)`.
 pub(crate) fn write_json_in(
     dir: &std::path::Path,
     file: &str,
     content: &str,
-) -> Result<(), String> {
-    crate::atomic_file::write(
-        &data_file_path(dir, file).map_err(|e| e.to_string())?,
-        content,
-    )
-    .map_err(|e| e.to_string())
+) -> anyhow::Result<()> {
+    crate::atomic_file::write(&data_file_path(dir, file)?, content)
 }
 
 /// Read a JSON file from AppData. Returns None if the file doesn't exist yet.
 #[tauri::command]
 pub fn appdata_read(file: String) -> CommandResult<Option<String>> {
-    Ok(read_appdata_json(&file).map_err(anyhow::Error::msg)?)
+    Ok(read_appdata_json(&file)?)
 }
 
 /// Write a JSON file to AppData (atomic: write to .tmp then rename).
@@ -143,10 +119,7 @@ pub fn appdata_write(file: String, content: String) -> CommandResult<()> {
 /// Delete a file from AppData. Idempotent (missing file is OK).
 #[tauri::command]
 pub fn appdata_delete(file: String) -> CommandResult<()> {
-    Ok(delete_json_in(
-        &appdata_dir_path().map_err(anyhow::Error::msg)?,
-        &file,
-    )?)
+    Ok(delete_json_in(&appdata_dir_path()?, &file)?)
 }
 
 fn delete_json_in(dir: &Path, file: &str) -> anyhow::Result<()> {

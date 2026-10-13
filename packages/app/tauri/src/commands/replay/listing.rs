@@ -226,9 +226,7 @@ fn default_replay_dir() -> Result<PathBuf> {
 
 #[cfg(mobile)]
 fn default_replay_dir() -> Result<PathBuf> {
-    crate::paths::ensure_data_dir()
-        .map(|d| d.join("replays"))
-        .map_err(anyhow::Error::msg)
+    crate::paths::ensure_data_dir().map(|d| d.join("replays"))
 }
 
 /// Resolve the replay dir the caller asked for (explicit → env override →

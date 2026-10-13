@@ -26,10 +26,7 @@ fn tag_urls() -> Vec<String> {
 }
 
 fn cache_path() -> anyhow::Result<std::path::PathBuf> {
-    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
-    Ok(paths::ensure_data_dir()
-        .map_err(anyhow::Error::msg)?
-        .join(CACHE_FILE))
+    Ok(paths::ensure_data_dir()?.join(CACHE_FILE))
 }
 
 fn parse(raw: &str) -> Option<CatalogTagIndex> {

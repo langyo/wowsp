@@ -41,7 +41,6 @@ pub(super) fn append_ship_history(
     timestamp: i64,
 ) {
     let result = appdata_dir_path()
-        .map_err(anyhow::Error::msg)
         .and_then(|dir| append_ship_history_in(&dir, realm, account_id, stats, timestamp));
     if let Err(error) = result {
         tracing::warn!(%error, "could not append per-ship history");
@@ -118,7 +117,7 @@ pub(super) fn update_history_in<T: serde::de::DeserializeOwned + serde::Serializ
     let _writer = HISTORY_WRITE_GATE.lock().unwrap_or_else(|p| p.into_inner());
     // Only a missing file starts fresh. A read/parse failure must preserve
     // the existing history, including a temporarily locked Windows file.
-    let mut history = match super::appdata::read_json_in(dir, file).map_err(anyhow::Error::msg)? {
+    let mut history = match super::appdata::read_json_in(dir, file)? {
         Some(raw) => {
             serde_json::from_str(&raw).map_err(|error| anyhow!("parse history {file}: {error}"))?
         },
@@ -127,7 +126,7 @@ pub(super) fn update_history_in<T: serde::de::DeserializeOwned + serde::Serializ
     update(&mut history);
     let raw = serde_json::to_string(&history)
         .map_err(|error| anyhow!("serialize history {file}: {error}"))?;
-    super::appdata::write_json_in(dir, file, &raw).map_err(anyhow::Error::msg)
+    super::appdata::write_json_in(dir, file, &raw)
 }
 
 /// A career row with battles recorded but zero damage AND zero kills cannot
@@ -198,12 +197,7 @@ pub async fn snapshot_player_stats(
         pr,
     };
 
-    append_snapshot_in(
-        &appdata_dir_path().map_err(anyhow::Error::msg)?,
-        &realm,
-        account_id,
-        snap.clone(),
-    )?;
+    append_snapshot_in(&appdata_dir_path()?, &realm, account_id, snap.clone())?;
     Ok(snap)
 }
 
@@ -242,7 +236,5 @@ async fn get_game_version_cached() -> Result<GameVersionInfo> {
         }
     }
     // Fall back to a live fetch via the encyclopedia command's path.
-    crate::commands::encyclopedia::get_game_version_pub()
-        .await
-        .map_err(anyhow::Error::msg)
+    crate::commands::encyclopedia::get_game_version_pub().await
 }

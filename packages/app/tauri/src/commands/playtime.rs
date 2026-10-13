@@ -161,11 +161,11 @@ fn loaded_state(
 /// is written back immediately so the once-only import cannot repeat after
 /// a crash.
 fn load_store() -> Result<PlaytimeStore> {
-    load_store_in(&super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?)
+    load_store_in(&super::appdata::appdata_dir_path()?)
 }
 
 fn load_store_in(dir: &Path) -> Result<PlaytimeStore> {
-    match super::appdata::read_json_in(dir, PLAYTIME_FILE).map_err(anyhow::Error::msg)? {
+    match super::appdata::read_json_in(dir, PLAYTIME_FILE)? {
         Some(raw) => serde_json::from_str::<PlaytimeStore>(&raw)
             .map_err(|e| anyhow!("parse playtime ledger: {e}")),
         None => {
@@ -177,15 +177,12 @@ fn load_store_in(dir: &Path) -> Result<PlaytimeStore> {
 }
 
 fn persist_store(store: &PlaytimeStore) -> Result<()> {
-    persist_store_in(
-        &super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?,
-        store,
-    )
+    persist_store_in(&super::appdata::appdata_dir_path()?, store)
 }
 
 fn persist_store_in(dir: &Path, store: &PlaytimeStore) -> Result<()> {
     let json = serde_json::to_string(store).map_err(|e| anyhow!("serialize playtime: {e}"))?;
-    super::appdata::write_json_in(dir, PLAYTIME_FILE, &json).map_err(anyhow::Error::msg)
+    super::appdata::write_json_in(dir, PLAYTIME_FILE, &json)
 }
 
 // ── observation (fed by the session poller) ────────────────────────────────
@@ -617,9 +614,7 @@ impl Default for BattleCache {
 /// untouched for a later retry. Only missing files and known pre-history
 /// schemas start empty; legacy payloads re-parse from their live replays.
 fn load_battle_cache_in(dir: &Path) -> Result<BattleCache> {
-    let Some(raw) =
-        super::appdata::read_json_in(dir, BATTLES_CACHE_FILE).map_err(anyhow::Error::msg)?
-    else {
+    let Some(raw) = super::appdata::read_json_in(dir, BATTLES_CACHE_FILE)? else {
         return Ok(BattleCache::default());
     };
     let document: serde_json::Value =
@@ -650,7 +645,7 @@ fn load_battle_cache_in(dir: &Path) -> Result<BattleCache> {
 /// helper). The scan gate keeps each writer's input history current.
 fn save_battle_cache_in(dir: &Path, cache: &BattleCache) -> Result<()> {
     let json = serde_json::to_string(cache).map_err(|e| anyhow!("serialize battle cache: {e}"))?;
-    super::appdata::write_json_in(dir, BATTLES_CACHE_FILE, &json).map_err(anyhow::Error::msg)
+    super::appdata::write_json_in(dir, BATTLES_CACHE_FILE, &json)
 }
 
 /// Stamp a battle row with the root's owning install — the exact
@@ -832,7 +827,7 @@ fn retain_own_battles(battles: Vec<PlaytimeBattle>) -> Vec<PlaytimeBattle> {
 /// The blocking core both ledger commands share: load the cache, scan the
 /// roots, answer the rows (and write the cache back only when it changed).
 fn scan_battles() -> Result<PlaytimeBattles> {
-    let dir = super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?;
+    let dir = super::appdata::appdata_dir_path()?;
     let battles = scan_battle_cache_in(&dir, |cache| {
         let roots = super::game_context::replay_roots();
         battles_from_roots(&roots, cache)
@@ -877,7 +872,7 @@ pub async fn playtime_battles() -> CommandResult<PlaytimeBattles> {
 #[tauri::command]
 pub async fn playtime_battles_reset() -> CommandResult<PlaytimeBattles> {
     tokio::task::spawn_blocking(|| {
-        let dir = super::appdata::appdata_dir_path().map_err(anyhow::Error::msg)?;
+        let dir = super::appdata::appdata_dir_path()?;
         if let Err(e) = save_battle_cache_in(&dir, &BattleCache::default()) {
             tracing::warn!(error = %e, "playtime battle cache reset failed");
         }

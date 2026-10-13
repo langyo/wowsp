@@ -23,6 +23,7 @@
 //!   - best-effort everywhere: a poisoned mutex degrades to a no-op, a
 //!     recording failure must never fail the lookup it rode on.
 
+use anyhow::anyhow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -129,7 +130,7 @@ pub(crate) async fn recorded_get(
     host: &str,
     label: &str,
     url: String,
-) -> Result<reqwest::Response, String> {
+) -> anyhow::Result<reqwest::Response> {
     let outcome = client.get(&url).send().await;
     match &outcome {
         Ok(resp) => {
@@ -142,7 +143,7 @@ pub(crate) async fn recorded_get(
         },
         Err(e) => record_failure(host, &format!("{label} request: {e}")),
     }
-    outcome.map_err(|e| format!("{label} request: {e}"))
+    outcome.map_err(|e| anyhow!("{label} request: {e}"))
 }
 
 /// `recorded_get` for callers that swallow errors (best-effort paths):
@@ -218,13 +219,6 @@ pub struct UpstreamHostReport {
 /// `#[tauri::command]`: the joined catalogue + health table. Stateless —
 /// the frontend polls it around its own lookup failures and renders the
 /// verdict (streak threshold, staleness) itself.
-///
-/// Note on the module's error plumbing: only the command is anyhow-migrated
-/// here; [`recorded_get`] deliberately keeps the historical
-/// `Result<_, String>` shape — the wave-1 lookup arms (wg_api's
-/// LookupError paths and the still-String encyclopedia module) consume it
-/// through their `From<String>` bridges / direct `?`, so flipping it to
-/// anyhow would break call sites outside this migration's file set.
 #[tauri::command]
 pub async fn upstream_health() -> CommandResult<Vec<UpstreamHostReport>> {
     let catalogue = host_catalogue();

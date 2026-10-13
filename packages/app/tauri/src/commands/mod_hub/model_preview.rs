@@ -301,10 +301,7 @@ pub fn mod_hub_read_model(
     members.dedup();
     members.truncate(FAMILY_CAP);
 
-    // ensure_cache_dir stays String-typed (see paths.rs) — bridge verbatim.
-    let cache_dir = crate::paths::ensure_cache_dir()
-        .map_err(anyhow::Error::msg)?
-        .join("model-previews");
+    let cache_dir = crate::paths::ensure_cache_dir()?.join("model-previews");
     fs::create_dir_all(&cache_dir).map_err(|e| anyhow!("cache dir: {e}"))?;
 
     let mut parts: Vec<ModelPreviewPart> = Vec::new();

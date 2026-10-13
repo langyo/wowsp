@@ -133,8 +133,7 @@ fn load_from(dir: &Path) -> GameConfigFile {
 /// JSON twin (only after the write succeeded).
 fn set_file_from(dir: &Path, file: &GameConfigFile) -> anyhow::Result<()> {
     let canonical = canonical_toml(file)?;
-    // store stays String-typed (see settings_store.rs) — bridge verbatim.
-    settings_store::store(dir, GAME_CONFIG_FILE, &canonical).map_err(anyhow::Error::msg)?;
+    settings_store::store(dir, GAME_CONFIG_FILE, &canonical)?;
     settings_store::retire_legacy_json(dir, LEGACY_GAME_CONFIG_FILE);
     Ok(())
 }
@@ -144,8 +143,7 @@ fn set_file_from(dir: &Path, file: &GameConfigFile) -> anyhow::Result<()> {
 /// is converted on the very first startup render.
 #[tauri::command]
 pub fn get_game_config() -> CommandResult<GameConfigResponse> {
-    // ensure_data_dir stays String-typed (see paths.rs) — bridge verbatim.
-    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let dir = paths::ensure_data_dir()?;
     let file = load_from(&dir);
     Ok(GameConfigResponse {
         active_path: file.active_path,
@@ -161,7 +159,7 @@ pub fn get_game_config() -> CommandResult<GameConfigResponse> {
 pub fn set_game_config(active_path: Option<String>) -> CommandResult<GameConfigResponse> {
     let active_path = sanitize_path(active_path);
     tracing::info!(?active_path, "active game install changed");
-    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let dir = paths::ensure_data_dir()?;
     let mut file = load_from(&dir);
     file.active_path = active_path;
     set_file_from(&dir, &file)?;
@@ -219,7 +217,7 @@ fn add_replay_dir_in(
 #[tauri::command]
 pub async fn add_replay_dir(path: String) -> CommandResult<GameConfigResponse> {
     Ok(tokio::task::spawn_blocking(move || {
-        let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+        let dir = paths::ensure_data_dir()?;
         let roots = super::game_context::replay_roots();
         add_replay_dir_in(&dir, &path, &roots)
     })
@@ -232,7 +230,7 @@ pub async fn add_replay_dir(path: String) -> CommandResult<GameConfigResponse> {
 /// it does not rewrite history (see `commands/playtime.rs`).
 #[tauri::command]
 pub fn remove_replay_dir(path: String) -> CommandResult<GameConfigResponse> {
-    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let dir = paths::ensure_data_dir()?;
     let file = remove_replay_dir_in(&dir, &path)?;
     Ok(GameConfigResponse {
         active_path: file.active_path,

@@ -244,8 +244,7 @@ struct LocalVersion {
 }
 
 fn cache_root() -> anyhow::Result<PathBuf> {
-    // ensure_cache_dir stays String-typed (see paths.rs) — bridge verbatim.
-    paths::ensure_cache_dir().map_err(anyhow::Error::msg)
+    paths::ensure_cache_dir()
 }
 
 fn read_local_version(cache: &Path) -> LocalVersion {
@@ -556,7 +555,6 @@ async fn download_archive(
     base_received: u64,
     base_total: u64,
 ) -> anyhow::Result<()> {
-    // transfer stays String-typed (see download_hub.rs) — bridge verbatim.
     download_hub::transfer(
         app,
         DownloadRequest {
@@ -577,7 +575,6 @@ async fn download_archive(
     )
     .await
     .map(|_| ())
-    .map_err(anyhow::Error::msg)
 }
 
 // ── Staging / publication ─────────────────────────────────────────────────
@@ -1046,8 +1043,7 @@ async fn ensure_pack() -> anyhow::Result<String> {
     #[cfg(not(mobile))]
     {
         let cache = cache_root()?;
-        // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-        let client = crate::commands::network::build_http_client().map_err(anyhow::Error::msg)?;
+        let client = crate::commands::network::build_http_client()?;
 
         // Route through the SAME single-flight guard the panel download uses.
         // While another download holds the guard, sleep and retry — once
@@ -1201,8 +1197,7 @@ pub async fn get_res_status() -> CommandResult<ResStatus> {
 #[tauri::command]
 pub async fn check_res_update() -> CommandResult<ResUpdate> {
     let cache = cache_root()?;
-    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-    let client = crate::commands::network::build_http_client().map_err(anyhow::Error::msg)?;
+    let client = crate::commands::network::build_http_client()?;
     let manifest = fetch_manifest(&client).await.ok();
     let local = read_local_version(&cache);
 
@@ -1288,7 +1283,7 @@ pub async fn check_res_update() -> CommandResult<ResUpdate> {
 pub async fn res_download(app: AppHandle) -> CommandResult<()> {
     // Build the client BEFORE taking the guard — an early error here must
     // not leak the single-flight slot.
-    let client = crate::commands::network::build_http_client().map_err(anyhow::Error::msg)?;
+    let client = crate::commands::network::build_http_client()?;
     {
         let mut guard = DOWNLOAD_ACTIVE
             .lock()
@@ -1366,21 +1361,11 @@ pub async fn clear_res() -> CommandResult<()> {
 /// the cache dir. User data (stats, ship history, accounts, mod ledger) is
 /// deliberately NOT listed.
 fn aux_cache_dir(scope: &str) -> anyhow::Result<PathBuf> {
-    // ensure_cache_dir / ensure_data_dir stay String-typed (see paths.rs) —
-    // the bridges render the messages verbatim.
     match scope {
-        "image-cache" => Ok(paths::ensure_cache_dir()
-            .map_err(anyhow::Error::msg)?
-            .join("image-cache")),
-        "gameparams" => Ok(paths::ensure_data_dir()
-            .map_err(anyhow::Error::msg)?
-            .join("gameparams")),
-        "encyclopedia" => Ok(paths::ensure_data_dir()
-            .map_err(anyhow::Error::msg)?
-            .join("encyclopedia")),
-        "community" => Ok(paths::ensure_data_dir()
-            .map_err(anyhow::Error::msg)?
-            .join("community")),
+        "image-cache" => Ok(paths::ensure_cache_dir()?.join("image-cache")),
+        "gameparams" => Ok(paths::ensure_data_dir()?.join("gameparams")),
+        "encyclopedia" => Ok(paths::ensure_data_dir()?.join("encyclopedia")),
+        "community" => Ok(paths::ensure_data_dir()?.join("community")),
         other => Err(anyhow!("unknown cache scope: {other}")),
     }
 }

@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use futures::future::join_all;
-use wowsp_tauri_shared::SupporterAvatar;
+use wowsp_tauri_shared::{CommandResult, SupporterAvatar};
 
 use super::appdata;
 
@@ -115,7 +115,7 @@ fn normalize_face(url: &str) -> Option<String> {
 /// (broken proxy config) — per-uid failures answer the cached URL or a
 /// `null` face.
 #[tauri::command]
-pub async fn get_supporter_avatars(uids: Vec<u64>) -> Result<Vec<SupporterAvatar>, String> {
+pub async fn get_supporter_avatars(uids: Vec<u64>) -> CommandResult<Vec<SupporterAvatar>> {
     let client = super::network::build_http_client()?;
     let mut cache = load_cache();
     let results = join_all(

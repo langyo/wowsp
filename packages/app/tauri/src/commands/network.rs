@@ -253,11 +253,10 @@ pub fn set_network_config(config: NetworkConfig) -> CommandResult<NetworkConfigR
     let config = sanitize(config);
     // Mode only — a manual proxy URL may embed credentials.
     tracing::info!(mode = ?config.mode, "network config saved");
-    // ensure_data_dir / store stay String-typed (see paths.rs /
-    // settings_store.rs) — the bridges render the messages verbatim.
-    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    // ensure_data_dir / store are anyhow errors now — `?` flows verbatim.
+    let dir = paths::ensure_data_dir()?;
     let canonical = canonical_toml(&config)?;
-    settings_store::store(&dir, NETWORK_CONFIG_FILE, &canonical).map_err(anyhow::Error::msg)?;
+    settings_store::store(&dir, NETWORK_CONFIG_FILE, &canonical)?;
     settings_store::retire_legacy_json(&dir, LEGACY_NETWORK_CONFIG_FILE);
     Ok(config.into())
 }
@@ -346,12 +345,7 @@ fn wininet_proxy() -> Option<String> {
 /// JSON lookups) apply it on the returned builder before build(). Connect
 /// gets a global ceiling so a dead host can never stall a lookup forever —
 /// per-request bodies set their own `.timeout()` where it matters.
-///
-/// PINNED to `Result<_, String>`: the wg_api lookup commands `?` this into
-/// their LookupError arms (`From<String>`), and still-String callers
-/// (changelog / supporters / update) use it directly; anyhow callers bridge
-/// via `map_err(anyhow::Error::msg)`, which renders the message verbatim.
-pub fn http_client_builder() -> Result<reqwest::ClientBuilder, String> {
+pub fn http_client_builder() -> anyhow::Result<reqwest::ClientBuilder> {
     let config = load_config();
     let mut builder = reqwest::Client::builder()
         .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
@@ -369,7 +363,7 @@ pub fn http_client_builder() -> Result<reqwest::ClientBuilder, String> {
     }
     if let Some(url) = effective_proxy(&config) {
         let mut proxy =
-            reqwest::Proxy::all(url.clone()).map_err(|e| format!("proxy {url}: {e}"))?;
+            reqwest::Proxy::all(url.clone()).map_err(|e| anyhow!("proxy {url}: {e}"))?;
         // Loopback targets (locally served update artifacts, dev mirrors)
         // must never ride the proxy — several proxies refuse or mangle
         // requests back to the very machine they run on.
@@ -382,22 +376,19 @@ pub fn http_client_builder() -> Result<reqwest::ClientBuilder, String> {
 }
 
 /// Convenience: build the proxy-aware client right away.
-///
-/// PINNED to `Result<_, String>` (see [http_client_builder]); anyhow
-/// callers bridge via `map_err(anyhow::Error::msg)`.
-pub fn build_http_client() -> Result<reqwest::Client, String> {
+pub fn build_http_client() -> anyhow::Result<reqwest::Client> {
     http_client_builder()?
         .build()
-        .map_err(|e| format!("http client: {e}"))
+        .map_err(|e| anyhow!("http client: {e}"))
 }
 
 /// The Mozilla CA root bundle vendored at `res/ca-bundle.pem` (refreshed
 /// from https://curl.se/docs/caextract.html). Android-only TLS trust anchor
 /// source — see the comment in [http_client_builder].
 #[cfg(target_os = "android")]
-fn android_tls_roots() -> Result<Vec<reqwest::tls::Certificate>, String> {
+fn android_tls_roots() -> anyhow::Result<Vec<reqwest::tls::Certificate>> {
     let pem: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/ca-bundle.pem"));
-    reqwest::tls::Certificate::from_pem_bundle(pem).map_err(|e| format!("bundled CA bundle: {e}"))
+    reqwest::tls::Certificate::from_pem_bundle(pem).map_err(|e| anyhow!("bundled CA bundle: {e}"))
 }
 
 #[cfg(test)]

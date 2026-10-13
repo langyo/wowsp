@@ -63,7 +63,7 @@ pub async fn pairing_pull_gamedata(
     /// Retry-After (seconds). Matches the server's own hint.
     const GAMEDATA_RETRY_AFTER_FALLBACK_SECS: u64 = 2;
 
-    let cache = crate::paths::ensure_cache_dir().map_err(anyhow::Error::msg)?;
+    let cache = crate::paths::ensure_cache_dir()?;
     let workspace = std::sync::Arc::new(GamedataWorkspace::create(&cache)?);
     let part = workspace.part();
     let started = std::time::Instant::now();
@@ -71,7 +71,7 @@ pub async fn pairing_pull_gamedata(
     let status_is_success = match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
+            let client = super::network::build_http_client()?;
             let url = format!("http://{host}:{port}/api/gamedata");
             let resp = loop {
                 let resp = client
@@ -118,7 +118,6 @@ pub async fn pairing_pull_gamedata(
                 &part,
             )
             .await
-            .map_err(anyhow::Error::msg)
         },
     };
 
@@ -139,7 +138,7 @@ pub async fn pairing_pull_gamedata(
         );
         return Err(e.into());
     }
-    let data_dir = crate::paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let data_dir = crate::paths::ensure_data_dir()?;
     let extract = {
         let workspace = workspace.clone();
         tokio::task::spawn_blocking(move || extract_gamedata_zip(&workspace.part(), &data_dir))

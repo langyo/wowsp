@@ -31,6 +31,7 @@
 //! JSON on purpose: they are big, opaque to the user, and owned by the webui
 //! stores; only human-editable configuration moved to TOML.
 
+use anyhow::Result;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -91,13 +92,9 @@ pub(crate) fn load_raw(dir: &Path, toml_file: &str, legacy_json_file: &str) -> L
 
 /// Atomic replacement, serialized with conditional heal writes. Each write
 /// exclusively creates its own temporary file and removes it on failure.
-///
-/// PINNED to `Result<_, String>` while still-String callers remain
-/// (overlay_config's save command `?`s this directly); the bridge renders
-/// the anyhow message verbatim, so the wire text is unchanged.
-pub(crate) fn store(dir: &Path, file: &str, content: &str) -> Result<(), String> {
+pub(crate) fn store(dir: &Path, file: &str, content: &str) -> Result<()> {
     let _gate = WRITE_GATE.lock().unwrap_or_else(|e| e.into_inner());
-    crate::atomic_file::write(&dir.join(file), content).map_err(|e| e.to_string())?;
+    crate::atomic_file::write(&dir.join(file), content)?;
     tracing::debug!(file, bytes = content.len(), "settings file written");
     Ok(())
 }

@@ -207,15 +207,11 @@ struct Job {
 /// arrival order; [`cancel`] tears a queued or running job down
 /// cooperatively. `app` is `None` for headless callers (startup ensure
 /// paths): the transfer runs, the progress events are simply not emitted.
-/// PINNED to `Result<_, String>` while still-String callers remain (update
-/// `?`s this directly); the bridge renders the anyhow message verbatim.
 pub async fn transfer(
     app: Option<&AppHandle>,
     req: DownloadRequest,
-) -> Result<TransferDone, String> {
-    transfer_on(hub(), app, req)
-        .await
-        .map_err(|e| e.to_string())
+) -> anyhow::Result<TransferDone> {
+    transfer_on(hub(), app, req).await
 }
 
 /// The same queue protocol with a caller-owned worker for isolated tests.
@@ -533,8 +529,7 @@ async fn run_transfer(
     if cancel.load(Ordering::SeqCst) {
         return Err(anyhow::Error::msg(req.cancel_msg.clone()));
     }
-    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-    let client = build_http_client().map_err(anyhow::Error::msg)?;
+    let client = build_http_client()?;
 
     if let Some(parent) = req.part.parent() {
         if !parent.as_os_str().is_empty() {

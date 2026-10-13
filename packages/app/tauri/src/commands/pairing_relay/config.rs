@@ -18,8 +18,7 @@ pub fn load_relay_config() -> RelayConfig {
 }
 
 fn save_relay_config(config: &RelayConfig) -> Result<()> {
-    // `paths` still speaks String errors — bridge verbatim.
-    let dir = crate::paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let dir = crate::paths::ensure_data_dir()?;
     let path = dir.join(RELAY_CONFIG_FILE);
     let tmp = dir.join(format!("{RELAY_CONFIG_FILE}.tmp"));
     let json = serde_json::to_string(config).map_err(|e| anyhow!("serialize config: {e}"))?;

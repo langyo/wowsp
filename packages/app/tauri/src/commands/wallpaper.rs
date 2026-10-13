@@ -19,10 +19,7 @@ use crate::paths;
 /// (`%APPDATA%/WoWSP/wallpapers/` locally, `<exe>/data/wallpapers/` in
 /// portable mode), created on first use.
 fn wallpapers_dir() -> Result<PathBuf> {
-    // `paths` still speaks String errors — bridge verbatim.
-    let dir = paths::ensure_data_dir()
-        .map_err(anyhow::Error::msg)?
-        .join("wallpapers");
+    let dir = paths::ensure_data_dir()?.join("wallpapers");
     std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {:?}: {e}", dir))?;
     Ok(dir)
 }

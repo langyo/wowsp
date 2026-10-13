@@ -1,6 +1,7 @@
-use super::*;
 use anyhow::{Result, anyhow};
 use wowsp_tauri_shared::CommandResult;
+
+use super::*;
 // ─────────────────────────────────────────────────────────────────────────
 // Manual locate (screenshot-style drag box)
 // ─────────────────────────────────────────────────────────────────────────

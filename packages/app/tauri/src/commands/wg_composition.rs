@@ -241,11 +241,8 @@ async fn resolve_account_ids_uncached(realm: &str, names: Vec<String>) -> Result
             .await)
     } else {
         let app_id = wg_realm::application_id(realm);
-        // `wg_realm`'s host table stays String-typed (pinned by the wave-1
-        // lookup arms) — adapt verbatim, same for the network builder.
-        let host = wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
-        let client = crate::commands::network::http_client_builder()
-            .map_err(anyhow::Error::msg)?
+        let host = wg_realm::api_host(realm)?;
+        let client = crate::commands::network::http_client_builder()?
             .timeout(Duration::from_secs(15))
             .build()
             .map_err(|e| anyhow!("http client: {e}"))?;
@@ -351,15 +348,13 @@ async fn resolve_ship_types(realm: &str, ship_ids: &[i64]) -> HashMap<i64, Optio
 /// serves it from the ASIA API (ids are cluster-wide identical).
 async fn fetch_ship_types_online(realm: &str, ids: &[i64]) -> Result<HashMap<i64, String>> {
     let app_id = wg_realm::application_id(realm);
-    // Same String-typed host table boundary as above.
-    let host = wg_realm::encyclopedia_host(realm).map_err(anyhow::Error::msg)?;
+    let host = wg_realm::encyclopedia_host(realm)?;
     let id_list = ids
         .iter()
         .map(|i| i.to_string())
         .collect::<Vec<_>>()
         .join(",");
-    let client = crate::commands::network::http_client_builder()
-        .map_err(anyhow::Error::msg)?
+    let client = crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| anyhow!("http client: {e}"))?;
@@ -367,9 +362,8 @@ async fn fetch_ship_types_online(realm: &str, ids: &[i64]) -> Result<HashMap<i64
         "https://{host}/wows/encyclopedia/ships/?application_id={app_id}\
          &ship_id={id_list}&language=en&fields=ship_id,type"
     );
-    let resp = super::upstream_health::recorded_get(&client, host, "encyclopedia/ships", url)
-        .await
-        .map_err(anyhow::Error::msg)?;
+    let resp =
+        super::upstream_health::recorded_get(&client, host, "encyclopedia/ships", url).await?;
     let parsed: WgResponse = resp
         .json()
         .await

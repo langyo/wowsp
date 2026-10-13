@@ -392,12 +392,10 @@ pub fn set_overlay_config(table: String, roster: String) -> CommandResult<Overla
         table: parse_table_field(&table),
         roster: parse_roster_field(&roster),
     };
-    // `paths` / `settings_store` still speak String errors (the historical
-    // plain-string IPC contract) — bridge them into anyhow verbatim.
-    let dir = paths::ensure_data_dir().map_err(anyhow::Error::msg)?;
+    let dir = paths::ensure_data_dir()?;
     let canonical = canonical_toml(config)?;
     tracing::info!(table = ?config.table, roster = ?config.roster, "overlay config saved");
-    settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical).map_err(anyhow::Error::msg)?;
+    settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical)?;
     settings_store::retire_legacy_json(&dir, LEGACY_OVERLAY_CONFIG_FILE);
     let mut cache = CACHE
         .lock()

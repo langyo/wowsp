@@ -366,11 +366,11 @@ async fn fetch_ship_stats_vortex(
     mode_splits: bool,
     ctx: Option<&PartialContext>,
 ) -> Result<Vec<RawShipStats>> {
-    let host = super::wg_realm::vortex_host(realm).map_err(anyhow::Error::msg)?;
+    let host = super::wg_realm::vortex_host(realm)?;
     // The stream client: no whole-request timeout — the per-mode documents
     // are the big ones a degraded host serves at a crawl, and
     // [`read_body_streamed`] enforces the pacing instead.
-    let client = super::wg_api_cn::vortex_stream_client().map_err(anyhow::Error::msg)?;
+    let client = super::wg_api_cn::vortex_stream_client()?;
     let modes: Vec<&'static str> = if mode_splits {
         std::iter::once(SHIP_MODE_CORE)
             .chain(SHIP_MODE_SPLITS)
@@ -417,9 +417,7 @@ async fn fetch_vortex_ships_mode(
     let terminal_source = source.clone();
     with_terminal_progress(ctx, &terminal_source, async move {
         let url = format!("https://{host}/api/accounts/{account_id}/ships/{mode}/");
-        let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url)
-            .await
-            .map_err(anyhow::Error::msg)?;
+        let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url).await?;
         if !resp.status().is_success() {
             bail!("vortex ships: HTTP {}", resp.status());
         }
@@ -510,8 +508,8 @@ async fn fetch_ship_stats_official(
 ) -> Result<Vec<RawShipStats>> {
     with_terminal_progress(ctx, "official", async move {
         let app_id = super::wg_realm::application_id(realm);
-        let host = super::wg_realm::api_host(realm).map_err(anyhow::Error::msg)?;
-        let client = super::wg_api_cn::vortex_stream_client().map_err(anyhow::Error::msg)?;
+        let host = super::wg_realm::api_host(realm)?;
+        let client = super::wg_api_cn::vortex_stream_client()?;
         let fields = "ship_id,last_battle_time,pvp,pvp_solo,pvp_div2,pvp_div3,pve,\
                       rank_solo,rank_div2,rank_div3";
         const MAX_PAGES: usize = 8;
@@ -532,9 +530,8 @@ async fn fetch_ship_stats_official(
             if page > 1 {
                 url.push_str(&format!("&page_no={page}"));
             }
-            let resp = super::upstream_health::recorded_get(&client, host, "ships/stats", url)
-                .await
-                .map_err(anyhow::Error::msg)?;
+            let resp =
+                super::upstream_health::recorded_get(&client, host, "ships/stats", url).await?;
             if !resp.status().is_success() {
                 bail!("ships/stats: HTTP {}", resp.status());
             }

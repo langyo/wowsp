@@ -128,6 +128,11 @@ jobs:
         # dependency-only (--no-deps keeps their upstream lint style out of
         # this gate). Mirrors `just lint rust` / `just lint` exactly.
         run: cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+      - name: Anyhow policy
+        # No Result<_, String> error types and anyhow-first imports in the
+        # app crates (helpers return anyhow::Result, commands return
+        # CommandResult). Mirrors the `just lint` step of the same name.
+        run: python scripts/check_anyhow.py
       - name: Check
         run: cargo check -p wowsp_tauri
       - name: Test (workspace)

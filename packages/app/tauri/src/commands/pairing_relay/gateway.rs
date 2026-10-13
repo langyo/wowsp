@@ -151,9 +151,8 @@ pub(super) fn store_gateway_info(info: Option<GatewayInfo>) {
 /// direct mode; only a clean gateway manifest yields `Ok(Some(..))`.
 async fn fetch_manifest(url: &str) -> Result<Option<GatewayManifest>> {
     // The SAME shared HTTP client every other outbound request uses: the
-    // Android CA-bundle client there, SChannel on the desktop. `network`
-    // still speaks String errors — bridge verbatim.
-    let client = super::network::build_http_client().map_err(anyhow::Error::msg)?;
+    // Android CA-bundle client there, SChannel on the desktop.
+    let client = super::network::build_http_client()?;
     let resp = client
         .get(url)
         .header(reqwest::header::CACHE_CONTROL, "no-store")

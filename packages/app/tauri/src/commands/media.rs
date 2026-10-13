@@ -146,10 +146,7 @@ fn cache_key(url: &str) -> String {
 
 /// Resolve `<cache>/image-cache/<key>` for a URL, creating the directory.
 fn cache_path(url: &str) -> anyhow::Result<PathBuf> {
-    // ensure_cache_dir stays String-typed (see paths.rs) — bridge verbatim.
-    let dir = paths::ensure_cache_dir()
-        .map_err(anyhow::Error::msg)?
-        .join(IMAGE_CACHE_DIR);
+    let dir = paths::ensure_cache_dir()?.join(IMAGE_CACHE_DIR);
     std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir.join(cache_key(url)))
 }
@@ -268,8 +265,7 @@ async fn load(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
     }
 
     // Miss: fetch through the proxy-aware client (Settings → Network applies).
-    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-    let client = network::build_http_client().map_err(anyhow::Error::msg)?;
+    let client = network::build_http_client()?;
     let (bytes, content_type) = fetch_image(&client, url).await?;
     cache_write(&path, &bytes);
     Ok((bytes, content_type))
@@ -289,8 +285,7 @@ async fn load_github(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
         return Ok((bytes, content_type));
     }
 
-    // build_http_client stays String-typed (see network.rs) — bridge verbatim.
-    let client = network::build_http_client().map_err(anyhow::Error::msg)?;
+    let client = network::build_http_client()?;
     let mut last_err = anyhow!("no mirror candidates generated");
     for candidate in crate::commands::github_mirror::candidates(url) {
         match fetch_image(&client, &candidate).await {

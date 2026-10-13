@@ -197,9 +197,7 @@ pub(crate) async fn load_expected_values() -> Option<std::collections::HashMap<i
 }
 
 fn expected_values_path() -> Result<std::path::PathBuf> {
-    Ok(appdata_dir_path()
-        .map_err(anyhow::Error::msg)?
-        .join(EXPECTED_VALUES_FILE))
+    Ok(appdata_dir_path()?.join(EXPECTED_VALUES_FILE))
 }
 
 /// The cached expected-values document, any age. None when never fetched.
@@ -244,8 +242,7 @@ fn validate_expected_values(raw: &str) -> Result<()> {
 /// Fetch the expected-values document, validate it, and cache it to disk.
 /// Returns the raw document on success.
 async fn fetch_and_cache_expected_values() -> Result<String> {
-    let client = crate::commands::network::http_client_builder()
-        .map_err(anyhow::Error::msg)?
+    let client = crate::commands::network::http_client_builder()?
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| anyhow!("http client: {e}"))?;
@@ -255,8 +252,7 @@ async fn fetch_and_cache_expected_values() -> Result<String> {
         "expected-values",
         EXPECTED_VALUES_URL.to_string(),
     )
-    .await
-    .map_err(anyhow::Error::msg)?
+    .await?
     .error_for_status()
     .map_err(|e| anyhow!("expected-values status: {e}"))?
     .bytes()
@@ -352,7 +348,7 @@ fn mean(xs: &[f32]) -> f32 {
 /// Read `patches/index.json`. Returns an empty vec if absent (the default
 /// state — no patches curated yet).
 fn read_patch_index() -> Result<Vec<PatchNote>> {
-    match read_appdata_json("patches/index.json").map_err(anyhow::Error::msg)? {
+    match read_appdata_json("patches/index.json")? {
         Some(raw) => Ok(serde_json::from_str(&raw).unwrap_or_default()),
         None => Ok(Vec::new()),
     }

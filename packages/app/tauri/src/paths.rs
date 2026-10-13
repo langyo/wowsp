@@ -122,25 +122,16 @@ pub fn cache_dir() -> anyhow::Result<PathBuf> {
 }
 
 /// Resolve `<data root>/` (creating it if missing).
-///
-/// PINNED to `Result<_, String>` while still-String callers remain
-/// (overlay_config / screenshot / stamps / wallpaper expect a plain String
-/// error; hardware_info maps it into its own enum). The bridge below
-/// renders the anyhow message verbatim, so the wire text is unchanged.
-pub fn ensure_data_dir() -> Result<PathBuf, String> {
-    let dir = data_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+pub fn ensure_data_dir() -> anyhow::Result<PathBuf> {
+    let dir = data_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir)
 }
 
 /// Resolve `<cache root>/` (creating it if missing).
-///
-/// PINNED to `Result<_, String>`: hardware_info maps this error straight
-/// into its `ElevateErr::Failed(String)` arm. The bridge renders the anyhow
-/// message verbatim, so the wire text is unchanged.
-pub fn ensure_cache_dir() -> Result<PathBuf, String> {
-    let dir = cache_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+pub fn ensure_cache_dir() -> anyhow::Result<PathBuf> {
+    let dir = cache_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir)
 }
 

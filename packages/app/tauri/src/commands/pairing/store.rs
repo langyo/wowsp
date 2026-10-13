@@ -152,7 +152,7 @@ pub async fn import_replay_file(
         .get("x-replay-name")
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| anyhow!("missing x-replay-name header"))?;
-    let name = super::exports::percent_decode(encoded).map_err(anyhow::Error::msg)?;
+    let name = super::exports::percent_decode(encoded)?;
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
         _ => return Err(anyhow!("expected raw body (pass a Uint8Array to invokeRaw)").into()),

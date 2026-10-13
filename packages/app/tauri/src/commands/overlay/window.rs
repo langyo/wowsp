@@ -1,6 +1,7 @@
-use super::*;
 use anyhow::anyhow;
 use wowsp_tauri_shared::CommandResult;
+
+use super::*;
 // ─────────────────────────────────────────────────────────────────────────
 // Window management
 // ─────────────────────────────────────────────────────────────────────────
