@@ -647,12 +647,14 @@ pub async fn mod_catalog_install(
     // Unpack + classify + write are blocking fs work — keep them off the
     // async runtime threads.
     let unpack_id = entry.id.clone();
+    let unpack_name = entry_display_name(&entry);
     let unpack_root = game_root.clone();
     let unpack_pkgs = packages.clone();
     let unpack_work = work.0.clone();
     let (outcome, mut ledger) = tauri::async_runtime::spawn_blocking(move || {
         let outcome = unpack_and_install(
             &unpack_id,
+            &unpack_name,
             &unpack_work,
             &unpack_root,
             &unpack_pkgs,
@@ -756,17 +758,40 @@ pub async fn mod_catalog_install(
     Ok(report)
 }
 
+/// The name a catalog install's record carries: the entry's Chinese title
+/// when published, else the index's own fallback chain. The pipeline classifies
+/// the unpacked tree through [`mod_hub::classify_package`], which names the
+/// plan after the directory it inspects — "res_mods" for game-root layouts,
+/// "unpacked" for flat ones. Those labels used to leak into the ledger, and
+/// every uninstall-conflict message quotes record names, so a blocked
+/// reinstall read `"res_mods" shares … with newer installed "res_mods"` —
+/// two names nobody could find in the UI.
+pub(crate) fn entry_display_name(entry: &CatalogEntry) -> String {
+    if !entry.name_zh.is_empty() {
+        entry.name_zh.clone()
+    } else if !entry.title.is_empty() {
+        entry.title.clone()
+    } else if !entry.name_en.is_empty() {
+        entry.name_en.clone()
+    } else {
+        entry.id.clone()
+    }
+}
+
 /// Extract every package archive (part order = index order) into `work`, then
 /// run the shared classify → install pipeline. Validate the full replacement
 /// before rewinding an existing install. Returns the report plus the
 /// written-file list (res_mods-relative, `@game/`-prefixed for game-root
-/// files) and restore snapshot dir for the ledger.
+/// files) and restore snapshot dir for the ledger. `display_name` replaces
+/// the classifier's directory label as the plan/report/record name (see
+/// [`entry_display_name`]).
 ///
 /// Aslain packages are laid out against the game root: the payload lives under
 /// `res_mods/…` (→ `bin/<ver>/res_mods/…`), and a few text mods ship a loose
 /// DLL that belongs in the game root itself.
 fn unpack_and_install(
     mod_id: &str,
+    display_name: &str,
     work: &Path,
     game_root: &str,
     packages: &[CatalogPackage],
@@ -801,7 +826,13 @@ fn unpack_and_install(
     } else {
         (extract_root.clone(), Vec::new())
     };
-    let plan = mod_hub::classify_package(&plan_root)?;
+    let mut plan = mod_hub::classify_package(&plan_root)?;
+    // The classifier named the plan after the directory it inspected; the
+    // record, the report and the conflict messages must speak the catalog
+    // title instead (see [`entry_display_name`]).
+    if !display_name.is_empty() {
+        plan.name = display_name.to_string();
+    }
     mod_hub::validate_plan(&plan)?;
     // Rewind only once all archives and the classified plan are usable.
     // Corrupt or unsupported replacement packages must leave the installed
@@ -929,6 +960,12 @@ pub(crate) fn validate_file_removal_order(
         if !newer.game_root.is_empty() && newer.game_root != game_root {
             continue;
         }
+        // Duplicate records of the SAME catalog id (an anomaly older builds
+        // could append) are one logical install and leave together — neither
+        // may deadlock the other's removal through this guard.
+        if newer.id == record.id {
+            continue;
+        }
         let claimed: std::collections::HashSet<_> =
             newer.files.iter().map(|f| uninstall_path_key(f)).collect();
         for rel in files {
@@ -942,11 +979,17 @@ pub(crate) fn validate_file_removal_order(
                 continue;
             }
             if claimed.contains(&uninstall_path_key(rel)) {
+                // The name alone must identify the blocker in the UI; the id
+                // is the fallback handle when a record's name is missing from
+                // the list the user sees.
+                let who = if newer.name == newer.id {
+                    format!("\"{}\"", newer.name)
+                } else {
+                    format!("\"{}\" (id {})", newer.name, newer.id)
+                };
                 return Err(anyhow!(
-                    "\"{}\" shares {rel} with newer installed \"{}\" — uninstall \"{}\" first to preserve its files and restore snapshots",
-                    record.name,
-                    newer.name,
-                    newer.name
+                    "\"{}\" shares {rel} with newer installed {who} — uninstall {who} first to preserve its files and restore snapshots",
+                    record.name
                 ));
             }
         }
@@ -1176,6 +1219,10 @@ pub struct ReconcileReport {
     /// Snapshot dirs no record references anymore (dropped records, failed
     /// installs of older builds) — deleted to stop them piling up.
     pub removed_restore_dirs: usize,
+    /// Records whose junk classifier label ("res_mods"/"unpacked") was
+    /// re-resolved to the catalog title — the frontend refreshes its records
+    /// snapshot on this too.
+    pub healed_names: usize,
 }
 
 /// How long an unreferenced snapshot dir must have sat untouched before
@@ -1189,16 +1236,55 @@ const ORPHAN_RESTORE_GRACE: std::time::Duration = std::time::Duration::from_secs
 pub async fn mod_hub_reconcile(game_root: String) -> CommandResult<ReconcileReport> {
     let _gate = mod_hub_gate().await;
     let mut ledger = load_ledger();
-    let report = reconcile_core(&game_root, &mut ledger.installs);
-    if report.dropped_records > 0 {
+    let mut report = reconcile_core(&game_root, &mut ledger.installs);
+    report.healed_names = heal_record_names(&mut ledger.installs, load_cached_index().as_ref());
+    if report.dropped_records > 0 || report.healed_names > 0 {
         save_ledger(&ledger)?;
     }
     tracing::info!(
         dropped = report.dropped_records,
         restore_dirs = report.removed_restore_dirs,
+        healed = report.healed_names,
         "ledger reconciled"
     );
     Ok(report)
+}
+
+/// Ledger names older installs recorded by mistake: the classifier's
+/// directory labels leaked into records before the catalog title was stamped
+/// on (see [`entry_display_name`]). Every conflict message quotes these
+/// names, so a blocked uninstall read `"res_mods" shares … with newer
+/// installed "res_mods"` and the instructed remedy was impossible to follow.
+fn is_junk_record_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("res_mods") || name.eq_ignore_ascii_case("unpacked")
+}
+
+/// Re-resolve junk record names against the cached catalog index, by id.
+/// Records no entry answers to (delisted ids, foreign/local payloads) keep
+/// their name — there is nothing better to say about them. Returns how many
+/// records were healed.
+pub(crate) fn heal_record_names(
+    installs: &mut [ModInstallRecord],
+    index: Option<&CatalogIndex>,
+) -> usize {
+    let Some(index) = index else {
+        return 0;
+    };
+    let mut healed = 0usize;
+    for record in installs.iter_mut() {
+        if !is_junk_record_name(&record.name) {
+            continue;
+        }
+        let Some(entry) = index.mods.iter().find(|m| m.id == record.id) else {
+            continue;
+        };
+        let name = entry_display_name(entry);
+        if name != record.name {
+            record.name = name;
+            healed += 1;
+        }
+    }
+    healed
 }
 
 pub(crate) fn reconcile_core(
@@ -1326,6 +1412,7 @@ fn reconcile_core_with_grace(
     ReconcileReport {
         dropped_records: dropped,
         removed_restore_dirs: removed,
+        healed_names: 0,
     }
 }
 
@@ -1457,6 +1544,7 @@ mod tests {
         assert!(
             unpack_and_install(
                 "example",
+                "Example mod",
                 &work,
                 &game.to_string_lossy(),
                 &packages,
@@ -1472,6 +1560,7 @@ mod tests {
         );
         unpack_and_install(
             "example",
+            "Example mod",
             &work,
             &game.to_string_lossy(),
             &packages,
@@ -1530,6 +1619,7 @@ mod tests {
             assert!(
                 unpack_and_install(
                     "example",
+                    "Example mod",
                     &work,
                     &game.to_string_lossy(),
                     &packages,
@@ -1578,8 +1668,15 @@ mod tests {
         let game_root = tmp.join("game").to_string_lossy().into_owned();
         let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
 
-        let (report, written, restore) =
-            unpack_and_install("test-mod", &work, &game_root, &packages, &mut Vec::new()).unwrap();
+        let (report, written, restore) = unpack_and_install(
+            "test-mod",
+            "Test mod",
+            &work,
+            &game_root,
+            &packages,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert_eq!(report.bin_version, "1");
         let res_mods = tmp.join("game/bin/1/res_mods");
         assert!(res_mods.join("gui/x/a.png").is_file());
@@ -1591,8 +1688,15 @@ mod tests {
         assert!(restore.is_none(), "fresh install overwrites nothing");
 
         // Re-install over it: the overwritten originals must be snapshotted.
-        let (_report2, _written2, restore2) =
-            unpack_and_install("test-mod", &work, &game_root, &packages, &mut Vec::new()).unwrap();
+        let (_report2, _written2, restore2) = unpack_and_install(
+            "test-mod",
+            "Test mod",
+            &work,
+            &game_root,
+            &packages,
+            &mut Vec::new(),
+        )
+        .unwrap();
         let restore2 = restore2.expect("second install snapshots overwritten files");
         assert!(restore2.join("ime_config.xml").is_file());
         assert!(restore2.join("@game/gettext_x64r.dll").is_file());
@@ -1690,7 +1794,7 @@ mod tests {
                 size: 0,
                 name: "part1.zip".into(),
             }];
-            unpack_and_install("m", work, &game_root, &packages, &mut Vec::new()).unwrap()
+            unpack_and_install("m", "M", work, &game_root, &packages, &mut Vec::new()).unwrap()
         };
 
         // v1 adds a file the v2 package drops — leftovers must not survive.
@@ -2216,5 +2320,122 @@ mod tests {
         let back: Ledger = serde_json::from_str(&json).unwrap();
         assert_eq!(back.installs[0].id, "x");
         assert_eq!(back.installs[0].files, vec!["a.xml"]);
+    }
+
+    fn junk_named_record(id: &str, name: &str, files: &[&str]) -> ModInstallRecord {
+        ModInstallRecord {
+            id: id.into(),
+            name: name.into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| f.to_string()).collect(),
+            restore_dir: None,
+            game_root: String::new(),
+        }
+    }
+
+    #[test]
+    fn catalog_installs_record_the_entry_title_not_the_classifier_label() {
+        let tmp =
+            std::env::temp_dir().join(format!("wowsp-catalog-name-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let work = tmp.join("work");
+        fs::create_dir_all(&work).unwrap();
+        let game = tmp.join("game");
+        fs::create_dir_all(game.join("bin/1")).unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        zip_fixture(
+            &package_archive(&work, 0),
+            &[("res_mods/gui/ttaro_mod.config/index.css", b"config")],
+        );
+        let packages = vec![CatalogPackage {
+            url: "https://example.com/package.zip".into(),
+            name: "package.zip".into(),
+            size: 0,
+            sha256: String::new(),
+        }];
+        // A game-root layout zip classifies through the `res_mods` directory —
+        // the label that used to leak into the ledger.
+        let (report, _, _) = unpack_and_install(
+            "battle.build.viewer",
+            "Build Viewer",
+            &work,
+            &game.to_string_lossy(),
+            &packages,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(report.name, "Build Viewer");
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn reconcile_heals_junk_record_names_from_the_catalog_index() {
+        let index = parse_index(&serde_json::json!({
+            "mods": {
+                "battle.build.viewer": {
+                    "latest": "1",
+                    "versions": {
+                        "1": {
+                            "title": "title fallback",
+                            "name_zh": "战场内升级品加点查看",
+                            "bundled": true
+                        }
+                    }
+                },
+                "battle.flat.layout": {
+                    "latest": "1",
+                    "versions": {"1": {"title": "Flat Mod", "bundled": true}}
+                }
+            }
+        }))
+        .unwrap();
+        let mut installs = vec![
+            junk_named_record("battle.build.viewer", "res_mods", &["gui/a.css"]),
+            junk_named_record("battle.flat.layout", "Unpacked", &["gui/b.css"]),
+            // No catalog entry answers to this id: nothing to heal from.
+            junk_named_record("battle.unlisted.mod", "res_mods", &["gui/c.css"]),
+            // A genuine local install keeps its own label even when it
+            // happens to be a junk-looking one.
+            ModInstallRecord {
+                source: "local".into(),
+                ..junk_named_record("local-1", "res_mods", &["gui/d.css"])
+            },
+        ];
+        let healed = heal_record_names(&mut installs, Some(&index));
+        assert_eq!(healed, 2, "{installs:?}");
+        assert_eq!(installs[0].name, "战场内升级品加点查看");
+        assert_eq!(installs[1].name, "Flat Mod", "unpacked is junk too");
+        assert_eq!(installs[2].name, "res_mods", "unknown ids stay");
+        assert_eq!(installs[3].name, "res_mods", "non-catalog ids stay");
+        assert_eq!(heal_record_names(&mut installs, None), 0);
+    }
+
+    #[test]
+    fn duplicate_records_of_one_mod_do_not_deadlock_each_others_uninstall() {
+        let older = junk_named_record("battle.build.viewer", "res_mods", &["gui/shared.css"]);
+        let mut newer = older.clone();
+        newer.installed_at = "later".into();
+        let root = "C:\\game";
+        // Both records claim the same file; before the same-id exemption the
+        // older one could never be uninstalled (or reinstalled-over) while
+        // its own duplicate sat on top of it.
+        assert!(
+            validate_uninstall_order(&[older.clone(), newer], "battle.build.viewer", root).is_ok()
+        );
+        // A DIFFERENT mod on top still blocks, and the message now carries
+        // the blocker's id next to its name.
+        let mut other = junk_named_record("battle.heal.assistant", "Heal Assistant", &[]);
+        other.files = vec!["gui/shared.css".into()];
+        let err =
+            validate_uninstall_order(&[older, other], "battle.build.viewer", root).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("Heal Assistant"), "{text}");
+        assert!(text.contains("(id battle.heal.assistant)"), "{text}");
     }
 }

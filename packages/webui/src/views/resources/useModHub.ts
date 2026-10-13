@@ -503,11 +503,13 @@ export function useModHub() {
       // snapshot dirs; refresh the records list when something dropped.
       const rec = await api.modHubReconcile(root).catch(() => null);
       if (!isCurrent()) return;
-      if (rec && rec.droppedRecords > 0) {
+      if (rec && (rec.droppedRecords > 0 || rec.healedNames > 0)) {
         const refreshed = await api.modHubRecords().catch(() => []);
         if (!isCurrent()) return;
         records.value = refreshed;
-        toast.info(t("resources.reconciled", { n: rec.droppedRecords }));
+        if (rec.droppedRecords > 0) {
+          toast.info(t("resources.reconciled", { n: rec.droppedRecords }));
+        }
       }
       // Sidebar deep-link (?migrate=1): once the first scan says there is
       // something to migrate, open the wizard on its confirm step. Fired

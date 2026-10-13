@@ -305,10 +305,11 @@ export interface MigrationPlan {
 }
 
 /** What a ledger reconciliation cleaned up (ghost records, orphan
- *  snapshot dirs). */
+ *  snapshot dirs) and how many junk record names it re-resolved. */
 export interface ReconcileReport {
   droppedRecords: number;
   removedRestoreDirs: number;
+  healedNames: number;
 }
 
 /** Result of uninstalling a catalog mod. */
