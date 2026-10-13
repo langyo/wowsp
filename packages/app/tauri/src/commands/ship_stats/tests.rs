@@ -1298,3 +1298,21 @@ fn zero_raw() -> RawShipStats {
         modes: None,
     }
 }
+
+#[test]
+fn stream_cap_rejects_oversized_bodies() {
+    // The byte cap exists so a broken/hostile source cannot balloon the
+    // process memory through the stall-tolerant reader: past the cap the
+    // read must fail with a source-named error (the caller's racer/cache
+    // fallback then applies), never grow the buffer.
+    ensure_stream_cap(0, "vortex:pvp").unwrap();
+    ensure_stream_cap(SHIP_STREAM_MAX_BYTES, "vortex:pvp").unwrap();
+    let err = ensure_stream_cap(SHIP_STREAM_MAX_BYTES + 1, "vortex:pvp")
+        .expect_err("over-cap body must fail");
+    let text = format!("{err:#}");
+    assert!(
+        text.contains("vortex:pvp") && text.contains("size cap"),
+        "error names source and cap: {text}"
+    );
+    assert!(text.contains("64"), "error states the cap value: {text}");
+}

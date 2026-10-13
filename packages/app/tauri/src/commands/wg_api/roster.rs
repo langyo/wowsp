@@ -86,7 +86,20 @@ pub async fn lookup_player_stats(
     realm: String,
     pr_algo: Option<String>,
 ) -> Result<PlayerStats, LookupError> {
+    // Field-report anchor: successful lookups log nothing anywhere on this
+    // path, so a "the app dies when I query X" report could not be told
+    // apart from "the lookup never ran" (the 2026-10-13 crash triage paid
+    // for that gap). One line at each end — the QUERY'S LENGTH, never the
+    // nickname itself, matching the roster batch's count-only discipline.
     let algo = PrAlgo::from_param(pr_algo.as_deref());
+    let lookup_started = std::time::Instant::now();
+    let query_len = name.trim().chars().count();
+    tracing::info!(
+        realm = %realm,
+        algo = ?algo,
+        query_len,
+        "interactive stats lookup started"
+    );
     if realm == "cn" {
         return super::wg_api_cn::lookup_player_stats(name, algo).await;
     }
@@ -216,6 +229,13 @@ pub async fn lookup_player_stats(
         stats.ranked_pr = None;
         stats.global_pr = None;
     }
+    tracing::info!(
+        realm = %stats.realm,
+        account_id = stats.account_id,
+        hidden = stats.hidden,
+        elapsed_ms = lookup_started.elapsed().as_millis() as u64,
+        "interactive stats lookup finished"
+    );
     Ok(stats)
 }
 

@@ -15,6 +15,26 @@ use super::appdata::{read_appdata_json, write_appdata_json};
 
 const INFO_CACHE: &str = "encyclopedia/info.json";
 
+/// Hard ceiling on the parallel page fan-out below. `page_total` is REMOTE
+/// data and the spawn loop trusts it blindly: a degraded/broken mirror
+/// answering a garbage (or hostile) meta would otherwise spawn one do-nothing
+/// task per phantom page in a single burst and take the whole process down —
+/// an allocation-failure abort kills the app outright with no panic and no
+/// log line. Real fleets stay around ~1100 ships ≈ 11 pages at the
+/// endpoint's 100/page limit, so 64 leaves wide headroom before a meta is
+/// declared implausible and the refresh fails into its cache fallback.
+const ENCYCLOPEDIA_MAX_PAGES: i64 = 64;
+
+/// Reject a page_total the fan-out must never act on. Pure — unit-tested.
+fn validate_page_total(page_total: i64) -> Result<(), String> {
+    if page_total > ENCYCLOPEDIA_MAX_PAGES {
+        return Err(format!(
+            "encyclopedia/ships: implausible page_total {page_total} (limit {ENCYCLOPEDIA_MAX_PAGES}) — upstream pathology, refusing the page fan-out"
+        ));
+    }
+    Ok(())
+}
+
 /// Fetch (and cache) the current WG game version + total ship count.
 #[tauri::command]
 pub async fn get_game_version() -> Result<GameVersionInfo, String> {
@@ -139,6 +159,7 @@ pub async fn get_ship_encyclopedia(
         .and_then(|m| m.get("page_total"))
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
+    validate_page_total(page_total)?;
 
     // Spawn concurrent requests for pages 2..page_total.
     let mut handles = Vec::new();
@@ -416,5 +437,24 @@ mod tests {
         let (compound3, _) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
         let cache3 = format!("encyclopedia/ships-{v}-{compound3}-s{SCHEMA}.json");
         assert_eq!(cache3, "encyclopedia/ships-15.5.0-zh-tw-asia-s2.json");
+    }
+
+    #[test]
+    fn page_total_validation_caps_the_fan_out() {
+        // Real fleets: single page up to the current ~11-page shipopedia.
+        for total in [1, 10, 11, ENCYCLOPEDIA_MAX_PAGES] {
+            assert!(validate_page_total(total).is_ok(), "{total} must pass");
+        }
+        // A zero/negative meta yields an empty fan-out (page 1 still serves)
+        // — tolerated, same as before the guard.
+        for total in [0, -5] {
+            assert!(validate_page_total(total).is_ok(), "{total} must pass");
+        }
+        // Anything beyond the ceiling is declared implausible: the spawn
+        // bomb guard must fail the refresh, not spawn the tasks.
+        for total in [ENCYCLOPEDIA_MAX_PAGES + 1, 1000, 1_000_000, i64::MAX] {
+            let err = validate_page_total(total).expect_err("{total} must fail");
+            assert!(err.contains("page_total"), "error names the field: {err}");
+        }
     }
 }

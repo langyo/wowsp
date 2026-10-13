@@ -105,6 +105,14 @@ const SHIP_STREAM_STALL: std::time::Duration = std::time::Duration::from_secs(15
 /// Hard ceiling on one document's TOTAL download — a crawl that never
 /// stalls hard must still end, or a query lane leaks for good.
 const SHIP_STREAM_HARD_CAP: std::time::Duration = std::time::Duration::from_secs(180);
+/// Hard ceiling on one document's SIZE alongside the time caps: the buffer
+/// grows with every chunk and nothing else bounds it, so a host streaming
+/// garbage at link speed could balloon the process for the whole hard-cap
+/// window (180s of a fast link is gigabytes). The largest legit per-mode
+/// vortex document observed runs to single-digit megabytes; past the cap the
+/// source is declaring itself broken and the read fails into the caller's
+/// racer/cache fallback like any other transport failure.
+pub(super) const SHIP_STREAM_MAX_BYTES: usize = 64 * 1024 * 1024;
 /// How long a source may stream before the chrome flags it degraded —
 /// matches the historical 15s timeout: past this point still flowing is
 /// officially "slow but receiving".
@@ -114,6 +122,19 @@ const SHIP_STREAM_SLOW_SIGNAL: std::time::Duration = std::time::Duration::from_s
 /// grows).
 const SHIP_PARTIAL_BATCH: usize = 25;
 
+/// One document's running byte count against [`SHIP_STREAM_MAX_BYTES`].
+/// Pure so the guard is unit-testable without HTTP — the read loop checks
+/// it BEFORE extending the buffer, so an oversized body fails without ever
+/// holding the excess in memory.
+pub(super) fn ensure_stream_cap(next_len: usize, source: &str) -> Result<()> {
+    if next_len > SHIP_STREAM_MAX_BYTES {
+        bail!(
+            "{source}: body exceeded the {}MB size cap",
+            SHIP_STREAM_MAX_BYTES / (1024 * 1024)
+        );
+    }
+    Ok(())
+}
 /// Read one response body with stall-tolerant pacing: any [`SHIP_STREAM_-
 /// STALL`] gap without bytes aborts, but a body that keeps trickling may
 /// take up to [`SHIP_STREAM_HARD_CAP`] in total. Crossing
@@ -159,6 +180,7 @@ async fn read_body_streamed(
                         SHIP_STREAM_HARD_CAP.as_secs()
                     );
                 }
+                ensure_stream_cap(buffer.len() + bytes.len(), source)?;
                 buffer.extend_from_slice(&bytes);
                 on_chunk(&buffer);
                 if !slow_signalled && started.elapsed() >= SHIP_STREAM_SLOW_SIGNAL {
