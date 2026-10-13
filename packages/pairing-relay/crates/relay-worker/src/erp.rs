@@ -23,9 +23,15 @@ use relay_core::erp::{
 };
 use relay_core::route::query_get;
 use serde_json::{Value, json};
-use worker::{Env, Headers, Method, Request, Response, Result, Url};
+use worker::{Env, Headers, Method, Request, Response, ResponseBody, Result};
 
 use crate::feedback::{FEISHU, err, feishu_json, http_call, json_headers, ok};
+
+/// 302 responses here are built from parts (`from_body(Empty)` +
+/// `Location`): `Response::redirect` wraps the JS static constructor,
+/// whose headers carry an immutable guard — ANY later header mutation
+/// (in these handlers, and in the security-headers exit wrapper)
+/// throws and turns the response into a 500.
 
 /// `GET /api/erp/login` — kick off the OAuth round trip.
 pub async fn handle_login(req: Request, env: Env) -> Result<Response> {
@@ -41,16 +47,19 @@ pub async fn handle_login(req: Request, env: Env) -> Result<Response> {
     let state = hex(&nonce);
 
     let url = authorize_url(&app_id, &format!("{origin}/api/erp/callback"), &state);
-    let mut resp = Response::redirect(Url::parse(&url)?)?;
-    resp.headers_mut().set(
+    let headers = Headers::new();
+    headers.set("Location", &url)?;
+    headers.set(
         "Set-Cookie",
         &format!(
             "{OAUTH_STATE_COOKIE}={state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={OAUTH_STATE_TTL_SECS}"
         ),
     )?;
     // State-bearing redirects must never be cached.
-    resp.headers_mut().set("cache-control", "no-store")?;
-    Ok(resp)
+    headers.set("cache-control", "no-store")?;
+    Ok(Response::from_body(ResponseBody::Empty)?
+        .with_status(302)
+        .with_headers(headers))
 }
 
 /// `GET /api/erp/callback` — finish the OAuth round trip.
@@ -151,6 +160,7 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
     // Two cookies on one response: Fetch `set()` REPLACES same-named
     // headers, so both Set-Cookie lines must go through `append()`.
     let headers = Headers::new();
+    headers.set("Location", &format!("{origin}/erp"))?;
     headers.append(
         "Set-Cookie",
         &format!(
@@ -163,8 +173,9 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         &format!("{OAUTH_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"),
     )?;
     headers.set("cache-control", "no-store")?;
-    let resp = Response::redirect(Url::parse(&format!("{origin}/erp"))?)?;
-    Ok(resp.with_headers(headers))
+    Ok(Response::from_body(ResponseBody::Empty)?
+        .with_status(302)
+        .with_headers(headers))
 }
 
 /// `GET /api/erp/session` — the console shell's whoami probe.
@@ -211,16 +222,18 @@ fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionCl
 }
 
 fn login_failed(origin: &str) -> Result<Response> {
-    // Response::redirect already returns our Result — the `?` only
-    // unwraps Url::parse. A failed round trip also drops the state
-    // cookie so no stale nonce lingers past its purpose.
-    let mut resp = Response::redirect(Url::parse(&format!("{origin}/erp?login=failed"))?)?;
-    resp.headers_mut().set(
+    // A failed round trip also drops the state cookie so no stale nonce
+    // lingers past its purpose.
+    let headers = Headers::new();
+    headers.set("Location", &format!("{origin}/erp?login=failed"))?;
+    headers.set(
         "Set-Cookie",
         &format!("{OAUTH_STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"),
     )?;
-    resp.headers_mut().set("cache-control", "no-store")?;
-    Ok(resp)
+    headers.set("cache-control", "no-store")?;
+    Ok(Response::from_body(ResponseBody::Empty)?
+        .with_status(302)
+        .with_headers(headers))
 }
 
 fn now_secs() -> i64 {
