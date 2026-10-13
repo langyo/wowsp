@@ -160,6 +160,21 @@ pub fn read_session(key: &[u8; 32], value: &str, now_secs: i64) -> Option<Sessio
 
 // ── small wire helpers ────────────────────────────────────────────────
 
+/// Whether the stored profile is worth re-reading from the contact API:
+/// user_info anonymizes the name to 用户＋digits (and blanks the avatar)
+/// for apps without contact visibility — a live re-read after 权限 is
+/// granted restores the real values.
+pub fn profile_needs_refresh(name: &str, avatar: &str) -> bool {
+    if avatar.is_empty() {
+        return true;
+    }
+    let rest = name.strip_prefix("用户");
+    match rest {
+        Some(digits) if !digits.is_empty() => digits.bytes().all(|b| b.is_ascii_digit()),
+        _ => false,
+    }
+}
+
 /// Pull one cookie out of a `Cookie:` header (`a=1; b=2` shapes only —
 /// the worker never sets quoted cookie values).
 pub fn cookie_get(header: &str, name: &str) -> Option<String> {
@@ -740,6 +755,27 @@ mod tests {
         }
         assert_eq!(b64url_encode(b"a"), "YQ");
         assert!(b64url_decode("!!!!!").is_none());
+    }
+
+    #[test]
+    fn anonymized_profiles_are_detected_for_refresh() {
+        // The user_info placeholder shape (用户＋digits) and a blank
+        // avatar are both worth a live contact re-read.
+        assert!(profile_needs_refresh("用户053028", ""));
+        assert!(profile_needs_refresh("用户053028", "https://a.test/a.png"));
+        assert!(profile_needs_refresh("伊欧", ""));
+        // A real name with an avatar is already good.
+        assert!(!profile_needs_refresh("伊欧", "https://a.test/a.png"));
+        // "用户" without digits, or bare prefixes, are real names.
+        assert!(!profile_needs_refresh("用户", "https://a.test/a.png"));
+        assert!(!profile_needs_refresh(
+            "用户组维护者",
+            "https://a.test/a.png"
+        ));
+        assert!(!profile_needs_refresh(
+            "欧 labeled 用户123",
+            "https://a.test/a.png"
+        ));
     }
 
     #[test]

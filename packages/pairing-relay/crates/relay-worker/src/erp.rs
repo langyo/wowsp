@@ -179,38 +179,9 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
     // a placeholder in the console's user chip. The tenant-token contact
     // read restores the real name + avatar once 权限 is granted; on any
     // failure the anonymized values still log the maintainer in.
-    let mut claims = claims;
-    if let Ok(token) = feishu_token(&env).await {
-        if let Ok((_, cu)) = feishu_json(
-            Method::Get,
-            &format!(
-                "{FEISHU}/contact/v3/users/{}?user_id_type=open_id",
-                urlencode(&claims.open_id)
-            ),
-            &token,
-            Value::Null,
-        )
+    let claims = refresh_profile(&env, claims.clone())
         .await
-        {
-            let u = cu.pointer("/data/user").cloned().unwrap_or(Value::Null);
-            if let Some(n) = u
-                .get("name")
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty())
-            {
-                claims.name = n.to_string();
-            }
-            let avatar = u
-                .pointer("/avatar/avatar_240")
-                .or_else(|| u.pointer("/avatar/avatar_640"))
-                .or_else(|| u.pointer("/avatar/avatar_origin"))
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty());
-            if let Some(a) = avatar {
-                claims.avatar = a.to_string();
-            }
-        }
-    }
+        .unwrap_or(claims);
 
     let key = session_key(&app_secret);
     // Two cookies on one response: Fetch `set()` REPLACES same-named
@@ -234,14 +205,38 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         .with_headers(headers))
 }
 
-/// `GET /api/erp/session` — the console shell's whoami probe.
+/// `GET /api/erp/session` — the console shell's whoami probe. A cookie
+/// minted while the app still lacked contact visibility carries the
+/// anonymized placeholder profile; the probe re-reads the contact API
+/// live in that case and re-mints the cookie, so granting 权限 heals the
+/// chip on the next page load instead of at the next re-login.
 pub async fn handle_session(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    match session_claims(&req, &env) {
-        Some(c) => ok(json!({ "ok": true, "name": c.name, "avatar": c.avatar })),
-        None => ok(json!({ "ok": false })),
+    let Some(c) = session_claims(&req, &env) else {
+        return ok(json!({ "ok": false }));
+    };
+    if !relay_core::erp::profile_needs_refresh(&c.name, &c.avatar) {
+        return ok(json!({ "ok": true, "name": c.name, "avatar": c.avatar }));
+    }
+    match refresh_profile(&env, c.clone()).await {
+        Some(fresh) => {
+            let mut resp = ok(json!({ "ok": true, "name": fresh.name, "avatar": fresh.avatar }))?;
+            if let Some(app_secret) = env.secret("FEISHU_APP_SECRET").ok().map(|s| s.to_string()) {
+                let value = mint_session(&session_key(&app_secret), &fresh);
+                resp.headers_mut().set(
+                    "Set-Cookie",
+                    &format!(
+                        "{SESSION_COOKIE}={value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={SESSION_TTL_SECS}"
+                    ),
+                )?;
+            }
+            Ok(resp)
+        },
+        // The contact read failed again (权限 still missing) — serve the
+        // stored claims and try again on the next load.
+        None => ok(json!({ "ok": true, "name": c.name, "avatar": c.avatar })),
     }
 }
 
@@ -275,6 +270,46 @@ fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionCl
     let cookie = req.headers().get("Cookie").ok().flatten()?;
     let value = cookie_get(&cookie, SESSION_COOKIE)?;
     read_session(&session_key(&app_secret), &value, now_secs())
+}
+
+/// Re-read the profile from the contact API with the tenant token.
+/// Returns `None` when the call fails (权限 still missing / unreachable)
+/// or nothing changed — callers keep the stored claims in both cases.
+async fn refresh_profile(
+    env: &Env,
+    claims: relay_core::erp::SessionClaims,
+) -> Option<relay_core::erp::SessionClaims> {
+    let token = feishu_token(env).await.ok()?;
+    let (_, cu) = feishu_json(
+        Method::Get,
+        &format!(
+            "{FEISHU}/contact/v3/users/{}?user_id_type=open_id",
+            urlencode(&claims.open_id)
+        ),
+        &token,
+        Value::Null,
+    )
+    .await
+    .ok()?;
+    let u = cu.pointer("/data/user").cloned().unwrap_or(Value::Null);
+    let mut fresh = claims.clone();
+    if let Some(n) = u
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        fresh.name = n.to_string();
+    }
+    let avatar = u
+        .pointer("/avatar/avatar_240")
+        .or_else(|| u.pointer("/avatar/avatar_640"))
+        .or_else(|| u.pointer("/avatar/avatar_origin"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty());
+    if let Some(a) = avatar {
+        fresh.avatar = a.to_string();
+    }
+    (fresh.name != claims.name || fresh.avatar != claims.avatar).then_some(fresh)
 }
 
 fn login_failed(origin: &str, reason: &str) -> Result<Response> {
