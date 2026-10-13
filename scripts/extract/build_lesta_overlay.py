@@ -402,16 +402,28 @@ def main() -> None:
             names_fragment[str(sid)] = names_entry
         names_path = Path(args.merge_names)
         db = json.loads(names_path.read_text(encoding="utf-8"))
-        added = 0
+        added = refreshed = 0
         for sid, frag in names_fragment.items():
             if sid not in db:
                 db[sid] = frag
                 added += 1
+                continue
+            # An existing entry may predate a curation pass (the DB bake
+            # predates this overlay run) — fold the fragment's non-empty
+            # languages in so replay/live name lookups see curated zh too.
+            names = db[sid].setdefault("names", {})
+            for lang, value in frag.get("names", {}).items():
+                if value and not names.get(lang):
+                    names[lang] = value
+                    refreshed += 1
         names_path.write_text(
             json.dumps(db, ensure_ascii=False, separators=(",", ":")),
             encoding="utf-8",
         )
-        print(f"[lesta-overlay] merged {added} entries into {names_path}")
+        print(
+            f"[lesta-overlay] merged {added} entries, refreshed {refreshed} "
+            f"name fields in {names_path}"
+        )
 
 
 if __name__ == "__main__":

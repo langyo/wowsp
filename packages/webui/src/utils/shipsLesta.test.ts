@@ -59,6 +59,11 @@ describe("generated overlay data", () => {
       expect(entry.names["ru-RU"], `${id} ru-RU name`).toBeTruthy();
       expect(entry.isPremium || entry.isSpecial, `${id} premium/special flag`).toBe(true);
     }
+    // The curated zh pass covers all but a small deliberately-English tail
+    // (event internals, untranslatable working names) — a regen that drops
+    // the curation file would fall far below this floor.
+    const zhCount = beyond.filter(([, e]) => e.names["zh-CN"]).length;
+    expect(zhCount, "curated zh-CN coverage of the port fleet").toBeGreaterThanOrEqual(125);
   });
 
   it("carries names, tiers and WG-shaped profiles", async () => {

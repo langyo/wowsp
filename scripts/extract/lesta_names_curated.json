@@ -1,62 +1,965 @@
 {
-  "_comment": "Hand-curated display names for Lesta-only ships (indexes absent from the WG tree). The Lesta client localizes only ru, so every other language is curated here — name priority in build_lesta_overlay.py: this file > client texts > en-US working name. Sources: the CN community's established renderings (NGA/bilibili Lesta-line threads), WG's own naming conventions for sister ships (Soviet DD meaning-translations, cruiser 'Admiral X' pattern), and standard transliterations for the ja rows. Keep the zh-CN and zh-SG values identical (same script); ja listed only where the katakana/kanji rendering is established.",
-  "PRSD320": { "zh-CN": "骄傲", "zh-SG": "骄傲", "zh-TW": "驕傲" },
-  "PRSD319": { "zh-CN": "安静", "zh-SG": "安静", "zh-TW": "安靜" },
-  "PRSD318": { "zh-CN": "勇敢", "zh-SG": "勇敢", "zh-TW": "勇敢" },
-  "PRSD317": { "zh-CN": "谨慎", "zh-SG": "谨慎", "zh-TW": "謹慎" },
-  "PRSD306": { "zh-CN": "灵敏", "zh-SG": "灵敏", "zh-TW": "靈敏" },
-  "PRSD218": { "zh-CN": "试验", "zh-SG": "试验", "zh-TW": "試驗" },
-  "PASB307": { "zh-CN": "康涅狄格", "zh-SG": "康涅狄格", "zh-TW": "康乃狄克" },
-  "PASB308": { "zh-CN": "华盛顿", "zh-SG": "华盛顿", "zh-TW": "華盛頓", "ja-JP": "ワシントン" },
-  "PASB309": { "zh-CN": "印第安纳", "zh-SG": "印第安纳", "zh-TW": "印第安納", "ja-JP": "インディアナ" },
-  "PASB310": { "zh-CN": "新泽西", "zh-SG": "新泽西", "zh-TW": "新澤西", "ja-JP": "ニュージャージー" },
-  "PASB211": { "zh-CN": "弗吉尼亚", "zh-SG": "弗吉尼亚", "zh-TW": "維吉尼亞", "ja-JP": "バージニア" },
-  "PASA206": { "zh-CN": "独立", "zh-SG": "独立", "zh-TW": "獨立", "ja-JP": "インディペンデンス" },
-  "PASA208": { "zh-CN": "约克城", "zh-SG": "约克城", "zh-TW": "約克鎮", "ja-JP": "ヨークタウン" },
-  "PASA210": { "zh-CN": "埃塞克斯", "zh-SG": "埃塞克斯", "zh-TW": "艾塞克斯", "ja-JP": "エセックス" },
-  "PASD207": { "zh-CN": "法兰德", "zh-SG": "法兰德", "zh-TW": "法蘭德" },
-  "PASD208": { "zh-CN": "霍格", "zh-SG": "霍格", "zh-TW": "霍格" },
-  "PASD209": { "zh-CN": "马菲特", "zh-SG": "马菲特", "zh-TW": "馬菲特" },
-  "PASD210": { "zh-CN": "林奇", "zh-SG": "林奇", "zh-TW": "林奇" },
-  "PJSA206": { "zh-CN": "瑞凤", "zh-SG": "瑞凤", "zh-TW": "瑞鳳", "ja-JP": "瑞鳳" },
-  "PJSA208": { "zh-CN": "飞龙", "zh-SG": "飞龙", "zh-TW": "飛龍", "ja-JP": "飛龍" },
-  "PJSA210": { "zh-CN": "大凤", "zh-SG": "大凤", "zh-TW": "大鳳", "ja-JP": "大鳳" },
-  "PJSC111": { "zh-CN": "仙丈", "zh-SG": "仙丈", "zh-TW": "仙丈" },
-  "PGSB211": { "zh-CN": "塞德利茨", "zh-SG": "塞德利茨", "zh-TW": "塞德利茨" },
-  "PGSC207": { "zh-CN": "维内塔", "zh-SG": "维内塔", "zh-TW": "維內塔" },
-  "PGSC208": { "zh-CN": "赫尔塔", "zh-SG": "赫尔塔", "zh-TW": "赫爾塔" },
-  "PGSC209": { "zh-CN": "弗蕾亚", "zh-SG": "弗蕾亚", "zh-TW": "弗蕾亞" },
-  "PGSC210": { "zh-CN": "汉莎", "zh-SG": "汉莎", "zh-TW": "漢莎" },
-  "PGSS111": { "zh-CN": "U-796", "zh-SG": "U-796", "zh-TW": "U-796" },
-  "PGSD111": { "zh-CN": "奥托·维迪根", "zh-SG": "奥托·维迪根", "zh-TW": "奧托·維迪根" },
-  "PRSB207": { "zh-CN": "谢尼亚文海军上将", "zh-SG": "谢尼亚文海军上将", "zh-TW": "謝尼亞文海軍上將" },
-  "PRSB208": { "zh-CN": "伊斯托明海军上将", "zh-SG": "伊斯托明海军上将", "zh-TW": "伊斯托明海軍上將" },
-  "PRSB209": { "zh-CN": "科尔尼洛夫海军上将", "zh-SG": "科尔尼洛夫海军上将", "zh-TW": "科爾尼洛夫海軍上將" },
-  "PRSB210": { "zh-CN": "拉扎列夫海军上将", "zh-SG": "拉扎列夫海军上将", "zh-TW": "拉扎列夫海軍上將" },
-  "PRSA111": { "zh-CN": "乌里扬诺夫斯克", "zh-SG": "乌里扬诺夫斯克", "zh-TW": "烏里揚諾夫斯克" },
-  "PRSS111": { "zh-CN": "B-4 切利亚宾斯克共青团员", "zh-SG": "B-4 切利亚宾斯克共青团员", "zh-TW": "B-4 切利亞賓斯克共青團員" },
-  "PISB111": { "zh-CN": "伽利略", "zh-SG": "伽利略", "zh-TW": "伽利略", "ja-JP": "ガリレオ" },
-  "PISC206": { "zh-CN": "奥勒留·戴克里先", "zh-SG": "奥勒留·戴克里先", "zh-TW": "奧勒留·戴克里先" },
-  "PISC207": { "zh-CN": "瓦莱里奥·君士坦丁", "zh-SG": "瓦莱里奥·君士坦丁", "zh-TW": "瓦萊里奧·君士坦丁" },
-  "PISC208": { "zh-CN": "马可·奥勒留", "zh-SG": "马可·奥勒留", "zh-TW": "馬可·奧勒留" },
-  "PISC209": { "zh-CN": "埃利奥·哈德良", "zh-SG": "埃利奥·哈德良", "zh-TW": "埃利奧·哈德良" },
-  "PISC210": { "zh-CN": "乌尔皮奥·图拉真", "zh-SG": "乌尔皮奥·图拉真", "zh-TW": "烏爾皮奧·圖拉真" },
-  "PISC211": { "zh-CN": "利古里亚", "zh-SG": "利古里亚", "zh-TW": "利古里亞" },
-  "PFSS106": { "zh-CN": "迪安娜", "zh-SG": "迪安娜", "zh-TW": "迪安娜" },
-  "PFSS108": { "zh-CN": "阿非利加", "zh-SG": "阿非利加", "zh-TW": "阿非利加" },
-  "PFSS110": { "zh-CN": "卡萨比安卡", "zh-SG": "卡萨比安卡", "zh-TW": "卡薩比安卡", "ja-JP": "カサビアンカ" },
-  "PFSD111": { "zh-CN": "罗伯斯庇尔", "zh-SG": "罗伯斯庇尔", "zh-TW": "羅伯斯庇爾" },
-  "PZSB106": { "zh-CN": "却克里", "zh-SG": "却克里", "zh-TW": "卻克里" },
-  "PZSB107": { "zh-CN": "祖勒菲卡尔", "zh-SG": "祖勒菲卡尔", "zh-TW": "祖勒菲卡爾" },
-  "PZSB108": { "zh-CN": "河内", "zh-SG": "河内", "zh-TW": "河內" },
-  "PZSB109": { "zh-CN": "东风", "zh-SG": "东风", "zh-TW": "東風" },
-  "PZSB110": { "zh-CN": "天宫", "zh-SG": "天宫", "zh-TW": "天宮" },
-  "PZSC111": { "zh-CN": "西安", "zh-SG": "西安", "zh-TW": "西安" },
-  "PVSD105": { "zh-CN": "塞拉诺", "zh-SG": "塞拉诺", "zh-TW": "塞拉諾" },
-  "PVSD106": { "zh-CN": "布宜诺斯艾利斯", "zh-SG": "布宜诺斯艾利斯", "zh-TW": "布宜諾斯艾利斯" },
-  "PVSD107": { "zh-CN": "阿克里", "zh-SG": "阿克里", "zh-TW": "阿克里" },
-  "PVSD108": { "zh-CN": "卡瓦哈尔", "zh-SG": "卡瓦哈尔", "zh-TW": "卡瓦哈爾" },
-  "PVSD109": { "zh-CN": "帕拉", "zh-SG": "帕拉", "zh-TW": "帕拉" },
-  "PVSD110": { "zh-CN": "新埃斯帕塔", "zh-SG": "新埃斯帕塔", "zh-TW": "新埃斯帕塔" },
-  "PVSD111": { "zh-CN": "七月二十日", "zh-SG": "七月二十日", "zh-TW": "七月二十日" }
+  "_comment": "Hand-curated display names for Lesta-only ships (indexes absent from the WG tree). The Lesta client localizes only ru, so every other language is curated here — name priority in build_lesta_overlay.py: this file > client texts > en-US working name. Sources: the CN community's established renderings (NGA/bilibili Lesta-line threads), WG's own naming conventions for sister ships (Soviet DD meaning-translations, cruiser 'Admiral X' pattern), and standard transliterations for the ja rows. Keep the zh-CN and zh-SG values identical (same script); ja listed only where the katakana/kanji rendering is established. Series conventions for the port fleet: the Lesta \"Black\" variants append ·黑 to the base name, the CLR (colour-clone) series keeps the CLR token verbatim (\"鲸 CLR\"), and hull-year variants keep the year (\"让·巴尔 1943\").",
+  "PASA206": {
+    "zh-CN": "独立",
+    "zh-SG": "独立",
+    "zh-TW": "獨立",
+    "ja-JP": "インディペンデンス"
+  },
+  "PASA208": {
+    "zh-CN": "约克城",
+    "zh-SG": "约克城",
+    "zh-TW": "約克鎮",
+    "ja-JP": "ヨークタウン"
+  },
+  "PASA210": {
+    "zh-CN": "埃塞克斯",
+    "zh-SG": "埃塞克斯",
+    "zh-TW": "艾塞克斯",
+    "ja-JP": "エセックス"
+  },
+  "PASA588": {
+    "zh-CN": "大黄蜂·黑",
+    "zh-SG": "大黄蜂·黑",
+    "zh-TW": "Hornet·黑"
+  },
+  "PASB211": {
+    "zh-CN": "弗吉尼亚",
+    "zh-SG": "弗吉尼亚",
+    "zh-TW": "維吉尼亞",
+    "ja-JP": "バージニア"
+  },
+  "PASB307": {
+    "zh-CN": "康涅狄格",
+    "zh-SG": "康涅狄格",
+    "zh-TW": "康乃狄克"
+  },
+  "PASB308": {
+    "zh-CN": "华盛顿",
+    "zh-SG": "华盛顿",
+    "zh-TW": "華盛頓",
+    "ja-JP": "ワシントン"
+  },
+  "PASB309": {
+    "zh-CN": "印第安纳",
+    "zh-SG": "印第安纳",
+    "zh-TW": "印第安納",
+    "ja-JP": "インディアナ"
+  },
+  "PASB310": {
+    "zh-CN": "新泽西",
+    "zh-SG": "新泽西",
+    "zh-TW": "新澤西",
+    "ja-JP": "ニュージャージー"
+  },
+  "PASB520": {
+    "zh-CN": "总统",
+    "zh-SG": "总统",
+    "zh-TW": "總統"
+  },
+  "PASB529": {
+    "zh-CN": "北达科他",
+    "zh-SG": "北达科他",
+    "zh-TW": "北達科他"
+  },
+  "PASB548": {
+    "zh-CN": "俄勒冈",
+    "zh-SG": "俄勒冈",
+    "zh-TW": "Oregon"
+  },
+  "PASC517": {
+    "zh-CN": "钱瑟勒斯维尔",
+    "zh-SG": "钱瑟勒斯维尔",
+    "zh-TW": "錢瑟勒斯維爾"
+  },
+  "PASC520": {
+    "zh-CN": "北安普顿",
+    "zh-SG": "北安普顿",
+    "zh-TW": "北安普頓"
+  },
+  "PASC540": {
+    "zh-CN": "谢南多厄",
+    "zh-SG": "谢南多厄",
+    "zh-TW": "謝南多厄"
+  },
+  "PASC558": {
+    "zh-CN": "宪法",
+    "zh-SG": "宪法",
+    "zh-TW": "憲法"
+  },
+  "PASC620": {
+    "zh-CN": "切萨皮克",
+    "zh-SG": "切萨皮克",
+    "zh-TW": "切薩皮克"
+  },
+  "PASD207": {
+    "zh-CN": "法兰德",
+    "zh-SG": "法兰德",
+    "zh-TW": "法蘭德"
+  },
+  "PASD208": {
+    "zh-CN": "霍格",
+    "zh-SG": "霍格",
+    "zh-TW": "霍格"
+  },
+  "PASD209": {
+    "zh-CN": "马菲特",
+    "zh-SG": "马菲特",
+    "zh-TW": "馬菲特"
+  },
+  "PASD210": {
+    "zh-CN": "林奇",
+    "zh-SG": "林奇",
+    "zh-TW": "林奇"
+  },
+  "PASD511": {
+    "zh-CN": "石墙",
+    "zh-SG": "石墙",
+    "zh-TW": "石牆"
+  },
+  "PASD517": {
+    "zh-CN": "梅奥",
+    "zh-SG": "梅奥",
+    "zh-TW": "梅奧"
+  },
+  "PASD521": {
+    "zh-CN": "詹金斯",
+    "zh-SG": "詹金斯",
+    "zh-TW": "詹金斯"
+  },
+  "PASD820": {
+    "zh-CN": "林奇 CLR",
+    "zh-SG": "林奇 CLR",
+    "zh-TW": "林奇 CLR"
+  },
+  "PASS610": {
+    "zh-CN": "射水鱼",
+    "zh-SG": "射水鱼",
+    "zh-TW": "Archerfish"
+  },
+  "PBSB506": {
+    "zh-CN": "君权",
+    "zh-SG": "君权",
+    "zh-TW": "Royal Sovereign"
+  },
+  "PBSB518": {
+    "zh-CN": "安森",
+    "zh-SG": "安森",
+    "zh-TW": "安森"
+  },
+  "PBSB520": {
+    "zh-CN": "宙斯",
+    "zh-SG": "宙斯",
+    "zh-TW": "宙斯"
+  },
+  "PBSB530": {
+    "zh-CN": "杰利科",
+    "zh-SG": "杰利科",
+    "zh-TW": "傑利科"
+  },
+  "PBSB811": {
+    "zh-CN": "蹂躏 CLR",
+    "zh-SG": "毁灭 CLR",
+    "zh-TW": "蹂躏 CLR"
+  },
+  "PBSC509": {
+    "zh-CN": "抵抗",
+    "zh-SG": "抵抗",
+    "zh-TW": "抵抗"
+  },
+  "PBSD511": {
+    "zh-CN": "滑铁卢",
+    "zh-SG": "滑铁卢",
+    "zh-TW": "滑鐵盧"
+  },
+  "PBSD809": {
+    "zh-CN": "日德兰 CLR",
+    "zh-SG": "日德兰 CLR",
+    "zh-TW": "日德兰 CLR"
+  },
+  "PFSB509": {
+    "zh-CN": "贝尔纳多特",
+    "zh-SG": "贝尔纳多特",
+    "zh-TW": "貝爾納多特"
+  },
+  "PFSB511": {
+    "zh-CN": "阿基坦",
+    "zh-SG": "阿基坦",
+    "zh-TW": "阿基坦"
+  },
+  "PFSB519": {
+    "zh-CN": "让·巴尔 1943",
+    "zh-SG": "让·巴尔 1943",
+    "zh-TW": "让·巴尔 1943"
+  },
+  "PFSB529": {
+    "zh-CN": "阿图瓦",
+    "zh-SG": "阿图瓦",
+    "zh-TW": "阿圖瓦"
+  },
+  "PFSB598": {
+    "zh-CN": "加斯科涅·黑",
+    "zh-SG": "加斯科涅·黑",
+    "zh-TW": "Gascogne·黑"
+  },
+  "PFSC519": {
+    "zh-CN": "德·格拉斯 1956",
+    "zh-SG": "格拉斯 1956",
+    "zh-TW": "德·格拉斯 1956"
+  },
+  "PFSC811": {
+    "zh-CN": "孔代 CLR",
+    "zh-SG": "孔代 CLR",
+    "zh-TW": "Condé CLR"
+  },
+  "PFSD111": {
+    "zh-CN": "罗伯斯庇尔",
+    "zh-SG": "罗伯斯庇尔",
+    "zh-TW": "羅伯斯庇爾"
+  },
+  "PFSD509": {
+    "zh-CN": "迪佩雷",
+    "zh-SG": "迪佩雷",
+    "zh-TW": "迪佩雷"
+  },
+  "PFSD510": {
+    "zh-CN": "伏尔蒂格",
+    "zh-SG": "伏尔蒂格",
+    "zh-TW": "伏爾蒂格"
+  },
+  "PFSD519": {
+    "zh-CN": "福尔班",
+    "zh-SG": "福尔班",
+    "zh-TW": "福爾班"
+  },
+  "PFSD610": {
+    "zh-CN": "雷诺堡",
+    "zh-SG": "雷诺堡",
+    "zh-TW": "Châteaurenault"
+  },
+  "PFSS106": {
+    "zh-CN": "迪安娜",
+    "zh-SG": "迪安娜",
+    "zh-TW": "迪安娜"
+  },
+  "PFSS108": {
+    "zh-CN": "阿非利加",
+    "zh-SG": "阿非利加",
+    "zh-TW": "阿非利加"
+  },
+  "PFSS110": {
+    "zh-CN": "卡萨比安卡",
+    "zh-SG": "卡萨比安卡",
+    "zh-TW": "卡薩比安卡",
+    "ja-JP": "カサビアンカ"
+  },
+  "PFSS506": {
+    "zh-CN": "蓝宝石",
+    "zh-SG": "蓝宝石",
+    "zh-TW": "藍寶石"
+  },
+  "PFSS510": {
+    "zh-CN": "絮库夫",
+    "zh-SG": "絮库夫",
+    "zh-TW": "Surcouf"
+  },
+  "PGSB211": {
+    "zh-CN": "塞德利茨",
+    "zh-SG": "塞德利茨",
+    "zh-TW": "塞德利茨"
+  },
+  "PGSB510": {
+    "zh-CN": "洛特林根",
+    "zh-SG": "洛特林根",
+    "zh-TW": "洛特林根"
+  },
+  "PGSB511": {
+    "zh-CN": "士瓦本",
+    "zh-SG": "士瓦本",
+    "zh-TW": "士瓦本"
+  },
+  "PGSB537": {
+    "zh-CN": "普法尔茨",
+    "zh-SG": "普法尔茨",
+    "zh-TW": "普法爾茨"
+  },
+  "PGSB548": {
+    "zh-CN": "奥丁·黑",
+    "zh-SG": "奥丁·黑",
+    "zh-TW": "Odin·黑"
+  },
+  "PGSB810": {
+    "zh-CN": "施里芬 CLR",
+    "zh-SG": "施里芬 CLR",
+    "zh-TW": "施里芬 CLR"
+  },
+  "PGSC207": {
+    "zh-CN": "维内塔",
+    "zh-SG": "维内塔",
+    "zh-TW": "維內塔"
+  },
+  "PGSC208": {
+    "zh-CN": "赫尔塔",
+    "zh-SG": "赫尔塔",
+    "zh-TW": "赫爾塔"
+  },
+  "PGSC209": {
+    "zh-CN": "弗蕾亚",
+    "zh-SG": "弗蕾亚",
+    "zh-TW": "弗蕾亞"
+  },
+  "PGSC210": {
+    "zh-CN": "汉莎",
+    "zh-SG": "汉莎",
+    "zh-TW": "漢莎"
+  },
+  "PGSC520": {
+    "zh-CN": "法金汉",
+    "zh-SG": "法金汉",
+    "zh-TW": "法金漢"
+  },
+  "PGSC530": {
+    "zh-CN": "沃坦",
+    "zh-SG": "沃坦",
+    "zh-TW": "沃坦"
+  },
+  "PGSC539": {
+    "zh-CN": "但泽",
+    "zh-SG": "但泽",
+    "zh-TW": "但澤"
+  },
+  "PGSC549": {
+    "zh-CN": "尼伯龙根",
+    "zh-SG": "尼伯龙根",
+    "zh-TW": "尼伯龍根"
+  },
+  "PGSC588": {
+    "zh-CN": "欧根亲王·黑",
+    "zh-SG": "欧根亲王·黑",
+    "zh-TW": "Prinz Eugen·黑"
+  },
+  "PGSD111": {
+    "zh-CN": "奥托·维迪根",
+    "zh-SG": "奥托·维迪根",
+    "zh-TW": "奧托·維迪根"
+  },
+  "PGSD538": {
+    "zh-CN": "Z-32",
+    "zh-SG": "Z-32",
+    "zh-TW": "Z-32"
+  },
+  "PGSD548": {
+    "zh-CN": "Z-33",
+    "zh-SG": "Z-33",
+    "zh-TW": "Z-33"
+  },
+  "PGSD558": {
+    "zh-CN": "Z-38",
+    "zh-SG": "Z-38",
+    "zh-TW": "Z-38"
+  },
+  "PGSS111": {
+    "zh-CN": "U-796",
+    "zh-SG": "U-796",
+    "zh-TW": "U-796"
+  },
+  "PHSD506": {
+    "zh-CN": "科尔特纳尔",
+    "zh-SG": "科尔特纳尔",
+    "zh-TW": "科爾特納爾"
+  },
+  "PHSD520": {
+    "zh-CN": "乌得勒支",
+    "zh-SG": "乌特勒支",
+    "zh-TW": "Utrecht"
+  },
+  "PISA510": {
+    "zh-CN": "拉齐奥",
+    "zh-SG": "拉齐奥",
+    "zh-TW": "拉齊奧"
+  },
+  "PISB111": {
+    "zh-CN": "伽利略",
+    "zh-SG": "伽利略",
+    "zh-TW": "伽利略",
+    "ja-JP": "ガリレオ"
+  },
+  "PISB539": {
+    "zh-CN": "帝国",
+    "zh-SG": "帝国",
+    "zh-TW": "帝國"
+  },
+  "PISB549": {
+    "zh-CN": "圣乔治",
+    "zh-SG": "圣乔治",
+    "zh-TW": "聖喬治"
+  },
+  "PISC206": {
+    "zh-CN": "奥勒留·戴克里先",
+    "zh-SG": "奥勒留·戴克里先",
+    "zh-TW": "奧勒留·戴克里先"
+  },
+  "PISC207": {
+    "zh-CN": "瓦莱里奥·君士坦丁",
+    "zh-SG": "瓦莱里奥·君士坦丁",
+    "zh-TW": "瓦萊里奧·君士坦丁"
+  },
+  "PISC208": {
+    "zh-CN": "马可·奥勒留",
+    "zh-SG": "马可·奥勒留",
+    "zh-TW": "馬可·奧勒留"
+  },
+  "PISC209": {
+    "zh-CN": "埃利奥·哈德良",
+    "zh-SG": "埃利奥·哈德良",
+    "zh-TW": "埃利奧·哈德良"
+  },
+  "PISC210": {
+    "zh-CN": "乌尔皮奥·图拉真",
+    "zh-SG": "乌尔皮奥·图拉真",
+    "zh-TW": "烏爾皮奧·圖拉真"
+  },
+  "PISC211": {
+    "zh-CN": "利古里亚",
+    "zh-SG": "利古里亚",
+    "zh-TW": "利古里亞"
+  },
+  "PISC509": {
+    "zh-CN": "伊松佐",
+    "zh-SG": "伊松佐",
+    "zh-TW": "伊松佐"
+  },
+  "PISD511": {
+    "zh-CN": "阿美利哥·韦斯普奇",
+    "zh-SG": "阿美利哥·韦斯普奇",
+    "zh-TW": "阿美利哥·韋斯普奇"
+  },
+  "PJSA206": {
+    "zh-CN": "瑞凤",
+    "zh-SG": "瑞凤",
+    "zh-TW": "瑞鳳",
+    "ja-JP": "瑞鳳"
+  },
+  "PJSA208": {
+    "zh-CN": "飞龙",
+    "zh-SG": "飞龙",
+    "zh-TW": "飛龍",
+    "ja-JP": "飛龍"
+  },
+  "PJSA210": {
+    "zh-CN": "大凤",
+    "zh-SG": "大凤",
+    "zh-TW": "大鳳",
+    "ja-JP": "大鳳"
+  },
+  "PJSA508": {
+    "zh-CN": "凰",
+    "zh-SG": "赤城",
+    "zh-TW": "Akagi"
+  },
+  "PJSA510": {
+    "zh-CN": "鹗",
+    "zh-SG": "信浓",
+    "zh-TW": "Shinano"
+  },
+  "PJSB503": {
+    "zh-CN": "鲐 04",
+    "zh-SG": "三笠 04",
+    "zh-TW": "鲐 04"
+  },
+  "PJSB520": {
+    "zh-CN": "雷兽",
+    "zh-SG": "雷兽",
+    "zh-TW": "雷獸"
+  },
+  "PJSB569": {
+    "zh-CN": "白山",
+    "zh-SG": "白山",
+    "zh-TW": "白山"
+  },
+  "PJSB599": {
+    "zh-CN": "尾张之鬼",
+    "zh-SG": "尾张之鬼",
+    "zh-TW": "尾張之鬼"
+  },
+  "PJSB810": {
+    "zh-CN": "鲸 CLR",
+    "zh-SG": "大和 CLR",
+    "zh-TW": "鲸 CLR"
+  },
+  "PJSC111": {
+    "zh-CN": "仙丈",
+    "zh-SG": "仙丈",
+    "zh-TW": "仙丈"
+  },
+  "PJSC506": {
+    "zh-CN": "大淀",
+    "zh-SG": "大淀",
+    "zh-TW": "大淀"
+  },
+  "PJSC509": {
+    "zh-CN": "猉·黑",
+    "zh-SG": "吾妻·黑",
+    "zh-TW": "Azuma·黑"
+  },
+  "PJSC529": {
+    "zh-CN": "鸟海",
+    "zh-SG": "鸟海",
+    "zh-TW": "鳥海"
+  },
+  "PJSC530": {
+    "zh-CN": "九头龙",
+    "zh-SG": "九头龙",
+    "zh-TW": "九頭龍"
+  },
+  "PJSC540": {
+    "zh-CN": "筑后",
+    "zh-SG": "筑后",
+    "zh-TW": "築後"
+  },
+  "PJSC550": {
+    "zh-CN": "海门",
+    "zh-SG": "海门",
+    "zh-TW": "海門"
+  },
+  "PJSD610": {
+    "zh-CN": "夏风",
+    "zh-SG": "夏风",
+    "zh-TW": "夏風"
+  },
+  "PJSD808": {
+    "zh-CN": "杏 CLR",
+    "zh-SG": "秋月 CLR",
+    "zh-TW": "杏 CLR"
+  },
+  "PJSS520": {
+    "zh-CN": "伊2",
+    "zh-SG": "伊2",
+    "zh-TW": "伊2"
+  },
+  "PJSS528": {
+    "zh-CN": "伊54",
+    "zh-SG": "伊54",
+    "zh-TW": "伊54"
+  },
+  "PRSA111": {
+    "zh-CN": "乌里扬诺夫斯克",
+    "zh-SG": "乌里扬诺夫斯克",
+    "zh-TW": "烏里揚諾夫斯克"
+  },
+  "PRSB207": {
+    "zh-CN": "谢尼亚文海军上将",
+    "zh-SG": "谢尼亚文海军上将",
+    "zh-TW": "謝尼亞文海軍上將"
+  },
+  "PRSB208": {
+    "zh-CN": "伊斯托明海军上将",
+    "zh-SG": "伊斯托明海军上将",
+    "zh-TW": "伊斯托明海軍上將"
+  },
+  "PRSB209": {
+    "zh-CN": "科尔尼洛夫海军上将",
+    "zh-SG": "科尔尼洛夫海军上将",
+    "zh-TW": "科爾尼洛夫海軍上將"
+  },
+  "PRSB210": {
+    "zh-CN": "拉扎列夫海军上将",
+    "zh-SG": "拉扎列夫海军上将",
+    "zh-TW": "拉扎列夫海軍上將"
+  },
+  "PRSB503": {
+    "zh-CN": "博罗季诺 04",
+    "zh-SG": "博罗季诺 04",
+    "zh-TW": "博罗季诺 04"
+  },
+  "PRSB515": {
+    "zh-CN": "巴黎公社",
+    "zh-SG": "巴黎公社",
+    "zh-TW": "巴黎公社"
+  },
+  "PRSB520": {
+    "zh-CN": "北莫尔斯克",
+    "zh-SG": "北莫尔斯克",
+    "zh-TW": "北莫爾斯克"
+  },
+  "PRSB526": {
+    "zh-CN": "最高机密",
+    "zh-SG": "最高机密",
+    "zh-TW": "最高機密"
+  },
+  "PRSB530": {
+    "zh-CN": "红旗",
+    "zh-SG": "红旗",
+    "zh-TW": "紅旗"
+  },
+  "PRSB539": {
+    "zh-CN": "乌拉尔",
+    "zh-SG": "乌拉尔",
+    "zh-TW": "烏拉爾"
+  },
+  "PRSB540": {
+    "zh-CN": "苏维埃之国",
+    "zh-SG": "苏维埃之国",
+    "zh-TW": "蘇維埃之國"
+  },
+  "PRSB548": {
+    "zh-CN": "伏龙芝",
+    "zh-SG": "伏龙芝",
+    "zh-TW": "伏龍芝"
+  },
+  "PRSB549": {
+    "zh-CN": "苏维埃格鲁吉亚",
+    "zh-SG": "苏维埃格鲁吉亚",
+    "zh-TW": "蘇維埃格魯吉亞"
+  },
+  "PRSB607": {
+    "zh-CN": "斯卡蒂之矛",
+    "zh-SG": "斯卡蒂之矛",
+    "zh-TW": "斯卡蒂之矛"
+  },
+  "PRSB910": {
+    "zh-CN": "克里姆林",
+    "zh-SG": "克里姆林",
+    "zh-TW": "Kremlin"
+  },
+  "PRSC511": {
+    "zh-CN": "伊凡雷帝",
+    "zh-SG": "伊凡雷帝",
+    "zh-TW": "伊凡雷帝"
+  },
+  "PRSC516": {
+    "zh-CN": "刻赤",
+    "zh-SG": "刻赤",
+    "zh-TW": "刻赤"
+  },
+  "PRSC517": {
+    "zh-CN": "汉科",
+    "zh-SG": "汉科",
+    "zh-TW": "漢科"
+  },
+  "PRSC519": {
+    "zh-CN": "谢尔巴科夫",
+    "zh-SG": "谢尔巴科夫",
+    "zh-TW": "謝爾巴科夫"
+  },
+  "PRSC526": {
+    "zh-CN": "莫洛托夫·黑",
+    "zh-SG": "莫洛托夫·黑",
+    "zh-TW": "Molotov·黑"
+  },
+  "PRSC529": {
+    "zh-CN": "陶里亚蒂",
+    "zh-SG": "陶里亚蒂",
+    "zh-TW": "陶里亞蒂"
+  },
+  "PRSC539": {
+    "zh-CN": "尤里·多尔戈鲁基",
+    "zh-SG": "尤里·多尔戈鲁基",
+    "zh-TW": "尤里·多爾戈魯基"
+  },
+  "PRSC540": {
+    "zh-CN": "穆恩海峡 1965",
+    "zh-SG": "穆恩海峡 1965",
+    "zh-TW": "穆恩海峽 1965"
+  },
+  "PRSC549": {
+    "zh-CN": "俄罗斯阿拉斯加",
+    "zh-SG": "俄罗斯阿拉斯加",
+    "zh-TW": "俄羅斯阿拉斯加"
+  },
+  "PRSC559": {
+    "zh-CN": "斯维尔德洛夫斯克",
+    "zh-SG": "斯维尔德洛夫斯克",
+    "zh-TW": "斯維爾德洛夫斯克"
+  },
+  "PRSC560": {
+    "zh-CN": "苏沃洛夫大元帅",
+    "zh-SG": "苏沃洛夫大元帅",
+    "zh-TW": "蘇沃洛夫大元帥"
+  },
+  "PRSC578": {
+    "zh-CN": "奥莉加女大公",
+    "zh-SG": "奥莉加女大公",
+    "zh-TW": "奧莉加女大公"
+  },
+  "PRSC609": {
+    "zh-CN": "彗星",
+    "zh-SG": "彗星",
+    "zh-TW": "彗星"
+  },
+  "PRSC618": {
+    "zh-CN": "信天翁",
+    "zh-SG": "信天翁",
+    "zh-TW": "信天翁"
+  },
+  "PRSC809": {
+    "zh-CN": "里加 CLR",
+    "zh-SG": "里加 CLR",
+    "zh-TW": "里加 CLR"
+  },
+  "PRSD218": {
+    "zh-CN": "试验",
+    "zh-SG": "试验",
+    "zh-TW": "試驗"
+  },
+  "PRSD306": {
+    "zh-CN": "灵敏",
+    "zh-SG": "灵敏",
+    "zh-TW": "靈敏"
+  },
+  "PRSD317": {
+    "zh-CN": "谨慎",
+    "zh-SG": "谨慎",
+    "zh-TW": "謹慎"
+  },
+  "PRSD318": {
+    "zh-CN": "勇敢",
+    "zh-SG": "勇敢",
+    "zh-TW": "勇敢"
+  },
+  "PRSD319": {
+    "zh-CN": "安静",
+    "zh-SG": "安静",
+    "zh-TW": "安靜"
+  },
+  "PRSD320": {
+    "zh-CN": "骄傲",
+    "zh-SG": "骄傲",
+    "zh-TW": "驕傲"
+  },
+  "PRSD509": {
+    "zh-CN": "现代",
+    "zh-SG": "现代",
+    "zh-TW": "現代"
+  },
+  "PRSD516": {
+    "zh-CN": "绍米扬",
+    "zh-SG": "绍米扬",
+    "zh-TW": "紹米揚"
+  },
+  "PRSD519": {
+    "zh-CN": "炽热",
+    "zh-SG": "炽热",
+    "zh-TW": "熾熱"
+  },
+  "PRSS111": {
+    "zh-CN": "B-4 切利亚宾斯克共青团员",
+    "zh-SG": "B-4 切利亚宾斯克共青团员",
+    "zh-TW": "B-4 切利亞賓斯克共青團員"
+  },
+  "PRSS518": {
+    "zh-CN": "S-189·黑",
+    "zh-SG": "S-189·黑",
+    "zh-TW": "S-189·黑"
+  },
+  "PSSB510": {
+    "zh-CN": "征服者",
+    "zh-SG": "征服者",
+    "zh-TW": "征服者"
+  },
+  "PSSC510": {
+    "zh-CN": "马德里",
+    "zh-SG": "马德里",
+    "zh-TW": "馬德里"
+  },
+  "PSSC809": {
+    "zh-CN": "安达卢西亚 CLR",
+    "zh-SG": "安达卢西亚 CLR",
+    "zh-TW": "Andalucía CLR"
+  },
+  "PUSC590": {
+    "zh-CN": "布里斯班·黑",
+    "zh-SG": "布里斯班·黑",
+    "zh-TW": "Brisbane·黑"
+  },
+  "PUSD520": {
+    "zh-CN": "安扎克",
+    "zh-SG": "安扎克",
+    "zh-TW": "安扎克"
+  },
+  "PVSB509": {
+    "zh-CN": "巴塔哥尼亚",
+    "zh-SG": "巴塔哥尼亚",
+    "zh-TW": "巴塔哥尼亞"
+  },
+  "PVSC509": {
+    "zh-CN": "弗朗西斯科·米兰达",
+    "zh-SG": "弗朗西斯科·米兰达",
+    "zh-TW": "弗朗西斯科·米蘭達"
+  },
+  "PVSC510": {
+    "zh-CN": "西蒙·玻利瓦尔",
+    "zh-SG": "西蒙·玻利瓦尔",
+    "zh-TW": "西蒙·玻利瓦爾"
+  },
+  "PVSC517": {
+    "zh-CN": "五月二十五日",
+    "zh-SG": "五月二十五日",
+    "zh-TW": "五月二十五日"
+  },
+  "PVSC808": {
+    "zh-CN": "伊格纳西奥·阿连德 CLR",
+    "zh-SG": "伊格纳西奥·阿连德 CLR",
+    "zh-TW": "伊格納西奧·阿連德 CLR"
+  },
+  "PVSD105": {
+    "zh-CN": "塞拉诺",
+    "zh-SG": "塞拉诺",
+    "zh-TW": "塞拉諾"
+  },
+  "PVSD106": {
+    "zh-CN": "布宜诺斯艾利斯",
+    "zh-SG": "布宜诺斯艾利斯",
+    "zh-TW": "布宜諾斯艾利斯"
+  },
+  "PVSD107": {
+    "zh-CN": "阿克里",
+    "zh-SG": "阿克里",
+    "zh-TW": "阿克里"
+  },
+  "PVSD108": {
+    "zh-CN": "卡瓦哈尔",
+    "zh-SG": "卡瓦哈尔",
+    "zh-TW": "卡瓦哈爾"
+  },
+  "PVSD109": {
+    "zh-CN": "帕拉",
+    "zh-SG": "帕拉",
+    "zh-TW": "帕拉"
+  },
+  "PVSD110": {
+    "zh-CN": "新埃斯帕塔",
+    "zh-SG": "新埃斯帕塔",
+    "zh-TW": "新埃斯帕塔"
+  },
+  "PVSD111": {
+    "zh-CN": "七月二十日",
+    "zh-SG": "七月二十日",
+    "zh-TW": "七月二十日"
+  },
+  "PWSB519": {
+    "zh-CN": "布达佩斯",
+    "zh-SG": "布达佩斯",
+    "zh-TW": "布達佩斯"
+  },
+  "PWSD507": {
+    "zh-CN": "雷霆",
+    "zh-SG": "雷霆",
+    "zh-TW": "雷霆"
+  },
+  "PWSD517": {
+    "zh-CN": "闪电·黑",
+    "zh-SG": "闪电·黑",
+    "zh-TW": "閃電·黑"
+  },
+  "PWSD518": {
+    "zh-CN": "闪电 1963",
+    "zh-SG": "闪电 1963",
+    "zh-TW": "閃電 1963"
+  },
+  "PWSD599": {
+    "zh-CN": "猎兵·黑",
+    "zh-SG": "耶格尔·黑",
+    "zh-TW": "Jäger·黑"
+  },
+  "PWSS508": {
+    "zh-CN": "萨尔迪雷",
+    "zh-SG": "萨尔迪雷",
+    "zh-TW": "薩爾迪雷"
+  },
+  "PXSC020": {
+    "zh-CN": "科谢伊",
+    "zh-SG": "科谢伊",
+    "zh-TW": "科謝伊"
+  },
+  "PXSC021": {
+    "zh-CN": "戈里尼奇",
+    "zh-SG": "戈里尼奇",
+    "zh-TW": "戈里尼奇"
+  },
+  "PXSC022": {
+    "zh-CN": "沃佳诺伊",
+    "zh-SG": "沃佳诺伊",
+    "zh-TW": "沃佳諾伊"
+  },
+  "PZSA518": {
+    "zh-CN": "仙灯",
+    "zh-SG": "仙灯",
+    "zh-TW": "仙燈"
+  },
+  "PZSB106": {
+    "zh-CN": "却克里",
+    "zh-SG": "却克里",
+    "zh-TW": "卻克里"
+  },
+  "PZSB107": {
+    "zh-CN": "祖勒菲卡尔",
+    "zh-SG": "祖勒菲卡尔",
+    "zh-TW": "祖勒菲卡爾"
+  },
+  "PZSB108": {
+    "zh-CN": "河内",
+    "zh-SG": "河内",
+    "zh-TW": "河內"
+  },
+  "PZSB109": {
+    "zh-CN": "东风",
+    "zh-SG": "东风",
+    "zh-TW": "東風"
+  },
+  "PZSB110": {
+    "zh-CN": "天宫",
+    "zh-SG": "天宫",
+    "zh-TW": "天宮"
+  },
+  "PZSB549": {
+    "zh-CN": "巨浪",
+    "zh-SG": "巨浪",
+    "zh-TW": "巨浪"
+  },
+  "PZSB559": {
+    "zh-CN": "先军",
+    "zh-SG": "先军",
+    "zh-TW": "先軍"
+  },
+  "PZSB610": {
+    "zh-CN": "长征",
+    "zh-SG": "长征",
+    "zh-TW": "長征"
+  },
+  "PZSB620": {
+    "zh-CN": "皇帝",
+    "zh-SG": "皇帝",
+    "zh-TW": "皇帝"
+  },
+  "PZSC111": {
+    "zh-CN": "西安",
+    "zh-SG": "西安",
+    "zh-TW": "西安"
+  },
+  "PZSC528": {
+    "zh-CN": "斗舰",
+    "zh-SG": "斗舰",
+    "zh-TW": "鬥艦"
+  },
+  "PZSC539": {
+    "zh-CN": "赤帝",
+    "zh-SG": "赤帝",
+    "zh-TW": "赤帝"
+  },
+  "PZSD529": {
+    "zh-CN": "奔马",
+    "zh-SG": "奔马",
+    "zh-TW": "奔馬"
+  },
+  "PZSD610": {
+    "zh-CN": "黄龙船",
+    "zh-SG": "黄龙船",
+    "zh-TW": "黃龍船"
+  },
+  "PZSS508": {
+    "zh-CN": "帕索帕蒂",
+    "zh-SG": "帕索帕蒂",
+    "zh-TW": "帕索帕蒂"
+  }
 }
