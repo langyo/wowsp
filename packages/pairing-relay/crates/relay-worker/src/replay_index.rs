@@ -80,6 +80,7 @@ impl DurableObject for ReplayIndex {
                 self.claim(body).await
             },
             "/admin-list" => self.admin_list().await,
+            "/credits" => self.credits().await,
             "/drain" => {
                 if let Some(resp) = Self::require_post(&req) {
                     return Ok(resp);
@@ -319,6 +320,15 @@ impl ReplayIndex {
             &ledger.admin_list(),
             ledger.counters().0,
         ))
+    }
+
+    /// GET /credits — per-identity lifetime share counts.
+    async fn credits(&self) -> Result<Response> {
+        let slot = self.ledger.borrow();
+        let Some(ledger) = slot.as_ref() else {
+            return not_hydrated();
+        };
+        Response::from_json(&relay_core::replay::credits_response(&ledger.credits()))
     }
 
     /// POST /drain — mark staged members drained, zero blob totals,

@@ -435,14 +435,31 @@ Storage layout:
   8/day per anonId + 24/day per IP, archive fetches 20/day per anonId,
   checks 60/day per IP; 429s carry `Retry-After`.
 
-**Maintainer drain flow**: log into `/erp` → `GET
-/api/replays/admin/list` (contributors + watermark) → fetch each
-interesting shard via `GET /api/replays/admin/archive?anon_id=…`
-(verify members by re-hashing) → `POST /api/replays/admin/drain` with
-the collected `anonIds`. Drain marks their members `drained`, zeroes
-their blob totals and decrements the watermark (freeing space for new
-contributors; their `creditCount` survives for the contributor list)
-and deletes the R2 shards.
+**Maintainer drain flow** — two equivalent faces:
+
+- The CLI (preferred, `packages/tools/replay-drain`, root-workspace
+  member): `just drain-replays` (= `cargo run -p replay-drain -- pull`)
+  lists contributors, streams every staged shard, re-hashes each member
+  against its `<sha256>.<ext>` name while storing it content-addressed
+  under `replay-archive/raw/`, and — only when a shard verified clean —
+  drains it. Flags: `--relay`, `--key`, `--out`, `--only <anon>`,
+  `--min-staged <n>`, `--dry-run`. Set the key via
+  `WOWSP_REPLAY_ADMIN_KEY` or `--key`; the relay URL defaults to
+  https://wowsp.langyo.xyz (env `WOWSP_RELAY_URL`).
+- The `/erp` console's 录像征集 view: the wanted ruleset with live
+  progress, the contributor table with per-row shard downloads, and
+  two-step-armed drain buttons (browser session auth).
+
+`replay-drain credits [--out contributors.json]` exports the
+per-identity lifetime counts (`GET /api/replays/admin/credits`) as the
+webui's `contributors.json` envelope (auto-incrementing `version`,
+RFC3339 `generatedAt`) — copy it to
+`packages/webui/src/res/contributors.json` before building a release.
+
+The admin routes accept EITHER a logged-in erp session OR an
+`x-admin-key` header matching the `REPLAY_ADMIN_KEY` secret
+(`wrangler secret put REPLAY_ADMIN_KEY`; a high-entropy random value).
+While the secret is unset the routes answer to the browser flow only.
 
 ## Deploy
 

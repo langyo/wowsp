@@ -1,0 +1,21 @@
+[package]
+name = "replay-drain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "SySL-1.0"
+publish = false  # maintainer-side ops binary, never published
+description = "Replay-share drain CLI — pull, verify and drain contributor shards, export credits"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+hex.workspace = true
+tar.workspace = true
+zstd.workspace = true

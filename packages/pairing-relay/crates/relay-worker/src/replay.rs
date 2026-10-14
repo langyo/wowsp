@@ -426,17 +426,50 @@ pub async fn handle_upload(mut req: Request, env: Env) -> Result<Response> {
     }))
 }
 
-// ── admin (drain) routes — erp-session-gated ──────────────────────────
+// ── admin (drain) routes — erp-session OR machine-key gated ───────────
+
+/// The admin gate: a logged-in erp console session (Feishu OAuth +
+/// allowlist) OR an `x-admin-key` header matching the operator's
+/// REPLAY_ADMIN_KEY secret — the drain CLI's machine leg. Neither set
+/// means the browser flow only; both set means either works.
+fn admin_authed(req: &Request, env: &Env) -> bool {
+    if crate::erp::session_ok(req, env) {
+        return true;
+    }
+    let provided = req.headers().get("x-admin-key").ok().flatten();
+    let expected = env
+        .secret("REPLAY_ADMIN_KEY")
+        .ok()
+        .map(|s| s.to_string());
+    relay_core::replay::admin_key_ok(provided.as_deref(), expected.as_deref())
+}
 
 /// GET /api/replays/admin/list — every contributor + the watermark.
 pub async fn handle_admin_list(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !crate::erp::session_ok(&req, &env) {
+    if !admin_authed(&req, &env) {
         return err(401, "unauthorized");
     }
     let mut resp = do_get(&env, "/admin-list").await?;
+    if resp.status_code() != 200 {
+        return err(500, "index_unavailable");
+    }
+    let v: Value = resp.json().await.unwrap_or(Value::Null);
+    ok(v)
+}
+
+/// GET /api/replays/admin/credits — the per-identity lifetime share
+/// counts (the release-time contributors list's source of truth).
+pub async fn handle_admin_credits(req: Request, env: Env) -> Result<Response> {
+    if req.method() != Method::Get {
+        return err(405, "method_not_allowed");
+    }
+    if !admin_authed(&req, &env) {
+        return err(401, "unauthorized");
+    }
+    let mut resp = do_get(&env, "/credits").await?;
     if resp.status_code() != 200 {
         return err(500, "index_unavailable");
     }
@@ -449,7 +482,7 @@ pub async fn handle_admin_archive(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !crate::erp::session_ok(&req, &env) {
+    if !admin_authed(&req, &env) {
         return err(401, "unauthorized");
     }
     let query = req.url()?.query().unwrap_or("").to_string();
@@ -471,7 +504,7 @@ pub async fn handle_admin_drain(mut req: Request, env: Env) -> Result<Response> 
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
     }
-    if !crate::erp::session_ok(&req, &env) {
+    if !admin_authed(&req, &env) {
         return err(401, "unauthorized");
     }
     let body: Value = req.json().await.unwrap_or(Value::Null);

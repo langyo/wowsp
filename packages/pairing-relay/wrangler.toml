@@ -147,6 +147,10 @@ new_sqlite_classes = ["ReplayIndex"]
 #   GATEWAY_NOTICE   — free-form operator message surfaced by /api/health.
 # TURNSTILE_SITEKEY is PUBLIC by design (it rides the /feedback HTML) —
 # the matching secret key lives in the worker secrets (TURNSTILE_SECRET).
+# REPLAY_ADMIN_KEY (secret, optional) — the machine gate on
+# /api/replays/admin/*: the replay-drain CLI sends it as x-admin-key.
+#   npx wrangler secret put REPLAY_ADMIN_KEY   (high-entropy random)
+# Unset = the admin routes answer to a logged-in erp session only.
 # Widget "wowsp-feedback" (managed mode, wowsp.langyo.xyz + localhost).
 [vars]
 TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"

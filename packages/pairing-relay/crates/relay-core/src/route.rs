@@ -104,6 +104,9 @@ pub enum Route<'a> {
     /// GET /api/replays/admin/archive?anon_id=… — one contributor's
     /// shard (erp session); `anon_id` is the raw query value.
     ReplaysAdminArchive { anon_id: Option<&'a str> },
+    /// GET /api/replays/admin/credits — per-identity lifetime share
+    /// counts (erp session or machine key; the handler gates).
+    ReplaysAdminCredits,
     /// POST /api/replays/admin/drain — mark staged members drained,
     /// decrement the watermark, delete the shards (erp session).
     ReplaysAdminDrain,
@@ -160,6 +163,7 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
                 anon_id: query_get(query, "anon_id"),
             };
         },
+        "/api/replays/admin/credits" => return Route::ReplaysAdminCredits,
         "/api/replays/admin/drain" => return Route::ReplaysAdminDrain,
         "/api/relay/control" => {
             return Route::Control {
@@ -481,6 +485,10 @@ mod tests {
         assert_eq!(
             classify("/api/replays/admin/archive", ""),
             Route::ReplaysAdminArchive { anon_id: None }
+        );
+        assert_eq!(
+            classify("/api/replays/admin/credits", ""),
+            Route::ReplaysAdminCredits
         );
         assert_eq!(
             classify("/api/replays/admin/drain", ""),

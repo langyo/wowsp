@@ -300,6 +300,8 @@ body {{ margin: 0; height: 100vh; height: 100dvh; display: flex;
   font-family: var(--font-sans); font-size: var(--text-md); line-height: 1.6;
   background: rgb(var(--color-background)); color: rgb(var(--color-text)); }}
 main {{ width: 100%; max-width: 76rem; height: 100%; }}
+.e-nav-gap {{ margin-top: var(--space-8); border-top: 1px solid color-mix(in srgb, rgb(var(--color-text)) 10%, transparent); border-radius: 0; padding-top: var(--space-8); }}
+.e-sub {{ margin: var(--space-16) 0 var(--space-8); font-size: 1rem; font-weight: 600; }}
 .e-card {{ display: flex; align-items: stretch; height: 100%;
   background: color-mix(in srgb, rgb(var(--color-surface)) 70%, transparent);
   border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 12%, transparent);
@@ -528,6 +530,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
     <button type="button" class="e-nav" data-filter="已开PR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></svg><span>已开PR</span></button>
     <button type="button" class="e-nav" data-filter="无需修复"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6m0-6 6 6"/></svg><span>无需修复</span></button>
     <button type="button" class="e-nav" data-filter="需补充"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg><span>需补充</span></button>
+    <button type="button" class="e-nav e-nav-gap" id="navReplays"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg><span>录像征集</span></button>
   </nav>
   <div class="e-side-foot">
     <div id="who" class="e-who" hidden>
@@ -558,6 +561,28 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       <span id="pageInfo" class="e-muted"></span>
     </div>
   </div>
+  <div class="e-content" id="replayApp" hidden>
+    <div class="e-head">
+      <h2 class="e-title">录像征集</h2>
+      <button type="button" id="replayReload" class="e-btn e-spacer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>刷新</span></button>
+    </div>
+    <p class="e-muted" id="replayOverview">加载中…</p>
+    <h3 class="e-sub">需求单（服务端权威接受范围）</h3>
+    <div class="hk-table-host"><table class="hk-table hk-table-md hk-table-hover"><thead><tr class="hk-table-header-row">
+      <th class="hk-table-header-cell" style="width:150px">规则</th><th class="hk-table-header-cell">范围</th>
+      <th class="hk-table-header-cell" style="width:110px">进度</th><th class="hk-table-header-cell" style="width:70px">状态</th>
+    </tr></thead><tbody class="hk-table-body" id="ruleRows"></tbody></table></div>
+    <h3 class="e-sub">贡献者（先下载归档，再提取）</h3>
+    <div class="e-row-actions" style="margin-bottom:var(--space-8)">
+      <button type="button" id="drainAll" class="e-btn">提取全部已暂存…</button>
+      <span class="e-muted" id="drainAllNote"></span>
+    </div>
+    <div class="hk-table-host"><table class="hk-table hk-table-md hk-table-hover"><thead><tr class="hk-table-header-row">
+      <th class="hk-table-header-cell">署名</th><th class="hk-table-header-cell" style="width:80px">服务器</th>
+      <th class="hk-table-header-cell" style="width:80px">暂存</th><th class="hk-table-header-cell" style="width:90px">体积</th>
+      <th class="hk-table-header-cell" style="width:140px">最近活动</th><th class="hk-table-header-cell" style="width:150px">操作</th>
+    </tr></thead><tbody class="hk-table-body" id="contribRows"></tbody></table></div>
+  </div>
   <div class="e-login" id="loginView">
     <div class="e-login-card">
       <div class="e-login-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
@@ -587,6 +612,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   var BASE = "{base_url}";
   var STATUSES = [{statuses_js}];
   var app = document.getElementById("app");
+  var replayApp = document.getElementById("replayApp");
   var loginView = document.getElementById("loginView");
   var lastItems = [];
   var pageToken = null, nextToken = null, prevStack = [];
@@ -642,6 +668,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   }}
   function showLogin(reason) {{
     app.hidden = true;
+    replayApp.hidden = true;
     loginView.hidden = false;
     if (reason === "denied") toast("该飞书账号不在后台允许名单内，请联系维护者。", "error");
     else if (reason) toast("登录失败（" + reason + "），请重试。", "error");
@@ -757,11 +784,157 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   document.getElementById("reload").onclick = function () {{ load(pageToken); }};
   document.querySelectorAll(".e-nav[data-filter]").forEach(function (b) {{
     b.onclick = function () {{
+      replayApp.hidden = true;
+      app.hidden = false;
       var cur = document.querySelector(".e-nav[data-active]");
       if (cur) delete cur.dataset.active;
       b.setAttribute("data-active", "");
       render();
     }};
+  }});
+
+  // ── the replay-collection view ─────────────────────────────────────
+  function fmtBytes(n) {{
+    if (!n) return "0 B";
+    var units = ["B", "KB", "MB", "GB", "TB"];
+    var i = Math.floor(Math.log(n) / Math.log(1024));
+    return (n / Math.pow(1024, i)).toFixed(i ? 1 : 0) + " " + units[Math.min(i, 4)];
+  }}
+  function dimsOf(rule) {{
+    var parts = [];
+    if (rule.maps && rule.maps.length) parts.push("图 " + rule.maps.join(","));
+    if (rule.modes && rule.modes.length) parts.push("模式 " + rule.modes.join(","));
+    if (rule.realms && rule.realms.length) parts.push(rule.realms.map(function (r) {{ return r.toUpperCase(); }}).join("/"));
+    if (rule.shipClasses && rule.shipClasses.length) parts.push(rule.shipClasses.join("/"));
+    if (rule.tiers && rule.tiers.length) parts.push("T" + rule.tiers.join(","));
+    if (rule.shipIds && rule.shipIds.length) parts.push("指定舰 " + rule.shipIds.length);
+    if (rule.playerCountMin || rule.playerCountMax) {{
+      parts.push("人数 " + (rule.playerCountMin || 1) + "-" + (rule.playerCountMax || "∞"));
+    }}
+    if (rule.botMax != null) parts.push("机器人≤" + rule.botMax);
+    if (rule.clientVersionMin) parts.push("版本≥" + rule.clientVersionMin);
+    return parts.join(" · ") || "不限";
+  }}
+  function armClick(btn, label, armedLabel, action) {{
+    btn.onclick = function () {{
+      if (btn.dataset.armed) {{
+        delete btn.dataset.armed;
+        btn.textContent = label;
+        action();
+        return;
+      }}
+      btn.dataset.armed = "1";
+      btn.textContent = armedLabel;
+      setTimeout(function () {{
+        if (btn.dataset.armed) {{
+          delete btn.dataset.armed;
+          btn.textContent = label;
+        }}
+      }}, 4000);
+    }};
+  }}
+  function drainIds(ids) {{
+    fetch(BASE + "/api/replays/admin/drain", {{
+      method: "POST",
+      headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{ anonIds: ids }})
+    }}).then(function (r) {{
+      if (r.status === 401 || r.status === 403) {{ showLogin(""); throw new Error("unauthorized"); }}
+      return r.json();
+    }}).then(function (j) {{
+      toast((j.drained ? j.drained.length : 0) + " 位贡献者已提取（" + fmtBytes(j.bytes || 0) + "）", "success");
+      loadReplays();
+    }}).catch(function (e) {{
+      if (e.message !== "unauthorized") toast("提取失败：" + e.message, "error");
+    }});
+  }}
+  function loadReplays() {{
+    $("replayOverview").textContent = "加载中…";
+    $("ruleRows").innerHTML = "";
+    $("contribRows").innerHTML = "";
+    var wanted = fetch(BASE + "/api/replays/wanted").then(function (r) {{ return r.json(); }});
+    var list = fetch(BASE + "/api/replays/admin/list").then(function (r) {{
+      if (r.status === 401 || r.status === 403) {{ showLogin(""); throw new Error("unauthorized"); }}
+      return r.json();
+    }});
+    Promise.all([wanted, list]).then(function (both) {{
+      var w = both[0], l = both[1];
+      var accepting = w.watermark && w.watermark.accepting;
+      $("replayOverview").textContent =
+        "水位 " + fmtBytes((w.watermark && w.watermark.stagedBytes) || 0) + " / " +
+        fmtBytes((w.watermark && w.watermark.limitBytes) || 0) +
+        (accepting ? " · 征集中" : " · 已关闭（规则空或水位满）") +
+        " · " + (w.rules || []).length + " 条规则 · " + (l.contributors || []).length + " 位贡献者";
+      (w.rules || []).forEach(function (rule) {{
+        var open = accepting && (rule.maxCount == null || rule.collected < rule.maxCount);
+        var tr = document.createElement("tr");
+        tr.className = "hk-table-row";
+        tr.innerHTML =
+          '<td class="hk-table-cell">' + esc(rule.id) +
+            (rule.note ? '<div class="e-muted">' + esc(rule.note) + "</div>" : "") + "</td>" +
+          '<td class="hk-table-cell">' + esc(dimsOf(rule)) + "</td>" +
+          '<td class="hk-table-cell">' + (rule.collected || 0) + " / " +
+            (rule.maxCount == null ? "∞" : rule.maxCount) + "</td>" +
+          '<td class="hk-table-cell">' + (open ? "收" : "停") + "</td>";
+        $("ruleRows").appendChild(tr);
+      }});
+      if (!(w.rules || []).length) {{
+        var tr = document.createElement("tr");
+        tr.className = "hk-table-row";
+        tr.innerHTML = '<td class="hk-table-cell" colspan="4"><span class="e-muted">需求单为空 —— 征集关闭（FEEDBACK_KV 的 replays:wanted 未设置）。</span></td>';
+        $("ruleRows").appendChild(tr);
+      }}
+      var staged = 0;
+      (l.contributors || []).forEach(function (c) {{
+        if (c.stagedCount > 0) staged += 1;
+        var tr = document.createElement("tr");
+        tr.className = "hk-table-row";
+        tr.innerHTML =
+          '<td class="hk-table-cell">' + esc(c.creditedName) +
+            '<div class="e-muted">' + esc(c.anonId) + "</div></td>" +
+          '<td class="hk-table-cell">' + esc((c.realm || "").toUpperCase()) + "</td>" +
+          '<td class="hk-table-cell">' + (c.stagedCount || 0) + "</td>" +
+          '<td class="hk-table-cell">' + fmtBytes(c.archiveBytes || 0) + "</td>" +
+          '<td class="hk-table-cell">' + esc(fmtTime(c.updatedAt)) + "</td>" +
+          '<td class="hk-table-cell"><div class="e-row-actions">' +
+            '<a href="' + BASE + "/api/replays/admin/archive?anon_id=" + encodeURIComponent(c.anonId) + '">下载</a> ' +
+            '<button type="button" class="e-btn drain" data-anon="' + esc(c.anonId) + '"' +
+              (c.stagedCount > 0 ? "" : " disabled") + ">提取</button></div></td>";
+        $("contribRows").appendChild(tr);
+      }});
+      if (!(l.contributors || []).length) {{
+        var tr = document.createElement("tr");
+        tr.className = "hk-table-row";
+        tr.innerHTML = '<td class="hk-table-cell" colspan="6"><span class="e-muted">还没有任何贡献者。</span></td>';
+        $("contribRows").appendChild(tr);
+      }}
+      $("drainAll").disabled = staged === 0;
+      $("drainAllNote").textContent = staged ? staged + " 位有待提取" : "";
+      $("contribRows").querySelectorAll("button.drain").forEach(function (b) {{
+        armClick(b, "提取", "确认提取?", function () {{
+          drainIds([b.getAttribute("data-anon")]);
+        }});
+      }});
+    }}).catch(function (e) {{
+      if (e.message !== "unauthorized") {{
+        $("replayOverview").textContent = "加载失败：" + e.message;
+      }}
+    }});
+  }}
+  document.getElementById("navReplays").onclick = function () {{
+    var cur = document.querySelector(".e-nav[data-active]");
+    if (cur) delete cur.dataset.active;
+    app.hidden = true;
+    replayApp.hidden = false;
+    loadReplays();
+  }};
+  document.getElementById("replayReload").onclick = loadReplays;
+  armClick(document.getElementById("drainAll"), "提取全部已暂存…", "确认全部提取?（请先逐个下载归档）", function () {{
+    var ids = [];
+    document.querySelectorAll('#contribRows button.drain:not([disabled])').forEach(function (b) {{
+      ids.push(b.getAttribute("data-anon"));
+    }});
+    if (ids.length) drainIds(ids);
   }});
   document.getElementById("logout").onclick = function () {{
     fetch(BASE + "/api/erp/logout", {{ method: "POST" }}).then(function () {{

@@ -1038,6 +1038,28 @@ impl Ledger {
         rules.sort();
         (self.wm, rules)
     }
+
+    /// The /credits face: per-identity totals for the release-time
+    /// contributors list. Multiple anon ids under one declared
+    /// (realm, name) merge — the same person sharing from two installs —
+    /// and never-contributed registrations (credit 0) stay invisible.
+    pub fn credits(&self) -> Vec<CreditRow> {
+        let mut by_identity: HashMap<(String, String), u64> = HashMap::new();
+        for meta in self.meta.values() {
+            if meta.credit_count == 0 {
+                continue;
+            }
+            *by_identity
+                .entry((meta.realm.clone(), meta.credited_name.clone()))
+                .or_default() += meta.credit_count;
+        }
+        let mut rows: Vec<CreditRow> = by_identity
+            .into_iter()
+            .map(|((realm, name), count)| CreditRow { name, realm, count })
+            .collect();
+        rows.sort_by(|a, b| a.realm.cmp(&b.realm).then_with(|| a.name.cmp(&b.name)));
+        rows
+    }
 }
 
 /// One staged member of a /mine reply (with the accept timestamp for
@@ -1121,6 +1143,16 @@ pub struct DrainDelta {
     pub drained: Vec<String>,
     pub bytes: u64,
     pub wm: u64,
+}
+
+/// One /credits row: a credited identity's lifetime share count (the
+/// release-time contributors list's atom).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditRow {
+    pub name: String,
+    pub realm: String,
+    pub count: u64,
 }
 
 /// /admin-list row.
@@ -1214,6 +1246,28 @@ pub fn admin_list_response(rows: &[AdminContributor], wm: u64) -> Value {
     })
 }
 
+/// /admin/credits reply body — exactly the `contributors` array the
+/// webui's `contributors.json` ships (the drain CLI stamps the envelope).
+pub fn credits_response(rows: &[CreditRow]) -> Value {
+    json!({
+        "contributors": rows
+            .iter()
+            .map(|c| json!({ "name": c.name, "realm": c.realm, "count": c.count }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// The machine gate on every /admin route: an `x-admin-key` header
+/// matching the operator's REPLAY_ADMIN_KEY secret (a high-entropy value
+/// from `wrangler secret put`, so plain equality is safe — network jitter
+/// dwarfs any timing signal an attacker could read).
+pub fn admin_key_ok(provided: Option<&str>, expected: Option<&str>) -> bool {
+    match (provided, expected) {
+        (Some(p), Some(e)) => !e.is_empty() && p == e,
+        _ => false,
+    }
+}
+
 // ── time + rate-limit helpers ─────────────────────────────────────────
 
 /// ms since epoch → `YYYY-MM-DDTHH:MM:SSZ` (Gregorian; Howard Hinnant's
@@ -1289,6 +1343,7 @@ mod tests {
     const T0: u64 = 1_790_000_000_000;
     const ANON: &str = "01234567-89ab-4cde-8f01-23456789abcd";
     const ANON2: &str = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const ANON3: &str = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
     const TOKEN: &str = "abcdefghijklmnopqrstuvwxyz012345";
     const TOKEN2: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ5678";
 
@@ -2253,6 +2308,56 @@ mod tests {
     }
 
     // ── admin list + counters + responses ─────────────────────────────
+
+    #[test]
+    fn credits_merge_identities_and_skip_never_contributed() {
+        let mut led = Ledger::new();
+        // Two anon ids under ONE declared identity merge their counts.
+        let a = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
+        led.apply_claim(&a.input(), 100).unwrap();
+        let mut b = fx(ANON2, TOKEN, vec![member(&"b".repeat(64))]);
+        b.credited_name = "Player";
+        b.realm = "asia";
+        led.apply_claim(&b.input(), 200).unwrap();
+        // A registration that never landed an accepted member (a legacy
+        // or manually-written storage row with zero credit) stays hidden
+        // — modeled directly, since apply_claim always credits.
+        led.meta.insert(
+            ANON3.to_string(),
+            ContributorMeta {
+                credited_name: "Ghost".into(),
+                realm: "eu".into(),
+                archive_bytes: 0,
+                credit_count: 0,
+                updated_at: 300,
+            },
+        );
+        let rows = led.credits();
+        assert_eq!(
+            rows,
+            vec![CreditRow {
+                name: "Player".into(),
+                realm: "asia".into(),
+                count: 2
+            }]
+        );
+        let body = credits_response(&rows);
+        assert_eq!(
+            body["contributors"],
+            json!([{ "name": "Player", "realm": "asia", "count": 2 }])
+        );
+    }
+
+    #[test]
+    fn admin_key_requires_both_sides_and_a_nonempty_secret() {
+        let key = format!("k-{}", "x".repeat(43));
+        assert!(admin_key_ok(Some(key.as_str()), Some(key.as_str())));
+        assert!(!admin_key_ok(Some(key.as_str()), Some("other")));
+        assert!(!admin_key_ok(None, Some(key.as_str())));
+        assert!(!admin_key_ok(Some(key.as_str()), None));
+        assert!(!admin_key_ok(Some(key.as_str()), Some("")));
+        assert!(!admin_key_ok(Some(""), Some("")));
+    }
 
     #[test]
     fn admin_list_sorts_newest_first_with_staged_counts() {

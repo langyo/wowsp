@@ -208,6 +208,17 @@ check-relay: feedback-theme
     cd packages/pairing-relay && cargo test -p relay-core
     cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
 
+# Maintainer replay-share drain CLI (packages/tools/replay-drain):
+#   just drain-replays                → pull + verify + drain every staged shard
+#   just drain-replays -- --dry-run   → verify + archive only
+#   just drain-credits                → export contributors.json
+# Auth: --key or WOWSP_REPLAY_ADMIN_KEY (the worker's REPLAY_ADMIN_KEY).
+drain-replays *FLAGS='':
+    cargo run -p replay-drain -- pull {{FLAGS}}
+
+drain-credits *FLAGS='':
+    cargo run -p replay-drain -- credits {{FLAGS}}
+
 # Bundles the WEBSITE-ONLY site into packages/pairing-relay/assets —
 # the worker's [assets] layer (worker-primary hosting; see
 # packages/pairing-relay/README.md ▶ Site hosting model). The full
