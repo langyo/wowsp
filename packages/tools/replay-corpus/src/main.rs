@@ -14,13 +14,17 @@ replay-corpus — the replay-share corpus CLI
                                        pool) and aggregate map-insights.json:
                                        per (map, mode) battle counts, the
                                        modal cap layout and 96x96 spawn/track
-                                       heat grids (self-calibrating bounds)
+                                       heat grids (self-calibrating bounds);
+                                       a heat-free map-insights-lite.json
+                                       companion (battleCount/capsSample/
+                                       caps per mode) lands next to it
 
 Options (env fallbacks in parentheses):
   --archive <dir>  the drained archive (WOWSP_ARCHIVE_DIR, default
                    ./replay-archive — whatever replay-drain pull wrote)
   --out <path>     scan: index output (default ./index.json); insights:
-                   dataset output (default ./map-insights.json)
+                   dataset output (default ./map-insights.json; the lite
+                   companion takes this path's stem plus -lite)
 ";
 
 fn main() {

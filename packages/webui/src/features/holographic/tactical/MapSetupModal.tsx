@@ -8,7 +8,10 @@
  * Step 2 offers two kinds of layouts, the honest split:
  *   - MEASURED: exact cap sets learned from the local replay history
  *     (api.getMapCapLayouts — the server's own EntityCreate points, rings
- *     drawn at their true radius over the map preview);
+ *     drawn at their true radius over the map preview), with the shipped
+ *     corpus dataset (src/res/map-insights.json, the replay-corpus CLI's
+ *     lite output) filling in modes the local history doesn't already
+ *     cover with stronger sample evidence;
  *   - TEMPLATE: the hand-made presets, clearly labelled as uncalibrated.
  * Emits the confirmed choice; the page owns what happens next (session
  * update, cap instantiation).
@@ -20,6 +23,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName } from "@/utils/mapNames";
 import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
 import { api, type LearnedCapLayout } from "@/api";
+import mapInsightsDoc from "@/res/map-insights.json";
 import { resolveMapMinimapUrl, type MapBounds } from "../modelLoader";
 import { MODE_PRESETS, modePresetOf } from "./modes";
 import type { MapModeBucket } from "@/utils/mapModes";
@@ -35,10 +39,44 @@ const CATEGORIES: { key: CategoryKey; labelKey: string }[] = [
   { key: "pve", labelKey: "tactics.filter.pve" },
 ];
 
+/** The shipped map-insights res doc — the corpus CLI's `-lite` companion
+ *  (same envelope, heat grids dropped). `maps` stays empty in the checked
+ *  placeholder; maintainers overwrite it per release (the same flow as
+ *  contributors.json), so an untouched file changes nothing here. */
+const MAP_INSIGHTS = mapInsightsDoc as {
+  version: number;
+  generatedAt: string | null;
+  unparsed: number;
+  maps: Record<
+    string,
+    {
+      modes: Record<
+        string,
+        { battleCount: number; capsSample: number; caps: LearnedCapLayout["caps"] }
+      >;
+    }
+  >;
+};
+
 /** The confirmed step-2 choice: a measured layout or a template preset. */
 export type MapSetupChoice =
   | { kind: "learned"; layout: LearnedCapLayout }
   | { kind: "preset"; presetId: string };
+
+/** One row of step 2's measured section: a layout learned from a local
+ *  replay, or one aggregated by the corpus — the corpus row rides the
+ *  exact LearnedCapLayout shape so picking/applying it is the very same
+ *  path as a local row (world caps, scenario unset). */
+type MeasuredEntry =
+  | { kind: "local"; layout: LearnedCapLayout }
+  | {
+      kind: "corpus";
+      layout: LearnedCapLayout;
+      /** All corpus battles of the (map, mode). */
+      battleCount: number;
+      /** Battles whose cap observations voted for this layout. */
+      capsSample: number;
+    };
 
 export default defineComponent({
   name: "TacticalMapSetupModal",
@@ -135,6 +173,50 @@ export default defineComponent({
           });
       },
     );
+
+    /** The measured section's merged rows: the local learned layouts, with
+     *  the shipped corpus dataset filling the gaps. For a mode the local
+     *  history already covers, the stronger sample evidence wins — a local
+     *  layout counts as the one replay it was learned from, a corpus row
+     *  as its capsSample battles — and ties keep the user's own replays.
+     *  An untouched res placeholder (maps empty) yields locals only. */
+    const measured = computed<MeasuredEntry[]>(() => {
+      const corpus = mapId.value ? MAP_INSIGHTS.maps[mapId.value]?.modes : undefined;
+      if (!corpus) return learned.value.map((layout) => ({ kind: "local" as const, layout }));
+      const localSamples = new Map<string, number>();
+      for (const l of learned.value) {
+        if (l.modeGroup != null) {
+          localSamples.set(l.modeGroup, (localSamples.get(l.modeGroup) ?? 0) + 1);
+        }
+      }
+      const outevidenced = new Set<string>();
+      const corpusRows: MeasuredEntry[] = [];
+      for (const mode of Object.keys(corpus).sort()) {
+        const row = corpus[mode]!;
+        if (row.caps.length === 0) continue;
+        const local = localSamples.get(mode) ?? 0;
+        if (local >= row.capsSample) continue;
+        if (local > 0) outevidenced.add(mode);
+        corpusRows.push({
+          kind: "corpus",
+          layout: {
+            modeGroup: mode,
+            scenario: null,
+            sourceReplay: "corpus",
+            sourceTime: null,
+            caps: row.caps,
+          },
+          battleCount: row.battleCount,
+          capsSample: row.capsSample,
+        });
+      }
+      return [
+        ...learned.value
+          .filter((l) => l.modeGroup == null || !outevidenced.has(l.modeGroup))
+          .map((layout) => ({ kind: "local" as const, layout })),
+        ...corpusRows,
+      ];
+    });
 
     /** Template presets offered for the chosen map: its observed families
      *  first, then the rest — any map CAN host any mode, the list just
@@ -323,35 +405,68 @@ export default defineComponent({
                   <div class="map-setup__section-label">{i18nT("tactics.setup.learnedSection")}</div>
                   {learning.value ? (
                     <p class="map-setup__empty">{i18nT("tactics.setup.learning")}</p>
-                  ) : learned.value.length === 0 ? (
+                  ) : measured.value.length === 0 ? (
                     <p class="map-setup__empty">{i18nT("tactics.setup.noLearned")}</p>
                   ) : (
-                    learned.value.map((l) => (
-                      <button
-                        key={learnedTitle(l) + l.sourceReplay}
-                        type="button"
-                        class={[
-                          "map-setup__mode",
-                          learnedPick.value === l ? "map-setup__mode--on" : "",
-                        ]}
-                        onClick={() => pickLearned(l)}
-                      >
-                        <span class="map-setup__mode-head">
-                          <strong>{learnedTitle(l)}</strong>
-                          <HkTag size="sm" variant="success">
-                            {i18nT("tactics.setup.measured")}
-                          </HkTag>
-                          <HkTag size="sm">
-                            {i18nT("tactics.setup.capCount", { n: l.caps.length })}
-                          </HkTag>
-                        </span>
-                        <span class="map-setup__mode-desc">
-                          {i18nT("tactics.setup.learnedFrom", {
-                            date: l.sourceTime ?? l.sourceReplay,
-                          })}
-                        </span>
-                      </button>
-                    ))
+                    measured.value.map((entry) => {
+                      const l = entry.layout;
+                      if (entry.kind === "corpus") {
+                        return (
+                          <button
+                            key={`corpus-${learnedTitle(l)}`}
+                            type="button"
+                            class={[
+                              "map-setup__mode",
+                              learnedPick.value === l ? "map-setup__mode--on" : "",
+                            ]}
+                            onClick={() => pickLearned(l)}
+                          >
+                            <span class="map-setup__mode-head">
+                              <strong>{learnedTitle(l)}</strong>
+                              <HkTag size="sm" variant="success">
+                                {i18nT("tactics.setup.measured")}
+                              </HkTag>
+                              <HkTag size="sm">{i18nT("tactics.setup.corpusSource")}</HkTag>
+                              <HkTag size="sm">
+                                {i18nT("tactics.setup.capCount", { n: l.caps.length })}
+                              </HkTag>
+                              <HkTag size="sm">
+                                {i18nT("tactics.setup.sampleCount", { n: entry.capsSample })}
+                              </HkTag>
+                            </span>
+                            <span class="map-setup__mode-desc">
+                              {i18nT("tactics.setup.corpusFrom", { n: entry.battleCount })}
+                            </span>
+                          </button>
+                        );
+                      }
+                      return (
+                        <button
+                          key={learnedTitle(l) + l.sourceReplay}
+                          type="button"
+                          class={[
+                            "map-setup__mode",
+                            learnedPick.value === l ? "map-setup__mode--on" : "",
+                          ]}
+                          onClick={() => pickLearned(l)}
+                        >
+                          <span class="map-setup__mode-head">
+                            <strong>{learnedTitle(l)}</strong>
+                            <HkTag size="sm" variant="success">
+                              {i18nT("tactics.setup.measured")}
+                            </HkTag>
+                            <HkTag size="sm">
+                              {i18nT("tactics.setup.capCount", { n: l.caps.length })}
+                            </HkTag>
+                          </span>
+                          <span class="map-setup__mode-desc">
+                            {i18nT("tactics.setup.learnedFrom", {
+                              date: l.sourceTime ?? l.sourceReplay,
+                            })}
+                          </span>
+                        </button>
+                      );
+                    })
                   )}
                   <div class="map-setup__section-label">{i18nT("tactics.setup.templateSection")}</div>
                   {presetOrder.value.map((preset) => (

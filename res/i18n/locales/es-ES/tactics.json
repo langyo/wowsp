@@ -50,7 +50,10 @@
     "measured": "Medido",
     "learning": "Aprendiendo puntos de tus repeticiones…",
     "noLearned": "Aún no hay repeticiones de este mapa en este equipo: juega una partida y los puntos medidos aparecerán aquí.",
-    "learnedFrom": "De la repetición {date}"
+    "learnedFrom": "De la repetición {date}",
+    "sampleCount": "{n} batallas",
+    "corpusSource": "Medido del corpus",
+    "corpusFrom": "Agregado de {n} batallas del corpus"
   },
   "mode": {
     "dom4": "Aleatorio · 4 puntos",

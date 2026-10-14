@@ -50,7 +50,10 @@
     "measured": "實測",
     "learning": "正在從錄影學習點位……",
     "noLearned": "本機還沒有這張圖的錄影——打過一局後，這裡會給出該圖各模式的實測點位。",
-    "learnedFrom": "來自錄影 {date}"
+    "learnedFrom": "來自錄影 {date}",
+    "sampleCount": "{n} 場",
+    "corpusSource": "語料實測",
+    "corpusFrom": "聚合自語料中的 {n} 場對局"
   },
   "mode": {
     "dom4": "隨機 · 四點",

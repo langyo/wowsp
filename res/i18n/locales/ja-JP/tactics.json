@@ -50,7 +50,10 @@
     "measured": "実測",
     "learning": "リプレイから拠点を学習中…",
     "noLearned": "このマップのリプレイがまだありません。1戦プレイすると、実測ポイントがここに表示されます。",
-    "learnedFrom": "リプレイ {date} から"
+    "learnedFrom": "リプレイ {date} から",
+    "sampleCount": "{n} 戦",
+    "corpusSource": "コーパス実測",
+    "corpusFrom": "コーパスの {n} 戦から集計"
   },
   "mode": {
     "dom4": "ランダム · 4拠点",

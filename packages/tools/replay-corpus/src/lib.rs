@@ -10,7 +10,8 @@
 //!   per-(map, mode) dataset `map-insights.json`: battle counts, the modal
 //!   capture layout, and self-calibrating 96×96 spawn/track heat grids
 //!   (bounds derived from the observed coordinates — no map-bounds data
-//!   needed anywhere).
+//!   needed anywhere). A heat-free `-lite` companion lands next to it for
+//!   the webui to ship as static res data.
 
 use anyhow::{Context, bail};
 use serde::Serialize;
@@ -565,6 +566,85 @@ pub struct MapInsights {
     pub modes: BTreeMap<String, ModeInsights>,
 }
 
+/// One (map, mode) row of the lite companion: the aggregated facts without
+/// the heat grids (the webui ships the lite doc as static res data — the
+/// 96×96 grids dwarf everything else and serve no app-side purpose).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModeInsightsLite {
+    pub battle_count: u32,
+    pub caps_sample: u32,
+    pub caps: Vec<CapPointObs>,
+}
+
+/// The `map-insights-lite.json` envelope: the same versioned shape as the
+/// full dataset with every mode row reduced to
+/// `{battleCount, capsSample, caps}`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsEnvelopeLite {
+    pub version: u32,
+    /// RFC3339, UTC — identical to the full doc's stamp.
+    pub generated_at: String,
+    pub unparsed: u32,
+    pub maps: BTreeMap<String, MapInsightsLite>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MapInsightsLite {
+    pub modes: BTreeMap<String, ModeInsightsLite>,
+}
+
+impl From<InsightsEnvelope> for InsightsEnvelopeLite {
+    fn from(full: InsightsEnvelope) -> Self {
+        Self {
+            version: full.version,
+            generated_at: full.generated_at,
+            unparsed: full.unparsed,
+            maps: full
+                .maps
+                .into_iter()
+                .map(|(map, m)| {
+                    (
+                        map,
+                        MapInsightsLite {
+                            modes: m
+                                .modes
+                                .into_iter()
+                                .map(|(mode, row)| {
+                                    (
+                                        mode,
+                                        ModeInsightsLite {
+                                            battle_count: row.battle_count,
+                                            caps_sample: row.caps_sample,
+                                            caps: row.caps,
+                                        },
+                                    )
+                                })
+                                .collect(),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+/// The lite companion's path: the full output's file name with `-lite`
+/// before the extension (`map-insights.json` → `map-insights-lite.json`;
+/// a custom `--out` stem carries over, an extension-less name just gains
+/// the suffix).
+pub fn lite_out_path(out: &Path) -> PathBuf {
+    let Some(name) = out.file_name().and_then(|n| n.to_str()) else {
+        return out.to_path_buf();
+    };
+    let lite = match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => format!("{stem}-lite.{ext}"),
+        _ => format!("{name}-lite"),
+    };
+    out.with_file_name(lite)
+}
+
 /// Aggregate a stream of decoded battles into the envelope — the pure core
 /// behind `run_insights`, unit-testable on synthetic fixtures.
 fn build_envelope(
@@ -601,7 +681,8 @@ fn build_envelope(
 
 /// The `insights` command: decode every drained member in a worker pool
 /// (the decode fns are sync CPU work; archive dirs hold thousands of
-/// files) and write the aggregated `map-insights.json` envelope.
+/// files) and write the aggregated `map-insights.json` envelope plus its
+/// heat-free `-lite` companion.
 pub fn run_insights(
     archive: &Path,
     out: &Path,
@@ -662,6 +743,12 @@ pub fn run_insights(
     let envelope = build_envelope(battles, unparsed, now);
     std::fs::write(out, serde_json::to_vec_pretty(&envelope)?)
         .with_context(|| format!("writing {}", out.display()))?;
+    // The heat-free companion the webui ships as static res data (same
+    // envelope, mode rows reduced to battleCount/capsSample/caps).
+    let lite_out = lite_out_path(out);
+    let lite = InsightsEnvelopeLite::from(envelope);
+    std::fs::write(&lite_out, serde_json::to_vec_pretty(&lite)?)
+        .with_context(|| format!("writing {}", lite_out.display()))?;
     Ok(RunReport {
         files: files.len(),
         unparsed,
@@ -844,6 +931,75 @@ mod tests {
             .map(|c| c.as_u64().unwrap())
             .sum();
         assert_eq!(track_total, 2);
+    }
+
+    // ── the lite companion ──────────────────────────────────────────────
+
+    /// The `-lite` companion path honors a custom out stem: `-lite` lands
+    /// before the extension, and extension-less paths just gain the suffix.
+    #[test]
+    fn lite_out_path_inserts_suffix_before_extension() {
+        assert_eq!(
+            lite_out_path(Path::new("map-insights.json")),
+            PathBuf::from("map-insights-lite.json")
+        );
+        assert_eq!(
+            lite_out_path(Path::new("data/custom-set.json")),
+            PathBuf::from("data/custom-set-lite.json")
+        );
+        assert_eq!(lite_out_path(Path::new("out")), PathBuf::from("out-lite"));
+    }
+
+    /// The lite doc keeps the envelope facts and the modal caps verbatim
+    /// but carries NO heat keys: each mode row is exactly
+    /// `{battleCount, capsSample, caps}` — the shape the webui's res
+    /// placeholder promises.
+    #[test]
+    fn lite_envelope_drops_heat_and_keeps_caps() {
+        let with_caps = battle(
+            "20_NE_two_brothers",
+            "pvp",
+            vec![
+                cap(1.0, 2.0, Some(80.0), 0, None),
+                cap(-3.5, 7.25, Some(115.0), 1, Some(-1)),
+            ],
+        );
+        // A mode that observed nothing (no caps → no capsSample) still gets
+        // its row, with an empty layout.
+        let bare = battle("20_NE_two_brothers", "ranked", Vec::new());
+        let now = chrono::Utc::now();
+        let envelope = build_envelope([with_caps, bare], 4, now);
+        let full = serde_json::to_value(&envelope).expect("full serializes");
+        let lite =
+            serde_json::to_value(InsightsEnvelopeLite::from(envelope)).expect("lite serializes");
+        assert_eq!(lite["version"], serde_json::json!(1));
+        assert_eq!(lite["unparsed"], serde_json::json!(4));
+        assert_eq!(lite["generatedAt"], full["generatedAt"]);
+        assert_eq!(
+            lite["maps"]["20_NE_two_brothers"]["modes"]["ranked"]["caps"],
+            serde_json::json!([])
+        );
+        let mode = &lite["maps"]["20_NE_two_brothers"]["modes"]["pvp"];
+        assert_eq!(mode["battleCount"], serde_json::json!(1));
+        assert_eq!(mode["capsSample"], serde_json::json!(1));
+        for key in ["spawnHeat", "trackHeat"] {
+            assert!(
+                mode.get(key).is_none(),
+                "the lite doc carries no {key} grid"
+            );
+        }
+        let mut keys: Vec<&str> = mode
+            .as_object()
+            .expect("mode row is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["battleCount", "caps", "capsSample"]);
+        assert_eq!(
+            mode["caps"], full["maps"]["20_NE_two_brothers"]["modes"]["pvp"]["caps"],
+            "the modal layout survives the reduction verbatim"
+        );
     }
 
     // ── synthetic DecodedReplay fixtures ─────────────────────────────────

@@ -50,7 +50,10 @@
     "measured": "Measured",
     "learning": "Learning cap layouts from replays…",
     "noLearned": "No replays of this map on this machine yet — play one and the measured layouts appear here.",
-    "learnedFrom": "From replay {date}"
+    "learnedFrom": "From replay {date}",
+    "sampleCount": "{n} battles",
+    "corpusSource": "Corpus-measured",
+    "corpusFrom": "Aggregated from {n} corpus battles"
   },
   "mode": {
     "dom4": "Random · 4 caps",

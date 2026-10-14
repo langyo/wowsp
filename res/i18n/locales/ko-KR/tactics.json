@@ -50,7 +50,10 @@
     "measured": "실측",
     "learning": "리플레이에서 거점 학습 중…",
     "noLearned": "이 맵의 리플레이가 아직 없습니다. 한 판 플레이하면 실측 거점이 여기 표시됩니다.",
-    "learnedFrom": "리플레이 {date}에서"
+    "learnedFrom": "리플레이 {date}에서",
+    "sampleCount": "{n}전투",
+    "corpusSource": "코퍼스 실측",
+    "corpusFrom": "코퍼스 {n}전투에서 집계"
   },
   "mode": {
     "dom4": "랜덤 · 거점 4개",
