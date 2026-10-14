@@ -99,6 +99,13 @@ packages/webui/src/res/data/gameparams/
 # tracked snapshot baked into src/data/dogtags_map.json at build time.
 packages/webui/src/res/dogtags/dogtags_map.json
 
+# The res-pack insights rail source (scripts/release_models.py stages it
+# into the pack): the FULL map-insights corpus (`replay-corpus insights`)
+# and the contributors envelope (`replay-drain credits`) — derived
+# replay-share products; the webui ships only the tracked lite/tracked
+# placeholders under src/res.
+packages/webui/src/res/insights/
+
 # WebView2 Evergreen offline installer cached by scripts/build_installers.py
 # (~180 MB, never tracked) for the -webview2.zip delivery artifact.
 packages/installer-shell/vendor/

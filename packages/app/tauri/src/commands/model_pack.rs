@@ -8,12 +8,12 @@
 //!     content tree hash + published-at timestamp carried in a small
 //!     `wowsp-res.json` manifest asset
 //!
-//! The full pack (`wowsp-res.tar.gz`, top-level `models/` + `dogtags/`)
-//! is content-addressed: its version hash is computed over the sorted
-//! per-file sha256 manifest of the tree, so republishing identical content
-//! keeps clients current and any change is detectable without trusting
-//! upload timestamps. The hash's LAST 6 hex chars are what the Settings →
-//! updates panel shows.
+//! The full pack (`wowsp-res.tar.gz`, top-level `models/` + `dogtags/` +
+//! the OPTIONAL `insights/` tree) is content-addressed: its version hash is
+//! computed over the sorted per-file sha256 manifest of the tree, so
+//! republishing identical content keeps clients current and any change is
+//! detectable without trusting upload timestamps. The hash's LAST 6 hex
+//! chars are what the Settings → updates panel shows.
 //!
 //! Chain patches: every publish also uploads a `res-delta-<from>-<to>`
 //! release whose `wowsp-res-delta.tar.gz` carries the changed/added files
@@ -87,7 +87,8 @@ use crate::paths;
 const REPO: &str = "langyo/wowsp";
 /// The fixed, single release tag the resource pack publishes under.
 const RES_TAG: &str = "res-latest";
-/// Full-pack asset name (top-level `models/` + `dogtags/`).
+/// Full-pack asset name (top-level `models/` + `dogtags/` + optional
+/// `insights/`).
 const RES_ARCHIVE: &str = "wowsp-res.tar.gz";
 /// The manifest asset: tree hash + published-at + asset sha256.
 const RES_MANIFEST: &str = "wowsp-res.json";
@@ -100,8 +101,15 @@ const DELTA_MANIFEST_FILE: &str = "delta-manifest.json";
 /// Files inside a delta archive live under this prefix.
 const DELTA_FILES_PREFIX: &str = "files";
 
-/// Cache sub-directories the pack owns (the archive's top level).
-const SUBDIRS: [&str; 2] = ["models", "dogtags"];
+/// Cache sub-directories the pack owns (the archive's top level). Every
+/// member rides the tree hash, staging clone, delta apply, publish swap and
+/// `clear_res` — but only when present: `insights/` (the full map-insights
+/// corpus + contributors list, the webui's res-pack insights rail) is
+/// OPTIONAL, so a pack — or an install, or a single delta — without it
+/// must hash, stage, verify and publish exactly as before. Presence of the
+/// pack itself stays keyed on `models` alone (see the `dir_populated`
+/// call sites): an `insights`-only tree never counts as a pack.
+const SUBDIRS: [&str; 3] = ["models", "dogtags", "insights"];
 
 /// Local version stamp (JSON: `{treeSha256, version}`) under the cache root.
 const VERSION_FILE: &str = ".res-version.json";
@@ -655,7 +663,7 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> anyhow::Result<()> {
     let mut saved = Vec::new();
     let mut published = Vec::new();
     let outcome = (|| -> anyhow::Result<()> {
-        for name in [VERSION_FILE, SUBDIRS[0], SUBDIRS[1]] {
+        for name in std::iter::once(VERSION_FILE).chain(SUBDIRS.iter().copied()) {
             let old = cache.join(name);
             if old
                 .try_exists()
@@ -665,7 +673,7 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> anyhow::Result<()> {
                 saved.push(name);
             }
         }
-        for name in [SUBDIRS[0], SUBDIRS[1], VERSION_FILE] {
+        for name in SUBDIRS.iter().copied().chain(std::iter::once(VERSION_FILE)) {
             let new = staging.join(name);
             if new
                 .try_exists()
@@ -713,8 +721,9 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> anyhow::Result<()> {
 }
 
 /// Unpack the full-pack tar.gz into `staging` (top-level `models/` +
-/// `dogtags/`). Runs on the blocking pool — a ~1.2 GB unpack must not
-/// stall the async runtime.
+/// `dogtags/` + the optional `insights/`; only `models/` is required — a
+/// pack without the optional tree is valid). Runs on the blocking pool —
+/// a ~1.2 GB unpack must not stall the async runtime.
 fn unpack_full_blocking(archive: &Path, staging: &Path) -> anyhow::Result<()> {
     let file = File::open(archive).map_err(|e| anyhow!("open archive: {e}"))?;
     let gz = GzDecoder::new(file);
@@ -1142,7 +1151,10 @@ pub async fn get_res_status() -> CommandResult<ResStatus> {
     let cache = cache_root()?;
     let status = tokio::task::spawn_blocking(move || -> ResStatus {
         let local = read_local_version(&cache);
-        let cache_populated = SUBDIRS.iter().any(|s| dir_populated(&cache.join(s)));
+        // Presence stays keyed on `models` alone — the optional `insights/`
+        // tree must never make an insights-only cache count as a pack (and
+        // a pack without it reports exactly as before).
+        let cache_populated = dir_populated(&cache.join("models"));
 
         #[cfg(mobile)]
         {
@@ -1472,6 +1484,14 @@ mod tests {
             Self(root)
         }
 
+        /// Add the pack's OPTIONAL `insights/` tree (the res-pack insights
+        /// rail: full map-insights corpus + contributors list).
+        fn add_insights(&self) {
+            fs::create_dir_all(self.0.join("insights")).unwrap();
+            fs::write(self.0.join("insights/map-insights.json"), b"old-insights").unwrap();
+            fs::write(self.0.join("insights/contributors.json"), b"old-contribs").unwrap();
+        }
+
         fn delta(&self, name: &str, corrupt_second: bool) -> PathBuf {
             let delta = self.0.join(name);
             fs::create_dir_all(delta.join("files/models")).unwrap();
@@ -1490,6 +1510,28 @@ mod tests {
             delta
         }
 
+        /// A delta whose only members live under the optional `insights/`
+        /// tree — the chain-patch shape a corpus refresh produces.
+        fn insights_delta(&self, name: &str, corrupt: bool) -> PathBuf {
+            let delta = self.0.join(name);
+            fs::create_dir_all(delta.join("files/insights")).unwrap();
+            fs::write(
+                delta.join("files/insights/map-insights.json"),
+                b"new-insights",
+            )
+            .unwrap();
+            let digest = file_sha256(&delta.join("files/insights/map-insights.json")).unwrap();
+            let manifest = serde_json::json!({
+                "from": hash(1), "to": hash(2),
+                "changed": [
+                    {"path": "insights/map-insights.json", "sha256": if corrupt { hash(0) } else { digest }}
+                ],
+                "removed": []
+            });
+            fs::write(delta.join(DELTA_MANIFEST_FILE), manifest.to_string()).unwrap();
+            delta
+        }
+
         fn assert_original(&self) {
             assert_eq!(fs::read(self.0.join("models/a.glb")).unwrap(), b"old-a");
             assert_eq!(fs::read(self.0.join("models/b.glb")).unwrap(), b"old-b");
@@ -1498,6 +1540,17 @@ mod tests {
                 b"old-tag"
             );
             assert_eq!(read_local_version(&self.0).tree_sha256, Some(hash(1)));
+        }
+
+        fn assert_insights_original(&self) {
+            assert_eq!(
+                fs::read(self.0.join("insights/map-insights.json")).unwrap(),
+                b"old-insights"
+            );
+            assert_eq!(
+                fs::read(self.0.join("insights/contributors.json")).unwrap(),
+                b"old-contribs"
+            );
         }
     }
 
@@ -1580,6 +1633,83 @@ mod tests {
         swap_staging_in(&fixture.0, &staging).unwrap();
         assert!(!fixture.0.join("models/a.glb").exists());
         assert!(!fixture.0.join("dogtags").exists());
+        assert_eq!(read_local_version(&fixture.0).tree_sha256, Some(hash(2)));
+    }
+
+    #[test]
+    fn staging_clones_the_optional_insights_tree_when_present() {
+        let fixture = PackFixture::new();
+        fixture.add_insights();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        assert_eq!(
+            fs::read(staging.join("insights/map-insights.json")).unwrap(),
+            b"old-insights"
+        );
+        assert_eq!(
+            fs::read(staging.join("insights/contributors.json")).unwrap(),
+            b"old-contribs"
+        );
+        fs::remove_dir_all(staging).unwrap();
+        fixture.assert_original();
+        fixture.assert_insights_original();
+    }
+
+    #[test]
+    fn staging_without_insights_is_simply_absent() {
+        // A pack without the optional tree must stage exactly as before.
+        let fixture = PackFixture::new();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        assert!(!staging.join("insights").exists());
+        assert!(staging.join("models").is_dir());
+        fs::remove_dir_all(staging).unwrap();
+        fixture.assert_original();
+    }
+
+    #[test]
+    fn corrupt_insights_delta_preserves_the_serving_pack_and_its_stamp() {
+        let fixture = PackFixture::new();
+        fixture.add_insights();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        let delta = fixture.insights_delta("bad-insights-delta", true);
+        assert!(apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).is_err());
+        fs::remove_dir_all(staging).unwrap();
+        fixture.assert_original();
+        fixture.assert_insights_original();
+    }
+
+    #[test]
+    fn insights_delta_publishes_the_tree_and_stamp_together() {
+        let fixture = PackFixture::new();
+        fixture.add_insights();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        let delta = fixture.insights_delta("good-insights-delta", false);
+        apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).unwrap();
+        write_local_version(&staging, &hash(2), "new").unwrap();
+        swap_staging_in(&fixture.0, &staging).unwrap();
+        assert_eq!(
+            fs::read(fixture.0.join("insights/map-insights.json")).unwrap(),
+            b"new-insights"
+        );
+        // Untouched insights members ride the staged clone unchanged.
+        assert_eq!(
+            fs::read(fixture.0.join("insights/contributors.json")).unwrap(),
+            b"old-contribs"
+        );
+        assert_eq!(read_local_version(&fixture.0).tree_sha256, Some(hash(2)));
+        assert!(!fixture.0.join(BACKUP_DIR).exists());
+    }
+
+    #[test]
+    fn full_snapshot_without_insights_drops_the_old_insights_tree() {
+        let fixture = PackFixture::new();
+        fixture.add_insights();
+        let staging = fixture.0.join(STAGING_DIR);
+        fs::create_dir_all(staging.join("models")).unwrap();
+        fs::write(staging.join("models/new.glb"), b"new").unwrap();
+        write_local_version(&staging, &hash(2), "new").unwrap();
+        swap_staging_in(&fixture.0, &staging).unwrap();
+        assert_eq!(fs::read(fixture.0.join("models/new.glb")).unwrap(), b"new");
+        assert!(!fixture.0.join("insights").exists());
         assert_eq!(read_local_version(&fixture.0).tree_sha256, Some(hash(2)));
     }
 

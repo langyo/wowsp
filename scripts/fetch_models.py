@@ -2,9 +2,10 @@
 """Fetch the resource pack from GitHub Releases into the webui res tree.
 
 The pack is the single content-addressed archive on the fixed `res-latest`
-release (asset wowsp-res.tar.gz, top-level `models/` + `dogtags/`), with
-its `wowsp-res.json` manifest carrying the content tree hash + asset
-sha256. Fresh clones and CI jobs that need local models run this:
+release (asset wowsp-res.tar.gz, top-level `models/` + `dogtags/` + the
+OPTIONAL `insights/` rail), with its `wowsp-res.json` manifest carrying
+the content tree hash + asset sha256. Fresh clones and CI jobs that need
+local models run this:
 
     python scripts/fetch_models.py               # fetch + verify the pack
     python scripts/fetch_models.py --dry-run     # print the asset URL only

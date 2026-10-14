@@ -24,7 +24,18 @@ Workflow:
   1. Run `just extract models && just bake-ships` to produce the GLBs.
      Run `just extract dogtags` to refresh the dog-tag map + PNGs.
      Run `just extract ship-images` for the preview portraits.
-  2. Run this script: `python scripts/release_models.py`.
+  2. OPTIONAL insights rail: drop the replay-share data products into
+     `packages/webui/src/res/insights/` (gitignored, derived data) —
+     `map-insights.json` is the FULL corpus envelope of
+     `replay-corpus insights` (the 96×96 heat grids ride the pack, NOT the
+     JS bundle — the webui imports only its `-lite` companion as the
+     bundled fallback), and `contributors.json` is the
+     `replay-drain credits` envelope. Present → the tree is staged, hashed,
+     packed and delta'd like any other member; absent → the pack publishes
+     models+dogtags exactly as before (old packs and installs keep
+     working). A res-pack update then refreshes this data WITHOUT an app
+     release.
+  3. Run this script: `python scripts/release_models.py`.
      `--dry-run` packages + diffs without uploading anything.
      `--images-only` refreshes just the build-time ship-portrait asset.
 
@@ -34,7 +45,8 @@ separate token handling. The previous manifest (and nothing heavier —
 old file hashes ride inside it) is fetched through the same CLI.
 
 Output layout on the `res-latest` release:
-  wowsp-res.tar.gz        full pack (top-level `models/` + `dogtags/`)
+  wowsp-res.tar.gz        full pack (top-level `models/` + `dogtags/` +
+                          the optional `insights/` when staged)
   wowsp-res.json          manifest: treeSha256, version, assetSha256,
                           assetSize, per-file sha256 map
   wowsp-images.tar.gz     build-time ship portraits (release CI embeds
@@ -65,6 +77,9 @@ import publish_digests
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models"
 DOGTAGS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "dogtags"
+# Optional insights rail (the replay-share data products) — see the
+# workflow notes in the module docstring. Absent dir = pack without it.
+INSIGHTS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "insights"
 DOGTAGS_MAP = REPO_ROOT / "packages" / "webui" / "src" / "data" / "dogtags_map.json"
 SHIP_IMAGES_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "images" / "ships"
 REPO = "langyo/wowsp"
@@ -116,9 +131,10 @@ def sha256_file(path: Path) -> str:
 
 def compute_tree(stage: Path) -> dict[str, str]:
     """Per-file sha256 map for the staged pack tree (`models/…` +
-    `dogtags/…`, pack-relative, sorted for hash stability)."""
+    `dogtags/…` + the optional `insights/…`, pack-relative, sorted for
+    hash stability)."""
     files: dict[str, str] = {}
-    for subdir in ("models", "dogtags"):
+    for subdir in ("models", "dogtags", "insights"):
         root = stage / subdir
         if not root.is_dir():
             continue
@@ -207,7 +223,8 @@ def build_deterministic_tar(archive: Path, stage: Path, entries: list[str]):
 # ── Staging ────────────────────────────────────────────────────────────────
 
 def stage_pack(tmp: str) -> Path:
-    """Stage `models/` + `dogtags/` (+ the dog-tag map) into one tree —
+    """Stage `models/` + `dogtags/` (+ the dog-tag map, + the OPTIONAL
+    `insights/` rail when its source dir holds files) into one tree —
     the exact layout the full archive packs and the installer relocates."""
     if not MODELS_DIR.is_dir():
         print(f"error: models dir not found: {MODELS_DIR}", file=sys.stderr)
@@ -223,6 +240,12 @@ def stage_pack(tmp: str) -> Path:
             print("  warning: dogtags_map.json missing — pack ships PNGs only")
     else:
         print(f"  dogtags dir not found ({DOGTAGS_DIR}) — models only")
+    if INSIGHTS_DIR.is_dir() and any(INSIGHTS_DIR.iterdir()):
+        shutil.copytree(INSIGHTS_DIR, stage / "insights")
+        names = sorted(p.name for p in INSIGHTS_DIR.iterdir())
+        print(f"  insights rail staged: {', '.join(names)}")
+    else:
+        print(f"  insights dir absent or empty ({INSIGHTS_DIR}) — pack ships without it")
     return stage
 
 
@@ -356,6 +379,11 @@ def build_delta(stage: Path, new_files: dict[str, str], old_manifest: dict,
 
     delta_dir = Path(tmp) / "delta-pkg"
     files_root = delta_dir / "files"
+    # Created upfront: a pure-removal delta (e.g. a publish that drops the
+    # optional insights rail while the models stand still) changes nothing,
+    # so the loop below would otherwise never materialize the directories.
+    delta_dir.mkdir(parents=True, exist_ok=True)
+    files_root.mkdir(parents=True, exist_ok=True)
     for rel in changed:
         dest = files_root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -432,7 +460,8 @@ def publish(dry_run: bool) -> None:
 
         print("[3/5] packing the full archive + manifest ...")
         full_archive = Path(tmp) / RES_ARCHIVE
-        build_deterministic_tar(full_archive, stage, ["models", "dogtags"])
+        entries = [e for e in ("models", "dogtags", "insights") if (stage / e).is_dir()]
+        build_deterministic_tar(full_archive, stage, entries)
         asset_sha = sha256_file(full_archive)
         manifest = {
             "format": 1,

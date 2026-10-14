@@ -35,6 +35,7 @@ import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
 import { runtimeShipEntry } from "@/utils/runtimeShipDb";
 import { isTauri } from "@/utils/platform";
+import { wireInsightsPack } from "./insightsLoader";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
@@ -58,6 +59,10 @@ export async function initModelPack(fetch: () => Promise<string>): Promise<void>
   }
   try {
     _modelCacheRoot = await fetch();
+    // The insights rail (insightsLoader.ts) rides the same pack — hand it
+    // the wiring so its loaders can read <cacheRoot>/insights/*, falling
+    // back to the bundled docs while unwired.
+    wireInsightsPack(_convertFileSrc, _modelCacheRoot);
     if (import.meta.env.DEV) console.log("[modelLoader] using cache:", _modelCacheRoot);
   } catch {
     console.warn("[modelLoader] model pack unavailable, falling back to publicDir");

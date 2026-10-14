@@ -182,9 +182,59 @@ function pruneGameparams(outDir: string): Plugin {
   };
 }
 
+// The res-pack insights rail source (src/res/insights/* — the untracked
+// FULL map-insights corpus from `replay-corpus insights` plus the
+// `replay-drain credits` envelope, dropped there by the maintainer or
+// extracted by scripts/fetch_models.py) rides publicDir into outDir like
+// every other res asset — but NOTHING serves it same-origin on any
+// platform: the insights loaders (features/holographic/insightsLoader.ts)
+// read the DOWNLOADED res-pack cache and fall back to the JS-bundled lite
+// doc (src/res/map-insights.json / contributors.json placeholders), so a
+// same-origin copy would only bloat the embedded binary/APK with the
+// 96×96 heat grids the JS bundle deliberately omits. Pruned from EVERY
+// build — desktop and mobile alike, unlike the two gates above.
+function pruneResInsights(outDir: string): Plugin {
+  return {
+    name: 'prune-res-insights',
+    apply: 'build',
+    closeBundle() {
+      const railDir = resolve(outDir, 'insights');
+      let freed = 0;
+      let removed = 0;
+      const visit = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const path = resolve(dir, entry.name);
+          if (entry.isDirectory()) {
+            visit(path);
+          } else {
+            freed += statSync(path).size;
+            rmSync(path);
+            removed += 1;
+          }
+        }
+      };
+      try {
+        visit(railDir);
+      } catch {
+        return; // no insights dir was copied — nothing to prune
+      }
+      rmSync(railDir, { recursive: true, force: true });
+      if (removed > 0) {
+        console.log(
+          `[prune-res-insights] removed ${removed} insights rail file(s) ` +
+            `(${(freed / 1024 / 1024).toFixed(1)} MB) from ${railDir}`,
+        );
+      }
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     cleanOutDirContents(resolve(pkgDir, '../../dist/webui')),
+    // See pruneResInsights above — the full corpus doc never ships inside a
+    // binary; the res-pack update channel is its only rail.
+    pruneResInsights(resolve(pkgDir, '../../dist/webui')),
     // Desktop/dev builds prune the baked GLBs (the pack serves from the
     // cache dir) and the offline gameparams pack (ship data reads the
     // install); WOWSP_MOBILE_BUNDLE=1 keeps both for the APK assets.

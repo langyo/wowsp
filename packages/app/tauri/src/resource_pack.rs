@@ -13,7 +13,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const TREES: [&str; 2] = ["models", "dogtags"];
+/// The payload trees this pass relocates. `insights` (the res-pack insights
+/// rail: full map-insights corpus + contributors list) is OPTIONAL on both
+/// sides — a payload without it still publishes `models` + `dogtags`, and a
+/// cache without it relocates unchanged.
+const TREES: [&str; 3] = ["models", "dogtags", "insights"];
 const STAMP: &str = ".res-version.json";
 
 struct Workspace {
@@ -110,13 +114,13 @@ fn publish(cache: &Path, staged: &Path, backup: &Path) -> Result<()> {
     let mut saved = Vec::new();
     let mut installed = Vec::new();
     let result = (|| -> io::Result<()> {
-        for name in [STAMP, "models", "dogtags"] {
+        for name in std::iter::once(STAMP).chain(TREES.iter().copied()) {
             if metadata(&cache.join(name))?.is_some() {
                 fs::rename(cache.join(name), backup.join(name))?;
                 saved.push(name);
             }
         }
-        for name in ["models", "dogtags", STAMP] {
+        for name in TREES.iter().copied().chain(std::iter::once(STAMP)) {
             if metadata(&staged.join(name))?.is_some() {
                 fs::rename(staged.join(name), cache.join(name))?;
                 installed.push(name);
@@ -222,9 +226,11 @@ pub(crate) fn relocate(install_dir: &Path, cache: &Path, stamp: Option<&[u8]>) -
 }
 
 /// First-launch publication of the installer-shipped pack: relocates the
-/// `models/` + `dogtags/` trees from beside the executable into the cache
-/// root (see [`crate::paths::cache_dir`]), stamps the cache with the
-/// shipped `wowsp-res-stamp.json`, and drops the bootstrap-only `webview2/`
+/// `models/` + `dogtags/` trees (plus the payload's OPTIONAL `insights/`
+/// tree, present only in future payloads that ship the insights rail) from
+/// beside the executable into the cache root (see
+/// [`crate::paths::cache_dir`]), stamps the cache with the shipped
+/// `wowsp-res-stamp.json`, and drops the bootstrap-only `webview2/`
 /// subtree the -webview2 flavor carried. A no-op (one cheap metadata
 /// probe) when the payload shipped no pack — lite installs and every
 /// later launch pay nothing.
@@ -260,6 +266,11 @@ pub fn relocate_shipped() -> Result<()> {
 mod tests {
     use super::*;
 
+    /// The trees every fixture materializes — the installer's always-shipped
+    /// pair. `insights` is the optional third tree (dedicated tests add it:
+    /// a payload without it must publish the pair exactly as before).
+    const SHIPPED: [&str; 2] = ["models", "dogtags"];
+
     struct Fixture(Workspace);
 
     impl Fixture {
@@ -275,7 +286,7 @@ mod tests {
         }
 
         fn prepare(&self) {
-            for name in TREES {
+            for name in SHIPPED {
                 fs::create_dir_all(self.install().join(name)).unwrap();
                 fs::write(self.install().join(name).join("new.bin"), b"new").unwrap();
                 fs::create_dir_all(self.cache().join(name)).unwrap();
@@ -285,7 +296,7 @@ mod tests {
         }
 
         fn assert_original(&self) {
-            for name in TREES {
+            for name in SHIPPED {
                 assert_eq!(
                     fs::read(self.cache().join(name).join("old.bin")).unwrap(),
                     b"old"
@@ -328,7 +339,7 @@ mod tests {
             b"blocked destination"
         );
         assert_eq!(fs::read(fixture.cache().join(STAMP)).unwrap(), b"old stamp");
-        for name in TREES {
+        for name in SHIPPED {
             assert_eq!(
                 fs::read(fixture.install().join(name).join("new.bin")).unwrap(),
                 b"new"
@@ -341,7 +352,7 @@ mod tests {
         let fixture = Fixture::new();
         fixture.prepare();
         relocate(&fixture.install(), &fixture.cache(), Some(b"new stamp")).unwrap();
-        for name in TREES {
+        for name in SHIPPED {
             assert_eq!(
                 fs::read(fixture.cache().join(name).join("new.bin")).unwrap(),
                 b"new"
@@ -371,7 +382,7 @@ mod tests {
     fn lite_payload_leaves_an_existing_pack_unchanged() {
         let fixture = Fixture::new();
         fixture.prepare();
-        for name in TREES {
+        for name in SHIPPED {
             fs::remove_dir_all(fixture.install().join(name)).unwrap();
         }
         relocate(
@@ -381,7 +392,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fs::read(fixture.cache().join(STAMP)).unwrap(), b"old stamp");
-        for name in TREES {
+        for name in SHIPPED {
             assert_eq!(
                 fs::read(fixture.cache().join(name).join("old.bin")).unwrap(),
                 b"old"
@@ -394,7 +405,7 @@ mod tests {
         let fixture = Fixture::new();
         fixture.prepare();
         relocate(&fixture.install(), &fixture.install(), Some(b"new stamp")).unwrap();
-        for name in TREES {
+        for name in SHIPPED {
             assert_eq!(
                 fs::read(fixture.install().join(name).join("new.bin")).unwrap(),
                 b"new"
@@ -482,7 +493,7 @@ mod tests {
         let backup = fixture.0.path.join("old");
         fs::create_dir(&staged).unwrap();
         fs::create_dir(&backup).unwrap();
-        for name in TREES {
+        for name in SHIPPED {
             copy_tree(&fixture.install().join(name), &staged.join(name)).unwrap();
         }
         fs::write(staged.join(STAMP), b"new stamp").unwrap();
@@ -494,5 +505,41 @@ mod tests {
         assert!(publish(&fixture.cache(), &staged, &backup).is_err());
         fixture.assert_original();
         assert_eq!(fs::read_dir(backup).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn optional_insights_payload_publishes_alongside_the_required_trees() {
+        let fixture = Fixture::new();
+        fixture.prepare();
+        fs::create_dir_all(fixture.install().join("insights")).unwrap();
+        fs::write(fixture.install().join("insights/map-insights.json"), b"new").unwrap();
+        relocate(&fixture.install(), &fixture.cache(), Some(b"new stamp")).unwrap();
+        assert_eq!(
+            fs::read(fixture.cache().join("models/new.bin")).unwrap(),
+            b"new"
+        );
+        assert_eq!(
+            fs::read(fixture.cache().join("insights/map-insights.json")).unwrap(),
+            b"new"
+        );
+        assert_eq!(fs::read(fixture.cache().join(STAMP)).unwrap(), b"new stamp");
+        assert!(!fixture.install().join("insights").exists());
+        assert_eq!(fs::read_dir(fixture.cache()).unwrap().count(), 4);
+    }
+
+    #[test]
+    fn payload_without_insights_publishes_models_and_dogtags_only() {
+        let fixture = Fixture::new();
+        fixture.prepare();
+        relocate(&fixture.install(), &fixture.cache(), Some(b"new stamp")).unwrap();
+        for name in SHIPPED {
+            assert_eq!(
+                fs::read(fixture.cache().join(name).join("new.bin")).unwrap(),
+                b"new"
+            );
+        }
+        // No insights dir is created in the cache — today's payloads.
+        assert!(!fixture.cache().join("insights").exists());
+        assert_eq!(fs::read_dir(fixture.cache()).unwrap().count(), 3);
     }
 }

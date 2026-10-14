@@ -60,9 +60,13 @@ import { serverTagOf } from "@/utils/installLabel";
 import { displayMapName } from "@/utils/mapNames";
 import { formatBytes } from "@/components/settings/useSettingsUpdatesState";
 import { runtimeShipEntry } from "@/utils/runtimeShipDb";
+import {
+  loadContributors,
+  type ContributorEntry,
+  type ContributorsDoc,
+} from "@/features/holographic/insightsLoader";
 import type { ReplayMetaLite } from "@/api";
 import shipNamesDbRaw from "@/data/ship_names.json";
-import contributorsDoc from "@/res/contributors.json";
 import "./SharingSection.scss";
 
 /** Both sides pin the consent version (contract §11). */
@@ -82,20 +86,6 @@ const STEP_KEYS = ["intro", "select", "upload", "done"] as const;
 type StepKey = (typeof STEP_KEYS)[number];
 /** The pipeline stages the upload step walks through (contract §9). */
 const PIPELINE_STAGES = ["plan", "check", "mine", "pack", "upload"] as const;
-
-/** One row of the shipped contributors placeholder (contract §10 — the
- *  data-pack rail refreshes it per release). */
-interface ContributorEntry {
-  name: string;
-  realm: string;
-  count: number;
-}
-
-const contributorsFile = contributorsDoc as {
-  version: number;
-  generatedAt: string | null;
-  contributors: ContributorEntry[];
-};
 
 /** The baked offline ship DB's row shape — only the hint fields matter
  *  here (modelLoader's full wrapper drags three.js into the import graph,
@@ -506,10 +496,16 @@ export default defineComponent({
       contributorsRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    // ── contributors list (shipped placeholder; data-pack refreshes it) ────
+    // ── contributors list (res-pack insights rail; bundled placeholder
+    //    fallback — empty ⇒ exactly the pre-rail UI) ─────────────────────
+    const contributors = ref<ContributorsDoc>({
+      version: 0,
+      generatedAt: null,
+      contributors: [],
+    });
     const contributorGroups = computed(() => {
       const byRealm = new Map<string, ContributorEntry[]>();
-      for (const c of contributorsFile.contributors) {
+      for (const c of contributors.value.contributors) {
         const bucket = byRealm.get(c.realm) ?? [];
         bucket.push(c);
         byRealm.set(c.realm, bucket);
@@ -519,7 +515,7 @@ export default defineComponent({
         entries: (byRealm.get(realm) ?? []).sort((a, b) => a.name.localeCompare(b.name)),
       })).filter((g) => g.entries.length > 0);
     });
-    const hasContributors = computed(() => contributorsFile.contributors.length > 0);
+    const hasContributors = computed(() => contributors.value.contributors.length > 0);
 
     function openContributor(c: ContributorEntry) {
       void router.push({ path: "/lookup", query: { name: c.name, realm: c.realm } });
@@ -532,6 +528,15 @@ export default defineComponent({
     // ── lifecycle ─────────────────────────────────────────────────────────
     onMounted(() => {
       void refreshState();
+      // The contributors doc: the pack's refreshed envelope when the
+      // res-pack insights rail carries one, else the bundled placeholder.
+      // A failure keeps the last known list (empty on first mount) instead
+      // of blanking it — same tolerance as refreshState.
+      loadContributors()
+        .then((doc) => {
+          contributors.value = doc;
+        })
+        .catch(() => {});
       if (replays.list.length === 0) void refreshList();
       // Wire the progress stream once; the poll only runs while the upload
       // step is live (single-flight, so one snapshot describes everything).
@@ -1016,7 +1021,7 @@ export default defineComponent({
         </HkSettingsGroup>
       </div>
 
-      {/* ── contributors list (shipped placeholder — data-pack rail) ───── */}
+      {/* ── contributors list (res-pack insights rail / bundled fallback) ── */}
       <div ref={contributorsRef}>
         <HkSettingsGroup title={t("sharing.contributors.title")}>
           <HkSettingsHint>{t("sharing.contributors.hint")}</HkSettingsHint>

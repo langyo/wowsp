@@ -8,22 +8,25 @@
  * Step 2 offers two kinds of layouts, the honest split:
  *   - MEASURED: exact cap sets learned from the local replay history
  *     (api.getMapCapLayouts — the server's own EntityCreate points, rings
- *     drawn at their true radius over the map preview), with the shipped
- *     corpus dataset (src/res/map-insights.json, the replay-corpus CLI's
- *     lite output) filling in modes the local history doesn't already
- *     cover with stronger sample evidence;
+ *     drawn at their true radius over the map preview), with the corpus
+ *     dataset filling in modes the local history doesn't already cover
+ *     with stronger sample evidence — the res-pack insights rail's FULL
+ *     doc when the downloaded pack carries it, else the bundled lite res
+ *     doc (src/res/map-insights.json, the replay-corpus CLI's lite
+ *     output; both share this envelope shape, the full one adding the
+ *     heat grids nothing here reads);
  *   - TEMPLATE: the hand-made presets, clearly labelled as uncalibrated.
  * Emits the confirmed choice; the page owns what happens next (session
  * update, cap instantiation).
  */
-import { computed, defineComponent, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, onMounted, ref, watch, type PropType } from "vue";
 import { HkModal, HkStepFlow, HkTabs, HkTag } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName } from "@/utils/mapNames";
 import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
 import { api, type LearnedCapLayout } from "@/api";
-import mapInsightsDoc from "@/res/map-insights.json";
+import { loadMapInsights, type MapInsightsDoc } from "../insightsLoader";
 import { resolveMapMinimapUrl, type MapBounds } from "../modelLoader";
 import { MODE_PRESETS, modePresetOf } from "./modes";
 import type { MapModeBucket } from "@/utils/mapModes";
@@ -38,25 +41,6 @@ const CATEGORIES: { key: CategoryKey; labelKey: string }[] = [
   { key: "clan", labelKey: "tactics.filter.clan" },
   { key: "pve", labelKey: "tactics.filter.pve" },
 ];
-
-/** The shipped map-insights res doc — the corpus CLI's `-lite` companion
- *  (same envelope, heat grids dropped). `maps` stays empty in the checked
- *  placeholder; maintainers overwrite it per release (the same flow as
- *  contributors.json), so an untouched file changes nothing here. */
-const MAP_INSIGHTS = mapInsightsDoc as {
-  version: number;
-  generatedAt: string | null;
-  unparsed: number;
-  maps: Record<
-    string,
-    {
-      modes: Record<
-        string,
-        { battleCount: number; capsSample: number; caps: LearnedCapLayout["caps"] }
-      >;
-    }
-  >;
-};
 
 /** The confirmed step-2 choice: a measured layout or a template preset. */
 export type MapSetupChoice =
@@ -114,6 +98,29 @@ export default defineComponent({
     const modeId = ref<string | null>(props.currentModeId);
     /** The selected measured layout (cleared when a preset is picked). */
     const learnedPick = ref<LearnedCapLayout | null>(null);
+
+    // ── Corpus dataset (res-pack insights rail, bundled lite fallback) ──
+    // Empty until the loader resolves — an empty `maps` yields locals only,
+    // exactly the untouched-placeholder behavior. A miss of every kind
+    // (pack unwired yet, pack without the insights tree, bad shape) lands
+    // on the bundled lite doc; the ref only swaps in what the loader
+    // actually resolved.
+    const mapInsights = ref<MapInsightsDoc>({
+      version: 0,
+      generatedAt: null,
+      unparsed: 0,
+      maps: {},
+    });
+    onMounted(() => {
+      void loadMapInsights()
+        .then((doc) => {
+          mapInsights.value = doc;
+        })
+        .catch(() => {
+          // Keep the empty doc — locals-only measured rows (the bundled
+          // import resolves eagerly; this catch is belt-and-braces).
+        });
+    });
 
     const steps = computed(() => [
       { key: "map", label: i18nT("tactics.setup.stepMap") },
@@ -175,13 +182,13 @@ export default defineComponent({
     );
 
     /** The measured section's merged rows: the local learned layouts, with
-     *  the shipped corpus dataset filling the gaps. For a mode the local
+     *  the corpus dataset filling the gaps. For a mode the local
      *  history already covers, the stronger sample evidence wins — a local
      *  layout counts as the one replay it was learned from, a corpus row
      *  as its capsSample battles — and ties keep the user's own replays.
-     *  An untouched res placeholder (maps empty) yields locals only. */
+     *  An empty corpus doc (placeholder / loader miss) yields locals only. */
     const measured = computed<MeasuredEntry[]>(() => {
-      const corpus = mapId.value ? MAP_INSIGHTS.maps[mapId.value]?.modes : undefined;
+      const corpus = mapId.value ? mapInsights.value.maps[mapId.value]?.modes : undefined;
       if (!corpus) return learned.value.map((layout) => ({ kind: "local" as const, layout }));
       const localSamples = new Map<string, number>();
       for (const l of learned.value) {
