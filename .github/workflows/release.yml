@@ -243,6 +243,11 @@ jobs:
       # cleanly while the repo secrets are unset.
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Optional Ed25519 signing of the pushed digest docs (the app
+      # accepts unsigned docs while no key is pinned — see
+      # packages/app/tauri/res/keys/README.md for the ceremony).
+      WOWSP_DIGEST_SIGNING_KEY: ${{ secrets.WOWSP_DIGEST_SIGNING_KEY }}
+      WOWSP_DIGEST_SIGNING_KEY_ID: ${{ vars.WOWSP_DIGEST_SIGNING_KEY_ID }}
     steps:
       - name: Settle, guard the tag, publish
         shell: bash
@@ -358,6 +363,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          pip install --quiet toml
+          pip install --quiet toml cryptography
           python scripts/publish_digests.py --channel app \
             --tag "${{ github.ref_name }}" --from-gh-release --latest

@@ -28,6 +28,15 @@ pub const DIGEST_CHANNELS: [&str; 4] = ["app", "mod-hub", "res", "data"];
 /// `seq` is per-channel and strictly increasing across publishes; the
 /// app refuses a doc whose seq regresses below the last one it accepted
 /// (rollback guard for the channels that consume it).
+///
+/// `key_id` + `sig` are the optional Ed25519 signature layer
+/// (`scripts/catalog_signing.py`): the signature covers the canonical
+/// JSON of the doc without `sig` (sorted keys, compact separators —
+/// byte-identical to serde_json's sorted-Map rendering). This worker
+/// only transports them; the app verifies against compile-time pinned
+/// public keys, which is what makes the KV store and the worker itself
+/// unable to forge a doc (an old signed doc can still be replayed —
+/// that is what the `seq` ratchet refuses).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DigestDoc {
     pub channel: String,
@@ -37,6 +46,11 @@ pub struct DigestDoc {
     /// is decided by `seq`, never by wall clocks).
     pub generated_at: String,
     pub assets: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<String>,
+    /// Standard base64 (padded) of the 64-byte Ed25519 signature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sig: Option<String>,
 }
 
 /// KV key of the doc pinned to one tag (`digest:<channel>:<tag>`).
@@ -70,9 +84,11 @@ pub fn valid_tag(tag: &str) -> bool {
 
 /// Shape check on a doc read back from KV before it is served: the doc
 /// must belong to the channel it was looked up under, carry at least
-/// one asset, and every asset name / digest must be well-formed. A doc
-/// failing this is corruption (or tampering) in the store — the worker
-/// refuses to serve it rather than propagate it.
+/// one asset, and every asset name / digest must be well-formed. The
+/// optional signature layer must be either fully present and well
+/// formed or fully absent. A doc failing this is corruption (or
+/// tampering) in the store — the worker refuses to serve it rather
+/// than propagate it.
 pub fn doc_is_sane(doc: &DigestDoc, channel: &str) -> bool {
     doc.channel == channel
         && valid_channel(&doc.channel)
@@ -88,6 +104,27 @@ pub fn doc_is_sane(doc: &DigestDoc, channel: &str) -> bool {
                 // letters" — the check is "no ASCII uppercase").
                 && !sha256.bytes().any(|b| b.is_ascii_uppercase())
         })
+        && signature_shape_is_sane(&doc.key_id, &doc.sig)
+}
+
+/// The signature layer's transport shape: `key_id` 1–16 chars of
+/// `[a-z0-9-]`, `sig` exactly the padded standard-base64 spelling of a
+/// 64-byte Ed25519 signature (88 chars). Cryptographic verification is
+/// the app's job — this only keeps garbage out of the wire.
+fn signature_shape_is_sane(key_id: &Option<String>, sig: &Option<String>) -> bool {
+    match (key_id, sig) {
+        (None, None) => true,
+        (Some(key_id), Some(sig)) => {
+            (1..=16).contains(&key_id.len())
+                && key_id.bytes().all(|b| {
+                    b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'
+                })
+                && sig.len() == 88
+                && sig.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
+        },
+        // Half-signed is corruption, not a policy choice.
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -106,6 +143,8 @@ mod tests {
                 ("WoWSP-0.6.1-x64-lite.exe".to_string(),
                  "0123456789abcdef".repeat(4)),
             ]),
+            key_id: None,
+            sig: None,
         }
     }
 
@@ -178,6 +217,40 @@ mod tests {
         let mut bad_name = sample("app", "v0.6.1");
         bad_name.assets.insert("x\n.exe".to_string(), "a".repeat(64));
         assert!(!doc_is_sane(&bad_name, "app"), "control chars in an asset name");
+    }
+
+    #[test]
+    fn signature_layer_shape_is_all_or_nothing() {
+        // A well-formed pair passes.
+        let mut signed = sample("app", "v0.6.1");
+        signed.key_id = Some("main".to_string());
+        signed.sig = Some("A".repeat(86) + "==");
+        assert!(doc_is_sane(&signed, "app"));
+
+        // Half-signed is refused.
+        let mut half = signed.clone();
+        half.sig = None;
+        assert!(!doc_is_sane(&half, "app"), "key_id without sig");
+        let mut other_half = signed.clone();
+        other_half.key_id = None;
+        assert!(!doc_is_sane(&other_half, "app"), "sig without key_id");
+
+        // Bad key ids and bad sig spellings are refused.
+        for bad_id in ["", "Main", "key with space", "toolongkeyiddddddd"] {
+            let mut doc = signed.clone();
+            doc.key_id = Some(bad_id.to_string());
+            assert!(!doc_is_sane(&doc, "app"), "{bad_id:?}");
+        }
+        for bad_sig in [
+            String::new(),
+            "A".repeat(87),
+            "A".repeat(88).replace('A', "?"),
+            "A".repeat(89),
+        ] {
+            let mut doc = signed.clone();
+            doc.sig = Some(bad_sig.clone());
+            assert!(!doc_is_sane(&doc, "app"), "{bad_sig:?}");
+        }
     }
 
     #[test]

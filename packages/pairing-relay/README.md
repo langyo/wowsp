@@ -337,6 +337,14 @@ Served shape (`relay-core::digests::DigestDoc`):
 }
 ```
 
+Docs may carry an optional Ed25519 signature layer (`key_id` +
+`sig`, see `scripts/catalog_signing.py` and
+`packages/app/tauri/res/keys/README.md`): this worker only transports
+the fields; the app verifies them against compile-time pinned public
+keys, at which point neither the KV store nor the worker can forge a
+doc (an old signed doc can still be replayed — the `seq` ratchet
+refuses that).
+
 Channels and their publishers: `app` ← release.yml, `mod-hub` ←
 mod_hub_publish.py, `res` ← release_models.py, `data` ←
 publish_data_pack.py — all through `scripts/publish_digests.py`, which

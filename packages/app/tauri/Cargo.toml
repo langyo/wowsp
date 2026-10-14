@@ -48,11 +48,13 @@ byteorder.workspace = true
 flate2.workspace = true
 tar.workspace = true
 
-# Catalog package integrity + unpacking (Mod Hub)
+# Catalog package integrity + unpacking (Mod Hub); ed25519 also verifies
+# the relay digest docs' signature layer (commands/update.rs).
 sha2.workspace = true
 hex.workspace = true
 chrono.workspace = true
 zip.workspace = true
+ed25519-dalek.workspace = true
 
 # Service supervision — graceful shutdown / signal handling
 malkuth.workspace = true

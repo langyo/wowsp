@@ -114,3 +114,7 @@ packages/webui/src/res/images/ships/_index.json
 # Local release staging (installers are uploaded to GitHub Releases)
 dist-release/
 node_modules
+
+# Release-digest signing PRIVATE seeds must never be committed (only the
+# *.pub halves live in packages/app/tauri/res/keys/ — see its README).
+packages/app/tauri/res/keys/*.key

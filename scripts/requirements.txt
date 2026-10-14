@@ -14,5 +14,8 @@ pydantic~=2.9
 numpy~=2.0
 toml~=0.10
 
+# Release-digest signing (scripts/catalog_signing.py)
+cryptography~=47.0
+
 # Image post-processing (visual-suite WebP conversion)
 pillow~=11.0

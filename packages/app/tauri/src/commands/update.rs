@@ -363,14 +363,98 @@ struct RelayDigest {
     seq: u64,
 }
 
+/// Compile-time pinned Ed25519 public keys (standard base64 of the 32
+/// raw bytes) that relay digest docs may be signed with. The private
+/// seeds NEVER enter this repository (AGENTS.md §7) — see the ceremony
+/// in scripts/catalog_signing.py and res/keys/README.md.
+///
+/// Transition policy: while this list is EMPTY, unsigned docs are
+/// accepted (the channel is young and nothing signs yet) — but SIGNED
+/// docs are already refused as unknown-key, so once the signing secret
+/// exists, no release may be cut from an empty-pinlist commit. As soon
+/// as the first key lands here, a valid signature by a listed key
+/// becomes REQUIRED — the KV store and the worker itself can then no
+/// longer forge a doc, and a replayed old doc is all that remains
+/// (which the seq ratchet refuses). The pin commit and the
+/// WOWSP_DIGEST_SIGNING_KEY secret must land in the same wave, before
+/// the next release tag (see res/keys/README.md).
+const PINNED_DIGEST_KEYS: &[(&str, &str)] = &[
+    // ("main", include_str!("../../res/keys/digest-main.pub")),
+    // ("backup", include_str!("../../res/keys/digest-backup.pub")),
+];
+
+/// Verify the doc's optional Ed25519 signature layer against `keys`.
+/// The signed bytes are the doc's JSON without the `sig` member,
+/// rendered with sorted keys and compact separators — byte-identical
+/// to scripts/catalog_signing.py's canonical form (serde_json's Map is
+/// sorted; every doc member that reaches the canonical form is ASCII).
+fn verify_doc_signature(doc: &serde_json::Value, keys: &[(&str, &str)]) -> Result<()> {
+    use base64::Engine as _;
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let key_id = doc.get("key_id").and_then(|v| v.as_str());
+    let sig_b64 = doc.get("sig").and_then(|v| v.as_str());
+    match (key_id, sig_b64) {
+        (None, None) => {
+            if keys.is_empty() {
+                return Ok(());
+            }
+            bail!("the relay digest doc is unsigned but the app pins signing keys");
+        },
+        (Some(_), None) | (None, Some(_)) => {
+            bail!("the relay digest doc is half-signed (key_id/sig must appear together)");
+        },
+        (Some(key_id), Some(sig_b64)) => {
+            let pub_b64 = keys
+                .iter()
+                .find(|(id, _)| *id == key_id)
+                .map(|(_, key)| *key)
+                .ok_or_else(|| {
+                    anyhow!("the relay digest doc is signed by unknown key {key_id:?}")
+                })?;
+            let key_bytes = base64::engine::general_purpose::STANDARD
+                .decode(pub_b64.trim())
+                .map_err(|e| anyhow!("pinned key {key_id:?} is not valid base64: {e}"))?;
+            let key_bytes: [u8; 32] = key_bytes
+                .try_into()
+                .map_err(|_| anyhow!("pinned key {key_id:?} is not 32 bytes"))?;
+            let sig_bytes = base64::engine::general_purpose::STANDARD
+                .decode(sig_b64)
+                .map_err(|e| anyhow!("the relay digest signature is not valid base64: {e}"))?;
+            let signature = Signature::from_slice(&sig_bytes)
+                .map_err(|e| anyhow!("the relay digest signature is malformed: {e}"))?;
+            let key = VerifyingKey::from_bytes(&key_bytes)
+                .map_err(|e| anyhow!("pinned key {key_id:?} is malformed: {e}"))?;
+
+            let mut unsigned = doc.clone();
+            unsigned
+                .as_object_mut()
+                .ok_or_else(|| anyhow!("the relay digest doc is not a JSON object"))?
+                .remove("sig");
+            let canonical = serde_json::to_vec(&unsigned)
+                .map_err(|e| anyhow!("canonicalizing the relay digest doc: {e}"))?;
+            key.verify(&canonical, &signature)
+                .map_err(|e| anyhow!("the relay digest signature does not verify: {e}"))?;
+            Ok(())
+        },
+    }
+}
+
 /// Read the relay's app-channel digest doc (relay_core::digests::
 /// DigestDoc) into the same [`OfficialRelease`] shape the GitHub leg
 /// produces, with the same strictness: v-tag, valid version, digest for
 /// exactly the artifact this version installs.
 fn parse_relay_digest(doc: &serde_json::Value) -> Result<RelayDigest> {
+    parse_relay_digest_with(doc, PINNED_DIGEST_KEYS)
+}
+
+/// [`parse_relay_digest`] with an explicit pinned-key table (tests pass
+/// their own; production passes [`PINNED_DIGEST_KEYS`]).
+fn parse_relay_digest_with(doc: &serde_json::Value, keys: &[(&str, &str)]) -> Result<RelayDigest> {
     if doc["channel"].as_str() != Some("app") {
         bail!("the relay digest doc is not the app channel");
     }
+    verify_doc_signature(doc, keys)?;
     let tag = doc["tag"]
         .as_str()
         .ok_or_else(|| anyhow!("the relay digest doc carries no tag"))?;
@@ -1546,6 +1630,69 @@ mod tests {
         assert!(ensure_seq_advances(Some(4), 4).is_err());
         let reverted = ensure_seq_advances(Some(9), 2).unwrap_err().to_string();
         assert!(reverted.contains("regressed"), "{reverted}");
+    }
+
+    /// A throwaway keypair (seed bytes 0..32) whose signature below was
+    /// produced by scripts/catalog_signing.py's canonical form — the
+    /// cross-language parity fixture. NOT a trust anchor; production
+    /// pins nothing yet (PINNED_DIGEST_KEYS is empty).
+    const TEST_DIGEST_KEY: (&str, &str) = ("test", "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=");
+
+    fn signed_digest_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "channel": "app",
+            "tag": "v0.6.0",
+            "seq": 3,
+            "generated_at": "2026-10-14T12:00:00Z",
+            "assets": {
+                "WoWSP_0.6.0_x64-installer-lite.exe":
+                    "8d88e539c25d9b8a0705c9f858f616e68f6d8ef13af4de7a00af39fb10593927"
+            },
+            "key_id": "test",
+            "sig": "oX05q6v+4ScQSmS08ryM0/ptDB4a3pL7N+eodLZfs4MbMok9j6eK1+20XM2NvB7wCl97zg5hEzfv4E5qaWj7BQ=="
+        })
+    }
+
+    #[test]
+    fn relay_digest_signature_verifies_across_languages() {
+        let keys = [TEST_DIGEST_KEY];
+        // The python-signed fixture parses AND verifies: this is the
+        // canonical-bytes parity proof (sorted-key compact JSON).
+        let parsed = parse_relay_digest_with(&signed_digest_fixture(), &keys).unwrap();
+        assert_eq!(parsed.seq, 3);
+        assert_eq!(parsed.release.version, "0.6.0");
+
+        // Any tampering of a signed member breaks the signature.
+        let mut tampered_seq = signed_digest_fixture();
+        tampered_seq["seq"] = 4u64.into();
+        let err = parse_relay_digest_with(&tampered_seq, &keys)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("does not verify"), "{err}");
+
+        // Unknown key ids are refused even with a valid signature.
+        let mut wrong_key = signed_digest_fixture();
+        wrong_key["key_id"] = "other".into();
+        assert!(parse_relay_digest_with(&wrong_key, &keys).is_err());
+
+        // Half-signed is refused.
+        let mut half = signed_digest_fixture();
+        half.as_object_mut().unwrap().remove("sig");
+        assert!(parse_relay_digest_with(&half, &keys).is_err());
+        let mut other_half = signed_digest_fixture();
+        other_half.as_object_mut().unwrap().remove("key_id");
+        assert!(parse_relay_digest_with(&other_half, &keys).is_err());
+
+        // Unsigned: refused while keys are pinned, accepted in the
+        // no-keys-pinned transition (production today).
+        let mut unsigned = signed_digest_fixture();
+        unsigned.as_object_mut().unwrap().remove("sig");
+        unsigned.as_object_mut().unwrap().remove("key_id");
+        let refused = parse_relay_digest_with(&unsigned, &keys)
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("unsigned"), "{refused}");
+        assert!(parse_relay_digest_with(&unsigned, &[]).is_ok());
     }
 
     #[test]

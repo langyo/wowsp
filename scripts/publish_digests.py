@@ -51,6 +51,9 @@ try:
 except ImportError:  # pragma: no cover - toml is in scripts/requirements.txt
     toml = None
 
+# Sibling module (same directory — sys.path[0] when run as a script).
+import catalog_signing
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WRANGLER_TOML = REPO_ROOT / "packages/pairing-relay/wrangler.toml"
 REPO = "langyo/wowsp"
@@ -203,6 +206,9 @@ def publish(
 
     current = kv_get(token, account, ns, f"digest-latest:{channel}")
     doc = build_doc(channel, tag, assets, next_seq(current))
+    # Sign when key material is exported (WOWSP_DIGEST_SIGNING_KEY);
+    # unsigned docs remain servable while the app has no pinned key.
+    doc = catalog_signing.sign_doc_from_env(doc)
     kv_put(token, account, ns, f"digest:{channel}:{tag}", doc)
     if latest:
         kv_put(token, account, ns, f"digest-latest:{channel}", doc)

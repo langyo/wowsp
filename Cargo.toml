@@ -213,6 +213,9 @@ image_dds = { version = "0.7", default-features = false }
 ciborium = "0.2"
 insta = { version = "1.47", features = ["yaml"] }
 sha2 = "0.10"
+# Ed25519 verification of the relay digest docs' signature layer (the
+# seeds live outside the repo — see scripts/catalog_signing.py).
+ed25519-dalek = "2"
 
 # ── Build profiles ──────────────────────────────────────────
 
