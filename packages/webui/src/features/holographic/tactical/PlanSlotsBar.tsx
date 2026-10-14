@@ -11,7 +11,7 @@
  */
 import { computed, defineComponent, nextTick, ref, type PropType } from "vue";
 import { Copy, Download, GitBranch, Plus, Trash2, Upload } from "@lucide/vue";
-import { HkTooltip } from "@celestia-island/hikari";
+import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import { fmtClock } from "./timelineModel";
 import type { PlanSlot } from "./planSlots";
@@ -146,66 +146,64 @@ export default defineComponent({
           <span class="plan-slots__actions plan-slots__actions--col">
             {props.onBranch ? (
               <HkTooltip text={i18nT("tactics.slots.branch")} placement="right">
-                <button
-                  type="button"
-                  class="plan-slots__btn plan-slots__btn--branch"
+                <HkIconButton
+                  size={24}
+                  variant="secondary"
+                  class="plan-slots__btn--branch"
                   onClick={() => {
                     armed.value = false;
                     props.onBranch!();
                   }}
                 >
                   <GitBranch size={12} />
-                </button>
+                </HkIconButton>
               </HkTooltip>
             ) : null}
             <HkTooltip text={i18nT("tactics.slots.add")} placement="right">
-              <button
-                type="button"
-                class="plan-slots__btn"
+              <HkIconButton
+                size={24}
                 onClick={() => {
                   armed.value = false;
                   props.onAdd();
                 }}
               >
                 <Plus size={12} />
-              </button>
+              </HkIconButton>
             </HkTooltip>
             <HkTooltip text={i18nT("tactics.slots.exportBundle")} placement="right">
-              <button
-                type="button"
-                class="plan-slots__btn"
+              <HkIconButton
+                size={24}
                 onClick={() => {
                   armed.value = false;
                   props.onExport();
                 }}
               >
                 <Download size={12} />
-              </button>
+              </HkIconButton>
             </HkTooltip>
             <HkTooltip text={i18nT("tactics.slots.importBundle")} placement="right">
-              <button
-                type="button"
-                class="plan-slots__btn"
+              <HkIconButton
+                size={24}
                 onClick={() => {
                   armed.value = false;
                   props.onImport();
                 }}
               >
                 <Upload size={12} />
-              </button>
+              </HkIconButton>
             </HkTooltip>
             {props.slots.length > 1 ? (
               <HkTooltip
                 text={i18nT(armed.value ? "tactics.slots.removeConfirm" : "tactics.slots.remove")}
                 placement="right"
               >
-                <button
-                  type="button"
-                  class={["plan-slots__btn", armed.value ? "plan-slots__btn--danger" : ""]}
+                <HkIconButton
+                  size={24}
+                  variant={armed.value ? "danger" : "ghost"}
                   onClick={clickRemove}
                 >
                   <Trash2 size={12} />
-                </button>
+                </HkIconButton>
               </HkTooltip>
             ) : null}
           </span>
@@ -245,65 +243,61 @@ export default defineComponent({
         ))}
         <span class="plan-slots__actions">
           <HkTooltip text={i18nT("tactics.slots.add")} placement="bottom">
-            <button
-              type="button"
-              class="plan-slots__btn"
+            <HkIconButton
+              size={24}
               onClick={() => {
                 armed.value = false;
                 props.onAdd();
               }}
             >
               <Plus size={12} />
-            </button>
+            </HkIconButton>
           </HkTooltip>
           <HkTooltip text={i18nT("tactics.slots.duplicate")} placement="bottom">
-            <button
-              type="button"
-              class="plan-slots__btn"
+            <HkIconButton
+              size={24}
               onClick={() => {
                 armed.value = false;
                 props.onDuplicate();
               }}
             >
               <Copy size={12} />
-            </button>
+            </HkIconButton>
           </HkTooltip>
           <HkTooltip text={i18nT("tactics.slots.exportBundle")} placement="bottom">
-            <button
-              type="button"
-              class="plan-slots__btn"
+            <HkIconButton
+              size={24}
               onClick={() => {
                 armed.value = false;
                 props.onExport();
               }}
             >
               <Download size={12} />
-            </button>
+            </HkIconButton>
           </HkTooltip>
           <HkTooltip text={i18nT("tactics.slots.importBundle")} placement="bottom">
-            <button
-              type="button"
-              class="plan-slots__btn"
+            <HkIconButton
+              size={24}
               onClick={() => {
                 armed.value = false;
                 props.onImport();
               }}
             >
               <Upload size={12} />
-            </button>
+            </HkIconButton>
           </HkTooltip>
           {props.slots.length > 1 ? (
             <HkTooltip
               text={i18nT(armed.value ? "tactics.slots.removeConfirm" : "tactics.slots.remove")}
               placement="bottom"
             >
-              <button
-                type="button"
-                class={["plan-slots__btn", armed.value ? "plan-slots__btn--danger" : ""]}
+              <HkIconButton
+                size={24}
+                variant={armed.value ? "danger" : "ghost"}
                 onClick={clickRemove}
               >
                 <Trash2 size={12} />
-              </button>
+              </HkIconButton>
             </HkTooltip>
           ) : null}
         </span>

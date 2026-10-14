@@ -5,8 +5,9 @@
  * snapshot; the mode/menu state and the follow-camera logic stay in
  * HolographicMap and come back through the on* callbacks.
  */
-import { defineComponent, type PropType } from "vue";
+import { defineComponent, ref, type PropType } from "vue";
 import { Crosshair, Orbit, Video } from "@lucide/vue";
+import { HkPopover } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { t as i18nT } from "@/i18n";
 import { tierToRoman } from "@wowsp/holo";
@@ -45,26 +46,39 @@ export default defineComponent({
     },
   },
   setup(props) {
+    // Anchor for the popover: the wrapper around the trigger button.
+    const triggerWrap = ref<HTMLSpanElement | null>(null);
     return () => (
       <div class="holo-map__camera">
-        <button
-          class={["holo-map__lbltoggle", props.open ? "holo-map__lbltoggle--on" : ""]}
-          onClick={(e) => {
-            e.stopPropagation();
-            props.onToggleMenu();
+        <span ref={triggerWrap} class="holo-map__camera-trigger">
+          <button
+            class={["holo-map__lbltoggle", props.open ? "holo-map__lbltoggle--on" : ""]}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onToggleMenu();
+            }}
+            data-hint={i18nT("replay.camera.title")}
+            aria-label={i18nT("replay.camera.title")}
+          >
+            {props.mode === "original" ? (
+              <Video size={14} />
+            ) : props.mode === "follow" ? (
+              <Crosshair size={14} />
+            ) : (
+              <Orbit size={14} />
+            )}
+          </button>
+        </span>
+        <HkPopover
+          modelValue={props.open}
+          onUpdate:modelValue={(v: boolean) => {
+            if (!v) props.onToggleMenu();
           }}
-          data-hint={i18nT("replay.camera.title")}
-          aria-label={i18nT("replay.camera.title")}
+          anchorRef={triggerWrap.value}
+          placement="top-start"
+          sheetOnMobile
+          title={i18nT("replay.camera.title")}
         >
-          {props.mode === "original" ? (
-            <Video size={14} />
-          ) : props.mode === "follow" ? (
-            <Crosshair size={14} />
-          ) : (
-            <Orbit size={14} />
-          )}
-        </button>
-        {props.open ? (
           <div class="holo-map__cam-menu" onClick={(e) => e.stopPropagation()}>
             <div class="holo-map__cam-modes">
               <button
@@ -133,7 +147,7 @@ export default defineComponent({
               </div>
             ))}
           </div>
-        ) : null}
+        </HkPopover>
       </div>
     );
   },

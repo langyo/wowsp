@@ -9,8 +9,17 @@
  * asymmetric one.
  */
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
-import { HkModal, HkTag, useToast } from "@celestia-island/hikari";
-import { ArrowLeftRight, Ship, Trash2, X } from "@lucide/vue";
+import {
+  HkIconButton,
+  HkIconButtonGroup,
+  HkTooltip,
+  HkModal,
+  HkPopupSelect,
+  HkTag,
+  useToast,
+  type HkIconButtonGroupOption,
+} from "@celestia-island/hikari";
+import { ArrowLeftRight, AudioLines, CloudFog, Radar, Ship, Trash2, X } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { ShipInfo } from "@/api/client";
@@ -32,6 +41,13 @@ const FAMILY_LABEL: Record<(typeof UTILITY_FAMILIES)[number], string> = {
   rls: "tactics.zone.radar",
   sonar: "tactics.zone.hydro",
   smoke: "tactics.zone.smoke",
+};
+
+/** Consumable family → the icon its toggle carries in the group strip. */
+const FAMILY_ICON: Record<(typeof UTILITY_FAMILIES)[number], typeof Ship> = {
+  rls: Radar,
+  sonar: AudioLines,
+  smoke: CloudFog,
 };
 
 /** Can the hull mount the family at all (kit + baked slot families)? */
@@ -99,17 +115,6 @@ export default defineComponent({
       };
     }
 
-    function toggleConsumable(side: TeamSide, index: number, family: string): void {
-      const entry = draft.value[side][index];
-      if (!entry) return;
-      const has = entry.consumables.includes(family);
-      patchAt(side, index, {
-        consumables: has
-          ? entry.consumables.filter((c) => c !== family)
-          : [...entry.consumables, family],
-      });
-    }
-
     function apply(): void {
       emit("apply", draft.value);
       emit("update:modelValue", false);
@@ -125,29 +130,35 @@ export default defineComponent({
           <div class="lineup__side-head">
             <strong>{label}</strong>
             <span class="lineup__side-count">{entries.length}</span>
-            <button
-              type="button"
-              class="lineup__icon-btn"
-              title={i18nT("tactics.lineup.copyTo", {
+            <HkTooltip
+              text={i18nT("tactics.lineup.copyTo", {
                 side: i18nT(other === "ally" ? "tactics.lineup.ally" : "tactics.lineup.enemy"),
               })}
-              onClick={() => {
-                draft.value = copySide(draft.value, other, side);
-              }}
             >
-              <ArrowLeftRight size={12} style={{ transform: other === "ally" ? "scaleX(-1)" : undefined }} />
-            </button>
-            <button
-              type="button"
-              class="lineup__icon-btn"
-              title={i18nT("tactics.lineup.clear")}
-              disabled={entries.length === 0}
-              onClick={() => {
-                draft.value = { ...draft.value, [side]: [] };
-              }}
-            >
-              <X size={12} />
-            </button>
+              <HkIconButton
+                size={24}
+                data-hint={i18nT("tactics.lineup.copyTo", {
+                  side: i18nT(other === "ally" ? "tactics.lineup.ally" : "tactics.lineup.enemy"),
+                })}
+                onClick={() => {
+                  draft.value = copySide(draft.value, other, side);
+                }}
+              >
+                <ArrowLeftRight size={12} style={{ transform: other === "ally" ? "scaleX(-1)" : undefined }} />
+              </HkIconButton>
+            </HkTooltip>
+            <HkTooltip text={i18nT("tactics.lineup.clear")}>
+              <HkIconButton
+                size={24}
+                data-hint={i18nT("tactics.lineup.clear")}
+                disabled={entries.length === 0}
+                onClick={() => {
+                  draft.value = { ...draft.value, [side]: [] };
+                }}
+              >
+                <X size={12} />
+              </HkIconButton>
+            </HkTooltip>
           </div>
           <div class="lineup__rows">
             {entries.map((entry, i) => {
@@ -172,49 +183,59 @@ export default defineComponent({
                         {`T${unit.ship.tier} · ${i18nT(`ships.type.${unit.ship.type}`)}`}
                       </HkTag>
                     ) : null}
-                    <button
-                      type="button"
-                      class="lineup__icon-btn lineup__icon-btn--danger"
-                      title={i18nT("tactics.lineup.remove")}
-                      onClick={() => removeAt(side, i)}
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    <HkTooltip text={i18nT("tactics.lineup.remove")}>
+                      <HkIconButton
+                        size={24}
+                        variant="danger"
+                        data-hint={i18nT("tactics.lineup.remove")}
+                        onClick={() => removeAt(side, i)}
+                      >
+                        <Trash2 size={12} />
+                      </HkIconButton>
+                    </HkTooltip>
                   </div>
                   <div class="lineup__row-config">
                     {torps.length > 0 ? (
-                      <label class="lineup__field">
-                        <span>{i18nT("tactics.lineup.torpedo")}</span>
-                        <select
-                          class="lineup__select"
-                          value={String(Math.min(entry.torpedo, torps.length - 1))}
-                          onChange={(e: Event) =>
-                            patchAt(side, i, { torpedo: Number((e.target as HTMLSelectElement).value) })
-                          }
-                        >
-                          {torps.map((tp, ti) => (
-                            <option key={tp.label} value={ti}>
-                              {i18nT("tactics.lineup.torpKm", { km: tp.label })}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <HkPopupSelect
+                        label={i18nT("tactics.lineup.torpedo")}
+                        modelValue={String(Math.min(entry.torpedo, torps.length - 1))}
+                        options={torps.map((tp, ti) => ({
+                          value: String(ti),
+                          label: i18nT("tactics.lineup.torpKm", { km: tp.label }),
+                        }))}
+                        onUpdate:modelValue={(v: string) => patchAt(side, i, { torpedo: Number(v) })}
+                      />
                     ) : null}
-                    <div class="lineup__chips">
-                      {UTILITY_FAMILIES.filter((f) => familyAvailable(f, src)).map((f) => {
-                        const on = entry.consumables.includes(f);
-                        return (
-                          <button
-                            key={f}
-                            type="button"
-                            class={["lineup__chip", on ? "lineup__chip--on" : ""]}
-                            onClick={() => toggleConsumable(side, i, f)}
-                          >
-                            {i18nT(FAMILY_LABEL[f])}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {(() => {
+                      // The mountable consumables as one multi-select icon
+                      // group: engaged families tint, tooltips carry the
+                      // localized names.
+                      const opts: HkIconButtonGroupOption[] = UTILITY_FAMILIES.filter((f) =>
+                        familyAvailable(f, src),
+                      ).map((f) => {
+                        const Icon = FAMILY_ICON[f];
+                        return {
+                          key: f,
+                          label: i18nT(FAMILY_LABEL[f]),
+                          icon: <Icon size={15} />,
+                        };
+                      });
+                      return opts.length > 0 ? (
+                        <HkIconButtonGroup
+                          class="lineup__kit"
+                          mode="multiple"
+                          variant="track"
+                          size="sm"
+                          options={opts}
+                          modelValue={entry.consumables}
+                          onUpdate:modelValue={(v: string | string[]) => {
+                            patchAt(side, i, {
+                              consumables: Array.isArray(v) ? v : [],
+                            });
+                          }}
+                        />
+                      ) : null;
+                    })()}
                   </div>
                 </div>
               );

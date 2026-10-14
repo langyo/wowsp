@@ -652,22 +652,27 @@
 .holo-map__camera {
   position: relative;
 }
+/* The camera dropdown is an HkPopover now: positioning/surface/mobile-sheet
+   are the popover's. The teleported panel leaves .holo-map, so the content
+   block re-applies the hud palette the rows read (--holo-hud-*). */
+.holo-map__camera-trigger {
+  display: inline-flex;
+}
+
 .holo-map__cam-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 6;
+  @include hud.holo-hud-dark;
+
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   width: min(380px, calc(100vw - 40px));
   max-height: min(70vh, 560px);
   overflow-y: auto;
-  padding: 0.4rem;
   background: var(--holo-hud-menu);
-  border: 1px solid var(--holo-hud-border);
-  border-radius: 6px;
-  box-shadow: var(--holo-hud-shadow);
+}
+
+:root[data-mode="light"] .holo-map__cam-menu {
+  @include hud.holo-hud-light;
 }
 .holo-map__cam-modes {
   display: flex;
@@ -782,8 +787,7 @@
     background: rgb(0 0 0 / 40%);
   }
 
-  .holo-map__speed-menu,
-  .holo-map__cam-menu {
+  .holo-map__speed-menu {
     position: fixed;
     left: 0;
     right: 0;

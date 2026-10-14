@@ -51,26 +51,10 @@
   margin-left: 2px;
 }
 
-.plan-slots__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--holo-hud-text);
-  cursor: pointer;
-
-  &:hover {
-    background: rgb(var(--tac-accent-rgb) / 16%);
-  }
-
-  &--danger {
-    border-color: rgb(204 51 51 / 70%);
-    color: rgb(248 113 113);
-  }
+/* Action buttons are hikari HkIconButtons (tooltips + variants carry the
+   armed-delete emphasis); only the branch button keeps a dashed outline. */
+.plan-slots__btn--branch {
+  border: 1px dashed rgb(var(--color-primary) / 45%);
 }
 
 /* ── Tree layout (the tactics page's left branch panel) ───────────────────
@@ -170,24 +154,10 @@
   gap: 4px;
 }
 
-.plan-slots--tree .plan-slots__btn {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  color: rgb(var(--color-muted));
-
-  &:hover {
-    background: rgb(var(--color-primary) / 12%);
-    color: rgb(var(--color-primary));
-  }
-
-  &--danger:hover {
-    background: rgb(204 51 51 / 18%);
-    color: rgb(248 113 113);
-  }
-
-  &--branch {
-    border: 1px dashed rgb(var(--color-primary) / 45%);
-    color: rgb(var(--color-primary));
-  }
+/* Tree-panel buttons ride the app surface tokens (the panel lives outside
+   the stage's HUD palette). hikari paints the glyph through its own
+   icon-color variables (same override pattern as AudioPlayerToast). */
+.plan-slots--tree .hk-icon-button {
+  --hi-icon-button-icon-color: rgb(var(--color-muted) / 90%);
+  --hi-icon-button-icon-color-active: rgb(var(--color-primary));
 }

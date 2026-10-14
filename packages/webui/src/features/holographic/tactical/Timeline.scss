@@ -107,17 +107,20 @@
 }
 
 /* Action editor pop (double-click a keyframe / user marker). */
-.tac-timeline__edit {
+/* Zero-size anchor for the edit popover, pinned at the keyframe hit. */
+.tac-timeline__edit-anchor {
   position: absolute;
-  z-index: 9;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Edit panel CONTENT — the glass surface + clamping is HkPopover's now. */
+.tac-timeline__edit {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 7px;
-  background: rgba(5, 8, 15, 0.95);
-  border: 1px solid var(--holo-hud-border);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 40%);
+  padding: 2px;
 }
 
 .tac-timeline__edit-field {

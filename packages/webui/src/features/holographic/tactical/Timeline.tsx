@@ -21,8 +21,9 @@ import {
   watch,
   type PropType,
 } from "vue";
+import { useBreakpoint } from "@celestia-island/hikari";
 import { ChevronsLeft, Pause, Play, Plus, Trash2, ZoomIn, ZoomOut } from "@lucide/vue";
-import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
+import { HkIconButton, HkPopover, HkTooltip } from "@celestia-island/hikari";
 import { i18n, t as i18nT } from "@/i18n";
 import type { TacticalActionKind, TacticalStep } from "./types";
 import type { ShipAction } from "./actions";
@@ -204,6 +205,7 @@ export default defineComponent({
     const tooltip = ref<Hit | null>(null);
     /** Collapsed accordion rows, by track key (survives doc edits). */
     const collapsed = ref<ReadonlySet<string>>(new Set<string>());
+    const { isMobile } = useBreakpoint();
 
     // Re-fit when a new battle (different duration) mounts.
     watch(
@@ -956,14 +958,14 @@ export default defineComponent({
       if (e.key === "Enter") commitMarkerEdit();
       else if (e.key === "Escape") markerEdit.value = null;
     }
-    const markerEditStyle = computed(() => {
+    /** Anchor for the edit popover: a zero-size span at the keyframe's hit
+     *  point — HkPopover positions against it and clamps/flips itself, so
+     *  the old manual flip arithmetic is gone. */
+    const editAnchor = ref<HTMLSpanElement | null>(null);
+    const markerEditAnchorStyle = computed(() => {
       const ed = markerEdit.value;
       if (!ed) return null;
-      const flip = ed.x > width.value - 210;
-      return {
-        left: `${flip ? ed.x - 208 : ed.x + 10}px`,
-        top: `${Math.max(2, ed.y - 14)}px`,
-      };
+      return { left: `${ed.x}px`, top: `${ed.y}px` };
     });
 
     function zoomStep(factor: number): void {
@@ -1080,56 +1082,74 @@ export default defineComponent({
               onClick={(e: MouseEvent) => e.stopPropagation()}
             />
           ) : null}
-          {markerEdit.value && markerEditData.value && markerEditStyle.value ? (
-            <div
-              class="tac-timeline__edit"
-              style={markerEditStyle.value}
-              onClick={(e: MouseEvent) => e.stopPropagation()}
-            >
-              <label class="tac-timeline__edit-field">
-                <span>{i18nT("replay.tactical.plan.editTime")}</span>
-                <input
-                  ref={markerTimeInput}
-                  value={markerTimeText.value}
-                  onInput={(e: Event) => {
-                    markerTimeText.value = (e.target as HTMLInputElement).value;
-                  }}
-                  onKeydown={onMarkerEditKeydown}
-                  onBlur={commitMarkerEdit}
-                />
-              </label>
-              {props.tall && markerEditData.value.action != null ? (
-                <div class="tac-timeline__edit-kinds">
-                  {(["move", "attack", "spot"] as const).map((kind) => (
-                    <button
-                      key={kind}
-                      type="button"
-                      class={[
-                        "tac-timeline__edit-kind",
-                        markerEditKind.value === kind ? "tac-timeline__edit-kind--on" : "",
-                      ]}
-                      onClick={() => {
-                        markerEditKind.value = kind;
-                      }}
-                    >
-                      {i18nT(`replay.tactical.plan.act.${kind}`)}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <button
-                type="button"
-                class="tac-timeline__edit-del"
-                title={i18nT("replay.tactical.plan.removeAction")}
-                onClick={() => {
-                  const ed = markerEdit.value;
-                  markerEdit.value = null;
-                  if (ed) props.removeUserMarker(ed.id);
+          {markerEdit.value && markerEditData.value ? (
+            <>
+              <span
+                ref={editAnchor}
+                class="tac-timeline__edit-anchor"
+                style={markerEditAnchorStyle.value ?? undefined}
+              />
+              <HkPopover
+                modelValue={markerEdit.value != null}
+                onUpdate:modelValue={(v: boolean) => {
+                  if (!v) markerEdit.value = null;
                 }}
+                anchorRef={editAnchor.value}
+                placement="bottom-start"
+                closeOnBackdrop={isMobile.value}
+                sheetOnMobile
+                title={i18nT("replay.tactical.plan.editTime")}
               >
-                <Trash2 size={12} />
-              </button>
-            </div>
+                <div
+                  class="tac-timeline__edit"
+                  onClick={(e: MouseEvent) => e.stopPropagation()}
+                >
+                  <label class="tac-timeline__edit-field">
+                    <span>{i18nT("replay.tactical.plan.editTime")}</span>
+                    <input
+                      ref={markerTimeInput}
+                      value={markerTimeText.value}
+                      onInput={(e: Event) => {
+                        markerTimeText.value = (e.target as HTMLInputElement).value;
+                      }}
+                      onKeydown={onMarkerEditKeydown}
+                      onBlur={commitMarkerEdit}
+                    />
+                  </label>
+                  {props.tall && markerEditData.value.action != null ? (
+                    <div class="tac-timeline__edit-kinds">
+                      {(["move", "attack", "spot"] as const).map((kind) => (
+                        <button
+                          key={kind}
+                          type="button"
+                          class={[
+                            "tac-timeline__edit-kind",
+                            markerEditKind.value === kind ? "tac-timeline__edit-kind--on" : "",
+                          ]}
+                          onClick={() => {
+                            markerEditKind.value = kind;
+                          }}
+                        >
+                          {i18nT(`replay.tactical.plan.act.${kind}`)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    class="tac-timeline__edit-del"
+                    title={i18nT("replay.tactical.plan.removeAction")}
+                    onClick={() => {
+                      const ed = markerEdit.value;
+                      markerEdit.value = null;
+                      if (ed) props.removeUserMarker(ed.id);
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </HkPopover>
+            </>
           ) : null}
           {tooltip.value && tooltipStyle.value ? (
             <div class="tac-timeline__tip" style={tooltipStyle.value}>
