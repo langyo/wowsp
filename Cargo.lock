@@ -4274,6 +4274,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "replay-corpus"
+version = "0.6.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "wowsp_replay_core",
+ "wowsp_tauri_shared",
+]
+
+[[package]]
 name = "replay-drain"
 version = "0.6.1"
 dependencies = [
@@ -7029,6 +7041,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wowsp_replay_core"
+version = "0.6.1"
+dependencies = [
+ "anyhow",
+ "blowfish",
+ "byteorder",
+ "flate2",
+ "serde",
+ "serde_json",
+ "wowsp_tauri_shared",
+]
+
+[[package]]
 name = "wowsp_tauri"
 version = "0.6.1"
 dependencies = [
@@ -7073,6 +7098,7 @@ dependencies = [
  "windows 0.61.3",
  "winreg 0.56.0",
  "wmi",
+ "wowsp_replay_core",
  "wowsp_tauri_shared",
  "wowsunpack",
  "ww2ogg",

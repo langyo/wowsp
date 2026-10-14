@@ -1,40 +1,18 @@
 //! Replay container framing + header parsing: the magic/block layout, the
 //! descriptor JSON extraction, the WG/Lesta roster projections behind
 //! [`ReplayMeta`]/[`ReplayMetaLite`], and the nickname classifiers the arena
-//! surfaces share. Split from the former single-file `commands/replay.rs`.
+//! surfaces share. Split from the former single-file `commands/replay.rs`,
+//! then lifted into the reusable decoding core (wave 4a) — the Tauri
+//! command wrapper (`read_replay_header`) stayed behind in the app crate
+//! (`wowsp_tauri::commands::replay::wire`).
 
-use anyhow::anyhow;
 use std::fs;
 
-use wowsp_tauri_shared::{CommandResult, ReplayMeta, ReplayMetaLite, VehicleEntry};
+use wowsp_tauri_shared::{ReplayMeta, ReplayMetaLite, VehicleEntry};
 
 /// Replay magic — first 4 bytes of every `.wowsreplay`.
-pub(super) const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
+pub const REPLAY_MAGIC: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
 
-/// Read + parse the header of one `.wowsreplay` file into a [`ReplayMeta`].
-///
-/// `path` must point at an existing file. On any structural problem (missing
-/// magic, truncated header, unparseable JSON) the raw JSON block is still
-/// returned when recoverable, so the frontend can render whatever it can.
-///
-/// Async command + [`tokio::task::spawn_blocking`]: reading + decrypting the
-/// descriptor block is real file I/O + CPU work, which must never run on the
-/// UI thread (Tauri 2 synchronous commands do) — same rule as
-/// [`pick_replay_files`].
-#[tauri::command]
-pub async fn read_replay_header(path: String) -> CommandResult<ReplayMeta> {
-    tokio::task::spawn_blocking(move || {
-        let bytes = fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
-        let json = extract_descriptor_json(&bytes).ok_or_else(|| {
-            anyhow!("{path}: not a valid wowsreplay (magic mismatch or truncated)")
-        })?;
-        let raw: serde_json::Value =
-            serde_json::from_str(&json).map_err(|e| anyhow!("parse descriptor JSON: {e}"))?;
-        Ok(meta_from_raw(path, raw))
-    })
-    .await
-    .map_err(|e| anyhow!("replay header task failed: {e}"))?
-}
 /// Generous upper bound on any one metadata block: real descriptors run a
 /// few hundred KB (roster-heavy), so a length prefix beyond this is a corrupt
 /// or malicious header, not a block worth buffering.
@@ -49,7 +27,7 @@ const MAX_FIRST_BLOCK_BYTES: usize = 16 * 1024 * 1024;
 /// multi-MB packet stream that follows. Lengths above
 /// [`MAX_FIRST_BLOCK_BYTES`] are rejected so a corrupt prefix can never
 /// drive a huge allocation or read.
-pub(super) fn read_block(path: &std::path::Path, index: usize) -> std::io::Result<Vec<u8>> {
+pub fn read_block(path: &std::path::Path, index: usize) -> std::io::Result<Vec<u8>> {
     use std::io::{Read as _, Seek as _, SeekFrom};
     let mut f = fs::File::open(path)?;
     let mut magic = [0u8; 4];
@@ -99,18 +77,17 @@ pub(super) fn read_block(path: &std::path::Path, index: usize) -> std::io::Resul
 /// only the path + filename-derived datetime populated, so the file is still
 /// listed.
 ///
-/// `pub(crate)`: the playtime battle ledger (commands/playtime.rs) shares
-/// this exact projection for its replay-derived rows — never duplicate the
-/// header parse.
-pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
+/// Shared by the app's playtime battle ledger and the replay-corpus scanner —
+/// never duplicate the header parse.
+pub fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
     lite_and_client_version(path).0
 }
 
 /// [`lite_from_path`] plus the descriptor's `clientVersionFromExe`
 /// (normalized to dot-numeric), sharing ONE bounded block-0 read — the
-/// contribution planner (commands/contribution/) wants both projections
-/// per file, so the header bytes are parsed exactly once.
-pub(crate) fn lite_and_client_version(path: &std::path::Path) -> (ReplayMetaLite, Option<String>) {
+/// contribution planner (the app's commands/contribution/) wants both
+/// projections per file, so the header bytes are parsed exactly once.
+pub fn lite_and_client_version(path: &std::path::Path) -> (ReplayMetaLite, Option<String>) {
     let path_str = path.to_string_lossy().into_owned();
     let date_time = parse_datetime_from_filename(&path_str);
     // The walk only surfaces replay containers (`*.wowsreplay` and the Lesta
@@ -154,7 +131,7 @@ pub(crate) fn lite_and_client_version(path: &std::path::Path) -> (ReplayMetaLite
 /// write comma-separated 4-tuples (`26,10,0,8867689`), so keep at most the
 /// first three NUMERIC segments and join them with dots. Anything without a
 /// leading numeric segment (or absent entirely) answers `None`.
-pub(crate) fn client_version_from_raw(value: Option<&serde_json::Value>) -> Option<String> {
+pub fn client_version_from_raw(value: Option<&serde_json::Value>) -> Option<String> {
     let raw = value?.as_str()?;
     let numeric: Vec<&str> = raw
         .split([',', '.'])
@@ -173,7 +150,7 @@ pub(crate) fn client_version_from_raw(value: Option<&serde_json::Value>) -> Opti
 /// defensive field-pulling style of [`meta_from_raw`] and the same roster
 /// source ([`roster_from_raw`] — WG `vehicles`, or the synthesized Lesta
 /// roster), resolving the recording player's ship (relation == 0).
-pub(super) fn lite_from_raw(
+pub fn lite_from_raw(
     path: String,
     date_time: Option<String>,
     raw: serde_json::Value,
@@ -255,24 +232,13 @@ pub(super) fn lite_from_raw(
         install_realm: None,
     }
 }
-/// Public re-export so `arena_info` can reuse the exact same JSON extraction
-/// (the live `tempArenaInfo.json` shares the replay's dual-format header).
-pub fn extract_descriptor_json_pub(bytes: &[u8]) -> Option<String> {
-    extract_descriptor_json(bytes)
-}
-
-/// Public re-export of [`meta_from_raw`] for `arena_info` (same JSON shape).
-pub fn meta_from_raw_pub(path: String, raw: serde_json::Value) -> ReplayMeta {
-    meta_from_raw(path, raw)
-}
-
 /// Pull the descriptor JSON out of a replay byte slice. Handles both the
 /// binary-prefixed replay format and the bare-JSON `tempArenaInfo.json`
 /// variant — the same dual-format logic ApeRadar ships.
 ///
 /// Replay layout: `magic(4) + block_count(4) + [len(4)+payload]×block_count`.
 /// The first payload is the match-descriptor JSON.
-pub(super) fn extract_descriptor_json(bytes: &[u8]) -> Option<String> {
+pub fn extract_descriptor_json(bytes: &[u8]) -> Option<String> {
     if bytes.len() < 8 {
         if bytes.first().copied() == Some(b'{') {
             return Some(String::from_utf8_lossy(bytes).into_owned());
@@ -305,10 +271,33 @@ pub(super) fn extract_descriptor_json(bytes: &[u8]) -> Option<String> {
     Some(String::from_utf8_lossy(&bytes[cur..end]).into_owned())
 }
 
+/// Skip the magic + JSON header blocks and return a slice over the encrypted
+/// packet stream. Shared by header parsing and position decoding (the app's
+/// replay-stream command and the replay-corpus decoder both enter the packet
+/// stage through this).
+pub fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
+    if bytes.len() < 8 || !bytes.starts_with(&REPLAY_MAGIC) {
+        return None;
+    }
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().ok()?) as usize;
+    let mut cur = 8;
+    for _ in 0..block_count {
+        if cur + 4 > bytes.len() {
+            return None;
+        }
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().ok()?) as usize;
+        cur += 4 + bl;
+        if cur > bytes.len() {
+            return None;
+        }
+    }
+    Some(&bytes[cur..])
+}
+
 /// Build a [`ReplayMeta`] from the raw descriptor JSON, pulling the common
 /// fields defensively. `dateTime` is parsed from the replay filename (the
 /// descriptor has no timestamp).
-pub(super) fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
+pub fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
     let obj = raw.as_object();
     let match_group = obj
         .and_then(|o| o.get("matchGroup"))
@@ -362,7 +351,7 @@ pub(super) fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta 
 /// (see [`is_scripted_unit_nickname`]) — the same markers the frontend's
 /// `isAiName` uses to skip WG API lookups. Mirrors that
 /// `^(?::.*:|IDS_.*|#.+)$` rule.
-pub(crate) fn is_bot_nickname(name: &str) -> bool {
+pub fn is_bot_nickname(name: &str) -> bool {
     is_scripted_unit_nickname(name)
         || (name.len() >= 2 && name.starts_with(':') && name.ends_with(':'))
 }
@@ -374,7 +363,7 @@ pub(crate) fn is_bot_nickname(name: &str) -> bool {
 /// in scripted scenarios (operations and the intro/tutorial battles), so
 /// their count doubles as an operation fingerprint for the frontend mode
 /// classifier (see `ReplayMeta::scripted_unit_count`).
-pub(crate) fn is_scripted_unit_nickname(name: &str) -> bool {
+pub fn is_scripted_unit_nickname(name: &str) -> bool {
     name.starts_with("IDS_") || (name.len() >= 2 && name.starts_with('#'))
 }
 
@@ -385,10 +374,11 @@ pub(crate) fn is_scripted_unit_nickname(name: &str) -> bool {
 /// `first_battle`, the `IDS_OP_15_*` escort op) whose scripted units field
 /// as real team rows. Exact mirror of the frontend's `isOperationBattle`
 /// (utils/modeColors.ts): the live surfaces' scripted-unit filtering
-/// (arena_info's `note_arena_seen` here, the webui's `splitLiveRosterSides`)
-/// keys on the same rule on both sides of the IPC boundary, so the sink
-/// solver's ally block and the frontend's ally order stay index-aligned.
-pub(crate) fn is_operation_battle(
+/// (arena_info's `note_arena_seen` in the app, the webui's
+/// `splitLiveRosterSides`) keys on the same rule on both sides of the IPC
+/// boundary, so the sink solver's ally block and the frontend's ally order
+/// stay index-aligned.
+pub fn is_operation_battle(
     match_group: Option<&str>,
     scenario: Option<&str>,
     event_type: Option<&str>,
@@ -424,7 +414,7 @@ pub(crate) fn is_operation_battle(
 /// the leading `YYYYMMDD_HHMMSS` is the only timestamp source. Both segments
 /// are 8/6 pure digits; we return them joined by `_` when both are present,
 /// falling back to the date alone if only the first matches.
-pub(crate) fn parse_datetime_from_filename(path: &str) -> Option<String> {
+pub fn parse_datetime_from_filename(path: &str) -> Option<String> {
     let name = std::path::Path::new(path).file_name()?.to_str()?;
     let mut parts = name.split('_');
     let date = parts.next()?;
@@ -458,10 +448,7 @@ fn parse_vehicle_entry(v: &serde_json::Value) -> Option<VehicleEntry> {
 /// duplicated. WG descriptors carry the roster inline (`vehicles`); a
 /// descriptor without one is the Lesta container, whose roster is
 /// synthesized from block[1]/block[2] ([`lesta_roster`]).
-pub(super) fn roster_from_raw(
-    path: &std::path::Path,
-    raw: &serde_json::Value,
-) -> Vec<VehicleEntry> {
+pub fn roster_from_raw(path: &std::path::Path, raw: &serde_json::Value) -> Vec<VehicleEntry> {
     if let Some(arr) = raw.get("vehicles").and_then(|v| v.as_array()) {
         return arr.iter().filter_map(parse_vehicle_entry).collect();
     }
@@ -500,10 +487,7 @@ fn parse_lesta_player(entry: &serde_json::Value) -> Option<LestaPlayer> {
 /// Defensive throughout: a block[1]/block[2] that is missing, unparseable
 /// or roster-less degrades to an empty list (the descriptor's own fields
 /// still parse) — a Lesta header read must never fail the whole parse.
-pub(super) fn lesta_roster(
-    path: &std::path::Path,
-    descriptor: &serde_json::Value,
-) -> Vec<VehicleEntry> {
+fn lesta_roster(path: &std::path::Path, descriptor: &serde_json::Value) -> Vec<VehicleEntry> {
     let players: Vec<LestaPlayer> = read_block(path, 1)
         .ok()
         .and_then(|payload| {

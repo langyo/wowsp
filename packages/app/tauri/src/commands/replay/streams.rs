@@ -7,7 +7,7 @@ use std::fs;
 
 use wowsp_tauri_shared::{CommandResult, VehicleEntry};
 
-use super::meta::{REPLAY_MAGIC, extract_descriptor_json, roster_from_raw};
+use super::meta::{extract_descriptor_json, roster_from_raw};
 
 /// Decode the packet stream of one `.wowsreplay` and return per-entity
 /// position trajectories (milestone M3) annotated with each entity's creation
@@ -285,25 +285,10 @@ pub(super) fn live_snapshot_from_bytes(
 }
 
 /// Skip the magic + JSON header blocks and return a slice over the encrypted
-/// packet stream. Shared by header parsing and position decoding.
-pub(super) fn packet_stream_after_blocks(bytes: &[u8]) -> Option<&[u8]> {
-    if bytes.len() < 8 || !bytes.starts_with(&REPLAY_MAGIC) {
-        return None;
-    }
-    let block_count = u32::from_le_bytes(bytes[4..8].try_into().ok()?) as usize;
-    let mut cur = 8;
-    for _ in 0..block_count {
-        if cur + 4 > bytes.len() {
-            return None;
-        }
-        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().ok()?) as usize;
-        cur += 4 + bl;
-        if cur > bytes.len() {
-            return None;
-        }
-    }
-    Some(&bytes[cur..])
-}
+/// packet stream. Shared by header parsing and position decoding — moved to
+/// the decoding core (wave 4a) and re-exported here so the historical
+/// `super::streams::packet_stream_after_blocks` paths keep resolving.
+pub(super) use wowsp_replay_core::meta::packet_stream_after_blocks;
 
 /// How the HP property's raw 4-byte value should be read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

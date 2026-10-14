@@ -104,6 +104,9 @@ shun = { version = "^0.4.1", default-features = false }
 
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true
+# Reusable replay decoding core (header parsing + packet stream), shared
+# with the replay-corpus maintainer CLI (wave 4a).
+wowsp_replay_core.workspace = true
 
 # Pairing relay tunnels (commands/pairing_relay/): the desktop host bridge
 # and the phone's HTTP-over-WebSocket client both ride tokio-tungstenite.

@@ -144,50 +144,32 @@ fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<
 
 /// Decode one replay and lift its capture zones out of the entity table.
 /// Ok(None) = not a parsable replay (foreign/corrupt file) — the caller
-/// skips the group rather than failing the whole scan.
+/// skips the group rather than failing the whole scan. The geometry lift
+/// itself lives in the decoding core (`wowsp_replay_core::caps::
+/// cap_points_of`), shared with the replay-corpus aggregator (wave 4a).
 #[cfg(desktop)]
 fn caps_of_replay(path: &std::path::Path) -> Option<Vec<LearnedCapPoint>> {
-    use super::streams::group_by_entity;
+    use super::streams::packet_stream_after_blocks;
 
     let bytes = std::fs::read(path).ok()?;
-    let stream = super::streams::packet_stream_after_blocks(&bytes)?;
+    let stream = packet_stream_after_blocks(&bytes)?;
     let lesta = path
         .extension()
         .and_then(|e| e.to_str())
         .is_some_and(super::super::game_client::is_lesta_replay_extension);
     let decoded =
         super::super::packets::decode_replay(stream, &HashSet::new(), None, lesta).ok()?;
-    let replay = group_by_entity(decoded);
-    let mut caps: Vec<LearnedCapPoint> = Vec::new();
-    for tr in &replay.trajectories {
-        let Some(kind) = &tr.kind else { continue };
-        if kind.entity_type != 14 {
-            continue;
-        }
-        // `control_point_index` is the authoritative "is a capture point"
-        // flag (interactive zones without it are not cap objectives) — but
-        // the componentsState scan only recovers it on newer protocols;
-        // older replays still carry the geometry, so a present radius
-        // qualifies a zone too and its list position stands in for the
-        // letter index.
-        if kind.control_point_index.is_none() && kind.radius.is_none() {
-            continue;
-        }
-        let appear_t = if kind.creation_time > 0.0 {
-            Some(kind.creation_time)
-        } else {
-            None
-        };
-        caps.push(LearnedCapPoint {
-            index: kind.control_point_index.unwrap_or(caps.len() as i32),
-            x: kind.initial_x,
-            z: kind.initial_z,
-            radius: kind.radius,
-            team: kind.initial_team,
-            appear_t,
-        });
-    }
-    caps.sort_by_key(|c| c.index);
+    let caps = wowsp_replay_core::caps::cap_points_of(&decoded)
+        .into_iter()
+        .map(|c| LearnedCapPoint {
+            index: c.index,
+            x: c.x,
+            z: c.z,
+            radius: c.radius,
+            team: c.team,
+            appear_t: c.appear_t,
+        })
+        .collect();
     Some(caps)
 }
 

@@ -5,6 +5,7 @@ use super::game_client::is_replay_extension;
 use super::listing::*;
 use super::meta::*;
 use super::streams::*;
+use super::wire::read_replay_header;
 use wowsp_tauri_shared::{GameInstall, GameInstallKind, VehicleEntry};
 
 /// The Lesta arena synthesis joins roster entries to ship entities by

@@ -8,6 +8,8 @@ default-members = [
 members = [
     "packages/app/tauri",
     "packages/app/tauri_shared",
+    "packages/app/replay_core",
+    "packages/tools/replay-corpus",
     "packages/tools/replay-drain",
     "packages/tools/wowsunpack-vendor/crates/wowsunpack",
     "packages/tools/wowsunpack-vendor/crates/wows-core",
@@ -44,6 +46,9 @@ repository = "https://github.com/langyo/wowsp"
 
 # Workspace internal crate aliases
 wowsp_tauri_shared = { path = "packages/app/tauri_shared" }
+# Reusable replay decoding core (header + packet stream) — shared by the app
+# shell and the replay-corpus maintainer CLI (wave 4a).
+wowsp_replay_core = { path = "packages/app/replay_core" }
 
 # Core language and utilities
 anyhow = "^1"

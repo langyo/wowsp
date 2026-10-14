@@ -25,7 +25,7 @@
 //! Lesta recording reality (verified across two 26.10 captures): the packet
 //! stream carries NO `onArenaStateReceived` and NO chat call at all — the
 //! roster ships in the replay container's block[1] JSON instead (see the
-//! `lesta_roster` synthesis in [`super::replay`]). Consequences for this
+//! `lesta_roster` synthesis in [`crate::meta`]). Consequences for this
 //! table:
 //!
 //! - `on_chat_message: -1` (disabled): Lesta split chat into

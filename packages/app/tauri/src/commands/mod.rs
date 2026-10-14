@@ -34,8 +34,6 @@ pub mod installer;
 pub mod logs;
 pub mod lookup_error;
 pub mod media;
-pub mod method_tables;
-pub mod method_tables_lesta;
 pub mod mod_catalog;
 pub mod mod_hub;
 pub mod mod_install;

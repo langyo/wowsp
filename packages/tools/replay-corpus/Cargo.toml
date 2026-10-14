@@ -1,0 +1,19 @@
+[package]
+name = "replay-corpus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "SySL-1.0"
+publish = false  # maintainer-side ops binary, never published
+description = "Replay-share corpus CLI — index the drained archive and aggregate map-insights datasets"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+
+# Workspace internal crates
+wowsp_replay_core.workspace = true
+wowsp_tauri_shared.workspace = true

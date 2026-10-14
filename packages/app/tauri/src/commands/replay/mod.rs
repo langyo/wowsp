@@ -23,7 +23,7 @@
 //!     ignored).
 //!
 //! A descriptor without `vehicles` gets its roster synthesized from [1] +
-//! [2] ([`lesta_roster`]); relations, bot/scripted counts and the recorder's
+//! [2] (`lesta_roster`); relations, bot/scripted counts and the recorder's
 //! ship then follow the WG rules unchanged.
 //!
 //! The packet stream behind the blocks is also the exact WG scheme (same
@@ -31,7 +31,7 @@
 //! trajectories decode unchanged. Fixed-layout packets (positions, entity
 //! create/destroy, player position) are version-independent;
 //! EntityMethod-id-gated features run under the Lesta Avatar method table
-//! ([`crate::commands::method_tables_lesta`]) selected by the container
+//! ([`wowsp_replay_core::method_tables_lesta`]) selected by the container
 //! family — Lesta's `clientVersionFromExe` ("26,10,0,...") sits above every
 //! WG table, so version-keyed lookup would cross-wire those streams. Lesta
 //! recordings additionally carry NO `onArenaStateReceived` and NO chat
@@ -48,17 +48,24 @@
 //! The dual-format reader also accepts the bare-JSON variant the client
 //! writes as `tempArenaInfo.json` (same logic ApeRadar's
 //! `FileUtils.ReadTempArenaInfoFile` uses).
+//!
+//! Wave 4a split: the PURE parsing (this header path, the packet-stream
+//! decoder, the method tables, the cap geometry) moved to the
+//! `wowsp_replay_core` lib crate — this facade re-exports it under the
+//! historical `commands::replay::meta` / `super::packets` paths so every
+//! sibling call site kept its original text. The Tauri command wrappers
+//! stayed here (`wire`, `streams`, `listing`, `cap_layouts`).
 
 // ── module layout ───────────────────────────────────────────────────────────
-// `meta`     — container framing + descriptor/roster parsing (the header path).
+// `wire`     — the header-read Tauri command over the lib's meta path.
 // `streams`  — packet-stream decoding: positions, live snapshots, HP anchoring.
 // `listing`  — replay directory walks + the list/pick commands.
-// `tests`    — the unit suite (moved with the code it tests).
+// `caps`     — (lib) capture-zone geometry; consumed by `cap_layouts`.
 
 mod cap_layouts;
 mod listing;
-mod meta;
 mod streams;
+mod wire;
 
 #[cfg(test)]
 mod tests;
@@ -67,6 +74,11 @@ mod tests;
 // unchanged `super::<name>::...` paths (this facade re-exports the names one
 // level down, so every call site kept its original text).
 pub(crate) use super::{game_client, game_context, game_detect, packets, probe_roster};
+
+// The pure header-parsing core (`wowsp_replay_core::meta`), re-exposed as
+// `replay::meta` so the children's `super::meta::...` paths and the test
+// suite's `use super::meta::*` keep resolving.
+pub(crate) use wowsp_replay_core::meta;
 
 // Tauri command surface. `generate_handler!` in `src/lib.rs` resolves both the
 // command fn and its doc(hidden) sibling macros (`__cmd__*` /
@@ -80,24 +92,26 @@ pub use listing::{
     __tauri_command_name_list_replays, __tauri_command_name_list_replays_meta,
     __tauri_command_name_pick_replay_files, list_replays, list_replays_meta, pick_replay_files,
 };
-pub use meta::{
-    __cmd__read_replay_header, __tauri_command_name_read_replay_header, read_replay_header,
-};
 pub use streams::{
     __cmd__live_temp_replay, __cmd__read_live_replay_snapshot, __cmd__read_replay_positions,
     __tauri_command_name_live_temp_replay, __tauri_command_name_read_live_replay_snapshot,
     __tauri_command_name_read_replay_positions, live_temp_replay, read_live_replay_snapshot,
     read_replay_positions,
 };
+pub use wire::{
+    __cmd__read_replay_header, __tauri_command_name_read_replay_header, read_replay_header,
+};
 
 // pub surface reused by `arena_info` (the live tempArenaInfo.json shares the
-// replay's dual-format header).
-pub use meta::{extract_descriptor_json_pub, meta_from_raw_pub};
+// replay's dual-format header) — the historical `_pub` names now re-export
+// the lib's (already public) fns verbatim.
+pub use wowsp_replay_core::meta::extract_descriptor_json as extract_descriptor_json_pub;
+pub use wowsp_replay_core::meta::meta_from_raw as meta_from_raw_pub;
 
 // pub(crate) surface consumed through direct `replay::...` paths by sibling
 // command modules (arena_info / playtime / pairing; call sites unchanged).
 pub(crate) use listing::{resolve_replay_dir, scan_replays_meta, walk_replays};
-pub(crate) use meta::{
+pub(crate) use wowsp_replay_core::meta::{
     is_bot_nickname, is_operation_battle, is_scripted_unit_nickname, lite_and_client_version,
     lite_from_path, parse_datetime_from_filename,
 };

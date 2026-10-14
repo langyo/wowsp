@@ -1,0 +1,23 @@
+[package]
+name = "wowsp_replay_core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "SySL-1.0"
+publish = false  # first-party decoding core, never published
+description = "WoWSP — reusable WoWS replay container + packet-stream decoding core"
+
+[dependencies]
+anyhow.workspace = true
+# Replay packet-stream decryption (Blowfish ECB + XOR chain + zlib) — the
+# exact stack the app crate's replay views ride, now shared with the
+# replay-corpus CLI.
+blowfish.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# Workspace internal crates
+wowsp_tauri_shared.workspace = true
