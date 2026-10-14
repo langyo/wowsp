@@ -48,6 +48,11 @@ byteorder.workspace = true
 flate2.workspace = true
 tar.workspace = true
 
+# Replay-share contribution packages (commands/contribution/) — tar.zstd
+# per the wave-1 contract, plus the v4 anonId the share identity mints.
+zstd.workspace = true
+uuid.workspace = true
+
 # Catalog package integrity + unpacking (Mod Hub); ed25519 also verifies
 # the relay digest docs' signature layer (commands/update.rs).
 sha2.workspace = true

@@ -1,0 +1,98 @@
+{
+  "status": {
+    "title": "Participer au partage",
+    "hint": "Partagez des replays pour améliorer l'analyse des positions et l'étalonnage des statistiques. Le serveur ne collecte que les types de replays actuellement nécessaires.",
+    "enrollCopy": "Rejoignez le programme de partage de replays pour aider WoWSP à collecter des replays d'analyse tactique. Tout est anonyme et arrêtable à tout moment.",
+    "enroll": "Participer",
+    "identity": "Identité créditée",
+    "realm": "Serveur",
+    "name": "ID de jeu",
+    "namePlaceholder": "Pseudo affiché dans la liste des contributeurs (3-24 caractères)",
+    "save": "Enregistrer",
+    "saved": "Identité enregistrée",
+    "nameInvalid": "Le pseudo doit contenir 3 à 24 caractères, sans caractères de contrôle",
+    "consentRecorded": "Conditions acceptées (v{version})",
+    "consentMissing": "Conditions de partage non encore acceptées",
+    "viewTerms": "Voir les conditions complètes",
+    "hideTerms": "Masquer les conditions",
+    "credits": "Replays acceptés",
+    "staged": "Volume en attente",
+    "lastSync": "Dernière synchro : {time}",
+    "neverSynced": "Jamais synchronisé",
+    "refresh": "Synchroniser",
+    "syncDone": "Synchronisé",
+    "forget": "Arrêter la participation",
+    "forgetConfirm": "Arrêter et effacer l'identité locale ?",
+    "forgotten": "Participation arrêtée ; identité et jeton locaux effacés"
+  },
+  "consent": {
+    "contains": "Un fichier de replay contient le pseudo et l'ID de compte de chaque joueur de la bataille, ainsi que tout le chat.",
+    "usedFor": "Les replays collectés servent uniquement à l'analyse des cartes et positions, au suivi d'étalonnage des statistiques et à la recherche assistée par IA.",
+    "noRedistribution": "Les replays bruts ne sont jamais rediffusés ; seules des statistiques dérivées (navires, équipes, coordonnées et séquences d'événements) sont publiées, sans données personnelles.",
+    "contributorList": "À chaque version, la liste « Personnes participant au partage » plus bas sur cette page est actualisée : groupée par serveur et ID de jeu, le chiffre à droite de chaque étiquette indique le nombre de replays partagés ; cliquez sur quelqu'un pour ouvrir ses statistiques publiques.",
+    "identity": "L'identité créditée est un serveur et un ID de jeu déclarés soi-même — aucun compte lié — modifiable à tout moment ci-dessus.",
+    "revoke": "Arrêter la participation interrompt seulement les futurs envois ; les données déjà collectées continuent d'être traitées selon les conditions ci-dessus.",
+    "agree": "J'ai lu et j'accepte l'ensemble des conditions ci-dessus"
+  },
+  "wizard": {
+    "title": "Assistant de partage de replays",
+    "hint": "Choisissez et envoyez des replays via l'assistant ; le serveur n'accepte que les batailles du périmètre de collecte actuel.",
+    "step": {
+      "intro": "Présentation",
+      "select": "Choix des replays",
+      "upload": "Vérification et envoi",
+      "done": "Terminé"
+    },
+    "next": "Suivant",
+    "prev": "Retour",
+    "startUpload": "Lancer l'envoi",
+    "doneLabel": "Terminer",
+    "viewContributors": "Voir les participants"
+  },
+  "select": {
+    "checkCard": "Sélectionner le replay de {name}",
+    "rescan": "Relancer le scan",
+    "smart": "Sélection intelligente",
+    "planning": "Analyse des replays locaux (hachage et confrontation au périmètre de collecte)…",
+    "empty": "Aucun replay local trouvé. Installez le jeu ou jouez une bataille, puis revenez.",
+    "filterEmpty": "Aucun replay ne correspond aux filtres actuels.",
+    "summary": "{n} sélectionnés",
+    "estSize": "≈ {size}",
+    "verdict": {
+      "accept": "Recherché",
+      "own_staged": "Déjà dans mon paquet",
+      "duplicate": "Déjà collecté",
+      "unwanted": "Non requis"
+    }
+  },
+  "upload": {
+    "stage": {
+      "plan": "Plan",
+      "check": "Vérification",
+      "mine": "Synchro",
+      "pack": "Empaquetage",
+      "upload": "Envoi"
+    },
+    "failed": "Échec de l'envoi",
+    "items": "{done}/{total} éléments",
+    "cancel": "Annuler",
+    "outcome": {
+      "accepted": "Accepté",
+      "duplicate": "Doublon",
+      "unwanted": "Ignoré",
+      "failed": "Échec"
+    }
+  },
+  "done": {
+    "summary": "Acceptés {accepted}, doublons {duplicate}, ignorés {unwanted}, échecs {failed}.",
+    "hint": "Merci pour votre contribution ! Les replays acceptés comptent pour la liste des participants de la prochaine version."
+  },
+  "contributors": {
+    "title": "Personnes participant au partage",
+    "hint": "Groupées par serveur et ID de jeu ; le chiffre à droite indique les replays partagés. Cliquez sur quelqu'un pour ouvrir ses statistiques publiques.",
+    "empty": "Aucun contributeur pour l'instant. La liste apparaîtra à la prochaine version après la première contribution.",
+    "self": "Moi",
+    "count": "{n}",
+    "note": "La liste est actualisée à chaque version depuis le serveur de collecte."
+  }
+}

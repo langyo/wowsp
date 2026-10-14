@@ -21,6 +21,14 @@
 //!   GET  /api/erp/callback?code=…&state=… — OAuth return, mints session
 //!   GET  /api/erp/session                — console whoami probe
 //!   POST /api/erp/logout                 — clear the session cookie
+//!   GET  /api/replays/wanted             — replay-share ruleset (cached)
+//!   POST /api/replays/check              — per-replay verdicts (no auth)
+//!   GET  /api/replays/mine               — the caller's staged set (auth)
+//!   GET  /api/replays/archive            — the caller's shard stream (auth)
+//!   POST /api/replays/upload             — tar.zst shard + manifest (auth)
+//!   GET  /api/replays/admin/list         — drain console rows (erp session)
+//!   GET  /api/replays/admin/archive?anon_id=… — one shard (erp session)
+//!   POST /api/replays/admin/drain        — mark drained + free space
 
 use crate::room::Side;
 
@@ -79,6 +87,26 @@ pub enum Route<'a> {
         channel: &'a str,
         tag: Option<&'a str>,
     },
+    /// GET /api/replays/wanted — the replay-share ruleset with live
+    /// counters (cacheable for 5 minutes).
+    ReplaysWanted,
+    /// POST /api/replays/check — per-replay verdicts (headers optional).
+    ReplaysCheck,
+    /// GET /api/replays/mine — the caller's staged set (auth headers).
+    ReplaysMine,
+    /// GET /api/replays/archive — the caller's shard as a zstd stream.
+    ReplaysArchive,
+    /// POST /api/replays/upload — tar.zst body + `x-manifest` header.
+    ReplaysUpload,
+    /// GET /api/replays/admin/list — drain-console contributor rows
+    /// (erp session; the handler gates).
+    ReplaysAdminList,
+    /// GET /api/replays/admin/archive?anon_id=… — one contributor's
+    /// shard (erp session); `anon_id` is the raw query value.
+    ReplaysAdminArchive { anon_id: Option<&'a str> },
+    /// POST /api/replays/admin/drain — mark staged members drained,
+    /// decrement the watermark, delete the shards (erp session).
+    ReplaysAdminDrain,
     /// Nothing we serve — every path outside `run_worker_first` is
     /// answered by the static-assets layer (any miss gets the SPA
     /// shell, navigation or not), so in production this only happens
@@ -121,6 +149,18 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
                 file_token: query_get(query, "file_token"),
             };
         },
+        "/api/replays/wanted" => return Route::ReplaysWanted,
+        "/api/replays/check" => return Route::ReplaysCheck,
+        "/api/replays/mine" => return Route::ReplaysMine,
+        "/api/replays/archive" => return Route::ReplaysArchive,
+        "/api/replays/upload" => return Route::ReplaysUpload,
+        "/api/replays/admin/list" => return Route::ReplaysAdminList,
+        "/api/replays/admin/archive" => {
+            return Route::ReplaysAdminArchive {
+                anon_id: query_get(query, "anon_id"),
+            };
+        },
+        "/api/replays/admin/drain" => return Route::ReplaysAdminDrain,
         "/api/relay/control" => {
             return Route::Control {
                 room: query_get(query, "room"),
@@ -415,5 +455,41 @@ mod tests {
             "path-injected segments route; the handler's channel/tag \
              validation is what refuses them"
         );
+    }
+
+    #[test]
+    fn replay_routes_classify() {
+        assert_eq!(classify("/api/replays/wanted", ""), Route::ReplaysWanted);
+        assert_eq!(classify("/api/replays/wanted/", ""), Route::ReplaysWanted);
+        assert_eq!(classify("/api/replays/check", ""), Route::ReplaysCheck);
+        assert_eq!(classify("/api/replays/mine", ""), Route::ReplaysMine);
+        assert_eq!(classify("/api/replays/archive", ""), Route::ReplaysArchive);
+        assert_eq!(classify("/api/replays/upload", ""), Route::ReplaysUpload);
+        assert_eq!(
+            classify("/api/replays/admin/list", ""),
+            Route::ReplaysAdminList
+        );
+        assert_eq!(
+            classify(
+                "/api/replays/admin/archive",
+                "anon_id=01234567-89ab-4cde-8f01-23456789abcd"
+            ),
+            Route::ReplaysAdminArchive {
+                anon_id: Some("01234567-89ab-4cde-8f01-23456789abcd")
+            }
+        );
+        assert_eq!(
+            classify("/api/replays/admin/archive", ""),
+            Route::ReplaysAdminArchive { anon_id: None }
+        );
+        assert_eq!(
+            classify("/api/replays/admin/drain", ""),
+            Route::ReplaysAdminDrain
+        );
+        // Unknown replays subpaths stay NotFound.
+        assert_eq!(classify("/api/replays/other", ""), Route::NotFound);
+        assert_eq!(classify("/api/replays/admin/other", ""), Route::NotFound);
+        assert_eq!(classify("/api/replays", ""), Route::NotFound);
+        assert_eq!(classify("/api/replays/", ""), Route::NotFound);
     }
 }

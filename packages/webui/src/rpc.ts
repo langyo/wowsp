@@ -181,6 +181,20 @@ export const RPC = {
   pairing_get_relay_config: "pairing_get_relay_config",
   pairing_set_relay: "pairing_set_relay",
   pairing_reallocate_code: "pairing_reallocate_code",
+  // ── Replay share (录像共享计划) — commands/contribution/ (see
+  //    CONTRACT-replay-share.md §9): local identity/consent state, the
+  //    wanted-ruleset cache, the wizard planner and the single-flight
+  //    upload pipeline. ──
+  contribution_state: "contribution_state",
+  contribution_set_identity: "contribution_set_identity",
+  contribution_save_consent: "contribution_save_consent",
+  contribution_forget_identity: "contribution_forget_identity",
+  contribution_fetch_wanted: "contribution_fetch_wanted",
+  contribution_sync_mine: "contribution_sync_mine",
+  contribution_plan: "contribution_plan",
+  contribution_start: "contribution_start",
+  contribution_cancel: "contribution_cancel",
+  contribution_queue: "contribution_queue",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

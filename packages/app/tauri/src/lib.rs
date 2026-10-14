@@ -484,6 +484,21 @@ pub fn run() {
             commands::playtime::playtime_overview,
             commands::playtime::playtime_battles,
             commands::playtime::playtime_battles_reset,
+            // Replay-share contribution (录像共享计划, commands/contribution/)
+            // — cross-platform: identity/consent/anon credentials, the
+            // wanted-ruleset cache, the share planner and the single-flight
+            // background pack+upload pipeline (progress on
+            // wowsp://contribution-progress).
+            commands::contribution::contribution_state,
+            commands::contribution::contribution_set_identity,
+            commands::contribution::contribution_save_consent,
+            commands::contribution::contribution_forget_identity,
+            commands::contribution::contribution_fetch_wanted,
+            commands::contribution::contribution_sync_mine,
+            commands::contribution::contribution_plan,
+            commands::contribution::contribution_start,
+            commands::contribution::contribution_cancel,
+            commands::contribution::contribution_queue,
             // The tray panel's action buttons (desktop only — the panel
             // window itself is tray-bound).
             #[cfg(desktop)]

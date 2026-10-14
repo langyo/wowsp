@@ -19,6 +19,7 @@ import OverlaySection from "@/components/settings/sections/OverlaySection";
 import FeedbackSection from "@/components/settings/FeedbackSection";
 import AboutSection from "@/components/settings/sections/AboutSection";
 import AttributionsSection from "@/components/settings/sections/AttributionsSection";
+import SharingSection from "@/components/settings/sections/SharingSection";
 import "../layout/SettingsModal.scss";
 
 /**
@@ -87,6 +88,7 @@ export default defineComponent({
           ),
           about: () => <AboutSection />,
           attributions: () => <AttributionsSection />,
+          sharing: () => <SharingSection />,
           }}
         </SettingsShell>
 

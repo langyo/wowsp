@@ -68,6 +68,11 @@ command = "worker-build --release crates/relay-worker"
 
 # Feedback pipeline KV (rate-limit counters + Feishu token/base caches).
 # Namespace: `npx wrangler kv namespace create FEEDBACK_KV`.
+# The replay-share collection ALSO lives here: the wanted ruleset in key
+# `replays:wanted` (maintainer sets/updates via wrangler — absent or
+# empty rules = collection CLOSED) and the replay rate-limit counters
+# under prefix `replays:rl:` (uploads/archive-fetch/check quotas; see
+# crates/relay-core/src/replay.rs).
 [[kv_namespaces]]
 binding = "FEEDBACK_KV"
 id = "a523e16e116b4f9fa5878c721c133028"
@@ -82,18 +87,35 @@ id = "a523e16e116b4f9fa5878c721c133028"
 # binding = "DIGESTS"
 # id = "<paste-the-namespace-id>"
 
-# Two SQLite-backed Durable Object classes — what the Workers FREE tier
+# Replay-share shard storage — one `shards/<anonId>.tar.zstd` blob per
+# contributor (the upload body streams straight in, the archive routes
+# stream straight out). The maintainer must create the bucket ONCE
+# before the first deploy that binds it:
+#   npx wrangler r2 bucket create wowsp-replay-shards
+# (Free tier: 10 GB stored — the 8 GiB watermark cap in
+# relay-core's replay policy keeps the collection inside it.)
+[[r2_buckets]]
+binding = "REPLAY_R2"
+bucket_name = "wowsp-replay-shards"
+
+# Three SQLite-backed Durable Object classes — what the Workers FREE tier
 # provisions:
-#   Room      — one per pairing room (DO id = the room's 64-hex key):
-#               in-memory rendezvous + byte pipes; storage is used only
-#               for the 15-min idle alarm.
-#   Directory — the singleton ("codes", idFromName) 6-digit pairing-code
-#               registry: code → {room, hostId} bindings + per-IP rate
-#               state in storage with a TTL alarm.
+#   Room        — one per pairing room (DO id = the room's 64-hex key):
+#                 in-memory rendezvous + byte pipes; storage is used only
+#                 for the 15-min idle alarm.
+#   Directory   — the singleton ("codes", idFromName) 6-digit pairing-code
+#                 registry: code → {room, hostId} bindings + per-IP rate
+#                 state in storage with a TTL alarm.
+#   ReplayIndex — the singleton ("index", idFromName) replay-share ledger:
+#                 per-hash rows (contributor/status/rule), per-contributor
+#                 meta + token hashes, per-rule counters and the staged-
+#                 bytes watermark. Alarm-free (drained rows stay forever;
+#                 see crates/relay-worker/src/replay_index.rs).
 #
 # Migrations v1/v2 are the SAME class declarations the TypeScript worker
-# deployed (names and SQLite backing unchanged) — the Rust rewrite needs
+# deployed (names and SQLite backing unchanged) — the Rust rewrite needed
 # NO new migration tag: deploying over the live worker applies cleanly.
+# v3 adds the ReplayIndex class (new in the replay-share wave).
 # (Storage rows in the old v1 key format are garbage-collected lazily on
 # the Directory's first load — see crates/relay-worker/src/directory.rs.)
 [[durable_objects.bindings]]
@@ -104,6 +126,10 @@ class_name = "Room"
 name = "DIRECTORY"
 class_name = "Directory"
 
+[[durable_objects.bindings]]
+name = "REPLAY_INDEX"
+class_name = "ReplayIndex"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
@@ -111,6 +137,10 @@ new_sqlite_classes = ["Room"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Directory"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ReplayIndex"]
 
 # Optional operator switches (dashboard ▶ Settings ▶ Variables, or here
 # under [vars]); neither is required:

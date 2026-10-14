@@ -137,6 +137,7 @@
   "overlayRosterPluginPage": "Open the plugin page",
   "overlayFullscreenNote": "※ Unavailable in exclusive fullscreen: in that mode GDI screen capture only returns black frames, and the overlay window cannot sit on top of a fullscreen swap chain. Set the game's display mode to borderless or windowed.",
   "attributions": "Supporters & credits",
+  "sharing": "Replay sharing",
   "telemetryTitle": "Usage Telemetry",
   "telemetryToggle": "Send usage telemetry",
   "telemetryToggleDesc": "Anonymous page views and interface language sent to Google Analytics. Turning this off stops sending immediately.",

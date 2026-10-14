@@ -1,0 +1,98 @@
+{
+  "status": {
+    "title": "Participate in sharing",
+    "hint": "Share replays to help improve map-position analysis and stats calibration. The server only collects the replay types it currently needs.",
+    "enrollCopy": "Join the replay sharing program to help WoWSP collect battle replays for tactical analysis. Contributions are anonymous and can be stopped at any time.",
+    "enroll": "Participate",
+    "identity": "Credited identity",
+    "realm": "Server",
+    "name": "Game ID",
+    "namePlaceholder": "Nickname credited in the contributor list (3-24 characters)",
+    "save": "Save",
+    "saved": "Credited identity saved",
+    "nameInvalid": "The nickname must be 3-24 characters with no control characters",
+    "consentRecorded": "Terms accepted (v{version})",
+    "consentMissing": "Sharing terms not yet accepted",
+    "viewTerms": "View full terms",
+    "hideTerms": "Hide terms",
+    "credits": "Accepted replays",
+    "staged": "Pending drain",
+    "lastSync": "Last sync: {time}",
+    "neverSynced": "Never synced",
+    "refresh": "Sync",
+    "syncDone": "Synced",
+    "forget": "Stop participating",
+    "forgetConfirm": "Stop and clear the local identity?",
+    "forgotten": "Participation stopped; the local identity and token were cleared"
+  },
+  "consent": {
+    "contains": "A replay file contains every player's nickname and account ID of that battle, plus the full chat log.",
+    "usedFor": "Collected replays are used only for map and position analysis, stats calibration tracking, and AI-assisted research.",
+    "noRedistribution": "Raw replays are never redistributed; only derived statistics (ships, teams, coordinates and event timelines) are published, with no personal information.",
+    "contributorList": "With every release, the “People participating in sharing” list on this page is refreshed: grouped by server and game ID, the number on the right of each chip shows how many replays that person shared; click anyone to open their public stats in the lookup.",
+    "identity": "The credited identity is a self-declared server and game ID — no account binding — and can be changed above at any time.",
+    "revoke": "Stopping participation only halts future uploads; already collected data keeps being processed under the terms above.",
+    "agree": "I have read and agree to all of the terms above"
+  },
+  "wizard": {
+    "title": "Replay sharing wizard",
+    "hint": "Pick and upload replays through the wizard; the server only accepts battles within the current collection scope.",
+    "step": {
+      "intro": "Introduction",
+      "select": "Select replays",
+      "upload": "Check & upload",
+      "done": "Done"
+    },
+    "next": "Next",
+    "prev": "Back",
+    "startUpload": "Start upload",
+    "doneLabel": "Finish",
+    "viewContributors": "View contributors"
+  },
+  "select": {
+    "checkCard": "Select the replay of {name}",
+    "rescan": "Rescan",
+    "smart": "Smart select",
+    "planning": "Analyzing local replays (hashing and matching against the collection scope)…",
+    "empty": "No local replays found. Install the game or play a battle first, then come back.",
+    "filterEmpty": "No replays match the current filters.",
+    "summary": "{n} selected",
+    "estSize": "≈ {size}",
+    "verdict": {
+      "accept": "Wanted",
+      "own_staged": "Already in my package",
+      "duplicate": "Already collected",
+      "unwanted": "Not needed"
+    }
+  },
+  "upload": {
+    "stage": {
+      "plan": "Plan",
+      "check": "Verify",
+      "mine": "Sync",
+      "pack": "Pack",
+      "upload": "Upload"
+    },
+    "failed": "Upload failed",
+    "items": "{done}/{total} items",
+    "cancel": "Cancel",
+    "outcome": {
+      "accepted": "Accepted",
+      "duplicate": "Duplicate",
+      "unwanted": "Skipped",
+      "failed": "Failed"
+    }
+  },
+  "done": {
+    "summary": "Accepted {accepted}, duplicates {duplicate}, skipped {unwanted}, failed {failed}.",
+    "hint": "Thanks for contributing! Accepted replays count toward the contributor list in the next release."
+  },
+  "contributors": {
+    "title": "People participating in sharing",
+    "hint": "Grouped by server and game ID; the number on the right shows shared replays. Click anyone to open their public stats.",
+    "empty": "No contributors yet. The list appears with the next release after the first contribution.",
+    "self": "Me",
+    "count": "{n}",
+    "note": "The list refreshes with each release from the collection server."
+  }
+}

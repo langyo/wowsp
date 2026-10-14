@@ -2550,3 +2550,223 @@ fn playtime_battles_pins_the_exact_wire_key_set() {
     assert_eq!(v["battles"][0]["kind"], "lesta");
     assert_eq!(v["battles"][0]["dateTime"], "20260930_080000");
 }
+
+// ── replay-share contribution (webui api/modules/contribution.ts) ─────────
+
+/// The §2 facts claim serializes FLAT (the flatten of `ReplayFactsCore`
+/// must not nest a "core" object) with every camelCase key pinned.
+#[test]
+fn contribution_replay_facts_flatten_pins_the_wire_shape() {
+    let v = round_trips(ReplayFacts {
+        sha256: "a".repeat(64),
+        file_name: "20261014_090000_x.wowsreplay".into(),
+        size_bytes: 8123456,
+        core: ReplayFactsCore {
+            map: "15_NE_north".into(),
+            mode: "standard".into(),
+            scenario: None,
+            realm: "asia".into(),
+            own_ship_id: 4_183_301_234u64,
+            ship_class: Some("Battleship".into()),
+            tier: Some(10),
+            player_count: 12,
+            bot_count: 0,
+            client_version: "14.5.0".into(),
+            battle_time: "2026-10-14T09:00:00Z".into(),
+        },
+    });
+    assert_exact_keys(
+        &v,
+        &[
+            "sha256",
+            "fileName",
+            "sizeBytes",
+            "map",
+            "mode",
+            "scenario",
+            "realm",
+            "ownShipId",
+            "shipClass",
+            "tier",
+            "playerCount",
+            "botCount",
+            "clientVersion",
+            "battleTime",
+        ],
+    );
+    assert_eq!(v["ownShipId"], 4_183_301_234u64);
+    assert_eq!(v["battleTime"], "2026-10-14T09:00:00Z");
+}
+
+/// The wanted document parses its own (sparse) wire shape — absent rule
+/// dimensions heal to empty ("any") — and round-trips camelCase.
+#[test]
+fn contribution_wanted_doc_roundtrips_with_sparse_rules() {
+    let raw = serde_json::json!({
+        "rulesetVersion": 3,
+        "updatedAt": "2026-10-14T00:00:00Z",
+        "watermark": { "stagedBytes": 123, "limitBytes": 8_589_934_592u64, "accepting": true },
+        "rules": [ { "id": "solomon-std-asia", "collected": 123, "maxCount": 200,
+            "maps": ["008_SOLOMONS"], "modes": ["standard"], "realms": ["asia"],
+            "shipClasses": ["Battleship"], "tiers": [10],
+            "playerCountMin": 12, "playerCountMax": 12, "botMax": 0,
+            "clientVersionMin": "14.0" } ]
+    });
+    let doc: WantedDoc = serde_json::from_value(raw).unwrap();
+    assert_eq!(doc.rules.len(), 1);
+    let rule = &doc.rules[0];
+    assert!(rule.scenarios.is_empty(), "absent dimension = any");
+    assert!(rule.ship_ids.is_empty());
+    assert!(rule.note.is_none());
+    assert_eq!(rule.max_count, Some(200));
+    let v = round_trips(doc);
+    assert_eq!(v["rules"][0]["playerCountMin"], 12);
+    assert_eq!(v["watermark"]["limitBytes"], 8_589_934_592u64);
+}
+
+/// Verdict/outcome enums use the contract's exact snake_case/lowercase
+/// spellings — the drift-prone one is `own_staged`.
+#[test]
+fn contribution_verdict_spellings_pin_the_contract() {
+    assert_eq!(
+        serde_json::to_value(ContributionVerdict::OwnStaged).unwrap(),
+        "own_staged"
+    );
+    assert_eq!(
+        serde_json::to_value(ContributionVerdict::Duplicate).unwrap(),
+        "duplicate"
+    );
+    assert_eq!(
+        serde_json::to_value(QueueOutcome::Accepted).unwrap(),
+        "accepted"
+    );
+    assert_eq!(
+        serde_json::to_value(QueueOutcome::Failed).unwrap(),
+        "failed"
+    );
+    let parsed: ContributionVerdict = serde_json::from_value("accept".into()).unwrap();
+    assert_eq!(parsed, ContributionVerdict::Accept);
+}
+
+/// The queue snapshot + state + plan rows pin their exact key sets (the
+/// wizard's polling and event payloads share one shape).
+#[test]
+fn contribution_queue_and_state_pin_their_key_sets() {
+    let queue = round_trips(QueueSnapshot {
+        running: true,
+        stage: "pack".into(),
+        total_items: 3,
+        done_items: 1,
+        total_bytes: 900,
+        current_bytes: 300,
+        message: Some("building".into()),
+        results: vec![QueueResult {
+            sha256: "b".repeat(64),
+            file_name: "x.wowsreplay".into(),
+            outcome: QueueOutcome::Accepted,
+        }],
+    });
+    assert_exact_keys(
+        &queue,
+        &[
+            "running",
+            "stage",
+            "totalItems",
+            "doneItems",
+            "totalBytes",
+            "currentBytes",
+            "message",
+            "results",
+        ],
+    );
+    assert_eq!(queue["totalItems"], 3);
+    assert_eq!(queue["results"][0]["fileName"], "x.wowsreplay");
+    // The default snapshot heals optional fields to null/[] instead of
+    // dropping them (the webui types them non-optional).
+    let bare = round_trips(QueueSnapshot::default());
+    assert!(bare["message"].is_null());
+    assert_eq!(bare["results"], serde_json::json!([]));
+    assert_eq!(bare["stage"], "idle");
+
+    let state = round_trips(ContributionState {
+        identity: Some(ContributionIdentity {
+            realm: "asia".into(),
+            name: "Player".into(),
+        }),
+        consent_version: Some(1),
+        anon_id: Some("00000000-0000-4000-8000-000000000000".into()),
+        has_upload_token: true,
+        credit_count: 3,
+        staged_count: 2,
+        staged_bytes: 900,
+        last_sync_at: Some("2026-10-14T09:00:00Z".into()),
+    });
+    assert_exact_keys(
+        &state,
+        &[
+            "identity",
+            "consentVersion",
+            "anonId",
+            "hasUploadToken",
+            "creditCount",
+            "stagedCount",
+            "stagedBytes",
+            "lastSyncAt",
+        ],
+    );
+    assert_eq!(state["hasUploadToken"], true);
+    assert_eq!(state["identity"]["realm"], "asia");
+
+    let item = round_trips(PlanItem {
+        path: r"C:\replays\x.wowsreplay".into(),
+        sha256: "c".repeat(64),
+        size_bytes: 4096,
+        facts: ReplayFacts {
+            sha256: "c".repeat(64),
+            file_name: "x.wowsreplay".into(),
+            size_bytes: 4096,
+            core: ReplayFactsCore::default(),
+        },
+        verdict: ContributionVerdict::Accept,
+        rule_id: Some("solomon-std-asia".into()),
+        file_name: "x.wowsreplay".into(),
+    });
+    assert_exact_keys(
+        &item,
+        &[
+            "path",
+            "sha256",
+            "sizeBytes",
+            "facts",
+            "verdict",
+            "ruleId",
+            "fileName",
+        ],
+    );
+    let candidate = round_trips(PlanCandidate {
+        path: r"C:\replays\x.wowsreplay".into(),
+        ship_class: Some("Battleship".into()),
+        tier: Some(10),
+    });
+    assert_exact_keys(&candidate, &["path", "shipClass", "tier"]);
+}
+
+/// The mine document heals a 404/fresh-contributor empty body through
+/// `#[serde(default)]`.
+#[test]
+fn contribution_mine_doc_heals_the_fresh_contributor_shape() {
+    let fresh: MineDoc = serde_json::from_str("{}").unwrap();
+    assert!(fresh.staged.is_empty());
+    assert_eq!(fresh.credit_count, 0);
+    let v = round_trips(MineDoc {
+        staged: vec![StagedEntry {
+            sha256: "d".repeat(64),
+            file_name: "y.korablireplay".into(),
+            size_bytes: 2048,
+        }],
+        archive_bytes: 2048,
+        credit_count: 1,
+    });
+    assert_exact_keys(&v, &["staged", "archiveBytes", "creditCount"]);
+    assert_eq!(v["staged"][0]["sizeBytes"], 2048);
+}

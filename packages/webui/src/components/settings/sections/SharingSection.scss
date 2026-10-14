@@ -1,0 +1,432 @@
+// SharingSection — the settings' 录像共享计划 pane: the participation
+// status card (identity editor, consent, my counts), the inline consent →
+// select → upload wizard and the contributors list. Surface colors come
+// from the hikari tokens so both theme modes read correctly (same idiom as
+// FeedbackSection).
+
+.sharing-sec {
+  &__enroll {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--hi-space-12, 12px);
+  }
+
+  &__enroll-copy {
+    margin: 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__identity-save {
+    flex: none;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    flex-wrap: wrap;
+  }
+
+  &__terms-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--hi-color-primary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__consent {
+    margin: 0;
+    padding-left: 1.2em;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-4, 4px);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__counts {
+    display: flex;
+    gap: var(--hi-space-24, 24px);
+    flex-wrap: wrap;
+  }
+
+  &__count {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__count-num {
+    font-size: var(--hi-text-lg, 1.125rem);
+    font-weight: 600;
+  }
+
+  &__count-label {
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__sync-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hi-space-8, 8px);
+    flex-wrap: wrap;
+  }
+
+  &__sync-label {
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__sync-actions {
+    display: flex;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  // ── wizard ─────────────────────────────────────────────────────────────
+
+  &__step {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-12, 12px);
+    min-width: 0;
+  }
+
+  &__select-head {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    flex-wrap: wrap;
+  }
+
+  &__plan-note {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    margin: 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__empty {
+    margin: 0;
+    padding: var(--hi-space-24, 24px) 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    text-align: center;
+  }
+
+  &__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-8, 8px);
+    max-height: 22rem;
+    overflow-y: auto;
+  }
+
+  &__card {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--hi-space-8, 8px);
+    padding: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
+    border: 1px solid var(--hi-color-border);
+    border-radius: var(--hi-radius-sm, 4px);
+    transition: border-color 0.15s ease;
+
+    &--on {
+      border-color: var(--hi-color-primary);
+    }
+  }
+
+  &__card-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    cursor: pointer;
+  }
+
+  &__card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__card-title {
+    font-weight: 600;
+    font-size: var(--hi-text-sm, 0.8125rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__card-pills {
+    display: flex;
+    gap: 4px;
+    flex: none;
+  }
+
+  &__pill {
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: var(--hi-text-xs, 0.75rem);
+    line-height: 1.4;
+    background: var(--hi-color-fill-secondary, rgba(128, 128, 128, 0.16));
+    color: var(--hi-color-text-secondary);
+
+    &--accept {
+      background: var(--hi-color-success-bg, rgba(46, 164, 79, 0.14));
+      color: var(--hi-color-success);
+    }
+
+    &--own_staged,
+    &--duplicate {
+      background: var(--hi-color-fill-secondary, rgba(128, 128, 128, 0.16));
+      color: var(--hi-color-text-secondary);
+    }
+
+    &--unwanted {
+      background: var(--hi-color-warning-bg, rgba(214, 158, 46, 0.14));
+      color: var(--hi-color-warning);
+    }
+  }
+
+  &__card-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--hi-space-8, 8px);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__card-label {
+    flex: none;
+    color: var(--hi-color-text-tertiary, var(--hi-color-text-secondary));
+  }
+
+  &__card-val {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hi-space-8, 8px);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__card-ship {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__card-players {
+    flex: none;
+  }
+
+  &__summary {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-16, 16px);
+    flex-wrap: wrap;
+    padding-top: var(--hi-space-4, 4px);
+    border-top: 1px solid var(--hi-color-border);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__stages {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-12, 12px);
+    flex-wrap: wrap;
+  }
+
+  &__stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--hi-color-border);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+
+    &--done {
+      color: var(--hi-color-success);
+      border-color: var(--hi-color-success-border, var(--hi-color-success));
+    }
+
+    &--active {
+      color: var(--hi-color-primary);
+      border-color: var(--hi-color-primary);
+    }
+  }
+
+  &__progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-4, 4px);
+  }
+
+  &__progress-note {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__outcomes {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-4, 4px);
+    max-height: 14rem;
+    overflow-y: auto;
+  }
+
+  &__outcome {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hi-space-8, 8px);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__outcome-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl; // long names trim from the left (the timestamp head)
+    text-align: left;
+  }
+
+  &__cancel {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__done-line {
+    margin: 0;
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__wizard-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--hi-space-8, 8px);
+    padding-top: var(--hi-space-8, 8px);
+  }
+
+  // ── contributors list ──────────────────────────────────────────────────
+
+  &__contrib-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-12, 12px);
+  }
+
+  &__contrib-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__contrib-realm {
+    font-size: var(--hi-text-xs, 0.75rem);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--hi-color-text-tertiary, var(--hi-color-text-secondary));
+  }
+
+  &__contrib-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__contrib-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    padding: 4px 10px;
+    border: 1px solid var(--hi-color-border);
+    border-radius: 999px;
+    background: var(--hi-color-fill-secondary, rgba(128, 128, 128, 0.1));
+    cursor: pointer;
+    font-size: var(--hi-text-sm, 0.8125rem);
+
+    &:hover {
+      border-color: var(--hi-color-primary);
+    }
+
+    &--self {
+      border-color: var(--hi-color-primary);
+      background: var(--hi-color-primary-bg, rgba(64, 128, 255, 0.1));
+    }
+  }
+
+  &__contrib-name {
+    max-width: 14em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__contrib-self {
+    color: var(--hi-color-primary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__contrib-count {
+    flex: none;
+    min-width: 1.4em;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--hi-color-fill, rgba(128, 128, 128, 0.2));
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  &__contrib-note {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    color: var(--hi-color-text-tertiary, var(--hi-color-text-secondary));
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+}

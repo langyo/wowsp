@@ -20,7 +20,8 @@ export type SettingsSection =
   | "overlay"
   | "feedback"
   | "about"
-  | "attributions";
+  | "attributions"
+  | "sharing";
 
 /** Rail groups (first level): titled clusters of related sections (the
  *  second level). Rail order is group order, then member order —
@@ -44,7 +45,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "game", sections: ["stats", "overlay", "gamePath"] },
   { id: "connection", sections: ["account", "network", "pairing"] },
   { id: "app", sections: ["updates", "changelog"] },
-  { id: "about", sections: ["feedback", "about", "attributions"] },
+  { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
 ];
 
 /** All sections in rail order (group order, then member order). */

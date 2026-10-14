@@ -1,0 +1,98 @@
+{
+  "status": {
+    "title": "参与共享",
+    "hint": "选择要共享的录像，协助改进地图点位分析与战绩校准。服务器只会征集当前明确需要的录像类型。",
+    "enrollCopy": "参与录像共享计划，协助 WoWSP 收集战术分析所需的比赛录像。整个过程匿名进行，可随时停止。",
+    "enroll": "参与共享",
+    "identity": "署名身份",
+    "realm": "服务器",
+    "name": "游戏 ID",
+    "namePlaceholder": "用于致谢署名的昵称（3-24 个字符）",
+    "save": "保存",
+    "saved": "署名身份已保存",
+    "nameInvalid": "昵称需为 3-24 个字符，且不含控制字符",
+    "consentRecorded": "已同意条款（v{version}）",
+    "consentMissing": "尚未同意共享条款",
+    "viewTerms": "查看完整条款",
+    "hideTerms": "收起条款",
+    "credits": "已收录份数",
+    "staged": "待提取体积",
+    "lastSync": "上次同步：{time}",
+    "neverSynced": "从未同步",
+    "refresh": "同步",
+    "syncDone": "已同步",
+    "forget": "停止参与",
+    "forgetConfirm": "确认停止并清除身份？",
+    "forgotten": "已停止参与；本地身份与令牌已清除"
+  },
+  "consent": {
+    "contains": "一份录像文件包含本局所有玩家的昵称、账号 ID 与全部聊天记录。",
+    "usedFor": "征集到的录像仅用于地图与点位分析、战绩校准追踪，以及 AI 辅助研究。",
+    "noRedistribution": "原始录像永远不会被重新分发；对外发布的只有派生统计（舰船、队伍、坐标与事件序列），不含任何个人信息。",
+    "contributorList": "每个版本发布时，本页下方的「参与共享的人员」名单会随之更新：按服务器与游戏 ID 排列，每人标签右侧的数字为其共享份数；点击任意人员可跳转水表查询查看其公开战绩。",
+    "identity": "署名身份为自报的服务器与游戏 ID，不绑定任何账户，可在上方随时修改。",
+    "revoke": "停止参与只会中止后续上传；已征集的数据将按上述条款继续处理。",
+    "agree": "我已阅读并同意以上全部条款"
+  },
+  "wizard": {
+    "title": "录像共享向导",
+    "hint": "按向导选择并上传录像；服务器只接收当前征集范围内的对局。",
+    "step": {
+      "intro": "说明",
+      "select": "选择录像",
+      "upload": "检查与上传",
+      "done": "完成"
+    },
+    "next": "下一步",
+    "prev": "上一步",
+    "startUpload": "开始上传",
+    "doneLabel": "完成",
+    "viewContributors": "查看参与人员"
+  },
+  "select": {
+    "checkCard": "选择{name}的录像",
+    "rescan": "重新扫描",
+    "smart": "智能匹配",
+    "planning": "正在分析本地录像（计算校验和并匹配征集范围）…",
+    "empty": "没有找到本地录像。先安装游戏或进行一局对战，再回到这里。",
+    "filterEmpty": "当前筛选条件下没有录像。",
+    "summary": "已选 {n} 份",
+    "estSize": "预计约 {size}",
+    "verdict": {
+      "accept": "征集中",
+      "own_staged": "已在我的共享包",
+      "duplicate": "已收录",
+      "unwanted": "暂不需要"
+    }
+  },
+  "upload": {
+    "stage": {
+      "plan": "规划",
+      "check": "校验",
+      "mine": "同步",
+      "pack": "打包",
+      "upload": "上传"
+    },
+    "failed": "上传失败",
+    "items": "{done}/{total} 项",
+    "cancel": "取消",
+    "outcome": {
+      "accepted": "已收录",
+      "duplicate": "重复",
+      "unwanted": "未接收",
+      "failed": "失败"
+    }
+  },
+  "done": {
+    "summary": "收录 {accepted} 份，重复 {duplicate} 份，未接收 {unwanted} 份，失败 {failed} 份。",
+    "hint": "感谢你的贡献！有收录的录像会计入下个版本的参与人员名单。"
+  },
+  "contributors": {
+    "title": "参与共享的人员",
+    "hint": "按服务器与游戏 ID 排列；右侧数字为共享份数。点击任意人员可查看其公开水表。",
+    "empty": "暂无贡献者。完成首次共享后，这里会在下个版本更新时出现。",
+    "self": "我",
+    "count": "{n}",
+    "note": "名单随版本发布更新，数据来自征集服务端。"
+  }
+}

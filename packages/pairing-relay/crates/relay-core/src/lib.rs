@@ -22,6 +22,7 @@ pub mod manifest;
 pub mod multipart;
 pub mod protocol;
 pub mod qqbot;
+pub mod replay;
 pub mod room;
 pub mod route;
 

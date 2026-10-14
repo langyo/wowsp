@@ -8,6 +8,7 @@ pub mod app_migrations;
 pub mod appdata;
 pub mod arena_info;
 pub mod changelog;
+pub mod contribution;
 pub mod data_pack;
 pub mod download_hub;
 pub mod encyclopedia;

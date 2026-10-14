@@ -24,9 +24,12 @@ pub mod directory;
 pub mod erp;
 pub mod feedback;
 pub mod qqbot;
+pub mod replay;
+pub mod replay_index;
 pub mod room;
 
 pub use directory::Directory;
+pub use replay_index::ReplayIndex;
 pub use room::Room;
 
 use futures_util::StreamExt;
@@ -93,6 +96,16 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,
         Route::QqBotCallback => qqbot::handle_callback(req, &env).await,
         Route::FeedbackAttachment { file_token: _ } => feedback::handle_attachment(req, env).await,
+
+        // ── replay share (see src/replay.rs) ─────────────────────────────
+        Route::ReplaysWanted => replay::handle_wanted(req, env).await,
+        Route::ReplaysCheck => replay::handle_check(req, env).await,
+        Route::ReplaysMine => replay::handle_mine(req, env).await,
+        Route::ReplaysArchive => replay::handle_archive(req, env).await,
+        Route::ReplaysUpload => replay::handle_upload(req, env).await,
+        Route::ReplaysAdminList => replay::handle_admin_list(req, env).await,
+        Route::ReplaysAdminArchive { anon_id: _ } => replay::handle_admin_archive(req, env).await,
+        Route::ReplaysAdminDrain => replay::handle_admin_drain(req, env).await,
 
         // ── erp console auth (see src/erp.rs) ────────────────────────────
         Route::ErpLogin => erp::handle_login(req, env).await,

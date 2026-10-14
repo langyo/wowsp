@@ -1,0 +1,98 @@
+{
+  "status": {
+    "title": "Participar en el uso compartido",
+    "hint": "Comparte repeticiones para mejorar el análisis de posiciones y la calibración de estadísticas. El servidor solo recopila los tipos de repeticiones que necesita ahora.",
+    "enrollCopy": "Únete al programa de compartir repeticiones y ayuda a WoWSP a recopilar repeticiones para el análisis táctico. Todo es anónimo y puedes detenerlo en cualquier momento.",
+    "enroll": "Participar",
+    "identity": "Identidad acreditada",
+    "realm": "Servidor",
+    "name": "ID de juego",
+    "namePlaceholder": "Apodo mostrado en la lista de contribuidores (3-24 caracteres)",
+    "save": "Guardar",
+    "saved": "Identidad guardada",
+    "nameInvalid": "El apodo debe tener de 3 a 24 caracteres, sin caracteres de control",
+    "consentRecorded": "Términos aceptados (v{version})",
+    "consentMissing": "Términos de uso compartido aún no aceptados",
+    "viewTerms": "Ver los términos completos",
+    "hideTerms": "Ocultar los términos",
+    "credits": "Repeticiones aceptadas",
+    "staged": "Volumen pendiente",
+    "lastSync": "Última sincronización: {time}",
+    "neverSynced": "Nunca sincronizado",
+    "refresh": "Sincronizar",
+    "syncDone": "Sincronizado",
+    "forget": "Dejar de participar",
+    "forgetConfirm": "¿Dejar de participar y borrar la identidad local?",
+    "forgotten": "Participación detenida; identidad y token locales borrados"
+  },
+  "consent": {
+    "contains": "Un archivo de repetición contiene el apodo y el ID de cuenta de todos los jugadores de esa batalla, además de todo el chat.",
+    "usedFor": "Las repeticiones recopiladas se usan solo para análisis de mapas y posiciones, seguimiento de calibración de estadísticas e investigación asistida por IA.",
+    "noRedistribution": "Las repeticiones originales nunca se redistribuyen; solo se publican estadísticas derivadas (buques, equipos, coordenadas y secuencias de eventos), sin información personal.",
+    "contributorList": "Con cada versión, la lista «Personas que participan en el uso compartido» más abajo en esta página se actualiza: agrupada por servidor e ID de juego, el número a la derecha de cada etiqueta indica cuántas repeticiones compartió esa persona; haz clic en cualquiera para abrir sus estadísticas públicas.",
+    "identity": "La identidad acreditada es un servidor y un ID de juego autodeclarados — sin vinculación de cuenta — y puede cambiarse arriba en cualquier momento.",
+    "revoke": "Dejar de participar solo detiene las futuras subidas; los datos ya recopilados siguen procesándose según los términos anteriores.",
+    "agree": "He leído y acepto todos los términos anteriores"
+  },
+  "wizard": {
+    "title": "Asistente de uso compartido de repeticiones",
+    "hint": "Elige y sube repeticiones con el asistente; el servidor solo acepta batallas dentro del ámbito de recopilación actual.",
+    "step": {
+      "intro": "Descripción",
+      "select": "Selección de repeticiones",
+      "upload": "Comprobación y subida",
+      "done": "Listo"
+    },
+    "next": "Siguiente",
+    "prev": "Atrás",
+    "startUpload": "Iniciar subida",
+    "doneLabel": "Finalizar",
+    "viewContributors": "Ver participantes"
+  },
+  "select": {
+    "checkCard": "Seleccionar la repetición de {name}",
+    "rescan": "Reescanear",
+    "smart": "Selección inteligente",
+    "planning": "Analizando repeticiones locales (hash y cotejo con el ámbito de recopilación)…",
+    "empty": "No se encontraron repeticiones locales. Instala el juego o juega una batalla y vuelve.",
+    "filterEmpty": "Ninguna repetición coincide con los filtros actuales.",
+    "summary": "{n} seleccionadas",
+    "estSize": "≈ {size}",
+    "verdict": {
+      "accept": "Requerida",
+      "own_staged": "Ya en mi paquete",
+      "duplicate": "Ya recopilada",
+      "unwanted": "No necesaria"
+    }
+  },
+  "upload": {
+    "stage": {
+      "plan": "Plan",
+      "check": "Verificación",
+      "mine": "Sincronización",
+      "pack": "Empaquetado",
+      "upload": "Subida"
+    },
+    "failed": "Error al subir",
+    "items": "{done}/{total} elementos",
+    "cancel": "Cancelar",
+    "outcome": {
+      "accepted": "Aceptada",
+      "duplicate": "Duplicada",
+      "unwanted": "Omitida",
+      "failed": "Error"
+    }
+  },
+  "done": {
+    "summary": "Aceptadas {accepted}, duplicadas {duplicate}, omitidas {unwanted}, con error {failed}.",
+    "hint": "¡Gracias por tu contribución! Las repeticiones aceptadas cuentan para la lista de participantes de la próxima versión."
+  },
+  "contributors": {
+    "title": "Personas que participan en el uso compartido",
+    "hint": "Agrupadas por servidor e ID de juego; el número de la derecha indica las repeticiones compartidas. Haz clic en cualquiera para abrir sus estadísticas públicas.",
+    "empty": "Todavía no hay contribuidores. La lista aparecerá en la próxima versión tras la primera contribución.",
+    "self": "Yo",
+    "count": "{n}",
+    "note": "La lista se actualiza con cada versión desde el servidor de recopilación."
+  }
+}

@@ -7053,6 +7053,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "uuid",
  "windows 0.61.3",
  "winreg 0.56.0",
  "wmi",
@@ -7060,6 +7061,7 @@ dependencies = [
  "wowsunpack",
  "ww2ogg",
  "zip",
+ "zstd",
 ]
 
 [[package]]

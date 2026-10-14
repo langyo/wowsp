@@ -103,6 +103,14 @@ pub(super) fn read_block(path: &std::path::Path, index: usize) -> std::io::Resul
 /// this exact projection for its replay-derived rows — never duplicate the
 /// header parse.
 pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
+    lite_and_client_version(path).0
+}
+
+/// [`lite_from_path`] plus the descriptor's `clientVersionFromExe`
+/// (normalized to dot-numeric), sharing ONE bounded block-0 read — the
+/// contribution planner (commands/contribution/) wants both projections
+/// per file, so the header bytes are parsed exactly once.
+pub(crate) fn lite_and_client_version(path: &std::path::Path) -> (ReplayMetaLite, Option<String>) {
     let path_str = path.to_string_lossy().into_owned();
     let date_time = parse_datetime_from_filename(&path_str);
     // The walk only surfaces replay containers (`*.wowsreplay` and the Lesta
@@ -115,8 +123,12 @@ pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
     let raw: Option<serde_json::Value> = read_block(path, 0)
         .ok()
         .and_then(|payload| serde_json::from_str(&String::from_utf8_lossy(&payload)).ok());
-    let Some(raw) = raw else {
-        return ReplayMetaLite {
+    let client_version = raw
+        .as_ref()
+        .and_then(|r| client_version_from_raw(r.get("clientVersionFromExe")));
+    let lite = match raw {
+        Some(raw) => lite_from_raw(path_str, date_time, raw),
+        None => ReplayMetaLite {
             path: path_str,
             date_time,
             match_group: None,
@@ -132,9 +144,29 @@ pub(crate) fn lite_from_path(path: &std::path::Path) -> ReplayMetaLite {
             install_path: None,
             install_kind: None,
             install_realm: None,
-        };
+        },
     };
-    lite_from_raw(path_str, date_time, raw)
+    (lite, client_version)
+}
+
+/// Normalize the descriptor's `clientVersionFromExe` into the dot-numeric
+/// form the replay-share contract compares (`14.5.0` ≥ `14.0`): clients
+/// write comma-separated 4-tuples (`26,10,0,8867689`), so keep at most the
+/// first three NUMERIC segments and join them with dots. Anything without a
+/// leading numeric segment (or absent entirely) answers `None`.
+pub(crate) fn client_version_from_raw(value: Option<&serde_json::Value>) -> Option<String> {
+    let raw = value?.as_str()?;
+    let numeric: Vec<&str> = raw
+        .split([',', '.'])
+        .map(str::trim)
+        .take_while(|part| part.parse::<u64>().is_ok())
+        .take(3)
+        .collect();
+    if numeric.is_empty() {
+        None
+    } else {
+        Some(numeric.join("."))
+    }
 }
 
 /// Project the parsed descriptor JSON onto a [`ReplayMetaLite`]. Shares the
@@ -392,7 +424,7 @@ pub(crate) fn is_operation_battle(
 /// the leading `YYYYMMDD_HHMMSS` is the only timestamp source. Both segments
 /// are 8/6 pure digits; we return them joined by `_` when both are present,
 /// falling back to the date alone if only the first matches.
-pub(super) fn parse_datetime_from_filename(path: &str) -> Option<String> {
+pub(crate) fn parse_datetime_from_filename(path: &str) -> Option<String> {
     let name = std::path::Path::new(path).file_name()?.to_str()?;
     let mut parts = name.split('_');
     let date = parts.next()?;

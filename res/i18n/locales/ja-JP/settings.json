@@ -137,6 +137,7 @@
   "overlayRosterPluginPage": "プラグインページを開く",
   "overlayFullscreenNote": "※ 排他的フルスクリーンでは表示できません：このモードでは GDI 画面キャプチャが黒いフレームしか取得できず、オーバーレイもフルスクリーンのスワップチェーンの上に重ねられないためです。ゲーム内の表示モードを「ボーダーレス」または「ウィンドウ」に設定してください。",
   "attributions": "サポートとクレジット",
+  "sharing": "リプレイ共有",
   "telemetryTitle": "使用状況テレメトリー",
   "telemetryToggle": "利用状況の統計を送信",
   "telemetryToggleDesc": "匿名のページ閲覧と表示言語を Google Analytics に送信します。オフにするとすぐに送信を停止します。",

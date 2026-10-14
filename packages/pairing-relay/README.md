@@ -377,6 +377,71 @@ KV namespace is ever rebuilt from scratch, the per-channel `seq`
 counters restart at 1: harmless (a GitHub-reachable client accepts the
 reset and re-climbs; the rollback refusal only applies when the relay
 doc is the sole decider), but avoid deleting the namespace casually.
+## Replay share (`/api/replays/*`)
+
+The replay-collection program: players who opt in ship whole-replay
+packages to the gateway; the maintainer periodically drains them for
+map/position analysis. No accounts — each app generates and persists an
+`anonId` (uuid v4) + `uploadToken` (32 chars) pair and sends them as
+`x-anon-id` / `x-upload-token` headers; the FIRST successful upload
+registers sha256(token) in the ledger and every later call must match.
+All policy lives in `crates/relay-core/src/replay.rs` (pure, host
+tested); `crates/relay-worker/src/replay.rs` is the plumbing and
+`src/replay_index.rs` the ledger Durable Object.
+
+| Route | Meaning |
+| --- | --- |
+| `GET /api/replays/wanted` | the wanted ruleset + live watermark/counters, `max-age=300` |
+| `POST /api/replays/check` | per-replay verdicts `accept\|own_staged\|duplicate\|unwanted` (≤400 facts, no auth) |
+| `GET /api/replays/mine` (auth) | the caller's staged set; 404 = unknown contributor |
+| `GET /api/replays/archive` (auth) | the caller's `shards/<anonId>.tar.zstd` streamed from R2 |
+| `POST /api/replays/upload` (auth) | RAW tar.zst body + `x-manifest` (base64url JSON) header; Content-Length required |
+| `GET /api/replays/admin/list` | contributor rows + watermark (erp session) |
+| `GET /api/replays/admin/archive?anon_id=…` | one contributor's shard (erp session) |
+| `POST /api/replays/admin/drain` | `{anonIds}` → mark drained, free space (erp session) |
+
+What the server accepts is **server-authoritative**: the maintainer
+writes ONE KV value — `FEEDBACK_KV` key `replays:wanted` — holding the
+ruleset (`{rulesetVersion, updatedAt, rules:[{id, maxCount, maps, modes,
+realms, shipClasses, shipIds, tiers, playerCountMin/Max, botMax,
+clientVersionMin}]}`; absent or empty rules = collection CLOSED. Rules
+are matched against client-claimed, plausibility-checked facts
+(`crates/relay-core/src/replay.rs` carries every bound); verdict
+precedence is duplicate > own_staged > accept > unwanted, and `accept`
+additionally needs an open rule (`collected < maxCount`) plus watermark
+headroom. An upload must be a SUPERSET of the contributor's staged set
+(dropping staged members → 422 `dropped_members`), every member must be
+`accept`/`own_staged` NOW (else 422 `rejected`), and the new blob must
+keep the global staged total under the 8 GiB watermark (503 `watermark`,
+retry-after). Archives are capped at 256 MiB / 400 members (413).
+
+Storage layout:
+
+- **R2 bucket `wowsp-replay-shards`** (binding `REPLAY_R2`) — one
+  `shards/<anonId>.tar.zstd` blob per contributor. Create it once
+  before the first deploy: `npx wrangler r2 bucket create
+  wowsp-replay-shards`. The upload streams through the worker into R2
+  (never buffered); `/archive` streams it back out.
+- **`ReplayIndex` Durable Object** (singleton `idFromName("index")`,
+  SQLite-backed, migration `v3`) — the ledger: `h:<sha256>` rows
+  (`{contributor, status: staged|drained, ruleId, size, fileName, at}`),
+  `c:<anonId>:<sha256>` mirrors, `tok:<anonId>` token hashes,
+  `meta:<anonId>` (`creditedName, realm, archiveBytes, creditCount`),
+  `rule:<ruleId>` collected counters (drain never decrements them — a
+  closed rule stays closed) and `wm` (staged-bytes total). Alarm-free:
+  drained rows persist forever so duplicate detection survives.
+- **FEEDBACK_KV counters** (prefix `replays:rl:`) — the quotas: uploads
+  8/day per anonId + 24/day per IP, archive fetches 20/day per anonId,
+  checks 60/day per IP; 429s carry `Retry-After`.
+
+**Maintainer drain flow**: log into `/erp` → `GET
+/api/replays/admin/list` (contributors + watermark) → fetch each
+interesting shard via `GET /api/replays/admin/archive?anon_id=…`
+(verify members by re-hashing) → `POST /api/replays/admin/drain` with
+the collected `anonIds`. Drain marks their members `drained`, zeroes
+their blob totals and decrements the watermark (freeing space for new
+contributors; their `creditCount` survives for the contributor list)
+and deletes the R2 shards.
 
 ## Deploy
 

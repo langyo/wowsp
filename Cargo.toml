@@ -117,6 +117,10 @@ blowfish = "^0.10"
 byteorder = "^1"
 flate2 = { version = "^1", features = ["zlib-rs"] }
 tar = "^0.4"
+# Replay-share contribution packages (commands/contribution/): the wire
+# format is tar.zstd (contract §8). Already in the lockfile transitively;
+# zstd-sys prebuilt CC builds keep every platform's compile painless.
+zstd = "^0.13"
 
 # Mod Hub package unpacking (catalog zips) — direct dep of the app crate
 zip = { version = "^8", default-features = false, features = ["deflate"] }

@@ -17,6 +17,7 @@ import {
   RefreshCw,
   ScrollText,
   Smartphone,
+  Upload,
   UserRound,
 } from "@lucide/vue";
 
@@ -156,6 +157,7 @@ export function useSettingsBody(props: { active: boolean }) {
     feedback: Bug,
     about: Info,
     attributions: Copyright,
+    sharing: Upload,
   };
   const sectionLabels = computed<Record<SettingsSection, string>>(() => ({
     language: t("settings.language"),
@@ -172,6 +174,7 @@ export function useSettingsBody(props: { active: boolean }) {
     feedback: t("settings.feedback"),
     about: t("settings.about"),
     attributions: t("settings.attributions"),
+    sharing: t("settings.sharing"),
   }));
   // The rail is grouped: five titled clusters (first level) over the
   // section entries (second level), so fourteen entries read as a few

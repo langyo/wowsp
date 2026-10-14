@@ -1,0 +1,98 @@
+{
+  "status": {
+    "title": "參與共享",
+    "hint": "選擇要共享的錄影，協助改進地圖點位分析與戰績校準。伺服器只會徵集目前明確需要的錄影類型。",
+    "enrollCopy": "參與錄影共享計畫，協助 WoWSP 收集戰術分析所需的比賽錄影。整個過程匿名進行，可隨時停止。",
+    "enroll": "參與共享",
+    "identity": "署名身分",
+    "realm": "伺服器",
+    "name": "遊戲 ID",
+    "namePlaceholder": "用於致謝署名的暱稱（3-24 個字元）",
+    "save": "儲存",
+    "saved": "署名身分已儲存",
+    "nameInvalid": "暱稱需為 3-24 個字元，且不含控制字元",
+    "consentRecorded": "已同意條款（v{version}）",
+    "consentMissing": "尚未同意共享條款",
+    "viewTerms": "查看完整條款",
+    "hideTerms": "收合條款",
+    "credits": "已收錄份數",
+    "staged": "待提取體積",
+    "lastSync": "上次同步：{time}",
+    "neverSynced": "從未同步",
+    "refresh": "同步",
+    "syncDone": "已同步",
+    "forget": "停止參與",
+    "forgetConfirm": "確認停止並清除身分？",
+    "forgotten": "已停止參與；本機身分與權杖已清除"
+  },
+  "consent": {
+    "contains": "一份錄影檔案包含本局所有玩家的暱稱、帳號 ID 與全部聊天紀錄。",
+    "usedFor": "徵集到的錄影僅用於地圖與點位分析、戰績校準追蹤，以及 AI 輔助研究。",
+    "noRedistribution": "原始錄影永遠不會被重新散布；對外發布的只有派生統計（艦艇、隊伍、座標與事件序列），不含任何個人資訊。",
+    "contributorList": "每個版本發布時，本頁下方的「參與共享的人員」名單會隨之更新：按伺服器與遊戲 ID 排列，每人標籤右側的數字為其共享份數；點擊任意人員可跳轉水表查詢查看其公開戰績。",
+    "identity": "署名身分為自報的伺服器與遊戲 ID，不綁定任何帳戶，可在上方隨時修改。",
+    "revoke": "停止參與只會中止後續上傳；已徵集的資料將按上述條款繼續處理。",
+    "agree": "我已閱讀並同意以上全部條款"
+  },
+  "wizard": {
+    "title": "錄影共享精靈",
+    "hint": "按精靈選擇並上傳錄影；伺服器只接收目前徵集範圍內的對局。",
+    "step": {
+      "intro": "說明",
+      "select": "選擇錄影",
+      "upload": "檢查與上傳",
+      "done": "完成"
+    },
+    "next": "下一步",
+    "prev": "上一步",
+    "startUpload": "開始上傳",
+    "doneLabel": "完成",
+    "viewContributors": "查看參與人員"
+  },
+  "select": {
+    "checkCard": "選擇{name}的錄影",
+    "rescan": "重新掃描",
+    "smart": "智慧匹配",
+    "planning": "正在分析本機錄影（計算校驗和並匹配徵集範圍）…",
+    "empty": "沒有找到本機錄影。先安裝遊戲或進行一局對戰，再回到這裡。",
+    "filterEmpty": "目前篩選條件下沒有錄影。",
+    "summary": "已選 {n} 份",
+    "estSize": "預計約 {size}",
+    "verdict": {
+      "accept": "徵集中",
+      "own_staged": "已在我的共享包",
+      "duplicate": "已收錄",
+      "unwanted": "暫不需要"
+    }
+  },
+  "upload": {
+    "stage": {
+      "plan": "規劃",
+      "check": "校驗",
+      "mine": "同步",
+      "pack": "打包",
+      "upload": "上傳"
+    },
+    "failed": "上傳失敗",
+    "items": "{done}/{total} 項",
+    "cancel": "取消",
+    "outcome": {
+      "accepted": "已收錄",
+      "duplicate": "重複",
+      "unwanted": "未接收",
+      "failed": "失敗"
+    }
+  },
+  "done": {
+    "summary": "收錄 {accepted} 份，重複 {duplicate} 份，未接收 {unwanted} 份，失敗 {failed} 份。",
+    "hint": "感謝你的貢獻！有收錄的錄影會計入下個版本的參與人員名單。"
+  },
+  "contributors": {
+    "title": "參與共享的人員",
+    "hint": "按伺服器與遊戲 ID 排列；右側數字為共享份數。點擊任意人員可查看其公開水表。",
+    "empty": "暫無貢獻者。完成首次共享後，這裡會在下個版本更新時出現。",
+    "self": "我",
+    "count": "{n}",
+    "note": "名單隨版本發布更新，資料來自徵集伺服器。"
+  }
+}

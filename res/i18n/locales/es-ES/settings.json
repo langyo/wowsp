@@ -137,6 +137,7 @@
   "overlayRosterPluginPage": "Abrir la página del plugin",
   "overlayFullscreenNote": "※ No disponible en pantalla completa exclusiva: en ese modo la captura de pantalla GDI solo devuelve fotogramas negros y la ventana de superposición no puede situarse sobre una cadena de intercambio a pantalla completa. Configura el modo de visualización del juego en sin bordes o en ventana.",
   "attributions": "Colaboradores y créditos",
+  "sharing": "Compartir repeticiones",
   "telemetryTitle": "Telemetría de uso",
   "telemetryToggle": "Enviar estadísticas de uso",
   "telemetryToggleDesc": "Páginas vistas e idioma de la interfaz, anónimos, enviados a Google Analytics. Al desactivarlo se deja de enviar de inmediato.",
