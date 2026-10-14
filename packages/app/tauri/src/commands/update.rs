@@ -15,7 +15,9 @@
 //! ([`resolve_latest`], used by `update_check`).
 //!
 //! `update_download` never takes the version from a mirror: it installs the
-//! official latest release named by `api.github.com` and refuses anything
+//! official latest release named by the official channels (the relay digest
+//! endpoint, cross-checked with api.github.com — see [`official_release`])
+//! and refuses anything
 //! not newer than the running build, so a stale or hostile mirror cannot
 //! turn an update into a downgrade. Every reachable source then enters the
 //! unified download hub (`commands/download_hub.rs`) as one
@@ -41,9 +43,9 @@
 //! `WoWSP_<version>_x64-installer.exe` as a byte-identical lite alias —
 //! pre-v0.3.1 updaters fetch exactly that; this build never does.
 //! Before any byte is accepted, the installer's sha256 is read from the
-//! same official release-API answer that named the version
-//! (`api.github.com`, never a mirror — the `digest` GitHub computes for
-//! every release asset) and the hub verifies the stream against it; no
+//! same official-channel answers that named the version (the relay digest
+//! doc or GitHub's `digest` field — never a mirror) and the hub verifies
+//! the stream against it; no
 //! reachable digest or a mismatch on every mirror means no installer is
 //! spawned.
 //! The hardened installer kills the running app and installs over its
@@ -238,14 +240,34 @@ fn versioned_download_base(base: &str) -> String {
 // ── Artifact integrity (official digest) ─────────────────────────────────
 
 /// The official latest-release API. Deliberately NOT routed through
-/// `github_mirror`: it is the trust anchor for both the version an update
-/// installs and the digest of installer bytes that may stream from
-/// third-party mirrors, so it must come from GitHub itself — a mirror able
-/// to name the version and serve both the artifact and its hash could
-/// forge all of them. `releases/latest` only ever names a published `v*`
-/// app release: data, model and mod-hub releases are published with
-/// `make_latest=false`.
+/// `github_mirror`: together with the relay digest endpoint below it is
+/// the trust anchor for both the version an update installs and the
+/// digest of installer bytes that may stream from third-party mirrors —
+/// a mirror able to name the version and serve both the artifact and its
+/// hash could forge all of them. `releases/latest` only ever names a
+/// published `v*` app release: data, model and mod-hub releases are
+/// published with `make_latest=false`.
 const LATEST_RELEASE_API: &str = "https://api.github.com/repos/langyo/wowsp/releases/latest";
+
+/// The relay worker's digest endpoint — the second official channel
+/// (see relay-core's `digests` module and scripts/publish_digests.py).
+/// The hostname is the app's own pairing gateway, reachable where
+/// api.github.com is not; the payload mirrors can influence neither
+/// channel. Root resolution rides the pairing module's helper so the
+/// undocumented `WOWSP_RELAY_URL` dev override (trim, scheme mapping,
+/// fallback) behaves exactly as it does for pairing.
+fn relay_digest_url() -> String {
+    format!(
+        "{}/api/digests/app",
+        super::pairing_relay::builtin_relay_root()
+    )
+}
+
+/// Per-attempt cap and attempts for the relay digest leg: the fast path
+/// gets two short tries — enough for one cold edge miss — before the
+/// GitHub budget takes over.
+const RELAY_DIGEST_TIMEOUT: Duration = Duration::from_secs(10);
+const RELAY_DIGEST_ATTEMPTS: usize = 2;
 
 /// Per-attempt cap on the official release lookup (version + digest; the
 /// payload is a few KB).
@@ -270,7 +292,7 @@ fn asset_sha256(release: &serde_json::Value, name: &str) -> Option<String> {
 
 /// The official latest release: the version to install and the sha256 of
 /// its lite installer.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct OfficialRelease {
     version: String,
     sha256: String,
@@ -295,20 +317,100 @@ fn parse_official_release(release: &serde_json::Value) -> Result<OfficialRelease
     })
 }
 
-/// Fetch the official latest release and its installer sha256. Any failure
-/// is an `Err`: an installer that cannot be verified is never spawned.
+/// One attempt at the GitHub release-API lookup; the caller owns the
+/// retry budget and the error rendering.
+async fn github_release_attempt(
+    client: &reqwest::Client,
+    url: &str,
+    timeout: Duration,
+) -> Result<serde_json::Value> {
+    let response = client
+        .get(url)
+        .header("User-Agent", "WoWSP-updater")
+        .header("Accept", "application/vnd.github+json")
+        .timeout(timeout)
+        .send()
+        .await;
+    match response {
+        Ok(r) if r.status().is_success() => r.json().await.map_err(|e| anyhow!("parse {url}: {e}")),
+        Ok(r) => Err(anyhow!("{url}: HTTP {}", r.status())),
+        Err(e) => Err(anyhow!("{url}: {e}")),
+    }
+}
+
+/// Fetch the official latest release and its installer sha256 from
+/// GitHub, with the full retry budget. Any failure is an `Err`: an
+/// installer that cannot be verified is never spawned.
 async fn fetch_official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
     let url = LATEST_RELEASE_API;
     let mut last_err = String::new();
     for _ in 0..DIGEST_ATTEMPTS {
+        match github_release_attempt(client, url, DIGEST_TIMEOUT).await {
+            Ok(release) => return parse_official_release(&release),
+            Err(e) => last_err = format!("{e:#}"),
+        }
+    }
+    bail!(
+        "cannot verify the update (official release unavailable: {last_err}); download it manually from GitHub Releases"
+    )
+}
+
+/// The relay's answer: the release fields plus the doc's per-channel
+/// publish counter (the rollback guard's input).
+#[derive(Debug, Clone, PartialEq)]
+struct RelayDigest {
+    release: OfficialRelease,
+    seq: u64,
+}
+
+/// Read the relay's app-channel digest doc (relay_core::digests::
+/// DigestDoc) into the same [`OfficialRelease`] shape the GitHub leg
+/// produces, with the same strictness: v-tag, valid version, digest for
+/// exactly the artifact this version installs.
+fn parse_relay_digest(doc: &serde_json::Value) -> Result<RelayDigest> {
+    if doc["channel"].as_str() != Some("app") {
+        bail!("the relay digest doc is not the app channel");
+    }
+    let tag = doc["tag"]
+        .as_str()
+        .ok_or_else(|| anyhow!("the relay digest doc carries no tag"))?;
+    let version = tag
+        .strip_prefix('v')
+        .filter(|version| is_valid_version(version))
+        .ok_or_else(|| anyhow!("the relay digest tag {tag:?} is not a release version"))?;
+    let name = artifact_name(version);
+    let sha256 = doc["assets"]
+        .get(&name)
+        .and_then(|v| v.as_str())
+        .filter(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| anyhow!("relay digest carries no sha256 for {name}"))?;
+    let seq = doc["seq"]
+        .as_u64()
+        .filter(|seq| *seq >= 1)
+        .ok_or_else(|| anyhow!("the relay digest doc carries no publish sequence number"))?;
+    Ok(RelayDigest {
+        release: OfficialRelease {
+            version: version.to_string(),
+            sha256,
+        },
+        seq,
+    })
+}
+
+/// Fetch the relay's app-channel digest doc. Any failure is an `Err`
+/// that [`choose_official`] turns into "fall back to GitHub".
+async fn fetch_relay_digest(client: &reqwest::Client) -> Result<RelayDigest> {
+    let url = relay_digest_url();
+    let mut last_err = String::new();
+    for _ in 0..RELAY_DIGEST_ATTEMPTS {
         let response = client
-            .get(url)
+            .get(&url)
             .header("User-Agent", "WoWSP-updater")
-            .header("Accept", "application/vnd.github+json")
-            .timeout(DIGEST_TIMEOUT)
+            .timeout(RELAY_DIGEST_TIMEOUT)
             .send()
             .await;
-        let release: serde_json::Value = match response {
+        let doc: serde_json::Value = match response {
             Ok(r) if r.status().is_success() => match r.json().await {
                 Ok(v) => v,
                 Err(e) => {
@@ -325,11 +427,122 @@ async fn fetch_official_release(client: &reqwest::Client) -> Result<OfficialRele
                 continue;
             },
         };
-        return parse_official_release(&release);
+        return parse_relay_digest(&doc);
     }
-    bail!(
-        "cannot verify the update (official release unavailable: {last_err}); download it manually from GitHub Releases"
-    )
+    bail!("relay digest channel unavailable: {last_err}")
+}
+
+/// Persisted high-water mark of accepted relay digest docs — the
+/// rollback guard relay-core's digests module documents. It only
+/// REFUSES in the case where the relay doc decides the update (GitHub
+/// unreachable); when GitHub answered and agrees, a regressed seq is an
+/// ops artifact (a rebuilt KV namespace restarts the counter), not an
+/// attack, and the mark simply never lowers. Defense-in-depth, not
+/// tamper-proofing: without doc signatures a store-level attacker can
+/// raise seq arbitrarily.
+const RELAY_SEQ_FILE: &str = ".relay-digest-seq.json";
+
+async fn accepted_relay_seq() -> Option<u64> {
+    let dir = crate::paths::ensure_data_dir().ok()?;
+    tokio::fs::read_to_string(dir.join(RELAY_SEQ_FILE))
+        .await
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Best-effort, monotone, and torn-write safe (tmp + rename): a failed
+/// or skipped mark only weakens the NEXT rollback check.
+async fn remember_relay_seq(seq: u64) {
+    let Ok(dir) = crate::paths::ensure_data_dir() else {
+        return;
+    };
+    let tmp = dir.join(format!("{RELAY_SEQ_FILE}.tmp"));
+    if tokio::fs::write(&tmp, seq.to_string()).await.is_ok() {
+        let _ = tokio::fs::rename(&tmp, dir.join(RELAY_SEQ_FILE)).await;
+    }
+}
+
+/// Pure core of the rollback check: a doc may only advance the mark
+/// (an equal seq is a replay, a lower one a revert).
+fn ensure_seq_advances(prev: Option<u64>, next: u64) -> Result<()> {
+    if prev.is_some_and(|prev| next <= prev) {
+        bail!(
+            "the relay digest regressed (seq {next} at/below the accepted {prev:?}) — refusing the update"
+        );
+    }
+    Ok(())
+}
+
+/// Combine the two official channels. Both answering must mean the same
+/// version+digest — a disagreement means one channel is lying, and the
+/// update is refused rather than guessed at. One channel answering is
+/// enough (the relay-only path is precisely the blocked-GitHub case the
+/// channel exists for); neither answering is an error the caller may
+/// still retry through GitHub's full budget.
+fn choose_official(
+    relay: Result<OfficialRelease>,
+    github: Result<OfficialRelease>,
+) -> Result<OfficialRelease> {
+    match (relay, github) {
+        (Ok(r), Err(_)) => Ok(r),
+        (Ok(r), Ok(g)) if r == g => Ok(r),
+        (Ok(r), Ok(g)) => bail!(
+            "the official digest channels disagree (relay says v{} {}, GitHub says v{} {}) — refusing to update",
+            r.version,
+            &r.sha256[..8],
+            g.version,
+            &g.sha256[..8]
+        ),
+        (Err(_), Ok(g)) => Ok(g),
+        (Err(relay_err), Err(_)) => Err(relay_err),
+    }
+}
+
+/// The official version + digest over both channels. The two legs run
+/// concurrently; the GitHub cross-check leg is a single short attempt
+/// (no retry budget) so the blocked-GitHub path costs at most one
+/// 10 s timeout — paid in parallel, never serialized. Only when both
+/// legs fail outright (the common transient shape on CN networks) does
+/// GitHub's full retry budget get spent; a channel DISAGREEMENT is
+/// terminal and never retried past.
+async fn official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
+    let github_quick = async {
+        github_release_attempt(client, LATEST_RELEASE_API, RELAY_DIGEST_TIMEOUT)
+            .await
+            .and_then(|release| parse_official_release(&release))
+    };
+    let (relay, github_quick) = tokio::join!(fetch_relay_digest(client), github_quick);
+    match (relay, github_quick) {
+        // Both quick legs unavailable: transient failures are the norm
+        // (CN networks drop api.github.com silently; the relay may be
+        // mid-deploy), so spend GitHub's full retry budget before
+        // refusing the update.
+        (Err(relay_err), Err(_)) => {
+            fetch_official_release(client).await.map_err(|github_err| {
+                anyhow!("cannot verify the update (relay: {relay_err}; GitHub: {github_err}); download it manually from GitHub Releases")
+            })
+        },
+        (Ok(relay_doc), github_quick) => {
+            let prev = accepted_relay_seq().await;
+            // The rollback refusal guards exactly the case where the
+            // relay doc DECIDES the update (GitHub unreachable). When
+            // GitHub answered, a regressed seq is an ops artifact —
+            // choosing below lets choose_official do the deciding
+            // (agreement passes, disagreement still refuses), and the
+            // monotone remember keeps the mark from ever lowering.
+            if github_quick.is_err() {
+                ensure_seq_advances(prev, relay_doc.seq)?;
+            }
+            let release = choose_official(Ok(relay_doc.release.clone()), github_quick)?;
+            if relay_doc.seq > prev.unwrap_or(0) {
+                remember_relay_seq(relay_doc.seq).await;
+            }
+            Ok(release)
+        },
+        (Err(_), Ok(g)) => Ok(g),
+    }
 }
 
 /// The parsed update-watch config (mirrors `shun::config::UpdateWatchConfig`;
@@ -679,12 +892,13 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
         .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
     let client = build_http_client()?;
     emit_phase(app, phase::RACE);
-    // The version comes from api.github.com, never from a mirror: the
-    // fastest mirror answering with an older tag must not turn the update
-    // into a downgrade (or a reinstall). The same answer carries the
-    // official digest every mirror byte is verified against; without it
-    // the update is refused.
-    let official = pass.run(fetch_official_release(&client)).await?;
+    // The version comes from the official channels — the relay digest
+    // endpoint or api.github.com, cross-checked whenever both answer —
+    // never from a mirror: the fastest mirror answering with an older
+    // tag must not turn the update into a downgrade (or a reinstall).
+    // The same answer carries the official digest every mirror byte is
+    // verified against; without it the update is refused.
+    let official = pass.run(official_release(&client)).await?;
     ensure_newer(&official.version, APP_VERSION)?;
     let version = official.version;
     // Every source is probed in parallel with a 10 s cap each; all that
@@ -1257,6 +1471,105 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("publishes no sha256 digest"), "{err}");
+    }
+
+    #[test]
+    fn relay_digest_names_the_version_and_digest() {
+        let hex = "8d88e539c25d9b8a0705c9f858f616e68f6d8ef13af4de7a00af39fb10593927";
+        let doc = serde_json::json!({
+            "channel": "app",
+            "tag": "v0.6.0",
+            "seq": 3,
+            "generated_at": "2026-10-14T12:00:00Z",
+            "assets": {
+                "WoWSP_0.6.0_x64-installer-lite.exe": hex,
+                "WoWSP_0.6.0_x64-installer.exe": format!("sha256:{hex}"),
+            }
+        });
+        assert_eq!(
+            parse_relay_digest(&doc).unwrap(),
+            RelayDigest {
+                release: OfficialRelease {
+                    version: "0.6.0".to_string(),
+                    sha256: hex.to_string(),
+                },
+                seq: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn relay_digest_rejects_the_wrong_shapes() {
+        let hex = "a".repeat(64);
+        let doc = |channel: &str, tag: &str, digest: serde_json::Value| {
+            serde_json::json!({
+                "channel": channel,
+                "tag": tag,
+                "seq": 4,
+                "assets": { "WoWSP_0.6.0_x64-installer-lite.exe": digest },
+            })
+        };
+        // Foreign channel, non-v / malformed tags, missing digest entry.
+        assert!(parse_relay_digest(&doc("res", "v0.6.0", hex.clone().into())).is_err());
+        assert!(parse_relay_digest(&doc("app", "0.6.0", hex.clone().into())).is_err());
+        assert!(parse_relay_digest(&doc("app", "v0.6.0/../x", hex.clone().into())).is_err());
+        assert!(parse_relay_digest(&doc("app", "v0.6.0", serde_json::json!(null))).is_err());
+        // Bad digests: wrong length, non-hex, GitHub's prefixed spelling.
+        assert!(parse_relay_digest(&doc("app", "v0.6.0", "a".repeat(63).into())).is_err());
+        assert!(parse_relay_digest(&doc("app", "v0.6.0", "G".repeat(64).into())).is_err());
+        assert!(
+            parse_relay_digest(&doc("app", "v0.6.0", format!("sha256:{hex}").into())).is_err(),
+            "the relay spelling is bare hex — a prefixed digest is a shape error"
+        );
+        // The publish counter is mandatory: absent or zero both refuse
+        // the doc.
+        let without_seq = serde_json::json!({
+            "channel": "app",
+            "tag": "v0.6.0",
+            "assets": { "WoWSP_0.6.0_x64-installer-lite.exe": hex },
+        });
+        assert!(parse_relay_digest(&without_seq).is_err());
+        let zero_seq = serde_json::json!({
+            "channel": "app",
+            "tag": "v0.6.0",
+            "seq": 0,
+            "assets": { "WoWSP_0.6.0_x64-installer-lite.exe": "b".repeat(64) },
+        });
+        assert!(parse_relay_digest(&zero_seq).is_err());
+    }
+
+    #[test]
+    fn relay_seq_only_advances() {
+        assert!(ensure_seq_advances(None, 1).is_ok());
+        assert!(ensure_seq_advances(Some(4), 5).is_ok());
+        // Equal is a replay, lower is a revert — both refused.
+        assert!(ensure_seq_advances(Some(4), 4).is_err());
+        let reverted = ensure_seq_advances(Some(9), 2).unwrap_err().to_string();
+        assert!(reverted.contains("regressed"), "{reverted}");
+    }
+
+    #[test]
+    fn choose_official_cross_checks_the_channels() {
+        let a = OfficialRelease {
+            version: "0.6.0".to_string(),
+            sha256: "a".repeat(64),
+        };
+        let b = OfficialRelease {
+            version: "0.6.1".to_string(),
+            sha256: "b".repeat(64),
+        };
+        let ok = |r: OfficialRelease| Ok(r);
+        let err = || Err(anyhow::anyhow!("unreachable"));
+
+        // Agreement passes; either channel alone suffices.
+        assert_eq!(choose_official(ok(a.clone()), ok(a.clone())).unwrap(), a);
+        assert_eq!(choose_official(ok(a.clone()), err()).unwrap(), a);
+        assert_eq!(choose_official(err(), ok(a.clone())).unwrap(), a);
+        // Disagreement is a hard refusal naming both sides.
+        let refused = choose_official(ok(a), ok(b)).unwrap_err().to_string();
+        assert!(refused.contains("disagree"), "{refused}");
+        // Neither channel leaves only the error to report/retry.
+        assert!(choose_official(err(), err()).is_err());
     }
 
     #[test]

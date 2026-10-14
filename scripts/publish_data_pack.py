@@ -37,6 +37,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Sibling module (same directory — sys.path[0] when run as
+# `python scripts/publish_data_pack.py`).
+import publish_digests
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TAG = "data-latest"
 MANIFEST_ASSET = "wowsp-data.json"
@@ -150,6 +154,12 @@ def main(argv: list[str]) -> int:
         for asset in prune:
             gh("release", "delete-asset", TAG, asset, "--yes")
             print(f"pruned old asset {asset}")
+        # Second official channel — the relay worker's digest store;
+        # skips without Cloudflare credentials.
+        digest_assets = {
+            p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in uploads
+        }
+        publish_digests.push_if_configured("data", TAG, digest_assets, latest=True)
     print("done")
     return 0
 

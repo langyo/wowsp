@@ -7,6 +7,7 @@
 //! static-assets layer.
 //!
 //!   GET  /api/health                     — merged health + discovery doc
+//!   GET  /api/digests/<channel>[/tag]    — release digests (updater trust)
 //!   WS   /api/relay/control?room=<64hex>&role=host|client
 //!   WS   /api/relay/resolve?code=NNNNNN
 //!   WS   /api/relay/data/<room>/<connId>[?role=host|client]
@@ -70,6 +71,14 @@ pub enum Route<'a> {
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
     FeedbackAttachment { file_token: Option<&'a str> },
+    /// GET /api/digests/<channel> — the channel's latest digest doc.
+    /// GET /api/digests/<channel>/<tag> — the doc pinned to one tag.
+    /// `channel`/`tag` are the raw path segments — validation happens
+    /// in the handler (this layer only routes).
+    Digests {
+        channel: &'a str,
+        tag: Option<&'a str>,
+    },
     /// Nothing we serve — every path outside `run_worker_first` is
     /// answered by the static-assets layer (any miss gets the SPA
     /// shell, navigation or not), so in production this only happens
@@ -124,6 +133,18 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
             };
         },
         _ => {},
+    }
+    if let Some(rest) = path.strip_prefix("/api/digests/") {
+        let mut segs = rest.split('/');
+        let channel = segs.next().unwrap_or("");
+        let tag_in_path = segs.next();
+        if segs.next().is_some() || channel.is_empty() {
+            return Route::NotFound;
+        }
+        return Route::Digests {
+            channel,
+            tag: tag_in_path.filter(|t| !t.is_empty()),
+        };
     }
     if let Some(rest) = path.strip_prefix("/api/relay/data/") {
         let mut segs = rest.split('/');
@@ -346,5 +367,53 @@ mod tests {
         // The retired verification endpoints (qq/code, qq/status) stay gone.
         assert_eq!(classify("/api/feedback/qq/code", ""), Route::NotFound);
         assert_eq!(classify("/api/feedback/qq/status", ""), Route::NotFound);
+    }
+
+    #[test]
+    fn digest_routes_classify() {
+        assert_eq!(
+            classify("/api/digests/app", ""),
+            Route::Digests {
+                channel: "app",
+                tag: None
+            }
+        );
+        // Trailing slash routes like the bare channel path.
+        assert_eq!(
+            classify("/api/digests/app/", ""),
+            Route::Digests {
+                channel: "app",
+                tag: None
+            }
+        );
+        assert_eq!(
+            classify("/api/digests/res/res-delta-a-b", ""),
+            Route::Digests {
+                channel: "res",
+                tag: Some("res-delta-a-b")
+            }
+        );
+        // The bare endpoint and deeper paths are NotFound.
+        assert_eq!(classify("/api/digests", ""), Route::NotFound);
+        assert_eq!(classify("/api/digests/", ""), Route::NotFound);
+        assert_eq!(classify("/api/digests/app/v0.6.1/extra", ""), Route::NotFound);
+        // trim_path strips every trailing slash, so `app//` is `app`.
+        assert_eq!(
+            classify("/api/digests/app//", ""),
+            Route::Digests {
+                channel: "app",
+                tag: None
+            }
+        );
+        // Raw values ride along; validation is the handler's job.
+        assert_eq!(
+            classify("/api/digests/../evil", ""),
+            Route::Digests {
+                channel: "..",
+                tag: Some("evil")
+            },
+            "path-injected segments route; the handler's channel/tag \
+             validation is what refuses them"
+        );
     }
 }

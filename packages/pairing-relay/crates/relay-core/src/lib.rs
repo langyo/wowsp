@@ -14,6 +14,7 @@
 //! version of that document.
 
 pub mod directory;
+pub mod digests;
 pub mod erp;
 pub mod feedback;
 pub mod headers;

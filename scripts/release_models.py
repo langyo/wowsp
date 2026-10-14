@@ -58,6 +58,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Sibling module (same directory — sys.path[0] when run as
+# `python scripts/release_models.py`).
+import publish_digests
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models"
 DOGTAGS_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "dogtags"
@@ -484,6 +488,20 @@ def publish(dry_run: bool) -> None:
         if images_archive is not None:
             uploads.append(str(images_archive))
         run(["gh", "release", "upload", PRIMARY_TAG, *uploads, "--repo", REPO, "--clobber"])
+
+        # Second official channel — the relay worker's digest store
+        # (skips without Cloudflare credentials). Pushed only after
+        # every GitHub upload succeeded, so a digest failure is never
+        # half-covered by missing assets.
+        digest_assets = {RES_ARCHIVE: asset_sha}
+        digest_assets[RES_MANIFEST] = sha256_file(manifest_path)
+        if images_archive is not None:
+            digest_assets[images_archive.name] = sha256_file(images_archive)
+        publish_digests.push_if_configured("res", PRIMARY_TAG, digest_assets, latest=True)
+        if delta_archive is not None:
+            publish_digests.push_if_configured(
+                "res", delta_tag, {delta_archive.name: sha256_file(delta_archive)}
+            )
 
         prune_old_deltas()
 

@@ -236,13 +236,21 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+    env:
+      # Optional second official digest channel (wowsp.langyo.xyz —
+      # reachable where api.github.com is not; see
+      # scripts/publish_digests.py). The push step below is skipped
+      # cleanly while the repo secrets are unset.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - name: Settle, guard the tag, publish
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # No checkout in this job — `gh release edit` below resolves the
-          # repo from this (gh api calls spell their path out instead).
+          # This step needs no checkout — `gh release edit` below resolves
+          # the repo from this (gh api calls spell their path out instead;
+          # only the optional digest-push step below adds one).
           GH_REPO: ${{ github.repository }}
         run: |
           ref="${{ github.ref_name }}"
@@ -335,3 +343,21 @@ jobs:
             exit 1
           fi
           echo "note: published $ref ($state)"
+
+      # Second official digest channel: push the installer digests to
+      # the pairing relay worker's /api/digests store. Skipped cleanly
+      # until the CLOUDFLARE_* secrets exist; once configured, a failing
+      # push fails the job (a stale digest channel must never pass
+      # silently after the release itself is public).
+      - uses: actions/checkout@v7
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+      - name: Push installer digests to the relay worker
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          pip install --quiet toml
+          python scripts/publish_digests.py --channel app \
+            --tag "${{ github.ref_name }}" --from-gh-release --latest

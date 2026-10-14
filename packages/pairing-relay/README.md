@@ -124,6 +124,8 @@ phone ──wss control/data ──▶ WORKER (this package) ◀──wss── 
 | `GET /feedback` | the embedded feedback form (see the feedback section above) |
 | `GET /erp` | the embedded admin review console page |
 | `GET /api/health` | merged liveness + discovery document (see below), `cache-control: no-store` |
+| `GET /api/digests/<channel>` | the channel's latest release-digest doc (see the release-digests section), `cache-control: public, max-age=300` |
+| `GET /api/digests/<channel>/<tag>` | the digest doc pinned to one tag |
 | `WS /api/relay/control?room=<64hex>&role=host\|client` | presence + open-request signaling + code allocation |
 | `WS /api/relay/resolve?code=NNNNNN` | phone: code → room handshake (`{"type":"room",…}` / rate-limited error / 404) |
 | `WS /api/relay/data/<room>/<connId>[?role=host\|client]` | the raw byte pipe |
@@ -313,6 +315,60 @@ delete FEEDBACK_TURNSTILE_BYPASS` — never leave it in place.
 The `FEEDBACK_KV` namespace is bound in `wrangler.toml` (rate-limit
 counters + the tenant-token and base-id caches; create it once with
 `npx wrangler kv namespace create FEEDBACK_KV`).
+
+## Release digests (`/api/digests`)
+
+The app updater's **second official channel** for "which version, and
+which sha256 does it install against" (the first being api.github.com —
+`packages/app/tauri/src/commands/update.rs` prefers this endpoint,
+cross-checks the two, and refuses on disagreement). The hostname is
+reachable where api.github.com is not, which is the whole point; a
+payload mirror can influence neither channel.
+
+Served shape (`relay-core::digests::DigestDoc`):
+
+```json
+{
+  "channel": "app",
+  "tag": "v0.6.1",
+  "seq": 12,
+  "generated_at": "2026-10-14T12:00:00Z",
+  "assets": { "WoWSP_0.6.1_x64-installer-lite.exe": "<64-hex>" }
+}
+```
+
+Channels and their publishers: `app` ← release.yml, `mod-hub` ←
+mod_hub_publish.py, `res` ← release_models.py, `data` ←
+publish_data_pack.py — all through `scripts/publish_digests.py`, which
+maintains the KV keys (`digest:<channel>:<tag>` per tag plus the
+`digest-latest:<channel>` pointer) with a per-channel strictly
+increasing `seq`.
+
+**Enabling** (until then the route answers 503 and the updater simply
+falls back to api.github.com, its pre-digest-relay behavior):
+
+```sh
+cd packages/pairing-relay
+npx wrangler kv namespace create DIGESTS   # paste the id into wrangler.toml
+# (uncomment the [[kv_namespaces]] DIGESTS block there, then deploy)
+npx wrangler deploy
+```
+
+Publish-side credentials (env, never committed; a token scoped to
+Workers KV Storage ▶ Edit on the one namespace is enough):
+`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` locally, and the same
+two as repo secrets for release.yml's push step (which skips cleanly
+while unset). A doc failing the worker's shape validation answers 500 —
+that is store corruption or tampering, never something to serve.
+
+**Ops notes**: the channel must keep moving with GitHub — once digests
+are enabled, a release published without its digest push makes the app
+updater refuse (the two official channels disagreeing is fail-closed by
+design, and release.yml fails loudly while the secrets are set). If the
+KV namespace is ever rebuilt from scratch, the per-channel `seq`
+counters restart at 1: harmless (a GitHub-reachable client accepts the
+reset and re-climbs; the rollback refusal only applies when the relay
+doc is the sole decider), but avoid deleting the namespace casually.
 
 ## Deploy
 

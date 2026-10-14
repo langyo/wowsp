@@ -44,6 +44,10 @@ import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# Sibling module (same directory — sys.path[0] when run as
+# `python scripts/mod_hub_publish.py`).
+import publish_digests
+
 REPO = "langyo/wowsp"
 ROOT_URL = "https://repo.aslain.com/wows_modmanager/root.xml"
 RELEASE_TAG = "mod-hub"
@@ -1055,6 +1059,14 @@ def index(cache: Path) -> None:
     out.write_text(json.dumps(index_json, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     subprocess.run(["gh", "release", "upload", RELEASE_TAG, "--repo", REPO, "--clobber", str(out)], check=True)
     print(f"mod-index.json ({len(index_json['mods'])} mods) -> release {RELEASE_TAG}")
+    # Second official channel — the relay worker's digest store; skips
+    # without Cloudflare credentials (scripts/publish_digests.py).
+    publish_digests.push_if_configured(
+        "mod-hub",
+        RELEASE_TAG,
+        {"mod-index.json": hashlib.sha256(out.read_bytes()).hexdigest()},
+        latest=True,
+    )
 
 
 # ---------------------------------------------------------------- main

@@ -19,6 +19,7 @@
 //!     (the erp console logs in via Feishu OAuth — see src/erp.rs)
 //!     (the feedback form and the admin review console).
 
+pub mod digests;
 pub mod directory;
 pub mod erp;
 pub mod feedback;
@@ -64,6 +65,11 @@ async fn route(req: Request, env: Env) -> Result<Response> {
             let mut resp = Response::from_json(&health)?;
             resp.headers_mut().set("cache-control", "no-store")?;
             Ok(resp)
+        },
+
+        // ── release digests (see src/digests.rs) ────────────────────────
+        Route::Digests { channel, tag } => {
+            digests::handle(req, env, channel, tag).await
         },
 
         // ── feedback pipeline (see src/feedback.rs) ─────────────────────
