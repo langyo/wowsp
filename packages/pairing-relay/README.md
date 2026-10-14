@@ -352,8 +352,9 @@ maintains the KV keys (`digest:<channel>:<tag>` per tag plus the
 `digest-latest:<channel>` pointer) with a per-channel strictly
 increasing `seq`.
 
-**Enabling** (until then the route answers 503 and the updater simply
-falls back to api.github.com, its pre-digest-relay behavior):
+**Enabled since 2026-10-14** (namespace `DIGESTS`, id in
+`wrangler.toml`; before that the route answered 503 and the updater
+fell back to api.github.com):
 
 ```sh
 cd packages/pairing-relay

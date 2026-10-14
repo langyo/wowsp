@@ -7,36 +7,34 @@ embeds them at compile time (`PINNED_DIGEST_KEYS` in
 `packages/app/tauri/src/commands/update.rs` via `include_str!`), which
 is what makes the KV store and the worker itself unable to forge a doc.
 
-**Private seeds never enter this repository** (AGENTS.md §7). Ceremony:
+**Private seeds never enter this repository** (AGENTS.md §7).
+
+**Current state (since 2026-10-14):** `main` + `backup` are generated
+and pinned; a valid signature by a listed key is REQUIRED. The seeds
+live at `~/.wowsp-signing/` on the maintainer's machine, and the
+`WOWSP_DIGEST_SIGNING_KEY` repo secret carries the `main` seed for
+release.yml (local publishes export the same value).
+
+Restoring / rotating after a seed loss (the `backup` path needs no app
+release — it is already pinned):
 
 ```sh
-# 1. generate a keypair — the private seed lands OUTSIDE the repo
-python scripts/catalog_signing.py genkey --key-id main \
-    --out-pub packages/app/tauri/res/keys/digest-main.pub \
-    --out-priv ~/.wowsp-signing/digest-main.key
-
-# 2. pin the public key (one line in update.rs)
-#    ("main", include_str!("../../res/keys/digest-main.pub")),
-#    → PINNED_DIGEST_KEYS, after which signed docs are REQUIRED
-
-# 3. export the seed where docs get published
-export WOWSP_DIGEST_SIGNING_KEY="$(cat ~/.wowsp-signing/digest-main.key)"
-# (release.yml reads the same value from the WOWSP_DIGEST_SIGNING_KEY
-#  repo secret; WOWSP_DIGEST_SIGNING_KEY_ID overrides the id, default
-#  "main")
+# sign with backup instead of main (local publish or secret swap):
+export WOWSP_DIGEST_SIGNING_KEY="$(cat ~/.wowsp-signing/digest-backup.key)"
+gh secret set WOWSP_DIGEST_SIGNING_KEY < ~/.wowsp-signing/digest-backup.key
 ```
 
-**Rollout ordering (the one rule that matters):** pinning the key and
-setting the secret must land in the same wave, BEFORE the next release
-tag. A build with an EMPTY pin list refuses signed docs (unknown key),
-and a pin-carrying build refuses unsigned ones — cutting a release
-either side of the flip only degrades the relay leg to the GitHub
-fallback (CN users lose relay auto-update for that release), never a
-hard brick, but keep the wave tight anyway.
+Rotation forward = generate a new id (`genkey` below), pin it
+alongside, sign with it, retire the old ids in a later release.
 
-Generate a `backup` keypair at the same time and pin BOTH while signing
-with `main`: if a seed is ever lost, publishing switches to `backup`
-with no app release needed. Rotation forward = generate a new id, pin
-it alongside, sign with it, retire the old ids in a later release.
+Fresh keypair ceremony (for a new id):
+
+```sh
+python scripts/catalog_signing.py genkey --key-id <id> \
+    --out-pub packages/app/tauri/res/keys/digest-<id>.pub \
+    --out-priv ~/.wowsp-signing/digest-<id>.key
+# pin the .pub in update.rs PINNED_DIGEST_KEYS, set/swap the secret,
+# and land pin + secret in the same wave before the next release tag.
+```
 
 File format: one line, standard base64 of the 32 raw key bytes.

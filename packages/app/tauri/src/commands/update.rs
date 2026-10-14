@@ -366,21 +366,18 @@ struct RelayDigest {
 /// Compile-time pinned Ed25519 public keys (standard base64 of the 32
 /// raw bytes) that relay digest docs may be signed with. The private
 /// seeds NEVER enter this repository (AGENTS.md §7) — see the ceremony
-/// in scripts/catalog_signing.py and res/keys/README.md.
+/// in scripts/catalog_signing.py and res/keys/README.md (seeds live at
+/// ~/.wowsp-signing/ on the maintainer's machine; the WOWSP_DIGEST_
+/// SIGNING_KEY repo secret carries the `main` seed for release.yml).
 ///
-/// Transition policy: while this list is EMPTY, unsigned docs are
-/// accepted (the channel is young and nothing signs yet) — but SIGNED
-/// docs are already refused as unknown-key, so once the signing secret
-/// exists, no release may be cut from an empty-pinlist commit. As soon
-/// as the first key lands here, a valid signature by a listed key
-/// becomes REQUIRED — the KV store and the worker itself can then no
-/// longer forge a doc, and a replayed old doc is all that remains
-/// (which the seq ratchet refuses). The pin commit and the
-/// WOWSP_DIGEST_SIGNING_KEY secret must land in the same wave, before
-/// the next release tag (see res/keys/README.md).
+/// With keys pinned, a valid signature by a listed key is REQUIRED —
+/// the KV store and the worker itself can no longer forge a doc, and a
+/// replayed old signed doc is all that remains (which the seq ratchet
+/// refuses). `backup` is pinned for rotation: publishes sign with
+/// `main` and may switch to `backup` with no app release in between.
 const PINNED_DIGEST_KEYS: &[(&str, &str)] = &[
-    // ("main", include_str!("../../res/keys/digest-main.pub")),
-    // ("backup", include_str!("../../res/keys/digest-backup.pub")),
+    ("main", include_str!("../../res/keys/digest-main.pub")),
+    ("backup", include_str!("../../res/keys/digest-backup.pub")),
 ];
 
 /// Verify the doc's optional Ed25519 signature layer against `keys`.
@@ -1570,8 +1567,11 @@ mod tests {
                 "WoWSP_0.6.0_x64-installer.exe": format!("sha256:{hex}"),
             }
         });
+        // Field parsing with the unsigned transition's key table; with
+        // the production pins live, this exact doc is refused — which
+        // the assertion after this one pins down.
         assert_eq!(
-            parse_relay_digest(&doc).unwrap(),
+            parse_relay_digest_with(&doc, &[]).unwrap(),
             RelayDigest {
                 release: OfficialRelease {
                     version: "0.6.0".to_string(),
@@ -1579,6 +1579,11 @@ mod tests {
                 },
                 seq: 3,
             }
+        );
+        let refused = parse_relay_digest(&doc).unwrap_err().to_string();
+        assert!(
+            refused.contains("unsigned"),
+            "production pins are live: {refused}"
         );
     }
 
@@ -1593,16 +1598,19 @@ mod tests {
                 "assets": { "WoWSP_0.6.0_x64-installer-lite.exe": digest },
             })
         };
+        // Shape checks run against the unsigned transition's key table
+        // so each refusal below is about the FIELD, not the signature.
+        let parse = |v: &serde_json::Value| parse_relay_digest_with(v, &[]);
         // Foreign channel, non-v / malformed tags, missing digest entry.
-        assert!(parse_relay_digest(&doc("res", "v0.6.0", hex.clone().into())).is_err());
-        assert!(parse_relay_digest(&doc("app", "0.6.0", hex.clone().into())).is_err());
-        assert!(parse_relay_digest(&doc("app", "v0.6.0/../x", hex.clone().into())).is_err());
-        assert!(parse_relay_digest(&doc("app", "v0.6.0", serde_json::json!(null))).is_err());
+        assert!(parse(&doc("res", "v0.6.0", hex.clone().into())).is_err());
+        assert!(parse(&doc("app", "0.6.0", hex.clone().into())).is_err());
+        assert!(parse(&doc("app", "v0.6.0/../x", hex.clone().into())).is_err());
+        assert!(parse(&doc("app", "v0.6.0", serde_json::json!(null))).is_err());
         // Bad digests: wrong length, non-hex, GitHub's prefixed spelling.
-        assert!(parse_relay_digest(&doc("app", "v0.6.0", "a".repeat(63).into())).is_err());
-        assert!(parse_relay_digest(&doc("app", "v0.6.0", "G".repeat(64).into())).is_err());
+        assert!(parse(&doc("app", "v0.6.0", "a".repeat(63).into())).is_err());
+        assert!(parse(&doc("app", "v0.6.0", "G".repeat(64).into())).is_err());
         assert!(
-            parse_relay_digest(&doc("app", "v0.6.0", format!("sha256:{hex}").into())).is_err(),
+            parse(&doc("app", "v0.6.0", format!("sha256:{hex}").into())).is_err(),
             "the relay spelling is bare hex — a prefixed digest is a shape error"
         );
         // The publish counter is mandatory: absent or zero both refuse
@@ -1612,14 +1620,14 @@ mod tests {
             "tag": "v0.6.0",
             "assets": { "WoWSP_0.6.0_x64-installer-lite.exe": hex },
         });
-        assert!(parse_relay_digest(&without_seq).is_err());
+        assert!(parse(&without_seq).is_err());
         let zero_seq = serde_json::json!({
             "channel": "app",
             "tag": "v0.6.0",
             "seq": 0,
             "assets": { "WoWSP_0.6.0_x64-installer-lite.exe": "b".repeat(64) },
         });
-        assert!(parse_relay_digest(&zero_seq).is_err());
+        assert!(parse(&zero_seq).is_err());
     }
 
     #[test]

@@ -73,14 +73,11 @@ binding = "FEEDBACK_KV"
 id = "a523e16e116b4f9fa5878c721c133028"
 
 # Release-digest KV — the /api/digests/<channel> endpoint's store (see
-# crates/relay-core/src/digests.rs and scripts/publish_digests.py). To
-# enable: `npx wrangler kv namespace create DIGESTS`, paste the id below,
-# deploy. Until then the route answers 503 and the app updater falls back
-# to api.github.com (its pre-digest-relay behavior), so leaving this
-# commented out never blocks a deploy of unrelated features.
-# [[kv_namespaces]]
-# binding = "DIGESTS"
-# id = "<paste-the-namespace-id>"
+# crates/relay-core/src/digests.rs and scripts/publish_digests.py).
+# Created 2026-10-14 (`npx wrangler kv namespace create DIGESTS`).
+[[kv_namespaces]]
+binding = "DIGESTS"
+id = "15ffe26d12d44b52a0649c375ae975fb"
 
 # Two SQLite-backed Durable Object classes — what the Workers FREE tier
 # provisions:
