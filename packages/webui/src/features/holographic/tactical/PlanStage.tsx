@@ -80,6 +80,11 @@ export default defineComponent({
     /** CSS selector the overview minimap teleports into (the tactics page's
      *  right side panel); absent keeps the in-stage corner card. */
     minimapTeleport: { type: String, default: undefined },
+    /** CSS selector the board dock (toolbar + timeline) teleports into —
+     *  the tactics page's FULL-WIDTH row under the workspace, so the side
+     *  panels frame the map only and the timeline spans everything.
+     *  Absent keeps the dock in-stage under the square (replay host). */
+    dockTeleport: { type: String, default: undefined },
   },
   setup(props, { expose }) {
     const artCanvas = ref<HTMLCanvasElement | null>(null);
@@ -685,6 +690,14 @@ export default defineComponent({
                 onImport={() => bundleInput.value?.click()}
               />
             </Teleport>
+            {/* The dock's landing element mounts BEFORE the board: the
+                board's own deferred teleport into #tactics-tac-dock queues
+                its post-render mount during this same patch, and deferred
+                teleports resolve in queue order — landing first is what
+                makes the nested target exist in time. */}
+            <Teleport defer to={props.dockTeleport ?? "body"} disabled={!props.dockTeleport}>
+              <div class="plan-stage__dock" id={PLAN_DOCK_ID} />
+            </Teleport>
             <div class="plan-stage__viewport">
               <div ref={stageRef} class="plan-stage__stage">
                 <canvas ref={artCanvas} class="plan-stage__art" />
@@ -749,7 +762,6 @@ export default defineComponent({
                 )}
               </div>
             </div>
-            <div class="plan-stage__dock" id={PLAN_DOCK_ID} />
             <input
               ref={bundleInput}
               class="plan-stage__file-input"

@@ -1,3 +1,5 @@
+@use "../../features/holographic/hudTokens" as hud;
+
 /* Tactics page - the plan board's full-bleed host. Top bar (map/mode,
    lineup, profile) over a three-column workspace: branch tree | square plan
    stage | side minimap. The flanking columns only exist on wide windows
@@ -84,7 +86,7 @@
   }
 }
 
-/* -- Workspace ------------------------------------------------------------ */
+/* -- Workspace (the flanked map row) -------------------------------------- */
 .tac-workspace {
   flex: 1;
   min-height: 0;
@@ -136,6 +138,31 @@
       aspect-ratio: 1 / 1;
     }
   }
+}
+
+/* -- The board dock (toolbar + timeline), FULL WIDTH under the workspace:
+      the branch/minimap panels frame the map only. The teleported
+      .plan-stage__dock is the board's own landing element. */
+.tac-dock-row {
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.tac-dock-row .plan-stage__dock {
+  /* In-stage the dock sits under the square and inherits the stage's HUD
+     palette; teleported out here it must carry its own copy — the
+     toolbar/timeline tokens (--holo-hud-*, --tac-accent-rgb) otherwise
+     resolve to nothing. Same dark/light pair as .plan-stage. */
+  @include hud.holo-hud-dark;
+
+  padding: 0.45rem 0.6rem 0.5rem;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-md);
+}
+
+:root[data-mode="light"] .tac-dock-row .plan-stage__dock {
+  @include hud.holo-hud-light;
 }
 
 /* Phone / narrow: no flanks (their docks are unmounted), the top bar wraps

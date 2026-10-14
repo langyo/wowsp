@@ -472,12 +472,17 @@ export default defineComponent({
                 caps={session.value.caps}
                 slotsTeleport={wide.value ? "#tactics-branch-dock" : undefined}
                 minimapTeleport={wide.value ? "#tactics-minimap-dock" : undefined}
+                dockTeleport="#tactics-dock-row"
               />
             </section>
             {wide.value ? (
               <aside class="tac-workspace__side" id="tactics-minimap-dock" />
             ) : null}
           </main>
+
+          {/* The board dock (toolbar + timeline) spans the WHOLE page
+              width — the flanking panels frame the map only. */}
+          <footer class="tac-dock-row" id="tactics-dock-row" />
 
           <MapSetupModal
             modelValue={setupOpen.value}

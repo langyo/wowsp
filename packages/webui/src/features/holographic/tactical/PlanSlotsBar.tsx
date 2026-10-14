@@ -135,7 +135,7 @@ export default defineComponent({
                   onClick={() => clickChip(slot.id)}
                   onDblclick={() => beginRename(slot.id, slot.name)}
                 >
-                  {props.names[index]}
+                  <span class="plan-slots__name">{props.names[index]}</span>
                   {slot.branchT != null ? (
                     <span class="plan-slots__fork">T+{fmtClock(slot.branchT)}</span>
                   ) : null}

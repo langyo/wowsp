@@ -88,15 +88,28 @@
 }
 
 .plan-slots--tree .plan-slots__chip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
   border: 1px solid rgb(var(--color-border) / 18%);
   background: rgb(var(--color-surface));
   color: rgb(var(--color-text));
   border-radius: var(--radius-sm);
   text-align: left;
-  max-width: 100%;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+
+  /* Long plan names ellipsize; the fork clock rides the right edge. */
+  .plan-slots__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   &:hover {
     border-color: rgb(var(--color-primary) / 45%);
@@ -117,7 +130,9 @@
 
 .plan-slots__node {
   display: flex;
+  align-items: center;
   min-width: 0;
+  padding: 1px 0;
 }
 
 .plan-slots__node-branch {
@@ -144,16 +159,21 @@
 }
 
 .plan-slots--tree .plan-slots__actions--col {
-  flex-direction: column;
-  align-items: stretch;
+  /* A compact row of SQUARE icon buttons — the panel is narrow; stacked
+     full-width strips read as squashed slabs. */
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   margin: 0;
-  margin-top: 0.4rem;
-  gap: 2px;
+  margin-top: 0.5rem;
+  gap: 4px;
 }
 
 .plan-slots--tree .plan-slots__btn {
-  width: 100%;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
   color: rgb(var(--color-muted));
 
   &:hover {
