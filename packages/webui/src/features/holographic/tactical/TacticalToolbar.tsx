@@ -1,15 +1,28 @@
 /**
- * Tactical-board toolbar: one compact horizontal bar docked at the map's
- * bottom-left (replacing the old right-side rail so the map keeps its full
- * size). Frequently-used tools sit directly on the bar; everything else
- * collapses into popovers that open upward — shapes, unit markers, the
- * colour/width/dash style sheet and a "more" menu holding the time-anchor
- * toggles, history, JSON import/export and the whole export/record group.
- * Built on hikari primitives (HkIconButton, HkTooltip, HkSwitch) over the
- * stage's --holo-hud-* tokens.
+ * Tactical-board toolbar: one compact horizontal bar in the board dock.
+ * Frequently-used tools sit directly on the bar; everything else collapses
+ * into popovers that open upward — shapes, unit markers, the colour/width/
+ * dash style sheet and a "more" panel holding the time-anchor toggles,
+ * history, JSON import/export and the whole export/record group.
+ *
+ * Every flyout is hikari machinery, not hand-rolled chrome: HkPopover
+ * (anchored, auto-flipping, phone bottom-sheet) carries the panel, tool
+ * lists render as HkMenuPanel + HkMenuActionItem rows (icon + label +
+ * shortcut suffix, active row via the host's is-active class), and the
+ * export settings use HkPopupSelect — the same primitives the filter
+ * chips and admin menus are built on.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
-import { HkIconButton, HkSwitch, HkTooltip } from "@celestia-island/hikari";
+import {
+  HkIconButton,
+  HkMenuActionItem,
+  HkMenuPanel,
+  HkPopover,
+  HkPopupSelect,
+  HkSwitch,
+  HkTooltip,
+  useBreakpoint,
+} from "@celestia-island/hikari";
 import {
   ArrowRight,
   Camera,
@@ -24,10 +37,10 @@ import {
   FlipHorizontal,
   Hand,
   MapPin,
-  MousePointer2,
   Maximize2,
   Minus,
   MoreHorizontal,
+  MousePointer2,
   MoveRight,
   Palette,
   Pen,
@@ -172,11 +185,13 @@ export default defineComponent({
     onToggleCaps: { type: Function as PropType<() => void>, default: undefined },
   },
   setup(props) {
+    const { isMobile } = useBreakpoint();
     const tool = computed(() => props.store.tool.value);
     const style = computed(() => props.store.style.value);
     const markerTools = computed(() => (props.plan ? PLAN_MARKER_TOOLS : MARKER_TOOLS));
 
-    /** Which popover is open (null = none). One at a time. */
+    /** Which popover is open (null = none). One at a time — opening one
+     *  closes the previous. */
     const open = ref<string | null>(null);
     function toggle(id: string): void {
       open.value = open.value === id ? null : id;
@@ -184,14 +199,34 @@ export default defineComponent({
     function close(): void {
       open.value = null;
     }
-    function onWindowPointerDown(e: PointerEvent): void {
-      if (!(e.target as HTMLElement).closest(".tac-bar__anchor")) close();
+
+    // HkPopover only closes on outside clicks when its backdrop is active
+    // (our phone sheets); on desktop the filter-chip convention carries a
+    // capture-phase closer of its own — presses inside the bar or inside
+    // any open hikari popup (this panel, a nested HkPopupSelect) count as
+    // inside, everything else dismisses.
+    const barRoot = ref<HTMLElement | null>(null);
+    function onDocPointerDown(e: PointerEvent): void {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (barRoot.value?.contains(target)) return;
+      if (target.closest(".hk-popover-panel")) return;
+      close();
     }
     watch(open, (v, old) => {
-      if (v != null && old == null) window.addEventListener("pointerdown", onWindowPointerDown, true);
-      if (v == null) window.removeEventListener("pointerdown", onWindowPointerDown, true);
+      if (v != null && old == null) {
+        document.addEventListener("pointerdown", onDocPointerDown, true);
+      } else if (v == null) {
+        document.removeEventListener("pointerdown", onDocPointerDown, true);
+      }
     });
-    onBeforeUnmount(() => window.removeEventListener("pointerdown", onWindowPointerDown, true));
+    onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointerDown, true));
+    /** Anchors: wrapping spans around each trigger button (HkPopover
+     *  positions against the element, same wiring as the filter chips). */
+    const shapeBtn = ref<HTMLElement | null>(null);
+    const markerBtn = ref<HTMLElement | null>(null);
+    const styleBtn = ref<HTMLElement | null>(null);
+    const moreBtn = ref<HTMLElement | null>(null);
 
     /** Pick the popover button's icon: the active sub-tool when one of the
      *  group's tools is selected, else the group glyph. */
@@ -223,31 +258,46 @@ export default defineComponent({
       );
     };
 
-    const menuItem = (tl: ToolMeta) => {
+    /** One tool row in a menu panel: icon + label + shortcut suffix, the
+     *  active tool highlighted through the host's is-active class. */
+    const menuRow = (tl: ToolMeta) => {
       const Icon = tl.icon;
       const hint = TOOL_KEY_HINTS[tl.id];
       return (
-        <button
+        <HkMenuActionItem
           key={tl.id}
-          class={["tac-bar__item", tool.value === tl.id ? "tac-bar__item--on" : ""]}
+          icon={<Icon size={14} />}
+          label={i18nT(`replay.tactical.${tl.key}`)}
+          class={tool.value === tl.id ? "is-active" : ""}
           onClick={() => {
             props.store.tool.value = tl.id;
             close();
           }}
         >
-          <Icon size={14} />
-          <span>{i18nT(`replay.tactical.${tl.key}`)}</span>
-          {hint ? <kbd>{hint}</kbd> : null}
-        </button>
+          {hint ? { suffix: () => <kbd class="tac-pop__kbd">{hint}</kbd> } : undefined}
+        </HkMenuActionItem>
       );
     };
 
+    /** Shared popover wiring (the filter chips' convention): close-only
+     *  model update, anchored placement, phone bottom-sheet. */
+    const popoverProps = (id: string, anchor: () => HTMLElement | null, edge = false) => ({
+      modelValue: open.value === id,
+      "onUpdate:modelValue": (v: boolean) => {
+        if (!v && open.value === id) close();
+      },
+      anchorRef: anchor(),
+      placement: edge ? ("top-end" as const) : ("top-start" as const),
+      closeOnBackdrop: isMobile.value,
+      sheetOnMobile: true,
+    });
+
     return () => (
-      <div class="tac-bar" onClick={(e: MouseEvent) => e.stopPropagation()}>
+      <div ref={barRoot} class="tac-bar" onClick={(e: MouseEvent) => e.stopPropagation()}>
         {BAR_TOOLS.map((tl) => toolButton(tl))}
 
         {/* Shapes + text */}
-        <span class={["tac-bar__anchor", isShapeTool.value ? "tac-bar__anchor--on" : ""]}>
+        <span ref={shapeBtn} class={["tac-bar__group", isShapeTool.value ? "tac-bar__group--on" : ""]}>
           <HkTooltip text={i18nT("replay.tactical.menu.shapes")} placement="top">
             <HkIconButton
               variant={isShapeTool.value ? "primary" : "ghost"}
@@ -257,34 +307,35 @@ export default defineComponent({
               {isShapeTool.value ? <shapeIcon.value size={14} /> : <ChevronUp size={14} />}
             </HkIconButton>
           </HkTooltip>
-          {open.value === "shapes" ? (
-            <div class="tac-bar__pop">
-              {SHAPE_TOOLS.map((tl) => menuItem(tl))}
-            </div>
-          ) : null}
+          <HkPopover {...popoverProps("shapes", () => shapeBtn.value)} title={i18nT("replay.tactical.menu.shapes")}>
+            <HkMenuPanel label={i18nT("replay.tactical.menu.shapes")}>
+              {SHAPE_TOOLS.map((tl) => menuRow(tl))}
+            </HkMenuPanel>
+          </HkPopover>
         </span>
 
         {/* Unit markers + path pin (unit mode: the lineup owns units, the
             group hides entirely) */}
         {!props.lineupMode ? (
-        <span class={["tac-bar__anchor", isMarkerTool.value ? "tac-bar__anchor--on" : ""]}>
-          <HkTooltip text={i18nT("replay.tactical.menu.markers")} placement="top">
-            <HkIconButton
-              variant={isMarkerTool.value ? "primary" : "ghost"}
-              size={32}
-              onClick={() => toggle("markers")}
-            >
-              {isMarkerTool.value ? <markerIcon.value size={14} /> : <Ship size={14} />}
-            </HkIconButton>
-          </HkTooltip>
-          {open.value === "markers" ? (
-            <div class="tac-bar__pop">
-              {markerTools.value.map((tl) => menuItem(tl))}
+          <span ref={markerBtn} class={["tac-bar__group", isMarkerTool.value ? "tac-bar__group--on" : ""]}>
+            <HkTooltip text={i18nT("replay.tactical.menu.markers")} placement="top">
+              <HkIconButton
+                variant={isMarkerTool.value ? "primary" : "ghost"}
+                size={32}
+                onClick={() => toggle("markers")}
+              >
+                {isMarkerTool.value ? <markerIcon.value size={14} /> : <Ship size={14} />}
+              </HkIconButton>
+            </HkTooltip>
+            <HkPopover {...popoverProps("markers", () => markerBtn.value)} title={i18nT("replay.tactical.menu.markers")}>
+              <HkMenuPanel label={i18nT("replay.tactical.menu.markers")}>
+                {markerTools.value.map((tl) => menuRow(tl))}
+              </HkMenuPanel>
               {props.plan ? (
-                <>
-                  <div class="tac-bar__pop-sep" />
-                  <div class="tac-bar__field-label">{i18nT("replay.tactical.plan.actionLabel")}</div>
-                  <div class="tac-bar__row">
+                <div class="tac-pop__extras">
+                  <div class="tac-pop__sep" />
+                  <div class="tac-pop__label">{i18nT("replay.tactical.plan.actionLabel")}</div>
+                  <div class="tac-pop__row">
                     {ACTION_KINDS.map((kind) => {
                       const Icon = ACTION_ICONS[kind];
                       const on = props.store.actionKind.value === kind;
@@ -303,15 +354,14 @@ export default defineComponent({
                     })}
                   </div>
                   <p class="tac-bar__note">{i18nT("replay.tactical.plan.hint")}</p>
-                </>
+                </div>
               ) : null}
-            </div>
-          ) : null}
-        </span>
+            </HkPopover>
+          </span>
         ) : null}
 
         {/* Style: colour swatch (opens palette + width + dash) */}
-        <span class="tac-bar__anchor">
+        <span ref={styleBtn} class="tac-bar__group">
           <HkTooltip text={i18nT("replay.tactical.style.color")} placement="top">
             <button
               class={["tac-bar__color", open.value === "style" ? "tac-bar__color--on" : ""]}
@@ -321,8 +371,8 @@ export default defineComponent({
               <Palette size={12} class="tac-bar__color-ico" />
             </button>
           </HkTooltip>
-          {open.value === "style" ? (
-            <div class="tac-bar__pop tac-bar__pop--wide">
+          <HkPopover {...popoverProps("style", () => styleBtn.value)} title={i18nT("replay.tactical.style.color")}>
+            <div class="tac-pop tac-pop--wide">
               <div class="tac-bar__swatches">
                 {TACTICAL_PALETTE.map((c) => (
                   <button
@@ -338,7 +388,7 @@ export default defineComponent({
                   />
                 ))}
               </div>
-              <div class="tac-bar__row">
+              <div class="tac-pop__row">
                 {TACTICAL_WIDTHS.map((w) => (
                   <button
                     key={w}
@@ -363,7 +413,7 @@ export default defineComponent({
                 ))}
               </div>
             </div>
-          ) : null}
+          </HkPopover>
         </span>
 
         {props.lineupMode ? (
@@ -463,7 +513,7 @@ export default defineComponent({
         )}
 
         {/* Everything else */}
-        <span class="tac-bar__anchor tac-bar__anchor--right">
+        <span ref={moreBtn} class="tac-bar__group">
           <HkTooltip text={i18nT("replay.tactical.menu.more")} placement="top">
             <HkIconButton
               size={32}
@@ -473,8 +523,8 @@ export default defineComponent({
               <MoreHorizontal size={14} />
             </HkIconButton>
           </HkTooltip>
-          {open.value === "more" ? (
-            <div class="tac-bar__pop tac-bar__pop--wide tac-bar__pop--right">
+          <HkPopover {...popoverProps("more", () => moreBtn.value, true)} title={i18nT("replay.tactical.menu.more")}>
+            <div class="tac-pop tac-pop--wide">
               <div class="tac-bar__toggles">
                 <HkSwitch
                   modelValue={props.store.anchorToTime.value}
@@ -492,87 +542,84 @@ export default defineComponent({
                 >
                   {i18nT("replay.tactical.time.ghost")}
                 </HkSwitch>
-                <button class="tac-bar__item" onClick={() => { props.actions.resetView(); close(); }}>
-                  <Maximize2 size={14} />
-                  <span>{i18nT("replay.tactical.view.reset")}</span>
-                </button>
               </div>
-              <div class="tac-bar__pop-sep" />
-              <div class="tac-bar__grid">
-                <label class="tac-bar__field">
-                  <span class="tac-bar__field-label">{i18nT("replay.tactical.export.format")}</span>
-                  <select
-                    class="tac-bar__select"
-                    value={props.exportSettings.format}
-                    onChange={(e: Event) => {
-                      props.exportSettings.format =
-                        (e.target as HTMLSelectElement).value === "webp" ? "webp" : "png";
-                    }}
-                  >
-                    <option value="png">PNG</option>
-                    <option value="webp">WebP</option>
-                  </select>
-                </label>
-                <label class="tac-bar__field">
-                  <span class="tac-bar__field-label">{i18nT("replay.tactical.export.scale")}</span>
-                  <select
-                    class="tac-bar__select"
-                    value={String(props.exportSettings.scale)}
-                    onChange={(e: Event) => {
-                      props.exportSettings.scale =
-                        (e.target as HTMLSelectElement).value === "2" ? 2 : 1;
-                    }}
-                  >
-                    <option value="1">1×</option>
-                    <option value="2">2×</option>
-                  </select>
-                </label>
-                <label class="tac-bar__field">
-                  <span class="tac-bar__field-label">{i18nT("replay.tactical.export.range")}</span>
-                  <select
-                    class="tac-bar__select"
-                    value={props.exportSettings.offlineFrom}
-                    onChange={(e: Event) => {
-                      props.exportSettings.offlineFrom =
-                        (e.target as HTMLSelectElement).value === "start" ? "start" : "now";
-                    }}
-                  >
-                    <option value="now">{i18nT("replay.tactical.export.rangeNow")}</option>
-                    <option value="start">{i18nT("replay.tactical.export.rangeFull")}</option>
-                  </select>
-                </label>
-                <label class="tac-bar__field">
-                  <span class="tac-bar__field-label">{i18nT("replay.tactical.export.fps")}</span>
-                  <select
-                    class="tac-bar__select"
-                    value={String(props.exportSettings.offlineFps)}
-                    onChange={(e: Event) => {
-                      props.exportSettings.offlineFps =
-                        (e.target as HTMLSelectElement).value === "60" ? 60 : 30;
-                    }}
-                  >
-                    <option value="30">30</option>
-                    <option value="60">60</option>
-                  </select>
-                </label>
+              <div class="tac-pop__sep" />
+              <HkMenuPanel label={i18nT("replay.tactical.menu.more")}>
+                <HkMenuActionItem
+                  icon={<Maximize2 size={14} />}
+                  label={i18nT("replay.tactical.view.reset")}
+                  onClick={() => {
+                    props.actions.resetView();
+                    close();
+                  }}
+                />
+              </HkMenuPanel>
+              <div class="tac-pop__sep" />
+              <div class="tac-pop__grid">
+                <HkPopupSelect
+                  label={i18nT("replay.tactical.export.format")}
+                  modelValue={props.exportSettings.format}
+                  options={[
+                    { value: "png", label: "PNG" },
+                    { value: "webp", label: "WebP" },
+                  ]}
+                  onUpdate:modelValue={(v: string) => {
+                    props.exportSettings.format = v === "webp" ? "webp" : "png";
+                  }}
+                />
+                <HkPopupSelect
+                  label={i18nT("replay.tactical.export.scale")}
+                  modelValue={String(props.exportSettings.scale)}
+                  options={[
+                    { value: "1", label: "1×" },
+                    { value: "2", label: "2×" },
+                  ]}
+                  onUpdate:modelValue={(v: string) => {
+                    props.exportSettings.scale = v === "2" ? 2 : 1;
+                  }}
+                />
+                <HkPopupSelect
+                  label={i18nT("replay.tactical.export.range")}
+                  modelValue={props.exportSettings.offlineFrom}
+                  options={[
+                    { value: "now", label: i18nT("replay.tactical.export.rangeNow") },
+                    { value: "start", label: i18nT("replay.tactical.export.rangeFull") },
+                  ]}
+                  onUpdate:modelValue={(v: string) => {
+                    props.exportSettings.offlineFrom = v === "start" ? "start" : "now";
+                  }}
+                />
+                <HkPopupSelect
+                  label={i18nT("replay.tactical.export.fps")}
+                  modelValue={String(props.exportSettings.offlineFps)}
+                  options={[
+                    { value: "30", label: "30" },
+                    { value: "60", label: "60" },
+                  ]}
+                  onUpdate:modelValue={(v: string) => {
+                    props.exportSettings.offlineFps = v === "60" ? 60 : 30;
+                  }}
+                />
               </div>
-              <HkSwitch
-                modelValue={props.exportSettings.timestamp}
-                onUpdate:modelValue={(v: boolean) => {
-                  props.exportSettings.timestamp = v;
-                }}
-              >
-                {i18nT("replay.tactical.export.timestamp")}
-              </HkSwitch>
-              <HkSwitch
-                modelValue={props.exportSettings.minimap}
-                onUpdate:modelValue={(v: boolean) => {
-                  props.exportSettings.minimap = v;
-                }}
-              >
-                {i18nT("replay.tactical.export.minimap")}
-              </HkSwitch>
-              <div class="tac-bar__row tac-bar__row--actions">
+              <div class="tac-bar__toggles">
+                <HkSwitch
+                  modelValue={props.exportSettings.timestamp}
+                  onUpdate:modelValue={(v: boolean) => {
+                    props.exportSettings.timestamp = v;
+                  }}
+                >
+                  {i18nT("replay.tactical.export.timestamp")}
+                </HkSwitch>
+                <HkSwitch
+                  modelValue={props.exportSettings.minimap}
+                  onUpdate:modelValue={(v: boolean) => {
+                    props.exportSettings.minimap = v;
+                  }}
+                >
+                  {i18nT("replay.tactical.export.minimap")}
+                </HkSwitch>
+              </div>
+              <div class="tac-pop__row tac-pop__row--actions">
                 <HkTooltip text={i18nT("replay.tactical.export.full")} placement="top">
                   <HkIconButton size={32} disabled={props.busy} onClick={() => { props.actions.exportFull(); close(); }}>
                     <Camera size={14} />
@@ -637,7 +684,7 @@ export default defineComponent({
                 {i18nT("replay.tactical.count", { n: props.store.elements.value.length })}
               </div>
             </div>
-          ) : null}
+          </HkPopover>
         </span>
       </div>
     );
