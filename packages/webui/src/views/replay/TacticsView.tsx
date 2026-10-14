@@ -27,7 +27,7 @@ import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { loadMapBounds, type MapBounds } from "@/features/holographic/modelLoader";
 import TacticalPlanStage from "@/features/holographic/tactical/PlanStage";
-import MapSetupModal from "@/features/holographic/tactical/MapSetupModal";
+import MapSetupModal, { type MapSetupChoice } from "@/features/holographic/tactical/MapSetupModal";
 import LineupEditorModal from "@/features/holographic/tactical/LineupEditorModal";
 import {
   instantiateCaps,
@@ -94,17 +94,20 @@ export default defineComponent({
 
     // ── World bounds (cap instantiation, spawn poses, mirroring) ────────
     const allBounds = ref<Map<string, MapBounds> | null>(null);
-    const bounds = computed<MapBounds | null>(() => {
+    /** Case-tolerant bounds lookup (the minimaps.json keys use the bare
+     *  space id; a `spaces/` prefix and case drift both resolve). */
+    function boundsOf(spaceId: string): MapBounds | null {
       const all = allBounds.value;
       if (!all) return null;
-      const key = selected.value.replace(/^spaces\//, "");
+      const key = spaceId.replace(/^spaces\//, "");
       return (
         all.get(key) ??
         all.get(key.toLowerCase()) ??
         [...all.entries()].find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1] ??
         null
       );
-    });
+    }
+    const bounds = computed<MapBounds | null>(() => boundsOf(selected.value));
     onMounted(() => {
       void loadMapBounds().then((all) => {
         allBounds.value = all;
@@ -140,24 +143,48 @@ export default defineComponent({
     // ── Setup wizard (map + mode) ───────────────────────────────────────
     const setupOpen = ref(false);
     /** Wizard result waiting for its map to become the selection (a map
-     *  switch reloads the session; the mode lands right after). */
-    let pendingMode: { mapId: string; modeId: string } | null = null;
+     *  switch reloads the session; the choice lands right after). */
+    let pendingMode: { mapId: string; choice: MapSetupChoice } | null = null;
 
-    function onSetupConfirm(mapId: string, modeId: string): void {
+    function onSetupConfirm(mapId: string, choice: MapSetupChoice): void {
       if (mapId !== selected.value) {
-        pendingMode = { mapId, modeId };
+        pendingMode = { mapId, choice };
         selected.value = mapId;
       } else {
-        applyMode(modeId);
+        applyChoice(choice);
       }
     }
     watch(selected, (id) => {
       if (pendingMode && pendingMode.mapId === id) {
-        const { modeId } = pendingMode;
+        const { choice } = pendingMode;
         pendingMode = null;
-        applyMode(modeId);
+        applyChoice(choice);
       }
     });
+
+    /** Apply the wizard's step-2 choice: a MEASURED layout lands its exact
+     *  replay-learned points (radius included, letters by point index,
+     *  ownership left neutral — the replay's team orientation vs the
+     *  board's ally-south spawn is not inferable from the layout alone);
+     *  a template preset instantiates as before. */
+    function applyChoice(choice: MapSetupChoice): void {
+      if (choice.kind === "learned") {
+        session.value = {
+          ...session.value,
+          modeId: null,
+          caps: choice.layout.caps.map((c) => ({
+            letter: String.fromCharCode(65 + Math.max(0, Math.min(25, c.index))),
+            at: { x: c.x, z: c.z },
+            radius: c.radius ?? 115,
+            team: null,
+            ...(c.appearT != null && c.appearT > 0 ? { appearT: c.appearT } : {}),
+          })),
+        };
+        persist();
+        return;
+      }
+      applyMode(choice.presetId);
+    }
 
     /** Switch the session's battle mode: re-instantiate the capture layout
      *  from the preset template over this map's playable rect. */
@@ -394,7 +421,9 @@ export default defineComponent({
               >
                 <MapIcon size={14} />
                 <span class="tac-topbar__map-name">{mapLabel || t("tactics.setup.title")}</span>
-                <span class="tac-topbar__map-mode">{t(`tactics.mode.${modeLabel.value}`)}</span>
+                {session.value.modeId != null ? (
+                  <span class="tac-topbar__map-mode">{t(`tactics.mode.${modeLabel.value}`)}</span>
+                ) : null}
               </button>
             </HkTooltip>
 
@@ -457,6 +486,8 @@ export default defineComponent({
             currentModeId={session.value.modeId}
             spaceIds={[...ANALYSABLE_SPACE_IDS]}
             bucketsOf={bucketsOf}
+            getBounds={(id) => boundsOf(id)}
+            replaysDir={activePath.value ? replaysDir(activePath.value) : undefined}
             onConfirm={onSetupConfirm}
           />
           <LineupEditorModal

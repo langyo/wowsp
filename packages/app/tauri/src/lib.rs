@@ -495,6 +495,10 @@ pub fn run() {
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
+            // Per-(map, scenario) cap layouts learned from local replays
+            // (commands/replay/cap_layouts.rs) — the map-setup wizard's
+            // "measured" layouts.
+            commands::replay::get_map_cap_layouts,
             commands::replay::read_live_replay_snapshot,
             commands::replay::live_temp_replay,
             commands::replay::list_replays,

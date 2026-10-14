@@ -55,6 +55,10 @@ export const RPC = {
   // shareable 档案 — a zip of profile.toml + per-branch plan JSON.
   tactics_profile_save: "tactics_profile_save",
   tactics_profile_open: "tactics_profile_open",
+  // Per-(map, scenario) capture layouts learned from the local replay
+  // history (commands/replay/cap_layouts.rs) — the map wizard's measured
+  // layouts.
+  get_map_cap_layouts: "get_map_cap_layouts",
   copy_image_to_clipboard: "copy_image_to_clipboard",
   read_temp_arena_info: "read_temp_arena_info",
   start_arena_watcher: "start_arena_watcher",

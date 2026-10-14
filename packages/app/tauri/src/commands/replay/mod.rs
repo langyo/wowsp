@@ -55,6 +55,7 @@
 // `listing`  — replay directory walks + the list/pick commands.
 // `tests`    — the unit suite (moved with the code it tests).
 
+mod cap_layouts;
 mod listing;
 mod meta;
 mod streams;
@@ -71,6 +72,9 @@ pub(crate) use super::{game_client, game_context, game_detect, packets, probe_ro
 // command fn and its doc(hidden) sibling macros (`__cmd__*` /
 // `__tauri_command_name_*`) through `commands::replay::*`, exactly like
 // `commands/mod_hub/mod.rs` — so those paths are re-exported verbatim.
+pub use cap_layouts::{
+    __cmd__get_map_cap_layouts, __tauri_command_name_get_map_cap_layouts, get_map_cap_layouts,
+};
 pub use listing::{
     __cmd__list_replays, __cmd__list_replays_meta, __cmd__pick_replay_files,
     __tauri_command_name_list_replays, __tauri_command_name_list_replays_meta,

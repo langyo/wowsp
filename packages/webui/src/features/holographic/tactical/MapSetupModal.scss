@@ -173,18 +173,20 @@
     color: rgb(var(--color-warning));
   }
 
-  /* Cap template dots over the preview (percent-positioned by the modal). */
+  /* Cap rings over the preview: percent-positioned by the modal, width in
+     percent of the preview = the ring's TRUE world diameter over the map's
+     playable span (the aspect is square), so what the author approves is
+     what lands on the board. Without bounds a schematic dot stands in. */
   &__cap {
     position: absolute;
     transform: translate(-50%, -50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    aspect-ratio: 1 / 1;
     border: 1.5px solid rgb(226 232 240 / 85%);
     border-radius: 999px;
-    background: rgb(8 14 26 / 62%);
+    background: rgb(8 14 26 / 42%);
     color: rgb(226 232 240 / 95%);
     font-size: 11px;
     font-weight: 700;
@@ -199,6 +201,21 @@
       border-color: rgb(244 63 94 / 90%);
       color: rgb(253 164 175);
     }
+
+    /* No-bounds fallback: a fixed schematic dot. */
+    &--dot {
+      width: 20px;
+    }
+  }
+
+  /* Section labels inside the mode list (measured vs templates). */
+  &__section-label {
+    margin-top: 0.35rem;
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(var(--color-muted));
   }
 
   /* Phone: the preview drops under the browser, capped height. */
@@ -209,9 +226,10 @@
       width: 100%;
     }
 
-    &__art-wrap &__cap {
+    /* True-scale rings keep their inline width + square aspect; only the
+       no-bounds dot shrinks on phones. */
+    &__art-wrap &__cap--dot {
       width: 16px;
-      height: 16px;
       font-size: 10px;
     }
   }

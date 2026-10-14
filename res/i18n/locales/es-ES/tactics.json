@@ -43,7 +43,14 @@
     "confirm": "Empezar a planificar",
     "capCount": "{n} puntos de captura",
     "capNone": "Sin puntos de captura",
-    "duration": "Batalla de {m} minutos"
+    "duration": "Batalla de {m} minutos",
+    "next": "Siguiente",
+    "learnedSection": "Medido de tus repeticiones",
+    "templateSection": "Plantillas (sin calibrar)",
+    "measured": "Medido",
+    "learning": "Aprendiendo puntos de tus repeticiones…",
+    "noLearned": "Aún no hay repeticiones de este mapa en este equipo: juega una partida y los puntos medidos aparecerán aquí.",
+    "learnedFrom": "De la repetición {date}"
   },
   "mode": {
     "dom4": "Aleatorio · 4 puntos",

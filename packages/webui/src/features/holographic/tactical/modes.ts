@@ -21,7 +21,8 @@ export interface CapSpec {
   /** Display letter (A, B, C …); the plan board shows it on the ring. */
   letter: string;
   at: Vec2;
-  /** Ring radius in world units (WoWS standard cap ~ 700 m ≈ 23.3 units). */
+  /** Ring radius in world units (measured band 110–140, see
+   *  CAP_RADIUS_UNITS). */
   radius: number;
   /** Owning side at t0 (null = neutral). Base caps of a symmetric layout
    *  belong to their side of the map. */
@@ -50,8 +51,12 @@ export interface ModePreset {
   caps: CapSpec[];
 }
 
-/** Standard WoWS cap ring radius in world units (700 m / 30). */
-export const CAP_RADIUS_UNITS = 700 / 30;
+/** Template cap ring radius in world units, calibrated to the band the
+ *  replay-learned layouts measure (110–140 across current maps — a Two
+ *  Brothers domination point reads 110 for the side caps, 140 for the
+ *  bases). Templates are approximations by definition; the ring size at
+ *  least matches reality. */
+export const CAP_RADIUS_UNITS = 115;
 
 /** 20-minute battle clock — the random / ranked / clan default. */
 export const BATTLE_DURATION_S = 20 * 60;

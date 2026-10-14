@@ -116,6 +116,26 @@ export interface ArenaInfo {
  *  `list_game_maps` (desktop only — phones get an error). Mirrors
  *  `wowsp_tauri::commands::game_maps::GameMapEntry`. A space is a playable
  *  map iff the install's VFS carries `spaces/<spaceId>/minimap.png`. */
+/** One capture point as the replay recorded it (world units) — mirrors
+ *  `wowsp_tauri_shared` / commands/replay/cap_layouts.rs. */
+export interface LearnedCapPoint {
+  index: number;
+  x: number;
+  z: number;
+  radius: number | null;
+  team: number | null;
+  appearT: number | null;
+}
+
+/** One learned (matchGroup, scenario) layout of a map. */
+export interface LearnedCapLayout {
+  modeGroup: string | null;
+  scenario: string | null;
+  sourceReplay: string;
+  sourceTime: string | null;
+  caps: LearnedCapPoint[];
+}
+
 export interface GameMapEntry {
   /** Space id, e.g. "20_NE_two_brothers". */
   spaceId: string;
@@ -723,6 +743,12 @@ export const replayApi = {
    *  shell answers with an error on phones. */
   listGameMaps: (gameRoot: string) =>
     transport.invoke<GameMapEntry[]>(RPC.list_game_maps, { gameRoot }),
+  /** Capture layouts of one map learned from the local replay history
+   *  (newest replay per (matchGroup, scenario)); `dir` follows the replay-dir
+   *  resolution (undefined = the active install's replays). Empty when the
+   *  map was never played here. */
+  getMapCapLayouts: (spaceId: string, dir?: string) =>
+    transport.invoke<LearnedCapLayout[]>(RPC.get_map_cap_layouts, { spaceId, dir }),
   readTempArenaInfo: (dir?: string) =>
     transport.invoke<ArenaInfo | null>(RPC.read_temp_arena_info, { dir }),
   startArenaWatcher: (dir?: string) => transport.invoke<null>(RPC.start_arena_watcher, { dir }),

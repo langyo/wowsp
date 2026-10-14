@@ -43,7 +43,14 @@
     "confirm": "계획 시작",
     "capCount": "거점 {n}개",
     "capNone": "거점 없음",
-    "duration": "전투 시간 {m}분"
+    "duration": "전투 시간 {m}분",
+    "next": "다음",
+    "learnedSection": "리플레이 실측",
+    "templateSection": "템플릿(미보정)",
+    "measured": "실측",
+    "learning": "리플레이에서 거점 학습 중…",
+    "noLearned": "이 맵의 리플레이가 아직 없습니다. 한 판 플레이하면 실측 거점이 여기 표시됩니다.",
+    "learnedFrom": "리플레이 {date}에서"
   },
   "mode": {
     "dom4": "랜덤 · 거점 4개",

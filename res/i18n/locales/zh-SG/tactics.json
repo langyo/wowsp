@@ -43,7 +43,14 @@
     "confirm": "开始规划",
     "capCount": "{n} 个占点",
     "capNone": "无占点",
-    "duration": "对局时长 {m} 分钟"
+    "duration": "对局时长 {m} 分钟",
+    "next": "下一步",
+    "learnedSection": "从本机录像实测",
+    "templateSection": "模板（未校准）",
+    "measured": "实测",
+    "learning": "正在从录像学习点位……",
+    "noLearned": "本机还没有这张图的录像——打过一局后，这里会给出该图各模式的实测点位。",
+    "learnedFrom": "来自录像 {date}"
   },
   "mode": {
     "dom4": "随机 · 四点",

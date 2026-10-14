@@ -1,9 +1,17 @@
 /**
  * Map-setup wizard (the tactics page's top-left map button): a two-step
- * HkStepFlow — pick the map (categorised list + live preview), then pick
- * the battle MODE for it (the same map hosts different cap layouts across
- * random / ranked / clan / operations). Emits the confirmed pair; the page
- * owns what happens next (session update, cap instantiation).
+ * HkStepFlow — pick the map (categorised list + live preview, advanced to
+ * step 2 ONLY by the explicit next button), then pick the battle MODE for
+ * it (the same map hosts different cap layouts across random / ranked /
+ * clan / operations).
+ *
+ * Step 2 offers two kinds of layouts, the honest split:
+ *   - MEASURED: exact cap sets learned from the local replay history
+ *     (api.getMapCapLayouts — the server's own EntityCreate points, rings
+ *     drawn at their true radius over the map preview);
+ *   - TEMPLATE: the hand-made presets, clearly labelled as uncalibrated.
+ * Emits the confirmed choice; the page owns what happens next (session
+ * update, cap instantiation).
  */
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 import { HkModal, HkStepFlow, HkTabs, HkTag } from "@celestia-island/hikari";
@@ -11,8 +19,9 @@ import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName } from "@/utils/mapNames";
 import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
-import { resolveMapMinimapUrl } from "../modelLoader";
-import { MODE_PRESETS, modePresetOf, type ModePreset } from "./modes";
+import { api, type LearnedCapLayout } from "@/api";
+import { resolveMapMinimapUrl, type MapBounds } from "../modelLoader";
+import { MODE_PRESETS, modePresetOf } from "./modes";
 import type { MapModeBucket } from "@/utils/mapModes";
 import "./MapSetupModal.scss";
 
@@ -25,6 +34,11 @@ const CATEGORIES: { key: CategoryKey; labelKey: string }[] = [
   { key: "clan", labelKey: "tactics.filter.clan" },
   { key: "pve", labelKey: "tactics.filter.pve" },
 ];
+
+/** The confirmed step-2 choice: a measured layout or a template preset. */
+export type MapSetupChoice =
+  | { kind: "learned"; layout: LearnedCapLayout }
+  | { kind: "preset"; presetId: string };
 
 export default defineComponent({
   name: "TacticalMapSetupModal",
@@ -40,10 +54,19 @@ export default defineComponent({
       type: Function as PropType<(spaceId: string) => Set<MapModeBucket>>,
       required: true,
     },
+    /** World bounds lookup (the page's loaded minimaps.json) — draws the
+     *  preview's cap rings at their TRUE size. Absent = schematic dots. */
+    getBounds: {
+      type: Function as PropType<(spaceId: string) => MapBounds | null>,
+      default: undefined,
+    },
+    /** Replay dir the measured-layout scan reads (undefined = let the
+     *  backend resolve the active install's replays). */
+    replaysDir: { type: String, default: undefined },
   },
   emits: {
     "update:modelValue": (_v: boolean) => true,
-    confirm: (_spaceId: string, _modeId: string) => true,
+    confirm: (_spaceId: string, _choice: MapSetupChoice) => true,
   },
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
@@ -51,6 +74,8 @@ export default defineComponent({
     const category = ref<CategoryKey>("all");
     const mapId = ref<string | null>(props.currentMapId);
     const modeId = ref<string | null>(props.currentModeId);
+    /** The selected measured layout (cleared when a preset is picked). */
+    const learnedPick = ref<LearnedCapLayout | null>(null);
 
     const steps = computed(() => [
       { key: "map", label: i18nT("tactics.setup.stepMap") },
@@ -59,7 +84,8 @@ export default defineComponent({
 
     // A fresh wizard pass always starts on the map step with the current
     // selection preloaded — reopening to tweak the mode of the boarded map
-    // is one click in, not a re-walk.
+    // is one click in, not a re-walk. Selecting a map NEVER auto-advances:
+    // the author looks at the preview first and presses 下一步 themselves.
     watch(
       () => props.modelValue,
       (open) => {
@@ -67,6 +93,7 @@ export default defineComponent({
           step.value = "map";
           mapId.value = props.currentMapId;
           modeId.value = props.currentModeId;
+          learnedPick.value = null;
         }
       },
     );
@@ -81,14 +108,41 @@ export default defineComponent({
         .map((e) => e.id);
     });
 
-    /** Mode presets offered for the chosen map: its observed families first
-     *  (a map only ever played in random battles fronts the random shapes),
-     *  then the rest — any map CAN host any mode, the list just fronts the
-     *  likely ones. */
-    const presetOrder = computed<ModePreset[]>(() => {
+    // ── Measured layouts (learned from the replay history) ──────────────
+    const learned = ref<LearnedCapLayout[]>([]);
+    const learning = ref(false);
+    let learnEpoch = 0;
+
+    watch(
+      () => [props.modelValue, step.value, mapId.value] as const,
+      ([open, s, id]) => {
+        if (!open || s !== "mode" || id == null) return;
+        const epoch = ++learnEpoch;
+        learning.value = true;
+        api
+          .getMapCapLayouts(id, props.replaysDir)
+          .then((layouts) => {
+            if (epoch !== learnEpoch) return;
+            learned.value = layouts;
+          })
+          .catch(() => {
+            // no install / unreadable replays — the template presets carry
+            // the step alone; measured layouts simply stay empty.
+            if (epoch === learnEpoch) learned.value = [];
+          })
+          .finally(() => {
+            if (epoch === learnEpoch) learning.value = false;
+          });
+      },
+    );
+
+    /** Template presets offered for the chosen map: its observed families
+     *  first, then the rest — any map CAN host any mode, the list just
+     *  fronts the likely ones. */
+    const presetOrder = computed(() => {
       if (!mapId.value) return [...MODE_PRESETS];
       const fam = new Set(props.bucketsOf(mapId.value));
-      const score = (m: ModePreset): number => (fam.has(m.family) ? 0 : 1);
+      const score = (m: (typeof MODE_PRESETS)[number]): number => (fam.has(m.family) ? 0 : 1);
       return [...MODE_PRESETS].sort(
         (a, b) => score(a) - score(b) || a.family.localeCompare(b.family),
       );
@@ -98,27 +152,71 @@ export default defineComponent({
 
     function chooseMap(id: string): void {
       mapId.value = id;
-      step.value = "mode";
+      // A different map invalidates both step-2 selections.
+      learnedPick.value = null;
+      modeId.value = null;
+    }
+
+    function pickLearned(layout: LearnedCapLayout): void {
+      learnedPick.value = layout;
+      modeId.value = null;
+    }
+
+    function pickPreset(id: string): void {
+      modeId.value = id;
+      learnedPick.value = null;
     }
 
     function confirm(): void {
-      if (!mapId.value || !modeId.value) return;
-      emit("confirm", mapId.value, modeId.value);
+      if (!mapId.value) return;
+      if (learnedPick.value) {
+        emit("confirm", mapId.value, { kind: "learned", layout: learnedPick.value });
+      } else if (modeId.value) {
+        emit("confirm", mapId.value, { kind: "preset", presetId: modeId.value });
+      } else {
+        return;
+      }
       emit("update:modelValue", false);
     }
 
-    /** Cap template overlay for one preset over the preview art: normalised
-     *  fractions map straight onto the square preview. */
+    /** One cap to draw on the preview: percent position + a ring sized by
+     *  its true world radius over the playable rect (bounds known), else a
+     *  schematic dot. */
     const capDots = computed(() => {
       const preset = modePresetOf(modeId.value);
+      const b = mapId.value ? props.getBounds?.(mapId.value) ?? null : null;
+      const span = b ? Math.max(b.maxX - b.minX, b.maxZ - b.minZ) : null;
+      const fromWorld = (x: number, z: number): { left: string; top: string } => ({
+        left: b ? `${((x - b.minX) / (b.maxX - b.minX)) * 100}%` : "50%",
+        top: b ? `${((b.maxZ - z) / (b.maxZ - b.minZ)) * 100}%` : "50%",
+      });
+      const size = (radius: number): string | undefined =>
+        span ? `${Math.min(45, ((2 * radius) / span) * 100)}%` : undefined;
+      if (learnedPick.value) {
+        return learnedPick.value.caps.map((c) => ({
+          key: `l${c.index}`,
+          letter: String.fromCharCode(65 + Math.max(0, Math.min(25, c.index))),
+          ...fromWorld(c.x, c.z),
+          size: size(c.radius ?? 115),
+          team: null as string | null,
+        }));
+      }
       if (!preset) return [];
-      return preset.caps.map((c) => ({
+      return preset.caps.map((c, i) => ({
+        key: `p${i}`,
         letter: c.letter,
         left: `${c.at.x * 100}%`,
         top: `${(1 - c.at.z) * 100}%`,
+        size: size(c.radius),
         team: c.team ?? null,
       }));
     });
+
+    /** Learned-layout card title: the scenario id is the layout's own name
+     *  ("domination_3point"); fall back to the match group. */
+    function learnedTitle(l: LearnedCapLayout): string {
+      return l.scenario ?? l.modeGroup ?? "";
+    }
 
     return () => (
       <HkModal
@@ -138,12 +236,19 @@ export default defineComponent({
                 variant: "secondary",
                 onClick: () => emit("update:modelValue", false),
               },
-          {
-            label: i18nT("tactics.setup.confirm"),
-            variant: "primary",
-            disabled: step.value === "map" ? mapId.value == null : modeId.value == null,
-            onClick: confirm,
-          },
+          step.value === "map"
+            ? {
+                label: i18nT("tactics.setup.next"),
+                variant: "primary",
+                disabled: mapId.value == null,
+                onClick: () => (step.value = "mode"),
+              }
+            : {
+                label: i18nT("tactics.setup.confirm"),
+                variant: "primary",
+                disabled: learnedPick.value == null && modeId.value == null,
+                onClick: confirm,
+              },
         ]}
       >
         <HkStepFlow
@@ -151,6 +256,7 @@ export default defineComponent({
           modelValue={step.value}
           timelineClickable
           onUpdate:modelValue={(v: string) => {
+            // Stepping to "mode" needs a map; going back is always fine.
             if (v === "mode" && mapId.value == null) return;
             step.value = v as "map" | "mode";
           }}
@@ -214,6 +320,40 @@ export default defineComponent({
             mode: () => (
               <div class="map-setup">
                 <div class="map-setup__modes">
+                  <div class="map-setup__section-label">{i18nT("tactics.setup.learnedSection")}</div>
+                  {learning.value ? (
+                    <p class="map-setup__empty">{i18nT("tactics.setup.learning")}</p>
+                  ) : learned.value.length === 0 ? (
+                    <p class="map-setup__empty">{i18nT("tactics.setup.noLearned")}</p>
+                  ) : (
+                    learned.value.map((l) => (
+                      <button
+                        key={learnedTitle(l) + l.sourceReplay}
+                        type="button"
+                        class={[
+                          "map-setup__mode",
+                          learnedPick.value === l ? "map-setup__mode--on" : "",
+                        ]}
+                        onClick={() => pickLearned(l)}
+                      >
+                        <span class="map-setup__mode-head">
+                          <strong>{learnedTitle(l)}</strong>
+                          <HkTag size="sm" variant="success">
+                            {i18nT("tactics.setup.measured")}
+                          </HkTag>
+                          <HkTag size="sm">
+                            {i18nT("tactics.setup.capCount", { n: l.caps.length })}
+                          </HkTag>
+                        </span>
+                        <span class="map-setup__mode-desc">
+                          {i18nT("tactics.setup.learnedFrom", {
+                            date: l.sourceTime ?? l.sourceReplay,
+                          })}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                  <div class="map-setup__section-label">{i18nT("tactics.setup.templateSection")}</div>
                   {presetOrder.value.map((preset) => (
                     <button
                       key={preset.id}
@@ -222,7 +362,7 @@ export default defineComponent({
                         "map-setup__mode",
                         modeId.value === preset.id ? "map-setup__mode--on" : "",
                       ]}
-                      onClick={() => (modeId.value = preset.id)}
+                      onClick={() => pickPreset(preset.id)}
                     >
                       <span class="map-setup__mode-head">
                         <strong>{i18nT(`tactics.mode.${preset.labelKey}`)}</strong>
@@ -244,7 +384,7 @@ export default defineComponent({
                       <img class="map-setup__art" src={previewUrl.value} alt="" draggable={false} />
                       {capDots.value.map((c) => (
                         <span
-                          key={c.letter}
+                          key={c.key}
                           class={[
                             "map-setup__cap",
                             c.team === "ally"
@@ -252,15 +392,25 @@ export default defineComponent({
                               : c.team === "enemy"
                                 ? "map-setup__cap--enemy"
                                 : "",
+                            c.size ? "" : "map-setup__cap--dot",
                           ]}
-                          style={{ left: c.left, top: c.top }}
+                          style={{
+                            left: c.left,
+                            top: c.top,
+                            ...(c.size ? { width: c.size } : null),
+                          }}
                         >
                           {c.letter}
                         </span>
                       ))}
                     </div>
                   ) : null}
-                  {modePresetOf(modeId.value) ? (
+                  {learnedPick.value ? (
+                    <div class="map-setup__meta">
+                      <strong>{learnedTitle(learnedPick.value)}</strong>
+                      <span>{i18nT("tactics.setup.measured")}</span>
+                    </div>
+                  ) : modePresetOf(modeId.value) ? (
                     <div class="map-setup__meta">
                       <strong>{i18nT(`tactics.mode.${modePresetOf(modeId.value)!.labelKey}`)}</strong>
                       <span>

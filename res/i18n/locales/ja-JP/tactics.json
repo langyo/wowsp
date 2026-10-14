@@ -43,7 +43,14 @@
     "confirm": "プラン作成を開始",
     "capCount": "拠点 {n} 個",
     "capNone": "拠点なし",
-    "duration": "戦闘時間 {m} 分"
+    "duration": "戦闘時間 {m} 分",
+    "next": "次へ",
+    "learnedSection": "リプレイから実測",
+    "templateSection": "テンプレート（未調整）",
+    "measured": "実測",
+    "learning": "リプレイから拠点を学習中…",
+    "noLearned": "このマップのリプレイがまだありません。1戦プレイすると、実測ポイントがここに表示されます。",
+    "learnedFrom": "リプレイ {date} から"
   },
   "mode": {
     "dom4": "ランダム · 4拠点",

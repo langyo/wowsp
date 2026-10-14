@@ -43,7 +43,14 @@
     "confirm": "Start planning",
     "capCount": "{n} capture points",
     "capNone": "No capture points",
-    "duration": "{m}-minute battle"
+    "duration": "{m}-minute battle",
+    "next": "Next",
+    "learnedSection": "Measured from your replays",
+    "templateSection": "Templates (uncalibrated)",
+    "measured": "Measured",
+    "learning": "Learning cap layouts from replays…",
+    "noLearned": "No replays of this map on this machine yet — play one and the measured layouts appear here.",
+    "learnedFrom": "From replay {date}"
   },
   "mode": {
     "dom4": "Random · 4 caps",
