@@ -68,16 +68,17 @@ export function stampOverrideUrl(kind: StampKind): string | null {
   return overrides.value[kind] ?? null;
 }
 
-/** Native image picker → the file lands as `<kind>.<ext>` in the stamps
- *  folder and shows up everywhere immediately. Null = the dialog was
- *  cancelled. */
-export async function importStampImage(kind: StampKind): Promise<boolean> {
-  const imported = await api.stampImport(kind);
+/** Crop-dialog result → the bytes land as `<kind>.<ext>` in the stamps
+ *  folder and show up everywhere immediately (the dialog already enforced
+ *  the square + size rules; see components/base/ImageSquareCropModal). */
+export async function importStampImage(
+  kind: StampKind,
+  bytes: Uint8Array,
+  ext: string,
+): Promise<void> {
+  await api.stampImportBytes(kind, ext, bytes);
   await refreshStampOverrides();
-  // Only a landed import announces itself — a cancelled dialog must not
-  // send the overlay re-reading an unchanged folder.
-  if (imported != null) emitTauriEvent(STAMPS_CHANGED_EVENT);
-  return imported != null;
+  emitTauriEvent(STAMPS_CHANGED_EVENT);
 }
 
 /** Delete the custom picture — the seal falls back to the default glyph. */

@@ -277,11 +277,13 @@ export function drawStampSeal(
   // Frame geometry per variant, in viewBox units (see RatingStamp.tsx).
   const geo = variant === "mini"
     ? { outer: 46.5, outerW: 93, outerR: 6, outerLw: 4, inner: 39.5, innerW: 79, innerR: 2.5, innerLw: 1.5, glyph: 36, glyphW: 72 }
-    : { outer: 45, outerW: 90, outerR: 7, outerLw: 6, inner: 35.5, innerW: 71, innerR: 3, innerLw: 2, glyph: 33, glyphW: 66 };
+    : { outer: 45, outerW: 90, outerR: 7, outerLw: 6, inner: 37.5, innerW: 75, innerR: 3, innerLw: 2, glyph: 34.5, glyphW: 69 };
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(-Math.PI / 20);
-  ctx.strokeStyle = rgba(STAMP_INK, 0.9);
+  // Full-opacity cinnabar — mirrors RatingStamp.scss's post-"看不清" pass
+  // (the old 0.9/0.92 blend read washed-out at share-shot seal sizes).
+  ctx.strokeStyle = rgba(STAMP_INK, 1);
   const s = size / 100;
   ctx.lineWidth = geo.outerLw * s;
   ctx.beginPath();
@@ -292,7 +294,6 @@ export function drawStampSeal(
   ctx.roundRect(-geo.inner * s, -geo.inner * s, geo.innerW * s, geo.innerW * s, geo.innerR * s);
   ctx.stroke();
   if (img) {
-    ctx.globalAlpha *= 0.92;
     ctx.drawImage(img, -geo.glyph * s, -geo.glyph * s, geo.glyphW * s, geo.glyphW * s);
   }
   ctx.restore();

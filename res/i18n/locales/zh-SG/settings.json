@@ -166,7 +166,8 @@
     "pickImage": "自定义图片",
     "resetDefault": "还原默认",
     "pickFailed": "导入自定义印章图片失败",
-    "resetFailed": "还原默认印章失败"
+    "resetFailed": "还原默认印章失败",
+    "dialogTitle": "自定义印章图片"
   },
   "updates": "更新与数据",
   "changelog": "更新日志",

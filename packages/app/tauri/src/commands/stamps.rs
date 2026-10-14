@@ -39,8 +39,8 @@ const STAMP_KINDS: [&str; 12] = [
 const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"];
 
 // All windows share the same folder. Keep its one-file-per-kind state
-// consistent across imports, resets, and listings; the picker and source
-// copy run outside this short filesystem transaction.
+// consistent across imports, resets, and listings; the crop dialog's byte
+// staging write runs outside this short filesystem transaction.
 static STAMP_FILES_GATE: Mutex<()> = Mutex::new(());
 
 /// The fixed stamp subdirectory of the app data root
@@ -50,17 +50,6 @@ fn stamps_dir() -> Result<PathBuf> {
     let dir = paths::ensure_data_dir()?.join("stamps");
     std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir)
-}
-
-/// Image extensions accepted by the import dialog. Anything else on disk is
-/// ignored by the listing (crash leftovers, `desktop.ini`, ...).
-fn is_image_file(name: &str) -> bool {
-    let ext = Path::new(name)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    IMAGE_EXTENSIONS.contains(&ext.as_str())
 }
 
 fn is_valid_kind(kind: &str) -> bool {
@@ -188,17 +177,19 @@ impl Drop for StampFiles {
     }
 }
 
+/// Stage the incoming image into `work.dir/image.part` — the one seam shared
+/// by every import source (raw bytes from the webui crop dialog today).
 fn import_stamp_with(
     dir: &Path,
     kind: &str,
-    src: &Path,
     ext: &str,
+    fill: impl FnOnce(&Path) -> std::io::Result<()>,
     publish: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<StampOverride> {
     let dest = dir.join(format!("{kind}.{ext}"));
     let mut work = StampFiles::new(dir)?;
     let part = work.dir.join("image.part");
-    std::fs::copy(src, &part).map_err(|e| anyhow!("copy stamp image: {e}"))?;
+    fill(&part).map_err(|e| anyhow!("stage stamp image: {e}"))?;
     let _gate = STAMP_FILES_GATE.lock().unwrap_or_else(|e| e.into_inner());
     // Keep the same-extension destination until atomic replacement. Other
     // extensions must be removable before publishing, or listing could
@@ -216,65 +207,82 @@ fn import_stamp_with(
     })
 }
 
-/// Native image-picker → copy the picked file into the stamps dir as
-/// `<kind>.<ext>` (a failed replacement preserves the previous picture,
-/// and a successful one leaves exactly one file). Returns the entry, or `None`
-/// when the dialog was cancelled.
-#[tauri::command]
-pub async fn stamp_import(kind: String) -> CommandResult<Option<StampOverride>> {
-    if !is_valid_kind(&kind) {
-        return Err(anyhow!("invalid stamp kind {kind:?}").into());
-    }
-    // Mobile: no native image picker (rfd has no Android backend) — the
-    // seal customizer's photo-picker bytes ride a later mobile phase.
-    #[cfg(mobile)]
-    {
-        return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
-    }
-    // rfd pumps its own message loop — run it on a blocking thread, never
-    // the async runtime workers or the app's UI thread (same rule as
-    // wallpaper_import).
-    #[cfg(desktop)]
-    {
-        let picked = tokio::task::spawn_blocking(|| {
-            rfd::FileDialog::new()
-                .set_title("Select a seal image")
-                .add_filter(
-                    "Images",
-                    &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"],
-                )
-                .pick_file()
-        })
-        .await
-        .map_err(|e| anyhow!("stamp picker task failed: {e}"))?;
+/// Hard ceiling on a stamp import's raw IPC body — the webui crop dialog
+/// exports ≤512px squares and passes larger originals through only under
+/// 2 MiB (see ImageSquareCropModal), so anything beyond this is a bug or
+/// abuse, not a stamp.
+const STAMP_IMPORT_MAX_BYTES: usize = 4 * 1024 * 1024;
 
-        let Some(src) = picked else {
-            return Ok(None);
-        };
-        // Windows dialogs don't enforce the filter on a manually typed file name
-        // — reject anything the listing wouldn't accept instead of importing a
-        // stamp that can never resolve.
-        let Some(file_name) = src.file_name().and_then(|n| n.to_str()) else {
-            return Err(anyhow!("picked file has no usable name").into());
-        };
-        if !is_image_file(file_name) {
-            return Err(anyhow!("unsupported stamp image type: {file_name}").into());
-        }
-        let ext = src
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_ascii_lowercase())
-            .unwrap_or_else(|| "png".into());
+/// Import the webui crop dialog's image bytes (raw IPC body, same channel as
+/// [`crate::commands::exports::write_export_bytes`]) into the stamps dir as
+/// `<kind>.<ext>` — a failed replacement preserves the previous picture, a
+/// successful one leaves exactly one file. Works on mobile too: no native
+/// picker is involved (the dialog runs in the webview).
+///
+/// Header contract with `api/modules/shell.ts` (`stampImportBytes`):
+/// `x-stamp-kind` = canonical kind, `x-stamp-ext` = canonical extension;
+/// body = the image file bytes. The extension is re-validated against the
+/// listing's allowlist exactly like the old native-picker path trusted the
+/// picked file's name — a bogus pair imports nothing.
+#[tauri::command]
+pub async fn stamp_import_bytes(request: tauri::ipc::Request<'_>) -> CommandResult<StampOverride> {
+    let headers = request.headers();
+    let kind = headers
+        .get("x-stamp-kind")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| anyhow!("missing x-stamp-kind header"))?
+        .to_string();
+    let ext = headers
+        .get("x-stamp-ext")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| anyhow!("missing x-stamp-ext header"))?
+        .to_ascii_lowercase();
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        _ => return Err(anyhow!("expected raw body (pass a Uint8Array to invokeRaw)").into()),
+    };
+    let (kind_log, ext_log, byte_len) = (kind.clone(), ext.clone(), bytes.len());
+    let entry = tokio::task::spawn_blocking(move || {
         let dir = stamps_dir()?;
-        let entry = tokio::task::spawn_blocking(move || {
-            import_stamp_with(&dir, &kind, &src, &ext, |from, to| {
-                std::fs::rename(from, to)
-            })
-        })
-        .await
-        .map_err(|e| anyhow!("stamp copy task failed: {e}"))??;
-        Ok(Some(entry))
+        import_stamp_bytes_in(&dir, &kind, &ext, &bytes)
+    })
+    .await
+    .map_err(|e| anyhow!("stamp import task failed: {e}"))??;
+    tracing::info!(
+        kind = %kind_log,
+        ext = %ext_log,
+        bytes = byte_len,
+        "custom seal image imported"
+    );
+    Ok(entry)
+}
+
+/// Validation + transactional write behind [`stamp_import_bytes`], split from
+/// it so tests can drive a fixture directory instead of the real data dir.
+fn import_stamp_bytes_in(dir: &Path, kind: &str, ext: &str, bytes: &[u8]) -> Result<StampOverride> {
+    if !is_valid_kind(kind) {
+        return Err(anyhow!("invalid stamp kind {kind:?}"));
     }
+    if !IMAGE_EXTENSIONS.contains(&ext) {
+        return Err(anyhow!("unsupported stamp image type: {ext}"));
+    }
+    if bytes.is_empty() {
+        bail!("stamp image is empty");
+    }
+    if bytes.len() > STAMP_IMPORT_MAX_BYTES {
+        bail!(
+            "stamp image is {} bytes (max {})",
+            bytes.len(),
+            STAMP_IMPORT_MAX_BYTES
+        );
+    }
+    import_stamp_with(
+        dir,
+        kind,
+        ext,
+        |part| std::fs::write(part, bytes),
+        |from, to| std::fs::rename(from, to),
+    )
 }
 
 /// Delete the custom picture of `kind` — the seal falls back to the bundled
@@ -332,7 +340,13 @@ mod tests {
     }
 
     fn import(dir: &Path, src: &Path, ext: &str) -> Result<StampOverride> {
-        import_stamp_with(dir, "rat", src, ext, |from, to| std::fs::rename(from, to))
+        import_stamp_with(
+            dir,
+            "rat",
+            ext,
+            |part| std::fs::copy(src, part).map(|_| ()),
+            |from, to| std::fs::rename(from, to),
+        )
     }
 
     #[test]
@@ -347,12 +361,18 @@ mod tests {
         let (published_tx, published_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let first = thread::spawn(move || {
-            import_stamp_with(&first_dir, "rat", &first_src, "png", |from, to| {
-                std::fs::rename(from, to)?;
-                published_tx.send(()).unwrap();
-                release_rx.recv().unwrap();
-                Ok(())
-            })
+            import_stamp_with(
+                &first_dir,
+                "rat",
+                "png",
+                |part| std::fs::copy(&first_src, part).map(|_| ()),
+                |from, to| {
+                    std::fs::rename(from, to)?;
+                    published_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                },
+            )
         });
         published_rx.recv().unwrap();
         let (done_tx, done_rx) = mpsc::channel();
@@ -380,8 +400,8 @@ mod tests {
         let result = import_stamp_with(
             &fixture.dir(),
             "rat",
-            &fixture.source("jpg"),
             "jpg",
+            |part| std::fs::copy(fixture.source("jpg"), part).map(|_| ()),
             |_, _| Err(std::io::Error::other("synthetic publish failure")),
         );
         assert!(result.is_err());
@@ -399,12 +419,18 @@ mod tests {
         let (published_tx, published_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let importing = thread::spawn(move || {
-            import_stamp_with(&dir, "rat", &src, "png", |from, to| {
-                std::fs::rename(from, to)?;
-                published_tx.send(()).unwrap();
-                release_rx.recv().unwrap();
-                Ok(())
-            })
+            import_stamp_with(
+                &dir,
+                "rat",
+                "png",
+                |part| std::fs::copy(&src, part).map(|_| ()),
+                |from, to| {
+                    std::fs::rename(from, to)?;
+                    published_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                },
+            )
         });
         published_rx.recv().unwrap();
         let dir = fixture.dir();
@@ -452,11 +478,17 @@ mod tests {
         let (staged_tx, staged_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let importing = thread::spawn(move || {
-            import_stamp_with(&dir, "rat", &src, "jpg", |from, to| {
-                staged_tx.send(()).unwrap();
-                release_rx.recv().unwrap();
-                std::fs::rename(from, to)
-            })
+            import_stamp_with(
+                &dir,
+                "rat",
+                "jpg",
+                |part| std::fs::copy(&src, part).map(|_| ()),
+                |from, to| {
+                    staged_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    std::fs::rename(from, to)
+                },
+            )
         });
         staged_rx.recv().unwrap();
         let dir = fixture.dir();
@@ -506,8 +538,8 @@ mod tests {
         let result = import_stamp_with(
             &fixture.dir(),
             "rat",
-            &fixture.source("jpg"),
             "jpg",
+            |part| std::fs::copy(fixture.source("jpg"), part).map(|_| ()),
             |part, _| {
                 let workspace = part.parent().unwrap().to_path_buf();
                 locked = Some(
@@ -586,12 +618,33 @@ mod tests {
     }
 
     #[test]
-    fn image_extension_allowlist() {
-        assert!(is_image_file("rat.png"));
-        assert!(is_image_file("rat.JPG"));
-        assert!(is_image_file("air.webp"));
-        assert!(!is_image_file("notes.txt"));
-        assert!(!is_image_file("noext"));
-        assert!(!is_image_file("evil.exe"));
+    fn byte_import_writes_exactly_the_sent_bytes() {
+        let fixture = Fixture::new();
+        let entry =
+            import_stamp_bytes_in(&fixture.dir(), "rat", "png", b"crop dialog bytes").unwrap();
+        assert_eq!(entry.kind, "rat");
+        assert_eq!(
+            std::fs::read(fixture.dir().join("rat.png")).unwrap(),
+            b"crop dialog bytes"
+        );
+        // A prior image of another extension must not survive the import.
+        import_stamp_bytes_in(&fixture.dir(), "rat", "gif", b"swap").unwrap();
+        assert_eq!(std::fs::read_dir(fixture.dir()).unwrap().count(), 1);
+        assert_eq!(
+            std::fs::read(fixture.dir().join("rat.gif")).unwrap(),
+            b"swap"
+        );
+    }
+
+    #[test]
+    fn byte_import_rejects_bad_kind_ext_and_size() {
+        let fixture = Fixture::new();
+        assert!(import_stamp_bytes_in(&fixture.dir(), "voodoo", "png", b"x").is_err());
+        assert!(import_stamp_bytes_in(&fixture.dir(), "rat", "svg", b"x").is_err());
+        assert!(import_stamp_bytes_in(&fixture.dir(), "rat", "png", b"").is_err());
+        let huge = vec![0u8; STAMP_IMPORT_MAX_BYTES + 1];
+        assert!(import_stamp_bytes_in(&fixture.dir(), "rat", "png", &huge).is_err());
+        // None of the rejected imports may have touched the folder.
+        assert!(list_stamps_in(&fixture.dir()).unwrap().is_empty());
     }
 }

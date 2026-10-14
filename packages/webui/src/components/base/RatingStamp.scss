@@ -4,9 +4,11 @@
    and the tilt. */
 
 .rating-stamp {
-  /* Cinnabar seal ink. */
+  /* Cinnabar seal ink. Full opacity — the old 0.9 press read as "hard to
+     see" at the 34–64px seal sizes (user feedback), and the ink texture
+     comes from the SVG weave/displacement, not transparency. */
   color: rgb(202 44 38);
-  opacity: 0.9;
+  opacity: 1;
   pointer-events: none;
   flex: none;
   /* One shared −9° press for every seal — mixed tilts read as sloppiness.
@@ -28,8 +30,8 @@
   }
 
   &__ink image {
-    /* The glyph bitmaps are pre-inked cinnabar; blend their alpha the same
-       way the old stroked text sat on the weave. */
-    opacity: 0.92;
+    /* The glyph bitmaps are pre-inked cinnabar — no extra fading on top of
+       the ink roughening (the 0.92 blend muddied the 2x2 faces). */
+    opacity: 1;
   }
 }

@@ -57,5 +57,21 @@
     "removeConfirm": "確認移除？",
     "removed": "遊戲路徑已移除",
     "inUse": "使用中"
+  },
+  "imageCrop": {
+    "choose": "選擇圖片…",
+    "requirement": "建議使用方形圖片：短邊不小於 {min}px、邊長不超過 {max}px；過大的裁剪會自動縮小後使用。",
+    "unsupported": "不支援的圖片格式（僅支援 PNG / JPG / WebP / GIF / BMP / AVIF）。",
+    "fileTooLarge": "檔案過大，請壓縮後再試。",
+    "tooSmall": "圖片太小：短邊至少需要 {min}px。",
+    "tooLarge": "圖片太大：邊長不得超過 {max}px。",
+    "decodeFailed": "圖片解碼失敗，檔案可能已損壞。",
+    "dragHint": "拖動調整位置，滾輪或滑桿縮放；輸出始終為正方形。",
+    "zoom": "縮放",
+    "dims": "原始 {w}×{h} → 輸出 {out}×{out}",
+    "rechoose": "重新選擇",
+    "confirm": "使用這張",
+    "cancel": "取消",
+    "exportFailed": "匯出裁剪圖片失敗"
   }
 }

@@ -57,5 +57,21 @@
     "removeConfirm": "¿Quitar?",
     "removed": "Ruta del juego eliminada",
     "inUse": "En uso"
+  },
+  "imageCrop": {
+    "choose": "Elegir imagen…",
+    "requirement": "Lo ideal es una imagen cuadrada: lado corto de al menos {min}px y lados de hasta {max}px; los recortes demasiado grandes se reducen automáticamente.",
+    "unsupported": "Formato de imagen no compatible (solo PNG / JPG / WebP / GIF / BMP / AVIF).",
+    "fileTooLarge": "El archivo es demasiado grande: comprímelo primero.",
+    "tooSmall": "Imagen demasiado pequeña: el lado corto debe medir al menos {min}px.",
+    "tooLarge": "Imagen demasiado grande: los lados no pueden superar {max}px.",
+    "decodeFailed": "No se pudo decodificar la imagen; el archivo puede estar dañado.",
+    "dragHint": "Arrastra para posicionar, rueda o control deslizante para el zoom; la salida siempre es cuadrada.",
+    "zoom": "Zoom",
+    "dims": "{w}×{h} → {out}×{out}",
+    "rechoose": "Elegir otra",
+    "confirm": "Usar esta imagen",
+    "cancel": "Cancelar",
+    "exportFailed": "Error al exportar la imagen recortada"
   }
 }

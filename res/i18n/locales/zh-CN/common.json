@@ -57,5 +57,21 @@
     "removeConfirm": "确认移除？",
     "removed": "游戏路径已移除",
     "inUse": "使用中"
+  },
+  "imageCrop": {
+    "choose": "选择图片…",
+    "requirement": "建议使用方形图片：短边不小于 {min}px、边长不超过 {max}px；过大的裁剪会自动缩小后使用。",
+    "unsupported": "不支持的图片格式（仅支持 PNG / JPG / WebP / GIF / BMP / AVIF）。",
+    "fileTooLarge": "文件过大，请压缩后再试。",
+    "tooSmall": "图片太小：短边至少需要 {min}px。",
+    "tooLarge": "图片太大：边长不得超过 {max}px。",
+    "decodeFailed": "图片解码失败，文件可能已损坏。",
+    "dragHint": "拖动调整位置，滚轮或滑杆缩放；输出始终为正方形。",
+    "zoom": "缩放",
+    "dims": "原始 {w}×{h} → 输出 {out}×{out}",
+    "rechoose": "重新选择",
+    "confirm": "使用这张",
+    "cancel": "取消",
+    "exportFailed": "导出裁剪图片失败"
   }
 }

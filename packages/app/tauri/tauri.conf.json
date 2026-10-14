@@ -67,7 +67,8 @@
         "enable": true,
         "scope": [
           "$LOCALDATA/WoWSP/**",
-          "$DATA/WoWSP/wallpapers/**"
+          "$DATA/WoWSP/wallpapers/**",
+          "$DATA/WoWSP/stamps/**"
         ]
       }
     }

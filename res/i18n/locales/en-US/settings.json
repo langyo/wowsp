@@ -166,7 +166,8 @@
     "pickImage": "Custom image",
     "resetDefault": "Reset to default",
     "pickFailed": "Failed to import the custom seal image",
-    "resetFailed": "Failed to reset the seal to its default"
+    "resetFailed": "Failed to reset the seal to its default",
+    "dialogTitle": "Custom seal image"
   },
   "updates": "Updates & data",
   "changelog": "Changelog",

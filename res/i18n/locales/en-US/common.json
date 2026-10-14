@@ -57,5 +57,21 @@
     "removeConfirm": "Remove?",
     "removed": "Game path removed",
     "inUse": "In use"
+  },
+  "imageCrop": {
+    "choose": "Choose image…",
+    "requirement": "Square images work best: shorter side at least {min}px, edges up to {max}px; oversized crops are downscaled.",
+    "unsupported": "Unsupported image format (PNG / JPG / WebP / GIF / BMP / AVIF only).",
+    "fileTooLarge": "File too large — compress it first.",
+    "tooSmall": "Image too small: the shorter side must be at least {min}px.",
+    "tooLarge": "Image too large: edges must not exceed {max}px.",
+    "decodeFailed": "Could not decode the image — the file may be corrupt.",
+    "dragHint": "Drag to position, wheel or slider to zoom; the output is always square.",
+    "zoom": "Zoom",
+    "dims": "{w}×{h} → {out}×{out}",
+    "rechoose": "Choose another",
+    "confirm": "Use this image",
+    "cancel": "Cancel",
+    "exportFailed": "Failed to export the cropped image"
   }
 }

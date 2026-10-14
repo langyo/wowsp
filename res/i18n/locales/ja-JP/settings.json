@@ -166,7 +166,8 @@
     "pickImage": "カスタム画像",
     "resetDefault": "既定に戻す",
     "pickFailed": "カスタム印章画像の読み込みに失敗しました",
-    "resetFailed": "印章を既定に戻すのに失敗しました"
+    "resetFailed": "印章を既定に戻すのに失敗しました",
+    "dialogTitle": "カスタム印章画像"
   },
   "updates": "更新とデータ",
   "changelog": "更新履歴",

@@ -288,6 +288,18 @@ pub fn run() {
                 },
                 Err(e) => tracing::warn!(error = %e, "asset scope: data dir unresolved"),
             }
+            // …and for the custom seal library (<data_dir>/stamps): the static
+            // scope never covered it, so every custom stamp image rendered as
+            // a scope denial — the kind-keyed pictures the seal customizer
+            // imports must resolve through convertFileSrc like wallpapers do.
+            match paths::data_dir().map(|d| d.join("stamps")) {
+                Ok(dir) => {
+                    if let Err(e) = app.asset_protocol_scope().allow_directory(&dir, true) {
+                        tracing::warn!(error = %e, ?dir, "asset scope: allow stamps dir failed");
+                    }
+                },
+                Err(e) => tracing::warn!(error = %e, "asset scope: data dir unresolved"),
+            }
             // Seed OS preferences (locale + color scheme) into the webview
             // BEFORE any page JS runs, so the first paint matches the OS theme.
             let prefs = os_prefs::detect();
@@ -610,7 +622,7 @@ pub fn run() {
             commands::wallpaper::wallpaper_import,
             commands::wallpaper::wallpaper_remove,
             commands::stamps::stamp_list,
-            commands::stamps::stamp_import,
+            commands::stamps::stamp_import_bytes,
             commands::stamps::stamp_reset,
             commands::supporters::get_supporter_avatars,
             commands::trends::get_player_trend,

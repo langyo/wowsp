@@ -166,7 +166,8 @@
     "pickImage": "사용자 지정 이미지",
     "resetDefault": "기본값으로 되돌리기",
     "pickFailed": "사용자 지정 인장 이미지 가져오기 실패",
-    "resetFailed": "인장을 기본값으로 되돌리기 실패"
+    "resetFailed": "인장을 기본값으로 되돌리기 실패",
+    "dialogTitle": "사용자 지정 인장 이미지"
   },
   "updates": "업데이트 및 데이터",
   "changelog": "업데이트 기록",

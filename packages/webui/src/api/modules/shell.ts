@@ -125,10 +125,14 @@ export const shellApi = {
   /** List customized seals (kind-keyed pictures in the AppData `stamps/`
    *  folder). Kinds without a file fall back to the bundled glyph. */
   stampList: () => transport.invoke<StampOverride[]>(RPC.stamp_list),
-  /** Native image picker → copy into the stamps folder as `<kind>.<ext>`.
-   *  Null = the user cancelled the dialog. */
-  stampImport: (kind: StampKind) =>
-    transport.invoke<StampOverride | null>(RPC.stamp_import, { kind }),
+  /** Crop-dialog image bytes → save into the stamps folder as
+   *  `<kind>.<ext>` (raw IPC body — same channel as writeExportBytes;
+   *  headers carry the kind and extension, the body carries the file). */
+  stampImportBytes: (kind: StampKind, ext: string, bytes: Uint8Array) =>
+    transport.invokeRaw?.<StampOverride>(RPC.stamp_import_bytes, bytes, {
+      "x-stamp-kind": kind,
+      "x-stamp-ext": ext,
+    }) ?? Promise.reject(new Error("raw IPC unavailable in this host")),
   /** Delete the kind's custom picture — the seal falls back to the bundled
    *  glyph. */
   stampReset: (kind: StampKind) => transport.invoke<null>(RPC.stamp_reset, { kind }),

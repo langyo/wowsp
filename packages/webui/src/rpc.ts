@@ -160,7 +160,7 @@ export const RPC = {
   wallpaper_remove: "wallpaper_remove",
   stamp_list: "stamp_list",
   get_supporter_avatars: "get_supporter_avatars",
-  stamp_import: "stamp_import",
+  stamp_import_bytes: "stamp_import_bytes",
   stamp_reset: "stamp_reset",
   installer_language: "installer_language",
   // ── Mobile replay acquisition + desktop pairing (Rust handlers in

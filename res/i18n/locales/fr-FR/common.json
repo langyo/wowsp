@@ -57,5 +57,21 @@
     "removeConfirm": "Retirer ?",
     "removed": "Chemin du jeu retiré",
     "inUse": "Utilisé"
+  },
+  "imageCrop": {
+    "choose": "Choisir une image…",
+    "requirement": "Une image carrée est idéale : petit côté d'au moins {min}px, côtés d'au plus {max}px ; les recadrages trop grands sont réduits automatiquement.",
+    "unsupported": "Format d'image non pris en charge (PNG / JPG / WebP / GIF / BMP / AVIF uniquement).",
+    "fileTooLarge": "Fichier trop volumineux — compressez-le d'abord.",
+    "tooSmall": "Image trop petite : le petit côté doit faire au moins {min}px.",
+    "tooLarge": "Image trop grande : les côtés ne doivent pas dépasser {max}px.",
+    "decodeFailed": "Impossible de décoder l'image — le fichier est peut-être corrompu.",
+    "dragHint": "Faites glisser pour positionner, molette ou curseur pour zoomer ; la sortie est toujours carrée.",
+    "zoom": "Zoom",
+    "dims": "{w}×{h} → {out}×{out}",
+    "rechoose": "Choisir une autre image",
+    "confirm": "Utiliser cette image",
+    "cancel": "Annuler",
+    "exportFailed": "Échec de l'export de l'image rognée"
   }
 }

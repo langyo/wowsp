@@ -204,16 +204,16 @@ export default defineComponent({
           <g class="rating-stamp__ink" filter={url("ink")}>
             {!mini && (
               <g class="rating-stamp__moire">
-                <rect x="14" y="14" width="71" height="71" fill={url("weave-a")} />
-                <rect x="14" y="14" width="71" height="71" fill={url("weave-b")} />
+                <rect x="12.5" y="12.5" width="75" height="75" fill={url("weave-a")} />
+                <rect x="12.5" y="12.5" width="75" height="75" fill={url("weave-b")} />
               </g>
             )}
             {/* Frame geometry per variant (viewBox units): the full face
-                keeps the classic wide double border; the mini face — the
-                live roster / post-battle rows, where the seals were reported
-                too small to read — presses a thinner frame closer to the
-                edge and lets the glyph grow from 66 to 72 units, spending
-                the freed border on ink instead. */}
+                keeps the classic wide double border but, after the "看不清"
+                feedback, presses its inner frame outward (75 units vs the
+                old 71) so the glyph grows from 66 to 69; the mini face —
+                the live roster / post-battle rows — keeps its thinner
+                tighter frame with the 72-unit glyph. */}
             <rect
               class="rating-stamp__frame"
               x={mini ? 3.5 : 5}
@@ -225,10 +225,10 @@ export default defineComponent({
             />
             <rect
               class="rating-stamp__frame"
-              x={mini ? 10.5 : 14.5}
-              y={mini ? 10.5 : 14.5}
-              width={mini ? 79 : 71}
-              height={mini ? 79 : 71}
+              x={mini ? 10.5 : 12.5}
+              y={mini ? 10.5 : 12.5}
+              width={mini ? 79 : 75}
+              height={mini ? 79 : 75}
               rx={mini ? 2.5 : 3}
               stroke-width={mini ? 1.5 : 2}
             />
@@ -237,10 +237,10 @@ export default defineComponent({
                 frame — full-bleed glyphs read too heavy at seal sizes. */}
             <image
               href={STAMP_GLYPHS[props.kind]}
-              x={mini ? 14 : 17}
-              y={mini ? 14 : 17}
-              width={mini ? 72 : 66}
-              height={mini ? 72 : 66}
+              x={mini ? 14 : 15.5}
+              y={mini ? 14 : 15.5}
+              width={mini ? 72 : 69}
+              height={mini ? 72 : 69}
             />
           </g>
         </svg>

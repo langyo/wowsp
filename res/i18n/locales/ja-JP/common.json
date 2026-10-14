@@ -57,5 +57,21 @@
     "removeConfirm": "削除しますか？",
     "removed": "ゲームパスを削除しました",
     "inUse": "使用中"
+  },
+  "imageCrop": {
+    "choose": "画像を選択…",
+    "requirement": "正方形の画像が最適です。短辺 {min}px 以上、辺の長さ {max}px 以内。大きすぎる切り抜きは自動的に縮小されます。",
+    "unsupported": "サポートされていない画像形式です（PNG / JPG / WebP / GIF / BMP / AVIF のみ）。",
+    "fileTooLarge": "ファイルが大きすぎます。圧縮してからお試しください。",
+    "tooSmall": "画像が小さすぎます：短辺は {min}px 以上必要です。",
+    "tooLarge": "画像が大きすぎます：辺の長さは {max}px 以内にしてください。",
+    "decodeFailed": "画像をデコードできませんでした。ファイルが破損している可能性があります。",
+    "dragHint": "ドラッグで位置調整、ホイールまたはスライダーで拡大縮小。出力は常に正方形になります。",
+    "zoom": "拡大縮小",
+    "dims": "元 {w}×{h} → 出力 {out}×{out}",
+    "rechoose": "選び直す",
+    "confirm": "この画像を使う",
+    "cancel": "キャンセル",
+    "exportFailed": "切り抜き画像の書き出しに失敗しました"
   }
 }

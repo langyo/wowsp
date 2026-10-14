@@ -1,0 +1,99 @@
+/* Square-image crop dialog body (components/base/ImageSquareCropModal) —
+   the geometry lives in the TSX + utils/imageCrop.ts; this file only skins
+   the stage: crop viewport, zoom rail, live previews. */
+
+.image-crop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem 0 0.75rem;
+  }
+
+  &__hint {
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  &__error {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-error, 220 38 38));
+  }
+
+  &__stage {
+    display: flex;
+    gap: 1rem;
+    align-items: stretch;
+  }
+
+  &__viewport {
+    position: relative;
+    flex: none;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    /* Transparency checkerboard — the seal art is mostly transparent PNG,
+       and bars behind it would read as image content. */
+    background:
+      conic-gradient(rgb(var(--color-border) / 18%) 0 25%, transparent 0 50%, rgb(var(--color-border) / 18%) 0 75%, transparent 0)
+      0 0 / 16px 16px,
+      rgb(var(--color-surface, 255 255 255) / 4%);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  /* The panned/zoomed image itself — one shared skin for the crop viewport
+     and the preview tiles. */
+  &__canvas-img {
+    position: absolute;
+    pointer-events: none;
+    max-width: none;
+  }
+
+  &__side {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__previews {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+  }
+
+  &__preview {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    flex: none;
+    border-radius: 4px;
+    border: 1px solid rgb(var(--color-border) / 40%);
+  }
+
+  &__meta {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  /* Narrow modal (mobile-width): previews and rail drop below the
+     viewport instead of squeezing it. */
+  @media (max-width: 480px) {
+    &__stage {
+      flex-direction: column;
+    }
+  }
+}

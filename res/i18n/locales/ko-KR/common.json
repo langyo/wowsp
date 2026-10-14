@@ -57,5 +57,21 @@
     "removeConfirm": "제거할까요?",
     "removed": "게임 경로가 제거되었습니다",
     "inUse": "사용 중"
+  },
+  "imageCrop": {
+    "choose": "이미지 선택…",
+    "requirement": "정사각형 이미지를 권장합니다: 짧은 변 {min}px 이상, 변 길이 {max}px 이하. 지나치게 큰 크롭은 자동으로 축소됩니다.",
+    "unsupported": "지원하지 않는 이미지 형식입니다 (PNG / JPG / WebP / GIF / BMP / AVIF만 가능).",
+    "fileTooLarge": "파일이 너무 큽니다. 압축 후 다시 시도해 주세요.",
+    "tooSmall": "이미지가 너무 작습니다: 짧은 변이 최소 {min}px이어야 합니다.",
+    "tooLarge": "이미지가 너무 큽니다: 변 길이는 {max}px를 초과할 수 없습니다.",
+    "decodeFailed": "이미지를 디코딩하지 못했습니다. 파일이 손상되었을 수 있습니다.",
+    "dragHint": "드래그로 위치를 조정하고 휠이나 슬라이더로 확대/축소하세요. 결과물은 항상 정사각형입니다.",
+    "zoom": "확대/축소",
+    "dims": "원본 {w}×{h} → 출력 {out}×{out}",
+    "rechoose": "다시 선택",
+    "confirm": "이 이미지 사용",
+    "cancel": "취소",
+    "exportFailed": "잘라낸 이미지 내보내기 실패"
   }
 }

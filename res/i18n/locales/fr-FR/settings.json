@@ -166,7 +166,8 @@
     "pickImage": "Image personnalisée",
     "resetDefault": "Rétablir",
     "pickFailed": "Échec de l'import de l'image du sceau",
-    "resetFailed": "Échec de la réinitialisation du sceau"
+    "resetFailed": "Échec de la réinitialisation du sceau",
+    "dialogTitle": "Image de sceau personnalisée"
   },
   "updates": "Mises à jour et données",
   "changelog": "Notes de mise à jour",

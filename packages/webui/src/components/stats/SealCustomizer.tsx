@@ -5,6 +5,7 @@ import { ImagePlus, RotateCcw } from "@lucide/vue";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import RatingStamp from "@/components/base/RatingStamp";
+import ImageSquareCropModal, { type ImageCropResult } from "@/components/base/ImageSquareCropModal";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { importStampImage, resetStampImage } from "@/stores/stampOverrides";
 import type { StampKind } from "@/utils/winrate";
@@ -51,19 +52,32 @@ export default defineComponent({
     const { uiLocale } = useLanguage();
     const toast = useToast();
     const busy = ref<StampKind | null>(null);
+    // The kind whose crop dialog is open — non-null opens the single shared
+    // ImageSquareCropModal instance rendered below the rows.
+    const dialogKind = ref<StampKind | null>(null);
 
     const visible = () =>
       uiLocale.value.startsWith("zh") && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled;
 
-    async function pick(kind: StampKind) {
+    /** "自定义图片" opens the crop dialog instead of a bare file picker: the
+     *  seal face is a square shown at 34–64px, so the dialog enforces the
+     *  square + min/max-side rules and previews the crop at real seal sizes
+     *  (with the shared −9° press) before anything lands on disk. */
+    function pick(kind: StampKind) {
+      dialogKind.value = kind;
+    }
+
+    async function onCropConfirm({ bytes, ext }: ImageCropResult) {
+      const kind = dialogKind.value;
+      if (!kind) return;
       busy.value = kind;
       try {
-        const imported = await importStampImage(kind);
-        if (!imported) return; // dialog cancelled — nothing to report
+        await importStampImage(kind, bytes, ext);
       } catch (e) {
         toast.error(`${t("settings.sealCustomizer.pickFailed")}\n${(e as Error).message || e}`);
       } finally {
         busy.value = null;
+        dialogKind.value = null;
       }
     }
 
@@ -120,6 +134,16 @@ export default defineComponent({
               </div>
             );
           })}
+          <ImageSquareCropModal
+            modelValue={dialogKind.value != null}
+            title={t("settings.sealCustomizer.dialogTitle")}
+            previewSizes={[64, 40]}
+            previewTransform="rotate(-9deg)"
+            onUpdate:modelValue={(v: boolean) => {
+              if (!v) dialogKind.value = null;
+            }}
+            onConfirm={(result: ImageCropResult) => void onCropConfirm(result)}
+          />
         </div>
       );
     };

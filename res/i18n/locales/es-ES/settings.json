@@ -166,7 +166,8 @@
     "pickImage": "Imagen personalizada",
     "resetDefault": "Restaurar",
     "pickFailed": "Error al importar la imagen del sello",
-    "resetFailed": "Error al restaurar el sello"
+    "resetFailed": "Error al restaurar el sello",
+    "dialogTitle": "Imagen de sello personalizada"
   },
   "updates": "Actualizaciones y datos",
   "changelog": "Historial de cambios",
