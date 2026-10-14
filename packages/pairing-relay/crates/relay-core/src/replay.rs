@@ -271,6 +271,91 @@ pub fn parse_wanted_doc(raw: &str) -> Option<WantedDoc> {
     Some(doc)
 }
 
+/// Hard cap on a saved ruleset (KV values reach 25 MiB; a wanted doc is
+/// a few KiB — anything past this is a paste error, not a ruleset).
+pub const WANTED_SAVE_MAX_BYTES: usize = 64 * 1024;
+
+/// Per-rule array caps, mirroring parse_wanted_doc's defensive truncates
+/// — but REJECTING on save instead of silently trimming, so the editor's
+/// author sees the runaway before it ships.
+const WANTED_RULE_CAPS: [(&str, usize); 7] = [
+    ("maps", 64),
+    ("modes", 32),
+    ("scenarios", 64),
+    ("realms", 8),
+    ("shipClasses", 8),
+    ("shipIds", 256),
+    ("tiers", 16),
+];
+
+/// STRICT parse for the console's save path. The GET-side parse is
+/// deliberately tolerant (a malformed rule is skipped, a malformed doc
+/// reads as closed); a save is an authoring act, so every rule must
+/// parse and validate, array caps are hard errors, and the returned doc
+/// is the canonical form actually stored (updatedAt stamped server-side
+/// to now, rulesetVersion defaulting to 1 when absent).
+pub fn validate_wanted_save(raw: &str, now_ms: u64) -> Result<WantedDoc, String> {
+    if raw.len() > WANTED_SAVE_MAX_BYTES {
+        return Err(format!(
+            "ruleset is {} bytes (max {})",
+            raw.len(),
+            WANTED_SAVE_MAX_BYTES
+        ));
+    }
+    if raw.trim().is_empty() {
+        return Err("the ruleset is empty — to close the collection save {{\"rulesetVersion\":1,\"rules\":[]}} instead".to_string());
+    }
+    let v: Value = serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))?;
+    if !v.is_object() {
+        return Err("the ruleset must be a JSON object".to_string());
+    }
+    let Some(rules_v) = v.get("rules").and_then(Value::as_array) else {
+        return Err("the \"rules\" array is required (empty = collection closed)".to_string());
+    };
+    if rules_v.len() > 256 {
+        return Err(format!("{} rules (max 256)", rules_v.len()));
+    }
+    let mut doc = WantedDoc {
+        ruleset_version: v.get("rulesetVersion").and_then(Value::as_u64).unwrap_or(1),
+        updated_at: Some(iso8601_utc(now_ms)),
+        rules: Vec::with_capacity(rules_v.len()),
+    };
+    if doc.ruleset_version == 0 {
+        return Err("rulesetVersion must be ≥ 1".to_string());
+    }
+    for (i, rule_v) in rules_v.iter().enumerate() {
+        let rule: WantedRule = serde_json::from_value(rule_v.clone())
+            .map_err(|e| format!("rules[{i}]: {e}"))?;
+        if !valid_rule_id(&rule.id) {
+            return Err(format!(
+                "rules[{i}]: id {:?} must match ^[a-z0-9-]{{1,64}}$",
+                rule.id
+            ));
+        }
+        for (field, cap) in WANTED_RULE_CAPS {
+            let n = match field {
+                "maps" => rule.maps.len(),
+                "modes" => rule.modes.len(),
+                "scenarios" => rule.scenarios.len(),
+                "realms" => rule.realms.len(),
+                "shipClasses" => rule.ship_classes.len(),
+                "shipIds" => rule.ship_ids.len(),
+                _ => rule.tiers.len(),
+            };
+            if n > cap {
+                return Err(format!("rules[{i}]: {field} has {n} entries (max {cap})"));
+            }
+        }
+        if let Some(max) = rule.max_count {
+            if max > 1_000_000 {
+                return Err(format!("rules[{i}]: maxCount {max} is absurd (cap 1,000,000)"));
+            }
+        }
+        doc.rules.push(rule);
+    }
+    Ok(doc)
+}
+
 /// Dot-numeric `a` ≥ `b` ("14.5.0" ≥ "14.0"). Missing or non-numeric
 /// components count as 0, so junk strings simply fail every real floor.
 pub fn version_ge(a: &str, b: &str) -> bool {
@@ -2379,6 +2464,46 @@ mod tests {
             body["contributors"][1]["updatedAt"],
             json!(iso8601_utc(100))
         );
+    }
+
+    #[test]
+    fn save_validation_is_strict_and_canonical() {
+        let ok = validate_wanted_save(
+            r#"{ "rulesetVersion": 3, "rules": [
+                { "id": "r1", "maps": ["008_SOLOMONS"], "maxCount": 10 } ] }"#,
+            1_700_000_000_000,
+        )
+        .unwrap();
+        assert_eq!(ok.ruleset_version, 3);
+        assert_eq!(ok.rules.len(), 1);
+        assert_eq!(ok.updated_at.as_deref(), Some("2023-11-14T22:13:20Z"));
+
+        // A malformed rule is an authoring error, not a silent skip.
+        let e = validate_wanted_save(
+            r#"{ "rules": [ { "id": "Bad Id", "maps": [] } ] }"#,
+            0,
+        )
+        .unwrap_err();
+        assert!(e.contains("rules[0]"), "{e}");
+        // Missing rules array, non-object, junk JSON, oversize, and the
+        // empty-string cop-out all refuse with actionable copy.
+        assert!(validate_wanted_save("{}", 0).unwrap_err().contains("rules"));
+        assert!(validate_wanted_save("[1]", 0).unwrap_err().contains("object"));
+        assert!(validate_wanted_save("nope", 0).unwrap_err().contains("JSON"));
+        assert!(validate_wanted_save(&"x".repeat(WANTED_SAVE_MAX_BYTES + 1), 0)
+            .unwrap_err()
+            .contains("bytes"));
+        assert!(validate_wanted_save("", 0).unwrap_err().contains("close"));
+        // Array caps reject instead of trimming.
+        let fat = format!(
+            r#"{{ "rules": [ {{ "id": "r1", "realms": [{}] }} ] }}"#,
+            vec!["\"na\""; 9].join(",")
+        );
+        assert!(validate_wanted_save(&fat, 0).unwrap_err().contains("realms"));
+        // The canonical round-trip re-parses identically (what GET serves).
+        let canon = serde_json::to_string(&ok).unwrap();
+        let again = validate_wanted_save(&canon, 1_700_000_000_000).unwrap();
+        assert_eq!(again.rules, ok.rules);
     }
 
     #[test]

@@ -105,6 +105,7 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::ReplaysUpload => replay::handle_upload(req, env).await,
         Route::ReplaysAdminList => replay::handle_admin_list(req, env).await,
         Route::ReplaysAdminCredits => replay::handle_admin_credits(req, env).await,
+        Route::ReplaysAdminWanted => replay::handle_admin_wanted(req, env).await,
         Route::ReplaysAdminArchive { anon_id: _ } => replay::handle_admin_archive(req, env).await,
         Route::ReplaysAdminDrain => replay::handle_admin_drain(req, env).await,
 

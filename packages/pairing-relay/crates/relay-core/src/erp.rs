@@ -302,6 +302,12 @@ body {{ margin: 0; height: 100vh; height: 100dvh; display: flex;
 main {{ width: 100%; max-width: 76rem; height: 100%; }}
 .e-nav-gap {{ margin-top: var(--space-8); border-top: 1px solid color-mix(in srgb, rgb(var(--color-text)) 10%, transparent); border-radius: 0; padding-top: var(--space-8); }}
 .e-sub {{ margin: var(--space-16) 0 var(--space-8); font-size: 1rem; font-weight: 600; }}
+.e-textarea {{ width: 100%; min-height: 14rem; resize: vertical;
+  font-family: ui-monospace, Consolas, Menlo, monospace; font-size: 0.85rem; line-height: 1.5;
+  padding: var(--space-8); color: rgb(var(--color-text));
+  background: color-mix(in srgb, rgb(var(--color-surface)) 80%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 15%, transparent);
+  border-radius: var(--radius-md); }}
 .e-card {{ display: flex; align-items: stretch; height: 100%;
   background: color-mix(in srgb, rgb(var(--color-surface)) 70%, transparent);
   border: 1px solid color-mix(in srgb, rgb(var(--color-text)) 12%, transparent);
@@ -567,6 +573,18 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       <button type="button" id="replayReload" class="e-btn e-spacer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>刷新</span></button>
     </div>
     <p class="e-muted" id="replayOverview">加载中…</p>
+    <div class="e-row-actions" style="margin:var(--space-8) 0">
+      <button type="button" id="wantedEditBtn" class="e-btn">编辑需求单…</button>
+      <button type="button" id="wantedCloseBtn" class="e-btn">关闭征集…</button>
+    </div>
+    <div id="wantedEditor" hidden>
+      <textarea id="wantedText" class="e-textarea" rows="14" spellcheck="false"></textarea>
+      <div class="e-row-actions" style="margin:var(--space-8) 0">
+        <button type="button" id="wantedSaveBtn" class="e-btn">校验并保存</button>
+        <button type="button" id="wantedCancelBtn" class="e-btn">取消</button>
+        <span id="wantedMsg" class="e-muted"></span>
+      </div>
+    </div>
     <h3 class="e-sub">需求单（服务端权威接受范围）</h3>
     <div class="hk-table-host"><table class="hk-table hk-table-md hk-table-hover"><thead><tr class="hk-table-header-row">
       <th class="hk-table-header-cell" style="width:150px">规则</th><th class="hk-table-header-cell">范围</th>
@@ -921,6 +939,66 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       }}
     }});
   }}
+  // ── the wanted-ruleset editor ───────────────────────────────────────
+  var WANTED_TEMPLATE = JSON.stringify({{
+    rulesetVersion: 1,
+    updatedAt: new Date().toISOString(),
+    rules: [{{
+      id: "example-rule", note: "示例：按需删改；空数组 = 该维度不限",
+      maps: [], modes: [], scenarios: [], realms: [], shipClasses: [],
+      shipIds: [], tiers: [],
+      playerCountMin: null, playerCountMax: null, botMax: 0,
+      clientVersionMin: "", maxCount: 100
+    }}]
+  }}, null, 2);
+  function saveWanted(text, doneMsg) {{
+    var btn = $("wantedSaveBtn");
+    if (btn) btn.disabled = true;
+    $("wantedMsg").textContent = "保存中…";
+    fetch(BASE + "/api/replays/admin/wanted", {{
+      method: "POST",
+      headers: {{ "Content-Type": "application/json" }},
+      body: text
+    }}).then(function (r) {{
+      if (r.status === 401 || r.status === 403) {{ showLogin(""); throw new Error("unauthorized"); }}
+      return r.json().then(function (j) {{ return j; }});
+    }}).then(function (j) {{
+      if (btn) btn.disabled = false;
+      if (j && j.ok) {{
+        $("wantedMsg").textContent = "";
+        $("wantedEditor").hidden = true;
+        toast(doneMsg || ("需求单已保存（v" + j.rulesetVersion + "，" + j.rules + " 条规则）"), "success");
+        loadReplays();
+      }} else {{
+        $("wantedMsg").textContent = j && j.error ? j.error : "保存失败";
+      }}
+    }}).catch(function (e) {{
+      if (btn) btn.disabled = false;
+      if (e.message !== "unauthorized") $("wantedMsg").textContent = "网络异常";
+    }});
+  }}
+  document.getElementById("wantedEditBtn").onclick = function () {{
+    if (!$("wantedEditor").hidden) {{ $("wantedEditor").hidden = true; return; }}
+    $("wantedMsg").textContent = "";
+    fetch(BASE + "/api/replays/admin/wanted").then(function (r) {{
+      if (r.status === 401 || r.status === 403) {{ showLogin(""); throw new Error("unauthorized"); }}
+      return r.json();
+    }}).then(function (j) {{
+      $("wantedText").value = j.exists && j.raw ? j.raw : WANTED_TEMPLATE;
+      $("wantedEditor").hidden = false;
+    }}).catch(function (e) {{
+      if (e.message !== "unauthorized") toast("读取需求单失败：" + e.message, "error");
+    }});
+  }};
+  document.getElementById("wantedCancelBtn").onclick = function () {{
+    $("wantedEditor").hidden = true;
+  }};
+  document.getElementById("wantedSaveBtn").onclick = function () {{
+    saveWanted($("wantedText").value);
+  }};
+  armClick(document.getElementById("wantedCloseBtn"), "关闭征集…", "确认关闭征集?", function () {{
+    saveWanted(JSON.stringify({{ rulesetVersion: 1, rules: [] }}), "征集已关闭（空规则单已保存）");
+  }});
   document.getElementById("navReplays").onclick = function () {{
     var cur = document.querySelector(".e-nav[data-active]");
     if (cur) delete cur.dataset.active;

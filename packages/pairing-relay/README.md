@@ -406,7 +406,12 @@ writes ONE KV value — `FEEDBACK_KV` key `replays:wanted` — holding the
 ruleset (`{rulesetVersion, updatedAt, rules:[{id, maxCount, maps, modes,
 realms, shipClasses, shipIds, tiers, playerCountMin/Max, botMax,
 clientVersionMin}]}`; absent or empty rules = collection CLOSED. Rules
-are matched against client-claimed, plausibility-checked facts
+are matched against client-claimed, plausibility-checked facts.
+Edit the ruleset either directly in KV or from the /erp console's
+录像征集 view (编辑需求单 — a strict server-side validation, the
+canonical form is stored with a server-stamped updatedAt); 关闭征集
+is the one-click empty-ruleset save. A GET/POST pair backs the editor
+at /api/replays/admin/wanted (admin session or x-admin-key).
 (`crates/relay-core/src/replay.rs` carries every bound); verdict
 precedence is duplicate > own_staged > accept > unwanted, and `accept`
 additionally needs an open rule (`collected < maxCount`) plus watermark

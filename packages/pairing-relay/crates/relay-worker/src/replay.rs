@@ -24,8 +24,8 @@ use relay_core::replay::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use worker::{
-    Env, FixedLengthStream, Headers, KvStore, Method, Request, RequestInit, Response, Result, Stub,
-    js_sys,
+    Date, Env, FixedLengthStream, Headers, KvStore, Method, Request, RequestInit, Response, Result,
+    Stub, js_sys,
 };
 
 use crate::feedback::{client_ip, err, ok};
@@ -458,6 +458,57 @@ pub async fn handle_admin_list(req: Request, env: Env) -> Result<Response> {
     }
     let v: Value = resp.json().await.unwrap_or(Value::Null);
     ok(v)
+}
+
+/// GET|POST /api/replays/admin/wanted — the console editor's faces.
+/// GET answers the RAW stored ruleset (what the editor round-trips);
+/// POST validates strictly (relay-core) and stores the canonical form,
+/// stamping updatedAt server-side.
+pub async fn handle_admin_wanted(mut req: Request, env: Env) -> Result<Response> {
+    if !admin_authed(&req, &env) {
+        return err(401, "unauthorized");
+    }
+    let kv = env.kv(KV)?;
+    match req.method() {
+        Method::Get => {
+            let raw = kv.get(replay::KV_WANTED_KEY).text().await.ok().flatten();
+            let v = match raw {
+                Some(raw) => json!({ "exists": true, "raw": raw }),
+                None => json!({ "exists": false, "raw": "" }),
+            };
+            ok(v)
+        },
+        Method::Post => {
+            if let Some(len) = req
+                .headers()
+                .get("Content-Length")?
+                .and_then(|v| v.parse::<usize>().ok())
+            {
+                if len > replay::WANTED_SAVE_MAX_BYTES + 1024 {
+                    return err(413, "file_too_large");
+                }
+            }
+            let body = req.text().await?;
+            let now_ms = Date::now().as_millis();
+            match replay::validate_wanted_save(&body, now_ms) {
+                Ok(doc) => {
+                    let canonical = serde_json::to_string(&doc)
+                        .map_err(|e| worker::Error::RustError(format!("serialize: {e}")))?;
+                    kv.put(replay::KV_WANTED_KEY, canonical)?
+                        .execute()
+                        .await?;
+                    ok(json!({
+                        "ok": true,
+                        "rulesetVersion": doc.ruleset_version,
+                        "rules": doc.rules.len(),
+                    }))
+                },
+                Err(e) => ok(json!({ "ok": false, "error": e }))
+                    .map(|r| r.with_status(400)),
+            }
+        },
+        _ => err(405, "method_not_allowed"),
+    }
 }
 
 /// GET /api/replays/admin/credits — the per-identity lifetime share
