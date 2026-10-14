@@ -21,7 +21,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveSelfStream, VehicleEntry } from "@/api";
-import { buildSelfStats } from "./liveSelfStats";
+import {
+  CALIB_DAMAGE_TOL,
+  CALIB_FRAGS_TOL,
+  CALIB_HITS_TOL,
+  buildSelfStats,
+} from "./liveSelfStats";
 
 // The fixture loads through vite's lazy glob (typed by vite/client — the
 // webui tsconfig carries no node types): present locally → the loader
@@ -62,11 +67,11 @@ describe("live calibration vs a real Lesta battle", () => {
     // Server damage stream: 26,723.5 folded vs the screen's 26,722 — the
     // float32 server totals vs the results accounting; within 0.01%.
     expect(m!.damageSource).toBe("server");
-    expect(Math.abs(m!.damage - 26722)).toBeLessThanOrEqual(10);
+    expect(Math.abs(m!.damage - 26722)).toBeLessThanOrEqual(CALIB_DAMAGE_TOL);
 
     // Impact-stream hits: within a handful of the game's 73 direct-hit
     // ribbons (splash volleys on already-sunk ships differ).
-    expect(Math.abs(m!.hits - 73)).toBeLessThanOrEqual(5);
+    expect(Math.abs(m!.hits - 73)).toBeLessThanOrEqual(CALIB_HITS_TOL);
 
     // Kill attribution envelope: Lesta replays carry NO BattleResults
     // payload (0x22 empty in both the live and the settled container —
@@ -75,8 +80,8 @@ describe("live calibration vs a real Lesta battle", () => {
     // best available: direct-window kills land reliably, DoT kills
     // (fire/flood-out seconds after my last shell) ride the engagement
     // fallback. The screen said 3; the estimate envelope is [2, 4].
-    expect(m!.frags).toBeGreaterThanOrEqual(2);
-    expect(m!.frags).toBeLessThanOrEqual(4);
+    expect(m!.frags).toBeGreaterThanOrEqual(3 - CALIB_FRAGS_TOL);
+    expect(m!.frags).toBeLessThanOrEqual(3 + CALIB_FRAGS_TOL);
 
     // The per-target ledgers must be POPULATED (the pre-fix failure mode:
     // totals without any rows, both lists stuck on 暂无记录).

@@ -59,6 +59,29 @@ const HIT_HP_MIN_DELTA = 50;
 const FRAG_DEATH_WINDOW_S = 1.2;
 const FRAG_DOT_PRE_WINDOW_S = 5.0;
 
+// ── calibration tolerances ────────────────────────────────────────────────
+// The estimate-vs-authority envelope the calibration suite pins: the
+// single-battle test (liveSelfCalibration.test.ts) against the results
+// screen of the 2026-10-08 battle, and the corpus bench
+// (liveSelfCalibrationCorpus.test.ts) against every drained battle whose
+// settled stream carries the BattleResults payload. Named here so the two
+// tests share one source of truth — a tolerance change is a calibration
+// decision, made once and visibly.
+/** Hull-HP totals (damage dealt / taken): float32 server streams vs the
+ * results accounting agree within ~0.01%, plus ribbon-class rounding. */
+export const CALIB_DAMAGE_TOL = 10;
+/** Direct-hit counters: the volley-ticked impact estimate sits within a
+ * handful of the game's ribbon total (splash volleys on already-sunk ships
+ * differ). */
+export const CALIB_HITS_TOL = 5;
+/** Kill attribution envelope: direct-window kills land reliably, DoT kills
+ * (fire/flood-out seconds after the last shell) ride the engagement
+ * fallback — the estimate stays within ±1 of the server's count. */
+export const CALIB_FRAGS_TOL = 1;
+/** Damage taken: the same hull-HP float32 class as dealt damage (max −
+ * final HP, both sides final-based). */
+export const CALIB_TAKEN_TOL = 10;
+
 /** One per-ship combat row: what I did to that ship (dealt) or that ship
  *  did to me (received). */
 export interface SelfCombatRow {

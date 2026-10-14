@@ -12,6 +12,12 @@
 //!   (bounds derived from the observed coordinates — no map-bounds data
 //!   needed anywhere). A heat-free `-lite` companion lands next to it for
 //!   the webui to ship as static res data.
+//! - `calib` decodes every member through the core's SETTLED self-stream
+//!   assembly (`live_self_stream_from_settled`) and writes one
+//!   LiveSelfStream JSON per NDJSON line — the corpus the webui's
+//!   stats-calibration bench (liveSelfCalibrationCorpus.test.ts) replays
+//!   through buildSelfStats. Members that fail the strict settled decode
+//!   are skipped and counted, never written.
 
 use anyhow::{Context, bail};
 use serde::Serialize;
@@ -23,11 +29,13 @@ use std::sync::mpsc;
 
 use wowsp_replay_core::DecodedReplay;
 use wowsp_replay_core::caps::{CapPointObs, cap_points_of};
+use wowsp_replay_core::live_self_stream_from_settled;
 use wowsp_replay_core::meta::{
     client_version_from_raw, extract_descriptor_json, lite_from_raw, packet_stream_after_blocks,
     parse_datetime_from_filename, roster_from_raw,
 };
 use wowsp_replay_core::{decode_replay, is_lesta_replay_extension};
+use wowsp_tauri_shared::LiveSelfStream;
 
 /// Heat grids are SIDE×SIDE cells (per the dataset contract).
 pub const GRID_SIDE: usize = 96;
@@ -45,6 +53,7 @@ const MEMBER_EXTS: [&str; 2] = ["wowsreplay", "korablireplay"];
 pub enum Command {
     Scan(CommonArgs),
     Insights(CommonArgs),
+    Calib(CommonArgs),
 }
 
 #[derive(Debug, PartialEq)]
@@ -57,7 +66,7 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
     let env_archive = std::env::var("WOWSP_ARCHIVE_DIR").ok();
     let mut it = argv.iter();
     let Some(cmd) = it.next() else {
-        bail!("usage: replay-corpus <scan|insights> [options] (see --help)");
+        bail!("usage: replay-corpus <scan|insights|calib> [options] (see --help)");
     };
     let mut archive: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
@@ -83,7 +92,11 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
             archive,
             out: out.unwrap_or_else(|| PathBuf::from("map-insights.json")),
         })),
-        other => bail!("unknown command {other} (scan | insights)"),
+        "calib" => Ok(Command::Calib(CommonArgs {
+            archive,
+            out: out.unwrap_or_else(|| PathBuf::from("calib-corpus.ndjson")),
+        })),
+        other => bail!("unknown command {other} (scan | insights | calib)"),
     }
 }
 
@@ -755,6 +768,101 @@ pub fn run_insights(
     })
 }
 
+// ── calib: the stats-calibration bench corpus ───────────────────────────
+
+/// Serialize one settled battle's [`LiveSelfStream`] to its single NDJSON
+/// line — the writer half of `calib`, unit-testable on pre-built stream
+/// values (the decode side needs real battles). Compact JSON:
+/// `serde_json::to_string` never emits newlines, so the one-line-per-battle
+/// contract holds for every stream.
+fn calib_line(stream: &LiveSelfStream) -> anyhow::Result<String> {
+    Ok(serde_json::to_string(stream)?)
+}
+
+/// Join the per-battle NDJSON lines into the corpus body — every line
+/// newline-terminated (the bench's fixture-line numbers key on it), an
+/// empty corpus staying an empty file.
+fn join_calib_ndjson(lines: impl IntoIterator<Item = String>) -> String {
+    let mut body = String::new();
+    for line in lines {
+        body.push_str(&line);
+        body.push('\n');
+    }
+    body
+}
+
+/// The `calib` command: decode every drained member through the decoding
+/// core's SETTLED self-stream assembly (roster → full decode → the same
+/// post-decode tail the app's live view runs; errors propagate — a corpus
+/// file must fully decode) and write the stats-calibration bench corpus:
+/// ONE LiveSelfStream JSON per NDJSON line, only the decodable battles,
+/// in content-address (sha) order so the bench's fixture-line numbers stay
+/// stable across regenerations. The webui replays this file through
+/// buildSelfStats (liveSelfCalibrationCorpus.test.ts).
+pub fn run_calib(archive: &Path, out: &Path) -> anyhow::Result<RunReport> {
+    let files = Arc::new(walk_raw(archive)?);
+    eprintln!(
+        "{} drained replay(s) under {}",
+        files.len(),
+        archive.join("raw").display()
+    );
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .max(1)
+        .min(files.len().max(1));
+    let next = Arc::new(AtomicUsize::new(0));
+    let (tx, rx) = mpsc::channel::<(usize, anyhow::Result<String>)>();
+    let mut handles = Vec::with_capacity(workers);
+    for _ in 0..workers {
+        let files = Arc::clone(&files);
+        let next = Arc::clone(&next);
+        let tx = tx.clone();
+        handles.push(std::thread::spawn(move || {
+            loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= files.len() {
+                    break;
+                }
+                let file = &files[i];
+                let result = std::fs::read(&file.path)
+                    .with_context(|| format!("reading {}", file.path.display()))
+                    .and_then(|bytes| live_self_stream_from_settled(&file.path, &bytes))
+                    .and_then(|stream| calib_line(&stream));
+                if tx.send((i, result)).is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+    drop(tx);
+    let mut lines: Vec<Option<String>> = vec![None; files.len()];
+    let mut unparsed = 0u32;
+    let mut done = 0usize;
+    for (i, result) in rx {
+        done += 1;
+        match result {
+            Ok(line) => lines[i] = Some(line),
+            Err(e) => {
+                unparsed += 1;
+                eprintln!("! {} skipped: {e:#}", files[i].sha);
+            },
+        }
+        if done % 100 == 0 {
+            eprintln!("  decoded {done}/{}", files.len());
+        }
+    }
+    for handle in handles {
+        let _ = handle.join();
+    }
+    let body = join_calib_ndjson(lines.into_iter().flatten());
+    std::fs::write(out, body).with_context(|| format!("writing {}", out.display()))?;
+    Ok(RunReport {
+        files: files.len(),
+        unparsed,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1123,6 +1231,76 @@ mod tests {
         assert_eq!(insight.caps[0].team, Some(-1));
     }
 
+    // ── the calib NDJSON writer ─────────────────────────────────────────
+
+    /// A pre-built battle stream serializes to ONE compact JSON line that
+    /// round-trips back through serde exactly — the bench corpus contract
+    /// (one LiveSelfStream per line, no embedded newlines).
+    #[test]
+    fn calib_line_roundtrips_a_prebuilt_stream() {
+        let mut stream = LiveSelfStream::default();
+        stream.trajectories = vec![wowsp_tauri_shared::EntityTrajectory {
+            entity_id: 7,
+            kind: Some(wowsp_tauri_shared::EntityKind {
+                entity_type: 2,
+                vehicle_id: 0,
+                initial_x: 1.0,
+                initial_y: 0.0,
+                initial_z: -2.0,
+                creation_time: -1.0,
+                ship_id: Some(101),
+                max_health: Some(27_400),
+                control_point_index: None,
+                initial_team: None,
+                radius: None,
+            }),
+            samples: Vec::new(),
+            death_time: Some(612.5),
+            hp_samples: vec![wowsp_tauri_shared::HpSample {
+                time: 0.0,
+                value: 27_400,
+            }],
+            cap_samples: Vec::new(),
+            cap_progress: Vec::new(),
+        }];
+        stream.damage_stats = vec![wowsp_tauri_shared::DamageStatSample {
+            time: 60.0,
+            weapon: 2,
+            category: 0,
+            count: 4,
+            total: 5_678.5,
+        }];
+        stream.battle_results = Some(r#"{"accountDBID":42}"#.into());
+        let line = calib_line(&stream).expect("serializes");
+        assert!(!line.contains('\n'), "one line per battle");
+        let back: LiveSelfStream = serde_json::from_str(&line).expect("reparses");
+        assert_eq!(back.trajectories.len(), 1);
+        assert_eq!(back.trajectories[0].entity_id, 7);
+        assert_eq!(back.trajectories[0].hp_samples.len(), 1);
+        assert_eq!(back.damage_stats.len(), 1);
+        assert_eq!(back.damage_stats[0].total, 5_678.5);
+        assert_eq!(
+            back.battle_results.as_deref(),
+            Some(r#"{"accountDBID":42}"#)
+        );
+        // The empty snapshot (a no-damage recorder) still lands a line.
+        assert_eq!(
+            calib_line(&LiveSelfStream::default()).unwrap(),
+            serde_json::to_string(&LiveSelfStream::default()).unwrap()
+        );
+    }
+
+    /// The corpus body joins lines newline-terminated (fixture-line numbers
+    /// key on it) and an empty corpus stays an empty file.
+    #[test]
+    fn calib_body_joins_lines_with_trailing_newlines() {
+        assert_eq!(join_calib_ndjson(Vec::<String>::new()), "");
+        assert_eq!(
+            join_calib_ndjson(vec!["{}".into(), "[1,2]".into()]),
+            "{}\n[1,2]\n"
+        );
+    }
+
     // ── argv ─────────────────────────────────────────────────────────────
 
     #[test]
@@ -1146,6 +1324,25 @@ mod tests {
             Command::Insights(a) => {
                 assert_eq!(a.archive, PathBuf::from("arch"));
                 assert_eq!(a.out, PathBuf::from("map-insights.json"));
+            },
+            other => panic!("wrong command {other:?}"),
+        }
+        let calib: Vec<String> = ["calib", "--archive", "arch", "--out", "bench.ndjson"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&calib).unwrap() {
+            Command::Calib(a) => {
+                assert_eq!(a.archive, PathBuf::from("arch"));
+                assert_eq!(a.out, PathBuf::from("bench.ndjson"));
+            },
+            other => panic!("wrong command {other:?}"),
+        }
+        let calib_default: Vec<String> = ["calib"].iter().map(|s| s.to_string()).collect();
+        match parse_args(&calib_default).unwrap() {
+            Command::Calib(a) => {
+                assert_eq!(a.archive, PathBuf::from("replay-archive"));
+                assert_eq!(a.out, PathBuf::from("calib-corpus.ndjson"));
             },
             other => panic!("wrong command {other:?}"),
         }

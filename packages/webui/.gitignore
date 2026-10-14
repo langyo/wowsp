@@ -1,4 +1,6 @@
-# Local-only live-calibration fixture (~2 MB real position stream);
-# regenerated via the ignored Rust test regenerate_live_calibration_fixture
-# (see liveSelfCalibration.test.ts).
+# Local-only live-calibration fixtures (real battle streams): the ~2 MB
+# single-battle stream regenerated via the ignored Rust test
+# regenerate_live_calibration_fixture, and the whole-archive bench corpus
+# calib-corpus.ndjson regenerated via `replay-corpus calib` (see
+# liveSelfCalibration.test.ts / liveSelfCalibrationCorpus.test.ts).
 src/features/replay/__fixtures__/

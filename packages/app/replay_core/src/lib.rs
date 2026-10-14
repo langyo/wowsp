@@ -10,6 +10,9 @@
 //! - [`packets`]         — packet-stream decoding: decrypt → inflate → the
 //!   frame walk producing [`DecodedReplay`] (positions, entity kinds,
 //!   battle-effect events).
+//! - [`assemble`]        — post-decode assembly: HP detection/anchoring, the
+//!   Lesta arena synthesis, entity grouping, and the settled-file
+//!   [`live_self_stream_from_settled`] entry (the corpus bench's source).
 //! - [`method_tables`] / [`method_tables_lesta`] — the per-version (WG) and
 //!   per-family (Lesta) Avatar client-method id tables the decoder gates
 //!   EntityMethod streams on.
@@ -20,12 +23,14 @@
 //! commands::replay`) and re-exports this crate's modules under their
 //! historical paths, so nothing about the IPC surface changes.
 
+pub mod assemble;
 pub mod caps;
 pub mod meta;
 pub mod method_tables;
 pub mod method_tables_lesta;
 pub mod packets;
 
+pub use assemble::live_self_stream_from_settled;
 pub use packets::{DecodedReplay, PropertyChange, decode_replay, decode_replay_partial};
 
 /// Whether `ext` is the Lesta (Мир кораблей) replay container extension.
