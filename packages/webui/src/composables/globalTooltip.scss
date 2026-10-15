@@ -128,26 +128,28 @@
 
 .global-tooltip__card-row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 8px;
   font-size: var(--text-2xs);
 }
 
 .global-tooltip__card-row-icon {
-  align-self: center;
   flex-shrink: 0;
   width: 15px;
   height: 15px;
   object-fit: contain;
-  margin-right: -6px;
+  margin-top: 1px;
 }
 
 .global-tooltip__card-row-label {
+  flex-shrink: 0;
+  min-width: 5.5em;
   color: #5c5c5c;
 }
 
 .global-tooltip__card-row-value {
+  flex: 1 1 auto;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -167,7 +169,7 @@
 .global-tooltip__card-note {
   margin-top: 6px;
   color: #5c5c5c;
-  font-size: var(--text-2-xs);
+  font-size: var(--text-2xs);
 }
 
 [data-mode="dark"] {
