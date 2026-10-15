@@ -2,7 +2,13 @@
  *  catalog entries/tags/presets, labels and size/url formatting. No
  *  component state — everything here reads the global locale composable
  *  or takes its input as a parameter. */
-import type { CatalogEntry, CatalogPreset, CatalogTag, ModKind } from "@/api";
+import type {
+  CatalogEntry,
+  CatalogPreset,
+  CatalogTag,
+  ModInstallRecord,
+  ModKind,
+} from "@/api";
 import { KIND_BIG } from "@/features/modhub/taxonomy";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -53,6 +59,21 @@ export function presetLabel(p: CatalogPreset): string {
   return uiLocale.value.toLowerCase().startsWith("zh")
     ? p.nameZh || p.nameEn
     : p.nameEn || p.nameZh;
+}
+
+/** Whether the user switched a preset-carrying INSTALLED entry away from
+ * its installed scheme — the config effectively changed, so the primary
+ * action becomes "save & reinstall" instead of the plain install/update
+ * wording. A record without a preset sits on the default (first) scheme. */
+export function presetSwitched(
+  entry: CatalogEntry,
+  record: ModInstallRecord | null | undefined,
+  activePreset: string,
+): boolean {
+  const list = entry.presets ?? [];
+  if (list.length === 0 || !record) return false;
+  const installed = record.preset ?? list[0].id;
+  return activePreset !== installed;
 }
 
 /** Installer display name for badges/notes. */
