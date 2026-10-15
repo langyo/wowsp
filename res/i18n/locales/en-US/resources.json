@@ -103,6 +103,7 @@
   "discuss": "Discussion",
   "bundledWithApp": "Bundled with the app (auto-installed when plugin detection is enabled)",
   "openDiscussion": "Open thread",
+  "authorPage": "Open the author's page",
   "pkgCount": "{count} pkg · {kb} KB",
   "detailMenu": "More actions",
   "actionOpenPath": "Open plugin folder",

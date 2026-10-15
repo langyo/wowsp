@@ -115,6 +115,8 @@ Discussions resource post template (excerpt):
     version: 1.4.0
     game: ">=14.3 <14.6"
     category: skins
+    author: Someone
+    author_url: https://github.com/someone
     aliases: SMO_HazeSkins, SeaHazeSkinsPy
     license: CC0-1.0
     ---
@@ -127,6 +129,14 @@ directory names. The indexer harvests them into `mod-index.json`, and the
 app's pairing treats them as exact identity, so a raw directory name that
 shares no words with the display name (`TeamHP` vs "Team HP by TTaro")
 still resolves to the right entry.
+
+`author` (optional) is the mod author's display name and `author_url`
+(optional) their official page. Both live ONLY here — localized display
+names never carry the attribution ("Team Panels", not "Team Panels by
+AutoSpy"): the indexer copies the pair into `mod-index.json` and the
+catalog renders them as the author tag, clickable when the URL is
+verified. The registry backing these lines lives in
+`scripts/mod_hub_authors.json`.
 
 #### Slug taxonomy (`category.genus.species`)
 

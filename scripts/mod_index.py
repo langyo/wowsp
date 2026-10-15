@@ -264,7 +264,12 @@ def index_discussions(nodes: list[dict]) -> dict:
         entry["versions"][version] = {
             "game": meta.get("game", "*"),
             "title": d.get("title"),
-            "author": (d.get("author") or {}).get("login"),
+            # Mod author (front-matter `author:`), falling back to the
+            # thread poster; `author_url` is the author's official page
+            # when the front-matter declares one — the catalog renders
+            # both as the author tag.
+            "author": meta.get("author") or (d.get("author") or {}).get("login"),
+            **({"author_url": meta["author_url"]} if meta.get("author_url") else {}),
         }
         if d.get("closed"):
             # Delisting signal: a closed thread means "this release is
@@ -345,6 +350,23 @@ def main(argv: list[str] | None = None) -> int:
         ])
         assert idx["mods"]["ime-config"]["latest"] == "1"
         assert idx["mods"]["ime-config"]["signals"] == {"14.6": ["u"]}
+        # Front-matter author rides the version; without it the thread
+        # poster is the fallback.
+        authored = index_discussions([
+            {"number": 1, "title": "t", "author": {"login": "poster"},
+             "body": "---\nwowsp-mod: smi\nversion: 1\ncategory: battle\nauthor: TTaro\n"
+                     "author_url: https://github.com/AndrewTaro\n---\nx",
+             "comments": {"nodes": []}},
+        ])
+        v = authored["mods"]["smi"]["versions"]["1"]
+        assert v["author"] == "TTaro" and v["author_url"] == "https://github.com/AndrewTaro", v
+        plain = index_discussions([
+            {"number": 2, "title": "t", "author": {"login": "poster"},
+             "body": "---\nwowsp-mod: mx\nversion: 1\ncategory: battle\n---\nx",
+             "comments": {"nodes": []}},
+        ])
+        assert plain["mods"]["mx"]["versions"]["1"]["author"] == "poster"
+        assert "author_url" not in plain["mods"]["mx"]["versions"]["1"]
         i18n = parse_i18n(
             "<!--\nwowsp:i18n\nen-US: Shot Timer | Counts down 20s\n"
             "zh-CN: 开火后倒计时20s | 主炮开火后提示灭点窗口\nwowsp:i18n\n-->\nbody"

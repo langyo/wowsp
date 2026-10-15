@@ -96,6 +96,8 @@ Discussions 资源帖模板（节选）：
     version: 1.4.0
     game: ">=14.3 <14.6"
     category: skins
+    author: Someone
+    author_url: https://github.com/someone
     aliases: SMO_HazeSkins, SeaHazeSkinsPy
     license: CC0-1.0
     ---
@@ -106,6 +108,12 @@ Discussions 资源帖模板（节选）：
 Aslain 整合包的清单行 ID 与落盘目录名。索引器将其采集进
 `mod-index.json`，应用侧配对按精确身份处理：`TeamHP` 这类与展示名
 （"Team HP by TTaro"）毫不相干的原始目录名，也能解析到正确条目。
+
+`author`（可选）是插件作者的显示名，`author_url`（可选）是作者官方
+页面。作者署名只活在这两行里——各语言的展示名一律不携带署名（是
+"Team Panels"，不是 "Team Panels by AutoSpy"）：索引器把这对字段
+复制进 `mod-index.json`，目录页将其渲染为作者标签，链接经核实后可
+点击跳转。两行的数据源是 `scripts/mod_hub_authors.json` 登记表。
 
 用 Discussions 而不是 Releases 的原因：评论区就是用户反馈与兼容性回报（"14.6 实测可用"会被索引器吸收为兼容性信号），Watch/通知即订阅，零后端成本。
 

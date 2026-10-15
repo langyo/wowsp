@@ -2130,6 +2130,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
         name_zh: "name-zh-sentinel".into(),
         name_en: "name-en-sentinel".into(),
         description: "description-sentinel".into(),
+        author: "author-sentinel".into(),
         author_url: "https://example.example/author".into(),
         packages: vec![CatalogPackage {
             url: "https://github.com/releases/pkg2.zip".into(),
@@ -2166,6 +2167,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
             "nameZh",
             "nameEn",
             "description",
+            "author",
             "authorUrl",
             "aliases",
             "preview",

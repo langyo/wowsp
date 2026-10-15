@@ -392,6 +392,7 @@ mod tests {
             name_zh: zh.into(),
             name_en: en.into(),
             description: String::new(),
+            author: String::new(),
             author_url: String::new(),
             i18n: [(
                 "en-US".to_string(),

@@ -142,6 +142,11 @@ export interface CatalogEntry {
   nameZh: string;
   nameEn: string;
   description: string;
+  /** Mod author display name (thread `author:` front-matter); empty when
+   *  no author is verified — the detail pane then renders no author tag. */
+  author: string;
+  /** The author's official page; empty when unknown, in which case the
+   *  author tag renders without a link. */
   authorUrl: string;
   packages: CatalogPackage[];
   /** Localized variants keyed by BCP-47 locale; empty for older posts. */

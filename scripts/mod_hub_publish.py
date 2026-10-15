@@ -167,8 +167,9 @@ from mod_hub_slugs import CATEGORY_RENAME, SLUG_MAP  # noqa: E402 - repo-local
 # (scripts/mod_hub_desc_i18n.json) — Aslain only ships rich descriptions in
 # a couple of languages, so the remaining locales are curated here and laid
 # over each thread by `enrich` as the HIGHEST-priority layer. The reserved
-# "_names" entry carries name fixes (e.g. es-ES names for hand-published
-# threads outside the Aslain ingest).
+# "_names" entry carries per-locale NAME FIXES that OVERRIDE the live block
+# and Aslain's own metadata (attribution stays out of display names; e.g.
+# es-ES names for hand-published threads outside the Aslain ingest).
 _DESC_I18N_PATH = Path(__file__).with_name("mod_hub_desc_i18n.json")
 DESC_I18N: dict = (
     json.loads(_DESC_I18N_PATH.read_text(encoding="utf-8"))
@@ -176,6 +177,36 @@ DESC_I18N: dict = (
     else {}
 )
 DESC_I18N_NAMES: dict = DESC_I18N.pop("_names", {}) if DESC_I18N else {}
+
+# Author tag registry (scripts/mod_hub_authors.json): `mods` maps every
+# catalog slug to its author's display name and `authors` maps that name to
+# the author's official page (empty string = no verified page, the tag then
+# renders without a link). `enrich` writes both into the thread's
+# front-matter (`author:` / `author_url:`) and `index` copies them into
+# mod-index.json; the catalog UI renders them as the clickable author tag.
+_AUTHORS_PATH = Path(__file__).with_name("mod_hub_authors.json")
+MOD_AUTHORS: dict = (
+    json.loads(_AUTHORS_PATH.read_text(encoding="utf-8"))
+    if _AUTHORS_PATH.exists()
+    else {}
+)
+
+
+def author_record(slug: str) -> tuple[str, str]:
+    """(author, official page) for one catalog slug, from the registry."""
+    name = MOD_AUTHORS.get("mods", {}).get(slug, "")
+    if not name:
+        return "", ""
+    return name, MOD_AUTHORS.get("authors", {}).get(name, "")
+
+
+def append_author_lines(front: list[str], slug: str) -> None:
+    """Front-matter author tag lines (registry-backed, absent when unknown)."""
+    name, url = author_record(slug)
+    if name:
+        front.append(f"author: {name}")
+    if url:
+        front.append(f"author_url: {url}")
 
 CATEGORY_MAP = {
     "Team_Panel": "battle",
@@ -730,6 +761,7 @@ def discussion_body(mod: dict) -> str:
         f'game: "{mod["game"]}"',
         f"category: {mod['category']}",
     ]
+    append_author_lines(front, mod["id"])
     alias = aliases_line(mod)
     if alias:
         front.append(alias)
@@ -948,10 +980,12 @@ def merged_i18n(slug: str, curated: dict | None, body: str) -> dict:
             entry["desc"] = meta["desc"]
     for lang, desc in (DESC_I18N.get(slug) or {}).items():
         i18n.setdefault(lang, {"name": "", "desc": ""})["desc"] = desc
+    # Name fixes OVERRIDE — attribution must stay out of display names even
+    # when the live block or Aslain's own metadata carries it ("Team Panels",
+    # never "Team Panels by AutoSpy"; the author lives in the tag).
     for lang, name in (DESC_I18N_NAMES.get(slug) or {}).items():
-        entry = i18n.setdefault(lang, {"name": "", "desc": ""})
-        if not entry.get("name"):
-            entry["name"] = name
+        if name:
+            i18n.setdefault(lang, {"name": "", "desc": ""})["name"] = name
     return {lang: v for lang, v in i18n.items() if v.get("name") or v.get("desc")}
 
 
@@ -973,9 +1007,12 @@ def enrich_body(curated: dict | None, thread: dict, gallery_urls: list[str]) -> 
         "aslain_id": (curated or {}).get("aslain_id", ""),
     }
     i18n = merged_i18n(slug, curated, thread["body"])
-    name_en = (curated or {}).get("name_en") or slug
-    name_zh = (curated or {}).get("name_zh") or ""
+    # The visible title line reads from the curated catalog names; the
+    # registry's name fixes win there too so attribution stays out.
+    name_en = (DESC_I18N_NAMES.get(slug) or {}).get("en-US") or (curated or {}).get("name_en") or slug
+    name_zh = (DESC_I18N_NAMES.get(slug) or {}).get("zh-CN") or (curated or {}).get("name_zh") or ""
     lines = ["---", f"wowsp-mod: {slug}", f"version: {version}", f'game: "{game}"', f"category: {category}"]
+    append_author_lines(lines, slug)
     alias = aliases_line(pseudo)
     if alias:
         lines.append(alias)
@@ -1164,7 +1201,10 @@ def build_index(state: dict) -> dict:
             "description": mod["description"],
             "i18n": mod.get("i18n") or {},
             "preview": (mod.get("preview_attachments") or [mod.get("preview_attachment") or ""])[0],
-            "author_url": mod["author_url"],
+            # The registry wins (name + verified page); the catalog's own
+            # AuthorUrl is the fallback for the URL.
+            "author": author_record(mod["id"])[0],
+            "author_url": author_record(mod["id"])[1] or mod["author_url"],
             "packages": [
                 {
                     "url": pkg["download_url"],
