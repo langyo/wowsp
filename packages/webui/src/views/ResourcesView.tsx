@@ -37,9 +37,11 @@ import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
 import { useMigrateWizard } from "./resources/useMigrateWizard";
+import { useFileListWindow } from "./resources/useFileListWindow";
 import type { ResourcesCtx } from "./resources/context";
 import { renderPane } from "./resources/DetailPane";
 import { renderMigrateWizard } from "./resources/MigrateWizard";
+import { renderFileListWindow } from "./resources/FileListWindow";
 import {
   renderCatalogRow,
   renderComponentRow,
@@ -75,7 +77,8 @@ export default defineComponent({
     const hub = useModHub();
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
-    const ctx: ResourcesCtx = { ...hub, ...wizard };
+    const fileWindow = useFileListWindow(hub);
+    const ctx: ResourcesCtx = { ...hub, ...wizard, fileWindow };
 
     // All installed rows, confirmations and migration plans belong to the
     // selected install. Invalidate synchronously so an old row can never
@@ -476,6 +479,7 @@ export default defineComponent({
 
           {/* Stale-bin migration wizard: plan → review → executing → done. */}
           {renderMigrateWizard(ctx)}
+          {renderFileListWindow(ctx)}
 
           <HkConfirmDialog
             open={!!hub.unitTarget.value}

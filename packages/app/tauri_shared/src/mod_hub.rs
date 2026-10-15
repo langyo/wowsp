@@ -312,6 +312,33 @@ pub struct ModInstallRecord {
     pub game_root: String,
 }
 
+/// One package's expected write map, for the read-only "what will this
+/// touch?" preview: the classifier runs over an on-demand extraction in a
+/// temp dir, so nothing ever touches `res_mods`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageFilePreview {
+    pub name: String,
+    pub size: u64,
+    /// `res_mods`-relative destinations this package maps its files to
+    /// (deduped, sorted; `@game/…` prefixes mark game-root DLL/EXE drops).
+    pub files: Vec<String>,
+    /// Classifier warnings (wrapper peel, unrecognized leftovers…).
+    pub warnings: Vec<String>,
+}
+
+/// Result of `mod_catalog_preview_files`: per-package expected write maps
+/// plus the `bin/<version>` the tree roots at.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogFilePreview {
+    /// `bin/<version>` string the preview tree should root at; empty when
+    /// the given game root has no recognizable bin version (the UI falls
+    /// back to a localized "current version" label).
+    pub bin_version: String,
+    pub packages: Vec<PackageFilePreview>,
+}
+
 /// ModAPI loader-marker health of the live `res_mods`: the client only
 /// loads `PnFMods/` python mods while the `PnFModsLoader.py` marker
 /// exists, so `pnf_mods_present && !marker_present` is the "everything

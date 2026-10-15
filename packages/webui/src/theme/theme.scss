@@ -245,8 +245,9 @@ select,
 .replay-view__meta-item:not(button),
 .replay-view__chat-text,
 .mod-detail__id,
-.mod-detail__paths li,
-.mod-detail__pkgs,
+/* File-list window: package rows and tree labels are paths worth copying. */
+.file-window__pkg-name,
+.file-window .hk-tree-row,
 .plan-card__detail,
 .plan-card__files,
 .mig-wizard__files {

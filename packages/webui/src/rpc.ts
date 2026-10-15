@@ -156,6 +156,8 @@ export const RPC = {
   mod_tags: "mod_tags",
   mod_catalog_refresh: "mod_catalog_refresh",
   mod_catalog_install: "mod_catalog_install",
+  mod_catalog_preview_files: "mod_catalog_preview_files",
+  mod_hub_reveal_path: "mod_hub_reveal_path",
   mod_catalog_uninstall: "mod_catalog_uninstall",
   mod_hub_records: "mod_hub_records",
   wallpaper_list: "wallpaper_list",
