@@ -284,11 +284,22 @@ export function techTreeFeatureNote(): string {
   return featureText(featureData.texts.note);
 }
 
-/** One localized feature sentence, "＋"/"−"-marked by its FEAT quality. */
-export function techTreeFeatText(featKey: string): string {
-  const text = featureText(featureData.texts.feat[featKey]);
-  if (!text) return "";
-  return (featKey.includes("_BAD_") ? "− " : "＋ ") + text;
+/** A localized feature sentence as a colored qualifier chip: tone "good"
+ *  for FEAT_GOOD_* positives, "bad" for FEAT_BAD_* negatives. */
+export interface TechTreeFeatChip {
+  text: string;
+  tone: "good" | "bad";
+}
+
+/** The chip list for one feature group, dropping sentences without a
+ *  bundled string. */
+export function techTreeFeatChips(featKeys: string[]): TechTreeFeatChip[] {
+  const chips: TechTreeFeatChip[] = [];
+  for (const key of featKeys) {
+    const text = featureText(featureData.texts.feat[key]);
+    if (text) chips.push({ text, tone: key.includes("_BAD_") ? "bad" : "good" });
+  }
+  return chips;
 }
 
 /** Localized category label for a feature group. */

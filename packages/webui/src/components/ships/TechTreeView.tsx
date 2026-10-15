@@ -8,8 +8,8 @@ import {
   techTreeBranchHasContent,
   techTreeBranchInfo,
   techTreeCardIcon,
+  techTreeFeatChips,
   techTreeCategoryIcon,
-  techTreeFeatText,
   techTreeFeatureCategoryText,
   techTreeFeatureNote,
   techTreeFeatureTitle,
@@ -248,13 +248,10 @@ export default defineComponent({
       const rows = (info?.groups ?? [])
         .map(([category, feats]) => ({
           label: techTreeFeatureCategoryText(category),
-          value: feats
-            .map((f) => techTreeFeatText(f))
-            .filter((s) => s !== "")
-            .join(" · "),
+          chips: techTreeFeatChips(feats),
           iconUrl: techTreeCategoryIcon(category) ?? undefined,
         }))
-        .filter((row) => row.value.trim() !== "");
+        .filter((row) => row.chips.length > 0);
       const icons = (info?.card ?? [])
         .map((k) => techTreeCardIcon(k))
         .filter((u): u is string => u !== null)

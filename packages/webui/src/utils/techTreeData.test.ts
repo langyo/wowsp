@@ -17,7 +17,7 @@ import {
   techTreeFeatureCategoryText,
   techTreeFeatureNote,
   techTreeFeatureTitle,
-  techTreeFeatText,
+  techTreeFeatChips,
   techTreeNode,
   techTreeShipBranch,
   treeNextShipIds,
@@ -288,9 +288,11 @@ describe("branch features", () => {
   });
 
   it("marks feature sentences good/bad and keeps unknown keys blank", () => {
-    expect(techTreeFeatText("FEAT_GOOD_TORP_DMG")).toMatch(/^＋ /);
-    expect(techTreeFeatText("FEAT_BAD_TORP_DMG")).toMatch(/^− /);
-    expect(techTreeFeatText("FEAT_KEY_NO_ONE_CURATED")).toBe("");
+    expect(techTreeFeatChips(["FEAT_GOOD_TORP_DMG", "FEAT_BAD_TORP_DMG"])).toEqual([
+      { text: "High torpedo damage", tone: "good" },
+      { text: "Low torpedo damage", tone: "bad" },
+    ]);
+    expect(techTreeFeatChips(["FEAT_KEY_NO_ONE_CURATED"])).toEqual([]);
   });
 });
 
