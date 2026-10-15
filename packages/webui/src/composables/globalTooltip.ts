@@ -49,6 +49,8 @@ const TAG_TONES: ReadonlySet<string> = new Set(["epic", "rec"]);
 export interface HintCardRow {
   label: string;
   value: string;
+  /** Optional leading icon (feature-category emblem, …). */
+  iconUrl?: string;
 }
 
 /** A structured hover card replacing the plain hint text. Every field is
@@ -64,8 +66,12 @@ export interface HintCard {
   subtitle?: string;
   /** Small flag image leading the subtitle line. */
   subtitleFlagUrl?: string;
+  /** Small feature icons under the identity line (tech-tree branches). */
+  icons?: string[];
   /** Parameter rows under an optional hairline divider. */
   rows?: HintCardRow[];
+  /** Muted footnote under the rows (the comparison basis, …). */
+  note?: string;
 }
 
 /** Shape-validate parsed `data-hint-card` JSON; blank optional fields are
@@ -81,6 +87,13 @@ export function hintCardFrom(parsed: unknown): HintCard | null {
   if (typeof o.subtitleFlagUrl === "string" && o.subtitleFlagUrl.trim() !== "") {
     card.subtitleFlagUrl = o.subtitleFlagUrl;
   }
+  if (Array.isArray(o.icons)) {
+    const icons = o.icons.filter(
+      (i): i is string => typeof i === "string" && i.trim() !== "",
+    );
+    if (icons.length > 0) card.icons = icons.slice(0, 6);
+  }
+  if (typeof o.note === "string" && o.note.trim() !== "") card.note = o.note;
   if (Array.isArray(o.rows)) {
     const rows = o.rows.filter(
       (row): row is HintCardRow =>
@@ -91,6 +104,11 @@ export function hintCardFrom(parsed: unknown): HintCard | null {
         typeof (row as HintCardRow).value === "string" &&
         (row as HintCardRow).value.trim() !== "",
     );
+    for (const row of rows) {
+      const iconUrl = (row as { iconUrl?: unknown }).iconUrl;
+      if (typeof iconUrl === "string" && iconUrl.trim() !== "") row.iconUrl = iconUrl;
+      else delete row.iconUrl;
+    }
     if (rows.length > 0) card.rows = rows;
   }
   return card;
@@ -177,12 +195,34 @@ function renderCard(card: HintCard): HTMLElement {
     root.appendChild(sub);
   }
 
+  if (card.icons && card.icons.length > 0) {
+    const strip = document.createElement("div");
+    strip.className = "global-tooltip__card-icons";
+    for (const url of card.icons) {
+      const icon = document.createElement("img");
+      icon.className = "global-tooltip__card-feature-icon";
+      icon.src = url;
+      icon.alt = "";
+      icon.draggable = false;
+      strip.appendChild(icon);
+    }
+    root.appendChild(strip);
+  }
+
   if (card.rows && card.rows.length > 0) {
     const rows = document.createElement("div");
     rows.className = "global-tooltip__card-rows";
     for (const row of card.rows) {
       const line = document.createElement("div");
       line.className = "global-tooltip__card-row";
+      if (row.iconUrl) {
+        const icon = document.createElement("img");
+        icon.className = "global-tooltip__card-row-icon";
+        icon.src = row.iconUrl;
+        icon.alt = "";
+        icon.draggable = false;
+        line.appendChild(icon);
+      }
       const label = document.createElement("span");
       label.className = "global-tooltip__card-row-label";
       label.textContent = row.label;
@@ -193,6 +233,13 @@ function renderCard(card: HintCard): HTMLElement {
       rows.appendChild(line);
     }
     root.appendChild(rows);
+  }
+
+  if (card.note) {
+    const note = document.createElement("div");
+    note.className = "global-tooltip__card-note";
+    note.textContent = card.note;
+    root.appendChild(note);
   }
 
   return root;

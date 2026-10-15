@@ -97,3 +97,26 @@ describe("hintCardFrom", () => {
     });
   });
 });
+
+describe("hintCardFrom branch-feature fields", () => {
+  it("keeps a validated icons strip, note and per-row icon", () => {
+    const card = hintCardFrom({
+      title: "战舰特性",
+      icons: ["a.png", "  ", 7, "b.png", "c.png", "d.png", "e.png", "f.png", "g.png"],
+      rows: [{ label: "主炮组", value: "＋伤害较高", iconUrl: "cat.png" }],
+      note: "与对应等级同类型战舰的比较差异。",
+    })!;
+    expect(card.icons).toEqual(["a.png", "b.png", "c.png", "d.png", "e.png", "f.png"]);
+    expect(card.rows?.[0].iconUrl).toBe("cat.png");
+    expect(card.note).toContain("比较差异");
+  });
+
+  it("drops blank/non-string icons, notes and row icons", () => {
+    expect(hintCardFrom({ title: "T", icons: ["", "  "] })).toEqual({ title: "T" });
+    expect(hintCardFrom({ title: "T", icons: "a.png" })).toEqual({ title: "T" });
+    expect(hintCardFrom({ title: "T", note: "   " })).toEqual({ title: "T" });
+    expect(
+      hintCardFrom({ title: "T", rows: [{ label: "L", value: "V", iconUrl: 42 }] }),
+    ).toEqual({ title: "T", rows: [{ label: "L", value: "V" }] });
+  });
+});

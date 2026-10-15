@@ -168,6 +168,21 @@
     position: relative;
   }
 
+  &__feats {
+    position: absolute;
+    left: 3px;
+    bottom: 2px;
+    display: flex;
+    gap: 2px;
+    pointer-events: none;
+  }
+
+  &__feat-icon {
+    width: 13px;
+    height: 13px;
+    object-fit: contain;
+  }
+
   &__img {
     width: 100%;
     height: 38px;

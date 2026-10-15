@@ -212,9 +212,13 @@ interface BranchFeaturesData {
   shipBranch: Record<string, string>;
   texts: {
     title: Record<string, string>;
-    compareNote: Record<string, string>;
+    note: Record<string, string>;
     category: FeatureTextMap;
     feat: FeatureTextMap;
+  };
+  icons?: {
+    card: Record<string, string>;
+    category: Record<string, string>;
   };
 }
 
@@ -255,18 +259,29 @@ export function techTreeBranchHasContent(branchName: string, type?: string): boo
   return (techTreeBranchInfo(branchName, type)?.groups.length ?? 0) > 0;
 }
 
-/** The bundled feature texts are game content (zh-Hans + en-US curated
- *  data), not UI chrome — resolve them against the active locale here. */
+/** The bundled feature texts are game content straight from the client's
+ *  localization (official zh-Hans + ru-RU where the Lesta client carries
+ *  it, curated en-US), not UI chrome — resolve them against the active
+ *  locale here, falling back to en-US. */
 function featureText(map: Record<string, string> | undefined): string {
   if (!map) return "";
   const locale = (i18n.global.locale as unknown as { value: Locale }).value;
-  const tag = locale.startsWith("zh") ? "zh-Hans" : "en-US";
+  const tag = locale.startsWith("zh")
+    ? "zh-Hans"
+    : locale.startsWith("ru")
+      ? "ru-RU"
+      : "en-US";
   return map[tag] ?? map["en-US"] ?? "";
 }
 
 /** Localized popup title for the branch-feature ⓘ card. */
 export function techTreeFeatureTitle(): string {
   return featureText(featureData.texts.title);
+}
+
+/** Localized comparison-basis footnote for the branch-feature ⓘ card. */
+export function techTreeFeatureNote(): string {
+  return featureText(featureData.texts.note);
 }
 
 /** One localized feature sentence, "＋"/"−"-marked by its FEAT quality. */
@@ -279,4 +294,20 @@ export function techTreeFeatText(featKey: string): string {
 /** Localized category label for a feature group. */
 export function techTreeFeatureCategoryText(category: string): string {
   return featureText(featureData.texts.category[category]) || category;
+}
+
+/** Public URL of a bundled feature icon (small game-client PNGs served from
+ *  the webui publicDir), or null when the key has no icon bundled. */
+function featureIconUrl(file: string | undefined): string | null {
+  return file ? `${import.meta.env.BASE_URL}images/tech-tree-features/${encodeURIComponent(file)}` : null;
+}
+
+/** Icon URL for a branch card-feature key (MAIN_/CLASS_), or null. */
+export function techTreeCardIcon(key: string): string | null {
+  return featureIconUrl(featureData.icons?.card[key]);
+}
+
+/** Icon URL for a feature-category code, or null. */
+export function techTreeCategoryIcon(category: string): string | null {
+  return featureIconUrl(featureData.icons?.category[category]);
 }

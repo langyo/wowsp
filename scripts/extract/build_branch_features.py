@@ -32,9 +32,15 @@ Usage:
   python scripts/extract/build_branch_features.py \
       --scripts-zip "<WG client>/bin/<build>/res/scripts.zip" \
       --gameparams "$LOCALAPPDATA/WoWSP-extract/GameParams.json" \
+      --mo-zh "<WG client>/bin/<build>/res/texts/zh/LC_MESSAGES/global.mo" \
+      --mo-ru "<Lesta client>/bin/<build>/res/texts/ru/LC_MESSAGES/global.mo" \
+      --icons-dir <dir from: wowsunpack extract "/gui/ships_tree_features/*.png"> \
       --out packages/webui/src/data/tech_tree_branch_features.json
 
-The output is committed; the client dump is not.
+The mo carries the official strings (a plain GNU gettext file — mind the
+(length, offset) field order); the icons land in the webui publicDir at
+packages/webui/src/res/images/tech-tree-features/ (small variants preferred,
+~355 KB). The output and the icons are committed; the client dumps are not.
 """
 from __future__ import annotations
 
@@ -356,11 +362,155 @@ def build_ship_branch(tree: dict, gp_keys: dict[str, str]) -> dict[str, str]:
     return ship_branch
 
 
+def load_mo(path: str) -> dict[str, str]:
+    """Read the client's GNU gettext global.mo.
+
+    The tables are plain (length, offset) pairs — an easy field order to get
+    backwards; the strings themselves are UTF-8.
+    """
+    import struct
+
+    data = Path(path).read_bytes()
+    magic, _rev, n, o, t = struct.unpack("<IIIII", data[:20])
+    if magic != 0x950412DE:
+        raise SystemExit(f"[branchfeat] not a .mo file: {path}")
+    out: dict[str, str] = {}
+    for i in range(n):
+        lno, offo = struct.unpack("<II", data[o + 8 * i:o + 8 * i + 8])
+        lnt, offt = struct.unpack("<II", data[t + 8 * i:t + 8 * i + 8])
+        out[data[offo:offo + lno].decode("utf-8", "replace")] = (
+            data[offt:offt + lnt].decode("utf-8", "replace")
+        )
+    return out
+
+
+# Official localization keys for the popup chrome. The FEAT/category strings
+# are looked up as IDS_<KEY> / IDS_OTHER_FEATURE_CATEGORY_<CODE>.
+TITLE_KEY = "IDS_SHIP_BRANCH_FEATURES_TOOLTIP_TITLE"
+NOTE_KEY = "IDS_SHIPS_BRANCHES_FEATURES_HINT"
+
+
+def merge_official_texts(
+    texts: dict,
+    zh: dict[str, str],
+    ru: dict[str, str] | None,
+    used_feats: set[str],
+    used_cats: set[str],
+) -> None:
+    """Overlay the client's official strings onto the curated en-US base.
+
+    zh-Hans comes from the CN client's mo (required — every used key must be
+    present); ru-RU rides along from the Lesta client where it exists (its
+    fork lags WG's newer keys, those fall back to en-US at runtime); en-US
+    stays curated (no English client is installed locally).
+    """
+    def put(bucket: dict, key: str, zh_v: str, ru_v: str | None) -> None:
+        entry = bucket.setdefault(key, {})
+        put_locale(entry, zh_v, ru_v)
+
+    def put_locale(entry: dict, zh_v: str, ru_v: str | None) -> None:
+        entry["zh-Hans"] = zh_v
+        if ru_v:
+            entry["ru-RU"] = ru_v
+        if "en-US" not in entry:
+            raise SystemExit("[branchfeat] curated en-US missing")
+
+    put_locale(texts["title"], zh[TITLE_KEY], ru.get(TITLE_KEY) if ru else None)
+    put_locale(texts["note"], zh[NOTE_KEY], ru.get(NOTE_KEY) if ru else None)
+    missing = [c for c in used_cats if f"IDS_OTHER_FEATURE_CATEGORY_{c.upper()}" not in zh]
+    if missing:
+        raise SystemExit(f"[branchfeat] categories without an official label: {missing}")
+    for c in used_cats:
+        k = f"IDS_OTHER_FEATURE_CATEGORY_{c.upper()}"
+        put(texts["category"], c, zh[k], ru.get(k) if ru else None)
+    missing = [f for f in used_feats if f"IDS_{f}" not in zh]
+    if missing:
+        raise SystemExit(f"[branchfeat] feats without an official zh string: {missing[:10]}")
+    for f in used_feats:
+        put(texts["feat"], f, zh[f"IDS_{f}"], ru.get(f"IDS_{f}") if ru else None)
+
+
+def bundle_icons(
+    used_cards: set[str],
+    used_cats: set[str],
+    icons_dir: str,
+    icons_out: str,
+) -> dict:
+    """Resolve and copy the feature icons (small variants preferred — the
+    tree cards and the tooltip render at 12-20px). Returns the manifest the
+    webui resolves against `${BASE_URL}images/tech-tree-features/`."""
+    import shutil
+
+    root = Path(icons_dir) / "gui" / "ships_tree_features"
+    main_dir = root / "main_features"
+    cat_dir = root / "categories"
+    manifest: dict[str, dict[str, str]] = {"card": {}, "category": {}}
+
+    def pick(key: str, pool: set[str]) -> str | None:
+        lo = key.lower()
+        for cand in (f"{lo}_small.png", f"{lo}.png"):
+            if cand in pool:
+                return cand
+        return None
+
+    main_pool = {p.name for p in main_dir.glob("*.png")}
+    cat_pool = {p.name for p in cat_dir.glob("*.png")}
+    wanted: list[tuple[Path, str]] = []
+    missing_icons: list[str] = []
+    for key in sorted(used_cards):
+        f = pick(key, main_pool)
+        if not f:
+            missing_icons.append(key)
+            continue
+        manifest["card"][key] = f
+        wanted.append((main_dir / f, f))
+    for code in sorted(used_cats):
+        f = f"category_{code}.png"
+        if f not in cat_pool:
+            missing_icons.append(code)
+            continue
+        manifest["category"][code] = f
+        wanted.append((cat_dir / f, f))
+    if missing_icons:
+        # A typo'd --icons-dir must fail loudly, not silently strip the
+        # bundle down (or wipe the committed icon set in --icons-out).
+        raise SystemExit(f"[branchfeat] icons missing from {icons_dir}: {missing_icons[:10]}")
+
+    out_dir = Path(icons_out)
+    # The prune below unlinks PNGs — only ever allow the dedicated folder.
+    if out_dir.name != "tech-tree-features":
+        raise SystemExit(
+            f"[branchfeat] refusing --icons-out {out_dir} (expected .../tech-tree-features)"
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    keep = {f for _, f in wanted}
+    for stale in out_dir.glob("*.png"):
+        if stale.name not in keep:
+            stale.unlink()
+    for src, name in wanted:
+        shutil.copyfile(src, out_dir / name)
+    total = sum(src.stat().st_size for src, _ in wanted)
+    print(f"[branchfeat] bundled {len(wanted)} icons ({total / 1024:.0f} KB) → {out_dir}")
+    return manifest
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scripts-zip", required=True, help="client res/scripts.zip")
     ap.add_argument("--gameparams", required=True, help="GameParams.json (entry keys carry ship names)")
     ap.add_argument("--tree", default="packages/webui/src/data/tech_tree.json")
+    ap.add_argument("--mo-zh", required=True, help="CN client texts/<lang>/LC_MESSAGES/global.mo")
+    ap.add_argument("--mo-ru", help="Lesta client global.mo (optional ru-RU strings)")
+    ap.add_argument(
+        "--icons-dir",
+        help="dir holding the extracted gui/ships_tree_features tree "
+        "(wowsunpack extract \"/gui/ships_tree_features/*.png\")",
+    )
+    ap.add_argument(
+        "--icons-out",
+        default="packages/webui/src/res/images/tech-tree-features",
+        help="webui publicDir folder the icons are copied into",
+    )
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -402,7 +552,7 @@ def main() -> None:
             unmatched.append(b)
 
     # Text coverage: every FEAT key that reaches the bundled data must have a
-    # curated en-US + zh-Hans string; the webui falls back en-US → key.
+    # curated en-US string (zh-Hans/ru-RU come from the client mo below).
     used_feats: set[str] = set()
     used_cats: set[str] = set()
     for info in branches.values():
@@ -411,16 +561,29 @@ def main() -> None:
             used_feats.update(feats)
     missing_texts = sorted(
         f for f in used_feats
-        if f not in texts["feat"] or "en-US" not in texts["feat"][f] or "zh-Hans" not in texts["feat"][f]
+        if f not in texts["feat"] or "en-US" not in texts["feat"][f]
     )
     missing_cats = sorted(
         c for c in used_cats
-        if c not in texts["category"] or "en-US" not in texts["category"][c] or "zh-Hans" not in texts["category"][c]
+        if c not in texts["category"] or "en-US" not in texts["category"][c]
     )
     if missing_texts or missing_cats:
         raise SystemExit(
             f"[branchfeat] missing curated texts — feats: {missing_texts}; categories: {missing_cats}"
         )
+
+    print("[branchfeat] merging official mo strings ...", flush=True)
+    merge_official_texts(
+        texts, load_mo(args.mo_zh), load_mo(args.mo_ru) if args.mo_ru else None,
+        used_feats, used_cats,
+    )
+
+    used_cards: set[str] = set()
+    for info in branches.values():
+        used_cards.update(info["card"])
+    icons: dict | None = None
+    if args.icons_dir:
+        icons = bundle_icons(used_cards, used_cats, args.icons_dir, args.icons_out)
 
     out = {
         "branches": branches,
@@ -429,6 +592,8 @@ def main() -> None:
         "shipBranch": {s: b for s, b in ship_branch.items() if b},
         "texts": texts,
     }
+    if icons:
+        out["icons"] = icons
     path = Path(args.out)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
