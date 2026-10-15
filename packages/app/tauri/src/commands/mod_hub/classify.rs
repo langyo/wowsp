@@ -253,6 +253,44 @@ fn is_override_top(to_rel: &str) -> bool {
     )
 }
 
+/// Every real file the plan would install, named by its installed location
+/// (`<to_rel>/<file>` relative to `res_mods`). The catalog's file-list
+/// window renders these — plan entries are install TARGETS (folders), so
+/// enumerating them directly would show a single directory name instead of
+/// the payload underneath.
+pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> Vec<String> {
+    let mut files = Vec::new();
+    for entry in &plan.entries {
+        let base = if entry.from_rel == "." {
+            src.to_path_buf()
+        } else {
+            src.join(&entry.from_rel)
+        };
+        let mut stack = vec![base.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(read) = fs::read_dir(&dir) else {
+                continue;
+            };
+            for e in read.flatten() {
+                let path = e.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    let rel = path
+                        .strip_prefix(&base)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    files.push(format!("{}/{}", entry.to_rel.trim_end_matches('/'), rel));
+                }
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+
 /// Filesystem-safe folder slug for auto-wrapped bank names.
 pub(crate) fn sanitize_dir_name(name: &str) -> String {
     name.chars()

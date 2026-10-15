@@ -192,21 +192,21 @@ MOD_AUTHORS: dict = (
 )
 
 
-def author_record(slug: str) -> tuple[str, str]:
-    """(author, official page) for one catalog slug, from the registry."""
-    name = MOD_AUTHORS.get("mods", {}).get(slug, "")
-    if not name:
-        return "", ""
-    return name, MOD_AUTHORS.get("authors", {}).get(name, "")
+def author_record(slug: str) -> list[tuple[str, str]]:
+    """(name, official page) for every author of one catalog slug, from the
+    registry — multi-author mods carry one pair each, in attribution order."""
+    names = MOD_AUTHORS.get("mods", {}).get(slug) or []
+    if isinstance(names, str):
+        names = [names]
+    return [(n, MOD_AUTHORS.get("authors", {}).get(n, "")) for n in names if n]
 
 
 def append_author_lines(front: list[str], slug: str) -> None:
-    """Front-matter author tag lines (registry-backed, absent when unknown)."""
-    name, url = author_record(slug)
-    if name:
-        front.append(f"author: {name}")
-    if url:
-        front.append(f"author_url: {url}")
+    """The front-matter author tag: one comma-separated `authors:` line; the
+    crawler resolves each name to its official page through the registry."""
+    pairs = author_record(slug)
+    if pairs:
+        front.append(f"authors: {', '.join(name for name, _ in pairs)}")
 
 CATEGORY_MAP = {
     "Team_Panel": "battle",
@@ -1193,6 +1193,7 @@ def build_index(state: dict) -> dict:
                 **({"aliases": aliases_of(mod)} if aliases_of(mod) else {}),
             },
         )
+        rec_authors = author_record(mod["id"])
         entry["versions"][mod["version"]] = {
             "game": mod["game"],
             "title": mod["name_en"],
@@ -1201,10 +1202,14 @@ def build_index(state: dict) -> dict:
             "description": mod["description"],
             "i18n": mod.get("i18n") or {},
             "preview": (mod.get("preview_attachments") or [mod.get("preview_attachment") or ""])[0],
-            # The registry wins (name + verified page); the catalog's own
-            # AuthorUrl is the fallback for the URL.
-            "author": author_record(mod["id"])[0],
-            "author_url": author_record(mod["id"])[1] or mod["author_url"],
+            # The registry wins (names + verified pages); the catalog's own
+            # AuthorUrl is the first author's page fallback. The legacy
+            # singular fields ride along for older consumers.
+            "authors": [
+                {"name": name, "url": url} for name, url in author_record(mod["id"])
+            ],
+            "author": rec_authors[0][0] if rec_authors else "",
+            "author_url": (rec_authors[0][1] if rec_authors and rec_authors[0][1] else mod["author_url"]),
             "packages": [
                 {
                     "url": pkg["download_url"],

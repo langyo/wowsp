@@ -243,7 +243,8 @@ describe("plugin file-list window", () => {
       mods: [{
         id: "mod-a", version: "2", category: "text", nameEn: "Mod A",
         game: ">=15.7", title: "Mod A", nameZh: "", description: "",
-        author: "", authorUrl: "", packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+        authors: [{ name: "TTaro", url: "" }],
+        packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
         i18n: {}, aliases: [],
       }],
       sourceVersion: "test",

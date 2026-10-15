@@ -15,8 +15,7 @@ const mk = (id: string, delisted?: boolean): CatalogEntry =>
     nameZh: "",
     nameEn: id,
     description: "",
-    author: "",
-    authorUrl: "",
+    authors: [],
     packages: [],
     i18n: {},
   }) as CatalogEntry;

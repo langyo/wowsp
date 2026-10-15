@@ -2130,8 +2130,10 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
         name_zh: "name-zh-sentinel".into(),
         name_en: "name-en-sentinel".into(),
         description: "description-sentinel".into(),
-        author: "author-sentinel".into(),
-        author_url: "https://example.example/author".into(),
+        authors: vec![CatalogAuthor {
+            name: "author-sentinel".into(),
+            url: "https://example.example/author".into(),
+        }],
         packages: vec![CatalogPackage {
             url: "https://github.com/releases/pkg2.zip".into(),
             sha256: "ab".repeat(32),
@@ -2167,8 +2169,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
             "nameZh",
             "nameEn",
             "description",
-            "author",
-            "authorUrl",
+            "authors",
             "aliases",
             "preview",
             "packages",
@@ -2185,9 +2186,19 @@ fn catalog_index_renames_source_version_game_version_and_fetched_at() {
         source_version: "v.15.7.0 #10 (2026.08.30)".into(),
         game_version: "15.7.0".into(),
         fetched_at: "2026-09-26T00:00:00Z".into(),
+        source_sha256: "ab".repeat(32),
         mods: Vec::new(),
     });
-    assert_exact_keys(&v, &["sourceVersion", "gameVersion", "fetchedAt", "mods"]);
+    assert_exact_keys(
+        &v,
+        &[
+            "sourceVersion",
+            "gameVersion",
+            "fetchedAt",
+            "sourceSha256",
+            "mods",
+        ],
+    );
 }
 
 /// The uninstall/migration ledger record (mods/installed.json;

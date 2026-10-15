@@ -212,23 +212,24 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           {isCatalogCat(entry.category) && (
             <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
           )}
-          {entry.author && (
-            entry.authorUrl ? (
+          {(entry.authors ?? []).map((a) =>
+            a.url ? (
               <button
+                key={a.name}
                 class="mod-detail__tag mod-detail__tag--link"
                 data-hint={t("resources.authorPage")}
-                onClick={() => openExternal(entry.authorUrl)}
+                onClick={() => openExternal(a.url)}
               >
                 <User size={12} />
-                {entry.author}
+                {a.name}
                 <ExternalLink size={11} />
               </button>
             ) : (
-              <span class="mod-detail__tag">
+              <span key={a.name} class="mod-detail__tag">
                 <User size={12} />
-                {entry.author}
+                {a.name}
               </span>
-            )
+            ),
           )}
           {record && !upToDate && (
             <span class="mod-detail__badge mod-detail__badge--warn">

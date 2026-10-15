@@ -479,7 +479,36 @@ fn classify_peels_single_wrapper_layer() {
     let froms: Vec<_> = plan.entries.iter().map(|e| e.from_rel.as_str()).collect();
     assert!(froms.contains(&"莫斯科日奈/PnFMods"), "{froms:?}");
     assert!(froms.contains(&"莫斯科日奈/content"), "{froms:?}");
+
     assert!(plan.warnings.iter().any(|w| w.contains("unwrapped")));
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn preview_files_enumerate_real_payloads() {
+    // The file-list window shows installed locations of REAL files —
+    // plan entries are install targets (folders) and must never leak in
+    // as pseudo files (research: "gui" rendered as a lone file leaf).
+    let tmp = std::env::temp_dir().join("wowsp_preview_files_test");
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("res_mods/gui/flash")).unwrap();
+    fs::write(tmp.join("res_mods/gui/commands.xml"), "<x/>").unwrap();
+    fs::write(tmp.join("res_mods/gui/flash/battle.swf"), "x").unwrap();
+
+    let pkg_root = tmp.join("res_mods");
+    let plan = classify_package(&pkg_root).unwrap();
+    assert_eq!(plan.entries.len(), 1);
+    assert_eq!(plan.entries[0].to_rel, "gui");
+
+    let files = collect_plan_files(&pkg_root, &plan);
+    assert_eq!(
+        files,
+        vec![
+            "gui/commands.xml".to_string(),
+            "gui/flash/battle.swf".to_string()
+        ],
+        "{files:?}"
+    );
     fs::remove_dir_all(&tmp).ok();
 }
 
@@ -2122,8 +2151,7 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
         name_zh: String::new(),
         name_en: en.into(),
         description: String::new(),
-        author: String::new(),
-        author_url: String::new(),
+        authors: Vec::new(),
         i18n: std::collections::HashMap::new(),
         aliases: Vec::new(),
         preview: None,
@@ -2138,6 +2166,7 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
         source_version: String::new(),
         game_version: String::new(),
         fetched_at: String::new(),
+        source_sha256: String::new(),
         mods: vec![
             cat("battle.marker.adjustable", "Adjustable Markers"),
             cat("battle.timer.shot", "Shot Timer"),
@@ -2612,8 +2641,7 @@ fn register_over_foreign_cuts_only_paired_manifest_rows() {
         name_zh: String::new(),
         name_en: en.into(),
         description: String::new(),
-        author: String::new(),
-        author_url: String::new(),
+        authors: Vec::new(),
         i18n: std::collections::HashMap::new(),
         aliases: Vec::new(),
         preview: None,
@@ -2628,6 +2656,7 @@ fn register_over_foreign_cuts_only_paired_manifest_rows() {
         source_version: String::new(),
         game_version: String::new(),
         fetched_at: String::new(),
+        source_sha256: String::new(),
         mods: vec![
             entry("battle.panel.ttaro", "TeamPanelTTaro"),
             entry("battle.timer.pro", "ShotTimer Pro"),
@@ -2816,8 +2845,7 @@ fn scan_pairs_units_with_catalog_identities() {
         name_zh: String::new(),
         name_en: en.into(),
         description: String::new(),
-        author: String::new(),
-        author_url: String::new(),
+        authors: Vec::new(),
         aliases: aliases.into_iter().map(Into::into).collect(),
         preview: None,
         i18n: std::collections::HashMap::new(),
@@ -2832,6 +2860,7 @@ fn scan_pairs_units_with_catalog_identities() {
         source_version: String::new(),
         game_version: String::new(),
         fetched_at: String::new(),
+        source_sha256: String::new(),
         mods: vec![
             entry("battle.hydro.3d", "3D Hydro", vec!["ThreeDimentionalHydro"]),
             entry(

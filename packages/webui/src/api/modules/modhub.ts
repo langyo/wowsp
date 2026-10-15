@@ -119,6 +119,12 @@ export interface CatalogPreset {
 }
 
 /** The latest version payload of one mod in `mod-index.json`. */
+/** One clickable author tag: the credited name plus its official page. */
+export interface CatalogAuthor {
+  name: string;
+  url: string;
+}
+
 export interface CatalogEntry {
   id: string;
   /** `battle | minimap | port | texts | skin | voice | ui`. */
@@ -142,12 +148,11 @@ export interface CatalogEntry {
   nameZh: string;
   nameEn: string;
   description: string;
-  /** Mod author display name (thread `author:` front-matter); empty when
-   *  no author is verified — the detail pane then renders no author tag. */
-  author: string;
-  /** The author's official page; empty when unknown, in which case the
-   *  author tag renders without a link. */
-  authorUrl: string;
+  /** Mod author tags, one per credited author (thread `authors:`
+   *  front-matter resolved through the registry, attribution order). An
+   *  author with an empty url renders without a link; an empty list
+   *  renders no tag at all. */
+  authors: CatalogAuthor[];
   packages: CatalogPackage[];
   /** Localized variants keyed by BCP-47 locale; empty for older posts. */
   i18n: Record<string, CatalogEntryI18n>;

@@ -23,6 +23,33 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Author tag registry (scripts/mod_hub_authors.json, same repo): `authors`
+# maps a display name to its official page. The thread front-matter carries
+# the names (`authors: A, B, C` — or the legacy singular `author:`); this
+# registry resolves each name to its page at crawl time so the index can
+# emit `authors: [{name, url}]` for the catalog's clickable tags.
+_AUTHOR_REGISTRY_PATH = Path(__file__).with_name("mod_hub_authors.json")
+_AUTHOR_URLS: dict[str, str] = (
+    json.loads(_AUTHOR_REGISTRY_PATH.read_text(encoding="utf-8")).get("authors", {})
+    if _AUTHOR_REGISTRY_PATH.exists()
+    else {}
+)
+
+
+def resolve_authors(meta: dict) -> list[dict]:
+    """The `authors: [{name, url}]` list for one thread's front-matter.
+    `authors:` is a comma-separated name list; the legacy singular
+    `author:` (+ `author_url:`) still parses for older threads."""
+    raw = meta.get("authors") or meta.get("author") or ""
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    out: list[dict] = []
+    for i, name in enumerate(names):
+        url = _AUTHOR_URLS.get(name, "")
+        if not url and name == (meta.get("author") or "").strip():
+            url = meta.get("author_url", "")
+        out.append({"name": name, "url": url})
+    return out
+
 QUERY = """
 query($owner: String!, $name: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {
@@ -261,16 +288,22 @@ def index_discussions(nodes: list[dict]) -> dict:
             # default, so the entry's plain package list (what pre-preset
             # app builds install) mirrors it.
             packages = presets[0]["packages"]
+        authors = resolve_authors(meta)
         entry["versions"][version] = {
             "game": meta.get("game", "*"),
             "title": d.get("title"),
-            # Mod author (front-matter `author:`), falling back to the
-            # thread poster; `author_url` is the author's official page
-            # when the front-matter declares one — the catalog renders
-            # both as the author tag.
-            "author": meta.get("author") or (d.get("author") or {}).get("login"),
+            # Mod author tag(s): front-matter `authors:` resolved through the
+            # registry (the legacy singular `author:` falls back to the
+            # thread poster when absent). `authors` drives the catalog's
+            # clickable tags; the legacy singular fields ride along for
+            # older consumers.
+            "author": meta.get("author")
+            or (authors[0]["name"] if authors else "")
+            or (d.get("author") or {}).get("login"),
             **({"author_url": meta["author_url"]} if meta.get("author_url") else {}),
         }
+        if authors:
+            entry["versions"][version]["authors"] = authors
         if d.get("closed"):
             # Delisting signal: a closed thread means "this release is
             # withdrawn". Kept per-version so the entry verdict below can
@@ -360,6 +393,22 @@ def main(argv: list[str] | None = None) -> int:
         ])
         v = authored["mods"]["smi"]["versions"]["1"]
         assert v["author"] == "TTaro" and v["author_url"] == "https://github.com/AndrewTaro", v
+        # `authors:` carries a comma list; each name resolves its page
+        # through the registry, unknown names keep an empty url.
+        multi = index_discussions([
+            {"number": 3, "title": "t", "author": {"login": "poster"},
+             "body": "---\nwowsp-mod: crew\nversion: 1\ncategory: battle\n"
+                     "authors: OlliN, Roslich, BADoBEST\n---\nx",
+             "comments": {"nodes": []}},
+        ])
+        va = multi["mods"]["crew"]["versions"]["1"]
+        assert va["authors"] == [
+            {"name": "OlliN",
+             "url": "https://forum.korabli.su/topic/150097-all-%D0%B1%D0%BE%D0%B5%D0%B2%D0%BE%D0%B9-%D1%8D%D0%BA%D1%81%D0%BF%D0%B5%D1%80%D1%82-battle-expert/"},
+            {"name": "Roslich", "url": "https://forum.korabli.su/topic/74477-0741-"},
+            {"name": "BADoBEST", "url": "https://github.com/BADoBEST"},
+        ], va.get("authors")
+        assert va["author"] == "OlliN"
         plain = index_discussions([
             {"number": 2, "title": "t", "author": {"login": "poster"},
              "body": "---\nwowsp-mod: mx\nversion: 1\ncategory: battle\n---\nx",
