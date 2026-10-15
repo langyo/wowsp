@@ -102,7 +102,13 @@
     gap: var(--hi-space-8, 8px);
   }
 
-  // ── wizard ─────────────────────────────────────────────────────────────
+  // ── wizard (body inside the secondary HkModal) ─────────────────────────
+
+  &__modal-hint {
+    margin: 0 0 var(--hi-space-12, 12px);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
 
   &__step {
     display: flex;
@@ -341,13 +347,6 @@
   &__done-line {
     margin: 0;
     font-size: var(--hi-text-sm, 0.8125rem);
-  }
-
-  &__wizard-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--hi-space-8, 8px);
-    padding-top: var(--hi-space-8, 8px);
   }
 
   // ── contributors list ──────────────────────────────────────────────────

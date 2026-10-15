@@ -24,6 +24,7 @@ import {
   useBreakpoint,
 } from "@celestia-island/hikari";
 import {
+  Anchor,
   ArrowRight,
   Camera,
   ChevronUp,
@@ -33,8 +34,11 @@ import {
   Download,
   Eraser,
   Eye,
+  EyeOff,
   FastForward,
+  Flame,
   FlipHorizontal,
+  Footprints,
   Hand,
   MapPin,
   Maximize2,
@@ -62,6 +66,7 @@ import { t as i18nT } from "@/i18n";
 import type { TacticalStore } from "./useTactical";
 import { TACTICAL_PALETTE, TACTICAL_WIDTHS } from "./useTactical";
 import { ACTION_KINDS } from "./plan";
+import type { HeatLayerMode, HeatOverlayData } from "./heatLayer";
 import type { DashStyle, TacticalActionKind, TacticalToolId } from "./types";
 import "./TacticalToolbar.scss";
 
@@ -139,6 +144,15 @@ const ACTION_ICONS: Record<TacticalActionKind, typeof Pen> = {
 
 const DASHES: DashStyle[] = ["solid", "dashed", "dotted"];
 
+/** Heat-overlay menu rows (the toolbar's 热力 flyout): off / ship-track
+ *  heat / spawn heat — the corpus grids the tactics page resolves for the
+ *  current (map, mode). */
+const HEAT_ROWS: { mode: HeatLayerMode; icon: typeof Pen; key: string }[] = [
+  { mode: "off", icon: EyeOff, key: "tactics.toolbar.heatOff" },
+  { mode: "track", icon: Footprints, key: "tactics.toolbar.heatTrack" },
+  { mode: "spawn", icon: Anchor, key: "tactics.toolbar.heatSpawn" },
+];
+
 /** Keyboard shortcut shown next to a menu item (matches TacticalBoard's
  *  TOOL_KEYS). */
 const TOOL_KEY_HINTS: Partial<Record<TacticalToolId, string>> = {
@@ -183,6 +197,13 @@ export default defineComponent({
     onToggleMirror: { type: Function as PropType<() => void>, default: undefined },
     showCaps: { type: Boolean, default: true },
     onToggleCaps: { type: Function as PropType<() => void>, default: undefined },
+    /** Corpus heat overlay (heatLayer.ts): UNDEFINED = this host wires no
+     *  heat layer (the replay board hides the button); NULL = wired but the
+     *  current (map, mode) has no corpus coverage (the button renders
+     *  disabled with the no-data hint). */
+    heat: { type: Object as PropType<HeatOverlayData | null>, default: undefined },
+    heatMode: { type: String as PropType<HeatLayerMode>, default: "off" },
+    onSetHeat: { type: Function as PropType<(mode: HeatLayerMode) => void>, default: undefined },
   },
   setup(props) {
     const { isMobile } = useBreakpoint();
@@ -227,6 +248,7 @@ export default defineComponent({
     const markerBtn = ref<HTMLElement | null>(null);
     const styleBtn = ref<HTMLElement | null>(null);
     const moreBtn = ref<HTMLElement | null>(null);
+    const heatBtn = ref<HTMLElement | null>(null);
 
     /** Pick the popover button's icon: the active sub-tool when one of the
      *  group's tools is selected, else the group glyph. */
@@ -441,6 +463,57 @@ export default defineComponent({
               </HkTooltip>
             ) : null}
           </>
+        ) : null}
+
+        {/* Corpus heat overlay (the 热力 flyout): off / track / spawn rows
+            against the current (map, mode)'s community-replay grids. The
+            whole group only exists on hosts that wire the layer (the plan
+            page); without corpus coverage the trigger stays disabled with
+            the no-data hint as its tooltip. */}
+        {props.heat !== undefined ? (
+          <span
+            ref={heatBtn}
+            class={["tac-bar__group", props.heatMode !== "off" ? "tac-bar__group--on" : ""]}
+          >
+            <HkTooltip
+              text={
+                props.heat == null
+                  ? i18nT("tactics.toolbar.heatNone")
+                  : i18nT("tactics.toolbar.heat")
+              }
+              placement="top"
+            >
+              <HkIconButton
+                size={32}
+                disabled={props.heat == null}
+                variant={props.heatMode !== "off" ? "primary" : "ghost"}
+                onClick={() => toggle("heat")}
+              >
+                <Flame size={14} />
+              </HkIconButton>
+            </HkTooltip>
+            <HkPopover {...popoverProps("heat", () => heatBtn.value)} title={i18nT("tactics.toolbar.heat")}>
+              <HkMenuPanel label={i18nT("tactics.toolbar.heat")}>
+                {HEAT_ROWS.map((row) => {
+                  const Icon = row.icon;
+                  const uncovered = row.mode !== "off" && props.heat?.[row.mode] == null;
+                  return (
+                    <HkMenuActionItem
+                      key={row.mode}
+                      icon={<Icon size={14} />}
+                      label={i18nT(row.key)}
+                      disabled={uncovered}
+                      class={props.heatMode === row.mode ? "is-active" : ""}
+                      onClick={() => {
+                        props.onSetHeat?.(row.mode);
+                        close();
+                      }}
+                    />
+                  );
+                })}
+              </HkMenuPanel>
+            </HkPopover>
+          </span>
         ) : null}
 
         <span class="tac-bar__sep" />

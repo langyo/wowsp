@@ -92,7 +92,12 @@
   },
   "toolbar": {
     "mirror": "自动镜像（双方同步编辑）",
-    "caps": "显示 / 隐藏占点"
+    "caps": "显示 / 隐藏占点",
+    "heat": "热力",
+    "heatOff": "关闭",
+    "heatTrack": "航迹热力",
+    "heatSpawn": "出生热力",
+    "heatNone": "当前模式暂无语料数据"
   },
   "lineup": {
     "title": "编辑阵容",

@@ -92,7 +92,12 @@
   },
   "toolbar": {
     "mirror": "자동 미러(양측 동시 편집)",
-    "caps": "거점 표시 / 숨기기"
+    "caps": "거점 표시 / 숨기기",
+    "heat": "히트맵",
+    "heatOff": "끄기",
+    "heatTrack": "항적 히트맵",
+    "heatSpawn": "출발 위치 히트맵",
+    "heatNone": "이 모드에는 아직 리플레이 데이터가 없습니다"
   },
   "lineup": {
     "title": "편성 편집",

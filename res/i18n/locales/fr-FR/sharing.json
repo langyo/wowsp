@@ -47,7 +47,7 @@
     "prev": "Retour",
     "startUpload": "Lancer l'envoi",
     "doneLabel": "Terminer",
-    "viewContributors": "Voir les participants"
+    "open": "Partager des replays…"
   },
   "select": {
     "checkCard": "Sélectionner le replay de {name}",
@@ -93,6 +93,6 @@
     "empty": "Aucun contributeur pour l'instant. La liste apparaîtra à la prochaine version après la première contribution.",
     "self": "Moi",
     "count": "{n}",
-    "note": "La liste est actualisée à chaque version depuis le serveur de collecte."
+    "note": "Notre profonde gratitude à chaque passionné qui a partagé ses replays bruts — ces batailles sont le socle de l'analyse des positions et de l'étalonnage des statistiques. La liste s'actualise à chaque version."
   }
 }

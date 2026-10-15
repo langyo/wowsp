@@ -92,7 +92,12 @@
   },
   "toolbar": {
     "mirror": "Miroir automatique (modifier les deux camps)",
-    "caps": "Afficher / masquer les points de capture"
+    "caps": "Afficher / masquer les points de capture",
+    "heat": "Carte de chaleur",
+    "heatOff": "Désactivé",
+    "heatTrack": "Chaleur des trajectoires",
+    "heatSpawn": "Chaleur des apparitions",
+    "heatNone": "Pas encore de données de corpus pour ce mode"
   },
   "lineup": {
     "title": "Modifier la formation",

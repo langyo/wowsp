@@ -92,7 +92,12 @@
   },
   "toolbar": {
     "mirror": "Auto-mirror (edit both sides)",
-    "caps": "Show / hide capture points"
+    "caps": "Show / hide capture points",
+    "heat": "Heat overlay",
+    "heatOff": "Off",
+    "heatTrack": "Track heat",
+    "heatSpawn": "Spawn heat",
+    "heatNone": "No corpus data for this mode yet"
   },
   "lineup": {
     "title": "Edit lineup",

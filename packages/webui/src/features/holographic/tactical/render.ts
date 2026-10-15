@@ -42,6 +42,7 @@ import {
 } from "./geometry";
 import { planNextActionT, planTweenTargets, type PlanTweenTarget } from "./plan";
 import { trajectoryPolylines } from "./replayPath";
+import { drawHeatOverlay, type HeatOverlayData, type HeatLayerKind } from "./heatLayer";
 
 /** Logical map space the enlarged 2D view draws in (matches zoomCanvas). */
 export const TACTICAL_SIZE = 760;
@@ -235,6 +236,12 @@ export interface RenderOptions {
   /** Offer scripted-route markers' arrival knob (unit-mode boards only —
    *  a hand-drawn route has no terminal heading to steer). */
   scriptedHandles?: boolean;
+  /** Corpus heat overlay (the toolbar's 热力 toggle): the community-replay
+   *  spawn/track grid painted as a translucent layer UNDER everything else
+   *  this canvas draws — the map backdrop lives on the host's art canvas
+   *  below, so "between the map and the plan" means FIRST here, before the
+   *  cap layer, never covering caps/markers. Null/undefined = off. */
+  heatOverlay?: { kind: HeatLayerKind; data: HeatOverlayData } | null;
 }
 
 export function renderTactical(ctx: CanvasRenderingContext2D, opts: RenderOptions): void {
@@ -243,6 +250,11 @@ export function renderTactical(ctx: CanvasRenderingContext2D, opts: RenderOption
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
+  // Heat first: everything above it (caps, zones, markers, strokes) must
+  // stay readable over the corpus traffic.
+  if (opts.heatOverlay) {
+    drawHeatOverlay(ctx, opts.heatOverlay.data, opts.heatOverlay.kind, proj);
+  }
   drawCaps(ctx, opts);
   for (const el of opts.elements) {
     const future = !visibleAt(el, opts.time);
