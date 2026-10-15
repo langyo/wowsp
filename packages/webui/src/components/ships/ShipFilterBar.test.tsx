@@ -17,7 +17,7 @@
  *    re-clicking one deselects it, and only the 全部… option can make the
  *    category sort;
  *  - division modes (组队模式) filter on the per-ship mode breakdown the
- *    same pure multi-select way: every option — 仅单人/仅双人/仅三人/仅排位
+ *    same pure multi-select way: every option — 单人/双人/三人/排位
  *    — keeps ships with battles > 0 in its bucket, picks OR together, and
  *    rows with NO breakdown (modes null) match nothing — they drop out
  *    while any mode option is selected and return when the category
@@ -125,7 +125,7 @@ function modeBreakdown(solo: number, div2: number, div3: number, ranked = 0): Sh
 }
 
 // Mode test fleet: id 1 solo-only play; id 2 mixes solo and div2; id 3 is
-// trio-ONLY (no solo battles at all — it must drop from 仅单人); id 4 mixes
+// trio-ONLY (no solo battles at all — it must drop from 单人); id 4 mixes
 // ranked into solo play; id 5 carries NO breakdown at all (realms that
 // don't serve battle-type splits) — it must vanish under any mode pick and
 // return when the category resets.
@@ -609,10 +609,10 @@ describe("ShipFilterBar chips", () => {
 
     await chip(wrapper, "mode").trigger("click");
     await waitPops(1);
-    // Resident option group: 全部组队模式 + 仅单人 + 仅双人 + 仅三人 + 仅排位.
+    // Resident option group: 全部组队模式 + 单人 + 双人 + 三人 + 排位.
     expect(popOpts().length).toBe(5);
 
-    // 仅单人: every ship WITH solo battles — the trio-only ship (no solo
+    // 单人: every ship WITH solo battles — the trio-only ship (no solo
     // battles at all) and the no-breakdown row are excluded.
     await popOpts()[1]!.trigger("click");
     await flushPromises();
@@ -621,14 +621,14 @@ describe("ShipFilterBar chips", () => {
     // Pure category: no direction arrow on the chip or the picked option.
     expect(chip(wrapper, "mode").find(".ship-filter-bar__dir").exists()).toBe(false);
     expect(popOpts()[1]!.find(".ship-filter-bar__dir").exists()).toBe(false);
-    expect(chip(wrapper, "mode").text()).toContain("Solo only");
+    expect(chip(wrapper, "mode").text()).toContain("Solo");
 
     // Re-clicking a picked mode deselects it (pure filter, like types).
     await popOpts()[1]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 1, 3, 5, 4]);
 
-    // Multi-select ORs: 仅双人 then +仅三人 keeps ships played in either
+    // Multi-select ORs: 双人 then +三人 keeps ships played in either
     // division size (battles-desc within the pick — pure picks never
     // reorder).
     await popOpts()[2]!.trigger("click");
@@ -637,10 +637,10 @@ describe("ShipFilterBar chips", () => {
     await popOpts()[3]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 3]);
-    expect(chip(wrapper, "mode").text()).toContain("Duo only");
-    expect(chip(wrapper, "mode").text()).toContain("Trio only");
+    expect(chip(wrapper, "mode").text()).toContain("Duo");
+    expect(chip(wrapper, "mode").text()).toContain("Trio");
 
-    // 仅排位 adds id 4 (its ranked battles qualify it; its solo battles
+    // 排位 adds id 4 (its ranked battles qualify it; its solo battles
     // are irrelevant to the ranked pick).
     await popOpts()[4]!.trigger("click");
     await flushPromises();
