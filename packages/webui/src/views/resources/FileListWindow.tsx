@@ -2,10 +2,17 @@
  *  the share-wizard pattern): a narrow package list on the left, and the
  *  expected game paths as an HkTree on the right, rooted at
  *  `<bin version>/res_mods`. Installed units render the ledger record's
- *  written files instantly; everything else fetches a read-only preview
- *  (download to temp + classify, res_mods untouched) on demand. */
+ *  written files instantly; everything else starts the read-only preview
+ *  (download to temp + classify, res_mods untouched) the moment the window
+ *  opens, with the progress riding the shared download bus. */
 import { Download, FileText, Folder, Package } from "@lucide/vue";
-import { HkButton, HkModal, HkTree, type TreeNode } from "@celestia-island/hikari";
+import {
+  HkButton,
+  HkModal,
+  HkSpinner,
+  HkTree,
+  type TreeNode,
+} from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { buildPathTree, splitGameRootFiles, type PathTreeNode } from "./fileTree";
@@ -43,7 +50,9 @@ function renderProgress(ctx: ResourcesCtx, id: string) {
   const pct = p && p.total > 0 ? Math.min(100, (p.received / p.total) * 100) : 12;
   return (
     <div class="file-window__state">
-      <p class="file-window__state-title">{t("resources.fileListBuilding")}</p>
+      <p class="file-window__state-title">
+        <HkSpinner size="xs" tone="current" /> {t("resources.fileListBuilding")}
+      </p>
       <div class="file-window__progress">
         <div class="file-window__progress-bar" style={{ width: `${pct}%` }} />
       </div>
