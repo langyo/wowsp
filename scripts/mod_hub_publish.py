@@ -18,7 +18,11 @@ Stages (all idempotent, run them in order):
     python scripts/mod_hub_publish.py discussions # one thread per mod (skips existing)
     python scripts/mod_hub_publish.py enrich      # rewrite live threads: aliases, rich
                                                   # descriptions, screenshot galleries
+    python scripts/mod_hub_publish.py update-bodies  # re-emit thread download lines
+                                                  # (run after a repack/drop healing pass
+                                                  # so threads carry the new hashes)
     python scripts/mod_hub_publish.py index       # emit + upload mod-index.json
+    python scripts/mod_hub_publish.py selftest    # offline checks (no network)
 
     python scripts/mod_hub_publish.py curate --dry-run   # just print the selection
 
@@ -34,6 +38,7 @@ import io
 import json
 import posixpath
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,6 +47,7 @@ import urllib.error
 import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 # Sibling module (same directory — sys.path[0] when run as
@@ -305,6 +311,61 @@ def fetch_binary(url: str, dest: Path, retries: int = 3) -> Path:
     raise RuntimeError("unreachable")
 
 
+# ------------------------------------------------------------ archive sanity
+
+# The app's installer only understands zip containers; a package whose
+# bytes are anything else installs as a hard failure at the user's end
+# (the live catalog once carried a `.zip` that was really a 7z). The
+# download stage therefore checks the magic of every payload.
+ZIP_MAGICS = (b"PK\x03\x04", b"PK\x05\x06")  # local-file header / empty archive
+SEVENZ_MAGIC = b"7z\xbc\xaf\x27\x1c"
+
+# Where to look for a 7z extractor when a payload needs repacking: PATH
+# first (7z / 7zz on Linux and macOS), then the standard Windows installs.
+SEVENZ_CANDIDATES = (
+    "7z",
+    "7zz",
+    r"C:\Program Files\7-Zip\7z.exe",
+    r"C:\Program Files (x86)\7-Zip\7z.exe",
+)
+
+
+def sevenz_binary() -> str | None:
+    for cand in SEVENZ_CANDIDATES:
+        found = shutil.which(cand)
+        if found:
+            return found
+        direct = Path(cand)
+        if direct.is_file():
+            return str(direct)
+    return None
+
+
+def looks_like_zip(data: bytes) -> bool:
+    return data.startswith(ZIP_MAGICS)
+
+
+def rezip_sevenz(src: Path, binary: str) -> bytes:
+    """Extract one 7z archive and repack its file tree as a real zip.
+
+    The catalog payload keeps the same inner layout (the app installs
+    `res_mods/…` trees); only the container changes, so the sha256 and
+    size the index publishes are the zip's.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp) / "x"
+        subprocess.run(
+            [binary, "x", "-y", f"-o{out_dir}", str(src)],
+            check=True, capture_output=True,
+        )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for path in sorted(out_dir.rglob("*")):
+                if path.is_file():
+                    zf.write(path, path.relative_to(out_dir).as_posix())
+        return buf.getvalue()
+
+
 # ---------------------------------------------------------------- curate
 
 
@@ -413,11 +474,25 @@ def load_state(cache: Path) -> dict:
 # ---------------------------------------------------------------- download
 
 
+def sidecar_key(mod_id: str, pkg_name: str) -> str:
+    """The repacked sidecar's key: mods may share package basenames."""
+    return f"{mod_id}/{pkg_name}"
+
+
 def download(cache: Path) -> None:
     state = load_state(cache)
     pkgs_dir = cache / "packages"
+    # Names repacked from 7z in an earlier run (their bytes are cached as
+    # zips now, but Aslain's catalog size still describes the 7z — the
+    # sidecar keeps the size-drift warning from firing on every re-run).
+    repacked_path = cache / "repacked.json"
+    repacked_names: set[str] = set()
+    if repacked_path.exists():
+        repacked_names = set(json.loads(repacked_path.read_text(encoding="utf-8")))
     done = 0
+    dropped = 0
     for mod in state["mods"]:
+        kept_packages = []
         for pkg in mod["packages"]:
             dest = pkgs_dir / mod["id"] / pkg["name"]
             if dest.exists() and dest.stat().st_size > 0:
@@ -425,13 +500,71 @@ def download(cache: Path) -> None:
             else:
                 print(f"GET {pkg['url']}", flush=True)
                 data = fetch_binary(pkg["url"], dest).read_bytes()
+            # The installer only speaks zip; a mislabeled container would
+            # surface as a user-facing install failure (the live catalog
+            # once carried a 7z under a .zip name). Repack what can be
+            # repacked, drop the rest before it reaches any index.
+            repacked = False
+            if not looks_like_zip(data):
+                if data.startswith(SEVENZ_MAGIC):
+                    binary = sevenz_binary()
+                    if binary:
+                        try:
+                            data = rezip_sevenz(dest, binary)
+                        except (subprocess.CalledProcessError, OSError) as exc:
+                            detail = getattr(exc, "stderr", None) or b""
+                            if isinstance(detail, bytes):
+                                detail = detail.decode("utf-8", errors="replace")
+                            tail = str(detail).strip()[-200:]
+                            print(f"  WARN dropping {pkg['name']}: 7z repack failed"
+                                  f"{f' ({tail})' if tail else f' ({exc})'}", file=sys.stderr, flush=True)
+                            dropped += 1
+                            continue
+                        dest.write_bytes(data)
+                        repacked = True
+                        repacked_names.add(sidecar_key(mod["id"], pkg["name"]))
+                        # Persist immediately: an interrupted run must not
+                        # lose the entry (the cache already serves the zip,
+                        # so a later run could never re-derive it).
+                        repacked_path.write_text(
+                            json.dumps(sorted(repacked_names), indent=1), encoding="utf-8")
+                        print(f"  repacked 7z->zip: {pkg['name']} ({len(data) // 1024} KB)", flush=True)
+                    else:
+                        print(f"  WARN dropping {pkg['name']}: 7z container and no 7z binary on this machine",
+                              file=sys.stderr, flush=True)
+                        dropped += 1
+                        continue
+                else:
+                    print(f"  WARN dropping {pkg['name']}: not a zip archive "
+                          f"(magic {data[:6].hex()})", file=sys.stderr, flush=True)
+                    dropped += 1
+                    continue
             pkg["sha256"] = hashlib.sha256(data).hexdigest()
             pkg["size_bytes"] = len(data)
-            if pkg["size_kb"] and abs(len(data) // 1024 - pkg["size_kb"]) > max(2, pkg["size_kb"] // 2):
+            # Aslain's size describes the original container; a repacked
+            # zip naturally differs, so only compare untouched payloads
+            # (the sidecar remembers earlier repacks across runs).
+            if (
+                not repacked
+                and sidecar_key(mod["id"], pkg["name"]) not in repacked_names
+                and pkg["size_kb"]
+                and abs(len(data) // 1024 - pkg["size_kb"]) > max(2, pkg["size_kb"] // 2)
+            ):
                 print(f"  WARN size drift for {pkg['name']}: catalog {pkg['size_kb']} KB, got {len(data) // 1024} KB")
+            kept_packages.append(pkg)
             done += 1
+        mod["packages"] = kept_packages
+    # Mods whose every package was dropped leave the catalog entirely —
+    # the index stops referencing them (the release keeps now-orphaned
+    # asset copies until someone prunes them; nothing serves those to
+    # users once the index no longer lists them).
+    before = len(state["mods"])
+    state["mods"] = [m for m in state["mods"] if m["packages"]]
+    if len(state["mods"]) != before:
+        print(f"dropped {before - len(state['mods'])} mods with no remaining packages",
+              file=sys.stderr, flush=True)
     (cache / "downloaded.json").write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{done} packages downloaded & hashed -> {pkgs_dir}")
+    print(f"{done} packages downloaded & hashed, {dropped} dropped -> {pkgs_dir}")
 
 
 def downloaded_state(cache: Path) -> dict:
@@ -532,9 +665,11 @@ def release(cache: Path) -> None:
             suffix = "" if len(mod["packages"]) == 1 else f"-part{idx}"
             asset_name = f"{mod['id']}-{mod['version']}{suffix}.zip"
             dest = out_dir / asset_name
-            if not dest.exists():
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes((cache / "packages" / mod["id"] / pkg["name"]).read_bytes())
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # Always restage from `packages/`: a staged copy left by an
+            # earlier run may predate a 7z->zip repack and would
+            # otherwise re-upload the old container against the new hash.
+            dest.write_bytes((cache / "packages" / mod["id"] / pkg["name"]).read_bytes())
             pkg["asset"] = asset_name
             pkg["download_url"] = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{asset_name}"
             uploads.append(dest)
@@ -997,8 +1132,9 @@ def migrate_assets(cache: Path) -> None:
         for name, local in batch:
             staged = Path(cache) / "assets" / "_migrated" / name
             staged.parent.mkdir(parents=True, exist_ok=True)
-            if not staged.exists():
-                staged.write_bytes(local.read_bytes())
+            # Always restage: a copy left by an earlier run may predate a
+            # 7z->zip repack of the same package.
+            staged.write_bytes(local.read_bytes())
             args.append(str(staged))
         subprocess.run(["gh", *args], check=True)
         print(f"  uploaded {i + len(batch)}/{len(uploads)}", flush=True)
@@ -1052,13 +1188,70 @@ def build_index(state: dict) -> dict:
     }
 
 
+def release_asset_names() -> set[str]:
+    """Names of the assets the live mod-hub release actually serves."""
+    release = json.loads(gh(f"repos/{REPO}/releases/tags/{RELEASE_TAG}"))
+    return {a["name"] for a in release["assets"]}
+
+
+def drop_missing_assets(index_json: dict, assets: set[str]) -> int:
+    """Drop every package the live release cannot serve, in place.
+
+    The index is emitted from local state, but the release is what the
+    app downloads from — a silently missed upload (the live catalog once
+    referenced two assets that 404) must shrink the index here, not fail
+    every install of that entry. Mods left without any servable package
+    leave the catalog; `latest` is recomputed over the survivors.
+    """
+    dropped = 0
+    for entry in list(index_json["mods"].values()):
+        for version in entry["versions"].values():
+            keep = [pkg for pkg in version["packages"] if pkg["name"] in assets]
+            dropped += len(version["packages"]) - len(keep)
+            for pkg in version["packages"]:
+                if pkg["name"] not in assets:
+                    print(f"warning: dropping {pkg['name']} (missing from release {RELEASE_TAG})",
+                          file=sys.stderr, flush=True)
+            version["packages"] = keep
+        entry["versions"] = {v: body for v, body in entry["versions"].items() if body["packages"]}
+        if not entry["versions"]:
+            print(f"warning: dropping mod {entry['id']} (no servable packages)", file=sys.stderr, flush=True)
+            del index_json["mods"][entry["id"]]
+            continue
+        latest = sorted(entry["versions"])[-1]
+        entry["latest"] = latest
+        entry["game"] = entry["versions"][latest]["game"]
+    return dropped
+
+
+def should_refuse_upload(total: int, dropped: int, mods_left: int) -> bool:
+    """Whether an index upload must be refused instead of shrunk.
+
+    Small drift (a missed upload, a dropped package) shrinks the index;
+    a wholesale drop means the state and the release disagree about
+    asset NAMING (e.g. a `migrate-assets` run without a follow-up
+    realignment), and an emptied state means nothing survived the gates
+    — uploading in either case would blank the Mod Hub for every user.
+    """
+    return mods_left == 0 or (total > 0 and dropped / total > 0.25)
+
+
 def index(cache: Path) -> None:
     state = downloaded_state(cache)
     index_json = build_index(state)
+    total = sum(len(v["packages"]) for m in index_json["mods"].values() for v in m["versions"].values())
+    dropped = drop_missing_assets(index_json, release_asset_names())
+    if should_refuse_upload(total, dropped, len(index_json["mods"])):
+        sys.exit(
+            f"refusing to upload: {dropped}/{total} packages missing from release {RELEASE_TAG} "
+            f"({len(index_json['mods'])} mods left) — state and release disagree on asset names; "
+            f"re-run `release` first"
+        )
     out = cache / "mod-index.json"
     out.write_text(json.dumps(index_json, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     subprocess.run(["gh", "release", "upload", RELEASE_TAG, "--repo", REPO, "--clobber", str(out)], check=True)
-    print(f"mod-index.json ({len(index_json['mods'])} mods) -> release {RELEASE_TAG}")
+    print(f"mod-index.json ({len(index_json['mods'])} mods, {dropped} unservable packages dropped)"
+          f" -> release {RELEASE_TAG}")
     # Second official channel — the relay worker's digest store; skips
     # without Cloudflare credentials (scripts/publish_digests.py).
     publish_digests.push_if_configured(
@@ -1069,12 +1262,105 @@ def index(cache: Path) -> None:
     )
 
 
+# ---------------------------------------------------------------- selftest
+
+
+def selftest() -> None:
+    """Offline checks for the archive gates (no network, no gh calls)."""
+    # Magic classification: real zip containers pass, 7z and anything
+    # else do not.
+    assert looks_like_zip(b"PK\x03\x04rest-of-archive")
+    assert looks_like_zip(b"PK\x05\x06")  # an empty zip archive
+    assert not looks_like_zip(SEVENZ_MAGIC + b"....")
+    assert not looks_like_zip(b"\x89PNG\r\n\x1a\n")
+    assert not looks_like_zip(b"")
+
+    # 7z -> zip repack round-trip (only meaningful with a converter).
+    binary = sevenz_binary()
+    if binary:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            src_dir = tmp_dir / "tree" / "res_mods"
+            src_dir.mkdir(parents=True)
+            (src_dir / "mod.bin").write_bytes(b"payload-bytes")
+            archive = tmp_dir / "pkg.7z"
+            subprocess.run([binary, "a", str(archive), str(tmp_dir / "tree")],
+                           check=True, capture_output=True)
+            repacked = rezip_sevenz(archive, binary)
+            assert looks_like_zip(repacked)
+            with zipfile.ZipFile(io.BytesIO(repacked)) as zf:
+                names = zf.namelist()
+                assert any(n.endswith("res_mods/mod.bin") for n in names), names
+                member = next(n for n in names if n.endswith("mod.bin"))
+                assert zf.read(member) == b"payload-bytes"
+        # An empty 7z repacks into a valid (empty) zip, not a drop.
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_dir = Path(tmp) / "nothing"
+            empty_dir.mkdir()
+            archive = Path(tmp) / "empty.7z"
+            subprocess.run([binary, "a", str(archive), str(empty_dir)],
+                           check=True, capture_output=True)
+            assert looks_like_zip(rezip_sevenz(archive, binary))
+    else:
+        print("  (no 7z binary found — repack round-trip skipped)")
+
+    # Missing-asset filtering: packages the release cannot serve drop,
+    # emptied versions drop, emptied mods drop, `latest` recomputes.
+    def pkg(name: str) -> dict:
+        return {"url": f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{name}",
+                "sha256": "a" * 64, "size": 1, "name": name}
+
+    def version(pkgs: list[dict]) -> dict:
+        return {"game": ">=15.7 <15.8", "packages": pkgs}
+
+    index_json = {
+        "mods": {
+            "keep": {"id": "keep", "versions": {"1": version([pkg("keep-1.zip")]),
+                                                "2": version([pkg("keep-2.zip"), pkg("gone-2.zip")])},
+                     "latest": "2", "game": ">=15.7 <15.8"},
+            "half": {"id": "half", "versions": {"1": version([pkg("keep-1.zip"), pkg("gone-1.zip")])},
+                     "latest": "1", "game": ">=15.7 <15.8"},
+            "flip": {"id": "flip", "versions": {"1": version([pkg("keep-1.zip")]),
+                                                "9": version([pkg("gone-9.zip")])},
+                     "latest": "9", "game": ">=15.7 <15.8"},
+            "gone": {"id": "gone", "versions": {"1": version([pkg("gone-3.zip")])},
+                     "latest": "1", "game": ">=15.7 <15.8"},
+        }
+    }
+    dropped = drop_missing_assets(index_json, {"keep-1.zip", "keep-2.zip"})
+    assert dropped == 4, dropped
+    assert set(index_json["mods"]) == {"keep", "half", "flip"}, list(index_json["mods"])
+    assert [p["name"] for p in index_json["mods"]["keep"]["versions"]["2"]["packages"]] == ["keep-2.zip"]
+    assert index_json["mods"]["keep"]["latest"] == "2"
+    # `flip`'s newest version lost its only package: `latest` must fall
+    # back to the newest SURVIVING version, not stay on an emptied one.
+    assert set(index_json["mods"]["flip"]["versions"]) == {"1"}
+    assert index_json["mods"]["flip"]["latest"] == "1"
+    assert index_json["mods"]["half"]["versions"]["1"]["packages"] == [
+        {"url": f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/keep-1.zip",
+         "sha256": "a" * 64, "size": 1, "name": "keep-1.zip"}
+    ]
+
+    # The upload guard: small drift uploads, wholesale loss refuses —
+    # and an emptied catalog refuses regardless of the ratio's shape.
+    assert not should_refuse_upload(258, 2, 256), "live drift shape must upload"
+    assert not should_refuse_upload(100, 25, 75), "exactly at the threshold uploads"
+    assert should_refuse_upload(100, 26, 74), "past the threshold refuses"
+    assert should_refuse_upload(10, 10, 0), "no mods left refuses"
+    assert should_refuse_upload(0, 0, 0), "empty state refuses"
+    print("selftest ok")
+
+
 # ---------------------------------------------------------------- main
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stage", choices=["curate", "download", "previews", "release", "discussions", "update-bodies", "enrich", "migrate-assets", "index"])
+    ap.add_argument(
+        "stage",
+        choices=["curate", "download", "previews", "release", "discussions",
+                 "update-bodies", "enrich", "migrate-assets", "index", "selftest"],
+    )
     ap.add_argument("--only", help="enrich only: restrict to one slug")
     ap.add_argument("--cache-dir", default=str(Path(tempfile.gettempdir()) / "wowsp-modhub"))
     ap.add_argument("--dry-run", action="store_true", help="curate only: print the selection and exit")
@@ -1099,6 +1385,8 @@ def main(argv: list[str] | None = None) -> int:
         migrate_assets(cache)
     elif args.stage == "index":
         index(cache)
+    elif args.stage == "selftest":
+        selftest()
     return 0
 
 
