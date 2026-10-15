@@ -45,6 +45,7 @@ import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type ContributionState, type PlanCandidate, type PlanItem, type QueueSnapshot } from "@/api";
 import { useReplayStore } from "@/stores/replay";
+import { useAccountStore } from "@/stores/account";
 import ReplayListFilter, {
   FILTER_ANY,
   collectModeOptions,
@@ -147,6 +148,7 @@ export default defineComponent({
     const router = useRouter();
     const { dataLanguage } = useLanguage();
     const replays = useReplayStore();
+    const accountStore = useAccountStore();
 
     // ── status card ───────────────────────────────────────────────────────
     const state = ref<ContributionState | null>(null);
@@ -164,6 +166,43 @@ export default defineComponent({
     // Identity draft — pre-filled from the declared identity once loaded.
     const idRealm = ref<string>("asia");
     const idName = ref("");
+    /** The wizard's identity source: a registered account key
+     *  (`realm:accountId`) or "custom" for free-form entry. */
+    const idSource = ref<string>("custom");
+    const identityAccounts = computed(() => accountStore.accounts);
+    const ACCOUNT_CUSTOM = "custom";
+    function accountKeyOf(realm: string, name: string): string | null {
+      const hit = accountStore.accounts.find(
+        (a) => a.realm === realm && a.nickname === name,
+      );
+      return hit ? `${hit.realm}:${hit.accountId}` : null;
+    }
+    /** Re-point the picker at the declared identity whenever it (or the
+     *  account list) changes; a match selects the account, anything else
+     *  reads as free-form. */
+    function watchIdentitySource() {
+      watch(
+        () => [state.value?.identity, identityAccounts.value.length] as const,
+        () => {
+          const id = state.value?.identity;
+          idSource.value =
+            id ? accountKeyOf(id.realm, id.name) ?? ACCOUNT_CUSTOM : ACCOUNT_CUSTOM;
+        },
+        { immediate: true },
+      );
+    }
+    function onIdentitySourcePick(key: string) {
+      idSource.value = key;
+      if (key === ACCOUNT_CUSTOM) return;
+      const [realm, id] = key.split(":");
+      const hit = accountStore.accounts.find(
+        (a) => a.realm === realm && String(a.accountId) === id,
+      );
+      if (hit) {
+        idRealm.value = hit.realm;
+        idName.value = hit.nickname;
+      }
+    }
     const savingIdentity = ref(false);
     watch(
       () => state.value?.identity,
@@ -648,6 +687,8 @@ export default defineComponent({
     // ── lifecycle ─────────────────────────────────────────────────────────
     onMounted(() => {
       void refreshState();
+      void accountStore.load();
+      watchIdentitySource();
       // The contributors doc: the pack's refreshed envelope when the
       // res-pack insights rail carries one, else the bundled placeholder.
       // A failure keeps the last known list (empty on first mount) instead
@@ -1078,19 +1119,41 @@ export default defineComponent({
                    *  uploads (the Rust side refuses without one) — so it
                    *  is captured here, on the consent step, instead of
                    *  erroring two steps later at the upload door. */}
+                  {/* Identity source: pick a registered player (the
+                      accounts section's list) or fall back to free-form
+                      entry when nothing is bound / 手动输入 is chosen. */}
                   <div class="sharing-sec__identity sharing-sec__identity--wizard">
-                    <HkSelect
-                      label={t("sharing.status.realm")}
-                      options={REALM_CODES.map((r) => ({ value: r, label: r.toUpperCase() }))}
-                      modelValue={idRealm.value}
-                      onUpdate:modelValue={(v: string) => (idRealm.value = v)}
-                    />
-                    <HkInput
-                      label={t("sharing.status.name")}
-                      placeholder={t("sharing.status.namePlaceholder")}
-                      modelValue={idName.value}
-                      onUpdate:modelValue={(v: string) => (idName.value = v)}
-                    />
+                    {identityAccounts.value.length > 0 ? (
+                      <HkSelect
+                        label={t("sharing.wizard.identitySource")}
+                        options={[
+                          ...identityAccounts.value.map((a) => ({
+                            value: `${a.realm}:${a.accountId}`,
+                            label: `${a.nickname} (${a.realm.toUpperCase()})`,
+                          })),
+                          { value: ACCOUNT_CUSTOM, label: t("sharing.wizard.identityCustom") },
+                        ]}
+                        modelValue={idSource.value}
+                        onUpdate:modelValue={onIdentitySourcePick}
+                      />
+                    ) : null}
+                    {identityAccounts.value.length === 0 ||
+                    idSource.value === ACCOUNT_CUSTOM ? (
+                      <>
+                        <HkSelect
+                          label={t("sharing.status.realm")}
+                          options={REALM_CODES.map((r) => ({ value: r, label: r.toUpperCase() }))}
+                          modelValue={idRealm.value}
+                          onUpdate:modelValue={(v: string) => (idRealm.value = v)}
+                        />
+                        <HkInput
+                          label={t("sharing.status.name")}
+                          placeholder={t("sharing.status.namePlaceholder")}
+                          modelValue={idName.value}
+                          onUpdate:modelValue={(v: string) => (idName.value = v)}
+                        />
+                      </>
+                    ) : null}
                   </div>
                   <HkSettingsHint>{t("sharing.wizard.identityHint")}</HkSettingsHint>
                 </div>

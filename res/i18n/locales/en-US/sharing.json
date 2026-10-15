@@ -49,7 +49,9 @@
     "doneLabel": "Finish",
     "open": "Share replays…",
     "identityHint": "The credited identity uploads with your package and lands in the contributor list.",
-    "identityMissing": "Set your credited identity (server + game ID) first"
+    "identityMissing": "Set your credited identity (server + game ID) first",
+    "identitySource": "Credited as",
+    "identityCustom": "Enter manually…"
   },
   "select": {
     "checkCard": "Select the replay of {name}",
