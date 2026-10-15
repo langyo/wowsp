@@ -351,6 +351,11 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
               <HkButton
                 size="sm"
                 variant="primary"
+                class={
+                  presetSwitched(entry, record, ctx.activePreset(entry))
+                    ? "mod-detail__action-warn"
+                    : undefined
+                }
                 disabled={!!busyState || !ctx.gameRoot.value}
                 loading={busyInstall}
                 onClick={() =>

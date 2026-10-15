@@ -32,7 +32,7 @@ vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: 
 vi.mock("@/features/modhub/AssetPreview", () => ({ default: { name: "AssetPreview", render: () => null } }));
 vi.mock("@/components/search/AsyncSearchCombo", () => ({ default: { name: "AsyncSearchCombo", render: () => null } }));
 vi.mock("@celestia-island/hikari", () => {
-  const component = (name: string) => ({ name, props: ["modelValue", "open", "footerActions", "items"], render: () => null });
+  const component = (name: string) => ({ name, props: ["modelValue", "open", "footerActions", "items", "tabs"], render: () => null });
   return {
     HkTabs: component("HkTabs"), HkSpinner: component("HkSpinner"), HkButton: component("HkButton"),
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
@@ -317,5 +317,50 @@ describe("catalog detail menu", () => {
       { id: "mod-a", version: "1", gameRoot: "C:/TestGameA" },
     ]);
     expect(installed.find((i) => i.key === "open-path")?.disabled).toBeFalsy();
+  });
+
+  it("lands the preset tabs on the installed scheme and drifts on switch", async () => {
+    mocks.catalog.mockResolvedValue({
+      mods: [{
+        id: "smi", version: "1", category: "battle", nameEn: "SMI",
+        game: "*", title: "SMI", nameZh: "", description: "",
+        authors: [], packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+        i18n: {}, aliases: [],
+        presets: [
+          { id: "classic", nameZh: "经典", nameEn: "Classic", packages: [] },
+          { id: "sasagcy", nameZh: "Sasagcy", nameEn: "Sasagcy", packages: [] },
+        ],
+      }],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.records.mockResolvedValue([
+      { id: "smi", version: "1", gameRoot: "C:/TestGameA", preset: "sasagcy" },
+    ]);
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+
+    // The pane's preset tabs — the HkTabs whose tab list carries the
+    // scheme ids (the source switcher's tabs carry view keys instead).
+    const presetTabs = () =>
+      view
+        .findAllComponents({ name: "HkTabs" })
+        .find(
+          (c) =>
+            (c.props("tabs") as { key: string }[] | undefined)?.some(
+              (tab) => tab.key === "sasagcy",
+            ),
+        )!;
+    // First entry shows the INSTALLED scheme, not the default first one.
+    expect(presetTabs().props("modelValue")).toBe("sasagcy");
+
+    // Switching is still a user action away from the installed scheme.
+    presetTabs().vm.$emit("update:modelValue", "classic");
+    await flushPromises();
+    expect(presetTabs().props("modelValue")).toBe("classic");
   });
 });
