@@ -373,6 +373,25 @@
   &--patch     { --accent: 16, 185, 129; }   // green — patch note
   &--textures  { --accent: 148, 163, 184; }  // grey — raw overrides
 
+  /* Online-catalog preview thumbnails (list rows + search-combo items):
+     the entry's screenshot overlays the tile in place of the category
+     glyph — for skins/voices the screenshot is the product. The glyph
+     stays underneath (placeholder while loading, fallback when the media
+     proxy cannot fetch the shot); the corner light keeps its surface ring
+     and its DOM-after position, so it stays on top of any image. */
+  &--preview {
+    overflow: hidden;
+
+    .mod-row__thumb {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+  }
+
   &--sm {
     width: 24px;
     height: 24px;

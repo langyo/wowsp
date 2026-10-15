@@ -33,6 +33,7 @@ import {
 import { listedEntries } from "@/features/modhub/catalogListed";
 import ModOpDisclaimer from "@/features/modhub/ModOpDisclaimer";
 import { t } from "@/i18n";
+import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
 import { useMigrateWizard } from "./resources/useMigrateWizard";
@@ -106,8 +107,26 @@ export default defineComponent({
       const text = localized(entry);
       return (
         <>
-          <span class="mod-row__tile mod-row__tile--cat mod-row__tile--sm">
+          <span
+            class={[
+              "mod-row__tile",
+              "mod-row__tile--cat",
+              "mod-row__tile--sm",
+              entry.preview && "mod-row__tile--preview",
+            ]}
+          >
+            {/* Same layering as the sidebar rows: glyph under the thumbnail
+                as placeholder and offline fallback. */}
             <Icon size={14} />
+            {entry.preview && (
+              <img
+                class="mod-row__thumb"
+                src={mediaImageUrl(entry.preview)}
+                alt=""
+                loading="lazy"
+                draggable={false}
+              />
+            )}
           </span>
           <span class="resources-view__combo-name">{text.name || entry.title || entry.nameEn}</span>
         </>
