@@ -414,6 +414,25 @@ class PyClass(object):
         return "<class %s>" % self.__name__
 
 
+class PyInstance(object):
+    """Instance of a PyClass: attribute writes land here, reads fall through
+    to the class chain (enough for static-data record classes). Methods come
+    back as unbound Py2Funcs — fine for data-only modules."""
+
+    def __init__(self, cls):
+        self.cls = cls
+        self.attrs = {}
+
+    def __setattr__(self, name, value):
+        if name in ("cls", "attrs"):
+            object.__setattr__(self, name, value)
+        else:
+            self.attrs[name] = value
+
+    def __repr__(self):
+        return "<%s instance>" % self.cls.__name__
+
+
 class Module(object):
     def __init__(self, name):
         self.name = name
@@ -481,6 +500,16 @@ GLOBALS = {
 
 def get_attr(obj, name):
     name = _s(name)
+    if isinstance(obj, PyInstance):
+        if name in obj.attrs:
+            return obj.attrs[name]
+        v = obj.cls.get(name)
+        if v is not None:
+            return v
+        if LENIENT:
+            MISSED.add((obj.cls.__name__, "instance-attr", _s(name)))
+            return DUMMY
+        raise AttributeError("%s instance: no attr %s" % (obj.cls.__name__, name))
     if isinstance(obj, PyClass):
         v = obj.get(name)
         if v is None:
@@ -513,7 +542,7 @@ def get_attr(obj, name):
 
 
 class Frame(object):
-    def __init__(self, code, module, args):
+    def __init__(self, code, module, args, kwargs=None):
         self.code = code
         self.names = [_s(n) for n in code["names"]]
         self.consts = code["consts"]
@@ -526,6 +555,8 @@ class Frame(object):
         argcount = code["argcount"]
         for i, a in enumerate(args[:argcount]):
             self.locals[self.varnames[i]] = a
+        for k, v in (kwargs or {}).items():
+            self.locals[_s(k)] = v
         if self.varnames and self.varnames[0] == ".0" and len(args) == 1:
             self.locals[".0"] = args[0]
         self.saved_off = 0
@@ -644,10 +675,19 @@ class Frame(object):
                 defaults = st.pop()
             st.append(Py2Func(c, self.module, defaults))
         elif nm == "CALL_FUNCTION":
-            args = st[len(st) - arg:] if arg else []
-            if arg:
-                del st[len(st) - arg:]
-            st.append(call_value(st.pop(), args))
+            # py2 packs <npos positional | nkw keyword> pairs into the single
+            # argument; keywords land on the stack as name/value pairs.
+            nkw = arg >> 8
+            npos = arg & 0xFF
+            kwargs = {}
+            if nkw:
+                items = st[len(st) - 2 * nkw:]
+                del st[len(st) - 2 * nkw:]
+                kwargs = {_s(items[2 * i]): items[2 * i + 1] for i in range(nkw)}
+            args = st[len(st) - npos:] if npos else []
+            if npos:
+                del st[len(st) - npos:]
+            st.append(call_value(st.pop(), args, kwargs))
         elif nm == "BUILD_CLASS":
             d = st.pop()
             bases = st.pop()
@@ -770,24 +810,31 @@ def is_generator(code):
     return has_op(code, "YIELD_VALUE")
 
 
-def call_value(f, args):
+def call_value(f, args, kwargs=None):
+    kwargs = kwargs or {}
     if isinstance(f, Py2Func):
         if is_generator(f.code):
             out = []
-            fr = Frame(f.code, f.module, args)
+            fr = Frame(f.code, f.module, args, kwargs)
             while True:
                 kind, v = fr.step()
                 if kind == "return":
                     break
                 out.append(v)
             return out
-        fr = Frame(f.code, f.module, args)
+        fr = Frame(f.code, f.module, args, kwargs)
         kind, v = fr.step()
         if fr.is_class_body():
             return dict(fr.locals)
         return v
+    if isinstance(f, PyClass):
+        inst = PyInstance(f)
+        init = f.get("__init__")
+        if isinstance(init, Py2Func):
+            Frame(init.code, init.module, [inst] + list(args), kwargs).step()
+        return inst
     if callable(f):
-        return f(*args)
+        return f(*args, **kwargs)
     return DUMMY  # WG code sometimes "calls" inert objects; tolerate
 
 
