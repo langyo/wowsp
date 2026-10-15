@@ -300,16 +300,31 @@ export function prTrendTierMatches(tier: number | null, bracketKey: string): boo
 export const PR_TREND_FRAME = {
   width: 640,
   height: 220,
-  /** Left pad carrying the y-axis labels. */
-  sidePad: 46,
+  /** Left pad carrying the y-axis numbers AND the tier benchmark names —
+   *  the guide labels share the numeric labels' gutter, so the pad is
+   *  wider than the playtime chart's (an end-anchored "Below Average" at
+   *  9px needs most of it; wider localized band names compress to the
+   *  gutter via textLength in the chart rather than clip past the edge).
+   *  viewBox scaling absorbs the wider pad: the plot narrows slightly on
+   *  every width, mobile included. */
+  sidePad: 66,
   topPad: 14,
   bottomPad: 26,
 } as const;
 
 /** PR tier thresholds (utils/winrate prTier's bands) that draw a faint
  *  horizontal guide when they fall inside the y domain — reading progress
- *  against the community scale, not just against yourself. */
+ *  against the community scale, not just against yourself. Each guide's
+ *  left end carries the name of the tier that STARTS at its threshold. */
 export const PR_TREND_GUIDES = [750, 1350, 1750, 2100, 2450] as const;
+
+/** Vertical clearance (px between label anchor rows) a domain number needs
+ *  from a tier label before both may stand in the left gutter. Closer than
+ *  this and the NUMBER steps aside — the tier name carries more meaning,
+ *  and both share the same end-anchored x. Decided in prTrendLayout (not
+ *  as a magic offset in the SVG template) so the rule is pinnable in
+ *  tests; 9px ≈ the tier label's own 9px font size. */
+export const PR_TREND_AXIS_TIER_CLEARANCE = 9;
 
 /** One rendered vertex of the line. */
 export interface PrTrendVertex {
@@ -328,6 +343,12 @@ export interface PrTrendLayout {
   yMax: number;
   /** Tier guides inside the domain: y position + the threshold value. */
   guides: { y: number; pr: number }[];
+  /** The three domain rows (floor / mid / ceiling): gridline y with the
+   *  row's PR number and whether that number still renders — `label` is
+   *  false when a tier label sits within PR_TREND_AXIS_TIER_CLEARANCE of
+   *  the row, so only the gridline draws there (the tier name keeps the
+   *  gutter). The collision rule lives here, not in the template. */
+  axis: { pr: number; y: number; label: boolean }[];
   /** Evenly spaced x tick positions with their timestamps (labeling is the
    *  caller's — locale lives there). */
   xTicks: { x: number; t: number }[];
@@ -379,6 +400,19 @@ export function prTrendLayout(
   const guidePrs = PR_TREND_GUIDES.filter((g) => g > yMin && g <= yMax);
   const guides = guidePrs.map((pr) => ({ y: fmtN(yOf(pr)), pr }));
 
+  // Domain rows: the floor / mid / ceiling gridlines always draw, but a
+  // number within the tier-label clearance of a guide yields its gutter
+  // space to that guide's tier name (yOf(yMin) === baselineY and
+  // yOf(yMax) === topPad by construction, so one yOf covers all three).
+  const yMid = (yMin + yMax) / 2;
+  const axis = [yMin, yMid, yMax].map((pr) => {
+    const y = fmtN(yOf(pr));
+    const label = guides.every(
+      (g) => Math.abs(g.y - y) >= PR_TREND_AXIS_TIER_CLEARANCE,
+    );
+    return { pr, y, label };
+  });
+
   const tickCount = Math.min(5, points.length);
   const xTicks = Array.from({ length: tickCount }, (_, i) => {
     const f = tickCount === 1 ? 0 : i / (tickCount - 1);
@@ -395,6 +429,7 @@ export function prTrendLayout(
     yMin,
     yMax,
     guides,
+    axis,
     xTicks,
     vertices,
     path,

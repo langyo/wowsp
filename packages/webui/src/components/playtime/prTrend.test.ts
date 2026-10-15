@@ -6,6 +6,8 @@ import {
   expectedPrFromTotals,
   expectedPrMap,
   filterIntervalsByRange,
+  PR_TREND_AXIS_TIER_CLEARANCE,
+  PR_TREND_FRAME,
   prOfInterval,
   prTrendIntervals,
   prTrendLayout,
@@ -260,6 +262,17 @@ describe("prTrendLayout", () => {
     expect(l.path).toContain("M");
     // Tier guides inside the domain only.
     expect(l.guides.map((g) => g.pr)).toEqual([1350, 1750]);
+    // The left gutter is wide enough for the end-anchored tier names.
+    expect(PR_TREND_FRAME.sidePad).toBeGreaterThanOrEqual(60);
+    // Domain rows: floor 750@194, mid 1250@104 (18px from the 1350 guide —
+    // just past the 9px clearance, so its number survives), ceiling
+    // 1750@14 — the 1750 guide sits exactly on it, so the tier name claims
+    // the gutter and the ceiling number steps aside (gridline still draws).
+    expect(l.axis).toEqual([
+      { pr: 750, y: 194, label: true },
+      { pr: 1250, y: 104, label: true },
+      { pr: 1750, y: 14, label: false },
+    ]);
     // Ticks cap at the point count and span the time range.
     expect(l.xTicks).toHaveLength(2);
     expect(l.xTicks[0].t).toBe(0);
@@ -297,6 +310,33 @@ describe("prTrendLayout", () => {
     expect(l.yMax).toBe(1250);
     expect(l.xTicks).toEqual([]);
     expect(l.guides.map((g) => g.pr)).toEqual([750]);
+    // The lone 750 guide (@86) clears every domain row (18px from the mid
+    // @104), so all three numbers keep their gutter.
+    expect(l.axis.map((a) => [a.pr, a.label])).toEqual([
+      [0, true],
+      [625, true],
+      [1250, true],
+    ]);
+  });
+
+  it("drops a domain number that collides with a tier label's row", () => {
+    // pr 650/800 → domain [500, 1000]: the 750 guide lands exactly on the
+    // mid row (@104), so the mid number gives way to the tierBelowAvg name
+    // while floor and ceiling keep theirs. The rule is >= clearance (9px),
+    // decided in the layout — the template renders whatever survives.
+    const l = prTrendLayout([
+      { t: 0, pr: 650 },
+      { t: 10, pr: 800 },
+    ]);
+    expect(l.yMin).toBe(500);
+    expect(l.yMax).toBe(1000);
+    expect(l.guides.map((g) => g.pr)).toEqual([750]);
+    expect(PR_TREND_AXIS_TIER_CLEARANCE).toBeGreaterThanOrEqual(8);
+    expect(l.axis).toEqual([
+      { pr: 500, y: 194, label: true },
+      { pr: 750, y: 104, label: false },
+      { pr: 1000, y: 14, label: true },
+    ]);
   });
 
   it("clamps the y floor at zero", () => {
