@@ -20,6 +20,12 @@ pub(super) enum PyVal {
 /// top-level value, or `None` on truncated/unsupported opcodes (the caller
 /// then just leaves that sample set empty — damage stats are an enhancement,
 /// never a hard requirement).
+/// Audit wowsp-R1-2: generous ceiling for the pickle memo table —
+/// legitimate WoWs replays have a few hundred entries; hostile
+/// bytecode must not drive unbounded allocation (a 6-byte sequence
+/// with LONG_BINPUT u32::MAX tried to resize to ~240GB).
+const MAX_MEMO_ENTRIES: usize = 64 * 1024;
+
 pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
     let mut stack: Vec<PyVal> = Vec::new();
     let mut metastack: Vec<Vec<PyVal>> = Vec::new();
@@ -218,6 +224,9 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // BINPUT 'q' — memoize the top of stack (1-byte index)
                 let idx = *bytes.get(i)? as usize;
                 i += 1;
+                if idx >= MAX_MEMO_ENTRIES {
+                    return None;
+                }
                 if let Some(v) = stack.last() {
                     if memo.len() <= idx {
                         memo.resize(idx + 1, PyVal::None);
@@ -229,6 +238,9 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // LONG_BINPUT 'r' — same with a 4-byte index
                 let idx = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
                 i += 4;
+                if idx >= MAX_MEMO_ENTRIES {
+                    return None;
+                }
                 if let Some(v) = stack.last() {
                     if memo.len() <= idx {
                         memo.resize(idx + 1, PyVal::None);
