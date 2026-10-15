@@ -41,6 +41,9 @@ export function useFileListWindow(hub: ModHubCtx) {
   /** Selected left-list package ("all" = union; only meaningful when the
    *  per-package preview data exists). */
   const selectedPkg = ref("all");
+  /** Which tree root the right pane shows: res_mods vs the game-root drops.
+   * Only dual-root entries surface the toggle; the scope resets per open. */
+  const treeScope = ref<"res_mods" | "game">("res_mods");
   const toast = useToast();
 
   function open(target_: FileListTarget) {
@@ -49,6 +52,7 @@ export function useFileListWindow(hub: ModHubCtx) {
     error.value = "";
     loading.value = false;
     selectedPkg.value = "all";
+    treeScope.value = "res_mods";
     // The window shows up first and fetches INSIDE: kick the preview off
     // immediately whenever this target needs one (installed units render
     // their ledger record instantly and never fetch).
@@ -62,6 +66,7 @@ export function useFileListWindow(hub: ModHubCtx) {
     preview.value = null;
     error.value = "";
     loading.value = false;
+    treeScope.value = "res_mods";
   }
 
   /** From the online pane: the entry drives the package list; a ledger
@@ -134,6 +139,7 @@ export function useFileListWindow(hub: ModHubCtx) {
     loading,
     error,
     selectedPkg,
+    treeScope,
     openForEntry,
     openForUnit,
     close,

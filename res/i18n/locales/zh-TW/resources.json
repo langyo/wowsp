@@ -125,6 +125,8 @@
   "fileTreeRoot": "{version}/res_mods",
   "fileTreeUnknownVersion": "目前版本",
   "fileTreeGameRoot": "遊戲根目錄",
+  "fileTreeScopeResMods": "僅 res_mods",
+  "fileTreeScopeGame": "遊戲根目錄",
   "fileTreeCount": "{count} 項",
   "gameRange": "適用 {game}",
   "installedDone": "「{name}」（{version}）安裝完成。",

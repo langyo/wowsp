@@ -27,6 +27,21 @@ export function splitGameRootFiles(files: string[]): { resMods: string[]; game: 
   return { resMods, game };
 }
 
+/** Which tree root(s) the window renders. Dual-root entries (files both
+ *  inside res_mods and in the game root) switch through the scope toggle;
+ *  single-root entries always render their one root, no toggle shown. */
+export type TreeScope = "res_mods" | "game";
+
+export function treeRootsFor(
+  resMods: string[],
+  game: string[],
+  scope: TreeScope,
+): { resMods: boolean; game: boolean } {
+  if (resMods.length === 0) return { resMods: false, game: game.length > 0 };
+  if (game.length === 0) return { resMods: true, game: false };
+  return scope === "res_mods" ? { resMods: true, game: false } : { resMods: false, game: true };
+}
+
 /** Nest one flat list of forward-slash paths into sorted folder/file
  *  nodes (folders first, then files, both alphabetical). Duplicate and
  *  empty segments are ignored; a trailing slash marks a folder. */

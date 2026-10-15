@@ -125,6 +125,8 @@
   "fileTreeRoot": "{version}/res_mods",
   "fileTreeUnknownVersion": "現在のバージョン",
   "fileTreeGameRoot": "ゲームのルート",
+  "fileTreeScopeResMods": "res_mods のみ",
+  "fileTreeScopeGame": "ゲームのルート",
   "fileTreeCount": "{count} 件",
   "gameRange": "対応 {game}",
   "installedDone": "「{name}」（{version}）をインストールしました。",

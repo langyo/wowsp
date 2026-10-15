@@ -125,6 +125,8 @@
   "fileTreeRoot": "{version}/res_mods",
   "fileTreeUnknownVersion": "текущая версия",
   "fileTreeGameRoot": "корень игры",
+  "fileTreeScopeResMods": "Только res_mods",
+  "fileTreeScopeGame": "Корень игры",
   "fileTreeCount": "элементов: {count}",
   "gameRange": "игра {game}",
   "installedDone": "«{name}» ({version}) установлен.",

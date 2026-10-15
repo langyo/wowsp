@@ -1,10 +1,13 @@
 /** The plugin file-list window — a secondary HkModal (teleported to body,
  *  the share-wizard pattern): a narrow package list on the left, and the
  *  expected game paths as an HkTree on the right, rooted at
- *  `<bin version>/res_mods`. Installed units render the ledger record's
- *  written files instantly; everything else starts the read-only preview
- *  (download to temp + classify, res_mods untouched) the moment the window
- *  opens, with the progress riding the shared download bus. */
+ *  `<bin version>/res_mods` (game-root `@game/` drops form a second tree).
+ *  Dual-root entries switch between the two through a scope toggle pinned
+ *  to the sidebar's bottom-left; single-root entries show no toggle.
+ *  Installed units render the ledger record's written files instantly;
+ *  everything else starts the read-only preview (download to temp +
+ *  classify, res_mods untouched) the moment the window opens, with the
+ *  progress riding the shared download bus. */
 import { Download, FileText, Folder, Package } from "@lucide/vue";
 import {
   HkButton,
@@ -16,7 +19,12 @@ import {
 } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
-import { buildPathTree, splitGameRootFiles, type PathTreeNode } from "./fileTree";
+import {
+  buildPathTree,
+  splitGameRootFiles,
+  treeRootsFor,
+  type PathTreeNode,
+} from "./fileTree";
 import { pkgKb } from "./display";
 import type { ResourcesCtx } from "./context";
 
@@ -89,16 +97,21 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
   const warnings = selectedPkgs.flatMap((p) => p.warnings);
   const binVersion = fromLedger ? target.record!.binVersion : (preview?.binVersion ?? "");
   const { resMods, game } = splitGameRootFiles(shownFiles);
-
-  const treeNodes: TreeNode[] = [
-    {
+  // Dual-root entries (payloads inside res_mods AND game-root drops) get
+  // the scope toggle at the sidebar's bottom; single-root entries render
+  // their one root without it.
+  const dualRoots = resMods.length > 0 && game.length > 0;
+  const roots = treeRootsFor(resMods, game, files.treeScope.value);
+  const treeNodes: TreeNode[] = [];
+  if (roots.resMods) {
+    treeNodes.push({
       id: "res-mods-root",
       label: rootLabel(binVersion),
       icon: Folder,
       children: toTreeNodes(buildPathTree(resMods)),
-    },
-  ];
-  if (game.length > 0) {
+    });
+  }
+  if (roots.game) {
     treeNodes.push({
       id: "game-root",
       label: t("resources.fileTreeGameRoot"),
@@ -121,48 +134,75 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
       <div class="file-window">
         {/* Both panes scroll through hikari's scroll containers (overlay
             thumbs; the native bars stay hidden). The left pane keeps the
-            aside landmark the plain div replaced. */}
-        <HkScrollContainer class="file-window__side" as="aside">
-          <div class="file-window__side-inner">
-          <div class="file-window__side-title">{t("resources.fileListPackages")}</div>
-          {!fromLedger && preview && packages.length > 1 && (
-            <button
-              type="button"
-              class={[
-                "file-window__pkg",
-                files.selectedPkg.value === "all" && "file-window__pkg--active",
-              ]}
-              onClick={() => (files.selectedPkg.value = "all")}
-            >
-              <Package size={14} />
-              <span class="file-window__pkg-name">{t("resources.fileListAll")}</span>
-            </button>
+            aside landmark; the scope toggle pins to its bottom, outside
+            the scrolling package list. */}
+        <aside class="file-window__side">
+          <HkScrollContainer class="file-window__side-scroll">
+            <div class="file-window__side-inner">
+              <div class="file-window__side-title">{t("resources.fileListPackages")}</div>
+              {!fromLedger && preview && packages.length > 1 && (
+                <button
+                  type="button"
+                  class={[
+                    "file-window__pkg",
+                    files.selectedPkg.value === "all" && "file-window__pkg--active",
+                  ]}
+                  onClick={() => (files.selectedPkg.value = "all")}
+                >
+                  <Package size={14} />
+                  <span class="file-window__pkg-name">{t("resources.fileListAll")}</span>
+                </button>
+              )}
+              {packages.map((p) => (
+                <button
+                  type="button"
+                  key={p.name}
+                  class={[
+                    "file-window__pkg",
+                    !fromLedger && files.selectedPkg.value === p.name && "file-window__pkg--active",
+                  ]}
+                  disabled={fromLedger || !preview}
+                  onClick={() => (files.selectedPkg.value = p.name)}
+                  title={p.name}
+                >
+                  <Package size={14} />
+                  <span class="file-window__pkg-name">{p.name}</span>
+                  {p.size > 0 && <span class="file-window__pkg-size">{pkgKb(p.size)} KB</span>}
+                </button>
+              ))}
+              {packages.length === 0 && (
+                <p class="file-window__side-empty">{t("resources.fileListNoPackages")}</p>
+              )}
+              {fromLedger && (target.entry?.packages.length ?? 0) > 1 && (
+                <p class="file-window__side-note">{t("resources.fileListInstalledNote")}</p>
+              )}
+            </div>
+          </HkScrollContainer>
+          {dualRoots && (
+            <div class="file-window__scope" role="group">
+              <button
+                type="button"
+                class={[
+                  "file-window__scope-btn",
+                  files.treeScope.value === "res_mods" && "file-window__scope-btn--active",
+                ]}
+                onClick={() => (files.treeScope.value = "res_mods")}
+              >
+                {t("resources.fileTreeScopeResMods")}
+              </button>
+              <button
+                type="button"
+                class={[
+                  "file-window__scope-btn",
+                  files.treeScope.value === "game" && "file-window__scope-btn--active",
+                ]}
+                onClick={() => (files.treeScope.value = "game")}
+              >
+                {t("resources.fileTreeScopeGame")}
+              </button>
+            </div>
           )}
-          {packages.map((p) => (
-            <button
-              type="button"
-              key={p.name}
-              class={[
-                "file-window__pkg",
-                !fromLedger && files.selectedPkg.value === p.name && "file-window__pkg--active",
-              ]}
-              disabled={fromLedger || !preview}
-              onClick={() => (files.selectedPkg.value = p.name)}
-              title={p.name}
-            >
-              <Package size={14} />
-              <span class="file-window__pkg-name">{p.name}</span>
-              {p.size > 0 && <span class="file-window__pkg-size">{pkgKb(p.size)} KB</span>}
-            </button>
-          ))}
-          {packages.length === 0 && (
-            <p class="file-window__side-empty">{t("resources.fileListNoPackages")}</p>
-          )}
-          {fromLedger && (target.entry?.packages.length ?? 0) > 1 && (
-            <p class="file-window__side-note">{t("resources.fileListInstalledNote")}</p>
-          )}
-          </div>
-        </HkScrollContainer>
+        </aside>
         <HkScrollContainer class="file-window__main">
           <div class="file-window__main-inner">
           {files.error.value && (
@@ -171,13 +211,13 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
           {files.loading.value && target.entry ? (
             renderProgress(ctx, `preview:${target.entry.id}`)
           ) : fromLedger ? (
-            treeNodes[0].children?.length ? (
+            treeNodes[0]?.children?.length ? (
               <HkTree nodes={treeNodes} size="sm" defaultExpandAll={expandAll} />
             ) : (
               <p class="file-window__state-sub">{t("resources.fileListEmpty")}</p>
             )
           ) : preview ? (
-            treeNodes[0].children?.length ? (
+            treeNodes[0]?.children?.length ? (
               <HkTree nodes={treeNodes} size="sm" defaultExpandAll={expandAll} />
             ) : (
               <p class="file-window__state-sub">{t("resources.fileListEmpty")}</p>

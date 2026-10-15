@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPathTree, commonRootDir, splitGameRootFiles } from "./fileTree";
+import { buildPathTree, commonRootDir, splitGameRootFiles, treeRootsFor } from "./fileTree";
 
 describe("splitGameRootFiles", () => {
   it("separates @game drops from res_mods-relative paths", () => {
@@ -12,6 +12,24 @@ describe("splitGameRootFiles", () => {
     ]);
     expect(resMods).toEqual(["PnFModsLoader.py", "PnFMods/ShotTimer/Main.py", "gui/unbound.xml"]);
     expect(game).toEqual(["magic.dll"]);
+  });
+});
+
+describe("treeRootsFor", () => {
+  it("lets the scope decide on dual-root entries", () => {
+    expect(treeRootsFor(["gui/x.xml"], ["magic.dll"], "res_mods")).toEqual({
+      resMods: true,
+      game: false,
+    });
+    expect(treeRootsFor(["gui/x.xml"], ["magic.dll"], "game")).toEqual({
+      resMods: false,
+      game: true,
+    });
+  });
+
+  it("pins the single root regardless of scope", () => {
+    expect(treeRootsFor(["gui/x.xml"], [], "game")).toEqual({ resMods: true, game: false });
+    expect(treeRootsFor([], ["magic.dll"], "res_mods")).toEqual({ resMods: false, game: true });
   });
 });
 
