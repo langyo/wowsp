@@ -283,6 +283,7 @@ export default defineComponent({
       { value: "1d", label: t("dashboard.range1d") },
       { value: "7d", label: t("dashboard.range7d") },
       { value: "30d", label: t("dashboard.range30d") },
+      { value: "90d", label: t("dashboard.range90d") },
       { value: "all", label: t("dashboard.rangeAll") },
       { value: "custom", label: t("dashboard.rangeCustom") },
     ];
@@ -543,6 +544,7 @@ export default defineComponent({
               "1d": t("dashboard.range1d"),
               "7d": t("dashboard.range7d"),
               "30d": t("dashboard.range30d"),
+              "90d": t("dashboard.range90d"),
               all: t("dashboard.rangeAll"),
             }[dateRange.value];
       // The custom window's own dates already say what it covers, so the

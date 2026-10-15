@@ -3,7 +3,7 @@
  *  The WG API returns flat per-ship PvP stats (PlayerShipStats[]). This module
  *  derives the higher-level views a stats page needs:
  *    - Per-ship-type summary (battles/wins/winrate/avgDamage by BB/CA/DD/CV/SS)
- *    - Date-range views (1d/7d/30d/all-time)
+ *    - Date-range views (1d/7d/30d/90d/all-time)
  *    - Per-mode breakdown from the account-level division winrates
  *
  *  Ship-type is resolved by joining shipId → encyclopedia ShipInfo.type.
@@ -27,7 +27,7 @@
 import type { PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint } from "@/api";
 import type { ShipInfo } from "@/api";
 
-export type DateRange = "1d" | "7d" | "30d" | "all";
+export type DateRange = "1d" | "7d" | "30d" | "90d" | "all";
 
 export interface ShipTypeSummary {
   type: string;
@@ -52,12 +52,12 @@ export function dateRangeCutoff(
   range: DateRange,
   nowSec: number = Math.floor(Date.now() / 1000),
 ): number {
-  const days = range === "1d" ? 1 : range === "7d" ? 7 : 30;
+  const days = range === "1d" ? 1 : range === "7d" ? 7 : range === "30d" ? 30 : 90;
   return nowSec - days * DAY_SECONDS;
 }
 
 /** Filter PlayerShipStats by a date range based on lastBattleTime.
- *  "all" returns everything; "1d/7d/30d" keep only ships whose last battle
+ *  "all" returns everything; "1d/7d/30d/90d" keep only ships whose last battle
  *  was within that many days from now.
  *
  *  CAREER FALLBACK ONLY: the kept rows still carry career totals, so this is

@@ -248,6 +248,7 @@ export default defineComponent({
         "1d": t("dashboard.range1d"),
         "7d": t("dashboard.range7d"),
         "30d": t("dashboard.range30d"),
+        "90d": t("dashboard.range90d"),
         all: t("dashboard.rangeAll"),
       }[dateRange.value];
       const rangeLabel =

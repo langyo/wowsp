@@ -13,6 +13,7 @@
   "range1d": "1 j",
   "range7d": "7 j",
   "range30d": "30 j",
+  "range90d": "90 j",
   "rangeAll": "Tout",
   "rangeSince": "Couvre depuis le {date} (d'après les instantanés locaux de statistiques).",
   "rangeNoHistory": "Pas encore d'instantané local assez ancien : les totaux de carrière des navires joués récemment sont affichés ; l'historique s'accumulera automatiquement avec l'utilisation.",

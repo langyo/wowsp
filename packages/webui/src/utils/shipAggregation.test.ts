@@ -1,5 +1,5 @@
 /** Tests for the date-range views:
- *  - `dateRangeCutoff` converts 1d/7d/30d to Unix-second cutoffs;
+ *  - `dateRangeCutoff` converts 1d/7d/30d/90d to Unix-second cutoffs;
  *  - `filterByDateRange` (the career fallback) keeps ships whose last battle
  *    falls inside the window — its rows still carry career totals, which is
  *    exactly why the real range view must go through `computeRecentDelta`;
@@ -54,6 +54,7 @@ describe("dateRangeCutoff", () => {
     expect(dateRangeCutoff("1d", now)).toBe(now - 86_400);
     expect(dateRangeCutoff("7d", now)).toBe(now - 7 * 86_400);
     expect(dateRangeCutoff("30d", now)).toBe(now - 30 * 86_400);
+    expect(dateRangeCutoff("90d", now)).toBe(now - 90 * 86_400);
   });
 });
 

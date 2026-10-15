@@ -7,19 +7,20 @@
  * moves.
  *
  * Interaction model:
- *   - Five filter categories — type / nation / tier / winrate / battles —
- *     render as collapsed chips styled after the segmented button-group
- *     triggers.
+ *   - Six filter categories — type / nation / tier / winrate / battles /
+ *     mode — render as collapsed chips styled after the segmented
+ *     button-group triggers.
  *   - Clicking a chip opens a popup hosting the category's option group.
- *     Type, nation and tier are MULTI-SELECT: the chosen options OR together
- *     inside the category (categories still AND). Winrate and battles are
+ *     Type, nation, tier and mode are MULTI-SELECT: the chosen options OR
+ *     together inside the category (categories still AND). Winrate and
+ *     battles are
  *     SINGLE-SELECT — their brackets sit on one numeric axis, so OR-ing
  *     thresholds that subsume each other (≥30 ∪ ≥100 = ≥30) only confuses;
  *     picking a bracket replaces the previous pick. The 正序/倒序 flag is
  *     SHARED by the whole category — re-clicking the picked option flips
- *     every arrow in it at once. Ship types and nations are further
- *     special: pure filters with no direction at all, so re-clicking a
- *     type/nation simply deselects it.
+ *     every arrow in it at once. Ship types, nations and division modes are
+ *     further special: pure filters with no direction at all, so re-clicking
+ *     one of them simply deselects it.
  *   - The nation popup hosts its options as ONE capped horizontal strip
  *     (it never wraps or outruns the viewport): panned by wheel (deltaY →
  *     scrollLeft) or mouse drag (5px click/pan threshold, the pan's
@@ -34,8 +35,9 @@
  *     is actually engaged. A chip that only sorts — sitting at 全部… —
  *     wears the intermediate --sort style.
  *   - A category is a sort key while it has a concrete selection or an
- *     engaged 全部…-sort (types only via the latter, so a type pick filters
- *     without reordering). Sort priority follows the fixed canonical chip
+ *     engaged 全部…-sort (pure categories — types/nations/modes — only
+ *     via the latter, so their picks filter without reordering). Sort
+ *     priority follows the fixed canonical chip
  *     order: the earlier sorting category is the primary key, the next
  *     sorting category breaks ties, and so on; battles desc is the final
  *     fallback so the untouched view matches the pre-chip behaviour.
@@ -63,7 +65,7 @@ import { t } from "@/i18n";
 import { useOptionStrip } from "./optionStrip";
 import "./ShipFilterBar.scss";
 
-type CatKey = "type" | "nation" | "tier" | "winrate" | "battles";
+type CatKey = "type" | "nation" | "tier" | "winrate" | "battles" | "mode";
 type SortDir = "asc" | "desc";
 
 const TYPE_ORDER = ["Battleship", "AirCarrier", "Cruiser", "Destroyer", "Submarine", ""];
@@ -104,6 +106,36 @@ const WINRATE_BRACKETS: [string, string, (wr: number) => boolean][] = [
 ];
 /** [min battles]. Labels come from `ships.filter.minBattles` at render time. */
 const BATTLE_STEPS: number[] = [30, 60, 100];
+
+/** [storage value, i18n label key, predicate over the row's mode breakdown].
+ *  Division-mode picks read the per-ship battle-type split: `solo` means the
+ *  ship was played ONLY solo — solo battles exist AND no div2/div3/ranked
+ *  battles do (coop is ignored, the table is randoms-only). Rows whose
+ *  `modes` is null/undefined (realms that don't serve battle-type splits,
+ *  caches written before the field existed) match NO concrete option, so
+ *  any mode pick filters them out. The breakdown is the CAREER split even
+ *  under ranged views (1d/…/custom): history baselines carry no per-mode
+ *  data, so mode picks and the div2+div3 all-sort always read career
+ *  totals. */
+const MODE_FILTERS: [string, string, (row: PlayerShipStats) => boolean][] = [
+  [
+    "solo",
+    "ships.filter.modeSolo",
+    (row) => {
+      const m = row.modes;
+      return (
+        !!m &&
+        (m.solo?.battles ?? 0) > 0 &&
+        (m.div2?.battles ?? 0) === 0 &&
+        (m.div3?.battles ?? 0) === 0 &&
+        (m.ranked?.battles ?? 0) === 0
+      );
+    },
+  ],
+  ["div2", "ships.filter.modeDiv2", (row) => (row.modes?.div2?.battles ?? 0) > 0],
+  ["div3", "ships.filter.modeDiv3", (row) => (row.modes?.div3?.battles ?? 0) > 0],
+  ["ranked", "ships.filter.modeRanked", (row) => (row.modes?.ranked?.battles ?? 0) > 0],
+];
 
 /** Minimal metadata slice the category predicates/sorters need — both the
  *  encyclopedia entry and the offline-DB fallback satisfy it structurally. */
@@ -173,33 +205,44 @@ const CAT_DEFS: Record<CatKey, CatDef> = {
     matches: (row, _info, value) => row.battles >= (Number(value) || 0),
     sortValue: (row) => row.battles,
   },
+  mode: {
+    title: "ships.filter.modeTitle",
+    allLabel: "ships.filter.modeAll",
+    matches: (row, _info, value) => MODE_FILTERS.find(([v]) => v === value)?.[2](row) ?? false,
+    // The 全部…-sort axis is division battles (div2 + div3) — the mode
+    // category's own numeric axis; desc (its canonical direction) leads
+    // with the ship played most in divisions, rows without a breakdown
+    // park at 0.
+    sortValue: (row) => (row.modes?.div2?.battles ?? 0) + (row.modes?.div3?.battles ?? 0),
+  },
 };
 
-const CAT_KEYS: CatKey[] = ["type", "nation", "tier", "winrate", "battles"];
+const CAT_KEYS: CatKey[] = ["type", "nation", "tier", "winrate", "battles", "mode"];
 const DEFAULT_ORDER: CatKey[] = [...CAT_KEYS];
 /** The direction a category's 全部…-sort first engages in (and re-arms to
  *  whenever it switches off): types read in the canonical BB→CV→CA→DD→SS
  *  order, everything else leads with the useful end (high tier / good
- *  winrate / most battles). */
+ *  winrate / most battles / most division battles). */
 const DEFAULT_DIR: Record<CatKey, SortDir> = {
   type: "asc",
   nation: "asc",
   tier: "desc",
   winrate: "desc",
   battles: "desc",
+  mode: "desc",
 };
 
 /** Winrate and battles brackets carve up ONE numeric axis, so picking
  *  several at once ORs thresholds that subsume each other (≥30 ∪ ≥100 is
  *  just ≥30) — these two categories hold exactly one pick at a time;
- *  type/tier/nation stay multi-select. */
+ *  type/tier/nation/mode stay multi-select. */
 const SINGLE_CATS: readonly CatKey[] = ["winrate", "battles"];
 const isSingleSel = (key: CatKey) => SINGLE_CATS.includes(key);
 
 /** Pure-filter categories: multi-select picks with no sort direction — a
  *  re-click deselects, and only the 全部… option can engage a sort (by the
  *  category's canonical rank order). */
-const PURE_CATS: readonly CatKey[] = ["type", "nation"];
+const PURE_CATS: readonly CatKey[] = ["type", "nation", "mode"];
 const isPureCat = (key: CatKey) => PURE_CATS.includes(key);
 
 /** Concrete option values of a category in canonical (display) order —
@@ -218,6 +261,8 @@ function canonicalValues(key: CatKey): string[] {
       return WINRATE_BRACKETS.map(([v]) => v);
     case "battles":
       return BATTLE_STEPS.map(String);
+    case "mode":
+      return MODE_FILTERS.map(([v]) => v);
   }
 }
 
@@ -262,6 +307,8 @@ function isValidValue(key: CatKey, v: string): boolean {
       return isValidWinrateValue(v);
     case "battles":
       return isValidBattleValue(v);
+    case "mode":
+      return MODE_FILTERS.some(([val]) => val === v);
   }
 }
 
@@ -329,6 +376,7 @@ export default defineComponent({
       tier: { values: [], dir: "desc", allSort: false },
       winrate: { values: [], dir: "desc", allSort: false },
       battles: { values: [], dir: "desc", allSort: false },
+      mode: { values: [], dir: "desc", allSort: false },
     });
     if (stored?.sel) {
       for (const k of CAT_KEYS) {
@@ -474,7 +522,7 @@ export default defineComponent({
         : null;
     };
 
-    /** Option rows per category. Type/tier/winrate/battles lists are
+    /** Option rows per category. Type/tier/winrate/battles/mode lists are
      *  RESIDENT: the selectable range never shrinks with the queried data,
      *  so a pick that matches nothing in the current range stays visible
      *  and re-clickable and just yields an empty result (the hosting view
@@ -526,6 +574,10 @@ export default defineComponent({
           label: t("ships.filter.minBattles", { n }),
         })),
       ],
+      mode: [
+        { value: "", label: t(CAT_DEFS.mode.allLabel) },
+        ...MODE_FILTERS.map(([v, key]) => ({ value: v, label: t(key) })),
+      ],
     }));
 
     // ── Search hits (shipId → matched name) — fuzzy + multilingual ──
@@ -548,9 +600,9 @@ export default defineComponent({
     );
 
     /** A category contributes a sort key while it has a concrete selection
-     *  or an engaged 全部…-sort. Types and nations only via the latter: a
-     *  type/nation pick is a pure filter with no direction, so it must not
-     *  reorder the list. */
+     *  or an engaged 全部…-sort. Types, nations and division modes only via
+     *  the latter: a pure pick is a filter with no direction, so it must
+     *  not reorder the list. */
     const isSortCat = (key: CatKey) =>
       sel.value[key].allSort || (sel.value[key].values.length > 0 && !isPureCat(key));
 
@@ -601,8 +653,8 @@ export default defineComponent({
      *  engage in the canonical direction, flip, switch off. Concrete
      *  options join the selection when unpicked (replacing it outright in
      *  the single-select categories); when picked they flip the category's
-     *  shared direction — except the pure categories (types/nations), which
-     *  carry no direction and simply drop out. */
+     *  shared direction — except the pure categories (types/nations/modes),
+     *  which carry no direction and simply drop out. */
     function clickOption(key: CatKey, value: string) {
       const s = sel.value[key];
       if (value === "") {
@@ -659,14 +711,14 @@ export default defineComponent({
       if (key !== "nation") strip.resetDragged();
     });
 
-    /** Popup explainer — four shapes: types/nations are pure filters
-     *  (re-click deselects; types get the dedicated wording, nations the
+    /** Popup explainer — four shapes: types/nations/modes are pure filters
+     *  (re-click deselects; types get the dedicated wording, the others the
      *  generic multi-select hint), winrate/battles pick a single bracket,
      *  tier is the multi-select-with-sort case. */
     const popHint = (key: CatKey) =>
       key === "type"
         ? t("ships.filter.hintTypePop")
-        : key === "nation"
+        : isPureCat(key)
           ? t("ships.filter.hintMulti")
           : isSingleSel(key)
             ? t("ships.filter.hintSinglePop")
@@ -778,10 +830,11 @@ export default defineComponent({
                       <span>{t(def.title)}</span>
                     </div>
                     {/* Option group in the segmented track look (multi-select
-                        for type/nation/tier, single for winrate/battles).
-                        The 全部… pill carries the direction arrow only while
-                        its all-state sort is engaged; concrete pure
-                        categories (types/nations) never show one. Nation
+                        for type/nation/tier/mode, single for winrate/
+                        battles). The 全部… pill carries the direction arrow
+                        only while its all-state sort is engaged; concrete
+                        pure categories (types/nations/modes) never show
+                        one. Nation
                         options lead with their flag (NationFlag swaps to a
                         letter badge when the asset is missing), and the
                         nation track alone is a one-line pannable strip —

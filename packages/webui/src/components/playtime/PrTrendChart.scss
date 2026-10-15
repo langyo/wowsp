@@ -21,6 +21,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Tier benchmark names at the guide lines' left ends — fill comes inline
+   from prTier (the fixed tier palette, same convention as the dots). The
+   彩表 (tierUnicum) band keeps its solid purple here: SVG text cannot
+   carry the background-clip rainbow sweep, and solid stays legible at
+   this size. */
+.pr-trend__tier {
+  font-size: 9px;
+  text-anchor: end;
+}
+
 .pr-trend__guide {
   stroke: rgb(var(--color-text) / 0.18);
   stroke-width: 1;
