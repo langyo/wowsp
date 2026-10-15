@@ -221,6 +221,43 @@
     min-width: 0;
   }
 
+  &__card-class {
+    flex: none;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__card-spacer {
+    flex: 1;
+  }
+
+  &__card-nick {
+    flex: none;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__card-tagrow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--hi-space-4, 4px);
+    min-width: 0;
+    margin-top: 2px;
+  }
+
+  &__card-map {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
   &__card-title {
     font-weight: 600;
     font-size: var(--hi-text-sm, 0.8125rem);
@@ -229,24 +266,7 @@
     white-space: nowrap;
   }
 
-  &__card-ship {
-    color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
-  &__card-meta {
-    display: flex;
-    align-items: baseline;
-    gap: 0;
-    color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   &__card-tags {
     display: flex;

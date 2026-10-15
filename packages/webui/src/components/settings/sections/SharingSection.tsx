@@ -62,6 +62,7 @@ import { serverTagOf } from "@/utils/installLabel";
 import { displayMapName } from "@/utils/mapNames";
 import { formatBytes } from "@/components/settings/useSettingsUpdatesState";
 import { runtimeShipEntry } from "@/utils/runtimeShipDb";
+import { tierLabel } from "@/utils/shipCompare";
 import {
   loadContributors,
   type ContributorEntry,
@@ -475,7 +476,7 @@ export default defineComponent({
         const meta = metaByPath.value.get(i.path);
         return {
           path: i.path,
-          playerName: meta?.playerName ?? i.facts.realm,
+          playerName: meta?.playerName ?? null,
           dateTime: meta?.dateTime ?? i.facts.battleTime,
           mapName: meta?.mapName ?? i.facts.map,
           ownShipId: i.facts.ownShipId,
@@ -754,20 +755,54 @@ export default defineComponent({
 
     /** One selectable replay card — the page rail's card info layout in a
      *  lighter, checkbox-led variant (contract §10). */
+    /** The N-point cap rule off a scenario id (`domination_3point` →
+     *  3 点制); scenarios without a point-count pattern (epicenter gets
+     *  its own word) render no tag. */
+    function capRuleLabel(scenario?: string | null): string | null {
+      const m = scenario?.match(/_(\d+)point$/);
+      if (m) return t("sharing.select.capRule", { n: m[1] });
+      if (scenario === "epicenter") return t("sharing.select.epicenter");
+      return null;
+    }
+
+    /** Any battle time we surface — the filename stamp or an ISO battle
+     *  time — as one normalized `YYYY-MM-DD HH:mm` tag text. */
+    function fmtBattleTime(dt?: string | null): string {
+      const stamp = formatStamp(dt);
+      if (stamp !== "—" && stamp !== dt) return stamp;
+      const d = dt ? new Date(dt) : null;
+      if (!d || Number.isNaN(d.getTime())) return "—";
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
     function renderSelectCard(r: ReplayMetaLite) {
       const item = planByPath.value.get(r.path);
       const on = checked.value.has(r.path);
       const shipName = shipNameOf(r.ownShipId, dataLanguage.value);
       const serverTag = serverTagOf(r.installKind, r.installRealm);
       const modeKey = replayModeKeyOf(r);
+      // Nick: the store meta, else the plan's header-read nickname
+      // (manual picks from outside the scanned folders).
+      const nick =
+        r.playerName ?? item?.playerName ?? t("replay.list.unknownPlayer");
+      const { shipClass, tier } = shipHintOf(r.ownShipId);
+      const classLabel =
+        shipClass != null ? t(`ships.type.${shipClass}`) : null;
+      const capRule = capRuleLabel(r.scenario);
       // Verdict → hikari tag variant: 收 = success, mine/duplicate =
-      // neutral, 不收 = warning (the row copy comes from sharing.*).
+      // neutral, 不收 = warning — except MANUAL rows, where an unmatched
+      // pick is the visitor's own choice and says 手动选择 instead.
+      const manualBadge =
+        manualMode.value && item?.verdict === "unwanted";
       const verdictVariant =
         item?.verdict === "accept"
           ? "success"
-          : item?.verdict === "unwanted"
-            ? "warning"
-            : "default";
+          : manualBadge
+            ? "primary"
+            : item?.verdict === "unwanted"
+              ? "warning"
+              : "default";
       return (
         <li
           key={r.path}
@@ -793,18 +828,35 @@ export default defineComponent({
             <div class="sharing-sec__card-text">
               <div class="sharing-sec__card-head">
                 <span class="sharing-sec__card-title">
-                  {r.playerName ?? t("replay.list.unknownPlayer")}
+                  {shipName ?? nick}
                 </span>
-                {shipName ? (
-                  <span class="sharing-sec__card-ship">{shipName}</span>
+                {classLabel != null && tier != null ? (
+                  <span class="sharing-sec__card-class">
+                    {classLabel} · {tierLabel(tier)}
+                  </span>
                 ) : null}
+                <span class="sharing-sec__card-spacer" />
+                <span class="sharing-sec__card-nick">{nick}</span>
               </div>
-              <div class="sharing-sec__card-meta">
-                {displayMapName(r.mapName, dataLanguage.value)}
-                {" · "}
-                {t("replay.players", { n: r.playerCount })}
-                {" · "}
-                {formatStamp(r.dateTime)}
+              <div class="sharing-sec__card-tagrow">
+                {modeKey ? (
+                  <HkTag size="sm">
+                    <span
+                      class="sharing-sec__mode-dot"
+                      style={{ background: modeColorOfKey(modeKey).color }}
+                      aria-hidden="true"
+                    />
+                    {modeLabelOfKey(modeKey)}
+                  </HkTag>
+                ) : null}
+                {r.playerCount != null ? (
+                  <HkTag size="sm">{t("replay.players", { n: r.playerCount })}</HkTag>
+                ) : null}
+                {capRule ? <HkTag size="sm">{capRule}</HkTag> : null}
+                <HkTag size="sm">{fmtBattleTime(r.dateTime)}</HkTag>
+                <span class="sharing-sec__card-map">
+                  {displayMapName(r.mapName, dataLanguage.value)}
+                </span>
               </div>
             </div>
           </div>
@@ -822,7 +874,9 @@ export default defineComponent({
             ) : null}
             {item ? (
               <HkTag size="sm" variant={verdictVariant}>
-                {t(`sharing.select.verdict.${item.verdict}`)}
+                {manualBadge
+                  ? t("sharing.select.manualBadge")
+                  : t(`sharing.select.verdict.${item.verdict}`)}
               </HkTag>
             ) : null}
           </div>

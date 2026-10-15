@@ -141,6 +141,9 @@ export interface PlanItem {
   verdict: ContributionVerdict;
   ruleId?: string | null;
   fileName: string;
+  /** The recorder's nickname off the header (present for manual picks
+   *  from outside the scanned folders, where no store meta exists). */
+  playerName?: string | null;
 }
 
 /** Per-item terminal outcome of a started share run. */

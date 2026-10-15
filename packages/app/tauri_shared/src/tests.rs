@@ -2732,6 +2732,7 @@ fn contribution_queue_and_state_pin_their_key_sets() {
         verdict: ContributionVerdict::Accept,
         rule_id: Some("solomon-std-asia".into()),
         file_name: "x.wowsreplay".into(),
+        player_name: Some("Player".into()),
     });
     assert_exact_keys(
         &item,
@@ -2743,8 +2744,10 @@ fn contribution_queue_and_state_pin_their_key_sets() {
             "verdict",
             "ruleId",
             "fileName",
+            "playerName",
         ],
     );
+    assert_eq!(item["playerName"], "Player");
     let candidate = round_trips(PlanCandidate {
         path: r"C:\replays\x.wowsreplay".into(),
         ship_class: Some("Battleship".into()),
