@@ -1291,6 +1291,16 @@
     margin-left: auto;
   }
 
+  /* Save-&-reinstall (the preset drifted from the installed scheme): the
+     action rewrites an installed config, so it speaks the warning voice —
+     hikari's primary button reads its fill and ink from CSS vars, so a
+     scoped retint beats a bespoke button style. */
+  &__action-warn {
+    --color-primary: rgb(var(--color-warning));
+    --color-on-solid: 255 255 255;
+    --color-on-solid-icon: 255 255 255;
+  }
+
   &__danger {
     display: inline-flex;
     align-items: center;

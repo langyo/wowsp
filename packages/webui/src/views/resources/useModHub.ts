@@ -826,7 +826,10 @@ export function useModHub() {
 
   function selectCatalog(entry: CatalogEntry) {
     delistedHit.value = null;
-    selectedPreset.value = "";
+    // Entering an INSTALLED entry's pane lands the preset tabs on the
+    // scheme that is actually installed — not the default first one
+    // (which would read as a drifted config and arm save-&-reinstall).
+    selectedPreset.value = recordOf(entry.id)?.preset ?? "";
     source.value = "online";
     selection.value = { mode: "catalog", entry };
   }

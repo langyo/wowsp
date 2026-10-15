@@ -401,11 +401,26 @@ html[data-wallpaper-art="true"] body::after {
    (user direction 2026-10-08: toasts follow shittim-chest's
    always-white-on-solid convention, day and night). Redefined on the
    toast container so every item, the icon and the copy/close buttons
-   inherit white again; warning keeps hikari's literal dark-amber ink
-   (white lands ~2.6:1 there) because that rule is not var-driven. */
+   inherit white again. Warning joins the convention per user direction
+   2026-10-16 (every yellow-background surface in the project carries
+   white ink): hikari pins literal dark-amber ink on the warning toast —
+   that rule is not var-driven, so it is overridden by selector, and the
+   copy/close buttons ride along. */
 .hk-toast-container {
   --hi-color-text-on-solid: #fff;
   --hi-color-icon-on-solid: #fff;
+
+  .hk-toast-warning,
+  .hk-toast-warning .hk-toast-copy-btn,
+  .hk-toast-warning .hk-toast-close {
+    color: #fff;
+  }
+}
+
+/* Same convention on the blocking toast's warning variant (hikari pins
+   the identical literal dark-amber ink there). */
+.hk-blocking-toast-warning {
+  color: #fff;
 }
 
 a {
