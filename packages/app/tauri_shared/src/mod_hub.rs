@@ -248,6 +248,14 @@ pub struct CatalogEntry {
     pub name_zh: String,
     pub name_en: String,
     pub description: String,
+    /// Mod author display name (thread `author:` front-matter; the indexer
+    /// falls back to the thread poster). Empty when no author is verified —
+    /// the UI then renders no author tag.
+    #[serde(default)]
+    pub author: String,
+    /// The author's official page (`author_url:` front-matter); empty when
+    /// unknown, in which case the author tag renders without a link.
+    #[serde(default)]
     pub author_url: String,
     pub packages: Vec<CatalogPackage>,
     /// Localized name/description variants; may be empty for older posts.

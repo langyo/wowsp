@@ -103,6 +103,7 @@
   "discuss": "토론",
   "bundledWithApp": "앱 번들 제공(플러그인 감지 사용 시 자동 설치)",
   "openDiscussion": "게시글 열기",
+  "authorPage": "제작자 페이지 열기",
   "pkgCount": "패키지 {count}개 · {kb} KB",
   "detailMenu": "더 보기",
   "actionOpenPath": "플러그인 폴더 열기",

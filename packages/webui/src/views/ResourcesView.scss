@@ -1158,6 +1158,26 @@
       background: rgb(168 85 247 / 10%);
       border-color: rgb(168 85 247 / 40%);
     }
+
+    /* The clickable author tag — a button reset to the pill look, with an
+       inline icon row and the same hover voice as the footer link. */
+    &--link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font: inherit;
+      cursor: pointer;
+      transition:
+        color 0.15s ease,
+        border-color 0.15s ease,
+        background-color 0.15s ease;
+
+      &:hover {
+        color: rgb(var(--color-primary));
+        border-color: rgb(var(--color-primary) / 45%);
+        background: rgb(var(--color-primary) / 8%);
+      }
+    }
   }
 
   &__badge {

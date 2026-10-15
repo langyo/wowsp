@@ -332,6 +332,8 @@ struct RawVersion {
     #[serde(default)]
     preview: Option<String>,
     #[serde(default)]
+    author: Option<String>,
+    #[serde(default)]
     author_url: Option<String>,
     #[serde(default)]
     packages: Option<Vec<RawPackage>>,
@@ -443,6 +445,7 @@ fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogIndex> {
                 .clone()
                 .unwrap_or_else(|| ver.title.clone().unwrap_or_else(|| id.clone())),
             description: ver.description.clone().unwrap_or_default(),
+            author: ver.author.clone().unwrap_or_default(),
             author_url: ver.author_url.clone().unwrap_or_default(),
             aliases: m.aliases.clone(),
             preview: ver.preview.clone(),

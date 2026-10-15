@@ -103,6 +103,7 @@
   "discuss": "Debate",
   "bundledWithApp": "Incluido con la aplicación (se instala automáticamente al activar la detección por plugin)",
   "openDiscussion": "Abrir hilo",
+  "authorPage": "Abrir la página del autor",
   "pkgCount": "{count} paquetes · {kb} KB",
   "detailMenu": "Más acciones",
   "actionOpenPath": "Abrir carpeta del plugin",

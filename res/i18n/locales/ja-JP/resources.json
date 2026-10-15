@@ -103,6 +103,7 @@
   "discuss": "ディスカッション",
   "bundledWithApp": "アプリ同梱（プラグイン検出を有効にすると自動インストール）",
   "openDiscussion": "スレッドを開く",
+  "authorPage": "作者のページを開く",
   "pkgCount": "{count} パッケージ · {kb} KB",
   "detailMenu": "その他の操作",
   "actionOpenPath": "プラグインのフォルダーを開く",

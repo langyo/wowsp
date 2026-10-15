@@ -51,6 +51,7 @@ function entry(id: string, version: string): CatalogEntry {
     nameZh: id,
     nameEn: id,
     description: "",
+    author: "",
     authorUrl: "",
     packages: [],
     i18n: {},

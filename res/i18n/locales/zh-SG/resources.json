@@ -103,6 +103,7 @@
   "discuss": "讨论帖",
   "bundledWithApp": "随应用分发（启用插件检测时自动安装）",
   "openDiscussion": "打开帖子",
+  "authorPage": "打开作者主页",
   "pkgCount": "{count} 个包 · {kb} KB",
   "detailMenu": "更多操作",
   "actionOpenPath": "打开插件路径",

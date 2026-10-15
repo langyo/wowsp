@@ -10,10 +10,12 @@
    "es-ES": "Indicador de torpedos detectados"
   },
   "battle.marker.traffic-v2": {
-   "es-ES": "SMI: v2 (aslain)"
+   "es-ES": "SMI: v2",
+   "en-US": "SMI: v2"
   },
   "battle.marker.traffic-v3": {
-   "es-ES": "SMI: v3 (aslain)"
+   "es-ES": "SMI: v3",
+   "en-US": "SMI: v3"
   },
   "battle.marker.traffic-v4": {
    "es-ES": "Indicador de movimiento de barcos"
@@ -50,6 +52,112 @@
   },
   "voice.crew.abathur": {
    "es-ES": "Voz de tripulación Abathur"
+  },
+  "battle.marker.adjustable-aslain": {
+   "zh-CN": "可调标记v2"
+  },
+  "battle.marker.adjustable-oveur": {
+   "zh-CN": "可调标记v3"
+  },
+  "battle.minipanel.team-hp": {
+   "en-US": "Team HP",
+   "es-ES": "Team HP"
+  },
+  "battle.panel.autospy": {
+   "en-US": "Team Panels",
+   "zh-CN": "侧边面板",
+   "zh-TW": "側邊面板",
+   "ja-JP": "Teamパネル",
+   "ko-KR": "팀 패널",
+   "ru-RU": "Панель команд",
+   "de-DE": "Team-Panels",
+   "fr-FR": "Panneaux d'équipe",
+   "es-ES": "Paneles de equipo"
+  },
+  "battle.panel.deceased": {
+   "en-US": "Team Panels",
+   "zh-CN": "色块图标",
+   "zh-TW": "色塊面板",
+   "ja-JP": "チームパネル",
+   "ko-KR": "팀 패널",
+   "ru-RU": "Панель команд",
+   "de-DE": "Team-Panels",
+   "fr-FR": "Panneaux d'équipe",
+   "es-ES": "Paneles de equipo"
+  },
+  "battle.panel.hakabase": {
+   "en-US": "Team Panels",
+   "zh-CN": "侧边面板（简洁版）",
+   "zh-TW": "側邊面板",
+   "ja-JP": "Teamパネル",
+   "ko-KR": "팀 패널",
+   "ru-RU": "Панель команд",
+   "de-DE": "Team-Panels",
+   "fr-FR": "Panneaux d'équipe",
+   "es-ES": "Paneles de equipo"
+  },
+  "battle.panel.roslich": {
+   "en-US": "Team Panels",
+   "zh-CN": "侧边面板",
+   "zh-TW": "側邊面板",
+   "ja-JP": "Teamパネル",
+   "ko-KR": "팀 패널",
+   "ru-RU": "Панель команд",
+   "de-DE": "Team-Panels",
+   "fr-FR": "Panneaux d'équipe",
+   "es-ES": "Paneles de equipo"
+  },
+  "battle.panel.ttaro": {
+   "en-US": "Team Panels",
+   "zh-CN": "侧边面板",
+   "zh-TW": "側邊面板",
+   "ja-JP": "Teamパネル",
+   "ko-KR": "팀 패널",
+   "ru-RU": "Панель команд",
+   "de-DE": "Team-Panels",
+   "fr-FR": "Panneaux d'équipe",
+   "es-ES": "Paneles de equipo"
+  },
+  "minimap.core.ttaro": {
+   "en-US": "Minimap",
+   "zh-CN": "小地图修改",
+   "zh-TW": "小地圖",
+   "ja-JP": "ミニマップ",
+   "ko-KR": "미니맵",
+   "ru-RU": "Миникарта",
+   "de-DE": "Minimap",
+   "fr-FR": "Minimap",
+   "es-ES": "minimap"
+  },
+  "port.carousel.extended": {
+   "zh-CN": "船坞扩展",
+   "zh-TW": "船塢擴展",
+   "ja-JP": "カルーセル拡張",
+   "ko-KR": "카루셀 확장",
+   "ru-RU": "Расширенная карусель",
+   "de-DE": "Erweitertes Karussell",
+   "fr-FR": "Carrousel étendu"
+  },
+  "port.techtree.all-ollin": {
+   "en-US": "All ships in vertical tech-tree",
+   "zh-CN": "科技树增强",
+   "zh-TW": "科技樹全艦解鎖",
+   "ja-JP": "縦ツリー全艦",
+   "ko-KR": "세로 트리 전 함선",
+   "de-DE": "Alle Schiffe im Baum",
+   "fr-FR": "Tous les navires",
+   "es-ES": "Todos los barcos en árbol vertical"
+  },
+  "text.chat.ttaro": {
+   "en-US": "Chat",
+   "zh-CN": "改进的聊天功能",
+   "zh-TW": "聊天增強",
+   "ja-JP": "チャット",
+   "ko-KR": "채팅",
+   "ru-RU": "Чат",
+   "de-DE": "Chat",
+   "fr-FR": "Chat",
+   "es-ES": "Chat"
   }
  },
  "battle.build.viewer": {

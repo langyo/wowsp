@@ -103,6 +103,7 @@
   "discuss": "討論串",
   "bundledWithApp": "隨應用程式分發（啟用插件檢測時自動安裝）",
   "openDiscussion": "開啟討論串",
+  "authorPage": "開啟作者主頁",
   "pkgCount": "{count} 個套件 · {kb} KB",
   "detailMenu": "更多操作",
   "actionOpenPath": "開啟插件路徑",
