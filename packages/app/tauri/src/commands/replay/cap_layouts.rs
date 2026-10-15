@@ -84,6 +84,51 @@ pub async fn get_map_cap_layouts(
     }
 }
 
+/// Read ONE explicitly picked replay and lift its capture layout (the
+/// manual-import path of the cap editor: a Neptune-series practice
+/// recording, say, yields its exact points without being in the scanned
+/// history). Ok(None) = the file carries no capture points.
+#[tauri::command]
+pub async fn get_replay_cap_layout(path: String) -> CommandResult<Option<LearnedCapLayout>> {
+    #[cfg(mobile)]
+    {
+        let _ = path;
+        return Err(anyhow!("战术点位学习需要本机录像文件。").into());
+    }
+    #[cfg(desktop)]
+    {
+        Ok(
+            tokio::task::spawn_blocking(move || replay_cap_layout(&path))
+                .await
+                .map_err(|e| anyhow!("cap-layout read task failed: {e}"))??,
+        )
+    }
+}
+
+/// Synchronous core of [`get_replay_cap_layout`].
+#[cfg(desktop)]
+fn replay_cap_layout(path: &str) -> anyhow::Result<Option<LearnedCapLayout>> {
+    let p = std::path::Path::new(path);
+    // mod.rs re-exports wowsp_replay_core's lite meta reader pub(crate).
+    let meta = super::lite_from_path(p);
+    let Some(caps) = caps_of_replay(p) else {
+        return Ok(None);
+    };
+    if caps.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(LearnedCapLayout {
+        mode_group: meta.match_group.clone(),
+        scenario: meta.scenario.clone(),
+        source_replay: p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string()),
+        source_time: meta.date_time.clone(),
+        caps,
+    }))
+}
+
 /// Grouping key of the meta scan — every field that distinguishes two
 /// layouts of the same map.
 fn group_of(meta: &wowsp_tauri_shared::ReplayMetaLite) -> (Option<String>, Option<String>) {

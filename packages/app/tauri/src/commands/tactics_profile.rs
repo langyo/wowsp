@@ -198,25 +198,34 @@ fn read_member<R: Read + Seek>(zip: &mut ZipArchive<R>, name: &str) -> anyhow::R
 pub async fn tactics_profile_save(
     meta: Value,
     plans: Vec<TacticsProfilePlan>,
+    path: Option<String>,
 ) -> CommandResult<Option<String>> {
     #[cfg(mobile)]
     {
-        let _ = (meta, plans);
+        let _ = (meta, plans, path);
         return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
     }
     #[cfg(desktop)]
     {
         let default_name = default_archive_name(&meta);
         let payload = TacticsProfilePayload { meta, plans };
-        let picked = tokio::task::spawn_blocking(move || {
-            rfd::FileDialog::new()
-                .set_title("Save tactics profile")
-                .set_file_name(&default_name)
-                .add_filter("WoWSP tactics profile", &["wowsp-tactics"])
-                .save_file()
-        })
-        .await
-        .map_err(|e| anyhow!("profile save dialog task failed: {e}"))?;
+        // A caller-provided path (the page confirmed the save target when
+        // the map was chosen) skips the dialog and writes straight to it.
+        let picked = match path {
+            Some(p) => Some(std::path::PathBuf::from(p)),
+            None => {
+                let name = default_name.clone();
+                tokio::task::spawn_blocking(move || {
+                    rfd::FileDialog::new()
+                        .set_title("Save tactics profile")
+                        .set_file_name(&name)
+                        .add_filter("WoWSP tactics profile", &["wowsp-tactics"])
+                        .save_file()
+                })
+                .await
+                .map_err(|e| anyhow!("profile save dialog task failed: {e}"))?
+            },
+        };
         let Some(path) = picked else {
             return Ok(None);
         };
@@ -236,8 +245,18 @@ pub async fn tactics_profile_save(
 
 /// Open dialog + zip read. Returns the payload, or None when the user
 /// cancelled; a malformed archive surfaces as the command's error.
+/** Open result: the payload plus the archive's own path, so the host can
+ *  keep saving to the file it opened. */
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TacticsProfileOpen {
+    #[serde(flatten)]
+    pub payload: TacticsProfilePayload,
+    /// Absolute path of the opened archive.
+    pub path: String,
+}
+
 #[tauri::command]
-pub async fn tactics_profile_open() -> CommandResult<Option<TacticsProfilePayload>> {
+pub async fn tactics_profile_open() -> CommandResult<Option<TacticsProfileOpen>> {
     #[cfg(mobile)]
     {
         return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
@@ -255,24 +274,36 @@ pub async fn tactics_profile_open() -> CommandResult<Option<TacticsProfilePayloa
         let Some(path) = picked else {
             return Ok(None);
         };
+        let path_str = path.to_string_lossy().into_owned();
+        let read_err_ctx = path_str.clone();
         let bytes = tokio::task::spawn_blocking(move || {
-            std::fs::read(&path).map_err(|e| anyhow!("read {}: {e}", path.display()))
+            std::fs::read(&path).map_err(|e| anyhow!("read {read_err_ctx}: {e}"))
         })
         .await
         .map_err(|e| anyhow!("profile read task failed: {e}"))??;
         let payload = unpack_profile(&bytes)?;
-        Ok(Some(payload))
+        Ok(Some(TacticsProfileOpen {
+            payload,
+            path: path_str,
+        }))
     }
 }
 
-/// File-name seed for the save dialog: the profile's display name, or the
-/// map id when the author never named it — always the archive extension.
+/// File-name seed for the save dialog: the page's generated file name
+/// (date-time + map + sequence), else the profile's display name, else the
+/// map id — always the archive extension.
 fn default_archive_name(meta: &Value) -> String {
     let seed = meta
-        .get("profileName")
+        .get("fileName")
         .and_then(Value::as_str)
         .filter(|s| !s.trim().is_empty())
         .map(str::to_string)
+        .or_else(|| {
+            meta.get("profileName")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_string)
+        })
         .or_else(|| {
             meta.get("mapId")
                 .and_then(Value::as_str)
@@ -364,6 +395,19 @@ mod tests {
             plans: vec![],
         };
         assert!(pack_profile(&payload).is_err());
+    }
+
+    #[test]
+    fn default_name_prefers_the_generated_file_name() {
+        let meta = serde_json::json!({
+            "fileName": "20261015_1430_20_NE_two_brothers_01",
+            "profileName": "随便什么显示名",
+            "mapId": "20_NE_two_brothers"
+        });
+        assert_eq!(
+            default_archive_name(&meta),
+            "wowsp-tactics-20261015_1430_20_NE_two_brothers_01.wowsp-tactics"
+        );
     }
 
     #[test]

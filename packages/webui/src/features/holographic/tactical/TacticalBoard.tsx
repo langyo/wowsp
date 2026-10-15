@@ -241,6 +241,21 @@ export default defineComponent({
     expose({
       flushDoc: () => store.flush(),
       reloadDoc: () => store.reloadDoc(),
+      /** Live unit poses at the playhead (world coords + team + colour) for
+       *  the host's overview panel — the same pose math the canvas uses. */
+      unitPoses: (): { x: number; z: number; team?: "ally" | "enemy"; color: string }[] => {
+        const t = props.getTime();
+        const tweens = planTweensOf(store.elements.value);
+        const nexts = planNextOf(store.elements.value);
+        const out: { x: number; z: number; team?: "ally" | "enemy"; color: string }[] = [];
+        for (const el of store.elements.value) {
+          if (el.kind !== "marker") continue;
+          if (el.action != null && !ownsUnitAt(el, t, nexts)) continue;
+          const pose = markerPoseAt(el, t, tweens.get(el.id));
+          out.push({ x: pose.at.x, z: pose.at.z, team: el.team, color: el.color });
+        }
+        return out;
+      },
     });
 
     const drag = ref<Drag | null>(null);
@@ -913,7 +928,10 @@ export default defineComponent({
         // a hand-drawn route marker (replay board) sails its own path with
         // no terminal heading to steer.
         scriptedHandles: lineupActive.value,
-        caps: lineupActive.value && capsVisible.value ? props.caps : [],
+        // The cap layer belongs to the PLAN (its battle mode), not to the
+        // lineup: a board with no fleet yet still shows its capture points
+        // (user report: points only appeared once ships were added).
+        caps: props.planMode && capsVisible.value ? props.caps : [],
         heatOverlay:
           props.heat && heatKind != null ? { kind: heatKind, data: props.heat } : null,
         legPreview: hoverLeg.value,

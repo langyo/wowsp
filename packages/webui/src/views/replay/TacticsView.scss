@@ -64,13 +64,69 @@
     flex: 1;
   }
 
-  &__profile-name {
-    width: 13rem;
-    max-width: 32vw;
-    padding: 0.3rem 0.7rem;
+  &__profile-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  /* The archive tag: shows the formal (file-name-derived) profile label;
+     the dot marks a confirmed silent save target. Click = rename. */
+  &__profile-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 22rem;
+    padding: 0.3rem 0.75rem;
     background: rgb(var(--color-surface));
     border: 1px solid rgb(var(--color-border) / 20%);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-full);
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 45%);
+    }
+
+    svg {
+      flex-shrink: 0;
+      color: rgb(var(--color-muted));
+    }
+  }
+
+  &__profile-tag-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  &__profile-tag-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: rgb(var(--color-success));
+  }
+
+  /* Rename popover content. */
+  &__rename {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem;
+    min-width: 18rem;
+  }
+
+  &__rename-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.3rem 0.6rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-sm);
     color: rgb(var(--color-text));
     font-size: var(--text-sm);
     font-family: inherit;
@@ -135,7 +191,6 @@
     .plan-stage__minimap {
       position: static;
       width: 100%;
-      aspect-ratio: 1 / 1;
     }
   }
 }
@@ -171,8 +226,8 @@
   .tac-topbar {
     flex-wrap: wrap;
 
-    &__profile-name {
-      width: 10rem;
+    &__profile-tag {
+      max-width: 9rem;
     }
   }
 }

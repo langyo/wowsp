@@ -85,7 +85,9 @@ pub(crate) use wowsp_replay_core::meta;
 // `__tauri_command_name_*`) through `commands::replay::*`, exactly like
 // `commands/mod_hub/mod.rs` — so those paths are re-exported verbatim.
 pub use cap_layouts::{
-    __cmd__get_map_cap_layouts, __tauri_command_name_get_map_cap_layouts, get_map_cap_layouts,
+    __cmd__get_map_cap_layouts, __cmd__get_replay_cap_layout,
+    __tauri_command_name_get_map_cap_layouts, __tauri_command_name_get_replay_cap_layout,
+    get_map_cap_layouts, get_replay_cap_layout,
 };
 pub use listing::{
     __cmd__list_replays, __cmd__list_replays_meta, __cmd__pick_replay_files,

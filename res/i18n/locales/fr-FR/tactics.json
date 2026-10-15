@@ -42,18 +42,17 @@
     "back": "Retour",
     "confirm": "Commencer la planification",
     "capCount": "{n} points de capture",
-    "capNone": "Aucun point de capture",
-    "duration": "Bataille de {m} minutes",
     "next": "Suivant",
     "learnedSection": "Mesuré d'après vos replays",
-    "templateSection": "Modèles (non calibrés)",
     "measured": "Mesuré",
     "learning": "Apprentissage des points depuis les replays…",
     "noLearned": "Pas encore de replay de cette carte sur cette machine — jouez-en une et les points mesurés apparaîtront ici.",
     "learnedFrom": "Du replay {date}",
     "sampleCount": "{n} batailles",
     "corpusSource": "Mesuré du corpus",
-    "corpusFrom": "Agrégé à partir de {n} batailles du corpus"
+    "corpusFrom": "Agrégé à partir de {n} batailles du corpus",
+    "custom": "Personnalisé",
+    "customDesc": "Ouvre l'éditeur de points : ajoutez, déplacez et réglez les points à la main, partez d'un modèle ou importez n'importe quel replay pour calquer ses points."
   },
   "mode": {
     "dom4": "Aléatoire · 4 points",
@@ -115,13 +114,33 @@
     "hint": "Déclarez d'abord la formation des deux équipes (symétrique ou non) : le plateau génère les unités à partir d'elle. Le sélecteur est le même composant que celui de la comparaison de navires."
   },
   "profile": {
-    "name": "Nom du profil",
     "namePlaceholder": "Nom du profil (par défaut, la carte)",
     "save": "Enregistrer le profil",
     "open": "Ouvrir le profil",
     "saved": "Profil enregistré dans {path}",
     "opened": "{n} plans chargés",
     "openBad": "Impossible d'ouvrir le profil : {detail}",
-    "unknownMap": "La carte du profil ({map}) n'est pas disponible ici"
+    "unknownMap": "La carte du profil ({map}) n'est pas disponible ici",
+    "untitled": "Profil sans nom",
+    "rename": "Renommer le profil"
+  },
+  "cap": {
+    "section": "Points personnalisés",
+    "title": "Modifier les points",
+    "hint": "Cliquez sur l'eau libre pour ajouter un point ; glissez pour le déplacer ; sélectionnez-le pour régler son rayon et son camp à droite.",
+    "templates": "Partir d'un modèle",
+    "importReplay": "Importer d'un replay…",
+    "imported": "{n} points chargés depuis {name}",
+    "importBad": "Aucun point reconnaissable dans ce replay",
+    "selected": "Point sélectionné",
+    "none": "Aucun point sélectionné",
+    "team": "Camp",
+    "neutral": "Neutre",
+    "ally": "Nos côtés",
+    "enemy": "Leurs côtés",
+    "radius": "Rayon",
+    "station": "Lié à la station",
+    "delete": "Supprimer le point",
+    "apply": "Appliquer"
   }
 }

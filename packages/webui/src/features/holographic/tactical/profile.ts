@@ -49,14 +49,18 @@ export interface TacticsProfilePlan {
 export interface TacticsProfilePayload {
   meta: TacticsProfileMeta;
   plans: TacticsProfilePlan[];
+  /** The archive's own path (open result only — the machine-local save
+   *  target, never serialized into the meta). */
+  path?: string;
 }
 
 /** Save-dialog + zip write; returns the saved path, or null when the user
  * cancelled. Throws on a non-Tauri host (the caller falls back to a toast). */
 export async function saveTacticsProfile(
   payload: TacticsProfilePayload,
+  path?: string,
 ): Promise<string | null> {
-  return api.saveTacticsProfile(payload.meta, payload.plans);
+  return api.saveTacticsProfile(payload.meta, payload.plans, path);
 }
 
 /** Open-dialog + zip read; null = cancelled. Throws on a bad archive; the

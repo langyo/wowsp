@@ -42,18 +42,17 @@
     "back": "Atrás",
     "confirm": "Empezar a planificar",
     "capCount": "{n} puntos de captura",
-    "capNone": "Sin puntos de captura",
-    "duration": "Batalla de {m} minutos",
     "next": "Siguiente",
     "learnedSection": "Medido de tus repeticiones",
-    "templateSection": "Plantillas (sin calibrar)",
     "measured": "Medido",
     "learning": "Aprendiendo puntos de tus repeticiones…",
     "noLearned": "Aún no hay repeticiones de este mapa en este equipo: juega una partida y los puntos medidos aparecerán aquí.",
     "learnedFrom": "De la repetición {date}",
     "sampleCount": "{n} batallas",
     "corpusSource": "Medido del corpus",
-    "corpusFrom": "Agregado de {n} batallas del corpus"
+    "corpusFrom": "Agregado de {n} batallas del corpus",
+    "custom": "Personalizado",
+    "customDesc": "Abre el editor de puntos: añade, arrastra y ajusta puntos a mano, parte de una plantilla o importa cualquier repetición para calcar sus puntos."
   },
   "mode": {
     "dom4": "Aleatorio · 4 puntos",
@@ -115,13 +114,33 @@
     "hint": "Declara primero las alineaciones de ambos equipos (simétricas o no): el tablero genera las unidades a partir de ellas. El selector es el mismo componente que usa la comparación de buques."
   },
   "profile": {
-    "name": "Nombre del perfil",
     "namePlaceholder": "Nombre del perfil (por defecto, el mapa)",
     "save": "Guardar perfil",
     "open": "Abrir perfil",
     "saved": "Perfil guardado en {path}",
     "opened": "{n} planes cargados",
     "openBad": "No se pudo abrir el perfil: {detail}",
-    "unknownMap": "El mapa del perfil ({map}) no está disponible aquí"
+    "unknownMap": "El mapa del perfil ({map}) no está disponible aquí",
+    "untitled": "Perfil sin nombre",
+    "rename": "Renombrar perfil"
+  },
+  "cap": {
+    "section": "Puntos personalizados",
+    "title": "Editar puntos",
+    "hint": "Clic en el agua vacía para añadir un punto; arrastra para moverlo; selecciónalo para ajustar su radio y dueño a la derecha.",
+    "templates": "Empezar de una plantilla",
+    "importReplay": "Importar de una repetición…",
+    "imported": "Cargados {n} puntos de {name}",
+    "importBad": "Esa repetición no tiene puntos reconocibles",
+    "selected": "Punto seleccionado",
+    "none": "Ningún punto seleccionado",
+    "team": "Dueño",
+    "neutral": "Neutral",
+    "ally": "Aliados",
+    "enemy": "Enemigos",
+    "radius": "Radio",
+    "station": "Atado a estación",
+    "delete": "Eliminar punto",
+    "apply": "Aplicar puntos"
   }
 }

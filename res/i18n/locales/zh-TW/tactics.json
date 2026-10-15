@@ -42,18 +42,17 @@
     "back": "上一步",
     "confirm": "開始規劃",
     "capCount": "{n} 個佔點",
-    "capNone": "無佔點",
-    "duration": "對局時長 {m} 分鐘",
     "next": "下一步",
     "learnedSection": "從本機錄影實測",
-    "templateSection": "範本（未校準）",
     "measured": "實測",
     "learning": "正在從錄影學習點位……",
     "noLearned": "本機還沒有這張圖的錄影——打過一局後，這裡會給出該圖各模式的實測點位。",
     "learnedFrom": "來自錄影 {date}",
     "sampleCount": "{n} 場",
     "corpusSource": "語料實測",
-    "corpusFrom": "聚合自語料中的 {n} 場對局"
+    "corpusFrom": "聚合自語料中的 {n} 場對局",
+    "custom": "自訂",
+    "customDesc": "開啟點位編輯器：手動增刪拖動點位、從範本起步，或匯入任意一場錄影精確匹配點位。"
   },
   "mode": {
     "dom4": "隨機 · 四點",
@@ -115,13 +114,33 @@
     "hint": "先宣告雙方的陣容（對稱或非對稱均可），棋盤會用它生成單位；選船視窗與科技樹/對比頁共用同一套篩選。"
   },
   "profile": {
-    "name": "檔案名稱",
     "namePlaceholder": "檔案名（預設按地圖命名）",
     "save": "儲存檔案",
     "open": "開啟檔案",
     "saved": "檔案已儲存到 {path}",
     "opened": "已載入 {n} 個方案",
     "openBad": "檔案開啟失敗：{detail}",
-    "unknownMap": "檔案指向的地圖（{map}）本機不可用"
+    "unknownMap": "檔案指向的地圖（{map}）本機不可用",
+    "untitled": "未命名檔案",
+    "rename": "重新命名檔案"
+  },
+  "cap": {
+    "section": "自訂點位",
+    "title": "編輯點位",
+    "hint": "點擊空白處新增點位；拖曳移動；選取後可在右側調整半徑與歸屬。",
+    "templates": "從範本開始",
+    "importReplay": "從錄影匯入…",
+    "imported": "已從 {name} 載入 {n} 個點位",
+    "importBad": "該錄影沒有可識別的點位",
+    "selected": "選取點位",
+    "none": "尚未選取點位",
+    "team": "歸屬",
+    "neutral": "中立",
+    "ally": "我方",
+    "enemy": "敵方",
+    "radius": "半徑",
+    "station": "觀測站機制",
+    "delete": "刪除該點位",
+    "apply": "套用點位"
   }
 }

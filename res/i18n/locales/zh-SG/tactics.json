@@ -42,18 +42,17 @@
     "back": "上一步",
     "confirm": "开始规划",
     "capCount": "{n} 个占点",
-    "capNone": "无占点",
-    "duration": "对局时长 {m} 分钟",
     "next": "下一步",
     "learnedSection": "从本机录像实测",
-    "templateSection": "模板（未校准）",
     "measured": "实测",
     "learning": "正在从录像学习点位……",
     "noLearned": "本机还没有这张图的录像——打过一局后，这里会给出该图各模式的实测点位。",
     "learnedFrom": "来自录像 {date}",
     "sampleCount": "{n} 场",
     "corpusSource": "语料实测",
-    "corpusFrom": "聚合自语料中的 {n} 场对局"
+    "corpusFrom": "聚合自语料中的 {n} 场对局",
+    "custom": "自定义",
+    "customDesc": "打开点位编辑器：手动增删拖动点位、从模板起步，或导入任意一场录像精确匹配点位。"
   },
   "mode": {
     "dom4": "随机 · 四点",
@@ -115,13 +114,33 @@
     "hint": "先声明双方的阵容（对称或非对称均可），棋盘会用它生成单位；选船弹窗与科技树/对比页共用同一套筛选。"
   },
   "profile": {
-    "name": "档案名称",
     "namePlaceholder": "档案名（默认按地图命名）",
     "save": "保存档案",
     "open": "打开档案",
     "saved": "档案已保存到 {path}",
     "opened": "已载入 {n} 个方案",
     "openBad": "档案打开失败：{detail}",
-    "unknownMap": "档案指向的地图（{map}）本机不可用"
+    "unknownMap": "档案指向的地图（{map}）本机不可用",
+    "untitled": "未命名档案",
+    "rename": "重命名档案"
+  },
+  "cap": {
+    "section": "自定义点位",
+    "title": "编辑点位",
+    "hint": "点击空白处添加点位；拖动移动；选中后可在右侧调整半径与归属。",
+    "templates": "从模板开始",
+    "importReplay": "从录像导入…",
+    "imported": "已从 {name} 载入 {n} 个点位",
+    "importBad": "该录像没有可识别的点位",
+    "selected": "选中点位",
+    "none": "尚未选中点位",
+    "team": "归属",
+    "neutral": "中立",
+    "ally": "我方",
+    "enemy": "敌方",
+    "radius": "半径",
+    "station": "观测站机制",
+    "delete": "删除该点位",
+    "apply": "应用点位"
   }
 }

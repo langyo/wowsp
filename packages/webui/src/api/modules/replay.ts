@@ -749,6 +749,11 @@ export const replayApi = {
    *  map was never played here. */
   getMapCapLayouts: (spaceId: string, dir?: string) =>
     transport.invoke<LearnedCapLayout[]>(RPC.get_map_cap_layouts, { spaceId, dir }),
+  /** One explicitly picked replay's capture layout — the cap editor's
+   *  manual import (a practice recording need not be in the scanned
+   *  history). Null = the file carries no capture points. */
+  getReplayCapLayout: (path: string) =>
+    transport.invoke<LearnedCapLayout | null>(RPC.get_replay_cap_layout, { path }),
   readTempArenaInfo: (dir?: string) =>
     transport.invoke<ArenaInfo | null>(RPC.read_temp_arena_info, { dir }),
   startArenaWatcher: (dir?: string) => transport.invoke<null>(RPC.start_arena_watcher, { dir }),

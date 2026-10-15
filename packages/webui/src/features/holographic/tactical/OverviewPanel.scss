@@ -1,0 +1,64 @@
+/* Plan-stage overview panel: full-bleed square canvas + compact zoom bar.
+ * Hosted either in the tactics page's right flank (static, fills the panel
+ * width) or as the in-stage corner card (absolute, fixed size). */
+
+.tac-overview {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgb(2 4 8 / 80%);
+  user-select: none;
+}
+
+.tac-overview__canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  cursor: grab;
+  touch-action: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.tac-overview__bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-top: 1px solid var(--holo-hud-border);
+  background: var(--holo-hud-chip);
+  color: var(--holo-hud-text);
+}
+
+.tac-overview__pct {
+  min-width: 44px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--holo-hud-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(var(--tac-accent-rgb) / 16%);
+  }
+}
+
+/* In-stage corner card form (narrow windows without the flank panel).
+   :where() keeps this at (0,1,0) so the flank panel's static/full-width
+   override wins on specificity, not stylesheet order. */
+.plan-stage__minimap:where(.tac-overview) {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 4;
+  width: 200px;
+}

@@ -59,6 +59,9 @@ export const RPC = {
   // history (commands/replay/cap_layouts.rs) — the map wizard's measured
   // layouts.
   get_map_cap_layouts: "get_map_cap_layouts",
+  // One explicitly picked replay's capture layout (the cap editor's manual
+  // import path).
+  get_replay_cap_layout: "get_replay_cap_layout",
   copy_image_to_clipboard: "copy_image_to_clipboard",
   read_temp_arena_info: "read_temp_arena_info",
   start_arena_watcher: "start_arena_watcher",

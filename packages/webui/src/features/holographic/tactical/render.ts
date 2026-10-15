@@ -184,17 +184,25 @@ function drawPlaneGlyph(
   }
 }
 
-function drawLabelChip(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
+function drawLabelChip(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+  align: "left" | "center" = "left",
+): void {
   ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
   const w = ctx.measureText(text).width;
+  const left = align === "center" ? x - (w + 10) / 2 : x;
   ctx.fillStyle = "rgba(5, 8, 15, 0.72)";
   ctx.beginPath();
-  ctx.roundRect(x, y, w + 10, 16, 8);
+  ctx.roundRect(left, y, w + 10, 16, 8);
   ctx.fill();
   ctx.fillStyle = color;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, x + 5, y + 8.5);
+  ctx.fillText(text, left + 5, y + 8.5);
 }
 
 export interface RenderOptions {
@@ -522,7 +530,9 @@ function drawElement(
       ctx.restore();
       if (el.label) {
         ctx.globalAlpha = alpha;
-        drawLabelChip(ctx, el.label, p.x + el.size * 0.55, p.y + el.size * 0.35, el.color);
+        // Directly under the hull, centred on it (was a right-bottom offset
+        // that read as floating off the ship).
+        drawLabelChip(ctx, el.label, p.x, p.y + el.size * 0.7 + 4, el.color, "center");
       }
       break;
     }
