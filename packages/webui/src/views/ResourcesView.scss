@@ -1599,17 +1599,21 @@
   min-height: 0;
   max-height: min(62vh, 34rem);
 
-  /* Left: the narrow archive list. */
+  /* Left: the narrow archive list. hikari's scroll container owns the
+     scrollbar (auto-hiding overlay track); the rows scroll in the inner
+     wrapper. */
   &__side {
     flex: none;
     width: 15rem;
+    background: rgb(var(--color-border) / 8%);
+    border-radius: var(--radius-sm);
+  }
+
+  &__side-inner {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
     padding: 0.625rem;
-    background: rgb(var(--color-border) / 8%);
-    border-radius: var(--radius-sm);
-    overflow-y: auto;
   }
 
   &__side-title {
@@ -1676,14 +1680,17 @@
     color: rgb(var(--color-muted));
   }
 
-  /* Right: the path tree (or its pending/CTA states). */
+  /* Right: the path tree (or its pending/CTA states). hikari's scroll
+     container owns the scrollbar; the blocks scroll in the inner wrapper. */
   &__main {
     flex: 1;
     min-width: 0;
+  }
+
+  &__main-inner {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    overflow-y: auto;
     padding: 0.25rem;
   }
 

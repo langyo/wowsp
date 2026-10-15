@@ -665,15 +665,6 @@
     display: flex;
   }
 
-  &__roster {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    flex: 1 1 50%;
-    min-height: 0;
-    overflow: hidden;
-  }
-
   &__placeholder {
     flex: 1;
     display: flex;
@@ -1011,10 +1002,6 @@
       min-height: 52vh;
     }
 
-    &__roster {
-      flex-basis: auto;
-    }
-
     /* ── bottom-sheet docking for the custom overlays ── */
     &__modal {
       align-items: flex-end;
@@ -1049,9 +1036,21 @@
     }
 
     &__modal-body {
-      padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
       /* Tracks the shrunken top gutter the pinned timeline bleeds into. */
       --hk-scroll-pad-top: 0.5rem;
+    }
+
+    /* Sheet gutters live on the inner wrapper now (padding on the root
+       would stack with the inner's desktop inset); the chat body restates
+       at the same (0,2,0) specificity as its desktop rule to keep its own
+       gutter — and the safe-area term — on the sheet. Both top pads equal
+       the 0.5rem pin var above. */
+    &__modal-body__inner {
+      padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    &__chat-panel .replay-view__modal-body {
+      padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
     }
 
     &__chat-panel {

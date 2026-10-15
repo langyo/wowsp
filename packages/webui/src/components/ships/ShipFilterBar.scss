@@ -488,9 +488,10 @@
     }
   }
 
+  /* The track's desktop nowrap unlocks so the pills wrap in the sheet —
+     gap stays 0, matching every other category's plain __opts wrap. */
   .ship-filter-bar__opts-track {
     flex-wrap: wrap;
-    gap: 2px;
   }
 
   .ship-filter-bar__scroll-hint {
