@@ -575,6 +575,7 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
         battle: 42,
         game_rect: game,
         kind: wowsp_tauri_shared::GameInstallKind::Wargaming,
+        profile: overlay_detect::DetectProfile::WG,
         anchor: anchor_with(10, true, None),
     });
     let r4 = apply_watch_command(&mut fsm, WatchCommand::ManualAnchorCleared);
@@ -600,6 +601,7 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
             team_split: 0.5,
         },
         team_sizes: (5, 5),
+        profile: overlay_detect::DetectProfile::WG,
     });
     assert!(
         apply_watch_command(&mut fsm, WatchCommand::BattleChanged).is_none(),

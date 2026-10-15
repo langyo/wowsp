@@ -145,7 +145,7 @@ pub(super) fn revalidate_pinned_anchor(
     let Some(pinned) = fsm.pinned_anchor.as_ref().map(|p| p.anchor.clone()) else {
         return;
     };
-    let Some(fresh) = compute_anchor(&g, fsm) else {
+    let Some((fresh, fresh_profile)) = compute_anchor(&g, fsm) else {
         tracing::debug!("anchor revalidation: capture/detection failed — pin kept");
         return;
     };
@@ -162,6 +162,7 @@ pub(super) fn revalidate_pinned_anchor(
             battle: super::arena_info::last_arena_stamp(),
             game_rect: rect_from_win32(g.rect),
             kind: g.kind,
+            profile: fresh_profile,
             anchor: fresh.clone(),
         });
         place_and_show(app, &fresh);
@@ -214,8 +215,7 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
     let Some((rgba, w, h)) = capture_game_rgba_cached(&game.rect) else {
         return;
     };
-    let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
-    let (roster, rows, split, ally_rows) = {
+    let (roster, rows, split, ally_rows, profile) = {
         let pin = fsm.pinned_anchor.as_ref().expect("checked above");
         let anchor = &pin.anchor;
         // The pin's anchor is OVERLAY-relative; shift it back into
@@ -237,7 +237,12 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
         // tick, so nothing downstream can build on it. Self-healing by
         // ordering; not worth a lock.
         let ally_rows = super::arena_info::last_known_team_sizes().0;
-        (roster, rows, anchor.team_split, ally_rows)
+        // Strip layout: the PIN's own profile — the one its row_alive was
+        // read under and the strip baseline was recorded against. NOT the
+        // geometry cache's: the cache can die and refill with a flipped
+        // resolution mid-battle (an aberrant frame), and this pass must
+        // stay consistent with the pin whatever the cache does.
+        (roster, rows, anchor.team_split, ally_rows, pin.profile)
     };
     // Band gate — O(band area). The table not being at the cached spot is
     // NOT a sink signal; it does count toward the cache's miss budget.

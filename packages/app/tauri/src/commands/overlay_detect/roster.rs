@@ -145,6 +145,98 @@ pub(crate) fn detect_roster_with_band(
     ))
 }
 
+/// Resolve which WG strip layout a JUST-detected table uses: the classic
+/// [`DetectProfile::WG`] columns or the next-generation
+/// [`DetectProfile::WG_NEXT`] rework. The two share the header-anchored
+/// geometry (bars, seam, grid — a detection cannot tell them apart), so the
+/// discriminator is where the row text sits INSIDE the bars: the classic
+/// rows carry stats columns across the whole bar span, filling the
+/// seam-adjacent tail of the ally span (and head of the enemy span); the
+/// rework's rows hold nothing there — the seam-adjacent gap between its
+/// narrow tier+ship column and the seam stays empty (measured on the
+/// fixtures: classic seam-side share 0.26/0.30 vs rework 0.01/0.02, per
+/// side).
+///
+/// Non-WG bases return unchanged (the Lesta layout differs structurally,
+/// not by mirroring), as do single-team green-only bands (the rework's PVE
+/// table is unknown). A side with too little text to vote (an occluded or
+/// all-sunk half) abstains; the resolution then follows the sides that did
+/// vote, and only a voted CLASSIC side can keep the base — an all-dim table
+/// abstains on both and keeps `base`, never guessing. Pure over the frame
+/// (unit-testable).
+pub(crate) fn resolve_wg_strip_profile(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    band: HeaderBand,
+    det: &DetectedRoster,
+    base: &DetectProfile,
+) -> DetectProfile {
+    if *base != DetectProfile::WG || band.red.is_none() {
+        return *base;
+    }
+    let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
+    let (px, w, h) = downscale_rgba(rgba, width, height, scale);
+    if w < 64 || h < 64 {
+        return *base;
+    }
+    // The row band under the header, in working px: the detection's rect
+    // bottom maps back through the same scale it was scaled up with.
+    let y0 = (band.top + band.height).min(h);
+    let y1 = (((det.rect.y + det.rect.height) as usize) / scale as usize).clamp(y0, h);
+    let rgb = |x: usize, y: usize| -> (i16, i16, i16) {
+        let i = (y * w + x) * 3;
+        (px[i] as i16, px[i + 1] as i16, px[i + 2] as i16)
+    };
+    // One side's vote over its bar span: (text px total, seam-side share).
+    // `seam_at_right` marks where the seam sits relative to the span — the
+    // RIGHT end of the ally (green) bar, the LEFT end of the enemy (red)
+    // one — and the counted window is the span's seam-adjacent slice: the
+    // last STRIP_LAYOUT_SEAM_SIDE_PCT% of the ally bar, the first of the
+    // enemy bar.
+    let side = |span: (usize, usize), seam_at_right: bool| -> (u32, f32) {
+        let span_w = span.1.saturating_sub(span.0);
+        let seam_x = if seam_at_right {
+            span.0 + span_w * STRIP_LAYOUT_SEAM_SIDE_PCT / 100
+        } else {
+            span.0 + span_w * (100 - STRIP_LAYOUT_SEAM_SIDE_PCT) / 100
+        };
+        let (mut total, mut seam_side) = (0u32, 0u32);
+        for y in y0..y1 {
+            for x in span.0..span.1 {
+                let (r, g, b) = rgb(x, y);
+                if is_text_white(r, g, b) {
+                    total += 1;
+                    if if seam_at_right {
+                        x >= seam_x
+                    } else {
+                        x < seam_x
+                    } {
+                        seam_side += 1;
+                    }
+                }
+            }
+        }
+        (total, seam_side as f32 / total.max(1) as f32)
+    };
+    let (total_l, seam_l) = side(band.green, true);
+    let (total_r, seam_r) = side(band.red.expect("guarded above"), false);
+    let vote_next = |total: u32, seam: f32| {
+        total >= STRIP_LAYOUT_MIN_TEXT_PX && seam < STRIP_LAYOUT_SEAM_SIDE_SHARE
+    };
+    let vote_classic = |total: u32, seam: f32| {
+        total >= STRIP_LAYOUT_MIN_TEXT_PX && seam >= STRIP_LAYOUT_SEAM_SIDE_SHARE
+    };
+    if (vote_next(total_l, seam_l) || vote_next(total_r, seam_r))
+        && !vote_classic(total_l, seam_l)
+        && !vote_classic(total_r, seam_r)
+    {
+        DetectProfile::WG_NEXT
+    } else {
+        *base
+    }
+}
+
 /// Fit one side's row grid to its white-text density profile. The PRIOR grid
 /// comes from [`grid_origin`] (header-anchored, constant ratio); the text
 /// bands then correct it in two steps, in this order:

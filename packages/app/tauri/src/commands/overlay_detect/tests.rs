@@ -2060,3 +2060,343 @@ fn lesta_frame_verify_still_rejects_a_slid_table() {
         "a slid table must not verify"
     );
 }
+
+/// The NEXT-GENERATION WG Tab table synth (the 2026-10 announced rework;
+/// proportions measured on `testdata/tab_table_next_648x365.png`): the
+/// teal/brick bars keep the classic adjacent shape but sit ~26% of the
+/// width each (table ~52% total), the rows pitch ~0.80× the bar height,
+/// the ONLY in-bar text is a narrow tier+ship column hugging the seam, and
+/// the player names sit OUTSIDE the bars — ally names left of the teal
+/// bar, enemy names right of the brick bar. `sunk` indexes rows (by
+/// GLOBAL row number, allies first) whose names render dim gray.
+fn synth_next_table(
+    w: u32,
+    h: u32,
+    rows_per_side: usize,
+    sunk: &[usize],
+) -> (Vec<u8>, Rect, Vec<f32>) {
+    let mut img = vec![0u8; (w * h * 4) as usize];
+    let mut noise = Noise(0x5eed_0801);
+    for y in 0..h {
+        for x in 0..w {
+            let l = noise.next_f32(110.0, 150.0) as u8;
+            let i = ((y * w + x) * 4) as usize;
+            img[i] = l;
+            img[i + 1] = l;
+            img[i + 2] = l;
+            img[i + 3] = 255;
+        }
+    }
+    let tw = (w as f32 * 0.52) as u32;
+    let tx = ((w - tw) / 2) as u32;
+    let ty = (h as f32 * 0.16) as u32;
+    let seam = tx + tw / 2;
+    let half = tw / 2;
+    let bar_h = (h as f32 * 0.035) as u32;
+    let pitch = (bar_h as f32 * 0.80) as u32;
+    let put = |img: &mut [u8], x: u32, y: u32, c: (u8, u8, u8)| {
+        let i = ((y * w + x) * 4) as usize;
+        img[i] = c.0;
+        img[i + 1] = c.1;
+        img[i + 2] = c.2;
+        img[i + 3] = 255;
+    };
+    // Header bars, adjacent at the seam like the classic table.
+    for y in ty..ty + bar_h {
+        for x in tx..seam {
+            put(&mut img, x, y, TEAL);
+        }
+        for x in seam..tx + tw {
+            put(&mut img, x, y, BRICK);
+        }
+    }
+    // Player rows: names OUTSIDE the bars, tier+ship column hugging the
+    // seam INSIDE (ally frac ~0.55–0.62 of its span, enemy ~0.30–0.44).
+    let name_w = w * 11 / 100;
+    let ship_w = half * 13 / 100;
+    let mut centers = Vec::new();
+    for side in 0..2 {
+        for k in 0..rows_per_side {
+            let yc = ty as f32 + bar_h as f32 + pitch as f32 * (k as f32 + 0.5);
+            if side == 0 {
+                centers.push(yc);
+            }
+            let global = side * rows_per_side + k;
+            let name = if sunk.contains(&global) {
+                (110, 110, 110)
+            } else {
+                (240, 240, 240)
+            };
+            let y0 = yc as u32;
+            let y1 = (y0 + 8).min(ty + bar_h + pitch * (k as u32 + 1));
+            for y in y0..y1 {
+                // Names outside: left of the teal bar / right of the brick.
+                let (nx0, nx1) = if side == 0 {
+                    (tx.saturating_sub(6 + name_w), tx - 6)
+                } else {
+                    (tx + tw + 6, tx + tw + 6 + name_w)
+                };
+                for x in nx0..nx1 {
+                    put(&mut img, x, y, name);
+                }
+                // Tier+ship inside, seam-hugging.
+                let (sx0, sx1) = if side == 0 {
+                    (seam - half * 44 / 100 - ship_w, seam - half * 38 / 100)
+                } else {
+                    (seam + half * 30 / 100, seam + half * 30 / 100 + ship_w)
+                };
+                for x in sx0..sx1 {
+                    put(&mut img, x, y, name);
+                }
+            }
+        }
+    }
+    let rect = Rect {
+        x: tx as i32,
+        y: ty as i32,
+        width: tw as i32,
+        height: (ty + bar_h + pitch * rows_per_side as u32 - ty) as i32,
+    };
+    (img, rect, centers)
+}
+
+/// The REAL next-generation Tab table: a WG promo capture of the reworked
+/// in-battle screen (players' names blurred by WG — still bright enough to
+/// classify). The header-anchored geometry must detect unchanged, the
+/// strip-layout resolver must pick the rework profile, and the name strips
+/// must then cover the OUTER name columns (blurred names measured at
+/// x 82–141 ally / 505–570 enemy on this 648-wide fixture).
+#[test]
+fn detects_real_next_layout_frame() {
+    let png = include_bytes!("../testdata/tab_table_next_648x365.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    assert_eq!((w, h), (648, 365));
+    let rgba = img.into_raw();
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (12, 12), &DetectProfile::WG)
+        .expect("next-layout table must be detected");
+    assert!(band.red.is_some(), "two-bar header detected");
+    assert_eq!(det.row_centers.len(), 24, "12 allies + 12 enemies");
+    assert!(
+        (det.rect.x as f32 - 155.0).abs() <= 6.0 && (det.rect.width as f32 - 338.0).abs() <= 10.0,
+        "rect: {:?}",
+        det.rect
+    );
+    assert!(
+        (det.team_split - 0.5).abs() <= 0.04,
+        "split: {}",
+        det.team_split
+    );
+    // Rows within ±4 px of the measured text bands (71, 82, …, 186).
+    for (k, &c) in det.row_centers.iter().take(4).enumerate() {
+        let truth = 71.0 + 10.5 * k as f32;
+        assert!((c as f32 - truth).abs() <= 4.0, "row {k}: {c} vs {truth}");
+    }
+    // Cache re-verification must hold on the rework bars too.
+    assert!(
+        verify_header_band(&rgba, w, h, &band),
+        "cached band verifies on the next-layout frame"
+    );
+    // Strip-layout resolution → rework profile; strips reach the OUTER
+    // name columns the classic windows would miss entirely.
+    let resolved = resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::WG);
+    assert_eq!(resolved, DetectProfile::WG_NEXT);
+    let table = StripTable {
+        roster: &det.rect,
+        row_centers: &det.row_centers,
+        team_split: det.team_split,
+        ally_rows: 12,
+    };
+    let ally = row_name_strip_rect(table, 0, &resolved).expect("ally strip");
+    assert!(
+        ally.x <= 82 && ally.x + ally.width >= 141,
+        "ally strip covers the name column: {:?}",
+        ally
+    );
+    let enemy = row_name_strip_rect(table, 12, &resolved).expect("enemy strip");
+    assert!(
+        enemy.x <= 507 && enemy.x + enemy.width >= 560,
+        "enemy strip covers the name column: {:?}",
+        enemy
+    );
+    // The blurred names' luma classifies the readable rows alive. The promo
+    // blur fades the ENEMY column toward the bottom (max luma 104–136 on
+    // the lower rows) — a redaction artifact, not the game's rendering —
+    // so only the rows whose blur stayed bright are asserted here; the
+    // alive/sunk split itself is covered end-to-end by the synthetic
+    // next-layout test below.
+    let alive = read_row_alive(&rgba, w, h, table, &resolved);
+    assert_eq!(alive.len(), 24);
+    assert!(
+        alive[..12].iter().all(|&a| a),
+        "ally rows alive: {:?}",
+        &alive[..12]
+    );
+    assert!(
+        alive[12..16].iter().all(|&a| a),
+        "enemy rows with bright-enough blur alive: {:?}",
+        &alive[12..]
+    );
+}
+
+/// The resolver must keep the CLASSIC profile on the classic frame — the
+/// stats columns' far-region text is what votes, and the old fixture
+/// carries it on both halves.
+#[test]
+fn resolver_keeps_classic_layout_on_real_frame() {
+    let png = include_bytes!("../testdata/tab_table_768x480.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    let rgba = img.into_raw();
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (5, 5), &DetectProfile::WG)
+        .expect("classic table detected");
+    assert_eq!(
+        resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::WG),
+        DetectProfile::WG,
+        "classic stats columns keep the classic profile"
+    );
+}
+
+/// Non-WG bases pass through untouched (the Lesta layout differs
+/// structurally, not by mirroring; the resolver never runs on it).
+#[test]
+fn resolver_passes_lesta_base_through() {
+    let png = include_bytes!("../testdata/tab_table_lesta_768x480.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    let rgba = img.into_raw();
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (6, 6), &DetectProfile::LESTA)
+        .expect("Lesta table detected");
+    assert_eq!(
+        resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::LESTA),
+        DetectProfile::LESTA
+    );
+}
+
+/// Synthetic next-generation table, end to end: detection, layout
+/// resolution, strips over the OUTER names, and the alive/sunk luma split
+/// on the rework geometry.
+#[test]
+fn detects_synthetic_next_layout_table() {
+    let (img, _rect, truth_centers) = synth_next_table(768, 480, 8, &[3, 10]);
+    let rgba = img;
+    let (w, h) = (768u32, 480u32);
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (8, 8), &DetectProfile::WG)
+        .expect("synthetic next-layout table detected");
+    assert_eq!(det.row_centers.len(), 16);
+    for (k, &c) in det.row_centers.iter().take(8).enumerate() {
+        assert!(
+            (c as f32 - truth_centers[k]).abs() <= 4.0,
+            "row {k}: {c} vs {}",
+            truth_centers[k]
+        );
+    }
+    let resolved = resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::WG);
+    assert_eq!(resolved, DetectProfile::WG_NEXT);
+    let table = StripTable {
+        roster: &det.rect,
+        row_centers: &det.row_centers,
+        team_split: det.team_split,
+        ally_rows: 8,
+    };
+    let alive = read_row_alive(&rgba, w, h, table, &resolved);
+    assert_eq!(alive.len(), 16);
+    for (k, a) in alive.iter().enumerate() {
+        let expect_alive = ![3, 10].contains(&k);
+        assert_eq!(*a, expect_alive, "row {k} alive={a}");
+    }
+}
+
+/// The next-generation LOADING screen (battle overview, same panels as
+/// the reworked Tab table but captioned with plain text, no solid header
+/// bars): the detector must NOT fire on it — same contract as the classic
+/// client's pre-battle screens ("the bars exist ONLY on the in-battle Tab
+/// table"). The frame's stray teal/red clusters (mode banner, wing UI)
+/// sit at different heights and fail both the two-bar adjacency and the
+/// green-only width + centering gates.
+#[test]
+fn loading_screen_frame_does_not_detect() {
+    let png = include_bytes!("../testdata/tab_next_loading_648x346.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    assert_eq!((w, h), (648, 346));
+    let rgba = img.into_raw();
+    assert!(
+        detect_roster_with_band(&rgba, w, h, (12, 12), &DetectProfile::WG).is_none(),
+        "the loading screen must not read as a Tab table"
+    );
+}
+
+/// Resolver safety: an all-dim table (every row sunk, no white text under
+/// the bars) has too little text for either side to vote — the resolution
+/// abstains and keeps the base rather than guessing.
+#[test]
+fn resolver_keeps_base_when_all_text_is_dim() {
+    let all: Vec<usize> = (0..16).collect();
+    let (rgba, _rect, _centers) = synth_next_table(768, 480, 8, &all);
+    let (w, h) = (768u32, 480u32);
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (8, 8), &DetectProfile::WG)
+        .expect("grid still fits on an all-dim table");
+    assert_eq!(
+        resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::WG),
+        DetectProfile::WG,
+        "no vote cast — base kept"
+    );
+}
+
+/// Resolver safety: conflicting halves (one votes classic, the other
+/// next-generation) keep the base — only an uncontested next vote flips
+/// the layout.
+#[test]
+fn resolver_keeps_base_on_conflicting_sides() {
+    let (mut rgba, rect, _centers) = synth_next_table(768, 480, 8, &[]);
+    let (w, h) = (768u32, 480u32);
+    // Paint a stats-like white block in the ALLY span's seam-side window
+    // (the classic layout's territory): the ally side votes classic while
+    // the enemy side still votes next.
+    let seam = rect.x + rect.width / 2;
+    let half = rect.width / 2;
+    let x0 = (seam - half * 30 / 100) as u32;
+    let x1 = (seam - half * 5 / 100) as u32;
+    let y0 = rect.y as u32 + rect.height as u32 / 4;
+    let y1 = rect.y as u32 + rect.height as u32 * 3 / 4;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let i = ((y * w + x) * 4) as usize;
+            rgba[i] = 240;
+            rgba[i + 1] = 240;
+            rgba[i + 2] = 240;
+            rgba[i + 3] = 255;
+        }
+    }
+    let (band, det) =
+        detect_roster_with_band(&rgba, w, h, (8, 8), &DetectProfile::WG).expect("table detected");
+    assert_eq!(
+        resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::WG),
+        DetectProfile::WG,
+        "a classic vote anywhere keeps the base"
+    );
+}
+
+/// Resolver safety: single-team green-only bands never resolve — the
+/// rework's PVE layout is unknown, so the base passes through untouched.
+#[test]
+fn resolver_keeps_base_on_green_only_band() {
+    let (rgba, _rect, _centers) = synth_single_team_table(768, 480, 7, 0, true);
+    let (w, h) = (768u32, 480u32);
+    let (band, det) = detect_roster_with_band(&rgba, w, h, (7, 0), &DetectProfile::WG)
+        .expect("single-team table detected");
+    assert!(band.red.is_none());
+    assert_eq!(
+        resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::WG),
+        DetectProfile::WG
+    );
+}
