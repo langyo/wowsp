@@ -49,7 +49,9 @@
     "doneLabel": "完成",
     "open": "共享錄影…",
     "identityHint": "署名身分將隨共享包上傳,並出現在參與人員名單中。",
-    "identityMissing": "請先填寫署名身分(伺服器 + 遊戲 ID)"
+    "identityMissing": "請先填寫署名身分(伺服器 + 遊戲 ID)",
+    "identitySource": "署名帳戶",
+    "identityCustom": "手動輸入…"
   },
   "select": {
     "checkCard": "選擇{name}的錄影",

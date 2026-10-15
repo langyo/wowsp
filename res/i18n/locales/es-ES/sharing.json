@@ -49,7 +49,9 @@
     "doneLabel": "Finalizar",
     "open": "Compartir repeticiones…",
     "identityHint": "La identidad acreditada se sube con tu paquete y aparece en la lista de participantes.",
-    "identityMissing": "Configura primero la identidad acreditada (servidor + ID de juego)"
+    "identityMissing": "Configura primero la identidad acreditada (servidor + ID de juego)",
+    "identitySource": "Cuenta acreditada",
+    "identityCustom": "Introducir manualmente…"
   },
   "select": {
     "checkCard": "Seleccionar la repetición de {name}",

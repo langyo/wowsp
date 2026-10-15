@@ -49,7 +49,9 @@
     "doneLabel": "완료",
     "open": "리플레이 공유…",
     "identityHint": "표기 신원은 공유 패키지와 함께 업로드되어 참여자 목록에 게재됩니다.",
-    "identityMissing": "먼저 표기 신원(서버와 게임 ID)을 설정하세요"
+    "identityMissing": "먼저 표기 신원(서버와 게임 ID)을 설정하세요",
+    "identitySource": "표기 계정",
+    "identityCustom": "직접 입력…"
   },
   "select": {
     "checkCard": "{name}의 리플레이 선택",
