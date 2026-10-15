@@ -31,9 +31,9 @@ use tauri::{AppHandle, Emitter};
 
 use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{
-    CatalogEntry, CatalogEntryI18n, CatalogFilePreview, CatalogIndex, CatalogPackage,
-    CatalogPreset, CommandResult, DOWNLOAD_PROGRESS_EVENT, DownloadProgress, InstallReport,
-    ModInstallRecord, PackageFilePreview,
+    CatalogAuthor, CatalogEntry, CatalogEntryI18n, CatalogFilePreview, CatalogIndex,
+    CatalogPackage, CatalogPreset, CommandResult, DOWNLOAD_PROGRESS_EVENT, DownloadProgress,
+    InstallReport, ModInstallRecord, PackageFilePreview,
 };
 
 use super::download_hub::{self, DownloadRequest};
@@ -157,13 +157,37 @@ pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
     if let Some(index) = cached.as_ref() {
         // A cache written by an older app build can lack the i18n maps
         // (schema drifted when threads gained the wowsp:i18n block);
-        // such a copy is stale by definition. A fresh-enough cache is
-        // served as-is; an expired one is refreshed (but stays the
-        // offline fallback if the fetch fails below).
+        // such a copy is stale by definition. Beyond the freshness TTL,
+        // the official digest is the freshness arbiter: a cheap signed
+        // lookup tells whether the release asset moved since this copy
+        // was verified, so hub updates land on the next view load
+        // instead of after the TTL. When the digest lookup fails
+        // (offline), the TTL alone decides and the cache stays the
+        // offline fallback if the fetch below fails too.
         let localized = index.mods.iter().any(|m| !m.i18n.is_empty()) || index.mods.is_empty();
         let fresh = fetched_recently(&index.fetched_at);
-        if localized && fresh {
+        let client = super::network::build_http_client().ok();
+        let digest = match client {
+            Some(client) => release_digest::fetch_official_sha256(
+                &client,
+                INDEX_CHANNEL,
+                INDEX_TAG,
+                INDEX_ASSET,
+            )
+            .await
+            .ok(),
+            None => None,
+        };
+        let matches_release = match (&digest, index.source_sha256.as_str()) {
+            // A legacy cache without a stamp can only be TTL-checked.
+            (Some(remote), local) => local.is_empty() || remote == local,
+            (None, _) => true,
+        };
+        if localized && fresh && matches_release {
             return Ok(index.clone());
+        }
+        if digest.is_some() && !matches_release {
+            tracing::info!("cached mod catalog predates the release digest — refetching");
         }
         if !localized && !index.mods.is_empty() {
             tracing::info!("cached mod catalog predates i18n — refetching");
@@ -172,7 +196,7 @@ pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
     }
     let fetched = fetch_index().await;
     match fetched {
-        Ok(index) => {
+        Ok((index, _)) => {
             let path = data_file(INDEX_CACHE_FILE)?;
             let json =
                 serde_json::to_string(&index).map_err(|e| anyhow!("serialize index: {e}"))?;
@@ -208,7 +232,7 @@ pub(crate) fn load_cached_index() -> Option<CatalogIndex> {
     serde_json::from_str(&raw).ok()
 }
 
-async fn fetch_index() -> anyhow::Result<CatalogIndex> {
+async fn fetch_index() -> anyhow::Result<(CatalogIndex, String)> {
     let client = super::network::build_http_client()?;
     // The official digest comes first, over the two channels the payload
     // mirrors can influence neither (the pairing relay's signed doc,
@@ -247,7 +271,8 @@ async fn fetch_index() -> anyhow::Result<CatalogIndex> {
                 Ok(raw) => {
                     let mut index = parse_index(&raw)?;
                     index.fetched_at = Utc::now().to_rfc3339();
-                    return Ok(index);
+                    index.source_sha256 = expected.clone();
+                    return Ok((index, expected));
                 },
                 Err(e) => last_err = format!("{url}: parse: {e}"),
             },
@@ -332,6 +357,10 @@ struct RawVersion {
     #[serde(default)]
     preview: Option<String>,
     #[serde(default)]
+    authors: Option<Vec<RawCatalogAuthor>>,
+    /// Legacy singular author fields from pre-array indexes; synthesized
+    /// into the authors list when `authors` is absent.
+    #[serde(default)]
     author: Option<String>,
     #[serde(default)]
     author_url: Option<String>,
@@ -342,6 +371,14 @@ struct RawVersion {
     /// them beside `packages`).
     #[serde(default)]
     presets: Vec<RawPreset>,
+}
+
+#[derive(Clone, Deserialize)]
+struct RawCatalogAuthor {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -445,8 +482,31 @@ fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogIndex> {
                 .clone()
                 .unwrap_or_else(|| ver.title.clone().unwrap_or_else(|| id.clone())),
             description: ver.description.clone().unwrap_or_default(),
-            author: ver.author.clone().unwrap_or_default(),
-            author_url: ver.author_url.clone().unwrap_or_default(),
+            authors: ver
+                .authors
+                .clone()
+                .map(|list| {
+                    list.into_iter()
+                        .map(|a| CatalogAuthor {
+                            name: a.name.unwrap_or_default(),
+                            url: a.url.unwrap_or_default(),
+                        })
+                        .filter(|a| !a.name.is_empty())
+                        .collect()
+                })
+                .unwrap_or_else(|| {
+                    // Legacy index: synthesize the single tag from the
+                    // singular fields.
+                    match (ver.author.clone(), ver.author_url.clone()) {
+                        (Some(name), _) if !name.is_empty() => {
+                            vec![CatalogAuthor {
+                                name,
+                                url: ver.author_url.clone().unwrap_or_default(),
+                            }]
+                        },
+                        _ => Vec::new(),
+                    }
+                }),
             aliases: m.aliases.clone(),
             preview: ver.preview.clone(),
             i18n: ver
@@ -476,6 +536,9 @@ fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogIndex> {
             .unwrap_or_else(|| "community crawl".into()),
         game_version: source.game_version.unwrap_or_else(|| "*".into()),
         fetched_at: Utc::now().to_rfc3339(),
+        // Filled in by `fetch_index` once the bytes match the official
+        // digest; parse-only paths (tests) carry an empty stamp.
+        source_sha256: String::new(),
         mods,
     })
 }
@@ -962,10 +1025,7 @@ pub async fn mod_catalog_preview_files(
                 });
                 match outcome {
                     Ok(plan) => {
-                        let mut files: Vec<String> =
-                            plan.entries.iter().map(|e| e.to_rel.clone()).collect();
-                        files.sort();
-                        files.dedup();
+                        let files = mod_hub::collect_plan_files(&root, &plan);
                         PackageFilePreview {
                             name: pkg.name.clone(),
                             size: pkg.size,

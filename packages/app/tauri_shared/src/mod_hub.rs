@@ -212,6 +212,16 @@ pub struct CatalogPreset {
     pub packages: Vec<CatalogPackage>,
 }
 
+/// One clickable author tag: the credited name plus its official page
+/// (empty url renders the tag without a link).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogAuthor {
+    pub name: String,
+    #[serde(default)]
+    pub url: String,
+}
+
 /// The `latest` version payload of one mod in `mod-index.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -248,15 +258,12 @@ pub struct CatalogEntry {
     pub name_zh: String,
     pub name_en: String,
     pub description: String,
-    /// Mod author display name (thread `author:` front-matter; the indexer
-    /// falls back to the thread poster). Empty when no author is verified —
-    /// the UI then renders no author tag.
+    /// Mod author tags: one per credited author, in attribution order.
+    /// Built by the indexer from the thread's `authors:` front-matter with
+    /// each name resolved through the registry; empty when no author is
+    /// verified — the UI then renders no author tag.
     #[serde(default)]
-    pub author: String,
-    /// The author's official page (`author_url:` front-matter); empty when
-    /// unknown, in which case the author tag renders without a link.
-    #[serde(default)]
-    pub author_url: String,
+    pub authors: Vec<CatalogAuthor>,
     pub packages: Vec<CatalogPackage>,
     /// Localized name/description variants; may be empty for older posts.
     #[serde(default)]
@@ -286,6 +293,11 @@ pub struct CatalogIndex {
     pub game_version: String,
     /// RFC3339 timestamp of when this copy was fetched.
     pub fetched_at: String,
+    /// The official sha256 digest this copy was verified against. A cached
+    /// copy whose digest disagrees with the current official one is stale
+    /// even inside the freshness TTL.
+    #[serde(default)]
+    pub source_sha256: String,
     pub mods: Vec<CatalogEntry>,
 }
 

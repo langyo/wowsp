@@ -392,8 +392,7 @@ mod tests {
             name_zh: zh.into(),
             name_en: en.into(),
             description: String::new(),
-            author: String::new(),
-            author_url: String::new(),
+            authors: Vec::new(),
             i18n: [(
                 "en-US".to_string(),
                 CatalogEntryI18n {
@@ -427,6 +426,7 @@ mod tests {
             source_version: String::new(),
             game_version: String::new(),
             fetched_at: String::new(),
+            source_sha256: String::new(),
             mods: vec![catalog_entry(
                 "battle.timer.shot",
                 "Shot Timer",
@@ -454,6 +454,7 @@ mod tests {
             source_version: String::new(),
             game_version: String::new(),
             fetched_at: String::new(),
+            source_sha256: String::new(),
             mods: vec![catalog_entry(
                 "battle.marker.adjustable",
                 "AdjustableMarkers",
@@ -498,6 +499,7 @@ mod tests {
             source_version: String::new(),
             game_version: String::new(),
             fetched_at: String::new(),
+            source_sha256: String::new(),
             mods: vec![catalog_entry(
                 "battle.panel.team",
                 "Team Panels by TTaro",
@@ -536,6 +538,7 @@ mod tests {
             source_version: String::new(),
             game_version: String::new(),
             fetched_at: String::new(),
+            source_sha256: String::new(),
             mods: vec![catalog_entry(
                 "battle.crosshair.smart",
                 "Smart Hybrid Crosshair",
@@ -568,6 +571,7 @@ mod tests {
             source_version: String::new(),
             game_version: String::new(),
             fetched_at: String::new(),
+            source_sha256: String::new(),
             mods: vec![catalog_entry(
                 "battle.marker.adjustable",
                 "Adjustable Markers (extended)",
@@ -609,6 +613,7 @@ mod tests {
             source_version: String::new(),
             game_version: String::new(),
             fetched_at: String::new(),
+            source_sha256: String::new(),
             mods: vec![],
         };
         let out = scan_foreign(&dir, &mods, Some(&catalog));
@@ -640,6 +645,7 @@ mod tests {
             source_version: String::new(),
             game_version: String::new(),
             fetched_at: String::new(),
+            source_sha256: String::new(),
             mods: vec![catalog_entry_aliased(
                 "battle.minipanel.team-hp",
                 "Team HP by TTaro",
