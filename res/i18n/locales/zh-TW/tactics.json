@@ -92,7 +92,12 @@
   },
   "toolbar": {
     "mirror": "自動鏡像（雙方同步編輯）",
-    "caps": "顯示 / 隱藏佔點"
+    "caps": "顯示 / 隱藏佔點",
+    "heat": "熱力",
+    "heatOff": "關閉",
+    "heatTrack": "航跡熱力",
+    "heatSpawn": "出生熱力",
+    "heatNone": "目前模式暫無語料資料"
   },
   "lineup": {
     "title": "編輯陣容",

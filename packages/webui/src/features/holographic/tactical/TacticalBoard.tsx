@@ -33,6 +33,7 @@ import { useTactical } from "./useTactical";
 import type { ShipAction } from "./actions";
 import { planTracks as planTracksOf, type PlanTrack } from "./plan";
 import type { CapSpec } from "./modes";
+import type { HeatLayerKind, HeatLayerMode, HeatOverlayData } from "./heatLayer";
 import {
   TEAM_COLOR,
   mirrorHeading,
@@ -213,6 +214,18 @@ export default defineComponent({
     },
     /** Capture points of the plan's battle mode (rendered + time-gated). */
     caps: { type: Array as PropType<CapSpec[]>, default: () => [] },
+    /** Corpus heat overlay (heatLayer.ts): UNDEFINED = this host wires no
+     *  heat layer (the replay board); NULL = wired but the current
+     *  (map, mode) has no corpus coverage — the toolbar's button renders
+     *  disabled with the no-data hint either way nothing draws. */
+    heat: { type: Object as PropType<HeatOverlayData | null>, default: undefined },
+    /** Which corpus grid is shown (off / track / spawn). */
+    heatMode: { type: String as PropType<HeatLayerMode>, default: "off" },
+    /** Ask the host to switch the overlay state (the toolbar's flyout). */
+    onSetHeat: {
+      type: Function as PropType<(mode: HeatLayerMode) => void>,
+      default: undefined,
+    },
     /** Anchor the teleported toolbar/timeline dock. The replay host docks the
      *  board into the playback bar's tall form; a plan host docks its own. */
     dockSelector: { type: String, default: "#holo-map-tac-dock" },
@@ -877,6 +890,9 @@ export default defineComponent({
         ctx.translate(-c, -c);
       }
       const p = makeProjection(bounds);
+      // Corpus heat layer: null unless a host wired data AND a grid is on.
+      const heatKind: HeatLayerKind | null =
+        props.heat && props.heatMode !== "off" ? props.heatMode : null;
       const regionRect: LogicalRect | null =
         regionOverride !== undefined
           ? regionOverride
@@ -898,6 +914,8 @@ export default defineComponent({
         // no terminal heading to steer.
         scriptedHandles: lineupActive.value,
         caps: lineupActive.value && capsVisible.value ? props.caps : [],
+        heatOverlay:
+          props.heat && heatKind != null ? { kind: heatKind, data: props.heat } : null,
         legPreview: hoverLeg.value,
         aimPreview: aimPreview.value,
         // Over a replay the virtual units are PLANS drawn hollow, so they
@@ -2173,6 +2191,9 @@ export default defineComponent({
                 onToggleMirror={props.onToggleMirror}
                 showCaps={capsVisible.value}
                 onToggleCaps={() => (capsVisible.value = !capsVisible.value)}
+                heat={props.heat}
+                heatMode={props.heatMode}
+                onSetHeat={props.onSetHeat}
                 regionActive={regionMode.value}
                 pendingRegion={pendingRegion.value != null}
                 recording={recording.value}

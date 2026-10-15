@@ -92,7 +92,12 @@
   },
   "toolbar": {
     "mirror": "Espejo automático (editar ambos bandos)",
-    "caps": "Mostrar / ocultar puntos de captura"
+    "caps": "Mostrar / ocultar puntos de captura",
+    "heat": "Mapa de calor",
+    "heatOff": "Desactivado",
+    "heatTrack": "Calor de rutas",
+    "heatSpawn": "Calor de aparición",
+    "heatNone": "Aún no hay datos del corpus para este modo"
   },
   "lineup": {
     "title": "Editar alineación",

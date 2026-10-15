@@ -47,7 +47,7 @@
     "prev": "Atrás",
     "startUpload": "Iniciar subida",
     "doneLabel": "Finalizar",
-    "viewContributors": "Ver participantes"
+    "open": "Compartir repeticiones…"
   },
   "select": {
     "checkCard": "Seleccionar la repetición de {name}",
@@ -93,6 +93,6 @@
     "empty": "Todavía no hay contribuidores. La lista aparecerá en la próxima versión tras la primera contribución.",
     "self": "Yo",
     "count": "{n}",
-    "note": "La lista se actualiza con cada versión desde el servidor de recopilación."
+    "note": "Nuestro más sincero agradecimiento a cada entusiasta que compartió sus repeticiones originales: esas batallas son la base del análisis de posiciones y de la calibración de estadísticas. La lista se actualiza con cada versión."
   }
 }

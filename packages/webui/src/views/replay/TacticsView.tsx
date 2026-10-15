@@ -26,7 +26,13 @@ import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { loadMapBounds, type MapBounds } from "@/features/holographic/modelLoader";
+import { loadMapInsights, type MapInsightsDoc } from "@/features/holographic/insightsLoader";
 import TacticalPlanStage from "@/features/holographic/tactical/PlanStage";
+import {
+  resolveHeatOverlay,
+  type HeatLayerMode,
+  type HeatOverlayData,
+} from "@/features/holographic/tactical/heatLayer";
 import MapSetupModal, { type MapSetupChoice } from "@/features/holographic/tactical/MapSetupModal";
 import LineupEditorModal from "@/features/holographic/tactical/LineupEditorModal";
 import {
@@ -163,15 +169,18 @@ export default defineComponent({
     });
 
     /** Apply the wizard's step-2 choice: a MEASURED layout lands its exact
-     *  replay-learned points (radius included, letters by point index,
-     *  ownership left neutral — the replay's team orientation vs the
-     *  board's ally-south spawn is not inferable from the layout alone);
-     *  a template preset instantiates as before. */
+     * replay-learned points (radius included, letters by point index,
+     * ownership left neutral — the replay's team orientation vs the
+     * board's ally-south spawn is not inferable from the layout alone);
+     * a template preset instantiates as before. */
     function applyChoice(choice: MapSetupChoice): void {
       if (choice.kind === "learned") {
         session.value = {
           ...session.value,
           modeId: null,
+          // The applied layout's raw match-group — the key the heat overlay
+          // resolves against the corpus doc (a preset has no such key).
+          modeGroup: choice.layout.modeGroup ?? null,
           caps: choice.layout.caps.map((c) => ({
             letter: String.fromCharCode(65 + Math.max(0, Math.min(25, c.index))),
             at: { x: c.x, z: c.z },
@@ -187,7 +196,7 @@ export default defineComponent({
     }
 
     /** Switch the session's battle mode: re-instantiate the capture layout
-     *  from the preset template over this map's playable rect. */
+     * from the preset template over this map's playable rect. */
     function applyMode(modeId: string): void {
       const preset = modePresetOf(modeId);
       const b = bounds.value;
@@ -195,6 +204,7 @@ export default defineComponent({
       session.value = {
         ...session.value,
         modeId,
+        modeGroup: null,
         caps: b ? instantiateCaps(preset, b) : [],
       };
       persist();
@@ -255,6 +265,37 @@ export default defineComponent({
 
     function toggleMirror(): void {
       session.value = { ...session.value, mirror: !session.value.mirror };
+      persist();
+    }
+
+    // ── Corpus heat overlay (the map-insights rail's spawn/track grids) ──
+    // Pack-first with the bundled lite fallback — the same doc the setup
+    // wizard's corpus rows read; until it resolves (or forever, on the lite
+    // placeholder that carries no grids) the overlay simply stays empty.
+    const mapInsights = ref<MapInsightsDoc | null>(null);
+    onMounted(() => {
+      void loadMapInsights()
+        .then((doc) => {
+          mapInsights.value = doc;
+        })
+        .catch(() => {
+          // Unresolvable corpus — heat stays unavailable (null data).
+        });
+    });
+    /** The current (map, mode)'s corpus heat grids; null without coverage
+     *  (placeholder doc, unset/unknown mode) — the toolbar's button then
+     *  renders disabled with the no-data hint. */
+    const heatData = computed<HeatOverlayData | null>(() =>
+      resolveHeatOverlay(
+        mapInsights.value,
+        selected.value,
+        session.value.modeId,
+        session.value.modeGroup,
+      ),
+    );
+
+    function setHeat(mode: HeatLayerMode): void {
+      session.value = { ...session.value, heat: mode };
       persist();
     }
 
@@ -468,8 +509,11 @@ export default defineComponent({
                 planUnits={planUnits.value}
                 mirror={session.value.mirror}
                 onToggleMirror={toggleMirror}
-                onEditLineup={() => (lineupOpen.value = true)}
-                caps={session.value.caps}
+                  onEditLineup={() => (lineupOpen.value = true)}
+                  caps={session.value.caps}
+                  heat={heatData.value}
+                  heatMode={session.value.heat}
+                  onSetHeat={setHeat}
                 slotsTeleport={wide.value ? "#tactics-branch-dock" : undefined}
                 minimapTeleport={wide.value ? "#tactics-minimap-dock" : undefined}
                 dockTeleport="#tactics-dock-row"

@@ -47,7 +47,7 @@
     "prev": "Back",
     "startUpload": "Start upload",
     "doneLabel": "Finish",
-    "viewContributors": "View contributors"
+    "open": "Share replays…"
   },
   "select": {
     "checkCard": "Select the replay of {name}",
@@ -93,6 +93,6 @@
     "empty": "No contributors yet. The list appears with the next release after the first contribution.",
     "self": "Me",
     "count": "{n}",
-    "note": "The list refreshes with each release from the collection server."
+    "note": "Our heartfelt thanks to every enthusiast who shared their raw replays — those battles are the bedrock of the map-position analysis and the stats calibration. The list refreshes with each release."
   }
 }

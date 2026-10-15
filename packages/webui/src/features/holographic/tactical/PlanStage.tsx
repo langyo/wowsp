@@ -44,6 +44,7 @@ import {
   type PlanSlot,
 } from "./planSlots";
 import type { CapSpec } from "./modes";
+import type { HeatLayerMode, HeatOverlayData } from "./heatLayer";
 import type { PlanUnit } from "./lineup";
 import { saveExportBlob } from "./exporters";
 import { TACTICAL_SIZE, viewWindow, type TacticalView } from "./render";
@@ -74,6 +75,17 @@ export default defineComponent({
     onEditLineup: { type: Function as PropType<(() => void) | undefined>, default: undefined },
     /** Capture points of the selected battle mode (modes.ts, world coords). */
     caps: { type: Array as () => CapSpec[], default: () => [] },
+    /** Corpus heat overlay (heatLayer.ts) resolved for the current
+     *  (map, mode): null = no corpus coverage (the toolbar's button shows
+     *  the no-data hint). */
+    heat: { type: Object as PropType<HeatOverlayData | null>, default: null },
+    /** Which corpus grid is shown (off / track / spawn). */
+    heatMode: { type: String as PropType<HeatLayerMode>, default: "off" },
+    /** Ask the host to switch the overlay state (the toolbar's flyout). */
+    onSetHeat: {
+      type: Function as PropType<(mode: HeatLayerMode) => void>,
+      default: undefined,
+    },
     /** CSS selector the plan-slot tree teleports into (the tactics page's
      *  left branch panel); absent keeps the chips row above the stage. */
     slotsTeleport: { type: String, default: undefined },
@@ -712,6 +724,9 @@ export default defineComponent({
                   onToggleMirror={props.onToggleMirror}
                   onEditLineup={props.onEditLineup}
                   caps={props.caps}
+                  heat={props.heat}
+                  heatMode={props.heatMode}
+                  onSetHeat={props.onSetHeat}
                   dockSelector={`#${PLAN_DOCK_ID}`}
                   getBounds={tacticalBounds}
                   getFullBounds={() => fullBounds.value}

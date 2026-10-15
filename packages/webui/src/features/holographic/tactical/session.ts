@@ -9,23 +9,38 @@
  * Pure module (DOM-free apart from localStorage) — unit-testable.
  */
 import type { CapSpec } from "./modes";
+import type { HeatLayerMode } from "./heatLayer";
 import type { Lineup } from "./lineup";
 
 export interface TacticalSession {
   /** ModePreset id (modes.ts); null = the map was never set up. */
   modeId: string | null;
+  /** Raw match-group of the applied LEARNED layout — the corpus/local key
+   *  the heat overlay resolves against (template presets carry null here;
+   *  heatLayer maps their modeId onto the same keys instead). */
+  modeGroup: string | null;
   /** World-space capture layout (moved by the author off the template). */
   caps: CapSpec[];
   /** Fleet lineup (lineup.ts persistence shape). */
   lineup: Lineup;
   /** Auto-mirror orders between sides. */
   mirror: boolean;
+  /** Corpus heat-overlay state (off / track / spawn). */
+  heat: HeatLayerMode;
   /** Profile display name ("" = the default map-based name). */
   profileName: string;
 }
 
 export function emptySession(): TacticalSession {
-  return { modeId: null, caps: [], lineup: { ally: [], enemy: [] }, mirror: false, profileName: "" };
+  return {
+    modeId: null,
+    modeGroup: null,
+    caps: [],
+    lineup: { ally: [], enemy: [] },
+    mirror: false,
+    heat: "off",
+    profileName: "",
+  };
 }
 
 function sessionKey(spaceId: string): string {
@@ -92,12 +107,15 @@ export function loadSession(spaceId: string): TacticalSession {
     if (typeof parsed !== "object" || parsed == null) return emptySession();
     return {
       modeId: typeof parsed.modeId === "string" ? parsed.modeId : null,
+      modeGroup:
+        typeof parsed.modeGroup === "string" && parsed.modeGroup ? parsed.modeGroup : null,
       caps: sanitizeCaps(parsed.caps),
       lineup: {
         ally: sanitizeLineupSide(parsed.lineup?.ally),
         enemy: sanitizeLineupSide(parsed.lineup?.enemy),
       },
       mirror: parsed.mirror === true,
+      heat: parsed.heat === "track" || parsed.heat === "spawn" ? parsed.heat : "off",
       profileName: typeof parsed.profileName === "string" ? parsed.profileName : "",
     };
   } catch {
@@ -121,6 +139,7 @@ export function sessionFromProfileMeta(meta: unknown): TacticalSession {
   if (typeof meta !== "object" || meta == null) return out;
   const m = meta as Record<string, unknown>;
   if (typeof m.modeId === "string" && m.modeId) out.modeId = m.modeId;
+  if (typeof m.modeGroup === "string" && m.modeGroup) out.modeGroup = m.modeGroup;
   if (Array.isArray(m.caps)) out.caps = sanitizeCaps(m.caps);
   if (typeof m.lineup === "object" && m.lineup != null) {
     const lu = m.lineup as Record<string, unknown>;
@@ -130,6 +149,7 @@ export function sessionFromProfileMeta(meta: unknown): TacticalSession {
     };
   }
   if (m.mirror === true) out.mirror = true;
+  if (m.heat === "track" || m.heat === "spawn") out.heat = m.heat;
   if (typeof m.profileName === "string") out.profileName = m.profileName;
   return out;
 }

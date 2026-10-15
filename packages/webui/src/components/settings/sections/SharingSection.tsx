@@ -25,6 +25,7 @@ import {
 import {
   HkAlert,
   HkButton,
+  HkModal,
   HkCheckbox,
   HkInput,
   HkProgressBar,
@@ -226,11 +227,13 @@ export default defineComponent({
       }
     }
 
-    /** The enroll CTA lands on the wizard's consent step — the wizard sits
-     *  directly below the status card, so scroll its group into view. */
-    const wizardRef = ref<HTMLElement | null>(null);
-    function scrollToWizard() {
-      wizardRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+    /** The wizard lives in a secondary modal (HkModal teleports to body,
+     *  so it stacks cleanly over the settings window); the enroll CTA and
+     *  the enrolled "share replays" entry both open it at the intro step. */
+    const wizardOpen = ref(false);
+    function openWizard() {
+      step.value = "intro";
+      wizardOpen.value = true;
     }
 
     // ── wizard: shared plumbing ───────────────────────────────────────────
@@ -491,11 +494,6 @@ export default defineComponent({
     });
 
     // ── wizard: done ──────────────────────────────────────────────────────
-    const contributorsRef = ref<HTMLElement | null>(null);
-    function scrollToContributors() {
-      contributorsRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
     // ── contributors list (res-pack insights rail; bundled placeholder
     //    fallback — empty ⇒ exactly the pre-rail UI) ─────────────────────
     const contributors = ref<ContributorsDoc>({
@@ -557,6 +555,7 @@ export default defineComponent({
         .then((q) => {
           if (q.running) {
             step.value = "upload";
+            wizardOpen.value = true;
             applySnapshot(q);
             startPolling();
           }
@@ -575,7 +574,7 @@ export default defineComponent({
       if (step.value === "intro") return t("sharing.wizard.next");
       if (step.value === "select") return t("sharing.wizard.startUpload");
       if (step.value === "upload") return t("sharing.wizard.doneLabel");
-      return t("sharing.wizard.viewContributors");
+      return t("sharing.wizard.doneLabel");
     });
     const primaryDisabled = computed(() => {
       if (step.value === "intro") return !consentGiven.value;
@@ -586,8 +585,44 @@ export default defineComponent({
       if (step.value === "intro") step.value = "select";
       else if (step.value === "select") void startUpload();
       else if (step.value === "upload") step.value = "done";
-      else scrollToContributors();
+      // The done step's primary closes the window — the contributors
+      // list sits in the section right below the status card.
+      else wizardOpen.value = false;
     }
+    const wizardFooter = computed(() => {
+      // Uploading: cancel only. Otherwise prev (never on the intro step)
+      // + the gated primary (MapSetupModal's footerActions contract).
+      if (uploading.value) {
+        return [
+          {
+            label: t("sharing.upload.cancel"),
+            variant: "secondary" as const,
+            onClick: () => void cancelUpload(),
+          },
+        ];
+      }
+      const actions: {
+        label: string;
+        variant: "secondary" | "primary";
+        disabled?: boolean;
+        onClick: () => void;
+      }[] = [];
+      if (step.value !== "intro") {
+        actions.push({
+          label: t("sharing.wizard.prev"),
+          variant: "secondary",
+          onClick: goBack,
+        });
+      }
+      actions.push({
+        label: primaryLabel.value,
+        variant: "primary",
+        disabled: primaryDisabled.value,
+        onClick: onPrimary,
+      });
+      return actions;
+    });
+
     function goBack() {
       const i = STEP_KEYS.indexOf(step.value);
       // Upstream of the upload step only — a finished/failed run restarts
@@ -696,7 +731,7 @@ export default defineComponent({
         {!enrolled.value ? (
           <div class="sharing-sec__enroll">
             <p class="sharing-sec__enroll-copy">{t("sharing.status.enrollCopy")}</p>
-            <HkButton variant="primary" onClick={scrollToWizard}>
+            <HkButton variant="primary" onClick={openWizard}>
               <Upload size={15} />
               {t("sharing.status.enroll")}
             </HkButton>
@@ -771,6 +806,14 @@ export default defineComponent({
             <span class="sharing-sec__sync-actions">
               <HkButton
                 size="sm"
+                variant="primary"
+                onClick={openWizard}
+              >
+                <Upload size={14} />
+                {t("sharing.wizard.open")}
+              </HkButton>
+              <HkButton
+                size="sm"
                 variant="secondary"
                 loading={syncing.value}
                 onClick={() => void syncMine()}
@@ -795,10 +838,17 @@ export default defineComponent({
         )}
       </HkSettingsGroup>
 
-      {/* ── the inline wizard — rendered in-section, NOT a modal ───────── */}
-      <div ref={wizardRef} class="sharing-sec__wizard">
-        <HkSettingsGroup title={t("sharing.wizard.title")}>
-          <HkSettingsHint>{t("sharing.wizard.hint")}</HkSettingsHint>
+      {/* ── the wizard — a secondary window over the settings surface
+          (HkModal teleports to body, so it stacks over both the desktop
+          modal and the phone settings page) ───────────────────────── */}
+      <HkModal
+        modelValue={wizardOpen.value}
+        onUpdate:modelValue={(v: boolean) => (wizardOpen.value = v)}
+        title={t("sharing.wizard.title")}
+        width="min(66rem, 92vw)"
+        footerActions={wizardFooter.value}
+      >
+        <p class="sharing-sec__modal-hint">{t("sharing.wizard.hint")}</p>
           <HkStepFlow
             steps={steps.value}
             modelValue={step.value}
@@ -996,34 +1046,10 @@ export default defineComponent({
               },
             }}
           />
-          {/* Footer — the house prev/primary row under the flow (HkStepFlow
-              itself owns only the timeline + bodies). */}
-          <div class="sharing-sec__wizard-footer">
-            {step.value === "intro" || uploading.value ? null : (
-              <HkButton variant="secondary" onClick={goBack}>
-                {t("sharing.wizard.prev")}
-              </HkButton>
-            )}
-            {uploading.value ? (
-              <HkButton variant="secondary" onClick={() => void cancelUpload()}>
-                {t("sharing.upload.cancel")}
-              </HkButton>
-            ) : (
-              <HkButton
-                variant="primary"
-                disabled={primaryDisabled.value}
-                onClick={onPrimary}
-              >
-                {primaryLabel.value}
-              </HkButton>
-            )}
-          </div>
-        </HkSettingsGroup>
-      </div>
+      </HkModal>
 
       {/* ── contributors list (res-pack insights rail / bundled fallback) ── */}
-      <div ref={contributorsRef}>
-        <HkSettingsGroup title={t("sharing.contributors.title")}>
+      <HkSettingsGroup title={t("sharing.contributors.title")}>
           <HkSettingsHint>{t("sharing.contributors.hint")}</HkSettingsHint>
           {!hasContributors.value ? (
             <p class="sharing-sec__empty">{t("sharing.contributors.empty")}</p>
@@ -1062,7 +1088,6 @@ export default defineComponent({
             <span>{t("sharing.contributors.note")}</span>
           </div>
         </HkSettingsGroup>
-      </div>
       </>
     );
   },
