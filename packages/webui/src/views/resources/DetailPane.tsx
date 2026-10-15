@@ -145,7 +145,8 @@ function renderDetailMenu(
             disabled: !actions.files,
           },
         ]}
-        onSelect={({ key }: { key: string | number }) => {
+        // HMenu emits the item key as the first argument (hikari: emit("select", item.key, item)).
+        onSelect={(key: string | number) => {
           ctx.fileWindow.detailMenuOpen.value = false;
           if (key === "open-path") actions.reveal?.();
           else if (key === "online" && actions.onlineUrl) openExternal(actions.onlineUrl);

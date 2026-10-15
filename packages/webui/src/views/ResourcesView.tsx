@@ -218,7 +218,8 @@ export default defineComponent({
                             !hub.gameRoot.value || hub.staleBins.value.length === 0 || wizard.migrating.value,
                         },
                       ]}
-                      onSelect={({ key }: { key: string | number }) => {
+                      // HMenu select emits the item key itself as the first argument.
+                      onSelect={(key: string | number) => {
                         hub.toolsOpen.value = false;
                         if (key === "safe-enter") hub.safeModeAsk.value = "on";
                         else if (key === "safe-exit") hub.safeModeAsk.value = "off";

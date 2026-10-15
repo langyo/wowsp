@@ -49,6 +49,12 @@ export function useFileListWindow(hub: ModHubCtx) {
     error.value = "";
     loading.value = false;
     selectedPkg.value = "all";
+    // The window shows up first and fetches INSIDE: kick the preview off
+    // immediately whenever this target needs one (installed units render
+    // their ledger record instantly and never fetch).
+    if (target_.entry && !target_.record && hub.gameRoot.value) {
+      void runPreview();
+    }
   }
 
   function close() {
