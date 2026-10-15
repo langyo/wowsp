@@ -19,12 +19,12 @@ import {
   RefreshCw,
   Trash2,
   Upload,
-  Users,
   Wand2,
 } from "@lucide/vue";
 import {
   HkAlert,
   HkButton,
+  HkEmptyState,
   HkModal,
   HkCheckbox,
   HkInput,
@@ -310,6 +310,11 @@ export default defineComponent({
 
     /** Verdict rows keyed by path — filled by the planner pass. */
     const planByPath = ref(new Map<string, PlanItem>());
+    /** The match RESULT model: nothing lists until the visitor runs the
+     *  smart match — then these are the qualifying replays (accept
+     *  verdict only, scarcity-ranked) the list shows pre-checked. */
+    const matchRan = ref(false);
+    const matchedItems = ref<PlanItem[]>([]);
     const planning = ref(false);
     const planError = ref<string | null>(null);
     /** Checked paths — the wizard's selection. */
@@ -349,16 +354,17 @@ export default defineComponent({
       return out;
     }
 
-    /** SMART SELECT (contract §10): plan the filtered set, sort the
-     *  accept-verdict items by rule scarcity (collected/maxCount ascending,
-     *  unlimited rules last) then battle time descending, and check boxes
-     *  capped at each rule's remaining quota. */
+    /** SMART MATCH — the picker's single entry: plan EVERY local replay,
+     *  rank the accept-verdict ones by rule scarcity (collected/maxCount
+     *  ascending, unlimited rules last) then battle time descending, cap
+     *  at each rule's remaining quota, and make THAT the visible list,
+     *  pre-checked. No qualifying replay → an empty-state hint. */
     async function smartSelect() {
-      if (planning.value || visibleReplays.value.length === 0) return;
+      if (planning.value || allReplays.value.length === 0) return;
       planning.value = true;
       try {
         await loadWanted();
-        const items = await runPlan(visibleReplays.value.map(candidateOf));
+        const items = await runPlan(allReplays.value.map(candidateOf));
         const remainingOf = (ruleId: string | null | undefined): number => {
           if (!ruleId) return Number.POSITIVE_INFINITY;
           const rule = wantedRules.value.get(ruleId);
@@ -382,7 +388,7 @@ export default defineComponent({
               (b.facts.battleTime < a.facts.battleTime ? -1 : b.facts.battleTime > a.facts.battleTime ? 1 : 0),
           );
         const takenPerRule = new Map<string, number>();
-        const next = new Set<string>();
+        const picked: PlanItem[] = [];
         for (const item of accepts) {
           const rem = remainingOf(item.ruleId);
           if (rem !== Number.POSITIVE_INFINITY) {
@@ -390,15 +396,35 @@ export default defineComponent({
             if (taken >= rem) continue;
             takenPerRule.set(item.ruleId ?? "", taken + 1);
           }
-          next.add(item.path);
+          picked.push(item);
         }
-        checked.value = next;
+        matchedItems.value = picked;
+        matchRan.value = true;
+        checked.value = new Set(picked.map((i) => i.path));
       } catch (e) {
         planError.value = (e as Error).message || String(e);
       } finally {
         planning.value = false;
       }
     }
+
+    /** meta lookup for the matched rows (PlanItem carries the path). */
+    const metaByPath = computed(() => {
+      const m = new Map<string, ReplayMetaLite>();
+      for (const r of allReplays.value) m.set(r.path, r);
+      return m;
+    });
+
+    /** The visible rows: the matched set narrowed by the visitor's
+     *  filters (the same pipeline the replay page uses), kept in match
+     *  rank order. */
+    const visibleMatched = computed(() => {
+      if (!matchRan.value) return [];
+      const rank = new Map(matchedItems.value.map((i, idx) => [i.path, idx]));
+      return visibleReplays.value
+        .filter((r) => rank.has(r.path))
+        .sort((a, b) => (rank.get(a.path) ?? 0) - (rank.get(b.path) ?? 0));
+    });
 
     function toggleChecked(path: string) {
       const next = new Set(checked.value);
@@ -458,9 +484,9 @@ export default defineComponent({
     }
 
     async function startUpload() {
-      const candidates = visibleReplays.value
-        .filter((r) => checked.value.has(r.path))
-        .map(candidateOf);
+      const candidates = matchedItems.value
+        .filter((i) => checked.value.has(i.path))
+        .map((i) => candidateOf(metaByPath.value.get(i.path)!));
       if (candidates.length === 0) return;
       try {
         await api.contributionStart(candidates);
@@ -710,10 +736,12 @@ export default defineComponent({
           <div class="sharing-sec__card-tags">
             {serverTag ? <HkTag size="sm" variant="info">{serverTag}</HkTag> : null}
             {modeKey ? (
-              <HkTag
-                size="sm"
-                style={{ background: modeColorOfKey(modeKey).color, borderColor: modeColorOfKey(modeKey).color }}
-              >
+              <HkTag size="sm">
+                <span
+                  class="sharing-sec__mode-dot"
+                  style={{ background: modeColorOfKey(modeKey).color }}
+                  aria-hidden="true"
+                />
                 {modeLabelOfKey(modeKey)}
               </HkTag>
             ) : null}
@@ -878,28 +906,61 @@ export default defineComponent({
               ),
               select: () => (
                 <div class="sharing-sec__step">
-                  {/* The filter trigger — a PRIVATE state instance of the
-                      page rail's component (nothing persists). */}
+                  {!matchRan.value ? (
+                    /* The hero: nothing lists until the visitor runs the
+                     * match — one centered action, hikari's empty-state
+                     * shell for the copy. */
+                    <div class="sharing-sec__hero">
+                      <HkEmptyState
+                        icon={Wand2}
+                        title={t("sharing.select.heroTitle")}
+                        description={
+                          allReplays.value.length === 0
+                            ? t("sharing.select.empty")
+                            : t("sharing.select.heroDesc")
+                        }
+                      >
+                        <div class="sharing-sec__hero-actions">
+                          <HkButton
+                            variant="primary"
+                            loading={planning.value}
+                            disabled={allReplays.value.length === 0}
+                            onClick={() => void smartSelect()}
+                          >
+                            <Wand2 size={15} />
+                            {t("sharing.select.smart")}
+                          </HkButton>
+                          {allReplays.value.length === 0 ? (
+                            <HkButton
+                              variant="secondary"
+                              loading={listLoading.value}
+                              onClick={() => void refreshList()}
+                            >
+                              <RefreshCw size={14} />
+                              {t("sharing.select.rescan")}
+                            </HkButton>
+                          ) : null}
+                        </div>
+                      </HkEmptyState>
+                      {planError.value ? (
+                        <HkAlert variant="error" size="sm" message={planError.value} />
+                      ) : null}
+                    </div>
+                  ) : (
+                  <>
+                  {/* Results: the smart match docks top-left, the filter
+                      narrows the MATCHED rows (a private filter instance —
+                      nothing persists). */}
                   <div class="sharing-sec__select-head">
-                    {allReplays.value.length + replays.external.length > 0 ? (
-                      <ReplayListFilter
-                        modeOptions={modeOptions.value}
-                        selectedModes={selectedModes.value}
-                        sortDir={sortDir.value}
-                        onUpdate:selectedModes={(s: Set<string>) => (selectedModes.value = s)}
-                        onUpdate:sortDir={(d: ReplaySortDir) => (sortDir.value = d)}
-                        dateFrom={dateFrom.value}
-                        dateTo={dateTo.value}
-                        onUpdate:dateFrom={(v: string | null) => (dateFrom.value = v)}
-                        onUpdate:dateTo={(v: string | null) => (dateTo.value = v)}
-                        selectedClient={selectedClient.value}
-                        clientOptions={clientOptions.value}
-                        onUpdate:selectedClient={(v: string) => (selectedClient.value = v)}
-                        selectedPlayer={selectedPlayer.value}
-                        playerOptions={playerOptions.value}
-                        onUpdate:selectedPlayer={(v: string) => (selectedPlayer.value = v)}
-                      />
-                    ) : null}
+                    <HkButton
+                      size="sm"
+                      variant="primary"
+                      loading={planning.value}
+                      onClick={() => void smartSelect()}
+                    >
+                      <Wand2 size={14} />
+                      {t("sharing.select.smart")}
+                    </HkButton>
                     <HkButton
                       size="sm"
                       variant="secondary"
@@ -909,16 +970,23 @@ export default defineComponent({
                       <RefreshCw size={14} />
                       {t("sharing.select.rescan")}
                     </HkButton>
-                    <HkButton
-                      size="sm"
-                      variant="primary"
-                      loading={planning.value}
-                      disabled={visibleReplays.value.length === 0}
-                      onClick={() => void smartSelect()}
-                    >
-                      <Wand2 size={14} />
-                      {t("sharing.select.smart")}
-                    </HkButton>
+                    <ReplayListFilter
+                      modeOptions={modeOptions.value}
+                      selectedModes={selectedModes.value}
+                      sortDir={sortDir.value}
+                      onUpdate:selectedModes={(s: Set<string>) => (selectedModes.value = s)}
+                      onUpdate:sortDir={(d: ReplaySortDir) => (sortDir.value = d)}
+                      dateFrom={dateFrom.value}
+                      dateTo={dateTo.value}
+                      onUpdate:dateFrom={(v: string | null) => (dateFrom.value = v)}
+                      onUpdate:dateTo={(v: string | null) => (dateTo.value = v)}
+                      selectedClient={selectedClient.value}
+                      clientOptions={clientOptions.value}
+                      onUpdate:selectedClient={(v: string) => (selectedClient.value = v)}
+                      selectedPlayer={selectedPlayer.value}
+                      playerOptions={playerOptions.value}
+                      onUpdate:selectedPlayer={(v: string) => (selectedPlayer.value = v)}
+                    />
                   </div>
                   {planning.value ? (
                     <p class="sharing-sec__plan-note">
@@ -929,15 +997,18 @@ export default defineComponent({
                   {planError.value ? (
                     <HkAlert variant="error" size="sm" message={planError.value} />
                   ) : null}
-                  {visibleReplays.value.length === 0 ? (
-                    <p class="sharing-sec__empty">
-                      {allReplays.value.length === 0
-                        ? t("sharing.select.empty")
-                        : t("sharing.select.filterEmpty")}
-                    </p>
+                  {matchedItems.value.length === 0 ? (
+                    <HkEmptyState
+                      title={t("sharing.select.noMatchTitle")}
+                      description={t("sharing.select.noMatchDesc")}
+                    />
+                  ) : visibleMatched.value.length === 0 ? (
+                    <HkEmptyState
+                      title={t("sharing.select.filterEmpty")}
+                    />
                   ) : (
                     <ul class="sharing-sec__list">
-                      {visibleReplays.value.map(renderSelectCard)}
+                      {visibleMatched.value.map(renderSelectCard)}
                     </ul>
                   )}
                   {/* Summary bar — selection count + estimated bytes (the
@@ -948,6 +1019,8 @@ export default defineComponent({
                       <span>{t("sharing.select.estSize", { size: formatBytes(estBytes.value) })}</span>
                     ) : null}
                   </div>
+                  </>
+                  )}
                 </div>
               ),
               upload: () => {
@@ -1055,6 +1128,7 @@ export default defineComponent({
       {/* ── contributors list (res-pack insights rail / bundled fallback) ── */}
       <HkSettingsGroup title={t("sharing.contributors.title")}>
           <HkSettingsHint>{t("sharing.contributors.hint")}</HkSettingsHint>
+          <p class="sharing-sec__contrib-thanks">{t("sharing.contributors.thanks")}</p>
           {!hasContributors.value ? (
             <p class="sharing-sec__empty">{t("sharing.contributors.empty")}</p>
           ) : (
@@ -1087,10 +1161,7 @@ export default defineComponent({
               ))}
             </div>
           )}
-          <div class="sharing-sec__contrib-note">
-            <Users size={14} />
-            <span>{t("sharing.contributors.note")}</span>
-          </div>
+          <p class="sharing-sec__contrib-note">{t("sharing.contributors.note")}</p>
         </HkSettingsGroup>
       </>
     );
