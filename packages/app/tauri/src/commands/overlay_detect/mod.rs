@@ -30,6 +30,19 @@
 //! [`find_header_band`]); such a band reports `team_split` exactly 1.0 and
 //! emits an ally-rows-only grid.
 //!
+//! The WG client's NEXT-GENERATION rework (announced 2026-10;
+//! `testdata/tab_table_next_648x365.png`, a WG promo capture) keeps this
+//! whole header-anchored pipeline unchanged — the bars still hug the seam
+//! — but mirrors the row content: the in-bar stats columns are gone (only
+//! a narrow seam-hugging tier+ship column remains) and the player names
+//! move OUTSIDE the bars. The name-strip windows therefore differ per
+//! layout, and since both render on the SAME WG client across versions
+//! (no client-kind signal to key on), the layout is MEASURED per detection
+//! by [`roster::resolve_wg_strip_profile`] and cached with the geometry
+//! (see `overlay::watch::GeometryCacheEntry`); the strip windows of the
+//! rework profile reach outside the roster rect via fractions beyond
+//! 0..1 ([`DetectProfile::WG_NEXT`]).
+//!
 //! Pipeline: find the row carrying the bars — both bars hugging the seam,
 //! or, single-team PVE only, a lone green bar after the width + centering +
 //! row-text gates (a red bar FARTHER than the adjacency gap rejects the
@@ -102,6 +115,19 @@ const ROW_SCAN_MAX_SPAN_FRAC: f32 = 0.45;
 /// window height is invisible — transparent, click-through — but a short
 /// window would clip the chips of a bigger table).
 const MIN_WINDOW_ROWS: f32 = 12.0;
+/// The strip-layout discriminator's counting window: the SEAM-ADJACENT
+/// slice of each header bar's span, in percent — the last slice of the
+/// ally (green) bar and the first of the enemy (red) one. The classic WG
+/// table fills that slice with stats columns; the next-generation rework
+/// leaves it empty (its tier+ship column hugs the seam from further out).
+/// See [`roster::resolve_wg_strip_profile`].
+const STRIP_LAYOUT_SEAM_SIDE_PCT: usize = 70;
+/// Seam-side white-text share below which a side votes "next-generation
+/// layout". Measured: classic 0.26/0.30 per side, rework 0.01/0.02.
+const STRIP_LAYOUT_SEAM_SIDE_SHARE: f32 = 0.10;
+/// White-text pixels (working px) a side needs before its vote counts — an
+/// occluded or all-sunk half abstains rather than voting on noise.
+const STRIP_LAYOUT_MIN_TEXT_PX: u32 = 12;
 
 mod anchor;
 mod band;
@@ -122,7 +148,9 @@ pub(crate) use band::{
     verify_header_band,
 };
 pub(crate) use profile::DetectProfile;
-pub(crate) use roster::{DetectedRoster, detect_roster, detect_roster_with_band};
+pub(crate) use roster::{
+    DetectedRoster, detect_roster, detect_roster_with_band, resolve_wg_strip_profile,
+};
 pub(crate) use scene::{detect_battle_scene, probe_battle_scene};
 pub(crate) use strip::{
     StripTable, StripThumb, crop_row_name_strips, read_row_alive, row_strip_alive, sink_victims,

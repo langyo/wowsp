@@ -45,6 +45,31 @@ impl DetectProfile {
         enemy_strip_x1_frac: 0.96,
     };
 
+    /// The WG client's NEXT-GENERATION Tab table (the 2026-10 announced
+    /// rework; `testdata/tab_table_next_648x365.png`, a WG promo capture of
+    /// the in-battle screen). The teal/brick header bars keep their classic
+    /// two-bar shape — adjacent at the seam, each ~26% of the frame — and
+    /// the header-anchored grid still fits, but the row content mirrors:
+    /// the stats columns inside the bar span are GONE (the only in-bar
+    /// text is a narrow tier+ship column hugging the seam, ally half
+    /// ~0.55–0.62 / enemy ~0.28–0.44) and the player names sit fully
+    /// OUTSIDE the bars — measured at half fractions −0.54…−0.065 (ally,
+    /// left of the teal bar) and +1.08…+1.46 (enemy, right of the brick
+    /// bar); the windows below round those outward. The strip windows
+    /// therefore reach outside the roster rect's
+    /// halves: fractions beyond 0..1, which `row_name_strip_rect` computes
+    /// fine and `crop_rgba` frame-clamps. Reading the OUTER name column
+    /// (not the seam-hugging ship column) keeps the strip as wide as the
+    /// classic one and stable across the screen's OVERVIEW/DETAILS tabs,
+    /// which restyle the in-bar columns.
+    pub(crate) const WG_NEXT: DetectProfile = DetectProfile {
+        pitch_per_header: 0.92,
+        ally_strip_x0_frac: -0.55,
+        ally_strip_x1_frac: -0.06,
+        enemy_strip_x0_frac: 1.08,
+        enemy_strip_x1_frac: 1.46,
+    };
+
     /// The Lesta (Мир кораблей) layout. Measured on a real 3072x1920
     /// capture: header bars ~26% of the frame width each (WG ~18–20%) with
     /// a ~9.5% center seam (WG ~3%) — both still inside every gate's

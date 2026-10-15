@@ -6,11 +6,19 @@ use wowsp_tauri_shared::CommandResult;
 
 /// Capture the game window, resolve the table geometry (via the FSM's
 /// per-game-window-mode cache when it verifies; a full detection otherwise)
-/// and return the anchor for the chip layer. Falls back to a conservative
-/// centered table when detection fails but a battle roster is known — stats
-/// must still be readable. Fallback geometry never enters the cache.
+/// and return the anchor for the chip layer TOGETHER with the strip-layout
+/// profile in effect for that anchor (the client-kind base, or the
+/// classic-vs-rework WG layout a fresh detection measured — callers pin it
+/// alongside the anchor so the sink path never reads strips under a
+/// profile a later cache refill could flip to). Falls back to a
+/// conservative centered table when detection fails but a battle roster is
+/// known — stats must still be readable. Fallback geometry never enters
+/// the cache.
 #[cfg(target_os = "windows")]
-pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<OverlayAnchor> {
+pub(super) fn compute_anchor(
+    game: &GameWindow,
+    fsm: &mut WatchFsm,
+) -> Option<(OverlayAnchor, overlay_detect::DetectProfile)> {
     let team_sizes = super::arena_info::last_known_team_sizes();
     let game_rect = rect_from_win32(game.rect);
     // Per-client tuning (WG vs Lesta scoreboard geometry), resolved once
@@ -38,6 +46,11 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     };
     let mut verify_missed = false;
     let mut band_verified = false;
+    // The strip-layout profile IN EFFECT for this frame: the client-kind
+    // base until a detection (or the cache it filled) resolves the WG
+    // classic-vs-rework layout — the strip readers below and every later
+    // cache hit must agree on it.
+    let mut profile_eff = profile;
     let cached = 'cache: {
         let Some(cache) = fsm.geometry_cache.as_mut() else {
             break 'cache None;
@@ -53,6 +66,7 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
         if overlay_detect::verify_header_band(&rgba, w, h, &cache.band) {
             fsm.geometry_verify_fails = 0;
             band_verified = true;
+            profile_eff = cache.profile;
             if cache.team_sizes == team_sizes {
                 break 'cache Some(cache.roster.clone());
             }
@@ -70,7 +84,7 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
                 h,
                 team_sizes,
                 Some(measured),
-                &profile,
+                &cache.profile,
             );
             cache.roster = det.clone();
             cache.team_sizes = team_sizes;
@@ -141,11 +155,18 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
                 // Confirmed detection → (re)fill the cache. Fallback
                 // geometry never enters it (table_detected == false never
                 // pins, so it would never be reused by a pin path anyway).
+                // The strip layout resolves HERE, once per detection: the
+                // classic and rework WG tables share this header geometry,
+                // and every strip read (this frame's luma pass, the sink
+                // probes, all later cache hits) keys on the cached profile.
+                profile_eff =
+                    overlay_detect::resolve_wg_strip_profile(&rgba, w, h, band, &det, &profile);
                 fsm.geometry_cache = Some(GeometryCacheEntry {
                     key,
                     band,
                     roster: det.clone(),
                     team_sizes,
+                    profile: profile_eff,
                 });
                 fsm.geometry_verify_fails = 0;
                 (det.rect, det.row_centers, det.team_split, true)
@@ -205,7 +226,7 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
                 team_split: split,
                 ally_rows: team_sizes.0,
             },
-            &profile,
+            &profile_eff,
         ))
     };
     let (overlay, mut anchor) = overlay_detect::build_anchor(
@@ -233,7 +254,7 @@ pub(super) fn compute_anchor(game: &GameWindow, fsm: &mut WatchFsm) -> Option<Ov
     // (the `.miss.` artifacts) dump once per battle, so a scenario where the
     // table cannot be found leaves its frame behind for offline analysis.
     super::tab_dump::maybe_dump_tab_frame(&rgba, w, h, &anchor);
-    Some(anchor)
+    Some((anchor, profile_eff))
 }
 
 /// Pack `GWL_STYLE` + `GWL_EXSTYLE` into one geometry-cache key component:

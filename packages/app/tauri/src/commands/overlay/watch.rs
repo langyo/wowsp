@@ -88,6 +88,13 @@ pub(super) struct PinnedAnchor {
     /// grids differ, and only the FIRST row center moves little enough for
     /// the move check to notice.
     pub(super) kind: wowsp_tauri_shared::GameInstallKind,
+    /// Strip-layout profile the pin's `row_alive` was read under (see
+    /// `overlay_detect::resolve_wg_strip_profile`). The sink fast-path
+    /// keys its strip crops on THIS, not on the geometry cache's — the
+    /// cache can die and refill with a flipped resolution mid-battle
+    /// (an aberrant frame), and the pin's own luma vector + strip
+    /// baseline must stay mutually consistent whatever the cache does.
+    pub(super) profile: overlay_detect::DetectProfile,
     pub(super) anchor: OverlayAnchor,
 }
 
@@ -111,17 +118,22 @@ pub(super) struct GeometryKey {
 
 /// One full detection's worth of pixel geometry, cached per game-window
 /// mode: the located header band, the roster grid detected WITH it (same
-/// frame, phase refinement included) and the team sizes the grid was built
-/// for. Every later capture first verifies the band cheaply
-/// ([`overlay_detect::verify_header_band`]); a pass reuses the cached grid
-/// verbatim, a team-size change rebuilds from the band, and repeated
-/// misses retire the entry.
+/// frame, phase refinement included), the team sizes the grid was built
+/// for, and the strip-layout profile the detection RESOLVED for that table
+/// (classic WG vs the next-generation rework share the header geometry, so
+/// the layout is measured once per detection and every strip read while
+/// the cache lives reuses it — see
+/// `overlay_detect::resolve_wg_strip_profile`). Every later capture first
+/// verifies the band cheaply ([`overlay_detect::verify_header_band`]); a
+/// pass reuses the cached grid verbatim, a team-size change rebuilds from
+/// the band, and repeated misses retire the entry.
 #[cfg(target_os = "windows")]
 pub(super) struct GeometryCacheEntry {
     pub(super) key: GeometryKey,
     pub(super) band: overlay_detect::HeaderBand,
     pub(super) roster: overlay_detect::DetectedRoster,
     pub(super) team_sizes: (usize, usize),
+    pub(super) profile: overlay_detect::DetectProfile,
 }
 
 /// The sink fast-path's fingerprint baseline: the name-strip thumbs of the
@@ -605,11 +617,12 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             }
             fsm.last_capture_attempt = Some(Instant::now());
             let computed = compute_anchor(&g, fsm);
-            if let Some(anchor) = computed.as_ref().filter(|a| a.table_detected) {
+            if let Some((anchor, profile)) = computed.as_ref().filter(|(a, _)| a.table_detected) {
                 fsm.pinned_anchor = Some(PinnedAnchor {
                     battle,
                     game_rect: rect_from_win32(g.rect),
                     kind: g.kind,
+                    profile: *profile,
                     anchor: anchor.clone(),
                 });
                 // A fresh pin restarts the sink lifecycle. The strip
@@ -619,7 +632,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 fsm.strip_baseline = None;
                 fsm.last_sink_check = Some(Instant::now());
             }
-            if let Some(anchor) = computed {
+            if let Some((anchor, _)) = computed {
                 // Place when the overlay is not up yet, or when a
                 // CONFIRMED anchor must replace the on-screen hint;
                 // re-placing an identical fallback hint every rate-limit
