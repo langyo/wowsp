@@ -513,6 +513,36 @@ fn preview_files_enumerate_real_payloads() {
 }
 
 #[test]
+fn package_layout_peels_res_mods_and_flags_loose_dlls() {
+    // Install/preview parity: a game-root-laid-out package classifies from
+    // its `res_mods/` folder while its loose root DLLs are game-root drops
+    // (the preview lists them as `@game/…`); non-DLL root files are noise.
+    let tmp = std::env::temp_dir().join("wowsp_pkg_layout_test");
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("res_mods/gui/flash")).unwrap();
+    fs::write(tmp.join("res_mods/gui/x.xml"), "<x/>").unwrap();
+    fs::write(tmp.join("gettext_x64r.dll"), "dll").unwrap();
+    fs::write(tmp.join("readme.txt"), "note").unwrap();
+
+    let (plan_root, loose) = crate::commands::mod_catalog::package_install_layout(&tmp).unwrap();
+    assert_eq!(plan_root, tmp.join("res_mods"));
+    assert_eq!(loose, vec!["gettext_x64r.dll".to_string()], "{loose:?}");
+
+    // Direct-layout packages (no res_mods folder) classify at their root
+    // and carry no game-root drops.
+    let direct = std::env::temp_dir().join("wowsp_pkg_layout_direct");
+    let _ = fs::remove_dir_all(&direct);
+    fs::create_dir_all(direct.join("gui")).unwrap();
+    fs::write(direct.join("gui/x.xml"), "<x/>").unwrap();
+    fs::write(direct.join("helper.dll"), "dll").unwrap();
+    let (plan_root, loose) = crate::commands::mod_catalog::package_install_layout(&direct).unwrap();
+    assert_eq!(plan_root, direct);
+    assert!(loose.is_empty(), "{loose:?}");
+    fs::remove_dir_all(&tmp).ok();
+    fs::remove_dir_all(&direct).ok();
+}
+
+#[test]
 fn install_maps_single_file_patches() {
     // Real ime_config patch: the plan's entry is a FILE, not a subtree.
     let pkg = std::env::temp_dir().join("wowsp_inst_ime");

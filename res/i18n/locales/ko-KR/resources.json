@@ -125,6 +125,8 @@
   "fileTreeRoot": "{version}/res_mods",
   "fileTreeUnknownVersion": "현재 버전",
   "fileTreeGameRoot": "게임 루트",
+  "fileTreeScopeResMods": "res_mods만",
+  "fileTreeScopeGame": "게임 루트",
   "fileTreeCount": "{count}개",
   "gameRange": "{game} 지원",
   "installedDone": "\"{name}\"({version}) 설치 완료.",

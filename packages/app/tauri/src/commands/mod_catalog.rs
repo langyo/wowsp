@@ -1021,18 +1021,28 @@ pub async fn mod_catalog_preview_files(
                 let root = work.0.join(format!("pkg-{i:02}"));
                 let mut visited = Vec::new();
                 let outcome = extract_zip(&archive, &root, &mut visited).and_then(|()| {
-                    mod_hub::classify_package(&root).map_err(|e| anyhow!("classify failed: {e}"))
+                    // Same layout resolution an install applies: a package
+                    // laid out against the game root classifies from its
+                    // `res_mods/` folder, and its loose root DLLs are
+                    // game-root drops (`@game/…` — the window's second tree).
+                    let (plan_root, loose_names) = package_install_layout(&root)?;
+                    let plan = mod_hub::classify_package(&plan_root)
+                        .map_err(|e| anyhow!("classify failed: {e}"))?;
+                    let mut files = mod_hub::collect_plan_files(&plan_root, &plan);
+                    for name in loose_names {
+                        files.push(format!("@game/{name}"));
+                    }
+                    files.sort();
+                    files.dedup();
+                    Ok(PackageFilePreview {
+                        name: pkg.name.clone(),
+                        size: pkg.size,
+                        files,
+                        warnings: plan.warnings,
+                    })
                 });
                 match outcome {
-                    Ok(plan) => {
-                        let files = mod_hub::collect_plan_files(&root, &plan);
-                        PackageFilePreview {
-                            name: pkg.name.clone(),
-                            size: pkg.size,
-                            files,
-                            warnings: plan.warnings,
-                        }
-                    },
+                    Ok(preview) => preview,
                     Err(e) => PackageFilePreview {
                         name: pkg.name.clone(),
                         size: pkg.size,
@@ -1179,20 +1189,11 @@ fn unpack_and_install(
         ));
     }
 
-    let res_mods_src = extract_root.join("res_mods");
-    let (plan_root, loose) = if res_mods_src.is_dir() {
-        // Aslain packages are laid out against the game root: the payload
-        // lives under `res_mods/…`, and a few text mods ship a loose DLL
-        // that belongs in the game root itself. Both go through the same
-        // journaled install (snapshots + rollback).
-        let loose: Vec<PathBuf> = loose_root_files(&extract_root)?
-            .into_iter()
-            .map(|name| extract_root.join(name))
-            .collect();
-        (res_mods_src, loose)
-    } else {
-        (extract_root.clone(), Vec::new())
-    };
+    let (plan_root, loose_names) = package_install_layout(&extract_root)?;
+    let loose: Vec<PathBuf> = loose_names
+        .iter()
+        .map(|name| extract_root.join(name))
+        .collect();
     let mut plan = mod_hub::classify_package(&plan_root)?;
     // The classifier named the plan after the directory it inspected; the
     // record, the report and the conflict messages must speak the catalog
@@ -1222,6 +1223,23 @@ fn unpack_and_install(
 /// catalog package ships one, and a root `.exe` could replace the game's
 /// own binaries. The packages themselves are only installed after the
 /// index-pinned sha256 check (see [`checked_package_sha256`]).
+/// Where a package's installable payload lives, and which root-level files
+/// are game-root drops: Aslain packages are laid out against the game root —
+/// the payload lives under `res_mods/…`, and a few text mods ship a loose
+/// DLL that belongs in the game root itself. Both the install path and the
+/// file-list preview resolve through this helper so they always agree on
+/// the layout (the preview lists the drops as `@game/…`).
+pub(crate) fn package_install_layout(
+    extract_root: &Path,
+) -> anyhow::Result<(PathBuf, Vec<String>)> {
+    let res_mods_src = extract_root.join("res_mods");
+    if res_mods_src.is_dir() {
+        Ok((res_mods_src, loose_root_files(extract_root)?))
+    } else {
+        Ok((extract_root.to_path_buf(), Vec::new()))
+    }
+}
+
 fn loose_root_files(extract_root: &Path) -> anyhow::Result<Vec<String>> {
     let mut loose = Vec::new();
     for ent in fs::read_dir(extract_root)

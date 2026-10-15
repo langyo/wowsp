@@ -1599,14 +1599,61 @@
   min-height: 0;
   max-height: min(62vh, 34rem);
 
-  /* Left: the narrow archive list. hikari's scroll container owns the
-     scrollbar (auto-hiding overlay track); the rows scroll in the inner
-     wrapper. */
+  /* Left: the narrow archive list with the dual-root scope toggle pinned
+     beneath it. hikari's scroll container owns the scrollbar (auto-hiding
+     overlay track); the rows scroll in the inner wrapper while the toggle
+     stays put. */
   &__side {
     flex: none;
     width: 15rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     background: rgb(var(--color-border) / 8%);
     border-radius: var(--radius-sm);
+  }
+
+  &__side-scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* res_mods ↔ game-root switcher — only rendered when the payload spans
+     both trees. */
+  &__scope {
+    flex: none;
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 0.625rem 0.625rem;
+    border-top: 1px solid rgb(var(--color-border) / 25%);
+  }
+
+  &__scope-btn {
+    flex: 1;
+    padding: 0.25rem 0.375rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-border) / 10%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease,
+      background-color 0.15s ease;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    &--active {
+      color: rgb(var(--color-primary));
+      border-color: rgb(var(--color-primary) / 45%);
+      background: rgb(var(--color-primary) / 10%);
+    }
   }
 
   &__side-inner {
