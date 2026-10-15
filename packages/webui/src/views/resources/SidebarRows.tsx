@@ -6,6 +6,7 @@ import { ImageIcon, Puzzle } from "@lucide/vue";
 import type { CatalogEntry, InstalledMod, ForeignModUnit } from "@/api";
 import { KIND_META, catIcon } from "@/features/modhub/taxonomy";
 import { t } from "@/i18n";
+import { mediaImageUrl } from "@/utils/media";
 import { kindLabel, localized } from "./display";
 import type { ResourcesCtx } from "./context";
 import type { TextureComponent } from "./types";
@@ -13,7 +14,10 @@ import type { TextureComponent } from "./types";
 /** One online catalog row: corner light speaks the install state (yellow
  *  = update, green = current, blue = only a third-party copy), the tail
  *  badge mirrors it, and the busy spinner owns the tail while an install
- *  runs. */
+ *  runs. Entries carrying a preview screenshot show it as the tile (for
+ *  skins/voices the screenshot IS the product; the category glyph stays
+ *  the fallback); the image rides the media proxy like the detail pane's
+ *  full-size preview. */
 export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey: string) {
   const text = localized(entry);
   const record = ctx.recordOf(entry.id);
@@ -38,8 +42,26 @@ export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey:
       class={["mod-row", selKey === entry.id && "mod-row--active"]}
       onClick={() => ctx.selectCatalog(entry)}
     >
-      <span class="mod-row__tile mod-row__tile--cat">
+      <span
+        class={[
+          "mod-row__tile",
+          "mod-row__tile--cat",
+          entry.preview && "mod-row__tile--preview",
+        ]}
+      >
+        {/* The glyph stays in the tile UNDER the thumbnail: it reads as a
+            loading placeholder and survives as the fallback when the media
+            proxy cannot fetch the screenshot (offline / dead link). */}
         <RowIcon size={20} />
+        {entry.preview && (
+          <img
+            class="mod-row__thumb"
+            src={mediaImageUrl(entry.preview)}
+            alt=""
+            loading="lazy"
+            draggable={false}
+          />
+        )}
         {light && (
           <span class={["mod-row__dot", `mod-row__dot--${light}`]} />
         )}
