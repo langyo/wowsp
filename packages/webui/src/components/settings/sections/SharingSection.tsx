@@ -15,6 +15,7 @@ import { useRouter } from "vue-router";
 import {
   Check,
   ChevronDown,
+  FolderOpen,
   ChevronRight,
   RefreshCw,
   Trash2,
@@ -315,6 +316,10 @@ export default defineComponent({
      *  verdict only, scarcity-ranked) the list shows pre-checked. */
     const matchRan = ref(false);
     const matchedItems = ref<PlanItem[]>([]);
+    /** MANUAL mode: the rows came from the visitor's own file pick, not
+     *  the wanted-ruleset match — they render straight off the plan
+     *  items (no store metas for folders outside the scanned ones). */
+    const manualMode = ref(false);
     const planning = ref(false);
     const planError = ref<string | null>(null);
     /** Checked paths — the wizard's selection. */
@@ -399,11 +404,56 @@ export default defineComponent({
           picked.push(item);
         }
         matchedItems.value = picked;
+        manualMode.value = false;
         matchRan.value = true;
         checked.value = new Set(picked.map((i) => i.path));
         if (picked.length === 0) {
           toast.info(t("sharing.select.noMatchTitle"));
         }
+      } catch (e) {
+        planError.value = (e as Error).message || String(e);
+      } finally {
+        planning.value = false;
+      }
+    }
+
+    /** MANUAL PICK — the one bypass around the wanted match: the native
+     *  file dialog returns explicit paths; they are planned (a second
+     *  pass re-plans rows whose ship-class/tier hint only becomes known
+     *  AFTER the header read, so ship-scoped rules still match), then
+     *  become the whole list, checked. */
+    async function pickManual() {
+      if (planning.value) return;
+      let paths: string[] = [];
+      try {
+        paths = await api.pickReplayFiles();
+      } catch (e) {
+        toast.error((e as Error).message || String(e));
+        return;
+      }
+      if (paths.length === 0) return;
+      planning.value = true;
+      planError.value = null;
+      try {
+        let items = await runPlan(paths.map((path) => ({ path })));
+        const hinted = items.filter((i) => {
+          const h = shipHintOf(i.facts.ownShipId);
+          return h.shipClass != null || h.tier != null;
+        });
+        if (hinted.length > 0) {
+          const second = await runPlan(
+            hinted.map((i) => ({
+              path: i.path,
+              ...shipHintOf(i.facts.ownShipId),
+            })),
+          );
+          const byPath = new Map(second.map((i) => [i.path, i]));
+          items = items.map((i) => byPath.get(i.path) ?? i);
+        }
+        matchedItems.value = items;
+        manualMode.value = true;
+        matchRan.value = true;
+        checked.value = new Set(items.map((i) => i.path));
       } catch (e) {
         planError.value = (e as Error).message || String(e);
       } finally {
@@ -418,11 +468,30 @@ export default defineComponent({
       return m;
     });
 
+    /** MANUAL rows: the plan items themselves, dressed as list metas
+     *  (store metas overlay when the picked path IS also scanned). */
+    const manualRows = computed<ReplayMetaLite[]>(() =>
+      matchedItems.value.map((i) => {
+        const meta = metaByPath.value.get(i.path);
+        return {
+          path: i.path,
+          playerName: meta?.playerName ?? i.facts.realm,
+          dateTime: meta?.dateTime ?? i.facts.battleTime,
+          mapName: meta?.mapName ?? i.facts.map,
+          ownShipId: i.facts.ownShipId,
+          playerCount: i.facts.playerCount,
+          installKind: meta?.installKind ?? null,
+          installRealm: meta?.installRealm ?? i.facts.realm,
+        };
+      }),
+    );
+
     /** The visible rows: the matched set narrowed by the visitor's
      *  filters (the same pipeline the replay page uses), kept in match
      *  rank order. */
     const visibleMatched = computed(() => {
       if (!matchRan.value) return [];
+      if (manualMode.value) return manualRows.value;
       const rank = new Map(matchedItems.value.map((i, idx) => [i.path, idx]));
       return visibleReplays.value
         .filter((r) => rank.has(r.path))
@@ -489,7 +558,10 @@ export default defineComponent({
     async function startUpload() {
       const candidates = matchedItems.value
         .filter((i) => checked.value.has(i.path))
-        .map((i) => candidateOf(metaByPath.value.get(i.path)!));
+        .map((i) => ({
+          path: i.path,
+          ...shipHintOf(i.facts.ownShipId),
+        }));
       if (candidates.length === 0) return;
       try {
         await api.contributionStart(candidates);
@@ -961,11 +1033,10 @@ export default defineComponent({
                     <HkButton
                       size="sm"
                       variant="primary"
-                      loading={planning.value}
-                      onClick={() => void smartSelect()}
+                      onClick={() => void pickManual()}
                     >
-                      <Wand2 size={14} />
-                      {t("sharing.select.smart")}
+                      <FolderOpen size={14} />
+                      {t("sharing.select.manual")}
                     </HkButton>
                     <HkButton
                       size="sm"

@@ -67,7 +67,8 @@
     "heroTitle": "Smart match",
     "heroDesc": "Scan every local replay against the collection's current wants — only qualifying battles are listed, pre-checked.",
     "noMatchTitle": "No qualifying replays",
-    "noMatchDesc": "Nothing on this machine falls inside the current collection scope — check back after the ruleset changes or new battles."
+    "noMatchDesc": "Nothing on this machine falls inside the current collection scope — check back after the ruleset changes or new battles.",
+    "manual": "Pick files…"
   },
   "upload": {
     "stage": {
