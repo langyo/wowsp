@@ -109,14 +109,14 @@ const BATTLE_STEPS: number[] = [30, 60, 100];
 
 /** [storage value, i18n label key, predicate over the row's mode breakdown].
  *  Division-mode picks read the per-ship battle-type split: every option is
- *  the same shape — the ship has at least one battle in that mode (仅X =
- *  "filter by mode X only"; coop is ignored, the table is randoms-only).
- *  Rows whose `modes` is null/undefined (realms that don't serve
- *  battle-type splits, caches written before the field existed) match NO
- *  concrete option, so any mode pick filters them out. The breakdown is the
- *  CAREER split even under ranged views (1d/…/custom): history baselines
- *  carry no per-mode data, so mode picks and the div2+div3 all-sort always
- *  read career totals. */
+ *  the same shape — the option names a battle mode, and a pick keeps ships
+ *  with at least one battle in it (coop is ignored, the table is
+ *  randoms-only). Rows whose `modes` is null/undefined (realms that don't
+ *  serve battle-type splits, caches written before the field existed)
+ *  match NO concrete option, so any mode pick filters them out. The
+ *  breakdown is the CAREER split even under ranged views (1d/…/custom):
+ *  history baselines carry no per-mode data, so mode picks and the
+ *  div2+div3 all-sort always read career totals. */
 const MODE_FILTERS: [string, string, (row: PlayerShipStats) => boolean][] = [
   ["solo", "ships.filter.modeSolo", (row) => (row.modes?.solo?.battles ?? 0) > 0],
   ["div2", "ships.filter.modeDiv2", (row) => (row.modes?.div2?.battles ?? 0) > 0],
