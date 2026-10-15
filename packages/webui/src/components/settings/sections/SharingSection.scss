@@ -153,33 +153,47 @@
   }
 
   &__card {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--hi-space-8, 8px);
-    padding: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--hi-space-12, 12px);
+    padding: var(--hi-space-10, 10px) var(--hi-space-14, 14px);
+    min-height: 3.5rem;
     border: 1px solid var(--hi-color-border);
-    border-radius: var(--hi-radius-sm, 4px);
-    transition: border-color 0.15s ease;
+    border-radius: var(--hi-radius-md, 6px);
+    background: var(--hi-color-surface, transparent);
+    transition: border-color 0.15s ease, background 0.15s ease;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--hi-color-primary) 55%, var(--hi-color-border));
+    }
 
     &--on {
       border-color: var(--hi-color-primary);
+      background: var(--hi-color-primary-bg, color-mix(in srgb, var(--hi-color-primary) 8%, transparent));
     }
   }
 
-  &__card-body {
-    flex: 1;
-    min-width: 0;
+  &__card-main {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    gap: var(--hi-space-12, 12px);
+    min-width: 0;
     cursor: pointer;
   }
 
-  &__card-top {
+  &__card-text {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__card-head {
+    display: flex;
+    align-items: baseline;
     gap: var(--hi-space-8, 8px);
+    min-width: 0;
   }
 
   &__card-title {
@@ -190,71 +204,30 @@
     white-space: nowrap;
   }
 
-  &__card-pills {
-    display: flex;
-    gap: 4px;
-    flex: none;
-  }
-
-  &__pill {
-    padding: 1px 6px;
-    border-radius: 999px;
-    font-size: var(--hi-text-xs, 0.75rem);
-    line-height: 1.4;
-    background: var(--hi-color-fill-secondary, rgba(128, 128, 128, 0.16));
+  &__card-ship {
     color: var(--hi-color-text-secondary);
-
-    &--accept {
-      background: var(--hi-color-success-bg, rgba(46, 164, 79, 0.14));
-      color: var(--hi-color-success);
-    }
-
-    &--own_staged,
-    &--duplicate {
-      background: var(--hi-color-fill-secondary, rgba(128, 128, 128, 0.16));
-      color: var(--hi-color-text-secondary);
-    }
-
-    &--unwanted {
-      background: var(--hi-color-warning-bg, rgba(214, 158, 46, 0.14));
-      color: var(--hi-color-warning);
-    }
+    font-size: var(--hi-text-xs, 0.75rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  &__card-row {
+  &__card-meta {
     display: flex;
     align-items: baseline;
-    gap: var(--hi-space-8, 8px);
-    font-size: var(--hi-text-xs, 0.75rem);
-  }
-
-  &__card-label {
-    flex: none;
-    color: var(--hi-color-text-tertiary, var(--hi-color-text-secondary));
-  }
-
-  &__card-val {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__card-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--hi-space-8, 8px);
+    gap: 0;
     color: var(--hi-color-text-secondary);
     font-size: var(--hi-text-xs, 0.75rem);
-  }
-
-  &__card-ship {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  &__card-players {
+  &__card-tags {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--hi-space-4, 4px);
     flex: none;
   }
 

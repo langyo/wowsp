@@ -659,6 +659,14 @@ export default defineComponent({
       const shipName = shipNameOf(r.ownShipId, dataLanguage.value);
       const serverTag = serverTagOf(r.installKind, r.installRealm);
       const modeKey = replayModeKeyOf(r);
+      // Verdict → hikari tag variant: 收 = success, mine/duplicate =
+      // neutral, 不收 = warning (the row copy comes from sharing.*).
+      const verdictVariant =
+        item?.verdict === "accept"
+          ? "success"
+          : item?.verdict === "unwanted"
+            ? "warning"
+            : "default";
       return (
         <li
           key={r.path}
@@ -670,7 +678,7 @@ export default defineComponent({
             onUpdate:modelValue={() => toggleChecked(r.path)}
           />
           <div
-            class="sharing-sec__card-body"
+            class="sharing-sec__card-main"
             role="button"
             tabindex={0}
             onClick={() => toggleChecked(r.path)}
@@ -681,43 +689,39 @@ export default defineComponent({
               }
             }}
           >
-            <div class="sharing-sec__card-top">
-              <span class="sharing-sec__card-title">
-                {r.playerName ?? t("replay.list.unknownPlayer")}
-              </span>
-              <span class="sharing-sec__card-pills">
-                {serverTag ? <span class="sharing-sec__pill">{serverTag}</span> : null}
-                {modeKey ? (
-                  <span
-                    class="sharing-sec__pill"
-                    style={{ background: modeColorOfKey(modeKey).color }}
-                  >
-                    {modeLabelOfKey(modeKey)}
-                  </span>
+            <div class="sharing-sec__card-text">
+              <div class="sharing-sec__card-head">
+                <span class="sharing-sec__card-title">
+                  {r.playerName ?? t("replay.list.unknownPlayer")}
+                </span>
+                {shipName ? (
+                  <span class="sharing-sec__card-ship">{shipName}</span>
                 ) : null}
-                {item ? (
-                  <span class={`sharing-sec__pill sharing-sec__pill--${item.verdict}`}>
-                    {t(`sharing.select.verdict.${item.verdict}`)}
-                  </span>
-                ) : null}
-              </span>
-            </div>
-            <div class="sharing-sec__card-row">
-              <span class="sharing-sec__card-label">{t("replay.matchTime")}</span>
-              <span class="sharing-sec__card-val">{formatStamp(r.dateTime)}</span>
-            </div>
-            <div class="sharing-sec__card-row">
-              <span class="sharing-sec__card-label">{t("replay.mapLabel")}</span>
-              <span class="sharing-sec__card-val">{displayMapName(r.mapName, dataLanguage.value)}</span>
-            </div>
-            <div class="sharing-sec__card-foot">
-              {shipName ? (
-                <span class="sharing-sec__card-ship">{shipName}</span>
-              ) : null}
-              <span class="sharing-sec__card-players">
+              </div>
+              <div class="sharing-sec__card-meta">
+                {displayMapName(r.mapName, dataLanguage.value)}
+                {" · "}
                 {t("replay.players", { n: r.playerCount })}
-              </span>
+                {" · "}
+                {formatStamp(r.dateTime)}
+              </div>
             </div>
+          </div>
+          <div class="sharing-sec__card-tags">
+            {serverTag ? <HkTag size="sm" variant="info">{serverTag}</HkTag> : null}
+            {modeKey ? (
+              <HkTag
+                size="sm"
+                style={{ background: modeColorOfKey(modeKey).color, borderColor: modeColorOfKey(modeKey).color }}
+              >
+                {modeLabelOfKey(modeKey)}
+              </HkTag>
+            ) : null}
+            {item ? (
+              <HkTag size="sm" variant={verdictVariant}>
+                {t(`sharing.select.verdict.${item.verdict}`)}
+              </HkTag>
+            ) : null}
           </div>
         </li>
       );
