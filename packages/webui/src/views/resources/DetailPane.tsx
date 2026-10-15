@@ -194,8 +194,10 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           <div class="mod-detail__en">{entry.nameEn}</div>
         </div>
         {renderDetailMenu(ctx, {
-          reveal: ctx.gameRoot.value
-            ? () => revealUnit(ctx, record ?? null, "")
+          // Open-path points at the ON-DISK folder of a WoWSP-managed
+          // install — grayed out until the entry actually has one.
+          reveal: record && ctx.gameRoot.value
+            ? () => revealUnit(ctx, record, "")
             : null,
           onlineUrl: url || null,
           files: () => ctx.fileWindow.openForEntry(entry),

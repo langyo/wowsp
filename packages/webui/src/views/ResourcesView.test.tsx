@@ -32,7 +32,7 @@ vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: 
 vi.mock("@/features/modhub/AssetPreview", () => ({ default: { name: "AssetPreview", render: () => null } }));
 vi.mock("@/components/search/AsyncSearchCombo", () => ({ default: { name: "AsyncSearchCombo", render: () => null } }));
 vi.mock("@celestia-island/hikari", () => {
-  const component = (name: string) => ({ name, props: ["modelValue", "open", "footerActions"], render: () => null });
+  const component = (name: string) => ({ name, props: ["modelValue", "open", "footerActions", "items"], render: () => null });
   return {
     HkTabs: component("HkTabs"), HkSpinner: component("HkSpinner"), HkButton: component("HkButton"),
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
@@ -283,5 +283,39 @@ describe("plugin file-list window", () => {
       .find((m) => m.props("modelValue") === true);
     expect(open).toBeTruthy();
     expect(mocks.preview).toHaveBeenCalledExactlyOnceWith("mod-a", "C:/TestGameA", undefined);
+  });
+});
+
+describe("catalog detail menu", () => {
+  const mountCatalogDetail = async (records: unknown[]) => {
+    mocks.catalog.mockResolvedValue({
+      mods: [{
+        id: "mod-a", version: "2", category: "text", nameEn: "Mod A",
+        game: ">=15.7", title: "Mod A", nameZh: "", description: "",
+        authors: [], packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+        i18n: {}, aliases: [],
+      }],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.records.mockResolvedValue(records);
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    const menus = view.findAllComponents({ name: "HMenu" });
+    return menus[menus.length - 1].props("items") as { key: string; disabled?: boolean }[];
+  };
+
+  it("keeps open-path grayed until the entry has an install record", async () => {
+    const notInstalled = await mountCatalogDetail([]);
+    expect(notInstalled.find((i) => i.key === "open-path")?.disabled).toBe(true);
+
+    const installed = await mountCatalogDetail([
+      { id: "mod-a", version: "1", gameRoot: "C:/TestGameA" },
+    ]);
+    expect(installed.find((i) => i.key === "open-path")?.disabled).toBeFalsy();
   });
 });
