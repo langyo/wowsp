@@ -266,7 +266,11 @@ describe("plugin file-list window", () => {
       fetchedAt: "",
     });
     mocks.preview.mockResolvedValue({ binVersion: "1", packages: [] });
-    const view = await shallowMount(ResourcesView);
+    // Same un-stub as mountInstalled: the scroll containers wrapping the
+    // sidebar rows must render their slots for .mod-row to exist.
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
     await flushPromises();
