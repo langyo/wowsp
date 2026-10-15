@@ -5,7 +5,13 @@ import { resolveShipImage } from "@/utils/shipImages";
 import {
   nationCrossLinks,
   nationTree,
+  techTreeBranchHasContent,
+  techTreeBranchInfo,
+  techTreeFeatText,
+  techTreeFeatureCategoryText,
+  techTreeFeatureTitle,
   techTreeNode,
+  techTreeShipBranch,
   treeNextShipIds,
   type TechTreeNode,
   type TechTreeRealm,
@@ -40,12 +46,16 @@ import "./TechTreeView.scss";
  *     cross-type research links straight across the type-section gap (the
  *     cruiser→battleship, destroyer→carrier hand-offs the in-game tree also
  *     bridges).
- *   - Only the cross-type research links carry a small ⓘ button on the line,
- *     whose hover card names the ship the link leads to and what changes
- *     (type hand-off, parallel branches, archetype hand-off) — the in-game
- *     tree attaches its link info (the client's ShipCrossResearchInfo
- *     component) to those hand-off lines only, never to in-line verticals
- *     or same-type fork elbows.
+ *   - Two kinds of links carry a small ⓘ button, mirroring the in-game
+ *     tree: the cross-type research hand-offs carry the link info card (the
+ *     client's ShipCrossResearchInfo: what the link changes — type hand-off,
+ *     parallel branches, archetype hand-off), and every branch run's first
+ *     ship carries the game's "warship characteristics" popup — the branch's
+ *     start—end range plus its feature groups, decoded from the client's
+ *     encrypted BranchesSettings module (bundled by
+ *     scripts/extract/build_branch_features.py). Both hang on the incoming
+ *     connector of the link's far ship, so a run that starts at its section
+ *     root has no ⓘ — exactly the in-game placement.
  */
 export default defineComponent({
   name: "TechTreeView",
@@ -217,11 +227,52 @@ export default defineComponent({
       });
     }
 
+    /**
+     * Hover-card JSON for the branch-feature ⓘ (the popup the in-game tree
+     * shows above each branch's first ship): the branch's run from its start
+     * ship to its end ship plus one row per feature group. Texts are the
+     * game's own BranchesSettings content, bundled with zh/en strings.
+     */
+    function branchSegmentCard(
+      branchName: string,
+      startNode: TechTreeNode,
+      endNode: TechTreeNode,
+    ): string {
+      const info = techTreeBranchInfo(branchName, endNode.type);
+      const rows = (info?.groups ?? [])
+        .map(([category, feats]) => ({
+          label: techTreeFeatureCategoryText(category),
+          value: feats
+            .map((f) => techTreeFeatText(f))
+            .filter((s) => s !== "")
+            .join(" · "),
+        }))
+        .filter((row) => row.value.trim() !== "");
+      return JSON.stringify({
+        title: techTreeFeatureTitle() || branchName,
+        badge: tierToRoman(startNode.tier),
+        subtitle: `${labelOf(startNode.shipId)} — ${labelOf(endNode.shipId)}`,
+        rows,
+      });
+    }
+
+    /** The branch run's last ship: walk the column down while the branch
+     *  name stays the same — that run is exactly one in-game branch. */
+    function segmentEndNode(col: PosCell[], fromIdx: number, branchName: string): TechTreeNode {
+      let end = col[fromIdx];
+      for (let j = fromIdx + 1; j < col.length; j++) {
+        if (techTreeShipBranch(col[j].shipId) !== branchName) break;
+        end = col[j];
+      }
+      return end.node;
+    }
+
     // ── SVG overlay measurement ──────────────────────────────────────────
     const containerRef = ref<HTMLElement | null>(null);
     interface DItem { key: string; d: string; cls: string; cx?: number; cy?: number }
     const drawItems = ref<DItem[]>([]);
-    /** ⓘ buttons on cross-type research links, positioned by measure(). */
+    /** ⓘ buttons (branch-feature popups + cross-type link info), positioned
+     *  by measure() next to the paths. */
     interface LinkIcon { key: string; x: number; y: number; card: string }
     const linkIcons = ref<LinkIcon[]>([]);
     const svgSize = ref({ w: 0, h: 0 });
@@ -264,9 +315,16 @@ export default defineComponent({
       }
 
       sections.value.forEach((sec) => {
+        // Per-branch column cell lists, tier-ascending (cells were pushed in
+        // chain order); shared with the ⓘ segment walks below.
+        const cols: PosCell[][] = [];
+        for (let bi = 0; bi < sec.numBranches; bi++) {
+          cols.push(sec.cells.filter((c) => c.branchIdx === bi));
+        }
+
         // Tracks: per-branch dashed vertical guide lines
         for (let bi = 0; bi < sec.numBranches; bi++) {
-          const col = sec.cells.filter((c) => c.branchIdx === bi);
+          const col = cols[bi];
           if (col.length < 2) continue;
           const first = cardEls.get(col[0].shipId);
           const last = cardEls.get(col[col.length - 1].shipId);
@@ -291,6 +349,23 @@ export default defineComponent({
           dot(`dot-${c.shipId}-in`, cCX, cCY);
 
           out.push({ key: `v-${c.parentId}-${c.shipId}`, d: `M ${pCX} ${pCY} V ${cCY}`, cls: "conn" });
+
+          // ⓘ at branch-segment starts: the game hangs its characteristics
+          // popup above the first ship of every branch run. Runs without
+          // bundled feature content (no record in the client either) draw
+          // nothing — an empty popup would be noise.
+          const parentBranch = techTreeShipBranch(c.parentId);
+          const childBranch = techTreeShipBranch(c.shipId);
+          if (childBranch && parentBranch !== childBranch && techTreeBranchHasContent(childBranch, c.node.type)) {
+            const col = cols[c.branchIdx] ?? [];
+            const idx = col.findIndex((x) => x.shipId === c.shipId);
+            icons.push({
+              key: `i-${c.parentId}-${c.shipId}`,
+              x: pCX,
+              y: (pCY + cCY) / 2,
+              card: branchSegmentCard(childBranch, c.node, segmentEndNode(col, idx, childBranch)),
+            });
+          }
         });
 
         // 2. Fork connectors: from forkFromId to first unique ship (right-angle path)
@@ -316,6 +391,21 @@ export default defineComponent({
 
           dot(`dot-${c.forkFromId}-fout`, pCX, pCY);
           dot(`dot-${c.shipId}-fin`, cCX, cCY);
+
+          // A fork column starts its own branch run — the same segment-ⓘ
+          // rule as the vertical hand-offs above.
+          const parentBranch = techTreeShipBranch(c.forkFromId);
+          const childBranch = techTreeShipBranch(c.shipId);
+          if (childBranch && parentBranch !== childBranch && techTreeBranchHasContent(childBranch, c.node.type)) {
+            const col = cols[c.branchIdx] ?? [];
+            const idx = col.findIndex((x) => x.shipId === c.shipId);
+            icons.push({
+              key: `i-${c.forkFromId}-${c.shipId}`,
+              x: (pCX + cCX) / 2,
+              y: midY,
+              card: branchSegmentCard(childBranch, c.node, segmentEndNode(col, idx, childBranch)),
+            });
+          }
         });
       });
 
@@ -482,7 +572,7 @@ export default defineComponent({
             })}
           </div>
 
-          {/* ⓘ buttons on cross-type research links — geometry lands after measure() */}
+          {/* ⓘ buttons (branch features + cross-type link info) — geometry lands after measure() */}
           {linkIcons.value.map((ic) => (
             <button
               key={ic.key}

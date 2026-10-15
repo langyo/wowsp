@@ -9,7 +9,11 @@ import {
   nationCrossLinks,
   nationNodes,
   nationTree,
+  techTreeBranchHasContent,
+  techTreeBranchInfo,
+  techTreeFeatText,
   techTreeNode,
+  techTreeShipBranch,
   treeNextShipIds,
   WG_EXCLUSIVE_TREE_SHIP_IDS,
   type TechTreeRealm,
@@ -241,5 +245,45 @@ describe("nationCrossLinks", () => {
         }
       }
     }
+  });
+});
+
+describe("branch features", () => {
+  it("maps the JP cruiser split onto distinct branches", () => {
+    const kuma = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PJSC013")!.shipId),
+    )!;
+    const agano = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PJSC205")!.shipId),
+    )!;
+    expect(techTreeShipBranch(kuma.shipId)).toBe("JP_CA");
+    expect(techTreeShipBranch(agano.shipId)).toBe("JP_CL");
+  });
+
+  it("splits a star-capped column into the line branch plus the supership branch", () => {
+    const seattle = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PASC109")!.shipId),
+    )!;
+    const annapolis = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PASC111")!.shipId),
+    )!;
+    expect(techTreeShipBranch(seattle.shipId)).toBe("US_CA_LIGHT");
+    expect(techTreeShipBranch(annapolis.shipId)).toBe("US_CA_ANNAPOLIS");
+  });
+
+  it("resolves branch records with a type-generic fallback and content checks", () => {
+    const light = techTreeBranchInfo("US_CA_LIGHT");
+    expect(light!.groups.length).toBeGreaterThan(0);
+    // The type-generic sets ship card icons only — never claim content.
+    expect(techTreeBranchHasContent("US_CA_EARLY", "Cruiser")).toBe(false);
+    expect(techTreeBranchInfo("US_CA_EARLY", "Cruiser")).not.toBeNull();
+    expect(techTreeBranchInfo("BRANCH_THAT_DOES_NOT_EXIST", "Cruiser")).not.toBeNull();
+    expect(techTreeBranchHasContent("BRANCH_THAT_DOES_NOT_EXIST", "Cruiser")).toBe(false);
+  });
+
+  it("marks feature sentences good/bad and keeps unknown keys blank", () => {
+    expect(techTreeFeatText("FEAT_GOOD_TORP_DMG")).toMatch(/^＋ /);
+    expect(techTreeFeatText("FEAT_BAD_TORP_DMG")).toMatch(/^− /);
+    expect(techTreeFeatText("FEAT_KEY_NO_ONE_CURATED")).toBe("");
   });
 });
