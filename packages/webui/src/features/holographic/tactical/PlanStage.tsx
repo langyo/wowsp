@@ -24,8 +24,8 @@ import {
   type PropType,
 } from "vue";
 import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoader";
-import { HMinimap } from "@celestia-island/hikari";
 import { useToast } from "@celestia-island/hikari";
+import OverviewPanel from "./OverviewPanel";
 import { t as i18nT } from "@/i18n";
 import TacticalBoard from "./TacticalBoard";
 import PlanSlotsBar from "./PlanSlotsBar";
@@ -105,7 +105,11 @@ export default defineComponent({
     const stageW = ref(0);
     /** Typed by the exposed surface only (defineExpose types don't
      *  propagate through InstanceType in TSX). */
-    const boardRef = ref<{ flushDoc: () => void; reloadDoc: () => void } | null>(null);
+    const boardRef = ref<{
+      flushDoc: () => void;
+      reloadDoc: () => void;
+      unitPoses: () => { x: number; z: number; team?: "ally" | "enemy"; color: string }[];
+    } | null>(null);
 
     /** Host-facing surface for the profile actions (the page's save/open
      *  read and write this stage's documents): flush the board's debounced
@@ -269,40 +273,24 @@ export default defineComponent({
       },
     };
 
-    /** Overview card scale rides the stage size: 1:1 from ~900px up, down to
-     *  0.72 on phones — the fixed 160px card would crowd a small board and
-     *  get lost on a 4K one. */
-    const minimapScale = computed(() =>
-      Math.min(1.25, Math.max(0.72, (stageW.value || 900) / 900)),
-    );
-
-    // ── Overview card (hikari HMinimap): full-map art with the view window
-    //    boxed + a zoom bar, so a zoomed-in author always knows where on the
-    //    map they are looking. HMinimap speaks translate(panX,panY)+scale
-    //    over its content rect; the props below express the plan's world
-    //    camera in NORMALISED art space (the unit square), where the window's
-    //    normalised size is exactly 1/scale — hence viewportWidth/Height 1. ─
-    const minimap = computed(() => {
+    /** Overview snapshot for the owned panel: full-map art, the battle
+     *  mode's capture points, the live unit poses out of the board, the
+     *  current view window and the clock (appearT ghosting). */
+    const overview = computed<import("./OverviewPanel").OverviewHandle | null>(() => {
       const full = fullBounds.value;
-      if (!full || !mapArtUrl.value) return null;
-      const vb = viewBounds(full);
-      const zoom = view.value.scale;
-      const w = full.maxX - full.minX || 1;
-      const h = full.maxZ - full.minZ || 1;
+      if (!full) return null;
       return {
-        imageSrc: mapArtUrl.value,
-        zoom,
-        panX: (-(vb.minX - full.minX) / w) * zoom,
-        panY: (-(full.maxZ - vb.maxZ) / h) * zoom,
-        zoomPercent: Math.round(zoom * 100),
-        canZoomIn: zoom < TACTICAL_MAX_SCALE - 1e-9,
-        canZoomOut: zoom > 1 + 1e-9,
+        artUrl: mapArtUrl.value,
+        full,
+        view: viewBounds(full),
+        caps: props.caps,
+        poses: boardRef.value?.unitPoses?.() ?? [],
+        time: time.value,
       };
     });
 
-    /** Zoom-bar request (both the ± steps and the slider speak absolute
-     *  percent rungs): re-aim the camera at that zoom, centre unchanged. */
-    function setZoomPercent(percent: number): void {
+    /** Zoom step (panel bar): one wheel-notch rung, centre unchanged. */
+    function overviewZoomStep(factor: number): void {
       const full = fullBounds.value;
       if (!full) return;
       const vb = viewBounds(full);
@@ -310,14 +298,24 @@ export default defineComponent({
       view.value = {
         cx: (vb.minX + vb.maxX) / 2,
         cz: (vb.minZ + vb.maxZ) / 2,
+        scale: Math.min(TACTICAL_MAX_SCALE, Math.max(1, view.value.scale * factor)),
+      };
+    }
+
+    /** Absolute percent rung (percent button semantics shared with the bar). */
+    function overviewZoomTo(percent: number): void {
+      viewTween = null;
+      view.value = {
+        cx: view.value.cx,
+        cz: view.value.cz,
         scale: Math.min(TACTICAL_MAX_SCALE, Math.max(1, percent / 100)),
       };
     }
 
-    /** Overview drag: HMinimap emits pan deltas in content units × its zoom
-     *  prop (dragging the box right shows terrain to the right); converted
-     *  back through the same normalisation into world-space centre moves. */
-    function panFromMinimap(dx: number, dy: number): void {
+    /** Overview drag: fractions of the FULL map the pointer moved — content
+     *  follows the pointer (drag right shows terrain to the left of where
+     *  you were). */
+    function overviewPanBy(fracDX: number, fracDY: number): void {
       const full = fullBounds.value;
       if (!full) return;
       const vb = viewBounds(full);
@@ -325,10 +323,14 @@ export default defineComponent({
       const h = full.maxZ - full.minZ || 1;
       viewTween = null;
       view.value = {
-        cx: (vb.minX + vb.maxX) / 2 - (dx / view.value.scale) * w,
-        cz: (vb.minZ + vb.maxZ) / 2 + (dy / view.value.scale) * h,
+        cx: (vb.minX + vb.maxX) / 2 - fracDX * w,
+        cz: (vb.minZ + vb.maxZ) / 2 + fracDY * h,
         scale: view.value.scale,
       };
+    }
+
+    function overviewReset(): void {
+      viewApi.reset();
     }
 
     // ── Planning clock: realtime playback over a fixed-length plan ───────
@@ -745,36 +747,18 @@ export default defineComponent({
                   baseCanvas={() => artCanvas.value}
                   overlayCanvas={() => overviewCanvas}
                 />
-                {minimap.value && (
+                {overview.value ? (
                   <Teleport defer to={props.minimapTeleport ?? "body"} disabled={!props.minimapTeleport}>
-                  <HMinimap
-                    class="plan-stage__minimap"
-                    style={
-                      props.minimapTeleport
-                        ? undefined
-                        : { transform: `scale(${minimapScale.value})`, transformOrigin: "bottom right" }
-                    }
-                    imageSrc={minimap.value.imageSrc}
-                    imageBounds={{ x: 0, y: 0, w: 1, h: 1 }}
-                    contentBounds={{ x: 0, y: 0, w: 1, h: 1 }}
-                    zoom={minimap.value.zoom}
-                    panX={minimap.value.panX}
-                    panY={minimap.value.panY}
-                    viewportWidth={1}
-                    viewportHeight={1}
-                    zoomPercent={minimap.value.zoomPercent}
-                    zoomStepPercent={22}
-                    minZoomPercent={100}
-                    maxZoomPercent={1200}
-                    canZoomIn={minimap.value.canZoomIn}
-                    canZoomOut={minimap.value.canZoomOut}
-                    showReset
-                    onZoomTo={setZoomPercent}
-                    onReset={() => viewApi.reset()}
-                    onPanDelta={panFromMinimap}
-                  />
+                    <OverviewPanel
+                      class="plan-stage__minimap"
+                      snapshot={() => overview.value}
+                      onZoomStep={overviewZoomStep}
+                      onZoomTo={overviewZoomTo}
+                      onReset={overviewReset}
+                      onPanBy={overviewPanBy}
+                    />
                   </Teleport>
-                )}
+                ) : null}
               </div>
             </div>
             <input

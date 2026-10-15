@@ -526,6 +526,7 @@ pub fn run() {
             // (commands/replay/cap_layouts.rs) — the map-setup wizard's
             // "measured" layouts.
             commands::replay::get_map_cap_layouts,
+            commands::replay::get_replay_cap_layout,
             commands::replay::read_live_replay_snapshot,
             commands::replay::live_temp_replay,
             commands::replay::list_replays,

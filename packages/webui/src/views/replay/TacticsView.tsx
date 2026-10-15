@@ -19,8 +19,8 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } fro
 import { useRoute, useRouter } from "vue-router";
 import { getVersion } from "@tauri-apps/api/app";
 
-import { HkIconButton, HkTooltip, useToast } from "@celestia-island/hikari";
-import { FolderOpen, Map as MapIcon, Save, Users } from "@lucide/vue";
+import { HkIconButton, HkPopover, HkTooltip, useToast } from "@celestia-island/hikari";
+import { Check, FileArchive, FolderOpen, Map as MapIcon, Save, Users } from "@lucide/vue";
 
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
@@ -153,6 +153,11 @@ export default defineComponent({
     let pendingMode: { mapId: string; choice: MapSetupChoice } | null = null;
 
     function onSetupConfirm(mapId: string, choice: MapSetupChoice): void {
+      // The archive's save target is confirmed the moment a NEW map is
+      // boarded (generated name pre-seeds the native dialog). Re-confirming
+      // the SAME map keeps the existing identity — a tweak must not wipe
+      // the display name or re-ask the path.
+      if (mapId !== selected.value) void confirmProfilePath(mapId);
       if (mapId !== selected.value) {
         pendingMode = { mapId, choice };
         selected.value = mapId;
@@ -169,10 +174,12 @@ export default defineComponent({
     });
 
     /** Apply the wizard's step-2 choice: a MEASURED layout lands its exact
-     * replay-learned points (radius included, letters by point index,
-     * ownership left neutral — the replay's team orientation vs the
-     * board's ally-south spawn is not inferable from the layout alone);
-     * a template preset instantiates as before. */
+     *  replay-learned points (radius included, letters by point index,
+     *  ownership left neutral — the replay's team orientation vs the
+     *  board's ally-south spawn is not inferable from the layout alone);
+     *  a CUSTOM layout lands exactly what the second-level editor
+     *  confirmed (hand-moved points, template starts, imported replays). */
+
     function applyChoice(choice: MapSetupChoice): void {
       if (choice.kind === "learned") {
         session.value = {
@@ -192,20 +199,12 @@ export default defineComponent({
         persist();
         return;
       }
-      applyMode(choice.presetId);
-    }
-
-    /** Switch the session's battle mode: re-instantiate the capture layout
-     * from the preset template over this map's playable rect. */
-    function applyMode(modeId: string): void {
-      const preset = modePresetOf(modeId);
-      const b = bounds.value;
-      if (!preset) return;
       session.value = {
         ...session.value,
-        modeId,
+        modeId: null,
+        // A hand-authored layout carries no corpus mode key either.
         modeGroup: null,
-        caps: b ? instantiateCaps(preset, b) : [],
+        caps: choice.caps.map((c) => ({ ...c, at: { ...c.at } })),
       };
       persist();
     }
@@ -323,8 +322,62 @@ export default defineComponent({
         });
     });
 
+    /** Rename popover state (the top-right tag's editor). */
+    const renameOpen = ref(false);
+    const renameText = ref("");
+    const renameAnchor = ref<HTMLElement | null>(null);
+
     function setProfileName(name: string): void {
-      session.value = { ...session.value, profileName: name };
+      session.value = { ...session.value, profileName: name.trim() };
+      persist();
+    }
+
+    /** The formal archive name: the custom display name, else the generated
+     *  file name's base (date-time + map + sequence), else the untitled
+     *  placeholder. This is what the top-right tag shows. */
+    const profileLabel = computed(() => {
+      if (session.value.profileName) return session.value.profileName;
+      const base = session.value.fileName?.replace(/\.wowsp-tactics$/i, "");
+      if (base) return base;
+      return t("tactics.profile.untitled");
+    });
+
+    /** Sequential archive file name: current date-time + the map's main
+     *  display name + a per-(day, map) running number, so re-running the
+     *  wizard for the same map on the same day never collides. */
+    function newProfileFileName(mapId: string, mapLabel: string): string {
+      const now = new Date();
+      const pad = (n: number): string => String(n).padStart(2, "0");
+      const day = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+      const time = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const safe = mapLabel.replace(/[^\w-]+/g, "_").replace(/^_+|_+$/g, "") || mapId;
+      const key = `wowsp:tactics:profileseq:v1:${day}:${mapId}`;
+      let seq = 1;
+      try {
+        seq = Number(window.localStorage.getItem(key) ?? "0") + 1;
+        window.localStorage.setItem(key, String(seq));
+      } catch {
+        // storage unavailable — the dialog prefill is editable anyway
+      }
+      return `${day}_${time}_${safe}_${String(seq).padStart(2, "0")}`;
+    }
+
+    /** Confirm the archive's save target right after the map is chosen:
+     *  one native save dialog pre-seeded with the generated name. A
+     *  confirmed path becomes the profile's silent save target; cancelling
+     *  keeps the dialog flow at save time. */
+    async function confirmProfilePath(mapId: string): Promise<void> {
+      const mapLabel = displayMapName(mapId, dataLanguage.value);
+      const fileName = newProfileFileName(mapId, mapLabel);
+      let path: string | null = null;
+      try {
+        path = await api.pickExportPath(`${fileName}.wowsp-tactics`, "WoWSP tactics profile", [
+          "wowsp-tactics",
+        ]);
+      } catch {
+        // non-Tauri host — no dialog; keep the name, save stays dialogless
+      }
+      session.value = { ...session.value, fileName, profilePath: path };
       persist();
     }
 
@@ -333,11 +386,18 @@ export default defineComponent({
         // Flush the board's debounced save first, or the archive misses the
         // last ≤400 ms of edits (the slot duplicator's rule).
         stageRef.value?.flushDoc?.();
+        const payload = buildProfilePayload(
+          selected.value,
+          displayMapName(selected.value, dataLanguage.value),
+          session.value,
+          { appVersion: appVersion.value, gameVersion: gameVersion.value },
+        );
+        // The generated file name seeds the archive's default name; a
+        // confirmed save target writes straight there, silently.
+        const meta = { ...payload.meta, fileName: session.value.fileName ?? undefined };
         const saved = await saveTacticsProfile(
-          buildProfilePayload(selected.value, displayMapName(selected.value, dataLanguage.value), session.value, {
-            appVersion: appVersion.value,
-            gameVersion: gameVersion.value,
-          }),
+          { ...payload, meta },
+          session.value.profilePath ?? undefined,
         );
         if (saved) toast.info(t("tactics.profile.saved", { path: saved }));
       } catch (e) {
@@ -359,8 +419,12 @@ export default defineComponent({
           return;
         }
         // The archive carries the whole session, not just the plans: mode,
-        // caps, lineup, mirror and the profile name land with it.
+        // caps, lineup, mirror and the profile name land with it — and the
+        // opened file becomes the silent save target (path + file name).
         const restored = sessionFromProfileMeta(payload.meta);
+        restored.profilePath = payload.path ?? null;
+        restored.fileName =
+          payload.path?.split(/[\\/]/).pop()?.replace(/\.wowsp-tactics$/i, "") ?? null;
         saveSession(spaceId, restored);
         if (spaceId !== selected.value) {
           // Switch first; the selected watcher loads the freshly written
@@ -476,13 +540,69 @@ export default defineComponent({
 
             <span class="tac-topbar__spacer" />
 
-            <input
-              class="tac-topbar__profile-name"
-              value={session.value.profileName}
-              placeholder={t("tactics.profile.namePlaceholder")}
-              title={t("tactics.profile.name")}
-              onInput={(e: Event) => setProfileName((e.target as HTMLInputElement).value)}
-            />
+            <span ref={renameAnchor} class="tac-topbar__profile-wrap">
+              <HkTooltip text={t("tactics.profile.rename")} placement="bottom">
+                <button
+                  type="button"
+                  class="tac-topbar__profile-tag"
+                  onClick={() => {
+                    renameText.value = session.value.profileName;
+                    renameOpen.value = !renameOpen.value;
+                  }}
+                >
+                  <FileArchive size={12} />
+                  <span class="tac-topbar__profile-tag-name">{profileLabel.value}</span>
+                  {session.value.profilePath ? (
+                    <span class="tac-topbar__profile-tag-dot" title={session.value.profilePath} />
+                  ) : null}
+                </button>
+              </HkTooltip>
+              <HkPopover
+                modelValue={renameOpen.value}
+                onUpdate:modelValue={(v: boolean) => {
+                  if (!v) renameOpen.value = false;
+                }}
+                anchorRef={renameAnchor.value}
+                placement="bottom-end"
+                closeOnBackdrop
+                title={t("tactics.profile.rename")}
+              >
+                <div class="tac-topbar__rename">
+                  <input
+                    class="tac-topbar__rename-input"
+                    value={renameText.value}
+                    placeholder={session.value.fileName ?? t("tactics.profile.namePlaceholder")}
+                    onInput={(e: Event) => {
+                      renameText.value = (e.target as HTMLInputElement).value;
+                    }}
+                    onBlur={() => {
+                      setProfileName(renameText.value);
+                      renameOpen.value = false;
+                    }}
+                    onKeydown={(e: KeyboardEvent) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") {
+                        setProfileName(renameText.value);
+                        renameOpen.value = false;
+                      } else if (e.key === "Escape") {
+                        renameOpen.value = false;
+                      }
+                    }}
+                  />
+                  <HkIconButton
+                    size={24}
+                    variant="primary"
+                    data-hint={t("tactics.lineup.apply")}
+                    onClick={() => {
+                      setProfileName(renameText.value);
+                      renameOpen.value = false;
+                    }}
+                  >
+                    <Check size={13} />
+                  </HkIconButton>
+                </div>
+              </HkPopover>
+            </span>
             <HkTooltip text={t("tactics.profile.save")} placement="bottom">
               <HkIconButton size={28} onClick={() => void saveProfile()}>
                 <Save size={14} />

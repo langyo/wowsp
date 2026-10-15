@@ -42,18 +42,17 @@
     "back": "Back",
     "confirm": "Start planning",
     "capCount": "{n} capture points",
-    "capNone": "No capture points",
-    "duration": "{m}-minute battle",
     "next": "Next",
     "learnedSection": "Measured from your replays",
-    "templateSection": "Templates (uncalibrated)",
     "measured": "Measured",
     "learning": "Learning cap layouts from replays…",
     "noLearned": "No replays of this map on this machine yet — play one and the measured layouts appear here.",
     "learnedFrom": "From replay {date}",
     "sampleCount": "{n} battles",
     "corpusSource": "Corpus-measured",
-    "corpusFrom": "Aggregated from {n} corpus battles"
+    "corpusFrom": "Aggregated from {n} corpus battles",
+    "custom": "Custom",
+    "customDesc": "Open the point editor: add, drag and tune points by hand, start from a template, or import any replay for exact matching."
   },
   "mode": {
     "dom4": "Random · 4 caps",
@@ -115,13 +114,33 @@
     "hint": "Declare both teams first (symmetric or not) — the board spawns the units from it. The picker is the same component the ship comparison uses."
   },
   "profile": {
-    "name": "Profile name",
     "namePlaceholder": "Profile name (defaults to the map)",
     "save": "Save profile",
     "open": "Open profile",
     "saved": "Profile saved to {path}",
     "opened": "Loaded {n} plans",
     "openBad": "Could not open profile: {detail}",
-    "unknownMap": "The profile's map ({map}) is not available here"
+    "unknownMap": "The profile's map ({map}) is not available here",
+    "untitled": "Untitled profile",
+    "rename": "Rename profile"
+  },
+  "cap": {
+    "section": "Custom points",
+    "title": "Edit capture points",
+    "hint": "Click empty water to add a point; drag to move; select one to tune its radius and ownership on the right.",
+    "templates": "Start from a template",
+    "importReplay": "Import from a replay…",
+    "imported": "Loaded {n} points from {name}",
+    "importBad": "No recognizable capture points in that replay",
+    "selected": "Selected point",
+    "none": "No point selected",
+    "team": "Ownership",
+    "neutral": "Neutral",
+    "ally": "Ours",
+    "enemy": "Theirs",
+    "radius": "Radius",
+    "station": "Station-gated",
+    "delete": "Delete point",
+    "apply": "Apply points"
   }
 }

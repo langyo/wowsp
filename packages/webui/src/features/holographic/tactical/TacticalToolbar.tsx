@@ -438,31 +438,27 @@ export default defineComponent({
           </HkPopover>
         </span>
 
-        {props.lineupMode ? (
-          <>
-            {props.onToggleMirror ? (
-              <HkTooltip text={i18nT("tactics.toolbar.mirror")} placement="top">
-                <HkIconButton
-                  size={32}
-                  variant={props.mirror ? "primary" : "ghost"}
-                  onClick={() => props.onToggleMirror!()}
-                >
-                  <FlipHorizontal size={14} />
-                </HkIconButton>
-              </HkTooltip>
-            ) : null}
-            {props.onToggleCaps ? (
-              <HkTooltip text={i18nT("tactics.toolbar.caps")} placement="top">
-                <HkIconButton
-                  size={32}
-                  variant={props.showCaps ? "primary" : "ghost"}
-                  onClick={() => props.onToggleCaps!()}
-                >
-                  <MapPin size={14} />
-                </HkIconButton>
-              </HkTooltip>
-            ) : null}
-          </>
+        {props.lineupMode && props.onToggleMirror ? (
+          <HkTooltip text={i18nT("tactics.toolbar.mirror")} placement="top">
+            <HkIconButton
+              size={32}
+              variant={props.mirror ? "primary" : "ghost"}
+              onClick={() => props.onToggleMirror!()}
+            >
+              <FlipHorizontal size={14} />
+            </HkIconButton>
+          </HkTooltip>
+        ) : null}
+        {props.plan && props.onToggleCaps ? (
+          <HkTooltip text={i18nT("tactics.toolbar.caps")} placement="top">
+            <HkIconButton
+              size={32}
+              variant={props.showCaps ? "primary" : "ghost"}
+              onClick={() => props.onToggleCaps!()}
+            >
+              <MapPin size={14} />
+            </HkIconButton>
+          </HkTooltip>
         ) : null}
 
         {/* Corpus heat overlay (the 热力 flyout): off / track / spawn rows

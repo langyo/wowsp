@@ -27,8 +27,14 @@ export interface TacticalSession {
   mirror: boolean;
   /** Corpus heat-overlay state (off / track / spawn). */
   heat: HeatLayerMode;
-  /** Profile display name ("" = the default map-based name). */
+  /** Profile display name ("" = derived from the file name). */
   profileName: string;
+  /** The confirmed silent save target (absolute path); null = the save
+   *  button runs the dialog flow. Fixed when the map is boarded. */
+  profilePath: string | null;
+  /** Generated archive base name (date-time + map + sequence) — the save
+   *  dialog's seed and the top-right tag's fallback label. */
+  fileName: string | null;
 }
 
 export function emptySession(): TacticalSession {
@@ -40,6 +46,8 @@ export function emptySession(): TacticalSession {
     mirror: false,
     heat: "off",
     profileName: "",
+    profilePath: null,
+    fileName: null,
   };
 }
 
@@ -117,6 +125,8 @@ export function loadSession(spaceId: string): TacticalSession {
       mirror: parsed.mirror === true,
       heat: parsed.heat === "track" || parsed.heat === "spawn" ? parsed.heat : "off",
       profileName: typeof parsed.profileName === "string" ? parsed.profileName : "",
+      profilePath: typeof parsed.profilePath === "string" && parsed.profilePath ? parsed.profilePath : null,
+      fileName: typeof parsed.fileName === "string" && parsed.fileName ? parsed.fileName : null,
     };
   } catch {
     return emptySession();
@@ -151,5 +161,8 @@ export function sessionFromProfileMeta(meta: unknown): TacticalSession {
   if (m.mirror === true) out.mirror = true;
   if (m.heat === "track" || m.heat === "spawn") out.heat = m.heat;
   if (typeof m.profileName === "string") out.profileName = m.profileName;
+  // The archive's meta never carries the local save path (that is machine
+  // state, not plan data); the file name rides along as the label seed.
+  if (typeof m.fileName === "string" && m.fileName) out.fileName = m.fileName;
   return out;
 }

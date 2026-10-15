@@ -24,8 +24,8 @@ export type TeamSide = "ally" | "enemy";
 /** Side-tint of a unit glyph / zone (readable over the dark minimap art and
  *  distinct from the cap-ring greens/reds the board also draws). */
 export const TEAM_COLOR: Record<TeamSide, string> = {
-  ally: "#22d3ee",
-  enemy: "#f472b6",
+  ally: "#4ade80",
+  enemy: "#f43f5e",
 };
 
 /** One hull of a lineup. `label` "" = display the ship's localized name. */
