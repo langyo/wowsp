@@ -661,6 +661,8 @@ pub fn run() {
             commands::mod_catalog::mod_hub_reconcile,
             commands::mod_catalog::mod_catalog_refresh,
             commands::mod_catalog::mod_catalog_install,
+            commands::mod_catalog::mod_catalog_preview_files,
+            commands::mod_catalog::mod_hub_reveal_path,
             commands::mod_catalog::mod_catalog_uninstall,
             commands::mod_catalog::mod_hub_records,
             commands::mod_install::install_overlay_mod,

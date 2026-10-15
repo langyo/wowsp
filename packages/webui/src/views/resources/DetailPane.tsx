@@ -6,21 +6,26 @@ import {
   AlertTriangle,
   Ban,
   CircleCheck,
+  Ellipsis,
   ExternalLink,
+  FolderOpen,
   FolderSearch,
   ImageIcon,
+  ListTree,
   MousePointerClick,
   Puzzle,
   Trash2,
 } from "@lucide/vue";
 import {
   HkButton,
+  HkIconButton,
   HkImagePreview,
+  HMenu,
   HkSwitch,
   HkTabs,
 } from "@celestia-island/hikari";
 
-import type { CatalogEntry, InstalledMod, ForeignModUnit, TextureAnalysis } from "@/api";
+import type { CatalogEntry, InstalledMod, ForeignModUnit, ModInstallRecord, TextureAnalysis } from "@/api";
 import { KIND_META, catIcon, isCatalogCat } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
 import AssetPreview from "@/features/modhub/AssetPreview";
@@ -34,11 +39,11 @@ import {
   installerLabel,
   kindLabel,
   localized,
-  pkgKb,
   presetLabel,
   tagLabel,
   texLabel,
 } from "./display";
+import { commonRootDir, splitGameRootFiles } from "./fileTree";
 import type { ResourcesCtx } from "./context";
 import type { TextureComponent } from "./types";
 
@@ -93,6 +98,75 @@ function renderTexAnalysis(a: TextureAnalysis) {
   );
 }
 
+/** The detail head's ⋯ menu: open the unit's folder in the OS file
+ *  manager, jump to the online thread, open the file-list window. Shared
+ *  by the catalog and installed panes; a null action disables its item. */
+function renderDetailMenu(
+  ctx: ResourcesCtx,
+  actions: { reveal: (() => void) | null; onlineUrl: string | null; files: (() => void) | null },
+) {
+  return (
+    <span class="mod-detail__menu" ref={ctx.fileWindow.detailMenuAnchor}>
+      <HkIconButton
+        size={24}
+        variant="ghost"
+        data-hint={t("resources.detailMenu")}
+        aria-label={t("resources.detailMenu")}
+        onClick={() =>
+          (ctx.fileWindow.detailMenuOpen.value = !ctx.fileWindow.detailMenuOpen.value)
+        }
+      >
+        <Ellipsis size={15} />
+      </HkIconButton>
+      <HMenu
+        variant="popup"
+        title={t("resources.detailMenu")}
+        open={ctx.fileWindow.detailMenuOpen.value}
+        anchorRef={ctx.fileWindow.detailMenuAnchor.value}
+        placement="bottom-end"
+        items={[
+          {
+            key: "open-path",
+            label: t("resources.actionOpenPath"),
+            icon: FolderOpen,
+            disabled: !actions.reveal,
+          },
+          {
+            key: "online",
+            label: t("resources.actionOnlinePage"),
+            icon: ExternalLink,
+            disabled: !actions.onlineUrl,
+          },
+          {
+            key: "files",
+            label: t("resources.actionFileList"),
+            icon: ListTree,
+            disabled: !actions.files,
+          },
+        ]}
+        onSelect={({ key }: { key: string | number }) => {
+          ctx.fileWindow.detailMenuOpen.value = false;
+          if (key === "open-path") actions.reveal?.();
+          else if (key === "online" && actions.onlineUrl) openExternal(actions.onlineUrl);
+          else if (key === "files") actions.files?.();
+        }}
+        onUpdate:open={(v: boolean) => (ctx.fileWindow.detailMenuOpen.value = v)}
+      />
+    </span>
+  );
+}
+
+/** Open the on-disk folder behind a detail pane: an explicit rel path
+ *  (installed pane) or the ledger record's common root (catalog pane);
+ *  an empty bin version lets the backend resolve the current one. */
+function revealUnit(ctx: ResourcesCtx, record: ModInstallRecord | null, relPath: string) {
+  void ctx.fileWindow.reveal(
+    record?.binVersion ?? "",
+    relPath ||
+      (record ? commonRootDir(splitGameRootFiles(record.files).resMods) : ""),
+  );
+}
+
 function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
   const text = localized(entry);
   const record = ctx.recordOf(entry.id);
@@ -116,6 +190,13 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           <div class="mod-detail__name">{text.name || entry.title || entry.nameEn}</div>
           <div class="mod-detail__en">{entry.nameEn}</div>
         </div>
+        {renderDetailMenu(ctx, {
+          reveal: ctx.gameRoot.value
+            ? () => revealUnit(ctx, record ?? null, "")
+            : null,
+          onlineUrl: url || null,
+          files: () => ctx.fileWindow.openForEntry(entry),
+        })}
       </div>
       <div class="mod-detail__scroll">
         {foreignCopy && (
@@ -191,16 +272,8 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
             <span>{t("resources.pkgCount", { count: entry.packages.length, kb })}</span>
           )}
         </div>
-        {entry.packages.length > 0 && (
-          <ul class="mod-detail__pkgs">
-            {entry.packages.map((p) => (
-              <li key={p.url}>
-                <span class="mod-detail__pkgname">{p.name}</span>
-                {p.size > 0 && <span class="mod-detail__pkgsize">{pkgKb(p.size)} KB</span>}
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* The package-by-package file listing moved into the ⋯ menu's
+            file-list window; the meta row above keeps the summary. */}
       </div>
       <div class="mod-detail__foot">
         {busyInstall && progressEntry && (
@@ -285,6 +358,8 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
   const meta = KIND_META[mod.kind];
   const Icon = meta.icon;
   const state = ctx.unitBusy.value.get(mod.relPath);
+  const paired = ctx.pairedEntryOf(mod);
+  const record = mod.identity ? (ctx.recordOf(mod.identity) ?? null) : null;
   return (
     <div class="mod-detail">
       <div class="mod-detail__head">
@@ -298,6 +373,13 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
           </div>
           <div class="mod-detail__en">{kindLabel(mod.kind)}</div>
         </div>
+        {renderDetailMenu(ctx, {
+          reveal: ctx.gameRoot.value
+            ? () => revealUnit(ctx, record, mod.relPath)
+            : null,
+          onlineUrl: paired ? discussionUrl(paired.discussion) : null,
+          files: paired || record ? () => ctx.fileWindow.openForUnit(mod) : null,
+        })}
       </div>
       <div class="mod-detail__scroll">
         {(mod.disabled || ctx.isAslainUnit(mod)) && (
@@ -315,7 +397,6 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
           </div>
         )}
         {(() => {
-          const paired = ctx.pairedEntryOf(mod);
           if (!paired) return null;
           return (
             <div class="mod-detail__paired">
@@ -363,15 +444,10 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
           />
         )}
         {mod.detail && <div class="mod-detail__desc">{mod.detail}</div>}
-        {mod.paths.length > 0 ? (
-          <ul class="mod-detail__paths">
-            {mod.paths.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        ) : (
-          <p class="mod-detail__hint">{t("resources.manifestOnly")}</p>
-        )}
+        {/* Unit root paths and full file listings live in the ⋯ menu's
+            file-list window now; the hint stays because it explains why
+            the enable switch below is missing. */}
+        {mod.paths.length === 0 && <p class="mod-detail__hint">{t("resources.manifestOnly")}</p>}
       </div>
       <div class="mod-detail__foot">
         <div class="mod-detail__foot-row">

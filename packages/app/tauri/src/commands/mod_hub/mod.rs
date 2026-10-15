@@ -48,7 +48,7 @@ pub(crate) struct PlanApply {
 /// game context's rule (preferences.xml pin preferred, then idx-carrying
 /// build, numeric fallback), kept as a thin local shim returning
 /// `(version name, dir)` for the call sites.
-fn latest_bin_version(game_root: &str) -> Option<(String, PathBuf)> {
+pub(crate) fn latest_bin_version(game_root: &str) -> Option<(String, PathBuf)> {
     super::game_context::latest_bin_dir(std::path::Path::new(game_root))
         .map(|(n, p)| (n.to_string(), p))
 }

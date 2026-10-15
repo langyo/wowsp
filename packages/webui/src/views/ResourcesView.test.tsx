@@ -36,6 +36,8 @@ vi.mock("@celestia-island/hikari", () => {
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
     HkIconButton: component("HkIconButton"), HkModal: component("HkModal"), HkSwitch: component("HkSwitch"), HMenu: component("HMenu"),
     HkImagePreview: component("HkImagePreview"),
+    /* The file-list window's additions (detail ⋯ menu + tree). */
+    HkTree: component("HkTree"),
     useToast: () => ({ error: mocks.error, success: vi.fn(), warning: vi.fn(), info: vi.fn() }),
   };
 });

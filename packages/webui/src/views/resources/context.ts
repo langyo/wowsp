@@ -4,5 +4,6 @@
  *  import graph stays one-directional. */
 import type { ModHubCtx } from "./useModHub";
 import type { MigrateWizardCtx } from "./useMigrateWizard";
+import type { FileListWindowCtx } from "./useFileListWindow";
 
-export type ResourcesCtx = ModHubCtx & MigrateWizardCtx;
+export type ResourcesCtx = ModHubCtx & MigrateWizardCtx & { fileWindow: FileListWindowCtx };

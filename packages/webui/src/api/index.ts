@@ -42,6 +42,8 @@ export type {
   ModelPreviewPart,
   CatalogEntryI18n,
   CatalogIndex,
+  CatalogFilePreview,
+  PackageFilePreview,
   ModInstallRecord,
   PnfLoaderStatus,
   StaleBinInfo,

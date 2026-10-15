@@ -183,6 +183,23 @@ export interface ModInstallRecord {
   gameRoot?: string;
 }
 
+/** One package's expected write map — the read-only classifier over an
+ *  on-demand extraction (mirrors wowsp_tauri_shared::PackageFilePreview). */
+export interface PackageFilePreview {
+  name: string;
+  size: number;
+  /** res_mods-relative destinations (`@game/…` for game-root drops). */
+  files: string[];
+  warnings: string[];
+}
+
+/** Per-package write maps + the bin version the preview tree roots at
+ *  (mirrors wowsp_tauri_shared::CatalogFilePreview). */
+export interface CatalogFilePreview {
+  binVersion: string;
+  packages: PackageFilePreview[];
+}
+
 /** One localized tag definition from the mod-tags registry (mirrors
  *  `wowsp_tauri_shared::CatalogTag`). Tags decorate entries beyond their
  *  category: licensed / AI-generated feature markers, IP origins… */
@@ -424,6 +441,22 @@ export const modHubApi = {
       modId,
       gameRoot,
       preset: preset ?? null,
+    }),
+  /** Read-only file preview: downloads the packages to a temp dir and
+   *  classifies them there, never touching res_mods. */
+  modCatalogPreviewFiles: (modId: string, gameRoot: string, preset?: string) =>
+    transport.invoke<CatalogFilePreview>(RPC.mod_catalog_preview_files, {
+      modId,
+      gameRoot,
+      preset: preset ?? null,
+    }),
+  /** Open a unit's folder (`bin/<version>/res_mods[/rel]`) in the OS file
+   *  manager; an empty binVersion resolves to the client's current one. */
+  modHubRevealPath: (gameRoot: string, binVersion: string, relPath?: string) =>
+    transport.invoke<null>(RPC.mod_hub_reveal_path, {
+      gameRoot,
+      binVersion: binVersion || null,
+      relPath: relPath || null,
     }),
   modCatalogUninstall: (modId: string, gameRoot: string) =>
     transport.invoke<UninstallReport>(RPC.mod_catalog_uninstall, { modId, gameRoot }),

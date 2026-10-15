@@ -21,7 +21,7 @@
 //! `wowsp://download-progress` with kind "mod-package"; the disk-side
 //! install stays serialized by the mod-hub gate below.
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -31,8 +31,9 @@ use tauri::{AppHandle, Emitter};
 
 use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{
-    CatalogEntry, CatalogEntryI18n, CatalogIndex, CatalogPackage, CatalogPreset, CommandResult,
-    DOWNLOAD_PROGRESS_EVENT, DownloadProgress, InstallReport, ModInstallRecord,
+    CatalogEntry, CatalogEntryI18n, CatalogFilePreview, CatalogIndex, CatalogPackage,
+    CatalogPreset, CommandResult, DOWNLOAD_PROGRESS_EVENT, DownloadProgress, InstallReport,
+    ModInstallRecord, PackageFilePreview,
 };
 
 use super::download_hub::{self, DownloadRequest};
@@ -561,6 +562,25 @@ fn package_archive(work: &Path, index: usize) -> PathBuf {
     work.join(format!("{index:02}.zip"))
 }
 
+/// The package list a named scheme resolves to: a preset id fully replaces
+/// the entry's default list (a scheme IS a different prebuilt payload, not
+/// an overlay); None/empty resolves to the default list (which mirrors the
+/// first preset). Shared by install and the read-only file preview.
+fn resolve_entry_packages(
+    entry: &CatalogEntry,
+    preset: Option<&str>,
+) -> anyhow::Result<Vec<CatalogPackage>> {
+    match preset.filter(|p| !p.is_empty()) {
+        Some(pid) => entry
+            .presets
+            .iter()
+            .find(|p| p.id == pid)
+            .map(|p| p.packages.clone())
+            .ok_or_else(|| anyhow!("{} has no preset `{pid}`", entry.id)),
+        None => Ok(entry.packages.clone()),
+    }
+}
+
 #[tauri::command]
 pub async fn mod_catalog_install(
     mod_id: String,
@@ -594,15 +614,7 @@ pub async fn mod_catalog_install(
     }
     // A scheme IS a different prebuilt payload, not an overlay: the chosen
     // preset's packages fully replace the default list for this install.
-    let packages: Vec<CatalogPackage> = match preset.as_deref().filter(|p| !p.is_empty()) {
-        Some(pid) => entry
-            .presets
-            .iter()
-            .find(|p| p.id == pid)
-            .map(|p| p.packages.clone())
-            .ok_or_else(|| anyhow!("{mod_id} has no preset `{pid}`"))?,
-        None => entry.packages.clone(),
-    };
+    let packages: Vec<CatalogPackage> = resolve_entry_packages(&entry, preset.as_deref())?;
 
     // Fail fast when the TARGET client is running — mutating res_mods under
     // a live client tears half-loaded mods (root-scoped: another install's
@@ -824,6 +836,230 @@ pub async fn mod_catalog_install(
     );
     tracing::info!(id = %entry.id, version = %entry.version, "mod_catalog_install done");
     Ok(report)
+}
+
+/// Read-only "what would this entry touch?" preview for the file-list
+/// window: downloads the (preset-resolved) packages through the unified
+/// hub — the same mirror ladder, sha256 verification and resume an install
+/// gets — extracts each into its OWN temp dir and runs the classifier
+/// there, so `res_mods` is never read or written. Per-package
+/// classification is exactly what the ledger cannot reconstruct: installs
+/// extract everything into one merged root before classifying once.
+#[tauri::command]
+pub async fn mod_catalog_preview_files(
+    mod_id: String,
+    game_root: String,
+    preset: Option<String>,
+    app: AppHandle,
+) -> CommandResult<CatalogFilePreview> {
+    tracing::info!(id = %mod_id, preset = ?preset, "mod_catalog_preview_files begin");
+    let index = load_cached_index()
+        .ok_or_else(|| anyhow!("catalog not loaded yet — refresh the online list first"))?;
+    let entry = index
+        .mods
+        .iter()
+        .find(|m| m.id == mod_id)
+        .ok_or_else(|| anyhow!("{mod_id} is not in the cached catalog"))?
+        .clone();
+    if entry.delisted {
+        return Err(anyhow!(
+            "{mod_id} has been delisted from the catalog — its discussion thread is closed"
+        )
+        .into());
+    }
+    let packages = resolve_entry_packages(&entry, preset.as_deref())?;
+    // Same trust chain as an install: every package must be pinned by the
+    // verified index and hosted on this repo's release download tree
+    // before the first byte moves (see checked_package_sha256).
+    let expected_sha256 = packages
+        .iter()
+        .map(checked_package_sha256)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    // Preview progress rides the same bus and kind as installs but under a
+    // distinct id, so no install spinner ever lights up for a
+    // look-but-don't-touch pass (the UI filters by id).
+    let progress_id = format!("preview:{}", entry.id);
+    download_hub::clear_pending(kind::MOD_PACKAGE, &progress_id);
+
+    let package_count = packages.len() as u32;
+    let total = packages.iter().map(|p| p.size).sum::<u64>().max(1);
+    emit_progress(
+        &app,
+        &progress_id,
+        phase::DOWNLOAD,
+        0,
+        package_count,
+        0,
+        total,
+    );
+
+    let work = WorkDir::create(&std::env::temp_dir())?;
+    let mut received_total = 0u64;
+    for (i, pkg) in packages.iter().enumerate() {
+        let done = download_hub::transfer(
+            Some(&app),
+            DownloadRequest {
+                expected_sha256: Some(expected_sha256[i].clone()),
+                timeout: Some(std::time::Duration::from_secs(600)),
+                base_received: received_total,
+                base_total: total.saturating_sub(pkg.size),
+                total_hint: pkg.size,
+                detail: Some(serde_json::json!({
+                    "package": (i + 1) as u32,
+                    "packages": package_count,
+                })),
+                ..DownloadRequest::new(
+                    &progress_id,
+                    kind::MOD_PACKAGE,
+                    download_candidates(&pkg.url),
+                    work.0.join(format!("pkg-{i:02}.zip.part")),
+                )
+            },
+        )
+        .await
+        .map_err(|e| anyhow!("download {}: {e}", pkg.name))?;
+        received_total += done.bytes;
+        tokio::fs::rename(&done.path, work.0.join(format!("pkg-{i:02}.zip")))
+            .await
+            .map_err(|e| anyhow!("assemble package {i}: {e}"))?;
+        emit_progress(
+            &app,
+            &progress_id,
+            phase::DOWNLOAD,
+            (i + 1) as u32,
+            package_count,
+            received_total,
+            total,
+        );
+    }
+    emit_progress(
+        &app,
+        &progress_id,
+        phase::INSTALLING,
+        package_count,
+        package_count,
+        received_total,
+        total,
+    );
+
+    // Extraction + classification are blocking fs work — keep them off the
+    // async runtime threads, mirroring the install's spawn_blocking tail.
+    // The WorkDir guard rides along into the closure, so the whole temp
+    // tree (zips + unpacked roots) is dropped the moment the pass ends.
+    let classified = tauri::async_runtime::spawn_blocking(move || -> Vec<PackageFilePreview> {
+        packages
+            .iter()
+            .enumerate()
+            .map(|(i, pkg)| {
+                let archive = work.0.join(format!("pkg-{i:02}.zip"));
+                let root = work.0.join(format!("pkg-{i:02}"));
+                let mut visited = Vec::new();
+                let outcome = extract_zip(&archive, &root, &mut visited).and_then(|()| {
+                    mod_hub::classify_package(&root).map_err(|e| anyhow!("classify failed: {e}"))
+                });
+                match outcome {
+                    Ok(plan) => {
+                        let mut files: Vec<String> =
+                            plan.entries.iter().map(|e| e.to_rel.clone()).collect();
+                        files.sort();
+                        files.dedup();
+                        PackageFilePreview {
+                            name: pkg.name.clone(),
+                            size: pkg.size,
+                            files,
+                            warnings: plan.warnings,
+                        }
+                    },
+                    Err(e) => PackageFilePreview {
+                        name: pkg.name.clone(),
+                        size: pkg.size,
+                        files: Vec::new(),
+                        warnings: vec![e.to_string()],
+                    },
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| anyhow!("preview task: {e}"))?;
+
+    emit_progress(
+        &app,
+        &progress_id,
+        phase::DONE,
+        package_count,
+        package_count,
+        received_total,
+        total,
+    );
+    let bin_version = if game_root.is_empty() {
+        String::new()
+    } else {
+        mod_hub::latest_bin_version(&game_root)
+            .map(|(v, _)| v)
+            .unwrap_or_default()
+    };
+    tracing::info!(id = %mod_id, packages = classified.len(), "mod_catalog_preview_files done");
+    Ok(CatalogFilePreview {
+        bin_version,
+        packages: classified,
+    })
+}
+
+/// One safe path component: non-empty, no separators, no traversal. The
+/// webui only ever passes ledger-scanned values, but the reveal command
+/// validates its arguments like untrusted input anyway.
+fn validate_path_segment(seg: &str) -> anyhow::Result<&str> {
+    if seg.is_empty()
+        || seg == "."
+        || seg == ".."
+        || seg.contains(['/', '\\'])
+        || seg.contains('\0')
+    {
+        bail!("illegal path segment `{seg}`");
+    }
+    Ok(seg)
+}
+
+/// Open a unit's on-disk folder in the OS file manager: the game root's
+/// `bin/<version>/res_mods` plus an optional res_mods-relative sub-path.
+/// An empty bin version resolves to the client's current one; the resolved
+/// directory must exist, so a stale ledger record says so instead of
+/// opening an unrelated folder.
+#[tauri::command]
+pub fn mod_hub_reveal_path(
+    game_root: String,
+    bin_version: Option<String>,
+    rel_path: Option<String>,
+    app: AppHandle,
+) -> CommandResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let bin = match bin_version.as_deref().filter(|v| !v.is_empty()) {
+        Some(v) => validate_path_segment(v)?.to_string(),
+        None => mod_hub::latest_bin_version(&game_root)
+            .map(|(v, _)| v)
+            .ok_or_else(|| anyhow!("no bin version found under {game_root}"))?,
+    };
+    let mut dir = Path::new(&game_root)
+        .join("bin")
+        .join(&bin)
+        .join("res_mods");
+    for seg in rel_path.as_deref().unwrap_or("").split('/') {
+        dir = dir.join(validate_path_segment(seg)?);
+    }
+    if !dir.is_dir() {
+        return Err(anyhow!(
+            "{} does not exist on disk — the unit may have been uninstalled",
+            dir.display()
+        )
+        .into());
+    }
+    tracing::info!(path = %dir.display(), "mod_hub_reveal_path");
+    Ok(app
+        .opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| anyhow!("open {}: {e}", dir.display()))?)
 }
 
 /// The name a catalog install's record carries: the entry's Chinese title
@@ -2144,6 +2380,18 @@ mod tests {
         // A zero listed size means "unknown" — never fails.
         assert!(size_within_catalog(0, 0));
         assert!(size_within_catalog(12345, 0));
+    }
+
+    #[test]
+    fn reveal_path_segments_reject_traversal() {
+        assert_eq!(validate_path_segment("0.11.9").unwrap(), "0.11.9");
+        assert_eq!(validate_path_segment("PnFMods").unwrap(), "PnFMods");
+        for bad in ["", ".", "..", "a/b", "a\\b", "a\u{0}b"] {
+            assert!(
+                validate_path_segment(bad).is_err(),
+                "{bad:?} must be rejected"
+            );
+        }
     }
 
     #[test]
