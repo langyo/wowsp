@@ -120,8 +120,9 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
     >
       <div class="file-window">
         {/* Both panes scroll through hikari's scroll containers (overlay
-            thumbs; the native bars stay hidden). */}
-        <HkScrollContainer class="file-window__side">
+            thumbs; the native bars stay hidden). The left pane keeps the
+            aside landmark the plain div replaced. */}
+        <HkScrollContainer class="file-window__side" as="aside">
           <div class="file-window__side-inner">
           <div class="file-window__side-title">{t("resources.fileListPackages")}</div>
           {!fromLedger && preview && packages.length > 1 && (
