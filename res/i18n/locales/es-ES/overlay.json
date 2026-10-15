@@ -13,5 +13,8 @@
   "intelRange": "máx",
   "avgWinrate": "VR medio",
   "avgPr": "PR medio",
-  "avgDmg": "Daño medio"
+  "avgDmg": "Daño medio",
+  "colScopeSolo": "solo",
+  "colScopeShip": "barco",
+  "colScopeClass": "clase"
 }

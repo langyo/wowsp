@@ -14,22 +14,45 @@ export type PrAlgo = "winrate" | "expected";
  *  blob stays small and new kinds default to visible. */
 export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 
-/** Which SHIPS a roster row's numbers cover — dimension 1 of the
- *  stats-source model: the whole account (career), the ships sharing the
- *  row's own current-ship class / tier, or exactly that ship ("跟随单船"
- *  — each row reads the player's stats on the ship they are sailing in
- *  this battle). */
-export type RosterShipScope = "all" | "class" | "tier" | "ship";
+/** Which SHIPS a roster column's numbers cover — the per-column half of
+ *  the retired three-dimension stats source (the battle dimension stays
+ *  panel-wide, see `RosterBattleScope`): the whole account career
+ *  ("global"), the solo-queue split ("solo"), exactly the row's current
+ *  ship ("ship" — each row reads the player's stats on the ship they are
+ *  sailing in this battle), or every ship of that ship's type ("class" —
+ *  仅当前舰种). */
+export type OverlayColumnScope = "global" | "solo" | "ship" | "class";
 
-/** Which battle-type career the numbers read — dimension 2: "follow"
- *  tracks the current battle (ranked battles read the ranked career,
- *  everything else randoms), the fixed scopes pin randoms / ranked, and
- *  "all" is the global merge of the two. */
+/** Which number a roster column shows. */
+export type OverlayColumnMetric = "winrate" | "pr" | "battles" | "damage";
+
+/** One configured roster column: a scope × metric pair. The column LIST
+ *  (order included) is the persisted state — every roster surface (live
+ *  panel, post-battle panels, Tab overlay chips, share shots) renders
+ *  exactly these columns, left to right, up to OVERLAY_COLUMN_LIMIT of
+ *  them. */
+export interface OverlayColumn {
+  scope: OverlayColumnScope;
+  metric: OverlayColumnMetric;
+}
+
+export const OVERLAY_COLUMN_LIMIT = 5;
+
+/** Which battle-type career the columns read — the one remaining
+ *  panel-wide stats-source dimension: "follow" tracks the current battle
+ *  (ranked battles read the ranked career, everything else randoms), the
+ *  fixed scopes pin randoms / ranked, and "all" is the global merge of
+ *  the two. */
 export type RosterBattleScope = "follow" | "random" | "ranked" | "all";
 
-/** Whether the numbers are restricted to solo-queue battles — dimension
- *  3. The split only exists on the randoms side (solo/div2/div3); ranked
- *  passes through unsplit. */
+/** The ship dimension of the VIEW layer's dims (see utils/statView):
+ *  "all" reads the account careers; "class" / "tier" / "ship" aggregate
+ *  the player's per-ship list. The settings UI no longer exposes this
+ *  directly — the per-column scopes map onto it. */
+export type RosterShipScope = "all" | "class" | "tier" | "ship";
+
+/** The solo dimension of the VIEW layer's dims: "all" keeps every queue,
+ *  "solo" restricts the randoms side to the solo split. */
 export type RosterSoloScope = "all" | "solo";
 
 /** The retired pre-split single enum ("跟随对局/随机/排位/全局") — still
@@ -43,17 +66,6 @@ export function legacyBattleScopeOf(v: unknown): RosterBattleScope | null {
   if (v === "random" || v === "ranked") return v;
   if (v === "global") return "all";
   return null;
-}
-
-/** Per-row stat content switches — the Tab overlay's chips and the roster
- *  panels' columns alike (winrate / PR / battles / avg damage). At least
- *  one on → numbers render; all off → only the seal stamps remain (the
- *  panels additionally keep their battle-local XP column). */
-export interface OverlayChipToggles {
-  winrate: boolean;
-  pr: boolean;
-  battles: boolean;
-  damage: boolean;
 }
 
 /** Team-intel card item switches (radar / hydro / smoke estimates). The
@@ -111,17 +123,14 @@ export interface StatsPrefs {
   teamIntelEnabled: boolean;
   /** Per-seal visibility toggles (settings' seal customizer). */
   sealDisabled: SealDisableMap;
-  /** Tab overlay per-row chip / roster panel column content (winrate / PR /
-   *  battles / avg damage). */
-  overlayChips: OverlayChipToggles;
-  /** Stats-source ship scope — dimension 1 of the roster numbers (see
-   *  `RosterShipScope`). */
-  overlayShipScope: RosterShipScope;
-  /** Stats-source battle-type scope — dimension 2 (see
-   *  `RosterBattleScope`). */
+  /** The ordered roster columns every water-table surface renders (scope
+   *  × metric pairs, left to right, at most OVERLAY_COLUMN_LIMIT). An
+   *  empty list means no stat numbers at all — only the seal stamps (and
+   *  the panels' battle-local XP column) remain. */
+  overlayColumns: OverlayColumn[];
+  /** Stats-source battle-type scope — the panel-wide dimension every
+   *  column reads (see `RosterBattleScope`). */
   overlayBattleScope: RosterBattleScope;
-  /** Stats-source solo filter — dimension 3 (see `RosterSoloScope`). */
-  overlaySoloScope: RosterSoloScope;
   /** Team-intel card items (master switch `teamIntelEnabled`). */
   overlayIntel: OverlayIntelToggles;
   /** Team-average line items under each team. */
@@ -160,12 +169,17 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   postbattleRosterFull: false,
   teamIntelEnabled: true,
   sealDisabled: {},
-  // All four stat columns ship on: the roster reads winrate / PR / battles
-  // together (each still individually switchable in the settings).
-  overlayChips: { winrate: true, pr: true, battles: true, damage: true },
-  overlayShipScope: "all",
+  // The four shipped columns — global career winrate / PR / battles /
+  // avg damage, left to right — exactly what the retired chip toggles
+  // defaulted to (each still individually removable / reorderable /
+  // re-scopable in the settings' column editor).
+  overlayColumns: [
+    { scope: "global", metric: "winrate" },
+    { scope: "global", metric: "pr" },
+    { scope: "global", metric: "battles" },
+    { scope: "global", metric: "damage" },
+  ],
   overlayBattleScope: "follow",
-  overlaySoloScope: "all",
   overlayIntel: { radar: true, hydro: true, smoke: true },
   overlayTeamAvg: { winrate: false, pr: false, damage: false },
 };
@@ -174,16 +188,91 @@ function isPrAlgo(v: unknown): v is PrAlgo {
   return v === "winrate" || v === "expected";
 }
 
-function isRosterShipScope(v: unknown): v is RosterShipScope {
-  return v === "all" || v === "class" || v === "tier" || v === "ship";
-}
-
 function isRosterBattleScope(v: unknown): v is RosterBattleScope {
   return v === "follow" || v === "random" || v === "ranked" || v === "all";
 }
 
-function isRosterSoloScope(v: unknown): v is RosterSoloScope {
-  return v === "all" || v === "solo";
+function isOverlayColumnScope(v: unknown): v is OverlayColumnScope {
+  return v === "global" || v === "solo" || v === "ship" || v === "class";
+}
+
+function isOverlayColumnMetric(v: unknown): v is OverlayColumnMetric {
+  return v === "winrate" || v === "pr" || v === "battles" || v === "damage";
+}
+
+/** The retired chip toggles, as last written by a pre-columns build —
+ *  read off the raw blob only, as a migration seed. */
+export interface LegacyOverlayChips {
+  winrate: boolean;
+  pr: boolean;
+  battles: boolean;
+  damage: boolean;
+}
+
+/** Validate a raw overlayColumns value: entries of a wrong shape drop
+ *  out, duplicates keep their first occurrence, the list caps at
+ *  OVERLAY_COLUMN_LIMIT — a hand-edited blob can never smuggle in junk
+ *  or an oversized roster. */
+export function parseOverlayColumns(raw: unknown): OverlayColumn[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OverlayColumn[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (entry == null || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (!isOverlayColumnScope(e.scope) || !isOverlayColumnMetric(e.metric)) continue;
+    const key = `${e.scope}:${e.metric}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ scope: e.scope, metric: e.metric });
+    if (out.length >= OVERLAY_COLUMN_LIMIT) break;
+  }
+  return out;
+}
+
+/** Column-scope seed off the retired ship/solo dimensions: a blob last
+ *  written by a pre-columns build mapped its whole roster onto one scope,
+ *  so every chip it had on becomes a column of that scope. "tier" has no
+ *  column scope and falls back to the account career ("global"). */
+function legacyColumnScopeOf(
+  ship: unknown,
+  solo: unknown,
+): OverlayColumnScope {
+  if (solo === "solo") return "solo";
+  if (ship === "ship") return "ship";
+  if (ship === "class") return "class";
+  return "global";
+}
+
+/** The chips (+ ship/solo dims) a pre-columns blob carried → the column
+ *  list preserving its intent: enabled chips become columns of the mapped
+ *  scope, in the render order that build used (winrate → PR → battles →
+ *  avg damage). Shared by the store's parsePrefs AND the overlay
+ *  window's readOverlayDisplayPrefs so the two migrations agree even
+ *  before the main window's heal-write lands. */
+export function legacyColumnsSeed(
+  chips: LegacyOverlayChips,
+  ship: unknown,
+  solo: unknown,
+): OverlayColumn[] {
+  const scope = legacyColumnScopeOf(ship, solo);
+  const out: OverlayColumn[] = [];
+  if (chips.winrate) out.push({ scope, metric: "winrate" });
+  if (chips.pr) out.push({ scope, metric: "pr" });
+  if (chips.battles) out.push({ scope, metric: "battles" });
+  if (chips.damage) out.push({ scope, metric: "damage" });
+  return out;
+}
+
+/** Read the retired chip toggles off a raw blob (migration seed only). */
+export function legacyChipsOf(raw: unknown): LegacyOverlayChips {
+  const out: LegacyOverlayChips = { winrate: false, pr: false, battles: false, damage: false };
+  if (raw == null || typeof raw !== "object") return out;
+  const src = raw as Record<string, unknown>;
+  for (const key of Object.keys(out) as Array<keyof LegacyOverlayChips>) {
+    if (typeof src[key] === "boolean") out[key] = src[key] as boolean;
+  }
+  return out;
 }
 
 /** Read a toggles object of shape T off a raw blob: known boolean keys are
@@ -217,26 +306,43 @@ function parseSealDisabled(v: unknown): SealDisableMap {
 function parsePrefs(raw: string | null): StatsPrefs | null {
   if (raw == null) return null;
   try {
-    // `overlayStatsMode` is the RETIRED pre-split stats-source enum — kept
-    // on the raw shape only, as a migration seed (see the battle-scope
-    // parse below).
+    // `overlayStatsMode` (the pre-split battle enum) and the
+    // chips/ship/solo trio (pre-columns) are RETIRED keys — kept on the
+    // raw shape only, as migration seeds (see the columns parse below).
     const j = JSON.parse(raw) as Partial<StatsPrefs> & {
       avgStatsEnabled?: unknown;
       overlayStatsMode?: unknown;
+      overlayChips?: unknown;
+      overlayShipScope?: unknown;
+      overlaySoloScope?: unknown;
     };
     if (j == null || typeof j !== "object") return null;
-    // Migration: the old single "per-row avg stats" switch seeds the chip
-    // toggles the first time a pre-overlayChips blob is read — its spirit
-    // was "show the stat numbers", so it seeds the whole shipped set.
+    // Migration: the old single "per-row avg stats" switch seeds the
+    // columns the first time a pre-overlayChips blob is read — its
+    // spirit was "show the stat numbers", so it seeds the whole shipped
+    // set (all four on).
     const legacyAvg =
       typeof j.avgStatsEnabled === "boolean" ? j.avgStatsEnabled : null;
-    const seededChips: OverlayChipToggles =
+    const seededChips: LegacyOverlayChips =
       legacyAvg == null
-        ? DEFAULT_STATS_PREFS.overlayChips
-        : // The legacy switch's spirit was "show the stat numbers" — it
-          // seeds the whole shipped set now (all four on), not the old
-          // winrate+damage-only pair.
-          { winrate: legacyAvg, pr: legacyAvg, battles: legacyAvg, damage: legacyAvg };
+        ? { winrate: true, pr: true, battles: true, damage: true }
+        : {
+            winrate: legacyAvg,
+            pr: legacyAvg,
+            battles: legacyAvg,
+            damage: legacyAvg,
+          };
+    // Columns: the stored list when this build (or a newer one) wrote
+    // it; otherwise the retired chips + ship/solo dims seed it — every
+    // enabled chip becomes a column of the scope those dims mapped onto.
+    const hasColumns = Array.isArray(j.overlayColumns);
+    const overlayColumns = hasColumns
+      ? parseOverlayColumns(j.overlayColumns)
+      : legacyColumnsSeed(
+          j.overlayChips == null ? seededChips : legacyChipsOf(j.overlayChips),
+          j.overlayShipScope,
+          j.overlaySoloScope,
+        );
     return {
       prEnabled:
         typeof j.prEnabled === "boolean" ? j.prEnabled : DEFAULT_STATS_PREFS.prEnabled,
@@ -270,22 +376,15 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
           ? j.teamIntelEnabled
           : DEFAULT_STATS_PREFS.teamIntelEnabled,
       sealDisabled: parseSealDisabled(j.sealDisabled),
-      overlayChips: parseToggles(j.overlayChips, seededChips),
-      // Migration: a blob written before the three-dimension split only
+      overlayColumns,
+      // Migration: a blob written before the battle-dimension split only
       // carries the retired `overlayStatsMode` enum — it seeds the battle
-      // dimension (ship/solo start "all"); the healed rewrite then drops
-      // the legacy key for good.
-      overlayShipScope: isRosterShipScope(j.overlayShipScope)
-        ? j.overlayShipScope
-        : DEFAULT_STATS_PREFS.overlayShipScope,
+      // dimension; the healed rewrite then drops the legacy key for good.
       overlayBattleScope:
         isRosterBattleScope(j.overlayBattleScope)
           ? j.overlayBattleScope
           : legacyBattleScopeOf(j.overlayStatsMode) ??
             DEFAULT_STATS_PREFS.overlayBattleScope,
-      overlaySoloScope: isRosterSoloScope(j.overlaySoloScope)
-        ? j.overlaySoloScope
-        : DEFAULT_STATS_PREFS.overlaySoloScope,
       overlayIntel: parseToggles(j.overlayIntel, DEFAULT_STATS_PREFS.overlayIntel),
       overlayTeamAvg: parseToggles(j.overlayTeamAvg, DEFAULT_STATS_PREFS.overlayTeamAvg),
     };
@@ -411,26 +510,21 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     persist({ ...prefs.value });
   }
 
-  function setOverlayChip<K extends keyof OverlayChipToggles>(
-    key: K,
-    v: boolean,
-  ) {
-    prefs.value.overlayChips = { ...prefs.value.overlayChips, [key]: v };
-    persist({ ...prefs.value });
-  }
-
-  function setOverlayShipScope(v: RosterShipScope) {
-    prefs.value.overlayShipScope = v;
-    persist({ ...prefs.value });
+  /** The one write path for the column list — add / remove / reorder all
+   *  land here, revalidated so a buggy caller can never exceed the limit
+   *  or duplicate a scope×metric pair. */
+  function setOverlayColumns(cols: OverlayColumn[]) {
+    const next = parseOverlayColumns(cols);
+    if (next.length === cols.length) {
+      prefs.value.overlayColumns = next;
+      persist({ ...prefs.value });
+    }
+    // A rejected write (dup / over-limit) silently no-ops: the editor UI
+    // prevents those states, so this is only the hand-edited-blob guard.
   }
 
   function setOverlayBattleScope(v: RosterBattleScope) {
     prefs.value.overlayBattleScope = v;
-    persist({ ...prefs.value });
-  }
-
-  function setOverlaySoloScope(v: RosterSoloScope) {
-    prefs.value.overlaySoloScope = v;
     persist({ ...prefs.value });
   }
 
@@ -459,10 +553,8 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setPostbattleRosterFull,
     setTeamIntelEnabled,
     setSealDisabled,
-    setOverlayChip,
-    setOverlayShipScope,
+    setOverlayColumns,
     setOverlayBattleScope,
-    setOverlaySoloScope,
     setOverlayIntel,
     setOverlayTeamAvg,
   };

@@ -160,7 +160,18 @@
     "kills": "격침",
     "sunkAt": "{time} 침몰",
     "aliveCount": "생존 {alive}/{total}",
-    "ship": "함선"
+    "ship": "함선",
+    "scopeGlobal": "전체",
+    "scopeSolo": "솔로만",
+    "scopeShip": "해당 함선만",
+    "scopeClass": "현재 함종만",
+    "scopeTagSolo": "솔로",
+    "scopeTagShip": "함선",
+    "scopeTagClass": "함종",
+    "metricWinrate": "승률",
+    "metricPr": "PR",
+    "metricBattles": "전투 수",
+    "metricDamage": "평균"
   },
   "minimap": {
     "zoom": "확대 맵",

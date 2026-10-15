@@ -57,14 +57,18 @@ import {
   teamIntelFor,
   type TeamIntelCount,
 } from "./teamIntel";
-// Display prefs (content toggles + the three-dimension stats source), read
-// with the same tolerant contract as the store and re-read live when the
-// main window broadcasts a prefs write (see refreshPrefs below).
+// Display prefs (the configured stat columns + the battle-type scope),
+// read with the same tolerant contract as the store and re-read live when
+// the main window broadcasts a prefs write (see refreshPrefs below).
 import {
-  dimsNeedShipStats,
+  columnsNeedShipStats,
+  effectiveOverlayColumns,
+  overlayColumnDims,
   readOverlayDisplayPrefs,
   resolveRosterBattleScope,
+  rosterStatView,
   scopedRosterView,
+  type OverlayColumnScope,
   type PrAlgo,
   type RawStat,
   type RosterModeNumbers,
@@ -105,7 +109,7 @@ interface OverlayMessages {
    *  bot row's stat cell (rowFace/statFace). Count-less by design — the
    *  face IS a bot, and the game's own table marks its bot rows anyway. */
   botLabel: string;
-  /** The per-row battle-count face (chipNumbers) as a pattern carrying
+  /** The per-row battle-count face (chipColumns) as a pattern carrying
    *  the count in `{n}`: the copy owns the unit word AND its placement,
    *  which is what lets one pattern serve all nine locales (the Chinese
    *  measure word hugs the number, Korean's noun reads before it). `{n}`
@@ -125,6 +129,11 @@ interface OverlayMessages {
   avgWinrate: string;
   avgPr: string;
   avgDmg: string;
+  /** Scope tags a non-global chip column carries before its figure
+   *  (scopeTagHtml — the muted "单人/单船/舰种" prefixes). */
+  colScopeSolo: string;
+  colScopeShip: string;
+  colScopeClass: string;
 }
 const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
@@ -293,20 +302,20 @@ let PREFS = readOverlayDisplayPrefs();
 // suit.
 let SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
 // Whether ANY per-row number (winrate / PR / battles / avg damage) can
-// render — gates the placeholder faces and the "querying" badge the same
-// way the old single avg-stats switch did.
-let ANY_CHIP_ON =
-  PREFS.chips.winrate || PREFS.chips.pr || PREFS.chips.battles || PREFS.chips.damage;
-// Which battle-mode career the chips + team averages render, resolved per
-// battle in render() ("follow" tracks the arena's mode key; the fixed
-// scopes and the global merge pin it).
+// render — gates the placeholder faces and the "querying" badge. PR
+// columns drop out while the rating master is off, exactly like the
+// webui's rosterColumns().
+let ANY_CHIP_ON = effectiveOverlayColumns(PREFS.columns, PREFS.prOn).length > 0;
+// Which battle-mode career the chip columns + team averages render,
+// resolved per battle in render() ("follow" tracks the arena's mode key;
+// the fixed scopes and the global merge pin it).
 let statsMode: ResolvedStatsMode = "random";
-// A ship-scoped dimension is on (ship scope beyond the account careers, or
-// the solo filter): every landed human stat then also carries the player's
-// full per-ship list, and the chip/team-average views aggregate it through
-// the SAME utils/shipStatsScope the main-window panels use. Re-derived on
-// every prefs refresh (refreshPrefs below).
-let SHIP_SCOPE_ON = dimsNeedShipStats(PREFS.statsDims);
+// Any configured column resolves past the account careers (a ship/class
+// column, or the solo split): every landed human stat then also carries
+// the player's full per-ship list, and the column views aggregate it
+// through the SAME utils/shipStatsScope the main-window panels use.
+// Re-derived on every prefs refresh (refreshPrefs below).
+let SHIP_SCOPE_ON = columnsNeedShipStats(PREFS.columns, PREFS.prOn);
 // Bumped whenever the stats cache is invalidated wholesale (a PR-algo
 // param flip): in-flight batches snapshot it and discard answers computed
 // under the previous algo instead of re-caching stale numbers.
@@ -338,9 +347,8 @@ function refreshPrefs(): void {
   const prevAlgo = statsAlgo;
   PREFS = readOverlayDisplayPrefs();
   SEALS_SHOWN = PREFS.sealsOn && locale.startsWith("zh");
-  ANY_CHIP_ON =
-    PREFS.chips.winrate || PREFS.chips.pr || PREFS.chips.battles || PREFS.chips.damage;
-  SHIP_SCOPE_ON = dimsNeedShipStats(PREFS.statsDims);
+  ANY_CHIP_ON = effectiveOverlayColumns(PREFS.columns, PREFS.prOn).length > 0;
+  SHIP_SCOPE_ON = columnsNeedShipStats(PREFS.columns, PREFS.prOn);
   const nextAlgo = PREFS.prAlgo ?? "winrate";
   if (nextAlgo !== prevAlgo) {
     statsGeneration += 1;
@@ -511,16 +519,16 @@ function shipIdOfName(name: string): number | null {
   return null;
 }
 
-/** One player's display numbers under the FULL three-dimension stats
- *  source: the account careers while the dims allow it, the aggregated
- *  per-ship view otherwise — the same utils/shipStatsScope module the
- *  main-window panels resolve through. */
-function scopedStatView(name: string): RosterModeNumbers {
+/** One player's display numbers for ONE column scope: the account
+ *  careers for "global" (and the solo sweep's whole-list aggregate), the
+ *  per-ship aggregate otherwise — the same utils/shipStatsScope module
+ *  the main-window panels resolve through. */
+function columnStatView(name: string, scope: OverlayColumnScope): RosterModeNumbers {
   const st = stats.get(cacheKey(name));
   return scopedRosterView(
     st,
     shipIdOfName(name),
-    PREFS.statsDims,
+    overlayColumnDims(scope, PREFS.battleScope),
     statsMode,
     PREFS.prAlgo ?? "winrate",
   );
@@ -619,50 +627,66 @@ function stampNode(kind: StampKind): string {
   return `<span class="overlay-stamp" data-stamp="${kind}" title="${label}">${label}</span>`;
 }
 
-/** The per-row number block, one COLUMN per enabled chip toggle (winrate /
- *  PR / battles / avg damage) in that order, joined by dots. Each figure
- *  sits in a fixed-width right-aligned cell (.overlay-num + the n-* class,
- *  widths in ch on the mono face), so every metric reads as its own aligned
- *  column across rows — a 3-digit PR no longer drags the battles and
- *  damage figures out of line. A metric with no value renders its dash in
- *  the same cell, keeping the column. The values come from the stats
- *  source in force (randoms / ranked / global). */
-function chipNumbers(v: RosterModeNumbers): string {
+/** Scope → the muted tag a non-global column carries before its figure
+ *  (overlay.json carries the wording per locale). */
+function scopeTagHtml(scope: OverlayColumnScope): string {
+  if (scope === "solo") return `<span class="overlay-scope">${localized("colScopeSolo")}</span>`;
+  if (scope === "ship") return `<span class="overlay-scope">${localized("colScopeShip")}</span>`;
+  if (scope === "class") return `<span class="overlay-scope">${localized("colScopeClass")}</span>`;
+  return "";
+}
+
+/** The per-row number block, one COLUMN per configured scope × metric
+ *  pair, joined by dots. Each figure sits in a fixed-width right-aligned
+ *  cell (.overlay-num + the n-* class, widths in ch on the mono face), so
+ *  every metric reads as its own aligned column across rows — a 3-digit
+ *  PR no longer drags the battles and damage figures out of line. A
+ *  metric with no value renders its dash in the same cell, keeping the
+ *  column. Scoped (non-global) columns carry their small muted scope tag
+ *  inside the bold value, ahead of the figure — the tag hangs OUTSIDE
+ *  the fixed-width cell (same rule as the battles unit) so the figures
+ *  alone define the column; the ENEMY side renders the columns REVERSED
+ *  so the two sides mirror each other around the game's table (config
+ *  order reads left→right on the ally block). */
+function chipColumns(name: string, side: "ally" | "enemy"): string {
+  const cols = effectiveOverlayColumns(PREFS.columns, PREFS.prOn);
+  const ordered = side === "enemy" ? [...cols].reverse() : cols;
   const parts: string[] = [];
   const fig = (cls: string, text: string) =>
     `<span class="overlay-num ${cls}">${text}</span>`;
-  if (PREFS.chips.winrate) {
-    parts.push(
-      v.winrate != null
-        ? `<b style="color:${winrateColor(v.winrate)}">${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
-        : `<b class="muted">${fig("n-wr", "—")}</b>`,
-    );
-  }
-  if (PREFS.chips.pr && PREFS.prOn) {
-    parts.push(
-      v.pr != null
-        ? `<b style="color:${prTier(v.pr).color}">${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
-        : `<b class="muted">${fig("n-pr", "—")}</b>`,
-    );
-  }
-  if (PREFS.chips.battles) {
-    // Red under 200 battles (thin-sample warning), plain above — same rule
-    // as the roster panels' battles column (utils/winrate battlesColor).
-    // The count lands with its localized unit (battlesText) — the unit
-    // hangs OUTSIDE the fixed-width cell so the figures alone align.
-    const color = battlesColor(v.battles);
-    parts.push(
-      v.battles != null
-        ? `<b${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`
-        : `<b class="muted">${fig("n-battles", "—")}</b>`,
-    );
-  }
-  if (PREFS.chips.damage) {
-    parts.push(
-      v.avgDamage != null
-        ? `<b style="color:${damageColor(v.avgDamage)}">${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
-        : `<b class="muted">${fig("n-dmg", "—")}</b>`,
-    );
+  for (const col of ordered) {
+    const v = columnStatView(name, col.scope);
+    const tag = scopeTagHtml(col.scope);
+    if (col.metric === "winrate") {
+      parts.push(
+        v.winrate != null
+          ? `<b style="color:${winrateColor(v.winrate)}">${tag}${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
+          : `<b class="muted">${tag}${fig("n-wr", "—")}</b>`,
+      );
+    } else if (col.metric === "pr") {
+      parts.push(
+        v.pr != null
+          ? `<b style="color:${prTier(v.pr).color}">${tag}${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
+          : `<b class="muted">${tag}${fig("n-pr", "—")}</b>`,
+      );
+    } else if (col.metric === "battles") {
+      // Red under 200 battles (thin-sample warning), plain above — same rule
+      // as the roster panels' battles column (utils/winrate battlesColor).
+      // The count lands with its localized unit (battlesText) — the unit
+      // hangs OUTSIDE the fixed-width cell so the figures alone align.
+      const color = battlesColor(v.battles);
+      parts.push(
+        v.battles != null
+          ? `<b${color ? ` style="color:${color}"` : ""}>${tag}${battlesText(v.battles)}</b>`
+          : `<b class="muted">${tag}${fig("n-battles", "—")}</b>`,
+      );
+    } else {
+      parts.push(
+        v.avgDamage != null
+          ? `<b style="color:${damageColor(v.avgDamage)}">${tag}${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
+          : `<b class="muted">${tag}${fig("n-dmg", "—")}</b>`,
+      );
+    }
   }
   return parts.join(`<span class="sep">·</span>`);
 }
@@ -699,7 +723,7 @@ function displayNameOf(name: string): string {
  *  the muted bot label for AI rows (they carry no lookup). Nothing at all
  *  with every number toggle off (the row then carries seals/name only). A
  *  story-layout bot row never reaches here — the render loop drops it. */
-function statFace(name: string): string {
+function statFace(name: string, side: "ally" | "enemy"): string {
   if (!ANY_CHIP_ON) return "";
   if (AI_NAME.test(name)) return `<span class="muted">${localized("botLabel")}</span>`;
   const st = stats.get(cacheKey(name));
@@ -713,7 +737,7 @@ function statFace(name: string): string {
   if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
     return loadingDots();
   }
-  return chipNumbers(scopedStatView(name));
+  return chipColumns(name, side);
 }
 
 /** The row's seal cluster (career verdict + composition tags through the
@@ -763,7 +787,7 @@ function sealNodes(name: string): string {
  *  table, names left-aligned), allies mirror it [seals][name][stats]
  *  growing leftward (stats left-aligned, names right-aligned). */
 function rowFace(name: string, side: "ally" | "enemy"): string {
-  const stat = `<span class="overlay-chip__stat">${statFace(name)}</span>`;
+  const stat = `<span class="overlay-chip__stat">${statFace(name, side)}</span>`;
   const label = `<span class="overlay-chip__name">${displayNameOf(name)}</span>`;
   const seals = sealNodes(name);
   return side === "ally" ? seals + label + stat : stat + label + seals;
@@ -842,15 +866,12 @@ function teamSummaryCard(
             .filter((v) => !AI_NAME.test(v.name))
             .map((v) => {
               const st = stats.get(cacheKey(v.name));
+              // The team averages grade the ACCOUNT careers (the global
+              // column scope) — the per-column scoped numbers ride the
+              // rows and the live panel's per-column headers instead.
               const v2 =
                 st && !st.hidden
-                  ? scopedRosterView(
-                      st,
-                      v.shipId ?? null,
-                      PREFS.statsDims,
-                      statsMode,
-                      PREFS.prAlgo ?? "winrate",
-                    )
+                  ? rosterStatView(st, statsMode)
                   : null;
               return {
                 winrate: v2?.winrate ?? null,
@@ -1059,7 +1080,7 @@ function render() {
   // Which battle-mode stats this battle renders ("follow" resolves per
   // battle — ranked battles show the ranked career, everything else the
   // randoms career; the fixed scopes pin it).
-  statsMode = resolveRosterBattleScope(PREFS.statsDims.battle, arena);
+  statsMode = resolveRosterBattleScope(PREFS.battleScope, arena);
   const dpr = window.devicePixelRatio || 1;
   const rows = anchor.rowCenters;
   if (rows.length === 0) return;

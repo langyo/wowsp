@@ -9,6 +9,15 @@
    in a mono face; values are tier-colored inline (battles: red under 200
    battles, plain above — the count carries no tier color); fixed ch widths
    keep each column aligned across rows on every surface. */
+/* A scoped column's tag (单人/单船/舰种 …) inside the full card's stat
+   text line — the muted small face, so the tag reads as a qualifier of
+   the number it prefixes, never as a value. */
+.replay-view__statline-scope {
+  font-size: 0.85em;
+  opacity: 0.68;
+  margin-right: 2px;
+}
+
 .replay-view__postbattle-cell-stat {
   flex: 0 0 auto;
   text-align: right;

@@ -430,7 +430,7 @@
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  grid-template-columns: 10rem minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 2.5rem;
+  grid-template-columns: 10rem minmax(0, 1fr) minmax(6ch, max-content) 2.5rem;
   column-gap: 10px;
   align-items: center;
   padding: 7px 9px;
@@ -513,18 +513,17 @@
   display: block;
   min-width: 0;
 }
-/* The shared dmg column + this panel's XP cell, pinned onto their tracks. */
-.replay-view__postbattle-fcell-btn .replay-view__postbattle-cell-stat--dmg {
-  grid-column: 3;
-}
+/* This panel's XP cell, pinned onto its track (the configured stat
+   columns ride the stat text strip inside the main track now — damage
+   included, so no dedicated dmg track remains). */
 .replay-view__postbattle-fcell-xp {
-  grid-column: 4;
+  grid-column: 3;
   justify-self: end;
   text-align: right;
   font-family: var(--font-mono);
 }
 .replay-view__postbattle-fcell-btn .replay-view__postbattle-cell-stampslot {
-  grid-column: 5;
+  grid-column: 4;
   flex-basis: auto;
   justify-self: center;
 }

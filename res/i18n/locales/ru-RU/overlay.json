@@ -13,5 +13,8 @@
   "intelRange": "макс",
   "avgWinrate": "Ср. винрейт",
   "avgPr": "Ср. PR",
-  "avgDmg": "Ср. урон"
+  "avgDmg": "Ср. урон",
+  "colScopeSolo": "соло",
+  "colScopeShip": "корабль",
+  "colScopeClass": "класс"
 }

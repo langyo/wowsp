@@ -13,5 +13,8 @@
   "intelRange": "最远",
   "avgWinrate": "平均胜率",
   "avgPr": "平均PR",
-  "avgDmg": "场均"
+  "avgDmg": "场均",
+  "colScopeSolo": "单人",
+  "colScopeShip": "单船",
+  "colScopeClass": "舰种"
 }

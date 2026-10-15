@@ -1,63 +1,95 @@
 /**
- * Shared stats-source selection for every roster surface (the live battle
+ * Shared stats-source resolution for every roster surface (the live battle
  * panel, both post-battle panels and the in-game Tab overlay).
  *
- * The source is modeled as THREE orthogonal dimensions persisted in the
- * statsPrefs blob (see stores/statsPrefs.ts):
+ * The source is TWO layers:
  *
- *   1. ship scope   — all ships (account careers) / the row's current-ship
- *                     class / tier / exactly that ship;
- *   2. battle scope — follow the battle / randoms / ranked / the global
- *                     merge of the two;
- *   3. solo filter  — all divisions / solo queue only.
+ *   1. per-COLUMN scope — each configured roster column (see
+ *      stores/statsPrefs' OverlayColumn) carries its own scope: the whole
+ *      account career ("global"), the solo split ("solo"), exactly the
+ *      row's current ship ("ship") or every ship of its type ("class");
+ *   2. panel-wide battle scope — follow the battle / randoms / ranked /
+ *      the global merge of the two, shared by every column.
  *
  * This module owns the battle-dimension resolution ("follow" against one
- * battle's identity) and the account-career picker the all-ships scope
- * reads; the ship-scoped dimensions aggregate per-ship payloads instead
- * (see utils/shipStatsScope.ts). Every surface consumes all three — the
- * in-game Tab overlay included (its bare-DOM page re-reads the dims live
- * off the store's broadcast and fetches per-ship lists through the shared
- * backend source).
+ * battle's identity), the account-career picker the global/solo columns
+ * read, and the column-scope → dims mapping the ship-scoped columns
+ * aggregate per-ship payloads through (see utils/shipStatsScope.ts).
+ * Every surface consumes both — the in-game Tab overlay included (its
+ * bare-DOM page re-reads the columns live off the store's broadcast and
+ * fetches per-ship lists through the shared backend source).
  */
 import { modeKey } from "@/utils/modeColors";
 import type {
+  OverlayColumn,
+  OverlayColumnScope,
   RosterBattleScope,
   RosterShipScope,
   RosterSoloScope,
 } from "@/stores/statsPrefs";
 
 export type { RosterBattleScope, RosterShipScope, RosterSoloScope };
+export type { OverlayColumn, OverlayColumnScope };
 
 /** A battle scope with "follow" already resolved against one battle's
  *  identity. */
 export type ResolvedStatsMode = "random" | "ranked" | "all";
 
-/** The three stored stats-source dimensions as one plain object (what
- *  `rosterDimsOf` hands the view layer). */
+/** The view layer's scope dimensions as one plain object (what
+ *  `scopedRosterView` consumes). */
 export interface RosterStatsDims {
   ship: RosterShipScope;
   battle: RosterBattleScope;
   solo: RosterSoloScope;
 }
 
-/** Read the three stats-source dimensions off a statsPrefs-shaped object. */
-export function rosterDimsOf(p: {
-  overlayShipScope: RosterShipScope;
-  overlayBattleScope: RosterBattleScope;
-  overlaySoloScope: RosterSoloScope;
-}): RosterStatsDims {
-  return {
-    ship: p.overlayShipScope,
-    battle: p.overlayBattleScope,
-    solo: p.overlaySoloScope,
-  };
-}
-
-/** True when the dimensions cannot be served by the account careers the
+/** True when these dims cannot be served by the account careers the
  *  roster batch already carries — the row views then need the player's
  *  full per-ship list (the pipeline in composables/useRosterStats). */
 export function dimsNeedShipStats(dims: RosterStatsDims): boolean {
   return dims.ship !== "all" || dims.solo === "solo";
+}
+
+/** One column scope → the ship/solo dims pair its views resolve through.
+ *  "global" reads the account careers the roster batch already carries;
+ *  every other scope needs the player's per-ship list (see
+ *  dimsNeedShipStats). */
+export function overlayColumnDims(
+  scope: OverlayColumnScope,
+  battle: RosterBattleScope,
+): RosterStatsDims {
+  switch (scope) {
+    case "solo":
+      return { ship: "all", battle, solo: "solo" };
+    case "ship":
+      return { ship: "ship", battle, solo: "all" };
+    case "class":
+      return { ship: "class", battle, solo: "all" };
+    default:
+      return { ship: "all", battle, solo: "all" };
+  }
+}
+
+/** The columns that actually render: PR columns drop out while the
+ *  rating master is off — the same rule every render surface applies
+ *  (postBattleShare's rosterColumns, the overlay's chip columns). */
+export function effectiveOverlayColumns(
+  columns: readonly OverlayColumn[],
+  prOn: boolean,
+): OverlayColumn[] {
+  return prOn ? [...columns] : columns.filter((c) => c.metric !== "pr");
+}
+
+/** True when ANY rendered column resolves past the account careers the
+ *  roster batch already carries — the rows then need the players' full
+ *  per-ship lists (the pipeline in composables/useRosterStats). PR columns
+ *  the rating master hides do not count: invisible columns must not drive
+ *  fetches or spinners. */
+export function columnsNeedShipStats(
+  columns: readonly OverlayColumn[],
+  prOn: boolean,
+): boolean {
+  return effectiveOverlayColumns(columns, prOn).some((c) => c.scope !== "global");
 }
 
 /** One mode's display numbers (all null = never played that mode / miss). */

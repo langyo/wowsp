@@ -13,5 +13,8 @@
   "intelRange": "max",
   "avgWinrate": "WR moyen",
   "avgPr": "PR moyen",
-  "avgDmg": "Dégâts moy."
+  "avgDmg": "Dégâts moy.",
+  "colScopeSolo": "solo",
+  "colScopeShip": "navire",
+  "colScopeClass": "classe"
 }

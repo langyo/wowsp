@@ -11,10 +11,11 @@
  * hidden-profile notice (never a fake "—"), the shared text line, a muted
  * dash when nothing applies.
  */
-import { defineComponent } from "vue";
+import { defineComponent, type PropType } from "vue";
 import { HkSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import type { OverlayColumnScope } from "@/stores/statsPrefs";
 import type { RosterModeNumbers } from "@/utils/statView";
 import { rosterStatLine } from "./postBattleShare";
 
@@ -29,9 +30,14 @@ export default defineComponent({
     /** Hidden profile: a red notice, not a fake "—" (the player could have
      *  stats — they chose to hide them). */
     hidden: { type: Boolean, default: false },
-    /** The row's resolved stats-source numbers — rendered once the states
-     *  above are clear; null values keep their "—" slots inside the line. */
-    view: { type: Object as () => RosterModeNumbers | null, default: null },
+    /** The row's per-column-scope number resolvers — each configured
+     *  column reads its own view through here; rendered once the states
+     *  above are clear, null values keep their "—" slots inside the
+     *  line. Absent = no resolvers (a gate holds). */
+    views: {
+      type: Function as PropType<(scope: OverlayColumnScope) => RosterModeNumbers>,
+      default: undefined,
+    },
   },
   setup(props) {
     return () => {
@@ -52,7 +58,7 @@ export default defineComponent({
           </span>
         );
       }
-      const line = props.view ? rosterStatLine(props.view) : null;
+      const line = props.views ? rosterStatLine(props.views) : null;
       return (
         <span class="live-battle__player-stat">
           {line != null ? (

@@ -28,12 +28,7 @@
  * number.
  */
 import type { PlayerShipStats, ShipModeStats } from "@/api";
-import {
-  prAlgoForRequest,
-  statsPrefsState,
-  type PrAlgo,
-  type RosterShipScope,
-} from "@/stores/statsPrefs";
+import { type PrAlgo, type RosterShipScope } from "@/stores/statsPrefs";
 // shipClass only (NOT features/holographic/modelLoader): this module is
 // shared with the bare-DOM Tab overlay page, which must stay free of the
 // three.js/model-pack dependency chain. Same offline database either way.
@@ -41,7 +36,6 @@ import { shipTierOf, shipTypeOf } from "@/utils/shipClass";
 import {
   EMPTY_ROSTER_VIEW,
   dimsNeedShipStats,
-  rosterDimsOf,
   rosterStatView,
   type ResolvedStatsMode,
   type RosterModeNumbers,
@@ -240,19 +234,15 @@ export function scopedRosterView(
   );
 }
 
-/** Convenience for prop-driven consumers (the replay fallback matrix):
- *  resolve the dims straight off the live prefs and scope one row's view
- *  against an already-resolved battle scope. */
+/** Convenience for prop-driven consumers (the holographic ship tooltip):
+ *  resolve the ACCOUNT career view against an already-resolved battle
+ *  scope. The per-column scopes live in the roster surfaces' own column
+ *  engines (postBattleShare / overlay main) — a tooltip has no column
+ *  list of its own, so it reads the plain global career. */
 export function scopedViewOf(
   st: (RosterStatViewSource & ShipScopedStat) | null | undefined,
-  shipId: number | null,
+  _shipId: number | null,
   battle: ResolvedStatsMode,
 ): RosterModeNumbers {
-  return scopedRosterView(
-    st,
-    shipId,
-    rosterDimsOf(statsPrefsState.value),
-    battle,
-    prAlgoForRequest() ?? "winrate",
-  );
+  return rosterStatView(st, battle);
 }
