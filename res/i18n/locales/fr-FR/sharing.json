@@ -47,7 +47,9 @@
     "prev": "Retour",
     "startUpload": "Lancer l'envoi",
     "doneLabel": "Terminer",
-    "open": "Partager des replays…"
+    "open": "Partager des replays…",
+    "identityHint": "L'identité créditée est envoyée avec votre paquet et figure dans la liste des participants.",
+    "identityMissing": "Définissez d'abord l'identité créditée (serveur + ID de jeu)"
   },
   "select": {
     "checkCard": "Sélectionner le replay de {name}",
