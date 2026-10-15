@@ -120,3 +120,40 @@ describe("hintCardFrom branch-feature fields", () => {
     ).toEqual({ title: "T", rows: [{ label: "L", value: "V" }] });
   });
 });
+
+describe("hintCardFrom row chips", () => {
+  it("keeps validated good/bad chips and drops the blank value", () => {
+    const card = hintCardFrom({
+      title: "战舰特性",
+      rows: [
+        {
+          label: "主炮组",
+          value: "   ",
+          chips: [
+            { text: "高爆弹伤害较高", tone: "good" },
+            { text: "穿甲弹伤害较低", tone: "bad" },
+            { text: "无色调", tone: "nope" },
+            "junk",
+          ],
+        },
+      ],
+    })!;
+    expect(card.rows?.[0].chips).toEqual([
+      { text: "高爆弹伤害较高", tone: "good" },
+      { text: "穿甲弹伤害较低", tone: "bad" },
+    ]);
+    expect(card.rows?.[0].value).toBeUndefined();
+  });
+
+  it("drops invalid chips entirely and keeps plain-value rows intact", () => {
+    const card = hintCardFrom({
+      title: "T",
+      rows: [
+        { label: "L", chips: [{ text: "x", tone: "nope" }] },
+        { label: "L2", value: "V" },
+      ],
+    })!;
+    // The row whose chips all got dropped carries nothing — removed entirely.
+    expect(card.rows).toEqual([{ label: "L2", value: "V" }]);
+  });
+});

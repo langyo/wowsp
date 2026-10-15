@@ -5,7 +5,7 @@
  * Elements opt in with `data-hint="…"` (plain text, pre-localized at the
  * call site); optional `data-hint-pos="top|bottom|left|right"` overrides
  * the default top placement. `data-hint-tags` (JSON array of
- * `{ text, tone: "epic" | "rec" }`, also pre-localized) appends a chip row
+ * `{ text, tone: "epic" | "rec" | "good" | "bad" }`, also pre-localized) appends a chip row
  * under the text for ribbon-style qualifiers — the chips are built with
  * DOM APIs only, so anchor-supplied strings never become markup.
  * `data-hint-card` (JSON `HintCard`, pre-localized) replaces the text
@@ -40,17 +40,21 @@ import "./globalTooltip.scss";
  *  pass these pre-localized via the `data-hint-tags` JSON attribute. */
 export interface HintTag {
   text: string;
-  tone: "epic" | "rec";
+  tone: "epic" | "rec" | "good" | "bad";
 }
 
-const TAG_TONES: ReadonlySet<string> = new Set(["epic", "rec"]);
+const TAG_TONES: ReadonlySet<string> = new Set(["epic", "rec", "good", "bad"]);
 
 /** A label/value line of a structured hint card (see `HintCard`). */
 export interface HintCardRow {
   label: string;
-  value: string;
+  /** Plain value text; rows with `chips` may omit it. */
+  value?: string;
   /** Optional leading icon (feature-category emblem, …). */
   iconUrl?: string;
+  /** Colored qualifier chips replacing the plain value (branch features:
+   *  tone good = positive trait, bad = negative one). */
+  chips?: HintTag[];
 }
 
 /** A structured hover card replacing the plain hint text. Every field is
@@ -95,21 +99,41 @@ export function hintCardFrom(parsed: unknown): HintCard | null {
   }
   if (typeof o.note === "string" && o.note.trim() !== "") card.note = o.note;
   if (Array.isArray(o.rows)) {
-    const rows = o.rows.filter(
-      (row): row is HintCardRow =>
-        typeof row === "object" &&
-        row !== null &&
-        typeof (row as HintCardRow).label === "string" &&
-        (row as HintCardRow).label.trim() !== "" &&
-        typeof (row as HintCardRow).value === "string" &&
-        (row as HintCardRow).value.trim() !== "",
-    );
+    const rows = o.rows.filter((raw): raw is HintCardRow => {
+      if (typeof raw !== "object" || raw === null) return false;
+      const row = raw as HintCardRow;
+      if (typeof row.label !== "string" || row.label.trim() === "") return false;
+      const hasValue = typeof row.value === "string" && row.value.trim() !== "";
+      const hasChips = Array.isArray(row.chips) && row.chips.length > 0;
+      return hasValue || hasChips;
+    });
     for (const row of rows) {
       const iconUrl = (row as { iconUrl?: unknown }).iconUrl;
       if (typeof iconUrl === "string" && iconUrl.trim() !== "") row.iconUrl = iconUrl;
       else delete row.iconUrl;
+      const rawChips = (row as { chips?: unknown }).chips;
+      if (Array.isArray(rawChips)) {
+        const chips = rawChips.filter(
+          (chip): chip is HintTag =>
+            typeof chip === "object" &&
+            chip !== null &&
+            typeof (chip as HintTag).text === "string" &&
+            (chip as HintTag).text.trim() !== "" &&
+            typeof (chip as HintTag).tone === "string" &&
+            TAG_TONES.has((chip as HintTag).tone),
+        );
+        if (chips.length > 0) row.chips = chips;
+        else delete row.chips;
+      } else {
+        delete row.chips;
+      }
+      // A chips-only row carries no plain value — drop blank leftovers.
+      if (row.chips && typeof row.value === "string" && row.value.trim() === "") {
+        delete row.value;
+      }
     }
-    if (rows.length > 0) card.rows = rows;
+    const renderable = rows.filter((row) => (row.chips?.length ?? 0) > 0 || (row.value?.trim() ?? "") !== "");
+    if (renderable.length > 0) card.rows = renderable;
   }
   return card;
 }
@@ -226,10 +250,23 @@ function renderCard(card: HintCard): HTMLElement {
       const label = document.createElement("span");
       label.className = "global-tooltip__card-row-label";
       label.textContent = row.label;
-      const value = document.createElement("span");
-      value.className = "global-tooltip__card-row-value";
-      value.textContent = row.value;
-      line.append(label, value);
+      line.appendChild(label);
+      if (row.chips && row.chips.length > 0) {
+        const chips = document.createElement("div");
+        chips.className = "global-tooltip__card-row-chips";
+        for (const chip of row.chips) {
+          const chipEl = document.createElement("span");
+          chipEl.className = `global-tooltip__tag global-tooltip__tag--${chip.tone}`;
+          chipEl.textContent = chip.text;
+          chips.appendChild(chipEl);
+        }
+        line.appendChild(chips);
+      } else {
+        const value = document.createElement("span");
+        value.className = "global-tooltip__card-row-value";
+        value.textContent = row.value ?? "";
+        line.appendChild(value);
+      }
       rows.appendChild(line);
     }
     root.appendChild(rows);

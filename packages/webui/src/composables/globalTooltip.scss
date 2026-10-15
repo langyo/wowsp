@@ -23,6 +23,18 @@
     box-shadow: inset 0 0 0 1px rgb(46 160 93 / 45%);
   }
 
+  &--good {
+    color: #1f6b3c;
+    background: rgb(46 160 93 / 12%);
+    box-shadow: inset 0 0 0 1px rgb(46 160 93 / 45%);
+  }
+
+  &--bad {
+    color: #a03333;
+    background: rgb(206 84 84 / 12%);
+    box-shadow: inset 0 0 0 1px rgb(206 84 84 / 45%);
+  }
+
   &--rec {
     color: #8a5f0b;
     background: rgb(224 167 46 / 16%);
@@ -34,6 +46,18 @@
       color: #8fe9b3;
       background: rgb(124 232 169 / 14%);
       box-shadow: inset 0 0 0 1px rgb(124 232 169 / 40%);
+    }
+
+    &--good {
+      color: #8fe9b3;
+      background: rgb(124 232 169 / 14%);
+      box-shadow: inset 0 0 0 1px rgb(124 232 169 / 40%);
+    }
+
+    &--bad {
+      color: #f5a3a3;
+      background: rgb(245 156 156 / 14%);
+      box-shadow: inset 0 0 0 1px rgb(245 156 156 / 40%);
     }
 
     &--rec {
@@ -151,6 +175,14 @@
   flex: 1 1 auto;
   min-width: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.global-tooltip__card-row-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
 }
 
 .global-tooltip__card-icons {
