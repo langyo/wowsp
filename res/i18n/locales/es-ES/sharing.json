@@ -68,7 +68,10 @@
     "heroDesc": "Escanea todas las repeticiones locales según las necesidades actuales de la colección: solo se listan las batallas elegibles, ya marcadas.",
     "noMatchTitle": "Ninguna repetición elegible",
     "noMatchDesc": "Ninguna batalla de esta máquina entra en el ámbito de colección actual; vuelve cuando cambien las reglas o tras nuevas batallas.",
-    "manual": "Elegir archivos…"
+    "manual": "Elegir archivos…",
+    "manualBadge": "Elección manual",
+    "capRule": "{n} zonas",
+    "epicenter": "Epicentro"
   },
   "upload": {
     "stage": {

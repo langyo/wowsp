@@ -218,6 +218,10 @@ pub struct PlanItem {
     #[serde(default)]
     pub rule_id: Option<String>,
     pub file_name: String,
+    /// The recorder's nickname off the header (manual-picked files have no
+    /// store meta, so the card's nick comes from here).
+    #[serde(default)]
+    pub player_name: Option<String>,
 }
 
 /// Per-item terminal outcome of a started share run.

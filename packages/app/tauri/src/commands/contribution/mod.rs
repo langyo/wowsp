@@ -527,6 +527,7 @@ fn plan_items_blocking(
                 verdict,
                 rule_id,
                 file_name,
+                player_name: lite.player_name.clone(),
             }
         })
         .collect()

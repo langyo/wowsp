@@ -68,7 +68,10 @@
     "heroDesc": "Analyse tous les replays locaux selon les besoins actuels de la collecte — seules les batailles éligibles sont listées, pré-cochées.",
     "noMatchTitle": "Aucun replay éligible",
     "noMatchDesc": "Aucune bataille de cette machine n'entre dans la périmètre de collecte actuel — revenez après un changement de règles ou de nouvelles batailles.",
-    "manual": "Choisir des fichiers…"
+    "manual": "Choisir des fichiers…",
+    "manualBadge": "Choix manuel",
+    "capRule": "{n} zones",
+    "epicenter": "Épicentre"
   },
   "upload": {
     "stage": {
