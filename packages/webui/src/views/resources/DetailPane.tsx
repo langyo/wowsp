@@ -22,6 +22,7 @@ import {
   HkIconButton,
   HkImagePreview,
   HMenu,
+  HkScrollContainer,
   HkSwitch,
   HkTabs,
 } from "@celestia-island/hikari";
@@ -200,7 +201,10 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           files: () => ctx.fileWindow.openForEntry(entry),
         })}
       </div>
-      <div class="mod-detail__scroll">
+      {/* Pane body scroller: hikari's scroll container owns the scrollbar
+          (overlay track); the body scrolls inside its viewport. */}
+      <HkScrollContainer class="mod-detail__scroll">
+        <div class="mod-detail__inner">
         {foreignCopy && (
           <div class="mod-detail__foreign-copy">
             {t("resources.foreignCopy", {
@@ -294,7 +298,8 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
         </div>
         {/* The package-by-package file listing moved into the ⋯ menu's
             file-list window; the meta row above keeps the summary. */}
-      </div>
+        </div>
+      </HkScrollContainer>
       <div class="mod-detail__foot">
         {busyInstall && progressEntry && (
           <div class="mod-detail__progress">
@@ -401,7 +406,8 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
           files: paired || record ? () => ctx.fileWindow.openForUnit(mod) : null,
         })}
       </div>
-      <div class="mod-detail__scroll">
+      <HkScrollContainer class="mod-detail__scroll">
+        <div class="mod-detail__inner">
         {(mod.disabled || ctx.isAslainUnit(mod)) && (
           <div class="mod-detail__badges">
             {mod.disabled && (
@@ -468,7 +474,8 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
             file-list window now; the hint stays because it explains why
             the enable switch below is missing. */}
         {mod.paths.length === 0 && <p class="mod-detail__hint">{t("resources.manifestOnly")}</p>}
-      </div>
+        </div>
+      </HkScrollContainer>
       <div class="mod-detail__foot">
         <div class="mod-detail__foot-row">
           {mod.paths.length > 0 ? (
@@ -524,7 +531,8 @@ function renderForeignDetail(ctx: ResourcesCtx, unit: ForeignModUnit) {
           <div class="mod-detail__en">{installerLabel(unit.installer)}</div>
         </div>
       </div>
-      <div class="mod-detail__scroll">
+      <HkScrollContainer class="mod-detail__scroll">
+        <div class="mod-detail__inner">
         <div class="mod-detail__badges">
           <span class="mod-detail__badge">
             {t("resources.foreignBadge", { source: installerLabel(unit.installer) })}
@@ -547,7 +555,8 @@ function renderForeignDetail(ctx: ResourcesCtx, unit: ForeignModUnit) {
             {t("resources.foreignPairedHint", { name: localized(paired).name })}
           </p>
         )}
-      </div>
+        </div>
+      </HkScrollContainer>
       <div class="mod-detail__foot">
         <div class="mod-detail__foot-row">
           {aslainRow && aslainRow.paths.length > 0 ? (
@@ -616,7 +625,8 @@ function renderComponentDetail(ctx: ResourcesCtx, comp: TextureComponent) {
           </div>
         </div>
       </div>
-      <div class="mod-detail__scroll">
+      <HkScrollContainer class="mod-detail__scroll">
+        <div class="mod-detail__inner">
         {comp.units.map((unit) => {
           const paired = ctx.pairedEntryOf(unit);
           return (
@@ -647,7 +657,8 @@ function renderComponentDetail(ctx: ResourcesCtx, comp: TextureComponent) {
             </div>
           );
         })}
-      </div>
+        </div>
+      </HkScrollContainer>
     </div>
   );
 }
@@ -664,7 +675,8 @@ function renderLocalDetail(ctx: ResourcesCtx) {
           <div class="mod-detail__en">{t("resources.installHint")}</div>
         </div>
       </div>
-      <div class="mod-detail__scroll">
+      <HkScrollContainer class="mod-detail__scroll">
+        <div class="mod-detail__inner">
         <div class="resources-installrow">
           <input
             type="text"
@@ -747,7 +759,8 @@ function renderLocalDetail(ctx: ResourcesCtx) {
             )}
           </div>
         )}
-      </div>
+        </div>
+      </HkScrollContainer>
       <div class="mod-detail__foot">
         <div class="mod-detail__foot-row">
           <div class="mod-detail__actions">

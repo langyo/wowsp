@@ -662,17 +662,22 @@
 .holo-map__cam-menu {
   @include hud.holo-hud-dark;
 
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  /* Scroll region: hikari's HkScrollContainer owns the scrollbar
+     (auto-hiding overlay track); the rows scroll inside its viewport. */
   width: min(380px, calc(100vw - 40px));
   max-height: min(70vh, 560px);
-  overflow-y: auto;
   background: var(--holo-hud-menu);
 }
 
 :root[data-mode="light"] .holo-map__cam-menu {
   @include hud.holo-hud-light;
+}
+/* Former menu layout, moved inside the viewport so it keeps scrolling
+   with the rows. */
+.holo-map__cam-menu-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 .holo-map__cam-modes {
   display: flex;
@@ -901,26 +906,35 @@
 
 /* ── Tab roster overlay ─────────────────────────────────────────────── */
 .holo-map__roster-overlay {
+  /* The overlay IS the scroll container (hikari's HkScrollContainer: a
+     24-row double table exceeds the map pane's height, so the board
+     scrolls under the pointer — the game's own Tab screen is fixed, but
+     replay scrubbing benefits from keeping long rosters reachable).
+     Pointer events are enabled for exactly this — while Tab is held the
+     overlay owns the pane. The absolute full-pane placement outranks
+     hikari's relative root rule (webui scss loads after hikari's). */
   position: absolute;
   inset: 0;
   z-index: 10;
   background: var(--holo-hud-scrim);
   backdrop-filter: blur(4px);
+  pointer-events: auto;
+  color: var(--holo-hud-text);
+
+  /* The scrollport itself: overscroll stays contained so a wheel-over-
+     roster chain cannot scroll the map pane below. */
+  & > .hk-scroll-container-viewport {
+    overscroll-behavior: contain;
+  }
+}
+
+/* Former overlay layout + clearance, moved inside the viewport so the
+   board keeps scrolling with its padding. */
+.holo-map__roster-inner {
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 2.2rem 1rem;
-  /* The overlay IS the scroll container: a 24-row double table exceeds the
-     map pane's height, so the board scrolls under the pointer (the game's
-     own Tab screen is fixed, but replay scrubbing benefits from keeping
-     long rosters reachable). Pointer events are enabled for exactly this —
-     while Tab is held the overlay owns the pane. */
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--holo-hud-border) transparent;
-  pointer-events: auto;
-  color: var(--holo-hud-text);
 }
 
 /* The Tab scoreboard: one board, one or two team tables side by side (the

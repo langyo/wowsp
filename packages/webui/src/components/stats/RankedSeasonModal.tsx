@@ -1,6 +1,6 @@
 import { computed, defineComponent, nextTick, ref, watch } from "vue";
 
-import { HkModal, HkSpinner } from "@celestia-island/hikari";
+import { HkModal, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import { useRankedStore } from "@/stores/ranked";
 import { t } from "@/i18n";
@@ -24,6 +24,12 @@ import "./RankedSeasonModal.scss";
  * looked-up one on /lookup); `playerName` only labels the modal.
  */
 
+/** Consumed slice of HkScrollContainer's exposed component ref (the ref
+ *  yields the exposed handle, not an element — see the strip below). */
+interface ScrollHandle {
+  getScrollElement(): HTMLElement | undefined;
+}
+
 export default defineComponent({
   name: "RankedSeasonModal",
   props: {
@@ -40,7 +46,9 @@ export default defineComponent({
     /** Selected season id — defaults to the newest whenever the modal
      *  opens or the store swaps to a season list without it. */
     const selectedId = ref<number | null>(null);
-    const strip = ref<HTMLElement | null>(null);
+    /** The horizontal strip — a COMPONENT ref: it exposes the scrolling
+     *  viewport (for the snap-to-newest pass), not an element. */
+    const strip = ref<ScrollHandle | null>(null);
 
     // Chronological order (oldest first) for the left→right timeline; the
     // store serves newest-first.
@@ -54,7 +62,7 @@ export default defineComponent({
     function focusNewest() {
       selectedId.value = seasons.value.at(-1)?.seasonId ?? null;
       void nextTick(() => {
-        const el = strip.value;
+        const el = strip.value?.getScrollElement();
         if (el) el.scrollLeft = el.scrollWidth;
       });
     }
@@ -104,8 +112,10 @@ export default defineComponent({
             <p class="ranked-modal__state">{t("stats.noRankedSeasons")}</p>
           ) : (
             <>
-              {/* ── Horizontal season timeline ── */}
-              <div class="ranked-modal__strip" ref={strip}>
+              {/* ── Horizontal season timeline — hikari's scroll container
+                  owns the scrollbar (auto-hiding overlay track under the
+                  strip); the track scrolls inside its viewport. ── */}
+              <HkScrollContainer class="ranked-modal__strip" axis="horizontal" ref={strip}>
                 <div class="ranked-modal__track">
                   {seasons.value.map((s) => {
                     const wr = seasonWr(s);
@@ -135,7 +145,7 @@ export default defineComponent({
                     );
                   })}
                 </div>
-              </div>
+              </HkScrollContainer>
 
               {/* ── Selected season detail ── */}
               {selected.value ? (

@@ -163,10 +163,15 @@
     letter-spacing: 0.04em;
   }
 
+  /* Rail scroller — the hikari container owns the scrollbar (auto-hiding
+     overlay track over the rail's right edge); the former scroller padding
+     moved to the inner wrapper so it keeps scrolling with the cards. */
   &__list-scroll {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
+  }
+
+  &__list-scroll__inner {
     padding: 0.25rem 0.75rem 1rem;
   }
 
@@ -237,14 +242,29 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
-    /* No right padding at the column level: the live roster is the column's
-       scroller and its scrollbar must hug the window's right edge across
-       the full height (same pattern as LookupView/ShipsView). Breathing
-       room rides on the non-scrolling children instead. */
+    /* No right padding at the column level: the live roster (the column's
+       scroller) keeps its overlay scrollbar floating at the window's right
+       edge across the full height (same pattern as LookupView/ShipsView).
+       Breathing room rides on the non-scrolling children instead. */
     padding: 1.25rem 0 1.25rem 1.5rem;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  /* Phone-only page scroller scaffolding (≤767px the stacked detail
+     scrolls inside the container). On desktop nothing overflows it — the
+     roster/map keep managing their own scroll — and the flex/min-height
+     chain keeps the column's former geometry through the wrappers. */
+  &__main-scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__main-inner {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
   }
 
   /* One row, one alignment: every meta item — map tag, date, mode/count
@@ -370,21 +390,33 @@
     font-size: var(--text-base);
     &:hover { color: rgb(var(--color-text)); }
   }
+  /* Results-body scroller: the hikari container owns the scrollbar, so
+     the body's padding moved to the inner wrapper (it scrolls with the
+     content). The chat body below keeps the base class but stays a plain
+     non-scrolling element. */
   &__modal-body {
     /* Flex child of a max-height column: without min-height:0 it refuses
        to shrink and the panel's overflow:hidden silently clips it. */
     flex: 1 1 auto;
     min-height: 0;
-    overflow-y: auto;
-    /* Never chain the sheet body's scroll to the page behind it (phone
+    /* Never chain the results body's scroll to the page behind it (phone
        sheet-family containment; the desktop shell never scrolls, so this
-       is a no-op there). */
-    overscroll-behavior: contain;
-    padding: 0.6rem 1rem;
+       is a no-op there) — the scrollport is the container's viewport. */
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior: contain;
+    }
     /* Scroll-pin whitespace contract (hk-scroll-pin-host): the pinned chat
-       timeline bleeds into this gutter, so the pad var must track the
-       padding above (the phone sheet re-declares it at 0.5rem). */
+       timeline bleeds into the CHAT body's gutter, so the pad var must
+       track the padding that body keeps (see __chat-panel; the phone sheet
+       re-declares it at 0.5rem). Custom properties inherit down the DOM,
+       so declaring it here serves the chat body (same class) and merely
+       rides inert into the results container's viewport — nothing pins
+       in there. */
     --hk-scroll-pad-top: 0.6rem;
+  }
+
+  &__modal-body__inner {
+    padding: 0.6rem 1rem;
   }
 
   /* Chat log modal — narrower than the results panel. Top: mini timeline
@@ -402,19 +434,26 @@
        change was the first message being half-swallowed by the timeline.
        Here the timeline rides a static header (the body no longer
        scrolls, so the sticky pin never offsets) and every scroll delta
-       moves all rows against the list's own crisp top clip. */
+       moves all rows against the scroller's own crisp top clip. The
+       body's padding stays ON the body (the base rule dropped it when
+       the results body became a container): it is the pin gutter the
+       timeline bleeds into. */
     .replay-view__modal-body {
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      padding: 0.6rem 1rem;
     }
-    .replay-view__chat-list {
+    /* The hikari scroller wrapping the message <ul> (the grid stays on
+       the list so the rows keep their shared subgrid axes). */
+    .replay-view__chat-scroll {
       flex: 1 1 auto;
       min-height: 0;
-      overflow-y: auto;
       /* Never chain the list's scroll to the page behind it (same
          containment the body used to carry). */
-      overscroll-behavior: contain;
+      & > .hk-scroll-container-viewport {
+        overscroll-behavior: contain;
+      }
     }
   }
   &__chat-timeline {
@@ -649,9 +688,10 @@
   }
 
   /* Keep the column's right gutter on the non-scrolling top-level states.
-     Scoped to direct children: error placeholders nested inside __content
+     Scoped to the scroll wrapper's direct children (the placeholders the
+     view renders top-level): error placeholders nested inside __content
      must not stack the gutter twice. */
-  &__main > &__placeholder {
+  &__main-inner > &__placeholder {
     padding-right: 1.5rem;
   }
 
@@ -912,156 +952,6 @@
   }
 }
 
-/* ── Roster columns (allies | enemies) ──────────────────────────────────── */
-.roster-col {
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 20%);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-
-  &__head {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.7rem;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    flex-shrink: 0;
-  }
-
-  &--ally .roster-col__head {
-    color: rgb(var(--color-success));
-    background: rgb(var(--color-success) / 8%);
-  }
-  &--enemy .roster-col__head {
-    color: rgb(var(--color-warning));
-    background: rgb(var(--color-warning) / 8%);
-  }
-
-  &__count {
-    padding: 0.1rem 0.55rem;
-    background: rgb(var(--color-border) / 25%);
-    border-radius: var(--radius-full);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-  }
-
-  &__totalhp {
-    margin-left: auto;
-    font-size: var(--text-2xs);
-    font-weight: 500;
-    letter-spacing: 0;
-    text-transform: none;
-    font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-muted));
-  }
-
-  &__list {
-    list-style: none;
-    margin: 0;
-    padding: 0.2rem 0.4rem;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  &__row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.2rem 0.35rem;
-    border-radius: var(--radius-xs);
-    cursor: default;
-
-    &:hover {
-      background: rgb(var(--color-primary) / 6%);
-    }
-  }
-
-  &__main {
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
-    min-width: 0;
-    flex: 1;
-  }
-
-  &__name {
-    font-size: var(--text-xs);
-    line-height: 1.25;
-    color: rgb(var(--color-text));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__ship {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: var(--text-2xs);
-    line-height: 1.2;
-    color: rgb(var(--color-muted));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__shiptype {
-    flex-shrink: 0;
-    padding: 0.01rem 0.28rem;
-    background: rgb(var(--color-border) / 25%);
-    border-radius: var(--radius-xs);
-    font-weight: 700;
-    color: rgb(var(--color-text));
-  }
-
-  /* HP bar — shows each ship's max HP relative to the team's tankiest ship.
-     Tinted by team (blue=ally, yellow=enemy). */
-  &__hp {
-    flex-shrink: 0;
-    width: 64px;
-    height: 5px;
-    border-radius: var(--radius-full);
-    background: rgb(var(--color-border) / 30%);
-    overflow: hidden;
-  }
-
-  &__hp-fill {
-    height: 100%;
-    border-radius: var(--radius-full);
-    transition: width var(--duration-short) var(--ease-standard);
-  }
-
-  &--ally .roster-col__hp-fill {
-    background: linear-gradient(90deg, rgb(var(--color-primary) / 60%), rgb(var(--color-primary)));
-  }
-  &--enemy .roster-col__hp-fill {
-    background: linear-gradient(90deg, rgb(var(--color-warning) / 60%), rgb(var(--color-warning)));
-  }
-}
-
-/* ── Responsive: stack the roster on narrow screens ─────────────────────── */
-@media (max-width: 960px) {
-  .replay-view {
-    &__roster {
-      grid-template-columns: 1fr;
-      flex-basis: 55%;
-    }
-
-    &__detail {
-      flex-basis: 45%;
-    }
-  }
-}
-
 /* ── Phone layout (≤767px) ─────────────────────────────────────────────
    The two-column app shell collapses: the replay list stacks above the
    detail (own capped scroller) and the custom in-view overlays
@@ -1086,8 +976,13 @@
       flex: 1;
       min-height: 0;
       /* Desktop keeps internal scrollers (roster/map); on phones the
-         stacked detail scrolls the whole main column. */
-      overflow-y: auto;
+         stacked detail scrolls inside the hikari container (__main-scroll)
+         — the column itself no longer scrolls, so its desktop padding
+         drops and the sheet padding rides on the inner wrapper. */
+      padding: 0;
+    }
+
+    &__main-inner {
       padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
     }
 

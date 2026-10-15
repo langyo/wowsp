@@ -12,6 +12,7 @@ import { computed, defineComponent, ref, watch, type PropType } from "vue";
 import {
   HkIconButton,
   HkIconButtonGroup,
+  HkScrollContainer,
   HkTooltip,
   HkModal,
   HkPopupSelect,
@@ -160,7 +161,11 @@ export default defineComponent({
               </HkIconButton>
             </HkTooltip>
           </div>
-          <div class="lineup__rows">
+          {/* Scroll region: hikari's HkScrollContainer owns the scrollbar
+              (auto-hiding overlay track); the hull rows scroll inside its
+              viewport. */}
+          <HkScrollContainer class="lineup__rows">
+            <div class="lineup__rows-inner">
             {entries.map((entry, i) => {
               const unit = resolveUnit(entry, byId.value);
               const src = zoneSourceOf(unit);
@@ -240,7 +245,8 @@ export default defineComponent({
                 </div>
               );
             })}
-          </div>
+            </div>
+          </HkScrollContainer>
           <button
             type="button"
             class="lineup__add"

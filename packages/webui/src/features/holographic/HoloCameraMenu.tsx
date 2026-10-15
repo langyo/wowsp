@@ -7,7 +7,7 @@
  */
 import { defineComponent, ref, type PropType } from "vue";
 import { Crosshair, Orbit, Video } from "@lucide/vue";
-import { HkPopover } from "@celestia-island/hikari";
+import { HkPopover, HkScrollContainer } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { t as i18nT } from "@/i18n";
 import { tierToRoman } from "@wowsp/holo";
@@ -79,7 +79,17 @@ export default defineComponent({
           sheetOnMobile
           title={i18nT("replay.camera.title")}
         >
-          <div class="holo-map__cam-menu" onClick={(e) => e.stopPropagation()}>
+          {/* Scroll region: hikari's HkScrollContainer owns the scrollbar
+              (auto-hiding overlay track on the menu's right edge); the
+              roster list scrolls inside its viewport. The click guard
+              spreads in (the component's props declare no DOM events;
+              Vue's attr fallthrough still lands it on the root, covering
+              the overlay track as well). */}
+          <HkScrollContainer
+            class="holo-map__cam-menu"
+            {...{ onClick: (e: MouseEvent) => e.stopPropagation() }}
+          >
+            <div class="holo-map__cam-menu-inner">
             <div class="holo-map__cam-modes">
               <button
                 class={["holo-map__cam-mode", props.mode === "free" ? "holo-map__cam-mode--on" : ""]}
@@ -146,7 +156,8 @@ export default defineComponent({
                 ))}
               </div>
             ))}
-          </div>
+            </div>
+          </HkScrollContainer>
         </HkPopover>
       </div>
     );

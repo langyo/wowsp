@@ -284,6 +284,8 @@
     white-space: nowrap;
   }
 
+  /* Dropdown list: hikari's scroll container owns the scrollbar (overlay
+     thumb on the menu's right edge; the native bar stays hidden). */
   &__model-pick-menu {
     position: absolute;
     top: calc(100% + 4px);
@@ -291,15 +293,17 @@
     z-index: 3;
     min-width: 100%;
     max-height: 240px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    padding: 3px;
     border-radius: var(--radius-md);
     background: rgb(var(--color-surface) / 92%);
     border: 1px solid rgb(var(--color-border) / 30%);
     box-shadow: 0 6px 18px rgb(0 0 0 / 30%);
     animation: ship-stage-pop-in 0.16s ease;
+  }
+
+  &__model-pick-menu-inner {
+    display: flex;
+    flex-direction: column;
+    padding: 3px;
   }
 
   &__model-pick-item {

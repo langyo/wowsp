@@ -22,14 +22,28 @@
      is decided by the shell grid, never by its contents. */
   container-type: inline-size;
 
-  /* Waiting for the battle to start (radar scope + copy). No head row here,
-     so this variant keeps the old self-scrolling full-padding behavior. */
+  /* Waiting for the battle to start (radar scope + copy). No head row
+     here, so the variant itself is the page's hikari scroll region (the
+     whole panel scrolls); the copy centers inside the inner wrapper. */
   &--empty {
+    /* Neutralizes the base panel padding — the variant's clearance scrolls
+       with the copy inside the wrapper instead. */
+    padding: 0;
+  }
+
+  &__empty-inner {
+    display: flex;
+    flex-direction: column;
+    /* The panel's own stacking rhythm (the base gap), carried inside the
+       wrapper now that the panel is the scroll container. */
+    gap: 0.75rem;
     align-items: center;
     justify-content: center;
-    text-align: center;
-    overflow-y: auto;
+    /* Keeps the waiting copy centered while the panel is taller than it,
+       and grows past it (scrolling) on short windows. */
+    min-height: 100%;
     padding: 1rem 1.5rem 1rem 1rem;
+    text-align: center;
   }
 
   &__empty-art {
@@ -73,8 +87,8 @@
     gap: 0.6rem;
     flex-wrap: nowrap;
     /* Fixed above the roster: never squeezed by it, and it carries the
-       right inset the container gave up (the matrix's scrollbar owns that
-       edge so it can keep hugging the window). */
+       right inset the panel gave up (the roster scroller's overlay track
+       owns that edge, floating over it as it hugs the window). */
     flex-shrink: 0;
     padding-right: 1.5rem;
   }
@@ -245,22 +259,26 @@
     animation: live-battle-manual-shake 0.4s ease;
   }
 
+  /* Roster scroller — the hikari container owns the scrollbar (auto-hiding
+     overlay track over the panel's right edge); the two-column grid and
+     its clearance moved to the inner wrapper so they scroll with the
+     cards. */
   &__matrix {
+    min-height: 0;
+  }
+
+  &__matrix__inner {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
-    /* The roster is the panel's scroller: it reaches the window's right
-       edge, so this native scrollbar hugs it; the wider right padding keeps
-       the cards clear of the bar (padding-bottom pads the scrolled end). */
-    min-height: 0;
-    overflow-y: auto;
     padding: 0 1.5rem 1rem 0;
 
     /* Single-sided battle (operations): the enemy list hides (its side is
        all scripted spawns) and the allies column keeps the two-column
        layout's column width, centered on the page — a full-width roster of
-       stretched cards reads looser than the game's own compact team block. */
-    &--single {
+       stretched cards reads looser than the game's own compact team block.
+       The modifier rides the container root above (see the tsx). */
+    .live-battle__matrix--single & {
       grid-template-columns: minmax(0, 1fr);
 
       .live-battle__col {

@@ -39,7 +39,9 @@
   }
 
   /* Raw English backend message: collapsed until asked for, monospace,
-     dimmed, scrollable when a long API error lands in it. */
+     dimmed, scrollable when a long API error lands in it. The capped box
+     is a hikari HkScrollContainer — its overlay bar owns the scroll, the
+     height cap stays on the box and the text rides the slot. */
   .lookup-error-notice__raw {
     font-size: var(--text-2xs);
 
@@ -48,17 +50,19 @@
       user-select: none;
       color: rgb(var(--color-muted));
     }
+  }
+
+  .lookup-error-notice__raw-detail {
+    max-height: 96px;
+    margin-top: 4px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgb(var(--color-text) / 6%);
+    color: rgb(var(--color-text) / 75%);
 
     code {
       display: block;
-      max-height: 96px;
-      overflow-y: auto;
-      margin-top: 4px;
-      padding: 6px 8px;
-      border-radius: 6px;
-      background: rgb(var(--color-text) / 6%);
       font-family: var(--font-mono);
-      color: rgb(var(--color-text) / 75%);
       white-space: pre-wrap;
       word-break: break-word;
     }

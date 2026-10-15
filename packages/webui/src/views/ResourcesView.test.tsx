@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, shallowMount } from "@vue/test-utils";
-import { reactive } from "vue";
+import { h, reactive } from "vue";
+import type { VNode } from "vue";
 import type { InstalledMod, MigrationPlan } from "@/api";
 
 const mocks = vi.hoisted(() => ({
@@ -39,6 +40,16 @@ vi.mock("@celestia-island/hikari", () => {
     HkImagePreview: component("HkImagePreview"),
     /* The file-list window's additions (detail ⋯ menu + tree). */
     HkTree: component("HkTree"),
+    // The view's scroll regions (sidebar list, pane bodies, wizard stacks)
+    // are hikari scroll containers now — render the (mocked) host for real
+    // as a pass-through div wrapping the slot (same shape as LookupView's
+    // mock; mountInstalled also un-stubs it, or shallowMount hides slots).
+    HkScrollContainer: {
+      name: "HkScrollContainer",
+      setup(_: unknown, { slots }: { slots: { default?: () => VNode[] } }) {
+        return () => h("div", slots.default?.() ?? []);
+      },
+    },
     useToast: () => ({ error: mocks.error, success: vi.fn(), warning: vi.fn(), info: vi.fn() }),
   };
 });
@@ -57,7 +68,12 @@ const mod = (name: string): InstalledMod => ({
   version: "1", fileCount: 1, totalBytes: 1, paths: ["test.xml"],
 }) as InstalledMod;
 async function mountInstalled() {
-  const view = shallowMount(ResourcesView);
+  // The sidebar list and the pane bodies are hikari scroll containers now
+  // — render the (mocked) host for real so its slot content (rows, empty
+  // notes, detail cards) stays visible under shallowMount.
+  const view = shallowMount(ResourcesView, {
+    global: { stubs: { HkScrollContainer: false } },
+  });
   view.findAllComponents({ name: "HkTabs" }).find((tabs) => tabs.props("modelValue") === "online")!
     .vm.$emit("update:modelValue", "installed");
   await flushPromises();

@@ -30,7 +30,7 @@ import {
   type PropType,
 } from "vue";
 import { Flag, Wrench } from "@lucide/vue";
-import { HkSpinner } from "@celestia-island/hikari";
+import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -95,6 +95,12 @@ function MetricCell({
       <span>{label}</span>
     </span>
   );
+}
+
+/** Consumed slice of HkScrollContainer's exposed component ref (the ref
+ *  yields the exposed handle, not an element — see the card body below). */
+interface ScrollHandle {
+  getScrollElement(): HTMLElement | undefined;
 }
 
 export default defineComponent({
@@ -211,6 +217,10 @@ export default defineComponent({
     // ── Placement (measure-then-place, refreshed on every content change
     //    so HP/dead flips keep the card hugging its anchor) ────────────────
     const cardEl = ref<HTMLElement | null>(null);
+    // The card-level scroll region (the HkScrollContainer filling the card
+    // below): a COMPONENT ref — it exposes the scrolling viewport, not an
+    // element of its own.
+    const scroll = ref<ScrollHandle | null>(null);
     const pos = ref<CSSProperties>({
       left: "0px",
       top: "0px",
@@ -256,7 +266,10 @@ export default defineComponent({
       ([, newId], [, oldId]) =>
         void nextTick(() => {
           place(true);
-          if (newId !== oldId && cardEl.value) cardEl.value.scrollTop = 0;
+          if (newId !== oldId) {
+            const vp = scroll.value?.getScrollElement();
+            if (vp) vp.scrollTop = 0;
+          }
         }),
     );
     onMounted(() => void nextTick(() => place(true)));
@@ -284,6 +297,13 @@ export default defineComponent({
             onMouseenter={() => props.onCardHover(true)}
             onMouseleave={() => props.onCardHover(false)}
           >
+            {/* Card scroll region: the measure-then-place card root must
+                stay a plain fixed element (offsetWidth/offsetHeight feed
+                the flip math), so the hikari scroll container lives INSIDE
+                it and fills it — the overlay track hugs the card's right
+                edge and the whole card scrolls as one document. */}
+            <HkScrollContainer class="holo-ship-tip__scroll" ref={scroll}>
+              <div class="holo-ship-tip__inner">
             <div class="holo-ship-tip__head">
               <div class="holo-ship-tip__name-row">
                 <span class="holo-ship-tip__name">
@@ -463,10 +483,11 @@ export default defineComponent({
             {specGroups.value.length ? (
               <div class="holo-ship-tip__section">
                 <div class="holo-ship-tip__sec-title">{t("replay.tip.specs")}</div>
-                {/* No scroll host of its own — the CARD is the only scroll
-                    container (hikari's pinned scrollbar here would scroll
-                    just the specs with an inset bar; the user wants the
-                    whole card scrolling with the bar at the card edge). */}
+                {/* No scroll host of its own — the card-level hikari
+                    scroll container above is the only scroller (a pinned
+                    bar here would scroll just the specs with an inset
+                    track; the card-wide container keeps the whole card
+                    scrolling with the bar at the card edge). */}
                 <div class="holo-ship-tip__specs">
                   {specGroups.value.map(([group, rows]) => (
                     <div class="holo-ship-tip__spec-group" key={group}>
@@ -484,6 +505,8 @@ export default defineComponent({
             ) : null}
 
             <div class="holo-ship-tip__foot">{t("replay.tip.holdTab")}</div>
+              </div>
+            </HkScrollContainer>
           </div>
         </Teleport>
       );

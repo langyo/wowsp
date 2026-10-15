@@ -1,6 +1,7 @@
 import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, watch } from "vue";
 import type { PropType, Ref } from "vue";
 import { AlertTriangle, ArrowUpCircle } from "@lucide/vue";
+import { HkScrollContainer } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -230,36 +231,43 @@ export default defineComponent({
                     {t("resources.pluginUpdateStaleWarning")}
                   </p>
                 ) : null}
+                {/* Both list shapes share the capped scroller: hikari's
+                    overlay scrollbar owns the overflow; the lines scroll
+                    in the viewport. */}
                 {multi ? (
-                  <ul class="plugin-update-hint__list">
-                    {groups.map((g) => {
-                      const names = itemNames(g.info);
-                      const shown = names.slice(0, LIST_CAP);
-                      const folded = names.length - shown.length;
-                      return (
-                        <li class="plugin-update-hint__group" key={g.path}>
-                          <span class="plugin-update-hint__group-label">{groupLabel(g)}</span>
-                          <ul class="plugin-update-hint__group-items">
-                            {shown.map((name) => (
-                              <li key={name}>{name}</li>
-                            ))}
-                            {folded > 0 ? (
-                              <li class="plugin-update-hint__more">+{folded}</li>
-                            ) : null}
-                          </ul>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  <HkScrollContainer class="plugin-update-hint__list">
+                    <ul class="plugin-update-hint__list-inner">
+                      {groups.map((g) => {
+                        const names = itemNames(g.info);
+                        const shown = names.slice(0, LIST_CAP);
+                        const folded = names.length - shown.length;
+                        return (
+                          <li class="plugin-update-hint__group" key={g.path}>
+                            <span class="plugin-update-hint__group-label">{groupLabel(g)}</span>
+                            <ul class="plugin-update-hint__group-items">
+                              {shown.map((name) => (
+                                <li key={name}>{name}</li>
+                              ))}
+                              {folded > 0 ? (
+                                <li class="plugin-update-hint__more">+{folded}</li>
+                              ) : null}
+                            </ul>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </HkScrollContainer>
                 ) : (
-                  <ul class="plugin-update-hint__list">
-                    {singleShown.map((name) => (
-                      <li key={name}>{name}</li>
-                    ))}
-                    {singleFolded > 0 ? (
-                      <li class="plugin-update-hint__more">+{singleFolded}</li>
-                    ) : null}
-                  </ul>
+                  <HkScrollContainer class="plugin-update-hint__list">
+                    <ul class="plugin-update-hint__list-inner">
+                      {singleShown.map((name) => (
+                        <li key={name}>{name}</li>
+                      ))}
+                      {singleFolded > 0 ? (
+                        <li class="plugin-update-hint__more">+{singleFolded}</li>
+                      ) : null}
+                    </ul>
+                  </HkScrollContainer>
                 )}
                 <button
                   type="button"

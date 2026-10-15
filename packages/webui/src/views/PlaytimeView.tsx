@@ -12,6 +12,7 @@ import {
   HkConfirmDialog,
   HkIconButton,
   HkPopover,
+  HkScrollContainer,
   HkTabs,
   useBreakpoint,
   useToast,
@@ -549,314 +550,336 @@ export default defineComponent({
     });
 
     return () => (
-      <div class="playtime-view">
-        <div class="playtime-view__content">
-          {/* ── Toolbar — ALWAYS rendered, empty state included: a fresh
-              install's first playtime data can come from a pinned replay
-              archive, and "rescan now" must never depend on data existing.
-              The scope pill narrows ONLY the battle-derived content
-              (battles card + breakdown + battle heatmap) — the ledger
-              itself is global. */}
-          <div class="playtime-view__toolbar">
-            <button
-              type="button"
-              ref={scopeBtn}
-              class="playtime-view__scope"
-              aria-haspopup="menu"
-              aria-expanded={scopeOpen.value}
-              onClick={() => (scopeOpen.value = !scopeOpen.value)}
-            >
-              <span class="playtime-view__scope-label">{scopeLabel.value}</span>
-              <ChevronDown
-                size={13}
-                class="playtime-view__scope-chevron"
-                data-open={scopeOpen.value || undefined}
-              />
-            </button>
-            {/* Desktop keeps closeOnBackdrop off: HkPopover's own
-                document listener would close on the re-click of the
-                open button before that click re-toggles it; the
-                pointerdown listener above is the outside-close and
-                Escape rides closeOnEscape. Phones dock the menu as a
-                bottom sheet (sheetOnMobile, same convention as the
-                filter chips). Both menus below share that contract. */}
-            <HkPopover
-              modelValue={scopeOpen.value}
-              onUpdate:modelValue={(v: boolean) => {
-                if (!v) closeScope();
-              }}
-              anchorRef={scopeBtn.value}
-              placement="bottom-end"
-              closeOnBackdrop={isMobile.value}
-              sheetOnMobile
-              title={t("playtime.battlesTitle")}
-            >
-              <div ref={scopePanel} class="playtime-view__scope-menu" role="menu">
-                {scopeOptions.value.map((o) => (
-                  <button
-                    key={o.key}
-                    type="button"
-                    role="menuitem"
-                    class="playtime-view__scope-opt"
-                    data-active={isPickedScope(o.key) || undefined}
-                    // The all-clients sentinel is not a client like the
-                    // rows under it — italics set it apart as the
-                    // aggregate it is.
-                    data-all={o.key === SCOPE_ALL || undefined}
-                    onClick={() => pickScope(o.key)}
-                  >
-                    <span class="playtime-view__scope-opt-label">{o.label}</span>
-                    {isPickedScope(o.key) ? (
-                      <Check size={13} class="playtime-view__scope-opt-check" />
-                    ) : null}
-                  </button>
-                ))}
-                {/* No detected install = nothing but the all-clients
-                    option to pick; the hint points at where clients are
-                    chosen (same wording the old single-option menu
-                    used). */}
-                {config.installs.length === 0 ? (
-                  <div class="playtime-view__scope-hint">
-                    {t("playtime.scopeUnavailable")}
-                  </div>
-                ) : null}
-              </div>
-            </HkPopover>
-            {/* ── Replay sources (录像来源): pins extra replay folders into
-                the same scan that feeds the battles card + heatmap + replay
-                rail. Removal keeps already-counted battles (history); the
-                rebuild action at the bottom drops that history on purpose
-                and requires the confirm dialog. */}
-            <button
-              type="button"
-              ref={sourcesBtn}
-              class="playtime-view__scope"
-              aria-haspopup="menu"
-              aria-expanded={sourcesOpen.value}
-              onClick={() => (sourcesOpen.value = !sourcesOpen.value)}
-            >
-              <FolderOpen size={13} class="playtime-view__scope-lead" />
-              <span class="playtime-view__scope-label">{t("playtime.sourcesTitle")}</span>
-              <ChevronDown
-                size={13}
-                class="playtime-view__scope-chevron"
-                data-open={sourcesOpen.value || undefined}
-              />
-            </button>
-            <HkPopover
-              modelValue={sourcesOpen.value}
-              onUpdate:modelValue={(v: boolean) => {
-                if (!v) closeSources();
-              }}
-              anchorRef={sourcesBtn.value}
-              placement="bottom-end"
-              closeOnBackdrop={isMobile.value}
-              sheetOnMobile
-              title={t("playtime.sourcesTitle")}
-            >
-              <div ref={sourcesPanel} class="playtime-view__sources-menu">
-                {config.replayDirs.length === 0 ? (
-                  <div class="playtime-view__sources-empty">
-                    {t("playtime.sourcesEmpty")}
-                  </div>
-                ) : (
-                  config.replayDirs.map((d) => (
-                    <div key={d} class="playtime-view__sources-row">
-                      <span class="playtime-view__sources-path" title={d}>
-                        {d}
-                      </span>
-                      <button
-                        type="button"
-                        class="playtime-view__sources-remove"
-                        aria-label={t("playtime.sourcesRemove", { path: d })}
-                        onClick={() => void onRemoveSource(d)}
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ))
-                )}
-                {/* Phones have no native folder picker (rfd has no Android
-                    backend) — the add row is desktop-only; pinned folders
-                    still list and remove everywhere. */}
-                {!isMobile.value ? (
-                  <HkButton
-                    size="sm"
-                    variant="ghost"
-                    disabled={addingSource.value}
-                    loading={addingSource.value}
-                    onClick={() => void onAddSource()}
-                  >
-                    <FolderPlus size={14} />
-                    <span>{t("playtime.sourcesAdd")}</span>
-                  </HkButton>
-                ) : null}
-                <div class="playtime-view__sources-hint">{t("playtime.sourcesHint")}</div>
-                <div class="playtime-view__sources-footer">
-                  <button
-                    type="button"
-                    class="playtime-view__sources-rebuild"
-                    disabled={rebuilding.value}
-                    onClick={() => (rebuildArmed.value = true)}
-                  >
-                    <RefreshCw
-                      size={12}
-                      class={rebuilding.value ? "playtime-view__spin" : undefined}
-                    />
-                    <span>{t("playtime.rebuild")}</span>
-                  </button>
-                </div>
-              </div>
-            </HkPopover>
-            {/* Manual rescan: re-pulls overview + battles now. The 30 s poll
-                re-pulls battles only around game sessions (activity key),
-                so files that changed on disk while idle — a hand-copied
-                replay, a pinned folder — otherwise wait for a launch. */}
-            <HkIconButton
-              size={24}
-              variant="ghost"
-              disabled={store.refreshing}
-              aria-label={t("playtime.refresh")}
-              onClick={() => void store.refreshAll()}
-            >
-              <RefreshCw
-                size={15}
-                class={store.refreshing ? "playtime-view__spin" : undefined}
-              />
-            </HkIconButton>
-          </div>
-          <HkConfirmDialog
-            open={rebuildArmed.value}
-            title={t("playtime.rebuild")}
-            message={t("playtime.rebuildConfirm")}
-            confirmLabel={t("playtime.rebuild")}
-            onConfirm={() => void onRebuild()}
-            onUpdate:open={(v: boolean) => {
-              if (!v) rebuildArmed.value = false;
-            }}
-          />
-          {!hasAnyData.value ? (
-            <div class="playtime-view__empty">
-              <h2 class="playtime-view__title">{t("playtime.emptyTitle")}</h2>
-              <p class="playtime-view__hint">{t("playtime.emptyHint")}</p>
-            </div>
-          ) : (
-            <>
-              {/* ── Record cards ─────────────────────────────────────── */}
-              <div class="playtime-cards">
-                {cards.value.map((card) => (
-                  <div class="playtime-card" key={card.label}>
-                    <span class="playtime-card__label">{card.label}</span>
-                    <span class="playtime-card__value">
-                      {card.value}
-                      {card.running ? (
-                        <span
-                          class="playtime-card__pulse"
-                          title={t("playtime.cards.running")}
-                        />
-                      ) : null}
-                    </span>
-                    <span class="playtime-card__sub">{card.sub}</span>
-                  </div>
-                ))}
-              </div>
-
-              {importNote.value ? (
-                <p class="playtime-view__note">{importNote.value}</p>
-              ) : null}
-
-              {/* ── Battle breakdown (replay-derived, scope-aware) ────── */}
-              {store.battles ? (
-                <section class="play-section">
-                  <div class="play-section__head">
-                    <h3>{t("playtime.battlesTitle")}</h3>
-                  </div>
-                  {scopedBattles.value.length === 0 ? (
-                    <p class="playtime-breakdown__empty">
-                      {totalBattles.value === 0
-                        ? t("playtime.battlesEmpty")
-                        : t("playtime.battlesNoneSelected")}
-                    </p>
-                  ) : (
-                    <div class="playtime-breakdown">
-                      {breakdownGroups.value.map((g) => (
-                        <PlaytimeBreakdownPie
-                          key={g.title}
-                          title={g.title}
-                          entries={g.entries}
-                          labelOf={g.labelOf}
-                          colorOf={g.colorOf}
-                          unitLabel={t("playtime.breakdown.battles")}
-                        />
+      <HkScrollContainer class="playtime-view">
+        {/* Page scroll region: the hikari scroll container owns the
+            scrollbar (auto-hiding overlay track); the routed content
+            scrolls inside its viewport. */}
+        <div class="playtime-view__inner">
+          <div class="playtime-view__content">
+            {/* ── Toolbar — ALWAYS rendered, empty state included: a fresh
+                install's first playtime data can come from a pinned replay
+                archive, and "rescan now" must never depend on data existing.
+                The scope pill narrows ONLY the battle-derived content
+                (battles card + breakdown + battle heatmap) — the ledger
+                itself is global. */}
+            <div class="playtime-view__toolbar">
+              <button
+                type="button"
+                ref={scopeBtn}
+                class="playtime-view__scope"
+                aria-haspopup="menu"
+                aria-expanded={scopeOpen.value}
+                onClick={() => (scopeOpen.value = !scopeOpen.value)}
+              >
+                <span class="playtime-view__scope-label">{scopeLabel.value}</span>
+                <ChevronDown
+                  size={13}
+                  class="playtime-view__scope-chevron"
+                  data-open={scopeOpen.value || undefined}
+                />
+              </button>
+              {/* Desktop keeps closeOnBackdrop off: HkPopover's own
+                  document listener would close on the re-click of the
+                  open button before that click re-toggles it; the
+                  pointerdown listener above is the outside-close and
+                  Escape rides closeOnEscape. Phones dock the menu as a
+                  bottom sheet (sheetOnMobile, same convention as the
+                  filter chips). Both menus below share that contract. */}
+              <HkPopover
+                modelValue={scopeOpen.value}
+                onUpdate:modelValue={(v: boolean) => {
+                  if (!v) closeScope();
+                }}
+                anchorRef={scopeBtn.value}
+                placement="bottom-end"
+                closeOnBackdrop={isMobile.value}
+                sheetOnMobile
+                title={t("playtime.battlesTitle")}
+              >
+                <div ref={scopePanel} class="playtime-view__scope-menu" role="menu">
+                  {/* Menu scroll region: the hikari scroll container owns the
+                      scrollbar (auto-hiding overlay track) once the option
+                      list outgrows the cap; the outside-close ref stays on
+                      the plain menu root so grabs on the overlay bar count
+                      as inside. */}
+                  <HkScrollContainer class="playtime-view__scope-menu__scroll">
+                    <div class="playtime-view__scope-menu__inner">
+                      {scopeOptions.value.map((o) => (
+                        <button
+                          key={o.key}
+                          type="button"
+                          role="menuitem"
+                          class="playtime-view__scope-opt"
+                          data-active={isPickedScope(o.key) || undefined}
+                          // The all-clients sentinel is not a client like the
+                          // rows under it — italics set it apart as the
+                          // aggregate it is.
+                          data-all={o.key === SCOPE_ALL || undefined}
+                          onClick={() => pickScope(o.key)}
+                        >
+                          <span class="playtime-view__scope-opt-label">{o.label}</span>
+                          {isPickedScope(o.key) ? (
+                            <Check size={13} class="playtime-view__scope-opt-check" />
+                          ) : null}
+                        </button>
                       ))}
+                      {/* No detected install = nothing but the all-clients
+                          option to pick; the hint points at where clients
+                          are chosen (same wording the old single-option menu
+                          used). */}
+                      {config.installs.length === 0 ? (
+                        <div class="playtime-view__scope-hint">
+                          {t("playtime.scopeUnavailable")}
+                        </div>
+                      ) : null}
                     </div>
-                  )}
-                </section>
-              ) : null}
-
-              {/* ── Trend bars ───────────────────────────────────────── */}
-              <section class="play-section">
-                <div class="play-section__head">
-                  <h3>{t("playtime.trendTitle")}</h3>
+                  </HkScrollContainer>
                 </div>
-                <div class="play-section__controls">
-                  <HkTabs
-                    variant="segmented"
-                    modelValue={range.value}
-                    onUpdate:modelValue={(v: string) => (range.value = v as TrendRange)}
-                    tabs={rangeOptions.map((o) => ({ key: o.key, label: o.label }))}
-                  />
-                  <span class="play-section__total">
-                    {t("playtime.rangeTotal", { v: fmtDuration(rangeTotal.value) })}
-                  </span>
-                </div>
-                <PlaytimeTrendChart buckets={buckets.value} />
-              </section>
-
-              {/* ── Battle heatmap (battles per local day, scope-aware;
-                  hidden entirely when no replay was ever scanned) ──────── */}
-              {store.battles && totalBattles.value > 0 ? (
-                <section class="play-section">
-                  <div class="play-section__head">
-                    <h3>{t("playtime.heatTitle")}</h3>
-                    <div class="play-heat-controls">
-                      <HkTabs
-                        variant="segmented"
-                        modelValue={heatYearKey.value}
-                        onUpdate:modelValue={(v: string) => (heatYearKey.value = v)}
-                        tabs={heatYearOptions.value}
-                      />
-                      <div class="play-heat-legend">
-                        <span>{t("playtime.heatLess")}</span>
-                        {[1, 2, 3, 4].map((level) => (
-                          <span key={level} class={`play-heat-legend__swatch is-${level}`} />
-                        ))}
-                        <span>{t("playtime.heatMore")}</span>
+              </HkPopover>
+              {/* ── Replay sources (录像来源): pins extra replay folders into
+                  the same scan that feeds the battles card + heatmap + replay
+                  rail. Removal keeps already-counted battles (history); the
+                  rebuild action at the bottom drops that history on purpose
+                  and requires the confirm dialog. */}
+              <button
+                type="button"
+                ref={sourcesBtn}
+                class="playtime-view__scope"
+                aria-haspopup="menu"
+                aria-expanded={sourcesOpen.value}
+                onClick={() => (sourcesOpen.value = !sourcesOpen.value)}
+              >
+                <FolderOpen size={13} class="playtime-view__scope-lead" />
+                <span class="playtime-view__scope-label">{t("playtime.sourcesTitle")}</span>
+                <ChevronDown
+                  size={13}
+                  class="playtime-view__scope-chevron"
+                  data-open={sourcesOpen.value || undefined}
+                />
+              </button>
+              <HkPopover
+                modelValue={sourcesOpen.value}
+                onUpdate:modelValue={(v: boolean) => {
+                  if (!v) closeSources();
+                }}
+                anchorRef={sourcesBtn.value}
+                placement="bottom-end"
+                closeOnBackdrop={isMobile.value}
+                sheetOnMobile
+                title={t("playtime.sourcesTitle")}
+              >
+                <div ref={sourcesPanel} class="playtime-view__sources-menu">
+                  {/* Same scroll contract as the scope menu: the hikari
+                      scroll container owns the scrollbar once the pinned
+                      folders outgrow the cap; the outside-close ref stays on
+                      the plain menu root. */}
+                  <HkScrollContainer class="playtime-view__sources-menu__scroll">
+                    <div class="playtime-view__sources-menu__inner">
+                      {config.replayDirs.length === 0 ? (
+                        <div class="playtime-view__sources-empty">
+                          {t("playtime.sourcesEmpty")}
+                        </div>
+                      ) : (
+                        config.replayDirs.map((d) => (
+                          <div key={d} class="playtime-view__sources-row">
+                            <span class="playtime-view__sources-path" title={d}>
+                              {d}
+                            </span>
+                            <button
+                              type="button"
+                              class="playtime-view__sources-remove"
+                              aria-label={t("playtime.sourcesRemove", { path: d })}
+                              onClick={() => void onRemoveSource(d)}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                      {/* Phones have no native folder picker (rfd has no Android
+                          backend) — the add row is desktop-only; pinned
+                          folders still list and remove everywhere. */}
+                      {!isMobile.value ? (
+                        <HkButton
+                          size="sm"
+                          variant="ghost"
+                          disabled={addingSource.value}
+                          loading={addingSource.value}
+                          onClick={() => void onAddSource()}
+                        >
+                          <FolderPlus size={14} />
+                          <span>{t("playtime.sourcesAdd")}</span>
+                        </HkButton>
+                      ) : null}
+                      <div class="playtime-view__sources-hint">{t("playtime.sourcesHint")}</div>
+                      <div class="playtime-view__sources-footer">
+                        <button
+                          type="button"
+                          class="playtime-view__sources-rebuild"
+                          disabled={rebuilding.value}
+                          onClick={() => (rebuildArmed.value = true)}
+                        >
+                          <RefreshCw
+                            size={12}
+                            class={rebuilding.value ? "playtime-view__spin" : undefined}
+                          />
+                          <span>{t("playtime.rebuild")}</span>
+                        </button>
                       </div>
                     </div>
-                  </div>
-                  <PlaytimeHeatmap
-                    points={battleHeat.value}
-                    hintOf={heatHint}
-                    now={now.value}
-                    locale={uiLocale.value}
-                    year={heatYear.value}
-                  />
-                  <p class="playtime-view__note">{t("playtime.heatHint")}</p>
-                </section>
-              ) : null}
-            </>
-          )}
+                  </HkScrollContainer>
+                </div>
+              </HkPopover>
+              {/* Manual rescan: re-pulls overview + battles now. The 30 s poll
+                  re-pulls battles only around game sessions (activity key),
+                  so files that changed on disk while idle — a hand-copied
+                  replay, a pinned folder — otherwise wait for a launch. */}
+              <HkIconButton
+                size={24}
+                variant="ghost"
+                disabled={store.refreshing}
+                aria-label={t("playtime.refresh")}
+                onClick={() => void store.refreshAll()}
+              >
+                <RefreshCw
+                  size={15}
+                  class={store.refreshing ? "playtime-view__spin" : undefined}
+                />
+              </HkIconButton>
+            </div>
+            <HkConfirmDialog
+              open={rebuildArmed.value}
+              title={t("playtime.rebuild")}
+              message={t("playtime.rebuildConfirm")}
+              confirmLabel={t("playtime.rebuild")}
+              onConfirm={() => void onRebuild()}
+              onUpdate:open={(v: boolean) => {
+                if (!v) rebuildArmed.value = false;
+              }}
+            />
+            {!hasAnyData.value ? (
+              <div class="playtime-view__empty">
+                <h2 class="playtime-view__title">{t("playtime.emptyTitle")}</h2>
+                <p class="playtime-view__hint">{t("playtime.emptyHint")}</p>
+              </div>
+            ) : (
+              <>
+                {/* ── Record cards ─────────────────────────────────────── */}
+                <div class="playtime-cards">
+                  {cards.value.map((card) => (
+                    <div class="playtime-card" key={card.label}>
+                      <span class="playtime-card__label">{card.label}</span>
+                      <span class="playtime-card__value">
+                        {card.value}
+                        {card.running ? (
+                          <span
+                            class="playtime-card__pulse"
+                            title={t("playtime.cards.running")}
+                          />
+                        ) : null}
+                      </span>
+                      <span class="playtime-card__sub">{card.sub}</span>
+                    </div>
+                  ))}
+                </div>
 
-          {/* ── PR trend (below the heatmap): skill over time from the
-              CACHED per-ship history + expected values — bound to the
-              active account, not the local ledger, so it renders even
-              while the playtime empty state holds (a fresh install with a
-              bound account still has water-meter history). The section
-              self-hides without an account or with PR display off. ── */}
-          <PrTrendSection />
+                {importNote.value ? (
+                  <p class="playtime-view__note">{importNote.value}</p>
+                ) : null}
+
+                {/* ── Battle breakdown (replay-derived, scope-aware) ────── */}
+                {store.battles ? (
+                  <section class="play-section">
+                    <div class="play-section__head">
+                      <h3>{t("playtime.battlesTitle")}</h3>
+                    </div>
+                    {scopedBattles.value.length === 0 ? (
+                      <p class="playtime-breakdown__empty">
+                        {totalBattles.value === 0
+                          ? t("playtime.battlesEmpty")
+                          : t("playtime.battlesNoneSelected")}
+                      </p>
+                    ) : (
+                      <div class="playtime-breakdown">
+                        {breakdownGroups.value.map((g) => (
+                          <PlaytimeBreakdownPie
+                            key={g.title}
+                            title={g.title}
+                            entries={g.entries}
+                            labelOf={g.labelOf}
+                            colorOf={g.colorOf}
+                            unitLabel={t("playtime.breakdown.battles")}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+
+                {/* ── Trend bars ───────────────────────────────────────── */}
+                <section class="play-section">
+                  <div class="play-section__head">
+                    <h3>{t("playtime.trendTitle")}</h3>
+                  </div>
+                  <div class="play-section__controls">
+                    <HkTabs
+                      variant="segmented"
+                      modelValue={range.value}
+                      onUpdate:modelValue={(v: string) => (range.value = v as TrendRange)}
+                      tabs={rangeOptions.map((o) => ({ key: o.key, label: o.label }))}
+                    />
+                    <span class="play-section__total">
+                      {t("playtime.rangeTotal", { v: fmtDuration(rangeTotal.value) })}
+                    </span>
+                  </div>
+                  <PlaytimeTrendChart buckets={buckets.value} />
+                </section>
+
+                {/* ── Battle heatmap (battles per local day, scope-aware;
+                    hidden entirely when no replay was ever scanned) ──────── */}
+                {store.battles && totalBattles.value > 0 ? (
+                  <section class="play-section">
+                    <div class="play-section__head">
+                      <h3>{t("playtime.heatTitle")}</h3>
+                      <div class="play-heat-controls">
+                        <HkTabs
+                          variant="segmented"
+                          modelValue={heatYearKey.value}
+                          onUpdate:modelValue={(v: string) => (heatYearKey.value = v)}
+                          tabs={heatYearOptions.value}
+                        />
+                        <div class="play-heat-legend">
+                          <span>{t("playtime.heatLess")}</span>
+                          {[1, 2, 3, 4].map((level) => (
+                            <span key={level} class={`play-heat-legend__swatch is-${level}`} />
+                          ))}
+                          <span>{t("playtime.heatMore")}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <PlaytimeHeatmap
+                      points={battleHeat.value}
+                      hintOf={heatHint}
+                      now={now.value}
+                      locale={uiLocale.value}
+                      year={heatYear.value}
+                    />
+                    <p class="playtime-view__note">{t("playtime.heatHint")}</p>
+                  </section>
+                ) : null}
+              </>
+            )}
+
+            {/* ── PR trend (below the heatmap): skill over time from the
+                CACHED per-ship history + expected values — bound to the
+                active account, not the local ledger, so it renders even
+                while the playtime empty state holds (a fresh install with a
+                bound account still has water-meter history). The section
+                self-hides without an account or with PR display off. ── */}
+            <PrTrendSection />
+          </div>
         </div>
-      </div>
+      </HkScrollContainer>
     );
   },
 });

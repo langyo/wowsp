@@ -16,12 +16,14 @@
  * chunk cannot rely on the LookupView chunk to carry the styles (Vite
  * dedupes the CSS module, so both surfaces stay in lockstep).
  *
- * The option track is the shared one-line pannable strip (`__opts--scroll`,
- * optionStrip composable): HkPopover sizes its panel to max-content, so a
- * wrapping track always measured as ONE long line that ran off-screen —
- * the strip caps the panel instead and pans the overflow (wheel / mouse
- * drag / native touch), with the edges fading while content hides. The
- * phone sheet relaxes the track back into a wrapping group (SCSS).
+ * The option track is the shared one-line pannable strip (`__opts--scroll`):
+ * HkPopover sizes its panel to max-content, so a wrapping track always
+ * measured as ONE long line that ran off-screen — the strip is a hikari
+ * HkScrollContainer (axis horizontal + fade) that caps the panel instead
+ * and pans the overflow (wheel / mouse drag / native touch), its edges
+ * fading while content hides (the library senses data-h-overflow itself;
+ * optionStrip adds the wheel normalization and the drag pan). The phone
+ * sheet relaxes the track back into a wrapping group (SCSS).
  *
  * The popup renders through hikari HkPopover: it teleports to body level and
  * positions against the chip button, so an overflow ancestor (the ship
@@ -39,7 +41,7 @@
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type VNode } from "vue";
 
-import { HkPopover, useBreakpoint } from "@celestia-island/hikari";
+import { HkPopover, HkScrollContainer, useBreakpoint } from "@celestia-island/hikari";
 import { ArrowDown, ArrowUp } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -235,41 +237,46 @@ export default defineComponent({
               <span>{props.title}</span>
             </div>
             {/* One-line pannable strip, shared with the 水表 bar's nation
-                popup: capped by the panel, panned by wheel / drag / touch,
-                fading where content still hides (optionStrip senses the
-                overflow sides onto data-h-overflow). The phone sheet
-                relaxes the track back into a wrapping group (SCSS). */}
-            <div
-              ref={strip.stripEl}
+                popup: a hikari HkScrollContainer (axis horizontal + fade)
+                capped by the panel and panned by wheel / drag / touch, its
+                edges fading where content still hides (the library senses
+                data-h-overflow; optionStrip normalizes the wheel and owns
+                the drag pan). The phone sheet relaxes the track back into
+                a wrapping group (SCSS). */}
+            <HkScrollContainer
+              ref={strip.attach}
               class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
+              axis="horizontal"
+              fade
               data-panning={strip.panning.value || undefined}
-              onPointerdown={strip.onPointerDown}
             >
-              <button
-                type="button"
-                class="ship-filter-bar__opt"
-                data-active={props.selected.size === 0 || undefined}
-                onClick={() => emit("all")}
-              >
-                <span>{props.allLabel}</span>
-                {props.dir ? dirIcon(props.dir) : null}
-              </button>
-              {props.options.map((o) => (
+              <div class="ship-filter-bar__opts-track">
                 <button
-                  key={o.value}
                   type="button"
                   class="ship-filter-bar__opt"
-                  data-active={props.selected.has(o.value) || undefined}
-                  onClick={() => emit("toggle", o.value)}
+                  data-active={props.selected.size === 0 || undefined}
+                  onClick={() => emit("all")}
                 >
-                  {props.renderOptionIcon ? props.renderOptionIcon(o.value) : null}
-                  <span>{o.label}</span>
-                  {props.dir && !props.pure && props.selected.has(o.value)
-                    ? dirIcon(props.dir)
-                    : null}
+                  <span>{props.allLabel}</span>
+                  {props.dir ? dirIcon(props.dir) : null}
                 </button>
-              ))}
-            </div>
+                {props.options.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    class="ship-filter-bar__opt"
+                    data-active={props.selected.has(o.value) || undefined}
+                    onClick={() => emit("toggle", o.value)}
+                  >
+                    {props.renderOptionIcon ? props.renderOptionIcon(o.value) : null}
+                    <span>{o.label}</span>
+                    {props.dir && !props.pure && props.selected.has(o.value)
+                      ? dirIcon(props.dir)
+                      : null}
+                  </button>
+                ))}
+              </div>
+            </HkScrollContainer>
             {/* Slot content rides between the strip and the hint — the
                 replay rail's date-range pair lives here. */}
             {slots.default?.()}

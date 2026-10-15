@@ -7,6 +7,7 @@ import {
   HkCheckbox,
   HkIconButton,
   HkModal,
+  HkScrollContainer,
   HkSpinner,
   HkTabs,
 } from "@celestia-island/hikari";
@@ -37,14 +38,18 @@ function renderMigGroup(ctx: ResourcesCtx, kind: "duplicate" | "superseded", fil
         <span class="mig-wizard__count">{files.length}</span>
       </button>
       <p class="mig-wizard__hint">{t(`resources.migrateGroup.${kind}Hint`)}</p>
+      {/* The raw file list's capped scroll region: hikari's overlay
+          scrollbar owns the overflow; the lines scroll in the viewport. */}
       {open && files.length > 0 && (
-        <ul class="mig-wizard__files">
-          {files.map((f) => (
-            <li key={f.path} title={f.path}>
-              {f.path}
-            </li>
-          ))}
-        </ul>
+        <HkScrollContainer class="mig-wizard__files">
+          <ul class="mig-wizard__files-inner">
+            {files.map((f) => (
+              <li key={f.path} title={f.path}>
+                {f.path}
+              </li>
+            ))}
+          </ul>
+        </HkScrollContainer>
       )}
     </div>
   );
@@ -294,9 +299,13 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
                     const ignore = ctx.migDecide.value.ignore;
                     const rows = plan.decide.filter((f) => !ignore.has(f.path));
                     return rows.length > 0 ? (
-                      <div class="mig-wizard__rows">
-                        {rows.map((f) => renderMigRow(ctx, f))}
-                      </div>
+                      // Capped decide-row stack: hikari's overlay scrollbar
+                      // owns the overflow; the rows scroll in the viewport.
+                      <HkScrollContainer class="mig-wizard__rows">
+                        <div class="mig-wizard__rows-inner">
+                          {rows.map((f) => renderMigRow(ctx, f))}
+                        </div>
+                      </HkScrollContainer>
                     ) : null;
                   })()}
                 </div>
@@ -329,11 +338,15 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
                       </HkButton>
                     </div>
                     {ctx.migGroupOpen.value === "ignored" && (
-                      <div class="mig-wizard__rows">
-                        {plan.decide
-                          .filter((f) => ctx.migDecide.value.ignore.has(f.path))
-                          .map((f) => renderMigIgnoredRow(ctx, f))}
-                      </div>
+                      // Same capped stack for the ignored rows (overlay
+                      // scrollbar owned by hikari's scroll container).
+                      <HkScrollContainer class="mig-wizard__rows">
+                        <div class="mig-wizard__rows-inner">
+                          {plan.decide
+                            .filter((f) => ctx.migDecide.value.ignore.has(f.path))
+                            .map((f) => renderMigIgnoredRow(ctx, f))}
+                        </div>
+                      </HkScrollContainer>
                     )}
                   </div>
                 )}

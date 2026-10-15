@@ -23,7 +23,7 @@
  * update, cap instantiation).
  */
 import { computed, defineComponent, onMounted, ref, watch, type PropType } from "vue";
-import { HkModal, HkStepFlow, HkTabs, HkTag } from "@celestia-island/hikari";
+import { HkModal, HkScrollContainer, HkStepFlow, HkTabs, HkTag } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName } from "@/utils/mapNames";
@@ -359,7 +359,11 @@ export default defineComponent({
                     onUpdate:modelValue={(v: string) => (category.value = v as CategoryKey)}
                     tabs={CATEGORIES.map((c) => ({ key: c.key, label: i18nT(c.labelKey) }))}
                   />
-                  <div class="map-setup__list">
+                  {/* Scroll region: hikari's HkScrollContainer owns the
+                      scrollbar (auto-hiding overlay track); the map rows
+                      scroll inside its viewport. */}
+                  <HkScrollContainer class="map-setup__list">
+                    <div class="map-setup__list-inner">
                     {sortedMaps.value.length === 0 ? (
                       <p class="map-setup__empty">{i18nT("tactics.list.filterEmpty")}</p>
                     ) : (
@@ -385,7 +389,8 @@ export default defineComponent({
                         </button>
                       ))
                     )}
-                  </div>
+                    </div>
+                  </HkScrollContainer>
                 </div>
                 <div class="map-setup__preview">
                   {previewUrl.value ? (
@@ -407,7 +412,11 @@ export default defineComponent({
             ),
             mode: () => (
               <div class="map-setup">
-                <div class="map-setup__modes">
+                {/* Scroll region: hikari's HkScrollContainer owns the
+                    scrollbar (auto-hiding overlay track); the mode cards
+                    scroll inside its viewport. */}
+                <HkScrollContainer class="map-setup__modes">
+                  <div class="map-setup__modes-inner">
                   <div class="map-setup__section-label">{i18nT("tactics.setup.learnedSection")}</div>
                   {learning.value ? (
                     <p class="map-setup__empty">{i18nT("tactics.setup.learning")}</p>
@@ -492,7 +501,9 @@ export default defineComponent({
                       ) : null}
                     </span>
                     <span class="map-setup__mode-desc">{i18nT("tactics.setup.customDesc")}</span>
-                  </button>                </div>
+                  </button>
+                  </div>
+                </HkScrollContainer>
                 <div class="map-setup__preview">
                   {previewUrl.value ? (
                     <div class="map-setup__art-wrap">

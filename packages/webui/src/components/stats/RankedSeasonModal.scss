@@ -50,11 +50,13 @@ $dot-y-in-node: calc(1.25rem + 0.3rem + #{$dot * 0.5});
     }
   }
 
-  /* ── Horizontal timeline strip ── */
+  /* ── Horizontal timeline strip: hikari's HkScrollContainer owns the
+     scrollbar (auto-hiding overlay track under the strip); the track
+     below is the content that scrolls inside its viewport. ── */
   &__strip {
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior-x: contain;
+    }
   }
 
   &__track {

@@ -617,6 +617,9 @@ export default defineComponent({
 
           <main class="tac-workspace">
             {wide.value ? (
+              // Teleport dock for the branch tree (PlanSlotsBar, tree
+              // layout) — the tree is itself the hikari scroll container;
+              // the aside keeps only the panel's box framing.
               <aside class="tac-workspace__branch" id="tactics-branch-dock" />
             ) : null}
             <section class="tac-workspace__stage">

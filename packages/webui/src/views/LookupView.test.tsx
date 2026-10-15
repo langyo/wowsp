@@ -87,6 +87,14 @@ vi.mock("@celestia-island/hikari", () => ({
     emits: ["update:modelValue"],
     render: () => null,
   },
+  // Scroll-region host: pass-through div wrapping the slot (the tests
+  // only assert on the content, never the scroller itself).
+  HkScrollContainer: {
+    name: "HkScrollContainer",
+    setup(_: unknown, { slots }: { slots: { default?: () => VNode[] } }) {
+      return () => h("div", slots.default?.() ?? []);
+    },
+  },
   useBreakpoint: () => ({ isMobile: { value: false } }),
 }));
 
@@ -103,7 +111,12 @@ const player = (accountId: number, realm = "asia") => ({ accountId, realm, name:
 const clan = (clanId: number, realm = "asia") => ({ clanId, realm, tag: `Clan${clanId}`, members: [] }) as unknown as ClanInfo;
 function mountLookup(query: Record<string, string> = {}) {
   mocks.route.query = query;
-  return shallowMount(LookupView);
+  // The history rail and the results region are hikari HkScrollContainers
+  // now — render the (mocked) host for real so its slot content (pending
+  // row, error notice, result cards) stays visible under shallowMount.
+  return shallowMount(LookupView, {
+    global: { stubs: { HkScrollContainer: false } },
+  });
 }
 
 beforeEach(() => {

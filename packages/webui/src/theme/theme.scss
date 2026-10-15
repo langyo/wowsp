@@ -1,7 +1,8 @@
 /* WoWSP global theme tokens. Adapted from shittim-chest's theme.scss.
    Structural tokens (radius, font, spacing, duration, motion, shadow,
-   z-index, scrollbar) live here; color RGB-channel tokens are seeded by
-   os_prefs + a future presets.ts. */
+   z-index) live here; color RGB-channel tokens are seeded by
+   os_prefs + a future presets.ts. Scrollbar chrome is hikari's
+   overlay system (see the Scrollbars note below), not a token here. */
 
 /* === Theme Transition === */
 html.s-theme-transitioning,
@@ -414,29 +415,13 @@ button {
   font: inherit;
 }
 
-/* === Custom scrollbars (replace ugly native Windows bars) === */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(var(--color-border) / 40%) transparent;
-}
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background: rgb(var(--color-border) / 35%);
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--color-primary) / 40%);
-  background-clip: padding-box;
-  border: 2px solid transparent;
-}
+/* === Scrollbars ===
+   Every scroll region renders through hikari's HkScrollContainer: the
+   viewport hides its native bar and the shared overlay chrome
+   (.hk-scrollbar-track/.hk-scrollbar-thumb from hikari's stylesheet)
+   draws the app-wide bar. No global native-bar styling remains — a
+   scroller that is not a hikari viewport would show the OS default,
+   which is the migration's failure mode, not a look to style around. */
 
 /* === Styled form controls (replace native select/input appearance) === */
 select {

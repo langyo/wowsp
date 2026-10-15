@@ -22,10 +22,11 @@
  *     further special: pure filters with no direction at all, so re-clicking
  *     one of them simply deselects it.
  *   - The nation popup hosts its options as ONE capped horizontal strip
- *     (it never wraps or outruns the viewport): panned by wheel (deltaY →
- *     scrollLeft) or mouse drag (5px click/pan threshold, the pan's
- *     trailing click swallowed), touch pans natively; a hint line names
- *     the gesture. The phone sheet still wraps the track.
+ *     (it never wraps or outruns the viewport): a hikari HkScrollContainer
+ *     (axis horizontal, edge fades) panned by wheel or mouse drag (5px
+ *     click/pan threshold, the pan's trailing click swallowed), touch pans
+ *     natively; a hint line names the gesture. The phone sheet still wraps
+ *     the track.
  *   - The 全部… option runs the all-state sort through a three-click cycle
  *     while nothing is picked: first click engages the "sort while
  *     unfiltered" mode in the category's canonical direction, the second
@@ -52,7 +53,7 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } fro
 import type { PlayerShipStats } from "@/api";
 import { ArrowDown, ArrowUp, Search } from "@lucide/vue";
 
-import { HkPopover, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
+import { HkPopover, HkScrollContainer, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry, nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -685,10 +686,11 @@ export default defineComponent({
     //    Fourteen flags cannot fit any sane popup width, and the old wrap
     //    never engaged (HkPopover sizes its panel to max-content, so the
     //    track always measured as ONE long line that ran off-screen). The
-    //    track is a real horizontal scroll container (SCSS) shared with
-    //    every FilterCategoryChip popup: wheel-panned, mouse-drag-panned,
-    //    touch pans natively, and the overflow edges fade (optionStrip's
-    //    data-h-overflow sensing drives the SCSS masks). ──
+    //    track is a hikari HkScrollContainer (axis horizontal + fade)
+    //    shared with every FilterCategoryChip popup: the library's
+    //    viewport scrolls and its data-h-overflow sensing drives the edge
+    //    fades, optionStrip normalizes the wheel (Firefox line mode) and
+    //    pans by mouse drag; touch pans natively. ──
     const strip = useOptionStrip();
     // A popover that closed before the pan's trailing click (window blur
     // mid-drag — pointerup lost) must not carry the swallow flag into the
@@ -826,13 +828,8 @@ export default defineComponent({
                         letter badge when the asset is missing), and the
                         nation track alone is a one-line pannable strip —
                         wrapped only by the phone sheet (see the SCSS). */}
-                    <div
-                      ref={key === "nation" ? strip.stripEl : undefined}
-                      class={["ship-filter-bar__opts", key === "nation" && "ship-filter-bar__opts--scroll"]}
-                      data-panning={key === "nation" && strip.panning.value ? "" : undefined}
-                      onPointerdown={key === "nation" ? strip.onPointerDown : undefined}
-                    >
-                      {catOptions.value[key].map((o) => {
+                    {(() => {
+                      const optButtons = catOptions.value[key].map((o) => {
                         const isAll = o.value === "";
                         const on = isAll ? cur.values.length === 0 : cur.values.includes(o.value);
                         return (
@@ -862,8 +859,25 @@ export default defineComponent({
                             {(isAll ? cur.allSort : on && !isPureCat(key)) ? dirIcon(cur.dir) : null}
                           </button>
                         );
-                      })}
-                    </div>
+                      });
+                      // The nation track renders into the pannable strip
+                      // (a hikari HkScrollContainer, shared with every
+                      // FilterCategoryChip popup); every other category
+                      // keeps the plain wrapping track.
+                      return key === "nation" ? (
+                        <HkScrollContainer
+                          ref={strip.attach}
+                          class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
+                          axis="horizontal"
+                          fade
+                          data-panning={strip.panning.value ? "" : undefined}
+                        >
+                          <div class="ship-filter-bar__opts-track">{optButtons}</div>
+                        </HkScrollContainer>
+                      ) : (
+                        <div class="ship-filter-bar__opts">{optButtons}</div>
+                      );
+                    })()}
                     {/* The nation strip pans instead of wrapping — name the
                         gesture. Hidden on the phone sheet, whose track wraps
                         and has nothing to pan (SCSS). */}
@@ -928,22 +942,27 @@ export default defineComponent({
                   placeholder={t("common.search.fuzzy")}
                 />
                 {shipQuery.value.trim() && searchCandidates.value.length > 0 ? (
-                  <div class="ship-filter-bar__candidates">
-                    {searchCandidates.value.slice(0, 12).map((c) => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        class="ship-filter-bar__candidate"
-                        onClick={() => {
-                          shipQuery.value = c.value;
-                          searchOpen.value = false;
-                        }}
-                      >
-                        <span>{c.label}</span>
-                        {c.sub ? <em>{c.sub}</em> : null}
-                      </button>
-                    ))}
-                  </div>
+                  /* Fuzzy-match candidates — a capped hikari scroll
+                     container (overlay bar); the row layout lives on
+                     __candidates-inner. */
+                  <HkScrollContainer class="ship-filter-bar__candidates">
+                    <div class="ship-filter-bar__candidates-inner">
+                      {searchCandidates.value.slice(0, 12).map((c) => (
+                        <button
+                          key={c.value}
+                          type="button"
+                          class="ship-filter-bar__candidate"
+                          onClick={() => {
+                            shipQuery.value = c.value;
+                            searchOpen.value = false;
+                          }}
+                        >
+                          <span>{c.label}</span>
+                          {c.sub ? <em>{c.sub}</em> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </HkScrollContainer>
                 ) : null}
                 {!shipQuery.value.trim() ? (
                   <div class="ship-filter-bar__search-hint">{t("common.search.hint")}</div>

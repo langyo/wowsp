@@ -5,9 +5,10 @@
   height: 100%;
   min-height: 0;
   /* Only left padding at the grid level: __main is the scroll column and
-     its scrollbar must hug the window's right edge across the full height
-     (like the other pages that scroll in the app shell's hikari scroll
-     viewport). Vertical breathing room rides on the two columns instead. */
+     its hikari overlay bar paints over the window's right edge across the
+     full height (like the other pages that scroll in the app shell's
+     hikari scroll viewport — no gutter to reserve). Vertical breathing
+     room rides on the two columns instead. */
   padding-left: 16px;
   overflow: hidden;
 }
@@ -17,9 +18,9 @@
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid rgb(var(--color-text) / 8%);
-  /* No right padding: __history is this column's scroller and its scrollbar
-     must hug the sidebar's right border (same edge-to-edge rule as __main).
-     Breathing room rides on the children instead. */
+  /* No right padding: __history is this column's scroller and its hikari
+     overlay bar paints over the sidebar's right border (same edge rule as
+     __main). Breathing room rides on the children instead. */
   padding: 16px 0;
 }
 
@@ -88,15 +89,19 @@
   }
 }
 
+/* Sidebar history scroller — hikari's HkScrollContainer owns the scrollbar
+   (auto-hiding overlay track over the sidebar's right border); the row
+   layout + right clearance moved to __history-inner so they scroll with
+   the entries. */
 .lookup-view__history {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.lookup-view__history-inner {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  /* Content clearance from the scrollbar; the scrollbar itself sits at this
-     scroller's border edge — flush with the sidebar's right border. */
   padding-right: 14px;
 }
 
@@ -159,8 +164,8 @@
   min-height: 0;
   /* The title row pins above __scroll (a long ship table must not scroll
      the page title away); this column only pads the top. Still no right
-     padding here: __scroll's scrollbar must hug the window's right edge
-     (like the other pages that scroll in their own viewport). */
+     padding here: __scroll's hikari overlay bar paints over the window's
+     right edge. */
   padding: 16px 0 0;
   display: flex;
   flex-direction: column;
@@ -171,20 +176,23 @@
   font-size: 1.05rem;
   font-weight: 700;
   margin: 0;
-  /* The right inset this column gave up to the scroller's edge-to-edge
-     scrollbar. */
+  /* Right inset keeping the pinned title clear of __scroll's overlay bar. */
   padding-right: 16px;
 }
 
+/* Main results scroller — hikari's HkScrollContainer owns the scrollbar
+   (auto-hiding overlay track over the region's right edge); the column
+   layout + right/bottom clearance moved to __scroll-inner so they scroll
+   with the content. */
 .lookup-view__scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.lookup-view__scroll-inner {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  /* Content clearance from the scrollbar; the scrollbar itself sits at this
-     scroller's border edge — flush with the window. */
   padding: 0 16px 16px 0;
 }
 
@@ -468,7 +476,9 @@
     /* Capped inner scroller above the results: hitting its end must not
        chain the touch gesture onward (phone sheet-family containment —
        see AppShell.scss). */
-    overscroll-behavior: contain;
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior: contain;
+    }
   }
 
   .lookup-view__history-item {
@@ -479,7 +489,7 @@
     padding: 0.75rem 0 0;
   }
 
-  .lookup-view__scroll {
+  .lookup-view__scroll-inner {
     padding: 0 0 calc(0.75rem + env(safe-area-inset-bottom, 0px));
   }
 }

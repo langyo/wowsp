@@ -200,8 +200,9 @@
   display: inline-flex;
   /* Wrap instead of overflow: with the type silhouettes the EN type row
      rides the panel's 640px cap, and a capped inline-flex would let the
-     last option poke past the border. The pannable strips override back
-     to nowrap (--scroll). */
+     last option poke past the border. The pannable strip carries its own
+     nowrap row wrapper (__opts-track) inside the scroll container
+     (--scroll). */
   flex-wrap: wrap;
   gap: 0;
   padding: 2px;
@@ -274,60 +275,26 @@
 /* ── Option strip: one line, panned — never wrapped ──
    The #667 wrap never engaged: HkPopover sizes its panel to max-content,
    so a wrapping track always measured as ONE long line that ran off the
-   screen. The track is a real horizontal scroll container now — it
-   shrinks to the capped panel above and pans by wheel / mouse drag (the
-   pointer machinery lives in optionStrip.ts: pointer capture, the 5px
-   click/pan threshold, the one-shot click swallow) while touch pans the
-   overflow natively (touch-action: pan-x). Shared by the nation popup
-   and every FilterCategoryChip popup.
-   Overflow affordance = hikari HkScrollContainer's edge-fade contract:
-   optionStrip senses which inline edges still hide content onto
-   data-h-overflow (start / end / both), and only those sides dissolve
-   under a mask — no content hidden, no fade. The classic scrollbar
-   steps aside (it would sit inside the masked paint); the fades, the
-   grab cursor and the popup's gesture hint carry the affordance
-   instead. Fade size mirrors hikari's --hk-scroll-fade-size so the
-   look matches the library's scroll containers exactly. */
+   screen. The track is a hikari HkScrollContainer now (axis horizontal,
+   fade): its viewport shrinks to the capped panel above and owns the
+   pan, its edge fades dissolve whichever inline sides still hide content
+   (the library senses data-h-overflow and paints the masks itself), and
+   its overlay chrome carries the scrollbar. optionStrip adds what hikari
+   lacks — the Firefox line-mode wheel normalization and the mouse
+   drag-pan (pointer capture, the 5px click/pan threshold, the one-shot
+   click swallow) — while touch pans the viewport natively. Shared by the
+   nation popup and every FilterCategoryChip popup. */
 .ship-filter-bar__opts--scroll {
-  flex-wrap: nowrap;
+  /* The __opts chrome (border / padding / surface) stays on this root;
+     assert hikari's flex-column root display so the base track's
+     inline-flex cannot win by stylesheet load order. fit-content keeps
+     the legacy shrink-to-fit: the bordered strip hugs its pills and only
+     stretches to the panel cap when the line actually overflows (a bare
+     block-level flex would span the whole panel even for two options). */
+  display: flex;
+  width: fit-content;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  touch-action: pan-x;
-  scrollbar-width: none;
 
-  &::-webkit-scrollbar {
-    display: none;
-  }
-
-  --hk-scroll-fade-size: var(--space-24);
-
-  &[data-h-overflow="end"] {
-    -webkit-mask-image: linear-gradient(to left, transparent 0, #000 var(--hk-scroll-fade-size));
-    mask-image: linear-gradient(to left, transparent 0, #000 var(--hk-scroll-fade-size));
-  }
-
-  &[data-h-overflow="start"] {
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--hk-scroll-fade-size));
-    mask-image: linear-gradient(to right, transparent 0, #000 var(--hk-scroll-fade-size));
-  }
-
-  &[data-h-overflow="both"] {
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent 0,
-      #000 var(--hk-scroll-fade-size),
-      #000 calc(100% - var(--hk-scroll-fade-size)),
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent 0,
-      #000 var(--hk-scroll-fade-size),
-      #000 calc(100% - var(--hk-scroll-fade-size)),
-      transparent 100%
-    );
-  }
   /* The whole strip drags (the hint line says so), so the grab
      affordance rides over the option buttons too. Clicks still select:
      the 5px pan threshold keeps plain clicks click-shaped. */
@@ -345,6 +312,23 @@
       cursor: grabbing;
     }
   }
+
+  /* Native touch pans the viewport, and a horizontal drag must not chain
+     the gesture onward vertically — the viewport, not the root, is where
+     the pan happens. */
+  > .hk-scroll-container-viewport {
+    touch-action: pan-x;
+  }
+}
+
+/* The one-line row inside the strip's viewport: the track's own flex
+   layout (buttons side by side, never wrapping) — the root is hikari's
+   flex-column scroll container, so the row layout lives on this wrapper
+   and scrolls with the content. */
+.ship-filter-bar__opts-track {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0;
 }
 
 .ship-filter-bar__pop-hint {
@@ -403,14 +387,18 @@
 }
 
 /* Fuzzy-match candidates under the input — same row-button spec as
-   AsyncSearchCombo's candidate list. */
+   AsyncSearchCombo's candidate list. The capped scroller is a hikari
+   HkScrollContainer (overlay bar); the column layout moved to
+   __candidates-inner so it scrolls with the rows. */
 .ship-filter-bar__candidates {
   margin-top: 8px;
+  max-height: 280px;
+}
+
+.ship-filter-bar__candidates-inner {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 280px;
-  overflow-y: auto;
 }
 
 .ship-filter-bar__candidate {
@@ -483,16 +471,26 @@
 
   /* The nation strip relaxes back into the wrapping group on phones: the
      sheet carries the full width, nothing pans there, and its gesture
-     hint would name an interaction the track does not have — hidden. */
+     hint would name an interaction the track does not have — hidden.
+     width: auto undoes the desktop strip's fit-content shrink (a short
+     option row must still span the sheet, as the old block strip did). */
   .ship-filter-bar__opts--scroll {
-    flex-wrap: wrap;
-    overflow: visible;
-    touch-action: auto;
+    width: auto;
     cursor: default;
 
     .ship-filter-bar__opt {
       cursor: pointer;
     }
+
+    > .hk-scroll-container-viewport {
+      overflow: visible;
+      touch-action: auto;
+    }
+  }
+
+  .ship-filter-bar__opts-track {
+    flex-wrap: wrap;
+    gap: 2px;
   }
 
   .ship-filter-bar__scroll-hint {

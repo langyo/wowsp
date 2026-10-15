@@ -9,7 +9,7 @@ import {
   type VNode,
 } from "vue";
 
-import { HkCheckbox, HkDatePicker, HkPopover, HkTabs, useBreakpoint } from "@celestia-island/hikari";
+import { HkCheckbox, HkDatePicker, HkPopover, HkScrollContainer, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 
 import { api, type ExpectedPrEntry, type ShipStatsHistoryPoint } from "@/api";
 import { shipIconUrl } from "@/features/holographic/shipIcons";
@@ -569,9 +569,12 @@ export default defineComponent({
                       ))}
                     </div>
                   </div>
-                  {/* The scrollable checkbox list (max-height in SCSS) —
-                      rows show the range-scoped battles / winrate / average
-                      damage on the right. */}
+                  {/* The scrollable checkbox list — a hikari scroll
+                      container owns the scrollbar (cap in SCSS); rows show
+                      the range-scoped battles / winrate / average damage
+                      on the right. The listbox role sits on the inner
+                      wrapper so the option rows are its direct DOM
+                      children. */}
                   <div class="pr-trend-pop__cols" aria-hidden="true">
                     <span />
                     <span>{t("playtime.prTrendColShip")}</span>
@@ -579,51 +582,53 @@ export default defineComponent({
                     <span>{t("playtime.prTrendColWr")}</span>
                     <span>{t("playtime.prTrendColAvg")}</span>
                   </div>
-                  <div class="pr-trend-pop__list" role="listbox" aria-multiselectable="true">
-                    {listedShips.value.length === 0 ? (
-                      <p class="pr-trend-pop__empty">
-                        {rangeKey.value === "custom" && !customWindow.value
-                          ? t("playtime.prTrendRangeIncomplete")
-                          : t("playtime.prTrendNoData")}
-                      </p>
-                    ) : (
-                      listedShips.value.map((s) => {
-                        const checked = shipSel.value.includes(String(s.shipId));
-                        return (
-                          <div
-                            key={s.shipId}
-                            class="pr-trend-pop__row"
-                            role="option"
-                            aria-selected={checked}
-                            onClick={(e) => {
-                              // The checkbox toggles via its own emit; the
-                              // row handler skips it (ShipPickerModal's
-                              // split).
-                              if ((e.target as HTMLElement).closest(".hk-checkbox")) return;
-                              toggleShip(s.shipId);
-                            }}
-                          >
-                            <HkCheckbox
-                              size="sm"
-                              modelValue={checked}
-                              onUpdate:modelValue={() => toggleShip(s.shipId)}
-                            />
-                            <span class="pr-trend-pop__name">
-                              {s.tier != null ? `T${s.tier} · ` : ""}
-                              {prTrendShipName(s.shipId, uiLocale.value)}
-                            </span>
-                            <span class="pr-trend-pop__num">{s.battles}</span>
-                            <span class="pr-trend-pop__num">
-                              {s.battles > 0 ? ((s.wins / s.battles) * 100).toFixed(1) : "—"}%
-                            </span>
-                            <span class="pr-trend-pop__num">
-                              {Math.round(s.damage / s.battles).toLocaleString(uiLocale.value)}
-                            </span>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+                  <HkScrollContainer class="pr-trend-pop__list">
+                    <div class="pr-trend-pop__list__inner" role="listbox" aria-multiselectable="true">
+                      {listedShips.value.length === 0 ? (
+                        <p class="pr-trend-pop__empty">
+                          {rangeKey.value === "custom" && !customWindow.value
+                            ? t("playtime.prTrendRangeIncomplete")
+                            : t("playtime.prTrendNoData")}
+                        </p>
+                      ) : (
+                        listedShips.value.map((s) => {
+                          const checked = shipSel.value.includes(String(s.shipId));
+                          return (
+                            <div
+                              key={s.shipId}
+                              class="pr-trend-pop__row"
+                              role="option"
+                              aria-selected={checked}
+                              onClick={(e) => {
+                                // The checkbox toggles via its own emit; the
+                                // row handler skips it (ShipPickerModal's
+                                // split).
+                                if ((e.target as HTMLElement).closest(".hk-checkbox")) return;
+                                toggleShip(s.shipId);
+                              }}
+                            >
+                              <HkCheckbox
+                                size="sm"
+                                modelValue={checked}
+                                onUpdate:modelValue={() => toggleShip(s.shipId)}
+                              />
+                              <span class="pr-trend-pop__name">
+                                {s.tier != null ? `T${s.tier} · ` : ""}
+                                {prTrendShipName(s.shipId, uiLocale.value)}
+                              </span>
+                              <span class="pr-trend-pop__num">{s.battles}</span>
+                              <span class="pr-trend-pop__num">
+                                {s.battles > 0 ? ((s.wins / s.battles) * 100).toFixed(1) : "—"}%
+                              </span>
+                              <span class="pr-trend-pop__num">
+                                {Math.round(s.damage / s.battles).toLocaleString(uiLocale.value)}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </HkScrollContainer>
                   {/* Pinned select-all — sits below the list, never scrolls
                       with it (the panel is one flex column). */}
                   <div

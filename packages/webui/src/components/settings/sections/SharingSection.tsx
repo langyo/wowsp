@@ -30,6 +30,7 @@ import {
   HkCheckbox,
   HkInput,
   HkProgressBar,
+  HkScrollContainer,
   HkSelect,
   HkSettingsGroup,
   HkSettingsHint,
@@ -1084,9 +1085,14 @@ export default defineComponent({
                       title={t("sharing.select.filterEmpty")}
                     />
                   ) : (
-                    <ul class="sharing-sec__list">
-                      {visibleMatched.value.map(renderSelectCard)}
-                    </ul>
+                    <HkScrollContainer class="sharing-sec__list">
+                      {/* Replay pick list: hikari's scroll container owns
+                          the scrollbar (auto-hiding overlay track); the
+                          cards scroll inside its viewport. */}
+                      <ul class="sharing-sec__list-inner">
+                        {visibleMatched.value.map(renderSelectCard)}
+                      </ul>
+                    </HkScrollContainer>
                   )}
                   {/* Summary bar — selection count + estimated bytes (the
                       planner's sizes; unplanned picks count without one). */}
@@ -1151,26 +1157,31 @@ export default defineComponent({
                         <HkSpinner size="xs" tone="current" />
                       </p>
                     )}
+                    {/* Upload outcomes: the same capped scroller shape
+                        (overlay scrollbar owned by hikari's scroll
+                        container; rows scroll in the viewport). */}
                     {(q?.results.length ?? 0) > 0 ? (
-                      <ul class="sharing-sec__outcomes">
-                        {q?.results.map((r) => (
-                          <li key={r.sha256} class="sharing-sec__outcome">
-                            <span class="sharing-sec__outcome-name">{r.fileName}</span>
-                            <HkTag
-                              variant={
-                                r.outcome === "accepted"
-                                  ? "success"
-                                  : r.outcome === "failed"
-                                    ? "danger"
-                                    : "default"
-                              }
-                              size="sm"
-                            >
-                              {t(`sharing.upload.outcome.${r.outcome}`)}
-                            </HkTag>
-                          </li>
-                        ))}
-                      </ul>
+                      <HkScrollContainer class="sharing-sec__outcomes">
+                        <ul class="sharing-sec__outcomes-inner">
+                          {q?.results.map((r) => (
+                            <li key={r.sha256} class="sharing-sec__outcome">
+                              <span class="sharing-sec__outcome-name">{r.fileName}</span>
+                              <HkTag
+                                variant={
+                                  r.outcome === "accepted"
+                                    ? "success"
+                                    : r.outcome === "failed"
+                                      ? "danger"
+                                      : "default"
+                                }
+                                size="sm"
+                              >
+                                {t(`sharing.upload.outcome.${r.outcome}`)}
+                              </HkTag>
+                            </li>
+                          ))}
+                        </ul>
+                      </HkScrollContainer>
                     ) : null}
                     {uploading.value ? (
                       <div class="sharing-sec__cancel">

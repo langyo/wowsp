@@ -1,19 +1,25 @@
 /* Two-step onboarding guide for the live-battle page's idle state (see
-   LiveIdleGuide.tsx). The guide fills the page body, centers its content,
-   and scrolls when the window is too short for the step cards. */
+   LiveIdleGuide.tsx). The guide fills the page body as a hikari scroll
+   region (auto-hiding overlay scrollbar), centers its content, and
+   scrolls when the window is too short for the step cards. */
 
 .live-idle-guide {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  display: flex;
 
   &__inner {
-    margin: auto;
+    /* Former margin: auto both-axis centering, re-based for the scroll
+       viewport: the wrapper fills the scrollport height so its column can
+       center vertically (and grows past it, scrolling, on short windows),
+       while the auto inline margins keep the capped box horizontally
+       centered. */
+    min-height: 100%;
+    margin-inline: auto;
     padding: 2.5rem 1.5rem;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     max-width: 640px;
   }
 

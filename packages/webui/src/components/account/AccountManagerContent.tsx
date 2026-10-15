@@ -1,7 +1,7 @@
 import { defineComponent, ref, watch, type PropType } from "vue";
 import { X, Trophy, Swords, Star, Plus, GripVertical } from "@lucide/vue";
 
-import { HkButton, HkInput, HkModal, HkSelect, HkTag } from "@celestia-island/hikari";
+import { HkButton, HkInput, HkModal, HkScrollContainer, HkSelect, HkTag } from "@celestia-island/hikari";
 
 import PlayerBadge from "@/components/base/PlayerBadge";
 import SortableList from "@/components/base/SortableList";
@@ -189,8 +189,10 @@ export default defineComponent({
       <div class="acct-modal">
         {/* bound accounts as cards (drag a card's grip handle to reorder —
             the array order is the persisted card order) + the dashed add row
-            closing the list */}
-        <div class="acct-modal__list">
+            closing the list. Hikari's scroll container owns the scrollbar
+            (overlay track); the cards scroll inside its viewport. */}
+        <HkScrollContainer class="acct-modal__list">
+          <div class="acct-modal__list-inner">
           {accounts.accounts.length === 0 ? (
             <p class="acct-modal__empty">{t("account.noAccounts")}</p>
           ) : (
@@ -295,7 +297,8 @@ export default defineComponent({
           <button type="button" class="acct-modal__add" onClick={openAdd}>
             <Plus size={14} /> {t("account.addPlayer")}
           </button>
-        </div>
+          </div>
+        </HkScrollContainer>
 
         {/* add-player dialog — search by nickname, preview the resolved
             player, then confirm the bind (two-step instead of the old

@@ -1,13 +1,20 @@
 /* 游玩时间 view — the water-meter page's sibling. Same page scroller
-   pattern as DashboardView: the page itself scrolls (native scrollbar at
-   the border edge, no ancestor side-padding) and a centered content
-   column keeps the cards readable on wide windows. */
+   pattern as DashboardView: the hikari scroll container owns the scrollbar
+   (auto-hiding overlay track on the region's right edge; the native bar
+   stays hidden) and a centered content column keeps the cards readable on
+   wide windows. */
 .playtime-view {
+  height: 100%;
+}
+
+/* Former scroller layout + clearance, moved inside the viewport so they
+   keep scrolling with the content. min-height: 100% keeps the empty
+   state's flex centering meaningful even when content is short. */
+.playtime-view__inner {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100%;
   padding: 1.5rem 2rem;
-  overflow-y: auto;
 }
 
 .playtime-view__content {
@@ -267,18 +274,33 @@
 
 /* HkPopover paints the panel chrome (glass surface, border, shadow) but no
    inner spacing — the menu content owns it (same contract as the filter
-   chips' popups). */
+   chips' popups). The plain menu root keeps the outside-close ref, so
+   grabs on the scroll container's overlay bar still count as inside the
+   menu. */
 .playtime-view__scope-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  /* The menu is now one option per detected client, so it grows with the
+     machine's install list — cap it and scroll (the nested hikari scroll
+     container owns the scrollbar: auto-hiding overlay track, native bar
+     hidden) rather than letting a many-client popup run off the
+     window. */
+  max-height: min(60vh, 22rem);
+}
+
+/* Menu scroll region — the flex share that lets the viewport scroll
+   inside the capped menu box. */
+.playtime-view__scope-menu__scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.playtime-view__scope-menu__inner {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 8px;
-  min-width: 13rem;
-  /* The menu is now one option per detected client, so it grows with the
-     machine's install list — cap it and scroll rather than letting a
-     many-client popup run off the window. */
-  max-height: min(60vh, 22rem);
-  overflow-y: auto;
 }
 
 .playtime-view__scope-opt {
@@ -342,12 +364,25 @@
 .playtime-view__sources-menu {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
   min-width: 16rem;
   max-width: 24rem;
+  /* Same scroll contract as the scope menu: the cap plus the nested hikari
+     scroll container (auto-hiding overlay bar) keep a long pinned-folder
+     list inside the window; the plain root holds the outside-close
+     ref. */
   max-height: min(60vh, 22rem);
-  overflow-y: auto;
+}
+
+.playtime-view__sources-menu__scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.playtime-view__sources-menu__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
 }
 
 .playtime-view__sources-row {

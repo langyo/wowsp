@@ -385,15 +385,16 @@ describe("mounted DOM legend", () => {
   });
 
   it("carries the forced-row modifier class only when the prop is set", () => {
-    // The class is the whole contract: ShipDistCharts.scss hangs the
-    // never-stack/overflow-scroll rules on it, so a lost binding would
+    // The class is the whole contract: the forced variant's root becomes
+    // hikari's horizontal scroll container (ShipDistCharts.scss hangs the
+    // one-row layout + overlay-bar region on it), so a lost binding would
     // silently return the lookup screen to the stacked narrow layout.
     const stacked = mount(ShipDistCharts, { props: { ships } });
     expect(stacked.classes()).not.toContain("ship-dist-charts--forced-row");
     const forced = mount(ShipDistCharts, { props: { ships, forcedRow: true } });
     expect(forced.classes()).toContain("ship-dist-charts--forced-row");
-    // The doubled-class override in the SCSS needs the base class to
-    // coexist on the same element.
+    // The base class must coexist on the same element — the container's
+    // own row-host rules (width, gap, stretch) ride on it.
     expect(forced.classes()).toContain("ship-dist-charts");
   });
 

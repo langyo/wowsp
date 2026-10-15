@@ -53,9 +53,20 @@ export function useSettingsAppearance() {
 
   // ── wallpaper management (import + two-step delete) ───────────────────
   const importingWallpaper = ref(false);
-  /** The wallpaper strip element — after a successful import it scrolls
-   *  to the far end so the newly added card is visible. */
-  const wallpaperRow = ref<HTMLDivElement | null>(null);
+
+  /** The wallpaper strip's imperative surface. The strip is now hikari's
+   *  HkScrollContainer (a horizontal scroller), so the ref exposes the
+   *  component's defineExpose members rather than an element — typed
+   *  structurally, the same convention as SchemeEditorExpose. The
+   *  horizontal scroll itself goes through getScrollElement(): the
+   *  exposed scrollTo() only addresses the vertical axis. */
+  interface WallpaperStripExpose {
+    getScrollElement: () => HTMLElement | undefined;
+  }
+
+  /** The wallpaper strip's scroll container — after a successful import
+   *  it scrolls to the far end so the newly added card is visible. */
+  const wallpaperRow = ref<WallpaperStripExpose | null>(null);
   /** Two-step delete confirm per custom wallpaper (id of the armed row). */
   const wallpaperArmed = ref<string | null>(null);
 
@@ -68,8 +79,8 @@ export function useSettingsAppearance() {
       const imported = await wallpaper.importCustom();
       if (imported) {
         await nextTick();
-        const row = wallpaperRow.value;
-        if (row) row.scrollTo({ left: row.scrollWidth, behavior: "smooth" });
+        const viewport = wallpaperRow.value?.getScrollElement();
+        if (viewport) viewport.scrollTo({ left: viewport.scrollWidth, behavior: "smooth" });
       }
     } catch (e) {
       toast.error(`${t("settings.wallpaperImportFailed")}\n${(e as Error).message || e}`);

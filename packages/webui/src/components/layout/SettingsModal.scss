@@ -230,14 +230,23 @@
 
   /* ── wallpaper ────────────────────────────────────────────────────────── */
 
-  /* Horizontal, never-wrapping wallpaper strip — overflows into an
-     automatic horizontal scrollbar (global thin scrollbar styling in
-     theme.scss applies). The dashed add tile rides at the far end. */
+  /* Horizontal, never-wrapping wallpaper strip — a hikari scroll
+     container (axis "horizontal") owns the scrollbar: an auto-hiding
+     overlay track on the strip's bottom edge, the native bar hidden.
+     The dashed add tile rides at the far end. No box rules of its own —
+     the strip root stretches its settings row (the container's own
+     flex column); the layout lives on the inner wrapper. */
   &__wallpapers {
+    /* intentionally empty — the root is sized entirely by the hikari
+       scroll container's own chrome */
+  }
+
+  /* Former strip layout + focus-ring clearance, moved inside the
+     viewport so they scroll with the cards. */
+  &__wallpapers-inner {
     display: flex;
     flex-wrap: nowrap;
     gap: 0.5rem;
-    overflow-x: auto;
     /* Keep focus rings (2px outline + 1px offset) from clipping at the
        edges of the scroll container. */
     padding: 3px;

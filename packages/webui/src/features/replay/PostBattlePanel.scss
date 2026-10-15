@@ -59,8 +59,8 @@
    rides the global toast surface instead of an inline note. (The chip's
    own pill styles live in LiveStatsModeChip.scss — it rides every chunk
    this toolbar does.) Wraps like the live head on narrow widths — a
-   long-locale chip label must never push the row into a horizontal
-   scrollbar. */
+   long-locale chip label must never push the row into horizontal
+   overflow. */
 .replay-view__postbattle-toolbar {
   display: flex;
   align-items: center;
@@ -183,12 +183,16 @@
     grid-template-columns: 1fr;
   }
 }
+/* Column scroller — the hikari container owns the scrollbar (auto-hiding
+   overlay track); the column's stacking rhythm moved to the inner wrapper
+   so the column title scrolls with the rows. */
 .replay-view__postbattle-col {
+  min-height: 0;
+}
+.replay-view__postbattle-col__inner {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  overflow-y: auto;
-  min-height: 0;
 }
 .replay-view__postbattle-col-title {
   display: flex;
@@ -667,13 +671,16 @@
   }
 }
 /* Player-detail body scrolls between the fixed head and the jump button —
-   StatsCard + tier/class charts overflow the 82vh cap on short viewports. */
+   StatsCard + tier/class charts overflow the 82vh cap on short viewports.
+   The hikari container owns the scrollbar (auto-hiding overlay track). */
 .replay-view__postbattle-modal-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  /* Phone sheet-family scroll containment (see __modal-body). */
-  overscroll-behavior: contain;
+  /* Phone sheet-family scroll containment (see __modal-body) — the
+     scrollport is the container's viewport. */
+  & > .hk-scroll-container-viewport {
+    overscroll-behavior: contain;
+  }
 }
 .replay-view__postbattle-global {
   margin-top: 10px;

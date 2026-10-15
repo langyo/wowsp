@@ -7,7 +7,7 @@ import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/Clan
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HkDatePicker, HkPopover, HkSpinner, HkTabs, useBreakpoint } from "@celestia-island/hikari";
+import { HkDatePicker, HkPopover, HkScrollContainer, HkSpinner, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
@@ -781,47 +781,57 @@ export default defineComponent({
               />
             </div>
           </div>
-          <div class="lookup-view__history">
-            <div class="lookup-view__history-title">{t("lookup.history")}</div>
-            {history.value.length === 0 ? (
-              <div class="lookup-view__history-empty">{t("lookup.historyEmpty")}</div>
-            ) : (
-              history.value.map((h) => (
-                <button
-                  key={`${h.realm}_${h.kind}_${h.name}`}
-                  class={[
-                    "lookup-view__history-item",
-                    mode.value === h.kind &&
-                      h.realm === (h.kind === "player" ? result.value?.realm : clanResult.value?.realm) &&
-                      ((h.kind === "player" && h.name === result.value?.name) ||
-                        (h.kind === "clan" && h.name === clanResult.value?.tag))
-                      ? "lookup-view__history-item--active"
-                      : "",
-                  ]}
-                  onClick={() => replayHistory(h)}
-                >
-                  <span
+          {/* Query history — the sidebar's own capped scroller (hikari's
+              HkScrollContainer owns the scrollbar: auto-hiding overlay
+              track); the row layout + clearance moved to __history-inner
+              so they scroll with the entries. */}
+          <HkScrollContainer class="lookup-view__history">
+            <div class="lookup-view__history-inner">
+              <div class="lookup-view__history-title">{t("lookup.history")}</div>
+              {history.value.length === 0 ? (
+                <div class="lookup-view__history-empty">{t("lookup.historyEmpty")}</div>
+              ) : (
+                history.value.map((h) => (
+                  <button
+                    key={`${h.realm}_${h.kind}_${h.name}`}
                     class={[
-                      "lookup-view__history-kind",
-                      h.kind === "clan" ? "lookup-view__history-kind--clan" : "",
+                      "lookup-view__history-item",
+                      mode.value === h.kind &&
+                        h.realm === (h.kind === "player" ? result.value?.realm : clanResult.value?.realm) &&
+                        ((h.kind === "player" && h.name === result.value?.name) ||
+                          (h.kind === "clan" && h.name === clanResult.value?.tag))
+                        ? "lookup-view__history-item--active"
+                        : "",
                     ]}
+                    onClick={() => replayHistory(h)}
                   >
-                    {h.kind === "clan" ? <Users size={11} /> : <User size={11} />}
-                  </span>
-                  <span class="lookup-view__history-name">{h.name}</span>
-                  <span class="lookup-view__history-realm">{h.realm.toUpperCase()}</span>
-                </button>
-              ))
-            )}
-          </div>
+                    <span
+                      class={[
+                        "lookup-view__history-kind",
+                        h.kind === "clan" ? "lookup-view__history-kind--clan" : "",
+                      ]}
+                    >
+                      {h.kind === "clan" ? <Users size={11} /> : <User size={11} />}
+                    </span>
+                    <span class="lookup-view__history-name">{h.name}</span>
+                    <span class="lookup-view__history-realm">{h.realm.toUpperCase()}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </HkScrollContainer>
         </aside>
 
         {/* Main content: overview card + per-ship list (player) or clan card.
             The title row pins above __scroll — a long ship table must not
-            scroll the page title out of view. */}
+            scroll the page title out of view; the scroll region itself is
+            a hikari HkScrollContainer (auto-hiding overlay track), with
+            the column layout + clearance on __scroll-inner so they scroll
+            with the content. */}
         <div class="lookup-view__main">
           <h1 class="lookup-view__title">{t("nav.lookup")}</h1>
-          <div class="lookup-view__scroll">
+          <HkScrollContainer class="lookup-view__scroll">
+          <div class="lookup-view__scroll-inner">
           {lookupFailure.value?.kind === mode.value ? (
             <LookupErrorNotice
               payload={lookupFailure.value.payload}
@@ -1068,6 +1078,7 @@ export default defineComponent({
             ) : null}
           </Transition>
           </div>
+          </HkScrollContainer>
         </div>
 
         {/* Ship detail popup — water-table context on the looked-up player:

@@ -99,15 +99,22 @@
     gap: 2px;
   }
 
+  /* The stale-item list's capped window: hikari's scroll container owns
+     the scrollbar (auto-hiding overlay track); the lines scroll inside
+     its viewport. */
   &__list {
+    max-height: 9rem;
+  }
+
+  /* Former list element, now inside the viewport — keeps the list
+     semantics and the line rhythm scrolling with the items. */
+  &__list-inner {
     margin: 0;
     padding: 0;
     list-style: none;
     display: flex;
     flex-direction: column;
     gap: 2px;
-    max-height: 9rem;
-    overflow-y: auto;
 
     li {
       font-size: var(--text-xs, 0.75rem);

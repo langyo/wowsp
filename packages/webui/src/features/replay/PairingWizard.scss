@@ -268,6 +268,14 @@
     padding: 1.2rem 0;
   }
 
+  /* Remote-list scroller: the hikari container owns the scrollbar
+     (auto-hiding overlay track over the list's right edge); the height cap
+     moved onto it from the ul so the viewport shrinks inside the modal
+     body, and the ul keeps the entries' own stacking rhythm. */
+  &__entries-scroll {
+    max-height: min(52vh, 26rem);
+  }
+
   &__entries {
     list-style: none;
     margin: 0;
@@ -275,8 +283,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    max-height: min(52vh, 26rem);
-    overflow-y: auto;
   }
 
   &__entry {
@@ -444,10 +450,13 @@
     min-height: 40px;
   }
 
-  .pairing-wizard__entries {
+  .pairing-wizard__entries-scroll {
     /* Inner scroller inside the sheet body: a list that hits its end must
        never chain the touch gesture to the sheet/page scrollers behind it
-       (same containment rule the sheet family follows — AppShell.scss). */
-    overscroll-behavior: contain;
+       (same containment rule the sheet family follows — AppShell.scss) —
+       the scrollport is the container's viewport. */
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior: contain;
+    }
   }
 }

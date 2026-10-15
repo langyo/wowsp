@@ -31,14 +31,21 @@
     color: rgb(var(--color-error));
   }
 
+  /* The account list's capped window: hikari's scroll container owns
+     the scrollbar (auto-hiding overlay track); the cards scroll inside
+     its viewport. */
   &__list {
+    /* Generous max-height so the list breathes; the strip scrolls if
+       there are many accounts. This replaces the old cramped 280px cap. */
+    max-height: 420px;
+  }
+
+  /* Former list layout + focus-ring clearance, moved inside the
+     viewport so they scroll with the cards. */
+  &__list-inner {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    /* Generous max-height so the list breathes; the modal body scrolls if
-       there are many accounts. This replaces the old cramped 280px cap. */
-    max-height: 420px;
-    overflow-y: auto;
     padding: 2px; /* avoid focus-ring clipping */
   }
 

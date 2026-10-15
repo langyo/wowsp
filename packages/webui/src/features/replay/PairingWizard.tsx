@@ -34,6 +34,7 @@ import {
   HkButton,
   HkInput,
   HkModal,
+  HkScrollContainer,
   HkSpinner,
   HkTabs,
   HkOtpInput,
@@ -626,90 +627,96 @@ export default defineComponent({
               ) : remoteList.value.length === 0 ? (
                 <p class="pairing-wizard__empty">{t("replay.pairing.remoteEmpty")}</p>
               ) : (
-                <ul class="pairing-wizard__entries">
-                  {remoteList.value.map((e) => {
-                    const st = fileState(e.path);
-                    const prog = store.progressByFile[e.path];
-                    return (
-                      <li key={e.path} class="pairing-wizard__entry">
-                        <button
-                          type="button"
-                          class="pairing-wizard__entry-main"
-                          disabled={st === "pulling" || st === "done"}
-                          onClick={() => void download(e.path)}
-                        >
-                          <span class="pairing-wizard__entry-top">
-                            <span class="pairing-wizard__entry-ship">
-                              {e.playerName ?? t("replay.list.unknownPlayer")}
-                            </span>
-                            {e.matchGroup ? (
-                              <span
-                                class="pairing-wizard__entry-pill"
-                                style={
-                                  modeColor(
-                                    e.matchGroup,
-                                    e.scenario,
-                                    e.eventType,
-                                    e.botCount ?? 0,
-                                    e.scriptedUnitCount ?? 0,
-                                  ) as CSSProperties
-                                }
-                              >
-                                {modeLabel(e)}
+                <HkScrollContainer class="pairing-wizard__entries-scroll">
+                  {/* Remote-list scroller: the hikari container owns the
+                      scrollbar (auto-hiding overlay track over the list's
+                      right edge); the height cap rides the container root
+                      and the <ul> keeps the entries' stacking rhythm. */}
+                  <ul class="pairing-wizard__entries">
+                    {remoteList.value.map((e) => {
+                      const st = fileState(e.path);
+                      const prog = store.progressByFile[e.path];
+                      return (
+                        <li key={e.path} class="pairing-wizard__entry">
+                          <button
+                            type="button"
+                            class="pairing-wizard__entry-main"
+                            disabled={st === "pulling" || st === "done"}
+                            onClick={() => void download(e.path)}
+                          >
+                            <span class="pairing-wizard__entry-top">
+                              <span class="pairing-wizard__entry-ship">
+                                {e.playerName ?? t("replay.list.unknownPlayer")}
                               </span>
-                            ) : null}
-                          </span>
-                          <span class="pairing-wizard__entry-sub">
-                            {formatDateTime(e.dateTime)} · {e.mapName ?? t("replay.map.unknown")}
-                            {e.playerCount > 0
-                              ? ` · ${t("replay.players", { n: e.playerCount })}`
-                              : ""}
-                          </span>
-                          {st === "pulling" ? (
-                            <span class="pairing-wizard__entry-progress">
-                              <span
-                                class="pairing-wizard__entry-progress-fill"
-                                style={{ width: `${pctOf(e.path)}%` }}
-                              />
-                              {prog && prog.total > 0 ? (
-                                <span class="pairing-wizard__entry-pct">
-                                  {pctOf(e.path)}%
+                              {e.matchGroup ? (
+                                <span
+                                  class="pairing-wizard__entry-pill"
+                                  style={
+                                    modeColor(
+                                      e.matchGroup,
+                                      e.scenario,
+                                      e.eventType,
+                                      e.botCount ?? 0,
+                                      e.scriptedUnitCount ?? 0,
+                                    ) as CSSProperties
+                                  }
+                                >
+                                  {modeLabel(e)}
                                 </span>
                               ) : null}
                             </span>
-                          ) : null}
-                        </button>
-                        <span class="pairing-wizard__entry-actions">
-                          {st === "done" ? (
-                            <span class="pairing-wizard__entry-done" data-hint={t("replay.pairing.pulled")}>
-                              <Check size={16} />
+                            <span class="pairing-wizard__entry-sub">
+                              {formatDateTime(e.dateTime)} · {e.mapName ?? t("replay.map.unknown")}
+                              {e.playerCount > 0
+                                ? ` · ${t("replay.players", { n: e.playerCount })}`
+                                : ""}
                             </span>
-                          ) : st === "error" ? (
-                            <button
-                              type="button"
-                              class="pairing-wizard__entry-retry"
-                              onClick={() => void download(e.path)}
-                              title={prog?.error ?? ""}
-                            >
-                              {t("common.retry")}
-                            </button>
-                          ) : st === "pulling" ? (
-                            <HkSpinner size="sm" tone="current" />
-                          ) : (
-                            <button
-                              type="button"
-                              class="pairing-wizard__entry-dl"
-                              aria-label={t("replay.pairing.pull")}
-                              onClick={() => void download(e.path)}
-                            >
-                              <Download size={16} />
-                            </button>
-                          )}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                            {st === "pulling" ? (
+                              <span class="pairing-wizard__entry-progress">
+                                <span
+                                  class="pairing-wizard__entry-progress-fill"
+                                  style={{ width: `${pctOf(e.path)}%` }}
+                                />
+                                {prog && prog.total > 0 ? (
+                                  <span class="pairing-wizard__entry-pct">
+                                    {pctOf(e.path)}%
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
+                          </button>
+                          <span class="pairing-wizard__entry-actions">
+                            {st === "done" ? (
+                              <span class="pairing-wizard__entry-done" data-hint={t("replay.pairing.pulled")}>
+                                <Check size={16} />
+                              </span>
+                            ) : st === "error" ? (
+                              <button
+                                type="button"
+                                class="pairing-wizard__entry-retry"
+                                onClick={() => void download(e.path)}
+                                title={prog?.error ?? ""}
+                              >
+                                {t("common.retry")}
+                              </button>
+                            ) : st === "pulling" ? (
+                              <HkSpinner size="sm" tone="current" />
+                            ) : (
+                              <button
+                                type="button"
+                                class="pairing-wizard__entry-dl"
+                                aria-label={t("replay.pairing.pull")}
+                                onClick={() => void download(e.path)}
+                              >
+                                <Download size={16} />
+                              </button>
+                            )}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </HkScrollContainer>
               )}
 
               {importedCount.value > 0 ? (

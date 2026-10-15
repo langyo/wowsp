@@ -66,7 +66,7 @@ import {
   Unplug,
   X,
 } from "@lucide/vue";
-import { useToast } from "@celestia-island/hikari";
+import { HkScrollContainer, useToast } from "@celestia-island/hikari";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
@@ -1026,15 +1026,20 @@ export default defineComponent({
       // player enters a battle.
       if (!props.arena || props.arena.vehicles.length === 0) {
         return (
-          <div class="live-battle live-battle--empty">
-            <WaitingRadarArt class="live-battle__empty-art" />
-            <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
-            <p class="live-battle__empty-hint">{t("replay.live.waitingHint")}</p>
-            {/* Status-only plugin card: res_mods mutations are refused
-                while the game runs, so no lifecycle buttons here — but the
-                state (incl. the outdated warning) stays visible. */}
-            <PluginStatusCard actions={false} />
-          </div>
+          <HkScrollContainer class="live-battle live-battle--empty">
+            {/* Waiting-state scroller: no head row, so the panel itself is
+                the hikari scroll region (auto-hiding overlay track); the
+                copy centers inside the inner wrapper. */}
+            <div class="live-battle__empty-inner">
+              <WaitingRadarArt class="live-battle__empty-art" />
+              <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
+              <p class="live-battle__empty-hint">{t("replay.live.waitingHint")}</p>
+              {/* Status-only plugin card: res_mods mutations are refused
+                  while the game runs, so no lifecycle buttons here — but the
+                  state (incl. the outdated warning) stays visible. */}
+              <PluginStatusCard actions={false} />
+            </div>
+          </HkScrollContainer>
         );
       }
 
@@ -1541,23 +1546,28 @@ export default defineComponent({
           {/* Operations (行动) have no enemy list — the enemy side is all
               scripted spawns — so the roster renders as one centered
               allies column (single-sided roster edges included). */}
-          <div
+          {/* Roster scroller: the hikari container owns the scrollbar
+              (auto-hiding overlay track over the panel's right edge); the
+              columns grid scrolls inside its viewport. */}
+          <HkScrollContainer
             class={[
               "live-battle__matrix",
               { "live-battle__matrix--single": enemies.value.length === 0 },
             ]}
           >
-            <div class="live-battle__col">
-              {colTitle(t("replay.roster.allies"), allies.value)}
-              {allies.value.map(cell)}
-            </div>
-            {enemies.value.length > 0 ? (
+            <div class="live-battle__matrix__inner">
               <div class="live-battle__col">
-                {colTitle(t("replay.roster.enemies"), enemies.value)}
-                {enemies.value.map(cell)}
+                {colTitle(t("replay.roster.allies"), allies.value)}
+                {allies.value.map(cell)}
               </div>
-            ) : null}
-          </div>
+              {enemies.value.length > 0 ? (
+                <div class="live-battle__col">
+                  {colTitle(t("replay.roster.enemies"), enemies.value)}
+                  {enemies.value.map(cell)}
+                </div>
+              ) : null}
+            </div>
+          </HkScrollContainer>
         </div>
       );
     };

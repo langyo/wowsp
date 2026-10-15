@@ -2,7 +2,7 @@ import { computed, defineComponent, onUnmounted, ref, Transition, watch } from "
 import { RouterLink } from "vue-router";
 import { AlertTriangle, ArrowLeftRight, GitBranch, List, RotateCcw, Ship } from "@lucide/vue";
 
-import { HkAlert, HkButton, HkInput, HkSpinner, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
+import { HkAlert, HkButton, HkInput, HkScrollContainer, HkSpinner, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
@@ -357,10 +357,16 @@ export default defineComponent({
         ) : null}
 
         {/* ── scrollable content body ──
-            Tree mode strips the body's padding and scroll: the tree region
-            below becomes the single edge-to-edge scroller so its horizontal
-            scrollbar hugs the window's bottom/left/right edges. */}
-        <div class={["ships-view__body", shipsUi.viewMode === "tree" ? "ships-view__body--tree" : ""]}>
+            hikari's container owns the scrollbar (auto-hiding overlay
+            track); the page clearance rides on __body-inner so it scrolls
+            with the content, and the filter bar keeps pinning sticky to
+            the viewport top. Tree mode (--tree) stops this container from
+            scrolling at all — the tree body inside becomes the single
+            edge-to-edge scroller for both axes. */}
+        <HkScrollContainer
+          class={["ships-view__body", shipsUi.viewMode === "tree" ? "ships-view__body--tree" : ""]}
+        >
+        <div class="ships-view__body-inner">
 
         {/* ── loading state ── */}
         {encyclopedia.loading && encyclopedia.ships.length === 0 ? (
@@ -466,37 +472,43 @@ export default defineComponent({
               </HkButton>
             </div>
           ) : shipsUi.viewMode === "tree" ? (
-            <div class="ships-view__tree-body" key="tree">
-              {/* nation rail — vertical list of faction crests */}
-              <aside class="ships-view__nation-rail">
-                {treeNations.value.map((n) => (
-                  <button
-                    class={[
-                      "ships-view__nation-btn",
-                      treeNation.value === n ? "ships-view__nation-btn--on" : "",
-                    ]}
-                    data-hint={nationLabel(n)}
-                    onClick={() => (treeNation.value = n)}
-                  >
-                    <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
-                    <span class="ships-view__nation-name">{nationLabel(n)}</span>
-                  </button>
-                ))}
-              </aside>
-              {/* the tree itself */}
-              <div class="ships-view__tree-canvas">
-                {treeNation.value ? (
-                  <TechTreeView
-                    nation={treeNation.value}
-                    realm={shipsUi.treeRealm}
-                    byId={shipsById.value}
-                    onOpen={(ship: ShipInfo) => openDetail(ship)}
-                  />
-                ) : (
-                  <div class="ships-view__status">{t("ships.empty")}</div>
-                )}
+            /* The single both-axis scroller: hikari's overlay bars paint
+                over the scrollport's bottom/right edges; the row layout
+                (rail + canvas) lives on __tree-inner so the nation rail
+                keeps sticking to the viewport's top-left corner. */
+            <HkScrollContainer class="ships-view__tree-body" axis="both" key="tree">
+              <div class="ships-view__tree-inner">
+                {/* nation rail — vertical list of faction crests */}
+                <aside class="ships-view__nation-rail">
+                  {treeNations.value.map((n) => (
+                    <button
+                      class={[
+                        "ships-view__nation-btn",
+                        treeNation.value === n ? "ships-view__nation-btn--on" : "",
+                      ]}
+                      data-hint={nationLabel(n)}
+                      onClick={() => (treeNation.value = n)}
+                    >
+                      <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
+                      <span class="ships-view__nation-name">{nationLabel(n)}</span>
+                    </button>
+                  ))}
+                </aside>
+                {/* the tree itself */}
+                <div class="ships-view__tree-canvas">
+                  {treeNation.value ? (
+                    <TechTreeView
+                      nation={treeNation.value}
+                      realm={shipsUi.treeRealm}
+                      byId={shipsById.value}
+                      onOpen={(ship: ShipInfo) => openDetail(ship)}
+                    />
+                  ) : (
+                    <div class="ships-view__status">{t("ships.empty")}</div>
+                  )}
+                </div>
               </div>
-            </div>
+            </HkScrollContainer>
           ) : shipsUi.viewMode === "compare" ? (
             <ShipCompareView key="compare" />
           ) : filteredShips.value.length === 0 ? (
@@ -586,6 +598,7 @@ export default defineComponent({
           )}
         </Transition>
         </div>
+        </HkScrollContainer>
 
         {/* ── detail modal ── */}
         <ShipDetailModal

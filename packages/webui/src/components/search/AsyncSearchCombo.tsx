@@ -24,6 +24,7 @@ import {
 import {
   HkIconButton,
   HkPopover,
+  HkScrollContainer,
   HkSearchInput,
   useBreakpoint,
 } from "@celestia-island/hikari";
@@ -231,7 +232,12 @@ export default defineComponent({
               ) : query.value.trim() && !gateOk(query.value.trim()) ? (
                 <div class="async-search-combo__hint">{props.minCharsHint}</div>
               ) : items.value.length > 0 ? (
-                <div class="async-search-combo__candidates">
+                /* Scroll region: hikari's HkScrollContainer owns the
+                    scrollbar (auto-hiding overlay track on the list's
+                    right edge); the candidate rows scroll inside its
+                    viewport. */
+                <HkScrollContainer class="async-search-combo__candidates">
+                  <div class="async-search-combo__candidates-inner">
                   {items.value.map((item) => (
                     <button
                       key={props.itemKey(item)}
@@ -242,7 +248,8 @@ export default defineComponent({
                       {props.renderItem(item)}
                     </button>
                   ))}
-                </div>
+                  </div>
+                </HkScrollContainer>
               ) : searched.value ? (
                 <div class="async-search-combo__hint">{props.noResultsText}</div>
               ) : null}
