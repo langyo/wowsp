@@ -18,6 +18,7 @@
  */
 import { computed, defineComponent, ref, watch, type Ref } from "vue";
 import { Star } from "@lucide/vue";
+import { HkScrollContainer } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import NationFlag from "@/components/base/NationFlag";
@@ -322,10 +323,12 @@ export default defineComponent({
     tiersOnly: { type: Boolean, default: false },
     /** Keep all three blocks on ONE row regardless of container width:
      *  the row flexes down to the blocks' min-width floors, then the
-     *  host grows a horizontal scrollbar instead of stacking vertically
-     *  (the named-container collapse in ShipDistCharts.scss). Designed
-     *  for the full three-block host — with tiersOnly only the
-     *  histogram renders and it just fills the row. */
+     *  host scrolls horizontally (hikari's HkScrollContainer overlay
+     *  bar) instead of stacking vertically — the named-container
+     *  collapse in ShipDistCharts.scss cannot reach the row, which
+     *  lives inside the scroll viewport. Designed for the full
+     *  three-block host — with tiersOnly only the histogram renders
+     *  and it just fills the row. */
     forcedRow: { type: Boolean, default: false },
   },
   setup(props) {
@@ -465,13 +468,11 @@ export default defineComponent({
 
     return () => {
       const layout = tierLayout.value;
-      return (
-        <div
-          class={{
-            "ship-dist-charts": true,
-            "ship-dist-charts--forced-row": props.forcedRow,
-          }}
-        >
+      // The three chart blocks, shared by both hosts below (only the
+      // forcedRow prop changes who owns the row: a plain wrapped row, or
+      // the one-row scroll region).
+      const blocks = (
+        <>
           {/* ALL eleven tier bins always render — an unplayed tier stays
               an empty gap on the axis instead of the neighbours
               stretching over it, and the fixed bar width keeps bars
@@ -557,8 +558,21 @@ export default defineComponent({
               </div>
             </div>
           ) : null}
-        </div>
+        </>
       );
+      // Forced one-row hosts swap the wrapping div for hikari's horizontal
+      // scroll container (auto-hiding overlay bar below the row); the row
+      // rhythm lives on __row inside the viewport. The wrapped default
+      // below stays a plain div — the named-container collapse query in
+      // ShipDistCharts.scss keeps targeting it untouched.
+      if (props.forcedRow) {
+        return (
+          <HkScrollContainer class="ship-dist-charts ship-dist-charts--forced-row" axis="horizontal">
+            <div class="ship-dist-charts__row">{blocks}</div>
+          </HkScrollContainer>
+        );
+      }
+      return <div class="ship-dist-charts">{blocks}</div>;
     };
   },
 });

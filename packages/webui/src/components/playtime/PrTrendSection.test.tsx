@@ -47,14 +47,23 @@ vi.mock("./PrTrendChart", () => ({
   },
 }));
 // HkPopover renders its slot so the popup content mounts under mount();
-// HkTabs mirrors the real guard (no update for the active key); HkCheckbox
-// renders the modelValue so indeterminate (null) is observable.
+// HkScrollContainer likewise renders its slot (the ship list's rows must
+// stay queryable; the real component's overlay-scrollbar machinery is
+// browser-only and irrelevant here); HkTabs mirrors the real guard (no
+// update for the active key); HkCheckbox renders the modelValue so
+// indeterminate (null) is observable.
 vi.mock("@celestia-island/hikari", () => ({
   HkPopover: {
     name: "HkPopover",
     props: ["modelValue", "title"],
     setup(props: { modelValue: boolean }, { slots }: { slots: Record<string, () => VNode[]> }) {
       return () => (props.modelValue ? h("div", { class: "pop-stub" }, slots.default?.()) : null);
+    },
+  },
+  HkScrollContainer: {
+    name: "HkScrollContainer",
+    setup(_: unknown, { slots }: { slots: Record<string, () => VNode[]> }) {
+      return () => h("div", slots.default?.());
     },
   },
   HkTabs: {

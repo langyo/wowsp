@@ -25,6 +25,7 @@
  */
 import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, type CSSProperties } from "vue";
 import { Flag, Wrench } from "@lucide/vue";
+import { HkScrollContainer } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -51,6 +52,12 @@ import "./LiveShipMeta.scss";
 /** Consumable families worth a row badge, in slot order. */
 function badgeFamilies(load: string[] | undefined): string[] {
   return (load ?? []).filter((f) => isBadgeConsumable(f));
+}
+
+/** Consumed slice of HkScrollContainer's exposed component ref (the ref
+ *  yields the exposed handle, not an element — see the flyout card below). */
+interface ScrollHandle {
+  getScrollElement(): HTMLElement | undefined;
 }
 
 /** Parameter chips kept on the inline row: the leading few of the canonical
@@ -102,7 +109,10 @@ export default defineComponent({
     // ── Flyout card ────────────────────────────────────────────────────────
     const flyoutOpen = ref(false);
     const flyoutPos = ref<CSSProperties>({});
-    const cardEl = ref<HTMLElement | null>(null);
+    // The card is an HkScrollContainer: a COMPONENT ref — it exposes the
+    // scrolling viewport (the measure-then-place pass below reads its box;
+    // the card's 1px border sits just outside it), not an element.
+    const card = ref<ScrollHandle | null>(null);
     let showTimer: ReturnType<typeof setTimeout> | null = null;
     let inZone = false;
     let inCard = false;
@@ -133,12 +143,12 @@ export default defineComponent({
           flyoutOpen.value = true;
         }
         void nextTick(() => {
-          const card = cardEl.value;
-          if (!card) return;
+          const viewport = card.value?.getScrollElement();
+          if (!viewport) return;
           const { left, top } = placeLiveCard(
             r,
-            card.offsetWidth,
-            card.offsetHeight,
+            viewport.offsetWidth,
+            viewport.offsetHeight,
             window.innerWidth,
             window.innerHeight,
           );
@@ -175,8 +185,8 @@ export default defineComponent({
     // Scrolling anywhere OUTSIDE the card (the panel body scrolls under a
     // stationary pointer) detaches a fixed-position card — close instead of
     // drifting. Scrolls inside the card are content browsing and must keep
-    // it open, so capture-phase events originating in .live-ship-card are
-    // ignored.
+    // it open, so capture-phase events originating in .live-ship-card (its
+    // scroll viewport included, via closest) are ignored.
     function onScrollCapture(e: Event) {
       const target = e.target as Element | null;
       if (target && typeof target.closest === "function" && target.closest(".live-ship-card")) {
@@ -256,51 +266,59 @@ export default defineComponent({
 
       const flyout = flyoutOpen.value ? (
         <Teleport to="body">
-          <div
-            ref={cardEl}
+          {/* Combat-card scroller: the card element itself is the hikari
+              container — its own fixed positioning (plus the inline
+              left/top below) wins over the container root's relative, and
+              the overlay track rides the card's right edge. */}
+          <HkScrollContainer
+            ref={card}
             class="live-ship-card"
             style={flyoutPos.value}
-            onMouseenter={onCardEnter}
-            onMouseleave={onCardLeave}
+            // The hover keep-alive spreads in (the component's props declare
+            // no DOM events; Vue's attr fallthrough still lands both on the
+            // root, covering the overlay track as well).
+            {...{ onMouseenter: onCardEnter, onMouseleave: onCardLeave }}
           >
-            <div class="live-ship-card__head">
-              {tier.value ? (
-                <span class="live-ship-card__tier">{tier.value}</span>
-              ) : null}
-              <BattleIcon type={entry.value?.type ?? ""} variant="plain" size={16} />
-              {typeLabel.value ? (
-                <span class="live-ship-card__type">{typeLabel.value}</span>
-              ) : null}
-              {nation.value ? (
-                <NationFlag
-                  nation={nation.value}
-                  label={nationLabel.value}
-                  variant="flag"
-                  size="sm"
-                />
-              ) : null}
-            </div>
-
-            {specGroups.value.length ? (
-              <div class="live-ship-card__groups">
-                {specGroups.value.map(([group, rows]) => (
-                  <div class="live-ship-card__group" key={group}>
-                    <div class="live-ship-card__group-title">{group}</div>
-                    <div class="live-ship-card__rows">
-                      {rows.map(([label, value]) => (
-                        <div class="live-ship-card__row" key={label}>
-                          <span class="live-ship-card__row-label">{label}</span>
-                          <span class="live-ship-card__row-value">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            <div class="live-ship-card__inner">
+              <div class="live-ship-card__head">
+                {tier.value ? (
+                  <span class="live-ship-card__tier">{tier.value}</span>
+                ) : null}
+                <BattleIcon type={entry.value?.type ?? ""} variant="plain" size={16} />
+                {typeLabel.value ? (
+                  <span class="live-ship-card__type">{typeLabel.value}</span>
+                ) : null}
+                {nation.value ? (
+                  <NationFlag
+                    nation={nation.value}
+                    label={nationLabel.value}
+                    variant="flag"
+                    size="sm"
+                  />
+                ) : null}
               </div>
-            ) : (
-              <p class="live-ship-card__empty">{t("replay.live.card.noData")}</p>
-            )}
-          </div>
+
+              {specGroups.value.length ? (
+                <div class="live-ship-card__groups">
+                  {specGroups.value.map(([group, rows]) => (
+                    <div class="live-ship-card__group" key={group}>
+                      <div class="live-ship-card__group-title">{group}</div>
+                      <div class="live-ship-card__rows">
+                        {rows.map(([label, value]) => (
+                          <div class="live-ship-card__row" key={label}>
+                            <span class="live-ship-card__row-label">{label}</span>
+                            <span class="live-ship-card__row-value">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p class="live-ship-card__empty">{t("replay.live.card.noData")}</p>
+              )}
+            </div>
+          </HkScrollContainer>
         </Teleport>
       ) : null;
 

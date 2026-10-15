@@ -2,6 +2,7 @@
  *  the view context (they render INSIDE ResourcesView's own tree, so the
  *  row vnodes stay children of the view component). */
 import { ImageIcon, Puzzle } from "@lucide/vue";
+import { HkScrollContainer } from "@celestia-island/hikari";
 
 import type { CatalogEntry, InstalledMod, ForeignModUnit } from "@/api";
 import { KIND_META, catIcon } from "@/features/modhub/taxonomy";
@@ -185,41 +186,45 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
 }
 
 /** The ModStation strip below the installed list — those trees sit
- *  outside res_mods, so the scan never lists them with the rest. */
+ *  outside res_mods, so the scan never lists them with the rest. Capped
+ *  at a share of the sidebar (see the scss); hikari's scroll container
+ *  owns the scrollbar and the units scroll inside its viewport. */
 export function renderModstationStrip(ctx: ResourcesCtx) {
   if (ctx.source.value !== "installed" || ctx.modstationUnits.value.length === 0) {
     return null;
   }
   return (
-    <div class="resources-view__foreign-strip">
-      <span class="resources-view__foreign-strip-title">
-        {t("resources.foreignSource.modstation")}
-      </span>
-      {ctx.modstationUnits.value.map((unit: ForeignModUnit) => (
-        <button
-          key={`${unit.installer}/${unit.key}`}
-          class={[
-            "mod-row",
-            ctx.selection.value?.mode === "foreign" &&
-              ctx.selection.value.unit.key === unit.key &&
-              ctx.selection.value.unit.installer === unit.installer &&
-              "mod-row--active",
-          ]}
-          onClick={() => ctx.selectForeign(unit)}
-        >
-          <span class="mod-row__tile mod-row__tile--cat">
-            <Puzzle size={20} />
-          </span>
-          <span class="mod-row__body">
-            <span class="mod-row__name">{unit.name}</span>
-            <span class="mod-row__sub">
-              {unit.identity
-                ? t("resources.foreignPaired")
-                : t("resources.foreignUnpaired")}
+    <HkScrollContainer class="resources-view__foreign-strip">
+      <div class="resources-view__foreign-strip-inner">
+        <span class="resources-view__foreign-strip-title">
+          {t("resources.foreignSource.modstation")}
+        </span>
+        {ctx.modstationUnits.value.map((unit: ForeignModUnit) => (
+          <button
+            key={`${unit.installer}/${unit.key}`}
+            class={[
+              "mod-row",
+              ctx.selection.value?.mode === "foreign" &&
+                ctx.selection.value.unit.key === unit.key &&
+                ctx.selection.value.unit.installer === unit.installer &&
+                "mod-row--active",
+            ]}
+            onClick={() => ctx.selectForeign(unit)}
+          >
+            <span class="mod-row__tile mod-row__tile--cat">
+              <Puzzle size={20} />
             </span>
-          </span>
-        </button>
-      ))}
-    </div>
+            <span class="mod-row__body">
+              <span class="mod-row__name">{unit.name}</span>
+              <span class="mod-row__sub">
+                {unit.identity
+                  ? t("resources.foreignPaired")
+                  : t("resources.foreignUnpaired")}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </HkScrollContainer>
   );
 }

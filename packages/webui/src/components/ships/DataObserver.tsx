@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref, type PropType } from "vue";
 import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
-import { HkIconButtonGroup } from "@celestia-island/hikari";
+import { HkIconButtonGroup, HkScrollContainer } from "@celestia-island/hikari";
 import { buildShipSpecs } from "./shipSpecs";
 import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
 import { t } from "@/i18n";
@@ -123,7 +123,10 @@ export default defineComponent({
       const visible = visibleGroup.value;
       const VisibleIcon = visible ? iconFor(visible.icon) : null;
       return (
-        <div class="data-observer">
+        /* The card body scrolls through hikari's scroll container (overlay
+           thumb on the card's right edge; the native bar stays hidden). */
+        <HkScrollContainer class="data-observer">
+          <div class="data-observer__inner">
           {options.length > 0 ? (
             <HkIconButtonGroup
               mode="single"
@@ -161,7 +164,8 @@ export default defineComponent({
               </dl>
             </section>
           ) : null}
-        </div>
+          </div>
+        </HkScrollContainer>
       );
     };
   },

@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 
-import { HkButton, HkModal, HkSpinner, HkStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
+import { HkButton, HkModal, HkScrollContainer, HkSpinner, HkStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -470,10 +470,14 @@ export default defineComponent({
                   <div class="onboarding__body onboarding__body--welcome">
                     {/* Scroll region of last resort: the notice block can
                         exceed very short viewports (same contract as the
-                        retired AnnouncementDialog). */}
-                    <div class="onboarding__announce">
-                      <AnnouncementContent />
-                    </div>
+                        retired AnnouncementDialog). Hikari's scroll
+                        container owns the scrollbar (overlay track); the
+                        notice scrolls inside its viewport. */}
+                    <HkScrollContainer class="onboarding__announce">
+                      <div class="onboarding__announce-inner">
+                        <AnnouncementContent />
+                      </div>
+                    </HkScrollContainer>
                   </div>
                 ),
                 game: () => (

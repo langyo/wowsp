@@ -2,15 +2,17 @@
    stage in the captain skills tab. One spec category shows at a time behind
    the icon-button selector; rows show base → delta → modified values. */
 .data-observer {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
   background: rgb(var(--color-bg));
   border: 1px solid rgb(var(--color-border) / 12%);
   border-radius: var(--radius-md);
-  padding: 0.6rem 0.7rem;
   max-height: 340px;
-  overflow-y: auto;
+
+  &__inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.6rem 0.7rem;
+  }
 
   /* Left-align the category strip (hikari centers the track by default). */
   .hk-icon-group {

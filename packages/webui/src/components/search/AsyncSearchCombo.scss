@@ -94,13 +94,19 @@
   }
 }
 
+/* Scroll region (hikari's HkScrollContainer owns the scrollbar): the
+   desktop cap keeps long candidate lists inside the anchored panel. */
 .async-search-combo__candidates {
   margin-top: 8px;
+  max-height: 280px;
+}
+
+/* Former list layout, moved inside the viewport so the rows keep
+   scrolling with their rhythm. */
+.async-search-combo__candidates-inner {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 280px;
-  overflow-y: auto;
 }
 
 .async-search-combo__candidate {
@@ -127,11 +133,12 @@
    "phones never float anchored menus" convention — same contract as
    ShipFilterBar's chips). The sheet carries its own title + close chrome
    (hk-popover-sheet-header), so the panel's inner header row would
-   duplicate it — hidden below; the candidate list trades its fixed 280px
-   desktop cap for the sheet's own scroll envelope. The sheet surface
-   itself (full width, top rounding, safe-area bottom padding, scroll
-   containment, top-inset cap) is hikari's .hk-is-sheet — nothing to
-   re-paint. Desktop anchored panels are untouched. */
+   duplicate it — hidden below; the candidate list drops its fixed 280px
+   desktop cap and rides the sheet's own scroll envelope (with no cap the
+   scroll viewport never overflows, so the sheet is the scroller). The
+   sheet surface itself (full width, top rounding, safe-area bottom
+   padding, scroll containment, top-inset cap) is hikari's .hk-is-sheet —
+   nothing to re-paint. Desktop anchored panels are untouched. */
 .hk-popover-panel.hk-is-sheet {
   .async-search-combo__panel {
     padding: 10px var(--space-12, 0.75rem) 0;
@@ -143,6 +150,5 @@
 
   .async-search-combo__candidates {
     max-height: none;
-    overflow-y: visible;
   }
 }

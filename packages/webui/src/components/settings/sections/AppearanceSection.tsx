@@ -6,6 +6,7 @@ import {
   HkButton,
   HkDivider,
   HkIconButton,
+  HkScrollContainer,
   HkSettingsGroup,
   HkSettingsHint,
   HkSettingsSub,
@@ -173,7 +174,16 @@ export default defineComponent({
                 AppData wallpapers folder and can be deleted (two-step
                 confirm per card). */}
             <HkSettingsSub title={t("settings.wallpaper")}>
-              <div class="settings-modal__wallpapers" ref={appearance.wallpaperRow}>
+              {/* Horizontal strip scroller: hikari's scroll container owns
+                  the scrollbar (auto-hiding overlay track); the cards
+                  scroll inside its viewport. The ref drives the
+                  scroll-to-far-end after an import (useSettingsAppearance). */}
+              <HkScrollContainer
+                class="settings-modal__wallpapers"
+                axis="horizontal"
+                ref={appearance.wallpaperRow}
+              >
+                <div class="settings-modal__wallpapers-inner">
                 {wallpaper.allWallpapers.value.map((w) => {
                   const on = wallpaper.activeWallpaperId.value === w.id;
                   // Builtin-ness decides the delete affordance, not the
@@ -265,7 +275,8 @@ export default defineComponent({
                     <span class="settings-modal__wallpaper-add-label">{t("settings.wallpaperImport")}</span>
                   </button>
                 ) : null}
-              </div>
+                </div>
+              </HkScrollContainer>
               {/* Overlay strength over image wallpapers — the transparency
                   dial (wallpaperOverlay.ts); meaningless for solid, which
                   never draws a scrim, so it only renders while an image is

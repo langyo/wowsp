@@ -20,6 +20,7 @@
  * in the game's sort key via the '[TAG]nick' display name).
  */
 import { computed, defineComponent, type PropType } from "vue";
+import { HkScrollContainer } from "@celestia-island/hikari";
 
 import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -241,11 +242,17 @@ export default defineComponent({
     );
 
     return () => (
-      <div class="holo-map__roster-overlay" aria-hidden="true">
-        <div class="holo-map__roster-board">
-          {teamTable(allies.value, false, props.showKills)}
-          {enemies.value.length ? teamTable(enemies.value, true, props.showKills) : null}
+      /* Scroll region: hikari's HkScrollContainer owns the scrollbar
+         (auto-hiding overlay track on the pane's right edge); the board
+         scrolls inside its viewport. The absolute full-pane positioning
+         stays on the class — it outranks hikari's relative root rule. */
+      <HkScrollContainer class="holo-map__roster-overlay" aria-hidden="true">
+        <div class="holo-map__roster-inner">
+          <div class="holo-map__roster-board">
+            {teamTable(allies.value, false, props.showKills)}
+            {enemies.value.length ? teamTable(enemies.value, true, props.showKills) : null}
+          </div>
         </div>
-      </div>
+      </HkScrollContainer>
     );  },
 });

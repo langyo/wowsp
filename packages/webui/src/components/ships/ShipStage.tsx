@@ -15,7 +15,7 @@ import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
 import { pruneModelDebris } from "@/features/holographic/debrisPrune";
 import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
-import { HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
+import { HkScrollContainer, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { useImage } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
@@ -2129,7 +2129,10 @@ export default defineComponent({
                       <ChevronDown size={11} strokeWidth={2.2} />
                     </button>
                     {modelPickOpen.value ? (
-                      <div class="ship-stage__model-pick-menu" role="listbox" aria-label={t("ships.detail.stage.modelPicker")}>
+                      /* Dropdown list scrolls through hikari's scroll
+                         container (overlay thumb, native bar hidden). */
+                      <HkScrollContainer class="ship-stage__model-pick-menu">
+                        <div class="ship-stage__model-pick-menu-inner" role="listbox" aria-label={t("ships.detail.stage.modelPicker")}>
                         <button
                           type="button"
                           role="option"
@@ -2152,7 +2155,8 @@ export default defineComponent({
                             {p.label}
                           </button>
                         ))}
-                      </div>
+                        </div>
+                      </HkScrollContainer>
                     ) : null}
                   </div>
                 ) : null}

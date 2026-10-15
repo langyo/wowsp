@@ -14,11 +14,17 @@
     gap: 0.5rem;
   }
 
+  /* Scroll region (hikari's HkScrollContainer owns the scrollbar): the
+     browser column's share of the wizard caps the rows. */
   &__list {
     flex: 1;
     min-height: 18rem;
     max-height: 24rem;
-    overflow-y: auto;
+  }
+
+  /* Former list layout, moved inside the viewport so the rows keep
+     scrolling with their rhythm. */
+  &__list-inner {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
@@ -72,12 +78,15 @@
     font-size: var(--text-sm);
   }
 
-  /* Step 2: the mode preset cards. */
+  /* Step 2: the mode preset cards — scroll region (hikari's container
+     owns the scrollbar), layout inside the viewport. */
   &__modes {
     flex: 1;
     min-width: 0;
-    overflow-y: auto;
     max-height: 24rem;
+  }
+
+  &__modes-inner {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;

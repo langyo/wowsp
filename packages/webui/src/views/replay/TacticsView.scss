@@ -150,6 +150,11 @@
   gap: 0.6rem;
   align-items: stretch;
 
+  /* Dock for the teleported branch tree (PlanSlotsBar's tree layout) —
+     the tree is itself the panel's hikari scroll container (auto-hiding
+     overlay track floating just inside this padding) and shrinks inside
+     the column when it overflows (a scroll container's automatic minimum
+     size is zero), so the dock keeps only its box framing. */
   &__branch {
     width: 216px;
     flex-shrink: 0;
@@ -160,8 +165,6 @@
     background: rgb(var(--color-surface) / min(100%, calc(50% * var(--ui-opacity, 1))));
     border: 1px solid rgb(var(--color-border) / 18%);
     border-radius: var(--radius-md);
-    overflow-y: auto;
-    overflow-x: hidden;
   }
 
   &__stage {

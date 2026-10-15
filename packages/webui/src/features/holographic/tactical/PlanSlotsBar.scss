@@ -62,13 +62,28 @@
    indented under their parent with a connector stub, the fork's battle
    clock riding the chip. Sits OUTSIDE .plan-stage when teleported, so the
    --holo-hud-* tokens must not be assumed — the tree variant re-bases on
-   the app surface tokens instead. */
+   the app surface tokens instead. The element is a hikari scroll
+   container (auto-hiding overlay bar on the panel's right edge) that
+   shrinks inside the branch panel's column; the node rhythm lives on the
+   inner wrapper below. */
 .plan-slots--tree {
-  flex-direction: column;
+  /* Overrides the chips base's centered cross-axis (webui scss loads
+     after hikari's): the viewport must stretch to the panel's full
+     width, not shrink-wrap the nodes. hikari's root already flexes
+     column; the base's flex-wrap is inert on a single-child root. */
   align-items: stretch;
+
+  /* Former overflow-x: hidden — hikari's vertical viewport scrolls both
+     axes by default; keep the cross axis clipped as before. */
+  & > .hk-scroll-container-viewport {
+    overflow-x: hidden;
+  }
+}
+
+.plan-slots__tree-inner {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 
 .plan-slots--tree .plan-slots__chip {

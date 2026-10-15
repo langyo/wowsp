@@ -11,7 +11,7 @@
  */
 import { computed, defineComponent, nextTick, ref, type PropType } from "vue";
 import { Copy, Download, GitBranch, Plus, Trash2, Upload } from "@lucide/vue";
-import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
+import { HkIconButton, HkScrollContainer, HkTooltip } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import { fmtClock } from "./timelineModel";
 import type { PlanSlot } from "./planSlots";
@@ -106,7 +106,17 @@ export default defineComponent({
 
     return () =>
       props.layout === "tree" ? (
-        <div class="plan-slots plan-slots--tree" onClick={(e: MouseEvent) => e.stopPropagation()}>
+        /* Scroll region (tree layout only): hikari's HkScrollContainer
+            owns the scrollbar (auto-hiding overlay track); the branch
+            nodes scroll inside its viewport. The click guard spreads in
+            (the component's props declare no DOM events; Vue's attr
+            fallthrough still lands it on the root, covering the overlay
+            track as well). */
+        <HkScrollContainer
+          class="plan-slots plan-slots--tree"
+          {...{ onClick: (e: MouseEvent) => e.stopPropagation() }}
+        >
+          <div class="plan-slots__tree-inner">
           {treeRows.value.map(({ slot, index, depth }) => (
             <span
               key={slot.id}
@@ -207,7 +217,8 @@ export default defineComponent({
               </HkTooltip>
             ) : null}
           </span>
-        </div>
+          </div>
+        </HkScrollContainer>
       ) : chipsView();
 
     function chipsView() {

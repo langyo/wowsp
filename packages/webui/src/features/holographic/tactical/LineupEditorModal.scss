@@ -69,14 +69,20 @@
     font-weight: 600;
   }
 
+  /* Scroll region (hikari's HkScrollContainer owns the scrollbar): the
+     side column's share of the modal caps the rows, the rest scrolls. */
   &__rows {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
+    max-height: 22rem;
+  }
+
+  /* Former rows layout, moved inside the viewport so the hull rows keep
+     scrolling with their rhythm. */
+  &__rows-inner {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    max-height: 22rem;
   }
 
   &__row {

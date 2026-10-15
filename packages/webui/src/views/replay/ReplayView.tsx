@@ -62,7 +62,7 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
-import { HkButton, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
+import { HkButton, HkScrollContainer, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import {
@@ -571,19 +571,26 @@ const PostBattleFallbackPanel = defineComponent({
               { "replay-view__postbattle-matrix--single": enemies.value.length === 0 },
             ]}
           >
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">
-                {t("replay.roster.allies")}
-              </div>
-              {allies.value.map(cell)}
-            </div>
-            {enemies.value.length > 0 ? (
-              <div class="replay-view__postbattle-col">
+            {/* Column scroller: the hikari container owns the scrollbar
+                (auto-hiding overlay track); the rows stack inside the
+                inner wrapper so the column-title scrolls with them. */}
+            <HkScrollContainer class="replay-view__postbattle-col">
+              <div class="replay-view__postbattle-col__inner">
                 <div class="replay-view__postbattle-col-title">
-                  {t("replay.roster.enemies")}
+                  {t("replay.roster.allies")}
                 </div>
-                {enemies.value.map(cell)}
+                {allies.value.map(cell)}
               </div>
+            </HkScrollContainer>
+            {enemies.value.length > 0 ? (
+              <HkScrollContainer class="replay-view__postbattle-col">
+                <div class="replay-view__postbattle-col__inner">
+                  <div class="replay-view__postbattle-col-title">
+                    {t("replay.roster.enemies")}
+                  </div>
+                  {enemies.value.map(cell)}
+                </div>
+              </HkScrollContainer>
             ) : null}
           </div>
 
@@ -621,7 +628,10 @@ const PostBattleFallbackPanel = defineComponent({
                   </span>
                   <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
                 </div>
-                <div class="replay-view__postbattle-modal-scroll">
+                {/* Drill-down scroller: the hikari container owns the
+                    scrollbar; the body blocks stack directly in its
+                    viewport (no layout rules to preserve). */}
+                <HkScrollContainer class="replay-view__postbattle-modal-scroll">
                   <div class="replay-view__postbattle-detail-body">
                     <div class="replay-view__postbattle-detail-damage">
                       <span class="replay-view__postbattle-detail-damage-num">
@@ -681,7 +691,7 @@ const PostBattleFallbackPanel = defineComponent({
                       ) : null}
                     </div>
                   )}
-                </div>
+                </HkScrollContainer>
                 {!isBot(sel) ? (
                   <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                     {t("replay.postbattle.fullStats")}
@@ -1139,45 +1149,50 @@ const ChatLogPanel = defineComponent({
         <>
           {/* Above the scroll: the timeline (and its legend) rides an
               HkScrollPin header. The message list scrolls ITSELF (see
-              __chat-panel in the SCSS), so the body never scrolls and the
+              __chat-scroll in the SCSS), so the body never scrolls and the
               sticky pin stays parked in the body's top gutter via the bleed
               contract — the pin must stay the FIRST element of the body
               (host class + pad var on __modal-body), and the timeline keeps
               its gap as padding so the pin's painted box covers it. Rows
-              then clip at the list's own crisp top edge, never behind the
-              translucent pin. */}
+              then clip at the scroller's own crisp top edge, never behind
+              the translucent pin. */}
           <HkScrollPin side="top">
             <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
           </HkScrollPin>
-          <ul class="replay-view__chat-list">
-            {rows.value.map((r, i) => (
-              <li key={i} class={["replay-view__chat-row", `replay-view__chat-row--${r.channel}`]}>
-                <span class="replay-view__chat-time">{formatClock(r.time)}</span>
-                {r.name ? (
+          {/* Message-list scroller: the hikari container owns the scrollbar
+              (auto-hiding overlay track on the list's right edge); the grid
+              stays on the <ul> so the rows keep their shared subgrid axes. */}
+          <HkScrollContainer class="replay-view__chat-scroll">
+            <ul class="replay-view__chat-list">
+              {rows.value.map((r, i) => (
+                <li key={i} class={["replay-view__chat-row", `replay-view__chat-row--${r.channel}`]}>
+                  <span class="replay-view__chat-time">{formatClock(r.time)}</span>
+                  {r.name ? (
+                    <button
+                      class="replay-view__chat-sender"
+                      data-hint={senderHint(r)}
+                      onClick={() => openDetail(r)}
+                    >
+                      {r.sender}
+                    </button>
+                  ) : (
+                    <span class="replay-view__chat-sender replay-view__chat-sender--static">
+                      {r.sender}
+                    </span>
+                  )}
+                  <span class="replay-view__chat-text">{r.message}</span>
                   <button
-                    class="replay-view__chat-sender"
-                    data-hint={senderHint(r)}
-                    onClick={() => openDetail(r)}
+                    class="replay-view__chat-copy"
+                    data-hint={t("replay.chat.copy")}
+                    aria-label={t("replay.chat.copy")}
+                    onClick={() => void copy(r.message)}
                   >
-                    {r.sender}
+                    <Copy size={12} />
                   </button>
-                ) : (
-                  <span class="replay-view__chat-sender replay-view__chat-sender--static">
-                    {r.sender}
-                  </span>
-                )}
-                <span class="replay-view__chat-text">{r.message}</span>
-                <button
-                  class="replay-view__chat-copy"
-                  data-hint={t("replay.chat.copy")}
-                  aria-label={t("replay.chat.copy")}
-                  onClick={() => void copy(r.message)}
-                >
-                  <Copy size={12} />
-                </button>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </HkScrollContainer>
           {/* Level-2 modal: the sender's stats (reuses the post-battle
               modal chrome; sits fixed above the chat panel). */}
           {sel ? (
@@ -1207,7 +1222,9 @@ const ChatLogPanel = defineComponent({
                   </span>
                   <button onClick={() => (selected.value = null)}><X size={12} /></button>
                 </div>
-                <div class="replay-view__postbattle-modal-scroll">
+                {/* Drill-down scroller (hikari container owns the scrollbar;
+                    the note blocks stack directly in its viewport). */}
+                <HkScrollContainer class="replay-view__postbattle-modal-scroll">
                   {sel.bot ? (
                     <div class="replay-view__postbattle-global">
                       <span class="replay-view__postbattle-global-note">
@@ -1233,7 +1250,7 @@ const ChatLogPanel = defineComponent({
                       )}
                     </div>
                   )}
-                </div>
+                </HkScrollContainer>
                 {!sel.bot ? (
                   <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                     {t("replay.postbattle.fullStats")}
@@ -1981,289 +1998,310 @@ export default defineComponent({
             ) : null}
           </div>
 
-          <div class="replay-view__list-scroll">
-            {parser.external.value.length === 0 && scannedReplays.value.length === 0 ? (
-              isMobileApp() ? (
-                /* Phone build's prominent acquisition empty state: pick
-                    local .wowsreplay files, or pair with the desktop. */
-                <div class="replay-view__acquire">
-                  <p class="replay-view__acquire-title">{t("replay.acquire.emptyTitle")}</p>
-                  <p class="replay-view__acquire-hint">{t("replay.acquire.emptyHint")}</p>
-                  <div class="replay-view__acquire-actions">
-                    <HkButton
-                      variant="primary"
-                      loading={importing.value}
-                      onClick={onPickFiles}
-                    >
-                      <FileUp size={15} />
-                      {t("replay.acquire.pickFiles")}
-                    </HkButton>
-                    <HkButton
-                      variant="secondary"
-                      onClick={() => (wizardOpen.value = true)}
-                    >
-                      <Laptop size={15} />
-                      {t("replay.acquire.fromDesktop")}
-                    </HkButton>
+          {/* Rail scroller: the hikari container owns the scrollbar
+              (auto-hiding overlay track over the rail's right edge); the
+              cards and empty states scroll inside its viewport. */}
+          <HkScrollContainer class="replay-view__list-scroll">
+            <div class="replay-view__list-scroll__inner">
+              {parser.external.value.length === 0 && scannedReplays.value.length === 0 ? (
+                isMobileApp() ? (
+                  /* Phone build's prominent acquisition empty state: pick
+                      local .wowsreplay files, or pair with the desktop. */
+                  <div class="replay-view__acquire">
+                    <p class="replay-view__acquire-title">{t("replay.acquire.emptyTitle")}</p>
+                    <p class="replay-view__acquire-hint">{t("replay.acquire.emptyHint")}</p>
+                    <div class="replay-view__acquire-actions">
+                      <HkButton
+                        variant="primary"
+                        loading={importing.value}
+                        onClick={onPickFiles}
+                      >
+                        <FileUp size={15} />
+                        {t("replay.acquire.pickFiles")}
+                      </HkButton>
+                      <HkButton
+                        variant="secondary"
+                        onClick={() => (wizardOpen.value = true)}
+                      >
+                        <Laptop size={15} />
+                        {t("replay.acquire.fromDesktop")}
+                      </HkButton>
+                    </div>
                   </div>
-                </div>
-              ) : !hasClient.value ? (
-                <p class="replay-view__empty">{t("replay.list.noClient")}</p>
+                ) : !hasClient.value ? (
+                  <p class="replay-view__empty">{t("replay.list.noClient")}</p>
+                ) : (
+                  <p class="replay-view__empty">{t("replay.list.empty")}</p>
+                )
+              ) : listFilter.visibleExternal.value.length === 0 &&
+                  listFilter.visibleList.value.length === 0 ? (
+                /* Everything is filtered out — the strip above stays reachable
+                   so the state is self-explanatory (and clearable). */
+                <p class="replay-view__empty">{t("replay.filter.noMatch")}</p>
               ) : (
-                <p class="replay-view__empty">{t("replay.list.empty")}</p>
-              )
-            ) : listFilter.visibleExternal.value.length === 0 &&
-                listFilter.visibleList.value.length === 0 ? (
-              /* Everything is filtered out — the strip above stays reachable
-                 so the state is self-explanatory (and clearable). */
-              <p class="replay-view__empty">{t("replay.filter.noMatch")}</p>
-            ) : (
-              <ul class="replay-view__items">
-                {/* Manually picked files (session-temporary) stay pinned
-                    above the scanned list; the filter and the sort apply to
-                    both blocks independently. */}
-                {listFilter.visibleExternal.value.map((r) => renderReplayCard(r, true))}
-                {listFilter.visibleList.value.map((r) => renderReplayCard(r, false))}
-              </ul>
-            )}
-          </div>
+                <ul class="replay-view__items">
+                  {/* Manually picked files (session-temporary) stay pinned
+                      above the scanned list; the filter and the sort apply to
+                      both blocks independently. */}
+                  {listFilter.visibleExternal.value.map((r) => renderReplayCard(r, true))}
+                  {listFilter.visibleList.value.map((r) => renderReplayCard(r, false))}
+                </ul>
+              )}
+            </div>
+          </HkScrollContainer>
         </aside>
 
         <section class="replay-view__main">
-          {parser.current.value ? (
-            <div class="replay-view__content">
-              {parser.error.value ? (
-                <div class="replay-view__placeholder replay-view__placeholder--error">
-                  {parser.error.value}
-                </div>
-              ) : null}
-              <header class="replay-view__meta">
-                {/* The map as a jump tag (shared with the live head): hover
-                    previews the map's bundled minimap, click opens the map's
-                    tactical board — see MapNameTag. */}
-                <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
-                <span class="replay-view__meta-item">
-                  {formatDateTime(parser.current.value.dateTime)}
-                </span>
-                {parser.current.value.matchGroup ? (
-                  <span
-                    class="replay-view__meta-item replay-view__pill"
-                    style={
-                      modeColor(
-                        parser.current.value.matchGroup,
-                        parser.current.value.scenario,
-                        parser.current.value.eventType,
-                        parser.current.value.botCount ?? 0,
-                        parser.current.value.scriptedUnitCount ?? 0,
-                      ) as CSSProperties
-                    }
-                  >
-                    {modeLabel(
-                      parser.current.value.matchGroup,
-                      parser.current.value.scenario,
-                      parser.current.value.eventType,
-                      parser.current.value.botCount ?? 0,
-                      parser.current.value.scriptedUnitCount ?? 0,
-                    )}
-                  </span>
-                ) : null}
-                <span class="replay-view__meta-item replay-view__count">
-                  {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
-                </span>
-                {duration.value > 0 ? (
-                  <span class="replay-view__meta-item">
-                    {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
-                  </span>
-                ) : null}
-                {resultsLoading.value ? (
-                  <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
-                    {t("replay.results")}
-                    <HkSpinner size="xs" tone="current" />
-                  </span>
-                ) : battleResults.value || trajectories.value.length > 0 ? (
-                  <button
-                    class="replay-view__meta-item replay-view__pill replay-view__results"
-                    onClick={() => (showResults.value = !showResults.value)}
-                  >
-                    {t("replay.results")}
-                  </button>
-                ) : null}
-                {chatCount.value > 0 ? (
-                  <button
-                    class="replay-view__meta-item replay-view__pill"
-                    onClick={() => (showChat.value = !showChat.value)}
-                  >
-                    {t("replay.chatLog")}
-                  </button>
-                ) : null}
-              </header>
-              {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
-                <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
-                  <div
-                    class="replay-view__modal-panel"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div class="replay-view__modal-head">
-                      <div class="replay-view__modal-title">
-                        <strong>{t("replay.results")}</strong>
-                        {!battleResults.value ? (
-                          <span class="replay-view__results-note">
-                            {t("replay.resultsIncomplete")}
-                          </span>
-                        ) : null}
-                      </div>
-                      <button
-                        class="replay-view__modal-close"
-                        onClick={() => (showResults.value = false)}
-                        aria-label="Close"
-                      >
-                        <X size={14} />
-                      </button>
+          {/* Phone-only page scroller (≤767px the stacked detail scrolls
+              here): the hikari container owns the scrollbar, and the inner
+              wrapper keeps the former direct-child flex chain (__content
+              flex:1 etc.) intact — on desktop nothing overflows, so the
+              roster/map keep managing their own scroll exactly as before. */}
+          <HkScrollContainer class="replay-view__main-scroll">
+            <div class="replay-view__main-inner">
+              {parser.current.value ? (
+                <div class="replay-view__content">
+                  {parser.error.value ? (
+                    <div class="replay-view__placeholder replay-view__placeholder--error">
+                      {parser.error.value}
                     </div>
-                    <div class="replay-view__modal-body">
-                      {battleResults.value ? (
-                        <PostBattlePanel
-                          raw={battleResults.value}
-                          head={{
-                            matchGroup: parser.current.value.matchGroup,
-                            scenario: parser.current.value.scenario,
-                            eventType: parser.current.value.eventType,
-                            botCount: parser.current.value.botCount ?? null,
-                            scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
-                            mapName: parser.current.value.mapName,
-                            realm: realm.value,
-                            gameVersion: gameVersionOf(parser.current.value.raw),
-                            battleTime: parser.current.value.dateTime
-                              ? formatDateTime(parser.current.value.dateTime)
-                              : null,
-                            durationSec: duration.value > 0 ? duration.value : null,
-                          }}
-                          operation={isOperation.value}
-                          stream={{
-                            trajectories: trajectories.value,
-                            shotKills: shotKills.value,
-                            damageStats: damageStats.value,
-                            achievements: achievements.value,
-                            arenaPlayers: arenaPlayers.value,
-                            shellLaunches: shellLaunches.value,
-                            torpedoes: torpedoes.value,
-                          }}
-                          roster={parser.current.value.vehicles}
-                          onClose={() => (showResults.value = false)}
-                        />
+                  ) : null}
+                  <header class="replay-view__meta">
+                    {/* The map as a jump tag (shared with the live head): hover
+                        previews the map's bundled minimap, click opens the map's
+                        tactical board — see MapNameTag. */}
+                    <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
+                    <span class="replay-view__meta-item">
+                      {formatDateTime(parser.current.value.dateTime)}
+                    </span>
+                    {parser.current.value.matchGroup ? (
+                      <span
+                        class="replay-view__meta-item replay-view__pill"
+                        style={
+                          modeColor(
+                            parser.current.value.matchGroup,
+                            parser.current.value.scenario,
+                            parser.current.value.eventType,
+                            parser.current.value.botCount ?? 0,
+                            parser.current.value.scriptedUnitCount ?? 0,
+                          ) as CSSProperties
+                        }
+                      >
+                        {modeLabel(
+                          parser.current.value.matchGroup,
+                          parser.current.value.scenario,
+                          parser.current.value.eventType,
+                          parser.current.value.botCount ?? 0,
+                          parser.current.value.scriptedUnitCount ?? 0,
+                        )}
+                      </span>
+                    ) : null}
+                    <span class="replay-view__meta-item replay-view__count">
+                      {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
+                    </span>
+                    {duration.value > 0 ? (
+                      <span class="replay-view__meta-item">
+                        {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
+                      </span>
+                    ) : null}
+                    {resultsLoading.value ? (
+                      <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
+                        {t("replay.results")}
+                        <HkSpinner size="xs" tone="current" />
+                      </span>
+                    ) : battleResults.value || trajectories.value.length > 0 ? (
+                      <button
+                        class="replay-view__meta-item replay-view__pill replay-view__results"
+                        onClick={() => (showResults.value = !showResults.value)}
+                      >
+                        {t("replay.results")}
+                      </button>
+                    ) : null}
+                    {chatCount.value > 0 ? (
+                      <button
+                        class="replay-view__meta-item replay-view__pill"
+                        onClick={() => (showChat.value = !showChat.value)}
+                      >
+                        {t("replay.chatLog")}
+                      </button>
+                    ) : null}
+                  </header>
+                  {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
+                    <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
+                      <div
+                        class="replay-view__modal-panel"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div class="replay-view__modal-head">
+                          <div class="replay-view__modal-title">
+                            <strong>{t("replay.results")}</strong>
+                            {!battleResults.value ? (
+                              <span class="replay-view__results-note">
+                                {t("replay.resultsIncomplete")}
+                              </span>
+                            ) : null}
+                          </div>
+                          <button
+                            class="replay-view__modal-close"
+                            onClick={() => (showResults.value = false)}
+                            aria-label="Close"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                        {/* Results-body scroller: the hikari container owns the
+                            scrollbar (auto-hiding overlay track); the panel
+                            scrolls inside its viewport. Nothing pins in here,
+                            so the pad var the base class carries stays inert
+                            (it only serves the chat body's timeline pin). */}
+                        <HkScrollContainer class="replay-view__modal-body">
+                          <div class="replay-view__modal-body__inner">
+                            {battleResults.value ? (
+                              <PostBattlePanel
+                                raw={battleResults.value}
+                                head={{
+                                  matchGroup: parser.current.value.matchGroup,
+                                  scenario: parser.current.value.scenario,
+                                  eventType: parser.current.value.eventType,
+                                  botCount: parser.current.value.botCount ?? null,
+                                  scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
+                                  mapName: parser.current.value.mapName,
+                                  realm: realm.value,
+                                  gameVersion: gameVersionOf(parser.current.value.raw),
+                                  battleTime: parser.current.value.dateTime
+                                    ? formatDateTime(parser.current.value.dateTime)
+                                    : null,
+                                  durationSec: duration.value > 0 ? duration.value : null,
+                                }}
+                                operation={isOperation.value}
+                                stream={{
+                                  trajectories: trajectories.value,
+                                  shotKills: shotKills.value,
+                                  damageStats: damageStats.value,
+                                  achievements: achievements.value,
+                                  arenaPlayers: arenaPlayers.value,
+                                  shellLaunches: shellLaunches.value,
+                                  torpedoes: torpedoes.value,
+                                }}
+                                roster={parser.current.value.vehicles}
+                                onClose={() => (showResults.value = false)}
+                              />
+                            ) : (
+                              <PostBattleFallbackPanel
+                                vehicles={parser.current.value.vehicles}
+                                trajectories={trajectories.value}
+                                explosions={explosions.value}
+                                shotKills={shotKills.value}
+                                damageStats={damageStats.value}
+                                realm={realm.value}
+                                operation={isOperation.value}
+                                arenaPlayers={arenaPlayers.value}
+                                inferredDeaths={inferredDeaths.value}
+                                statsMode={fallbackStatsMode.value}
+                                onClose={() => (showResults.value = false)}
+                              />
+                            )}
+                          </div>
+                        </HkScrollContainer>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showChat.value && chatCount.value > 0 ? (
+                    <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
+                      <div
+                        class="replay-view__modal-panel replay-view__chat-panel"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div class="replay-view__modal-head">
+                          <div class="replay-view__modal-title">
+                            <strong>{t("replay.chatLog")}</strong>
+                          </div>
+                          <button
+                            class="replay-view__modal-close"
+                            onClick={() => (showChat.value = false)}
+                            aria-label="Close"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                        <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
+                          <ChatLogPanel
+                            events={chatMessages.value}
+                            vehicles={parser.current.value.vehicles}
+                            trajectories={trajectories.value}
+                            arenaPlayers={arenaPlayers.value}
+                            duration={duration.value}
+                            realm={realm.value}
+                            mapApi={mapRef.value}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div class="replay-view__detail">
+                    <div class="replay-view__map-wrap">
+                      {trajectoryError.value ? (
+                        <div class="replay-view__placeholder replay-view__placeholder--error">
+                          trajectory decode failed: {trajectoryError.value}
+                        </div>
                       ) : (
-                        <PostBattleFallbackPanel
-                          vehicles={parser.current.value.vehicles}
+                        <HolographicMap
+                          ref={mapRef}
+                          replayPath={parser.current.value.path}
                           trajectories={trajectories.value}
+                          shellLaunches={shellLaunches.value}
                           explosions={explosions.value}
+                          torpedoes={torpedoes.value}
+                          torpedoSteers={torpedoSteers.value}
+                          weaponLocks={weaponLocks.value}
+                          battleResults={battleResults.value ?? undefined}
+                          replayVersion={replayVersion.value ?? undefined}
+                          mapNamePkt={mapNamePkt.value ?? undefined}
+                          cameraFrames={cameraFrames.value}
+                          netStats={netStats.value}
+                          leavesMap={leavesMap.value}
+                          cameraModes={cameraModes.value}
+                          squadronCreates={squadronCreates.value}
+                          squadronPlanes={squadronPlanes.value}
+                          minimapSquadronAdds={minimapSquadronAdds.value}
+                          minimapSquadronMoves={minimapSquadronMoves.value}
+                          minimapSquadronRemoves={minimapSquadronRemoves.value}
+                          wards={wards.value}
+                          wardRemoves={wardRemoves.value}
                           shotKills={shotKills.value}
                           damageStats={damageStats.value}
-                          realm={realm.value}
-                          operation={isOperation.value}
+                          chatMessages={chatMessages.value}
+                          achievements={achievements.value}
                           arenaPlayers={arenaPlayers.value}
                           inferredDeaths={inferredDeaths.value}
+                          weatherTransitions={weatherTransitions.value}
+                          weatherNotifications={weatherNotifications.value}
+                          vehicles={parser.current.value.vehicles}
+                          operation={isOperation.value}
+                          encyclopedia={encyclopedia.byId}
+                          mapId={parser.current.value.mapName ?? ""}
+                          matchGroup={parser.current.value.matchGroup ?? ""}
+                          mapName={parser.current.value.mapName ?? ""}
+                          initialTime={initialSeek}
+                          initialMinimapZoom={route.query.mm === "1"}
+                          realm={realm.value}
                           statsMode={fallbackStatsMode.value}
-                          onClose={() => (showResults.value = false)}
                         />
                       )}
                     </div>
                   </div>
                 </div>
-              ) : null}
-
-              {showChat.value && chatCount.value > 0 ? (
-                <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
-                  <div
-                    class="replay-view__modal-panel replay-view__chat-panel"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div class="replay-view__modal-head">
-                      <div class="replay-view__modal-title">
-                        <strong>{t("replay.chatLog")}</strong>
-                      </div>
-                      <button
-                        class="replay-view__modal-close"
-                        onClick={() => (showChat.value = false)}
-                        aria-label="Close"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
-                      <ChatLogPanel
-                        events={chatMessages.value}
-                        vehicles={parser.current.value.vehicles}
-                        trajectories={trajectories.value}
-                        arenaPlayers={arenaPlayers.value}
-                        duration={duration.value}
-                        realm={realm.value}
-                        mapApi={mapRef.value}
-                      />
-                    </div>
-                  </div>
+              ) : parser.error.value ? (
+                <div class="replay-view__placeholder replay-view__placeholder--error">
+                  {parser.error.value}
                 </div>
-              ) : null}
-
-              <div class="replay-view__detail">
-                <div class="replay-view__map-wrap">
-                  {trajectoryError.value ? (
-                    <div class="replay-view__placeholder replay-view__placeholder--error">
-                      trajectory decode failed: {trajectoryError.value}
-                    </div>
-                  ) : (
-                    <HolographicMap
-                      ref={mapRef}
-                      replayPath={parser.current.value.path}
-                      trajectories={trajectories.value}
-                      shellLaunches={shellLaunches.value}
-                      explosions={explosions.value}
-                      torpedoes={torpedoes.value}
-                      torpedoSteers={torpedoSteers.value}
-                      weaponLocks={weaponLocks.value}
-                      battleResults={battleResults.value ?? undefined}
-                      replayVersion={replayVersion.value ?? undefined}
-                      mapNamePkt={mapNamePkt.value ?? undefined}
-                      cameraFrames={cameraFrames.value}
-                      netStats={netStats.value}
-                      leavesMap={leavesMap.value}
-                      cameraModes={cameraModes.value}
-                      squadronCreates={squadronCreates.value}
-                      squadronPlanes={squadronPlanes.value}
-                      minimapSquadronAdds={minimapSquadronAdds.value}
-                      minimapSquadronMoves={minimapSquadronMoves.value}
-                      minimapSquadronRemoves={minimapSquadronRemoves.value}
-                      wards={wards.value}
-                      wardRemoves={wardRemoves.value}
-                      shotKills={shotKills.value}
-                      damageStats={damageStats.value}
-                      chatMessages={chatMessages.value}
-                      achievements={achievements.value}
-                      arenaPlayers={arenaPlayers.value}
-                      inferredDeaths={inferredDeaths.value}
-                      weatherTransitions={weatherTransitions.value}
-                      weatherNotifications={weatherNotifications.value}
-                      vehicles={parser.current.value.vehicles}
-                      operation={isOperation.value}
-                      encyclopedia={encyclopedia.byId}
-                      mapId={parser.current.value.mapName ?? ""}
-                      matchGroup={parser.current.value.matchGroup ?? ""}
-                      mapName={parser.current.value.mapName ?? ""}
-                      initialTime={initialSeek}
-                      initialMinimapZoom={route.query.mm === "1"}
-                      realm={realm.value}
-                      statsMode={fallbackStatsMode.value}
-                    />
-                  )}
-                </div>
-              </div>
+              ) : (
+                <div class="replay-view__placeholder">{t("replay.select")}</div>
+              )}
             </div>
-          ) : parser.error.value ? (
-            <div class="replay-view__placeholder replay-view__placeholder--error">
-              {parser.error.value}
-            </div>
-          ) : (
-            <div class="replay-view__placeholder">{t("replay.select")}</div>
-          )}
+          </HkScrollContainer>
         </section>
 
         {/* Hidden HTML file picker backing the mobile import action (the

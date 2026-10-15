@@ -15,6 +15,7 @@
  */
 import { defineComponent } from "vue";
 import { ChevronRight } from "@lucide/vue";
+import { HkScrollContainer } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import PluginStatusCard from "./PluginStatusCard";
@@ -25,7 +26,10 @@ export default defineComponent({
   name: "LiveIdleGuide",
   setup() {
     return () => (
-      <div class="live-idle-guide">
+      <HkScrollContainer class="live-idle-guide">
+        {/* Page scroll region: the hikari container owns the scrollbar
+            (auto-hiding overlay track); the guide centers inside its
+            viewport through the inner wrapper. */}
         <div class="live-idle-guide__inner">
           <span class="live-idle-guide__status">
             <span class="live-idle-guide__status-dot" />
@@ -57,7 +61,7 @@ export default defineComponent({
           <PluginStatusCard actions />
           <p class="live-idle-guide__footnote">{t("replay.live.idleFootnote")}</p>
         </div>
-      </div>
+      </HkScrollContainer>
     );
   },
 });

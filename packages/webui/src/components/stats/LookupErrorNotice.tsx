@@ -1,6 +1,6 @@
 import { computed, defineComponent, type PropType } from "vue";
 
-import { HkAlert } from "@celestia-island/hikari";
+import { HkAlert, HkScrollContainer } from "@celestia-island/hikari";
 
 import type { LookupErrorPayload } from "@/transport/types";
 import { t } from "@/i18n";
@@ -75,10 +75,13 @@ export default defineComponent({
                   <p class="lookup-error-notice__seen">{t("lookup.error.seenBefore")}</p>
                 ) : null}
                 {/* The historical English backend string — collapse for
-                    power users filing an issue, don't lead with it. */}
+                    power users filing an issue, don't lead with it. The
+                    capped box is a hikari scroll container (overlay bar). */}
                 <details class="lookup-error-notice__raw">
                   <summary>{t("lookup.error.rawDetail")}</summary>
-                  <code>{p.message}</code>
+                  <HkScrollContainer class="lookup-error-notice__raw-detail">
+                    <code>{p.message}</code>
+                  </HkScrollContainer>
                 </details>
               </div>
             </HkAlert>
@@ -105,7 +108,9 @@ export default defineComponent({
                   <summary>{t("lookup.error.rawDetail")}</summary>
                   {/* `message` already embeds the official detail verbatim
                       ("account/list: <detail>") — don't append it twice. */}
-                  <code>{p!.message}</code>
+                  <HkScrollContainer class="lookup-error-notice__raw-detail">
+                    <code>{p!.message}</code>
+                  </HkScrollContainer>
                 </details>
               ) : null}
             </div>

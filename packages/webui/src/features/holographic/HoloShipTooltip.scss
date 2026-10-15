@@ -10,7 +10,7 @@
      the light theme's dark ink sat on a mid-grey wash. The panel is now
      near-opaque — the same 96% recipe the pop-up menus use via
      --holo-hud-menu — with per-theme flips for every dark-biased inner
-     surface (chips, HP rail, scrollbar, accents). */
+     surface (chips, HP rail, accents). */
   --tip-ally: #4ade80;
   --tip-enemy: #f87171;
   --tip-panel: rgb(12 16 26 / 96%);
@@ -19,19 +19,18 @@
   --tip-tag: rgb(0 0 0 / 35%);
   --tip-tag-ink: rgb(255 255 255 / 85%);
   --tip-rail: rgb(9 13 22 / 65%);
-  --tip-scrollbar: rgb(255 255 255 / 30%);
 
   position: fixed;
   z-index: 1000;
   box-sizing: border-box;
   /* Capped card: big CV spec sheets no longer tower over the map (they
      used to flip ABOVE the anchor and cover the scorebar strip). The
-     clipped rest scrolls inside the card — wheel over it, thin scrollbar. */
+     card is a flex column so the scroll region below can shrink inside
+     the cap; the clipped rest scrolls inside it via hikari's overlay
+     bar riding the card's right edge. */
+  display: flex;
+  flex-direction: column;
   max-height: min(58vh, 540px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  padding: 0.65rem 0.8rem 0.5rem;
   border-radius: 12px;
   /* Near-opaque themed panel — see the token block above. The blur stays
      as progressive enhancement for engines where backdrop sampling works. */
@@ -44,7 +43,24 @@
   font-size: 0.75rem;
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
-  scrollbar-color: var(--tip-scrollbar) transparent;
+
+  /* Card scroll region: hikari's HkScrollContainer owns the scrollbar
+     (auto-hiding overlay track at the card edge) and fills the fixed
+     card; the native bar stays hidden. */
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior: contain;
+    }
+  }
+
+  /* Former card padding, moved inside the viewport so it scrolls with
+     the content. */
+  &__inner {
+    padding: 0.65rem 0.8rem 0.5rem;
+  }
 
   /* Left rail picks the side tint so the card reads ally/enemy at a glance. */
   &--enemy { border-left: 3px solid var(--tip-enemy); }
@@ -250,8 +266,9 @@
     white-space: nowrap;
   }
 
-  /* No inner fold: the CARD is the scroll container now (capped height +
-     wheel), so the spec list renders full-length and scrolls with it. */
+  /* No inner fold: the card-level scroll region owns the scrolling (capped
+     height + wheel), so the spec list renders full-length and scrolls with
+     the whole card. */
   &__specs {
     padding-right: 2px;
   }
@@ -303,7 +320,6 @@
   --tip-tag: rgb(55 65 81 / 12%);
   --tip-tag-ink: rgb(55 65 81 / 85%);
   --tip-rail: rgb(55 65 81 / 18%);
-  --tip-scrollbar: rgb(55 65 81 / 30%);
 
   /* Only the three neutral sides — the left longhand stays owned by the
      ally/enemy accent rail rules above (border-color here would grey the

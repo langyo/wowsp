@@ -71,9 +71,17 @@
     }
   }
 
+  /* The tall notice step's own scroll region (nested on purpose: the
+     step must not grow the window every frame) — hikari's scroll
+     container owns the scrollbar (auto-hiding overlay track); the
+     notice scrolls inside its viewport. */
   &__announce {
     max-height: 24rem;
-    overflow-y: auto;
+  }
+
+  /* Former scroller side clearance, moved inside the viewport so it
+     scrolls with the notice text. */
+  &__announce-inner {
     padding: 0 0.25rem;
   }
 

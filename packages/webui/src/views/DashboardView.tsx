@@ -5,7 +5,7 @@ import StatsCard from "@/components/stats/StatsCard";
 import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
 import RefreshStatsButton from "@/components/stats/RefreshStatsButton";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import { HkTag, HkTabs, HkButton } from "@celestia-island/hikari";
+import { HkTag, HkTabs, HkButton, HkScrollContainer } from "@celestia-island/hikari";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
@@ -355,7 +355,12 @@ export default defineComponent({
 
     return () => (
       <div class="dashboard-view" ref={root}>
-        <Transition name="s-fade-slide" mode="out-in">
+        {/* Page scroll region: the hikari scroll container owns the
+            scrollbar (auto-hiding overlay track); the routed content
+            scrolls inside its viewport. */}
+        <HkScrollContainer class="dashboard-view__scroll">
+          <div class="dashboard-view__inner">
+            <Transition name="s-fade-slide" mode="out-in">
           {!activeAccount.value ? (
             <div class="dashboard-view__empty" key="empty">
               <div class="dashboard-view__empty-icon">
@@ -526,9 +531,11 @@ export default defineComponent({
           ) : stats.error ? (
             <div class="dashboard-view__error" key="error">{stats.error}</div>
           ) : null}
-        </Transition>
+            </Transition>
+          </div>
+        </HkScrollContainer>
 
-        {currentStats.value ? <SScrollTop /> : null}
+        {currentStats.value ? <SScrollTop container=".dashboard-view .hk-scroll-container-viewport" /> : null}
 
         {/* Ship detail popup — water-table context: defaults to the My Stats
             tab with the holographic stage collapsed. */}

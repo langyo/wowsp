@@ -103,12 +103,22 @@
   }
 }
 
+/* The scrollable ship list — hikari's HkScrollContainer owns the scrollbar
+   (auto-hiding overlay track; the native bar stays hidden); the border
+   stays pinned to the box while rows scroll under it. */
 .pr-trend-pop__list {
   max-height: 264px;
   min-height: 64px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   border-block: 1px solid rgb(var(--color-text) / 8%);
+
+  /* Keep wheel-scroll chained inside the list while it can still scroll
+     (the old scroller's overscroll clamp, moved onto the viewport). */
+  & > .hk-scroll-container-viewport {
+    overscroll-behavior: contain;
+  }
+}
+
+.pr-trend-pop__list__inner {
   padding: 2px 0;
 }
 

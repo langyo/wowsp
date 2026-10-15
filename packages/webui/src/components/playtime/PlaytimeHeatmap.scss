@@ -3,9 +3,12 @@
    strength. Not-yet days hatch gray via the SVG <pattern> the component
    defines — deliberately NOT the primary hue, so "hasn't happened" reads
    apart from "happened, little". */
+/* Horizontal strip scroller: hikari's HkScrollContainer owns the scrollbar
+   (auto-hiding overlay track on the strip's bottom edge; the native bar
+   stays hidden) — the SVG keeps its 640px floor and pans inside the
+   viewport on narrow columns. */
 .playtime-heat {
   width: 100%;
-  overflow-x: auto;
 }
 
 .playtime-heat__svg {

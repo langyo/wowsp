@@ -28,13 +28,17 @@
   }
 
   // ── scrollable result list ───────────────────────────────────────────
+  // hikari's scroll container owns the scrollbar (overlay thumb on the
+  // list's right edge; the native bar stays hidden).
   &__list {
-    display: flex;
-    flex-direction: column;
     max-height: 40vh;
-    overflow-y: auto;
     border: 1px solid rgb(var(--color-border) / 15%);
     border-radius: var(--radius-sm);
+  }
+
+  &__list-inner {
+    display: flex;
+    flex-direction: column;
   }
 
   &__row {

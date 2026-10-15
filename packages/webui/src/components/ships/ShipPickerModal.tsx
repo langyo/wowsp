@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref, watch, type PropType, type VNode } from "vue";
 
-import { HkButton, HkCheckbox, HkModal, HkSearchInput, HkTag } from "@celestia-island/hikari";
+import { HkButton, HkCheckbox, HkModal, HkScrollContainer, HkSearchInput, HkTag } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
@@ -239,7 +239,10 @@ export default defineComponent({
                 />
               </div>
 
-              <div class="ship-picker__list">
+              {/* Result list scrolls through hikari's scroll container
+                  (overlay thumb on the list's right edge). */}
+              <HkScrollContainer class="ship-picker__list">
+                <div class="ship-picker__list-inner">
                 {filteredShips.value.length === 0 ? (
                   <p class="ship-picker__empty">{t("ships.empty")}</p>
                 ) : (
@@ -274,7 +277,8 @@ export default defineComponent({
                     );
                   })
                 )}
-              </div>
+                </div>
+              </HkScrollContainer>
               {isTruncated.value ? (
                 <p class="ship-picker__truncated">
                   {t("ships.compare.showing", {

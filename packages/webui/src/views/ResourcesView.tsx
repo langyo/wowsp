@@ -15,6 +15,7 @@ import {
   HkButton,
   HkConfirmDialog,
   HkIconButton,
+  HkScrollContainer,
   HkTabs,
   HMenu,
 } from "@celestia-island/hikari";
@@ -416,20 +417,24 @@ export default defineComponent({
             </div>
 
             {/* ── The compact list (the master half): the sidebar's
-                scroller — the filter stack above stays put ── */}
-            <div class="resources-view__side-scroll">
-              {hub.source.value === "online"
-                ? hub.catalogShown.value.length === 0
-                  ? catalogEmptyNote()
-                  : hub.catalogShown.value.map((entry) => renderCatalogRow(ctx, entry, selKey))
-                : hub.bigCat.value === "texture" && hub.textureComponents.value.length === 0
-                  ? installedEmptyNote()
-                  : hub.bigCat.value === "texture"
-                    ? hub.textureComponents.value.map((comp) => renderComponentRow(ctx, comp))
-                    : hub.shown.value.length === 0
-                      ? installedEmptyNote()
-                      : hub.shown.value.map((m) => renderInstalledRow(ctx, m, selKey))}
-            </div>
+                scroller — the filter stack above stays put; the hikari
+                scroll container owns the scrollbar (overlay track) and
+                the rows scroll inside its viewport ── */}
+            <HkScrollContainer class="resources-view__side-scroll">
+              <div class="resources-view__side-inner">
+                {hub.source.value === "online"
+                  ? hub.catalogShown.value.length === 0
+                    ? catalogEmptyNote()
+                    : hub.catalogShown.value.map((entry) => renderCatalogRow(ctx, entry, selKey))
+                  : hub.bigCat.value === "texture" && hub.textureComponents.value.length === 0
+                    ? installedEmptyNote()
+                    : hub.bigCat.value === "texture"
+                      ? hub.textureComponents.value.map((comp) => renderComponentRow(ctx, comp))
+                      : hub.shown.value.length === 0
+                        ? installedEmptyNote()
+                        : hub.shown.value.map((m) => renderInstalledRow(ctx, m, selKey))}
+              </div>
+            </HkScrollContainer>
 
             {renderModstationStrip(ctx)}
 

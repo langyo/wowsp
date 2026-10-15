@@ -9,6 +9,7 @@ import { Download, FileText, Folder, Package } from "@lucide/vue";
 import {
   HkButton,
   HkModal,
+  HkScrollContainer,
   HkSpinner,
   HkTree,
   type TreeNode,
@@ -118,7 +119,11 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
       width="min(66rem, 92vw)"
     >
       <div class="file-window">
-        <aside class="file-window__side">
+        {/* Both panes scroll through hikari's scroll containers (overlay
+            thumbs; the native bars stay hidden). The left pane keeps the
+            aside landmark the plain div replaced. */}
+        <HkScrollContainer class="file-window__side" as="aside">
+          <div class="file-window__side-inner">
           <div class="file-window__side-title">{t("resources.fileListPackages")}</div>
           {!fromLedger && preview && packages.length > 1 && (
             <button
@@ -156,8 +161,10 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
           {fromLedger && (target.entry?.packages.length ?? 0) > 1 && (
             <p class="file-window__side-note">{t("resources.fileListInstalledNote")}</p>
           )}
-        </aside>
-        <div class="file-window__main">
+          </div>
+        </HkScrollContainer>
+        <HkScrollContainer class="file-window__main">
+          <div class="file-window__main-inner">
           {files.error.value && (
             <div class="resources-banner resources-banner--error">{files.error.value}</div>
           )}
@@ -203,7 +210,8 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
               ))}
             </ul>
           )}
-        </div>
+          </div>
+        </HkScrollContainer>
       </div>
     </HkModal>
   );

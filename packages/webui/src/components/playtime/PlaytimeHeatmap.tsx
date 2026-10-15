@@ -1,5 +1,7 @@
 import { computed, defineComponent, type PropType } from "vue";
 
+import { HkScrollContainer } from "@celestia-island/hikari";
+
 import { t } from "@/i18n";
 import { buildHeatGrid, type HeatPoint, type HeatYear } from "./playtimeAgg";
 import "./PlaytimeHeatmap.scss";
@@ -44,7 +46,7 @@ export default defineComponent({
       const width = LEFT + g.columns.length * (CELL + GAP);
       const height = TOP + 7 * (CELL + GAP) + 18;
       return (
-        <div class="playtime-heat">
+        <HkScrollContainer class="playtime-heat" axis="horizontal">
           <svg
             class="playtime-heat__svg"
             viewBox={`0 0 ${width} ${height}`}
@@ -124,7 +126,7 @@ export default defineComponent({
               </text>
             ))}
           </svg>
-        </div>
+        </HkScrollContainer>
       );
     };
   },

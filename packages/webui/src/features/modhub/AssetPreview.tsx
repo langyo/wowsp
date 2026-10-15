@@ -18,7 +18,7 @@
  */
 import { defineComponent, ref, watch } from "vue";
 import { Box, ImageIcon, Music, PlayCircle } from "@lucide/vue";
-import { useToast } from "@celestia-island/hikari";
+import { useToast, HkScrollContainer } from "@celestia-island/hikari";
 
 import { api, type AssetFileInfo, type ModelPreviewPart } from "@/api";
 import { t } from "@/i18n";
@@ -176,29 +176,33 @@ export default defineComponent({
     // plain model mode.
     function renderModelBlock(list: AssetFileInfo[]) {
       const rows = [...list].sort((a, b) => a.rel.localeCompare(b.rel));
+      // Mesh-row strip: hikari's scroll container owns the scrollbar
+      // (overlay track); the wrapped chip rows scroll in the viewport.
       return (
         <div class="asset-preview__model">
           {modelParts.value ? <ModelStage parts={modelParts.value} /> : null}
-          <ul class="asset-preview__model-rows">
-            {rows.map((f) => (
-              <li key={f.rel} class="asset-preview__model-row">
-                <button
-                  type="button"
-                  class={{
-                    "asset-preview__model-btn": true,
-                    "asset-preview__model-btn--active": modelRel.value === f.rel,
-                  }}
-                  disabled={modelLoading.value}
-                  data-hint={t("resources.modelPlay")}
-                  onClick={() => void toggleModel(f)}
-                >
-                  <Box size={14} />
-                  <span class="asset-preview__model-name">{f.rel.split("/").pop()}</span>
-                  <span class="asset-preview__model-size">{kbFormat(f.size)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <HkScrollContainer class="asset-preview__model-rows">
+            <ul class="asset-preview__model-rows-inner">
+              {rows.map((f) => (
+                <li key={f.rel} class="asset-preview__model-row">
+                  <button
+                    type="button"
+                    class={{
+                      "asset-preview__model-btn": true,
+                      "asset-preview__model-btn--active": modelRel.value === f.rel,
+                    }}
+                    disabled={modelLoading.value}
+                    data-hint={t("resources.modelPlay")}
+                    onClick={() => void toggleModel(f)}
+                  >
+                    <Box size={14} />
+                    <span class="asset-preview__model-name">{f.rel.split("/").pop()}</span>
+                    <span class="asset-preview__model-size">{kbFormat(f.size)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </HkScrollContainer>
         </div>
       );
     }
@@ -233,9 +237,12 @@ export default defineComponent({
       // tells nobody what the line is FOR); unmapped files keep the old
       // single-line shape. Scene rows group by event, orphans trail.
       const audioRows = [...usable].sort(compareByScene);
+      // Voice list: hikari's scroll container owns the scrollbar (overlay
+      // track); the scene rows scroll inside its viewport.
       return (
-        <ul class="asset-preview__audio">
-          {audioRows.map((f) => {
+        <HkScrollContainer class="asset-preview__audio">
+          <ul class="asset-preview__audio-inner">
+            {audioRows.map((f) => {
             const fileName = f.rel.split("/").pop();
             const title = f.sceneEvent
               ? (sceneLabel(f.sceneEvent, uiLocale.value) ?? humanizeEvent(f.sceneEvent))
@@ -275,7 +282,8 @@ export default defineComponent({
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </HkScrollContainer>
       );
     };
   },

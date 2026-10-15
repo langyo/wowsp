@@ -2,27 +2,15 @@
  * Tests for the shared one-line pannable option strip (optionStrip):
  *  - stripWheelDelta: real horizontal deltas win, vertical notches map
  *    onto the horizontal axis, Firefox line mode normalizes to pixels;
- *  - panEngaged: the 5px threshold is met on EITHER axis;
- *  - overflowSides: the hikari data-h-overflow contract — which inline
- *    edges still hide content, with sub-pixel offsets counting as
- *    resting at the edge and no overflow reading "none".
+ *  - panEngaged: the 5px threshold is met on EITHER axis.
  *
- * Pure DOM/DOMRect-free helpers only — jsdom's layout is zero-sized, so
- * the overflow probe runs against stubbed scroll geometry.
+ * (The edge-fade sensing the module used to own moved into hikari's
+ * HkScrollContainer with the scroll migration — data-h-overflow and the
+ * mask painting are the library's contract now.)
  */
 import { describe, expect, it } from "vitest";
 
-import { overflowSides, panEngaged, stripWheelDelta } from "./optionStrip";
-
-function stripStub(scrollWidth: number, clientWidth: number, scrollLeft: number): HTMLElement {
-  const el = document.createElement("div");
-  Object.defineProperties(el, {
-    scrollWidth: { value: scrollWidth, configurable: true },
-    clientWidth: { value: clientWidth, configurable: true },
-    scrollLeft: { value: scrollLeft, configurable: true },
-  });
-  return el;
-}
+import { panEngaged, stripWheelDelta } from "./optionStrip";
 
 describe("stripWheelDelta", () => {
   it("pixel mode: a horizontal delta wins over the vertical one", () => {
@@ -51,28 +39,5 @@ describe("panEngaged", () => {
     expect(panEngaged(5, 0, 5)).toBe(true);
     expect(panEngaged(0, -5, 5)).toBe(true);
     expect(panEngaged(-9, 3, 5)).toBe(true);
-  });
-});
-
-describe("overflowSides", () => {
-  it("no overflow reads none regardless of the (zero) offset", () => {
-    expect(overflowSides(stripStub(400, 400, 0))).toBe("none");
-  });
-
-  it("resting at the start hides the end only", () => {
-    expect(overflowSides(stripStub(1000, 400, 0))).toBe("end");
-  });
-
-  it("scrolled to the end hides the start only", () => {
-    expect(overflowSides(stripStub(1000, 400, 600))).toBe("start");
-  });
-
-  it("mid-scroll hides both edges", () => {
-    expect(overflowSides(stripStub(1000, 400, 300))).toBe("both");
-  });
-
-  it("sub-pixel offsets still count as resting at the edge", () => {
-    expect(overflowSides(stripStub(1000, 400, 0.5))).toBe("end");
-    expect(overflowSides(stripStub(1000, 400, 599.5))).toBe("start");
   });
 });

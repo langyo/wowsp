@@ -166,15 +166,22 @@
     text-align: center;
   }
 
+  /* Replay pick list: the capped window — hikari's scroll container
+     owns the scrollbar (auto-hiding overlay track); the cards scroll
+     inside its viewport. */
   &__list {
+    max-height: 22rem;
+  }
+
+  /* Former list element, now inside the viewport — keeps the list
+     semantics and the card rhythm scrolling with the picks. */
+  &__list-inner {
     margin: 0;
     padding: 0;
     list-style: none;
     display: flex;
     flex-direction: column;
     gap: var(--hi-space-8, 8px);
-    max-height: 22rem;
-    overflow-y: auto;
   }
 
   &__card {
@@ -330,15 +337,21 @@
     font-size: var(--hi-text-sm, 0.8125rem);
   }
 
+  /* Upload outcomes: the capped window — same scroller shape as the
+     pick list above (overlay scrollbar owned by hikari's scroll
+     container; rows scroll in the viewport). */
   &__outcomes {
+    max-height: 14rem;
+  }
+
+  /* Former list element, now inside the viewport. */
+  &__outcomes-inner {
     margin: 0;
     padding: 0;
     list-style: none;
     display: flex;
     flex-direction: column;
     gap: var(--hi-space-4, 4px);
-    max-height: 14rem;
-    overflow-y: auto;
   }
 
   &__outcome {

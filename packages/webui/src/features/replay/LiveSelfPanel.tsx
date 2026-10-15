@@ -27,7 +27,7 @@ import {
   type CSSProperties,
 } from "vue";
 import { Camera, Eye, EyeOff } from "@lucide/vue";
-import { HkSpinner } from "@celestia-island/hikari";
+import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import type { ArenaInfo } from "@/api";
 import { t } from "@/i18n";
@@ -190,11 +190,16 @@ export default defineComponent({
       // waiting state the roster panel shows.
       if (!props.arena || props.arena.vehicles.length === 0) {
         return (
-          <div class="live-battle live-battle--empty">
-            <WaitingRadarArt class="live-battle__empty-art" />
-            <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
-            <p class="live-battle__empty-hint">{t("replay.live.selfWaitingHint")}</p>
-          </div>
+          <HkScrollContainer class="live-battle live-battle--empty">
+            {/* Waiting-state scroller (same shape as the roster panel's
+                empty state): the panel itself is the hikari scroll region;
+                the copy centers inside the inner wrapper. */}
+            <div class="live-battle__empty-inner">
+              <WaitingRadarArt class="live-battle__empty-art" />
+              <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
+              <p class="live-battle__empty-hint">{t("replay.live.selfWaitingHint")}</p>
+            </div>
+          </HkScrollContainer>
         );
       }
 
@@ -267,18 +272,23 @@ export default defineComponent({
             </button>
           </div>
 
-          <div class="live-self__body">
-            {!m ? (
-              <div class="live-self__pending">
-                <WaitingRadarArt class="live-self__pending-art" />
-                <p class="live-self__pending-title">{t("replay.live.selfSyncing")}</p>
-                <p class="live-self__pending-hint">{t("replay.live.selfSyncingHint")}</p>
-                {live.error ? <p class="live-self__pending-err">{live.error}</p> : null}
-              </div>
-            ) : (
-              <SelfReportBody model={m} maskOf={masking.maskOf} />
-            )}
-          </div>
+          {/* Body scroller: the hikari container owns the scrollbar
+              (auto-hiding overlay track); the report and the interim
+              state stack inside the inner wrapper. */}
+          <HkScrollContainer class="live-self__body">
+            <div class="live-self__body__inner">
+              {!m ? (
+                <div class="live-self__pending">
+                  <WaitingRadarArt class="live-self__pending-art" />
+                  <p class="live-self__pending-title">{t("replay.live.selfSyncing")}</p>
+                  <p class="live-self__pending-hint">{t("replay.live.selfSyncingHint")}</p>
+                  {live.error ? <p class="live-self__pending-err">{live.error}</p> : null}
+                </div>
+              ) : (
+                <SelfReportBody model={m} maskOf={masking.maskOf} />
+              )}
+            </div>
+          </HkScrollContainer>
         </div>
       );
     };

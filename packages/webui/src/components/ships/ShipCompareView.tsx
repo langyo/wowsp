@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref, watch } from "vue";
 import { X } from "@lucide/vue";
 
-import { HkButton, HkIconButton, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
+import { HkButton, HkIconButton, HkScrollContainer, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
@@ -145,8 +145,9 @@ export default defineComponent({
               </div>
 
               {/* ── the compare table: identity columns sticky left,
-                  header row sticky top ── */}
-              <div class="ship-compare__scroll">
+                  header row sticky top. Both axes scroll through hikari's
+                  scroll container (overlay thumbs; native bars hidden). ── */}
+              <HkScrollContainer class="ship-compare__scroll" axis="both">
                 <table class="ship-compare__table">
                   <thead>
                     <tr>
@@ -201,7 +202,7 @@ export default defineComponent({
                     })}
                   </tbody>
                 </table>
-              </div>
+              </HkScrollContainer>
             </>
           )}
 
