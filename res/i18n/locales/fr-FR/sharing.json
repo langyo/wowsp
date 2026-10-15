@@ -63,7 +63,11 @@
       "own_staged": "Déjà dans mon paquet",
       "duplicate": "Déjà collecté",
       "unwanted": "Non requis"
-    }
+    },
+    "heroTitle": "Correspondance intelligente",
+    "heroDesc": "Analyse tous les replays locaux selon les besoins actuels de la collecte — seules les batailles éligibles sont listées, pré-cochées.",
+    "noMatchTitle": "Aucun replay éligible",
+    "noMatchDesc": "Aucune bataille de cette machine n'entre dans la périmètre de collecte actuel — revenez après un changement de règles ou de nouvelles batailles."
   },
   "upload": {
     "stage": {
@@ -93,6 +97,7 @@
     "empty": "Aucun contributeur pour l'instant. La liste apparaîtra à la prochaine version après la première contribution.",
     "self": "Moi",
     "count": "{n}",
-    "note": "Notre profonde gratitude à chaque passionné qui a partagé ses replays bruts — ces batailles sont le socle de l'analyse des positions et de l'étalonnage des statistiques. La liste s'actualise à chaque version."
+    "note": "La liste s'actualise à chaque version.",
+    "thanks": "Notre profonde gratitude à chaque passionné qui a partagé ses replays bruts — ces batailles sont le socle de l'analyse des positions et de l'étalonnage des statistiques."
   }
 }

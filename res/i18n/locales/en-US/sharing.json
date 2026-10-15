@@ -63,7 +63,11 @@
       "own_staged": "Already in my package",
       "duplicate": "Already collected",
       "unwanted": "Not needed"
-    }
+    },
+    "heroTitle": "Smart match",
+    "heroDesc": "Scan every local replay against the collection's current wants — only qualifying battles are listed, pre-checked.",
+    "noMatchTitle": "No qualifying replays",
+    "noMatchDesc": "Nothing on this machine falls inside the current collection scope — check back after the ruleset changes or new battles."
   },
   "upload": {
     "stage": {
@@ -93,6 +97,7 @@
     "empty": "No contributors yet. The list appears with the next release after the first contribution.",
     "self": "Me",
     "count": "{n}",
-    "note": "Our heartfelt thanks to every enthusiast who shared their raw replays — those battles are the bedrock of the map-position analysis and the stats calibration. The list refreshes with each release."
+    "note": "The list refreshes with each release.",
+    "thanks": "Our heartfelt thanks to every enthusiast who shared their raw replays — those battles are the bedrock of the map-position analysis and the stats calibration."
   }
 }
